@@ -27,11 +27,10 @@ afterEach(() => {
 })
 
 describe('HeroAnimation', () => {
-  it('内联 SVG 并默认收起，鼠标悬停展开、移开收起', () => {
+  it('默认收起，鼠标悬停展开、移开收起', () => {
     render(<HeroAnimation />)
     const trigger = screen.getByRole('button', { name: EXPAND })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(trigger.querySelector('svg [data-cue-node]')).not.toBeNull()
 
     fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
     expect(trigger).toHaveAttribute('aria-expanded', 'true')

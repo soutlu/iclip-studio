@@ -151,48 +151,16 @@ export const zBrandFontInfoOut = z.object({
 })
 
 /**
- * BrandFontUploadInstruction
- */
-export const zBrandFontUploadInstruction = z.object({
-  expiresAt: z.iso.datetime(),
-  headers: z.record(z.string(), z.string()),
-  method: z.literal('PUT').optional().default('PUT'),
-  url: z.string(),
-})
-
-/**
- * BrandFontUploadTicketOut
- */
-export const zBrandFontUploadTicketOut = z.object({
-  upload: zBrandFontUploadInstruction,
-  uploadId: z.uuid(),
-})
-
-/**
- * BrandTemplateCreateIn
- */
-export const zBrandTemplateCreateIn = z.object({
-  brand: z.string().min(1).max(100).nullish(),
-  kind: z.enum(['intro', 'outro']),
-  name: z.string().min(1).max(100),
-  uploadId: z.uuid(),
-})
-
-/**
  * BrandTemplateOut
  */
 export const zBrandTemplateOut = z.object({
   brand: z.string().nullable(),
   createdAt: z.iso.datetime(),
   disabledAt: z.iso.datetime().nullable(),
-  durationMs: z.int().nullable(),
-  hasAudio: z.boolean().nullable(),
-  height: z.int().nullable(),
   id: z.uuid(),
   kind: z.string(),
   name: z.string(),
   url: z.string(),
-  width: z.int().nullable(),
 })
 
 /**
@@ -543,8 +511,8 @@ export const zConversationTaskIn = z.object({
  *
  * 审计列表里的一段对话。
  *
- * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
- * 没有成片为 null。
+ * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条素材片（出片或合成）的地址，不含分叉继承来的；
+ * 没有素材片为 null。
  */
 export const zConversationsAuditItemOut = z.object({
   activity: zConversationActivityOut,
@@ -639,7 +607,7 @@ export const zExecutionThresholdsOut = z.object({
 /**
  * FaceOut
  *
- * 一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
+ * 一版素材片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
  */
 export const zFaceOut = z.object({
   durationMs: z.int().nullable(),
@@ -1036,7 +1004,7 @@ export const zMovingAverageOut = z.object({
  *
  * 一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
  *
- * 件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+ * 件数类（出片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
  * 其余在整个窗里重算比率或平均。补窗规则见合同 §12。
  */
 export const zMovingAveragesOut = z.object({
@@ -1057,22 +1025,12 @@ export const zMovingAveragesOut = z.object({
 })
 
 /**
- * MusicGainPoint
- *
- * 音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。
- */
-export const zMusicGainPoint = z.object({
-  atMs: z.int().gte(0).lte(120000),
-  gain: z.number().gte(0).lte(1),
-})
-
-/**
  * MusicIn
  *
  * 生成一段背景音乐的受理输入。
  *
  * ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
- * 一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+ * 一样，只是对话必填：背景音乐属于一段对话。``userName`` 只用来替人办事，音乐模型不收
  * 它，不进 ``request``。
  */
 export const zMusicIn = z.object({
@@ -1478,7 +1436,7 @@ export const zStyleMatchOut = z.object({
 /**
  * SubtitleIn
  *
- * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ * 手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
  *
  * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
  * 服务不收它，不进 ``request``。
@@ -1492,15 +1450,29 @@ export const zSubtitleIn = z.object({
 })
 
 /**
+ * SubtitleWord
+ *
+ * 一句里的一个词：在视频里的起止（毫秒）、文字与紧跟其后的标点（没有就是空串）。
+ */
+export const zSubtitleWord = z.object({
+  endMs: z.int().gte(0),
+  punctuation: z.string().optional().default(''),
+  startMs: z.int().gte(0),
+  text: z.string(),
+})
+
+/**
  * SubtitleSentence
  *
- * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ * 字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
+ * camelCase；早先的记录没有逐词时间，读出来是空。
  */
 export const zSubtitleSentence = z.object({
   endMs: z.int().gte(0),
   speaker: z.int().nullable(),
   startMs: z.int().gte(0),
   text: z.string(),
+  words: z.array(zSubtitleWord).optional().default([]),
 })
 
 /**
@@ -1518,9 +1490,9 @@ export const zGenerationOut = z.object({
   errorMessage: z.string().nullable(),
   finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio']),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']),
   outputUrl: z.string().nullable(),
   rangeEndMs: z.int().nullish(),
   rangeStartMs: z.int().nullish(),
@@ -1552,7 +1524,7 @@ export const zGenerationsPageOut = z.object({
 /**
  * TakeOut
  *
- * 一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
+ * 一版素材片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
  */
 export const zTakeOut = z.object({
   aspectRatio: z.string().nullable(),
@@ -1569,7 +1541,7 @@ export const zTakeOut = z.object({
 /**
  * LibraryVideoOut
  *
- * 资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；
+ * 资料库的一张素材卡：一段对话的分镜，装着这段对话读得到的全部素材片（自己的加继承来的）；
  * 不挂对话的出片一条一张卡，同原作的合成跟着它。
  */
 export const zLibraryVideoOut = z.object({
@@ -2011,9 +1983,10 @@ export const zTurnUsage = z.object({
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认。
+ * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
  */
 export const zUploadConfirmIn = z.object({
+  conversationId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
 })
 
@@ -2060,7 +2033,7 @@ export const zUploadSignIn = z.object({
  * 一次直传的许可：先拿到名字，再去传。
  *
  * ``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它
- * 叫什么」达成一致。确认时用它指这一次上传，确认后它就是那条上传记录的 id。
+ * 叫什么」达成一致。确认时用它指这一次上传。
  */
 export const zUploadTicketOut = z.object({
   upload: zUploadInstruction,
@@ -2165,7 +2138,7 @@ export const zOverviewPeriodOut = z.object({
 /**
  * PersonOut
  *
- * 一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。
+ * 一个人在时间窗里的指标；出片数同一需求单只算一件，没挂需求单的有出片对话各算一件。
  */
 export const zPersonOut = z.object({
   metrics: zMetricsOut,
@@ -2608,6 +2581,40 @@ export const zVideoEditIn = z.object({
 })
 
 /**
+ * VideoEnhanceIn
+ *
+ * 给一条素材片或一条导出的成片做高清版的受理输入。
+ *
+ * ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。
+ */
+export const zVideoEnhanceIn = z.object({
+  resolution: z.enum(['720p', '1080p']),
+  sourceJobId: z.uuid(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
+ * VideoEnhanceTierOut
+ *
+ * 高清版的一档：清晰度与这一档最近的一条超分记录（谁提的都算），还没有为空。
+ */
+export const zVideoEnhanceTierOut = z.object({
+  job: zGenerationOut.nullable(),
+  mine: z.boolean(),
+  resolution: z.enum(['720p', '1080p']),
+})
+
+/**
+ * VideoEnhancementsOut
+ *
+ * 一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。
+ */
+export const zVideoEnhancementsOut = z.object({
+  downloadedJobIds: z.array(z.uuid()),
+  tiers: z.array(zVideoEnhanceTierOut),
+})
+
+/**
  * VideoModelsOut
  *
  * 配置允许的视频模型，以及片段入口已接入的模型能力。
@@ -2763,90 +2770,166 @@ export const zReferenceFiltersOut = z.object({
 })
 
 /**
- * WholeFilmBrandIn
- *
- * 整片的片头或片尾：用哪条品牌模板。
+ * WholeFilmCanvas
  */
-export const zWholeFilmBrandIn = z.object({
-  templateId: z.uuid(),
+export const zWholeFilmCanvas = z.object({
+  height: z.int().gte(1).lte(4096),
+  width: z.int().gte(1).lte(4096),
 })
 
 /**
- * WholeFilmMusicIn
+ * WholeFilmCaptionEdit
  *
- * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
+ * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
  */
-export const zWholeFilmMusicIn = z.object({
-  audioJobId: z.uuid(),
-  gain: z.array(zMusicGainPoint).min(1).max(500),
-  offsetMs: z.int().gte(0),
-  volume: z.number().gte(0).lte(2).optional().default(1),
+export const zWholeFilmCaptionEdit = z.object({
+  sentenceIndex: z.int().gte(0),
+  subtitleJobId: z.uuid(),
+  text: z.string().min(1).max(500),
 })
 
 /**
- * WholeFilmSegmentIn
+ * WholeFilmCaptions
  *
- * 整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。
+ * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
+ * ``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。
  */
-export const zWholeFilmSegmentIn = z.object({
-  endMs: z.int(),
-  sourceJobId: z.uuid(),
-  startMs: z.int().gte(0),
-  volume: z.number().gte(0).lte(2).optional().default(1),
+export const zWholeFilmCaptions = z.object({
+  component: z.string().min(1).max(200),
+  edits: z.array(zWholeFilmCaptionEdit).max(1000),
+  hidden: z.boolean().optional().default(false),
+  x: z.int().gte(-4096).lte(4096).optional().default(0),
+  y: z.int().gte(-4096).lte(4096).optional().default(0),
 })
 
 /**
- * WholeFilmSubtitle
+ * WholeFilmComponentClip
  *
- * 整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。
+ * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
  */
-export const zWholeFilmSubtitle = z.object({
-  endMs: z.int().gte(0).lte(120000),
-  startMs: z.int().gte(0).lte(120000),
-  text: z.string().min(1).max(200),
+export const zWholeFilmComponentClip = z.object({
+  component: z.string().min(1).max(200),
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  playbackStart: z.int().gte(0),
+  start: z.int().gte(0),
+  type: z.literal('component'),
+  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
 })
 
 /**
- * WholeFilmIn
+ * WholeFilmDraftSavedOut
  *
- * 一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
- * 总长是三者之和，片头片尾的时长受理时按模板定。
- *
- * 字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
- * 与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
- * ``request``。
+ * 保存后的新版本号与保存时刻。
  */
-export const zWholeFilmIn = z.object({
-  conversationId: z.uuid(),
-  fontId: z.uuid().nullish(),
-  intro: zWholeFilmBrandIn.nullish(),
-  metadata: z.record(z.string(), z.unknown()).nullish(),
-  music: zWholeFilmMusicIn.nullish(),
-  outro: zWholeFilmBrandIn.nullish(),
-  segments: z.array(zWholeFilmSegmentIn).min(1).max(100),
-  subtitles: z.array(zWholeFilmSubtitle).max(500),
-  taskId: z.uuid().nullish(),
-  userName: z.string().min(1).max(200).nullish(),
+export const zWholeFilmDraftSavedOut = z.object({
+  revision: z.int(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * WholeFilmExportErrorOut
+ */
+export const zWholeFilmExportErrorOut = z.object({
+  code: z.string(),
+  message: z.string(),
+})
+
+/**
+ * WholeFilmExportIn
+ *
+ * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
+ */
+export const zWholeFilmExportIn = z.object({
+  revision: z.int().gte(0),
+})
+
+/**
+ * WholeFilmExportOut
+ *
+ * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ */
+export const zWholeFilmExportOut = z.object({
+  downloadUrl: z.string().nullable(),
+  error: zWholeFilmExportErrorOut.nullable(),
+  id: z.uuid(),
+  progress: z.number().nullable(),
+  queuePosition: z.int().nullable(),
+  sourceJobIds: z.array(z.uuid()),
+  status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),
+})
+
+/**
+ * WholeFilmExportLatestOut
+ *
+ * 这段对话最新的一次导出；还没导出过为 null。
+ */
+export const zWholeFilmExportLatestOut = z.object({
+  export: zWholeFilmExportOut.nullable(),
+})
+
+/**
+ * WholeFilmExportStartedOut
+ *
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
+ * 用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
+ */
+export const zWholeFilmExportStartedOut = z.object({
+  exportId: z.uuid(),
+  sourceJobIds: z.array(z.uuid()),
+})
+
+/**
+ * WholeFilmMusic
+ *
+ * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
+ */
+export const zWholeFilmMusic = z.object({
+  jobId: z.uuid(),
+  offset: z.int().gte(0),
+  volume: z.number().gte(0).lte(3.981072),
+})
+
+/**
+ * WholeFilmOverlay
+ *
+ * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
+ * ``playbackStart`` 起播。
+ *
+ * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
+ * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
+ * ``x``、``y`` 是它在画面上挪开的位置。
+ */
+export const zWholeFilmOverlay = z.object({
+  component: z.string().min(1).max(200),
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  playbackStart: z.int().gte(0),
+  start: z.int().gte(0),
+  track: z.int().gte(0),
+  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+  x: z.int().gte(-4096).lte(4096).optional().default(0),
+  y: z.int().gte(-4096).lte(4096).optional().default(0),
+  zIndex: z.int().gte(0),
 })
 
 /**
  * WholeFilmVersionOut
  *
- * 整片卡里的一版：这段对话自己的一条已完成整片。
+ * 成片卡里的一版：这段对话的一次已完成导出。
  */
 export const zWholeFilmVersionOut = z.object({
-  durationMs: z.int().nullable(),
   finishedAt: z.iso.datetime(),
   jobId: z.uuid(),
   outputUrl: z.string(),
+  sourceJobIds: z.array(z.uuid()),
   userName: z.string().nullable(),
-  watermarkOutputUrl: z.string().nullable(),
 })
 
 /**
  * WholeFilmCardOut
  *
- * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
+ * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。
  */
 export const zWholeFilmCardOut = z.object({
   canOpenConversation: z.boolean(),
@@ -2864,6 +2947,55 @@ export const zWholeFilmCardsOut = z.object({
   items: z.array(zWholeFilmCardOut),
   nextCursor: z.string().nullable(),
   total: z.int().nullable(),
+})
+
+/**
+ * WholeFilmVideoClip
+ *
+ * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
+ */
+export const zWholeFilmVideoClip = z.object({
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  playbackStart: z.int().gte(0),
+  sourceJobId: z.uuid(),
+  start: z.int().gte(0),
+  type: z.literal('video'),
+  volume: z.number().gte(0).lte(3.981072),
+})
+
+/**
+ * WholeFilmDocument
+ *
+ * 一段对话的成片草稿。
+ */
+export const zWholeFilmDocument = z.object({
+  canvas: zWholeFilmCanvas.nullable(),
+  captions: zWholeFilmCaptions,
+  layer0: z.array(z.union([zWholeFilmVideoClip, zWholeFilmComponentClip])).max(1200),
+  music: zWholeFilmMusic.nullable(),
+  overlays: z.array(zWholeFilmOverlay).max(1200),
+})
+
+/**
+ * WholeFilmDraftIn
+ *
+ * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
+ */
+export const zWholeFilmDraftIn = z.object({
+  document: zWholeFilmDocument,
+  revision: z.int().gte(0),
+})
+
+/**
+ * WholeFilmDraftOut
+ *
+ * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
+ */
+export const zWholeFilmDraftOut = z.object({
+  document: zWholeFilmDocument.nullable(),
+  revision: z.int(),
+  updatedAt: z.iso.datetime().nullable(),
 })
 
 /**
@@ -2957,19 +3089,12 @@ export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
  */
 export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
 
-export const zCreateBrandTemplateBrandTemplatesPostBody = zBrandTemplateCreateIn
-
-/**
- * Successful Response
- */
-export const zCreateBrandTemplateBrandTemplatesPostResponse = zBrandTemplateOut
-
 export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
 
 /**
  * Successful Response
  */
-export const zSignFontBrandTemplatesFontsSignPostResponse = zBrandFontUploadTicketOut
+export const zSignFontBrandTemplatesFontsSignPostResponse = zUploadTicketOut
 
 export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostBody = zBrandFontConfirmIn
 
@@ -3390,6 +3515,64 @@ export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostPath
  */
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse = zPrompt
 
+export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
+  zWholeFilmDraftOut
+
+export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutBody = zWholeFilmDraftIn
+
+export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
+  zWholeFilmDraftSavedOut
+
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostBody =
+  zWholeFilmExportIn
+
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
+  zWholeFilmExportStartedOut
+
+export const zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse =
+  zWholeFilmExportLatestOut
+
+export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeletePath =
+  z.object({
+    conversation_id: z.uuid(),
+    export_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
+  z.void()
+
 export const zReadConversationFileConversationsConversationIdWorkspaceFileGetPath = z.object({
   conversation_id: z.uuid(),
 })
@@ -3452,8 +3635,8 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio']).nullish(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload']).nullish(),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']).nullish(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
   metadata: z.string().nullish(),
@@ -3512,6 +3695,13 @@ export const zSubmitVideoEditGenerationsVideoEditsPostBody = zVideoEditIn
  */
 export const zSubmitVideoEditGenerationsVideoEditsPostResponse = zGenerationEnvelope
 
+export const zSubmitVideoEnhancementGenerationsVideoEnhancementsPostBody = zVideoEnhanceIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitVideoEnhancementGenerationsVideoEnhancementsPostResponse = zGenerationEnvelope
+
 /**
  * Successful Response
  */
@@ -3526,13 +3716,6 @@ export const zGetVideoTaskGenerationsVideoTaskIdGetPath = z.object({
  */
 export const zGetVideoTaskGenerationsVideoTaskIdGetResponse = zVideoTaskOut
 
-export const zSubmitWholeFilmGenerationsWholeFilmsPostBody = zWholeFilmIn
-
-/**
- * Successful Response
- */
-export const zSubmitWholeFilmGenerationsWholeFilmsPostResponse = zGenerationEnvelope
-
 export const zGetGenerationGenerationsJobIdGetPath = z.object({
   job_id: z.uuid(),
 })
@@ -3541,6 +3724,15 @@ export const zGetGenerationGenerationsJobIdGetPath = z.object({
  * Successful Response
  */
 export const zGetGenerationGenerationsJobIdGetResponse = zGenerationEnvelope
+
+export const zListVideoEnhancementsGenerationsJobIdEnhancementsGetPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zListVideoEnhancementsGenerationsJobIdEnhancementsGetResponse = zVideoEnhancementsOut
 
 /**
  * Response Healthz Healthz Get
@@ -3598,6 +3790,11 @@ export const zWholeFilmsLibraryWholeFilmsGetQuery = z.object({
  * Successful Response
  */
 export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
+
+/**
+ * Successful Response
+ */
+export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
 
 export const zListReferencesReferencesGetQuery = z.object({
   videoTypes: z

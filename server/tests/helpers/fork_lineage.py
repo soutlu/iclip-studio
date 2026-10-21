@@ -18,7 +18,7 @@ from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.models import Conversation
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
-from iclip.domains.generation.schemas import GenerationRequest
+from iclip.domains.generation.stored_requests import GenerationRequest
 from tests.helpers.generation import edit_request, make_job, video_request
 
 
@@ -118,7 +118,7 @@ class ForkChain:
     in_flight: GenerationJob
     """父名下、孙建立时还在跑、之后才完成的出片（已是完成态）：孙继承不到。"""
     parent_edit: GenerationJob
-    """父名下、孙建立之前完成的编辑段，基底是 ``from_parent``：孙继承得到，但它不是成片。"""
+    """父名下、孙建立之前完成的编辑段，基底是 ``from_parent``：孙继承得到，但它不是素材片。"""
     failed: GenerationJob
     """父名下失败的出片。"""
     parent_after_child: GenerationJob

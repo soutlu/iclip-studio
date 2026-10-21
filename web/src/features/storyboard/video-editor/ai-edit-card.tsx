@@ -1,17 +1,12 @@
-/** AI 改段的弹出卡：选中视频段时盖在舞台上，水平对准时间线上的选区，底边小尖角指向它；画面不为它让位。
- *
- * 一拖、一播就收成画面底部的小胶囊，停下后点胶囊或那段再展开。卡与胶囊是同一个元素，切换时从原来的
- * 大小变过去。没提交的要求由调用方以 React 状态持有：收起时输入框卸载，展开时从状态装回来。
- * 上传归共享输入框自己管、随它卸载而断，所以还没传完（或传失败）的参考图留不下来：收起时报出张数，
- * 由调用方在卡里说出来。 */
-
 import {
   useEffect,
   useEffectEvent,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
+  type Ref,
   type RefObject,
 } from 'react'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
@@ -28,13 +23,16 @@ import {
   type ComposerSubmission,
 } from '@/shared/ui/composer'
 import { InlineAlert } from '@/shared/ui/inline-alert'
-import { imageSlotsOf } from '../edit-prompt'
 import { editMentionItems, type EditMentionItem } from '../image-edit/edit-mention-items'
 import { EditMentionMenu } from '../image-edit/edit-mention-menu'
-import { placeCard } from './card-placement'
+import { placeCard } from '../editing/card-placement'
+import {
+  referenceImageCountOf,
+  type ClipGenerationBlock,
+  type ClipGenerationMode,
+} from './clip-generation'
 import './ai-edit-card.css'
 
-/** 卡此刻的位置与大小，切换外形时从它变过去。编辑器播放时每帧都重渲染，这里只读几何、不读样式。 */
 type Box = { width: number; height: number; left: number }
 
 const measure = (card: HTMLElement): Box => ({
@@ -43,7 +41,6 @@ const measure = (card: HTMLElement): Box => ({
   left: card.offsetLeft,
 })
 
-/** 卡头与胶囊上的一帧；截不到图时露出中性底色。 */
 function Thumb({ src, className }: { src: string | undefined; className: string }) {
   const [failed, setFailed] = useState<string>()
   return src === undefined || failed === src ? (
@@ -53,27 +50,28 @@ function Thumb({ src, className }: { src: string | undefined; className: string 
   )
 }
 
-/** 用户改了要求：`parts` 只含文字与传好的参考图。 */
 type DraftChange = (parts: readonly ComposerPart[]) => void
 
+type GenerationBlockOf = (referenceImageCount: number) => ClipGenerationBlock | undefined
+
 type CardComposerProps = {
-  composerRef: RefObject<ComposerHandle | null>
   draft: readonly ComposerPart[]
   onDraftChange: DraftChange
-  /** 卸载（卡收起或收走）时正文里还有几张图没传好，没有留进草稿；没有就不调。 */
   onUploadsDropped: (count: number) => void
-  /** 挂载后把光标放进输入框：从胶囊点开的。只在挂载时读。 */
+  appending: readonly string[]
+  onAppended: () => void
   focusInput: boolean
   onInputFocused: () => void
   submitDisabled: boolean
   sending: boolean
   onSubmit: (submission: ComposerSubmission) => void
   modelPicker: ReactNode
-  durationControl?: ReactNode
-  mode: 'image' | 'edit'
-  onModeChange: (mode: 'image' | 'edit') => void
+  durationControl: ReactNode
+  mode: ClipGenerationMode
+  onModeChange: (mode: ClipGenerationMode) => void
   firstFrameReferenceUrl: string | undefined
-  referenceLimit: number
+  referenceLimit: number | undefined
+  generationBlockOf: GenerationBlockOf
 }
 
 const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =>
@@ -83,12 +81,12 @@ const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =
     text: '',
   })
 
-/** 卡里的输入框：挂载时装回没提交的要求，之后每次变化把就绪的部分交回去。 */
 function CardComposer({
-  composerRef,
   draft,
   onDraftChange,
   onUploadsDropped,
+  appending,
+  onAppended,
   focusInput,
   onInputFocused,
   submitDisabled,
@@ -100,15 +98,17 @@ function CardComposer({
   onModeChange,
   firstFrameReferenceUrl,
   referenceLimit,
+  generationBlockOf,
 }: CardComposerProps) {
   const { data: user } = useUser()
+  const composerRef = useRef<ComposerHandle>(null)
   const [initial] = useState(draft)
   const [focusOnMount] = useState(focusInput)
   const [parts, setParts] = useState(draft)
-  // 正文里此刻的全部内容（含上传中的图）：算参考图还能加几张，卸载时清点没传好的。
   const partsRef = useRef<readonly ComposerPart[]>(draft)
   const focused = useEffectEvent(onInputFocused)
   const dropped = useEffectEvent(onUploadsDropped)
+  const appended = useEffectEvent(onAppended)
 
   useEffect(
     () => () => {
@@ -128,12 +128,23 @@ function CardComposer({
       composer.focus()
       focused()
     }
-  }, [initial, focusOnMount, composerRef])
+  }, [initial, focusOnMount])
 
-  const remaining = () =>
-    referenceLimit - new Set(imageSlotsOf(partsRef.current).map((slot) => slot.key)).size
-  const referenceCount = new Set(imageSlotsOf(parts).map((slot) => slot.key)).size
-  const exceedsReferenceLimit = referenceCount > referenceLimit
+  useEffect(() => {
+    const composer = composerRef.current
+    if (composer === null || appending.length === 0) return
+    let hasContent = partsRef.current.length > 0
+    for (const text of appending) {
+      composer.append([{ kind: 'text', text: hasContent ? `\n${text}` : text }])
+      hasContent = true
+    }
+    appended()
+  }, [appending])
+
+  const remaining = (limit: number) => limit - referenceImageCountOf(partsRef.current)
+  const referenceCount = referenceImageCountOf(parts)
+  const exceedsReferenceLimit = referenceLimit !== undefined && referenceCount > referenceLimit
+  const block = generationBlockOf(referenceCount)
   const hasText = parts.some((part) => part.kind === 'text' && part.text.trim() !== '')
 
   const images = parts.flatMap((part) =>
@@ -155,7 +166,10 @@ function CardComposer({
     (frame, index) => candidates.findIndex((candidate) => candidate.url === frame.url) === index,
   )
   const blockedReason = (item: EditMentionItem) =>
-    item.kind !== 'frame' || images.some((image) => image.url === item.url) || remaining() > 0
+    item.kind !== 'frame' ||
+    referenceLimit === undefined ||
+    images.some((image) => image.url === item.url) ||
+    remaining(referenceLimit) > 0
       ? undefined
       : `最多引用 ${referenceLimit} 张图片`
   const mention: ComposerMention<EditMentionItem> = {
@@ -179,10 +193,14 @@ function CardComposer({
       <Composer<never, EditMentionItem>
         accept="image"
         ariaLabel="修改要求"
-        attachmentLimit={{
-          notice: (dropped) => `参考图最多 ${referenceLimit} 张，本次有 ${dropped} 张未添加`,
-          remaining,
-        }}
+        attachmentLimit={
+          referenceLimit === undefined
+            ? undefined
+            : {
+                notice: (dropped) => `参考图最多 ${referenceLimit} 张，本次有 ${dropped} 张未添加`,
+                remaining: () => remaining(referenceLimit),
+              }
+        }
         attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
         className="video-editor-card-composer"
         dropScope="card"
@@ -230,65 +248,61 @@ function CardComposer({
           disabled:
             submitDisabled ||
             exceedsReferenceLimit ||
-            (mode === 'image' ? images.length === 0 : !hasText),
+            block !== undefined ||
+            (mode === 'edit' && !hasText),
           emphasis: 'primary',
           icon: 'video',
-          label: '生成',
-          pendingLabel: '提交',
+          label: '生成视频',
+          pendingLabel: '正在提交',
+          size: 'sm',
+        }}
+        toolbarClassNames={{
+          row: 'video-editor-card-toolbar',
+          leading: 'video-editor-card-toolbar-leading',
+          trailing: 'video-editor-card-toolbar-trailing',
         }}
         trailing={modelPicker}
       />
       {exceedsReferenceLimit ? (
         <InlineAlert
-          message={`当前模型最多支持 ${referenceLimit} 张参考图，已引用 ${referenceCount} 张；请删除多出的图片后再生成`}
+          message={`当前模型最多支持 ${referenceLimit} 张参考图，已引用 ${referenceCount} 张，无法生成视频；请删除多出的图片`}
         />
-      ) : mode === 'image' && referenceCount === 0 ? (
-        <InlineAlert message="请在描述中引用至少一张图片" />
+      ) : block?.cause === 'references' ? (
+        <InlineAlert message={block.message} />
       ) : null}
     </>
   )
 }
 
+export type AiEditCardHandle = { appendText: (text: string) => void }
+
 type AiEditCardProps = {
-  composerRef: RefObject<ComposerHandle | null>
-  /** 展开成卡；否则收成胶囊。 */
+  ref?: Ref<AiEditCardHandle>
   open: boolean
   onExpand: () => void
   onCollapse: () => void
-  /** 时间线上的选区外框，卡对准它的中线；拖着段时它不在，卡留在原处。 */
   anchorRef: RefObject<HTMLElement | null>
-  /** 选中的是哪几段，如「第 2–3 段」。 */
   positions: string
-  /** 卡头副标题：能交给 AI 时是区间与做法，不能时是原因。 */
   detail: string
-  /** 这几段的首帧与末帧截图；截不了帧时没有。 */
   frames: { first: string | undefined; last: string | undefined }
-  /** 没提交的要求，只含文字与传好的参考图；展开时恢复。 */
   draft: readonly ComposerPart[]
   onDraftChange: DraftChange
-  /** 收起或收走时有几张参考图还没传好、没能留下。 */
   onUploadsDropped: (count: number) => void
-  /** 能不能生成：选区能交给 AI、有模型、没在提交。 */
   canGenerate: boolean
   generating: boolean
   onGenerate: (submission: ComposerSubmission) => void
-  /** 卡底的模型选择。 */
   modelPicker: ReactNode
-  /** 图生时长控件，紧跟生成方式；实际时长仍由编辑器持有。 */
-  durationControl?: ReactNode
-  /** 两种方式共用正文与版本列表；切换时保留未提交的要求。 */
-  mode: 'image' | 'edit'
-  onModeChange: (mode: 'image' | 'edit') => void
-  /** 选区当前首帧的引用候选；只有插入正文后才随生成请求提交。 */
+  durationControl: ReactNode
+  mode: ClipGenerationMode
+  onModeChange: (mode: ClipGenerationMode) => void
   firstFrameReferenceUrl: string | undefined
-  /** 当前模型与产品共同允许的正文参考图张数上限。 */
-  referenceLimit: number
-  /** 卡里要让人看到的错误：提交失败、模型清单读不到。 */
+  referenceLimit: number | undefined
+  generationBlockOf: GenerationBlockOf
   alerts: ReactNode
 }
 
 export function AiEditCard({
-  composerRef,
+  ref,
   open,
   onExpand,
   onCollapse,
@@ -308,6 +322,7 @@ export function AiEditCard({
   onModeChange,
   firstFrameReferenceUrl,
   referenceLimit,
+  generationBlockOf,
   alerts,
 }: AiEditCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -316,10 +331,21 @@ export function AiEditCard({
   const wasOpenRef = useRef(open)
   const morphRef = useRef<Animation | null>(null)
   const [focusInput, setFocusInput] = useState(false)
+  const [appending, setAppending] = useState<readonly string[]>([])
   const title = `${positions} · 视频生成`
   const unfinished = draft.some((part) => part.kind === 'media' || part.text.trim() !== '')
 
-  /** 按选区摆好水平位置，并记下此刻的外形。选区外框不在（拖着段）时不挪。 */
+  useImperativeHandle(
+    ref,
+    () => ({
+      appendText: (text) => {
+        setAppending((queued) => [...queued, text])
+        onExpand()
+      },
+    }),
+    [onExpand],
+  )
+
   const place = useEffectEvent(() => {
     const card = cardRef.current
     const stage = card?.offsetParent
@@ -339,21 +365,18 @@ export function AiEditCard({
     boxRef.current = measure(card)
   })
 
-  // 每次渲染后重摆（选区、外形都可能变了）；外形刚切换时从切换前的样子变过去。
   useLayoutEffect(() => {
     const card = cardRef.current
     const before = boxRef.current
     const toggled = wasOpenRef.current !== open
     wasOpenRef.current = open
     if (toggled && card !== null) {
-      // 上一次变形还没走完就又切了：停掉它，从它停下时的样子（上一帧量到的）重新变。
       morphRef.current?.cancel()
       morphRef.current = null
       delete card.dataset['morphing']
     }
     place()
     if (!toggled || card === null) return
-    // 收起时焦点若随输入框一起没了，交给胶囊，键盘不断。
     const active = document.activeElement
     if (!open && (active === null || active === document.body || active.contains(card)))
       miniRef.current?.focus()
@@ -361,7 +384,6 @@ export function AiEditCard({
     if (before === null || after === null) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const style = getComputedStyle(card)
-    // 卡是 20px 圆角，胶囊是半高的全圆角；圆角也跟着变，免得大卡一瞬间变成椭圆。
     const radiusOf = (box: Box, isOpen: boolean) =>
       isOpen ? style.getPropertyValue('--radius-xl') : `${box.height / 2}px`
     const frame = (box: Box, isOpen: boolean) => ({
@@ -380,14 +402,13 @@ export function AiEditCard({
       if (morphRef.current !== animation) return
       morphRef.current = null
       delete card.dataset['morphing']
-      // 变形期间量到的是动画中的宽度；选区在这期间变了（如拖完段松手）的话，按落定的宽度重摆。
+      // 动画期间读到的 offsetWidth 是动画中的尺寸，落定后按最终尺寸重摆。
       place()
     }
     animation.finished.then(settle, settle)
   })
 
-  // 选区外框刚挂上（第一次选中、拖完段松手）：时间线排在卡后面，上面那次重摆时它的 ref 还没接上，
-  // 等这一轮提交的 ref 都接好再摆一次。
+  // 时间线排在卡之后渲染，卡的 layout effect 执行时选区外框的 ref 尚未挂上；等本轮 ref 全部挂好后再摆一次。
   const anchorSeenRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (anchorRef.current === anchorSeenRef.current) return
@@ -395,7 +416,6 @@ export function AiEditCard({
     place()
   })
 
-  // 舞台变大小、时间线横向滚动（窄屏）时重摆。
   useEffect(() => {
     const card = cardRef.current
     const stage = card?.offsetParent
@@ -430,19 +450,21 @@ export function AiEditCard({
             <IconButton label="收起" name="close" onClick={onCollapse} size="sm" />
           </div>
           <CardComposer
-            composerRef={composerRef}
+            appending={appending}
             draft={draft}
-            focusInput={focusInput}
-            firstFrameReferenceUrl={firstFrameReferenceUrl}
-            modelPicker={modelPicker}
             durationControl={durationControl}
+            firstFrameReferenceUrl={firstFrameReferenceUrl}
+            focusInput={focusInput}
+            generationBlockOf={generationBlockOf}
             mode={mode}
-            referenceLimit={referenceLimit}
-            onModeChange={onModeChange}
-            onInputFocused={() => setFocusInput(false)}
+            modelPicker={modelPicker}
+            onAppended={() => setAppending([])}
             onDraftChange={onDraftChange}
-            onUploadsDropped={onUploadsDropped}
+            onInputFocused={() => setFocusInput(false)}
+            onModeChange={onModeChange}
             onSubmit={onGenerate}
+            onUploadsDropped={onUploadsDropped}
+            referenceLimit={referenceLimit}
             sending={generating}
             submitDisabled={!canGenerate}
           />

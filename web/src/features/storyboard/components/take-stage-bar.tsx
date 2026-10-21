@@ -1,4 +1,4 @@
-/** 舞台显示成片时右上的工具条：成片信息（ⓘ，分辨率 · 时长 · 生成时间与模型 id 收在提示里）、下载、编辑视频、回填提示词，
+/** 舞台显示素材片时右上的工具条：素材片信息（ⓘ，分辨率 · 时长 · 生成时间与模型 id 收在提示里）、下载、编辑视频、回填提示词，
  * 一律深色玻璃图标按钮。画面上不挂别的信息胶囊；播放控件是共享播放器自带的底部胶囊，与这里互不遮挡。
  * 各动作出不出现、能不能用由 `takeActionsOf` 定，这里只照着画。 */
 
@@ -30,7 +30,9 @@ export function TakeStageBar({ actions, onEditVideo, onRefill, take }: TakeStage
           {download.kind === 'enabled' && take.outputUrl !== undefined ? (
             <VideoDownload
               className={stageActionClass}
-              jobId={take.job.id}
+              downloadedJobIds={[take.job.id]}
+              durationMs={take.job.durationMs}
+              enhanceSourceId={take.job.id}
               url={take.outputUrl}
               watermarkUrl={take.job.watermarkOutputUrl}
             />
@@ -59,10 +61,10 @@ export function TakeStageBar({ actions, onEditVideo, onRefill, take }: TakeStage
   )
 }
 
-/** 成片信息按钮：悬停、聚焦或点按弹出「分辨率 · 时长 · 生成时间」与模型 id；可访问名里带着同样的内容，读屏不用等提示。
+/** 素材片信息按钮：悬停、聚焦或点按弹出「分辨率 · 时长 · 生成时间」与模型 id；可访问名里带着同样的内容，读屏不用等提示。
  * 触屏没有悬停，Radix 提示又不接触摸，所以受控开合、点按也打开，做法同 `BlockedReason`。 */
 function TakeInfo({ take }: { take: Take }) {
-  // 「今天」「昨天」按挂上那一刻算；换一条成片会重挂。
+  // 「今天」「昨天」按挂上那一刻算；换一条素材片会重挂。
   const [now] = useState(() => new Date())
   const [open, setOpen] = useState(false)
   const model = take.model ?? '未记录模型'
@@ -84,7 +86,7 @@ function TakeInfo({ take }: { take: Take }) {
         }}
       >
         <button
-          aria-label={`成片信息：${info}，${model}`}
+          aria-label={`素材片信息：${info}，${model}`}
           className={stageActionClass}
           type="button"
         >

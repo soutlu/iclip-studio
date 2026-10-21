@@ -1,10 +1,9 @@
-/** 选区的媒体坐标与版本切换。播放位置随时间线变化，候选归属始终使用基底区间。 */
-
 import type { GenerationJob } from '../storyboard.api'
+import type { Clip } from '../editing/clip'
+import { rangeKey } from '../editing/version-lineage'
 import { baseRangeForClip, groupForRange, type ClipVersionGroup } from './clip-versions'
-import { clipItem, selectedRange, type Clip, type Draft, type Edit, type Selection } from './draft'
+import { clipItem, selectedRange, type Draft, type Edit, type Selection } from './draft'
 
-/** 按当前时间线先后返回选中的实际素材，用它们拼出给模型的参考片段。 */
 export const selectedClips = (draft: Draft, selection: Selection): readonly Clip[] | undefined => {
   const range = selectedRange(draft, selection)
   if (range === undefined) return undefined
@@ -14,7 +13,13 @@ export const selectedClips = (draft: Draft, selection: Selection): readonly Clip
     : undefined
 }
 
-/** 同来源且媒体时间连续时返回一段，用于判断当前选用的候选；混合素材仍可组成编辑选区。 */
+export const selectionPositions = (draft: Draft, selection: Selection): string | undefined => {
+  if (selection.length === 0) return undefined
+  const first = draft.findIndex((item) => item.id === selection[0]) + 1
+  const last = draft.findIndex((item) => item.id === selection.at(-1)) + 1
+  return first === last ? `第 ${first} 段` : `第 ${first}–${last} 段`
+}
+
 export const selectedSource = (draft: Draft, selection: Selection): Clip | undefined => {
   const clips = selectedClips(draft, selection)
   const first = clips?.[0]
@@ -30,8 +35,6 @@ export const selectedSource = (draft: Draft, selection: Selection): Clip | undef
   return { sourceJobId: first.sourceJobId, start: first.start, end: last.end }
 }
 
-/** 将选区逐段映射到基底后合并；只有正向连续的基底区间才构成一个版本组。
- * 已编辑结果与相邻原片可以混选，时长变化不会改变它们对应的基底范围。 */
 export const selectedGroup = (
   draft: Draft,
   selection: Selection,
@@ -54,7 +57,7 @@ export const selectedGroup = (
   const range = { start: first.start, end: last.end }
   return (
     groupForRange(range, baseJobId, jobs) ?? {
-      key: `${baseJobId}@${Math.round(range.start * 1000)}-${Math.round(range.end * 1000)}`,
+      key: rangeKey(baseJobId, range),
       baseJobId,
       ...range,
       edits: [],
@@ -62,7 +65,6 @@ export const selectedGroup = (
   )
 }
 
-/** 只替换当前选区，其余片段的版本、顺序与裁剪保持不动。 */
 export const chooseClipVersion = (
   draft: Draft,
   selection: Selection,

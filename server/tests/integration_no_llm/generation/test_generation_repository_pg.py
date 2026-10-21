@@ -1,17 +1,14 @@
-"""验证生成仓储的数据库时钟、JSON 往返、外键、组合约束、条件更新原子性与分叉继承的读范围。"""
+"""验证生成仓储的数据库时钟、JSON 往返、外键、条件更新原子性与分叉继承的读范围。"""
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import NotFound
@@ -27,7 +24,7 @@ from iclip.domains.generation.models import (
     GenerationKind,
     GenerationOperation,
 )
-from iclip.domains.generation.schemas import GenerationRequest
+from iclip.domains.generation.stored_requests import GenerationRequest
 from tests.helpers.fork_lineage import (
     complete,
     finished,
@@ -77,7 +74,9 @@ async def test_state_transitions_round_trip_through_the_table(engine: AsyncEngin
     request = video_request(reference_image_urls=["https://example.test/first.png"])
     job = await insert_job(repo, owner, request)
 
-    assert (await repo.mark_submitting(job.id)).status == STATUS_SUBMITTING
+    submitting = await repo.mark_submitting(job.id)
+    assert submitting is not None and submitting.status == STATUS_SUBMITTING
+    assert await repo.mark_submitting(job.id) is None, "只有还在排队的才改成提交中"
     submitted = await repo.mark_submitted(job.id, provider_task_id="t-1", provider_status="queued")
     assert submitted.status == STATUS_SUBMITTED
     assert submitted.submitted_at is not None
@@ -366,7 +365,7 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
 async def test_latest_master_by_conversation_takes_each_conversations_newest_master(
     engine: AsyncEngine,
 ) -> None:
-    """审计列表要的最新成片：按完成时刻取最晚的出片或合成，同一刻取 id 大的；编辑段、失败与在途的
+    """审计列表要的最新素材片：按完成时刻取最晚的出片或合成，同一刻取 id 大的；编辑段、失败与在途的
     出片、没有地址的记录、图片都不算；每段对话只看记在自己名下的。"""
 
     repo = SqlGenerationRepository(engine)
@@ -379,7 +378,7 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     )
     take = await finished(repo, owner, newest, "take")
     started_first = await complete(repo, started_first, "https://example.test/started-first.mp4")
-    # 下面几条都比它晚，但都不是成片。
+    # 下面几条都比它晚，但都不是素材片。
     await complete(
         repo,
         await repo.create(make_edit(take, owner_user_id=owner, conversation_id=newest)),
@@ -422,7 +421,7 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     tie_winner = max(pair, key=lambda job: job.id)
 
     await finished(repo, owner, nothing, "nothing-image", image_request())
-    # 没问到的对话里最晚的成片，不串进别的对话。
+    # 没问到的对话里最晚的素材片，不串进别的对话。
     await finished(repo, owner, uuid.uuid4(), "outsider")
 
     latest = await repo.latest_master_by_conversation(
@@ -440,8 +439,8 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
 async def test_latest_master_by_conversation_leaves_inherited_masters_out(
     engine: AsyncEngine,
 ) -> None:
-    """分叉副本读得到祖先的成片，最新成片却只看它自己名下的：只在继承来的出片上剪了一段、还没合成的
-    副本没有成片。"""
+    """分叉副本读得到祖先的素材片，最新素材片却只看它自己名下的：只在继承来的出片上剪了一段、还没合成的
+    副本没有素材片。"""
 
     chain = await three_level_fork(engine)
     repo = SqlGenerationRepository(engine)
@@ -578,170 +577,6 @@ async def test_duration_is_written_only_when_completion_brings_one(engine: Async
     assert (await repo.get(image.id, owner=owner)).duration_ms is None
 
 
-_SHAPES = {
-    "出片带来源": ("video", "generate", "take", None, None),
-    "编辑段缺区间": ("video", "generate", "take", "take", None),
-    "编辑段区间倒过来": ("video", "generate", "take", "take", (3000, 1000)),
-    "编辑段起点为负": ("video", "generate", "take", "take", (-1, 1000)),
-    "合成带区间": ("video", "compose", "edit", "take", (0, 1000)),
-    "合成没有来源": ("video", "compose", None, "take", None),
-    "图片带原作": ("image", "generate", None, "take", None),
-    "kind 是 clip": ("clip", "compose", "edit", "take", None),
-    "operation 不认识": ("image", "crop", None, None, None),
-}
-"""(kind, operation, 来源, 原作, 区间)；来源与原作写的是种子里哪一条。"""
-
-
-@pytest.mark.parametrize("shape", list(_SHAPES))
-async def test_combined_constraints_refuse_rows_of_no_known_shape(
-    engine: AsyncEngine, shape: str
-) -> None:
-    """每种行的必填与留空由库兜底：绕过受理层直接写，形状对不上也落不进去。"""
-
-    repo = SqlGenerationRepository(engine)
-    owner = await make_user(engine)
-    take = await repo.create(make_job(video_request(), owner_user_id=owner))
-    edit = await repo.create(make_edit(take, owner_user_id=owner))
-    seeded = {"take": take.id, "edit": edit.id}
-    kind, operation, source, root, span = _SHAPES[shape]
-
-    with pytest.raises(IntegrityError):
-        async with engine.begin() as conn:
-            await conn.execute(
-                text(
-                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation, "
-                    "provider, request, status, source_job_id, root_job_id, range_start_ms, "
-                    "range_end_ms, created_at) VALUES (:id, :owner, :kind, :operation, "
-                    "'test', CAST(:request AS jsonb), 'pending', :source, :root, :start, :end, "
-                    "now())"
-                ),
-                {
-                    "id": uuid.uuid4(),
-                    "owner": owner,
-                    "kind": kind,
-                    "operation": operation,
-                    "request": json.dumps({"prompt": "p"}),
-                    "source": None if source is None else seeded[source],
-                    "root": None if root is None else seeded[root],
-                    "start": None if span is None else span[0],
-                    "end": None if span is None else span[1],
-                },
-            )
-
-
-_BASE_URL = "https://example.test/base.png"
-
-_MD5 = "0123456789abcdef0123456789abcdef"
-
-_IMAGE_ROW: dict[str, Any] = {
-    "kind": "image",
-    "operation": "generate",
-    "request": '{"prompt": "p"}',
-    "status": "pending",
-    "conversation": False,
-    "source": False,
-    "source_url": None,
-    "root": False,
-    "output_url": None,
-    "finished": False,
-    "content_md5": None,
-}
-"""一条合法的图片生成；各用例在它上面改几列，``conversation`` / ``source`` / ``root`` 为真就填上。"""
-
-_SETTLED: dict[str, Any] = {
-    "request": None,
-    "status": "completed",
-    "output_url": "https://example.test/settled.png",
-    "finished": True,
-}
-"""创建即完成的行：没有请求，已完成，有产物地址与完成时刻。"""
-
-_REFUSED_SHAPES: dict[str, dict[str, Any]] = {
-    "切图没有来源": {"operation": "cut", **_SETTLED},
-    "切图带外部地址": {"operation": "cut", "source": True, "source_url": _BASE_URL, **_SETTLED},
-    "视频切图": {"kind": "video", "operation": "cut", "source": True, **_SETTLED},
-    "上传带来源": {"operation": "upload", "source": True, **_SETTLED},
-    "上传挂对话": {"operation": "upload", "conversation": True, **_SETTLED},
-    "上传带请求": {"operation": "upload", **_SETTLED, "request": '{"prompt": "p"}'},
-    "上传的请求是 JSON null": {"operation": "upload", **_SETTLED, "request": "null"},
-    "出图没有请求": {"request": None},
-    "出图的请求是 JSON null": {"request": "null"},
-    "帧图编辑两种来源都填": {"source": True, "source_url": _BASE_URL},
-    "视频带外部地址": {"kind": "video", "source_url": _BASE_URL},
-    "切图还没完成": {"operation": "cut", "source": True, "request": None},
-    "上传没有产物地址": {"operation": "upload", **_SETTLED, "output_url": None},
-    "上传没有完成时刻": {"operation": "upload", **_SETTLED, "finished": False},
-    "图片上传带 MD5": {"operation": "upload", **_SETTLED, "content_md5": _MD5},
-    "视频出片带 MD5": {"kind": "video", "content_md5": _MD5},
-    "图片合成": {
-        "operation": "compose",
-        "source": True,
-        "root": True,
-        "request": '{"segments": []}',
-    },
-}
-
-_ACCEPTED_SHAPES: dict[str, dict[str, Any]] = {
-    "帧图编辑记库内底图": {"source": True},
-    "帧图编辑记外部底图": {"source_url": _BASE_URL},
-    "切图": {"operation": "cut", "source": True, "conversation": True, **_SETTLED},
-    "图片上传": {"operation": "upload", **_SETTLED},
-    "视频上传": {"kind": "video", "operation": "upload", **_SETTLED},
-    "视频上传带 MD5": {"kind": "video", "operation": "upload", **_SETTLED, "content_md5": _MD5},
-}
-
-
-async def _insert_shaped(engine: AsyncEngine, shape: Mapping[str, Any]) -> None:
-    """绕过受理层直接写一行；来源与原作指一张现成的图。"""
-
-    repo = SqlGenerationRepository(engine)
-    owner = await make_user(engine)
-    grid = await repo.create(make_job(image_request(), owner_user_id=owner))
-    row = {**_IMAGE_ROW, **shape}
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind, "
-                "operation, provider, request, status, source_job_id, source_url, root_job_id, "
-                "output_url, content_md5, created_at, finished_at) VALUES (:id, :owner, "
-                ":conversation, :kind, :operation, 'test', CAST(:request AS jsonb), :status, "
-                ":source, :source_url, :root, :output_url, :content_md5, now(), :finished_at)"
-            ),
-            {
-                "id": uuid.uuid4(),
-                "owner": owner,
-                "conversation": uuid.uuid4() if row["conversation"] else None,
-                "kind": row["kind"],
-                "operation": row["operation"],
-                "request": row["request"],
-                "status": row["status"],
-                "source": grid.id if row["source"] else None,
-                "source_url": row["source_url"],
-                "root": grid.id if row["root"] else None,
-                "output_url": row["output_url"],
-                "content_md5": row["content_md5"],
-                "finished_at": datetime.now(UTC) if row["finished"] else None,
-            },
-        )
-
-
-@pytest.mark.parametrize("shape", list(_REFUSED_SHAPES))
-async def test_sources_and_settled_rows_of_no_known_shape_are_refused(
-    engine: AsyncEngine, shape: str
-) -> None:
-    """帧图编辑、切图、上传的必填与留空也由库兜底；请求为 JSON null 与 SQL NULL 一样挡得住。"""
-
-    with pytest.raises(IntegrityError):
-        await _insert_shaped(engine, _REFUSED_SHAPES[shape])
-
-
-@pytest.mark.parametrize("shape", list(_ACCEPTED_SHAPES))
-async def test_sources_and_settled_rows_of_a_known_shape_are_accepted(
-    engine: AsyncEngine, shape: str
-) -> None:
-    await _insert_shaped(engine, _ACCEPTED_SHAPES[shape])
-
-
 async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
     engine: AsyncEngine,
 ) -> None:
@@ -780,6 +615,9 @@ async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
             )
         ).scalar_one()
     assert nulls is True, "没有请求落的是 SQL NULL，不是 JSON null"
+
+
+_MD5 = "0123456789abcdef0123456789abcdef"
 
 
 async def test_a_video_upload_is_found_by_its_md5_earliest_first_across_owners(

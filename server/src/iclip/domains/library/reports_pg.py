@@ -1,26 +1,10 @@
-"""资料库的 Postgres 查询：跨生成记录、对话、用户三张表只读，不建表、不写入。成片卡与整片卡
-各一组查询，整片卡的在文件后部。
-
-SQL 与本模块里的 'video' / 'generate' / 'compose' / 'completed' 镜像生成域的 KIND_VIDEO /
-OPERATION_GENERATE / OPERATION_COMPOSE / STATUS_COMPLETED（按表名直接查，不 import 业务模块）；
-集成测试的种子取自那些常量，生成域改词这里的用例就红。外部输入一律走绑定参数。
-
-继承规则在这里照 ``conversations.infra_sql.ancestry`` 与 ``generation.infra_sql._inherited``
-手写了一份：模块边界不让复用，接受这份重复；两份由同一个分叉场景
-（tests/helpers/fork_lineage.py）钉住，漂了会现形。
-
-列表层不碰血缘：继承来的行完成时刻不晚于副本的建立时刻；副本 id 由服务端
-在分叉时铸，挂副本的行都在副本建立之后才落。所以对话自己最新的成片就是整卡最新的：有没有卡、
-卡面、排序、游标与筛选都只看自己的行，只有组数、版数与详情要用血缘，列表里也只算当页那几张卡。
-"""
-
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
 from typing import Any, Final
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import TextClause, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -43,24 +27,9 @@ from iclip.domains.library.schemas import (
 
 _COMPOSE: Final = "compose"
 
-# ---------------------------------------------------------------------------
-# CTE 体，按「一个 WITH RECURSIVE 前缀 + 逗号拼接」组装成语句：
-# own_masters 候选行：每条成片只进自己的卡；卡 id 是存在的对话，不挂对话的按原作；
-# faces       卡面：卡自己最新的成片；
-# cards       一张卡一行，卡面那一版对应的出片可能在祖先对话里，绝不按对话过滤；
-# seeds       要装填的卡：列表是当页，详情是那一张（不是卡的 id 就没有种子）；
-# lineage     每张卡的对话沿 forked_from 往上，逐跳带边界；
-# visible     每张卡读得到的成片：自己的加继承来的，不挂对话的卡是出片与同原作的合成；
-# fill        每张卡的组数与版数。
-# ---------------------------------------------------------------------------
-
 _MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND g.output_url IS NOT NULL
-      AND (g.operation = 'compose' OR (g.operation = 'generate' AND g.source_job_id IS NULL))
-      AND NOT (g.operation = 'compose' AND g.source_job_id IS NULL)
+      AND ((g.operation = 'generate' AND g.source_job_id IS NULL) OR g.operation = 'compose')
       AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
-"""成片卡收的成片：已完成、有地址的出片（没有来源的视频 generate）或有基底的合成；按别名 ``g``
-拼进条件。整片（没有来源的 compose）不收：它不属于任何镜头组，也没有原作可取脚本，另有整片页。
-参考视频的试生成（``metadata`` 带 ``referenceId``）只是拿来对照拆解的，不收。"""
 
 _JOB_COLUMNS: Final = """g.id, g.operation, g.shot_index, g.root_job_id, g.output_url,
            g.watermark_output_url, g.duration_ms, g.finished_at, g.owner_user_id"""
@@ -133,13 +102,11 @@ seeds AS (SELECT c.id FROM cards c WHERE c.id = CAST(:card_id AS uuid))"""
 
 _LINEAGE: Final = """
 lineage AS (
-    -- 种子是卡的对话本身，边界为空：自己的行不设界
     SELECT c.id AS card_id, c.id AS conversation_id, c.forked_from, c.created_at,
            CAST(NULL AS timestamptz) AS boundary
     FROM seeds s
     JOIN iclip.conversations c ON c.id = s.id
     UNION ALL
-    -- 每跳取上一级，边界是这条链上它的下一级（刚走过的那段）的建立时刻；不看删除标记
     SELECT l.card_id, p.id, p.forked_from, p.created_at, l.created_at
     FROM lineage l
     JOIN iclip.conversations p ON p.id = l.forked_from
@@ -153,7 +120,6 @@ visible AS (
     WHERE {_MASTER}
       AND (l.boundary IS NULL OR (g.status = 'completed' AND g.finished_at <= l.boundary))
     UNION ALL
-    -- 不挂对话的卡：那条出片与同原作的合成，没有血缘
     SELECT COALESCE(g.root_job_id, g.id), {_JOB_COLUMNS}
     FROM iclip.generation_jobs g
     LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
@@ -163,7 +129,6 @@ visible AS (
 
 _FILL: Final = """
 fill AS (
-    -- 组键与 _groups_of 同一口径：有镜号按镜号，没镜号按原作
     SELECT v.card_id, count(*) AS version_count,
            count(DISTINCT COALESCE('#' || v.shot_index::text,
                                    COALESCE(v.root_job_id, v.id)::text)) AS group_count
@@ -203,7 +168,6 @@ _VERSIONS: Final = _statement(
        v.duration_ms, v.finished_at, u.username AS user_name,
        t.id AS take_id, t.request AS take_request
 FROM visible v
--- 合成沿原作取脚本与参数；原作按构造一定读得到，内连接
 JOIN iclip.generation_jobs t ON t.id = COALESCE(v.root_job_id, v.id)
 JOIN iclip.users u ON u.id = v.owner_user_id
 ORDER BY v.finished_at, v.id""",
@@ -217,14 +181,8 @@ GROUP BY c.user_name
 ORDER BY n DESC, c.user_name""",
 )
 
-# ---------------------------------------------------------------------------
-# 整片页：一段对话一张卡，只看对话自己的整片，不走血缘（继承来的整片不算）。整片必挂对话；
-# 对话 id 指向不存在的对话时没有卡可挂，不收。不看对话的删除标记。
-# ---------------------------------------------------------------------------
-
-_WHOLE_FILM: Final = """g.kind = 'video' AND g.operation = 'compose' AND g.source_job_id IS NULL
-      AND g.status = 'completed' AND g.output_url IS NOT NULL"""
-"""整片页收的整片：已完成、有地址、没有来源的视频 compose；按别名 ``g`` 拼进条件。"""
+_WHOLE_FILM: Final = """g.kind = 'whole_film' AND g.status = 'completed'
+      AND g.output_url IS NOT NULL"""
 
 _FILM_CARDS: Final = f"""
 WITH film_cards AS (
@@ -256,18 +214,26 @@ page AS (
     LIMIT :limit
 )
 SELECT p.id AS conversation_id, p.title, p.conversation_owner, p.conversation_deleted,
-       p.user_name, g.id AS job_id, g.output_url, g.watermark_output_url, g.duration_ms,
-       g.finished_at, vu.username AS version_user_name
+       p.user_name, g.id AS job_id, g.output_url, g.finished_at,
+       vu.username AS version_user_name, g.request->'videos' AS sources
 FROM page p
 JOIN iclip.generation_jobs g ON g.conversation_id = p.id
 JOIN iclip.users vu ON vu.id = g.owner_user_id
 WHERE {_WHOLE_FILM}
 ORDER BY p.face_finished_at DESC, p.id DESC, g.finished_at, g.id"""
 )
-"""当页的卡连同各自的全部版本，一版一行：卡按卡面倒序，卡内按完成先后。"""
 
 _COUNT_WHOLE_FILMS: Final = text(
     _FILM_CARDS + "\nSELECT count(*) AS n FROM film_cards f" + _FILM_FILTER
+)
+
+_WHOLE_FILM_AUTHORS: Final = text(
+    _FILM_CARDS
+    + """
+SELECT f.user_name, count(*) AS n FROM film_cards f
+WHERE f.user_name IS NOT NULL
+GROUP BY f.user_name
+ORDER BY n DESC, f.user_name"""
 )
 
 
@@ -287,8 +253,6 @@ class _StoredShot(BaseModel):
 
 
 class _StoredVideoRequest(BaseModel):
-    """出片请求快照里资料库要读的那几项；快照由生成域受理时校验过，形状不对就是坏数据，照常报错。"""
-
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     prompt: str
@@ -301,9 +265,18 @@ class _StoredVideoRequest(BaseModel):
     reference_image_urls: list[str] = []
 
 
-def _script_of(request: _StoredVideoRequest) -> ScriptOut | None:
-    """请求里带结构化镜头组就用它；只有正文的按拼装规则拆，拆不出来就是纯文本。"""
+class _StoredWholeFilmSource(BaseModel):
+    """成片导出请求里 ``videos`` 的一项（按别名落库），只取素材片 id。"""
 
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    job_id: uuid.UUID = Field(alias="jobId")
+
+
+_WHOLE_FILM_SOURCES: Final = TypeAdapter(list[_StoredWholeFilmSource])
+
+
+def _script_of(request: _StoredVideoRequest) -> ScriptOut | None:
     if request.shot is not None:
         return ScriptOut(
             global_settings=request.shot.global_settings,
@@ -350,8 +323,6 @@ def _take_of(take_id: uuid.UUID, stored: object) -> TakeOut:
 
 
 def _face_of(row: RowMapping, prefix: str = "") -> FaceOut:
-    """版本头；卡上的列带 ``face_`` 前缀，版本行上的不带。"""
-
     return FaceOut(
         kind="composite" if row[f"{prefix}operation"] == _COMPOSE else "take",
         job_id=row[f"{prefix}id"],
@@ -391,11 +362,6 @@ def _card_of(row: RowMapping) -> CardRow:
 
 
 def _groups_of(rows: Sequence[RowMapping]) -> list[ShotGroupOut]:
-    """把按完成时刻排好的版本行分成镜头组，组键与 ``_FILL`` 同一口径。
-
-    有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面，按组里第一版
-    （出片）的完成先后——稳定排序保留了插入序。"""
-
     groups: dict[tuple[str, int | uuid.UUID], tuple[int | None, list[VersionOut]]] = {}
     for row in rows:
         shot: int | None = row["shot_index"]
@@ -406,8 +372,6 @@ def _groups_of(rows: Sequence[RowMapping]) -> list[ShotGroupOut]:
 
 
 def _like_pattern(q: str) -> str:
-    """关键词按字面包含：``%``、``_`` 与转义符本身都转义掉。"""
-
     escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
@@ -432,17 +396,16 @@ def _film_scope_params(scope: WholeFilmScope) -> dict[str, Any]:
 
 
 def _film_cards_of(rows: Sequence[RowMapping]) -> list[WholeFilmCardRow]:
-    """把一版一行的结果按卡收拢；行已按卡、再按卡内完成先后排好，最后一版就是卡面。"""
-
     cards: dict[uuid.UUID, tuple[RowMapping, list[WholeFilmVersionOut]]] = {}
     for row in rows:
         version = WholeFilmVersionOut(
             job_id=row["job_id"],
             output_url=row["output_url"],
-            watermark_output_url=row["watermark_output_url"],
-            duration_ms=row["duration_ms"],
             finished_at=row["finished_at"],
             user_name=row["version_user_name"],
+            source_job_ids=[
+                source.job_id for source in _WHOLE_FILM_SOURCES.validate_python(row["sources"])
+            ],
         )
         cards.setdefault(row["conversation_id"], (row, []))[1].append(version)
     return [
@@ -463,8 +426,6 @@ def _film_cards_of(rows: Sequence[RowMapping]) -> list[WholeFilmCardRow]:
 
 
 class PgLibraryReports:
-    """``LibraryReports`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -496,8 +457,14 @@ class PgLibraryReports:
         return _groups_of(rows)
 
     async def authors(self) -> Sequence[LibraryAuthorOut]:
+        return await self._authors(_AUTHORS)
+
+    async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]:
+        return await self._authors(_WHOLE_FILM_AUTHORS)
+
+    async def _authors(self, statement: TextClause) -> Sequence[LibraryAuthorOut]:
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(_AUTHORS)).mappings().all()
+            rows = (await conn.execute(statement)).mappings().all()
         return [LibraryAuthorOut(user_name=row["user_name"], count=int(row["n"])) for row in rows]
 
     async def whole_films(

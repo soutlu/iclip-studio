@@ -1,5 +1,3 @@
-/** 资料库的只读口：筛选翻成查询串，列表用 useInfiniteQuery，作者名单用 useQuery。 */
-
 import { skipToken, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { apiFetch, errorMessageOf } from '@/shared/api/client'
@@ -21,12 +19,16 @@ export type LibraryShotGroup = LibraryVideoDetail['groups'][number]
 export type LibraryVersionOut = LibraryShotGroup['versions'][number]
 export type Orientation = NonNullable<z.output<typeof zVideosLibraryVideosGetQuery>['orientation']>
 
-/** 列表的筛选：人（卡的作者）、时间范围、画幅朝向与关键词。 */
-export interface LibraryScope extends DateRange {
+export interface LibraryBaseScope extends DateRange {
   userName: string | null
-  orientation: Orientation | null
   q: string
 }
+
+export interface LibraryScope extends LibraryBaseScope {
+  orientation: Orientation | null
+}
+
+export type FilterScope = LibraryBaseScope & { orientation?: Orientation | null }
 
 export const DEFAULT_LIBRARY_SCOPE: LibraryScope = {
   ...UNBOUNDED_RANGE,
@@ -35,18 +37,16 @@ export const DEFAULT_LIBRARY_SCOPE: LibraryScope = {
   userName: null,
 }
 
-/** 一页的卡数：瀑布流五列时约五排。 */
 export const LIBRARY_PAGE_SIZE = 24
 
-export const isDefaultScope = (scope: LibraryScope): boolean =>
+export const isDefaultScope = (scope: FilterScope): boolean =>
   scope.userName === null &&
-  scope.orientation === null &&
+  (scope.orientation ?? null) === null &&
   scope.q.trim() === '' &&
   scope.range === 'all'
 
-/** now 可注入方便测试；预设范围按此刻往前数。 */
 export const librarySearchParams = (
-  scope: LibraryScope,
+  scope: FilterScope,
   cursor: string | null,
   now: Date = new Date(),
 ): URLSearchParams => {
@@ -55,7 +55,7 @@ export const librarySearchParams = (
   if (since !== null) params.set('since', since.toISOString())
   if (until !== null) params.set('until', until.toISOString())
   if (scope.userName !== null) params.set('userName', scope.userName)
-  if (scope.orientation !== null) params.set('orientation', scope.orientation)
+  if (scope.orientation != null) params.set('orientation', scope.orientation)
   const keyword = scope.q.trim()
   if (keyword !== '') params.set('q', keyword)
   params.set('limit', String(LIBRARY_PAGE_SIZE))
@@ -67,10 +67,11 @@ export const libraryQueryKeys = {
   all: ['library'] as const,
   videos: (scope: LibraryScope) => ['library', 'videos', scope] as const,
   video: (id: string) => ['library', 'video', id] as const,
-  authors: ['library', 'authors'] as const,
+  authors: (path: AuthorsPath) => ['library', 'authors', path] as const,
 }
 
-/** 缓存留 30 分钟：看完一条详情退回来，已展开的分页不该缩回第一页。 */
+type AuthorsPath = '/library/authors' | '/library/whole-films/authors'
+
 export const useLibraryVideos = (scope: LibraryScope) =>
   useInfiniteQuery({
     gcTime: 30 * 60_000,
@@ -85,7 +86,6 @@ export const useLibraryVideos = (scope: LibraryScope) =>
     queryKey: libraryQueryKeys.videos(scope),
   })
 
-/** 一张卡的详情：按镜头组列全部版本。按卡 id 单独取，分享来的链接未必在已读的列表里。`id` 为 null 时不读。 */
 export const useLibraryVideo = (id: string | null) =>
   useQuery({
     queryFn:
@@ -99,15 +99,15 @@ export const useLibraryVideo = (id: string | null) =>
     queryKey: libraryQueryKeys.video(id ?? ''),
   })
 
-/** 按人筛选的候选：名下有卡的作者，候选 id 与显示名都是作者的用户名。 */
-export const useLibraryAuthorSource = (): PickerSource => {
+/** 按人筛选的候选：取自 `path` 给的作者名单，不随翻到的卡片变化。 */
+export const useAuthorSource = (path: AuthorsPath): PickerSource => {
   const query = useQuery({
     queryFn: ({ signal }) =>
-      apiFetch('/library/authors', zLibraryAuthorsOut, {
+      apiFetch(path, zLibraryAuthorsOut, {
         fallbackErrorMessage: '读取作者名单失败',
         signal,
       }),
-    queryKey: libraryQueryKeys.authors,
+    queryKey: libraryQueryKeys.authors(path),
     staleTime: 5 * 60_000,
   })
   return {
@@ -120,3 +120,5 @@ export const useLibraryAuthorSource = (): PickerSource => {
     })),
   }
 }
+
+export const useLibraryAuthorSource = (): PickerSource => useAuthorSource('/library/authors')

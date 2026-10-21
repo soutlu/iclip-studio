@@ -1,4 +1,4 @@
-export { frameArtifactId, type ArtifactRendererProps, type ConversationTask } from './artifact'
+export { frameArtifactId, type ArtifactRendererProps } from './artifact'
 export { ARTIFACT_SEARCH_KEY, useOpenArtifact, WORKSPACE_FILE_SEARCH_KEY } from './artifact-search'
 export { ArtifactRegistry } from './registry'
 export { useWorkbenchOpenRequest } from './use-workbench-open-request'

@@ -1,5 +1,3 @@
-"""品牌资源表与 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
-
 from __future__ import annotations
 
 import uuid
@@ -7,12 +5,10 @@ from collections.abc import Sequence
 from typing import Final
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
-    Integer,
     MetaData,
     Table,
     Text,
@@ -22,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.brand_templates.models import BrandTemplate, ProbedVideo
+from iclip.domains.brand_templates.models import BrandTemplate
 
 DB_SCHEMA: Final = "iclip"
 
@@ -33,39 +29,50 @@ brand_templates_table = Table(
     metadata_obj,
     Column("id", Uuid, primary_key=True),
     Column("kind", Text, nullable=False),
-    # 未指定所属品牌时为空，不从名称或地址推断。
     Column("brand", Text, nullable=True),
     Column("name", Text, nullable=False),
-    # 资源文件地址；以下媒体参数在不适用时为空。
     Column("url", Text, nullable=False),
-    Column("width", Integer, nullable=True),
-    Column("height", Integer, nullable=True),
-    Column("duration_ms", Integer, nullable=True),
-    Column("has_audio", Boolean, nullable=True),
     Column(
         "created_by",
         Uuid,
         ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_brand_templates_created_by"),
         nullable=False,
     ),
-    # 不关联外键，与生成记录的 api_key_id 同一做法。
     Column("api_key_id", Uuid, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
-    # 为空表示在用；停用不删，已有整片的请求里记着快照。
     Column("disabled_at", DateTime(timezone=True), nullable=True),
     CheckConstraint("kind ~ '[^[:space:]]'", name="ck_brand_templates_kind"),
     CheckConstraint("brand IS NULL OR brand ~ '[^[:space:]]'", name="ck_brand_templates_brand"),
     CheckConstraint("btrim(name) <> ''", name="ck_brand_templates_name"),
-    CheckConstraint(
-        "(width IS NULL OR width > 0) AND (height IS NULL OR height > 0)",
-        name="ck_brand_templates_size",
+)
+
+# 与迁移 0034 同名同式。表保留在库里，目前没有读写；声明在这里只为元数据与迁移一致。
+brand_profiles_table = Table(
+    "brand_profiles",
+    metadata_obj,
+    Column("brand", Text, primary_key=True),
+    Column("slogan", Text, nullable=True),
+    Column("accent_color", Text, nullable=True),
+    Column(
+        "updated_by",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_brand_profiles_updated_by"),
+        nullable=False,
     ),
-    CheckConstraint("duration_ms IS NULL OR duration_ms > 0", name="ck_brand_templates_duration"),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("brand ~ '[^[:space:]]'", name="ck_brand_profiles_brand"),
+    CheckConstraint(
+        "slogan IS NULL OR (btrim(slogan) <> '' AND char_length(slogan) <= 100)",
+        name="ck_brand_profiles_slogan",
+    ),
+    CheckConstraint(
+        "accent_color IS NULL OR accent_color ~ '^#[0-9a-f]{6}$'",
+        name="ck_brand_profiles_accent_color",
+    ),
 )
 
 _ROW: Final = """
-SELECT id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by,
-       created_at, disabled_at
+SELECT id, kind, brand, name, url, created_by, created_at, disabled_at
 FROM iclip.brand_templates"""
 
 _BY_ID: Final = text(f"{_ROW}\nWHERE id = :id")
@@ -77,16 +84,13 @@ WHERE (CAST(:kind AS text) IS NULL OR kind = CAST(:kind AS text))
 ORDER BY created_at DESC, id DESC""")
 
 _RETURNING: Final = """
-RETURNING id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by,
-          created_at, disabled_at"""
+RETURNING id, kind, brand, name, url, created_by, created_at, disabled_at"""
 
 _INSERT: Final = text(f"""
-INSERT INTO iclip.brand_templates
-    (id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by, api_key_id)
-VALUES (:id, :kind, :brand, :name, :url, :width, :height, :duration_ms, :has_audio,
-        :created_by, :api_key_id) ON CONFLICT (id) DO NOTHING {_RETURNING}""")
+INSERT INTO iclip.brand_templates (id, kind, brand, name, url, created_by, api_key_id)
+VALUES (:id, :kind, :brand, :name, :url, :created_by, :api_key_id)
+ON CONFLICT (id) DO NOTHING {_RETURNING}""")
 
-# 停用时已停用的保留原来的停用时刻；不给的那一项不动。
 _UPDATE: Final = text(f"""
 UPDATE iclip.brand_templates
 SET name = coalesce(CAST(:name AS text), name),
@@ -106,10 +110,6 @@ def _row_of(row: RowMapping) -> BrandTemplate:
         brand=row["brand"],
         name=row["name"],
         url=row["url"],
-        width=row["width"],
-        height=row["height"],
-        duration_ms=row["duration_ms"],
-        has_audio=row["has_audio"],
         created_by=row["created_by"],
         created_at=row["created_at"],
         disabled_at=row["disabled_at"],
@@ -117,8 +117,6 @@ def _row_of(row: RowMapping) -> BrandTemplate:
 
 
 class SqlBrandTemplateStore:
-    """品牌资源存取；是否可用于某项操作由消费它的用例明确校验。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -130,7 +128,6 @@ class SqlBrandTemplateStore:
         brand: str | None,
         name: str,
         url: str,
-        video: ProbedVideo | None,
         created_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
     ) -> BrandTemplate:
@@ -145,10 +142,6 @@ class SqlBrandTemplateStore:
                             "brand": brand,
                             "name": name,
                             "url": url,
-                            "width": None if video is None else video.width,
-                            "height": None if video is None else video.height,
-                            "duration_ms": None if video is None else video.duration_ms,
-                            "has_audio": None if video is None else video.has_audio,
                             "created_by": created_by,
                             "api_key_id": api_key_id,
                         },
@@ -210,4 +203,9 @@ class SqlBrandTemplateStore:
         return None if row is None else _row_of(row)
 
 
-__all__ = ["SqlBrandTemplateStore", "brand_templates_table", "metadata_obj"]
+__all__ = [
+    "SqlBrandTemplateStore",
+    "brand_profiles_table",
+    "brand_templates_table",
+    "metadata_obj",
+]

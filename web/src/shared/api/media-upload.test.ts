@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '@/testing/mocks/server'
 import { errorMessageOf, UserFacingError } from './client'
-import { audioContentTypeOf, uploadMediaFile } from './media-upload'
+import { checkUploadFile, uploadContentTypeOf, uploadMediaFile } from './media-upload'
 
 const FALLBACK = '兜底文案'
 
@@ -52,7 +52,7 @@ describe('uploadMediaFile 视频', () => {
 
   it.each([
     ['video/mp4', 5],
-    ['video/quicktime', 512 * 1024 * 1024],
+    ['video/quicktime', 5],
   ])('上传 %s 后确认并返回永久地址与上传 id，尺寸保留空值', async (type, size) => {
     await expect(uploadMediaFile(videoFile(type, size), 'video')).resolves.toEqual({
       uploadId,
@@ -70,8 +70,7 @@ describe('uploadMediaFile 视频', () => {
     ['video/webm', 5],
     ['image/png', 5],
     ['', 5],
-    ['video/mp4', 512 * 1024 * 1024 + 1],
-  ])('不上传不支持的类型或过大的视频：%s / %i 字节，错误可直接展示', async (type, size) => {
+  ])('不上传不支持的类型：%s / %i 字节，错误可直接展示', async (type, size) => {
     const error = await rejectionOf(uploadMediaFile(videoFile(type, size), 'video'))
     expect(error).toBeInstanceOf(UserFacingError)
     expect(errorMessageOf(error, FALLBACK)).not.toBe(FALLBACK)
@@ -240,13 +239,11 @@ describe('音乐的类型', () => {
     ['夏日.wav', 'audio/wave', 'audio/wav'],
     ['夏日.mp3', 'audio/mp3', 'audio/mpeg'],
     ['夏日.mp3', '', 'audio/mpeg'],
-    // 扩展名认不出时按浏览器给的类型认。
     ['夏日', 'audio/x-m4a', 'audio/mp4'],
     ['夏日.audio', 'audio/x-wav', 'audio/wav'],
-    // 扩展名优先：浏览器给的类型与扩展名对不上时以扩展名为准。
     ['夏日.mp3', 'audio/x-wav', 'audio/mpeg'],
   ])('%s（浏览器报 %s）按 %s 签名', (name, type, expected) => {
-    expect(audioContentTypeOf({ name, type })).toBe(expected)
+    expect(uploadContentTypeOf({ name, type }, 'audio')).toBe(expected)
   })
 
   it.each([
@@ -254,7 +251,27 @@ describe('音乐的类型', () => {
     ['夏日.flac', ''],
     ['夏日', ''],
   ])('%s（%s）认不出', (name, type) => {
-    expect(audioContentTypeOf({ name, type })).toBeUndefined()
+    expect(uploadContentTypeOf({ name, type }, 'audio')).toBeUndefined()
+  })
+})
+
+describe('上传校验表', () => {
+  const MIB = 1024 * 1024
+  const fileOf = (name: string, type: string, size: number) => ({ name, type, size })
+
+  it.each([
+    ['video', fileOf('片头.mp4', 'video/mp4', 1), 'video/mp4'],
+    ['video', fileOf('片头', 'video/quicktime', 512 * MIB), 'video/quicktime'],
+  ] as const)('%s 收下 %o，按 %s 签名', (kind, file, contentType) => {
+    expect(checkUploadFile(file, kind)).toBe(contentType)
+  })
+
+  it.each([
+    ['video', fileOf('片头.mp4', 'video/webm', 1), 'MP4 或 MOV'],
+    ['video', fileOf('片头.mp4', 'video/mp4', 512 * MIB + 1), '512 MiB'],
+  ] as const)('%s 拒收 %o，原因含「%s」', (kind, file, reason) => {
+    expect(() => checkUploadFile(file, kind)).toThrow(UserFacingError)
+    expect(() => checkUploadFile(file, kind)).toThrow(reason)
   })
 })
 

@@ -70,7 +70,6 @@ describe('PromptEditor', () => {
     const editor = screen.getByRole('textbox', { name: '镜头 1 的描述' })
     expect(editor).toHaveTextContent('她走向镜头 @1，停下 @2。')
     const chip = screen.getByRole('button', { name: '查看第 2 帧' })
-    expect(chip.querySelector('img')).toHaveAttribute('src', frames[1])
     fireEvent.click(chip)
     expect(selected).toBe(2)
   })

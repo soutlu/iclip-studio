@@ -32,7 +32,7 @@ const deltaOf = (element: HTMLElement) => within(element).queryByTitle(/^与 .+ 
 const legend = () => screen.getByRole('group', { name: '图例' })
 
 describe('OverviewPanel 环比', () => {
-  it('成片数按活跃日日均比，不按总数比', async () => {
+  it('出片件数按活跃日日均比，不按总数比', async () => {
     // 12 件 / 4 个活跃日 = 3，10 件 / 5 个活跃日 = 2：日均涨 50%，按总数只涨 20%。
     await renderOverview(
       overviewFixture({
@@ -43,15 +43,15 @@ describe('OverviewPanel 环比', () => {
       }),
     )
 
-    expect(deltaOf(card('成片数'))).toHaveTextContent('升50%')
+    expect(deltaOf(card('出片件数'))).toHaveTextContent('升50%')
   })
 
-  it('两期成片都不到 5 件时不比', async () => {
+  it('两期出片都不到 5 件时不比', async () => {
     await renderOverview(
       overviewFixture({ current: { deliveries: 4 }, previous: { deliveries: 3 } }),
     )
 
-    expect(deltaOf(card('成片数'))).toBeNull()
+    expect(deltaOf(card('出片件数'))).toBeNull()
   })
 
   it.each<{ name: string; enough: Partial<Metrics>; short: Partial<Metrics> }>([
@@ -66,7 +66,7 @@ describe('OverviewPanel 环比', () => {
       short: { activeCycleSeconds: { avg: 3600, count: 9, median: 3000, p90: 7200 } },
     },
     {
-      name: '每件成片 · token',
+      name: '每件出片 · token',
       enough: { deliveries: 10, tokensPerDelivery: 900_000 },
       short: { deliveries: 9, tokensPerDelivery: 900_000 },
     },
@@ -119,7 +119,7 @@ describe('OverviewPanel 片长', () => {
     expect(within(cost).queryByRole('img', { name: '总视频生成秒数趋势' })).not.toBeInTheDocument()
   })
 
-  it('有片长时画每期的片长图，分出最终成片与废片', async () => {
+  it('有片长时画每期的片长图，分出最终出片与废片', async () => {
     await renderOverview(
       overviewFixture({
         current: {
@@ -134,8 +134,9 @@ describe('OverviewPanel 片长', () => {
     const cost = screen.getByRole('region', { name: '模型消耗' })
     expect(within(cost).getByRole('img', { name: '总视频生成秒数趋势' })).toBeInTheDocument()
     expect(within(cost).queryByText('暂无片长数据')).not.toBeInTheDocument()
-    // 最终成片 = 片长合计 − 废片：120 − 30 = 90 秒。
-    expect(within(cost).getByText('最终成片长度').parentElement).toHaveTextContent('1.5 分钟')
+    // 最终出片 = 片长合计 − 废片：120 − 30 = 90 秒。
+    expect(within(cost).getByText('最终出片长度')).toBeVisible()
+    expect(within(cost).getByText('1.5 分钟')).toBeVisible()
   })
 })
 

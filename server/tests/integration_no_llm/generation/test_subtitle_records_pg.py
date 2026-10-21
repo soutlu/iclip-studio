@@ -1,15 +1,10 @@
-"""字幕记录落在生成记录表里：组合约束、逐句结果的往返与状态守卫，以及它不混进视频的在途与成片口径。"""
+"""字幕记录落在生成记录表里：逐句结果的往返与状态守卫，以及它不混进视频的在途与素材片口径。"""
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import Mapping
-from typing import Any
 
-import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
@@ -19,14 +14,23 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTING,
     GenerationJob,
 )
-from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
+from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import make_job, make_subtitle, video_request
 
 TAKE_URL = "https://cdn.example.test/take.mp4"
 
 SENTENCES = (
-    SubtitleSentence(start_ms=0, end_ms=1500, text="这双鞋很轻。", speaker=0),
+    SubtitleSentence(
+        start_ms=0,
+        end_ms=1500,
+        text="这双鞋很轻。",
+        speaker=0,
+        words=(
+            SubtitleWord(start_ms=0, end_ms=700, text="这双鞋"),
+            SubtitleWord(start_ms=700, end_ms=1500, text="很轻", punctuation="。"),
+        ),
+    ),
     SubtitleSentence(start_ms=1600, end_ms=2400, text="Light.", speaker=None),
 )
 
@@ -128,7 +132,7 @@ async def test_the_status_guard_keeps_a_failed_subtitle_record_failed(engine: As
 async def test_subtitle_records_do_not_count_as_videos_in_flight_or_masters(
     engine: AsyncEngine,
 ) -> None:
-    """对话的「视频在跑」与最新成片只看视频：排队、提交中、完成的字幕记录都不算。"""
+    """对话的「视频在跑」与最新素材片只看视频：排队、提交中、完成的字幕记录都不算。"""
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
@@ -145,101 +149,3 @@ async def test_subtitle_records_do_not_count_as_videos_in_flight_or_masters(
 
     assert await repo.in_flight_by_conversation([quiet, busy_subtitles], kind="video") == {}
     assert await repo.latest_master_by_conversation([quiet, busy_subtitles]) == {quiet: TAKE_URL}
-
-
-_SUBTITLE_ROW: dict[str, Any] = {
-    "kind": "subtitle",
-    "operation": "generate",
-    "request": json.dumps({"model": "m", "videoUrl": TAKE_URL}),
-    "status": "pending",
-    "source": True,
-    "root": False,
-    "shot_index": None,
-    "range": None,
-    "source_url": None,
-    "output_url": None,
-    "watermark_output_url": None,
-    "sentences": None,
-}
-"""一条合法的排队中字幕记录；各用例在它上面改几列，``source`` / ``root`` 为真就指那条出片。"""
-
-_REFUSED: dict[str, dict[str, Any]] = {
-    "没有来源": {"source": False},
-    "带原作": {"root": True},
-    "带镜号": {"shot_index": 1},
-    "带区间": {"range": (0, 1000)},
-    "带外部地址": {"source_url": TAKE_URL},
-    "带产物地址": {"output_url": TAKE_URL},
-    "带水印地址": {"watermark_output_url": TAKE_URL},
-    "完成了却没有结果": {"status": "completed"},
-    "结果不是数组": {"status": "completed", "sentences": json.dumps({"text": "x"})},
-    "结果是 JSON null": {"status": "completed", "sentences": "null"},
-    "没有请求": {"request": None},
-    "本地拼接": {"operation": "compose"},
-    "上传": {"operation": "upload", "request": None, "status": "completed"},
-    "视频带结果": {"kind": "video", "source": False, "sentences": "[]"},
-    "图片带结果": {"kind": "image", "source": False, "sentences": "[]"},
-}
-
-_ACCEPTED: dict[str, dict[str, Any]] = {
-    "排队中": {},
-    "完成且有几句": {
-        "status": "completed",
-        "sentences": json.dumps(
-            [{"start_ms": 0, "end_ms": 900, "text": "好", "speaker": 0}], ensure_ascii=False
-        ),
-    },
-    "完成且没有口播": {"status": "completed", "sentences": "[]"},
-    "失败没有结果": {"status": "failed"},
-}
-
-
-async def _insert(engine: AsyncEngine, shape: Mapping[str, Any]) -> None:
-    """绕过受理层直接写一行；来源与原作指一条现成的出片。"""
-
-    repo = SqlGenerationRepository(engine)
-    owner = await make_user(engine)
-    take = await completed_take(repo, owner)
-    row = {**_SUBTITLE_ROW, **shape}
-    span = row["range"]
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation, provider,"
-                " request, status, source_job_id, root_job_id, shot_index, range_start_ms,"
-                " range_end_ms, source_url, output_url, watermark_output_url, sentences,"
-                " created_at, finished_at)"
-                " VALUES (:id, :owner, :kind, :operation, 'qwen_asr', CAST(:request AS jsonb),"
-                " :status, :source, :root, :shot_index, :start, :end, :source_url, :output_url,"
-                " :watermark_output_url, CAST(:sentences AS jsonb), now(),"
-                " CASE WHEN :status = 'pending' THEN NULL ELSE now() END)"
-            ),
-            {
-                "id": uuid.uuid4(),
-                "owner": owner,
-                "kind": row["kind"],
-                "operation": row["operation"],
-                "request": row["request"],
-                "status": row["status"],
-                "source": take.id if row["source"] else None,
-                "root": take.id if row["root"] else None,
-                "shot_index": row["shot_index"],
-                "start": None if span is None else span[0],
-                "end": None if span is None else span[1],
-                "source_url": row["source_url"],
-                "output_url": row["output_url"],
-                "watermark_output_url": row["watermark_output_url"],
-                "sentences": row["sentences"],
-            },
-        )
-
-
-@pytest.mark.parametrize("shape", list(_REFUSED))
-async def test_subtitle_rows_of_no_known_shape_are_refused(engine: AsyncEngine, shape: str) -> None:
-    with pytest.raises(IntegrityError):
-        await _insert(engine, _REFUSED[shape])
-
-
-@pytest.mark.parametrize("shape", list(_ACCEPTED))
-async def test_subtitle_rows_of_a_known_shape_are_accepted(engine: AsyncEngine, shape: str) -> None:
-    await _insert(engine, _ACCEPTED[shape])

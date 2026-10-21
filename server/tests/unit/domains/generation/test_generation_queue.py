@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from procrastinate.exceptions import ConnectorException
@@ -27,6 +29,7 @@ from iclip.domains.generation.provider import (
 from iclip.domains.generation.queue import (
     QUEUE_POLL,
     GenerationQueue,
+    ProviderLane,
     StillRunning,
     submit_queue,
 )
@@ -258,7 +261,7 @@ async def test_poll_success_and_failure_reach_terminal_states() -> None:
 
 
 async def test_a_polled_result_lands_its_reported_duration_on_the_record() -> None:
-    """上游报成功时带回的成片时长随完成落进记录。"""
+    """上游报成功时带回的产物时长随完成落进记录。"""
 
     job = make_job(video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1")
     repo = InMemoryGenerationRepository([job])
@@ -357,6 +360,74 @@ async def test_job_stuck_running_forever_eventually_times_out() -> None:
     assert video.poll_calls == [], "超时先判掉，不再多问一次"
 
 
+async def test_a_lane_with_its_own_time_limit_outlasts_the_default() -> None:
+    """lane 自己写了时限就按它的：同样提交了两倍默认时限，没写的那家已超时，写了更长的那家还在问。"""
+
+    default = QUEUE_SETTINGS.job_timeout_seconds
+    stale = datetime.now(UTC) - timedelta(seconds=default * 2)
+    slow_job = make_job(
+        video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1", submitted_at=stale
+    )
+    usual_job = make_job(
+        image_request(), status=STATUS_SUBMITTED, provider_task_id="t-2", submitted_at=stale
+    )
+    repo = InMemoryGenerationRepository([slow_job, usual_job])
+    running = ProviderProgress(outcome="running", provider_status="queued")
+    slow = ScriptedProvider(name=FAKE_VIDEO_PROVIDER, progress=running)
+    usual = ScriptedProvider(name=FAKE_IMAGE_PROVIDER, progress=running)
+    queue, _ = build_queue(
+        repo,
+        lanes=(
+            ProviderLane(slow, 1, timeout_seconds=default * 3),
+            ProviderLane(usual, 1),
+        ),
+    )
+
+    with pytest.raises(StillRunning):
+        await queue.run_poll(str(slow_job.id))
+    await queue.run_poll(str(usual_job.id))
+
+    assert repo.jobs[slow_job.id].status == STATUS_SUBMITTED
+    assert slow.poll_calls == [slow_job.id]
+    timed_out = repo.jobs[usual_job.id]
+    assert (timed_out.status, timed_out.error_code) == (STATUS_FAILED, "PROVIDER_TIMEOUT")
+    assert timed_out.error_message is not None and str(default) in timed_out.error_message
+
+    repo.jobs[slow_job.id] = replace(
+        repo.jobs[slow_job.id],
+        submitted_at=datetime.now(UTC) - timedelta(seconds=default * 3 + 60),
+    )
+    await queue.run_poll(str(slow_job.id))
+
+    late = repo.jobs[slow_job.id]
+    assert (late.status, late.error_code) == (STATUS_FAILED, "PROVIDER_TIMEOUT")
+    assert late.error_message is not None and str(default * 3) in late.error_message
+
+
+async def test_a_job_settled_between_reading_and_submitting_is_never_submitted() -> None:
+    """读到排队之后、落「提交中」之前，这一行被别处判了结论（如取消）：不占住、不提交、结论不变。"""
+
+    job = make_job(video_request())
+
+    class CancelledMeanwhile(InMemoryGenerationRepository):
+        async def get(self, *args: Any, **kwargs: Any) -> GenerationJob:
+            read = await super().get(*args, **kwargs)
+            await self.mark_failed(job.id, error_code="CANCELLED", error_message="导出已取消")
+            return read
+
+    repo = CancelledMeanwhile([job])
+    video = ScriptedProvider(
+        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued")
+    )
+    queue, _ = build_queue(repo, video=video)
+
+    await queue.run_submit(str(job.id))
+
+    stored = repo.jobs[job.id]
+    assert (stored.status, stored.error_code) == (STATUS_FAILED, "CANCELLED")
+    assert video.submit_calls == []
+
+
 async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
     """失联恢复可能与原 worker 返回结果并发；清理更新不得覆盖已成功结果。"""
 
@@ -401,7 +472,7 @@ async def test_submit_fails_loudly_when_the_provider_is_not_assembled() -> None:
     marked_submitting: list[uuid.UUID] = []
 
     class Recording(InMemoryGenerationRepository):
-        async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
+        async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
             marked_submitting.append(job_id)
             return await super().mark_submitting(job_id)
 

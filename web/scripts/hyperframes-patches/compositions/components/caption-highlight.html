@@ -1,0 +1,274 @@
+<!--
+  Highlight — 逐词高亮字幕：说到哪个词，哪个词后面亮起红色底块。
+
+  来源：HyperFrames 组件库 caption-highlight，https://github.com/heygen-com/hyperframes （v0.8.168），
+  Apache License 2.0（http://www.apache.org/licenses/LICENSE-2.0），Copyright HeyGen。
+
+  本文件对原组件的改动：
+  1. 改成 <template> 子合成；台词来自 window.__hyperframes.getVariables().words
+     （[{ text, start, end, sentence }]，成片秒数），同一 sentence 的词为一组，去掉写死的台词与分组。
+  2. 按中文排版拼词：词与词之间不留间隔，两侧都是拉丁字母或数字时才隔开；去掉转大写。
+     中文用 Noto Sans SC（本地字体文件），拉丁字母仍用 Montserrat。
+  3. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin）；
+     一组放不下时折行；字号照原组件用画布量字，缩到整组不超过两行（不设最小字号）。
+  4. 每组写上 data-hf-id="caption:<sentence>"，编辑器在画面上按它认出点中的是哪一句。
+  高亮底块、入场与组间切换的动画不变。
+-->
+<template id="caption-highlight-template">
+  <div id="highlight" data-composition-id="caption-highlight" data-timeline-locked data-start="0">
+    <link rel="stylesheet" href="../../vendor/fonts/dba19bcac9b2.css" />
+    <link rel="stylesheet" href="../../vendor/fonts/noto-sans-sc.css" />
+    <div id="hl-container"></div>
+    <style>
+      #highlight {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+        background: transparent;
+        container-type: size;
+      }
+
+      #highlight #hl-container {
+        --u: calc(100cqmin / 1080);
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        pointer-events: none;
+      }
+
+      #highlight .hl-group {
+        position: absolute;
+        bottom: calc(140 * var(--u));
+        left: 0;
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: center;
+        row-gap: calc(8 * var(--u));
+        padding: 0 6cqw;
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      #highlight .hl-word {
+        font-family: 'Montserrat', 'Noto Sans SC', sans-serif;
+        font-weight: 800;
+        font-size: calc(80 * var(--u));
+        color: #ffffff;
+        display: inline-block;
+        letter-spacing: 0.02em;
+        line-height: 1.15;
+        position: relative;
+        padding: calc(6 * var(--u)) calc(6 * var(--u)) calc(8 * var(--u));
+        text-shadow: 0 calc(6 * var(--u)) calc(18 * var(--u)) rgba(0, 0, 0, 0.45);
+        transform-origin: 50% 58%;
+        will-change: transform, filter;
+      }
+
+      #highlight .hl-word.hl-space {
+        margin-left: calc(16 * var(--u));
+      }
+
+      #highlight .hl-word-bg {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, #ff1745 0%, #df1238 100%);
+        border-radius: calc(10 * var(--u));
+        box-shadow: 0 calc(12 * var(--u)) calc(30 * var(--u)) rgba(229, 20, 58, 0.32);
+        opacity: 0;
+        transform: scaleX(0);
+        transform-origin: 0% 50%;
+        z-index: -1;
+      }
+
+      #highlight .hl-word-text {
+        position: relative;
+        z-index: 1;
+      }
+    </style>
+    <script>
+      ;(function () {
+        window.__timelines = window.__timelines || {}
+
+        var vars =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {}
+        var LATIN_END = /[A-Za-z0-9]$/
+        var LATIN_START = /^[A-Za-z0-9]/
+        var CAPTION_FONT_SIZE = 80
+        var LETTER_SPACING = 0.02
+        // .hl-word 左右内边距共 12 个单位，.hl-space 再加 16 个单位的间隔；不随字号变。
+        var WORD_PADDING = 12
+        var WORD_GAP = 16
+
+        // 量字（以字号为单位）：字体与 .hl-word 一致；画布不算字距，按每字 0.02em 补上。
+        var measureContext = document.createElement('canvas').getContext('2d')
+        measureContext.font = "800 100px 'Montserrat', 'Noto Sans SC', sans-serif"
+        function widthInEm(text) {
+          return (
+            measureContext.measureText(text).width / 100 + Array.from(text).length * LETTER_SPACING
+          )
+        }
+
+        // 不超过两行的字号：词是整块折行的，每行最多空出一个词，所以整组宽度加上最宽的词
+        // 不超过两行宽即可（一行宽是画面宽去掉两侧各 6cqw）。词宽 = 字号 × 量出的宽 + 固定的边距。
+        function fitFontSize(items) {
+          var em = 0
+          var fixed = 0
+          var widestEm = 0
+          var widestFixed = 0
+          items.forEach(function (item) {
+            em += item.em
+            fixed += item.fixed
+            widestEm = Math.max(widestEm, item.em)
+            widestFixed = Math.max(widestFixed, item.fixed)
+          })
+          var base = 'calc(' + CAPTION_FONT_SIZE + ' * var(--u))'
+          var room = '2 * 88cqw - ' + (fixed + widestFixed) + ' * var(--u)'
+          var fit = 'calc((' + room + ') / ' + (em + widestEm).toFixed(4) + ')'
+          return 'min(' + base + ', ' + fit + ')'
+        }
+
+        var WORDS = (Array.isArray(vars.words) ? vars.words : [])
+          .map(function (word) {
+            var start = Number(word.start) || 0
+            return {
+              text: String(word.text || '').trim(),
+              start: start,
+              end: Math.max(start, Number(word.end) || 0),
+              sentence: word.sentence,
+            }
+          })
+          .filter(function (word) {
+            return word.text.length > 0
+          })
+
+        // 同一 sentence 的连续词为一组。
+        var RAW_GROUPS = []
+        WORDS.forEach(function (word, index) {
+          var last = RAW_GROUPS[RAW_GROUPS.length - 1]
+          if (!last || WORDS[last[1]].sentence !== word.sentence) RAW_GROUPS.push([index, index])
+          else last[1] = index
+        })
+        var GROUPS = RAW_GROUPS.map(function (pair, gi) {
+          var ws = pair[0],
+            we = pair[1]
+          var nextStart =
+            gi + 1 < RAW_GROUPS.length ? WORDS[RAW_GROUPS[gi + 1][0]].start : WORDS[we].end + 0.5
+          var gEnd = Math.min(WORDS[we].end + 0.5, nextStart - 0.05)
+          return {
+            wordStart: ws,
+            wordEnd: we,
+            start: WORDS[ws].start,
+            end: Math.max(gEnd, WORDS[ws].start + 0.15),
+          }
+        })
+
+        var container = document.getElementById('hl-container')
+        var tl = gsap.timeline({ paused: true })
+        // 每组的词、词前是否隔开、词的元素，字号按组量出来再写到每个词上。
+        var FITTED = []
+
+        GROUPS.forEach(function (g, gi) {
+          var groupWords = WORDS.slice(g.wordStart, g.wordEnd + 1)
+          var grp = document.createElement('div')
+          grp.className = 'hl-group'
+          grp.id = 'hl-grp-' + gi
+          grp.setAttribute('data-hf-id', 'caption:' + WORDS[g.wordStart].sentence)
+
+          var spaced = groupWords.map(function (w, i) {
+            var previous = groupWords[i - 1]
+            return Boolean(previous && LATIN_END.test(previous.text) && LATIN_START.test(w.text))
+          })
+          var wordEls = []
+          FITTED.push({ words: groupWords, spaced: spaced, els: wordEls })
+
+          groupWords.forEach(function (w, i) {
+            var wi = g.wordStart + i
+            var wordEl = document.createElement('span')
+            wordEl.className = spaced[i] ? 'hl-word hl-space' : 'hl-word'
+            wordEl.id = 'hl-w-' + wi
+            wordEls.push(wordEl)
+
+            var bgEl = document.createElement('span')
+            bgEl.className = 'hl-word-bg'
+            bgEl.id = 'hl-bg-' + wi
+
+            var textEl = document.createElement('span')
+            textEl.className = 'hl-word-text'
+            textEl.textContent = w.text
+
+            wordEl.appendChild(bgEl)
+            wordEl.appendChild(textEl)
+            grp.appendChild(wordEl)
+          })
+
+          container.appendChild(grp)
+
+          tl.set(grp, { visibility: 'visible' }, g.start)
+          tl.fromTo(
+            grp,
+            { opacity: 0 },
+            { opacity: 1, duration: 0.12, ease: 'power2.out' },
+            g.start,
+          )
+
+          groupWords.forEach(function (w, i) {
+            var wi = g.wordStart + i
+            var bgEl = document.getElementById('hl-bg-' + wi)
+            var wordEl = document.getElementById('hl-w-' + wi)
+
+            tl.to(bgEl, { opacity: 1, scaleX: 1, duration: 0.15, ease: 'power2.out' }, w.start)
+            tl.to(
+              wordEl,
+              { filter: 'brightness(1.05)', duration: 0.08, ease: 'power2.out' },
+              w.start,
+            )
+            tl.to(
+              wordEl,
+              { filter: 'brightness(1)', duration: 0.16, ease: 'power2.out' },
+              w.start + 0.08,
+            )
+            tl.to(bgEl, { opacity: 0, scaleX: 1.02, duration: 0.1, ease: 'power2.in' }, w.end)
+            tl.set(bgEl, { scaleX: 0 }, w.end + 0.1)
+          })
+
+          tl.to(grp, { opacity: 0, duration: 0.1, ease: 'power2.in' }, g.end - 0.1)
+          tl.set(grp, { opacity: 0, visibility: 'hidden' }, g.end)
+        })
+
+        function fitAll() {
+          FITTED.forEach(function (group) {
+            var fontSize = fitFontSize(
+              group.words.map(function (w, i) {
+                return {
+                  em: widthInEm(w.text),
+                  fixed: WORD_PADDING + (group.spaced[i] ? WORD_GAP : 0),
+                }
+              }),
+            )
+            group.els.forEach(function (wordEl) {
+              wordEl.style.fontSize = fontSize
+            })
+          })
+        }
+        fitAll()
+        // 量字要用真正显示的字体：字体用到才下载，脚本运行时可能还没到，到了之后按真实字形再量一次。
+        document.fonts
+          .load(
+            measureContext.font,
+            WORDS.map(function (w) {
+              return w.text
+            }).join(''),
+          )
+          .then(fitAll)
+
+        tl.seek(0)
+        window.__timelines['caption-highlight'] = tl
+      })()
+    </script>
+  </div>
+</template>

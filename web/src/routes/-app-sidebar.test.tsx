@@ -13,20 +13,18 @@ import {
   mockCollections,
 } from '@/testing/mocks/handlers'
 import { renderWithProviders } from '@/testing/render'
-import { stubSidebarViewport } from '@/testing/sidebar-viewport'
+import { stubSidebarViewport } from '@/testing/scroll-viewport'
 import { AppSidebar } from './-app-sidebar'
 import { HomePage } from './-home-page'
 import { LoginPromptProvider } from './-login-prompt'
 
 beforeEach(stubSidebarViewport)
 
-/** 测试壳持有折叠状态，与应用壳的状态归属一致。 */
 function SidebarHarness({ compact = false }: { compact?: boolean }) {
   const [collapsed, setCollapsed] = useState(true)
   return <AppSidebar collapsed={collapsed} compact={compact} onCollapsedChange={setCollapsed} />
 }
 
-/** 与应用壳一样持有首页输入框的聚焦请求，首页路径下挂上首页。 */
 function ShellHarness({ compact }: { compact: boolean }) {
   const [collapsed, setCollapsed] = useState(true)
   const [pending, setPending] = useState(false)
@@ -152,7 +150,6 @@ describe('AppSidebar', () => {
     const { router } = await renderSidebar(vi.fn(), '/tasks')
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    // 等待 /users/me 完成，避免新建任务仍触发登录弹窗。
     await screen.findByRole('button', { name: '用户菜单' })
     await user.click(screen.getByRole('button', { name: '新建任务' }))
 
@@ -169,7 +166,6 @@ describe('AppSidebar', () => {
     await user.click(screen.getByRole('button', { name: '新建任务' }))
 
     await waitFor(() => expect(screen.getByLabelText('输入消息')).toHaveFocus())
-    // 紧凑屏的抽屉随之收起，焦点仍留在输入框。
     if (compact) expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     expect(screen.getByLabelText('输入消息')).toHaveFocus()
   })
@@ -194,7 +190,6 @@ describe('AppSidebar', () => {
       ).toBeInTheDocument()
       await waitFor(() => expect(screen.getByLabelText('输入消息')).toHaveFocus())
       await waitFor(() => expect(router.state.location.search).toEqual({}))
-      // 紧凑屏已在首页时路由不变，抽屉照样收起。
       if (compact) expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     },
   )
@@ -442,7 +437,6 @@ describe('AppSidebar 对话区', () => {
     expect(screen.queryByText('暂无合集')).not.toBeInTheDocument()
     await user.type(draft, '春季童鞋{Enter}')
 
-    // 回车建成后焦点交给新合集那一行。
     expect(await screen.findByRole('button', { name: '春季童鞋 (0)' })).toHaveFocus()
     expect(screen.queryByRole('textbox', { name: '新合集名称' })).not.toBeInTheDocument()
     expect(mockCollections.map((item) => item.name)).toEqual(['春季童鞋'])
@@ -456,7 +450,6 @@ describe('AppSidebar 对话区', () => {
 
     await user.click(screen.getByRole('button', { name: '待改名 的操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '重命名' }))
-    // 原位编辑：原名全选，直接输入即替换。
     const input = await screen.findByRole('textbox', { name: '重命名 待改名' })
     expect(input).toHaveFocus()
     await user.keyboard('改好了{Enter}')
@@ -472,7 +465,6 @@ describe('AppSidebar 对话区', () => {
     )
 
     await waitFor(() => expect(mockCollections).toHaveLength(0))
-    // 合集没了，里面的对话回到任务区，不用展开任何合集就看得到。
     expect(await screen.findByRole('link', { name: '里面的对话' })).toBeVisible()
   })
 

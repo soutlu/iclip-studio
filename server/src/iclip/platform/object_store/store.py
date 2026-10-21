@@ -70,11 +70,32 @@ class PublicBucket(PublicObjectStore, SignedUploadStore, Protocol):
     """完整公开桶端口；消费者可依赖所需的较小接口。"""
 
 
+@dataclass(frozen=True, slots=True)
+class SignedUpload:
+    """给另一个服务端用的限时 PUT：往 ``url`` 发 PUT，``headers`` 原样带上（都签进了签名）。"""
+
+    url: str
+    headers: Mapping[str, str]
+
+
+class ServerUploadSigner(Protocol):
+    """让另一个服务端把文件直接传进公开桶的签名端口：本地计算，不发网络请求。"""
+
+    def sign_server_upload(
+        self, *, object_key: str, content_type: str, expires_seconds: int
+    ) -> SignedUpload:
+        """签一个 ``expires_seconds`` 秒内有效的 PUT。只签 ``Content-Type``，不带 ACL 头，对象随桶
+        公共读；地址给服务端用（配了内网 endpoint 就是内网地址）。"""
+        ...
+
+
 __all__ = [
     "SIGNED_PUT_EXPIRES_SECONDS",
     "ObjectStoreUnavailable",
     "PublicBucket",
     "PublicObjectStore",
+    "ServerUploadSigner",
+    "SignedUpload",
     "SignedUploadStore",
     "StoredObject",
 ]

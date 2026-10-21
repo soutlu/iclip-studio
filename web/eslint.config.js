@@ -56,8 +56,9 @@ export default tseslint.config(
       'node_modules',
       // 文档示例不属于项目 tsconfig，排除类型感知检查。
       'docs',
-      // vendor 按上游风格维护、不套本仓 lint，维护约定见该目录 README。
+      // vendor 按上游风格维护、不套本仓 lint，维护约定见各目录 README。
       'src/shared/transcript/vendor/**',
+      'src/features/storyboard/whole-film/vendor/hyperframes-studio/**',
     ],
   },
 

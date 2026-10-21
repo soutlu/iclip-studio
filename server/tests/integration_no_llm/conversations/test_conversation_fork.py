@@ -24,7 +24,10 @@ from sqlalchemy import text
 from iclip.app.bootstrap import build_app
 from iclip.common.errors import Conflict, NotFound
 from iclip.config import ResolvedAgent, VideoGenerationSection
-from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.conversations.infra_sql import (
+    SqlConversationRepository,
+    SqlWholeFilmDraftStore,
+)
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
@@ -33,7 +36,7 @@ from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, settled
@@ -413,6 +416,9 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             write_derived_file=_untouched,
             document_validators={},
             film=UnusedFilmPage(),
+            drafts=SqlWholeFilmDraftStore(engine),
+            draft_references=_untouched,
+            exports=None,
             generate_title=_untouched,
             announce_title=_untouched,
             activities_of=_untouched,
@@ -636,7 +642,7 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
 async def test_audit_list_carries_only_each_conversations_own_latest_master(
     media_app: FastAPI, pg_url: str
 ) -> None:
-    """全部对话列表的每一段带自己名下最新一条成片的地址：源对话有，只继承了它的副本为空。"""
+    """全部对话列表的每一段带自己名下最新一条素材片的地址：源对话有，只继承了它的副本为空。"""
 
     engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)

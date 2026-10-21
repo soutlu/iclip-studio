@@ -1,4 +1,4 @@
-/** 成片区的规则：从本对话的视频记录里挑出这一组的出片、按提交时间排好、读出卡上画的几样，以及卡片尺寸。 */
+/** 素材片区的规则：从本对话的视频记录里挑出这一组的出片、按提交时间排好、读出卡上画的几样，以及卡片尺寸。 */
 
 import { aspectOf } from '@/shared/lib/aspect-ratio'
 import type { Shot } from './shot-document'
@@ -71,7 +71,7 @@ export const takesOfShot = (
     })
 }
 
-/** 选中成片时舞台工具条上的一个动作：不出现、可用，或置灰并说明原因。 */
+/** 选中素材片时舞台工具条上的一个动作：不出现、可用，或置灰并说明原因。 */
 export type TakeAction =
   { kind: 'hidden' } | { kind: 'enabled' } | { kind: 'blocked'; reason: string }
 
@@ -101,12 +101,12 @@ export const takeActionsOf = (
       readOnly || !refillable
         ? HIDDEN
         : take.history === undefined
-          ? blocked('该成片未记录分镜结构，无法回填')
+          ? blocked('该素材片未记录分镜结构，无法回填')
           : ENABLED,
   }
 }
 
-/** 成片区的行高。 */
+/** 素材片区的行高。 */
 export const TAKE_ROW_HEIGHT = 176
 
 /** 横屏卡最多占可见宽度的这么多，免得一张就占满、看不出还能往后滑。 */

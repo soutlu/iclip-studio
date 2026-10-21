@@ -56,6 +56,15 @@ it('标尺拖动只定位播放头，保留原选区和片段顺序；键盘滑�
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
     DOMRect.fromRect({ x: 100, y: 0, width: 400, height: 200 }),
   )
+  fireEvent.pointerMove(ruler, { pointerId: 1, clientX: 350, pointerType: 'mouse' })
+  expect(screen.getByText('00:02.50')).toBeVisible()
+  expect(seek).not.toHaveBeenCalled()
+  expect(scrub).not.toHaveBeenCalled()
+  fireEvent.scroll(screen.getByRole('region', { name: '时间线轨道，窄屏可横向滚动' }))
+  expect(screen.queryByText('00:02.50')).toBeNull()
+  fireEvent.pointerMove(ruler, { pointerId: 1, clientX: 350, pointerType: 'mouse' })
+  fireEvent.pointerLeave(ruler)
+  expect(screen.queryByText('00:02.50')).toBeNull()
   fireEvent.pointerDown(ruler, { button: 0, pointerId: 1, clientX: 200 })
   expect(seek).toHaveBeenLastCalledWith(1)
   fireEvent.pointerMove(ruler, { pointerId: 1, clientX: 350 })

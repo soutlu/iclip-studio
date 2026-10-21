@@ -1,6 +1,6 @@
-/** 一组分镜的页面：解析选中的段与帧，组合舞台列、文案列（正文 + 列底的成片区）与添加图片的选择器；
+/** 一组分镜的页面：解析选中的段与帧，组合舞台列、文案列（正文 + 列底的素材片区）与添加图片的选择器；
  * 添加图片的流程在 `useFrameAdditions`，替换当前帧的流程在 `useFrameReplacement`。
- * 选中成片时舞台改播它，文案列撤掉选中高亮，点任意一段就回到帧；进行中的上传不受影响，照旧落进原来那段。 */
+ * 选中素材片时舞台改播它，文案列撤掉选中高亮，点任意一段就回到帧；进行中的上传不受影响，照旧落进原来那段。 */
 import { useEffect, useEffectEvent, useRef, type ReactNode } from 'react'
 import type { LightboxMedia } from '@/shared/ui/media-lightbox'
 import type { FrameBadge } from '../frame-status'
@@ -31,7 +31,7 @@ type ReaderPageProps = {
   editingDisabled: boolean
   onUpdateShot: (updater: (current: Shot) => Shot) => Shot | undefined
   onReplaceFrame: (frame: number, previousUrl: string, url: string) => void
-  /** 新图已写进 `content` 段：记下这次上传。`follow`（落在选中的段里）时选区跟到这帧，不改舞台在显示什么，在放成片就接着放；
+  /** 新图已写进 `content` 段：记下这次上传。`follow`（落在选中的段里）时选区跟到这帧，不改舞台在显示什么，在放素材片就接着放；
    * 用户已经换到别的段就不把选区拽回来。 */
   onUploaded: (content: string, frame: number, url: string, follow: boolean) => void
   onUploadingChange: (group: number, uploading: boolean) => void
@@ -40,9 +40,9 @@ type ReaderPageProps = {
   onPreview: (media: LightboxMedia) => void
   /** 打开这一帧的编辑器；`open` 决定进去先看哪张：铅笔进底图，角标进那条新结果。 */
   onEditFrame: (frame: number, open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
-  /** 文案列底部的成片区，由工作台组好放进来。 */
+  /** 文案列底部的素材片区，由工作台组好放进来。 */
   takes: ReactNode
-  /** 选中的成片与它的操作；没选时舞台显示帧。 */
+  /** 选中的素材片与它的操作；没选时舞台显示帧。 */
   take: Omit<TakeView, 'kind'> | undefined
 }
 
@@ -69,7 +69,7 @@ export function ReaderPage({
     frame,
   })
   const url = frameNumber === undefined ? undefined : shot.image_urls[frameNumber - 1]
-  // 选中的帧；选中成片时它不上舞台，但上传的目标照旧是它。
+  // 选中的帧；选中素材片时它不上舞台，但上传的目标照旧是它。
   const selectedFrame =
     url === undefined || frameNumber === undefined
       ? undefined
@@ -80,7 +80,7 @@ export function ReaderPage({
     if (handle === null) editorsRef.current.delete(id)
     else editorsRef.current.set(id, handle)
   }
-  // 选同一段不指定帧时停在当前帧：从成片点回原来那段，舞台回到刚才看的那一帧。
+  // 选同一段不指定帧时停在当前帧：从素材片点回原来那段，舞台回到刚才看的那一帧。
   const select = (id: string, number?: number) =>
     onSelect(id, number ?? (id === content.id ? frame : undefined))
   const additions = useFrameAdditions({
@@ -158,7 +158,7 @@ export function ReaderPage({
           aspectRatio={aspect_ratio}
           drop={additions.drop}
           editorRef={editorRef}
-          // 选中成片时文案列不标选中：点哪段（包括原来选中的那段）都回到帧。
+          // 选中素材片时文案列不标选中：点哪段（包括原来选中的那段）都回到帧。
           frameNumber={take === undefined ? frameNumber : undefined}
           images={additions.imagesOf}
           onSelect={select}

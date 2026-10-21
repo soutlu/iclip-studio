@@ -20,26 +20,9 @@ export const openStoryboardShot = async (panel: Locator, index: number) => {
   await expect(list).toBeHidden()
 }
 
-/** 把当前界面按浅色、深色各截一张验收图，存为 `${pathPrefix}-light.png` 与 `${pathPrefix}-dark.png`，截完切回浅色。 */
-export const screenshotBothThemes = async (page: Page, pathPrefix: string) => {
-  const apply = async (colorScheme: 'light' | 'dark') => {
-    await page.emulateMedia({ colorScheme })
-    // .dark 类由 matchMedia 的 change 监听异步切换，等它落定再截。
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-      .toBe(colorScheme === 'dark')
-  }
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await apply(colorScheme)
-    // 冻结动画，切主题引起的颜色过渡不会拍在中途。
-    await page.screenshot({ animations: 'disabled', path: `${pathPrefix}-${colorScheme}.png` })
-  }
-  await apply('light')
-}
-
 /**
  * 在页面里用 Canvas 画一张 PNG 当本地上传文件，默认 600×800（上传前会校验短边至少 300）。
- * fill 是底色；给 label 时在中间画一块深色标签，截图里认得出这是测试图。
+ * fill 是底色；给 label 时在中间画一块深色标签，一眼认得出这是测试图。
  */
 export const canvasPng = async (
   page: Page,
@@ -72,6 +55,27 @@ export const canvasPng = async (
   )
   return Buffer.from(base64, 'base64')
 }
+
+type MockResponseGate = {
+  pause: (pathname: string) => void
+  release: (pathname: string) => void
+}
+
+/** 暂停这个路径的 mock 响应：请求照常发出，响应等 {@link releaseMockResponses} 后才回来。 */
+export const pauseMockResponses = (page: Page, pathname: string) =>
+  page.evaluate(
+    (path) =>
+      (window as unknown as { cueMockResponses: MockResponseGate }).cueMockResponses.pause(path),
+    pathname,
+  )
+
+/** 放行 {@link pauseMockResponses} 暂停的响应。 */
+export const releaseMockResponses = (page: Page, pathname: string) =>
+  page.evaluate(
+    (path) =>
+      (window as unknown as { cueMockResponses: MockResponseGate }).cueMockResponses.release(path),
+    pathname,
+  )
 
 /** video_shot.json 的一组镜头；分镜与复刻共用这份形状。 */
 export type VideoShot = {

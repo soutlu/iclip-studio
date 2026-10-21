@@ -87,7 +87,8 @@ class VideoBreakdownToolset(FunctionToolset[AgentDepsT]):
                 max_retries=BREAKDOWN_RETRIES,
                 args_validator=self._validate_video_url,
                 # 拆一条视频要等几分钟：挂了 BackgroundTools 的 agent 在等待时可以接着干别的。
-                # 后台跑时 harness 0.55 不累计重试次数，max_retries 不生效，上限是这次运行的请求数上限。
+                # 后台跑时 harness 不累计重试次数（pydantic/pydantic-ai#10109），max_retries 不生效，
+                # 上限是这次运行的请求数上限。
                 metadata={"background": True},
             )
         )

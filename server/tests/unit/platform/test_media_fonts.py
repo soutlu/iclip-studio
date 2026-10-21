@@ -1,4 +1,4 @@
-"""真实静态字体文件的解析、覆盖、字族隔离与 HarfBuzz 字形度量。"""
+"""真实静态字体文件的解析与字形覆盖。"""
 
 from __future__ import annotations
 
@@ -12,9 +12,7 @@ from iclip.platform.media.fonts import (
     MAX_FONT_BYTES,
     FontError,
     FontStyle,
-    caption_text,
     inspect_font,
-    prepare_font,
 )
 from tests.helpers.fonts import make_font
 
@@ -37,6 +35,14 @@ def test_properties_come_from_the_font_not_the_file_name(
 
     assert (info.family, info.weight, info.style) == ("Actual Family", 350, style)
     assert info.unicode_ranges == ((32, 32), (65, 67), (ord("汉"), ord("汉")))
+
+
+def test_win_line_metrics_do_not_decide_whether_a_font_is_usable(tmp_path: Path) -> None:
+    """Win 行高度量为 0 的字体照样读得出：只看字族、字重、样式、字形与轮廓。"""
+
+    path = make_font(tmp_path / "no-win-metrics.ttf", characters="A", win_metrics=(0, 0))
+
+    assert inspect_font(path).unicode_ranges == ((ord("A"), ord("A")),)
 
 
 @pytest.mark.parametrize("kind", ["corrupt", "collection", "variable", "woff"])
@@ -97,54 +103,3 @@ def test_readable_metadata_does_not_hide_a_broken_glyph_outline(tmp_path: Path, 
         assert font.getBestCmap() == {ord("A"): "uni0041"}
     with pytest.raises(FontError, match="字体文件"):
         inspect_font(path)
-
-
-@pytest.mark.parametrize("otf", [False, True], ids=["ttf", "otf"])
-def test_the_selected_face_has_a_private_family_without_changing_its_glyphs(
-    tmp_path: Path, otf: bool
-) -> None:
-    light = make_font(
-        tmp_path / "light.font", characters="Wi", weight=300, otf=otf, advances={"W": 900, "i": 200}
-    )
-    bold = make_font(
-        tmp_path / "bold.font", characters="Wi", weight=700, otf=otf, advances={"W": 1000, "i": 300}
-    )
-    original = light.read_bytes()
-
-    selected = prepare_font(light, texts=["Wi"], directory=tmp_path / "first")
-    other = prepare_font(bold, texts=["Wi"], directory=tmp_path / "second")
-
-    assert selected.family != other.family
-    assert (selected.info.family, other.info.family) == ("Iclip Test", "Iclip Test")
-    assert inspect_font(selected.path).family == selected.family
-    assert (selected.ass_weight, other.ass_weight) == (300, 700)
-    assert selected.ass_size_scale == pytest.approx(1.2)
-    assert selected.measure("Wi", size=100) == pytest.approx(110)
-    assert other.measure("Wi", size=100) == pytest.approx(130)
-    assert light.read_bytes() == original
-
-
-@pytest.mark.parametrize("text", ["A汉", "A\u200dA", "A\ufe0f", "A\tA"])
-def test_missing_characters_never_use_system_fallback(tmp_path: Path, text: str) -> None:
-    source = make_font(tmp_path / "latin.ttf", characters="A")
-
-    with pytest.raises(FontError, match="缺少字幕字符"):
-        prepare_font(source, texts=[text], directory=tmp_path / "render")
-    assert not (tmp_path / "render").exists()
-
-
-def test_coverage_checks_the_characters_that_will_actually_be_burned(tmp_path: Path) -> None:
-    source = make_font(tmp_path / "literal.ttf", characters="A{}\\")
-    assert caption_text("  A\r\n{\\A}  ") == "A\n｛＼A｝"
-    assert caption_text("\ufeffA\u3000\n\tA\t") == "A\nA"
-    assert caption_text("A\u0085") == "A\u0085", "与浏览器 trim 一致，不吞掉其它控制字符"
-
-    with pytest.raises(FontError, match="U\\+FF5B"):
-        prepare_font(source, texts=["{\\A}"], directory=tmp_path / "render")
-
-
-def test_newlines_are_layout_separators_not_missing_glyphs(tmp_path: Path) -> None:
-    source = make_font(tmp_path / "latin.ttf", characters="A")
-    selected = prepare_font(source, texts=[" A\r\nA "], directory=tmp_path / "render")
-
-    assert selected.measure("AA", size=20) == pytest.approx(40)

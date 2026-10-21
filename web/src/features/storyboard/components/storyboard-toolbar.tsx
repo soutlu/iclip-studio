@@ -1,4 +1,4 @@
-/** 分镜工作台顶栏：保存状态，「整片」入口，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组的字。
+/** 分镜工作台顶栏：保存状态，「成片」入口，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组的字。
  * 分镜页与制作页共用，各自给镜头组摘要和要复制的字。 */
 
 import type { ReactNode } from 'react'
@@ -20,7 +20,7 @@ type StoryboardToolbarProps = {
   onGoShot: (shot: number) => void
   /** 复制按钮：按钮名、拷走的字与拷好后的提示；`blocked` 是此刻不能复制的原因，给了就置灰、悬停说原因。 */
   copy: { label: string; text: string; done: string; blocked?: string | undefined }
-  /** 打开整片编辑器；只读时不给，按钮不出现。 */
+  /** 打开成片编辑器；只读时不给，按钮不出现。 */
   onWholeFilm: (() => void) | undefined
 }
 
@@ -44,10 +44,10 @@ export function StoryboardToolbar({
               type="button"
             >
               <Icon decorative name="video-type" size="sm" />
-              整片
+              成片
             </button>
           </TooltipTrigger>
-          <TooltipContent>把各镜头组的成片拼成整片</TooltipContent>
+          <TooltipContent>把各镜头组的素材片剪成成片</TooltipContent>
         </TooltipRoot>
       )}
       <ShotGroupSwitcher groups={groups} onGo={onGoShot} position={position} />

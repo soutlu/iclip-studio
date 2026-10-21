@@ -47,7 +47,8 @@ from iclip.harness.transcript.projector import TranscriptEventStream
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import MediaError, ffmpeg_available
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
 from tests.helpers.fetch_url import as_is

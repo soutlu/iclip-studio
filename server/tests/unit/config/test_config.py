@@ -22,6 +22,7 @@ MANIFEST = (
     "PMS_BASE_URL",
     "ROOT_EMAIL",
     "VIDEO_SUBMIT_URL",
+    "VIDEO_ENHANCE_SUBMIT_URL",
     "VIDEO_STATUS_BASE_URL",
     "VIDEO_API_KEY",
     "IMAGE_API_BASE",
@@ -36,6 +37,7 @@ MANIFEST = (
     "PRODUCT_CATALOG_DATABASE_URL",
     "QWEN_API_KEY",
     "T_QWEN_KEY",
+    "WHOLE_FILM_RENDER_URL",
 )
 
 
@@ -336,6 +338,75 @@ def test_media_generation_half_configured_fails_loudly(
         resolve_settings(config)
 
 
+ENHANCE = """
+    enhance:
+      model: video-enhance
+      resolutions: [1080p, 720p]
+      fps: 30"""
+
+
+def _with_enhance(enhance: str = ENHANCE) -> str:
+    return VALID + MEDIA.replace(
+        "allowed_models: [seedance, seedance-other]",
+        "allowed_models: [seedance, seedance-other]" + enhance,
+    )
+
+
+def test_enhance_resolves_from_its_section_and_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, _with_enhance()))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", " https://video.test/videos/enhance/async ")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.video_enhance is not None
+    enhance = media.video_enhance
+    assert enhance.submit_url == "https://video.test/videos/enhance/async"
+    assert (enhance.model, enhance.resolutions, enhance.fps) == (
+        "video-enhance",
+        ("1080p", "720p"),
+        30,
+    ), "档位保持配置里从高到低的先后"
+
+
+def test_enhance_is_off_without_its_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, _with_enhance()))
+    _media_env(monkeypatch)
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.video_enhance is None
+
+
+def test_enhance_address_without_its_section_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", "https://video.test/videos/enhance/async")
+
+    with pytest.raises(RuntimeError, match="VIDEO_ENHANCE_SUBMIT_URL"):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(
+    "enhance",
+    [
+        ENHANCE.replace("[1080p, 720p]", "[]"),
+        ENHANCE.replace("[1080p, 720p]", "[1080p, 1080p]"),
+        ENHANCE.replace("[1080p, 720p]", "[4k]"),
+        ENHANCE.replace("fps: 30", "fps: 90"),
+        ENHANCE.replace("model: video-enhance", "model: ''"),
+    ],
+    ids=["no_tiers", "repeated_tier", "unknown_tier", "fps_out_of_range", "no_model"],
+)
+def test_enhance_section_rejects_what_upstream_would(tmp_path: Path, enhance: str) -> None:
+    with pytest.raises(ValidationError):
+        load_runtime_config(write(tmp_path, _with_enhance(enhance)))
+
+
 SUBTITLE = """  subtitle:
     url: https://asr.test/api/v1/services/aigc/multimodal-generation/generation
 """
@@ -484,6 +555,53 @@ def test_media_generation_without_a_bucket_fails_loudly(
     _media_env(monkeypatch)
     monkeypatch.delenv("OSS_BUCKET")
     with pytest.raises(RuntimeError, match="OSS_BUCKET"):
+        resolve_settings(config)
+
+
+def _bucket_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in MEDIA_ENV.items():
+        if name.startswith("OSS_"):
+            monkeypatch.setenv(name, value)
+
+
+def test_whole_film_render_is_off_until_its_url_is_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+    assert resolve_settings(config).whole_film_render is None
+
+    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", " http://render:8080/ ")
+    render = resolve_settings(config).whole_film_render
+    assert render is not None and render.url == "http://render:8080"
+
+
+def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """每次导出是一条生成记录，成片上传进桶：没有桶、没开媒体生成都导不出来，报出缺的那一样。"""
+
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", "http://render:8080")
+    with pytest.raises(RuntimeError, match="OSS_BUCKET") as neither:
+        resolve_settings(config)
+    assert "media_generation" in str(neither.value)
+
+    _bucket_env(monkeypatch)
+    with pytest.raises(RuntimeError, match="media_generation") as no_media:
+        resolve_settings(config)
+    assert "OSS_BUCKET" not in str(no_media.value)
+
+
+@pytest.mark.parametrize("bad", ["render:8080", "ftp://render", "http://"])
+def test_whole_film_render_url_must_be_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", bad)
+    with pytest.raises(ValidationError, match="WHOLE_FILM_RENDER_URL"):
         resolve_settings(config)
 
 

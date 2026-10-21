@@ -9,7 +9,7 @@ const FIRST_FRAME = `${OSS_VIDEO}?x-oss-process=video/snapshot,t_0,f_jpg,w_256,h
 const preview = (imageUrl: string | null) => ({ title: '夏季上新', requirement: '', imageUrl })
 
 describe('auditCoverUrl', () => {
-  it('有商品图就用商品图的缩略图，成片首帧让位', () => {
+  it('有商品图就用商品图的缩略图，素材片首帧让位', () => {
     expect(
       auditCoverUrl({ taskId: 't1', latestMasterUrl: OSS_VIDEO }, preview(OSS_IMAGE), 'ready'),
     ).toBe(PRODUCT_THUMB)
@@ -22,7 +22,7 @@ describe('auditCoverUrl', () => {
     )
   })
 
-  it('需求单没有商品图、或没挂需求单时，用最新成片的首帧', () => {
+  it('需求单没有商品图、或没挂需求单时，用最新素材片的首帧', () => {
     expect(
       auditCoverUrl({ taskId: 't1', latestMasterUrl: OSS_VIDEO }, preview(null), 'ready'),
     ).toBe(FIRST_FRAME)
@@ -31,7 +31,7 @@ describe('auditCoverUrl', () => {
     )
   })
 
-  it('成片不是 OSS 地址截不出首帧，按没有封面算', () => {
+  it('素材片不是 OSS 地址截不出首帧，按没有封面算', () => {
     expect(
       auditCoverUrl(
         { taskId: null, latestMasterUrl: 'https://example.com/cut.webm' },
@@ -41,7 +41,7 @@ describe('auditCoverUrl', () => {
     ).toBeNull()
   })
 
-  it('既没有商品图也没有成片时没有封面', () => {
+  it('既没有商品图也没有素材片时没有封面', () => {
     expect(auditCoverUrl({ taskId: null, latestMasterUrl: null }, undefined, 'ready')).toBeNull()
     expect(
       auditCoverUrl({ taskId: 't1', latestMasterUrl: null }, preview(null), 'ready'),
@@ -55,7 +55,7 @@ describe('auditCoverUrl', () => {
   })
 
   it.each(['error', 'forbidden', 'ready'] as const)(
-    '需求单预览读不到（%s）时退到成片首帧',
+    '需求单预览读不到（%s）时退到素材片首帧',
     (state) => {
       expect(auditCoverUrl({ taskId: 't1', latestMasterUrl: OSS_VIDEO }, undefined, state)).toBe(
         FIRST_FRAME,

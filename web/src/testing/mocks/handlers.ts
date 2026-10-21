@@ -8,8 +8,9 @@ import {
   type zTaskOut,
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
+import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
-import { brandTemplateHandlers, resetMockBrandTemplates } from './brand-templates'
+import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
@@ -23,15 +24,12 @@ import {
   resetMockConversations,
   type MockConversation,
 } from './conversations'
-import { audioHandlers } from './audio'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
+import { wholeFilmHandlers } from './whole-film'
 import { workspaceHandlers } from './workspace'
-import { waitForSidebarHistoryPage } from './sidebar-history'
-
-// MSW handlers 由单测与 dev:mock 共用；普通 dev 不注册。响应字段以 contract/openapi.json 为准。
 
 export {
   addMockCollection,
@@ -46,7 +44,6 @@ export {
 
 export type MockUser = typeof mockAuthUser
 
-// 登录的是谁由登录接口或单测的 loginAs 决定：governor 是治理者，其余用户名都是测试用户；页面刷新和单测清理后重置为未登录。
 let currentUser: MockUser | null = null
 
 /**
@@ -58,23 +55,19 @@ export const loginAs = (user: MockUser, overrides: Partial<MockUser> = {}): Mock
   return currentUser
 }
 
-/** 列表按属主过滤时用的身份；没登录就调列表接口的 API 测试按测试用户算。 */
 const activeUserId = () => (currentUser ?? mockAuthUser).id
 
 export const resetMockSession = () => {
   currentUser = null
   resetMockUploads()
-  resetMockBrandTemplates()
 }
 
 const SIDEBAR_PER_COLLECTION = 10
 const SIDEBAR_UNGROUPED = 20
 
-/** 登录人自己还活着的对话；工作台接口只列这些，墓碑只进审计。 */
 const mine = () =>
   mockConversations.filter((item) => item.ownerUserId === activeUserId() && item.deletedAt === null)
 
-/** done / open 看 completedAt，running 含待审批；计数用相同筛选。 */
 const inState = (item: MockConversation, state: string | null) => {
   if (state === 'running') return item.activity.busy
   if (state === 'done') return item.completedAt !== null
@@ -84,7 +77,6 @@ const inState = (item: MockConversation, state: string | null) => {
 
 type MockTask = z.output<typeof zTaskOut>
 
-/** 模拟后端在请求默认值补齐后输出完整的 inputs。 */
 const completeTaskInputs = (inputs: z.output<typeof zTaskCreateIn>['inputs']) =>
   zTaskInputsOutput.parse({
     ...inputs,
@@ -149,7 +141,6 @@ export const resetMockUsers = () => {
   mockUsers.length = 0
 }
 
-/** 删没删、属主、需求单与时间先切出范围，state 再在范围内挑；runningTotal 只看范围。时间窗作用在 createdAt 上。 */
 const auditScope = (query: URLSearchParams) => {
   const deleted = query.get('deleted') ?? 'live'
   const owner = query.get('ownerUserId')
@@ -167,7 +158,6 @@ const auditScope = (query: URLSearchParams) => {
 }
 
 export const handlers = [
-  // /users/me 是会话事实源，未登录时返回 401。
   http.get('*/api/users/me', () =>
     currentUser
       ? HttpResponse.json({ user: currentUser })
@@ -189,7 +179,6 @@ export const handlers = [
   // mock 不启用 SSO，以 404 表示路由未挂载。
   http.get('*/api/auth/sso/authorize', () => new HttpResponse(null, { status: 404 })),
 
-  // 两个登录账号在前，其余按加入顺序，按名册接口分页。
   http.get('*/api/users', ({ request }) => {
     const query = new URL(request.url).searchParams
     const page = Number(query.get('page') ?? 1)
@@ -203,7 +192,6 @@ export const handlers = [
     })
   }),
 
-  // 治理者的全平台列表：两个总数不随翻页变，state 用与侧栏同一口径；每行另带最新一条成片的地址。
   http.get('*/api/conversations/audit', ({ request }) => {
     const query = new URL(request.url).searchParams
     const scoped = auditScope(query)
@@ -226,8 +214,6 @@ export const handlers = [
     }),
   ),
 
-  // 侧栏、搜索与分页都只列自己的对话，治理者也一样（合同 §6）；全平台的走 audit。
-  // 模拟 ILIKE 的大小写不敏感标题搜索。
   http.get('*/api/conversations/search', ({ request }) => {
     const keyword = (new URL(request.url).searchParams.get('q') ?? '').trim().toLowerCase()
     const items = mine()
@@ -289,8 +275,7 @@ export const handlers = [
     return HttpResponse.json(pageByCreated(rows, query.get('cursor'), SIDEBAR_UNGROUPED))
   }),
 
-  http.get('*/api/conversations/by-collection/:collectionId', async ({ params, request }) => {
-    await waitForSidebarHistoryPage(String(params['collectionId']))
+  http.get('*/api/conversations/by-collection/:collectionId', ({ params, request }) => {
     const query = new URL(request.url).searchParams
     const rows = mine().filter(
       (item) => item.collectionId === params['collectionId'] && inState(item, query.get('state')),
@@ -337,7 +322,6 @@ export const handlers = [
     return HttpResponse.json({ conversation })
   }),
 
-  // 单行读取：属主读自己活着的（合同 §6）；mock 只有一个登录用户，墓碑与别人的一律 404。
   http.get('*/api/conversations/:conversationId', ({ params }) => {
     const conversation = liveMockConversation(String(params['conversationId']))
     if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
@@ -470,21 +454,20 @@ export const handlers = [
   }),
 
   ...uploadHandlers,
-  ...audioHandlers,
 
-  // 埋点只收不回；不校验主语，夹具里的记录 id 不都是 UUID。
   http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
 
   ...workspaceHandlers,
   ...filmHandlers,
+  ...wholeFilmHandlers,
+  ...enhancementHandlers(activeUserId),
+  ...audioHandlers,
 
   ...transcriptHandlers,
 
   ...auditHandlers((taskId) => mockTasks.find((task) => task.id === taskId)?.title ?? null),
 
   ...libraryHandlers,
-
-  ...brandTemplateHandlers(() => (currentUser ?? mockAuthUser).permissions),
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
 ]

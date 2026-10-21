@@ -1,3 +1,4 @@
+import { http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
@@ -14,10 +15,14 @@ import { seedMockFilm } from './film'
 import { backgroundShowcase, multipleBackgroundShowcase } from './background-showcase'
 import { toolShowcase } from './tool-showcase'
 import { markMockAwaitingApproval, markMockJustFinished, markMockShowcase } from './transcript'
-import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
+import {
+  seedMockMusic,
+  seedMockReplicaWorkspace,
+  seedMockSubtitles,
+  seedMockWorkspace,
+} from './workspace'
 import { seedSidebarHistory } from './sidebar-history'
 
-// 演示数据仅在浏览器侧初始化，避免影响每例清空存储的单测。
 const DEMO_CONVERSATIONS = [
   '夜景延时素材生成',
   '夏季亚麻系列广告',
@@ -26,7 +31,6 @@ const DEMO_CONVERSATIONS = [
   '产品宣传片 · 分镜生成中',
 ]
 
-// id 固定：刷新页面后还是同一段对话，视频编辑器存在浏览器里的草稿对得上。
 const seeded = DEMO_CONVERSATIONS.map((title, index) =>
   addMockConversation(
     title,
@@ -36,7 +40,6 @@ const seeded = DEMO_CONVERSATIONS.map((title, index) =>
   ),
 )
 
-// 末个会话的 transcript 和侧栏同时设为等待审批。
 const awaiting = seeded.at(-1)
 if (awaiting !== undefined) {
   awaiting.activity = {
@@ -48,7 +51,6 @@ if (awaiting !== undefined) {
   markMockAwaitingApproval(awaiting.id)
 }
 
-// 连接后模拟运行结束并更新 lastRunId，用于验证已查看会话的未读标记。
 const unseen = seeded[3]
 if (unseen !== undefined) {
   unseen.activity = {
@@ -60,50 +62,41 @@ if (unseen !== undefined) {
   markMockJustFinished(unseen)
 }
 
-// 首个演示会话提供 video_shot.json，供浏览器工作台演示；它的出片记录里有一条还在跑，侧栏行上同步画出来。
 const withShots = seeded[0]
 if (withShots !== undefined) {
   seedMockWorkspace(withShots.id, { httpFrames: true })
+  seedMockMusic(withShots.id)
+  seedMockSubtitles(withShots.id)
   withShots.activity = { ...withShots.activity, videoGeneration: 'running' }
 }
 
-// 「亚麻衬衫二剪」没有工作区，只在侧栏演示「出片还在排队」的角标；放在未分组区，一打开就看得见。
 const queuedVideo = seeded[3]
 if (queuedVideo !== undefined) {
   queuedVideo.activity = { ...queuedVideo.activity, videoGeneration: 'queued' }
 }
 
-// 独立的无图草稿用于演示先编辑正文、再补充第一张图片。
 const withoutImages = addMockConversation('无图分镜草稿')
 seedMockWorkspace(withoutImages.id, { withoutImages: true })
 
-// 工具过程展示：几轮历史摆出工具行的各种状态（失败、被拒绝、中断、整轮失败），带一份工作区可点开文件。
 const toolShowcaseConversation = addMockConversation(toolShowcase.title)
 seedMockWorkspace(toolShowcaseConversation.id, { httpFrames: true })
 markMockShowcase(toolShowcaseConversation.id, toolShowcase)
 
-// 后台任务展示：完成与失败通知、「已转入后台」的原卡、被停下后中断的原卡，末轮一个拆解在跑；另一段同时跑两个。
 for (const showcase of [backgroundShowcase, multipleBackgroundShowcase]) {
   markMockShowcase(addMockConversation(showcase.title).id, showcase)
 }
 
-// AI 导演的工程：制作页演示改字与读出镜头组。
 const film = addMockConversation('穿搭种草 · 12 秒')
-seedMockFilm(film.id, {
-  musicDescription: '轻快的电子乐，鼓点渐入，副歌推到高潮，整体明亮有活力',
-})
+seedMockFilm(film.id)
 
 const replica = addMockConversation('乐福鞋 · 完全复刻')
 seedMockReplicaWorkspace(replica.id)
 
-// 两个会话归入示例合集，其余保持未分组。
 const linen = addMockCollection('夏季亚麻系列')
 seeded.slice(1, 3).forEach((conversation) => {
   conversation.collectionId = linen.id
 })
 
-// 治理者自己的对话：用 governor 登录时侧栏不至于是空的，分镜工作台与在途角标也能演示；
-// 「全部对话」里连同别人的一起看。
 const governorShots = addMockConversation(
   '治理者 · 秋冬企划样片',
   new Date(Date.now() - 30 * 60_000).toISOString(),
@@ -119,7 +112,6 @@ const governorDone = addMockConversation(
 governorDone.activity = { ...governorDone.activity, lastTurnReason: 'completed' }
 governorDone.lastRunId = 'run-governor-1'
 
-// 别人的对话：测试用户的侧栏看不到，用 governor 登录后在「全部对话」里看，点进去是只读。
 const wang = addMockUser('小王')
 const wangRunning = addMockConversation('小王 · 秋季新品短片', undefined, wang.id)
 wangRunning.activity = {
@@ -141,7 +133,6 @@ wangDone.activity = {
 }
 wangDone.lastRunId = 'run-wang-1'
 
-// 「全部对话」里这几段有自己的成片，其余没有、成片地址为 null。
 mockLatestMasterUrls.set(replica.id, sampleVideoUrl)
 mockLatestMasterUrls.set(governorDone.id, sampleWideUrl)
 mockLatestMasterUrls.set(wangDone.id, sampleVideoUrl)
@@ -162,3 +153,31 @@ if (window.localStorage.getItem('cue.mock.sidebar-large-collection') === 'true')
 }
 
 export const worker = setupWorker(...handlers)
+
+const pausedResponses = new Map<string, () => void>()
+
+/**
+ * 浏览器用例暂停某个路径的 mock 响应：暂停后到达的请求照常发出，响应等 `release` 后再交给原有 handler。
+ * 挂在 `window.cueMockResponses` 上，用例经 `page.evaluate` 调用。
+ */
+const mockResponseGate = {
+  pause(pathname: string) {
+    if (pausedResponses.has(pathname)) return
+    let release = () => {}
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    pausedResponses.set(pathname, release)
+    // resolver 不返回响应时，MSW 接着交给后面匹配的 handler。
+    worker.use(
+      http.all(`*${pathname}`, async () => {
+        await released
+      }),
+    )
+  },
+  release(pathname: string) {
+    pausedResponses.get(pathname)?.()
+    pausedResponses.delete(pathname)
+  },
+}
+Object.assign(window, { cueMockResponses: mockResponseGate })

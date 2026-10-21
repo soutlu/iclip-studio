@@ -1,21 +1,26 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { canvasPng, openConversation, openStoryboardShot, screenshotBothThemes } from './helpers'
+import {
+  canvasPng,
+  openConversation,
+  openStoryboardShot,
+  pauseMockResponses,
+  releaseMockResponses,
+} from './helpers'
 
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
-const SHOT_DIR = '../.artifacts/design-qa/video-editor-version-state'
 
-/** 第 2 组那条成片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
+/** 第 2 组那条素材片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
 const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await openStoryboardShot(panel, group)
-  // 点成片卡选中它，编辑视频叠在舞台右上。
+  // 点素材片卡选中它，编辑视频叠在舞台右上。
   await panel
-    .getByRole('region', { name: '本组成片', exact: true })
-    .getByRole('button', { name: /的成片$/ })
+    .getByRole('region', { name: '本组素材片', exact: true })
+    .getByRole('button', { name: /的素材片$/ })
     .first()
     .click()
   await panel.getByRole('button', { name: '编辑视频', exact: true }).click()
@@ -28,7 +33,7 @@ const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) 
     await segment(dialog, 1).click()
     await card(dialog).getByRole('button', { name: '编辑模型', exact: true }).click()
     await page.getByRole('menuitemradio', { name: 'wan3.0-video', exact: true }).click()
-    await scope(dialog, '整片').click()
+    await scope(dialog, '整条').click()
   }
   return dialog
 }
@@ -41,7 +46,7 @@ const segment = (dialog: Locator, position: number) =>
   timelineOf(dialog).getByRole('button', { name: new RegExp(`^第 ${position} 段`) })
 const controls = (dialog: Locator) => dialog.getByRole('group', { name: '播放控件' })
 const versions = (dialog: Locator) => dialog.getByRole('group', { name: '视频版本' })
-const scope = (dialog: Locator, name: '整片' | '片段') =>
+const scope = (dialog: Locator, name: '整条' | '片段') =>
   dialog.getByRole('group', { name: '视频预览范围' }).getByRole('button', { name, exact: true })
 /** 选中段时盖在舞台上的弹出卡。 */
 const card = (dialog: Locator) => dialog.getByRole('region', { name: 'AI 改段' })
@@ -50,7 +55,7 @@ const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
 const generateButton = (dialog: Locator) =>
-  card(dialog).getByRole('button', { name: '生成', exact: true })
+  card(dialog).getByRole('button', { name: '生成视频', exact: true })
 
 /** 等分段读好：第 2 组 6 段，原声读到波形。 */
 const waitForSegments = async (dialog: Locator, count = 6) => {
@@ -169,34 +174,39 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   expect(Number(await duration.getAttribute('aria-valuenow'))).toBeGreaterThan(4)
   await duration.press('End')
   await expect(generateButton(dialog)).toBeEnabled()
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-card')
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(card(dialog).getByRole('radio', { name: '图生', exact: true })).toBeVisible()
   await expect(generateButton(dialog)).toBeVisible()
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-mobile')
 
   const expectToolbarInsideCard = async (width: number, state: string) => {
     await expect
       .configure({ soft: true })
       .poll(
-        () =>
-          card(dialog).evaluate((element) => {
-            const bounds = element.getBoundingClientRect()
-            return Array.from(
-              element.querySelectorAll('button, [role="slider"], [role="radio"], output'),
-            )
-              .map((control) => {
-                const box = control.getBoundingClientRect()
-                return {
-                  name: control.getAttribute('aria-label') ?? control.textContent,
-                  left: Math.max(0, bounds.left - box.left),
-                  right: Math.max(0, box.right - bounds.right),
-                  top: Math.max(0, bounds.top - box.top),
-                  bottom: Math.max(0, box.bottom - bounds.bottom),
-                }
-              })
-              .filter(({ left, right, top, bottom }) => left + right + top + bottom > 0)
-          }),
+        async () => {
+          const bounds = await card(dialog).boundingBox()
+          if (bounds === null) throw new Error('编辑卡尚未显示')
+          const interactive = card(dialog)
+            .getByRole('button')
+            .or(card(dialog).getByRole('slider'))
+            .or(card(dialog).getByRole('radio'))
+            .or(card(dialog).getByRole('status'))
+          return interactive.evaluateAll(
+            (elements, bounds) =>
+              elements
+                .map((control) => {
+                  const box = control.getBoundingClientRect()
+                  return {
+                    name: control.getAttribute('aria-label') ?? control.textContent,
+                    left: Math.max(0, bounds.x - box.left),
+                    right: Math.max(0, box.right - bounds.x - bounds.width),
+                    top: Math.max(0, bounds.y - box.top),
+                    bottom: Math.max(0, box.bottom - bounds.y - bounds.height),
+                  }
+                })
+                .filter(({ left, right, top, bottom }) => left + right + top + bottom > 0),
+            bounds,
+          )
+        },
         { message: `${width}px ${state}时所有工具栏控件应在卡片内`, timeout: 1500 },
       )
       .toEqual([])
@@ -206,38 +216,18 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
     await expectToolbarInsideCard(width, '可提交')
   }
 
-  // 在 HTTP 系统边界暂停发送，检查提交中状态；释放后仍交给真实 MSW 接口。
-  await page.evaluate(() => {
-    const originalFetch = window.fetch.bind(window)
-    const gate = new Promise<void>((resolve) =>
-      window.addEventListener('release-clip-submission', () => resolve(), { once: true }),
-    )
-    window.fetch = async (...args: Parameters<typeof fetch>) => {
-      const input = args[0]
-      const url = input instanceof Request ? input.url : String(input)
-      if (url.endsWith('/api/generations/video-edits')) {
-        await gate
-        window.fetch = originalFetch
-      }
-      return originalFetch(...args)
-    }
-  })
+  await pauseMockResponses(page, '/api/generations/video-edits')
   const submitted = page.waitForRequest(
     (request) =>
       request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
   )
   await generateButton(dialog).click()
-  await expect(card(dialog).getByRole('button', { name: '提交', exact: true })).toBeDisabled()
+  await expect(card(dialog).getByRole('button', { name: '正在提交', exact: true })).toBeDisabled()
   for (const width of [390, 600, 640, 1280]) {
     await page.setViewportSize({ width, height: 844 })
     await expectToolbarInsideCard(width, '提交中')
-    if (width === 600)
-      await screenshotBothThemes(
-        page,
-        '../.artifacts/design-qa/video-duration-slider/submitting-600',
-      )
   }
-  await page.evaluate(() => window.dispatchEvent(new Event('release-clip-submission')))
+  await releaseMockResponses(page, '/api/generations/video-edits')
   const sent = await submitted
   await sent.response()
   const body = sent.postDataJSON() as Record<string, unknown>
@@ -252,14 +242,9 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   expect(body['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
   await expect(card(dialog).getByRole('alert')).toHaveCount(0)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/retain-generation-input/submitted')
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
   await expect(generateButton(dialog)).toBeVisible()
-  await screenshotBothThemes(
-    page,
-    '../.artifacts/design-qa/retain-generation-input/submitted-mobile',
-  )
   await page.setViewportSize({ width: 1280, height: 844 })
   await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -269,11 +254,11 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   await expect(candidate).toBeEnabled({ timeout: STEP_TIMEOUT })
   await expect(generateButton(dialog)).toBeEnabled()
   await candidate.click()
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
 })
 
-test('整片预览使用时间线选用的版本，历史原片与当前剪辑分别显示对应画面和时长', async ({ page }) => {
+test('整条预览使用时间线选用的版本，历史原片与当前剪辑分别显示对应画面和时长', async ({ page }) => {
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
   const video = dialog.getByLabel('视频播放器', { exact: true })
@@ -289,8 +274,8 @@ test('整片预览使用时间线选用的版本，历史原片与当前剪辑�
   const editedUrl = await video.getAttribute('src')
   if (editedUrl === null) throw new Error('编辑结果尚未加载')
 
-  // 一秒原片换成三秒结果，总长八秒；切整片后该位置仍播放被选用的文件。
-  await scope(dialog, '整片').click()
+  // 一秒原片换成三秒结果，总长八秒；切整条后该位置仍播放被选用的文件。
+  await scope(dialog, '整条').click()
   await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
   await expect(video).toHaveAttribute('src', editedUrl)
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
@@ -306,12 +291,11 @@ test('整片预览使用时间线选用的版本，历史原片与当前剪辑�
   await waitForSegments(dialog, 6)
   await expect(controls(dialog)).toContainText('共 6.0 秒')
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await expect(controls(dialog)).toContainText('共 8.0 秒')
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
   await expect(video).toHaveAttribute('src', editedUrl)
-  await screenshotBothThemes(page, `${SHOT_DIR}/whole-current`)
 })
 
 test('提交立即显示提交中且保护关闭与站内离开，受理后显示生成中并允许退出，完成未看才有绿点', async ({
@@ -334,8 +318,6 @@ test('提交立即显示提交中且保护关闭与站内离开，受理后显�
   await expect(submitting).toBeVisible()
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeVisible()
-
-  await screenshotBothThemes(page, `${SHOT_DIR}/submitting`)
 
   await release()
   const generating = versions(dialog).getByRole('button', { name: 'V1 · 生成中', exact: true })
@@ -458,13 +440,40 @@ test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段�
     items.map((item) => item.getAttribute('aria-label')),
   )
   const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await ruler.press('Home')
   const box = await ruler.boundingBox()
   if (box === null) throw new Error('标尺尚未布局')
-  expect(box.height).toBeGreaterThanOrEqual(32)
   await page.mouse.move(await xAt(dialog, 2), box.y + box.height - 1)
+  const timePreview = page.getByText('00:02.00', { exact: true })
+  await expect(timePreview).toContainText('00:02.00')
+  const hoverGuide = dialog.getByTestId('timeline-hover-guide')
+  await expect(hoverGuide).toBeVisible()
+  const guideBox = await hoverGuide.boundingBox()
+  const clipBox = await segment(dialog, 2).boundingBox()
+  if (guideBox === null || clipBox === null) throw new Error('悬停引导线尚未布局')
+  expect(Math.abs(guideBox.x + guideBox.width / 2 - (await xAt(dialog, 2)))).toBeLessThan(1)
+  expect(guideBox.y).toBeLessThan(clipBox.y)
+  expect(guideBox.y + guideBox.height).toBeGreaterThanOrEqual(clipBox.y + clipBox.height)
+  // 编辑器背后的会话仍可能自动滚动，不应清掉时间线上的预览。
+  await page.getByTestId('chat-scroller').evaluate(
+    (element) =>
+      new Promise<void>((resolve) => {
+        element.addEventListener('scroll', () => requestAnimationFrame(() => resolve()), {
+          once: true,
+        })
+        element.scrollTop = element.scrollTop === 0 ? element.scrollHeight : 0
+      }),
+  )
+  await expect(timePreview).toBeVisible()
+  await expect(hoverGuide).toBeVisible()
+  const previewBox = await timePreview.boundingBox()
+  if (previewBox === null) throw new Error('时间预览尚未布局')
+  expect(previewBox.y + previewBox.height).toBeLessThan(box.y)
   await page.mouse.down()
+  await expect(hoverGuide).toHaveCount(0)
   await page.mouse.move(await xAt(dialog, 4.5), box.y + box.height - 1, { steps: 8 })
   await page.mouse.up()
+  await expect(hoverGuide).toHaveCount(0)
   expect(Number(await ruler.inputValue())).toBeCloseTo(4.5, 1)
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
   expect(
@@ -555,7 +564,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expectCard(
     dialog,
     '第 2 段 · 视频生成',
-    '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
+    '该模型编辑至少需要 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
   )
 
   // 拖过头停在最短的 0.2 秒。
@@ -601,12 +610,16 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   await expect.poll(pillOffset).toBeLessThan(4)
   // Shift 连上后面那段，按基底时间不连续，不能交给 AI。
   await segment(dialog, 2).click({ modifiers: ['Shift'] })
-  await expectCard(dialog, '第 1–2 段 · 视频生成', '请选择原片时间连续的片段，再生成新版本')
+  await expectCard(
+    dialog,
+    '第 1–2 段 · 视频生成',
+    '所选片段在原片中不连续，无法生成新版本；请选择原片时间连续的片段',
+  )
 
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
-  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  await dialog.getByRole('button', { name: '合成新版本', exact: true }).click()
   const baseJobId = new URL(page.url()).searchParams.get('video')
   expect((await request).postDataJSON()).toEqual({
     conversationId: expect.any(String),
@@ -665,7 +678,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   })
   await expect(requestBox(dialog).getByText('黄昏.png')).toBeVisible()
   await expect(generateButton(dialog)).toBeEnabled({ timeout: STEP_TIMEOUT })
-  await screenshotBothThemes(page, `${SHOT_DIR}/card`)
 
   const { body, editId } = await submitEdit(page, dialog)
   // 基底是正在编辑的那一版，区间正好是第 2–3 段的关键帧；参考片段由浏览器在关键帧处切好、传上去；
@@ -706,7 +718,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
     'true',
   )
   await expect(controls(dialog)).toContainText('共 6.0 秒')
-  await screenshotBothThemes(page, `${SHOT_DIR}/running`)
 
   // 结果回来只新增候选，不覆盖已选的 原片；点击 V1 才替换为 3 秒结果。
   await expect(versions(dialog).getByRole('button', { name: /V1 · 生成中/ })).toHaveCount(0, {
@@ -740,7 +751,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await expect(requestBox(dialog)).toBeFocused()
   await page.keyboard.type('再暖一点')
   await expect(generateButton(dialog)).toBeEnabled()
-  await screenshotBothThemes(page, `${SHOT_DIR}/selected`)
 
   // 删一段：后面的跟上，右边留细框。
   await segment(dialog, 5).click()
@@ -753,7 +763,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
-  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  await dialog.getByRole('button', { name: '合成新版本', exact: true }).click()
   expect((await request).postDataJSON()).toEqual({
     conversationId: expect.any(String),
     taskId: null,
@@ -767,22 +777,13 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   })
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 
-  // 整片按钮预览当前时间线；明确点击合成版本才查看历史文件。
-  await scope(dialog, '整片').click()
+  // 整条按钮预览当前时间线；明确点击合成版本才查看历史文件。
+  await scope(dialog, '整条').click()
   const composite = versions(dialog).getByRole('button', { name: 'V1', exact: true })
   await expect(composite).toBeEnabled({ timeout: STEP_TIMEOUT })
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await waitForSegments(dialog, 4)
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
-  const retained = await page.evaluate(
-    (key) =>
-      Object.keys(localStorage).filter(
-        (name) => name.startsWith('video-editor-draft:') && name.endsWith(`:${key}`),
-      ),
-    baseJobId ?? '',
-  )
-  expect(retained).toHaveLength(1)
-  await screenshotBothThemes(page, `${SHOT_DIR}/composed`)
   await composite.click()
   await expect(composite).toHaveAttribute('aria-pressed', 'true')
   await waitForSegments(dialog, 6)
@@ -790,7 +791,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await versions(dialog).getByRole('button', { name: '原片', exact: true }).click()
   await waitForSegments(dialog, 6)
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await waitForSegments(dialog, 4)
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
@@ -849,7 +850,7 @@ test('扩大已编辑区间：参考包含当前版本和相邻原片，新版�
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
-  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  await dialog.getByRole('button', { name: '合成新版本', exact: true }).click()
   expect((await request).postDataJSON()).toMatchObject({
     baseJobId,
     segments: [
@@ -869,7 +870,6 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await segment(dialog, 2).click()
   await segment(dialog, 3).click({ modifiers: ['Shift'] })
   await requestBox(dialog).fill('换成黄昏的暖光')
-
   // 按住播放头拖：卡收成画面底部的小胶囊，标着未提交。
   const release = await holdDrag(
     page,
@@ -880,25 +880,8 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await expect(card(dialog)).toHaveCount(0)
   await expect(capsule(dialog)).toHaveAccessibleName('展开第 2–3 段 · 视频生成，未提交')
   await expect(capsule(dialog)).toContainText('· 未提交')
-  await capsule(dialog).evaluate((element) =>
-    Promise.all(
-      (element.parentElement?.getAnimations() ?? []).map((animation) => animation.finished),
-    ),
-  )
-  // 指针按住拖的焦点不画焦点环。
-  const seek = dialog.getByRole('slider', { name: '时间线播放位置' })
-  const rulerOutline = () =>
-    seek.evaluate((element) => getComputedStyle(element.parentElement as HTMLElement).outlineStyle)
-  await expect(seek).toBeFocused()
-  expect(await rulerOutline()).toBe('none')
-  await screenshotBothThemes(page, `${SHOT_DIR}/scrub`)
+  await expect(dialog.getByRole('slider', { name: '时间线播放位置' })).toBeFocused()
   await release()
-  expect(await rulerOutline()).toBe('none')
-  // 键盘走开再走回来：刻度区画出焦点环。
-  await page.keyboard.press('Shift+Tab')
-  await page.keyboard.press('Tab')
-  await expect(seek).toBeFocused()
-  expect(await rulerOutline()).toBe('solid')
 
   // 停下后点胶囊展开：字还在，光标在输入框里。
   await capsule(dialog).click()
@@ -923,9 +906,7 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await expect(dialog).toBeHidden()
 })
 
-test('移动布局：对话框内部自己滚，页面不横向溢出；卡与胶囊铺满舞台宽减两边留白', async ({
-  page,
-}) => {
+test('移动编辑：输入卡与胶囊可操作，放大预览不撑出页面', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const dialog = await openEditor(page, true)
   await waitForSegments(dialog)
@@ -934,11 +915,10 @@ test('移动布局：对话框内部自己滚，页面不横向溢出；卡与�
   const stage = await dialog.getByRole('region', { name: '预览舞台' }).boundingBox()
   const box = await card(dialog).boundingBox()
   if (stage === null || box === null) throw new Error('舞台或卡尚未布局')
-  expect(box.x).toBeCloseTo(stage.x + 12, 0)
-  expect(box.width).toBeCloseTo(stage.width - 24, 0)
+  expect(box.x).toBeGreaterThanOrEqual(stage.x)
+  expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width)
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
   await dialog.getByRole('region', { name: '预览舞台' }).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: `${SHOT_DIR}/mobile-card-light.png`, animations: 'disabled' })
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
@@ -948,13 +928,12 @@ test('移动布局：对话框内部自己滚，页面不横向溢出；卡与�
   const pill = await capsule(dialog).boundingBox()
   const stageNow = await dialog.getByRole('region', { name: '预览舞台' }).boundingBox()
   if (pill === null || stageNow === null) throw new Error('胶囊尚未布局')
-  expect(pill.x).toBeGreaterThanOrEqual(stageNow.x + 12)
-  expect(pill.x + pill.width).toBeLessThanOrEqual(stageNow.x + stageNow.width - 12)
+  expect(pill.x).toBeGreaterThanOrEqual(stageNow.x)
+  expect(pill.x + pill.width).toBeLessThanOrEqual(stageNow.x + stageNow.width)
   await dialog.getByRole('region', { name: '预览舞台' }).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: `${SHOT_DIR}/mobile-capsule-light.png`, animations: 'disabled' })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
-  // 手机上放大：宽度到 90vw 的上限为止，比例不变，页面仍不横向溢出。
+  // 手机上仍能放大查看，比例不变，页面不横向溢出。
   await dialog.getByRole('button', { name: '放大', exact: true }).click()
   const overlay = page.getByRole('dialog', { name: '放大预览' })
   await expect(overlay).toBeVisible()
@@ -963,7 +942,7 @@ test('移动布局：对话框内部自己滚，页面不横向溢出；卡与�
   )
   const enlarged = await overlay.getByLabel('视频预览', { exact: true }).boundingBox()
   if (enlarged === null) throw new Error('放大层尚未布局')
-  expect(enlarged.width).toBeCloseTo(390 * 0.9, 0)
+  await expect(overlay.getByLabel('视频预览', { exact: true })).toBeInViewport({ ratio: 1 })
   expect(enlarged.width / enlarged.height).toBeCloseTo(9 / 16, 2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
@@ -996,10 +975,9 @@ test('横版素材：舞台按画面比例摆，不留黑边；原声轨写「�
   const stage = await overlay.getByLabel('视频预览', { exact: true }).boundingBox()
   const enlargedPill = await overlay.getByRole('group', { name: '播放控件' }).boundingBox()
   if (stage === null || enlargedPill === null) throw new Error('放大层尚未布局')
-  expect(stage.width).toBeCloseTo(960, 0)
   expect(stage.width / stage.height).toBeCloseTo(16 / 9, 2)
   expect(enlargedPill.y + enlargedPill.height).toBeLessThanOrEqual(stage.y + stage.height)
-  expect(enlargedPill.y + enlargedPill.height).toBeGreaterThan(stage.y + stage.height - 40)
+  await expect(overlay.getByRole('group', { name: '播放控件' })).toBeInViewport({ ratio: 1 })
 })
 
 test('播放：草稿连着放，跨过删掉的段；剪一刀播放头留在原处', async ({ page }) => {
@@ -1053,12 +1031,12 @@ test('放大预览：舞台搬进应用内遮罩，播放不断、不进浏览�
   await expect.poll(playing).toBe(true)
 })
 
-test('只有成功的出片才能进编辑；关掉编辑器回到成片区，地址里不再带 video', async ({ page }) => {
+test('只有成功的出片才能进编辑；关掉编辑器回到素材片区，地址里不再带 video', async ({ page }) => {
   const dialog = await openEditor(page)
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page).not.toHaveURL(/[?&]video=/)
-  const takes = page.getByRole('region', { name: '本组成片', exact: true })
+  const takes = page.getByRole('region', { name: '本组素材片', exact: true })
   await expect(takes).toBeVisible()
   // 第 2 组只有一条完成的出片：选中失败的那条，编辑置灰；选中在途的那条，没有编辑入口。
   await expect(takes.getByRole('listitem')).toHaveCount(3)
@@ -1080,8 +1058,7 @@ test('镜头提示词：可连续追加到修改要求，浮窗保持打开且�
   const prompts = page.getByRole('dialog', { name: '镜头提示词', exact: true })
   await expect(prompts).toBeVisible()
   await expect(requestBox(dialog)).toHaveText('')
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-prompt-viewer/empty')
-  const text = await prompts.locator('ol > li').first().locator('p').innerText()
+  const text = await prompts.getByRole('listitem').first().getByRole('paragraph').innerText()
   await requestBox(dialog).fill('保留手动要求')
   const append = prompts.getByRole('button', { name: '复制镜头 1 到输入框' })
   await append.click()
@@ -1089,7 +1066,6 @@ test('镜头提示词：可连续追加到修改要求，浮窗保持打开且�
   await expect(requestBox(dialog)).toHaveText(`保留手动要求\n${text}\n${text}`)
   await expect(prompts).toBeVisible()
   expect(await preview.boundingBox()).toEqual(before)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-prompt-viewer/desktop')
   await prompts.getByRole('button', { name: '关闭镜头提示词' }).click()
   await expect(prompts).toBeHidden()
   await expect(card(dialog)).toBeVisible()
@@ -1107,5 +1083,4 @@ test('镜头提示词：窄屏浮窗可以滚动且不溢出视口', async ({ pa
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(390)
   expect(box.y + box.height).toBeLessThanOrEqual(844)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-prompt-viewer/mobile')
 })

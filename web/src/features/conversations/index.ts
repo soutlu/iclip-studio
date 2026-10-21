@@ -1,9 +1,4 @@
-export type {
-  Conversation,
-  ConversationListState,
-  ConversationPage,
-  SidebarCollection,
-} from './conversations.api'
+export type { Conversation, ConversationListState, SidebarCollection } from './conversations.api'
 export {
   auditDeletedSchema,
   DEFAULT_AUDIT_FILTERS,
@@ -22,11 +17,10 @@ export {
   refreshConversationLists,
   useStartConversation,
   useConversationAgents,
-  useConversationTask,
   useSetConversationMembership,
-  useSidebarPages,
   useSidebarTopology,
 } from './conversations.api'
+export { useSidebarCollectionPages, useSidebarPages, type SidebarPagesQuery } from './sidebar-pages'
 export { ConversationsRoute } from './components/conversations-route'
 export { ConversationDeleteDialog } from './components/conversation-delete-dialog'
 export { ConversationMembershipDialog } from './components/conversation-membership-dialog'

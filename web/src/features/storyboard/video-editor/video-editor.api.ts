@@ -1,8 +1,5 @@
-/** 视频编辑页的片段生成、合成与链查询。编辑模式在浏览器里准备参考视频，图生直接提交引用图片；
- * 合成给基底与片段列表，地址由服务端按各段出处填。 */
-
 import { useQuery, type QueryClient } from '@tanstack/react-query'
-import { apiFetch } from '@/shared/api/client'
+import { apiFetch, UserFacingError } from '@/shared/api/client'
 import type {
   VideoClipModelOut,
   VideoComposeIn,
@@ -17,34 +14,26 @@ import {
   type GenerationJob,
   type GenerationsPage,
 } from '../storyboard.api'
-import type { Clip } from './draft'
-import { clipDurationError } from './clip-generation'
-import type { SecondsRange } from './reference-clip'
-import type { PlaySegment } from './play-layout'
+import type { Clip, SecondsRange } from '../editing/clip'
+import type { PlaySegment } from '../editing/play-layout'
+import { clipGenerationBlock } from './clip-generation'
 
-/** 本对话全部编辑链的查询前缀，挂在本对话生成记录的前缀下；按根的键挂在它下面，一次失效全部。 */
 export const videoEditConversationKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'video-edits'] as const
 
 export const videoEditChainKey = (conversationId: string, rootJobId: string) =>
   [...videoEditConversationKey(conversationId), rootJobId] as const
 
-/** 一条根名下的衍生记录：编辑段与合成按原作号筛，翻到底全部拿回。缓存照列表接口的 `{ items }` 形状存。
- *
- * 只读第一页时更早的合成与草稿用着的编辑段会被挤掉：版本条少了那一版，草稿也会被当成读不出来而重建。
- * 根自己的原作号是空的，不在结果里，由打开编辑器的那条记录传进来。 */
 export const useVideoEditChain = (conversationId: string, rootJobId: string) =>
   useQuery({
     queryKey: videoEditChainKey(conversationId, rootJobId),
     queryFn: async ({ signal }): Promise<GenerationsPage> => ({
       items: await readAllGenerations({ conversationId, rootJobId }, signal, '读取编辑记录失败'),
     }),
-    // 编辑器按需打开，打开就重拉，不吃全局 30 秒的新鲜期。
     staleTime: 0,
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data?.items ?? []),
   })
 
-/** 刚受理的记录先放进这条链的缓存最前面，再失效本对话全部编辑链，等服务端结果覆盖。 */
 export const seedVideoEditJob = (
   queryClient: QueryClient,
   conversationId: string,
@@ -60,9 +49,7 @@ export const seedVideoEditJob = (
   void queryClient.invalidateQueries({ queryKey: videoEditConversationKey(conversationId) })
 }
 
-/** 编辑时请求里要多带的东西：正文前缀，或并进 `provider_options` 的键值。 */
-export /** 编辑器用哪个模型：选过的不在允许表里（配置改了）就退回默认；默认模型不支持编辑就取第一个支持的。 */
-const pickGenerationModel = (
+export const pickGenerationModel = (
   models: readonly string[],
   wanted: string | undefined,
   fallback: string | undefined,
@@ -71,11 +58,12 @@ const pickGenerationModel = (
 
 type Origin = {
   conversationId: string
-  /** 根记录归属的需求单，编辑段与合成跟着它。 */
   taskId: string | null
 }
 
-/** 图生直接提交正文图片；编辑先将当前选用素材拼接、上传。两者都绑定同一基底时间区间。 */
+type ClipGeneration =
+  { mode: 'image'; seconds: number } | { mode: 'edit'; referenceClips: readonly PlaySegment[] }
+
 export const submitClipGeneration = async (
   input: Origin & {
     sourceJobId: string
@@ -83,25 +71,25 @@ export const submitClipGeneration = async (
     model: VideoClipModelOut
     prompt: string
     referenceImageUrls: readonly string[]
-    generation:
-      { mode: 'image'; seconds: number } | { mode: 'edit'; referenceClips: readonly PlaySegment[] }
+    generation: ClipGeneration
   },
 ): Promise<GenerationJob> => {
   const { generation, model } = input
-  const seconds =
-    generation.mode === 'image'
-      ? generation.seconds
-      : generation.referenceClips.reduce((sum, clip) => sum + clip.end - clip.start, 0)
-  const durationError = clipDurationError(model, generation.mode, seconds)
-  if (durationError !== undefined) throw new Error(durationError)
+  const block = clipGenerationBlock(model, {
+    mode: generation.mode,
+    seconds:
+      generation.mode === 'image'
+        ? generation.seconds
+        : generation.referenceClips.reduce((sum, clip) => sum + clip.end - clip.start, 0),
+    referenceImageCount: input.referenceImageUrls.length,
+  })
+  if (block !== undefined) throw new UserFacingError(block.message)
   let referenceVideoUrls: string[] = []
   if (generation.mode === 'edit') {
     const { concatenateReferenceClips } = await import('./reference-clip')
     const file = await concatenateReferenceClips(generation.referenceClips)
     const { url } = await uploadMediaFile(file, 'video')
     referenceVideoUrls = [url]
-  } else {
-    if (input.referenceImageUrls.length === 0) throw new Error('请在描述中引用至少一张图片')
   }
   const body: VideoEditIn = {
     conversation_id: input.conversationId,
@@ -123,7 +111,6 @@ export const submitClipGeneration = async (
   return result.generation
 }
 
-/** 在基底那一版上按片段列表拼成新的一版：片段就是剪辑草稿。服务端核对各段出处、换成地址再拼。 */
 export const submitVideoComposite = async (
   input: Origin & { baseJobId: string; segments: readonly Clip[] },
 ): Promise<GenerationJob> => {

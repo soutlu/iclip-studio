@@ -16,6 +16,7 @@ from iclip.domains.conversations.repository import (
     ConversationRepository,
     PageCursor,
     StateFilter,
+    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import (
     SIDEBAR_COLLECTIONS,
@@ -149,6 +150,9 @@ def build(
         write_derived_file=_untouched,
         document_validators={},
         film=UnusedFilmPage(),
+        drafts=cast("WholeFilmDraftStore", object()),
+        draft_references=_untouched,
+        exports=None,
         generate_title=_untouched,
         announce_title=_untouched,
         activities_of=activities,

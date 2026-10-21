@@ -376,63 +376,6 @@ export type BrandFontUnicodeRange = {
 }
 
 /**
- * BrandFontUploadInstruction
- */
-export type BrandFontUploadInstruction = {
-  /**
-   * Expiresat
-   */
-  expiresAt: string
-  /**
-   * Headers
-   */
-  headers: {
-    [key: string]: string
-  }
-  /**
-   * Method
-   */
-  method?: 'PUT'
-  /**
-   * Url
-   */
-  url: string
-}
-
-/**
- * BrandFontUploadTicketOut
- */
-export type BrandFontUploadTicketOut = {
-  upload: BrandFontUploadInstruction
-  /**
-   * Uploadid
-   */
-  uploadId: string
-}
-
-/**
- * BrandTemplateCreateIn
- */
-export type BrandTemplateCreateIn = {
-  /**
-   * Brand
-   */
-  brand?: string | null
-  /**
-   * Kind
-   */
-  kind: 'intro' | 'outro'
-  /**
-   * Name
-   */
-  name: string
-  /**
-   * Uploadid
-   */
-  uploadId: string
-}
-
-/**
  * BrandTemplateOut
  */
 export type BrandTemplateOut = {
@@ -449,18 +392,6 @@ export type BrandTemplateOut = {
    */
   disabledAt: string | null
   /**
-   * Durationms
-   */
-  durationMs: number | null
-  /**
-   * Hasaudio
-   */
-  hasAudio: boolean | null
-  /**
-   * Height
-   */
-  height: number | null
-  /**
    * Id
    */
   id: string
@@ -476,10 +407,6 @@ export type BrandTemplateOut = {
    * Url
    */
   url: string
-  /**
-   * Width
-   */
-  width: number | null
 }
 
 /**
@@ -1045,8 +972,8 @@ export type ConversationTaskIn = {
  *
  * 审计列表里的一段对话。
  *
- * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
- * 没有成片为 null。
+ * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条素材片（出片或合成）的地址，不含分叉继承来的；
+ * 没有素材片为 null。
  */
 export type ConversationsAuditItemOut = {
   activity: ConversationActivityOut
@@ -1325,7 +1252,7 @@ export type ExecutionThresholdsOut = {
 /**
  * FaceOut
  *
- * 一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
+ * 一版素材片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
  */
 export type FaceOut = {
   /**
@@ -1898,7 +1825,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image' | 'subtitle' | 'audio'
+  kind: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film'
   /**
    * Metadata
    */
@@ -1908,7 +1835,7 @@ export type GenerationOut = {
   /**
    * Operation
    */
-  operation: 'generate' | 'compose' | 'cut' | 'upload'
+  operation: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance'
   /**
    * Outputurl
    */
@@ -2189,7 +2116,7 @@ export type LibraryVideoDetailOut = {
 /**
  * LibraryVideoOut
  *
- * 资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；
+ * 资料库的一张素材卡：一段对话的分镜，装着这段对话读得到的全部素材片（自己的加继承来的）；
  * 不挂对话的出片一条一张卡，同原作的合成跟着它。
  */
 export type LibraryVideoOut = {
@@ -2332,7 +2259,7 @@ export type MetricsOut = {
   /**
    * Deliveries
    *
-   * 成片件数：有成片的需求单各一件，加没挂需求单却有成片的对话各一件。
+   * 出片件数：有出片的需求单各一件，加没挂需求单却有出片的对话各一件。
    */
   readonly deliveries: number
   /**
@@ -2423,7 +2350,7 @@ export type MovingAverageOut = {
  *
  * 一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
  *
- * 件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+ * 件数类（出片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
  * 其余在整个窗里重算比率或平均。补窗规则见合同 §12。
  */
 export type MovingAveragesOut = {
@@ -2444,28 +2371,12 @@ export type MovingAveragesOut = {
 }
 
 /**
- * MusicGainPoint
- *
- * 音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。
- */
-export type MusicGainPoint = {
-  /**
-   * Atms
-   */
-  atMs: number
-  /**
-   * Gain
-   */
-  gain: number
-}
-
-/**
  * MusicIn
  *
  * 生成一段背景音乐的受理输入。
  *
  * ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
- * 一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+ * 一样，只是对话必填：背景音乐属于一段对话。``userName`` 只用来替人办事，音乐模型不收
  * 它，不进 ``request``。
  */
 export type MusicIn = {
@@ -2694,7 +2605,7 @@ export type Permission =
 /**
  * PersonOut
  *
- * 一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。
+ * 一个人在时间窗里的指标；出片数同一需求单只算一件，没挂需求单的有出片对话各算一件。
  */
 export type PersonOut = {
   metrics: MetricsOut
@@ -3458,7 +3369,7 @@ export type StyleMatchOut = {
 /**
  * SubtitleIn
  *
- * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ * 手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
  *
  * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
  * 服务不收它，不进 ``request``。
@@ -3491,7 +3402,8 @@ export type SubtitleIn = {
 /**
  * SubtitleSentence
  *
- * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ * 字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
+ * camelCase；早先的记录没有逐词时间，读出来是空。
  */
 export type SubtitleSentence = {
   /**
@@ -3510,12 +3422,40 @@ export type SubtitleSentence = {
    * Text
    */
   text: string
+  /**
+   * Words
+   */
+  words?: Array<SubtitleWord>
+}
+
+/**
+ * SubtitleWord
+ *
+ * 一句里的一个词：在视频里的起止（毫秒）、文字与紧跟其后的标点（没有就是空串）。
+ */
+export type SubtitleWord = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Punctuation
+   */
+  punctuation?: string
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
 }
 
 /**
  * TakeOut
  *
- * 一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
+ * 一版素材片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
  */
 export type TakeOut = {
   /**
@@ -4498,9 +4438,13 @@ export type TurnUsage = {
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认。
+ * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
  */
 export type UploadConfirmIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
   /**
    * Username
    */
@@ -4582,7 +4526,7 @@ export type UploadSignIn = {
  * 一次直传的许可：先拿到名字，再去传。
  *
  * ``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它
- * 叫什么」达成一致。确认时用它指这一次上传，确认后它就是那条上传记录的 id。
+ * 叫什么」达成一致。确认时用它指这一次上传。
  */
 export type UploadTicketOut = {
   upload: UploadInstruction
@@ -4972,6 +4916,61 @@ export type VideoEditIn = {
 }
 
 /**
+ * VideoEnhanceIn
+ *
+ * 给一条素材片或一条导出的成片做高清版的受理输入。
+ *
+ * ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。
+ */
+export type VideoEnhanceIn = {
+  /**
+   * Resolution
+   */
+  resolution: '720p' | '1080p'
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * VideoEnhanceTierOut
+ *
+ * 高清版的一档：清晰度与这一档最近的一条超分记录（谁提的都算），还没有为空。
+ */
+export type VideoEnhanceTierOut = {
+  job: GenerationOut | null
+  /**
+   * Mine
+   */
+  mine: boolean
+  /**
+   * Resolution
+   */
+  resolution: '720p' | '1080p'
+}
+
+/**
+ * VideoEnhancementsOut
+ *
+ * 一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。
+ */
+export type VideoEnhancementsOut = {
+  /**
+   * Downloadedjobids
+   */
+  downloadedJobIds: Array<string>
+  /**
+   * Tiers
+   */
+  tiers: Array<VideoEnhanceTierOut>
+}
+
+/**
  * VideoGenerationIn
  *
  * 一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。
@@ -5241,21 +5240,72 @@ export type VideoTypeCountOut = {
 }
 
 /**
- * WholeFilmBrandIn
- *
- * 整片的片头或片尾：用哪条品牌模板。
+ * WholeFilmCanvas
  */
-export type WholeFilmBrandIn = {
+export type WholeFilmCanvas = {
   /**
-   * Templateid
+   * Height
    */
-  templateId: string
+  height: number
+  /**
+   * Width
+   */
+  width: number
+}
+
+/**
+ * WholeFilmCaptionEdit
+ *
+ * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
+ */
+export type WholeFilmCaptionEdit = {
+  /**
+   * Sentenceindex
+   */
+  sentenceIndex: number
+  /**
+   * Subtitlejobid
+   */
+  subtitleJobId: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * WholeFilmCaptions
+ *
+ * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
+ * ``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。
+ */
+export type WholeFilmCaptions = {
+  /**
+   * Component
+   */
+  component: string
+  /**
+   * Edits
+   */
+  edits: Array<WholeFilmCaptionEdit>
+  /**
+   * Hidden
+   */
+  hidden?: boolean
+  /**
+   * X
+   */
+  x?: number
+  /**
+   * Y
+   */
+  y?: number
 }
 
 /**
  * WholeFilmCardOut
  *
- * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
+ * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。
  */
 export type WholeFilmCardOut = {
   /**
@@ -5300,129 +5350,274 @@ export type WholeFilmCardsOut = {
 }
 
 /**
- * WholeFilmIn
+ * WholeFilmComponentClip
  *
- * 一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
- * 总长是三者之和，片头片尾的时长受理时按模板定。
- *
- * 字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
- * 与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
- * ``request``。
+ * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
  */
-export type WholeFilmIn = {
+export type WholeFilmComponentClip = {
   /**
-   * Conversationid
+   * Component
    */
-  conversationId: string
+  component: string
   /**
-   * Fontid
+   * Duration
    */
-  fontId?: string | null
-  intro?: WholeFilmBrandIn | null
+  duration: number
   /**
-   * Metadata
+   * Id
    */
-  metadata?: {
-    [key: string]: unknown
-  } | null
-  music?: WholeFilmMusicIn | null
-  outro?: WholeFilmBrandIn | null
+  id: string
   /**
-   * Segments
+   * Playbackstart
    */
-  segments: Array<WholeFilmSegmentIn>
+  playbackStart: number
   /**
-   * Subtitles
+   * Start
    */
-  subtitles: Array<WholeFilmSubtitle>
+  start: number
   /**
-   * Taskid
+   * Type
    */
-  taskId?: string | null
+  type: 'component'
   /**
-   * Username
+   * Variables
    */
-  userName?: string | null
+  variables: {
+    [key: string]: boolean | number | number | string
+  }
 }
 
 /**
- * WholeFilmMusicIn
+ * WholeFilmDocument
  *
- * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
+ * 一段对话的成片草稿。
  */
-export type WholeFilmMusicIn = {
+export type WholeFilmDocument = {
+  canvas: WholeFilmCanvas | null
+  captions: WholeFilmCaptions
   /**
-   * Audiojobid
+   * Layer0
    */
-  audioJobId: string
+  layer0: Array<WholeFilmVideoClip | WholeFilmComponentClip>
+  music: WholeFilmMusic | null
   /**
-   * Gain
+   * Overlays
    */
-  gain: Array<MusicGainPoint>
+  overlays: Array<WholeFilmOverlay>
+}
+
+/**
+ * WholeFilmDraftIn
+ *
+ * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
+ */
+export type WholeFilmDraftIn = {
+  document: WholeFilmDocument
   /**
-   * Offsetms
+   * Revision
    */
-  offsetMs: number
+  revision: number
+}
+
+/**
+ * WholeFilmDraftOut
+ *
+ * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
+ */
+export type WholeFilmDraftOut = {
+  document: WholeFilmDocument | null
+  /**
+   * Revision
+   */
+  revision: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string | null
+}
+
+/**
+ * WholeFilmDraftSavedOut
+ *
+ * 保存后的新版本号与保存时刻。
+ */
+export type WholeFilmDraftSavedOut = {
+  /**
+   * Revision
+   */
+  revision: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * WholeFilmExportErrorOut
+ */
+export type WholeFilmExportErrorOut = {
+  /**
+   * Code
+   */
+  code: string
+  /**
+   * Message
+   */
+  message: string
+}
+
+/**
+ * WholeFilmExportIn
+ *
+ * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
+ */
+export type WholeFilmExportIn = {
+  /**
+   * Revision
+   */
+  revision: number
+}
+
+/**
+ * WholeFilmExportLatestOut
+ *
+ * 这段对话最新的一次导出；还没导出过为 null。
+ */
+export type WholeFilmExportLatestOut = {
+  export: WholeFilmExportOut | null
+}
+
+/**
+ * WholeFilmExportOut
+ *
+ * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ */
+export type WholeFilmExportOut = {
+  /**
+   * Downloadurl
+   */
+  downloadUrl: string | null
+  error: WholeFilmExportErrorOut | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Progress
+   */
+  progress: number | null
+  /**
+   * Queueposition
+   */
+  queuePosition: number | null
+  /**
+   * Sourcejobids
+   */
+  sourceJobIds: Array<string>
+  /**
+   * Status
+   */
+  status: 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
+}
+
+/**
+ * WholeFilmExportStartedOut
+ *
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
+ * 用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
+ */
+export type WholeFilmExportStartedOut = {
+  /**
+   * Exportid
+   */
+  exportId: string
+  /**
+   * Sourcejobids
+   */
+  sourceJobIds: Array<string>
+}
+
+/**
+ * WholeFilmMusic
+ *
+ * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
+ */
+export type WholeFilmMusic = {
+  /**
+   * Jobid
+   */
+  jobId: string
+  /**
+   * Offset
+   */
+  offset: number
   /**
    * Volume
    */
-  volume?: number
+  volume: number
 }
 
 /**
- * WholeFilmSegmentIn
+ * WholeFilmOverlay
  *
- * 整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。
- */
-export type WholeFilmSegmentIn = {
-  /**
-   * Endms
-   */
-  endMs: number
-  /**
-   * Sourcejobid
-   */
-  sourceJobId: string
-  /**
-   * Startms
-   */
-  startMs: number
-  /**
-   * Volume
-   */
-  volume?: number
-}
-
-/**
- * WholeFilmSubtitle
+ * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
+ * ``playbackStart`` 起播。
  *
- * 整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。
+ * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
+ * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
+ * ``x``、``y`` 是它在画面上挪开的位置。
  */
-export type WholeFilmSubtitle = {
+export type WholeFilmOverlay = {
   /**
-   * Endms
+   * Component
    */
-  endMs: number
+  component: string
   /**
-   * Startms
+   * Duration
    */
-  startMs: number
+  duration: number
   /**
-   * Text
+   * Id
    */
-  text: string
+  id: string
+  /**
+   * Playbackstart
+   */
+  playbackStart: number
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Track
+   */
+  track: number
+  /**
+   * Variables
+   */
+  variables: {
+    [key: string]: boolean | number | number | string
+  }
+  /**
+   * X
+   */
+  x?: number
+  /**
+   * Y
+   */
+  y?: number
+  /**
+   * Zindex
+   */
+  zIndex: number
 }
 
 /**
  * WholeFilmVersionOut
  *
- * 整片卡里的一版：这段对话自己的一条已完成整片。
+ * 成片卡里的一版：这段对话的一次已完成导出。
  */
 export type WholeFilmVersionOut = {
-  /**
-   * Durationms
-   */
-  durationMs: number | null
   /**
    * Finishedat
    */
@@ -5436,13 +5631,49 @@ export type WholeFilmVersionOut = {
    */
   outputUrl: string
   /**
+   * Sourcejobids
+   */
+  sourceJobIds: Array<string>
+  /**
    * Username
    */
   userName: string | null
+}
+
+/**
+ * WholeFilmVideoClip
+ *
+ * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
+ */
+export type WholeFilmVideoClip = {
   /**
-   * Watermarkoutputurl
+   * Duration
    */
-  watermarkOutputUrl: string | null
+  duration: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Playbackstart
+   */
+  playbackStart: number
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Type
+   */
+  type: 'video'
+  /**
+   * Volume
+   */
+  volume: number
 }
 
 export type ListKeysApiKeysGetData = {
@@ -5835,33 +6066,6 @@ export type ListBrandTemplatesBrandTemplatesGetResponses = {
 export type ListBrandTemplatesBrandTemplatesGetResponse =
   ListBrandTemplatesBrandTemplatesGetResponses[keyof ListBrandTemplatesBrandTemplatesGetResponses]
 
-export type CreateBrandTemplateBrandTemplatesPostData = {
-  body: BrandTemplateCreateIn
-  path?: never
-  query?: never
-  url: '/brand-templates'
-}
-
-export type CreateBrandTemplateBrandTemplatesPostErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type CreateBrandTemplateBrandTemplatesPostError =
-  CreateBrandTemplateBrandTemplatesPostErrors[keyof CreateBrandTemplateBrandTemplatesPostErrors]
-
-export type CreateBrandTemplateBrandTemplatesPostResponses = {
-  /**
-   * Successful Response
-   */
-  201: BrandTemplateOut
-}
-
-export type CreateBrandTemplateBrandTemplatesPostResponse =
-  CreateBrandTemplateBrandTemplatesPostResponses[keyof CreateBrandTemplateBrandTemplatesPostResponses]
-
 export type SignFontBrandTemplatesFontsSignPostData = {
   body: BrandFontSignIn
   path?: never
@@ -5883,7 +6087,7 @@ export type SignFontBrandTemplatesFontsSignPostResponses = {
   /**
    * Successful Response
    */
-  200: BrandFontUploadTicketOut
+  200: UploadTicketOut
 }
 
 export type SignFontBrandTemplatesFontsSignPostResponse =
@@ -7150,6 +7354,171 @@ export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostRespon
 export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse =
   RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses[keyof RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses]
 
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/draft'
+}
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetError =
+  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors]
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmDraftOut
+}
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
+  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses]
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutData = {
+  body: WholeFilmDraftIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/draft'
+}
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutError =
+  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors]
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmDraftSavedOut
+}
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
+  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses]
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData = {
+  body: WholeFilmExportIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports'
+}
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostError =
+  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors]
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: WholeFilmExportStartedOut
+}
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
+  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses]
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports/latest'
+}
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetError =
+  LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetErrors[keyof LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetErrors]
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmExportLatestOut
+}
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse =
+  LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponses[keyof LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponses]
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+    /**
+     * Export Id
+     */
+    export_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports/{export_id}'
+}
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteError =
+  CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteErrors[keyof CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteErrors]
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses =
+  {
+    /**
+     * Successful Response
+     */
+    204: void
+  }
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
+  CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses[keyof CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses]
+
 export type ReadConversationFileConversationsConversationIdWorkspaceFileGetData = {
   body?: never
   path: {
@@ -7340,11 +7709,11 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | 'subtitle' | 'audio' | null
+    kind?: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film' | null
     /**
      * Operation
      */
-    operation?: 'generate' | 'compose' | 'cut' | 'upload' | null
+    operation?: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance' | null
     /**
      * Rootjobid
      *
@@ -7570,6 +7939,33 @@ export type SubmitVideoEditGenerationsVideoEditsPostResponses = {
 export type SubmitVideoEditGenerationsVideoEditsPostResponse =
   SubmitVideoEditGenerationsVideoEditsPostResponses[keyof SubmitVideoEditGenerationsVideoEditsPostResponses]
 
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostData = {
+  body: VideoEnhanceIn
+  path?: never
+  query?: never
+  url: '/generations/video-enhancements'
+}
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostError =
+  SubmitVideoEnhancementGenerationsVideoEnhancementsPostErrors[keyof SubmitVideoEnhancementGenerationsVideoEnhancementsPostErrors]
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponse =
+  SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponses[keyof SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponses]
+
 export type ListVideoModelsGenerationsVideoModelsGetData = {
   body?: never
   path?: never
@@ -7619,33 +8015,6 @@ export type GetVideoTaskGenerationsVideoTaskIdGetResponses = {
 export type GetVideoTaskGenerationsVideoTaskIdGetResponse =
   GetVideoTaskGenerationsVideoTaskIdGetResponses[keyof GetVideoTaskGenerationsVideoTaskIdGetResponses]
 
-export type SubmitWholeFilmGenerationsWholeFilmsPostData = {
-  body: WholeFilmIn
-  path?: never
-  query?: never
-  url: '/generations/whole-films'
-}
-
-export type SubmitWholeFilmGenerationsWholeFilmsPostErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type SubmitWholeFilmGenerationsWholeFilmsPostError =
-  SubmitWholeFilmGenerationsWholeFilmsPostErrors[keyof SubmitWholeFilmGenerationsWholeFilmsPostErrors]
-
-export type SubmitWholeFilmGenerationsWholeFilmsPostResponses = {
-  /**
-   * Successful Response
-   */
-  202: GenerationEnvelope
-}
-
-export type SubmitWholeFilmGenerationsWholeFilmsPostResponse =
-  SubmitWholeFilmGenerationsWholeFilmsPostResponses[keyof SubmitWholeFilmGenerationsWholeFilmsPostResponses]
-
 export type GetGenerationGenerationsJobIdGetData = {
   body?: never
   path: {
@@ -7677,6 +8046,38 @@ export type GetGenerationGenerationsJobIdGetResponses = {
 
 export type GetGenerationGenerationsJobIdGetResponse =
   GetGenerationGenerationsJobIdGetResponses[keyof GetGenerationGenerationsJobIdGetResponses]
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/generations/{job_id}/enhancements'
+}
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetError =
+  ListVideoEnhancementsGenerationsJobIdEnhancementsGetErrors[keyof ListVideoEnhancementsGenerationsJobIdEnhancementsGetErrors]
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: VideoEnhancementsOut
+}
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponse =
+  ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponses[keyof ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponses]
 
 export type HealthzHealthzGetData = {
   body?: never
@@ -7881,6 +8282,23 @@ export type WholeFilmsLibraryWholeFilmsGetResponses = {
 
 export type WholeFilmsLibraryWholeFilmsGetResponse =
   WholeFilmsLibraryWholeFilmsGetResponses[keyof WholeFilmsLibraryWholeFilmsGetResponses]
+
+export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/library/whole-films/authors'
+}
+
+export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryAuthorsOut
+}
+
+export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
+  WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
 
 export type ListReferencesReferencesGetData = {
   body?: never

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 TitleKind = Literal["default", "generated", "custom"]
 """标题来源，取值须与数据库检查约束同步。"""
@@ -56,6 +57,18 @@ IDLE_ACTIVITY = ConversationActivity()
 """无运行记录或活动信息时使用的空闲状态。"""
 
 
+@dataclass(frozen=True, slots=True)
+class WholeFilmDraft:
+    """一段对话的成片草稿：只有当前一份，每存一次版本号加一，第一次存是 1。"""
+
+    conversation_id: uuid.UUID
+    document: Mapping[str, Any]
+    """前端编辑器与渲染服务读写的那份 JSON，原样存取；形状见 ``whole_film_schemas``。"""
+    revision: int
+    updated_by: uuid.UUID
+    updated_at: datetime
+
+
 class EventWatermark(Protocol):
     """某一刻各段对话的会话事件水位，由组合根从广播方取来。
 
@@ -71,4 +84,45 @@ class EventWatermark(Protocol):
         ...
 
 
-__all__ = ["IDLE_ACTIVITY", "Conversation", "ConversationActivity", "EventWatermark", "TitleKind"]
+WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
+"""一次导出走到哪一步，取值照渲染服务。"""
+
+
+@dataclass(frozen=True, slots=True)
+class WholeFilmExportError:
+    """导出失败的原因：``code`` 是渲染服务自己的（render-failed、upload-failed、media-unreachable、
+    timeout），或本系统的（RENDER_LOST、RENDER_REJECTED、RENDER_UNAVAILABLE、PROVIDER_TIMEOUT 等），
+    ``message`` 是给人看的一句话。"""
+
+    code: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class WholeFilmExport:
+    """一次成片导出，即那条成片生成记录给人看的样子。"""
+
+    id: uuid.UUID
+    status: WholeFilmExportStatus
+    progress: float | None
+    """0–1，只在渲染服务答得上来时有。"""
+    queue_position: int | None
+    """排队时前面还有几个；渲染服务答不上来或不在排队为 None。"""
+    error: WholeFilmExportError | None
+    download_url: str | None
+    """只在 done 时有：成片的公开地址，长期有效。"""
+    source_job_ids: tuple[uuid.UUID, ...]
+    """这次用到的素材片，去重、按在画面轨里第一次出现的先后。"""
+
+
+__all__ = [
+    "IDLE_ACTIVITY",
+    "Conversation",
+    "ConversationActivity",
+    "EventWatermark",
+    "TitleKind",
+    "WholeFilmDraft",
+    "WholeFilmExport",
+    "WholeFilmExportError",
+    "WholeFilmExportStatus",
+]

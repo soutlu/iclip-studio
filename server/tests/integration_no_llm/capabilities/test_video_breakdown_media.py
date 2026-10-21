@@ -13,7 +13,8 @@ from iclip.capabilities.video_breakdown.media import (
     sample_file,
 )
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import MediaError, ffmpeg_available, run
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.process import ffmpeg_available, run
 from tests.helpers.fetch_url import rewriting
 from tests.helpers.media import BROKEN_DECODE, CODECS, local_codec, synthesize_video
 from tests.helpers.media_server import serving

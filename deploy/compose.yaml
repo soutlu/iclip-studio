@@ -1,9 +1,10 @@
-# 单机部署：后端 → nginx 前端。数据库迁移由操作者手动执行，部署和服务启动不执行迁移。
+# 单机部署：后端 → nginx 前端，另有只在内网可达的成片渲染服务。数据库迁移由操作者手动执行，部署和服务启动不执行迁移。
 # Postgres 用服务器现有实例，本项目独占一个数据库。
 # 变量与凭证来自同目录的 .env，server 容器也整份加载它；env 文件不进仓库。
 # 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
 # ACR_NAMESPACE 仓库里的命名空间、IMAGE_TAG 镜像版本（缺省 latest，升级时改它再 up -d）、
-# WEB_PORT 对外端口（缺省 80，改了 SSO_REDIRECT_URL 的端口要跟着改）。应用变量见 server/src/iclip/config/models.py。
+# WEB_PORT 对外端口（缺省 80，改了 SSO_REDIRECT_URL 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务
+# 允许取素材的主机。应用变量见 server/src/iclip/config/models.py。
 # 模型、agent、skill 配置不进镜像也不进仓库：同目录的 configs/、agents/、skills/ 只读挂进后端，
 # 改文件保存即热重载。
 
@@ -35,6 +36,34 @@ services:
       retries: 5
       start_period: 20s
 
+  # 成片导出的渲染服务：只在 compose 网络里可达（后端 WHOLE_FILM_RENDER_URL=http://render:8080），
+  # 不对外开端口。RENDER_ALLOWED_MEDIA_HOSTS 列出它会取素材的主机，见 docs/deploy.md「成片渲染服务」。
+  render:
+    image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-render:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # 未设置时渲染服务启动即退出并记录「配置不完整」。
+      RENDER_ALLOWED_MEDIA_HOSTS: ${RENDER_ALLOWED_MEDIA_HOSTS:-}
+    # Chrome 渲染用共享内存，Docker 默认的 64 MB 不够。
+    shm_size: 2gb
+    volumes:
+      - render-tmp:/tmp/iclip-render
+    # Chrome 用显卡渲染（WebGL）要 graphics，NVENC 编码要 video；启动日志与 /health 报告实际用的是
+    # hardware 还是 software。没有显卡的机器删掉这一段，渲染照常、走软件。
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, video, graphics]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   web:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -43,3 +72,7 @@ services:
     depends_on:
       server:
         condition: service_healthy
+
+volumes:
+  # 渲染服务的临时项目目录（素材、逐帧中间文件、成片），导出结束即删。
+  render-tmp:

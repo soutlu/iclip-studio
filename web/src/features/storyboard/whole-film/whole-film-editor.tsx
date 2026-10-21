@@ -1,1260 +1,1016 @@
-/** 整片编辑器：视频编辑器的整片模式。把这段对话读得到的成片（自己的与继承的）放进素材区，从各条素材上挑段、
- * 在成片轨上交叉剪辑成一条整片；字幕取各段来源的口播识别结果，跟着画面走，只能改字；背景音乐上传或生成，
- * 自动对齐切点、口播处压低，预览时跟着画面放（见 use-film-music）。「合成成片」把草稿排成时间线交给服务端，
- * 合成出的每一版进版本条，点开预览、下载。
- *
- * 编辑只存在浏览器里（ADR-0003），按对话一份；浏览器里没有草稿而已经合成过时，按最新一版重建。 */
-
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { useBrandTemplates } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
-import { Icon } from '@/shared/icons'
+import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
-import { normalizeCaptionText, usePreviewFont } from '@/shared/lib/use-preview-font'
-import { Button, IconButton } from '@/shared/ui/button'
+import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
-import { VideoDownload } from '@/shared/ui/video-download'
-import type { ConversationTask } from '@/shared/workbench'
-import { BlockedReason } from '../components/blocked-reason'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
+import { keyframeRanges } from '../editing/keyframe-segments'
+import { useAudioPeaks } from '../editing/media-analysis'
+import { Frames } from '../editing/timeline'
+import { handleUndoShortcut } from '../editing/undo-shortcut'
+import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
-import { measureCaptionLayout } from '../video-editor/caption-layout'
-import { EditorPreview, type EditorPreviewHandle } from '../video-editor/editor-preview'
-import { EditorVersionStrip, type VersionStripEntry } from '../video-editor/editor-version-strip'
-import { keyframeSegments } from '../video-editor/draft'
-import { layoutPlay } from '../video-editor/play-layout'
 import {
-  useAudioPeaks,
+  brandGroups,
+  CATEGORY_ICON,
+  categoryGroups,
+  durationMsOf,
+  itemOf,
+  thumbnailOf,
+  useComponentCatalog,
+  type CatalogItem,
+  type ComponentCatalog,
+} from './component-catalog'
+import { placeComponent, placedPiece, type Placing } from './component-placement'
+import { moveEditOf } from './canvas-drag'
+import { CanvasLayer } from './canvas-layer'
+import { captionTextEdit, componentTextEdit } from './canvas-text-edit'
+import { CaptionControls, CaptionStatus } from './caption-controls'
+import { ComponentPopover } from './component-popover'
+import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-panel'
+import { DEFAULT_CANVAS } from './composition/build'
+import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
+import { autoBeatSync } from './editing/beat-sync'
+import { setCaptionsHidden, setCaptionStyle } from './editing/captions'
+import {
+  MAX_FILM_MS,
+  type ComponentVariables,
+  type Layer0Clip,
+  type VideoClip,
+} from './editing/draft'
+import {
+  deleteClip,
+  insertMaterial,
+  moveClip,
+  setClipVolume,
+  splitClip,
+  type InsertAt,
+} from './editing/layer0'
+import { filmBeats, removeMusic, setMusicVolume } from './editing/music'
+import { moveOverlay, removeOverlay } from './editing/overlays'
+import type { EditResult } from './editing/result'
+import { filmDuration } from './editing/timeline'
+import { setComponentVariables } from './editing/variables'
+import {
+  buildEditContext,
   useKeyframeIndexes,
-  type PeaksState,
-} from '../video-editor/use-media-analysis'
-import { useMediaDurations } from '../video-editor/use-media-durations'
-import { useStableValue } from '../video-editor/use-stable-value'
+  useVideoSize,
+  videoSizeQuery,
+  withSourceSize,
+  type KeyframeStates,
+} from './edit-context'
+import { EditorToolbar, SoundRow } from './editor-toolbar'
+import { ExportControl } from './export-control'
 import {
-  brandDuration,
-  wholeFilmDuration,
-  setBrand,
-  setFont,
-  setSegmentVolume,
-  setMusicVolume,
-  resetMusicStart,
-  MAX_FILM_SEGMENTS,
-  MIN_SEGMENT_SECONDS,
-  canSplitAt,
-  EMPTY_FILM,
-  filmDuration,
-  fitsInFilm,
-  insertClockOf,
-  insertSegment,
-  MAX_FILM_SECONDS,
-  moveSegment,
-  putLane,
-  removeManualSubtitle,
-  removeSegment,
-  segmentDuration,
-  setManualText,
-  setSentenceText,
-  splitAt,
-  trimSegment,
-  type FilmState,
-} from './film-draft'
-import { BrandCard, MusicCard, SegmentCard, SubtitleCard } from './film-card'
-import { MusicMenu } from './film-music-menu'
+  FilmTracks,
+  type Attempt,
+  type CarryPayload,
+  type ComponentFace,
+  type DropPoint,
+  type Selection,
+  type TracksHandle,
+} from './film-tracks'
+import { MaterialArea, type MaterialCarry } from './material-area'
+import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
 import {
   materialCatalog,
-  materialName,
+  shotAt,
+  usedSpans,
   type Material,
-  type MaterialDuration,
-} from './film-materials'
-import { AddVideoRow, type BrandMenuProps } from './film-menus'
-import {
-  brandOf,
-  isVideoTemplate,
-  matchesFilmRatio,
-  templateBlockedReason,
-  useFilmDimensions,
-} from './film-brand'
-import { FilmFontMenu } from './film-font-menu'
-import { composeBlockedReason, wholeFilmBody } from './film-submit'
-import {
-  burnedSubtitles,
-  captionAt,
-  latestSubtitles,
-  projectSubtitles,
-  subtitleSourceOf,
-  type SubtitleSource,
-} from './film-subtitles'
-import { FilmTimeline, type FilmSelection, type LaneView, type MaterialPick } from './film-timeline'
-import { draftFromVersion, firstSourceOf, wholeFilmVersions } from './film-versions'
-import { useFilmDraft, type DraftSeed } from './use-film-draft'
-import { useFilmMusic } from './use-film-music'
-import { FilmSoundControls } from './film-sound-controls'
-import {
-  seedSubtitleJob,
-  seedWholeFilmJob,
-  submitSubtitle,
-  submitWholeFilm,
-  useConversationMusic,
-  useConversationSubtitles,
-} from './whole-film.api'
+  type MaterialRange,
+  type MaterialTake,
+} from './materials'
+import { useMeasuredMusicDurations, useMusicAnalysis, useMusicBeats } from './music-analysis'
+import { MusicAction, MusicPanel } from './music-panel'
+import { peaksStateOf } from './music-view'
+import { compositionMedia, previewState } from './preview-document'
+import { PreviewPlayer, type PreviewControl } from './preview-player'
+import { FILM_LIMIT_TEXT, REFUSAL_TEXT } from './refusal-text'
+import { FIT_ZOOM, nextZoom, timelineScale, type Zoom } from './timeline-scale'
+import { useDraftSession } from './use-draft-session'
+import { useSubtitleRecognition } from './use-subtitle-recognition'
+import { useWholeFilmExport } from './use-whole-film-export'
+import { useConversationMusic, useWholeFilmDraftQuery } from './whole-film.api'
 import './whole-film.css'
-
-/** 时间线至少按这么多秒排：空轨、短片时刻度不至于太密。 */
-const MIN_SCALE_SECONDS = 20
-const LOADING_PEAKS: PeaksState = { kind: 'loading' }
-const STORAGE_FAILURE = '当前浏览器无法保存草稿，关闭编辑器后整片内容将丢失'
-const UNCOMPOSED_LABEL = '未合成'
-/** 版本条上草稿那一格的键；别的格子用整片记录的 id。 */
-const DRAFT_KEY = 'draft'
-const seconds = (value: number) => value.toFixed(1)
-const posterOf = (url: string | undefined, at = 0) =>
-  url === undefined ? undefined : videoSnapshotUrl(url, 320, at)
-
-/** 控制条上「下载」的外观：与拆分、删除同一档的文字按钮（VideoDownload 带字时样式全由这里给）。 */
-const DOWNLOAD_CLASS =
-  'video-editor-bar-button relative inline-flex h-(--control-height-md) cursor-pointer items-center justify-center gap-2 rounded-sm text-body-sm font-medium whitespace-nowrap ui-state ui-focus'
-
-/** 按键落在输入框里时让给输入框自己（Cmd/Ctrl+Z 在那里是撤销打字）。 */
-const isTextEntry = (target: EventTarget) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable ||
-    target instanceof HTMLTextAreaElement ||
-    (target instanceof HTMLInputElement && target.type !== 'range'))
 
 type Props = {
   conversationId: string
-  /** 本对话此刻挂的需求单：重新识别字幕、生成音乐、合成整片都归属到它；没读到时这几样先不能提交。宿主没给时当作在读。 */
-  task: ConversationTask | undefined
+  conversationTitle: string
   onClose: () => void
 }
 
-export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
-  const queryClient = useQueryClient()
-  const videos = useShotGenerations(conversationId)
-  const subtitlesQuery = useConversationSubtitles(conversationId)
-  const musicRecords = useConversationMusic(conversationId)
-  const templatesQuery = useBrandTemplates()
-  const previewRef = useRef<EditorPreviewHandle>(null)
-  const anchorRef = useRef<HTMLElement>(null)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [playback, setPlayback] = useState({ playing: false, muted: true })
-  // 生成面板挂在编辑器里（模态弹窗外的浮层拿不到焦点）。
-  const [editorElement, setEditorElement] = useState<HTMLElement | null>(null)
-  const [selection, setSelection] = useState<FilmSelection>()
-  const [pick, setPick] = useState<MaterialPick>()
-  /** 素材预览不写进草稿，也不占用整片播放头。range 没给时预览所选版本的整条素材。 */
-  const [materialPreview, setMaterialPreview] = useState<{
-    jobId: string
-    range?: { start: number; end: number }
-  }>()
-  const [materialTime, setMaterialTime] = useState(0)
-  const [previewSeek, setPreviewSeek] = useState<{
-    clock: number
-    boundary?: 'start' | 'end' | undefined
-  }>()
-  // 子播放器先按 current 切源；再用它已有的定位入口显示正在拖动的边界。
-  useEffect(() => {
-    if (previewSeek !== undefined)
-      previewRef.current?.previewAt(previewSeek.clock, previewSeek.boundary)
-  }, [previewSeek])
-  const [retrying, setRetrying] = useState<ReadonlySet<string>>(() => new Set())
-  /** 版本条上选中的那一格：草稿，或某一条整片。 */
-  const [viewingKey, setViewingKey] = useState(DRAFT_KEY)
-  const [submitting, setSubmitting] = useState(false)
-  const [composeError, setComposeError] = useState<string | null>(null)
-  /** 脚注位置上要让人看到的一句话，下一次剪辑时收起。 */
-  const [notice, setNotice] = useState<string | null>(null)
-  const storageFailedRef = useRef(false)
-  const noticeStorageFailure = () => {
-    if (storageFailedRef.current) return
-    storageFailedRef.current = true
-    setNotice(STORAGE_FAILURE)
-  }
+type SideTab = 'materials' | 'brand' | 'general'
 
-  const taskId = task?.kind === 'ready' ? task.taskId : undefined
-  const taskState = task?.kind ?? 'loading'
-  const taskBlocked =
-    taskState === 'failed'
-      ? '任务信息读取失败，暂时无法提交；请点击「重试」'
-      : '任务信息读取中，暂时无法提交'
+/** 品牌栏、通用栏各自选中的小标题；没选过为 undefined，取第一个 */
+type SideChips = Readonly<Record<'brand' | 'general', string | undefined>>
 
-  const catalog = useMemo(
-    () =>
-      videos.data === undefined ? undefined : materialCatalog(groupConversationVideos(videos.data)),
-    [videos.data],
-  )
-  const known = catalog?.byJob
-  const versions = useMemo(() => wholeFilmVersions(videos.data ?? []), [videos.data])
-  const materialOf = (jobId: string) => catalog?.byJob.get(jobId)
+/** 能删除的选中：字幕以外的 */
+type Removable = Exclude<NonNullable<Selection>, { kind: 'caption' }>
 
-  const latest = useMemo(
-    () => (subtitlesQuery.data === undefined ? undefined : latestSubtitles(subtitlesQuery.data)),
-    [subtitlesQuery.data],
-  )
-  const sourceOf = (jobId: string): SubtitleSource | undefined =>
-    latest === undefined ? undefined : subtitleSourceOf(latest.get(jobId))
-
-  // 浏览器里没有草稿而合成过：从最新版本的最终字幕与模板快照恢复，音乐记录用于区分生成与上传。
-  const newestVersion = versions.done.at(-1)
-  const seed = (): DraftSeed => {
-    if (newestVersion === undefined) return null
-    if (musicRecords.data === undefined) return undefined
-    return {
-      label: newestVersion.label,
-      stored: draftFromVersion(newestVersion.job, {
-        takeOf: (jobId) => materialOf(jobId)?.takeId,
-        generatedMusic: new Set(musicRecords.data.map((job) => job.id)),
-        newId: () => crypto.randomUUID(),
-      }),
-    }
-  }
-  const draft = useFilmDraft({
-    conversationId,
-    known,
-    seed,
-    onNotice: setNotice,
-    onStorageFailure: noticeStorageFailure,
-  })
-  const film = draft?.film ?? EMPTY_FILM
-  const { segments } = film
-  const total = filmDuration(segments)
-  const fullTotal = wholeFilmDuration(film)
-  const bodyStart = (film.intro?.durationMs ?? 0) / 1000
-  const bodyTime = currentTime - bodyStart
-  const frame = useFilmDimensions(materialOf(segments[0]?.sourceJobId ?? '')?.url)
-  const templateBlocked = templateBlockedReason(film, templatesQuery.data?.items, frame.data)
-
-  // ---------- 版本 ----------
-
-  const viewedDone = versions.done.find((item) => item.job.id === viewingKey)
-  const viewedRunning = versions.running.find((job) => job.id === viewingKey)
-  const viewedFailed = versions.failed.find((job) => job.id === viewingKey)
-  // 选中的那一条不在了（换了一批记录）就回到草稿。
-  const viewingDraft =
-    viewedDone === undefined && viewedRunning === undefined && viewedFailed === undefined
-
-  // 素材多长：记录上有就用，没有就开播放器去探；看着的那一版没记时长也去探。
-  const probeUrls = useStableValue([
-    ...(catalog === undefined
-      ? []
-      : [...catalog.byJob.values()].flatMap((item) =>
-          item.knownDuration === undefined ? [item.url] : [],
-        )),
-    ...(viewedDone !== undefined && viewedDone.job.durationMs === null ? [viewedDone.url] : []),
-  ])
-  const durations = useMediaDurations(probeUrls)
-  const sourceUrls = useStableValue([
-    ...new Set((draft?.lanes ?? []).flatMap((lane) => materialOf(lane.jobId)?.url ?? [])),
-  ])
-  const keyframes = useKeyframeIndexes(sourceUrls)
-  const durationOf = (material: Material): MaterialDuration => {
-    const frames = keyframes.get(material.url)
-    return frames?.kind === 'ready'
-      ? frames.index.duration
-      : (material.knownDuration ?? durations[material.url])
-  }
-
-  const lanes: LaneView[] = (draft?.lanes ?? []).flatMap((lane) => {
-    const material = materialOf(lane.jobId)
-    const group = catalog?.groups.find((item) => item.id === material?.groupId)
-    const take = group?.takes.find((item) => item.id === lane.takeId)
-    if (material === undefined || group === undefined || take === undefined) return []
-    const frames = keyframes.get(material.url)
-    return [
-      {
-        lane,
-        label: group.label,
-        material,
-        versions: take.versions,
-        duration: frames?.kind === 'ready' ? frames.index.duration : undefined,
-        shots: frames?.kind === 'ready' ? keyframeSegments(material.jobId, frames.index) : [],
-        shotState:
-          frames?.kind === 'failed' ? 'error' : frames?.kind === 'ready' ? 'ready' : 'loading',
-        onRetryShots: () => {
-          if (frames?.kind === 'failed') frames.retry()
-        },
-      },
-    ]
-  })
-  const scale = Math.max(MIN_SCALE_SECONDS, fullTotal, ...lanes.map((view) => view.duration ?? 0))
-
-  const peakUrls = useStableValue([
-    ...new Set([
-      ...lanes.map((view) => view.material.url),
-      ...segments.flatMap((segment) => materialOf(segment.sourceJobId)?.url ?? []),
-    ]),
-  ])
-  const peaks = useAudioPeaks(peakUrls)
-
-  // ---------- 字幕 ----------
-
-  const { subtitles, statuses } = projectSubtitles(film, sourceOf)
-  // 恢复的字幕有自己的快照，音乐压低仍依赖来源识别；识别中的口播不能被快照掩盖。
-  const speechProjection = projectSubtitles(film, sourceOf, false)
-  const subtitleStatuses = film.music === null ? statuses : speechProjection.statuses
-  const unduckedCount =
-    film.music !== null && film.music.gain === undefined
-      ? speechProjection.statuses.filter(
-          (item) => item.kind === 'failed' || item.kind === 'missing',
-        ).length
-      : 0
-  const burned = burnedSubtitles(subtitles)
-  const previewFont = usePreviewFont(
-    film.font == null ? null : { id: film.font.fontId, url: film.font.url },
-    burned.map((item) => item.text).join('\n'),
-  )
-  const captionTexts = useStableValue(burned.map((item) => item.text))
-  const captionFont = useStableValue(
-    previewFont.kind === 'ready'
-      ? {
-          fontFamily: previewFont.fontFamily,
-          fontWeight: previewFont.fontWeight,
-          fontStyle: previewFont.fontStyle,
-        }
-      : undefined,
-  )
-  const customCaptionLayout = useMemo(
-    () =>
-      captionFont === undefined || frame.data === undefined
-        ? undefined
-        : measureCaptionLayout(captionTexts, frame.data, captionFont),
-    [captionTexts, frame.data, captionFont],
-  )
-  const rawCaption = captionAt(burned, bodyTime)
-  const caption =
-    customCaptionLayout?.kind === 'ready' && rawCaption !== undefined
-      ? customCaptionLayout.texts.get(rawCaption)
-      : rawCaption
-  const fontBlocked =
-    film.font == null
-      ? undefined
-      : templatesQuery.data === undefined
-        ? templatesQuery.isError
-          ? '字体信息读取失败，请重试'
-          : '正在读取字体信息…'
-        : !templatesQuery.data.items.some(
-              (item) =>
-                item.id === film.font?.fontId && item.kind === 'font' && item.disabledAt === null,
-            )
-          ? '所选字体已停用或不可用，无法合成；请更换字幕字体'
-          : previewFont.kind === 'loading'
-            ? '正在加载字幕字体…'
-            : previewFont.kind === 'failed'
-              ? previewFont.message
-              : frame.isError
-                ? '正文画幅读取失败，无法排版字幕；请重试'
-                : frame.data === undefined
-                  ? '正在读取正文画幅以排版字幕…'
-                  : customCaptionLayout?.kind === 'failed'
-                    ? customCaptionLayout.message
-                    : undefined
-
-  // ---------- 预览 ----------
-
-  const draftAudioSegments = [
-    ...(film.intro == null
-      ? []
-      : [{ mediaUrl: film.intro.url, start: 0, end: film.intro.durationMs / 1000 }]),
-    ...segments.flatMap((segment) => {
-      const url = materialOf(segment.sourceJobId)?.url
-      return url === undefined
-        ? []
-        : [{ mediaUrl: url, start: segment.start, end: segment.end, volume: segment.volume ?? 1 }]
-    }),
-    ...(film.outro == null
-      ? []
-      : [{ mediaUrl: film.outro.url, start: 0, end: film.outro.durationMs / 1000 }]),
-  ]
-  const draftPlay = layoutPlay(draftAudioSegments)
-  const viewedDuration =
-    viewedDone === undefined
-      ? undefined
-      : viewedDone.job.durationMs === null
-        ? durations[viewedDone.url]
-        : viewedDone.job.durationMs / 1000
-  const previewMaterial =
-    materialPreview === undefined ? undefined : materialOf(materialPreview.jobId)
-  const previewingMaterial = viewingDraft && previewMaterial !== undefined
-  const materialDuration = previewMaterial === undefined ? undefined : durationOf(previewMaterial)
-  const materialRange =
-    materialPreview?.range ??
-    (materialDuration == null ? undefined : { start: 0, end: materialDuration })
-  const current = useStableValue(
-    previewingMaterial
-      ? materialRange === undefined
-        ? materialDuration === null
-          ? []
-          : undefined
-        : layoutPlay([{ mediaUrl: previewMaterial.url, ...materialRange }])
-      : viewingDraft
-        ? draft === undefined
-          ? undefined
-          : draftPlay
-        : viewedDone === undefined || viewedDuration === null
-          ? []
-          : viewedDuration === undefined
-            ? undefined
-            : layoutPlay([{ mediaUrl: viewedDone.url, start: 0, end: viewedDuration }]),
-  )
-  const firstUrl = draftPlay[0]?.mediaUrl
-  const pendingPoster = (jobId: string | undefined) =>
-    posterOf(jobId === undefined ? undefined : materialOf(jobId)?.url)
-  const viewedPending = viewedRunning ?? viewedFailed
-  const stagePoster = previewingMaterial
-    ? posterOf(previewMaterial.url, materialRange?.start)
-    : viewedDone !== undefined
-      ? posterOf(viewedDone.url)
-      : viewedPending !== undefined
-        ? pendingPoster(firstSourceOf(viewedPending))
-        : posterOf(firstUrl)
-  // 素材边界用前景视频精确定位；装饰背景固定首帧，拖动不反复请求、切换远端截图。
-  const stageBackdrop = previewingMaterial ? posterOf(previewMaterial.url) : stagePoster
-  const stageMessage = previewingMaterial
-    ? '素材时长读取失败，暂时无法预览'
-    : viewedRunning !== undefined
-      ? '整片合成中'
-      : viewedFailed !== undefined
-        ? '整片合成失败'
-        : viewedDone !== undefined
-          ? '这一版的时长读取失败，暂时无法预览'
-          : '成片轨还是空的'
-
-  // ---------- 选中 ----------
-
-  // 选中的段或字幕不在了（撤销、删掉、换了识别结果）就当没选。
-  const selectedIndex =
-    selection?.kind === 'segment'
-      ? segments.findIndex((segment) => segment.id === selection.id)
-      : -1
-  const selectedSegment = segments[selectedIndex]
-  const subtitleIndex =
-    selection?.kind === 'subtitle' ? subtitles.findIndex((item) => item.key === selection.key) : -1
-  const selectedSubtitle = subtitles[subtitleIndex]
-
-  // ---------- 操作 ----------
-
-  const editable = draft !== undefined && viewingDraft
-
-  const previewFilm = (clock = currentTime, boundary?: 'start' | 'end') => {
-    setMaterialPreview(undefined)
-    setPreviewSeek({ clock, boundary })
-  }
-  const showMaterial = (target: MaterialPick, clock: number, boundary?: 'start' | 'end') => {
-    setMaterialPreview({
-      jobId: target.sourceJobId,
-      range: { start: target.start, end: target.end },
-    })
-    setMaterialTime(clock - target.start)
-    setPreviewSeek({ clock: clock - target.start, boundary })
-    setSelection(undefined)
-  }
-
-  const apply = (
-    next: FilmState | ((present: FilmState) => FilmState) | undefined,
-    typing?: string,
-  ) => {
-    if (next === undefined || draft === undefined) return
-    if (materialPreview !== undefined) previewFilm()
-    draft.apply(next, typing)
-    if (typing === undefined) setNotice(null)
-  }
-
-  // ---------- 音乐 ----------
-
-  const music = useFilmMusic({
-    conversationId,
-    taskId,
-    taskBlocked,
-    film,
-    total,
-    subtitles: speechProjection.subtitles,
-    previewSegments: draftAudioSegments,
-    bodyStartSeconds: bodyStart,
-    apply,
-    onNotice: setNotice,
-    // 看着合成好的一版时，那一版自带混好的声音，草稿的音乐不跟着放。
-    playback:
-      viewingDraft && !previewingMaterial ? playback : { playing: false, muted: playback.muted },
-    currentTime,
-  })
-  // 音乐读出来了才选得中；拿掉、换了还在读的就当没选。
-  const musicSelected = selection?.kind === 'music' && music.card !== undefined
-  const selectedBrand = selection?.kind === 'brand' ? film[selection.position] : undefined
-  const shownSelection: FilmSelection =
-    viewingDraft &&
-    (selectedSegment !== undefined ||
-      selectedSubtitle !== undefined ||
-      musicSelected ||
-      selectedBrand != null)
-      ? selection
-      : undefined
-
-  const insert = (target: MaterialPick, index: number) => {
-    const duration = segmentDuration(target)
-    if (duration < MIN_SEGMENT_SECONDS) {
-      setNotice(`镜头不足 ${MIN_SEGMENT_SECONDS} 秒，无法加入成片；请拖动两端扩大范围`)
-      return
-    }
-    if (segments.length >= MAX_FILM_SEGMENTS) {
-      setNotice(`片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入；请先删减片段`)
-      return
-    }
-    if (!fitsInFilm(segments, duration, brandDuration(film))) {
-      setNotice(
-        `整片含片头片尾已有 ${seconds(fullTotal)} 秒，放不下这 ${seconds(duration)} 秒；请先删减成片轨上的段`,
-      )
-      return
-    }
-    const next = insertSegment(film, target, index, crypto.randomUUID())
-    if (next === undefined) return
-    apply(next)
-    // 播放头移到新段的结尾：接着按回车插入，下一段就排在它后面。
-    const end = bodyStart + insertClockOf(segments, index) + duration
-    requestAnimationFrame(() => previewRef.current?.previewAt(end, 'end'))
-  }
-
-  const retry = async (sourceJobId: string) => {
-    if (retrying.has(sourceJobId)) return
-    if (taskId === undefined) {
-      setNotice(taskBlocked)
-      return
-    }
-    setRetrying((busy) => new Set(busy).add(sourceJobId))
-    try {
-      const job = await submitSubtitle({ conversationId, sourceJobId, taskId })
-      seedSubtitleJob(queryClient, conversationId, job)
-    } catch (error) {
-      toast.error(errorMessageOf(error, '字幕识别提交失败'))
-    } finally {
-      setRetrying((busy) => {
-        const next = new Set(busy)
-        next.delete(sourceJobId)
-        return next
-      })
-    }
-  }
-
-  const addMaterial = (material: Material) => {
-    if (draft === undefined) return
-    draft.setLanes(putLane(draft.lanes, { takeId: material.takeId, jobId: material.jobId }))
-    setPick(undefined)
-    setSelection(undefined)
-    setMaterialPreview({ jobId: material.jobId })
-    setMaterialTime(0)
-    setPreviewSeek({ clock: 0 })
-  }
-
-  const switchVersion = (view: LaneView, material: Material) => {
-    if (material.jobId === view.material.jobId) return
-    addMaterial(material)
-    setNotice(
-      `已换成 ${material.version}，之后从这条素材轨挑的段用 ${material.version}；成片轨上已有的段不变`,
-    )
-  }
-
-  const removeSelected = () => {
-    if (selection?.kind === 'brand') {
-      apply(setBrand(film, selection.position, null))
-      setSelection(undefined)
-      return
-    }
-    if (selectedSegment === undefined) return
-    apply(removeSegment(film, selectedSegment.id))
-    setSelection(undefined)
-  }
-
-  const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (isTextEntry(event.target) || !(event.metaKey || event.ctrlKey)) return
-    if (event.key.toLowerCase() !== 'z' || draft === undefined || !viewingDraft) return
-    event.preventDefault()
-    previewFilm()
-    if (event.shiftKey) {
-      if (draft.canRedo) draft.redo()
-    } else if (draft.canUndo) draft.undo()
-  }
-
-  const view = (key: string) => {
-    setMaterialPreview(undefined)
-    setPreviewSeek({ clock: key === DRAFT_KEY ? currentTime : 0 })
-    setViewingKey(key)
-    setSelection(undefined)
-    setPick(undefined)
-    setNotice(null)
-  }
-
-  const brands: BrandMenuProps = {
-    templates:
-      frame.data === undefined
-        ? []
-        : (templatesQuery.data?.items ?? []).filter(
-            (template) =>
-              (template.kind === 'intro' || template.kind === 'outro') &&
-              (!isVideoTemplate(template) ||
-                (frame.data !== undefined && matchesFilmRatio(template, frame.data))),
-          ),
-    reason:
-      segments.length === 0
-        ? '请先在成片轨放入正文视频，再选择片头片尾'
-        : frame.isError
-          ? '正文画幅读取失败，请重试'
-          : frame.data === undefined
-            ? '正在读取正文画幅…'
-            : templatesQuery.isError
-              ? '模板读取失败，请重试'
-              : templatesQuery.data === undefined
-                ? '正在读取模板…'
-                : undefined,
-    retry: frame.isError
-      ? () => void frame.refetch()
-      : templatesQuery.isError
-        ? () => void templatesQuery.refetch()
-        : undefined,
-    intro: film.intro,
-    outro: film.outro,
-    onSelect: (position, template) => {
-      if (!isVideoTemplate(template)) return
-      const next = setBrand(film, position, brandOf(template))
-      if (wholeFilmDuration(next) > MAX_FILM_SECONDS) {
-        setNotice(
-          `加入${position === 'intro' ? '片头' : '片尾'}后整片超过 ${MAX_FILM_SECONDS} 秒；请先删减内容`,
-        )
-        return
-      }
-      apply(next)
-      setSelection({ kind: 'brand', position })
-    },
-    onRemove: (position) => {
-      apply(setBrand(film, position, null))
-      setSelection(undefined)
-    },
-  }
-
-  // ---------- 合成 ----------
-
-  const composeBlocked = composeBlockedReason({
-    submitting,
-    segmentCount: segments.length,
-    totalSeconds: fullTotal,
-    submittedSubtitleCount: burned.length,
-    templateBlocked,
-    fontBlocked,
-    task: taskState,
-    subtitleRecords:
-      subtitlesQuery.data !== undefined ? 'ready' : subtitlesQuery.isError ? 'failed' : 'loading',
-    recognizing: subtitleStatuses.filter((status) => status.kind === 'running').length,
-    music: music.readiness,
-    subtitles,
-  })
-
-  const compose = async () => {
-    if (composeBlocked !== undefined || taskId === undefined) return
-    const { readiness } = music
-    setSubmitting(true)
-    setComposeError(null)
-    setNotice(null)
-    try {
-      const job = await submitWholeFilm(
-        wholeFilmBody({
-          conversationId,
-          taskId,
-          film,
-          subtitles: burned,
-          music: readiness.kind === 'ready' ? readiness.plan : null,
-        }),
-      )
-      seedWholeFilmJob(queryClient, conversationId, job)
-      toast.success('已提交合成，完成后将生成新版本')
-    } catch (error) {
-      setComposeError(errorMessageOf(error, '整片合成提交失败，请重试'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  // ---------- 脚注 ----------
-
-  const footnote = (() => {
-    if (notice !== null) return notice
-    if (draft === undefined) return undefined
-    if (viewedDone !== undefined)
-      return `正在查看 ${viewedDone.label}，点击「${UNCOMPOSED_LABEL}」可继续剪辑`
-    if (viewedRunning !== undefined) return '正在合成，关闭窗口不影响合成'
-    if (viewedFailed !== undefined) return '整片合成失败，请检查剪辑后重新点击「合成成片」'
-    if (previewingMaterial)
-      return `正在预览${materialName(previewMaterial)}${materialRange === undefined ? '' : ` · ${seconds(materialRange.start)}–${seconds(materialRange.end)} 秒`}`
-    return music.footnote(musicSelected)
-  })()
-
-  // ---------- 渲染 ----------
-
-  const toolButtons = (
-    <>
-      <span aria-hidden="true" className="video-editor-bar-divider" />
-      <IconButton
-        disabled={!editable || draft?.canUndo !== true}
-        label="撤销"
-        name="undo"
-        onClick={() => {
-          previewFilm()
-          draft?.undo()
-        }}
-        size="sm"
-      />
-      <IconButton
-        disabled={!editable || draft?.canRedo !== true}
-        label="重做"
-        name="redo"
-        onClick={() => {
-          previewFilm()
-          draft?.redo()
-        }}
-        size="sm"
-      />
-      <span aria-hidden="true" className="video-editor-bar-divider" />
-      <BlockedReason
-        reason={
-          segments.length >= MAX_FILM_SEGMENTS
-            ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续拆分；请先删减片段`
-            : undefined
-        }
-        side="bottom"
-      >
-        <Button
-          className="video-editor-bar-button video-editor-tool"
-          disabled={!editable || !canSplitAt(segments, bodyTime)}
-          leadingIcon="split"
-          onClick={() => apply(splitAt(film, bodyTime, crypto.randomUUID()))}
-          size="md"
-          variant="ghost"
-        >
-          <span className="video-editor-tool-label">拆分</span>
-        </Button>
-      </BlockedReason>
-      <Button
-        className="video-editor-bar-button video-editor-tool"
-        disabled={!editable || (selectedSegment === undefined && selectedBrand == null)}
-        leadingIcon="delete"
-        onClick={removeSelected}
-        size="md"
-        variant="ghost"
-      >
-        <span className="video-editor-tool-label">删除</span>
-      </Button>
-    </>
-  )
-
-  const readout = (
-    <span className="video-editor-readout">
-      {previewingMaterial ? (
-        <>
-          素材选区 ·{' '}
-          <b>
-            {seconds(materialRange === undefined ? 0 : materialRange.end - materialRange.start)}
-          </b>{' '}
-          秒
-        </>
-      ) : (
-        <>
-          共 <b>{seconds(viewingDraft ? fullTotal : (viewedDuration ?? 0))}</b> 秒 · 上限{' '}
-          {MAX_FILM_SECONDS} 秒
-        </>
-      )}
-    </span>
-  )
-
-  /** 重建草稿要用的记录读不出来：说清读的是什么，给重试。 */
-  const seedFailure =
-    catalog !== undefined && draft === undefined && musicRecords.isError
-      ? {
-          message: errorMessageOf(musicRecords.error, '读取音乐记录失败'),
-          retry: () => void musicRecords.refetch(),
-        }
-      : undefined
-
-  const timeline =
-    videos.isError && catalog === undefined ? (
-      <p className="video-editor-timeline-loading" role="alert">
-        {errorMessageOf(videos.error, '读取视频记录失败')}
-        <Button onClick={() => void videos.refetch()} size="md" variant="ghost">
-          重试
-        </Button>
-      </p>
-    ) : seedFailure !== undefined ? (
-      <p className="video-editor-timeline-loading" role="alert">
-        {`${seedFailure.message}，暂时无法恢复上次合成的剪辑`}
-        <Button onClick={seedFailure.retry} size="md" variant="ghost">
-          重试
-        </Button>
-      </p>
-    ) : catalog === undefined ? (
-      <p className="video-editor-timeline-loading" role="status">
-        正在读取成片…
-      </p>
-    ) : draft === undefined ? (
-      <p className="video-editor-timeline-loading" role="status">
-        正在恢复上次合成的剪辑…
-      </p>
-    ) : (
-      <FilmTimeline
-        addVideo={
-          <AddVideoRow
-            catalog={catalog}
-            disabled={!viewingDraft}
-            durationOf={durationOf}
-            onAdd={addMaterial}
-          />
-        }
-        brands={brands}
-        subtitleSettings={
-          <FilmFontMenu
-            font={film.font}
-            fonts={(templatesQuery.data?.items ?? []).filter((item) => item.kind === 'font')}
-            reason={
-              templatesQuery.isError
-                ? '字体读取失败，请重试'
-                : templatesQuery.data === undefined
-                  ? '正在读取字体…'
-                  : undefined
-            }
-            retry={templatesQuery.isError ? () => void templatesQuery.refetch() : undefined}
-            onSelect={(font) => apply(setFont(film, font))}
-          />
-        }
-        anchorRef={anchorRef}
-        currentTime={currentTime}
-        durationOf={durationOf}
-        lanes={lanes}
-        materialOf={materialOf}
-        onDelete={(id) => {
-          apply(removeSegment(film, id))
-          setSelection(undefined)
-        }}
-        onInsert={insert}
-        onMove={(id, before) => apply(moveSegment(film, id, before))}
-        onPick={(next) => {
-          setPick(next)
-          if (next !== undefined) setSelection(undefined)
-        }}
-        onPreviewMaterial={showMaterial}
-        onRetry={(sourceJobId) => void retry(sourceJobId)}
-        // 拖动时收起字幕卡与音乐卡；选中的段留着（拖的可能就是它的两端）。
-        onScrub={() => {
-          previewFilm()
-          setSelection((value) => (value?.kind === 'segment' ? value : undefined))
-        }}
-        onSeek={(time) => previewFilm(time)}
-        onSelect={(next) => {
-          previewFilm()
-          setSelection(next)
-          if (next !== undefined) setPick(undefined)
-        }}
-        music={music.view}
-        musicAdd={<MusicMenu container={editorElement} {...music.menu} />}
-        onMoveMusic={music.move}
-        onRemoveMusic={() => {
-          music.remove()
-          setSelection(undefined)
-        }}
-        onSwitchVersion={switchVersion}
-        onTrim={(id, edge, value) => {
-          const segment = segments.find((item) => item.id === id)
-          const material = segment === undefined ? undefined : materialOf(segment.sourceJobId)
-          const duration = material === undefined ? undefined : durationOf(material)
-          apply(trimSegment(film, id, edge, value, duration ?? undefined))
-        }}
-        onTrimPreview={(target, clock, edge) => {
-          setMaterialPreview({
-            jobId: target.sourceJobId,
-            range: { start: target.start, end: target.end },
-          })
-          setMaterialTime(clock - target.start)
-          setPreviewSeek({ clock: clock - target.start, boundary: edge })
-        }}
-        peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
-        pick={viewingDraft ? pick : undefined}
-        retrying={retrying}
-        scale={scale}
-        segments={segments}
-        selection={shownSelection}
-        statuses={subtitleStatuses.map((item) => ({
-          ...item,
-          at: item.at + bodyStart,
-          end: item.end + bodyStart,
-        }))}
-        subtitles={subtitles.map((item) => ({
-          ...item,
-          at: item.at + bodyStart,
-          end: item.end + bodyStart,
-        }))}
-        total={fullTotal}
-        bodyTotal={total}
-        intro={film.intro}
-        outro={film.outro}
-      />
-    )
-
-  const segmentMaterial =
-    selectedSegment === undefined ? undefined : materialOf(selectedSegment.sourceJobId)
-  const subtitleMaterial =
-    selectedSubtitle === undefined
-      ? undefined
-      : materialOf(
-          segments.find((segment) => segment.id === selectedSubtitle.segmentId)?.sourceJobId ?? '',
-        )
-  const card = !viewingDraft ? null : selectedBrand != null && selection?.kind === 'brand' ? (
-    <BrandCard
-      anchorRef={anchorRef}
-      position={selection.position}
-      template={selectedBrand}
-      brands={brands}
-      onClose={() => setSelection(undefined)}
+function EditorHeader({ actions, title }: { actions: ReactNode; title: string }) {
+  return (
+    <DialogHeader
+      actions={actions}
+      className="editor-header"
+      closeLabel="关闭成片编辑"
+      title={title}
     />
-  ) : selectedSegment !== undefined && segmentMaterial !== undefined ? (
-    <SegmentCard
-      anchorRef={anchorRef}
-      end={selectedSegment.end}
-      frame={videoSnapshotUrl(segmentMaterial.url, 60, selectedSegment.start)}
-      key={selectedSegment.id}
-      onClose={() => setSelection(undefined)}
-      position={selectedIndex + 1}
-      source={materialName(segmentMaterial)}
-      start={selectedSegment.start}
-    />
-  ) : selectedSubtitle !== undefined ? (
-    <SubtitleCard
-      anchorRef={anchorRef}
-      key={selectedSubtitle.key}
-      onClose={() => setSelection(undefined)}
-      onRemove={
-        selectedSubtitle.kind === 'manual'
-          ? () => {
-              apply(removeManualSubtitle(film, selectedSubtitle.textKey))
-              setSelection(undefined)
-            }
-          : undefined
-      }
-      onText={(text) =>
-        apply(
-          selectedSubtitle.kind === 'manual'
-            ? setManualText(film, selectedSubtitle.textKey, text)
-            : setSentenceText(film, selectedSubtitle.textKey, text),
-          selectedSubtitle.textKey,
-        )
-      }
-      position={subtitleIndex + 1}
-      restored={selectedSubtitle.kind === 'snapshot'}
-      source={
-        selectedSubtitle.kind !== 'sentence' || subtitleMaterial === undefined
-          ? undefined
-          : materialName(subtitleMaterial)
-      }
-      text={selectedSubtitle.text}
-    />
-  ) : musicSelected && music.card !== undefined ? (
-    <MusicCard
-      anchorRef={anchorRef}
-      detail={music.card.detail}
-      lines={music.card.lines}
-      onClose={() => setSelection(undefined)}
-      onRegenerate={music.card.onRegenerate}
-      onRemove={() => {
-        music.remove()
-        setSelection(undefined)
-      }}
-      title={music.card.title}
-    />
-  ) : null
-
-  // 新的在前：草稿、在合成的、失败的、完成的各版。
-  const stripEntries: VersionStripEntry[] = [
-    {
-      key: DRAFT_KEY,
-      label: UNCOMPOSED_LABEL,
-      name: `${UNCOMPOSED_LABEL}的整片`,
-      poster: posterOf(firstUrl),
-      running: undefined,
-      unseen: false,
-    },
-    ...versions.running.map((job) => ({
-      key: job.id,
-      label: undefined,
-      name: '整片合成中',
-      poster: pendingPoster(firstSourceOf(job)),
-      running: { since: job.createdAt },
-      unseen: false,
-    })),
-    ...versions.failed.map((job) => ({
-      key: job.id,
-      label: undefined,
-      name: '整片合成失败',
-      poster: pendingPoster(firstSourceOf(job)),
-      running: undefined,
-      failed: true,
-      unseen: false,
-    })),
-    ...versions.done.toReversed().map((item) => ({
-      key: item.job.id,
-      label: item.label,
-      name: `整片 ${item.label}`,
-      poster: posterOf(item.url),
-      running: undefined,
-      unseen: false,
-    })),
-  ]
-
-  const composeButton = (
-    <BlockedReason reason={composeBlocked} side="bottom">
-      <Button
-        aria-disabled={composeBlocked === undefined ? undefined : true}
-        className="video-editor-compose"
-        onClick={() => {
-          if (composeBlocked === undefined) void compose()
-        }}
-        size="md"
-      >
-        {/* 提交中不用 `loading`：它落原生 disabled，悬停就说不出原因了。 */}
-        {submitting ? (
-          <Icon className="motion-safe:animate-spin" decorative name="loading" size="md" />
-        ) : (
-          <Icon decorative name="video" size="md" />
-        )}
-        合成成片
-      </Button>
-    </BlockedReason>
   )
+}
 
-  /** 控制条最右的下载：下的是选中的那一版，看着草稿或还没合成好时灰着。 */
-  const downloadButton =
-    viewedDone === undefined ? (
-      <Button
-        className="video-editor-bar-button"
-        disabled
-        leadingIcon="download"
-        size="md"
-        title="合成后可下载"
-        variant="ghost"
-      >
-        下载
-      </Button>
-    ) : (
-      <VideoDownload
-        className={DOWNLOAD_CLASS}
-        jobId={viewedDone.job.id}
-        url={viewedDone.url}
-        watermarkUrl={null}
-      >
-        下载
-      </VideoDownload>
-    )
-
+/** 成片编辑器：把这段对话的各条素材片剪成一条成片，草稿自动存在服务端。 */
+export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: Props) {
+  const draftQuery = useWholeFilmDraftQuery(conversationId)
+  const catalogQuery = useComponentCatalog()
+  // 快捷键挂在弹窗上，草稿读到之后由编辑区接上
+  const keysRef = useRef<((event: KeyboardEvent<HTMLDivElement>) => void) | null>(null)
+  const failed = draftQuery.isError ? draftQuery : catalogQuery.isError ? catalogQuery : undefined
   return (
     <DialogRoot open onOpenChange={(open) => !open && onClose()}>
       <DialogSurface
         aria-describedby={undefined}
-        className="video-editor-dialog"
+        className="editor-dialog wf-dialog"
         onEscapeKeyDown={(event) => {
-          // 有选中或选区时 Escape 先收起它们，再按一次才关编辑器。
-          if (shownSelection === undefined && pick === undefined && !previewingMaterial) return
+          // 字幕改字时 Esc 只放弃这次输入，不关编辑器
+          if (event.target instanceof Element && event.target.closest('.wf-caption') !== null)
+            event.preventDefault()
+        }}
+        // 打开时焦点落在弹窗本身：落在顶栏按钮上会直接弹出它的说明
+        onOpenAutoFocus={(event) => {
           event.preventDefault()
-          setSelection(undefined)
-          setPick(undefined)
-          previewFilm()
+          if (event.target instanceof HTMLElement) event.target.focus()
         }}
         onInteractOutside={(event) => event.preventDefault()}
-        onKeyDown={keyDown}
+        onKeyDown={(event) => keysRef.current?.(event)}
       >
-        <DialogHeader
-          actions={composeButton}
-          className="video-editor-header border-0"
-          closeLabel="关闭视频编辑"
-          title={
-            <span className="video-editor-title">
-              <span>编辑视频</span>
-              <span className="text-body-sm font-normal text-on-surface-muted">整片</span>
-            </span>
-          }
-        />
-        <div
-          aria-label="整片编辑器"
-          className="video-editor whole-film-editor"
-          ref={setEditorElement}
-        >
-          <EditorPreview
-            backdrop={{ current: stageBackdrop, original: undefined }}
-            barEnd={downloadButton}
-            caption={
-              viewingDraft &&
-              !previewingMaterial &&
-              (previewFont.kind === 'system' || customCaptionLayout?.kind === 'ready')
-                ? caption === undefined
-                  ? undefined
-                  : normalizeCaptionText(caption)
-                : undefined
-            }
-            captionPresentation={
-              viewingDraft && !previewingMaterial && customCaptionLayout?.kind === 'ready'
-                ? customCaptionLayout.presentation
-                : undefined
-            }
-            contentKey={
-              previewingMaterial
-                ? `material:${previewMaterial.jobId}`
-                : viewingDraft
-                  ? 'whole-film'
-                  : `version:${viewingKey}`
-            }
-            current={current}
-            currentTime={previewingMaterial ? materialTime : currentTime}
-            muteMediaAudio={viewingDraft && !previewingMaterial}
-            playBlocked={
-              viewingDraft && !previewingMaterial && music.previewAudio.kind !== 'ready'
-                ? music.previewAudio.kind === 'loading'
-                  ? '正在准备预览声音…'
-                  : music.previewAudio.message
-                : undefined
-            }
-            emptyMessage={stageMessage}
-            footnote={
-              <>
-                {task?.kind === 'failed' ? (
-                  <InlineAlert
-                    action={{ label: '重试', onClick: task.retry }}
-                    message="任务信息读取失败，识别字幕、生成音乐与合成暂时无法提交"
-                  />
-                ) : null}
-                {composeError === null ? null : <InlineAlert message={composeError} />}
-                {viewingDraft && music.previewAudio.kind === 'failed' ? (
-                  <InlineAlert
-                    message={music.previewAudio.message}
-                    action={{ label: '重试', onClick: music.previewAudio.retry }}
-                  />
-                ) : null}
-                {viewingDraft && fontBlocked !== undefined ? (
-                  <InlineAlert
-                    message={fontBlocked}
-                    {...(previewFont.kind === 'failed'
-                      ? { action: { label: '重试', onClick: previewFont.retry } }
-                      : frame.isError
-                        ? { action: { label: '重试', onClick: () => void frame.refetch() } }
-                        : templatesQuery.isError
-                          ? {
-                              action: {
-                                label: '重试',
-                                onClick: () => void templatesQuery.refetch(),
-                              },
-                            }
-                          : {})}
-                  />
-                ) : null}
-                {templateBlocked === undefined ? null : (
-                  <InlineAlert
-                    message={templateBlocked}
-                    {...(brands.retry === undefined
-                      ? {}
-                      : { action: { label: '重试', onClick: brands.retry } })}
-                  />
-                )}
-                {subtitlesQuery.isError && seedFailure === undefined ? (
-                  <InlineAlert
-                    action={{ label: '重试', onClick: () => void subtitlesQuery.refetch() }}
-                    message={errorMessageOf(subtitlesQuery.error, '读取字幕记录失败')}
-                  />
-                ) : null}
-                {videos.isError && catalog !== undefined ? (
-                  <InlineAlert
-                    action={{ label: '重试', onClick: () => void videos.refetch() }}
-                    message={errorMessageOf(videos.error, '读取视频记录失败')}
-                  />
-                ) : null}
-                {viewingDraft && !previewingMaterial && unduckedCount > 0 ? (
-                  <p className="video-editor-footnote" role="status">
-                    有 {unduckedCount} 段缺少口播识别，配乐未自动避让；请在字幕轨重新识别
-                  </p>
-                ) : null}
-                {footnote === undefined ? null : (
-                  <p
-                    className="video-editor-footnote"
-                    role={notice === null ? undefined : 'status'}
-                  >
-                    {footnote}
-                  </p>
-                )}
-              </>
-            }
-            onPlay={() => {
-              setSelection((value) => (value?.kind === 'segment' ? value : undefined))
-              if (viewingDraft && !previewingMaterial) music.prime()
-            }}
-            onPlaybackChange={setPlayback}
-            onTime={previewingMaterial ? setMaterialTime : setCurrentTime}
-            original={undefined}
-            overlay={card}
-            poster={stagePoster}
-            readout={readout}
-            ref={previewRef}
-            timeline={
-              <>
-                <FilmSoundControls
-                  segmentLabel={
-                    selectedSegment === undefined ? undefined : `第 ${selectedIndex + 1} 段`
-                  }
-                  sourceVolume={selectedSegment?.volume ?? 1}
-                  musicVolume={film.music?.volume ?? 1}
-                  sourceDisabled={!editable || selectedSegment === undefined}
-                  musicDisabled={!editable || music.view.kind !== 'ready'}
-                  alignmentBlocked={
-                    !editable
-                      ? '请返回「未合成」调整配乐'
-                      : music.view.kind !== 'ready'
-                        ? '请先添加可用的配乐'
-                        : music.view.placement.shortBy > 0
-                          ? '配乐时长不足，请更换配乐'
-                          : music.view.song.grid === null
-                            ? '未检测到拍点，请拖动音乐调整起点'
-                            : undefined
-                  }
-                  onSourceVolume={(volume, edit) => {
-                    if (selectedSegment !== undefined)
-                      apply(
-                        (present) => setSegmentVolume(present, selectedSegment.id, volume),
-                        edit,
-                      )
-                  }}
-                  onMusicVolume={(volume, edit) =>
-                    apply((present) => setMusicVolume(present, volume), edit)
-                  }
-                  onAlign={() => {
-                    apply(resetMusicStart(film))
-                    setNotice('已按当前剪辑自动对齐配乐')
-                  }}
-                />
-                <div className="whole-film-track-scroll" role="region" aria-label="轨道列表">
-                  {viewingDraft ? (
-                    timeline
-                  ) : (
-                    // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
-                    <div className="whole-film-timeline-locked" inert>
-                      {timeline}
-                    </div>
-                  )}
-                </div>
-              </>
-            }
-            tools={toolButtons}
-            versions={
-              <EditorVersionStrip
-                entries={stripEntries}
-                onSelect={view}
-                selectedKey={viewingDraft ? DRAFT_KEY : viewingKey}
-                showSingle
-              />
-            }
+        {draftQuery.data !== undefined && catalogQuery.data !== undefined ? (
+          <EditorBody
+            catalog={catalogQuery.data}
+            conversationId={conversationId}
+            initial={draftQuery.data}
+            keysRef={keysRef}
+            title={conversationTitle}
           />
-        </div>
+        ) : (
+          <>
+            <EditorHeader actions={null} title={conversationTitle} />
+            {failed !== undefined ? (
+              <div className="wf-state">
+                <InlineAlert
+                  action={{ label: '重试', onClick: () => void failed.refetch() }}
+                  message={errorMessageOf(
+                    failed.error,
+                    failed === draftQuery ? '成片草稿读取失败' : '组件库读取失败',
+                  )}
+                />
+              </div>
+            ) : (
+              <p className="wf-state" role="status">
+                正在读取成片草稿…
+              </p>
+            )}
+          </>
+        )}
       </DialogSurface>
     </DialogRoot>
+  )
+}
+
+const takeLetterOf = (material: Material) => material.takeLabel.replace(/^生成\s*/, '')
+
+/** 素材里 ms 这一刻是第几个镜头；镜头表还没读到时 undefined */
+const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
+  const state = keyframes.get(url)
+  return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
+}
+
+const isTextEntry = (target: HTMLElement) =>
+  target.isContentEditable ||
+  target instanceof HTMLTextAreaElement ||
+  (target instanceof HTMLInputElement && target.type !== 'range')
+
+/**
+ * 编辑器的单键快捷键只在弹窗里、不在打字时生效；组件浮层与菜单挂在弹窗外，标签页的方向键与空格
+ * 留给标签页自己。
+ */
+const isShortcutTarget = (event: KeyboardEvent<HTMLDivElement>) =>
+  event.target instanceof HTMLElement &&
+  event.currentTarget.contains(event.target) &&
+  !isTextEntry(event.target) &&
+  event.target.closest('[role="tab"]') === null
+
+const attemptOf = (result: EditResult): Attempt =>
+  result.ok ? result : { ok: false, reason: REFUSAL_TEXT[result.refusal] }
+
+function EditorBody({
+  conversationId,
+  initial,
+  catalog,
+  keysRef,
+  title,
+}: {
+  conversationId: string
+  initial: WholeFilmDraftOut
+  catalog: ComponentCatalog
+  title: string
+  keysRef: RefObject<((event: KeyboardEvent<HTMLDivElement>) => void) | null>
+}) {
+  const notice = useCallback((message: string) => toast.info(message), [])
+  const session = useDraftSession(conversationId, initial, { onNotice: notice })
+  const { draft } = session
+  const [materialView, setMaterialView] = useState<MaterialView | null>(null)
+  const [materialMs, setMaterialMs] = useState(0)
+  const [materialPlaying, setMaterialPlaying] = useState(false)
+  const materialPreviewRef = useRef<MaterialPreviewControl | null>(null)
+  // 拖播放头、点画面轨或做成片编辑时回到成片；播放暂停控制当前预览。
+  const leaveMaterial = () => {
+    setMaterialView(null)
+    setMaterialPlaying(false)
+  }
+  const apply = (result: EditResult) => {
+    leaveMaterial()
+    return session.apply(result)
+  }
+
+  const videos = useShotGenerations(conversationId)
+  const materials = useMemo(
+    () => materialCatalog(groupConversationVideos(videos.data ?? [])),
+    [videos.data],
+  )
+  const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
+  const versionOf = (take: MaterialTake): Material =>
+    take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
+
+  const sourceUrls = useStableValue(
+    [
+      ...new Set(
+        draft.layer0.flatMap((clip) =>
+          clip.type === 'video' ? (materials.byJob.get(clip.sourceJobId)?.url ?? []) : [],
+        ),
+      ),
+    ].sort(),
+  )
+  const shownUrls = useStableValue(
+    [
+      ...new Set([
+        ...sourceUrls,
+        ...materials.groups.flatMap((group) => group.takes.map((take) => versionOf(take).url)),
+      ]),
+    ].sort(),
+  )
+  const keyframes = useKeyframeIndexes(shownUrls)
+  const peaks = useAudioPeaks(sourceUrls)
+
+  const music = useConversationMusic(conversationId)
+  const captionStatusId = useId()
+  const recognition = useSubtitleRecognition({
+    conversationId,
+    sourceJobIds: draft.layer0.flatMap((clip) => (clip.type === 'video' ? [clip.sourceJobId] : [])),
+  })
+  const unmeasured = useStableValue(
+    (music.data ?? []).flatMap((job) =>
+      job.status === 'completed' && job.outputUrl !== null && job.durationMs === null
+        ? [job.outputUrl]
+        : [],
+    ),
+  )
+  const musicDurations = useMeasuredMusicDurations(unmeasured)
+  const songIndex = music.data?.findIndex((job) => job.id === draft.music?.jobId) ?? -1
+  const song = music.data?.[songIndex]
+  const songUrl = song?.outputUrl ?? undefined
+  const songAnalysis = useMusicAnalysis(songUrl)
+  const beats = useMusicBeats(songUrl)
+
+  const context = useMemo(
+    () =>
+      buildEditContext({
+        materials: materials.byJob.values(),
+        keyframes,
+        subtitles: recognition.records ?? [],
+        music: music.data ?? [],
+        musicDurations,
+        beats:
+          beats.kind === 'ready' && draft.music !== null
+            ? { jobId: draft.music.jobId, beats: beats.beats }
+            : undefined,
+      }),
+    [materials, keyframes, recognition.records, music.data, musicDurations, beats, draft.music],
+  )
+
+  const [playheadMs, setPlayheadMs] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const previewRef = useRef<PreviewControl | null>(null)
+  const [selection, setSelection] = useState<Selection>(null)
+  const [popoverId, setPopoverId] = useState<string | null>(null)
+  // 画面上正在显示的合成页，画面点选在它里面找点中了什么
+  const [previewFrame, setPreviewFrame] = useState<HTMLIFrameElement | null>(null)
+  const [sideTab, setSideTab] = useState<SideTab>('materials')
+  const [sideChips, setSideChips] = useState<SideChips>({ brand: undefined, general: undefined })
+  const [snap, setSnap] = useState(true)
+  const [zoom, setZoom] = useState<Zoom>(FIT_ZOOM)
+  const [viewportWidth, setViewportWidth] = useState(0)
+  const [range, setRange] = useState<MaterialRange | null>(null)
+  const tracksRef = useRef<TracksHandle | null>(null)
+
+  const total = filmDuration(draft)
+  const scale = timelineScale(viewportWidth, total, zoom)
+  const playhead = Math.min(playheadMs, total)
+  // 停在成片末尾时仍取最后一帧所在的镜头；组件或空白段不沿用上一镜的背景。
+  const frameMs = Math.min(playhead, Math.max(0, total - 1))
+  const previewClip = draft.layer0.find(
+    (clip) => clip.start <= frameMs && frameMs < clip.start + clip.duration,
+  )
+  const previewUrl =
+    previewClip?.type === 'video' ? materials.byJob.get(previewClip.sourceJobId)?.url : undefined
+  const seek = (ms: number) => {
+    leaveMaterial()
+    setPlayheadMs(ms)
+    previewRef.current?.seek(ms)
+  }
+  const togglePlay = () => {
+    if (materialView !== null) {
+      materialPreviewRef.current?.toggle()
+      return
+    }
+    if (playing) previewRef.current?.pause()
+    else previewRef.current?.play()
+  }
+  /** 点画面轨上的段：选中，播放头移到段首并把这一段播一遍，停在段尾；拖动播放头或再按播放时取消 */
+  const playClip = (clip: Layer0Clip) => {
+    setSelection({ kind: 'clip', id: clip.id })
+    leaveMaterial()
+    setPlayheadMs(clip.start)
+    previewRef.current?.playRange(clip.start, clip.start + clip.duration)
+  }
+
+  const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
+  // 画布还没定时，第一段视频的画面尺寸定画布：选中镜头就开始读
+  const sizeUrl = draft.canvas === null ? rangeMaterial?.url : undefined
+  const size = useVideoSize(sizeUrl)
+  const queryClient = useQueryClient()
+
+  // 拖动中能不能放：素材时长没读到、画面尺寸读取失败时写原因；尺寸还在读不拦，插入时等它读到
+  const addBlocked =
+    range === null
+      ? '先在下方点一个镜头选中范围'
+      : context.sources[range.jobId] === undefined
+        ? '正在读取素材时长，稍后再试'
+        : draft.canvas === null && size.isError
+          ? errorMessageOf(size.error, '画面尺寸读取失败，无法加入成片')
+          : undefined
+
+  /** 把 picked 插到 at；画布还没定时 sourceSize 是这条素材的画面尺寸 */
+  const insertResult = (
+    picked: MaterialRange,
+    at: InsertAt,
+    sourceSize: { width: number; height: number } | undefined = size.data,
+  ) =>
+    insertMaterial(
+      draft,
+      {
+        sourceJobId: picked.jobId,
+        playbackStart: picked.startMs,
+        duration: picked.endMs - picked.startMs,
+        at,
+      },
+      draft.canvas === null && sourceSize !== undefined
+        ? withSourceSize(context, picked.jobId, sourceSize)
+        : context,
+    )
+  // 画面尺寸读到时已经过了几次渲染：用那时的草稿插
+  const insertResultRef = useRef(insertResult)
+  useEffect(() => {
+    insertResultRef.current = insertResult
+  })
+
+  const insert = (at: InsertAt): boolean => {
+    if (addBlocked !== undefined || range === null) {
+      notice(addBlocked ?? '先在下方点一个镜头选中范围')
+      return false
+    }
+    if (draft.canvas !== null || size.data !== undefined) return apply(insertResult(range, at))
+    // 画面尺寸还在读：等读到再插，不让人重按
+    const picked = range
+    void queryClient.fetchQuery(videoSizeQuery(sizeUrl)).then(
+      (read) => apply(insertResultRef.current(picked, at, read)),
+      (error: unknown) => notice(errorMessageOf(error, '画面尺寸读取失败，无法加入成片')),
+    )
+    return true
+  }
+
+  /** 拖着素材区选中的范围 picked：落在画面轨上插到最近的切点 */
+  const materialPayload = (
+    picked: MaterialRange,
+    origin?: MaterialCarry['origin'],
+  ): CarryPayload | undefined => {
+    const material = materials.byJob.get(picked.jobId)
+    if (material === undefined) return undefined
+    const duration = picked.endMs - picked.startMs
+    const shot = shotNumberOf((picked.startMs + picked.endMs) / 2, material.url, keyframes)
+    const blocked =
+      context.sources[picked.jobId] === undefined ? '正在读取素材时长，稍后再试' : undefined
+    return {
+      durationMs: duration,
+      ghost:
+        origin === undefined
+          ? undefined
+          : {
+              origin,
+              face: {
+                title: `${takeLetterOf(material)}${shot === undefined ? '' : ` · 镜头 ${shot}`}`,
+                durationMs: duration,
+                media: (
+                  <Frames
+                    part={{
+                      mediaUrl: material.url,
+                      start: picked.startMs / 1000,
+                      end: Math.min(picked.endMs, picked.startMs + 500) / 1000,
+                    }}
+                  />
+                ),
+              },
+            },
+      attempt: (point) => {
+        if (point.lane !== 'film') return undefined
+        if (blocked !== undefined) return { ok: false, reason: blocked }
+        return attemptOf(insertResult(picked, { timeMs: point.timeMs }))
+      },
+      drop: (point) => point.lane === 'film' && insert({ timeMs: point.timeMs }),
+    }
+  }
+
+  // 撤销、重做也是成片编辑：预览回到成片
+  const undo = () => {
+    leaveMaterial()
+    session.undo()
+  }
+  const redo = () => {
+    leaveMaterial()
+    session.redo()
+  }
+
+  const selectedId = selection !== null && 'id' in selection ? selection.id : undefined
+  const selectedVideo = draft.layer0.find(
+    (clip): clip is VideoClip => clip.id === selectedId && clip.type === 'video',
+  )
+  const split = splitClip(draft, {
+    timeMs: playhead,
+    ...(selectedId === undefined ? {} : { clipId: selectedId }),
+  })
+  const removeResult = (target: Removable): EditResult =>
+    target.kind === 'clip'
+      ? deleteClip(draft, { clipId: target.id })
+      : target.kind === 'overlay'
+        ? removeOverlay(draft, { overlayId: target.id })
+        : removeMusic(draft)
+  /** 删除选中的；字幕是识别出来的，不能删 */
+  const remove = (target: Selection) => {
+    if (target === null || target.kind === 'caption') return
+    if (apply(removeResult(target))) {
+      setSelection(null)
+      setPopoverId(null)
+    }
+  }
+
+  /**
+   * 单键快捷键：空格播放、暂停；Delete / ⌫ 删除选中的；⌥←/→ 把选中的段前后挪一位；选中特效块时
+   * ←/→ 把它挪 0.1 秒（⇧ 1 秒），否则播放头走 0.1 秒（⇧ 1 秒）。修剪手柄、音量推子自己处理方向键。
+   */
+  const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
+    const { key } = event
+    if (key === ' ') {
+      event.preventDefault()
+      togglePlay()
+      return
+    }
+    if (key === 'Delete' || key === 'Backspace') {
+      event.preventDefault()
+      remove(selection)
+      return
+    }
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
+    // 刻度尺上的定位滑块自己走播放头
+    if (event.target instanceof HTMLInputElement) return
+    event.preventDefault()
+    const sign = key === 'ArrowLeft' ? -1 : 1
+    const stepMs = event.shiftKey ? 1_000 : 100
+    if (event.altKey) {
+      if (selection?.kind !== 'clip') return
+      const from = draft.layer0.findIndex((clip) => clip.id === selection.id)
+      if (apply(moveClip(draft, { clipId: selection.id, to: sign < 0 ? from - 1 : from + 2 })))
+        tracksRef.current?.focusClip(selection.id)
+      return
+    }
+    if (selection?.kind === 'overlay') {
+      const overlay = draft.overlays.find((item) => item.id === selection.id)
+      if (overlay === undefined) return
+      const result = moveOverlay(draft, { overlayId: overlay.id, deltaMs: sign * stepMs })
+      if (result.ok && result.draft !== draft) apply(result)
+      else if (sign > 0 && overlay.start + overlay.duration + stepMs > MAX_FILM_MS)
+        notice(FILM_LIMIT_TEXT)
+      else if (sign > 0 || overlay.start > 0) notice('这一行旁边没有空位，挪不动了')
+      return
+    }
+    seek(Math.min(total, Math.max(0, playhead + sign * stepMs)))
+  }
+  useEffect(() => {
+    keysRef.current = (event) => {
+      handleUndoShortcut(event, session, leaveMaterial)
+      // 焦点不在任何控件上时（落在弹窗本身），Enter 把选区插到播放头处
+      if (event.key === 'Enter' && event.target === event.currentTarget) {
+        event.preventDefault()
+        insert({ timeMs: playhead })
+        return
+      }
+      shortcut(event)
+    }
+    return () => {
+      keysRef.current = null
+    }
+  })
+
+  // 音乐列表与时长读到之前，编辑操作拿不到这首音乐的事实（时长、拍点）
+  const musicKnown = draft.music !== null && context.music[draft.music.jobId] !== undefined
+  const beatBlocked =
+    draft.music === null
+      ? REFUSAL_TEXT['no-music']
+      : !musicKnown || beats.kind === 'loading'
+        ? '正在分析这首音乐的拍点，稍后再试'
+        : beats.kind === 'unavailable'
+          ? beats.reason
+          : undefined
+  const beatSync = () => {
+    const result = autoBeatSync(draft, context)
+    if (!apply(result) || !result.ok) return
+    toast.info(`已卡点 ${result.moved} 处，保留 ${result.kept} 处`)
+  }
+
+  // ---- 组件 ----
+  const componentFace = (name: string): ComponentFace => {
+    const item = itemOf(catalog, name)
+    return {
+      title: item?.title ?? '组件库里没有的组件',
+      thumbnail: item === undefined ? undefined : thumbnailOf(item),
+      icon: (item === undefined ? undefined : CATEGORY_ICON[item.category]) ?? 'grid',
+    }
+  }
+  /** 放进成片后选中新的组件段或特效块；有可填项就打开它的浮层 */
+  const place = (item: CatalogItem, placing: Placing): boolean => {
+    const result = placeComponent(draft, item, placing)
+    if (!apply(result) || !result.ok) return false
+    const placed = placedPiece(draft, result.draft)
+    if (placed !== undefined) {
+      setSelection(placed)
+      setPopoverId(item.variables.length > 0 ? placed.id : null)
+    }
+    return true
+  }
+  const placeFromCard = (item: CatalogItem) => place(item, { via: 'click', playheadMs: playhead })
+  const dropAt = (point: DropPoint): Placing => ({
+    via: 'drop',
+    lane: point.lane,
+    timeMs: point.timeMs,
+    overlayRow: point.overlayRow,
+  })
+  /**
+   * 拖着组件卡：落在哪条轨就是哪种用法；字幕样式只落在字幕轨，音乐轨不收组件。
+   * 手上的缩影是预览图加名字的小条，拿起时的卡片位置是它退回的地方。
+   */
+  const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
+    durationMs: durationMsOf(item, total),
+    ghost:
+      origin === undefined
+        ? undefined
+        : {
+            origin,
+            face: {
+              title: item.title,
+              durationMs: durationMsOf(item, total),
+              media: <ComponentThumb iconSize="xs" item={item} />,
+            },
+          },
+    attempt: (point) => {
+      const result = placeComponent(draft, item, dropAt(point))
+      return !result.ok && result.refusal === 'drop-elsewhere' ? undefined : attemptOf(result)
+    },
+    drop: (point) => place(item, dropAt(point)),
+  })
+  const carryComponent = (item: CatalogItem, carry: CardCarry | null) => {
+    if (carry === null) tracksRef.current?.cancel()
+    else
+      tracksRef.current?.carry(carry.clientX, carry.clientY, componentPayload(item, carry.origin))
+  }
+  const dropComponent = (item: CatalogItem, carry: CardCarry) =>
+    tracksRef.current?.release(carry.clientX, carry.clientY, componentPayload(item, carry.origin))
+  const hasFields = (name: string) => {
+    const item = itemOf(catalog, name)
+    return item === undefined || item.variables.length > 0
+  }
+
+  const renderPopover = (id: string): ReactNode => {
+    const clip = draft.layer0.find((item) => item.id === id && item.type === 'component')
+    const overlay = draft.overlays.find((item) => item.id === id)
+    const target =
+      clip?.type === 'component'
+        ? {
+            component: clip.component,
+            variables: clip.variables,
+            selection: { kind: 'clip', id } as const,
+          }
+        : overlay !== undefined
+          ? {
+              component: overlay.component,
+              variables: overlay.variables,
+              selection: { kind: 'overlay', id } as const,
+            }
+          : undefined
+    if (target === undefined) return null
+    const item = itemOf(catalog, target.component)
+    if (item === undefined)
+      return (
+        <div className="wf-pop">
+          <p className="wf-pop-desc">组件库里没有这个组件，无法使用</p>
+          <Button onClick={() => remove(target.selection)} size="md" variant="outlined">
+            移除
+          </Button>
+        </div>
+      )
+    return (
+      <ComponentPopover
+        item={item}
+        onChange={(variables: ComponentVariables) =>
+          apply(setComponentVariables(draft, { id, variables }))
+        }
+        onRemove={() => remove(target.selection)}
+        values={target.variables}
+      />
+    )
+  }
+
+  // ---- 字幕 ----
+  const subtitleRecords = useMemo(() => {
+    const records: Record<string, SubtitleRecord | null> = {}
+    for (const [jobId, source] of Object.entries(context.sources)) records[jobId] = source.subtitle
+    return records
+  }, [context.sources])
+  const captions = useMemo(() => placeCaptions(draft, subtitleRecords), [draft, subtitleRecords])
+  const recognized = (caption: PlacedCaption) =>
+    Object.values(subtitleRecords).find((record) => record?.subtitleJobId === caption.subtitleJobId)
+      ?.sentences[caption.sentenceIndex]?.text ?? caption.text
+  const sentenceText = (caption: PlacedCaption) =>
+    draft.captions.edits.find(
+      (edit) =>
+        edit.subtitleJobId === caption.subtitleJobId &&
+        edit.sentenceIndex === caption.sentenceIndex,
+    )?.text ?? recognized(caption)
+  /** 改一句字幕的字；返回写没写进草稿（没变不记编辑） */
+  const editCaption = (caption: PlacedCaption, text: string): boolean => {
+    const result = captionTextEdit(draft, {
+      caption,
+      text,
+      current: sentenceText(caption),
+      recognized: recognized(caption),
+    })
+    return result !== null && apply(result)
+  }
+
+  // ---- 预览 ----（React Compiler 按草稿与素材缓存，播放头走动时不重新生成）
+  const preview = previewState(
+    draft,
+    compositionMedia(draft, {
+      videoUrl: (jobId) => materials.byJob.get(jobId)?.url,
+      musicUrl: songUrl,
+      subtitles: subtitleRecords,
+    }),
+    catalog,
+    window.location.origin,
+  )
+  const playBlocked = preview.kind === 'blocked' ? preview.message : undefined
+  const canvas = draft.canvas ?? DEFAULT_CANVAS
+  /** 在画面上点中：等于在时间线上点中，但不打开组件浮层 */
+  const selectOnCanvas = (next: Selection) => {
+    setSelection(next)
+    setPopoverId(null)
+  }
+
+  // ---- 导出 ----
+  const exporting = useWholeFilmExport(conversationId, session.settle)
+  const exportBlocked =
+    draft.layer0.length === 0 ? '成片里还没有画面，无法导出；请先加入视频或组件' : undefined
+
+  const clipLabel = (clip: VideoClip) => {
+    const material = materials.byJob.get(clip.sourceJobId)
+    if (material === undefined) return '素材不在了'
+    const shot = shotNumberOf(clip.playbackStart, material.url, keyframes)
+    return shot === undefined
+      ? `${takeLetterOf(material)} · ${material.version}`
+      : `${takeLetterOf(material)} · 镜头 ${shot}`
+  }
+
+  const selectedIndex = draft.layer0.findIndex((clip) => clip.id === selectedId)
+  const clipText =
+    selectedIndex < 0 ? (
+      '选择片段可调原声'
+    ) : (
+      <>
+        当前片段 · <b>第 {selectedIndex + 1} 段</b>
+        {selectedVideo === undefined ? ' · 没有原声' : ''}
+      </>
+    )
+
+  // ---- 素材预览 ----
+  const viewedMaterial =
+    materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
+  const materialLabel = (material: Material, shown: MaterialRange) => {
+    const shot = shotNumberOf((shown.startMs + shown.endMs) / 2, material.url, keyframes)
+    return `素材 · ${material.groupLabel} · ${material.takeLabel}${shot === undefined ? '' : ` · 镜头 ${shot}`}`
+  }
+  const showMaterial = (shown: MaterialRange, show: MaterialView['show']) => {
+    previewRef.current?.pause()
+    setRange(shown)
+    setMaterialView({ range: shown, show })
+  }
+
+  return (
+    <>
+      <EditorHeader
+        title={title}
+        actions={
+          <ExportControl
+            blocked={exportBlocked}
+            onCancel={() => void exporting.cancel()}
+            onStart={() => void exporting.start()}
+            view={exporting.view}
+          />
+        }
+      />
+      <div aria-label="成片编辑器" className="wf-workspace" role="group">
+        <TabsRoot
+          className="wf-side"
+          onValueChange={(value) => setSideTab(value as SideTab)}
+          value={sideTab}
+        >
+          <TabsList aria-label="素材、品牌与通用" className="wf-side-tabs">
+            <TabsTrigger value="materials">素材</TabsTrigger>
+            <TabsTrigger value="brand">品牌</TabsTrigger>
+            <TabsTrigger value="general">通用</TabsTrigger>
+          </TabsList>
+          <TabsContent className="wf-side-body" value="materials">
+            <MusicPanel
+              apply={apply}
+              context={context}
+              conversationId={conversationId}
+              draft={draft}
+              onNotice={notice}
+            />
+          </TabsContent>
+          <TabsContent className="wf-side-body is-components" value="brand">
+            <ComponentsPanel
+              captionComponent={draft.captions.component}
+              emptyText="暂无品牌组件"
+              groups={brandGroups(catalog)}
+              groupsLabel="品牌"
+              onCarry={carryComponent}
+              onDrop={dropComponent}
+              onSelect={(id) => setSideChips((chips) => ({ ...chips, brand: id }))}
+              onUse={placeFromCard}
+              selected={sideChips.brand}
+            />
+          </TabsContent>
+          <TabsContent className="wf-side-body is-components" value="general">
+            <ComponentsPanel
+              captionComponent={draft.captions.component}
+              emptyText="暂无组件"
+              groups={categoryGroups(catalog)}
+              groupsLabel="分类"
+              onCarry={carryComponent}
+              onDrop={dropComponent}
+              onSelect={(id) => setSideChips((chips) => ({ ...chips, general: id }))}
+              onUse={placeFromCard}
+              selected={sideChips.general}
+            />
+          </TabsContent>
+        </TabsRoot>
+        <PreviewPlayer
+          backdrop={previewUrl === undefined ? undefined : videoSnapshotUrl(previewUrl, 320)}
+          controlRef={previewRef}
+          height={canvas.height}
+          message={playBlocked}
+          onFrame={setPreviewFrame}
+          onPlaying={setPlaying}
+          onTime={setPlayheadMs}
+          srcdoc={preview.kind === 'ready' ? preview.html : undefined}
+          width={canvas.width}
+        >
+          <CanvasLayer
+            canvas={canvas}
+            captions={captions}
+            draft={draft}
+            iframe={previewFrame}
+            onCaptionText={editCaption}
+            onComponentText={(change) => {
+              const result = componentTextEdit(draft, change)
+              return result !== null && apply(result)
+            }}
+            onMove={(op) => {
+              const result = moveEditOf(draft, op)
+              return result !== null && apply(result)
+            }}
+            onPause={() => previewRef.current?.pause()}
+            onSelect={selectOnCanvas}
+            playheadMs={playhead}
+            selection={selection}
+            sentenceText={sentenceText}
+            snap={snap}
+          />
+        </PreviewPlayer>
+        {viewedMaterial === undefined || materialView === null ? null : (
+          <MaterialPreview
+            controlRef={materialPreviewRef}
+            label={materialLabel(viewedMaterial, materialView.range)}
+            onNotice={notice}
+            onPlaying={setMaterialPlaying}
+            onTime={setMaterialMs}
+            timeMs={materialMs}
+            url={viewedMaterial.url}
+            view={materialView}
+          />
+        )}
+        <div className="wf-timeline">
+          <EditorToolbar
+            beatBlocked={beatBlocked}
+            canRedo={session.canRedo}
+            canUndo={session.canUndo}
+            deleteBlocked={
+              selection === null || selection.kind === 'caption' ? '先选中要删除的片段' : undefined
+            }
+            onBeatSync={beatSync}
+            onDelete={() => remove(selection)}
+            onFit={() => setZoom(FIT_ZOOM)}
+            onPlay={togglePlay}
+            onRedo={redo}
+            onSnap={() => setSnap((value) => !value)}
+            onSplit={() => {
+              if (apply(split) && split.ok) setSelection(null)
+            }}
+            onUndo={undo}
+            onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
+            playBlocked={materialView === null ? playBlocked : undefined}
+            playheadMs={playhead}
+            playing={materialView === null ? playing : materialPlaying}
+            snap={snap}
+            splitBlocked={split.ok ? undefined : REFUSAL_TEXT[split.refusal]}
+            totalMs={total}
+          />
+          <SoundRow
+            clipBlocked={
+              selectedIndex < 0 ? '先在画面轨上选中一段视频' : REFUSAL_TEXT['not-a-video']
+            }
+            clipText={clipText}
+            clipVolume={selectedVideo?.volume}
+            musicVolume={draft.music?.volume}
+            onClipVolume={(volume) => {
+              if (selectedVideo !== undefined)
+                apply(setClipVolume(draft, { clipId: selectedVideo.id, volume }))
+            }}
+            onMusicVolume={(volume) => apply(setMusicVolume(draft, { volume }))}
+          />
+          {session.save.kind === 'failed' ? (
+            <InlineAlert
+              action={{ label: '重新保存', onClick: session.flush }}
+              message={session.save.message}
+            />
+          ) : null}
+          <FilmTracks
+            apply={apply}
+            beats={musicKnown ? filmBeats(draft, context) : []}
+            captionControls={
+              <CaptionControls
+                component={draft.captions.component}
+                hidden={draft.captions.hidden === true}
+                onStyle={(component) => apply(setCaptionStyle(draft, { component }))}
+                onToggleHidden={() =>
+                  apply(setCaptionsHidden(draft, { hidden: !draft.captions.hidden }))
+                }
+                recognition={recognition}
+                statusId={captionStatusId}
+                styles={catalog.items.filter((item) => item.placement === 'caption')}
+              />
+            }
+            captionStatus={
+              <CaptionStatus
+                hasCaptions={captions.length > 0}
+                id={captionStatusId}
+                recognition={recognition}
+              />
+            }
+            captions={captions}
+            clipLabel={clipLabel}
+            componentFace={componentFace}
+            context={context}
+            draft={draft}
+            music={
+              song === undefined || songUrl === undefined
+                ? undefined
+                : {
+                    url: songUrl,
+                    title: `音乐 ${songIndex + 1}`,
+                    peaks: peaksStateOf(songAnalysis),
+                  }
+            }
+            musicAction={
+              <MusicAction
+                conversationId={conversationId}
+                musicJobId={draft.music?.jobId}
+                onNotice={notice}
+                onOpenMusic={() => setSideTab('materials')}
+              />
+            }
+            onCaptionText={editCaption}
+            onClipClick={playClip}
+            onSeek={seek}
+            onSelect={(next) => {
+              leaveMaterial()
+              setSelection(next)
+              if (next === null) setPopoverId(null)
+            }}
+            onViewportWidth={setViewportWidth}
+            peaks={peaks}
+            playheadMs={playhead}
+            popovers={{
+              openId: popoverId,
+              onOpen: setPopoverId,
+              render: renderPopover,
+              hasFields,
+            }}
+            scale={scale}
+            selection={selection}
+            sentenceText={sentenceText}
+            snap={snap}
+            tracksRef={tracksRef}
+            urlOf={(sourceJobId) => materials.byJob.get(sourceJobId)?.url}
+          />
+          <MaterialArea
+            groups={materials.groups}
+            keyframes={keyframes}
+            onCarry={(carry) => {
+              const payload =
+                carry === null ? undefined : materialPayload(carry.range, carry.origin)
+              if (carry === null || payload === undefined) tracksRef.current?.cancel()
+              else tracksRef.current?.carry(carry.clientX, carry.clientY, payload)
+            }}
+            onDrop={(clientX, clientY, picked) => {
+              const payload = materialPayload(picked)
+              return (
+                payload !== undefined &&
+                (tracksRef.current?.release(clientX, clientY, payload) ?? false)
+              )
+            }}
+            onInsert={() => insert({ timeMs: playhead })}
+            onPick={(picked) => showMaterial(picked, 'play')}
+            onSelect={setRange}
+            onTrim={showMaterial}
+            onVersion={(takeId, jobId) => {
+              setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
+              if (range?.takeId !== takeId) return
+              setRange(null)
+              leaveMaterial()
+            }}
+            placeholder={
+              videos.isError ? (
+                <InlineAlert
+                  action={{ label: '重试', onClick: () => void videos.refetch() }}
+                  message={errorMessageOf(videos.error, '读取素材片失败')}
+                />
+              ) : videos.isPending ? (
+                <p className="wf-panel-note" role="status">
+                  正在读取素材片…
+                </p>
+              ) : undefined
+            }
+            previewMs={materialView === null ? undefined : materialMs}
+            range={range}
+            used={usedSpans(draft.layer0)}
+            versionOf={versionOf}
+          />
+        </div>
+      </div>
+    </>
   )
 }

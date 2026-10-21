@@ -88,15 +88,14 @@ def card(
 
 
 def film_card(at: datetime) -> WholeFilmCardRow:
-    """一张只有一版的整片卡，卡面在 ``at`` 完成。"""
+    """一张只有一版的成片卡，卡面在 ``at`` 完成。"""
 
     version = WholeFilmVersionOut(
         job_id=uuid.uuid4(),
         output_url="https://oss.example.test/film.mp4",
-        watermark_output_url=None,
-        duration_ms=1000,
         finished_at=at,
         user_name="Nora.Ho",
+        source_job_ids=[uuid.uuid4()],
     )
     return WholeFilmCardRow(
         card=WholeFilmCardOut(
@@ -171,6 +170,9 @@ class FakeReports:
     async def count_whole_films(self, scope: WholeFilmScope) -> int:
         self.films_counted.append(scope)
         return len(self.films)
+
+    async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]:
+        return [LibraryAuthorOut(user_name="Nora.Ho", count=len(self.films))]
 
 
 def library(
@@ -257,7 +259,7 @@ async def test_limit_out_of_range_is_rejected() -> None:
 
 
 async def test_whole_film_cursor_keys_on_the_face_and_the_conversation() -> None:
-    """整片卡的游标是卡面完成时刻加对话 id，总数只在第一页；空白关键词等于不筛。"""
+    """成片卡的游标是卡面完成时刻加对话 id，总数只在第一页；空白关键词等于不筛。"""
 
     reports = FakeReports(films=[film_card(NOW - timedelta(minutes=minute)) for minute in range(3)])
     service = library(reports)

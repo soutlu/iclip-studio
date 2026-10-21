@@ -1,104 +1,48 @@
-/** 参考视频的一张卡：封面是视频首帧截图，左上角是拆解状态，下面是标签行与属主、时间。点画面进详情。
- *
- * 正在上传的文件还没建行，另画一张只有进度的卡，排在最前面。 */
-
-import { useState } from 'react'
 import { Icon } from '@/shared/icons'
-import { videoSnapshotUrl } from '@/shared/lib/media-url'
-import { formatRelativeTime } from '@/shared/lib/relative-time'
 import { cn } from '@/shared/lib/utils'
-import { REFERENCE_FALLBACK_RATIO, snapshotWidthFor } from '../library-layout'
+import { PLACEHOLDER_VIDEO_RATIO } from '../library-layout'
 import { referenceTitleOf, UNTAGGED_YET, type VideoTypeLabels } from '../reference-labels'
 import type { PendingUpload } from '../reference-upload'
 import type { ReferenceItem } from '../references.api'
 import { AuthorAvatar } from './author-avatar'
+import { CardByline } from './card-byline'
+import { PlaceholderRatioCard } from './placeholder-ratio-card'
 
 type ReferenceCardProps = {
   item: ReferenceItem
   labels: VideoTypeLabels
-  /** 这一列的显示宽度，决定封面截多大。 */
   width: number
   onOpen: (id: string) => void
   onAuthor: (userName: string) => void
 }
 
 export function ReferenceCard({ item, labels, width, onOpen, onAuthor }: ReferenceCardProps) {
-  // 列宽量出来之前不请求封面，免得先按占位宽度截一张、量完再截一张。
-  const poster =
-    width > 0
-      ? videoSnapshotUrl(item.videoUrl, snapshotWidthFor(width, window.devicePixelRatio || 1))
-      : null
-  // 列表项不带画幅：先按竖版占位，封面到了按它的实际比例撑开。
-  const [ratio, setRatio] = useState(REFERENCE_FALLBACK_RATIO)
-  const [posterLoaded, setPosterLoaded] = useState(false)
   const title = referenceTitleOf(item, labels)
-  const author = item.userName
-
   return (
-    <article aria-label={title.text} className="library-card group flex flex-col">
-      <div
-        className="library-card-media relative overflow-hidden rounded-md bg-surface-container-low"
-        style={{ aspectRatio: ratio }}
-      >
-        {poster === null ? null : poster === undefined ? (
-          // 不是 OSS 地址截不了帧，只放一个视频图标。
-          <span className="absolute inset-0 grid place-items-center text-on-surface-variant">
-            <Icon decorative name="video" size="xl" />
-          </span>
-        ) : (
-          <img
-            alt=""
-            className={cn(
-              'library-card-poster absolute inset-0 size-full object-cover',
-              posterLoaded && 'library-card-poster-loaded',
-            )}
-            decoding="async"
-            loading="lazy"
-            onLoad={(event) => {
-              const { naturalWidth, naturalHeight } = event.currentTarget
-              if (naturalWidth > 0 && naturalHeight > 0) setRatio(naturalWidth / naturalHeight)
-              setPosterLoaded(true)
-            }}
-            src={poster}
-          />
+    <PlaceholderRatioCard
+      badges={<StatusBadge status={item.breakdownStatus} />}
+      cardId={item.id}
+      label={title.text}
+      onOpen={() => onOpen(item.id)}
+      openLabel={`查看详情：${title.text}`}
+      videoUrl={item.videoUrl}
+      width={width}
+    >
+      <h3
+        className={cn(
+          'line-clamp-2 text-body break-words',
+          title.placeholder ? 'text-on-surface-faint' : 'font-medium text-on-surface',
         )}
-        <button
-          aria-label={`查看详情：${title.text}`}
-          className="absolute inset-0 cursor-pointer rounded-md ui-focus"
-          data-open-reference={item.id}
-          onClick={() => onOpen(item.id)}
-          type="button"
-        />
-        <StatusBadge status={item.breakdownStatus} />
-      </div>
-
-      <div className="px-0.5 pt-2.5">
-        <h3
-          className={cn(
-            'line-clamp-2 text-body break-words',
-            title.placeholder ? 'text-on-surface-faint' : 'font-medium text-on-surface',
-          )}
-        >
-          {title.text}
-        </h3>
-        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-body-sm text-on-surface-variant">
-          {author === null ? null : (
-            <button
-              className="inline-flex min-w-0 ui-state items-center gap-1.5 rounded-full py-0.5 pr-1.5 ui-focus"
-              onClick={() => onAuthor(author)}
-              title={`仅显示 ${author} 的参考视频`}
-              type="button"
-            >
-              <AuthorAvatar className="size-4.5 text-caption" name={author} />
-              <span className="truncate">{author}</span>
-            </button>
-          )}
-          <span className="shrink-0 text-on-surface-faint">
-            {formatRelativeTime(item.createdAt)}
-          </span>
-        </div>
-      </div>
-    </article>
+      >
+        {title.text}
+      </h3>
+      <CardByline
+        at={item.createdAt}
+        author={item.userName}
+        itemNoun="参考视频"
+        onAuthor={onAuthor}
+      />
+    </PlaceholderRatioCard>
   )
 }
 
@@ -116,7 +60,6 @@ function StatusBadge({ status }: { status: ReferenceItem['breakdownStatus'] }) {
   )
 }
 
-/** 正在上传的那张卡：没有封面，压一条进度；文件名放在画面里，太长截断。 */
 export function UploadingCard({
   upload,
   myUserName,
@@ -129,7 +72,7 @@ export function UploadingCard({
     <article aria-label={`正在上传：${upload.name}`} className="library-card flex flex-col">
       <div
         className="library-card-media relative overflow-hidden rounded-md bg-surface-container-low"
-        style={{ aspectRatio: REFERENCE_FALLBACK_RATIO }}
+        style={{ aspectRatio: PLACEHOLDER_VIDEO_RATIO }}
       >
         <span className="absolute inset-0 grid place-items-center text-on-surface-faint">
           <Icon decorative name="video" size="xl" />

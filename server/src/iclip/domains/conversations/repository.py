@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
-from iclip.domains.conversations.models import Conversation
+from iclip.domains.conversations.models import Conversation, WholeFilmDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,4 +191,26 @@ class ConversationRepository(Protocol):
         ...
 
 
-__all__ = ["CollectionConversations", "ConversationRepository", "PageCursor"]
+class WholeFilmDraftStore(Protocol):
+    """``iclip.whole_film_drafts`` 的数据访问。不判权限，调用方先判对话可见、可写。"""
+
+    async def get(self, conversation_id: uuid.UUID) -> WholeFilmDraft | None:
+        """这段对话的草稿；还没存过给 ``None``。"""
+        ...
+
+    async def save(
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        document: Mapping[str, Any],
+        revision: int,
+        updated_by: uuid.UUID,
+    ) -> WholeFilmDraft | None:
+        """``revision`` 是调用方读到的版本（还没有草稿是 0），对上了就整份覆盖、版本加一，返回新的
+        一份；对不上（含还没有草稿却给了非 0、已有草稿却给了 0）什么都不写，给 ``None``。
+
+        核对与写入是同一条语句，并发的两次保存只有一次成功。"""
+        ...
+
+
+__all__ = ["CollectionConversations", "ConversationRepository", "PageCursor", "WholeFilmDraftStore"]

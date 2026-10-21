@@ -38,7 +38,9 @@ from iclip.capabilities.shot_video.shots import (
 )
 from iclip.platform.file_store.store import FileStore
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.ffmpeg import MAX_VIDEO_BYTES, MediaError, fetched, probe_duration_ms
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
+from iclip.platform.media.probe import probe_duration_ms
 
 EXTRACTION_PATH: Final = "frames/extraction.json"
 EXTRACTION_VERSION: Final = 1

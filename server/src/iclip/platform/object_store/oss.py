@@ -19,6 +19,7 @@ from iclip.platform.object_store.layout import OSS_ROOT
 from iclip.platform.object_store.store import (
     SIGNED_PUT_EXPIRES_SECONDS,
     ObjectStoreUnavailable,
+    SignedUpload,
     StoredObject,
 )
 
@@ -111,6 +112,23 @@ class OssObjectStore:
             )
         except oss2.exceptions.OssError as exc:  # pragma: no cover - 本地计算，理论上不会走到
             raise ObjectStoreUnavailable(f"OSS 签名失败: {exc}") from exc
+
+    def sign_server_upload(
+        self, *, object_key: str, content_type: str, expires_seconds: int
+    ) -> SignedUpload:
+        """用读写客户端签：配了内网 endpoint 时地址是内网的，给同机房的服务端上传。"""
+
+        key = _validate_object_key(object_key)
+        if not content_type.strip():
+            raise ValueError("预签名 PUT 必须指定内容类型")
+        headers = {"Content-Type": content_type}
+        try:
+            url = self._bucket.sign_url(
+                "PUT", key, expires_seconds, headers=dict(headers), slash_safe=True
+            )
+        except oss2.exceptions.OssError as exc:  # pragma: no cover - 本地计算，理论上不会走到
+            raise ObjectStoreUnavailable(f"OSS 签名失败: {exc}") from exc
+        return SignedUpload(url=str(url), headers=headers)
 
     async def find_object(self, *, prefix: str) -> StoredObject | None:
         """在线程中执行对象列举及元信息查询。"""

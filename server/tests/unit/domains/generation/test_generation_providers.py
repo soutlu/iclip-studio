@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import get_args
 
 import httpx
@@ -20,7 +21,12 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
-from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, ClipStage, ImageGenerationIn
+from iclip.domains.generation.schemas import (
+    IMAGE_ASPECT_RATIOS,
+    ClipStage,
+    ImageGenerationIn,
+    VideoEnhanceRequest,
+)
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.platform.media.codec import SOFTWARE
@@ -32,9 +38,11 @@ from tests.helpers.generation import (
     MemoryObjectStore,
     compose_request,
     image_request,
+    make_enhancement,
     make_job,
     video_request,
     video_shot,
+    whole_film_request,
 )
 
 VIDEO_SETTINGS = VideoProviderSettings(
@@ -251,7 +259,7 @@ async def test_video_poll_maps_terminal_and_running_states() -> None:
         SUCCEEDED_RESULT["output_url"],
         SUCCEEDED_RESULT["watermark_output_url"],
     ), "上游发布好的地址直接存，不转存"
-    assert fetched == ["video.test"], "只问了状态，没去下载成片"
+    assert fetched == ["video.test"], "只问了状态，没去下载产物"
     assert (await video_provider(running).poll(job)).outcome == "running"
     rejected = await video_provider(failed).poll(job)
     assert (rejected.outcome, rejected.error_code) == ("failed", "NSFW")
@@ -266,7 +274,7 @@ def succeeded_with(result: Mapping[str, object]) -> HttpVideoProvider:
 
 
 async def test_video_poll_takes_the_measured_output_duration() -> None:
-    """成片时长取上游实测的秒数折成毫秒；``result.duration_ms`` 是生成耗时，不读。"""
+    """产物时长取上游实测的秒数折成毫秒；``result.duration_ms`` 是生成耗时，不读。"""
 
     provider = succeeded_with(
         SUCCEEDED_RESULT | {"output_duration_seconds": 10.041667, "duration_ms": 45000}
@@ -754,3 +762,135 @@ async def test_gpt_image_refuses_a_tier_it_does_not_declare() -> None:
         await provider.submit(make_job(image_request(aspect_ratio="9:16", resolution="1k")))
 
     assert raised.value.code == "PROVIDER_SIZE_UNSUPPORTED"
+
+
+# --- 超分（高清版） ------------------------------------------------------------------
+
+ENHANCE_URL = "https://video.test/videos/enhance/async"
+ENHANCE_SETTINGS = replace(VIDEO_SETTINGS, enhance_submit_url=ENHANCE_URL)
+
+
+def enhance_provider(
+    handler: object, *, settings: VideoProviderSettings = ENHANCE_SETTINGS
+) -> HttpVideoProvider:
+    assert callable(handler)
+    return HttpVideoProvider(settings, transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+
+
+def finished_take() -> GenerationJob:
+    return make_job(
+        video_request(resolution="720p"),
+        status="completed",
+        output_url="https://cdn.test/take.mp4",
+        watermark_output_url="https://cdn.test/take-wm.mp4",
+    )
+
+
+def finished_film() -> GenerationJob:
+    return make_job(
+        whole_film_request(uuid.uuid4()),
+        status="completed",
+        output_url="https://cdn.test/film.mp4",
+    )
+
+
+@pytest.mark.parametrize("source", [finished_take, finished_film], ids=["video", "whole_film"])
+async def test_an_enhancement_goes_to_its_own_address_with_the_upstream_body(
+    source: Callable[[], GenerationJob],
+) -> None:
+    """超分打超分那个地址，请求体就是记下的那份，一个字段都不多；同一把 key。种类不论跟哪种来源。"""
+
+    seen: list[tuple[str, str | None, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (str(request.url), request.headers.get("x-api-key"), json.loads(request.content))
+        )
+        return httpx.Response(200, json={"task_id": "e-1"})
+
+    origin = source()
+    submission = await enhance_provider(handler).submit(make_enhancement(origin, "1080p"))
+
+    assert submission.provider_task_id == "e-1"
+    assert seen == [
+        (
+            ENHANCE_URL,
+            "secret-key",
+            {
+                "model": "video-enhance",
+                "resolution": "1080p",
+                "fps": 30,
+                "video_url": origin.output_url,
+                "user_name": "logan",
+            },
+        )
+    ]
+
+
+async def test_an_enhancement_without_a_frame_rate_does_not_send_one() -> None:
+    sent: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"task_id": "e-1"})
+
+    job = make_enhancement(finished_take())
+    assert isinstance(job.request, VideoEnhanceRequest)
+    unframed = replace(job, request=job.request.model_copy(update={"fps": None}))
+    await enhance_provider(handler).submit(unframed)
+
+    assert sent == [
+        {
+            "model": "video-enhance",
+            "resolution": "1080p",
+            "video_url": "https://cdn.test/take.mp4",
+            "user_name": "logan",
+        }
+    ]
+
+
+async def test_takes_still_go_to_the_generation_address_when_enhance_is_on() -> None:
+    urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        urls.append(str(request.url))
+        return httpx.Response(200, json={"task_id": "t-1"})
+
+    await enhance_provider(handler).submit(make_job(video_request()))
+
+    assert urls == [VIDEO_SETTINGS.submit_url]
+
+
+async def test_an_enhancement_is_polled_like_a_take() -> None:
+    """查询地址、带的 user_name 与成功结果的两个地址都同出片。"""
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"status": "succeeded", "result": SUCCEEDED_RESULT})
+
+    job = replace(make_enhancement(finished_film()), provider_task_id="e/1")
+    done = await enhance_provider(handler).poll(job)
+
+    assert seen == ["https://video.test/tasks/e%2F1?user_name=logan"]
+    assert (done.outcome, done.output_url, done.watermark_output_url) == (
+        "succeeded",
+        SUCCEEDED_RESULT["output_url"],
+        SUCCEEDED_RESULT["watermark_output_url"],
+    )
+
+
+async def test_an_enhancement_without_an_address_fails_for_good_without_calling_out() -> None:
+    called: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        called.append(str(request.url))
+        return httpx.Response(200, json={"task_id": "e-1"})
+
+    provider = enhance_provider(handler, settings=VIDEO_SETTINGS)
+    with pytest.raises(ProviderError) as raised:
+        await provider.submit(make_enhancement(finished_take()))
+
+    assert (raised.value.code, raised.value.retryable) == ("ENHANCE_NOT_CONFIGURED", False)
+    assert called == []

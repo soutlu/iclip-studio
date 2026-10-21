@@ -17,6 +17,7 @@ from iclip.domains.generation.schemas import (
     KIND_IMAGE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
 )
@@ -36,6 +37,7 @@ _JOBS: tuple[tuple[str, str, str, str, str | None, bool], ...] = (
     ("image", KIND_IMAGE, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
     ("upload", KIND_VIDEO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
     ("music_upload", KIND_AUDIO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
+    ("enhancement", KIND_VIDEO, OPERATION_ENHANCE, STATUS_COMPLETED, "video", True),
 )
 DOWNLOADABLE = ("video", "composite")
 
@@ -49,7 +51,7 @@ async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: 
 
 async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
     """一段对话里一条成了的出片，它上面的一段编辑与那次合成，外加没成的、没地址的出片与一张图；
-    另有不挂对话、没有请求的一条视频上传与一条音乐上传。"""
+    另有不挂对话、没有请求的一条视频上传与一条音乐上传，以及那条出片不挂对话的一条高清版。"""
 
     conversation_id = uuid.uuid4()
     ids = {label: uuid.uuid4() for label, *_ in _JOBS}
@@ -63,6 +65,8 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
         )
         for label, kind, operation, status, source, has_url in _JOBS:
             upload = operation == OPERATION_UPLOAD
+            # 高清版（超分）不挂对话、没有原作，请求是发给超分接口的那几项。
+            enhancement = operation == OPERATION_ENHANCE
             request = (
                 None
                 if upload
@@ -77,6 +81,13 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                     ]
                 }
                 if operation == OPERATION_COMPOSE
+                else {
+                    "model": "video-enhance",
+                    "resolution": "1080p",
+                    "video_url": "https://oss.example.test/video.mp4",
+                    "user_name": "nora",
+                }
+                if enhancement
                 else {"model": "m", "prompt": "p", "user_name": "nora"}
             )
             edit = operation == OPERATION_GENERATE and source is not None
@@ -92,14 +103,14 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                 {
                     "id": ids[label],
                     "owner": owner,
-                    "conversation_id": None if upload else conversation_id,
+                    "conversation_id": None if upload or enhancement else conversation_id,
                     "kind": kind,
                     "operation": operation,
                     "request": None if request is None else json.dumps(request),
                     "finished_at": datetime.now(UTC) if upload else None,
                     "status": status,
                     "source": None if source is None else ids[source],
-                    "root": None if source is None else ids["video"],
+                    "root": None if source is None or enhancement else ids["video"],
                     "range_start_ms": 1000 if edit else None,
                     "range_end_ms": 4000 if edit else None,
                     "output_url": f"https://oss.example.test/{label}.mp4" if has_url else None,
@@ -155,7 +166,7 @@ async def test_anyone_who_reads_generations_records_a_download_of_any_take_or_co
 async def test_anything_but_a_downloadable_video_is_the_same_404(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """编辑段、没成的、没地址的、图片、视频与音乐上传、根本不存在的，状态码与报错一字不差。"""
+    """编辑段、没成的、没地址的、图片、视频与音乐上传、高清版、根本不存在的，状态码与报错一字不差。"""
 
     owner = await login_as(client, pg_url, "nora", "editor")
     jobs = await plant_jobs(pg_url, owner=owner)

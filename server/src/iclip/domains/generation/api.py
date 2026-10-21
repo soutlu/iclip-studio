@@ -1,8 +1,3 @@
-"""媒体生成 HTTP 端点。提交返回 202，此时 pending 记录已落库，Provider 调用由后台执行。
-
-视频那一对端点（提交、查状态）是上游异步接口的镜像，编辑段转发上游字段、与它们同族，字段都是
-snake_case；其余端点是本系统自己的，camelCase。"""
-
 from __future__ import annotations
 
 import json
@@ -27,11 +22,13 @@ from iclip.domains.generation.schemas import (
     SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
+    VideoEnhanceIn,
+    VideoEnhancementsOut,
+    VideoEnhanceTierOut,
     VideoGenerationIn,
     VideoModelsOut,
     VideoSubmitOut,
     VideoTaskOut,
-    WholeFilmIn,
     generation_out,
     video_task_out,
 )
@@ -80,12 +77,12 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoEditIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """为成片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长
+        """为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长
         能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频，
         实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
 
         source_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，
-        独立于生成时长。基底须为本对话自己的或继承来的已完成成片，区间须在其时长之内。
+        独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。
         user_name 的规则同出片。
         """
 
@@ -101,9 +98,9 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoComposeIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """在基底那一版上按片段列表拼成一条新成片，来源记基底，原作与镜号随基底。不经外部服务。
+        """在基底那一版上按片段列表拼成一条新素材片，来源记基底，原作与镜号随基底。不经外部服务。
 
-        ``baseJobId`` 必须是这段对话自己的或继承来的一条已完成成片；``segments`` 每段的
+        ``baseJobId`` 必须是这段对话自己的或继承来的一条已完成素材片；``segments`` 每段的
         ``sourceJobId`` 是基底本身或来源是基底的一条已完成编辑段，``start`` / ``end`` 是那条记录
         自己的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进
         ``request.segments``。``userName`` 的规则同出片。
@@ -116,42 +113,43 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         )
         return await envelope(job)
 
-    @router.post("/whole-films", response_model=GenerationEnvelope, status_code=202)
-    async def submit_whole_film(
-        body: WholeFilmIn,
-        principal: Annotated[Principal, require_permission("generation:submit")],
-    ) -> GenerationEnvelope:
-        """把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上
-        字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。
-
-        ``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里
-        的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，
-        服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却
-        不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则
-        同出片，只用来替人办事，不进 ``request``。
-        """
-
-        user_name = resolve_user_name(principal, body.user_name)
-        principal = await act_as(principal, user_name)
-        job = await service.submit_whole_film(principal, body)
-        return await envelope(job)
-
     @router.post("/subtitles", response_model=GenerationEnvelope, status_code=202)
     async def submit_subtitle(
         body: SubtitleIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """手动识别一条成片的口播，另起一条字幕记录（种类 ``subtitle``）；成片完成时后台已自动识别
+        """手动识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时后台已自动识别
         一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。
 
         ``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到
-        却不是成片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
+        却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
         取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         job = await service.submit_subtitle(principal, body)
+        return await envelope(job)
+
+    @router.post("/video-enhancements", response_model=GenerationEnvelope, status_code=202)
+    async def submit_video_enhancement(
+        body: VideoEnhanceIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """给一条素材片或一条导出完成的成片做一档高清版（超分），记一条超分记录（操作 ``enhance``，
+        种类 ``video``）；完成后 ``outputUrl`` / ``watermarkOutputUrl`` 同出片。
+
+        ``sourceJobId`` 不按属主取：资料库里看得到的片谁都能提。来源不存在 404；不是素材片或成片、
+        ``resolution`` 不比来源清晰（可做的档见 ``GET /generations/{id}/enhancements``）、高清版没开通
+        都是 422。同一来源同一档已有没失败的超分记录（谁提的都算）时直接给那一条，不新建。
+        ``userName`` 的规则同出片。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_video_enhance(
+            principal, body.model_copy(update={"user_name": user_name})
+        )
         return await envelope(job)
 
     @router.post("/music", response_model=GenerationEnvelope, status_code=202)
@@ -225,8 +223,9 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         ``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。
 
         按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
-        成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
-        一段对话生成的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找；上传的音乐不挂对话，按属主列。
+        素材片的字幕记录是种类 ``subtitle``、来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
+        一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传
+        都在里面；没挂对话的上传按属主列。
         """
 
         jobs = await service.list_recent(
@@ -287,6 +286,35 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         return video_task_out(await service.get_video(principal, task_id))
 
+    @router.get("/{job_id}/enhancements", response_model=VideoEnhancementsOut)
+    async def list_video_enhancements(
+        job_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("generation:read")],
+    ) -> VideoEnhancementsOut:
+        """一条视频能做的高清版各档（比它清晰的，按运行配置的先后）与各档最近的一条超分记录（谁提的
+        都算，``mine`` 标它是不是读的人的），以及下载高清版时要记下载事件的素材片。
+
+        来源不按属主取，id 不存在 404。来源不是素材片或导出完成的成片时两项都空；高清版没开通时
+        ``tiers`` 为空。
+        """
+
+        found = await service.enhancements(job_id)
+        jobs = [tier.job for tier in found.tiers if tier.job is not None]
+        addresses = await service.source_addresses(jobs)
+        return VideoEnhancementsOut(
+            downloaded_job_ids=list(found.downloaded_job_ids),
+            tiers=[
+                VideoEnhanceTierOut(
+                    resolution=tier.resolution,
+                    job=None
+                    if tier.job is None
+                    else generation_out(tier.job, source_address=addresses.get(tier.job.id)),
+                    mine=tier.job is not None and tier.job.owner_user_id == principal.user_id,
+                )
+                for tier in found.tiers
+            ],
+        )
+
     @router.get("/{job_id}", response_model=GenerationEnvelope)
     async def get_generation(
         job_id: uuid.UUID,
@@ -303,8 +331,6 @@ _METADATA_FILTER = TypeAdapter(Metadata)
 
 
 def _metadata_filter(raw: str | None) -> dict[str, Any] | None:
-    """查询串里的 ``metadata`` 必须是 JSON 对象，长度与请求体里的同一上限；否则按请求形状错误拒绝。"""
-
     if raw is None:
         return None
     try:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Sequence
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -17,17 +18,20 @@ from iclip.domains.generation.module import (
     ImageModelConfig,
     build_generation_module,
 )
+from iclip.domains.generation.schemas import VideoEnhanceIn
+from iclip.domains.generation.service import VideoEnhanceSpec
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import (
-    FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
     image_request,
+    make_job,
+    video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
 
@@ -56,23 +60,30 @@ async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> No
     return None
 
 
+VIDEO = VideoProviderSettings(
+    submit_url="https://video.test/generate",
+    status_base_url="https://video.test/tasks",
+    api_key="secret-key",
+)
+
+
 def build(
     repo: InMemoryGenerationRepository,
     *,
     names: Sequence[str],
     transport: httpx.AsyncBaseTransport | None = None,
+    video: VideoProviderSettings = VIDEO,
+    video_enhance: VideoEnhanceSpec | None = None,
+    video_transport: httpx.AsyncBaseTransport | None = None,
 ) -> GenerationModule:
     return build_generation_module(
         repo,
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
-        brand_templates=FixedBrandTemplates(),
-        video=VideoProviderSettings(
-            submit_url="https://video.test/generate",
-            status_base_url="https://video.test/tasks",
-            api_key="secret-key",
-        ),
+        video=video,
+        video_enhance=video_enhance,
+        video_transport=video_transport,
         video_default_model="vendor-a-seedance-2-5",
         video_allowed_models=("vendor-a-seedance-2-5",),
         image_models=[
@@ -139,7 +150,6 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
-        brand_templates=FixedBrandTemplates(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -195,3 +205,77 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
 def test_an_image_model_without_an_adapter_fails_at_assembly() -> None:
     with pytest.raises(RuntimeError, match="没有 flux 这家图片模型的适配器"):
         build(InMemoryGenerationRepository(), names=["flux"])
+
+
+ENHANCE_URL = "https://video.test/videos/enhance/async"
+ENHANCE = VideoEnhanceSpec(model="video-enhance", resolutions=("1080p", "720p"), fps=30)
+
+
+async def test_an_enhancement_runs_through_the_video_lane_to_both_addresses() -> None:
+    """装配好的超分：受理后排进视频那条队列，提交打超分地址，查询与结果同出片。"""
+
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url)))
+        if request.method == "POST":
+            return httpx.Response(200, json={"task_id": "e-1"})
+        return httpx.Response(
+            200,
+            json={
+                "status": "succeeded",
+                "result": {
+                    "output_url": "https://cdn.test/hd.mp4",
+                    "watermark_output_url": "https://cdn.test/hd-wm.mp4",
+                },
+            },
+        )
+
+    take = make_job(
+        video_request(resolution="720p"),
+        status=STATUS_COMPLETED,
+        output_url="https://cdn.test/take.mp4",
+        watermark_output_url="https://cdn.test/take-wm.mp4",
+    )
+    repo = InMemoryGenerationRepository([take])
+    module = build(
+        repo,
+        names=["nano_banana_pro"],
+        video=replace(VIDEO, enhance_submit_url=ENHANCE_URL),
+        video_enhance=ENHANCE,
+        video_transport=httpx.MockTransport(handler),
+    )
+
+    job = await module.service.submit_video_enhance(
+        PRINCIPAL, VideoEnhanceIn(source_job_id=take.id, resolution="1080p", user_name="tester")
+    )
+    await module.queue.run_submit(str(job.id))
+    await module.queue.run_poll(str(job.id))
+
+    done = repo.jobs[job.id]
+    assert (done.status, done.output_url, done.watermark_output_url) == (
+        STATUS_COMPLETED,
+        "https://cdn.test/hd.mp4",
+        "https://cdn.test/hd-wm.mp4",
+    )
+    assert calls == [
+        ("POST", ENHANCE_URL),
+        ("GET", "https://video.test/tasks/e-1?user_name=tester"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("video", "video_enhance"),
+    [(replace(VIDEO, enhance_submit_url=ENHANCE_URL), None), (VIDEO, ENHANCE)],
+    ids=["address_only", "spec_only"],
+)
+def test_half_wired_enhance_fails_at_assembly(
+    video: VideoProviderSettings, video_enhance: VideoEnhanceSpec | None
+) -> None:
+    with pytest.raises(RuntimeError, match="高清版"):
+        build(
+            InMemoryGenerationRepository(),
+            names=["nano_banana_pro"],
+            video=video,
+            video_enhance=video_enhance,
+        )

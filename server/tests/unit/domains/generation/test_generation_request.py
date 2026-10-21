@@ -11,18 +11,21 @@ from iclip.domains.generation.schemas import (
     IMAGE_MAX_REFERENCES,
     KIND_IMAGE,
     KIND_VIDEO,
+    KIND_WHOLE_FILM,
     MAX_METADATA_CHARS,
     OPERATION_COMPOSE,
     OPERATION_CUT,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
     ComposeSegment,
     VideoComposeRequest,
     VideoEditIn,
+    VideoEnhanceRequest,
     VideoGenerationIn,
-    request_from_payload,
     request_to_payload,
 )
+from iclip.domains.generation.stored_requests import request_from_payload
 from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
@@ -124,7 +127,7 @@ def test_a_composite_round_trips_and_keeps_open_ends_open() -> None:
 
 
 def test_a_composite_stored_before_user_names_reads_back_without_one() -> None:
-    """0017 之前拼好的成片没有对账名，读回 ``user_name`` 为空；各段的出处由 0022 补齐。"""
+    """0017 之前拼好的合成没有对账名，读回 ``user_name`` 为空；各段的出处由 0022 补齐。"""
 
     base, edit = uuid.uuid4(), uuid.uuid4()
     stored = {
@@ -159,6 +162,31 @@ def test_the_stored_shape_is_chosen_by_kind_and_operation() -> None:
         request_from_payload(KIND_IMAGE, OPERATION_COMPOSE, request_to_payload(image_request()))
     with pytest.raises(ValidationFailed, match="未知的生成类型"):
         request_from_payload("clip", OPERATION_COMPOSE, request_to_payload(compose_request()))
+
+
+def test_an_enhancement_is_a_video_stored_as_sent() -> None:
+    """超分记录的种类只有视频，成片的高清版也是；落库的就是发上游的那几个键。"""
+
+    original = VideoEnhanceRequest(
+        model="video-enhance",
+        resolution="1080p",
+        fps=30,
+        video_url="https://cdn.test/take.mp4",
+        user_name="logan",
+    )
+    payload = request_to_payload(original)
+
+    assert payload == {
+        "model": "video-enhance",
+        "resolution": "1080p",
+        "fps": 30,
+        "video_url": "https://cdn.test/take.mp4",
+        "user_name": "logan",
+    }
+    assert request_from_payload(KIND_VIDEO, OPERATION_ENHANCE, payload) == original
+    for kind in (KIND_WHOLE_FILM, KIND_IMAGE):
+        with pytest.raises(ValidationFailed, match="未知的生成类型"):
+            request_from_payload(kind, OPERATION_ENHANCE, payload)
 
 
 _SOURCE = str(uuid.uuid4())

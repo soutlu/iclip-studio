@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Protocol
 
+from iclip.common.errors import NotFound
 from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
@@ -14,8 +15,10 @@ from iclip.domains.generation.models import (
     GenerationStatus,
     InFlightPhase,
     Inheritance,
+    inherited_through,
 )
-from iclip.domains.generation.schemas import SubtitleSentence
+from iclip.domains.generation.schemas import OPERATION_UPLOAD, SubtitleSentence
+from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 
 
 class GenerationRepository(Protocol):
@@ -87,8 +90,10 @@ class GenerationRepository(Protocol):
         之外，再并上经它继承来的记录（不看属主）；其余筛选与 ``before`` 锚点对两者一视同仁。"""
         ...
 
-    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
-        """在调用 Provider 前持久化 submitting，使恢复流程能识别提交结果未知的任务。"""
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        """在调用 Provider 前持久化 submitting，使恢复流程能识别提交结果未知的任务。
+
+        只改还在排队（pending）的行；已经有了结论（如排队时被取消）的不动，返回 None。"""
         ...
 
     async def mark_submitted(
@@ -126,10 +131,7 @@ class GenerationRepository(Protocol):
         provider_status: str,
         provider_task_id: str,
         only_if_status: GenerationStatus | None = None,
-    ) -> GenerationJob | None:
-        """字幕记录的成功终态：写下逐句结果（没有口播是空元组）、回执 id，补齐 submitted_at；没有
-        产物地址。指定 only_if_status 时原子校验状态，不匹配返回 None。"""
-        ...
+    ) -> GenerationJob | None: ...
 
     async def mark_failed(
         self,
@@ -165,9 +167,40 @@ class GenerationRepository(Protocol):
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]
     ) -> Mapping[uuid.UUID, str]:
-        """这些对话各自名下最新一条成片的地址：按完成时刻取最晚的，同一刻取 id 大的。只看记在这段
-        对话上的，不含分叉继承来的；没有成片的对话不在结果里。不按属主过滤，理由同上。"""
+        """这些对话各自名下最新一条素材片的地址：按完成时刻取最晚的，同一刻取 id 大的。只看记在这段
+        对话上的，不含分叉继承来的；没有素材片的对话不在结果里。不按属主过滤，理由同上。"""
+        ...
+
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        """以这一条为来源的全部超分记录（谁提的都算），新建的在前（建立时刻、id 倒序）。不按属主
+        过滤：资料库里的片对所有能读生成记录的人可见，高清版也是。"""
         ...
 
 
-__all__ = ["GenerationRepository"]
+async def conversation_record(
+    repo: GenerationRepository,
+    principal: Principal,
+    job_id: uuid.UUID,
+    *,
+    conversation_id: uuid.UUID | None,
+    inheritance: Inheritance,
+    own_uploads: bool = False,
+) -> GenerationJob | None:
+    try:
+        record = await repo.get(
+            job_id, owner=visible_owner_incl_act_as(principal), inherited=inheritance
+        )
+    except NotFound:
+        return None
+    if record.conversation_id == conversation_id or inherited_through(record, inheritance):
+        return record
+    if (
+        own_uploads
+        and record.operation == OPERATION_UPLOAD
+        and record.owner_user_id == principal.user_id
+    ):
+        return record
+    return None
+
+
+__all__ = ["GenerationRepository", "conversation_record"]

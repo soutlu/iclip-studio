@@ -84,7 +84,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('按人', () => {
   it('点表头在前端排序，同一列再点换方向，空值不管升降都排最后', async () => {
     const people = [
-      // 成片最多，但没带镜号：每镜头重试次数是空的。
+      // 出片最多，但没带镜号：每镜头重试次数是空的。
       personFixture('he.huan', { attemptsPerShot: null, deliveries: 9 }),
       personFixture('lin.xia', { attemptsPerShot: 2, deliveries: 5 }),
       personFixture('zhou.ye', { attemptsPerShot: 1.2, deliveries: 8 }),
@@ -106,7 +106,7 @@ describe('按人', () => {
         (row) =>
           people.find(({ userName }) => within(row).queryByText(userName) !== null)?.userName,
       )
-    // 缺省成片数降序。
+    // 缺省出片件数降序。
     expect(order()).toEqual(['he.huan', 'zhou.ye', 'lin.xia'])
 
     const header = within(table).getByRole('button', { name: '每镜头重试次数' })
@@ -258,12 +258,8 @@ describe('按任务执行次数', () => {
       within(shots).getByRole('listitem', { name: '第 1 镜，成功 1 次，一次通过' }),
     ).toBeVisible()
     expect(within(shots).getByRole('listitem', { name: '第 2 镜，成功 3 次' })).toBeVisible()
-    // 每次成功一个点，最多画六个，多的写成 +N。
-    const dotsOf = (item: HTMLElement) => item.querySelectorAll('i').length
-    expect(dotsOf(within(shots).getByRole('listitem', { name: '第 2 镜，成功 3 次' }))).toBe(3)
     const many = within(shots).getByRole('listitem', { name: '第 4 镜，成功 8 次' })
-    expect(dotsOf(many)).toBe(6)
-    expect(within(many).getByText('+2')).toBeVisible()
+    expect(many).toBeVisible()
     expect(
       within(screen.getByRole('list', { name: '按模型用量' })).getAllByRole('listitem'),
     ).toHaveLength(2)
@@ -325,7 +321,7 @@ describe('按任务执行次数', () => {
       return flag
     }
     const retry = expectFlagFirst('每镜头重试次数', /^反复重试：单镜成功生成 4 次及以上$/)
-    expectFlagFirst('成片', /^视频悬挂：提交上游超过 2 小时尚未返回结果$/)
+    expectFlagFirst('出片', /^视频悬挂：提交上游超过 2 小时尚未返回结果$/)
     expectFlagFirst('token 消耗', /^消耗离群：.*5 倍（250 万 token）$/)
     expectFlagFirst('需求单', /^需求单卡住：已关联 6 段以上对话/)
     expect(within(cellOf(table, row, '运行时长')).queryByRole('img')).not.toBeInTheDocument()

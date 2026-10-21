@@ -1,7 +1,7 @@
 """审计总览的纯规则：时间窗、粒度、上一期、回看下限、分期的轴，以及按基础格补窗的 7 / 30 日均线。
 
 对外表述见合同 §12「总览」。这里不连库：服务层按 ``OverviewWindow`` 发查询，把基础格交回来算。
-按人页签的时间窗、粒度与每期成片数的轴也用这里的规则。"""
+按人页签的时间窗、粒度与每期出片数的轴也用这里的规则。"""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class OverviewWindow:
 
 @dataclass(frozen=True, slots=True)
 class Cell:
-    """基础格的一格 ``[start, end)``：整格的指标与格里有成片的件。"""
+    """基础格的一格 ``[start, end)``：整格的指标与格里有出片的件。"""
 
     start: datetime
     end: datetime
@@ -153,7 +153,7 @@ def period_starts(window: OverviewWindow) -> list[datetime]:
 def fill_periods(
     starts: Sequence[datetime], counts: Mapping[datetime, int]
 ) -> list[PeriodDeliveriesOut]:
-    """把只列了有成片的期的计数铺到轴上，缺的期补 0。
+    """把只列了有出片的期的计数铺到轴上，缺的期补 0。
 
     计数的键是 SQL 按同一粒度截出的期首，按「不晚于它的最后一个期首」落期，不要求与轴逐字相等。
     """
@@ -338,7 +338,7 @@ def _widen_to_samples(
 
 
 def _widen_to_units(cells: Sequence[Cell], lo: int, hi: int) -> tuple[int, frozenset[str]]:
-    """同上，样本是窗里去重后的成片件；件跨格只算一次，所以对集合取并而不是把各格件数相加。"""
+    """同上，样本是窗里去重后的出片件；件跨格只算一次，所以对集合取并而不是把各格件数相加。"""
 
     units: set[str] = set().union(*(cell.units for cell in cells[lo : hi + 1]))
     while len(units) < DELIVERY_SAMPLES and lo > 0:

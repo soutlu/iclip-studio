@@ -1,13 +1,12 @@
-/** 资料库的查询串：选中的页签、这个页签的筛选范围与打开着的那条详情。等于默认值的条件不落地址栏，非法取值退回默认。
- *
- * 各页签使用独立筛选，换页签时清空；人、时间与关键词沿用同名参数。 */
-
 import { z } from 'zod'
 import {
   DEFAULT_LIBRARY_SCOPE,
+  DEFAULT_LIBRARY_TAB,
   DEFAULT_REFERENCE_SCOPE,
   DEFAULT_WHOLE_FILM_SCOPE,
+  LIBRARY_TAB_VALUES,
   type LibraryScope,
+  type LibraryTab,
   type ReferenceScope,
   type WholeFilmScope,
   zCategory,
@@ -19,29 +18,30 @@ import {
   dateRangeToSearch,
 } from '@/shared/lib/date-range'
 
+const zLibraryTab = z.enum(LIBRARY_TAB_VALUES)
+
 export const librarySearchSchema = z.object({
   ...dateRangeSearchFields,
-  /** 成片是默认页签，不写进地址。 */
-  tab: z.enum(['references', 'whole-films', 'brand-templates']).optional().catch(undefined),
+  tab: zLibraryTab.optional().catch(undefined),
   orientation: z.enum(['portrait', 'landscape']).optional().catch(undefined),
   q: z.string().max(100).optional().catch(undefined),
   userName: z.string().min(1).optional().catch(undefined),
-  /** 参考视频的两组标签筛选；混进非法取值时整组作废。 */
   videoTypes: z.array(zVideoType).min(1).optional().catch(undefined),
   categories: z.array(zCategory).min(1).optional().catch(undefined),
-  /** 打开着详情的那张成片卡；分享出去的链接也靠它直达。 */
   video: z.uuid().optional().catch(undefined),
-  /** 打开着详情的那条参考视频。 */
   reference: z.uuid().optional().catch(undefined),
-  /** 打开着详情的整片卡（对话 id）。 */
   film: z.uuid().optional().catch(undefined),
-  /** 品牌模板的筛选；普通读者不会向服务端请求停用模板。 */
-  kind: z.enum(['font', 'intro', 'outro']).optional().catch(undefined),
-  brand: z.string().trim().min(1).max(100).optional().catch(undefined),
-  includeDisabled: z.literal(true).optional().catch(undefined),
 })
 
 export type LibrarySearch = z.output<typeof librarySearchSchema>
+
+export const tabFromSearch = (search: LibrarySearch): LibraryTab =>
+  search.tab ?? DEFAULT_LIBRARY_TAB
+
+export function searchFromTab(value: string): LibrarySearch {
+  const tab = zLibraryTab.safeParse(value)
+  return tab.success && tab.data !== DEFAULT_LIBRARY_TAB ? { tab: tab.data } : {}
+}
 
 export function scopeFromSearch(search: LibrarySearch): LibraryScope {
   return {
@@ -52,7 +52,6 @@ export function scopeFromSearch(search: LibrarySearch): LibraryScope {
   }
 }
 
-/** 只写筛选范围；改筛选时详情随之关掉。 */
 export function searchFromScope(scope: LibraryScope): LibrarySearch {
   const q = scope.q.trim()
   return {
@@ -73,7 +72,6 @@ export function referenceScopeFromSearch(search: LibrarySearch): ReferenceScope 
   }
 }
 
-/** 参考视频页签的筛选范围连同页签本身；改筛选时详情随之关掉。 */
 export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
   const q = scope.q.trim()
   return {

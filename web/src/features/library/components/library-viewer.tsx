@@ -1,5 +1,3 @@
-/** 资料库详情：左边播这张卡某个镜头组的某个版本、下面一行切组与版本，右边是脚本与参数；上一条 / 下一条在已读的列表里走。 */
-
 import { useNavigate } from '@tanstack/react-router'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -17,31 +15,28 @@ import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { VideoDownload } from '@/shared/ui/video-download'
-import { VIDEO_PLAYER_SELECTOR, VideoPlayer } from '@/shared/ui/video-player'
+import { VIDEO_PLAYER_SELECTOR } from '@/shared/ui/video-player'
 import { useLibraryVideo, type LibraryVideo, type LibraryVideoDetail } from '../library.api'
 import { cardTitleOf, durationSecondsOf, formatSecond, versionsOf } from '../library-media'
 import { AuthorAvatar } from './author-avatar'
 import { LibraryParamsPanel, LibraryScriptPanel } from './library-script'
 import { LibraryVersionBar, LibraryVersionBarSkeleton } from './library-version-bar'
 import { LibraryViewerFrame } from './library-viewer-frame'
+import { ViewerPending, ViewerStage, ViewerVideo } from './library-viewer-stage'
 
-/** 点镜头跳过去时往后让一点，免得停在上一镜的最后一帧。 */
+// 恰好跳到镜头起点时画面可能停在上一镜的最后一帧，往后让一点。
 const SEEK_NUDGE_S = 0.05
 
 type LibraryViewerProps = {
   videoId: string
-  /** 列表里已读到的这一条；详情读回来之前先拿它铺画面和脚本。 */
   listed: LibraryVideo | undefined
-  /** 从故事板点某一帧进来时，从这一秒开始播。 */
   startAt: number | null
   prevId: string | null
   nextId: string | null
-  /** 这一条的分享地址，「复制链接」给它。 */
   shareLink: string
   onNavigate: (id: string) => void
   onClose: () => void
   onAuthor: (userName: string) => void
-  /** 关掉后由列表把焦点放回卡片；卡片已被虚拟列表回收时返回 false，交给弹窗的默认去处。 */
   onRestoreFocus: () => boolean
 }
 
@@ -60,8 +55,7 @@ export function LibraryViewer({
   const detail = useLibraryVideo(videoId)
   const video = detail.data?.video ?? listed
 
-  // 左右方向键翻上一条 / 下一条。嵌套的浮层（菜单、参考图大图）经 portal 冒泡上来，
-  // 与播放器、页签一样自己用方向键，不抢。
+  // React portal 里的嵌套浮层（菜单、参考图大图）的按键也冒泡到这里，它们自己用方向键。
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     const target = event.target
@@ -91,6 +85,7 @@ export function LibraryViewer({
     >
       {video === undefined ? (
         <ViewerPending
+          title="资料库详情"
           error={detail.isError ? errorMessageOf(detail.error, '读取该视频失败') : null}
           onClose={onClose}
           onRetry={() => void detail.refetch()}
@@ -136,42 +131,6 @@ function NavButton({
   )
 }
 
-/** 分享来的链接指向的片子不在已读列表里：详情回来之前只有状态。 */
-function ViewerPending({
-  error,
-  onClose,
-  onRetry,
-}: {
-  error: string | null
-  onClose: () => void
-  onRetry: () => void
-}) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
-      <DialogTitle className="sr-only">资料库详情</DialogTitle>
-      {error === null ? (
-        <p className="text-body-sm text-on-surface-variant" role="status">
-          正在读取…
-        </p>
-      ) : (
-        <>
-          <p className="text-body text-on-surface" role="alert">
-            {error}
-          </p>
-          <div className="flex gap-2">
-            <Button onClick={onRetry} size="md" variant="inverted">
-              重试
-            </Button>
-            <Button onClick={onClose} size="md" variant="ghost">
-              关闭
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 type ViewerBodyProps = {
   video: LibraryVideo
   detail: LibraryVideoDetail | undefined
@@ -194,17 +153,12 @@ function ViewerBody({
   onRetry,
 }: ViewerBodyProps) {
   const playerRef = useRef<HTMLVideoElement>(null)
-  // 起播位置只对打开时那个版本生效一次，换版本从头播。
   const pendingStartRef = useRef(startAt)
-  // 只记选中的那一版，所在的镜头组由它推出来；没选过就是卡面那一版。
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // 片子读到元数据后量出的真实比例；请求里的画幅可能认不出（如 adaptive）或与成片不符。
-  const [measured, setMeasured] = useState<{ jobId: string; ratio: number } | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [preview, setPreview] = useState<LightboxMedia | null>(null)
   const { copied, copy } = useCopyFeedback()
 
-  // 详情回来之前只有卡面那一版，切组与版本的那一行等它回来再出。
   const groups = detail?.groups ?? [
     { shotIndex: null, versions: [{ ...video.face, take: video.take }] },
   ]
@@ -217,7 +171,6 @@ function ViewerBody({
   if (version === undefined) return null
 
   const { w, h } = aspectOf(version.take.aspectRatio)
-  const ratio = measured?.jobId === version.jobId ? measured.ratio : w / h
   const title = cardTitleOf(video)
   const author = version.userName
   const seconds = durationSecondsOf(version.durationMs, version.take)
@@ -237,48 +190,30 @@ function ViewerBody({
 
   return (
     <>
-      <section aria-label="播放" className="relative flex min-w-0 flex-1 flex-col max-md:flex-none">
-        <IconButton
-          className="layer-local-1 absolute top-4 right-4 size-10 rounded-full bg-surface-container-low text-on-surface"
-          label="关闭"
-          name="close"
-          onClick={onClose}
+      <ViewerStage label="播放" onClose={onClose}>
+        <ViewerVideo
+          fallbackRatio={w / h}
+          key={version.jobId}
+          label={title}
+          onExpand={(at) =>
+            setPreview({
+              kind: 'video',
+              name: title,
+              poster,
+              startAt: at,
+              url: version.outputUrl,
+            })
+          }
+          onLoadedMetadata={(event) => {
+            const at = pendingStartRef.current
+            pendingStartRef.current = null
+            if (at !== null) event.currentTarget.currentTime = at + SEEK_NUDGE_S
+          }}
+          onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+          playerRef={playerRef}
+          poster={poster}
+          src={version.outputUrl}
         />
-        <div className="relative min-h-0 flex-1 max-md:h-[56vh] max-md:flex-none">
-          {/* 视频盒与画面同比例、在这块区域里等比放到最大：圆角落在画面上，两侧不留底色块。 */}
-          <div className="[container-type:size] absolute inset-3 grid place-items-center md:inset-6">
-            <VideoPlayer
-              autoPlay
-              className="bg-surface-container-low"
-              key={version.jobId}
-              label={title}
-              loop
-              // 放大接着当前进度在灯箱里播，关掉后把灯箱播到的位置写回来。
-              onExpand={(at) =>
-                setPreview({
-                  kind: 'video',
-                  name: title,
-                  poster,
-                  startAt: at,
-                  url: version.outputUrl,
-                })
-              }
-              onLoadedMetadata={(event) => {
-                const { videoWidth, videoHeight } = event.currentTarget
-                if (videoWidth > 0 && videoHeight > 0)
-                  setMeasured({ jobId: version.jobId, ratio: videoWidth / videoHeight })
-                const at = pendingStartRef.current
-                pendingStartRef.current = null
-                if (at !== null) event.currentTarget.currentTime = at + SEEK_NUDGE_S
-              }}
-              onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-              poster={poster}
-              ref={playerRef}
-              src={version.outputUrl}
-              style={{ aspectRatio: ratio, width: `min(100cqw, ${100 * ratio}cqh)` }}
-            />
-          </div>
-        </div>
         {detail !== undefined ? (
           <LibraryVersionBar
             group={group}
@@ -293,7 +228,7 @@ function ViewerBody({
             versionCount={video.versionCount}
           />
         ) : null}
-      </section>
+      </ViewerStage>
 
       <section
         aria-label="脚本与参数"
@@ -380,10 +315,11 @@ function ViewerBody({
           >
             <span className="max-sm:hidden">{copied ? '已复制' : '复制提示词'}</span>
           </Button>
-          {/* 版本是一条出片或合成，id 与地址取自同一条记录。 */}
           <VideoDownload
             className="size-(--control-height-lg) rounded-full"
-            jobId={version.jobId}
+            downloadedJobIds={[version.jobId]}
+            durationMs={seconds === null ? null : seconds * 1000}
+            enhanceSourceId={version.jobId}
             url={version.outputUrl}
             watermarkUrl={version.watermarkOutputUrl}
           />
@@ -408,9 +344,6 @@ function ViewerBody({
 const MAKE_SAME_CLASS =
   'flex-1 rounded-full aria-disabled:bg-disabled-container aria-disabled:active:scale-100'
 
-/** 「做同款」：能做时去首页、把卡 id 带在查询串里，由首页进入做同款；能不能做只有详情知道，详情回来之前置灰、不说原因。
- *
- * 做不了时外观是禁用的主按钮，但留在 tab 序列里，悬停、聚焦、点按都亮出原因，点了不做别的。 */
 function MakeSameButton({ cardId, canMakeSame }: { cardId: string; canMakeSame: boolean | null }) {
   const navigate = useNavigate()
   const [hint, setHint] = useState(false)
@@ -454,7 +387,6 @@ function MakeSameButton({ cardId, canMakeSame }: { cardId: string; canMakeSame: 
   )
 }
 
-/** 复制链接人人都有；打开来源对话只给打得开那段对话的读者：对话 id 人人都拿得到，由调用方按 canOpenConversation 决定传不传。 */
 function MoreMenu({
   conversationId,
   shareLink,

@@ -21,6 +21,7 @@ import {
   Bug,
   CalendarDays,
   Captions,
+  CaptionsOff,
   ChartColumn,
   Check,
   ChevronDown,
@@ -76,6 +77,7 @@ import {
   Plus,
   RefreshCw,
   Repeat,
+  ScanText,
   Scissors,
   Search,
   Send,
@@ -91,6 +93,14 @@ import {
   VolumeOff,
   X,
   ZoomIn,
+  ZoomOut,
+  Magnet,
+  MoveHorizontal,
+  Sparkles,
+  Blend,
+  Type,
+  Film,
+  Layers,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -174,6 +184,7 @@ const ICONS = {
   blocked: Ban,
   calendar: CalendarDays,
   captions: Captions,
+  'captions-off': CaptionsOff,
   chart: ChartColumn,
   check: Check,
   close: X,
@@ -224,6 +235,7 @@ const ICONS = {
   pause: Pause,
   preview: Eye,
   reference: BookOpen,
+  'recognize-text': ScanText,
   refresh: RefreshCw,
   replace: Repeat,
   search: Search,
@@ -249,6 +261,19 @@ const ICONS = {
   warning: TriangleAlert,
   waveform: AudioLines,
   zoom: ZoomIn,
+  'zoom-out': ZoomOut,
+  /** 时间线吸附 */
+  snap: Magnet,
+  /** 时间线缩放到适应宽度 */
+  fit: MoveHorizontal,
+  /** AI 生成（如生成音乐） */
+  sparkles: Sparkles,
+  /** 组件分类：效果、文字效果、场景 */
+  blend: Blend,
+  type: Type,
+  film: Film,
+  /** 成片编辑器的特效轨 */
+  layers: Layers,
 } as const
 
 export type IconName = keyof typeof ICONS

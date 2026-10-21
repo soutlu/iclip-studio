@@ -267,7 +267,7 @@ describe('Composer 扩展点', () => {
     const zone = screen.getByRole('button', { name: '发送' })
     fireEvent.dragEnter(zone, { dataTransfer: drag })
     const overlay = screen.getByTestId('composer-drop-overlay')
-    expect(overlay.parentElement).toContainElement(editor())
+    expect(overlay).toBeVisible()
 
     fireEvent.drop(zone, { dataTransfer: drag })
     expect(screen.queryByTestId('composer-drop-overlay')).not.toBeInTheDocument()

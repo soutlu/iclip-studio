@@ -42,7 +42,7 @@ from iclip.domains.audit.schemas import (
 # ---------------------------------------------------------------------------
 # 公共 CTE。videos 是全部口径的基础：只认有镜号（shot_index 列）且挂着对话的出片，
 # 需求单从对话取；视频的人是属主的用户名，request 里的 user_name 只发给上游、报表不读。
-# 失败与还没出结果的出片不计费，镜、次数与成片都只看成功的；它们只进单任务时长的区间、
+# 失败与还没出结果的出片不计费，镜、次数与出片都只看成功的；它们只进单任务时长的区间、
 # 视频悬挂、任务执行的圈定，以及没跑过的对话按最近一条视频定人。
 # person 给每段对话定一个人：最近一轮运行的 user_name，没有运行就取最近一条视频的属主。
 # 分叉出来的副本一律不进报表（``forked_from`` 非空）：它继承的出片记在源对话名下，源那边
@@ -59,25 +59,15 @@ _VIDEOS: Final = """
 videos AS (
     SELECT g.id, g.conversation_id, g.status, g.created_at, g.submitted_at, g.finished_at,
            g.duration_ms,
-           -- 成片：出成了且有完成时刻；各口径只引用这一列。
+           -- 完成的出片：出成了且有完成时刻；各口径只引用这一列。
            (g.status = 'completed' AND g.finished_at IS NOT NULL) AS delivered,
-           -- 有人下载过它、以它为原作的合成，或用到它的整片：下载的那条沿原作折回出片；
-           -- 整片（没有来源的 compose）按请求里各段的出处折，出处是合成的再沿原作折。出处可以
-           -- 在祖先对话里，折回的就是祖先那条出片。子查询不相关，整个集合只算一遍，逐行只做
-           -- 成员判断。
+           -- 有人下载过它，或以它为原作的合成：下载的那条沿原作折回出片，原作可以在祖先对话里，
+           -- 折回的就是祖先那条出片。子查询不相关，整个集合只算一遍，逐行只做成员判断。
            g.id IN (
                SELECT COALESCE(d.root_job_id, d.id)
                FROM iclip.tracking_events t
                JOIN iclip.generation_jobs d ON d.id = t.job_id
                WHERE t.name = 'video.downloaded'
-               UNION
-               SELECT COALESCE(s.root_job_id, s.id)
-               FROM iclip.tracking_events t
-               JOIN iclip.generation_jobs d ON d.id = t.job_id
-               CROSS JOIN LATERAL jsonb_array_elements(d.request -> 'segments') AS seg(item)
-               JOIN iclip.generation_jobs s ON s.id = CAST(seg.item ->> 'sourceJobId' AS uuid)
-               WHERE t.name = 'video.downloaded'
-                 AND d.kind = 'video' AND d.operation = 'compose' AND d.source_job_id IS NULL
            ) AS downloaded,
            g.shot_index AS shot,
            u.username AS user_name,
@@ -178,8 +168,8 @@ cycles AS (
     JOIN person p ON p.conversation_id = d.conversation_id
 )"""
 
-# 单任务时长：每段有成片的对话一个样本，锚点同交付周期。区间 = 这段对话有终态的运行
-# [开始, 终态] ∪ 每条出片 [受理, 完成]（没完成的只是受理那一刻），裁进交付周期 [起点, 最后成片]；
+# 单任务时长：每段有出片的对话一个样本，锚点同交付周期。区间 = 这段对话有终态的运行
+# [开始, 终态] ∪ 每条出片 [受理, 完成]（没完成的只是受理那一刻），裁进交付周期 [起点, 最后出片]；
 # 按开始排序合并，下一段的开始距已合并段的结束不超过 30 分钟就并进来、空档照算，超过就断开、
 # 空档不计。已合并段的结束是排在前面的全部区间结束的最大值；样本值是各合并段长度之和。
 _ACTIVE_CYCLES: Final = """
@@ -222,7 +212,7 @@ active_cycles AS (
     GROUP BY y.conversation_id, y.user_name, y.task_id, y.started_at, y.delivered_at
 )"""
 
-# 成片连同废片标记：同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后的那条以外都是废片。
+# 出片连同废片标记：同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后的那条以外都是废片。
 # 窗口函数在全量上算，时间窗与筛选只能施加在引用它的 CTE 里，否则「全时段最后一条」会退化成
 # 窗内或某人名下的最后一条。
 _TAKES: Final = """
@@ -453,7 +443,7 @@ WHERE TRUE
 {_FILTERS.format(t="r")}
 """)
 
-# 每个时段里有成片的件，键与成片件数同一口径：需求单各一件，没挂需求单的对话各一件。
+# 每个时段里有出片的件，键与出片件数同一口径：需求单各一件，没挂需求单的对话各一件。
 _DELIVERY_UNITS: Final = text(f"""
 WITH {_VIDEOS}
 SELECT {_BUCKET.format(anchor="v.finished_at")} AS k,
@@ -467,7 +457,7 @@ GROUP BY 1
 ORDER BY 1
 """)
 
-# 每人每个时段的成片件数，与成片件数同一口径：需求单各一件，没挂需求单的对话各一件。人是视频
+# 每人每个时段的出片件数，与出片件数同一口径：需求单各一件，没挂需求单的对话各一件。人是视频
 # 的属主，与指标 SQL 的人维度一致；属主没有用户名的不归任何人。
 _USER_DELIVERIES: Final = text(f"""
 WITH {_VIDEOS}
@@ -497,7 +487,7 @@ LIMIT :limit
 # ---------------------------------------------------------------------------
 # 任务执行：建立时刻落在时间窗里、有运行或出片的对话（副本已由 person 挡掉，已删的照列）。
 # 排序键与异常都按这段对话的全量算，不按时间窗裁；user_name 只筛行，放在最后一步，需求单卡住
-# 按整个时间窗里的执行判。「从来没有成片」按 videos 判，副本自己的出片本就不计。视频悬挂的
+# 按整个时间窗里的执行判。「从来没有出片」按 videos 判，副本自己的出片本就不计。视频悬挂的
 # 'submitted' 镜像生成域的 STATUS_SUBMITTED（同文件头）。
 # 排序键空值不论升降都排最后；翻页从上一页末行的（键，对话 id）接着取，末行已在空值尾段时
 # 只在尾段里按对话 id 往后取。{key} / {kind} / {direction} / {op} 由 _EXECUTIONS_SQL 从常量填。

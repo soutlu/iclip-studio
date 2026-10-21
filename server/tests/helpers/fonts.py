@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
 from fontTools.fontBuilder import FontBuilder
@@ -11,11 +10,7 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 
 from iclip.platform.media.fonts import FontStyle
 
-TEST_CHARACTERS = (
-    " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-"
-    "｛｝＼第一二句话字整片的字幕烧进了画面跟着段走上一行下"
-    "这是一句比较长的整片字幕用来看看折行是否合适并且每行差不多一样长加粗"
-)
+TEST_CHARACTERS = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-汉字"
 
 
 def make_font(
@@ -25,12 +20,12 @@ def make_font(
     family: str = "Iclip Test",
     weight: int = 400,
     style: FontStyle = "normal",
-    advances: Mapping[str, int] | None = None,
     otf: bool = False,
+    win_metrics: tuple[int, int] = (900, 300),
 ) -> Path:
-    """创建一份可被 FreeType/libass 实际渲染的字体，每个字符画一个矩形轮廓。
+    """创建一份可被 fontTools 完整解析的字体，每个字符画一个矩形轮廓。
 
-    em 为 1000，Win 行高为 1200；用不同推进量模拟等宽、比例及同名字族的不同字重。
+    em 为 1000，Win 行高默认 1200（``win_metrics`` 是 Win ascent 与 descent），每个字符推进 1000。
     这些轮廓由测试代码绘制，不包含任何外部字体数据。
     """
 
@@ -39,7 +34,7 @@ def make_font(
     order = [".notdef", *cmap.values()]
     metrics = {".notdef": (1000, 0)}
     for char in points:
-        metrics[cmap[ord(char)]] = ((advances or {}).get(char, 1000), 0)
+        metrics[cmap[ord(char)]] = (1000, 0)
     builder = FontBuilder(1000, isTTF=not otf)
     builder.setupGlyphOrder(order)
     builder.setupCharacterMap(cmap)
@@ -93,8 +88,8 @@ def make_font(
         version=4,
         sTypoAscender=900,
         sTypoDescender=-300,
-        usWinAscent=900,
-        usWinDescent=300,
+        usWinAscent=win_metrics[0],
+        usWinDescent=win_metrics[1],
         usWeightClass=weight,
         fsSelection=flags,
     )

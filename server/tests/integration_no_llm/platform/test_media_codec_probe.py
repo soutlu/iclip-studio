@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from iclip.platform.media.codec import HARDWARE_CANDIDATES, SOFTWARE, detect_codec
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.media import encodes_here
 
 pytestmark = pytest.mark.skipif(not ffmpeg_available(), reason="本机 PATH 上没有 ffmpeg/ffprobe")

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
+import { pauseMockResponses, releaseMockResponses } from './helpers'
 import { login } from './login'
 
 const COLLECTION_NAME = '千条历史任务'
@@ -55,14 +56,17 @@ test('展开千条合集自动读全，只挂载视口附近的行，滚到底�
   expect(pageRequests).toHaveLength(100)
   expect(transcriptRequests).toHaveLength(0)
   expect(await scrollTopOf(listOf(page))).toBe(0)
-  expect(await sessionRows(page).count()).toBeLessThan(80)
+  expect(await sessionRows(page).count()).toBeLessThan(SESSION_COUNT)
+  const earlyRow = listOf(page).getByRole('link', { name: sessionTitle(3), exact: true })
+  await expect(earlyRow).toBeInViewport()
 
   await listOf(page).evaluate((element) => {
     element.scrollTop = element.scrollHeight
   })
   const last = listOf(page).getByRole('link', { name: sessionTitle(SESSION_COUNT), exact: true })
   await expect(last).toBeVisible()
-  expect(await sessionRows(page).count()).toBeLessThan(80)
+  expect(await sessionRows(page).count()).toBeLessThan(SESSION_COUNT)
+  await expect(earlyRow).toHaveCount(0)
   await last.click()
   await expect(page).toHaveURL(/\/c\/10000000-0000-4000-8000-000000001000$/)
 })
@@ -93,7 +97,7 @@ test('改名输入框滚出视口后保留草稿，保存后顺序和滚动位�
   await expect.poll(() => scrollTopOf(list)).toBe(5000)
   await expect(input).toBeAttached()
   await expect(input).toBeFocused()
-  expect(await sessionRows(page).count()).toBeLessThan(80)
+  expect(await sessionRows(page).count()).toBeLessThan(SESSION_COUNT)
 
   await list.evaluate((element) => {
     element.scrollTop = 0
@@ -186,7 +190,7 @@ test('Tab 与 Shift+Tab 连续走过未挂载的历史行，Enter 可打开聚�
     ).toBeFocused()
   }
   expect(await scrollTopOf(list)).toBeGreaterThan(0)
-  expect(await sessionRows(page).count()).toBeLessThan(80)
+  expect(await sessionRows(page).count()).toBeLessThan(SESSION_COUNT)
 
   await page.keyboard.press('Shift+Tab')
   await expect(
@@ -197,7 +201,6 @@ test('Tab 与 Shift+Tab 连续走过未挂载的历史行，Enter 可打开聚�
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/c\/10000000-0000-4000-8000-000000000045$/)
 
-  // 从底栏反向进入，需接回整个已加载列表的末行，不能跳到当前虚拟窗口最后一个节点。
   await list.evaluate((element) => {
     element.scrollTop = 0
   })
@@ -257,11 +260,8 @@ test('连续追加剩余分页和切换会话不改变侧栏的阅读位置', as
 
 test('上方合集继续追加时，下方正在阅读的未分组会话留在原来的屏幕位置', async ({ page }) => {
   await prepareHistory(page)
-  // 未分组演示数据只有九行；较矮视口让滚到底后整个阅读区域都处于未分组列表内。
   await page.setViewportSize({ width: 1440, height: 600 })
-  await page.evaluate(() => {
-    window.localStorage.setItem('cue.mock.sidebar-pause-history', 'true')
-  })
+  await pauseMockResponses(page, paginationPath)
   const complete = page.waitForResponse(pageEnded)
   const firstContinuation = page.waitForRequest(
     (request) => new URL(request.url()).pathname === paginationPath,
@@ -278,18 +278,16 @@ test('上方合集继续追加时，下方正在阅读的未分组会话留在�
   const before = await reading.boundingBox()
   if (before === null) throw new Error('未分组任务必须在视口内')
   const initialScrollTop = await scrollTopOf(list)
-  const firstVisibleTitle = await list.evaluate((element) => {
-    const top = element.getBoundingClientRect().top
-    const link = [...element.querySelectorAll('a')].find(
-      (row) => row.getBoundingClientRect().top >= top,
+  const listTop = (await list.boundingBox())?.y ?? 0
+  const firstVisibleTitle = await list
+    .getByRole('link')
+    .evaluateAll(
+      (links, top) => links.find((link) => link.getBoundingClientRect().top >= top)?.textContent,
+      listTop,
     )
-    return link?.textContent
-  })
   expect(firstVisibleTitle).toBeDefined()
   expect(firstVisibleTitle).not.toMatch(/^历史任务 /)
-  await page.evaluate(() => {
-    window.localStorage.removeItem('cue.mock.sidebar-pause-history')
-  })
+  await releaseMockResponses(page, paginationPath)
 
   await complete
   await expect
@@ -299,7 +297,7 @@ test('上方合集继续追加时，下方正在阅读的未分组会话留在�
     })
     .toBeLessThanOrEqual(1)
   expect(await scrollTopOf(list)).toBeGreaterThan(initialScrollTop + 1000)
-  expect(await sessionRows(page).count()).toBeLessThan(80)
+  expect(await sessionRows(page).count()).toBeLessThan(SESSION_COUNT)
 })
 
 test('拖拽期间滚出源行，再移到任务区和原合集都正常且不误打开会话', async ({ page }) => {

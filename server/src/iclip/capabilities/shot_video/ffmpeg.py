@@ -1,8 +1,3 @@
-"""分镜取帧专用的 ffmpeg 操作：整片抽帧、灰度检测与按格裁剪。
-
-下载、探时长、可用性检查与子进程封装是通用的，调用方直接用
-[platform.media.ffmpeg](../../platform/media/ffmpeg.py)。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -11,7 +6,8 @@ from tempfile import TemporaryDirectory
 
 from iclip.capabilities.shot_video.grid import GrayImage, parse_pgm
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.ffmpeg import PROBE_TIMEOUT_SECONDS, MediaError, run
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.process import PROBE_TIMEOUT_SECONDS, run
 
 EXTRACT_TIMEOUT_SECONDS = 900.0
 """全片解码抽帧的超时上限。"""

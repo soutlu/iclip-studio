@@ -1,4 +1,4 @@
-/** 成片区的一张卡：整张是一个按钮，点了在舞台上看这条成片，选中时 `aria-pressed` 并加中性描边。
+/** 素材片区的一张卡：整张是一个按钮，点了在舞台上看这条素材片，选中时 `aria-pressed` 并加中性描边。
  * 成功卡铺封面，在途卡转圈走表，失败卡只有错误图标；画面上只有角标：左上分辨率、左下编辑次数、右下片长，各自缺了就不画。 */
 
 import { Icon } from '@/shared/icons'
@@ -29,7 +29,7 @@ export function TakeCard({ now, onSelect, selected, size, take }: TakeCardProps)
   return (
     <li className="storyboard-take-item">
       <button
-        aria-label={`${time} 的成片${STATE_TEXT[take.state]}`}
+        aria-label={`${time} 的素材片${STATE_TEXT[take.state]}`}
         aria-pressed={selected}
         className="storyboard-take ui-focus"
         data-state={take.state}

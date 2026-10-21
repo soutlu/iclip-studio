@@ -3,10 +3,8 @@ FROM python:3.13-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /bin/uv
 
-# fonts-noto-cjk：整片烧字幕用的中文字体（思源黑体，SIL OFL 1.1），Debian 的 ffmpeg 带 libass，
-# 按 platform/media/ffmpeg.py 的 SUBTITLE_FONT 与 SUBTITLE_FONTS_DIR 找它。
 RUN apt-get update -qq \
-    && apt-get install -y -qq --no-install-recommends ffmpeg fonts-noto-cjk \
+    && apt-get install -y -qq --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 用镜像自带的 Python，不让 uv 再下载一份；字节码预编译换启动速度；不留下载缓存。

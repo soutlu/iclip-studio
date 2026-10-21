@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from iclip.domains.conversations.api import create_conversations_router
-from iclip.domains.conversations.repository import ConversationRepository
+from iclip.domains.conversations.repository import ConversationRepository, WholeFilmDraftStore
 from iclip.domains.conversations.service import (
     ActivitiesOf,
     AnnounceConversationDeleted,
@@ -27,6 +27,8 @@ from iclip.domains.conversations.service import (
     ListCollections,
     ListDerivedFiles,
     ReadDerivedFile,
+    WholeFilmDraftReferences,
+    WholeFilmExports,
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
@@ -53,6 +55,9 @@ def build_conversations_module(
     write_derived_file: WriteDerivedFile,
     document_validators: Mapping[str, WorkspaceDocumentValidator],
     film: ConversationFilm,
+    drafts: WholeFilmDraftStore,
+    draft_references: WholeFilmDraftReferences,
+    exports: WholeFilmExports | None,
     generate_title: GenerateTitle,
     announce_title: AnnounceTitle,
     activities_of: ActivitiesOf,
@@ -76,6 +81,9 @@ def build_conversations_module(
         write_derived_file=write_derived_file,
         document_validators=document_validators,
         film=film,
+        drafts=drafts,
+        draft_references=draft_references,
+        exports=exports,
         generate_title=generate_title,
         announce_title=announce_title,
         activities_of=activities_of,

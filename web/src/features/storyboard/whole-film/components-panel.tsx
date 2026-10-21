@@ -1,0 +1,214 @@
+import { useRef, useState, type PointerEvent } from 'react'
+import { Icon } from '@/shared/icons'
+import { cn } from '@/shared/lib/utils'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
+import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import { DRAG_THRESHOLD, releasePointer, useClickAfterDrag } from '../editing/timeline-drag'
+import {
+  CATEGORY_ICON,
+  defaultLaneLabel,
+  thumbnailOf,
+  type CatalogItem,
+  type ComponentGroup,
+} from './component-catalog'
+
+type ComponentsPanelProps = {
+  /** 这一栏的小标题（品牌或分类）和各自的卡片 */
+  groups: ComponentGroup[]
+  /** 小标题这一排叫什么，如「品牌」「分类」 */
+  groupsLabel: string
+  /** 选中的小标题；不在 groups 里时取第一个 */
+  selected: string | undefined
+  onSelect: (id: string) => void
+  /** 这一栏没有卡片时的说明 */
+  emptyText: string
+  /** 成片在用的字幕样式：这张卡描墨色框并打勾 */
+  captionComponent: string
+  /** 点卡片：按组件的默认去处放进成片 */
+  onUse: (item: CatalogItem) => void
+  /** 拿着卡片移动；null 是拖动中途作废 */
+  onCarry: (item: CatalogItem, carry: CardCarry | null) => void
+  /** 拿着卡片在某处松手 */
+  onDrop: (item: CatalogItem, carry: CardCarry) => void
+}
+
+/** 拖着的卡片：指针位置，以及拿起时卡片的位置与大小（没放下时缩影退回这里） */
+export type CardCarry = {
+  clientX: number
+  clientY: number
+  origin: { left: number; top: number; width: number; height: number }
+}
+
+/** 品牌栏、通用栏：一排小标题加卡片网格；点卡片放进成片，或拖到时间线的轨上 */
+export function ComponentsPanel({
+  groups,
+  groupsLabel,
+  selected,
+  onSelect,
+  emptyText,
+  captionComponent,
+  onUse,
+  onCarry,
+  onDrop,
+}: ComponentsPanelProps) {
+  const group = groups.find((item) => item.id === selected) ?? groups[0]
+  if (group === undefined) return <p className="wf-components-empty">{emptyText}</p>
+  return (
+    <div className="wf-components">
+      <ChipGroup
+        aria-label={groupsLabel}
+        className="wf-chips"
+        onValueChange={(value) => {
+          if (value !== '') onSelect(value)
+        }}
+        type="single"
+        value={group.id}
+      >
+        {groups.map((item) => (
+          <FilterChip className="wf-chip" key={item.id} value={item.id}>
+            {item.label}
+            <span>{item.items.length}</span>
+          </FilterChip>
+        ))}
+      </ChipGroup>
+      <ul aria-label="组件" className="wf-component-grid">
+        {group.items.map((item) => (
+          <li key={item.name}>
+            <ComponentCard
+              captionInUse={
+                item.placement === 'caption' ? item.name === captionComponent : undefined
+              }
+              item={item}
+              onCarry={(carry) => onCarry(item, carry)}
+              onDrop={(carry) => onDrop(item, carry)}
+              onUse={() => onUse(item)}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** 组件的预览图；目录里没有缩略图的用分类图标 */
+export function ComponentThumb({
+  item,
+  className,
+  iconSize = 'md',
+}: {
+  item: CatalogItem
+  className?: string
+  iconSize?: 'xs' | 'md'
+}) {
+  const thumbnail = thumbnailOf(item)
+  return (
+    <span className={cn('wf-component-thumb', className)}>
+      {thumbnail === undefined ? (
+        <Icon decorative name={CATEGORY_ICON[item.category] ?? 'grid'} size={iconSize} />
+      ) : (
+        <img alt="" draggable={false} loading="lazy" src={thumbnail} />
+      )}
+    </span>
+  )
+}
+
+type CardProps = {
+  item: CatalogItem
+  /** 字幕样式卡是不是成片在用的那个；其余组件为 undefined */
+  captionInUse: boolean | undefined
+  onUse: () => void
+  onCarry: (carry: CardCarry | null) => void
+  onDrop: (carry: CardCarry) => void
+}
+
+type Press = {
+  pointerId: number
+  originX: number
+  originY: number
+  origin: CardCarry['origin']
+  moved: boolean
+}
+
+function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps) {
+  const pressRef = useRef<Press | null>(null)
+  const [lifting, setLifting] = useState(false)
+  const [tip, setTip] = useState(false)
+  const clicks = useClickAfterDrag()
+
+  const press = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return
+    clicks.reset()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const box = event.currentTarget.getBoundingClientRect()
+    pressRef.current = {
+      pointerId: event.pointerId,
+      originX: event.clientX,
+      originY: event.clientY,
+      origin: { left: box.left, top: box.top, width: box.width, height: box.height },
+      moved: false,
+    }
+  }
+  const move = (event: PointerEvent<HTMLButtonElement>) => {
+    const current = pressRef.current
+    if (current === null || current.pointerId !== event.pointerId) return
+    if (!current.moved) {
+      const distance = Math.hypot(event.clientX - current.originX, event.clientY - current.originY)
+      if (distance <= DRAG_THRESHOLD) return
+      current.moved = true
+      setLifting(true)
+    }
+    onCarry({ clientX: event.clientX, clientY: event.clientY, origin: current.origin })
+  }
+  const release = (event: PointerEvent<HTMLButtonElement>) => {
+    const current = pressRef.current
+    if (current === null || current.pointerId !== event.pointerId) return
+    releasePointer(event)
+    pressRef.current = null
+    setLifting(false)
+    if (!current.moved) return
+    clicks.swallow()
+    onDrop({ clientX: event.clientX, clientY: event.clientY, origin: current.origin })
+  }
+  const cancel = () => {
+    if (pressRef.current?.moved === true) {
+      clicks.swallow()
+      onCarry(null)
+    }
+    pressRef.current = null
+    setLifting(false)
+  }
+  useEscapeAheadOfDialog(lifting, cancel)
+
+  return (
+    // 拖着卡片时收起说明，免得它挡在侧栏上跟着不走
+    <TooltipRoot onOpenChange={setTip} open={tip && !lifting}>
+      <TooltipTrigger asChild>
+        <button
+          aria-label={`${item.title}，${defaultLaneLabel(item)}：${item.description}`}
+          aria-pressed={captionInUse}
+          className={cn('wf-component ui-focus', lifting && 'is-lifting')}
+          onClick={() => {
+            if (!clicks.take()) onUse()
+          }}
+          onPointerCancel={cancel}
+          onPointerDown={press}
+          onPointerMove={move}
+          onPointerUp={release}
+          type="button"
+        >
+          <span className="wf-component-frame">
+            <ComponentThumb item={item} />
+            {captionInUse === true ? (
+              <span className="wf-component-check">
+                <Icon decorative name="check" size="xs" />
+              </span>
+            ) : null}
+          </span>
+          <span className="wf-component-name">{item.title}</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{item.description}</TooltipContent>
+    </TooltipRoot>
+  )
+}

@@ -1,9 +1,3 @@
-/** 参考视频详情：布局照成片详情，左边是「原片｜试生成」对照，右边是属主、两组标签与拆解；底栏是编辑、重新拆解与更多操作。
- *
- * 只有属主（`canEdit`）能改标签与拆解、重拆、移除；别人的只能看、复制拆解、下载视频。改动整份带 `version` 提交，
- * 版本对不上（别处改过或重拆过）给一句提示并重读，不覆盖。重新拆解与移除都在底栏原地确认，不另开弹窗。
- * 试生成只限属主本人（按用户名比，替人办事与治理者的 `canEdit` 不算），画幅取与原片最接近的一种。 */
-
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
@@ -20,7 +14,7 @@ import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import { VideoPlayer } from '@/shared/ui/video-player'
-import { REFERENCE_FALLBACK_RATIO } from '../library-layout'
+import { PLACEHOLDER_VIDEO_RATIO } from '../library-layout'
 import { failureMessageOf, tagsOf, UNTAGGED_YET, type VideoTypeLabels } from '../reference-labels'
 import {
   CATEGORY_VALUES,
@@ -38,12 +32,11 @@ import {
 import { AuthorAvatar } from './author-avatar'
 import { ReferenceTagRow } from './reference-tags'
 import { LibraryViewerFrame } from './library-viewer-frame'
+import { ViewerPending, ViewerStage } from './library-viewer-stage'
 import { CompareOverlay, TestVideoCell } from './test-video-slot'
 
-/** 深色主按钮：置灰时换成禁用底，不留深底配浅灰字。 */
 const INVERTED_CLASS = 'rounded-full disabled:bg-disabled-container'
 
-/** 版本对不上：别处改过或重拆过。 */
 const CONFLICT_MESSAGE = '该拆解已被修改，刷新将丢弃本次修改'
 
 const isConflict = (error: unknown) => error instanceof ApiError && error.status === 409
@@ -52,14 +45,11 @@ type Mode = 'view' | 'edit' | 'confirm-rerun' | 'confirm-remove'
 
 type ReferenceViewerProps = {
   referenceId: string
-  /** 列表里已读到的这一条；详情读回来之前先拿它铺画面和标签。 */
   listed: ReferenceItem | undefined
   labels: VideoTypeLabels
-  /** 此刻登录的用户名；属主本人才能试生成。 */
   myUserName: string | null
   onClose: () => void
   onAuthor: (userName: string) => void
-  /** 关掉后由列表把焦点放回卡片；卡片已被虚拟列表回收时返回 false。 */
   onRestoreFocus: () => boolean
 }
 
@@ -79,7 +69,6 @@ export function ReferenceViewer({
   return (
     <LibraryViewerFrame
       onClose={onClose}
-      // 编辑或确认到一半时 Esc 先退回查看，不连详情一起关掉。
       onEscapeKeyDown={(event) => {
         if (mode === 'view') return
         event.preventDefault()
@@ -89,6 +78,7 @@ export function ReferenceViewer({
     >
       {reference === undefined ? (
         <ViewerPending
+          title="参考视频详情"
           error={detail.isError ? errorMessageOf(detail.error, '读取该参考视频失败') : null}
           onClose={onClose}
           onRetry={() => void detail.refetch()}
@@ -110,45 +100,8 @@ export function ReferenceViewer({
   )
 }
 
-/** 分享来的链接指向的那条不在已读列表里：详情回来之前只有状态。 */
-function ViewerPending({
-  error,
-  onClose,
-  onRetry,
-}: {
-  error: string | null
-  onClose: () => void
-  onRetry: () => void
-}) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
-      <DialogTitle className="sr-only">参考视频详情</DialogTitle>
-      {error === null ? (
-        <p className="text-body-sm text-on-surface-variant" role="status">
-          正在读取…
-        </p>
-      ) : (
-        <>
-          <p className="text-body text-on-surface" role="alert">
-            {error}
-          </p>
-          <div className="flex gap-2">
-            <Button onClick={onRetry} size="md" variant="inverted">
-              重试
-            </Button>
-            <Button onClick={onClose} size="md" variant="ghost">
-              关闭
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 type ViewerBodyProps = {
   reference: ReferenceItem
-  /** 带拆解正文的详情；读回来之前是 undefined。 */
   detail: ReferenceDetail | undefined
   labels: VideoTypeLabels
   mode: Mode
@@ -159,7 +112,6 @@ type ViewerBodyProps = {
   onAuthor: (userName: string) => void
 }
 
-/** 放大的是哪一格：关掉灯箱后把播到的秒数还给那个播放器。 */
 type Preview = { media: LightboxMedia; player: 'original' | 'test' }
 
 function ViewerBody({
@@ -175,16 +127,14 @@ function ViewerBody({
 }: ViewerBodyProps) {
   const playerRef = useRef<HTMLVideoElement>(null)
   const testPlayerRef = useRef<HTMLVideoElement>(null)
-  // 读到元数据后量出的真实比例；列表项不带画幅，量到之前按竖版占位，也不能试生成，免得按猜的画幅生成。
   const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
-  const ratio = measuredRatio ?? REFERENCE_FALLBACK_RATIO
+  const ratio = measuredRatio ?? PLACEHOLDER_VIDEO_RATIO
   const [preview, setPreview] = useState<Preview | null>(null)
   const [draft, setDraft] = useState('')
   const [conflict, setConflict] = useState(false)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const footerRef = useRef<HTMLElement>(null)
   const previousModeRef = useRef(mode)
-  // 换了底栏就把焦点放到新出现的地方：编辑框、确认按钮；退回查看时回到底栏第一个按钮，焦点不掉到页面上。
   useEffect(() => {
     if (previousModeRef.current === mode) return
     previousModeRef.current = mode
@@ -194,7 +144,6 @@ function ViewerBody({
         ?.querySelector<HTMLButtonElement>(mode === 'view' ? 'button' : 'button:last-of-type')
         ?.focus()
   }, [mode])
-  // 冲突提示出现在底栏时焦点给「刷新」，收起时回到编辑框。
   useEffect(() => {
     if (conflict)
       footerRef.current?.querySelector<HTMLButtonElement>('button:last-of-type')?.focus()
@@ -211,7 +160,6 @@ function ViewerBody({
   const tags = tagsOf(reference, labels)
   const title = tags.length === 0 ? '参考视频' : tags.join(' · ')
   const author = reference.userName
-  // 改标签也是整份提交，要带上当前拆解；还没拆出过、正在拆时都改不了。
   const tagsEditable = reference.canEdit && detail !== undefined && document !== null && !busy
   const saving = update.isPending
 
@@ -295,14 +243,13 @@ function ViewerBody({
     }
   }
 
-  // 试生成只用拆解文字：拆解排队、拆解中或从没拆成时不能提交。
   const testReady = detail !== undefined && document !== null && !busy
   const submitTest = () => {
     if (measuredRatio === null || !testReady) return
     startTest.mutate(nearestTestAspectRatio(measuredRatio), {
       onError: (error) => {
         toast.error(errorMessageOf(error, '试生成失败'))
-        // 409：拆解状态或上一次试生成与画面上的不一致，读回最新的。
+        // 服务端以 409 表示拆解状态或上一次试生成与画面上的不一致。
         if (isConflict(error)) onRefresh()
       },
     })
@@ -313,16 +260,8 @@ function ViewerBody({
 
   return (
     <>
-      <section aria-label="播放" className="relative flex min-w-0 flex-1 flex-col max-md:flex-none">
-        <IconButton
-          className="layer-local-1 absolute top-4 right-4 size-10 rounded-full bg-surface-container-low text-on-surface"
-          label="关闭"
-          name="close"
-          onClick={onClose}
-        />
+      <ViewerStage label="播放" onClose={onClose}>
         <div className="relative min-h-0 flex-1 max-md:flex-none">
-          {/* 两格与原片同比例、在这块区域里等比放到最大：圆角落在画面上，两侧不留底色块。
-              手机上按内容高度排，顶部让出关闭按钮。 */}
           <div className="[container-type:size] absolute inset-3 grid place-items-center max-md:[container-type:inline-size] max-md:static max-md:px-3 max-md:pt-16 max-md:pb-2 md:inset-6">
             <div
               className="reference-compare"
@@ -377,7 +316,7 @@ function ViewerBody({
             </div>
           </div>
         </div>
-      </section>
+      </ViewerStage>
 
       <section
         aria-label="拆解"
@@ -427,7 +366,6 @@ function ViewerBody({
               editable={tagsEditable && mode === 'view'}
               emptyText={busy ? UNTAGGED_YET : '未标注'}
               label="品类"
-              // 加上的放在最后，与片子类型一样按点选的先后显示。
               onChange={(ids) =>
                 saveTags({
                   categories: ids.flatMap((id) => CATEGORY_VALUES.filter((name) => name === id)),
@@ -471,7 +409,6 @@ function ViewerBody({
           ref={footerRef}
         >
           {mode === 'edit' && conflict ? (
-            // 版本冲突也在底栏原地说：编辑框不动、内容留着，复制完再刷新；「取消」只收起提示、接着编辑。
             <>
               <span
                 className="min-w-0 flex-1 text-body-sm text-balance text-on-surface"
@@ -624,7 +561,6 @@ function ViewerBody({
   )
 }
 
-/** 拆解区：还没拆完时说明一句并给占位，没拆成时顶上说原因，有拆解就按 Markdown 显示。 */
 function BreakdownBody({
   reference,
   detail,
@@ -687,7 +623,6 @@ function BreakdownBody({
   )
 }
 
-/** 两段文字的样子：标题一行、正文几行，段间空一点。 */
 const SKELETON_LINES = [
   { id: 'h1', width: '40%' },
   { id: 'p1', width: '92%' },
@@ -700,7 +635,6 @@ const SKELETON_LINES = [
   { id: 'p6', width: '60%' },
 ] as const
 
-/** 拆解还没读回来或还没拆完时的几行灰条。 */
 function DocumentSkeleton() {
   return (
     <div aria-hidden className="grid gap-3 pt-1 motion-safe:animate-pulse">

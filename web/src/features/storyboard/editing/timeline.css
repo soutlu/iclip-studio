@@ -1,0 +1,284 @@
+/* 两个编辑器时间线的共用件。各编辑器通过下列自定义属性给出自己的尺寸，不改这里的类：
+   --timeline-ruler-height、--timeline-first-tick-shift、--timeline-wave-inset、--timeline-wave-stroke、
+   --timeline-handle-top、--timeline-bubble-height、--timeline-playhead-top、--timeline-playhead-bottom、
+   --timeline-knob-top。 */
+
+.timeline-ruler {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--timeline-ruler-height);
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  translate: -50% 0;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-tick.is-first {
+  translate: var(--timeline-first-tick-shift, 0) 0;
+}
+
+.timeline-tick.is-last {
+  translate: -100% 0;
+}
+
+.timeline-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.timeline-seek:disabled {
+  cursor: default;
+}
+
+.timeline-frames {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface-faint);
+}
+
+.timeline-frames img,
+.timeline-frame-empty {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 0;
+  object-fit: cover;
+}
+
+.timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
+
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 52%, transparent);
+}
+
+.timeline-wave svg {
+  position: absolute;
+  inset: var(--timeline-wave-inset, 3px) 0;
+  width: 100%;
+  height: calc(100% - 2 * var(--timeline-wave-inset, 3px));
+}
+
+.timeline-wave path {
+  fill: none;
+  stroke: var(--timeline-wave-color);
+  stroke-width: var(--timeline-wave-stroke, 1.4);
+  vector-effect: non-scaling-stroke;
+}
+
+.timeline-wave-loading {
+  width: calc(100% - 16px);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-hairline);
+}
+
+.timeline-wave-note {
+  overflow: hidden;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.timeline-handle {
+  position: absolute;
+  top: var(--timeline-handle-top, 50%);
+  z-index: var(--z-local-3);
+  display: grid;
+  width: 8px;
+  height: 20px;
+  place-items: center;
+  translate: -50% -50%;
+  padding: 0;
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* 视觉保持细小，透明命中区为 28 × 24px，不跨过包装轨。 */
+.timeline-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 24px;
+  translate: -50% -50%;
+}
+
+.timeline-handle::after {
+  content: '';
+  width: 2px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.timeline-handle:hover {
+  background: var(--color-surface-container-high);
+}
+
+.timeline-handle:is(:focus-visible, :active, .is-pressed) {
+  outline: none;
+  border-color: transparent;
+  background: var(--color-on-surface);
+}
+
+.timeline-handle:is(:focus-visible, :active, .is-pressed)::after {
+  background: var(--color-surface-container-lowest);
+}
+
+.timeline-time-preview {
+  position: fixed;
+  z-index: var(--z-popup);
+  display: flex;
+  width: 112px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-1);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-time-preview > span {
+  opacity: 0.65;
+}
+
+.timeline-time-preview > b {
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+
+.timeline-hover-guide {
+  position: absolute;
+  top: var(--timeline-playhead-top);
+  bottom: var(--timeline-playhead-bottom);
+  z-index: var(--z-local-3);
+  width: 1px;
+  translate: -50% 0;
+  background: repeating-linear-gradient(to bottom, var(--color-outline) 0 3px, transparent 3px 6px);
+  pointer-events: none;
+}
+
+.timeline-hover-guide::before {
+  content: '';
+  position: absolute;
+  box-sizing: border-box;
+  top: -7px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  translate: -50% 0;
+  border: 1px solid var(--color-outline);
+  border-radius: calc(var(--radius-xs) / 2);
+  background: var(--color-surface-container-lowest);
+}
+
+.timeline-bubble {
+  position: absolute;
+  top: -8px;
+  z-index: var(--z-local-3);
+  display: flex;
+  height: var(--timeline-bubble-height, 22px);
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: var(--timeline-playhead-top, auto);
+  bottom: var(--timeline-playhead-bottom, auto);
+  z-index: var(--z-local-3);
+  width: 2px;
+  translate: -1px 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-surface-container-lowest) 70%, transparent);
+  pointer-events: none;
+}
+
+.timeline-playhead::before {
+  content: '';
+  position: absolute;
+  box-sizing: border-box;
+  top: var(--timeline-knob-top, -12px);
+  left: 50%;
+  width: 10px;
+  height: 12px;
+  translate: -50% 0;
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+}
+
+.timeline-playhead::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--timeline-knob-top, -12px) + 6px);
+  left: 50%;
+  width: 2px;
+  height: 5px;
+  translate: -50% -50%;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
+  ~ .timeline-playhead::before {
+  border-color: transparent;
+  background: var(--color-on-surface);
+}
+
+.timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
+  ~ .timeline-playhead::after {
+  background: var(--color-surface-container-lowest);
+}

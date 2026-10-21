@@ -31,6 +31,7 @@ PLACEHOLDER_ENV = {
     "SSO_BASE_URL": "https://placeholder.invalid/sso",
     "SSO_REDIRECT_URL": "https://placeholder.invalid/auth/sso/callback",
     "VIDEO_API_KEY": "openapi-dump-placeholder",
+    "VIDEO_ENHANCE_SUBMIT_URL": "https://placeholder.invalid/video/enhance",
     "VIDEO_STATUS_BASE_URL": "https://placeholder.invalid/video/status",
     "VIDEO_SUBMIT_URL": "https://placeholder.invalid/video/submit",
     "VIDEO_UNDERSTANDING_API_KEY": "openapi-dump-placeholder",

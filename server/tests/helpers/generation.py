@@ -45,21 +45,24 @@ from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     OPERATION_CUT,
     OPERATION_UPLOAD,
-    GenerationRequest,
     ImageGenerationIn,
     MusicRequest,
     SubtitleRequest,
     SubtitleSentence,
     VideoComposeRequest,
+    VideoEnhanceRequest,
+    VideoEnhanceResolution,
     VideoGenerationIn,
-    WholeFilmRender,
     WholeFilmRequest,
+    WholeFilmVideoSource,
 )
-from iclip.domains.generation.service import BrandTemplateFacts, GenerationService
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.errors import MediaError
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
 from tests.helpers.fetch_url import as_is
@@ -282,9 +285,9 @@ def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
-    """识别成片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
+    """识别素材片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
 
-    assert video.output_url is not None, "只识别有地址的成片"
+    assert video.output_url is not None, "只识别有地址的素材片"
     fields.setdefault("owner_user_id", video.owner_user_id)
     fields.setdefault("conversation_id", video.conversation_id)
     fields.setdefault("task_id", video.task_id)
@@ -295,67 +298,40 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
     )
 
 
-def whole_film_request(
-    segments: Sequence[Mapping[str, Any]],
-    *,
-    subtitles: Sequence[Mapping[str, Any]] = (),
-    music: Mapping[str, Any] | None = None,
-    intro: Mapping[str, Any] | None = None,
-    outro: Mapping[str, Any] | None = None,
-    font: Mapping[str, Any] | None = None,
-) -> WholeFilmRequest:
-    """整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的 ``sourceJobId``），
-    字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。片头片尾是模板快照
-    ``{url, durationMs, width, height, hasAudio}``，没写 ``templateId`` 也按地址补一个。"""
+def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
+    """一次成片导出的请求：画面轨按先后用到 ``sources`` 这几条素材片（地址随 id 起），草稿是空的，
+    没有音乐与字幕。"""
 
-    def snapshot(brand: Mapping[str, Any] | None) -> dict[str, Any] | None:
-        if brand is None:
-            return None
-        return {"templateId": uuid.uuid5(uuid.NAMESPACE_URL, brand["url"]), **brand}
-
-    def with_source(item: Mapping[str, Any]) -> dict[str, Any]:
-        if "sourceJobId" in item or "audioJobId" in item:
-            return dict(item)
-        return {"sourceJobId": uuid.uuid5(uuid.NAMESPACE_URL, item["url"]), **item}
-
-    music_payload = None
-    if music is not None:
-        music_payload = dict(music)
-        music_payload.setdefault("audioJobId", uuid.uuid5(uuid.NAMESPACE_URL, music["url"]))
-    return WholeFilmRequest.model_validate(
-        {
-            "segments": [with_source(segment) for segment in segments],
-            "subtitles": list(subtitles),
-            "music": music_payload,
-            "render": WholeFilmRender(),
-            "intro": snapshot(intro),
-            "outro": snapshot(outro),
-            "font": None
-            if font is None
-            else {"fontId": uuid.uuid5(uuid.NAMESPACE_URL, str(font["url"])), **font},
-        }
+    return WholeFilmRequest(
+        revision=1,
+        document={},
+        videos=[
+            WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
+            for source in sources
+        ],
+        music=None,
+        subtitles=[],
     )
 
 
-def make_whole_film(*masters: GenerationJob, **fields: Any) -> GenerationJob:
-    """把 ``masters`` 各取前一秒剪成的一条整片：没有来源、原作与镜号，挂第一条的对话（默认），执行方
-    是本地 ffmpeg，默认排队中。"""
+def make_enhancement(
+    source: GenerationJob, resolution: VideoEnhanceResolution = "1080p", **fields: Any
+) -> GenerationJob:
+    """给来源 ``source``（素材片或成片）做的一条超分记录：种类是视频，镜号随来源，不挂对话，默认排队中。"""
 
-    fields.setdefault("provider", "ffmpeg")
-    fields.setdefault("conversation_id", masters[0].conversation_id or uuid.uuid4())
-    fields.setdefault("owner_user_id", masters[0].owner_user_id)
-    request = whole_film_request(
-        [
-            {
-                "sourceJobId": master.id,
-                "url": master.output_url or "https://example.com/take.mp4",
-                "startMs": 0,
-                "endMs": 1000,
-            }
-            for master in masters
-        ]
+    assert source.output_url is not None, "只给有地址的来源做高清版"
+    fields.setdefault("shot_index", source.shot_index)
+    return make_job(
+        VideoEnhanceRequest(
+            model="video-enhance",
+            resolution=resolution,
+            fps=30,
+            video_url=source.output_url,
+            user_name="logan",
+        ),
+        source_job_id=source.id,
+        **fields,
     )
-    return make_job(request, **fields)
 
 
 MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短视频的背景音乐"
@@ -523,7 +499,9 @@ class InMemoryGenerationRepository:
         rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
         return tuple(rows[:limit])
 
-    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        if self.jobs[job_id].status != STATUS_PENDING:
+            return None
         return self._replace(job_id, status=STATUS_SUBMITTING)
 
     async def mark_submitted(
@@ -633,9 +611,18 @@ class InMemoryGenerationRepository:
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]
     ) -> Mapping[uuid.UUID, str]:
-        """取最新成片的排序与成片判定只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
+        """取最新素材片的排序与素材片判定只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
 
-        raise AssertionError("unit 层不走最新成片")
+        raise AssertionError("unit 层不走最新素材片")
+
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        rows = [
+            job
+            for job in self.jobs.values()
+            if job.source_job_id == source_job_id and job.operation == "enhance"
+        ]
+        rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
+        return tuple(rows)
 
     def _replace(self, job_id: uuid.UUID, **values: Any) -> GenerationJob:
         from dataclasses import replace
@@ -768,7 +755,6 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
-        brand_templates=FixedBrandTemplates(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -810,14 +796,18 @@ class FixedLineage:
         return self._readable
 
 
-class FixedBrandTemplates:
-    """BrandTemplates 替身：品牌模板预先写死，按 id 读；没给的就是没有。"""
+class FakeMediaProbe:
+    """RemoteMediaProbe 替身：按地址给时长，不认得的地址像取不到一样抛 ``MediaError``；记下探过哪些。"""
 
-    def __init__(self, *templates: BrandTemplateFacts) -> None:
-        self._templates = {template.id: template for template in templates}
+    def __init__(self, durations: Mapping[str, int] | None = None) -> None:
+        self._durations = dict(durations or {})
+        self.probed: list[str] = []
 
-    async def __call__(self, template_id: uuid.UUID) -> BrandTemplateFacts | None:
-        return self._templates.get(template_id)
+    async def duration_ms(self, url: str) -> int:
+        self.probed.append(url)
+        if url not in self._durations:
+            raise MediaError(f"取不到素材: {url}")
+        return self._durations[url]
 
 
 class MemoryObjectStore:
@@ -873,7 +863,7 @@ __all__ = [
     "MEDIA_ENVS",
     "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
-    "FixedBrandTemplates",
+    "FakeMediaProbe",
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",
@@ -887,11 +877,11 @@ __all__ = [
     "make_composite",
     "make_cut",
     "make_edit",
+    "make_enhancement",
     "make_job",
     "make_music",
     "make_subtitle",
     "make_upload",
-    "make_whole_film",
     "stored_request",
     "video_request",
     "whole_film_request",

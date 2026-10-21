@@ -1,14 +1,10 @@
-"""运行配置。YAML 定义能力形状，环境变量提供地址与凭证。
-
-EnvSettings 字段别名是环境变量清单，缺失时聚合报告变量名。
-可选能力的开关为空时关闭；开启后必须提供该组全部必需变量。"""
-
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Final, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -25,56 +21,42 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
+from iclip.common.generation_vocab import VideoEnhanceResolution
+
 _MIN_SECRET_LENGTH = 32
 
 RequiredEnv = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-"""必需的环境变量值，空字符串和纯空白均视为缺失。"""
 
 OptionalEnv = Annotated[str, StringConstraints(strip_whitespace=True)]
-"""可以缺的环境变量值；缺了就是空串。"""
 
 SSO_BASE_URL_ENV: Final = "SSO_BASE_URL"
-"""SSO 的总开关：这个地址为空即整项关闭。"""
 
 DEFAULT_SSO_OAUTH_NAME: Final = "sso"
-"""没配 ``SSO_OAUTH_NAME`` 时 OAuth 账号表里记的提供方名。"""
 
 OSS_BUCKET_ENV: Final = "OSS_BUCKET"
-"""公开对象存储的总开关：桶名为空即整项关闭（``/uploads/*`` 不挂载）。"""
 
 VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
-"""媒体生成的总开关：这个地址为空即整项关闭。"""
+
+VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
 
 QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
-"""千问AI平台（DashScope）的 API Key，平台上的各项能力共用这一个。为空或空白即用不了平台上的能力；
-用到它的能力另有自己的开关（如字幕识别还要媒体生成开着、YAML 写了 ``media_generation.subtitle`` 段，
-生成背景音乐要写 ``media_generation.music`` 段）。"""
 
 VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
-"""视频拆解的总开关：这个地址为空即 `video` 与 `video_breakdown` 都不登记。"""
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
-"""PDM 款目录的总开关：这个连接串为空即爆款视频的降级不可用。"""
+
+WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
 
 
 class ConfigSection(BaseModel):
-    """所有 YAML 段的共同约束：frozen + 未知字段即拒。"""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 class EnvSettings(BaseSettings):
-    """所有 env 段的共同约束：frozen，且只认自己声明的那几个变量。"""
-
     model_config = SettingsConfigDict(frozen=True, extra="ignore")
 
 
-# 环境变量配置
-
-
 class CoreEnv(EnvSettings):
-    """任何时候都必需的两个。"""
-
     database_url: RequiredEnv = Field(validation_alias="DATABASE_URL")
     auth_secret: RequiredEnv = Field(validation_alias="AUTH_SECRET")
 
@@ -94,68 +76,56 @@ class CoreEnv(EnvSettings):
 
 
 class SsoEnv(EnvSettings):
-    """SSO 的地址。只在 ``SSO_BASE_URL`` 非空时才构造，所以落地路由是必需的。"""
-
     base_url: RequiredEnv = Field(validation_alias=SSO_BASE_URL_ENV)
     redirect_url: RequiredEnv = Field(validation_alias="SSO_REDIRECT_URL")
     pms_base_url: OptionalEnv = Field("", validation_alias="PMS_BASE_URL")
     root_email: OptionalEnv = Field("", validation_alias="ROOT_EMAIL")
     oauth_name: OptionalEnv = Field("", validation_alias="SSO_OAUTH_NAME")
-    """登录回调按它查找与关联 OAuth 账号；为空取 ``DEFAULT_SSO_OAUTH_NAME``。"""
 
 
 class ObjectStoreEnv(EnvSettings):
-    """公开对象存储（阿里云 OSS）的地址与凭证。
-
-    它自己就是一项能力（素材上传、生成结果转存、镜头帧落地都用它），所以有自己的
-    开关，不挂在别人下面。变量名不带本仓前缀：对象存储的凭证不是本仓专有的东西。
-    """
-
     bucket: RequiredEnv = Field(validation_alias=OSS_BUCKET_ENV)
     endpoint: RequiredEnv = Field(validation_alias="OSS_ENDPOINT")
     access_key_id: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_ID")
     access_key_secret: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_SECRET")
     public_url_base: RequiredEnv = Field(validation_alias="OSS_PUBLIC_URL_BASE")
+    # 阿里云的内网 endpoint 只在与桶同地域的 ECS 或 VPC 内可用。
     internal_endpoint: OptionalEnv = Field("", validation_alias="OSS_INTERNAL_ENDPOINT")
-    """桶所在地域的内网 endpoint，只在与桶同地域的阿里云 ECS 或 VPC 内可用。配了时服务端读写、
-    删除与下载本桶对象走它；为空则全部走 ``OSS_ENDPOINT``。浏览器直传的签名始终用 ``OSS_ENDPOINT``。"""
 
 
 class MediaGenerationEnv(EnvSettings):
-    """两家生成接口的地址与凭证。只在总开关非空时才构造，所以这里全是必需的。
-
-    图片那个地址是网关根，每家的路由段与并发在 ``ImageGenerationSection`` 里声明。
-    """
-
     video_submit_url: RequiredEnv = Field(validation_alias=VIDEO_SUBMIT_URL_ENV)
     video_status_base_url: RequiredEnv = Field(validation_alias="VIDEO_STATUS_BASE_URL")
     video_api_key: RequiredEnv = Field(validation_alias="VIDEO_API_KEY")
     image_api_base: RequiredEnv = Field(validation_alias="IMAGE_API_BASE")
+    # 高清版（超分）的完整提交地址；查询地址与 key 同出片。留空就是没开通。
+    video_enhance_submit_url: OptionalEnv = Field("", validation_alias=VIDEO_ENHANCE_SUBMIT_URL_ENV)
 
 
 class QwenEnv(EnvSettings):
-    """千问AI平台的 API Key。只在 ``QWEN_API_KEY`` 非空时才构造；各项能力的地址在各自的 YAML 段。"""
-
     api_key: RequiredEnv = Field(validation_alias=QWEN_API_KEY_ENV)
 
 
 class VideoUnderstandingEnv(EnvSettings):
-    """视频拆解接口的地址与凭证。只在总开关非空时才构造。
-
-    地址要完整的（含路径）：接口路由不留在仓里。
-    """
-
     url: RequiredEnv = Field(validation_alias=VIDEO_UNDERSTANDING_URL_ENV)
     api_key: RequiredEnv = Field(validation_alias="VIDEO_UNDERSTANDING_API_KEY")
 
 
 class ProductCatalogEnv(EnvSettings):
-    """PDM 款目录：外部只读库的连接串。供爆款视频按品类与品牌圈选同类款。"""
-
     database_url: RequiredEnv = Field(validation_alias=PRODUCT_CATALOG_DATABASE_URL_ENV)
 
 
-# YAML 声明
+class WholeFilmRenderEnv(EnvSettings):
+    url: RequiredEnv = Field(validation_alias=WHOLE_FILM_RENDER_URL_ENV)
+    """成片渲染服务的内网根地址（compose 里的服务名），只给服务端用。"""
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            raise ValueError(f"{WHOLE_FILM_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
+        return value.rstrip("/")
 
 
 class AppSection(ConfigSection):
@@ -189,44 +159,49 @@ class SecuritySection(ConfigSection):
 
 
 class SsoSection(ConfigSection):
-    """SSO 里唯一不属于「地址与凭证」的东西：我们在对方那边注册的应用名。"""
-
     app_name: str
 
 
 class ModelSection(ConfigSection):
-    """一个命名模型。``provider`` 是官方 provider 名；``model`` 缺省即键名。
-
-    ``api_key_env`` 是**这一条**用哪个变量取 key——每个模型的 key 各自一个变量，
-    这属于声明的一部分，没法用一套写死的别名表达，所以它留在 YAML 里。
-    """
-
     provider: str
     api: Literal["chat", "responses"] = "chat"
     api_key_env: str
     base_url: str | None = None
     model: str | None = None
     thinking: ThinkingEffort | None = None
-    """思考强度档位；不写即不发该参数，用厂商默认档。"""
     context_window: int | None = Field(default=None, gt=0)
-    """传给 Pydantic AI Harness 的模型上下文窗口。"""
 
 
 ThinkingEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
+# 方舟收到别的取值会静默改用默认档。
 ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
-"""方舟支持的思考强度；启动时拒绝其他值，避免上游静默使用默认档。"""
+
+
+class VideoEnhanceSection(ConfigSection):
+    """高清版（超分）：用哪个模型、提到哪几档（从高到低，界面按这个顺序列）、帧率。"""
+
+    model: str = Field(min_length=1)
+    resolutions: tuple[VideoEnhanceResolution, ...] = Field(min_length=1)
+    fps: int | None = Field(default=None, ge=15, le=60)
+    """目标帧率；不写就不插帧，保持原片帧率。"""
+
+    @field_validator("resolutions")
+    @classmethod
+    def _distinct(
+        cls, value: tuple[VideoEnhanceResolution, ...]
+    ) -> tuple[VideoEnhanceResolution, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("enhance.resolutions 不能重复")
+        return value
 
 
 class VideoGenerationSection(ConfigSection):
-    """新视频生成允许选择的模型与默认模型。归属标签 user_name 随每次请求来，不在配置里。
-
-    这里只声明允许表；生成域从允许表派生片段图生、编辑的能力，模型列表与受理共用。"""
-
     model: str
     allowed_models: tuple[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ...
     ] = Field(min_length=1)
+    enhance: VideoEnhanceSection | None = None
 
     @model_validator(mode="after")
     def _default_model_is_allowed(self) -> VideoGenerationSection:
@@ -236,31 +211,17 @@ class VideoGenerationSection(ConfigSection):
 
 
 class ImageModelSection(ConfigSection):
-    """一家图片模型。``route`` 拼在 ``IMAGE_API_BASE`` 后面构成它的地址。"""
-
     route: str = Field(min_length=1)
     concurrency: int = Field(gt=0)
-    """这家同时最多挂几个提交。一家一条队列，慢的一家占满自己的槽位不拖别家。"""
     text_to_image_task: str | None = Field(default=None, min_length=1)
     image_edit_task: str | None = Field(default=None, min_length=1)
-    """这家自己的两条任务路由；不写就用 ``image`` 段里各家共用的那两条。"""
 
 
 class ImageGenerationSection(ConfigSection):
-    """图像生成接入了哪几家，以及对方约定的取值。
-
-    键名即落库的 provider 名，也是这家那条提交队列的名字，改名会让历史记录对不上。
-    归属标签 user_name 随每次请求来，不在配置里。
-    """
-
     env: Literal["prod", "uat", "test"]
-    """网关要求的调用环境。它按调用方标识与这一项一起判这次调用合不合法。"""
     text_to_image_task: str = Field(min_length=1)
-    """文生图的任务路由，拼在每家的地址后面。"""
     image_edit_task: str = Field(min_length=1)
-    """图像编辑的任务路由，拼在每家的地址后面。"""
     default: str
-    """请求省略 ``model`` 时用哪家。"""
     models: dict[str, ImageModelSection] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -270,145 +231,68 @@ class ImageGenerationSection(ConfigSection):
         return self
 
 
-class SubtitleSection(ConfigSection):
-    """成片的字幕识别：每条成片完成后后台识别一次口播。写出这一段、并设了千问AI平台的 API Key
-    （``QWEN_API_KEY``）即开通；模型钉在代码里，不在这里配。"""
-
+class QwenServiceSection(ConfigSection):
     url: str = Field(min_length=1)
-    """同步识别接口的完整地址，即千问AI平台 DashScope 的 multimodal-generation 端点。"""
+    concurrency: int = Field(gt=0)
+    timeout_seconds: float = Field(gt=0)
+
+
+class SubtitleSection(QwenServiceSection):
     concurrency: int = Field(default=4, gt=0)
-    """识别队列每个服务进程同时跑几条。每条要下载成片、本地抽音轨、再等接口。"""
     timeout_seconds: float = Field(default=120.0, gt=0)
-    """一次识别请求等结果的上限；超时记为结果未知、不重投。"""
 
 
-class MusicSection(ConfigSection):
-    """生成背景音乐。写出这一段、并设了千问AI平台的 API Key（``QWEN_API_KEY``）即开通；模型钉在
-    代码里，不在这里配。"""
-
-    url: str = Field(min_length=1)
-    """音频生成同步接口的完整地址，即千问AI平台的 ``…/api/v1/services/audio/tts/SpeechSynthesizer``。"""
+class MusicSection(QwenServiceSection):
     concurrency: int = Field(default=2, gt=0)
-    """生成队列每个服务进程同时跑几条。每条要等模型、下载，再跑两遍 ffmpeg 规整。"""
     timeout_seconds: float = Field(default=300.0, gt=0)
-    """一次生成请求等结果的上限：模型一次最长出两分钟音乐，同步等它生成完；超时记为结果未知、
-    不重投。"""
 
 
 class MediaGenerationSection(ConfigSection):
-    """媒体生成的节奏与对方约定的取值。
-
-    整项能力的开关在环境里（``VIDEO_SUBMIT_URL`` 为空即关闭），不在这份文件
-    里。关闭时 ``/generations`` 不挂载、后台也不跑。
-
-    节奏参数暴露三个：查得多勤、多久算超时、本地合成同时跑几条。图片的并发按家声明在
-    ``image.models`` 里；轮询、视频提交与关停宽限是实现细节（按「纯等待」定的高值），默认值在
-    ``GenerationQueueSettings`` 里，真要调再往上抬。
-    """
-
     video: VideoGenerationSection
     image: ImageGenerationSection
     poll_interval_seconds: int = Field(default=5, ge=1)
     job_timeout_seconds: int = Field(default=3600, ge=1)
     compose_concurrency: int | None = Field(default=None, ge=1)
-    """本地合成每个服务进程同时跑几条。不写时按启动时选定的编解码取：硬件 4，软件 2。"""
     subtitle: SubtitleSection | None = None
-    """成片的字幕识别；不写即不识别。"""
     music: MusicSection | None = None
-    """生成背景音乐；不写即不能生成。"""
 
 
 class VideoSection(ConfigSection):
-    """视频拆解对方约定的取值。地址与 key 在 ``VideoUnderstandingEnv``。"""
-
     understanding_model: str
-    """拆解视频用对方哪个模型。"""
-
     understanding_thinking: ArkReasoningEffort | None = None
-    """拆解模型的思考强度；不写即不发该参数，用对方默认档。"""
-
     understanding_fps: float | None = Field(default=None, ge=0.2, le=5)
-    """拆解模型每秒看几帧；不写即不发该参数，用对方默认档（1 帧）。
-
-    快剪片一秒切两三刀，每秒只看一帧就看不见剪辑点，时间码全压在整秒上。方舟只收
-    0.2-5，装配期就拦住。
-    """
 
 
 class IclipStudioSection(ConfigSection):
-    """视频拆解（``video_breakdown`` 与参考视频的后台拆解）对方约定的取值。地址与 key 复用
-    ``VideoUnderstandingEnv``。"""
-
     breakdown_model: str
-    """拆解视频用对方哪个模型。"""
-
     breakdown_concurrency: int | None = Field(default=None, ge=1)
-    """参考视频的后台拆解每个服务进程同时跑几条；多个进程时总并发是它乘进程数。不写时按启动时
-    选定的编解码取：硬件 4，软件 2。"""
 
 
 class ShotVideoSection(ConfigSection):
-    """取帧与出图的节奏与渠道重试；写出这一段即启用。
-
-    这项能力**建立在媒体生成之上**：出图走生成域，帧与切格产物落生成用的那个公
-    开对象存储。所以生成没开的时候它也装不起来。
-    """
-
     poll_interval_seconds: float = Field(default=5.0, gt=0)
-    """出图之后隔多久查一次结果。"""
-
     dev_attempts: int = Field(default=2, ge=1)
-    """先在 dev 渠道试几次。"""
-
     pro_attempts: int = Field(default=1, ge=0)
-    """dev 试完还不成，再在 pro 渠道试几次。0 即不升级。"""
-
     backoff_seconds: float = Field(default=5.0, gt=0)
-    """两次重试之间的起始间隔，之后逐次乘以 ``backoff_factor``。"""
-
     backoff_factor: float = Field(default=3.0, ge=1)
     job_timeout_seconds: float = Field(default=1800.0, gt=0)
-    """一次出图工具调用总共等多久；超时向模型报告失败，任务标识保留在诊断日志。"""
 
 
 class CompactionSection(ConfigSection):
-    """历史压成摘要的触发线与尾巴长度。"""
-
     max_fraction: float = Field(default=0.85, gt=0, lt=1)
-    """历史估算占到模型窗口的这个比例就压一次。"""
-
     keep_messages: int = Field(default=20, ge=1)
-    """压完之后留几条原始消息在摘要后面。"""
 
 
 class ConversationsSection(ConfigSection):
-    """对话本身的设置。
-
-    ``title_model`` 是给对话起标题的那个小模型，取 ``models`` 段的键名。不配就不起标题，
-    对话一直叫默认名。
-    """
-
     title_model: str | None = None
     compaction: CompactionSection = CompactionSection()
 
 
 class AgentRunsSection(ConfigSection):
-    """agent 运行租约的节奏：在跑的行按心跳续租，中断的由清扫重新认领续跑或判失败。"""
-
     heartbeat_seconds: int = Field(default=10, gt=0)
-    """在跑的行每隔多久刷一次心跳。"""
-
     lease_seconds: int = Field(default=30, gt=0)
-    """心跳停了多久就算失联。"""
-
     sweep_seconds: int = Field(default=15, gt=0)
-    """每隔多久清扫一次失联的行、并叫醒没人管的队列。"""
-
     max_attempts: int = Field(default=2, ge=1)
-    """一条 prompt 最多被认领几次。1 等于中断后只判失败，不续跑。"""
-
     max_snapshots_per_run: int = Field(default=3, ge=1)
-    """一次 run 在库里留几份快照。每份都是全量历史，留多了对话级体积按份数翻倍。"""
 
     @model_validator(mode="after")
     def _lease_outlasts_a_heartbeat(self) -> AgentRunsSection:
@@ -420,7 +304,6 @@ class AgentRunsSection(ConfigSection):
 class OpsSection(ConfigSection):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["console", "json"] = "console"
-    """console 给人看；json 一行一个对象，给日志平台按字段检索。"""
 
 
 class RuntimeConfig(BaseSettings):
@@ -448,13 +331,10 @@ class RuntimeConfig(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # YAML 形状仅从文件与显式参数读取，环境值由独立解析流程处理。
         return (init_settings,)
 
 
 def load_runtime_config(path: Path) -> RuntimeConfig:
-    """从 YAML 加载并校验 RuntimeConfig。"""
-
     if not path.is_file():
         raise FileNotFoundError(f"配置文件不存在: {path}")
     source = YamlConfigSettingsSource(RuntimeConfig, yaml_file=path)
@@ -462,9 +342,6 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
     if not data:
         raise ValueError(f"配置文件为空或不是 mapping: {path}")
     return RuntimeConfig(**data)
-
-
-# 解析后的运行值
 
 
 @dataclass(frozen=True, slots=True)
@@ -487,25 +364,38 @@ class ResolvedSso:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedImageModel:
-    """一家图片模型的运行值：网关根地址与声明的路由段已经拼好。"""
-
     name: str
     api_base: str
     concurrency: int
     text_to_image_task: str | None = None
     image_edit_task: str | None = None
-    """这家自己的两条任务路由；为 None 用各家共用的那两条。"""
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedQwenService:
+    url: str
+    api_key: str
+    concurrency: int
+    timeout_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedVideoEnhance:
+    submit_url: str
+    model: str
+    resolutions: tuple[VideoEnhanceResolution, ...]
+    fps: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedMediaGeneration:
-    """媒体生成的运行值：env 里的地址凭证 + YAML 里的取值与节奏。"""
-
     video_submit_url: str
     video_status_base_url: str
     video_api_key: str
     video_model: str
     video_allowed_models: tuple[str, ...]
+    video_enhance: ResolvedVideoEnhance | None
+    """高清版；为 None 时提交端点答「没有开通」。"""
     image_models: tuple[ResolvedImageModel, ...]
     image_default_model: str
     image_env: str
@@ -514,37 +404,12 @@ class ResolvedMediaGeneration:
     poll_interval_seconds: int
     job_timeout_seconds: int
     compose_concurrency: int | None
-    """None 即没写，由组合根按选定的编解码取默认值。"""
-    subtitle: ResolvedSubtitle | None
-    """None 即字幕识别没开通：段没写，或 ``QWEN_API_KEY`` 为空。"""
-    music: ResolvedMusic | None
-    """None 即生成背景音乐没开通：段没写，或 ``QWEN_API_KEY`` 为空。"""
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedSubtitle:
-    """字幕识别的运行值：YAML 里的地址与节奏 + env 里的 key。"""
-
-    url: str
-    api_key: str
-    concurrency: int
-    timeout_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedMusic:
-    """生成背景音乐的运行值：YAML 里的地址与节奏 + env 里的 key。"""
-
-    url: str
-    api_key: str
-    concurrency: int
-    timeout_seconds: float
+    subtitle: ResolvedQwenService | None
+    music: ResolvedQwenService | None
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedVideo:
-    """视频拆解的运行值。"""
-
     understanding_url: str
     understanding_api_key: str
     understanding_model: str
@@ -554,19 +419,14 @@ class ResolvedVideo:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedIclipStudio:
-    """视频拆解（``video_breakdown`` 与参考视频的后台拆解）的运行值。"""
-
     breakdown_url: str
     breakdown_api_key: str
     breakdown_model: str
     breakdown_concurrency: int | None
-    """None 即没写，由组合根按选定的编解码取默认值。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedShotVideo:
-    """取帧与出图的运行值。"""
-
     poll_interval_seconds: float
     dev_attempts: int
     pro_attempts: int
@@ -577,15 +437,16 @@ class ResolvedShotVideo:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedProductCatalog:
-    """PDM 款目录的运行值：外部只读库连接。"""
-
     database_url: str
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedAgentRuns:
-    """agent 运行租约的节奏。"""
+class ResolvedWholeFilmRender:
+    url: str
 
+
+@dataclass(frozen=True, slots=True)
+class ResolvedAgentRuns:
     heartbeat_seconds: int
     lease_seconds: int
     sweep_seconds: int
@@ -595,16 +456,12 @@ class ResolvedAgentRuns:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedCompaction:
-    """历史压成摘要的触发线与尾巴长度。"""
-
     max_fraction: float
     keep_messages: int
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedModel:
-    """一个命名模型解析后的装配事实。``name`` 是 agent 引用的名字。"""
-
     name: str
     provider: str
     model: str
@@ -617,8 +474,6 @@ class ResolvedModel:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedSettings:
-    """启动期解析出的运行值；SSO 关闭时 ``sso is None``。"""
-
     app_name: str
     database_url: str
     db_schema: str
@@ -630,9 +485,10 @@ class ResolvedSettings:
     shot_video: ResolvedShotVideo | None
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
+    whole_film_render: ResolvedWholeFilmRender | None
+    """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
     models: tuple[ResolvedModel, ...]
     title_model: str | None
-    """给对话起标题的模型名，取 ``models`` 里的一个。为空即不起标题。"""
     compaction: ResolvedCompaction
     agent_runs: ResolvedAgentRuns
     log_level: str
@@ -640,8 +496,6 @@ class ResolvedSettings:
 
     @property
     def shot_tools_missing(self) -> tuple[str, ...]:
-        """写了 ``shot_video`` 段却装不起取帧与出图时，缺的环境变量名；空即齐了。"""
-
         if self.shot_video is None:
             return ()
         return tuple(
@@ -655,14 +509,10 @@ class ResolvedSettings:
 
     @property
     def shot_tools_enabled(self) -> bool:
-        """取帧与出图是否可用；能力登记按这一处判断。"""
-
         return self.shot_video is not None and not self.shot_tools_missing
 
     @property
     def ffmpeg_required(self) -> bool:
-        """是否必须有 ffmpeg：取帧与出图要用，媒体生成带的视频裁剪拼接要用，视频拆解读时长与抽帧也要用。"""
-
         return (
             self.shot_tools_enabled
             or self.media_generation is not None
@@ -671,20 +521,14 @@ class ResolvedSettings:
 
 
 def _from_env[EnvT: EnvSettings](cls: type[EnvT]) -> EnvT:
-    """通过环境变量构造设置，集中适配与字段构造签名不同的加载方式。"""
-
     return cls()  # pyright: ignore[reportCallIssue]
 
 
 def _switched_on(env_name: str) -> bool:
-    """先检查能力开关，再加载该组必需变量，区分未启用与配置不完整。"""
-
     return bool(os.environ.get(env_name, "").strip())
 
 
 def _resolve_object_store() -> ObjectStoreEnv | None:
-    """按桶名开关解析对象存储环境配置。"""
-
     if not _switched_on(OSS_BUCKET_ENV):
         return None
     return _from_env(ObjectStoreEnv)
@@ -693,8 +537,6 @@ def _resolve_object_store() -> ObjectStoreEnv | None:
 def _resolve_media_generation(
     section: MediaGenerationSection | None, *, object_store_on: bool
 ) -> ResolvedMediaGeneration | None:
-    """按声明与环境开关解析媒体生成；开启后必须配置全部凭证及结果转存所需的对象存储。"""
-
     if section is None or not _switched_on(VIDEO_SUBMIT_URL_ENV):
         return None
     if not object_store_on:
@@ -709,6 +551,7 @@ def _resolve_media_generation(
         video_api_key=env.video_api_key,
         video_model=section.video.model,
         video_allowed_models=section.video.allowed_models,
+        video_enhance=_resolve_video_enhance(section.video.enhance, env.video_enhance_submit_url),
         image_models=tuple(
             ResolvedImageModel(
                 name=name,
@@ -726,32 +569,36 @@ def _resolve_media_generation(
         poll_interval_seconds=section.poll_interval_seconds,
         job_timeout_seconds=section.job_timeout_seconds,
         compose_concurrency=section.compose_concurrency,
-        subtitle=_resolve_subtitle(section.subtitle),
-        music=_resolve_music(section.music),
+        subtitle=_resolve_qwen_service(section.subtitle),
+        music=_resolve_qwen_service(section.music),
     )
 
 
-def _resolve_subtitle(section: SubtitleSection | None) -> ResolvedSubtitle | None:
-    """按声明与 key 开关解析字幕识别；两者缺一即不开通。"""
+def _resolve_video_enhance(
+    section: VideoEnhanceSection | None, submit_url: str
+) -> ResolvedVideoEnhance | None:
+    """提交地址留空就是没开通；配了地址却没写 ``media_generation.video.enhance`` 段报错。"""
 
-    if section is None or not _switched_on(QWEN_API_KEY_ENV):
+    if not submit_url:
         return None
-    env = _from_env(QwenEnv)
-    return ResolvedSubtitle(
-        url=section.url,
-        api_key=env.api_key,
-        concurrency=section.concurrency,
-        timeout_seconds=section.timeout_seconds,
+    if section is None:
+        raise RuntimeError(
+            f"配了 {VIDEO_ENHANCE_SUBMIT_URL_ENV} 却没写 media_generation.video.enhance 段："
+            "高清版用哪个模型、提到哪几档都写在那里。补上它，或者清空这个地址"
+        )
+    return ResolvedVideoEnhance(
+        submit_url=submit_url,
+        model=section.model,
+        resolutions=section.resolutions,
+        fps=section.fps,
     )
 
 
-def _resolve_music(section: MusicSection | None) -> ResolvedMusic | None:
-    """按声明与 key 开关解析生成背景音乐；两者缺一即不开通。"""
-
+def _resolve_qwen_service(section: QwenServiceSection | None) -> ResolvedQwenService | None:
     if section is None or not _switched_on(QWEN_API_KEY_ENV):
         return None
     env = _from_env(QwenEnv)
-    return ResolvedMusic(
+    return ResolvedQwenService(
         url=section.url,
         api_key=env.api_key,
         concurrency=section.concurrency,
@@ -760,8 +607,6 @@ def _resolve_music(section: MusicSection | None) -> ResolvedMusic | None:
 
 
 def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
-    """按声明与视频理解开关解析。"""
-
     if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
         return None
     env = _from_env(VideoUnderstandingEnv)
@@ -775,8 +620,6 @@ def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
 
 
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
-    """按声明与视频理解开关解析。"""
-
     if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
         return None
     env = _from_env(VideoUnderstandingEnv)
@@ -789,8 +632,6 @@ def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipSt
 
 
 def _resolve_shot_video(section: ShotVideoSection | None) -> ResolvedShotVideo | None:
-    """按声明解析取帧与出图的节奏；媒体生成与对象存储是否齐由 ``shot_tools_missing`` 判。"""
-
     if section is None:
         return None
     return ResolvedShotVideo(
@@ -804,17 +645,31 @@ def _resolve_shot_video(section: ShotVideoSection | None) -> ResolvedShotVideo |
 
 
 def _resolve_product_catalog() -> ResolvedProductCatalog | None:
-    """按数据库连接开关解析可选的 PDM 款目录。"""
-
     if not _switched_on(PRODUCT_CATALOG_DATABASE_URL_ENV):
         return None
     env = _from_env(ProductCatalogEnv)
     return ResolvedProductCatalog(database_url=env.database_url)
 
 
-def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
-    """合并 YAML 声明与环境值，启动时校验配置完整性。"""
+def _resolve_whole_film_render(
+    *, object_store_on: bool, media_generation_on: bool
+) -> ResolvedWholeFilmRender | None:
+    if not _switched_on(WHOLE_FILM_RENDER_URL_ENV):
+        return None
+    missing: list[str] = []
+    if not object_store_on:
+        missing.append(f"对象存储（{OSS_BUCKET_ENV} 那一组）")
+    if not media_generation_on:
+        missing.append(f"媒体生成（media_generation 段与 {VIDEO_SUBMIT_URL_ENV} 那一组）")
+    if missing:
+        raise RuntimeError(
+            f"配了 {WHOLE_FILM_RENDER_URL_ENV} 但没开{'与'.join(missing)}：每次导出是一条生成记录，"
+            f"由生成队列交给渲染服务，成片上传进桶。补上它们"
+        )
+    return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
 
+
+def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
     core = _from_env(CoreEnv)
 
     sso: ResolvedSso | None = None
@@ -850,6 +705,10 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         shot_video=_resolve_shot_video(config.shot_video),
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
+        whole_film_render=_resolve_whole_film_render(
+            object_store_on=object_store is not None,
+            media_generation_on=media_generation is not None,
+        ),
         models=tuple(
             ResolvedModel(
                 name=name,
@@ -881,8 +740,6 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
 
 
 def _require_model_key(name: str, env_name: str) -> str:
-    """按模型声明的环境变量名读取 API key。"""
-
     value = os.environ.get(env_name, "").strip()
     if not value:
         raise RuntimeError(f"缺少运行必需的环境变量 {env_name}（模型 {name} 的 API Key）")

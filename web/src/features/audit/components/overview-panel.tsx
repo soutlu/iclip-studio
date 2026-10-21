@@ -30,7 +30,7 @@ const CARDS: readonly {
 }[] = [
   {
     key: 'deliveries',
-    info: '有成片的需求单各计为 1 件；未关联需求单、但有成片的对话各计为 1 件。环比按活跃日的日均值计算。',
+    info: '有出片的需求单各计为 1 件；未关联需求单、但有出片的对话各计为 1 件。环比按活跃日的日均值计算。',
     section: 'output',
   },
   {
@@ -40,7 +40,7 @@ const CARDS: readonly {
   },
   {
     key: 'cycle',
-    info: '统计一段对话从首次运行到最后一条成片的时长，仅计 agent 运行或视频生成的时间，取平均值。中途间隔超过 30 分钟的部分不计入，30 分钟以内的照常计入。',
+    info: '统计一段对话从首次运行到最后一条出片的时长，仅计 agent 运行或视频生成的时间，取平均值。中途间隔超过 30 分钟的部分不计入，30 分钟以内的照常计入。',
     section: 'speed',
   },
   {
@@ -51,18 +51,18 @@ const CARDS: readonly {
   },
   {
     key: 'perDelivery',
-    info: '模型 token 合计 ÷ 成片件数，按输入、输出、缓存写入、缓存读取分项统计。标题生成、压缩摘要、视频理解不计入。',
+    info: '模型 token 合计 ÷ 出片件数，按输入、输出、缓存写入、缓存读取分项统计。标题生成、压缩摘要、视频理解不计入。',
     section: 'cost',
     wide: true,
   },
 ]
 
 const CARD_LABEL: Record<CardKey, string> = {
-  deliveries: '成片数',
+  deliveries: '出片件数',
   attempts: '每镜头重试次数',
   cycle: '单任务平均时长',
   effective: '素材有效率',
-  perDelivery: '每件成片 · token',
+  perDelivery: '每件出片 · token',
 }
 
 const BUCKET_UNIT = { hour: '小时', day: '天', week: '周' } as const

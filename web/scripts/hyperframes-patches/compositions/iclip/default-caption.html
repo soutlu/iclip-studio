@@ -1,0 +1,230 @@
+<!--
+  默认字幕样式「白字黑边」。
+
+  来源：HyperFrames 组件库 caption-weight-shift（"Weight Shift"），
+  https://github.com/heygen-com/hyperframes （v0.8.168），Apache License 2.0
+  （http://www.apache.org/licenses/LICENSE-2.0），Copyright HeyGen。
+
+  本文件对原组件的改动：
+  1. 改成 <template> 子合成；台词来自 window.__hyperframes.getVariables().words
+     （[{ text, start, end, sentence }]，成片秒数），同一 sentence 的词为一组，去掉写死的台词与分组。
+  2. 词与词按中文排版拼接：两侧都是拉丁字母或数字时才加空格；去掉转小写。
+  3. 白字黑描边（-webkit-text-stroke + paint-order），字重 700，字体 Noto Sans SC（本地字体文件）。
+  4. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin），
+     安全区宽度为画面宽的 1400/1920；折行交给浏览器，去掉两行拆分与行间字重切换。
+  5. 字号照原组件用画布量字，缩到整组不超过两行（不设最小字号）。
+  6. 每组写上 data-hf-id="caption:<sentence>"，编辑器在画面上按它认出点中的是哪一句。
+  入场动画（opacity + scale 0.85→1）与组间切换时机不变。
+-->
+<template id="default-caption-template">
+  <div
+    id="default-caption"
+    data-composition-id="default-caption"
+    data-timeline-locked
+    data-start="0"
+  >
+    <link rel="stylesheet" href="../../vendor/fonts/noto-sans-sc.css" />
+    <div class="caption-layer" aria-hidden="true">
+      <div id="caption-stage" class="safe-zone"></div>
+    </div>
+    <style>
+      #default-caption *,
+      #default-caption *::before,
+      #default-caption *::after {
+        box-sizing: border-box;
+      }
+
+      #default-caption {
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: transparent;
+        container-type: size;
+        font-family: 'Noto Sans SC', sans-serif;
+      }
+
+      #default-caption .caption-layer {
+        --u: calc(100cqmin / 1080);
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        pointer-events: none;
+        transform: translateZ(0);
+      }
+
+      #default-caption .safe-zone {
+        position: absolute;
+        bottom: calc(100 * var(--u));
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(100cqw * 1400 / 1920);
+        height: calc(278 * var(--u));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #default-caption .caption-group {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transform-origin: 50% 50%;
+        will-change: transform;
+        backface-visibility: hidden;
+      }
+
+      #default-caption .caption-line {
+        max-width: 100%;
+        text-align: center;
+        line-height: 1.2;
+        color: #ffffff;
+        font-family: 'Noto Sans SC', sans-serif;
+        font-weight: 700;
+        font-size: calc(72 * var(--u));
+        letter-spacing: 0.02em;
+        text-shadow: 0 calc(2 * var(--u)) calc(4 * var(--u)) rgba(0, 0, 0, 0.3);
+        -webkit-text-stroke: calc(10 * var(--u)) #000000;
+        paint-order: stroke fill;
+      }
+    </style>
+    <script>
+      ;(function () {
+        var VARS = window.__hyperframes.getVariables()
+        var ENTRY_DURATION = 0.1
+        var CAPTION_FONT_SIZE = 72
+        var LETTER_SPACING = 0.02
+
+        // 量字（以字号为单位）：字体与 .caption-line 一致；画布不算字距，按每字 0.02em 补上。
+        var measureContext = document.createElement('canvas').getContext('2d')
+        measureContext.font = "700 100px 'Noto Sans SC', sans-serif"
+        function widthInEm(text) {
+          return (
+            measureContext.measureText(text).width / 100 + Array.from(text).length * LETTER_SPACING
+          )
+        }
+
+        // 不超过两行的字号：每行最多空出一个断不开的词，所以整组宽度加上最宽的词不超过两行宽即可。
+        // 行宽照原组件留出 40 个单位的余量。
+        function fitFontSize(group) {
+          var widest = Math.max.apply(
+            null,
+            group.words.map(function (word) {
+              return widthInEm(String(word.text || ''))
+            }),
+          )
+          var span = widthInEm(group.text) + widest
+          var base = 'calc(' + CAPTION_FONT_SIZE + ' * var(--u))'
+          var fit = 'calc((100cqw * 1400 / 1920 - 40 * var(--u)) * 2 / ' + span.toFixed(4) + ')'
+          return 'min(' + base + ', ' + fit + ')'
+        }
+
+        function joinWords(words) {
+          var text = ''
+          words.forEach(function (word) {
+            var piece = String(word.text || '')
+            if (text && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(piece)) text += ' '
+            text += piece
+          })
+          return text.trim()
+        }
+
+        // 同一 sentence 的连续词为一组；组的起止取首词开始与末词结束。
+        function groupWords(raw) {
+          var groups = []
+          ;(Array.isArray(raw) ? raw : []).forEach(function (word) {
+            var start = Number(word.start) || 0
+            var end = Math.max(start, Number(word.end) || 0)
+            var last = groups[groups.length - 1]
+            if (!last || last.sentence !== word.sentence) {
+              last = { sentence: word.sentence, words: [], start: start, end: end }
+              groups.push(last)
+            }
+            last.words.push(word)
+            last.end = Math.max(last.end, end)
+          })
+          return groups
+            .map(function (group) {
+              return {
+                sentence: group.sentence,
+                text: joinWords(group.words),
+                words: group.words,
+                start: group.start,
+                end: group.end,
+              }
+            })
+            .filter(function (group) {
+              return group.text.length > 0
+            })
+        }
+
+        var GROUPS = groupWords(VARS.words)
+        var stage = document.getElementById('caption-stage')
+        var lineEls = []
+        var groupEls = GROUPS.map(function (group, index) {
+          var groupEl = document.createElement('div')
+          var lineEl = document.createElement('div')
+          groupEl.id = 'caption-group-' + index
+          groupEl.className = 'caption-group'
+          groupEl.setAttribute('data-hf-id', 'caption:' + group.sentence)
+          lineEl.className = 'caption-line'
+          lineEl.textContent = group.text
+          groupEl.appendChild(lineEl)
+          stage.appendChild(groupEl)
+          lineEls.push(lineEl)
+          return groupEl
+        })
+
+        function fitAll() {
+          GROUPS.forEach(function (group, index) {
+            lineEls[index].style.fontSize = fitFontSize(group)
+          })
+        }
+        fitAll()
+        // 量字要用真正显示的字体：字体用到才下载，脚本运行时可能还没到，到了之后按真实字形再量一次。
+        document.fonts
+          .load(
+            measureContext.font,
+            GROUPS.map(function (group) {
+              return group.text
+            }).join(''),
+          )
+          .then(fitAll)
+
+        window.__timelines = window.__timelines || {}
+        var tl = gsap.timeline({ paused: true })
+
+        var visibleStarts = GROUPS.map(function (group, index) {
+          var previous = GROUPS[index - 1]
+          var gap = previous ? Math.max(0, group.start - previous.end) : ENTRY_DURATION
+          return Math.max(0, group.start - Math.min(ENTRY_DURATION, gap))
+        })
+
+        GROUPS.forEach(function (group, index) {
+          var groupEl = groupEls[index]
+          var visibleStart = visibleStarts[index]
+          var nextStart = index < GROUPS.length - 1 ? visibleStarts[index + 1] : group.end
+          var visibleEnd = Math.min(group.end, nextStart)
+
+          groupEls.forEach(function (otherEl, otherIndex) {
+            if (otherIndex !== index) tl.set(otherEl, { opacity: 0 }, visibleStart)
+          })
+          tl.set(groupEl, { opacity: 0, scale: 0.85 }, visibleStart)
+          tl.to(
+            groupEl,
+            { opacity: 1, scale: 1, duration: ENTRY_DURATION, ease: 'power3.out', force3D: true },
+            visibleStart,
+          )
+          tl.set(groupEl, { opacity: 0 }, visibleEnd)
+        })
+
+        var lastEnd = GROUPS.length ? GROUPS[GROUPS.length - 1].end : 0
+        tl.set({}, {}, lastEnd)
+        window.__timelines['default-caption'] = tl
+      })()
+    </script>
+  </div>
+</template>

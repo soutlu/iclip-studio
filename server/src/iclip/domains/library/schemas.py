@@ -1,8 +1,3 @@
-"""资料库的读模型：成片卡是一段对话的分镜，脚本取自出片那一刻的请求；整片卡是一段对话自己的
-整片。直接就是各端点的响应，camelCase 别名。
-
-术语与收录口径见 docs/CONTEXT.md「资料库」。"""
-
 from __future__ import annotations
 
 import uuid
@@ -36,7 +31,7 @@ class ScriptOut(CamelModel):
 
 
 class TakeOut(CamelModel):
-    """一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。"""
+    """一版素材片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。"""
 
     id: uuid.UUID
     model: str | None
@@ -52,7 +47,7 @@ class TakeOut(CamelModel):
 
 
 class FaceOut(CamelModel):
-    """一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。"""
+    """一版素材片的版本头：卡面放的那一版，也是详情里每一版的公共部分。"""
 
     kind: Literal["take", "composite"]
     """``take`` 是出片，``composite`` 是合成。"""
@@ -83,7 +78,7 @@ class ShotGroupOut(CamelModel):
 
 
 class LibraryVideoOut(CamelModel):
-    """资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；
+    """资料库的一张素材卡：一段对话的分镜，装着这段对话读得到的全部素材片（自己的加继承来的）；
     不挂对话的出片一条一张卡，同原作的合成跟着它。"""
 
     id: uuid.UUID
@@ -101,9 +96,9 @@ class LibraryVideoOut(CamelModel):
     group_count: int
     """卡里有几个镜头组，含继承来的。"""
     version_count: int
-    """卡里一共几版成片，各组相加，含继承来的。"""
+    """卡里一共几版素材片，各组相加，含继承来的。"""
     face: FaceOut
-    """卡面：对话自己最新的成片。"""
+    """卡面：对话自己最新的素材片。"""
     take: TakeOut
     """卡面那一版对应的出片。"""
 
@@ -125,35 +120,33 @@ class LibraryVideoDetailOut(CamelModel):
 
 
 class WholeFilmVersionOut(CamelModel):
-    """整片卡里的一版：这段对话自己的一条已完成整片。"""
+    """成片卡里的一版：这段对话的一次已完成导出。"""
 
     job_id: uuid.UUID
+    """那条成片记录。"""
     output_url: str
-    watermark_output_url: str | None
-    """整片是本系统渲染的，没有水印版，现为 ``None``。"""
-    duration_ms: int | None
-    """渲染后量出的时长，毫秒。"""
     finished_at: datetime
-    """完成时刻；卡面的完成时刻决定列表顺序与时间筛选，卡里按它编版本。"""
     user_name: str | None
-    """这一版属主的用户名；账号没有用户名时为 ``None``。"""
+    """导出的人的用户名；账号没有用户名时为 ``None``。"""
+    source_job_ids: list[uuid.UUID]
+    """这次导出用到的素材片，按导出请求里的先后；只有组件段的导出为空。下载时各记一次下载。"""
 
 
 class WholeFilmCardOut(CamelModel):
-    """资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。"""
+    """资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。"""
 
     conversation_id: uuid.UUID
-    """来源对话，即卡 id；对所有读者都给。"""
+    """卡 id 就是来源对话 id。"""
     can_open_conversation: bool
-    """这位读者能不能打开来源对话，口径同成片卡。"""
+    """这位读者能不能打开来源对话，口径同素材卡。"""
     title: str | None
     """来源对话的标题，对话删了照给。"""
     user_name: str | None
-    """卡的作者：对话属主的用户名；账号没有用户名时为 ``None``。"""
+    """卡的作者：对话属主的用户名。"""
     face: WholeFilmVersionOut
-    """卡面：这段对话最新完成的一版，即 ``versions`` 的最后一项。"""
+    """卡面：最新完成的一版，即 ``versions`` 的最后一条。"""
     versions: list[WholeFilmVersionOut]
-    """全部版本，早完成的在前，第 N 条就是第 N 版。"""
+    """早完成的在前，第 N 条就是第 N 版。"""
 
 
 class WholeFilmCardsOut(CamelModel):

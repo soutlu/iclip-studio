@@ -1,25 +1,23 @@
 /** REST 读取与 WebSocket 模拟写入共用内存文件表，确保通知后重读得到新内容。 */
 
 import { http, HttpResponse } from 'msw'
-import { zWholeFilmIn } from '@/shared/api/generated/zod.gen'
 import type {
   ImageGenerationIn,
   MusicIn,
-  SubtitleIn,
   SubtitleSentence,
   VideoComposeIn,
   VideoEditIn,
   VideoGenerationIn,
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
+import { zSubtitleIn } from '@/shared/api/generated/zod.gen'
 // no-inline：这几条要作为地址进请求体、进 <video src>，不能被构建按小文件内联成 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { VIDEO_MODELS } from '../video-models'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
-import { findMockBrandTemplate, mockBrandFontInfo } from './brand-templates'
-import { isMockVideoUpload } from './uploads'
+import { isMockVideoUpload, onMockUploadConfirmed } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
 const FRAME_A =
@@ -48,14 +46,14 @@ const httpFrames = (): MockFrames => {
 /** 出片与合成都放这条 6 秒的测试卡；编辑段的结果放另一条 3 秒的彩条，切换时看得出来。
  *
  * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。三条都是 VP9-in-MP4、每秒
- * 一个关键帧，与线上的成片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
+ * 一个关键帧，与线上的素材片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
  * 原样拷出来。只有这条 6 秒的测试卡带一条 Opus 原声（Chromium 能解，AAC 不能），时间线上看得到
  * 真实波形；彩条与横版没有音轨，原声轨显示「无声」。 */
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
 const EDITED_MS = 3000
-/** 第 3 组那条成片改用同样 6 秒的横版测试卡：预览黑框是固定比例，横版才会露出上下黑边。 */
+/** 第 3 组那条素材片改用同样 6 秒的横版测试卡：预览黑框是固定比例，横版才会露出上下黑边。 */
 const WIDE_VIDEO_URL = sampleWideUrl
 
 const PREAMBLE = ['参考锁定：模特的服装与发型跟住 @Image1。', '剪辑形式：硬切。'].join('\n')
@@ -68,7 +66,7 @@ const assembleShotPrompt = (shot: VideoShotIn): string => {
   return `${shot.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
 }
 
-/** 第 2 组那条成片当初提交的镜头组，形状与分镜文件里的 prompt 相同；带 shot 的记录才能回填。 */
+/** 第 2 组那条素材片当初提交的镜头组，形状与分镜文件里的 prompt 相同；带 shot 的记录才能回填。 */
 const HISTORY_SHOT: VideoShotIn = {
   global_settings: PREAMBLE,
   timeline: [
@@ -218,12 +216,13 @@ type MockJob = {
   kind?: 'video' | 'image' | 'subtitle' | 'audio'
   /** 字幕记录完成后的逐句结果；别的记录没有。 */
   sentences?: SubtitleSentence[]
-  /** 省略即 generate；合成是 compose。 */
-  operation?: 'generate' | 'compose'
+  /** 省略即 generate；合成是 compose，上传的音乐是 upload。 */
+  operation?: 'generate' | 'compose' | 'upload'
   outputUrl?: string
   prompt: string
   request?: Record<string, unknown>
   metadata?: Record<string, unknown>
+  taskId?: string | null
   /** 镜头组编号：出片照请求，编辑段与合成抄基底的；图片没有。 */
   shotIndex?: number | null
   status: 'completed' | 'failed' | 'pending' | 'submitted'
@@ -232,7 +231,7 @@ type MockJob = {
   durationMs?: number
   /** 原作号：编辑段与合成指最初那条出片，出片与图片不填。 */
   rootJobId?: string | null
-  /** 直接来源：编辑段与合成指基底成片，帧图编辑指底图那条。 */
+  /** 直接来源：编辑段与合成指基底素材片，帧图编辑指底图那条。 */
   sourceJobId?: string | null
   /** 来源的地址：帧图编辑是它改的底图，底图在不在库里都有。 */
   sourceUrl?: string | null
@@ -251,7 +250,7 @@ const job = (spec: MockJob) => ({
   request: spec.request ?? { prompt: spec.prompt },
   metadata: spec.metadata ?? null,
   status: spec.status,
-  taskId: null,
+  taskId: spec.taskId ?? null,
   shotIndex: spec.shotIndex ?? null,
   rootJobId: spec.rootJobId ?? null,
   sourceJobId: spec.sourceJobId ?? null,
@@ -273,25 +272,10 @@ type MockRecord = ReturnType<typeof job>
 
 const generations = new Map<string, MockRecord[]>()
 
-/** 资料库与编辑器共用已完成的整片记录，合成后的版本在两处都能读到。 */
-export const mockWholeFilms = () =>
-  [...generations].flatMap(([conversationId, records]) =>
-    records
-      .filter(
-        (record) =>
-          record.kind === 'video' &&
-          record.operation === 'compose' &&
-          record.sourceJobId === null &&
-          record.status === 'completed' &&
-          record.outputUrl !== null,
-      )
-      .map((record) => ({ conversationId, record })),
-  )
-
 const findJob = (conversationId: string | null | undefined, id: string): MockRecord | undefined =>
   generations.get(conversationId ?? '')?.find((item) => item.id === id)
 
-/** 成片：完成了的出片或合成，编辑段只能基于它。 */
+/** 素材片：完成了的出片或合成，编辑段只能基于它。 */
 const isFinishedTake = (record: MockRecord): boolean =>
   record.kind === 'video' &&
   record.status === 'completed' &&
@@ -305,7 +289,8 @@ const VIDEO_DONE_MS = 3000
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
 type MockGenerationChange = {
-  conversationId: string
+  /** 没挂对话的记录（如超分记录）为 null，帧上就没有对话。 */
+  conversationId: string | null
   id: string
   kind: string
   operation: string
@@ -323,22 +308,32 @@ export const watchMockGenerations = (watcher: (change: MockGenerationChange) => 
   return () => void generationWatchers.delete(watcher)
 }
 
-const announceGeneration = (conversationId: string | null, record: MockRecord) => {
-  if (conversationId === null) return
+/** 发一条生成记录的状态跳转帧。 */
+export const announceMockGeneration = (
+  conversationId: string | null,
+  record: {
+    id: string
+    kind: string
+    operation: string
+    metadata: Record<string, unknown> | null
+    shotIndex?: number | null | undefined
+    status: string
+  },
+) => {
   const { id, kind, operation, metadata, shotIndex, status } = record
-  const shot = shotIndex === null ? {} : { shot_index: shotIndex }
+  const shot = shotIndex === null || shotIndex === undefined ? {} : { shot_index: shotIndex }
   for (const watcher of generationWatchers)
     watcher({ conversationId, id, kind, operation, ...shot, metadata, status })
 }
 
-/** 样片的口播：识别出的逐句字幕（毫秒）。 */
-const SAMPLE_SENTENCES: SubtitleSentence[] = [
-  { startMs: 300, endMs: 2100, text: '这只包今天第一次上身', speaker: 0 },
-  { startMs: 2500, endMs: 4200, text: '容量刚好放下日常用品', speaker: 0 },
-  { startMs: 4500, endMs: 5800, text: '通勤约会都合适', speaker: 0 },
-]
+const announceGeneration = (conversationId: string | null, record: MockRecord) => {
+  if (conversationId === null) return
+  announceMockGeneration(conversationId, record)
+}
 
-const SUBTITLE_REQUEST = { model: 'qwen-audio-3.1-asr-flash' }
+/** 任一对话里的一条素材片（完成的出片或合成）；高清版的 mock 按它定来源。 */
+export const findMockTake = (id: string): MockRecord | undefined =>
+  [...generations.values()].flat().find((record) => record.id === id && isFinishedTake(record))
 
 export const seedMockWorkspace = (
   conversationId: string,
@@ -403,7 +398,7 @@ export const seedMockWorkspace = (
       id: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
       outputUrl: WIDE_VIDEO_URL,
       prompt: '模特走向镜头，停下微笑，暖光。',
-      // 横版成片：成片卡按请求里的画幅画，不跟分镜。
+      // 横版素材片：素材片卡按请求里的画幅画，不跟分镜。
       request: {
         aspect_ratio: '16:9',
         model: 'wan3.0-video',
@@ -421,18 +416,19 @@ export const seedMockWorkspace = (
       outputUrl: VIDEO_URL,
       // 带结构化 shot 的记录可以回填镜头组；纯描述的那两条只能看不能回填。
       prompt: assembleShotPrompt(HISTORY_SHOT),
+      // 480p 出的：高清版的菜单里有 1080p、720p 两档。
       request: {
         aspect_ratio: '9:16',
         model: 'vendor-a-seedance-2-5',
         prompt: assembleShotPrompt(HISTORY_SHOT),
-        resolution: '720p',
+        resolution: '480p',
         shot: HISTORY_SHOT,
       },
       shotIndex: 2,
       status: 'completed',
       watermarkOutputUrl: VIDEO_URL,
     }),
-    // 只记了正文与分辨率：成片卡按分镜画幅画，不显示模型。
+    // 只记了正文与分辨率：素材片卡按分镜画幅画，不显示模型。
     job({
       createdAt: '2026-09-01T11:40:00Z',
       errorMessage: '上游返回了空结果，换个描述再试一次。',
@@ -508,27 +504,6 @@ export const seedMockWorkspace = (
         ),
         `diagnostic_code=${'IMAGE_REFERENCE_VALIDATION_'.repeat(6)}`,
       ].join('\n'),
-    }),
-    // 成片完成后自动识别的口播字幕：第 2 组那条识别好了，第 3 组那条识别失败，整片编辑器按它们画字幕轨。
-    job({
-      createdAt: '2026-09-01T11:11:00Z',
-      id: 'e4b8cedb-a639-457f-9c84-90a1b2c3d4e5',
-      kind: 'subtitle',
-      prompt: '',
-      request: SUBTITLE_REQUEST,
-      sentences: SAMPLE_SENTENCES,
-      sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
-      status: 'completed',
-    }),
-    job({
-      createdAt: '2026-09-01T10:05:00Z',
-      errorMessage: '识别服务暂时不可用',
-      id: 'f5c9dfec-b74a-4680-8d95-a1b2c3d4e5f6',
-      kind: 'subtitle',
-      prompt: '',
-      request: SUBTITLE_REQUEST,
-      sourceJobId: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
-      status: 'failed',
     }),
   ])
 }
@@ -761,6 +736,79 @@ export const resetMockWorkspace = () => {
   generations.clear()
 }
 
+const addRecord = (conversationId: string, record: MockRecord) => {
+  generations.set(conversationId, [...(generations.get(conversationId) ?? []), record])
+  return record
+}
+
+// 挂到对话上的音乐上传，确认时记一条上传的音频记录（id 就是 uploadId）；后端不量上传的时长。
+onMockUploadConfirmed(({ uploadId, url, contentType, conversationId }) => {
+  if (conversationId === null || !contentType.startsWith('audio/')) return
+  if (findJob(conversationId, uploadId) !== undefined) return
+  addRecord(
+    conversationId,
+    job({
+      createdAt: new Date().toISOString(),
+      id: uploadId,
+      kind: 'audio',
+      operation: 'upload',
+      outputUrl: url,
+      prompt: '',
+      status: 'completed',
+    }),
+  )
+})
+
+/** 这段对话的音乐：一首生成的（记了时长），一首上传的（没记时长，要前端量）。 */
+export const seedMockMusic = (conversationId: string) => {
+  const generated = addRecord(
+    conversationId,
+    job({
+      createdAt: '2026-09-01T12:00:00Z',
+      durationMs: MOCK_MUSIC_SECONDS * 1000,
+      id: crypto.randomUUID(),
+      kind: 'audio',
+      outputUrl: MOCK_MUSIC_URL,
+      prompt: '轻快原声吉他，适合秋季穿搭',
+      request: { model: 'qwen-audio-3.1-tts-next', prompt: '轻快原声吉他，适合秋季穿搭' },
+      status: 'completed',
+    }),
+  )
+  const uploaded = addRecord(
+    conversationId,
+    job({
+      createdAt: '2026-09-01T12:05:00Z',
+      id: crypto.randomUUID(),
+      kind: 'audio',
+      operation: 'upload',
+      outputUrl: MOCK_MUSIC_URL,
+      prompt: '',
+      status: 'completed',
+    }),
+  )
+  return { generated, uploaded }
+}
+
+const SUBTITLE_SENTENCES: SubtitleSentence[] = [
+  { startMs: 300, endMs: 2_000, speaker: null, text: '夜色里，城市慢慢亮起来' },
+  { startMs: 2_400, endMs: 5_200, speaker: null, text: '车流划出一道道光' },
+]
+
+/** 演示对话第 2 组那条竖版素材片的字幕记录（识别完成，两句；旧格式没有逐词时间） */
+export const seedMockSubtitles = (conversationId: string) =>
+  addRecord(
+    conversationId,
+    job({
+      createdAt: '2026-09-01T12:10:00Z',
+      id: crypto.randomUUID(),
+      kind: 'subtitle',
+      prompt: '',
+      sentences: SUBTITLE_SENTENCES,
+      sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+      status: 'completed',
+    }),
+  )
+
 export const workspaceHandlers = [
   http.get('*/mock-frames/:name.png', ({ params }) => {
     const png = FRAME_PNGS[String(params['name'])]
@@ -931,7 +979,10 @@ export const workspaceHandlers = [
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 422 })
     }
     if (!isFinishedTake(base)) {
-      return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
+      return HttpResponse.json(
+        { detail: '基底必须是一条已完成的素材片（出片或合成）' },
+        { status: 422 },
+      )
     }
     const clips = body.reference_video_urls ?? []
     if (
@@ -973,7 +1024,7 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 合成：基底要是这段对话里一条完成的成片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
+  // 合成：基底要是这段对话里一条完成的素材片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
   // 这里拼不了视频，产物用现成的测试卡代替。
   http.post('*/api/generations/video-composites', async ({ request }) => {
     const body = (await request.json()) as VideoComposeIn
@@ -982,7 +1033,10 @@ export const workspaceHandlers = [
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 422 })
     }
     if (!isFinishedTake(base)) {
-      return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
+      return HttpResponse.json(
+        { detail: '基底必须是一条已完成的素材片（出片或合成）' },
+        { status: 422 },
+      )
     }
     const placed: { source: MockRecord; url: string; start: number; end: number | null }[] = []
     for (const segment of body.segments) {
@@ -1033,137 +1087,36 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 整片与现有合成共用受理与完成通知，媒体字节仍用测试卡，不在浏览器里模拟 ffmpeg。
-  http.post('*/api/generations/whole-films', async ({ request }) => {
-    const parsed = zWholeFilmIn.safeParse(await request.json())
-    if (!parsed.success) return HttpResponse.json({ detail: '整片参数不合法' }, { status: 422 })
-    const body = parsed.data
-    const segments = []
-    for (const segment of body.segments) {
-      const source = findJob(body.conversationId, segment.sourceJobId)
-      if (source === undefined || !isFinishedTake(source) || source.outputUrl === null)
-        return HttpResponse.json({ detail: '素材不存在或不可使用' }, { status: 422 })
-      segments.push({ ...segment, url: source.outputUrl })
-    }
-    const brands: Record<string, unknown> = {}
-    let brandMs = 0
-    for (const position of ['intro', 'outro'] as const) {
-      const selected = body[position]
-      if (selected == null) continue
-      const template = findMockBrandTemplate(selected.templateId)
-      if (
-        template === undefined ||
-        template.disabledAt !== null ||
-        template.kind !== position ||
-        template.width === null ||
-        template.height === null ||
-        template.durationMs === null ||
-        template.hasAudio === null
-      )
-        return HttpResponse.json({ detail: '片头片尾模板不可用' }, { status: 422 })
-      brands[position] = {
-        templateId: template.id,
-        url: template.url,
-        width: template.width,
-        height: template.height,
-        durationMs: template.durationMs,
-        hasAudio: template.hasAudio,
-      }
-      brandMs += template.durationMs
-    }
-    let font = null
-    if (body.fontId != null) {
-      const selectedFont = findMockBrandTemplate(body.fontId)
-      if (
-        selectedFont === undefined ||
-        selectedFont.kind !== 'font' ||
-        selectedFont.disabledAt !== null
-      )
-        return HttpResponse.json({ detail: '所选字体不可用' }, { status: 422 })
-      font = {
-        fontId: selectedFont.id,
-        name: selectedFont.name,
-        url: selectedFont.url,
-        family: mockBrandFontInfo.family,
-        weight: mockBrandFontInfo.weight,
-        style: mockBrandFontInfo.style,
-      }
-    }
-    const durationMs =
-      brandMs + segments.reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0)
-    if (durationMs > 120_000)
-      return HttpResponse.json({ detail: '整片最长 120 秒' }, { status: 422 })
-    const created = acceptGeneration({
-      kind: 'video',
-      operation: 'compose',
-      prompt: '',
-      conversationId: body.conversationId,
-      metadata: body.metadata ?? null,
-      request: {
-        ...brands,
-        font,
-        segments,
-        subtitles: body.subtitles,
-        music:
-          body.music == null
-            ? null
-            : {
-                ...body.music,
-                url:
-                  findJob(body.conversationId, body.music.audioJobId)?.outputUrl ?? MOCK_MUSIC_URL,
-              },
-      },
-      outputUrl: VIDEO_URL,
-      durationMs,
-    })
-    return HttpResponse.json({ generation: created }, { status: 202 })
-  }),
-
-  // 出片、合成与整片都可以识别字幕；编辑段不可识别。
   http.post('*/api/generations/subtitles', async ({ request }) => {
-    const body = (await request.json()) as SubtitleIn
+    const parsed = zSubtitleIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '字幕识别参数无效' }, { status: 422 })
+    }
+    const body = parsed.data
     const source = findJob(body.conversationId, body.sourceJobId)
-    if (source === undefined)
-      return HttpResponse.json({ detail: '未找到这条视频' }, { status: 404 })
-    if (
-      source.kind !== 'video' ||
-      source.status !== 'completed' ||
-      source.outputUrl === null ||
-      (source.operation === 'generate' && source.sourceJobId !== null)
-    )
-      return HttpResponse.json({ detail: '只能识别已完成的成片' }, { status: 422 })
-    const created = job({
-      createdAt: new Date().toISOString(),
-      id: crypto.randomUUID(),
+    if (source === undefined) {
+      return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 404 })
+    }
+    if (!isFinishedTake(source)) {
+      return HttpResponse.json({ detail: '只能识别素材片：已完成的出片或合成' }, { status: 422 })
+    }
+    const created = acceptGeneration({
       kind: 'subtitle',
       prompt: '',
-      request: SUBTITLE_REQUEST,
+      request: { videoUrl: source.outputUrl },
+      conversationId: body.conversationId ?? null,
+      taskId: body.taskId ?? null,
+      metadata: body.metadata ?? null,
       sourceJobId: source.id,
-      status: 'submitted',
-      ...(body.metadata == null ? {} : { metadata: body.metadata }),
+      outputUrl: null,
+      // 竖版样片沿用预置字幕；横版样片没有音轨，识别正常完成但结果为空。
+      sentences: source.outputUrl === VIDEO_URL ? SUBTITLE_SENTENCES : [],
     })
-    const conversationId = body.conversationId ?? null
-    if (conversationId !== null)
-      generations.set(conversationId, [...(generations.get(conversationId) ?? []), created])
-    const timer = setTimeout(() => {
-      created.sentences = SAMPLE_SENTENCES
-      created.finishedAt = new Date().toISOString()
-      created.status = 'completed'
-      timers.delete(timer)
-      announceGeneration(conversationId, created)
-    }, VIDEO_DONE_MS)
-    timers.add(timer)
-    announceGeneration(conversationId, created)
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 生成背景音乐：提示词原样记进请求，过一会儿出一段 30 秒、每分钟 120 拍的鼓点。
   http.post('*/api/generations/music', async ({ request }) => {
     const body = (await request.json()) as MusicIn
-    if (body.prompt.trim() === '')
-      return HttpResponse.json({ detail: 'prompt: 不能为空' }, { status: 422 })
-    if (body.prompt.length > 3000)
-      return HttpResponse.json({ detail: 'prompt: 至多 3000 字' }, { status: 422 })
     const created = acceptGeneration({
       kind: 'audio',
       prompt: body.prompt,
@@ -1185,21 +1138,23 @@ export const workspaceHandlers = [
 
 /** 受理一条生成记录并在固定延迟后把它标成完成，与真实后端的「先受理、后台出结果」同形。 */
 function acceptGeneration(spec: {
-  kind: 'image' | 'video' | 'audio'
+  kind: 'image' | 'video' | 'audio' | 'subtitle'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>
   conversationId: string | null
   metadata: Record<string, unknown> | null
+  taskId?: string | null
   shotIndex?: number | null
   rootJobId?: string | null
   sourceJobId?: string
   sourceUrl?: string | null
   rangeStartMs?: number
   rangeEndMs?: number
-  outputUrl: string
+  outputUrl: string | null
   watermarkOutputUrl?: string
   durationMs?: number
+  sentences?: SubtitleSentence[]
 }) {
   const created = job({
     createdAt: new Date().toISOString(),
@@ -1209,6 +1164,7 @@ function acceptGeneration(spec: {
     prompt: spec.prompt,
     request: spec.request,
     ...(spec.metadata === null ? {} : { metadata: spec.metadata }),
+    taskId: spec.taskId ?? null,
     shotIndex: spec.shotIndex ?? null,
     rootJobId: spec.rootJobId ?? null,
     sourceJobId: spec.sourceJobId ?? null,
@@ -1225,6 +1181,7 @@ function acceptGeneration(spec: {
     created.watermarkOutputUrl = spec.watermarkOutputUrl ?? null
     // 时长、产物地址与完成时刻一起落，与真实后端同一次写入。
     created.durationMs = spec.durationMs ?? null
+    created.sentences = spec.sentences ?? null
     created.finishedAt = new Date().toISOString()
     created.status = 'completed'
     timers.delete(timer)

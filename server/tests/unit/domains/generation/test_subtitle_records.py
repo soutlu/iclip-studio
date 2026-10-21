@@ -1,4 +1,4 @@
-"""字幕记录：成片完成后自动排一条、手动端点另起一条、识别结果落库与读出、失败不重投。
+"""字幕记录：素材片完成后自动排一条、手动端点另起一条、识别结果落库与读出、失败不重投。
 
 用内存仓储与真实队列协程，provider 全是替身，不碰识别服务。"""
 
@@ -30,8 +30,8 @@ from iclip.domains.generation.provider import (
     ProviderSubmission,
 )
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
-from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
-from iclip.domains.generation.service import GenerationService, SubtitleTarget
+from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
+from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
@@ -41,13 +41,14 @@ from tests.helpers.generation import (
     FAKE_SUBTITLE_PROVIDER,
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
-    FixedBrandTemplates,
+    FakeMediaProbe,
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
     image_request,
     make_composite,
     make_edit,
+    make_enhancement,
     make_job,
     make_subtitle,
     video_request,
@@ -58,10 +59,19 @@ TAKE_URL = "https://cdn.test/video/take.mp4"
 TAKE_WATERMARK_URL = "https://cdn.test/video/take-wm.mp4"
 COMPOSITE_URL = "https://cdn.test/video/composite.mp4"
 MODEL = "qwen-audio-3.1-asr-flash"
-SUBTITLES = SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model=MODEL)
+SUBTITLES = ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model=MODEL)
 
 SENTENCES = (
-    SubtitleSentence(start_ms=100, end_ms=1800, text="第一句。", speaker=0),
+    SubtitleSentence(
+        start_ms=100,
+        end_ms=1800,
+        text="第一句。",
+        speaker=0,
+        words=(
+            SubtitleWord(start_ms=100, end_ms=900, text="第一"),
+            SubtitleWord(start_ms=900, end_ms=1800, text="句", punctuation="。"),
+        ),
+    ),
     SubtitleSentence(start_ms=2000, end_ms=3000, text="第二句。", speaker=None),
 )
 
@@ -81,10 +91,6 @@ class _ClearedCompletions:
 
     async def record(self, conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         self.calls.append((conversation_id, owner))
-
-
-async def _no_probe(url: str) -> int:
-    raise AssertionError("字幕识别不探时长")
 
 
 @dataclass
@@ -111,7 +117,7 @@ class World:
 def build_world(
     jobs: list[GenerationJob],
     *,
-    subtitles: SubtitleTarget | None = SUBTITLES,
+    subtitles: ProviderTarget | None = SUBTITLES,
     repo: InMemoryGenerationRepository | None = None,
     video_progress: ProviderProgress | None = None,
     compose_submission: ProviderSubmission | None = None,
@@ -119,7 +125,7 @@ def build_world(
     asr_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
-    """装一个真队列与真服务：成片完成的回调接到服务上，与装配一致。"""
+    """装一个真队列与真服务：素材片完成的回调接到服务上，与装配一致。"""
 
     store = repo if repo is not None else InMemoryGenerationRepository()
     for job in jobs:
@@ -153,8 +159,7 @@ def build_world(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
-        probe_duration_ms=_no_probe,
-        brand_templates=FixedBrandTemplates(),
+        media_probe=FakeMediaProbe(),
         subtitles=subtitles,
     )
     holder["service"] = service
@@ -258,6 +263,23 @@ async def test_a_completed_edit_segment_is_not_transcribed() -> None:
     assert world.subtitles() == []
 
 
+async def test_a_completed_enhancement_is_not_transcribed() -> None:
+    """高清版不是素材片：上游报成功落了两个地址，也不为它排字幕。"""
+
+    enhancement = replace(
+        make_enhancement(completed_take()),
+        status=STATUS_SUBMITTED,
+        provider_task_id="up-3",
+        submitted_at=datetime.now(UTC),
+    )
+    world = build_world([enhancement], video_progress=TAKE_SUCCEEDED)
+
+    await world.queue.run_poll(str(enhancement.id))
+
+    assert world.repo.jobs[enhancement.id].status == STATUS_COMPLETED
+    assert world.subtitles() == []
+
+
 async def test_a_completed_image_is_not_transcribed() -> None:
     image = make_job(image_request())
     world = build_world(
@@ -310,9 +332,9 @@ async def test_failing_to_create_the_subtitle_record_leaves_the_take_completed()
     assert world.repo.jobs[take.id].status == STATUS_COMPLETED
     assert world.subtitles() == []
     errors = [entry for entry in logs if entry["log_level"] == "error"]
-    assert [(entry["event"], entry["video_job_id"]) for entry in errors] == [
-        ("成片完成后建字幕记录失败", take.id)
-    ]
+    assert [(entry["event"], entry["job_id"]) for entry in errors] == [
+        ("生成任务完成后的后续动作失败", take.id)
+    ], "只由队列记一条，不重复记"
 
 
 # --- 识别结果与失败 ---------------------------------------------------------------
@@ -432,7 +454,7 @@ async def test_transcribing_ones_own_take_takes_attribution_from_the_request() -
                 "sourceJobId": str(take.id),
                 "conversationId": str(conversation),
                 "taskId": str(task),
-                "metadata": {"film": "整片"},
+                "metadata": {"film": "春季上新"},
             },
         )
 
@@ -451,7 +473,7 @@ async def test_transcribing_ones_own_take_takes_attribution_from_the_request() -
         conversation,
         task,
     )
-    assert subtitle.metadata == {"film": "整片"}
+    assert subtitle.metadata == {"film": "春季上新"}
     assert subtitle.request == SubtitleRequest(model=MODEL, video_url=TAKE_URL)
     assert len(world.submits_to(FAKE_SUBTITLE_PROVIDER)) == 1
     assert world.cleared.calls == [], "识别不是在对话里动手，不动收尾标记"
@@ -528,7 +550,7 @@ async def test_a_readable_record_that_is_not_a_master_is_rejected(kind: str) -> 
         response = await http.post("/generations/subtitles", json={"sourceJobId": str(target.id)})
 
     assert response.status_code == 422, response.text
-    assert "成片" in response.json()["detail"]
+    assert "素材片" in response.json()["detail"]
     assert new_rows(world, seeded) == []
 
 
@@ -598,8 +620,17 @@ async def test_a_finished_subtitle_record_reads_back_its_sentences_by_kind_sourc
     generation = single.json()["generation"]
     expected = (
         [
-            {"startMs": 100, "endMs": 1800, "text": "第一句。", "speaker": 0},
-            {"startMs": 2000, "endMs": 3000, "text": "第二句。", "speaker": None},
+            {
+                "startMs": 100,
+                "endMs": 1800,
+                "text": "第一句。",
+                "speaker": 0,
+                "words": [
+                    {"startMs": 100, "endMs": 900, "text": "第一", "punctuation": ""},
+                    {"startMs": 900, "endMs": 1800, "text": "句", "punctuation": "。"},
+                ],
+            },
+            {"startMs": 2000, "endMs": 3000, "text": "第二句。", "speaker": None, "words": []},
         ]
         if sentences
         else []

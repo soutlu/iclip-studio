@@ -25,7 +25,12 @@ const openJson = async (content: string, path = PATH) => {
     ),
   )
   return renderWithProviders(
-    <WorkspaceFilesPanel artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
+    <WorkspaceFilesPanel
+      conversationTitle="夜景延时素材生成"
+      artifact={artifact}
+      conversationId={CONVERSATION_ID}
+      readOnly={false}
+    />,
     { initialPath: `/c/${CONVERSATION_ID}?file=${encodeURIComponent(path)}` },
   )
 }
@@ -151,11 +156,7 @@ describe('JSON 格式化视图', () => {
     await openJson(broken)
 
     expect(await screen.findByText('JSON 格式有误，已按原文显示')).toBeVisible()
-    expect(
-      screen.getByText(
-        (_, element) => element?.tagName === 'PRE' && element.textContent === broken,
-      ),
-    ).toBeVisible()
+    expect(screen.getByText(broken, { normalizer: (value) => value })).toBeVisible()
     expect(screen.queryByRole('button', { name: '全部收起' })).not.toBeInTheDocument()
   })
 

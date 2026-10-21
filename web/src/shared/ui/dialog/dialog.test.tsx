@@ -1,7 +1,40 @@
-import { createEvent, fireEvent, screen } from '@testing-library/react'
+import { createEvent, fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { renderWithTooltip } from '@/testing/render'
 import { DialogHeader, DialogRoot, DialogSurface } from './dialog'
+
+function OpenedByState() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button onClick={() => setOpen(true)} type="button">
+        打开设置
+      </button>
+      <DialogRoot open={open} onOpenChange={setOpen}>
+        <DialogSurface aria-describedby={undefined} returnFocus>
+          <DialogHeader closeLabel="关闭" title="设置" />
+        </DialogSurface>
+      </DialogRoot>
+    </>
+  )
+}
+
+describe('DialogSurface 的焦点回位', () => {
+  it.each([
+    ['Esc', () => userEvent.keyboard('{Escape}')],
+    ['关闭按钮', () => userEvent.click(screen.getByRole('button', { name: '关闭' }))],
+  ])('不经触发器打开的弹窗用%s关闭后，焦点回到打开它的按钮', async (_, close) => {
+    renderWithTooltip(<OpenedByState />)
+    const opener = screen.getByRole('button', { name: '打开设置' })
+    await userEvent.click(opener)
+    expect(screen.getByRole('dialog', { name: '设置' })).toBeVisible()
+    await close()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(opener).toHaveFocus()
+  })
+})
 
 const fileDrag = () => ({ dropEffect: '', files: [], items: [], types: ['Files'] })
 

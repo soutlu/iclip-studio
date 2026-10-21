@@ -1,4 +1,4 @@
-/** 制作页的组合根：读 AI 导演的工程、草稿、出片与路由参数在这里，分给顶栏、舞台、文案列（末尾是本组成片）、出片栏与浮层。
+/** 制作页的组合根：读 AI 导演的工程、草稿、出片与路由参数在这里，分给顶栏、舞台、文案列（末尾是本组素材片）、出片栏与浮层。
  *
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
@@ -70,7 +70,7 @@ type ReaderSearch = {
   shot?: number | undefined
   /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
-  /** 整片编辑器开着；属于整段对话，换组不关。 */
+  /** 成片编辑器开着；属于整段对话，换组不关。 */
   wholeFilm?: true | undefined
 }
 
@@ -90,7 +90,7 @@ export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
 
-function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps) {
+function FilmWorkspace({ conversationId, conversationTitle, readOnly }: ArtifactRendererProps) {
   const film = useFilmView(conversationId)
   useFilmFileChanges(conversationId)
   useLiveGenerations(conversationId)
@@ -124,7 +124,7 @@ function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps
     generations.data === undefined || group === undefined
       ? undefined
       : takesOfShot(generations.data, group.index, group.aspectRatio)
-  // 选中的成片不在本组列表里了就回到图。
+  // 选中的素材片不在本组列表里了就回到图。
   const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
   // 生成卡上的提交：哪张图、在生成还是在选用，与没被收下的原话（挨着按钮说，不弹全局提示）。
   const [cardAction, setCardAction] = useState<{
@@ -151,7 +151,7 @@ function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps
     queryClient.setQueryData(filmQueryKey(conversationId), { film: changed })
   }
   const replace = useFilmReplace({
-    // 舞台在放成片时看不到图，不收拖放与粘贴。
+    // 舞台在放素材片时看不到图，不收拖放与粘贴。
     disabled: readOnly || selectedTake !== undefined,
     frame,
     onReplace: (target, url) => applyImage(target.node, url),
@@ -465,7 +465,7 @@ function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps
                 onSelect={select}
                 onUploadingChange={onTextUploading}
                 readOnly={readOnly}
-                // 放成片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。
+                // 放素材片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。
                 selectedId={selectedTake === undefined ? selection.contentId : undefined}
                 uploads={uploads}
               />
@@ -537,8 +537,8 @@ function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps
       {search.wholeFilm === true && !readOnly ? (
         <WholeFilmEditor
           conversationId={conversationId}
+          conversationTitle={conversationTitle}
           onClose={() => go({ wholeFilm: undefined })}
-          task={task}
         />
       ) : null}
       <FilmConflictDialog resolve={draft.resolveConflict} state={draft.state} />

@@ -52,7 +52,7 @@ test('长对话可以滚动，鼠标离开后正文位置与宽度保持稳定',
   await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: '停止', exact: true })).toBeHidden()
 
-  const scroller = page.locator('.chat-scroller')
+  const scroller = page.getByTestId('chat-scroller')
   await scroller.hover()
   await page.mouse.wheel(0, -10_000)
   const firstTurn = page.getByRole('article', { name: '第 1 轮' })
@@ -160,7 +160,7 @@ test('长对话首屏只铺最近 10 轮，点「加载更早」接上前面几�
   await expect(page.getByText('长对话第 14 轮的回复。')).toBeVisible()
   await expect(page.getByText('长对话第 4 轮的回复。')).toHaveCount(0)
 
-  const scroller = page.locator('.chat-scroller')
+  const scroller = page.getByTestId('chat-scroller')
   await scroller.hover()
   await page.mouse.wheel(0, -10_000)
   const loadEarlier = page.getByRole('button', { name: '加载更早的消息' })

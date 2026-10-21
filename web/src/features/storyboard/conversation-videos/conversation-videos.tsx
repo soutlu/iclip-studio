@@ -87,7 +87,9 @@ function VideoGroup({ group, onBeforeExpand }: VideoGroupProps) {
       <div className="flex items-center gap-2">
         <h4 className="min-w-0 flex-1 text-label font-medium text-on-surface">{group.label}</h4>
         <VideoDownload
-          jobId={selected.id}
+          downloadedJobIds={[selected.id]}
+          durationMs={selected.durationMs}
+          enhanceSourceId={selected.id}
           url={selected.outputUrl}
           watermarkUrl={selected.watermarkOutputUrl}
         />

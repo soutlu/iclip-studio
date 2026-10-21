@@ -1,56 +1,90 @@
-/** 读一首音乐：下载、解码成整段声音（预览混音直接用它），量出拍子与波形。只经 `useMusicAnalysis` 动态加载，
- * 拍点检测库（web-audio-beat-detector）跟着这个模块进单独的包，不进首屏。 */
+import { queryOptions, skipToken, useQueries, useQuery } from '@tanstack/react-query'
+import { audioBufferPeaks, type AudioPeaks } from '../editing/audio-peaks'
+import type { MusicBeat } from './editing/context'
 
-import { guess } from 'web-audio-beat-detector'
-import { beatGridOf, type Song } from './film-music'
-import { FILM_AUDIO_RATE } from './film-audio'
+const DECODE_RATE = 44_100
 
-/** 波形每秒取几个峰值：音乐轨上一秒十几像素，够画包络。 */
-const PEAK_RATE = 50
+export type MusicAnalysis = { durationMs: number; peaks: AudioPeaks }
 
-/** 拍点检测库在整首都找不出拍子时抛的那一句；只有它算「没有拍子」，别的错照常抛出。 */
-const NO_BEATS = /detectable beats/
-
-export type MusicAnalysis = Song & {
-  /** 解码好的整首，预览时交给 Web Audio 播。 */
-  buffer: AudioBuffer
-  /** 每秒 `rate` 个峰值，0–1（按整首最响处归一）。 */
-  peaks: { rate: number; values: number[] }
-}
-
-const peaksOf = (buffer: AudioBuffer): MusicAnalysis['peaks'] => {
-  const bucket = Math.max(1, Math.round(buffer.sampleRate / PEAK_RATE))
-  const count = Math.ceil(buffer.length / bucket)
-  const values = Array.from({ length: count }, () => 0)
-  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
-    const data = buffer.getChannelData(channel)
-    for (let index = 0; index < data.length; index += 1) {
-      const at = Math.floor(index / bucket)
-      const level = Math.abs(data[index] ?? 0)
-      if (level > (values[at] ?? 0)) values[at] = level
-    }
-  }
-  const loudest = Math.max(...values, 0)
-  return {
-    rate: buffer.sampleRate / bucket,
-    values: loudest === 0 ? values : values.map((value) => value / loudest),
-  }
-}
-
-/** 下载并解码 `url`，量拍子与波形。下载、解码失败照常抛出；整首找不出拍子不算失败，`grid` 为 null。 */
-export const analyzeMusic = async (url: string, signal?: AbortSignal): Promise<MusicAnalysis> => {
-  // 外链素材下载：音乐在对象存储上，不经 apiFetch。
-  const response = await fetch(url, signal === undefined ? {} : { signal })
+/** 下载并解码一首音乐，量出时长与波形。音乐在对象存储上，是外链素材，不经 apiFetch。 */
+const analyzeMusic = async (url: string, signal: AbortSignal): Promise<MusicAnalysis> => {
+  const response = await fetch(url, { signal })
   if (!response.ok) throw new Error(`音乐下载失败：${response.status}`)
-  const bytes = await response.arrayBuffer()
-  // 解码不需要出声，离线上下文不受浏览器「先有手势才能出声」的限制。
-  const buffer = await new OfflineAudioContext(1, 1, FILM_AUDIO_RATE).decodeAudioData(bytes)
-  let grid: Song['grid'] = null
-  try {
-    // 类型里只写了 bpm 与 offset，运行时还带未取整的 tempo（GuessedBeat 里是可选的）。
-    grid = beatGridOf(await guess(buffer))
-  } catch (error) {
-    if (!(error instanceof Error && NO_BEATS.test(error.message))) throw error
-  }
-  return { buffer, duration: buffer.duration, grid, peaks: peaksOf(buffer) }
+  // 离线上下文不受浏览器「先有用户手势才能出声」的限制。
+  const buffer = await new OfflineAudioContext(1, 1, DECODE_RATE).decodeAudioData(
+    await response.arrayBuffer(),
+  )
+  return { durationMs: Math.round(buffer.duration * 1000), peaks: audioBufferPeaks(buffer) }
+}
+
+const musicAnalysisQuery = (url: string | undefined) =>
+  queryOptions({
+    queryKey: ['whole-film', 'music-analysis', url],
+    queryFn: url === undefined ? skipToken : ({ signal }) => analyzeMusic(url, signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  })
+
+export const useMusicAnalysis = (url: string | undefined) => useQuery(musicAnalysisQuery(url))
+
+/** 记录上没记时长的几首音乐，量出来的时长（地址 → 毫秒）；与列表里的波形共用同一份分析 */
+export const useMeasuredMusicDurations = (urls: readonly string[]): ReadonlyMap<string, number> =>
+  useQueries({
+    queries: urls.map((url) => musicAnalysisQuery(url)),
+    combine: (results) =>
+      new Map(
+        results.flatMap((result, at) => {
+          const url = urls[at]
+          return url === undefined || result.data === undefined
+            ? []
+            : [[url, result.data.durationMs] as const]
+        }),
+      ),
+  })
+
+export type MusicBeats =
+  | { kind: 'ready'; beats: MusicBeat[] }
+  | { kind: 'loading' }
+  | { kind: 'unavailable'; reason: string }
+
+const NO_STEADY_BEAT = '这首音乐没有稳定的节拍，无法自动卡点'
+
+/** 下载、解码一首音乐，用 HyperFrames 的拍点分析（与 Studio 同一套）找出拍点 */
+const analyzeBeats = async (url: string, signal: AbortSignal): Promise<MusicBeat[]> => {
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new Error(`音乐下载失败：${response.status}`)
+  const buffer = await new OfflineAudioContext(1, 1, DECODE_RATE).decodeAudioData(
+    await response.arrayBuffer(),
+  )
+  const { analyzeMusicFromBuffer } = await import('@hyperframes/core/beats')
+  const analysis = await analyzeMusicFromBuffer(buffer)
+  if (analysis.bpm === null) return []
+  return analysis.beatTimes.map((time, index) => ({
+    timeMs: Math.round(time * 1000),
+    strength: analysis.beatStrengths[index] ?? 0,
+  }))
+}
+
+const musicBeatsQuery = (url: string | undefined) =>
+  queryOptions({
+    queryKey: ['whole-film', 'music-beats', url],
+    queryFn: url === undefined ? skipToken : ({ signal }) => analyzeBeats(url, signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  })
+
+/**
+ * 成片在用的这首音乐的拍点（音乐文件时间）；每首只分析一次。还在分析、分析失败或没有稳定节拍时
+ * 「自动卡点」按给出的原因置灰。
+ */
+export const useMusicBeats = (url: string | undefined): MusicBeats => {
+  const query = useQuery(musicBeatsQuery(url))
+  if (url === undefined) return { kind: 'unavailable', reason: '还没有选用音乐，无法自动卡点' }
+  if (query.isError) return { kind: 'unavailable', reason: '拍点分析失败，无法自动卡点' }
+  if (query.data === undefined) return { kind: 'loading' }
+  return query.data.length === 0
+    ? { kind: 'unavailable', reason: NO_STEADY_BEAT }
+    : { kind: 'ready', beats: query.data }
 }

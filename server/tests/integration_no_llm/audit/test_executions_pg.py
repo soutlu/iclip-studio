@@ -98,11 +98,11 @@ async def plant_sortable(
     engine: AsyncEngine,
 ) -> dict[ExecutionSort, dict[uuid.UUID, SortValue | None]]:
     """六段执行，四种排序键各自的取值；每镜重试与 token 有并列，每镜重试与运行时长还有空值。
-    重试只数成功的生成，空值恰好都是没有成片的那几段。
+    重试只数成功的生成，空值恰好都是没有出片的那几段。
 
-    E1 一镜一次成片（重试 1、运行 600 秒、token 500）；E2 一镜失败一次再成两次（2、1320 秒、100）；
+    E1 一镜一次出片（重试 1、运行 600 秒、token 500）；E2 一镜失败一次再成两次（2、1320 秒、100）；
     E3 只跑过（空、空、300）；E4 一镜成一次、另一镜失败一次再成（1、300 秒、没有用量算 0）；E5 只跑
-    过、没有用量（空、空、0）；E6 一镜只失败了一次（没有成功镜为空、没成片为空、200）。"""
+    过、没有用量（空、空、0）；E6 一镜只失败了一次（没有成功镜为空、没出片为空、200）。"""
 
     async with engine.begin() as conn:
         plant = Plant(conn)
@@ -340,7 +340,7 @@ async def test_retry_and_stuck_flag_on_their_thresholds(
 async def delivered(
     plant: Plant, owner: uuid.UUID, *, at: datetime, tokens: int, run_by: str | None = None
 ) -> uuid.UUID:
-    """一段没挂需求单、出了一件成片的对话，带这么多 token。"""
+    """一段没挂需求单、出了一件出片的对话，带这么多 token。"""
 
     conversation_id = await plant.conversation(owner, at=at)
     if run_by is not None:
@@ -359,7 +359,7 @@ async def delivered(
 async def test_spend_baseline_is_the_whole_window_regardless_of_user_filter(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """全窗四件成片共 1300 token，每件平均 325，门槛 975：Sara 那段 1000 超了。只看 Sara 时门槛
+    """全窗四件出片共 1300 token，每件平均 325，门槛 975：Sara 那段 1000 超了。只看 Sara 时门槛
     不变、照样标出——若按 Sara 自己算，平均 1000、门槛 3000，就标不出来。"""
 
     async with engine.begin() as conn:
@@ -399,8 +399,8 @@ async def test_spend_is_off_when_the_window_has_no_delivery(
 async def test_task_stuck_needs_three_executions_in_window_and_no_delivery_ever(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """卡住的单：窗里三段执行、从没成片，三段都标，只看 Derek 时他那段也标（段数不看 userName）。
-    反例：窗里三段没成片、但窗外早先有一段成过片的单；窗里只有两段、第三段在窗外的单；两段执行
+    """卡住的单：窗里三段执行、从没出片，三段都标，只看 Derek 时他那段也标（段数不看 userName）。
+    反例：窗里三段没出片、但窗外早先有一段成过片的单；窗里只有两段、第三段在窗外的单；两段执行
     外加一段既没跑也没出片的对话（不算执行）的单。"""
 
     async with engine.begin() as conn:
@@ -432,7 +432,7 @@ async def test_task_stuck_needs_three_executions_in_window_and_no_delivery_ever(
         for hours in (5, 4):
             await attempt(idle_third, at=ago(hours=hours, minutes=30))
         await plant.conversation(sara, at=ago(hours=3), task_id=idle_third)
-        # 一段有成片的对话，让本期有成片基准；它不挂单，不影响卡住判定。
+        # 一段有出片的对话，让本期有出片基准；它不挂单，不影响卡住判定。
         await delivered(plant, derek, at=ago(hours=1), tokens=0, run_by=DEREK)
 
     page = await service.executions(since=SINCE, limit=100)
@@ -450,7 +450,7 @@ async def test_task_stuck_needs_three_executions_in_window_and_no_delivery_ever(
 async def test_anomalies_come_in_a_fixed_order_and_totals_cover_every_page(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """反复重试要有成片、需求单卡住要从没成片，同一行不会两个都中，四种的顺序分两行看：一行没挂单、
+    """反复重试要有出片、需求单卡住要从没出片，同一行不会两个都中，四种的顺序分两行看：一行没挂单、
     一镜成功三次、另一镜悬在上游、token 远超门槛，按 retry、stuck、spend 排；另一行挂在卡住的单下、
     一镜悬在上游、token 也超了，按 stuck、spend、task_stuck 排。每页两条时条数与命中条数仍是整个
     范围的。"""
@@ -477,7 +477,7 @@ async def test_anomalies_come_in_a_fixed_order_and_totals_cover_every_page(
         for hours in (17, 16):
             sibling = await plant.conversation(sara, at=ago(hours=hours), task_id=task_id)
             await plant.turn(sibling, user_name=SARA, started_at=ago(hours=hours), ended_at=None)
-        # 六件各 10 token 的成片，连同重试的那段共七件：本期每件平均 (6000 + 5000 + 60) / 7，
+        # 六件各 10 token 的出片，连同重试的那段共七件：本期每件平均 (6000 + 5000 + 60) / 7，
         # 门槛约 4740。
         for hours in range(6):
             await delivered(plant, sara, at=ago(hours=hours + 1), tokens=10)

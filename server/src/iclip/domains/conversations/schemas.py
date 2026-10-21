@@ -212,8 +212,8 @@ class SidebarOut(CamelModel):
 class ConversationsAuditItemOut(ConversationOut):
     """审计列表里的一段对话。
 
-    ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
-    没有成片为 null。
+    ``latestMasterUrl`` 是这段对话自己名下最新完成的一条素材片（出片或合成）的地址，不含分叉继承来的；
+    没有素材片为 null。
     """
 
     latest_master_url: str | None
@@ -371,8 +371,6 @@ class FilmViewOut(CamelModel):
     problems: int
     groups: list[FilmGroupOut]
     music_description: str | None
-    """工程文件里「配乐」那段文字的正文，生成背景音乐时原样当提示词；没有这一段、或 ``problems``
-    不为 0 时为 null。"""
 
 
 class FilmViewEnvelope(CamelModel):
@@ -615,7 +613,7 @@ def audit_item_out(
     latest_master_url: str | None,
     events: EventWatermark,
 ) -> ConversationsAuditItemOut:
-    """在 ``conversation_out`` 之上补这段对话自己最新一条成片的地址，转换为审计列表的条目。"""
+    """在 ``conversation_out`` 之上补这段对话自己最新一条素材片的地址，转换为审计列表的条目。"""
 
     return ConversationsAuditItemOut(
         **dict(conversation_out(conversation, activity, events)),

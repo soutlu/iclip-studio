@@ -34,7 +34,9 @@
 | `src/shared/transcript/`              | 对话协议、订阅与投影；vendor 维护要求见[目录说明](src/shared/transcript/vendor/README.md) |
 | `src/shared/workbench/`               | 产物面板宿主、布局与选择状态                                                              |
 | `src/testing/`、`e2e/`                | 测试基建、MSW 与浏览器用例                                                                |
+| `src/features/storyboard/whole-film/` | 成片编辑器；`composition/` 与 `catalog/` 同时编进渲染服务 `../render/`                    |
 | `vite/`、`scripts/`                   | 构建助手与开发、检查命令                                                                  |
+| `scripts/hyperframes-*`               | HyperFrames 组件库按 lock 同步到 `public/hyperframes/`（不入库）                          |
 | `../design/cue-mascot/`               | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)                  |
 
 - `src/routes/` 负责路由装配、守卫、search params 与跨 feature 组合；业务逻辑留在 feature。共用侧边栏、登录弹窗、布局和工作台由 `_shell.tsx` 及同目录 `-` 前缀助手承载。
@@ -45,12 +47,14 @@
 - 不手改生成文件，不抬高 design-guard 基线；修复存量后可以收紧基线。
 - 分镜工作台用于查看和编辑 Agent 交付的分镜、发起媒体生成；制作页（`features/storyboard/film/`）复用它的舞台与文案列，查看和改 AI 导演的工程（见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)）。产物与渲染器登记、认领与重叠规则以 [artifact.ts](src/shared/workbench/artifact.ts) 为准，文件写回与生成约定见[跨端合同](../contract/conventions.md)。
 
+- 成片的 `composition/` 要在浏览器和 Node 里都能跑：不碰 DOM 与浏览器 API，对仓内只做 `import type`（生成的合同类型）；渲染服务另外直接用 `src/shared/api/generated/zod.gen.ts` 校验请求，改这几处后另按[开发约定](../AGENTS.md#1-命令与验证)跑渲染服务的检查。
+
 依赖边界、导入入口、命名与语法由 [ESLint](eslint.config.js) 管理；死代码范围由 [knip](knip.json) 管理；基础 token 见根 [设计系统](../design-system.html)。
 
 ## 3. 验证
 
 - 代码变更推送前执行 `pnpm ci:static` 与 `pnpm typecheck`，并运行与改动直接相关的 Vitest 文件；核心用户旅程变更另跑相关 Playwright 用例。完整单测、生产构建与全部用例由 CI 运行，本地不重复跑 `pnpm ci:check`。
 - 新增页面、变更共享逻辑、跨层合同或用户行为时，按[实现规范的测试归层](docs/frontend-implementation.md#测试)补充或更新覆盖；纯文档或措辞变更检查格式和链接。
-- UI 变更核对桌面与移动布局、浅深主题、键盘操作和中文长内容；截图位置见根开发约定。
+- UI 变更核对桌面与移动布局、浅深主题、键盘操作和中文长内容；验收截图用本地临时脚本或本地 Playwright 运行截到 `.artifacts/design-qa/`，e2e 用例只写断言、不截图。
 - 修改生产反代时，验证路径 rewrite、WebSocket upgrade 与同源 Host / Origin；部署约定见[跨端合同](../contract/conventions.md)。
 - 运行时依赖升级由开发者决定，升级后通过 `pnpm verify`；SSO / PMS 的真实验收要求见根开发约定。

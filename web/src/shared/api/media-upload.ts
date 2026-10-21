@@ -1,74 +1,93 @@
-/** 上传协议的唯一实现：本地校验 → 签名 → 直传对象存储 → 确认；合同见 contract/conventions.md §10。 */
+/** 合同见 contract/conventions.md §10。 */
 
 import type { z } from 'zod'
 import { apiFetch, NETWORK_FAILURE, UserFacingError } from './client'
 import { zUploadConfirmedOut, zUploadTicketOut } from './generated/zod.gen'
 
-const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
-const VIDEO_TYPES = ['video/mp4', 'video/quicktime']
-export const MEDIA_IMAGE_ACCEPT = IMAGE_TYPES.join(',')
-export const MEDIA_VIDEO_ACCEPT = VIDEO_TYPES.join(',')
+const MIB = 1024 * 1024
 
-/** 后端收的三种音乐类型，按扩展名认。 */
-const AUDIO_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
-  m4a: 'audio/mp4',
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
+export type UploadKind = 'image' | 'video' | 'audio'
+
+type UploadRule = {
+  byExtension: Readonly<Record<string, string>>
+  byType: Readonly<Record<string, string>>
+  maxBytes: number
+  formatError: string
+  sizeError: string
 }
-/** 浏览器与系统给同一种音乐报的别名；扩展名认不出时按它们认。 */
-const AUDIO_TYPE_ALIASES: Readonly<Record<string, string>> = {
-  'audio/mp4': 'audio/mp4',
-  'audio/x-m4a': 'audio/mp4',
-  'audio/m4a': 'audio/mp4',
-  'audio/mpeg': 'audio/mpeg',
-  'audio/mp3': 'audio/mpeg',
-  'audio/wav': 'audio/wav',
-  'audio/x-wav': 'audio/wav',
-  'audio/wave': 'audio/wav',
+
+const sameType = (types: readonly string[]) => Object.fromEntries(types.map((type) => [type, type]))
+
+const UPLOAD_RULES: Readonly<Record<UploadKind, UploadRule>> = {
+  image: {
+    byExtension: {},
+    byType: sameType(['image/jpeg', 'image/png', 'image/webp']),
+    maxBytes: 16 * MIB,
+    formatError: '文件格式不受支持，无法上传；请选择 JPEG、PNG 或 WebP 图片',
+    sizeError: '图片超过 16 MiB，无法上传；请选择更小的文件',
+  },
+  video: {
+    byExtension: {},
+    byType: sameType(['video/mp4', 'video/quicktime']),
+    maxBytes: 512 * MIB,
+    formatError: '文件格式不受支持，无法上传；请选择 MP4 或 MOV 视频',
+    sizeError: '视频超过 512 MiB，无法上传；请选择更小的文件',
+  },
+  // 同一种音乐浏览器各报各的（m4a 常报 audio/x-m4a），签名与直传要用后端认的那一种。
+  audio: {
+    byExtension: { m4a: 'audio/mp4', mp3: 'audio/mpeg', wav: 'audio/wav' },
+    byType: {
+      'audio/mp4': 'audio/mp4',
+      'audio/x-m4a': 'audio/mp4',
+      'audio/m4a': 'audio/mp4',
+      'audio/mpeg': 'audio/mpeg',
+      'audio/mp3': 'audio/mpeg',
+      'audio/wav': 'audio/wav',
+      'audio/x-wav': 'audio/wav',
+      'audio/wave': 'audio/wav',
+    },
+    maxBytes: 50 * MIB,
+    formatError: '文件格式不受支持，无法上传；请选择 MP3、WAV 或 M4A 音乐',
+    sizeError: '音乐超过 50 MiB，无法上传；请选择更小的文件',
+  },
 }
-export const MEDIA_AUDIO_ACCEPT = [
-  ...Object.keys(AUDIO_TYPE_BY_EXTENSION).map((extension) => `.${extension}`),
-  ...Object.keys(AUDIO_TYPE_ALIASES),
-].join(',')
 
-const AUDIO_MAX_BYTES = 50 * 1024 * 1024
+const acceptOf = ({ byExtension, byType }: UploadRule): string =>
+  [...Object.keys(byExtension).map((extension) => `.${extension}`), ...Object.keys(byType)].join(
+    ',',
+  )
 
-/** 一个音乐文件按后端收的类型该报什么：先看扩展名，再看浏览器给的类型；都认不出时是 `undefined`。
- * 同一种文件浏览器各报各的（m4a 常报 `audio/x-m4a`），签名与直传要用后端认的那一种。 */
-export const audioContentTypeOf = (file: Pick<File, 'name' | 'type'>): string | undefined => {
+export const MEDIA_IMAGE_ACCEPT = acceptOf(UPLOAD_RULES.image)
+export const MEDIA_VIDEO_ACCEPT = acceptOf(UPLOAD_RULES.video)
+export const MEDIA_AUDIO_ACCEPT = acceptOf(UPLOAD_RULES.audio)
+
+export const uploadContentTypeOf = (
+  file: Pick<File, 'name' | 'type'>,
+  kind: UploadKind,
+): string | undefined => {
+  const { byExtension, byType } = UPLOAD_RULES[kind]
   const extension = /\.([^./]+)$/.exec(file.name)?.[1]?.toLowerCase()
   return (
-    (extension === undefined ? undefined : AUDIO_TYPE_BY_EXTENSION[extension]) ??
-    AUDIO_TYPE_ALIASES[file.type.toLowerCase()]
+    (extension === undefined ? undefined : byExtension[extension]) ??
+    byType[file.type.toLowerCase()]
   )
+}
+
+export const checkUploadFile = (file: Pick<File, 'name' | 'type' | 'size'>, kind: UploadKind) => {
+  const rule = UPLOAD_RULES[kind]
+  const contentType = uploadContentTypeOf(file, kind)
+  if (contentType === undefined) throw new UserFacingError(rule.formatError)
+  if (file.size > rule.maxBytes) throw new UserFacingError(rule.sizeError)
+  return contentType
 }
 
 const UPLOAD_FAILED = '上传失败'
 
-type MediaKind = 'image' | 'video' | 'audio'
+type SignedMedia = { contentType: string; width: number | null; height: number | null }
 
-/** 文件选择与拖放共用校验，给出签名时报的类型与宽高；图片尺寸须解码后才能用于签名。 */
-const signedMediaOf = async (file: File, kind: MediaKind) => {
-  if (kind === 'audio') {
-    const contentType = audioContentTypeOf(file)
-    if (contentType === undefined)
-      throw new UserFacingError('文件格式不受支持，无法上传；请选择 MP3、WAV 或 M4A 音乐')
-    if (file.size > AUDIO_MAX_BYTES) throw new UserFacingError('音乐超过 50 MiB，无法上传')
-    return { contentType, height: null, width: null }
-  }
-  return { contentType: file.type, ...(await mediaDimensions(file, kind)) }
-}
-
-const mediaDimensions = async (file: File, kind: 'image' | 'video') => {
-  if (kind === 'video') {
-    if (!VIDEO_TYPES.includes(file.type))
-      throw new UserFacingError('文件格式不受支持，无法上传；请选择 MP4 或 MOV 视频')
-    if (file.size > 512 * 1024 * 1024) throw new UserFacingError('视频超过 512 MiB，无法上传')
-    return { height: null, width: null }
-  }
-  if (!IMAGE_TYPES.includes(file.type))
-    throw new UserFacingError('文件格式不受支持，无法上传；请选择 JPEG、PNG 或 WebP 图片')
-  if (file.size > 16 * 1024 * 1024) throw new UserFacingError('图片超过 16 MiB，无法上传')
+const signedMediaOf = async (file: File, kind: UploadKind): Promise<SignedMedia> => {
+  const contentType = checkUploadFile(file, kind)
+  if (kind !== 'image') return { contentType, height: null, width: null }
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
@@ -82,14 +101,13 @@ const mediaDimensions = async (file: File, kind: 'image' | 'video') => {
       '图片尺寸不符，无法上传；请使用短边至少 300 像素、长边不超过 6000 像素的图片',
     )
   }
-  return { height, width }
+  return { contentType, height, width }
 }
 
-type UploadInstruction = z.infer<typeof zUploadTicketOut>['upload']
+type UploadTicket = z.infer<typeof zUploadTicketOut>
 
-/** 用 XHR 直传以便取进度；签名里的 headers 必须原样发送。失败文案与 apiFetch 同格式：断网时带原因，其余只给前缀、不外露状态码。 */
-export const putToStorage = (
-  upload: UploadInstruction,
+const putToStorage = (
+  upload: UploadTicket['upload'],
   file: File,
   onProgress: ((ratio: number) => void) | undefined,
 ): Promise<void> =>
@@ -119,23 +137,16 @@ export const putToStorage = (
     request.send(file)
   })
 
-type UploadMediaOptions = {
-  /** 直传进度 0–1，浏览器算得出总量时才回调；节流由调用方决定。 */
-  onProgress?: (ratio: number) => void
-}
-
-/** 确认过的一次上传：可持久化的地址，以及把它交给别的端点（如建参考视频）时用的上传 id。 */
 export type UploadedMedia = { url: string; uploadId: string }
 
-/**
- * 校验、签名、直传并确认；服务端按桶里的对象核对通过后才返回可持久化的地址。
- *
- * 本地校验与直传失败抛 {@link UserFacingError}，签名与确认失败抛 ApiError；两者的 message 都可直接展示。
- */
+/** `conversationId` 只对音频有意义：确认时把这首音乐挂到这段对话上（合同 §10）。 */
 export const uploadMediaFile = async (
   file: File,
-  kind: MediaKind,
-  { onProgress }: UploadMediaOptions = {},
+  kind: UploadKind,
+  {
+    onProgress,
+    conversationId,
+  }: { onProgress?: (ratio: number) => void; conversationId?: string } = {},
 ): Promise<UploadedMedia> => {
   const signed = await signedMediaOf(file, kind)
   const ticket = await apiFetch('/uploads/sign', zUploadTicketOut, {
@@ -145,6 +156,7 @@ export const uploadMediaFile = async (
   })
   await putToStorage(ticket.upload, file, onProgress)
   const confirmed = await apiFetch(`/uploads/${ticket.uploadId}/confirm`, zUploadConfirmedOut, {
+    ...(conversationId === undefined ? {} : { body: { conversationId } }),
     fallbackErrorMessage: UPLOAD_FAILED,
     method: 'POST',
   })

@@ -30,11 +30,9 @@ from iclip.domains.generation.schemas import (
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
-    request_to_payload,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
 from iclip.platform.db.engine import build_engine
-from tests.helpers.generation import whole_film_request
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"
@@ -48,7 +46,7 @@ def ago(**delta: float) -> datetime:
 
 class Seed:
     """一组固定的数据：三个人（一个只跑过没出片）、两张需求单、八段对话、八条带镜号的视频与一条没镜号的，
-    外加 C1 两镜各被下载过（镜 1 下的是出片、两个人各一次，镜 2 下的是它名下的成片）。"""
+    外加 C1 两镜各被下载过（镜 1 下的是出片、两个人各一次，镜 2 下的是它名下的素材片）。"""
 
     def __init__(self) -> None:
         self.sara = uuid.uuid4()
@@ -57,8 +55,8 @@ class Seed:
         self.stuck_task = uuid.uuid4()
         self.c1 = uuid.uuid4()  # 需求单下、两镜、镜 2 试了三次
         self.c2 = uuid.uuid4()  # 需求单下、钥匙直提没有运行、镜 2 悬挂在上游
-        self.c3 = uuid.uuid4()  # 没挂需求单的成片
-        self.c4 = uuid.uuid4()  # 有运行无成片、两天没动
+        self.c3 = uuid.uuid4()  # 没挂需求单的出片
+        self.c4 = uuid.uuid4()  # 有运行无出片、两天没动
         self.c5 = uuid.uuid4()  # 已删
         self.c1_agent_job_at = ago(hours=2)
         self.c2_created_at = ago(hours=5)
@@ -199,7 +197,7 @@ class Seed:
                 shot: int,
                 created_at: datetime,
             ) -> None:
-                """视频编辑确认合成的成片：先在 ``root`` 那次出片上有一段编辑，合成以 ``root``
+                """视频编辑确认合成的素材片：先在 ``root`` 那次出片上有一段编辑，合成以 ``root``
                 为来源、把编辑段夹进去；两条都抄着原作的镜号 ``shot``。"""
 
                 edit = await video(
@@ -367,7 +365,7 @@ class Seed:
                 finished_at=ago(minutes=4),
                 edit_of=self.missing_shot_video,
             )
-            # 镜 1 的出片被两个人各下载一次，仍只算一镜；镜 2 下载的是名下的成片，算回镜 2。
+            # 镜 1 的出片被两个人各下载一次，仍只算一镜；镜 2 下载的是名下的素材片，算回镜 2。
             await master(
                 self.c1_shot2_master,
                 self.c1,
@@ -469,7 +467,7 @@ class Seed:
             )
             await agent_job(self.c4, user_name=DEREK, at=ago(hours=49))
 
-            # C5：Eva 替 Sara 跑了一轮就被属主删掉了；Eva 只有这一次运行，没有成片也没有用量。
+            # C5：Eva 替 Sara 跑了一轮就被属主删掉了；Eva 只有这一次运行，没有出片也没有用量。
             await conversation(
                 self.c5,
                 owner=self.sara,
@@ -518,7 +516,7 @@ async def executions_by_id(service: AuditService) -> dict[uuid.UUID, ExecutionOu
 async def test_overall_counts_every_metric_on_its_own_anchor(
     reports: PgAuditReports, seed: Seed
 ) -> None:
-    """成片件数按「需求单一件、无单对话一件」；镜只算成功过的、次数只数成功的，失败与悬在上游的
+    """出片件数按「需求单一件、无单对话一件」；镜只算成功过的、次数只数成功的，失败与悬在上游的
     都不计，成了又重出的不算一次通过；运行含已删对话的；周期缺运行时从对话创建起算。"""
 
     overall = await reports.overall(Scope())
@@ -549,7 +547,7 @@ async def test_overall_counts_every_metric_on_its_own_anchor(
 
 
 async def test_window_applies_to_each_metric_anchor(reports: PgAuditReports, seed: Seed) -> None:
-    """近两小时：只剩 C1 的四条成片、两镜、一段周期与两行用量；运行数左闭，恰在 since 的 C1 那轮算进来。"""
+    """近两小时：只剩 C1 的四条出片、两镜、一段周期与两行用量；运行数左闭，恰在 since 的 C1 那轮算进来。"""
 
     recent = await reports.overall(Scope(since=ago(hours=2)))
 
@@ -690,7 +688,7 @@ async def test_executions_carry_whole_conversation_detail(
     assert c2.usage == []
     assert (c3.task_id, c3.task_title) == (None, None)
     assert c3.metrics.delivered_orphan_conversations == 1
-    # 跑过没出片：没有成片时刻、没有镜；删掉的照列。
+    # 跑过没出片：没有出片时刻、没有镜；删掉的照列。
     c4, c5 = rows[seed.c4], rows[seed.c5]
     assert (c4.delivered_at, c4.shots, c4.metrics.runs) == (None, [], 1)
     assert c5.deleted_at == ago(hours=1) and c5.user_name == EVA
@@ -712,7 +710,7 @@ async def test_executions_window_falls_on_creation_and_user_filters_rows(
 async def test_effective_shots_are_downloaded_shots(
     reports: PgAuditReports, service: AuditService, seed: Seed
 ) -> None:
-    """有效镜是下载过的镜，下载成片算它原作所在的镜，同一镜下载几次都只算一镜；还没成过的镜
+    """有效镜是下载过的镜，下载素材片算它原作所在的镜，同一镜下载几次都只算一镜；还没成过的镜
     （C2 镜 2 悬在上游）不算镜、不进分母；分母为零的有效率是空。四个维度同一口径。"""
 
     overall = await reports.overall(Scope())
@@ -975,64 +973,6 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
     assert await executions_by_id(service) == before_executions
 
 
-async def test_whole_films_do_not_count_toward_any_metric(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
-) -> None:
-    """整片没有镜号，不是出片：C1 里一条完成、一条失败、一条还在跑，镜、生成次数、有效镜、片长与任务
-    执行都不变。下载整片怎么算见下面两条。"""
-
-    before = await reports.overall(Scope())
-    before_users = await reports.by_user(Scope())
-    before_executions = await executions_by_id(service)
-    at = ago(minutes=30)
-    request = json.dumps(
-        request_to_payload(
-            whole_film_request(
-                [
-                    {
-                        "sourceJobId": seed.c1_shot1_video,
-                        "url": "https://example.test/c1-1.mp4",
-                        "startMs": 0,
-                        "endMs": 1000,
-                    }
-                ]
-            )
-        )
-    )
-    films = {status: uuid.uuid4() for status in (STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED)}
-    async with engine.begin() as conn:
-        for status, film in films.items():
-            await conn.execute(
-                text(
-                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
-                    " kind, operation, provider, request, status, output_url, duration_ms,"
-                    " created_at, submitted_at, finished_at)"
-                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'ffmpeg',"
-                    " CAST(:request AS jsonb), :status, :output_url, :duration_ms,"
-                    " :at, :at, :finished_at)"
-                ),
-                {
-                    "id": film,
-                    "owner": seed.sara,
-                    "conversation": seed.c1,
-                    "kind": KIND_VIDEO,
-                    "operation": OPERATION_COMPOSE,
-                    "request": request,
-                    "status": status,
-                    "output_url": "https://example.test/film.mp4"
-                    if status == STATUS_COMPLETED
-                    else None,
-                    "duration_ms": 1000 if status == STATUS_COMPLETED else None,
-                    "at": at,
-                    "finished_at": None if status == STATUS_SUBMITTED else at,
-                },
-            )
-
-    assert await reports.overall(Scope()) == before
-    assert await reports.by_user(Scope()) == before_users
-    assert await executions_by_id(service) == before_executions
-
-
 async def plant_conversation(
     conn: AsyncConnection,
     *,
@@ -1097,7 +1037,7 @@ async def plant_composite(
     base: uuid.UUID,
     at: datetime,
 ) -> uuid.UUID:
-    """在出片 ``base`` 上合成的一条成片：来源与原作都是它，镜号随它。"""
+    """在出片 ``base`` 上合成的一条素材片：来源与原作都是它，镜号随它。"""
 
     composite = uuid.uuid4()
     await conn.execute(
@@ -1136,52 +1076,6 @@ async def plant_composite(
     return composite
 
 
-async def plant_whole_film(
-    conn: AsyncConnection,
-    conversation_id: uuid.UUID,
-    *,
-    owner: uuid.UUID,
-    sources: list[uuid.UUID],
-    at: datetime,
-) -> uuid.UUID:
-    """一条完成的整片，按顺序每个出处取一秒；同一个出处可以出现几次。"""
-
-    film = uuid.uuid4()
-    request = whole_film_request(
-        [
-            {
-                "sourceJobId": source,
-                "url": f"https://example.test/{source}.mp4",
-                "startMs": 1000 * position,
-                "endMs": 1000 * (position + 1),
-            }
-            for position, source in enumerate(sources)
-        ]
-    )
-    await conn.execute(
-        text(
-            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-            " operation, provider, request, status, output_url, duration_ms, created_at,"
-            " submitted_at, finished_at)"
-            " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'ffmpeg',"
-            " CAST(:request AS jsonb), :status, :url, :duration_ms, :at, :at, :at)"
-        ),
-        {
-            "id": film,
-            "owner": owner,
-            "conversation_id": conversation_id,
-            "kind": KIND_VIDEO,
-            "operation": OPERATION_COMPOSE,
-            "request": json.dumps(request_to_payload(request)),
-            "status": STATUS_COMPLETED,
-            "url": f"https://example.test/{film}.mp4",
-            "duration_ms": request.duration_ms,
-            "at": at,
-        },
-    )
-    return film
-
-
 async def plant_download(conn: AsyncConnection, job_id: uuid.UUID, *, user_id: uuid.UUID) -> None:
     await conn.execute(
         text(
@@ -1192,48 +1086,18 @@ async def plant_download(conn: AsyncConnection, job_id: uuid.UUID, *, user_id: u
     )
 
 
-async def test_downloading_a_whole_film_counts_each_shot_its_segments_come_from(
+async def test_a_composite_downloaded_in_a_fork_counts_toward_the_ancestors_shot(
     reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
-    """Derek 的新对话三镜各成一条，镜 2 上另有一条合成；整片两段取镜 1、一段取镜 2 的合成，镜 3
-    没用上。整片被下载两次：镜 1 只算一镜，合成按原作算到镜 2，镜 3 不算。与种子里 C1 下载出片、
-    下载合成得来的两镜合起来，有效镜共四镜；整片本身不加镜、不加生成次数。"""
-
-    before = await reports.overall(Scope())
-    at = ago(minutes=30)
-    async with engine.begin() as conn:
-        conversation = await plant_conversation(conn, owner=seed.derek, at=ago(hours=1))
-        one, two, _ = [
-            await plant_take(conn, conversation, owner=seed.derek, shot=shot, at=at)
-            for shot in (1, 2, 3)
-        ]
-        two_cut = await plant_composite(conn, conversation, owner=seed.derek, base=two, at=at)
-        film = await plant_whole_film(
-            conn, conversation, owner=seed.derek, sources=[one, two_cut, one], at=at
-        )
-        await plant_download(conn, film, user_id=seed.sara)
-        await plant_download(conn, film, user_id=seed.derek)
-
-    overall = await reports.overall(Scope())
-    assert (overall.shots, overall.attempts) == (before.shots + 3, before.attempts + 3)
-    assert (before.effective_shots, overall.effective_shots) == (2, 4)
-    assert (await reports.by_user(Scope()))[DEREK].effective_shots == 2
-    shots = (await executions_by_id(service))[conversation].shots
-    assert [(shot.shot, shot.effective) for shot in shots] == [(1, True), (2, True), (3, False)]
-
-
-async def test_a_whole_film_downloaded_in_a_fork_counts_like_a_composite(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
-) -> None:
-    """副本不进报表，但它里头下载的片照原作算回祖先：Sara 的源对话三镜各成一条，副本在继承来的
-    镜 1 上剪了合成，又用继承来的镜 2 和自己出的一条剪了整片。两条都被下载，源对话的镜 1、镜 2
-    成有效镜，镜 3 不算；副本自己出的那条不让任何一镜变有效，副本也不成任务执行。"""
+    """副本不进报表，但它里头下载的合成照原作算回祖先：Sara 的源对话三镜各成一条，副本在继承来的
+    镜 1 上剪了合成，自己也出了一条。两条都被下载，源对话只有镜 1 成有效镜；副本自己出的那条不让
+    任何一镜变有效，副本也不成任务执行。"""
 
     before = await reports.overall(Scope())
     at = ago(minutes=30)
     async with engine.begin() as conn:
         source = await plant_conversation(conn, owner=seed.sara, at=ago(hours=1))
-        one, two, _ = [
+        one, _, _ = [
             await plant_take(conn, source, owner=seed.sara, shot=shot, at=ago(minutes=50))
             for shot in (1, 2, 3)
         ]
@@ -1242,20 +1106,19 @@ async def test_a_whole_film_downloaded_in_a_fork_counts_like_a_composite(
         )
         own = await plant_take(conn, fork, owner=seed.derek, shot=4, at=at)
         composite = await plant_composite(conn, fork, owner=seed.derek, base=one, at=at)
-        film = await plant_whole_film(conn, fork, owner=seed.derek, sources=[two, own], at=at)
         await plant_download(conn, composite, user_id=seed.derek)
-        await plant_download(conn, film, user_id=seed.derek)
+        await plant_download(conn, own, user_id=seed.derek)
 
     overall = await reports.overall(Scope())
     assert (overall.shots, overall.effective_shots) == (
         before.shots + 3,
-        before.effective_shots + 2,
+        before.effective_shots + 1,
     )
     executions = await executions_by_id(service)
     assert fork not in executions
     assert [(shot.shot, shot.effective) for shot in executions[source].shots] == [
         (1, True),
-        (2, True),
+        (2, False),
         (3, False),
     ]
 

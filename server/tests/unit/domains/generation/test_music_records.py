@@ -26,7 +26,7 @@ from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.provider import ProviderError, ProviderSubmission
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import MAX_MUSIC_PROMPT_CHARS, MusicRequest
-from iclip.domains.generation.service import GenerationService, MusicTarget, SubtitleTarget
+from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
@@ -38,7 +38,7 @@ from tests.helpers.generation import (
     FAKE_VIDEO_PROVIDER,
     MUSIC_PROMPT,
     QUEUE_SETTINGS,
-    FixedBrandTemplates,
+    FakeMediaProbe,
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
@@ -47,7 +47,7 @@ from tests.helpers.generation import (
 from tests.helpers.identity import InMemoryUserRepository
 
 MODEL = "qwen-audio-3.1-tts-next"
-MUSIC = MusicTarget(provider=FAKE_MUSIC_PROVIDER, model=MODEL)
+MUSIC = ProviderTarget(provider=FAKE_MUSIC_PROVIDER, model=MODEL)
 MUSIC_URL = "https://cdn.test/iclip/agent/generated-music/m.m4a"
 
 
@@ -57,10 +57,6 @@ class _ClearedCompletions:
 
     async def record(self, conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         self.calls.append((conversation_id, owner))
-
-
-async def _no_probe(url: str) -> int:
-    raise AssertionError("生成背景音乐不在受理时探时长")
 
 
 @dataclass
@@ -87,7 +83,7 @@ class World:
 def build_world(
     jobs: list[GenerationJob],
     *,
-    music: MusicTarget | None = MUSIC,
+    music: ProviderTarget | None = MUSIC,
     music_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
@@ -128,9 +124,8 @@ def build_world(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
-        probe_duration_ms=_no_probe,
-        brand_templates=FixedBrandTemplates(),
-        subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
+        media_probe=FakeMediaProbe(),
+        subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,
     )
     holder["service"] = service
@@ -183,7 +178,7 @@ async def test_the_prompt_is_recorded_and_queued_exactly_as_sent() -> None:
                 "prompt": prompt,
                 "conversationId": str(conversation),
                 "taskId": str(task),
-                "metadata": {"film": "整片"},
+                "metadata": {"film": "春季上新"},
             },
         )
 
@@ -212,7 +207,7 @@ async def test_the_prompt_is_recorded_and_queued_exactly_as_sent() -> None:
         me,
         conversation,
         task,
-        {"film": "整片"},
+        {"film": "春季上新"},
     )
     assert (music.source_job_id, music.root_job_id, music.shot_index) == (None, None, None)
     assert len(world.tasks("generation.submit", FAKE_MUSIC_PROVIDER)) == 1

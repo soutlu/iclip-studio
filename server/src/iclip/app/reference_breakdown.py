@@ -33,7 +33,7 @@ from iclip.domains.references.models import (
 )
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 
 
 def _tag_system_prompt() -> str:

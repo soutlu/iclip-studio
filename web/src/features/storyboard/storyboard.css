@@ -90,13 +90,13 @@
    两个方向都量的容器；剩下的宽度都给文案列，文案列至少保留 clamp(320px, 40%, 480px)，不够时舞台列让。
    两列之间是一条贯穿主体高度的发丝分隔线，两侧各留 --storyboard-column-gap；上下排时没有分隔线。 */
 .storyboard-workbench {
-  /* 压在画面与深色舞台上的深色玻璃：舞台上的 @N、箭头、帧计数、工具按钮与成片卡角标共用，不随主题换。
+  /* 压在画面与深色舞台上的深色玻璃：舞台上的 @N、箭头、帧计数、工具按钮与素材片卡角标共用，不随主题换。
      只模糊不加饱和度、底色够密：压在高饱和的画面上（如彩条测试卡）也读作中性深色，不被染成彩色按钮。 */
   --storyboard-glass: color-mix(in srgb, var(--color-scrim) 64%, transparent);
   --storyboard-glass-hover: color-mix(in srgb, var(--color-scrim) 78%, transparent);
   --storyboard-glass-line: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
   container: storyboard-workbench / inline-size;
-  /* 舞台、成片区等叠层的局部 z-index 只在工作台里排序，不越过工作台与壳上的兄弟层；镜头组列表等浮层挂在 body 上，不受影响。 */
+  /* 舞台、素材片区等叠层的局部 z-index 只在工作台里排序，不越过工作台与壳上的兄弟层；镜头组列表等浮层挂在 body 上，不受影响。 */
   isolation: isolate;
   display: flex;
   width: 100%;
@@ -190,7 +190,7 @@
   position: absolute;
   inset: 0;
 }
-/* 文案列：占舞台列以外的宽度；正文区占满剩下的高度、自己竖向滚；列底留给成片区。 */
+/* 文案列：占舞台列以外的宽度；正文区占满剩下的高度、自己竖向滚；列底留给素材片区。 */
 .storyboard-script {
   display: flex;
   min-width: clamp(320px, 40%, 480px);
@@ -221,7 +221,7 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     padding-bottom: 4px;
-    /* 聚焦滚动（点成片卡、Tab 进正文）把目标停在吸顶的舞台下面，不被它盖住：舞台 45vh + 余量。 */
+    /* 聚焦滚动（点素材片卡、Tab 进正文）把目标停在吸顶的舞台下面，不被它盖住：舞台 45vh + 余量。 */
     scroll-padding-top: calc(45vh + 12px);
   }
   /* 舞台吸顶：往下读文案时画面和叠在上面的操作一直在；垫一层页面底色，滚过去的正文不透出来。 */
@@ -800,7 +800,7 @@
   background-color: var(--color-surface-container-lowest);
 }
 .storyboard-bar-segment {
-  padding: 0 12px;
+  padding: 0 8px;
   border-radius: var(--radius-xs);
   font-size: var(--text-body);
   font-variant-numeric: tabular-nums;
@@ -874,7 +874,7 @@
   }
 }
 
-/* 横向滚动行的两端渐隐：出片栏参数行与成片区共用；data-fade 由 useScrollFade 按还能往哪边滚给出，
+/* 横向滚动行的两端渐隐：出片栏参数行与素材片区共用；data-fade 由 useScrollFade 按还能往哪边滚给出，
    放得下时是 none、不遮。渐隐宽度各自用 --storyboard-fade 定。 */
 .storyboard-scroll-fade[data-fade='start'] {
   mask-image: linear-gradient(to right, transparent, black var(--storyboard-fade, 24px));
@@ -892,9 +892,9 @@
   );
 }
 
-/* ===== 成片区 =====
+/* ===== 素材片区 =====
    文案列底部一行横滑的出片卡。左右排时左边贴齐文案列起点、右边出血到工作台右边缘（抵掉主体的 16px 内距），
-   卡片在工作台边缘被切开，正文区自己滚、成片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
+   卡片在工作台边缘被切开，正文区自己滚、素材片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
    行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在工作台 ≥ 776 且放不下时出现。
    整张卡是按钮，选中那张套一圈中性描边；滚动行四周留 4px 给描边，负边距抵掉，卡的起点仍贴齐文案列。 */
 .storyboard-takes {
@@ -1049,7 +1049,7 @@
   }
 }
 @container storyboard-workbench (width < 640px) {
-  /* 上下排：两侧出血，排在正文之后跟着主体一起滚；舞台已吸顶，再钉住成片区正文就没地方了。 */
+  /* 上下排：两侧出血，排在正文之后跟着主体一起滚；舞台已吸顶，再钉住素材片区正文就没地方了。 */
   .storyboard-takes {
     margin: 0 -16px;
   }
@@ -1076,7 +1076,7 @@
   font-size: var(--text-body-sm);
   line-height: var(--text-body-sm--line-height);
 }
-/* 在途与失败的成片铺满画幅框：骨架或错误图标加完整原因，原因太长就在框里滚；按深色舞台配色，比舞台底亮一档。 */
+/* 在途与失败的素材片铺满画幅框：骨架或错误图标加完整原因，原因太长就在框里滚；按深色舞台配色，比舞台底亮一档。 */
 .storyboard-take-stage {
   --storyboard-shine: color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
   position: absolute;
@@ -1104,7 +1104,7 @@
 }
 
 /* ===== 舞台叠层 =====
-   层次从下到上：模糊铺底 → 暗角 → 画面（帧：整张是「打开原图」按钮；成片：共享播放器，自带底部控件胶囊）
+   层次从下到上：模糊铺底 → 暗角 → 画面（帧：整张是「打开原图」按钮；素材片：共享播放器，自带底部控件胶囊）
    → 顶部工具条、左右切帧箭头与底部正中的帧计数 → 拖放提示。
    叠层是画面的兄弟、叠在它上面，点它们不开原图、不碰播放器；它们在舞台的拖放区里，拖到上面照样替换。
    铺底：画面比例与分镜画幅不一致时，空出来的地方露出同一张图的模糊暗版，上下排时舞台两侧也是它；
@@ -1176,8 +1176,8 @@
 }
 
 /* ===== 舞台工具条 =====
-   舞台顶部一条叠层，左右各一簇、放不下时左边让：左上是身份与状态（帧：@N，下面挂任务角标与上传状态；成片：不挂信息），
-   右上是深色玻璃按钮（帧：编辑、替换，带字；成片：ⓘ 成片信息、下载、编辑视频、回填，只有图标）。
+   舞台顶部一条叠层，左右各一簇、放不下时左边让：左上是身份与状态（帧：@N，下面挂任务角标与上传状态；素材片：不挂信息），
+   右上是深色玻璃按钮（帧：编辑、替换，带字；素材片：ⓘ 素材片信息、下载、编辑视频、回填，只有图标）。
    条本身不接指针，点空处等于点画面；按钮常显，触屏与窄屏都点得到。舞台窄于 240 时带字按钮收起文字、退成图标，
    收起与否只在这里定，StageAction 读样式结果决定要不要提示。 */
 .storyboard-stage-bar {
@@ -1301,7 +1301,8 @@
   opacity: 1;
 }
 /* ===== 编辑器舞台共用 =====
-   图片编辑与视频编辑的舞台模糊底、画面图框与版本条小图格（components/stage-backdrop、version-thumb）。 */
+   图片编辑与视频编辑的舞台模糊底、画面图框、画面上的状态胶囊与版本条小图格
+   （components/stage-backdrop、stage-failure、version-thumb）。 */
 /* 舞台模糊底：舞台上那张图放大、模糊后压一层底色，画面两侧不留空。 */
 .stage-backdrop {
   position: absolute;
@@ -1331,6 +1332,87 @@
   box-shadow:
     0 0 0 0.5px color-mix(in srgb, var(--color-scrim) 10%, transparent),
     0 18px 40px -16px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+}
+/* 生成中与失败：画面保持清晰，压暗一层把正中的胶囊托出来；失败压得更暗。 */
+.stage-dim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-scrim) 30%, transparent);
+}
+.stage-dim[data-failed] {
+  background: color-mix(in srgb, var(--color-scrim) 46%, transparent);
+}
+/* 画面正中的状态：胶囊一行，失败原因展开时铺在胶囊下面。 */
+.stage-status {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+}
+.stage-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.stage-pill {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-glass-base) 88%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-1);
+  backdrop-filter: blur(14px);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+.stage-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+.stage-pill-button {
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+}
+.stage-pill-button:hover {
+  background: var(--color-glass-base);
+  color: var(--color-on-surface);
+}
+.stage-pill-button[aria-expanded='true'] svg {
+  rotate: 180deg;
+}
+/* 原因多是服务端的原话，用正文字体读起来不像报错日志。 */
+.stage-reason {
+  width: 260px;
+  max-width: 100%;
+  max-height: min(180px, 50cqh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-popup-bg);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-3);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
 }
 /* 版本小图格：竖版小画面，没选的淡一些、小一点，选中的完整亮度加一圈细白边。
    默认 40×71，按画幅的尺寸由组件写在元素上。放在实底横条（窄屏）里时，所在编辑器在自己的断点里

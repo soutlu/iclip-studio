@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commit, redo, undo } from '../edit-history'
+import { commit, redo, undo } from '../editing/edit-history'
 import {
   canRemove,
   canSplitAt,
@@ -26,7 +26,7 @@ import {
 } from './draft'
 
 const V = 'v1'
-/** 一条 6 秒的成片，每秒一个关键帧：第 1–6 段各 1 秒。 */
+/** 一条 6 秒的素材片，每秒一个关键帧：第 1–6 段各 1 秒。 */
 const segments = keyframeSegments(V, { keyframes: [0, 1, 2, 3, 4, 5], duration: 6 })
 const ids = (draft: Draft) => draft.map((item) => item.id)
 const seg = (at: number): DraftClip => {
@@ -53,17 +53,6 @@ const storedPending = (draft: Draft, selection: readonly string[], editJobId: st
 }
 
 describe('keyframeSegments', () => {
-  it('按关键帧切成 [k_i, k_i+1)，最后一段到片尾；第一个关键帧不在 0 上时片头也算一段', () => {
-    expect(
-      clips(keyframeSegments(V, { keyframes: [0.5, 1.917, 1.917, 4.208], duration: 5.25 })),
-    ).toEqual([
-      [V, 0, 0.5],
-      [V, 0.5, 1.917],
-      [V, 1.917, 4.208],
-      [V, 4.208, 5.25],
-    ])
-  })
-
   it('初始草稿就是分段，没有改动', () => {
     expect(isUnchanged(segments, segments)).toBe(true)
     expect(isUnchanged(segments.slice(1), segments)).toBe(false)

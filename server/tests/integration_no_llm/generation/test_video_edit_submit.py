@@ -31,11 +31,10 @@ from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import (
-    FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
@@ -87,7 +86,6 @@ def _edit_module(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
-        brand_templates=FixedBrandTemplates(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -232,6 +230,7 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
             kind=KIND_VIDEO,
             url=server.url("clip.mp4"),
             content_md5=CLIP_MD5,
+            conversation_id=None,
         )
         mine = await records.record_upload(
             me,
@@ -239,6 +238,7 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
             kind=KIND_VIDEO,
             url=server.url("my-copy.mp4"),
             content_md5=CLIP_MD5,
+            conversation_id=None,
         )
         job = await module.service.submit_video_edit(
             me, _edit_in(take.id, mine.url, start_ms=1000, end_ms=3000)

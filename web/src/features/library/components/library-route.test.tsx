@@ -7,10 +7,10 @@ import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { mockLibraryVideos } from '@/testing/mocks/library'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
-import { DEFAULT_LIBRARY_SCOPE, type LibraryScope } from '../library.api'
+import { stubScrollViewport } from '@/testing/scroll-viewport'
+import { DEFAULT_LIBRARY_SCOPE, libraryQueryKeys, type LibraryScope } from '../library.api'
 import { LibraryRoute } from './library-route'
 
-/** 测试壳持有筛选范围与打开着的详情，与路由把两者存在查询参数里的归属一致：改筛选时详情随之关掉。 */
 function Harness({
   onScope,
   initialVideo = null,
@@ -37,7 +37,6 @@ function Harness({
   )
 }
 
-/** 记下每次列表请求的查询串。 */
 const recordListQueries = () => {
   const queries: URLSearchParams[] = []
   server.events.on('request:start', ({ request }) => {
@@ -53,23 +52,11 @@ const cardNames = () =>
 const SKATE = '滑板女孩 · 厚底靴街拍'
 const SANDALS = '春夏凉鞋合集'
 
-/** jsdom 没有排版，元素尺寸都是 0；给页面滚动容器一个视口大小，虚拟列表才会渲染视口里的卡片。 */
-const stubScrollViewport = () => {
-  const sizeOf = (element: HTMLElement, size: number) => (element.tagName === 'MAIN' ? size : 0)
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    return sizeOf(this, 900)
-  })
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    return sizeOf(this, 1200)
-  })
-}
+const stubLibraryViewport = () =>
+  stubScrollViewport({ role: 'main', name: '资料库' }, { width: 1200, height: 900 })
 
 describe('LibraryRoute', () => {
-  beforeEach(stubScrollViewport)
+  beforeEach(stubLibraryViewport)
 
   it('lists one card per storyboard with its badges and the total', async () => {
     await renderWithProviders(<Harness />)
@@ -77,17 +64,14 @@ describe('LibraryRoute', () => {
     const skate = await screen.findByRole('article', { name: SKATE })
     expect(within(skate).getByText('6 版')).toBeVisible()
     expect(within(skate).getByText(/4 镜/)).toBeVisible()
-    // 只有一个镜头组的卡不标组数
     expect(within(skate).queryByText(/组$/)).not.toBeInTheDocument()
     const beach = screen.getByRole('article', { name: '童鞋海边亲子' })
     expect(within(beach).getByText('合成')).toBeVisible()
     expect(within(beach).getByText('4 版')).toBeVisible()
     expect(within(beach).getByText(/0:15/)).toBeVisible()
-    // 两个镜头组的版本合在一张卡上
     const sandals = screen.getByRole('article', { name: SANDALS })
     expect(within(sandals).getByText('2 组')).toBeVisible()
     expect(within(sandals).getByText('3 版')).toBeVisible()
-    // 没挂对话的纯文本出片没有镜数，只标时长
     const plain = screen.getByRole('article', { name: '接口提交' })
     expect(within(plain).queryByText(/镜$/)).not.toBeInTheDocument()
     expect(screen.getByText('共 6 条')).toBeVisible()
@@ -127,7 +111,6 @@ describe('LibraryRoute', () => {
 
     await waitFor(() => expect(cardNames()).toEqual([SKATE]))
     expect(queries.at(-1)?.get('q')).toBe('滑板')
-    // 输入过程中不逐字请求
     expect(queries.filter((query) => query.has('q'))).toHaveLength(1)
   })
 
@@ -157,10 +140,8 @@ describe('LibraryRoute', () => {
   })
 })
 
-/** 等一会儿，给本不该发出的请求留出发出的时间。 */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
-/** 三页、每页一张卡；`override` 给某一页换响应（挂住或报错），返回 undefined 就照常给。关键词「没有的词」什么都搜不到。 */
 const serveThreePages = (
   override?: (cursor: string) => Promise<Response | undefined> | Response | undefined,
 ) => {
@@ -184,7 +165,7 @@ const serveThreePages = (
 const cursorsOf = (queries: URLSearchParams[]) => queries.map((query) => query.get('cursor'))
 
 describe('library paging', () => {
-  beforeEach(stubScrollViewport)
+  beforeEach(stubLibraryViewport)
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -198,7 +179,6 @@ describe('library paging', () => {
 
     await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
     expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3'])
-    // 读完了页脚就收起，不再有读取状态
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     await settle()
     expect(queries).toHaveLength(3)
@@ -215,10 +195,7 @@ describe('library paging', () => {
     await renderWithProviders(<Harness />)
 
     await screen.findAllByRole('article')
-    const footer = screen.getByText('已显示 1 / 3').closest('footer')
-    // 不用再点：页脚里没有按钮
-    expect(footer).not.toBeNull()
-    expect(within(footer as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByText('已显示 1 / 3')).toBeVisible()
     await settle()
     expect(cursorsOf(queries)).toEqual([null])
 
@@ -274,13 +251,50 @@ describe('library paging', () => {
     await waitFor(() => expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3']))
     await settle()
     expect(queries).toHaveLength(3)
-    // 第二页的卡接在已读末尾之后
     await user.keyboard('{ArrowRight}')
+    expect(await screen.findByRole('dialog', { name: SKATE })).toBeVisible()
+  })
+
+  it('reads the next page once a background refresh ends while the viewer sits on the loaded end', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    const queries = recordListQueries()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let firstPageReads = 0
+    const [first, second] = mockLibraryVideos()
+    server.use(
+      http.get('*/api/library/videos', async ({ request }) => {
+        if (new URL(request.url).searchParams.has('cursor'))
+          return HttpResponse.json({ items: [second], nextCursor: null, total: null })
+        firstPageReads += 1
+        if (firstPageReads > 1) await held
+        return HttpResponse.json({ items: [first], nextCursor: 'p2', total: 2 })
+      }),
+    )
+    stubIntersectionObserver()
+    const user = userEvent.setup()
+    const { queryClient } = await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: '跑鞋手持展示' })
+
+    void queryClient.invalidateQueries({ queryKey: libraryQueryKeys.videos(DEFAULT_LIBRARY_SCOPE) })
+    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, null]))
+    const viewer = await openCard(user, '跑鞋手持展示')
+    const next = within(viewer).getByRole('button', { name: '下一条' })
+    await settle()
+    expect(cursorsOf(queries)).toEqual([null, null])
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+
+    release()
+    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, null, 'p2']))
+    await waitFor(() => expect(next).not.toHaveAttribute('aria-disabled'))
+    await user.click(next)
     expect(await screen.findByRole('dialog', { name: SKATE })).toBeVisible()
   })
 })
 
-/** 从列表点开一张卡的详情。 */
 const openCard = async (user: ReturnType<typeof userEvent.setup>, title: string) => {
   const card = await screen.findByRole('article', { name: title })
   await user.click(within(card).getByRole('button', { name: `查看详情：${title}` }))
@@ -292,7 +306,7 @@ const playerIn = (viewer: HTMLElement, title: string) =>
 
 describe('library viewer', () => {
   beforeEach(() => {
-    stubScrollViewport()
+    stubLibraryViewport()
     // jsdom 不播放媒体，play / pause 换成立即完成。
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
@@ -306,7 +320,6 @@ describe('library viewer', () => {
     const versions = await within(viewer).findByRole('group', { name: '该镜头组的版本' })
     expect(within(versions).getAllByRole('button')).toHaveLength(6)
     expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('6')
-    // 只有一个镜头组，不出组分段
     expect(within(viewer).queryByRole('group', { name: '镜头组' })).not.toBeInTheDocument()
 
     await user.click(within(viewer).getByRole('button', { name: '镜头 3，1.9 秒起' }))
@@ -336,7 +349,6 @@ describe('library viewer', () => {
     await user.click(await screen.findByRole('menuitem', { name: '打开来源任务' }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${own?.conversationId}`))
 
-    // 别人的卡同样带着对话 id，但读者打不开那段对话，就不给入口
     await user.keyboard('{Escape}')
     expect(mockLibraryVideos().find((video) => video.title === SANDALS)).toMatchObject({
       canOpenConversation: false,
@@ -432,24 +444,20 @@ describe('library viewer', () => {
 
     const viewer = await openCard(user, SANDALS)
     const groups = await within(viewer).findByRole('group', { name: '镜头组' })
-    // 卡面在只有一版的镜头组 1 上，没有版本分段
     expect(within(groups).getByRole('button', { pressed: true })).toHaveAccessibleName('1')
     expect(within(viewer).queryByRole('group', { name: '该镜头组的版本' })).not.toBeInTheDocument()
 
-    // 点组切到那一组最新的一版
     await user.click(within(groups).getByRole('button', { name: '2' }))
     const versions = await within(viewer).findByRole('group', { name: '该镜头组的版本' })
     expect(within(versions).getAllByRole('button')).toHaveLength(2)
     expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('2')
     expect(within(viewer).getByText('居家客厅，几何地毯与木柜；自然窗光。')).toBeVisible()
 
-    // 点版本只换版本，组不变
     await user.click(within(versions).getByRole('button', { name: '1' }))
     expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('1')
     expect(within(groups).getByRole('button', { pressed: true })).toHaveAccessibleName('2')
     await user.click(within(viewer).getByRole('tab', { name: '参数与来源' }))
     expect(within(viewer).getByText('第 1 版', { selector: 'dd' })).toBeVisible()
-    // 组不是卡：还是这张卡的详情
     expect(screen.getByRole('dialog', { name: SANDALS })).toBe(viewer)
 
     await user.click(within(groups).getByRole('button', { name: '1' }))
@@ -470,7 +478,6 @@ describe('library viewer', () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
 
-    // 只有一版的卡不会有这一行，也就不占
     let viewer = await openCard(user, '跑鞋手持展示')
     expect(within(viewer).queryByRole('status')).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
@@ -500,7 +507,6 @@ describe('library viewer', () => {
     const viewer = await openCard(user, '跑鞋手持展示')
     const card = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
 
-    // 详情回来之前不知道做不做得了：置灰、不说原因。
     const pending = within(viewer).getByRole('button', { name: '做同款' })
     expect(pending).toHaveAttribute('aria-disabled', 'true')
     act(() => pending.focus())
@@ -520,7 +526,6 @@ describe('library viewer', () => {
   it('explains why a card cannot be made the same way, on focus and on click', async () => {
     const user = userEvent.setup()
     const { router } = await renderWithProviders(<Harness />)
-    // 别人的卡：打不开那段对话，做不了同款。
     const viewer = await openCard(user, SANDALS)
     await within(viewer).findByRole('group', { name: '镜头组' })
     const search = router.state.location.search
@@ -574,7 +579,7 @@ describe('library viewer', () => {
 
 describe('library storyboard', () => {
   beforeEach(() => {
-    stubScrollViewport()
+    stubLibraryViewport()
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
     // 能悬停时卡片会挂预览视频，卸载时清地址要调 load。
@@ -588,7 +593,6 @@ describe('library storyboard', () => {
 
     await user.click(within(card).getByRole('button', { name: '故事板：4 镜，0:06' }))
     const sheet = await screen.findByRole('dialog', { name: '故事板' })
-    // 等过悬停浮层的起延迟（150ms）：不能悬停时用鼠标点也不该再起浮层
     await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
     expect(screen.getAllByRole('dialog', { name: '故事板' })).toHaveLength(1)
     expect(screen.getByRole('dialog', { name: '故事板' })).toBe(sheet)

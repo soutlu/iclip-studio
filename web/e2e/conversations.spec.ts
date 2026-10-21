@@ -64,8 +64,7 @@ test('不是从全部对话点进来的会话，返回按钮回默认视图', as
   await expect(page).toHaveURL('/conversations')
 })
 
-test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留键盘焦点', async ({ page }) => {
-  const screenshotDir = '../.artifacts/design-qa/audit-polish'
+test('全部对话的筛选在窄屏下可用，关闭后保留键盘焦点', async ({ page }) => {
   await page.setViewportSize({ width: 1524, height: 1032 })
   await page.clock.setFixedTime(new Date('2026-09-13T20:00:00Z'))
   await page.goto('/')
@@ -73,15 +72,10 @@ test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留�
   await page.getByRole('button', { name: '全部任务', exact: true }).click()
   const audit = page.getByRole('main', { name: '全部任务' })
   await expect(audit.getByRole('link')).toHaveCount(15)
-  await page.screenshot({ path: `${screenshotDir}/desktop-light.png`, animations: 'disabled' })
 
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await page.screenshot({ path: `${screenshotDir}/desktop-dark.png`, animations: 'disabled' })
   await page.setViewportSize({ width: 390, height: 844 })
   const collapse = page.getByRole('button', { name: '折叠侧边栏' })
   if (await collapse.isVisible()) await collapse.click()
-  await page.screenshot({ path: `${screenshotDir}/mobile-dark.png`, animations: 'disabled' })
-  await page.emulateMedia({ colorScheme: 'light' })
 
   const userTrigger = page.getByRole('button', { name: '用户：用户', exact: true })
   await userTrigger.click()
@@ -109,12 +103,10 @@ test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留�
   await selectedTime.click()
   const calendar = page.getByRole('dialog', { name: '选择建立时间范围' })
   await expect(calendar.getByRole('gridcell', { selected: true })).toHaveCount(5)
-  await page.screenshot({ path: `${screenshotDir}/mobile-calendar.png`, animations: 'disabled' })
   await page.keyboard.press('Escape')
   await expect(selectedTime).toBeFocused()
   await selectedTime.click()
   await page.getByRole('radio', { name: '自定义', exact: true }).click()
   await expect(timeTrigger).toBeFocused()
   await expect(audit.getByRole('link')).toHaveCount(15)
-  await page.screenshot({ path: `${screenshotDir}/mobile-light.png`, animations: 'disabled' })
 })

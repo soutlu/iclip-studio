@@ -11,8 +11,7 @@ export const MOCK_MUSIC_URL = 'http://localhost/mock-audio/generated.wav'
 
 const SAMPLE_RATE = 22_050
 
-/** 单声道 16 位 PCM 的 WAV：一层持续的高音铺底（波形上看得出口播处压低），每拍一下 60 Hz 的低音鼓（0.15 秒内衰减），
- * 小节第一拍更响。拍点检测先滤掉 240 Hz 以上，只看得见鼓。 */
+/** 单声道 16 位 PCM 的 WAV：一层持续的高音铺底，每拍一下 60 Hz 的低音鼓（0.15 秒内衰减），小节第一拍更响。 */
 const beatTrackWav = (seconds: number, bpm: number): ArrayBuffer => {
   const length = Math.round(seconds * SAMPLE_RATE)
   const samples = Float32Array.from({ length }, (_, index) => {

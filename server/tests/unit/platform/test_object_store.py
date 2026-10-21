@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import oss2
 import pytest
@@ -462,3 +463,66 @@ def test_signed_put_uses_the_public_endpoint_even_with_an_internal_one() -> None
     url = OssObjectStore(settings).sign_put(object_key=KEY, headers={"Content-Type": "image/png"})
 
     assert urlsplit(url).netloc == "iclip.oss-cn-shenzhen.aliyuncs.com"
+
+
+FILM_KEY = f"{OSS_ROOT}/whole-films/e.mp4"
+PUBLIC_AND_INTERNAL = replace(INTERNAL, endpoint="https://oss-cn-shenzhen.aliyuncs.com")
+
+
+def _query(url: str) -> dict[str, str]:
+    return {key: values[0] for key, values in parse_qs(urlsplit(url).query).items()}
+
+
+NOW = 1_800_000_000
+"""钉住时钟：签名随过期时刻变，同一刻签出来的才能比。"""
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(time, "time", lambda: float(NOW))
+
+
+def _same_key_signed(method: str, endpoint: str, **kwargs: object) -> str:
+    """同一把凭证、同一刻、直接用 SDK 签的对照地址。"""
+
+    bucket = oss2.Bucket(oss2.Auth("ak", "sk"), endpoint, "iclip")
+    return str(bucket.sign_url(method, FILM_KEY, 6 * 3600, slash_safe=True, **kwargs))
+
+
+@pytest.mark.usefixtures("frozen_clock")
+def test_a_server_upload_goes_to_the_internal_host_and_binds_only_the_type() -> None:
+    """签名本地算：服务端上传走内网 host，过期时刻是现在加给的秒数；只签 Content-Type、不带 ACL 头，
+    对象随桶公共读。"""
+
+    signed = OssObjectStore(PUBLIC_AND_INTERNAL).sign_server_upload(
+        object_key=FILM_KEY, content_type="video/mp4", expires_seconds=6 * 3600
+    )
+
+    parts = urlsplit(signed.url)
+    assert parts.netloc == "iclip.oss-cn-shenzhen-internal.aliyuncs.com"
+    assert parts.path == f"/{FILM_KEY}"
+    assert _query(signed.url)["Expires"] == str(NOW + 6 * 3600)
+    assert dict(signed.headers) == {"Content-Type": "video/mp4"}
+    internal = "https://oss-cn-shenzhen-internal.aliyuncs.com"
+    typed = _same_key_signed("PUT", internal, headers={"Content-Type": "video/mp4"})
+    other_type = _same_key_signed("PUT", internal, headers={"Content-Type": "image/png"})
+    assert _query(signed.url)["Signature"] == _query(typed)["Signature"]
+    assert _query(other_type)["Signature"] != _query(signed.url)["Signature"], "类型签进了签名"
+
+
+def test_a_server_upload_without_an_internal_endpoint_uses_the_public_one() -> None:
+    signed = OssObjectStore(SETTINGS).sign_server_upload(
+        object_key=FILM_KEY, content_type="video/mp4", expires_seconds=3600
+    )
+
+    assert urlsplit(signed.url).netloc == "iclip.oss.test"
+
+
+def test_a_server_upload_refuses_keys_outside_the_namespace_and_a_blank_type() -> None:
+    store = OssObjectStore(SETTINGS)
+    with pytest.raises(ValueError):
+        store.sign_server_upload(
+            object_key="other/e.mp4", content_type="video/mp4", expires_seconds=3600
+        )
+    with pytest.raises(ValueError):
+        store.sign_server_upload(object_key=FILM_KEY, content_type=" ", expires_seconds=3600)

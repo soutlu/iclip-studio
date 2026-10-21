@@ -35,13 +35,12 @@ from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
-from iclip.platform.media.ffmpeg import MediaError
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
-    FixedBrandTemplates,
+    FakeMediaProbe,
     FixedLineage,
     InMemoryGenerationRepository,
     build_queue,
@@ -88,20 +87,6 @@ DURATIONS_MS = {
     CLIP_URL: 5000,
 }
 """远程探测替身认得的地址与时长：基底 6 秒，片段 5 秒；参考时长独立于基底替换区间。"""
-
-
-class FakeProbe:
-    """远程探测替身：按地址给时长，不认得的地址像取不到一样抛 ``MediaError``；记下探过哪些。"""
-
-    def __init__(self, durations: Mapping[str, int]) -> None:
-        self._durations = dict(durations)
-        self.probed: list[str] = []
-
-    async def __call__(self, url: str) -> int:
-        self.probed.append(url)
-        if url not in self._durations:
-            raise MediaError(f"取不到素材: {url}")
-        return self._durations[url]
 
 
 IMAGE_MODELS = {"nano_banana_pro": NANO_BANANA_PRO.spec, "seedream_v5_pro": SEEDREAM_V5_PRO.spec}
@@ -156,7 +141,7 @@ def build_test_app(
     app = app_with_principal(granted)
     cleared = ClearedCompletions()
     app.state.cleared_completions = cleared
-    probe = FakeProbe(durations)
+    probe = FakeMediaProbe(durations)
     app.state.probe = probe
 
     queue, _ = build_queue(repo)
@@ -177,8 +162,7 @@ def build_test_app(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
-        probe_duration_ms=probe,
-        brand_templates=FixedBrandTemplates(),
+        media_probe=probe,
     )
     app.include_router(
         create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))
@@ -200,8 +184,15 @@ def test_openapi_publishes_generation_kind_operation_and_status_as_enums() -> No
 
     app = build_test_app(InMemoryGenerationRepository(), granted=None)
     fields = app.openapi()["components"]["schemas"]["GenerationOut"]["properties"]
-    assert fields["kind"]["enum"] == ["video", "image", "subtitle", "audio"]
-    assert fields["operation"]["enum"] == ["generate", "compose", "cut", "upload"]
+    assert fields["kind"]["enum"] == ["video", "image", "subtitle", "audio", "whole_film"]
+    assert fields["operation"]["enum"] == [
+        "generate",
+        "compose",
+        "cut",
+        "upload",
+        "render",
+        "enhance",
+    ]
     assert fields["status"]["enum"] == ["pending", "submitting", "submitted", "completed", "failed"]
 
 
@@ -1362,7 +1353,7 @@ async def test_an_edit_needs_a_finished_take_as_its_base(role: str) -> None:
         )
 
     assert response.status_code == 422, response.text
-    assert "成片" in response.json()["detail"]
+    assert "素材片" in response.json()["detail"]
     assert set(repo.jobs) == seeded
 
 
@@ -1678,11 +1669,11 @@ async def test_a_composite_needs_a_finished_master_as_its_base(role: str) -> Non
         )
 
     assert response.status_code == 422, response.text
-    assert "基底必须是一条已完成的成片" in response.json()["detail"]
+    assert "基底必须是一条已完成的素材片" in response.json()["detail"]
     assert set(repo.jobs) == seeded
 
 
-@pytest.mark.parametrize("role", ["别的基底的编辑段", "还在跑的编辑段", "另一条成片"])
+@pytest.mark.parametrize("role", ["别的基底的编辑段", "还在跑的编辑段", "另一条素材片"])
 async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: str) -> None:
     """每段要么出自基底本身，要么出自基于这个基底的一条已完成编辑段；别的一律拒，不落库。"""
 
@@ -1747,9 +1738,11 @@ async def test_a_segment_from_an_edit_in_another_conversation_is_out_of_scope() 
     [
         (7000, 7.04, True),
         (7000, 7.06, False),
+        (1957, 2.007, True),
+        (1957, 2.008, False),
         (None, 30, True),
     ],
-    ids=["容差之内", "超出时长", "没量过时长不判"],
+    ids=["容差之内", "超出时长", "恰好多出容差", "多出容差加一毫秒", "没量过时长不判"],
 )
 async def test_a_segment_end_stays_within_its_sources_duration(
     duration_ms: int | None, end: float, accepted: bool

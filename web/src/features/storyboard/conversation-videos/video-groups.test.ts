@@ -20,7 +20,7 @@ const ids = (groups: ReturnType<typeof groupConversationVideos>) =>
   groups.map((group) => group.videos.map((video) => video.id))
 
 describe('groupConversationVideos', () => {
-  it('只收成片：完成、有地址的出片与有基底的合成；图片、编辑段、在途、失败与没有来源的合成都不算', () => {
+  it('只收素材片：完成、有地址的出片与有基底的合成；图片、编辑段、在途与失败的都不算', () => {
     const groups = groupConversationVideos([
       job('original'),
       job('image', { kind: 'image' }),
@@ -37,7 +37,6 @@ describe('groupConversationVideos', () => {
       }),
       composite('composite', 'original', { createdAt: '2026-09-01T10:05:00Z' }),
       composite('composing', 'original', { status: 'submitted', outputUrl: null }),
-      job('whole-film', { operation: 'compose', shotIndex: null }),
     ])
 
     expect(ids(groups)).toEqual([['original', 'composite']])

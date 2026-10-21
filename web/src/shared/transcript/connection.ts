@@ -150,8 +150,9 @@ export type SessionUpdate =
       /** 任务没有来源对话时为 null，mark.seq 也随之为 null。 */
       conversationId: string | null
       jobId: string
-      /** 生成种类与业务状态，词表同 GenerationOut。 */
+      /** 生成种类、操作与业务状态，词表同 GenerationOut；属主在 mark.ownerUserId。 */
       jobKind: GenerationChange['kind']
+      operation: GenerationChange['operation']
       status: GenerationChange['status']
       /** 调用方自带的坐标，原样转发；由消费方自己解释。 */
       metadata: Record<string, unknown> | null
@@ -450,6 +451,7 @@ export class TranscriptConnection {
           kind: 'generation',
           mark: { ...markOf(envelope.data), seq: envelope.data.seq ?? null },
           metadata: parsed.data.metadata ?? null,
+          operation: parsed.data.operation,
           status: parsed.data.status,
         })
         return

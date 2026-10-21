@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from iclip.domains.conversations.models import Conversation, ConversationActivity, EventWatermark
 from iclip.domains.conversations.schemas import (
@@ -52,6 +53,16 @@ from iclip.domains.conversations.service import (
     DeletedFilter,
     ListAgents,
     ListState,
+    WholeFilmRenderUnavailable,
+)
+from iclip.domains.conversations.whole_film_schemas import (
+    WholeFilmDraftIn,
+    WholeFilmDraftOut,
+    WholeFilmDraftSavedOut,
+    WholeFilmExportIn,
+    WholeFilmExportLatestOut,
+    WholeFilmExportStartedOut,
+    whole_film_export_out,
 )
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
@@ -60,6 +71,16 @@ from iclip.domains.identity.public import (
     require_permission,
 )
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
+
+
+@contextmanager
+def _render_unavailable_as_502() -> Generator[None]:
+    """渲染服务不可用不是调用方的错，照 SSO / PMS 不可达的先例答 502，``detail`` 是原因。"""
+
+    try:
+        yield
+    except WholeFilmRenderUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def create_conversations_router(
@@ -441,6 +462,83 @@ def create_conversations_router(
             run_version=body.run_version,
         )
         return FilmJobOut(job_id=job_id)
+
+    @router.get("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftOut)
+    async def read_whole_film_draft(
+        conversation_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> WholeFilmDraftOut:
+        """读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
+        ``document`` 与 ``updatedAt`` 为 null。"""
+
+        found = await service.whole_film_draft(principal, conversation_id)
+        if found is None:
+            return WholeFilmDraftOut(revision=0, document=None, updated_at=None)
+        draft, document = found
+        return WholeFilmDraftOut(
+            revision=draft.revision, document=document, updated_at=draft.updated_at
+        )
+
+    @router.put("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftSavedOut)
+    async def save_whole_film_draft(
+        conversation_id: uuid.UUID,
+        body: WholeFilmDraftIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> WholeFilmDraftSavedOut:
+        """整份保存成片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有
+        草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。"""
+
+        saved = await service.save_whole_film_draft(
+            principal, conversation_id, revision=body.revision, document=body.document
+        )
+        return WholeFilmDraftSavedOut(revision=saved.revision, updated_at=saved.updated_at)
+
+    @router.post(
+        "/{conversation_id}/whole-film/exports",
+        response_model=WholeFilmExportStartedOut,
+        status_code=202,
+    )
+    async def export_whole_film(
+        conversation_id: uuid.UUID,
+        body: WholeFilmExportIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> WholeFilmExportStartedOut:
+        """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id 与用到的素材片。只有属主能导；
+        ``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。
+        渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。"""
+
+        export_id, sources = await service.export_whole_film(
+            principal, conversation_id, revision=body.revision
+        )
+        return WholeFilmExportStartedOut(export_id=export_id, source_job_ids=list(sources))
+
+    @router.get(
+        "/{conversation_id}/whole-film/exports/latest", response_model=WholeFilmExportLatestOut
+    )
+    async def latest_whole_film_export(
+        conversation_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> WholeFilmExportLatestOut:
+        """这段对话最新的一次导出走到哪一步，``done`` 时带成片的地址；还没导出过 ``export`` 为
+        null。只有属主能看。"""
+
+        found = await service.latest_whole_film_export(principal, conversation_id)
+        return WholeFilmExportLatestOut(
+            export=None if found is None else whole_film_export_out(found)
+        )
+
+    @router.delete("/{conversation_id}/whole-film/exports/{export_id}", status_code=204)
+    async def cancel_whole_film_export(
+        conversation_id: uuid.UUID,
+        export_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> Response:
+        """取消排队中或渲染中的导出；已结束的也答 204、不改状态。只有属主能取消；不是这段对话的
+        导出 404；正在交给渲染服务 409，稍后再取消；渲染服务不可用 502。"""
+
+        with _render_unavailable_as_502():
+            await service.cancel_whole_film_export(principal, conversation_id, export_id)
+        return Response(status_code=204)
 
     @router.patch("/{conversation_id}", response_model=ConversationEnvelope)
     async def rename_conversation(

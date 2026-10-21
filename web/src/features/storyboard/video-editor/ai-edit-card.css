@@ -1,5 +1,3 @@
-/* AI 改段的弹出卡：盖在舞台底部，画面不让位。水平位置与尖角由脚本按选区算（见 card-placement.ts），
-   这里只管外形；收成胶囊是同一个元素换外形。 */
 .video-editor-card {
   position: absolute;
   bottom: 16px;
@@ -14,7 +12,6 @@
   color: var(--color-on-surface);
 }
 
-/* 底边的小尖角，指向时间线上的选区。 */
 .video-editor-card::after {
   content: '';
   position: absolute;
@@ -37,7 +34,6 @@
     var(--shadow-2);
 }
 
-/* 换外形的那一下按动画的尺寸裁住内容；尖角等落定再出来。 */
 .video-editor-card[data-morphing] {
   overflow: hidden;
 }
@@ -70,7 +66,6 @@
   box-shadow: 0 0 0 0.5px var(--color-hairline);
 }
 
-/* 截不到帧的占位：卡底是 top-layer，深色下它和 container-high 同值；用默认边框色，两种主题下都看得出一块。 */
 .video-editor-card-frame.is-empty,
 .video-editor-card-mini-frame.is-empty {
   display: block;
@@ -95,7 +90,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 共享输入框就是卡身：去掉它自己的外框、底色与投影，贴着卡头排。 */
 .video-editor-card .video-editor-card-composer {
   border: 0;
   background: transparent;
@@ -111,20 +105,26 @@
   top: 10px;
 }
 
-/* 桌面保持单行参数；窄屏按原型换行，控件与图片 chip 外观不变。 */
+.video-editor-card-toolbar-leading {
+  min-width: 0;
+}
+
+.video-editor-card-toolbar-trailing {
+  flex-shrink: 0;
+}
+
 @media (max-width: 599px) {
-  .video-editor-card-composer > .flex {
+  .video-editor-card-toolbar {
     flex-wrap: wrap;
   }
 
-  .video-editor-card-composer > .flex > .flex:last-child {
+  .video-editor-card-toolbar-trailing {
     flex: 0 0 100%;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
 }
 
-/* 模型按钮尺寸固定，长名称省略显示，展开菜单仍显示完整名称。 */
 .video-editor-card .video-editor-model-picker {
   width: 148px;
   min-width: 148px;
@@ -132,110 +132,10 @@
   flex: 0 0 148px;
 }
 
-.video-editor-card-composer > .flex > .flex:first-child {
-  min-width: 0;
-}
-
-.video-editor-card-composer > .flex > .flex:last-child {
-  flex-shrink: 0;
-}
-
-.video-editor-duration {
-  display: flex;
-  width: 156px;
-  min-width: 80px;
-  max-width: calc(100vw - 234px);
-  flex: 0 1 156px;
-  align-items: center;
-  gap: 8px;
-  margin-left: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
-.video-editor-duration-slider {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  height: var(--control-height-md);
-  flex: 1;
-  align-items: center;
-  touch-action: none;
-  cursor: pointer;
-}
-
-.video-editor-duration-slider[data-disabled] {
-  cursor: default;
-  opacity: var(--state-disabled-content);
-}
-
-.video-editor-duration-track {
-  position: relative;
-  height: 4px;
-  flex: 1;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-highest);
-}
-
-.video-editor-duration-range {
-  position: absolute;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-primary);
-}
-
-.video-editor-duration-thumb {
-  position: relative;
-  display: block;
-  width: var(--icon-md);
-  height: var(--icon-md);
-  border: 2px solid var(--color-surface-container-lowest);
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  box-shadow: var(--shadow-1);
-}
-
-/* 仅扩大垂直热区，避免覆盖相邻的模式切换按钮。 */
-.video-editor-duration-thumb::before {
-  position: absolute;
-  inset: -12px 0;
-  content: '';
-}
-
-.video-editor-duration-value {
-  display: flex;
-  width: 32px;
-  flex: none;
-  justify-content: flex-end;
-  align-items: baseline;
-  gap: 3px;
-  font-size: var(--text-label);
-  font-weight: 500;
-}
-
-.video-editor-duration-value span {
-  font-size: var(--text-caption);
-  font-weight: 400;
-  color: var(--color-on-surface-muted);
-}
-
-.video-editor-card-composer > .flex > .flex:last-child > button:last-child {
-  height: var(--control-height-sm);
-  gap: 6px;
-  padding-inline: 10px;
-  font-size: var(--text-label);
-}
-
-.video-editor-card-composer > .flex > .flex:last-child > button:last-child > svg {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
-}
-
 .video-editor-card-body > [role='alert'] {
   padding: 0 16px 12px;
 }
 
-/* 收起后的小胶囊：首帧、要改哪几段、有没写完的字，点开再展开。 */
 .video-editor-card-mini {
   display: flex;
   height: var(--control-height-lg);

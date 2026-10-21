@@ -77,14 +77,18 @@ class StreamProgressTest(unittest.TestCase):
 
     def test_throttle_is_per_layer_and_completion_and_errors_are_immediate(self):
         output, logged = io.StringIO(), {}
+        now = 0.0
         with contextlib.redirect_stdout(output), mock.patch.object(
-            MODULE.time, "monotonic", side_effect=[0, 1, 1, 10, 10.1]
+            MODULE.time, "monotonic", new=lambda: now
         ):
             MODULE.emit(b"Copying blob abcdef012345 1 MiB", logged)
+            now = 1.0
             MODULE.emit(b"Copying blob abcdef012345 2 MiB", logged)
             MODULE.emit(b"Copying blob 123456abcdef 1 MiB", logged)
+            now = 10.0
             MODULE.emit(b"Copying blob abcdef012345 3 MiB", logged)
             MODULE.emit(b"Copying blob abcdef012345 done", logged)
+            now = 10.1
             MODULE.emit(b"Copying blob abcdef012345 4 MiB", logged)
             MODULE.emit(b"Copying blob abcdef012345 skipped", logged)
             MODULE.emit(

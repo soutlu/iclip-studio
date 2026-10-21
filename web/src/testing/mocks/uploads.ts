@@ -31,6 +31,20 @@ export const mockConfirmedUpload = (
   return { body: storedBytes.get(uploadId)?.body, contentType, url }
 }
 
+type ConfirmListener = (upload: {
+  uploadId: string
+  url: string
+  contentType: string
+  conversationId: string | null
+}) => void
+
+let confirmListener: ConfirmListener | null = null
+
+/** 确认上传时通知一声；生成记录的 mock 据此把挂到对话上的音乐记成一条上传的音频记录（合同 §10）。 */
+export const onMockUploadConfirmed = (listener: ConfirmListener) => {
+  confirmListener = listener
+}
+
 export const uploadHandlers = [
   http.post('*/api/uploads/sign', async ({ request }) => {
     const body = (await request.json()) as { contentType: string }
@@ -60,11 +74,14 @@ export const uploadHandlers = [
       : new HttpResponse(null, { status: 404 })
   }),
 
-  http.post('*/api/uploads/:uploadId/confirm', ({ params }) => {
+  http.post('*/api/uploads/:uploadId/confirm', async ({ params, request }) => {
     const uploadId = params['uploadId'] as string
     const contentType = signedUploads.get(uploadId) ?? 'image/png'
     const url = uploadUrlOf(uploadId)
     confirmedUploads.set(url, contentType)
+    const text = await request.text()
+    const body = text === '' ? {} : (JSON.parse(text) as { conversationId?: string | null })
+    confirmListener?.({ uploadId, url, contentType, conversationId: body.conversationId ?? null })
     return HttpResponse.json({ contentType, sizeBytes: 1024, url })
   }),
 ]

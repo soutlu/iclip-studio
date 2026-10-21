@@ -27,14 +27,18 @@ class MediaPaths:
         return f"{OSS_ROOT}/generated-images/{job_id}.{ext}"
 
     def generated_music(self, *, job_id: uuid.UUID, ext: str) -> str:
-        """生成并规整过的背景音乐：模型给的是 24 小时后失效的地址，规整后转存到这里。"""
 
         return f"{OSS_ROOT}/generated-music/{job_id}.{ext}"
 
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
-        """拼出来的成片，长期保留，不进过期规则。"""
+        """拼出来的素材片（合成），长期保留，不进过期规则。"""
 
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
+
+    def whole_film(self, *, job_id: uuid.UUID) -> str:
+        """导出的成片，按它那条生成记录的 id 命名，长期保留，不进过期规则。"""
+
+        return f"{OSS_ROOT}/whole-films/{job_id}.mp4"
 
     def shot_board(self, *, extraction_key: str, index: int) -> str:
         """按取帧键分目录，使同一视频与镜头表复用预览板。"""
@@ -59,7 +63,6 @@ class MediaPaths:
         return f"{OSS_ROOT}/uploads/{upload_id}."
 
     def font_upload(self, *, user_id: uuid.UUID, upload_id: uuid.UUID, ext: str) -> str:
-        """字体直传按主体隔离；确认时只查询当前主体下的对象。"""
 
         return f"{self.font_upload_prefix(user_id=user_id, upload_id=upload_id)}{ext}"
 

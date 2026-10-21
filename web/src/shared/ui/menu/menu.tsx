@@ -1,5 +1,5 @@
 import { DropdownMenu } from 'radix-ui'
-import type { ComponentProps, ComponentPropsWithoutRef } from 'react'
+import type { ComponentProps, ComponentPropsWithoutRef, ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { POPUP_SURFACE_CLASS } from '@/shared/ui/popup'
@@ -42,6 +42,8 @@ type MenuItemProps = ComponentPropsWithoutRef<typeof DropdownMenu.Item> & {
   destructive?: boolean
   icon?: Parameters<typeof Icon>[0]['name']
   shortcut?: readonly string[]
+  /** 靠右的灰色小字或小图标，如预计时间、计时、重试图标。 */
+  trailing?: ReactNode
 }
 
 export function MenuItem({
@@ -50,6 +52,7 @@ export function MenuItem({
   destructive = false,
   icon,
   shortcut,
+  trailing,
   ...props
 }: MenuItemProps) {
   return (
@@ -67,6 +70,11 @@ export function MenuItem({
         />
       ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
+      {trailing === undefined ? null : (
+        <span className="ml-4 flex shrink-0 items-center text-label text-on-surface-variant tabular-nums">
+          {trailing}
+        </span>
+      )}
       {shortcut?.length ? (
         <span className="ml-4 flex shrink-0 items-center gap-1 text-label text-on-surface-variant">
           {shortcut.map((key) => (
@@ -76,18 +84,6 @@ export function MenuItem({
       ) : null}
     </DropdownMenu.Item>
   )
-}
-
-const BARE_ITEM_CLASS =
-  // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
-  'ui-focus cursor-pointer rounded-sm outline-none select-none'
-
-/** 内容自排的菜单项（如一格缩略图）：只带焦点环与指针，键盘高亮与选中行为同 {@link MenuItem}。 */
-export function MenuBareItem({
-  className,
-  ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.Item>) {
-  return <DropdownMenu.Item className={cn(BARE_ITEM_CLASS, className)} {...props} />
 }
 
 /** `ref` 透传到菜单项，调用方可在打开后把焦点放到指定项上。 */

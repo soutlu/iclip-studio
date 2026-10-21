@@ -1,7 +1,7 @@
 /** 替换舞台当前帧的唯一流程：「替换图片」按钮与拖到舞台上都走这里。
  *
  * 一次只传一张。上传只属于发起它的那段的那一帧，不管舞台在显示什么：换段、换帧或这帧的地址变了即作废，迟到的结果不回填；
- * 舞台改放成片不算换目标。成功与失败都 toast，舞台在放成片时画面上的状态看不到。 */
+ * 舞台改放素材片不算换目标。成功与失败都 toast，舞台在放素材片时画面上的状态看不到。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -15,7 +15,7 @@ type Options = {
   /** 选中的帧；没有帧时无可替换，拖放锁定。 */
   frame: { number: number; url: string } | undefined
   editingDisabled: boolean
-  /** 舞台在放成片：当前帧不在舞台上，拖放锁定；进行中的替换照旧完成。 */
+  /** 舞台在放素材片：当前帧不在舞台上，拖放锁定；进行中的替换照旧完成。 */
   showingTake: boolean
   /** 新图已传好：把第 `frame` 帧从 `previousUrl` 换成 `url`。 */
   onReplace: (frame: number, previousUrl: string, url: string) => void

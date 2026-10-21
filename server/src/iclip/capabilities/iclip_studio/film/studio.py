@@ -163,12 +163,9 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
 
 
 MUSIC_VALUE: Final = "配乐"
-"""工程文件里写配乐描述的那段 ``text:Value`` 的名字，AI 导演写法里的固定名称之一。"""
 
 
 def music_description(film: Film) -> str | None:
-    """工程文件里「配乐」那段文字的正文，制作页拿它当生成背景音乐的提示词；没有这一段或正文为空时
-    为 None。它不进任何生图、视频提示词。"""
 
     project = film.project
     node = project.nodes.get(MUSIC_VALUE)

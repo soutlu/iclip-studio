@@ -54,7 +54,6 @@ def queue_dsn(database_url: str) -> str:
 
 
 OnCompleted = Callable[[GenerationJob], Awaitable[None]]
-"""一条记录带着产物地址转为完成之后的后续动作，收到的是刚写进去的那一行。"""
 
 
 class StillRunning(Exception):
@@ -67,6 +66,8 @@ class ProviderLane:
 
     provider: GenerationProvider
     concurrency: int
+    timeout_seconds: int | None = None
+    """这家提交后多久还没终态就按超时收尾；不写取 ``GenerationQueueSettings.job_timeout_seconds``。"""
 
 
 def _by_name(lanes: Sequence[ProviderLane]) -> Mapping[str, ProviderLane]:
@@ -87,7 +88,7 @@ class GenerationQueueSettings:
     """故障后的重试间隔，长于正常轮询间隔以降低故障期间的请求压力。"""
 
     job_timeout_seconds: int = 3600
-    """提交后达到此时限仍无终态则失败，限制持续轮询的总时长。"""
+    """提交后达到此时限仍无终态则失败，限制持续轮询的总时长；lane 自己写了时限的按 lane 的。"""
 
     video_submit_concurrency: int = 100
     """视频只有一家，它那条提交队列的并发不进配置。图片按家配，见 ProviderLane。"""
@@ -140,8 +141,6 @@ class GenerationQueue:
         settings: GenerationQueueSettings | None = None,
         on_completed: OnCompleted | None = None,
     ) -> None:
-        """``on_completed`` 在一条记录带着产物地址转为完成之后调一次（字幕记录完成不调），装配用它
-        给成片排字幕识别；它失败不影响那条记录。"""
 
         self._repo = repo
         self._on_completed = on_completed
@@ -209,8 +208,11 @@ class GenerationQueue:
             await self._not_configured(job, only_if_status=STATUS_PENDING)
             return
 
-        # 提交前持久化状态，确保请求中断后不会被视为未提交而重投。
-        await self._repo.mark_submitting(job.id)
+        # 提交前持久化状态，确保请求中断后不会被视为未提交而重投。只改还在排队的：读到 pending
+        # 之后它可能已被取消，这时不提交。
+        if await self._repo.mark_submitting(job.id) is None:
+            _logger.info("生成任务在提交之前已有结论，不再提交", job_id=job.id)
+            return
         try:
             submission = await lane.provider.submit(job)
         except ProviderError as exc:
@@ -234,7 +236,6 @@ class GenerationQueue:
             return
 
         if submission.sentences is not None:
-            # 字幕识别同步出结果：结果是逐句字幕，不是产物地址。
             self._settled(
                 job,
                 await self._repo.mark_transcribed(
@@ -284,20 +285,19 @@ class GenerationQueue:
         if job.status != STATUS_SUBMITTED:
             _logger.info("生成任务已有结论，不再轮询", job_id=job.id, status=job.status)
             return
-        if self._timed_out(job):
+        lane = self._lanes.get(job.provider)
+        timeout_seconds = self._timeout_seconds(lane)
+        if self._timed_out(job, timeout_seconds):
             self._settled(
                 job,
                 await self._repo.mark_failed(
                     job.id,
                     error_code="PROVIDER_TIMEOUT",
-                    error_message=(
-                        f"提交后 {self._settings.job_timeout_seconds} 秒仍无终态，按超时收尾"
-                    ),
+                    error_message=f"提交后 {timeout_seconds} 秒仍无终态，按超时收尾",
                     only_if_status=STATUS_SUBMITTED,
                 ),
             )
             return
-        lane = self._lanes.get(job.provider)
         if lane is None:
             # 不接住就是 KeyError 逃进重试策略，而它不设次数上限，会一直重排到总时限。
             await self._not_configured(job, only_if_status=STATUS_SUBMITTED)
@@ -455,10 +455,6 @@ class GenerationQueue:
         _logger.warning("生成任务提交中断，已判失败", job_id=job.id)
 
     async def _completed(self, job: GenerationJob, written: GenerationJob | None) -> None:
-        """产物写成完成之后交给 ``on_completed``；没写进去（别的执行已下了结论）就不交。
-
-        ``on_completed`` 出任何错都只记日志：这一条已经完成落库，后续动作失败不能改它的结论，
-        也不能逃进重试策略让这次执行重跑。"""
 
         self._settled(job, written)
         if written is None or self._on_completed is None:
@@ -477,10 +473,16 @@ class GenerationQueue:
         if written is None:
             _logger.info("生成任务在收尾之前已有结论，不改它", job_id=job.id)
 
-    def _timed_out(self, job: GenerationJob) -> bool:
+    def _timeout_seconds(self, lane: ProviderLane | None) -> int:
+        if lane is None or lane.timeout_seconds is None:
+            return self._settings.job_timeout_seconds
+        return lane.timeout_seconds
+
+    @staticmethod
+    def _timed_out(job: GenerationJob, timeout_seconds: int) -> bool:
         started = job.submitted_at or job.created_at
         elapsed = (datetime.now(UTC) - started).total_seconds()
-        return elapsed > self._settings.job_timeout_seconds
+        return elapsed > timeout_seconds
 
 
 __all__ = [

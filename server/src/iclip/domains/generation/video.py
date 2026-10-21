@@ -2,7 +2,7 @@
 
 请求字段照上游原样转发，只去掉我们自己加的归属字段与结构化 shot；成功时上游给的是它自己
 发布好的两个稳定地址（原片与水印版），直接存，不再转存。编辑段与出片一样转发：参考片段的
-地址受理时就在请求里。"""
+地址受理时就在请求里。超分（高清版）是同一家的另一个提交地址，任务查询与结果同出片。"""
 
 from __future__ import annotations
 
@@ -24,9 +24,16 @@ from iclip.domains.generation.provider import (
     request_of,
     user_name_of,
 )
-from iclip.domains.generation.schemas import NOT_FORWARDED_FIELDS, VideoGenerationIn
+from iclip.domains.generation.schemas import (
+    NOT_FORWARDED_FIELDS,
+    VideoEnhanceRequest,
+    VideoGenerationIn,
+)
 
 PROVIDER_NAME: Final = "video_api"
+
+_REQUESTS: Final = (VideoGenerationIn, VideoEnhanceRequest)
+"""这家处理的两类请求：出片与编辑段，以及超分。两者的任务查询是同一个接口。"""
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -47,6 +54,8 @@ class VideoProviderSettings:
     submit_url: str
     status_base_url: str
     api_key: str
+    enhance_submit_url: str | None = None
+    """超分的提交地址；为空就是没开通。超分的任务查询与出片走同一个地址。"""
 
 
 class HttpVideoProvider:
@@ -66,13 +75,25 @@ class HttpVideoProvider:
         return PROVIDER_NAME
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
-        request = request_of(job, VideoGenerationIn, provider=PROVIDER_NAME)
+        request = request_of(job, _REQUESTS, provider=PROVIDER_NAME)
         user_name_of(request)
-        # 没给的可选字段不发，上游的模型默认值才能生效；归属字段与 shot 是我们自己的，不发。
-        payload = request.model_dump(exclude_none=True, exclude=set(NOT_FORWARDED_FIELDS))
+        if isinstance(request, VideoEnhanceRequest):
+            if self._settings.enhance_submit_url is None:
+                raise ProviderError(
+                    "高清版没有开通，没有超分的提交地址",
+                    code="ENHANCE_NOT_CONFIGURED",
+                    retryable=False,
+                )
+            url = self._settings.enhance_submit_url
+            # 不插帧时不发 fps，上游按原片帧率出。
+            payload = request.model_dump(exclude_none=True)
+        else:
+            url = self._settings.submit_url
+            # 没给的可选字段不发，上游的模型默认值才能生效；归属字段与 shot 是我们自己的，不发。
+            payload = request.model_dump(exclude_none=True, exclude=set(NOT_FORWARDED_FIELDS))
         body = await self._request(
             "POST",
-            self._settings.submit_url,
+            url,
             json=payload,
             timeout=_SUBMIT_TIMEOUT_SECONDS,
             result_unknown_on_transport_error=True,
@@ -87,7 +108,7 @@ class HttpVideoProvider:
         return ProviderSubmission(provider_task_id=task_id.strip(), provider_status="queued")
 
     async def poll(self, job: GenerationJob) -> ProviderProgress:
-        request = request_of(job, VideoGenerationIn, provider=PROVIDER_NAME)
+        request = request_of(job, _REQUESTS, provider=PROVIDER_NAME)
         task_id = job.provider_task_id
         if task_id is None:
             raise ProviderError(
@@ -233,7 +254,7 @@ def _progress_from_body(
 
 
 def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: str) -> int | None:
-    """上游实测的成片时长 ``output_duration_seconds`` 折成毫秒；没给或给坏了都是 ``None``。
+    """上游实测的产物时长 ``output_duration_seconds`` 折成毫秒；没给或给坏了都是 ``None``。
 
     ``result.duration_ms`` 是生成耗时、请求里的 ``seconds`` 是目标时长，都不拿来顶替。"""
 
@@ -249,7 +270,7 @@ def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: s
                 return ms
     # 时长只是附带信息，给坏了不该让已经出好的片判失败。
     _logger.warning(
-        "视频上游给的成片时长不可用",
+        "视频上游给的产物时长不可用",
         job_id=job_id,
         task_id=task_id,
         output_duration_seconds=seconds,

@@ -1,0 +1,14 @@
+{
+  "files": {
+    "compositions/iclip/default-caption.html": { "replaces": null },
+    "compositions/components/grid-pixelate-wipe.html": {
+      "replaces": "60981a8c4a97c1686014543cefdeac439daa621d3da9074485834f16ed7ac03c"
+    },
+    "compositions/components/caption-texture.html": {
+      "replaces": "e5515306b83a8cec029fb28124b5633d634141b932f5921a5a1e25476ccf9155"
+    },
+    "compositions/components/caption-highlight.html": {
+      "replaces": "e3364ce3229e9f87e6094f6a26e53d2b61add606085e4c4a1c4d782c65abff9f"
+    }
+  }
+}

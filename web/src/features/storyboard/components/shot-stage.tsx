@@ -1,7 +1,7 @@
-/** 舞台列：只有舞台，纵向吃满到出片栏。按选中的是帧还是成片二选一，两种各自一套舞台内容与叠层；换了显示的东西舞台内容淡入。
- * 叠层都在舞台里：顶部工具条（帧：`FrameStageBar`；成片：`TakeStageBar`），显示帧时另有左右切帧箭头与底部的帧计数
- * （`StageFrameNav`），焦点在舞台里时 ←/→ 也切帧；成片舞台不接方向键。
- * 整块舞台是替换当前帧的拖放区，拖放提示盖在所有东西上面；显示成片时锁定。舞台列宽随分镜画幅，见 storyboard.css。 */
+/** 舞台列：只有舞台，纵向吃满到出片栏。按选中的是帧还是素材片二选一，两种各自一套舞台内容与叠层；换了显示的东西舞台内容淡入。
+ * 叠层都在舞台里：顶部工具条（帧：`FrameStageBar`；素材片：`TakeStageBar`），显示帧时另有左右切帧箭头与底部的帧计数
+ * （`StageFrameNav`），焦点在舞台里时 ←/→ 也切帧；素材片舞台不接方向键。
+ * 整块舞台是替换当前帧的拖放区，拖放提示盖在所有东西上面；显示素材片时锁定。舞台列宽随分镜画幅，见 storyboard.css。 */
 
 import {
   useRef,
@@ -39,7 +39,7 @@ export type FrameView = {
   onEditFrame: (frame: number, open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
 }
 
-/** 舞台显示选中的成片。 */
+/** 舞台显示选中的素材片。 */
 export type TakeView = {
   kind: 'take'
   take: Take
@@ -51,14 +51,14 @@ export type TakeView = {
 type ShotStageProps = {
   shotIndex: number
   aspectRatio: string
-  /** 替换当前帧的拖放区；显示成片时由 `useFrameReplacement` 锁定，不亮提示，进行中的替换照旧完成。 */
+  /** 替换当前帧的拖放区；显示素材片时由 `useFrameReplacement` 锁定，不亮提示，进行中的替换照旧完成。 */
   drop: ReturnType<typeof useFileDropTarget>
   view: FrameView | TakeView
 }
 
 export function ShotStage({ aspectRatio, drop, shotIndex, view }: ShotStageProps) {
   return (
-    // 分镜画幅挂在舞台列上：列宽按它算，帧画面也按它占位；成片的画面框用自己的画幅另挂。
+    // 分镜画幅挂在舞台列上：列宽按它算，帧画面也按它占位；素材片的画面框用自己的画幅另挂。
     <div
       className="storyboard-stage-column"
       style={{ '--storyboard-ar': aspectValueOf(aspectRatio) } as CSSProperties}
@@ -66,7 +66,7 @@ export function ShotStage({ aspectRatio, drop, shotIndex, view }: ShotStageProps
       {view.kind === 'frame' ? (
         <FrameStage aspectRatio={aspectRatio} drop={drop} shotIndex={shotIndex} view={view} />
       ) : (
-        // 换一条成片就整块重挂：淡入重来一次，播放器跟着卸载。
+        // 换一条素材片就整块重挂：淡入重来一次，播放器跟着卸载。
         <TakeStage drop={drop} key={view.take.job.id} view={view} />
       )}
     </div>

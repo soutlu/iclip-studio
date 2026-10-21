@@ -1,11 +1,9 @@
-/* 面板的底色、圆角与控制条在 video-editor.css；这里只排轨道。
-   上面 36px 是独立刻度区；一段是上下一对：视频 46px、中间 8px 放「改过」的灰线、原声 30px；
-   再往下隔 8px 是字幕轨、音乐轨，各 30px、间隔 8px。 */
 .video-editor-timeline {
-  --timeline-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
-
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
+  --timeline-handle-top: calc(var(--timeline-track-top) + 23px);
+  --timeline-playhead-top: calc(var(--timeline-track-top) - 4px);
+  --timeline-playhead-bottom: 0;
 
   display: flex;
   min-width: 0;
@@ -13,15 +11,11 @@
   color: var(--color-on-surface);
 }
 
-.dark .video-editor-timeline {
-  --timeline-wave: color-mix(in srgb, var(--color-on-surface) 52%, transparent);
-}
-
 .video-editor-timeline-heads {
   position: relative;
   flex: none;
   width: 76px;
-  height: calc(var(--timeline-track-top) + 160px);
+  height: calc(var(--timeline-track-top) + 84px);
 }
 
 .video-editor-timeline-head {
@@ -45,17 +39,6 @@
   height: 30px;
 }
 
-.video-editor-timeline-head.is-captions {
-  top: calc(var(--timeline-track-top) + 92px);
-  height: 30px;
-}
-
-.video-editor-timeline-head.is-music {
-  top: calc(var(--timeline-track-top) + 130px);
-  height: 30px;
-}
-
-/* 让出气泡、手柄与焦点环的位置；窄屏横向滚动。 */
 .video-editor-timeline-scroll {
   min-width: 0;
   flex: 1;
@@ -69,74 +52,10 @@
 .video-editor-timeline-lanes {
   position: relative;
   min-width: 520px;
-  height: calc(var(--timeline-track-top) + 160px);
+  height: calc(var(--timeline-track-top) + 84px);
   isolation: isolate;
 }
 
-.video-editor-timeline-ruler {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: var(--timeline-ruler-height);
-}
-
-/* 滑块本身透明，键盘焦点环画在刻度区上；指针按住拿到的焦点不画（见 editor-timeline.tsx 的 data-pointer）。 */
-.video-editor-timeline-ruler:has(> .video-editor-timeline-seek:focus-visible:not([data-pointer])) {
-  outline: var(--state-focus-ring) solid var(--color-focus-ring);
-  outline-offset: var(--state-focus-offset);
-}
-
-.video-editor-timeline-tick {
-  position: absolute;
-  top: 0;
-  translate: -50% 0;
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.video-editor-timeline-tick.is-first {
-  translate: 0 0;
-}
-
-.video-editor-timeline-tick.is-last {
-  translate: -100% 0;
-}
-
-.video-editor-timeline-seek {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: ew-resize;
-  touch-action: none;
-}
-
-/* 字幕轨、音乐轨：与原声同款的整条底，右端对齐各段之间留的 2px 缝。 */
-.video-editor-timeline-lane {
-  position: absolute;
-  right: 2px;
-  left: 0;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-.video-editor-timeline-lane.is-captions {
-  top: calc(var(--timeline-track-top) + 92px);
-}
-
-.video-editor-timeline-lane.is-music {
-  top: calc(var(--timeline-track-top) + 130px);
-}
-
-/* 一段：视频、灰线位、原声上下一列，点哪里都是点这一段。 */
 .video-editor-timeline-item {
   position: absolute;
   top: var(--timeline-track-top);
@@ -196,7 +115,6 @@
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
-/* 拖走的那几段在原处只留一个空框。 */
 .video-editor-timeline-item.is-slot .video-editor-timeline-face.is-video,
 .video-editor-timeline-item.is-slot .video-editor-timeline-face.is-audio {
   background: transparent;
@@ -205,24 +123,6 @@
 
 .video-editor-timeline-item.is-slot .video-editor-timeline-face > * {
   visibility: hidden;
-}
-
-.video-editor-timeline-frames {
-  display: flex;
-  min-width: 0;
-  height: 100%;
-  flex-basis: 0;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-on-surface-faint);
-}
-
-.video-editor-timeline-frames img,
-.video-editor-timeline-frame-empty {
-  min-width: 0;
-  height: 100%;
-  flex: 1 1 0;
-  object-fit: cover;
 }
 
 .video-editor-timeline-mark {
@@ -235,46 +135,6 @@
   background: var(--color-on-surface-muted);
 }
 
-.video-editor-timeline-wave {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  height: 100%;
-  flex-basis: 0;
-  align-items: center;
-  justify-content: center;
-}
-
-.video-editor-timeline-wave svg {
-  position: absolute;
-  inset: 3px 0;
-  width: 100%;
-  height: calc(100% - 6px);
-}
-
-.video-editor-timeline-wave path {
-  fill: none;
-  stroke: var(--timeline-wave);
-  stroke-width: 1.4;
-  vector-effect: non-scaling-stroke;
-}
-
-.video-editor-timeline-wave-loading {
-  width: calc(100% - 16px);
-  height: 2px;
-  border-radius: var(--radius-full);
-  background: var(--color-hairline);
-}
-
-.video-editor-timeline-wave-note {
-  overflow: hidden;
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  white-space: nowrap;
-}
-
-/* 草稿比所看那一版短：右边空出的那截只描一个细框。 */
 .video-editor-timeline-tail {
   position: absolute;
   top: var(--timeline-track-top);
@@ -284,7 +144,6 @@
   pointer-events: none;
 }
 
-/* 裁剪中被裁掉的那截：压一层面板底色，淡下去。 */
 .video-editor-timeline-ghost {
   position: absolute;
   top: var(--timeline-track-top);
@@ -294,89 +153,15 @@
   pointer-events: none;
 }
 
-/* 选中：视频段墨色 2px 框，对应的原声段 1px 淡墨细框。 */
+/* 只保留 AI 输入卡的选区定位锚点，不绘制选中外框。 */
 .video-editor-timeline-box {
   position: absolute;
   top: calc(var(--timeline-track-top) - 3px);
   z-index: var(--z-local-2);
   height: 52px;
-  border: 2px solid var(--color-on-surface);
-  border-radius: var(--radius-md);
   pointer-events: none;
 }
 
-.video-editor-timeline-box.is-linked {
-  top: calc(var(--timeline-track-top) + 53px);
-  height: 32px;
-  border-width: 1px;
-  border-color: var(--color-on-surface-faint);
-  border-radius: var(--radius-sm);
-}
-
-.video-editor-timeline-handle {
-  position: absolute;
-  top: calc(var(--timeline-track-top) - 3px);
-  z-index: var(--z-local-3);
-  display: grid;
-  width: 8px;
-  height: 52px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: var(--color-on-surface);
-  cursor: ew-resize;
-  touch-action: none;
-}
-
-.video-editor-timeline-handle.is-start {
-  translate: -3px 0;
-  border-radius: var(--radius-md) var(--radius-xs) var(--radius-xs) var(--radius-md);
-}
-
-.video-editor-timeline-handle.is-end {
-  translate: -7px 0;
-  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
-}
-
-/* 手柄只有 8px 宽，只横向放宽热区，避免侵入上方播放标尺。 */
-.video-editor-timeline-handle::before {
-  content: '';
-  position: absolute;
-  inset: 0 -10px;
-}
-
-.video-editor-timeline-handle::after {
-  content: '';
-  width: 2px;
-  height: 14px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
-}
-
-.video-editor-timeline-handle.is-pressed {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 16%, transparent);
-}
-
-.video-editor-timeline-bubble {
-  position: absolute;
-  top: -8px;
-  z-index: var(--z-local-3);
-  display: flex;
-  height: 22px;
-  align-items: center;
-  translate: -50% 0;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-/* 拖动调序：被拖的那串浮起来跟着指针，插入处一条墨线。 */
 .video-editor-timeline-lifted {
   position: absolute;
   top: calc(var(--timeline-track-top) - 10px);
@@ -422,32 +207,6 @@
 
 .video-editor-timeline-insert::after {
   bottom: -4px;
-}
-
-.video-editor-timeline-playhead {
-  position: absolute;
-  top: var(--timeline-track-top);
-  bottom: 0;
-  z-index: var(--z-local-3);
-  width: 2px;
-  translate: -1px 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-surface-container-lowest) 70%, transparent);
-  pointer-events: none;
-}
-
-.video-editor-timeline-playhead::before {
-  content: '';
-  position: absolute;
-  top: -24px;
-  left: 50%;
-  width: 14px;
-  height: 18px;
-  translate: -50% 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-on-surface);
-  box-shadow: 0 0 0 2px var(--color-surface-container-low);
 }
 
 @media (max-width: 599px) {
