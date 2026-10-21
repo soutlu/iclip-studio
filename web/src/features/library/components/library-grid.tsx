@@ -1,4 +1,4 @@
-/** 瀑布流：TanStack Virtual 的多列（lanes）虚拟列表，只渲染视口附近的卡片；列数随容器宽度变。成片与参考视频共用，卡片长什么样由调用方给。 */
+/** 瀑布流：TanStack Virtual 的多列（lanes）虚拟列表，只渲染视口附近的卡片；列数随容器宽度变。成片素材、灵感库与成片页共用，卡片长什么样由调用方给。 */
 
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react'

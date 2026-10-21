@@ -174,7 +174,7 @@ const generateButton = () => within(openCard()).getByRole('button', { name: '生
 const versionStrip = () => screen.getByRole('group', { name: '视频版本' })
 const versionButton = (label: string) =>
   within(versionStrip()).getByRole('button', { name: new RegExp(`^${label}(?: ·|$)`) })
-const scopeButton = (name: '整片' | '片段') =>
+const scopeButton = (name: '整条' | '片段') =>
   within(screen.getByRole('group', { name: '视频预览范围' })).getByRole('button', {
     name,
   })
@@ -903,15 +903,15 @@ describe('AI 改段的弹出卡', () => {
   })
 })
 
-describe('整片版本与片段选用', () => {
-  it('整片预览按时间线选用的媒体播放，选用编辑结果后无需合成', async () => {
+describe('整条版本与片段选用', () => {
+  it('整条预览按时间线选用的媒体播放，选用编辑结果后无需合成', async () => {
     serveChain([editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })])
     const user = userEvent.setup()
     await renderEditor()
     const track = await timeline()
     await user.click(segmentOf(track, 3))
     await user.click(versionButton('V1'))
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
       target: { value: '3' },
     })
@@ -953,7 +953,7 @@ describe('整片版本与片段选用', () => {
       expect(within(submitting).queryByRole('img', { name: '新结果' })).toBeNull()
       expect(chain).toHaveLength(0)
       expect(submitting).toHaveAccessibleName('V1 · 提交中')
-      expect(scopeButton('整片')).toBeDisabled()
+      expect(scopeButton('整条')).toBeDisabled()
       expect(scopeButton('片段')).toBeDisabled()
       await user.click(screen.getByRole('button', { name: '关闭视频编辑' }))
       expect(onClose).not.toHaveBeenCalled()
@@ -968,7 +968,7 @@ describe('整片版本与片段选用', () => {
       await within(versionStrip()).findByRole('button', { name: 'V1 · 生成中' }),
     ).toBeDisabled()
     expect(within(versionStrip()).queryByRole('button', { name: /提交中/ })).toBeNull()
-    expect(scopeButton('整片')).toBeEnabled()
+    expect(scopeButton('整条')).toBeEnabled()
     expect(scopeButton('片段')).toBeEnabled()
     await user.click(screen.getByRole('button', { name: '关闭视频编辑' }))
     expect(onClose).toHaveBeenCalledOnce()
@@ -1094,7 +1094,7 @@ describe('整片版本与片段选用', () => {
     expect(within(stage).queryByRole('button', { name: '查看原因' })).toBeNull()
   })
 
-  it('整片与片段共用现有版本栏，原片单独命名且时间线不挂编号', async () => {
+  it('整条与片段共用现有版本栏，原片单独命名且时间线不挂编号', async () => {
     serveChain([])
     const user = userEvent.setup()
     await renderEditor()
@@ -1105,14 +1105,14 @@ describe('整片版本与片段选用', () => {
     expect(within(versionStrip()).queryByRole('button', { name: /未合成/ })).toBeNull()
     expect(within(track).queryByText('原片')).toBeNull()
     expect(within(track).queryAllByText(/^V\d+$/)).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: '合成成片' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '合成新版本' })).toBeNull()
     await user.click(segmentOf(track, 2))
     expect(scopeButton('片段')).toHaveAttribute('aria-pressed', 'true')
     expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'true')
     expect(within(track).queryByText('原片')).toBeNull()
   })
 
-  it('已有编辑结果只列为候选；点击 V1 才选用，查看整片保留选择，恢复原片清除编号', async () => {
+  it('已有编辑结果只列为候选；点击 V1 才选用，查看整条保留选择，恢复原片清除编号', async () => {
     restoreMedia = stubMediaDurations({ [EDITED_URL]: 2.5 })
     serveChain([editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })])
     const user = userEvent.setup()
@@ -1129,9 +1129,9 @@ describe('整片版本与片段选用', () => {
     expect(within(segmentOf(track, 3)).getByText('V1')).toBeVisible()
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', EDITED_URL)
     expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.5 秒')
-    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '合成新版本' })).toBeEnabled()
 
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     expect(within(versionStrip()).getAllByRole('button')).toHaveLength(1)
     expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
@@ -1158,7 +1158,7 @@ describe('整片版本与片段选用', () => {
     await user.click(segmentOf(track, 1))
     await user.keyboard('{Delete}')
     expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(6)
-    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '合成新版本' })).toBeEnabled()
   })
 
   it('结果时长读不出来时不能选用，保留当前素材并说明失败', async () => {
@@ -1335,7 +1335,7 @@ describe('片段版本的提交来源', () => {
     await user.click(segmentOf(track, 5))
     await user.click(versionButton('V1'))
     await user.click(versionButton('原片'))
-    await user.click(screen.getByRole('button', { name: '合成成片' }))
+    await user.click(screen.getByRole('button', { name: '合成新版本' }))
     await waitFor(() => expect(submitted).toBeDefined())
     expect(submitted).toMatchObject({
       baseJobId: ROOT_ID,
@@ -1454,7 +1454,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     records = []
   })
 
-  it('合成完成后查看新整片，刷新与切换页面仍保留原基底上的剪辑选择', async () => {
+  it('合成完成后查看新合成的版本，刷新与切换页面仍保留原基底上的剪辑选择', async () => {
     serveRecords()
     serveComposeSubmit()
     const user = userEvent.setup()
@@ -1462,7 +1462,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     const track = await timeline()
     await user.click(segmentOf(track, 2))
     await user.keyboard('{Delete}')
-    await user.click(screen.getByRole('button', { name: '合成成片' }))
+    await user.click(screen.getByRole('button', { name: '合成新版本' }))
     await waitFor(() => expect(stored(ROOT_ID)).toContain(COMPOSITE_ID))
     finishComposite()
     await act(() => view.queryClient.invalidateQueries())
@@ -1502,7 +1502,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     const names = segmentNames(track)
     const total = readout()
     expect(names).toHaveLength(6)
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     const refreshed = await refresh(view)
     await waitFor(() => expect(stripLabels()).toEqual(['V1', '原片']))
     expect(segmentNames(await timeline())).toEqual(names)
@@ -1570,7 +1570,7 @@ describe('刷新与切换页面后的编辑历史', () => {
   })
 
   it.each([false, true])(
-    '合成期间关闭，回来时已完成=%s：等待会落定，剪辑选择保留，整片可切回原片',
+    '合成期间关闭，回来时已完成=%s：等待会落定，剪辑选择保留，整条可切回原片',
     async (finishBeforeReopen) => {
       serveRecords()
       serveComposeSubmit()
@@ -1578,7 +1578,7 @@ describe('刷新与切换页面后的编辑历史', () => {
       const view = await renderEditor()
       await user.click(segmentOf(await timeline(), 2))
       await user.keyboard('{Delete}')
-      await user.click(screen.getByRole('button', { name: '合成成片' }))
+      await user.click(screen.getByRole('button', { name: '合成新版本' }))
       await waitFor(() => expect(stored(ROOT_ID)).toContain(COMPOSITE_ID))
       view.unmount()
       if (finishBeforeReopen) finishComposite()
@@ -1588,7 +1588,7 @@ describe('刷新与切换页面后的编辑历史', () => {
         finishComposite()
         await act(() => reopened.queryClient.invalidateQueries())
       }
-      await user.click(scopeButton('整片'))
+      await user.click(scopeButton('整条'))
       await waitFor(() => expect(stripLabels()).toEqual(['V1', '原片']))
       await waitFor(() => expect(stored(ROOT_ID)).not.toContain(COMPOSITE_ID))
       expect(stored(ROOT_ID)).not.toBeNull()
@@ -1596,12 +1596,12 @@ describe('刷新与切换页面后的编辑历史', () => {
       expect(pickedLabel()).toBe('原片')
       expect(segmentNames(await timeline())).toHaveLength(8)
       expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
-      await user.click(scopeButton('整片'))
+      await user.click(scopeButton('整条'))
       expect(segmentNames(await timeline())).toHaveLength(7)
     },
   )
 
-  it('合成期间查看其他整片，关闭再回来：新整片仍可查看，当前剪辑不会被旧成片覆盖', async () => {
+  it('合成期间查看其他版本，关闭再回来：新合成的版本仍可查看，当前剪辑不会被旧版本覆盖', async () => {
     const NEXT_ID = '4c5d6e7f-8091-4b2c-9d3e-4f5a6b7c8d9e'
     records = [composite()]
     serveRecords()
@@ -1623,9 +1623,9 @@ describe('刷新与切换页面后的编辑历史', () => {
     const view = await renderEditor()
     await user.click(segmentOf(await timeline(), 2))
     await user.keyboard('{Delete}')
-    await user.click(screen.getByRole('button', { name: '合成成片' }))
+    await user.click(screen.getByRole('button', { name: '合成新版本' }))
     await waitFor(() => expect(stored(COMPOSITE_ID)).toContain(NEXT_ID))
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     await user.click(versionButton('原片'))
     view.unmount()
     records = records.map((job) =>
@@ -1646,7 +1646,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     await user.click(versionButton('原片'))
     expect(pickedLabel()).toBe('原片')
     expect(segmentNames(await timeline())).toHaveLength(8)
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     expect(segmentNames(await timeline())).toHaveLength(6)
   })
 
@@ -1672,9 +1672,9 @@ describe('刷新与切换页面后的编辑历史', () => {
     const view = await renderEditor()
     await user.click(segmentOf(await timeline(), 2))
     await user.keyboard('{Delete}')
-    await user.click(screen.getByRole('button', { name: '合成成片' }))
+    await user.click(screen.getByRole('button', { name: '合成新版本' }))
     await waitFor(() => expect(stored(COMPOSITE_ID)).toContain(NEXT_ID))
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     await user.click(versionButton('原片'))
     records = records.map((job) =>
       job.id === NEXT_ID ? { ...job, status: 'failed', errorMessage: '素材下载失败' } : job,
@@ -1684,12 +1684,12 @@ describe('刷新与切换页面后的编辑历史', () => {
     expect(pickedLabel()).toBe('原片')
     await waitFor(() => expect(stored(COMPOSITE_ID)).not.toContain(NEXT_ID))
     expect(stored(COMPOSITE_ID)).not.toBeNull()
-    expect(screen.getByRole('button', { name: '合成成片' })).toBeDisabled()
-    await user.click(scopeButton('整片'))
-    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '合成新版本' })).toBeDisabled()
+    await user.click(scopeButton('整条'))
+    expect(screen.getByRole('button', { name: '合成新版本' })).toBeEnabled()
   })
 
-  it('整片版本条点「合成失败」的格在舞台上看原因，点别的格后收起', async () => {
+  it('整条版本条点「合成失败」的格在舞台上看原因，点别的格后收起', async () => {
     records = [
       composite(),
       composite({
@@ -1722,7 +1722,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     expect(pickedLabel()).toBe('V1')
   })
 
-  it('查看历史时播放器和时间线同步，刷新保留历史选择，返回整片仍是保存的剪辑', async () => {
+  it('查看历史时播放器和时间线同步，刷新保留历史选择，返回整条仍是保存的剪辑', async () => {
     records = [composite()]
     serveRecords()
     const user = userEvent.setup()
@@ -1731,7 +1731,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     await user.click(segmentOf(track, 2))
     await user.keyboard('{Delete}')
     const names = segmentNames(track)
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     await user.click(versionButton('原片'))
     expect(segmentNames(track)).toHaveLength(8)
     expect(readout()).toBe('共 8.0 秒')
@@ -1755,7 +1755,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     expect(readout()).toBe('共 7.0 秒')
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', V1_URL)
     expect(stored(COMPOSITE_ID)).toBe(saved)
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     expect(segmentNames(await timeline())).toEqual(names)
     expect(pickedLabel()).toBeUndefined()
     expect(screen.getByRole('button', { name: '下载' })).toBeDisabled()
@@ -1779,7 +1779,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     window.localStorage.setItem(viewStorageKey(CONVERSATION, ROOT_ID), value)
     await renderEditor()
     expect(segmentNames(await timeline())).toHaveLength(6)
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     await waitFor(() => expect(stripLabels()).toEqual(['V1', '原片']))
     expect(pickedLabel()).toBeUndefined()
   })
@@ -1807,7 +1807,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     )
   })
 
-  it('链上超过 100 条编辑记录，较早的合成仍出现在整片版本栏', async () => {
+  it('链上超过 100 条编辑记录，较早的合成仍出现在整条版本栏', async () => {
     records = [
       composite(),
       ...Array.from({ length: 100 }, (_, at) =>
@@ -1823,7 +1823,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await user.click(scopeButton('整片'))
+    await user.click(scopeButton('整条'))
     await waitFor(() => expect(stripLabels()).toEqual(['V1', '原片']))
   })
 

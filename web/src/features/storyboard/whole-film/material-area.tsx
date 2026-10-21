@@ -32,13 +32,13 @@ export type MaterialCarry = {
 
 type MaterialAreaProps = {
   groups: readonly MaterialGroup[]
-  /** 成片还没读到或读取失败时，区域里放这个 */
+  /** 素材片还没读到或读取失败时，区域里放这个 */
   placeholder: ReactNode
   versionOf: (take: MaterialTake) => Material
   onVersion: (takeId: string, jobId: string) => void
   keyframes: KeyframeStates
   range: MaterialRange | null
-  /** 成片轨上每版成片已经用了的段，按 jobId 分；轨道底边画一道 */
+  /** 画面轨上每版素材片已经用了的段，按 jobId 分；轨道底边画一道 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
   /** 点镜头（或点选区）：选中它，预览放这一段 */
   onPick: (range: MaterialRange) => void
@@ -50,7 +50,7 @@ type MaterialAreaProps = {
   onInsert: () => void
   /** 预览在放选区时，素材里放到的时刻（毫秒） */
   previewMs: number | undefined
-  /** 拖着 range 到成片轨上松手；落在轨上返回 true */
+  /** 拖着 range 到画面轨上松手；落在轨上返回 true */
   onDrop: (clientX: number, clientY: number, range: MaterialRange) => boolean
   /** 拖动中指针移到哪；取消时为 null */
   onCarry: (carry: MaterialCarry | null) => void
@@ -91,7 +91,7 @@ export function MaterialArea({
         {placeholder ??
           (groups.length === 0 ? (
             <p className="wf-materials-empty">
-              这段对话还没有成片，出片完成后可在这里挑选片段加入整片
+              这段对话还没有素材片，出片完成后可在这里挑选片段加入成片
             </p>
           ) : (
             groups.map((group) => (
@@ -138,7 +138,7 @@ type TakeRowProps = {
   version: Material
   keyframes: KeyframeStates
   range: MaterialRange | null
-  /** 这一版在成片轨上已经用了的段 */
+  /** 这一版在画面轨上已经用了的段 */
   used: readonly UsedSpan[]
   previewMs: number | undefined
   onPick: (range: MaterialRange) => void
@@ -355,7 +355,7 @@ function TakeRow({
             ))}
         {shown !== null && durationMs !== undefined ? (
           <div
-            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，拖到成片轨上可加入，按 Enter 插到播放头处`}
+            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，拖到画面轨上可加入，按 Enter 插到播放头处`}
             className={cn('wf-range', lifting && 'is-lifting')}
             onPointerCancel={cancel}
             onPointerDown={(event) => press(event, 'body')}

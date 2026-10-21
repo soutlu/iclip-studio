@@ -26,7 +26,7 @@ import {
 } from './draft'
 
 const V = 'v1'
-/** 一条 6 秒的成片，每秒一个关键帧：第 1–6 段各 1 秒。 */
+/** 一条 6 秒的素材片，每秒一个关键帧：第 1–6 段各 1 秒。 */
 const segments = keyframeSegments(V, { keyframes: [0, 1, 2, 3, 4, 5], duration: 6 })
 const ids = (draft: Draft) => draft.map((item) => item.id)
 const seg = (at: number): DraftClip => {

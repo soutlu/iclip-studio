@@ -3,7 +3,7 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 
-/** 做同款的那条视频：卡片标题（来源对话没有标题时为 null，不压字）、卡面成片的地址与画幅。 */
+/** 做同款的那条视频：卡片标题（来源对话没有标题时为 null，不压字）、卡面素材片的地址与画幅。 */
 export type SameStyleVideo = {
   title: string | null
   outputUrl: string

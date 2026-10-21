@@ -37,9 +37,9 @@ type Props = {
   onFilmChange: (id: string | null, replace: boolean) => void
 }
 
-const titleOf = (film: WholeFilmCard) => film.title?.trim() || '未命名整片'
+const titleOf = (film: WholeFilmCard) => film.title?.trim() || '未命名成片'
 
-/** 资料库「成片」：全站导出的整片，一段对话一张卡，卡面是最新一次导出，详情里切换各版。 */
+/** 资料库「成片」：全站导出的成片，一段对话一张卡，卡面是最新一次导出，详情里切换各版。 */
 export function WholeFilmsRoute({
   tabs,
   scope,
@@ -66,9 +66,9 @@ export function WholeFilmsRoute({
       mainRef={mainRef}
       header={
         <LibraryPageHeader
-          description="收录团队导出的整片，每段任务保留每一次导出。"
+          description="收录团队导出的成片，每段任务保留每一次导出。"
           search={{
-            label: '搜索整片标题',
+            label: '搜索成片标题',
             placeholder: '搜索任务标题…',
             value: scope.q,
             onSearch: (q) => onScopeChange({ ...scope, q }),
@@ -93,16 +93,16 @@ export function WholeFilmsRoute({
           >
             {selected === undefined ? (
               <div className="flex flex-1 flex-col items-center justify-center p-6">
-                <DialogTitle className="sr-only">整片详情</DialogTitle>
+                <DialogTitle className="sr-only">成片详情</DialogTitle>
                 {query.isError ? (
                   <ListError
-                    message={errorMessageOf(query.error, '读取整片失败')}
+                    message={errorMessageOf(query.error, '读取成片失败')}
                     onRetry={() => void query.refetch()}
                   />
                 ) : query.isPending || query.hasNextPage ? (
-                  <ListPending label="正在读取整片…" />
+                  <ListPending label="正在读取成片…" />
                 ) : (
-                  <ListEmpty>该整片不在当前筛选范围内，无法显示；请关闭详情后清除筛选</ListEmpty>
+                  <ListEmpty>该成片不在当前筛选范围内，无法显示；请关闭详情后清除筛选</ListEmpty>
                 )}
                 <Button onClick={close} variant="ghost">
                   关闭
@@ -125,13 +125,13 @@ export function WholeFilmsRoute({
       <LibraryList
         query={query}
         getScrollElement={getScrollElement}
-        skeletonLabel="正在读取整片"
-        errorMessage="读取整片失败"
+        skeletonLabel="正在读取成片"
+        errorMessage="读取成片失败"
         empty={
           <ListEmpty>
             {filtered
-              ? '暂无匹配的整片，请更换关键词或清除筛选'
-              : '暂无导出的整片，请在任务的整片编辑器中导出'}
+              ? '暂无匹配的成片，请更换关键词或清除筛选'
+              : '暂无导出的成片，请在任务的成片编辑器中导出'}
           </ListEmpty>
         }
         items={loaded}
@@ -174,7 +174,7 @@ function FilmCard({
       cardId={film.conversationId}
       label={title}
       onOpen={onOpen}
-      openLabel={`查看整片：${title}`}
+      openLabel={`查看成片：${title}`}
       videoUrl={film.face.outputUrl}
       width={width}
     >
@@ -182,7 +182,7 @@ function FilmCard({
       <CardByline
         at={film.face.finishedAt}
         author={film.userName}
-        itemNoun="整片"
+        itemNoun="成片"
         onAuthor={onAuthor}
       />
     </PlaceholderRatioCard>
@@ -211,7 +211,7 @@ function FilmViewer({
   const poster = videoSnapshotUrl(version.outputUrl, 720)
   return (
     <>
-      <ViewerStage label="整片播放" onClose={onClose}>
+      <ViewerStage label="成片播放" onClose={onClose}>
         <ViewerVideo
           fallbackRatio={PLACEHOLDER_VIDEO_RATIO}
           key={version.jobId}
@@ -230,7 +230,7 @@ function FilmViewer({
           src={version.outputUrl}
         />
         <div
-          aria-label="整片版本"
+          aria-label="成片版本"
           role="group"
           className="flex flex-wrap justify-center gap-2 px-4 py-4"
         >
@@ -248,7 +248,7 @@ function FilmViewer({
         </div>
       </ViewerStage>
       <section
-        aria-label="整片信息"
+        aria-label="成片信息"
         className="flex w-full flex-col gap-4 p-6 md:w-80 md:shrink-0 md:border-l md:border-hairline"
       >
         <DialogTitle className="text-title-lg font-semibold">{title}</DialogTitle>
@@ -259,7 +259,7 @@ function FilmViewer({
           <VideoDownload
             downloadedJobIds={version.sourceJobIds}
             enhanceSourceId={version.jobId}
-            originalLabel="下载整片"
+            originalLabel="下载成片"
             url={version.outputUrl}
             watermarkUrl={null}
           />

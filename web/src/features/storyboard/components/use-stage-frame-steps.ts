@@ -1,4 +1,4 @@
-/** 舞台上切帧：点箭头与焦点在舞台里时按 ←/→ 走同一个 `stepFrame`。只接帧视图，成片舞台不接方向键。 */
+/** 舞台上切帧：点箭头与焦点在舞台里时按 ←/→ 走同一个 `stepFrame`。只接帧视图，素材片舞台不接方向键。 */
 
 import { useEffect, useEffectEvent } from 'react'
 

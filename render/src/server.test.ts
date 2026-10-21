@@ -53,7 +53,7 @@ describe('渲染服务接口', () => {
     })
   })
 
-  it('成片轨上只有组件段、没有视频也没有画布：照样受理并开始渲染', async () => {
+  it('画面轨上只有组件段、没有视频也没有画布：照样受理并开始渲染', async () => {
     const body = exportRequest()
     body['document'] = {
       ...(body['document'] as Record<string, unknown>),
@@ -104,7 +104,7 @@ describe('渲染服务接口', () => {
       'unknown-component',
     ],
     [
-      '成片没有给地址',
+      '素材片没有给地址',
       (() => {
         const body = exportRequest()
         ;(body['media'] as { videos: Record<string, unknown> }).videos = {}

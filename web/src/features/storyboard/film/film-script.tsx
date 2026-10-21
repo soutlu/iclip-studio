@@ -37,7 +37,7 @@ import type { FilmSegmentValue } from './use-film-draft'
 
 type FilmScriptProps = {
   group: FilmGroup
-  /** 选中的段；舞台在看成片时为 undefined，哪段都不标。 */
+  /** 选中的段；舞台在看素材片时为 undefined，哪段都不标。 */
   selectedId: string | undefined
   /** 舞台上那张图在 `frames` 里的位置，对应的图片芯片高亮。 */
   frame: number | undefined

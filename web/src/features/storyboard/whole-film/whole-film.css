@@ -1,4 +1,4 @@
-/* 整片编辑器：上面左边是素材 / 组件栏、右边是预览，下面是剪辑工具、成片区四条轨与视频素材区。
+/* 成片编辑器：上面左边是素材 / 组件栏、右边是预览，下面是剪辑工具、时间线四条轨与视频素材区。
    外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
 
 .wf-dialog {
@@ -1008,7 +1008,7 @@
   opacity: var(--state-disabled-content);
 }
 
-/* ---- 成片区 ---- */
+/* ---- 时间线 ---- */
 
 .wf-tracks {
   --timeline-ruler-height: 18px;
@@ -1025,7 +1025,7 @@
   user-select: none;
 }
 
-/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是成片轨，字幕轨与音乐轨之间只空 4px */
+/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是画面轨，字幕轨与音乐轨之间只空 4px */
 .wf-track-heads {
   display: grid;
   grid-template-rows:
@@ -1399,7 +1399,7 @@
   border-radius: inherit;
 }
 
-/* 成片段：上面一行画面，下面原声波形（组件段写组件名） */
+/* 画面轨上的段：上面一行画面，下面原声波形（组件段写组件名） */
 .wf-clip-frames {
   display: flex;
   height: 30px;
@@ -1847,7 +1847,7 @@
   flex-direction: column;
 }
 
-/* 组名、原作名与成片区轨名同字号 */
+/* 组名、原作名与时间线轨名同字号 */
 .wf-group-label {
   height: 20px;
   color: var(--color-on-surface);
@@ -1901,7 +1901,7 @@
   padding-right: 4px;
 }
 
-/* 素材轨左端与成片轨对齐（轨名列同宽、时间区左边同样留 8px），按原作自身时长铺满一行；
+/* 素材轨左端与画面轨对齐（轨名列同宽、时间区左边同样留 8px），按原作自身时长铺满一行；
    右边留 8px，选区结尾的手柄不撑出横向滚动 */
 .wf-take-strip {
   position: relative;
@@ -1937,7 +1937,7 @@
   width: 100%;
 }
 
-/* 成片轨上已经用了的段：轨道底边一道 */
+/* 画面轨上已经用了的段：轨道底边一道 */
 .wf-used {
   position: absolute;
   bottom: 1px;

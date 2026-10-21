@@ -458,7 +458,7 @@ describe('制作页', () => {
     expect(videos).toEqual([])
   })
 
-  it('参考图都有图时，先存改了的字再按存好的那一版出这一组：模型默认照文件；成片进本组，选它舞台就放它', async () => {
+  it('参考图都有图时，先存改了的字再按存好的那一版出这一组：模型默认照文件；素材片进本组，选它舞台就放它', async () => {
     const bodies = recordEdits()
     const videos = recordVideos()
     const script = await renderFilm({ complete: true })
@@ -484,7 +484,7 @@ describe('制作页', () => {
       video: 'board_video',
     })
 
-    await userEvent.click(await screen.findByRole('button', { name: /的成片/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /的素材片/ }))
     expect(stageTag()).toBeNull()
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))

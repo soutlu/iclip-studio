@@ -30,10 +30,10 @@ export const mockSessionEnvelope = (conversationId: string) => {
 /** 删除只写 deletedAt（合同 §6 墓碑）；墓碑只有审计列表列得出来。 */
 export const mockConversations: MockConversation[] = []
 
-/** 按对话 id 记它自己最新一条成片的地址；只有审计列表带这一项，没记的为 null。 */
+/** 按对话 id 记它自己最新一条素材片的地址；只有审计列表带这一项，没记的为 null。 */
 export const mockLatestMasterUrls = new Map<string, string>()
 
-/** 审计列表里的一行：对话本身加上它最新一条成片的地址。 */
+/** 审计列表里的一行：对话本身加上它最新一条素材片的地址。 */
 export const mockAuditRow = (
   conversation: MockConversation,
 ): z.output<typeof zConversationsAuditItemOut> => ({

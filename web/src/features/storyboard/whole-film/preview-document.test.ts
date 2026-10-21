@@ -41,7 +41,7 @@ describe('预览页', () => {
     expect(font).toBeGreaterThan(base)
   })
 
-  it('用合成构建生成：成片地址、组件段、字幕都在页里', () => {
+  it('用合成构建生成：素材片地址、组件段、字幕都在页里', () => {
     const draft = draftOf(
       [card('c1', 1_500, { component: 'logo-sting' }), video('v1', 's1', 0, 1_000)],
       { captions: { component: 'default-caption', edits: [] } },
@@ -55,7 +55,7 @@ describe('预览页', () => {
     expect(state.html).toContain('&quot;text&quot;:&quot;世&quot;')
   })
 
-  it('成片轨上只有组件段（还没有画布）：也生成预览页，画面是竖屏 1080×1920', () => {
+  it('画面轨上只有组件段（还没有画布）：也生成预览页，画面是竖屏 1080×1920', () => {
     const draft = draftOf([
       card('c1', 1_500, { component: 'logo-sting' }),
       card('c2', 2_000, { component: 'logo-outro' }),
@@ -68,7 +68,7 @@ describe('预览页', () => {
     expect(state.html).toMatch(/data-composition-src="[^"]*logo-outro/)
   })
 
-  it('成片轨还是空的时不生成，说明原因', () => {
+  it('画面轨还是空的时不生成，说明原因', () => {
     expect(previewState(draftOf([]), mediaOf(draftOf([])), catalog, ORIGIN)).toEqual({
       kind: 'blocked',
       message: expect.stringMatching(/成片.*没有画面/),

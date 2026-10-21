@@ -78,7 +78,7 @@ describe('insertMaterial', () => {
     ['在一段后半：插在这段后面，不拆段', 4_000, ['c1', 'v1', 'v3', 'v2', 'c2']],
     ['在开头的组件段前半：插到最前', 500, ['v3', 'c1', 'v1', 'v2', 'c2']],
     ['在末尾的组件段后半：插到最后', 8_000, ['c1', 'v1', 'v2', 'c2', 'v3']],
-    ['在整片之后：插到最后', 20_000, ['c1', 'v1', 'v2', 'c2', 'v3']],
+    ['在成片之后：插到最后', 20_000, ['c1', 'v1', 'v2', 'c2', 'v3']],
   ])('落点%s', (_, timeMs, expected) => {
     const before = withCards()
     const { draft } = expectOk(insertMaterial(before, material({ timeMs }), context))
@@ -104,7 +104,7 @@ describe('insertMaterial', () => {
     expect(second.canvas).toEqual({ width: 1920, height: 1080 })
   })
 
-  it('整片正好 120 秒可以加，多 1 毫秒不行，也不缩短', () => {
+  it('成片正好 120 秒可以加，多 1 毫秒不行，也不缩短', () => {
     const base = withCards()
     const room = 120_000 - filmDuration(base)
     const range = (duration: number) => ({
@@ -183,7 +183,7 @@ describe('insertComponent', () => {
     ])
   })
 
-  it('组件段也能放进空的成片轨，画布仍未定', () => {
+  it('组件段也能放进空的画面轨，画布仍未定', () => {
     const { draft } = expectOk(insertComponent(draftOf([]), component({ timeMs: 0 })))
     expect(spans(draft)).toEqual([['c1', 0, 1_000]])
     expect(draft.canvas).toBeNull()
@@ -291,7 +291,7 @@ describe('trimClip', () => {
     expect(draft.layer0[0]).toMatchObject({ start: 0, ...expected })
   })
 
-  it('整片已满 120 秒：再往长拉不动，原样返回', () => {
+  it('成片已满 120 秒：再往长拉不动，原样返回', () => {
     const full = draftOf([video('v1', 'big', 0, 119_000), video('v2', 'big', 0, 1_000)])
     expect(expectOk(trim(full, 'v1', 'end', 5_000)).draft).toBe(full)
     const near = draftOf([video('v1', 'big', 1_000, 118_000), video('v2', 'big', 0, 1_000)])
@@ -323,10 +323,10 @@ describe('trimClip', () => {
     expect(filmDuration(draft)).toBe(120_000)
   })
 
-  it('上下文缺少草稿里的成片：是调用方的错，直接报错', () => {
+  it('上下文缺少草稿里的素材片：是调用方的错，直接报错', () => {
     expect(() =>
       trimClip(base(), { clipId: 'v1', edge: 'end', deltaMs: 1 }, contextOf({})),
-    ).toThrow('整片编辑上下文缺少成片 s1')
+    ).toThrow('成片编辑上下文缺少素材片 s1')
   })
 })
 
@@ -419,7 +419,7 @@ describe('deleteClip', () => {
     })
   })
 
-  it('整片变短：特效块原样留着，不截、不删', () => {
+  it('成片变短：特效块原样留着，不截、不删', () => {
     const overlays = [overlay('o1', 2_000, 1_000), overlay('o2', 3_500, 300)]
     const film = draftOf([video('v1', 's1', 0, 2_500), video('v2', 's1', 0, 1_500)], { overlays })
     expect(expectOk(deleteClip(film, { clipId: 'v2' })).draft.overlays).toEqual(overlays)

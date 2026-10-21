@@ -61,7 +61,7 @@ describe('素材主机白名单', () => {
     expect(parseAllowedHosts(undefined)).toEqual(new Set())
   })
 
-  it('成片与配乐的主机都要在白名单里；上传地址不检查', () => {
+  it('素材片与配乐的主机都要在白名单里；上传地址不检查', () => {
     const parsed = parseExportRequest(exportRequest({ mediaHost: 'Evil.example.net' }))
     if (!parsed.ok) throw new Error(parsed.message)
     expect(disallowedMediaHosts(parsed.request, new Set(['oss.example.com']))).toEqual([

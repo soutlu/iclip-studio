@@ -45,7 +45,7 @@ type ShotScriptProps = {
   drop: ScriptDrop
   /** 要排出来的段，见 `scriptSegments`。 */
   segments: readonly ShotContent[]
-  /** 选中的段；舞台在看成片时为 undefined，哪段都不标。 */
+  /** 选中的段；舞台在看素材片时为 undefined，哪段都不标。 */
   selectedId: string | undefined
   /** 选中段里正在看的帧，正文里对应的 @N 高亮。 */
   frameNumber: number | undefined

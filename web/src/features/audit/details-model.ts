@@ -29,7 +29,7 @@ const PEOPLE_SORT_VALUE: Record<PeopleSortKey, (person: Person) => number | null
   perDelivery: ({ metrics }) => metrics.tokensPerDelivery,
 }
 
-/** 按人表的排序：空值不管升降都排最后，取值相同的保持接口给的次序（成片多的在前）。 */
+/** 按人表的排序：空值不管升降都排最后，取值相同的保持接口给的次序（出片多的在前）。 */
 export function sortPeople(people: readonly Person[], sort: TableSort<PeopleSortKey>): Person[] {
   const valueOf = PEOPLE_SORT_VALUE[sort.key]
   const sign = sort.order === 'asc' ? 1 : -1

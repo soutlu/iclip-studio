@@ -1,5 +1,5 @@
-# 整片渲染服务镜像（iclip-render）。构建上下文为仓库根：要用 web/ 的组件库同步脚本、组件目录、
-# 整片合成构建与后端合同的 zod 生成物。
+# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根：要用 web/ 的组件库同步脚本、组件目录、
+# 成片合成构建与后端合同的 zod 生成物。
 #
 #   docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render .
 #

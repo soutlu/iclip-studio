@@ -46,7 +46,7 @@ describe('hfIdOnScreen', () => {
     expect(hfIdOnScreen({ kind: 'overlay', id: 'o1' }, DRAFT, CAPTIONS, 2_500)).toBeUndefined()
   })
 
-  it('字幕按它现在在整片里的位置给出 caption:N；没选中、选中音乐或已不在草稿里时没有', () => {
+  it('字幕按它现在在成片里的位置给出 caption:N；没选中、选中音乐或已不在草稿里时没有', () => {
     const second = { kind: 'caption', key: captionKey(CAPTIONS[1] as PlacedCaption) } as const
     expect(hfIdOnScreen(second, DRAFT, CAPTIONS, 2_000)).toBe('caption:1')
     expect(hfIdOnScreen(second, DRAFT, CAPTIONS, 1_000)).toBeUndefined()

@@ -43,12 +43,12 @@ describe('addOverlay：点卡片', () => {
     expect(draft.overlays[2]).toMatchObject({ playbackStart: 0, variables: { label: '新品' } })
   })
 
-  it('第一个特效块的 zIndex 是 1；可以超出成片轨的结尾，成片轨为空也能放', () => {
+  it('第一个特效块的 zIndex 是 1；可以超出画面轨的结尾，画面轨为空也能放', () => {
     const empty = expectOk(addOverlay(draftOf([]), badge(0, 3_000))).draft
     expect(layout(empty)).toEqual([['o1', 0, 0, 3_000, 1]])
   })
 
-  it('超出成片轨结尾的特效块让整片变长：整片到特效块最晚的结尾', () => {
+  it('超出画面轨结尾的特效块让成片变长：成片到特效块最晚的结尾', () => {
     const film = withOverlays([])
     expect(filmDuration(film)).toBe(10_000)
     const longer = expectOk(addOverlay(film, badge(9_000, 3_500))).draft

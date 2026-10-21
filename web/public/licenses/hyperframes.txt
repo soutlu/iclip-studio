@@ -1,7 +1,7 @@
 HyperFrames 许可 / HyperFrames License
 ======================================
 
-整片的预览与导出使用 HyperFrames（合成格式、运行时、播放器与组件库）。HyperFrames 按 Apache License 2.0
+成片的预览与导出使用 HyperFrames（合成格式、运行时、播放器与组件库）。HyperFrames 按 Apache License 2.0
 发布。引擎包 @hyperframes/core、@hyperframes/player 未修改源码；组件库按固定版本同步到
 hyperframes/0.8.168/，其中改写过的组件文件头注明了来源与改动。许可全文附在本文件末尾。
 The whole-film preview and export use HyperFrames (composition format, runtime, player and component

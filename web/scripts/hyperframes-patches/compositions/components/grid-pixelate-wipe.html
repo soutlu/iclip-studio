@@ -5,10 +5,10 @@
   Apache License 2.0（http://www.apache.org/licenses/LICENSE-2.0），Copyright HeyGen。
 
   本文件对原组件的改动（原组件是要自己写时间线的代码片段）：
-  1. 改成 <template> 子合成，按原文件末尾的时间线写法自带时间线，挂在整片的一个切点上：
+  1. 改成 <template> 子合成，按原文件末尾的时间线写法自带时间线，挂在成片的一个切点上：
      前一半格子从中心向外盖满画面（切点在正中，此时画面全被盖住），后一半从四周向里揭开。
   2. 原定时长 1.2 秒（原写法的每格 0.6 秒加错开 0.6 秒），盖住与揭开各占一半，
-     每格动画与错开总量各占半程的一半；整片里的时长由宿主的播放速率换算。
+     每格动画与错开总量各占半程的一半；成片里的时长由宿主的播放速率换算。
 -->
 <template id="grid-pixelate-wipe-template">
   <div id="grid-pixelate-root" data-composition-id="grid-pixelate-wipe">

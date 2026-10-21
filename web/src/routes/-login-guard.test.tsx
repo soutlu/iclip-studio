@@ -92,6 +92,6 @@ describe('整页要登录的那几页', () => {
 
     expect(router.state.location.pathname).toBe('/audit')
     expect(await screen.findByRole('main', { name: '审计' })).toBeVisible()
-    expect(await screen.findByRole('article', { name: '成片数' })).toBeVisible()
+    expect(await screen.findByRole('article', { name: '出片件数' })).toBeVisible()
   })
 })

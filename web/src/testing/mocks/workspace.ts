@@ -46,14 +46,14 @@ const httpFrames = (): MockFrames => {
 /** 出片与合成都放这条 6 秒的测试卡；编辑段的结果放另一条 3 秒的彩条，切换时看得出来。
  *
  * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。三条都是 VP9-in-MP4、每秒
- * 一个关键帧，与线上的成片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
+ * 一个关键帧，与线上的素材片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
  * 原样拷出来。只有这条 6 秒的测试卡带一条 Opus 原声（Chromium 能解，AAC 不能），时间线上看得到
  * 真实波形；彩条与横版没有音轨，原声轨显示「无声」。 */
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
 const EDITED_MS = 3000
-/** 第 3 组那条成片改用同样 6 秒的横版测试卡：预览黑框是固定比例，横版才会露出上下黑边。 */
+/** 第 3 组那条素材片改用同样 6 秒的横版测试卡：预览黑框是固定比例，横版才会露出上下黑边。 */
 const WIDE_VIDEO_URL = sampleWideUrl
 
 const PREAMBLE = ['参考锁定：模特的服装与发型跟住 @Image1。', '剪辑形式：硬切。'].join('\n')
@@ -66,7 +66,7 @@ const assembleShotPrompt = (shot: VideoShotIn): string => {
   return `${shot.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
 }
 
-/** 第 2 组那条成片当初提交的镜头组，形状与分镜文件里的 prompt 相同；带 shot 的记录才能回填。 */
+/** 第 2 组那条素材片当初提交的镜头组，形状与分镜文件里的 prompt 相同；带 shot 的记录才能回填。 */
 const HISTORY_SHOT: VideoShotIn = {
   global_settings: PREAMBLE,
   timeline: [
@@ -231,7 +231,7 @@ type MockJob = {
   durationMs?: number
   /** 原作号：编辑段与合成指最初那条出片，出片与图片不填。 */
   rootJobId?: string | null
-  /** 直接来源：编辑段与合成指基底成片，帧图编辑指底图那条。 */
+  /** 直接来源：编辑段与合成指基底素材片，帧图编辑指底图那条。 */
   sourceJobId?: string | null
   /** 来源的地址：帧图编辑是它改的底图，底图在不在库里都有。 */
   sourceUrl?: string | null
@@ -275,7 +275,7 @@ const generations = new Map<string, MockRecord[]>()
 const findJob = (conversationId: string | null | undefined, id: string): MockRecord | undefined =>
   generations.get(conversationId ?? '')?.find((item) => item.id === id)
 
-/** 成片：完成了的出片或合成，编辑段只能基于它。 */
+/** 素材片：完成了的出片或合成，编辑段只能基于它。 */
 const isFinishedTake = (record: MockRecord): boolean =>
   record.kind === 'video' &&
   record.status === 'completed' &&
@@ -331,7 +331,7 @@ const announceGeneration = (conversationId: string | null, record: MockRecord) =
   announceMockGeneration(conversationId, record)
 }
 
-/** 任一对话里的一条成片（完成的出片或合成）；高清版的 mock 按它定来源。 */
+/** 任一对话里的一条素材片（完成的出片或合成）；高清版的 mock 按它定来源。 */
 export const findMockTake = (id: string): MockRecord | undefined =>
   [...generations.values()].flat().find((record) => record.id === id && isFinishedTake(record))
 
@@ -398,7 +398,7 @@ export const seedMockWorkspace = (
       id: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
       outputUrl: WIDE_VIDEO_URL,
       prompt: '模特走向镜头，停下微笑，暖光。',
-      // 横版成片：成片卡按请求里的画幅画，不跟分镜。
+      // 横版素材片：素材片卡按请求里的画幅画，不跟分镜。
       request: {
         aspect_ratio: '16:9',
         model: 'wan3.0-video',
@@ -428,7 +428,7 @@ export const seedMockWorkspace = (
       status: 'completed',
       watermarkOutputUrl: VIDEO_URL,
     }),
-    // 只记了正文与分辨率：成片卡按分镜画幅画，不显示模型。
+    // 只记了正文与分辨率：素材片卡按分镜画幅画，不显示模型。
     job({
       createdAt: '2026-09-01T11:40:00Z',
       errorMessage: '上游返回了空结果，换个描述再试一次。',
@@ -794,7 +794,7 @@ const SUBTITLE_SENTENCES: SubtitleSentence[] = [
   { startMs: 2_400, endMs: 5_200, speaker: null, text: '车流划出一道道光' },
 ]
 
-/** 演示对话第 2 组那条竖版成片的字幕记录（识别完成，两句；旧格式没有逐词时间） */
+/** 演示对话第 2 组那条竖版素材片的字幕记录（识别完成，两句；旧格式没有逐词时间） */
 export const seedMockSubtitles = (conversationId: string) =>
   addRecord(
     conversationId,
@@ -979,7 +979,10 @@ export const workspaceHandlers = [
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 422 })
     }
     if (!isFinishedTake(base)) {
-      return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
+      return HttpResponse.json(
+        { detail: '基底必须是一条已完成的素材片（出片或合成）' },
+        { status: 422 },
+      )
     }
     const clips = body.reference_video_urls ?? []
     if (
@@ -1021,7 +1024,7 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 合成：基底要是这段对话里一条完成的成片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
+  // 合成：基底要是这段对话里一条完成的素材片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
   // 这里拼不了视频，产物用现成的测试卡代替。
   http.post('*/api/generations/video-composites', async ({ request }) => {
     const body = (await request.json()) as VideoComposeIn
@@ -1030,7 +1033,10 @@ export const workspaceHandlers = [
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 422 })
     }
     if (!isFinishedTake(base)) {
-      return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
+      return HttpResponse.json(
+        { detail: '基底必须是一条已完成的素材片（出片或合成）' },
+        { status: 422 },
+      )
     }
     const placed: { source: MockRecord; url: string; start: number; end: number | null }[] = []
     for (const segment of body.segments) {
@@ -1092,7 +1098,7 @@ export const workspaceHandlers = [
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 404 })
     }
     if (!isFinishedTake(source)) {
-      return HttpResponse.json({ detail: '只能识别已完成的成片' }, { status: 422 })
+      return HttpResponse.json({ detail: '只能识别素材片：已完成的出片或合成' }, { status: 422 })
     }
     const created = acceptGeneration({
       kind: 'subtitle',

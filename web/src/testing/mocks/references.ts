@@ -2,7 +2,7 @@
  *
  * 上传建的行和重拆的行按时间往前走：先排队，过一会儿拆解中，再过一会儿拆完（带演示拆解与标签），
  * dev:mock 下轮询看得见状态变化。同一份文件内容再传一次交回原来那一行（200）。
- * 试生成同样按时间往前走：提交后生成中，过一会儿完成，成片与原片同一个示例视频；改过或重拆过拆解就标为过时。
+ * 试生成同样按时间往前走：提交后生成中，过一会儿完成，试生成与原片同一个示例视频；改过或重拆过拆解就标为过时。
  * 演示行覆盖各种状态：拆完的、没标签的、排队与拆解中的、没拆成的（有无上一次拆解）、别人的；
  * 试生成有未试生成、生成中、完成（含横版）、拆解已更新、失败，以及别人的完成与未试生成。
  * 单测要断言具体内容就先 `resetMockReferences([])` 再用 `addMockReference` 放自己的行。 */
@@ -161,7 +161,7 @@ export const addMockReference = (overrides: Partial<Reference> = {}): Reference 
 
 const ago = (hours: number) => new Date(Date.now() - hours * HOUR_MS).toISOString()
 
-/** 一次已经结束或静止的试生成；完成的成片用与原片同方向的示例视频。 */
+/** 一次已经结束或静止的试生成；完成的试生成用与原片同方向的示例视频。 */
 const demoTestVideo = (overrides: Partial<TestVideo>): TestVideo => ({
   createdAt: ago(1),
   errorMessage: null,
@@ -472,7 +472,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  // 画幅不影响 mock：成片沿用原片的示例视频。
+  // 画幅不影响 mock：试生成沿用原片的示例视频。
   http.post('*/api/references/:id/test-generations', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()

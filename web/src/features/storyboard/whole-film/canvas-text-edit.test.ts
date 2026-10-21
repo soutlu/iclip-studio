@@ -49,7 +49,7 @@ describe('captionTextEdit', () => {
 })
 
 describe('componentTextEdit', () => {
-  it('只换改的那一项，其余可填项照旧；特效块与成片轨上的组件段都行', () => {
+  it('只换改的那一项，其余可填项照旧；特效块与画面轨上的组件段都行', () => {
     const named = componentTextEdit(film(), {
       id: 'o1',
       variable: 'name',

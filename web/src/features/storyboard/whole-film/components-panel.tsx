@@ -23,7 +23,7 @@ type ComponentsPanelProps = {
   onSelect: (id: string) => void
   /** 这一栏没有卡片时的说明 */
   emptyText: string
-  /** 整片在用的字幕样式：这张卡描墨色框并打勾 */
+  /** 成片在用的字幕样式：这张卡描墨色框并打勾 */
   captionComponent: string
   /** 点卡片：按组件的默认去处放进成片 */
   onUse: (item: CatalogItem) => void
@@ -40,7 +40,7 @@ export type CardCarry = {
   origin: { left: number; top: number; width: number; height: number }
 }
 
-/** 品牌栏、通用栏：一排小标题加卡片网格；点卡片放进成片，或拖到成片区的轨上 */
+/** 品牌栏、通用栏：一排小标题加卡片网格；点卡片放进成片，或拖到时间线的轨上 */
 export function ComponentsPanel({
   groups,
   groupsLabel,
@@ -115,7 +115,7 @@ export function ComponentThumb({
 
 type CardProps = {
   item: CatalogItem
-  /** 字幕样式卡是不是整片在用的那个；其余组件为 undefined */
+  /** 字幕样式卡是不是成片在用的那个；其余组件为 undefined */
   captionInUse: boolean | undefined
   onUse: () => void
   onCarry: (carry: CardCarry | null) => void

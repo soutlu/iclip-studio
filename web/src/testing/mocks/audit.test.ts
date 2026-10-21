@@ -29,7 +29,7 @@ describe('审计清单 mock', () => {
     return items
   }
 
-  it('近 30 天里有四种异常、已删除、没成片与多模型用量的对话', async () => {
+  it('近 30 天里有四种异常、已删除、没出片与多模型用量的对话', async () => {
     const items = await allExecutions('start', 'desc')
     const kinds = new Set(items.flatMap((item) => item.anomalies))
     expect(kinds).toEqual(new Set(['retry', 'stuck', 'spend', 'task_stuck']))

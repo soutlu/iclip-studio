@@ -1,4 +1,4 @@
-/** 整片草稿与导出的 mock：每段对话一份草稿，形状与版本号规矩同后端（合同 §6「整片草稿」「整片导出」）。
+/** 成片草稿与导出的 mock：每段对话一份草稿，形状与版本号规矩同后端（合同 §6「成片草稿」「成片导出」）。
  * 只查文档的形状与版本号，不核对引用的记录；整份保存，版本对不上是 409。 */
 
 import { http, HttpResponse } from 'msw'
@@ -31,8 +31,8 @@ const EXPORT_STEPS = [
   { status: 'uploading', progress: null, queuePosition: null },
 ] as const
 
-export const STALE_DRAFT_DETAIL = '整片草稿已经有更新的一版，重新读取后再改'
-export const STALE_EXPORT_DETAIL = '整片草稿已经有更新的一版，重新读取后再导出'
+export const STALE_DRAFT_DETAIL = '成片草稿已经有更新的一版，重新读取后再改'
+export const STALE_EXPORT_DETAIL = '成片草稿已经有更新的一版，重新读取后再导出'
 
 export const resetMockWholeFilm = () => {
   drafts.clear()
@@ -59,7 +59,7 @@ const exportOut = (found: MockExport) => {
   }
 }
 
-/** 一次没取消的导出（按导出 id 找），高清版的 mock 把它当整片记录；没有为 undefined。 */
+/** 一次没取消的导出（按导出 id 找），高清版的 mock 把它当成片记录；没有为 undefined。 */
 export const findMockWholeFilmExport = (
   exportId: string,
 ): { sourceJobIds: readonly string[]; downloadUrl: string } | undefined => {
@@ -136,7 +136,7 @@ export const wholeFilmHandlers = [
   http.delete('*/api/conversations/:conversationId/whole-film/exports/:exportId', ({ params }) => {
     const found = latestExports.get(String(params['conversationId']))
     if (found?.id !== String(params['exportId']))
-      return HttpResponse.json({ detail: '整片导出不存在' }, { status: 404 })
+      return HttpResponse.json({ detail: '成片导出不存在' }, { status: 404 })
     // 已经完成的也答 204、状态不变
     if (found.reads <= EXPORT_STEPS.length) found.cancelled = true
     return new HttpResponse(null, { status: 204 })

@@ -2,7 +2,7 @@
 
 单测与 dev:mock 共用。以此刻为准往前确定地造一批任务执行（一段对话一行），再给对话 mock 里的每段对话各添一行、
 身份取自那段对话（从清单点进去打得开），按请求的时间窗、人、排序与游标切出来；
-按人是同一批任务执行按人汇总。造出的那批里刻意放了四种异常、已删除、没成片与多模型用量的对话，
+按人是同一批任务执行按人汇总。造出的那批里刻意放了四种异常、已删除、没出片与多模型用量的对话，
 还有一个只跑过、没出过片的人，按人表的空值排在他身上。
 
 聚合只求演示自洽，不是后端口径的参考实现：测试要断言数字就用下面的 fixture 喂自己的数据。 */
@@ -63,7 +63,7 @@ const TASKS = [
   { id: uuidOf(7000, 3), title: '跑鞋新品上市' },
 ]
 
-/** 这三段挂同一张单、一条成片都没有：需求单卡住。标题故意很长，看截断。 */
+/** 这三段挂同一张单、一条出片都没有：需求单卡住。标题故意很长，看截断。 */
 const STUCK_TASK = { id: uuidOf(7000, 9), title: '儿童雨靴春季上新短视频（三段都没出片的需求单）' }
 const STUCK_TASK_INDEXES = new Set([20, 21, 22])
 
@@ -308,7 +308,7 @@ const draftsIn = ({ since, until, now }: Window, taskTitleOf: TaskTitleOf) =>
     return at >= since && at < until
   })
 
-/** 一群任务执行合成一格指标：同一需求单只算一件，没挂单的有成片对话各算一件。 */
+/** 一群任务执行合成一格指标：同一需求单只算一件，没挂单的有出片对话各算一件。 */
 const metricsOf = (drafts: readonly Omit<Execution, 'anomalies'>[]): Metrics => {
   const delivered = drafts.filter((draft) => draft.deliveredAt !== null)
   const deliveredTasks = new Set(delivered.flatMap((draft) => draft.taskId ?? [])).size
@@ -355,7 +355,7 @@ const metricsOf = (drafts: readonly Omit<Execution, 'anomalies'>[]): Metrics => 
   }
 }
 
-/** 这个时间窗的四种门槛：消耗离群按全体每件成片平均消耗算，与按不按人筛无关。 */
+/** 这个时间窗的四种门槛：消耗离群按全体每件出片平均消耗算，与按不按人筛无关。 */
 const thresholdsOf = (drafts: readonly Omit<Execution, 'anomalies'>[]): Thresholds => {
   const perDelivery = metricsOf(drafts).tokensPerDelivery
   return {
@@ -463,7 +463,7 @@ export const mockExecutionsOf = (
   }
 }
 
-/** 按人：时间窗里跑过或出过片的每个人一行，成片多的在前；迷你图按成片时刻分期。 */
+/** 按人：时间窗里跑过或出过片的每个人一行，出片多的在前；迷你图按出片时刻分期。 */
 export const mockPeopleOf = (
   query: URLSearchParams,
   taskTitleOf: TaskTitleOf,
@@ -518,7 +518,7 @@ export const MOCK_THRESHOLDS: Thresholds = { ...THRESHOLDS, spendTokens: 3_000_0
 
 type ExecutionPatch = Omit<Partial<Execution>, 'metrics'> & { metrics?: Partial<Metrics> }
 
-/** 一段形状完整的任务执行：一镜一次就过、已成片、没有异常；只关心的字段自己覆盖。 */
+/** 一段形状完整的任务执行：一镜一次就过、已出片、没有异常；只关心的字段自己覆盖。 */
 export const executionFixture = ({ metrics, ...patch }: ExecutionPatch = {}): Execution => ({
   anomalies: [],
   conversationId: crypto.randomUUID(),

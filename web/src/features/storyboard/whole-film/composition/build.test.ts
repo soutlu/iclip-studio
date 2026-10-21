@@ -164,7 +164,7 @@ const variablesOf = (element: Element | null): unknown =>
   JSON.parse(element?.getAttribute('data-variable-values') ?? 'null')
 
 describe('buildComposition', () => {
-  it('第 0 层每段画面是一个 video：整片时间、素材入点与音量写成 HyperFrames 属性', () => {
+  it('第 0 层每段画面是一个 video：成片时间、素材入点与音量写成 HyperFrames 属性', () => {
     const { html, durationMs } = build()
     const doc = parse(html)
     const videos = [...doc.querySelectorAll('#stage > video')]
@@ -252,7 +252,7 @@ describe('buildComposition', () => {
     )
   })
 
-  it('配乐铺满整片：从 0 开始，素材里的起点与音量写进 audio', () => {
+  it('配乐铺满成片：从 0 开始，素材里的起点与音量写进 audio', () => {
     const doc = parse(build({ music: { jobId: 'music-1', offset: 12_345, volume: 0.6 } }).html)
     const audio = doc.querySelector('#stage > audio')
     expect({
@@ -298,7 +298,7 @@ describe('buildComposition', () => {
     expect(hosts.slice(0, 2).map(variablesOf)).toEqual([{ title: '新品' }, { title: '标题' }])
   })
 
-  it('整片时长是所有轨上内容的最远结束：特效块超出成片轨时整片变长，特效块与音乐都铺到那里', () => {
+  it('成片时长是所有轨上内容的最远结束：特效块超出画面轨时成片变长，特效块与音乐都铺到那里', () => {
     const { html, durationMs } = build({
       music: { jobId: 'music-1', offset: 0, volume: 1 },
       overlays: [
@@ -322,11 +322,11 @@ describe('buildComposition', () => {
       ['ov-1', '6', '2.5'],
       ['ov-2', '0', '1'],
     ])
-    // 没有超出成片轨的特效块时，整片就是成片轨的长度
+    // 没有超出画面轨的特效块时，成片就是画面轨的长度
     expect(build({ overlays: [ov('o', 'lower-third', 0, 1000)] }).durationMs).toBe(5000)
   })
 
-  it('字幕组件经 words 变量拿到整片秒数的逐词数据；没有字幕时不放字幕', () => {
+  it('字幕组件经 words 变量拿到成片秒数的逐词数据；没有字幕时不放字幕', () => {
     const doc = parse(build().html)
     const captions = doc.querySelector('#captions')
     expect(captions?.getAttribute('data-composition-src')).toBe(
@@ -366,7 +366,7 @@ describe('buildComposition', () => {
     return Number(/z-index:(\d+)/.exec(style)?.[1])
   }
 
-  it('叠放：成片轨（组件段也算）< 整层特效 < 字幕，特效块的 zIndex 再大也不越出这一层', () => {
+  it('叠放：画面轨（组件段也算）< 整层特效 < 字幕，特效块的 zIndex 再大也不越出这一层', () => {
     const { html } = build({
       layer0: [vid('a', 0, 3000), comp('c', 3000, 2000, 'end-card')],
       overlays: [ov('o1', 'lower-third', 1000, 3000, { zIndex: 999 })],
@@ -577,7 +577,7 @@ describe('buildComposition', () => {
       y: node.getAttribute('data-y'),
       base: [node.getAttribute('data-hf-edit-base-x'), node.getAttribute('data-hf-edit-base-y')],
     }))
-    // 铺满的写在宿主上，固定尺寸的写在缩放盒子上；没挪过的块与成片轨上的段不写
+    // 铺满的写在宿主上，固定尺寸的写在缩放盒子上；没挪过的块与画面轨上的段不写
     expect(positioned).toEqual([
       { hfId: 'o1', element: 'fill', x: '-36', y: '410', base: ['0', '0'] },
       { hfId: 'o2', element: 'fit', x: '120', y: '0', base: ['0', '0'] },
@@ -636,7 +636,7 @@ describe('buildComposition', () => {
     ['特效块的组件不在目录里', { overlays: [ov('o', 'nope', 0, 500)] }, MEDIA, 'unknown-component'],
     ['组件段的组件不在目录里', { layer0: [comp('c', 0, 500, 'nope')] }, MEDIA, 'unknown-component'],
     ['被排除的组件', { overlays: [ov('o', 'showreel', 0, 500)] }, MEDIA, 'unknown-component'],
-    ['成片缺地址', {}, { ...MEDIA, videos: {} }, 'missing-media'],
+    ['素材片缺地址', {}, { ...MEDIA, videos: {} }, 'missing-media'],
     [
       '配乐缺地址',
       { music: { jobId: 'm', offset: 0, volume: 1 } },
@@ -653,7 +653,7 @@ describe('buildComposition', () => {
     }
   })
 
-  it('组件目录的 placement 不限制组件放在哪：字幕样式以外的组件在成片轨、特效轨都能合成', () => {
+  it('组件目录的 placement 不限制组件放在哪：字幕样式以外的组件在画面轨、特效轨都能合成', () => {
     const doc = parse(
       build({
         layer0: [comp('c', 0, 1000, 'lower-third'), vid('a', 1000, 1000)],

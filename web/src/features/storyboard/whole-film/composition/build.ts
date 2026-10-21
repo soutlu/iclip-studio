@@ -1,5 +1,5 @@
 /**
- * 整片草稿 → HyperFrames 合成页。预览（播放器 srcdoc，页头加 `<base>` 指向组件目录）与导出
+ * 成片草稿 → HyperFrames 合成页。预览（播放器 srcdoc，页头加 `<base>` 指向组件目录）与导出
  * （渲染服务 `render/` 写进项目目录）共用这一份；纯函数，只返回字符串。
  *
  * 合成页里组件、运行时的路径都相对组件目录根；素材地址原样使用调用方给的。
@@ -12,15 +12,15 @@ import { escapeAttribute, jsonAttribute, seconds } from './html'
 
 type ComponentVariables = WholeFilmOverlay['variables']
 
-/** 草稿还没定画布（成片轨上没有视频）时的画面尺寸：竖屏 1080×1920。 */
+/** 草稿还没定画布（画面轨上没有视频）时的画面尺寸：竖屏 1080×1920。 */
 export const DEFAULT_CANVAS = { width: 1080, height: 1920 } as const
 
 export interface CompositionMedia {
-  /** 按 `sourceJobId`：成片地址。 */
+  /** 按 `sourceJobId`：素材片地址。 */
   videos: Readonly<Record<string, { url: string }>>
   /** 草稿里配乐的地址；没有配乐时为 null。 */
   music: { url: string } | null
-  /** 按 `sourceJobId`：这条成片的字幕记录；没有识别结果时缺省或为 null。 */
+  /** 按 `sourceJobId`：这条素材片的字幕记录；没有识别结果时缺省或为 null。 */
   subtitles: Readonly<Record<string, SubtitleRecord | null | undefined>>
 }
 
@@ -38,7 +38,7 @@ export interface Composition {
 export type CompositionErrorCode =
   /** 组件不在目录里（或已被排除）。 */
   | 'unknown-component'
-  /** 草稿引用的成片或配乐没有给出地址。 */
+  /** 草稿引用的素材片或配乐没有给出地址。 */
   | 'missing-media'
   /** 草稿本身无法合成。 */
   | 'invalid-draft'
@@ -55,11 +55,11 @@ export class CompositionError extends Error {
 }
 
 // 画面叠放次序（HyperFrames 的 data-track-index 只用于显示，叠放靠 z-index）：画面 < 特效 < 字幕。
-// 特效块都放在一层盒子里（自成一个叠放上下文），整层压在成片轨之上、字幕之下；层里按各自的
+// 特效块都放在一层盒子里（自成一个叠放上下文），整层压在画面轨之上、字幕之下；层里按各自的
 // zIndex 叠，相同时按草稿里的先后（页面上后写的在上），不看 track。
 const Z = { layer0: 1, overlay: 2, captions: 3 } as const
 
-/** 字幕宿主的 data-hf-id：整片字幕在画面上整体拖动时按它找到宿主；每一句另有 `caption:N` */
+/** 字幕宿主的 data-hf-id：全部字幕在画面上整体拖动时按它找到宿主；每一句另有 `caption:N` */
 export const CAPTIONS_HF_ID = 'captions'
 const TRACK = { layer0: 0, captions: 2, overlay: 3, music: 4 } as const
 
@@ -88,7 +88,7 @@ interface HostOptions {
    * 字幕宿主写 `captions`。
    */
   hfId: string
-  /** 在画面上挪开的位置（画面像素）；成片轨上的组件段没有 */
+  /** 在画面上挪开的位置（画面像素）；画面轨上的组件段没有 */
   position?: { x?: number | undefined; y?: number | undefined }
   item: CatalogItem
   startMs: number
@@ -152,10 +152,10 @@ function fontCss(catalog: ComponentCatalog, family: string): string {
 }
 
 /**
- * 生成合成页。成片轨为空、组件不在目录里，或草稿引用的素材缺地址时抛出 {@link CompositionError}。
+ * 生成合成页。画面轨为空、组件不在目录里，或草稿引用的素材缺地址时抛出 {@link CompositionError}。
  *
- * 整片时长同 HyperFrames，是所有轨上内容的最远结束：特效块超出成片轨的部分叠在空画面上照样渲染，
- * 音乐也铺到那里。画布还没定（成片轨上只有组件段）时用 {@link DEFAULT_CANVAS}。
+ * 成片时长同 HyperFrames，是所有轨上内容的最远结束：特效块超出画面轨的部分叠在空画面上照样渲染，
+ * 音乐也铺到那里。画布还没定（画面轨上只有组件段）时用 {@link DEFAULT_CANVAS}。
  */
 export function buildComposition({ draft, media, catalog }: CompositionInput): Composition {
   if (draft.layer0.length === 0) {
@@ -188,7 +188,8 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       })
     }
     const source = media.videos[clip.sourceJobId]
-    if (!source) throw new CompositionError('missing-media', `成片「${clip.sourceJobId}」没有地址`)
+    if (!source)
+      throw new CompositionError('missing-media', `素材片「${clip.sourceJobId}」没有地址`)
     return (
       `<video id="${id}" class="layer0" data-hf-id="${escapeAttribute(clip.id)}"` +
       ` src="${escapeAttribute(source.url)}"` +

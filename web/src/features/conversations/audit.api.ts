@@ -38,7 +38,7 @@ export const DEFAULT_AUDIT_FILTERS: AuditFilters = {
 
 export type AuditPage = z.output<typeof zConversationsAuditOut>
 
-/** 列表里的一段对话：对话本身加上它自己最新一条成片的地址。 */
+/** 列表里的一段对话：对话本身加上它自己最新一条素材片的地址。 */
 export type AuditConversation = AuditPage['items'][number]
 
 const PAGE_LIMIT = 50

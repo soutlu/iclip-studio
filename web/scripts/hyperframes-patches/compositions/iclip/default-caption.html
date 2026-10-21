@@ -7,7 +7,7 @@
 
   本文件对原组件的改动：
   1. 改成 <template> 子合成；台词来自 window.__hyperframes.getVariables().words
-     （[{ text, start, end, sentence }]，整片秒数），同一 sentence 的词为一组，去掉写死的台词与分组。
+     （[{ text, start, end, sentence }]，成片秒数），同一 sentence 的词为一组，去掉写死的台词与分组。
   2. 词与词按中文排版拼接：两侧都是拉丁字母或数字时才加空格；去掉转小写。
   3. 白字黑描边（-webkit-text-stroke + paint-order），字重 700，字体 Noto Sans SC（本地字体文件）。
   4. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin），

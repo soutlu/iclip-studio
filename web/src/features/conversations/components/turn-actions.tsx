@@ -38,7 +38,7 @@ const fullTime = (iso: string): string => {
 const usageLine = (usage: TranscriptUsage): string =>
   `输入 ${exactTokens(usage.inputTokens ?? 0)} · 缓存 ${exactTokens(usage.cachedTokens ?? 0)} · 输出 ${exactTokens(usage.outputTokens ?? 0)}`
 
-/** 时刻：悬停、聚焦弹出完整时刻与用量；触屏没有悬停，Radix 提示又不接触摸，所以受控开合、点一下开、再点收起，做法同成片信息按钮。 */
+/** 时刻：悬停、聚焦弹出完整时刻与用量；触屏没有悬停，Radix 提示又不接触摸，所以受控开合、点一下开、再点收起，做法同素材片信息按钮。 */
 const TurnTime = ({ endedAt, usage }: { endedAt: string; usage: TranscriptUsage | undefined }) => {
   // 相对日期以组件挂载时刻为参照。
   const [now] = useState(() => new Date())

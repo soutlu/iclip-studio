@@ -32,7 +32,7 @@ afterEach(() => {
 })
 
 describe('ConversationVideos', () => {
-  it('读完分页后展示旧页中的成片，不把第一页没有成功结果误报为空', async () => {
+  it('读完分页后展示旧页中的素材片，不把第一页没有成功结果误报为空', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) =>
       job(1000 - index, { status: 'failed', outputUrl: null }),
     )
@@ -167,7 +167,7 @@ describe('ConversationVideos', () => {
     expect(reads).toBe(2)
   })
 
-  it('只认本对话的生成帧：别的对话的帧不重拉，本对话的帧立刻重拉并展示新成片', async () => {
+  it('只认本对话的生成帧：别的对话的帧不重拉，本对话的帧立刻重拉并展示新素材片', async () => {
     let reads = 0
     server.use(
       http.get('*/api/generations', () => {
@@ -251,7 +251,7 @@ describe('ConversationVideos', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('没有成片时只显示紧凑空态', async () => {
+  it('没有素材片时只显示紧凑空态', async () => {
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [] })))
 
     await renderWithProviders(<ConversationVideos conversationId={conversationId} />)

@@ -50,7 +50,7 @@ const place = (
 ) => placeCaptions({ layer0, captions: { component: 'default-caption', edits } }, subtitles)
 
 describe('placeCaptions', () => {
-  it('取段内的句子与词，换算成整片毫秒，文字带上紧跟的标点', () => {
+  it('取段内的句子与词，换算成成片毫秒，文字带上紧跟的标点', () => {
     const placed = place([video({ id: 'a', start: 2000, duration: 4000 })], { 'job-a': RECORD })
     expect(placed).toEqual([
       {
@@ -81,7 +81,7 @@ describe('placeCaptions', () => {
   })
 
   it('跨段的句子在切点按词的中点截断，前后两段各得一份，时间收在各自段内', () => {
-    // 同一条成片切成两段：[0, 2000) 与 [2000, 3500)；「的」中点 2850 落在后一段。
+    // 同一条素材片切成两段：[0, 2000) 与 [2000, 3500)；「的」中点 2850 落在后一段。
     const placed = place(
       [
         video({ id: 'a', start: 0, duration: 2000 }),
@@ -104,7 +104,7 @@ describe('placeCaptions', () => {
     ])
   })
 
-  it('素材入点之前与出点之后的词不进整片', () => {
+  it('素材入点之前与出点之后的词不进成片', () => {
     const placed = place([video({ id: 'a', start: 0, duration: 1000, playbackStart: 1500 })], {
       'job-a': RECORD,
     })

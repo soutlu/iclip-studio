@@ -28,7 +28,7 @@ const drop = (lane: TrackLane, timeMs: number, overlayRow: OverlayRow = { track:
 const layerIds = (draft: WholeFilmDraft) => draft.layer0.map((clip) => clip.id)
 
 describe('placeComponent：点卡片按 kind 去处', () => {
-  it('block 插进成片轨离播放头最近的切点，时长取组件自己的', () => {
+  it('block 插进画面轨离播放头最近的切点，时长取组件自己的', () => {
     // logo-outro 是 block，6 秒；播放头 2 秒在 v1 后半，插到 v1 与 v2 之间
     const { draft } = expectOk(placeComponent(film(), item('logo-outro'), click(2_000)))
     expect(layerIds(draft)).toEqual(['v1', 'c1', 'v2'])
@@ -43,7 +43,7 @@ describe('placeComponent：点卡片按 kind 去处', () => {
     expect(draft.overlays).toEqual([])
   })
 
-  it('component 放到特效轨：在最上面开一行，从播放头开始，叠在最上面，成片轨不动', () => {
+  it('component 放到特效轨：在最上面开一行，从播放头开始，叠在最上面，画面轨不动', () => {
     // hw-arrow 是 component，4 秒
     const busy = draftOf([video('v1', 's1', 0, 3_000), video('v2', 's1', 0, 2_000)], {
       overlays: [overlay('o1', 0, 1_000, { zIndex: 3 })],
@@ -65,13 +65,13 @@ describe('placeComponent：点卡片按 kind 去处', () => {
     ])
   })
 
-  it('字幕样式换掉整片的字幕样式', () => {
+  it('字幕样式换掉全部字幕的样式', () => {
     const { draft } = expectOk(placeComponent(film(), item('caption-highlight'), click(0)))
     expect(draft.captions.component).toBe('caption-highlight')
     expect(draft.layer0).toEqual(film().layer0)
   })
 
-  it('没有固定时长的组件：取 10 秒与整片时长里长的那个', () => {
+  it('没有固定时长的组件：取 10 秒与成片时长里长的那个', () => {
     // count-up 是 component、没有固定时长
     const short = expectOk(placeComponent(film(), item('count-up'), click(0))).draft
     expect(short.overlays[0]?.duration).toBe(10_000)
@@ -83,7 +83,7 @@ describe('placeComponent：点卡片按 kind 去处', () => {
 })
 
 describe('placeComponent：拖放只看落在哪条轨', () => {
-  it('component 拖到成片轨也是一段，插到离松手处最近的切点', () => {
+  it('component 拖到画面轨也是一段，插到离松手处最近的切点', () => {
     const { draft } = expectOk(placeComponent(film(), item('hw-arrow'), drop('film', 4_500)))
     expect(layerIds(draft)).toEqual(['v1', 'v2', 'c1'])
     expect(draft.layer0[2]).toMatchObject({ start: 5_000, duration: 4_000 })
@@ -116,14 +116,14 @@ describe('placeComponent：拖放只看落在哪条轨', () => {
     expect(draft.overlays[0]).toMatchObject({ start: 2_400, duration: 1_200 })
   })
 
-  it('组件段可以放在已有组件段旁边、整片最前', () => {
+  it('组件段可以放在已有组件段旁边、成片最前', () => {
     const cards = draftOf([card('c1', 1_000), video('v1', 's1', 0, 3_000)])
     const { draft } = expectOk(placeComponent(cards, item('logo-outro'), drop('film', 100)))
     expect(layerIds(draft)).toEqual(['c2', 'c1', 'v1'])
   })
 
   it.each([
-    ['字幕样式拖到成片轨', 'caption-highlight', 'film'],
+    ['字幕样式拖到画面轨', 'caption-highlight', 'film'],
     ['字幕样式拖到特效轨', 'caption-highlight', 'overlay'],
     ['别的组件拖到字幕轨', 'hw-arrow', 'caption'],
     ['拖到音乐轨', 'logo-outro', 'music'],
@@ -134,7 +134,7 @@ describe('placeComponent：拖放只看落在哪条轨', () => {
     })
   })
 
-  it('放进去超过 120 秒：成片轨与特效轨都拒绝，不缩短', () => {
+  it('放进去超过 120 秒：画面轨与特效轨都拒绝，不缩短', () => {
     const full = draftOf([video('v1', 's1', 0, 115_000)], { overlays: [overlay('o1', 0, 1_000)] })
     expect(placeComponent(full, item('logo-outro'), drop('film', 0))).toEqual({
       ok: false,
@@ -152,7 +152,7 @@ describe('placedPiece：放置后新出现的片段', () => {
     overlays: [overlay('o1', 0, 1_000)],
   })
 
-  it('插进成片轨的是组件段，放到特效轨的是特效块', () => {
+  it('插进画面轨的是组件段，放到特效轨的是特效块', () => {
     const clip = expectOk(placeComponent(before, item('logo-outro'), drop('film', 0))).draft
     expect(placedPiece(before, clip)).toEqual({
       kind: 'clip',

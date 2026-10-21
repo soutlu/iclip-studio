@@ -1,5 +1,5 @@
 /**
- * 在预览画面上拖动特效块或整片字幕：拖哪个元素、屏幕上的位移怎么吸附并换成画布像素、松手时 SDK
+ * 在预览画面上拖动特效块或全部字幕：拖哪个元素、屏幕上的位移怎么吸附并换成画布像素、松手时 SDK
  * 交回的移动操作怎么写进草稿。手势与 SDK 预览适配器的接线在 canvas-layer.tsx。
  */
 import type { EditOp } from '@hyperframes/sdk'
@@ -19,8 +19,8 @@ import {
 } from './vendor/hyperframes-studio/components/editor/snapEngine'
 
 /**
- * 选中的这一块在画面上拖哪个元素（它的 data-hf-id）：特效块拖它自己，字幕的任何一句都拖整片字幕。
- * 成片轨上的段（视频段、组件段）只能选中，不能拖。
+ * 选中的这一块在画面上拖哪个元素（它的 data-hf-id）：特效块拖它自己，字幕的任何一句都拖全部字幕。
+ * 画面轨上的段（视频段、组件段）只能选中，不能拖。
  */
 export function dragTargetOf(selection: Selection): string | undefined {
   if (selection?.kind === 'overlay') return selection.id
@@ -83,7 +83,7 @@ export function snapDrag(args: {
 }
 
 /**
- * 松手时 SDK 交回的操作写进草稿：拖的是整片字幕就挪字幕，是特效块就挪那一块。别的操作、别的元素
+ * 松手时 SDK 交回的操作写进草稿：拖的是字幕就挪全部字幕，是特效块就挪那一块。别的操作、别的元素
  * （草稿里已经没有这一块）不处理，返回 null。
  */
 export function moveEditOf(draft: WholeFilmDraft, op: EditOp): EditResult | null {

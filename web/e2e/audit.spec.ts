@@ -14,7 +14,7 @@ test('审计总览：快捷档与日历切时间，卡片标题跳到对应一�
 
   const main = page.getByRole('main', { name: '审计' })
   const legend = main.getByRole('group', { name: '图例' })
-  await expect(main.getByRole('article', { name: '成片数' })).toBeVisible()
+  await expect(main.getByRole('article', { name: '出片件数' })).toBeVisible()
   await expect(main.getByText('数据截至 9月23日 14:30')).toBeVisible()
   await expect(
     main.getByRole('button', { name: '自定义时间范围：8月25日 – 9月23日' }),
@@ -51,8 +51,8 @@ test('审计总览：快捷档与日历切时间，卡片标题跳到对应一�
 
   // 卡片标题点了滚到下面对应的一节。
   await main
-    .getByRole('article', { name: '成片数' })
-    .getByRole('button', { name: '成片数' })
+    .getByRole('article', { name: '出片件数' })
+    .getByRole('button', { name: '出片件数' })
     .click()
   await expect(main.getByRole('region', { name: '使用人次' })).toBeInViewport()
 
@@ -71,12 +71,12 @@ test('审计总览在手机宽度不横向滚动', async ({ page }) => {
   await login(page, 'governor')
   await page.getByRole('button', { name: '审计', exact: true }).click()
   const main = page.getByRole('main', { name: '审计' })
-  await expect(main.getByRole('article', { name: '成片数' })).toBeVisible()
+  await expect(main.getByRole('article', { name: '出片件数' })).toBeVisible()
 
   await page.setViewportSize({ width: 390, height: 844 })
   const collapse = page.getByRole('button', { name: '折叠侧边栏' })
   if (await collapse.isVisible()) await collapse.click()
-  await expect(main.getByRole('article', { name: '成片数' })).toBeVisible()
+  await expect(main.getByRole('article', { name: '出片件数' })).toBeVisible()
   const overflow = await main.evaluate((element) => ({
     document: document.documentElement.scrollWidth - window.innerWidth,
     main: element.scrollWidth - element.clientWidth,

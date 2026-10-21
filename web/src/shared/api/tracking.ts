@@ -10,8 +10,8 @@ import {
 type TrackingEvent = z.input<typeof zRecordEventTrackingEventsPostBody>
 
 /**
- * 记一次视频下载，主语 jobId 是一条成片：下载成片时是它自己（原片与水印版同属一条记录），
- * 下载导出的整片时是它用到的每一条。
+ * 记一次视频下载，主语 jobId 是一条素材片：下载素材片时是它自己（原片与水印版同属一条记录），
+ * 下载导出的成片时是它用到的每一条。
  *
  * 默认不打扰用户：调用方不等它回来，与取字节并行；失败不抛、不弹 toast，只 console.warn 一条——
  * 丢一条记账不该挡住用户拿片子。keepalive 让请求在页面随即跳走或关闭时仍能发完。

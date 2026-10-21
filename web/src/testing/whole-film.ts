@@ -1,4 +1,4 @@
-/** 整片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好。 */
+/** 成片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好。 */
 
 import type {
   CatalogItem,
@@ -34,7 +34,7 @@ export const video = (
   volume: 1,
 })
 
-/** 成片轨上的一段组件 */
+/** 画面轨上的一段组件 */
 export const card = (
   id: string,
   duration: number,

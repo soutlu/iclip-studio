@@ -12,15 +12,15 @@ import {
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
 
-/** 第 2 组那条成片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
+/** 第 2 组那条素材片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
 const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await openStoryboardShot(panel, group)
-  // 点成片卡选中它，编辑视频叠在舞台右上。
+  // 点素材片卡选中它，编辑视频叠在舞台右上。
   await panel
-    .getByRole('region', { name: '本组成片', exact: true })
-    .getByRole('button', { name: /的成片$/ })
+    .getByRole('region', { name: '本组素材片', exact: true })
+    .getByRole('button', { name: /的素材片$/ })
     .first()
     .click()
   await panel.getByRole('button', { name: '编辑视频', exact: true }).click()
@@ -33,7 +33,7 @@ const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) 
     await segment(dialog, 1).click()
     await card(dialog).getByRole('button', { name: '编辑模型', exact: true }).click()
     await page.getByRole('menuitemradio', { name: 'wan3.0-video', exact: true }).click()
-    await scope(dialog, '整片').click()
+    await scope(dialog, '整条').click()
   }
   return dialog
 }
@@ -46,7 +46,7 @@ const segment = (dialog: Locator, position: number) =>
   timelineOf(dialog).getByRole('button', { name: new RegExp(`^第 ${position} 段`) })
 const controls = (dialog: Locator) => dialog.getByRole('group', { name: '播放控件' })
 const versions = (dialog: Locator) => dialog.getByRole('group', { name: '视频版本' })
-const scope = (dialog: Locator, name: '整片' | '片段') =>
+const scope = (dialog: Locator, name: '整条' | '片段') =>
   dialog.getByRole('group', { name: '视频预览范围' }).getByRole('button', { name, exact: true })
 /** 选中段时盖在舞台上的弹出卡。 */
 const card = (dialog: Locator) => dialog.getByRole('region', { name: 'AI 改段' })
@@ -254,11 +254,11 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   await expect(candidate).toBeEnabled({ timeout: STEP_TIMEOUT })
   await expect(generateButton(dialog)).toBeEnabled()
   await candidate.click()
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
 })
 
-test('整片预览使用时间线选用的版本，历史原片与当前剪辑分别显示对应画面和时长', async ({ page }) => {
+test('整条预览使用时间线选用的版本，历史原片与当前剪辑分别显示对应画面和时长', async ({ page }) => {
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
   const video = dialog.getByLabel('视频播放器', { exact: true })
@@ -274,8 +274,8 @@ test('整片预览使用时间线选用的版本，历史原片与当前剪辑�
   const editedUrl = await video.getAttribute('src')
   if (editedUrl === null) throw new Error('编辑结果尚未加载')
 
-  // 一秒原片换成三秒结果，总长八秒；切整片后该位置仍播放被选用的文件。
-  await scope(dialog, '整片').click()
+  // 一秒原片换成三秒结果，总长八秒；切整条后该位置仍播放被选用的文件。
+  await scope(dialog, '整条').click()
   await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
   await expect(video).toHaveAttribute('src', editedUrl)
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
@@ -291,7 +291,7 @@ test('整片预览使用时间线选用的版本，历史原片与当前剪辑�
   await waitForSegments(dialog, 6)
   await expect(controls(dialog)).toContainText('共 6.0 秒')
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await expect(controls(dialog)).toContainText('共 8.0 秒')
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
@@ -619,7 +619,7 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
-  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  await dialog.getByRole('button', { name: '合成新版本', exact: true }).click()
   const baseJobId = new URL(page.url()).searchParams.get('video')
   expect((await request).postDataJSON()).toEqual({
     conversationId: expect.any(String),
@@ -763,7 +763,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
-  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  await dialog.getByRole('button', { name: '合成新版本', exact: true }).click()
   expect((await request).postDataJSON()).toEqual({
     conversationId: expect.any(String),
     taskId: null,
@@ -777,11 +777,11 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   })
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 
-  // 整片按钮预览当前时间线；明确点击合成版本才查看历史文件。
-  await scope(dialog, '整片').click()
+  // 整条按钮预览当前时间线；明确点击合成版本才查看历史文件。
+  await scope(dialog, '整条').click()
   const composite = versions(dialog).getByRole('button', { name: 'V1', exact: true })
   await expect(composite).toBeEnabled({ timeout: STEP_TIMEOUT })
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await waitForSegments(dialog, 4)
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await composite.click()
@@ -791,7 +791,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await versions(dialog).getByRole('button', { name: '原片', exact: true }).click()
   await waitForSegments(dialog, 6)
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
-  await scope(dialog, '整片').click()
+  await scope(dialog, '整条').click()
   await waitForSegments(dialog, 4)
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
@@ -850,7 +850,7 @@ test('扩大已编辑区间：参考包含当前版本和相邻原片，新版�
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
-  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  await dialog.getByRole('button', { name: '合成新版本', exact: true }).click()
   expect((await request).postDataJSON()).toMatchObject({
     baseJobId,
     segments: [
@@ -1031,12 +1031,12 @@ test('放大预览：舞台搬进应用内遮罩，播放不断、不进浏览�
   await expect.poll(playing).toBe(true)
 })
 
-test('只有成功的出片才能进编辑；关掉编辑器回到成片区，地址里不再带 video', async ({ page }) => {
+test('只有成功的出片才能进编辑；关掉编辑器回到素材片区，地址里不再带 video', async ({ page }) => {
   const dialog = await openEditor(page)
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page).not.toHaveURL(/[?&]video=/)
-  const takes = page.getByRole('region', { name: '本组成片', exact: true })
+  const takes = page.getByRole('region', { name: '本组素材片', exact: true })
   await expect(takes).toBeVisible()
   // 第 2 组只有一条完成的出片：选中失败的那条，编辑置灰；选中在途的那条，没有编辑入口。
   await expect(takes.getByRole('listitem')).toHaveCount(3)

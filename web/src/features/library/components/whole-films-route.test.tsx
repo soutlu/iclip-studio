@@ -20,7 +20,7 @@ const version = (n: number, sourceJobIds: string[]) => ({
 })
 const film: WholeFilmCard = {
   conversationId: 'fa010002-0000-4000-8000-000000000001',
-  title: '秋日整片',
+  title: '秋日成片',
   canOpenConversation: true,
   userName: 'tester',
   face: version(2, [source(3)]),
@@ -59,7 +59,7 @@ afterEach(() => {
 })
 
 describe('WholeFilmsRoute', () => {
-  it('按最新一版展示卡片；切到 V1 下载时按那一版用到的成片各记一次，没有脚本或做同款', async () => {
+  it('按最新一版展示卡片；切到 V1 下载时按那一版用到的素材片各记一次，没有脚本或做同款', async () => {
     const events: unknown[] = []
     server.use(
       http.post('*/api/tracking/events', async ({ request }) => {
@@ -73,10 +73,10 @@ describe('WholeFilmsRoute', () => {
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    const card = await screen.findByRole('article', { name: '秋日整片' })
+    const card = await screen.findByRole('article', { name: '秋日成片' })
     expect(within(card).getByText('V2')).toBeVisible()
-    await user.click(within(card).getByRole('button', { name: '查看整片：秋日整片' }))
-    const dialog = screen.getByRole('dialog', { name: '秋日整片' })
+    await user.click(within(card).getByRole('button', { name: '查看成片：秋日成片' }))
+    const dialog = screen.getByRole('dialog', { name: '秋日成片' })
     expect(within(dialog).getByRole('button', { name: 'V2' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -105,9 +105,9 @@ describe('WholeFilmsRoute', () => {
       ),
     )
     await renderWithProviders(<Harness initialFilm={film.conversationId} />)
-    const dialog = await screen.findByRole('dialog', { name: '秋日整片' })
+    const dialog = await screen.findByRole('dialog', { name: '秋日成片' })
     expect(within(dialog).queryByRole('button', { name: '打开来源任务' })).toBeNull()
-    expect(within(dialog).getByRole('group', { name: '整片版本' })).toBeVisible()
+    expect(within(dialog).getByRole('group', { name: '成片版本' })).toBeVisible()
   })
 
   it('按标题与作者筛选，没有画幅筛选', async () => {
@@ -123,12 +123,12 @@ describe('WholeFilmsRoute', () => {
     await screen.findByRole('article')
     expect(screen.queryByRole('radiogroup', { name: '画幅' })).toBeNull()
     await user.click(screen.getByRole('radio', { name: '我生成的' }))
-    await user.type(screen.getByRole('textbox', { name: '搜索整片标题' }), '秋日')
+    await user.type(screen.getByRole('textbox', { name: '搜索成片标题' }), '秋日')
     await waitFor(() => expect(queries.at(-1)?.get('q')).toBe('秋日'))
     expect(queries.at(-1)?.get('userName')).toBe('tester')
   })
 
-  it('按人筛选的候选取自整片作者名单，不随翻到的卡片变化', async () => {
+  it('按人筛选的候选取自成片作者名单，不随翻到的卡片变化', async () => {
     const viewport = stubIntersectionObserver()
     const queries: URLSearchParams[] = []
     server.use(
@@ -140,7 +140,7 @@ describe('WholeFilmsRoute', () => {
         queries.push(query)
         if (query.get('userName') === 'OnlyFilm.Owner')
           return HttpResponse.json({
-            items: [{ ...film, title: '未加载作者的整片', userName: 'OnlyFilm.Owner' }],
+            items: [{ ...film, title: '未加载作者的成片', userName: 'OnlyFilm.Owner' }],
             nextCursor: null,
             total: 1,
           })
@@ -151,7 +151,7 @@ describe('WholeFilmsRoute', () => {
             {
               ...film,
               conversationId: 'fa010002-0000-4000-8000-000000000002',
-              title: '第二页整片',
+              title: '第二页成片',
               userName: 'Paged.Owner',
             },
           ],
@@ -162,9 +162,9 @@ describe('WholeFilmsRoute', () => {
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    await screen.findByRole('article', { name: '秋日整片' })
+    await screen.findByRole('article', { name: '秋日成片' })
     await viewport.scroll(true)
-    expect(await screen.findByRole('article', { name: '第二页整片' })).toBeVisible()
+    expect(await screen.findByRole('article', { name: '第二页成片' })).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '人：人' }))
     const popup = await screen.findByRole('dialog', { name: '选择人' })
@@ -176,7 +176,7 @@ describe('WholeFilmsRoute', () => {
       ).toEqual(['OOnlyFilm.Owner']),
     )
     await user.click(within(popup).getByRole('option', { name: /OnlyFilm\.Owner/ }))
-    expect(await screen.findByRole('article', { name: '未加载作者的整片' })).toBeVisible()
+    expect(await screen.findByRole('article', { name: '未加载作者的成片' })).toBeVisible()
     expect(queries.at(-1)?.get('userName')).toBe('OnlyFilm.Owner')
   })
 
@@ -186,7 +186,7 @@ describe('WholeFilmsRoute', () => {
     const second = {
       ...film,
       conversationId: 'fa010002-0000-4000-8000-000000000002',
-      title: '第二条整片',
+      title: '第二条成片',
     }
     server.use(
       http.get('*/api/library/whole-films', ({ request }) => {
@@ -198,11 +198,11 @@ describe('WholeFilmsRoute', () => {
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness initialFilm={second.conversationId} />)
-    const dialog = await screen.findByRole('dialog', { name: '整片详情' })
+    const dialog = await screen.findByRole('dialog', { name: '成片详情' })
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('下一页暂不可用')
     failed = false
     await user.click(within(dialog).getByRole('button', { name: '重新加载' }))
-    expect(await screen.findByRole('dialog', { name: '第二条整片' })).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: '第二条成片' })).toBeVisible()
   })
 
   it('翻页失败后重试，读取期间不再显示错误', async () => {
@@ -215,7 +215,7 @@ describe('WholeFilmsRoute', () => {
     const second = {
       ...film,
       conversationId: 'fa010002-0000-4000-8000-000000000002',
-      title: '第二条整片',
+      title: '第二条成片',
     }
     server.use(
       http.get('*/api/library/whole-films', async ({ request }) => {
@@ -236,7 +236,7 @@ describe('WholeFilmsRoute', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
     release()
-    expect(await screen.findByRole('article', { name: '第二条整片' })).toBeVisible()
+    expect(await screen.findByRole('article', { name: '第二条成片' })).toBeVisible()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 

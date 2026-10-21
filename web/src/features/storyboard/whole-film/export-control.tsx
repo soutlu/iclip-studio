@@ -56,8 +56,8 @@ const enhanceStatus = (rows: readonly EnhanceTierRow[]): Status | undefined => {
 
 /**
  * 顶栏的导出：提交、进度与取消、完成后下载。每次导出都按当时存好的那一版重新渲染；
- * 成片长期留着，显示的是这段对话最近一次导出；下载时它用到的成片各记一次下载。
- * 导出完成后「下载整片」的菜单里还能做高清版，进度写在状态行，按钮上不加点；导出自己的状态优先。
+ * 成片长期留着，显示的是这段对话最近一次导出；下载时它用到的素材片各记一次下载。
+ * 导出完成后「下载成片」的菜单里还能做高清版，进度写在状态行，按钮上不加点；导出自己的状态优先。
  */
 export function ExportControl({ view, blocked, onStart, onCancel }: ExportControlProps) {
   const running = view.kind === 'queued' || view.kind === 'rendering' || view.kind === 'uploading'
@@ -89,11 +89,11 @@ export function ExportControl({ view, blocked, onStart, onCancel }: ExportContro
             className="editor-compose"
             downloadedJobIds={view.sourceJobIds}
             enhanceSourceId={view.exportId}
-            originalLabel="下载整片"
+            originalLabel="下载成片"
             url={view.downloadUrl}
             watermarkUrl={null}
           >
-            下载整片
+            下载成片
           </VideoDownload>
         </>
       ) : (

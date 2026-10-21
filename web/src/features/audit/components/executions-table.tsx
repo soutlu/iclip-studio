@@ -65,7 +65,7 @@ export function ExecutionsTable({
               需求单
             </th>
             <th className={TH} scope="col">
-              成片
+              出片
             </th>
             <SortHeader column="retries" onSort={onSort} sort={sort}>
               每镜头重试次数
@@ -225,7 +225,7 @@ function UsageList({ usage }: { usage: Execution['usage'] }) {
   )
 }
 
-/** 成片与否：中性状态点加文字，是为实心点、否为空心点，不用判断色。 */
+/** 出片与否：中性状态点加文字，是为实心点、否为空心点，不用判断色。 */
 function DeliveredMark({ delivered }: { delivered: boolean }) {
   return (
     <span className={cn('inline-flex items-center gap-1.5', !delivered && 'text-on-surface-muted')}>

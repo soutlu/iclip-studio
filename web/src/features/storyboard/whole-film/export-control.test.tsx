@@ -85,8 +85,8 @@ describe('ExportControl · 高清版', () => {
   it.each([
     { view: { kind: 'rendering', progress: 0.4 } as const, text: '正在渲染 40%' },
     {
-      view: { kind: 'failed', message: '整片渲染失败，请重新导出' } as const,
-      text: '整片渲染失败，请重新导出',
+      view: { kind: 'failed', message: '成片渲染失败，请重新导出' } as const,
+      text: '成片渲染失败，请重新导出',
     },
   ])('导出自己在进行或失败时，写导出的状态（$text）', async ({ view, text }) => {
     const tiers = serveTiers([{ job: enhanceJob('submitted'), resolution: '1080p' }])
@@ -96,12 +96,12 @@ describe('ExportControl · 高清版', () => {
     expect(tiers.reads).toBe(0)
   })
 
-  it('「下载整片」能做高清版时先开菜单，第一项是「下载整片」，按钮上不带状态', async () => {
+  it('「下载成片」能做高清版时先开菜单，第一项是「下载成片」，按钮上不带状态', async () => {
     const tiers = serveTiers([{ job: enhanceJob('submitted'), resolution: '1080p' }])
     const user = userEvent.setup()
     await renderControl(DONE)
     await waitFor(() => expect(tiers.reads).toBe(1))
-    const download = screen.getByRole('button', { name: '下载整片' })
+    const download = screen.getByRole('button', { name: '下载成片' })
     expect(download).not.toHaveAccessibleDescription()
 
     await user.click(download)
@@ -111,6 +111,6 @@ describe('ExportControl · 高清版', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['下载整片', expect.stringMatching(/^正在生成高清版 1080p/)])
+    ).toEqual(['下载成片', expect.stringMatching(/^正在生成高清版 1080p/)])
   })
 })

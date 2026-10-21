@@ -21,7 +21,7 @@ import {
   sourceOf,
 } from './timeline'
 
-// 第 0 层（成片轨）是视频段与组件段的同一个列表，先后不限，始终从 0 起首尾相接。
+// 第 0 层（画面轨）是视频段与组件段的同一个列表，先后不限，始终从 0 起首尾相接。
 
 const replaceClip = (draft: WholeFilmDraft, clip: Layer0Clip): WholeFilmDraft => ({
   ...draft,
@@ -34,10 +34,10 @@ export type InsertAt = { index: number } | { timeMs: number }
 const indexAt = (draft: WholeFilmDraft, at: InsertAt) =>
   'index' in at ? clamp(at.index, 0, draft.layer0.length) : insertIndexAt(draft.layer0, at.timeMs)
 
-/** 放进第 0 层，后面的段整体后移；整片超过总长上限时拒绝，不缩短 */
+/** 放进第 0 层，后面的段整体后移；成片超过总长上限时拒绝，不缩短 */
 const insertClip = (draft: WholeFilmDraft, clip: Layer0Clip, at: InsertAt): EditResult => {
   if (clip.duration < MIN_CLIP_MS) return refuse('too-short')
-  // 特效块本来就不晚于上限结束，成片轨不超过上限，整片也就不超过
+  // 特效块本来就不晚于上限结束，画面轨不超过上限，成片也就不超过
   if (layer0End(draft) + clip.duration > MAX_FILM_MS) return refuse('film-too-long')
   return done(normalize({ ...draft, layer0: insertAt(draft.layer0, indexAt(draft, at), clip) }))
 }
@@ -70,7 +70,7 @@ export const insertMaterial = (
 }
 
 /**
- * 把组件作为一段放进成片轨，与视频段同等占时间。variables 是写进草稿的可填项，没写的项合成时取
+ * 把组件作为一段放进画面轨，与视频段同等占时间。variables 是写进草稿的可填项，没写的项合成时取
  * 组件自己的默认值。
  */
 export const insertComponent = (
@@ -108,7 +108,7 @@ export const moveClip = (
 
 /**
  * 修剪一段的一端，算法用 Studio 的修剪。修开头时切点不动、入点后移（组件段从组件自己时间里更晚处
- * 起播）；之后整轨收紧，后面的段跟着移。视频段不超出素材，任何一段都不短于最短时长，整片拉长到
+ * 起播）；之后整轨收紧，后面的段跟着移。视频段不超出素材，任何一段都不短于最短时长，成片拉长到
  * 总长上限就停住。
  */
 export const trimClip = (

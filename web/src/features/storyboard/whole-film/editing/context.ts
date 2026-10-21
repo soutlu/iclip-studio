@@ -10,7 +10,7 @@ export type SourceMedia = {
   durationMs: number
   width: number
   height: number
-  /** 这条成片的字幕记录；还没有识别结果时为 null，此时不知道口播在哪 */
+  /** 这条素材片的字幕记录；还没有识别结果时为 null，此时不知道口播在哪 */
   subtitle: SourceSubtitle | null
 }
 
@@ -20,7 +20,7 @@ export type MusicBeat = { timeMs: number; strength: number }
 export type MusicMedia = { durationMs: number; beats: MusicBeat[] }
 
 export type EditContext = {
-  /** 按成片的 sourceJobId */
+  /** 按素材片的 sourceJobId */
   sources: Record<string, SourceMedia>
   /** 按音频记录的 jobId */
   music: Record<string, MusicMedia>

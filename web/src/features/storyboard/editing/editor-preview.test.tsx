@@ -63,7 +63,7 @@ it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟�
   expect(playback).toHaveBeenLastCalledWith({ playing: false, muted: true })
 })
 
-it('切段先停在准确的整片切点，下一段实际开播后才恢复混音', async () => {
+it('切段先停在准确的整条切点，下一段实际开播后才恢复混音', async () => {
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
     frames.push(callback)

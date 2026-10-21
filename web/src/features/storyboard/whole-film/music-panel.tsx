@@ -371,7 +371,7 @@ export function GenerateMusic({
   const reason = submitting
     ? '正在提交，请稍候'
     : task.isError
-      ? '对话信息读取失败，无法生成；请关闭后重新打开整片'
+      ? '对话信息读取失败，无法生成；请关闭后重新打开成片编辑器'
       : task.data === undefined
         ? '正在读取对话信息，稍后再试'
         : text.trim() === ''

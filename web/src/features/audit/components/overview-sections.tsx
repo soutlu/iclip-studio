@@ -201,7 +201,7 @@ const SPAN_ROWS: readonly {
 }[] = [
   {
     name: '单任务平均时长',
-    hint: '从首次运行到最后一条成片，仅计运行中的时间',
+    hint: '从首次运行到最后一条出片，仅计运行中的时间',
     pick: (m) => m.activeCycleSeconds,
   },
   {
@@ -389,7 +389,7 @@ export function CostSection({ id, overview }: SectionProps) {
                 />
               ) : null
             }
-            info="仅统计成功出片的秒数，失败的不计入。一个镜头成功生成多条时，最后一条计入最终成片长度，其余计入废片长度。"
+            info="仅统计成功出片的秒数，失败的不计入。一个镜头成功生成多条时，最后一条计入最终出片长度，其余计入废片长度。"
             title="视频生成总时长"
           />
           {hasLength ? (
@@ -409,7 +409,7 @@ export function CostSection({ id, overview }: SectionProps) {
                 items={[
                   {
                     color: 'var(--color-chart-1)',
-                    name: '最终成片长度',
+                    name: '最终出片长度',
                     value: fmtLength(finalLength),
                   },
                   {

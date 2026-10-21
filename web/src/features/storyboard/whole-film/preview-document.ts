@@ -27,10 +27,10 @@ export const withBaseHref = (html: string, baseHref: string): string => {
 }
 
 type MediaSources = {
-  /** 成片的地址（按 sourceJobId）；读不到时为 undefined */
+  /** 素材片的地址（按 sourceJobId）；读不到时为 undefined */
   videoUrl: (sourceJobId: string) => string | undefined
   musicUrl: string | undefined
-  /** 每条成片用的字幕记录：识别完成的记录里最晚建的那条，与导出取的同一条 */
+  /** 每条素材片用的字幕记录：识别完成的记录里最晚建的那条，与导出取的同一条 */
   subtitles: Readonly<Record<string, SubtitleRecord | null | undefined>>
 }
 
@@ -63,7 +63,7 @@ const BLOCKED_TEXT: Record<CompositionErrorCode, string> = {
   'invalid-draft': EMPTY_TEXT,
 }
 
-/** 生成预览页；成片轨还是空的、或草稿合成不了时给出原因（一句话，不带组件 id） */
+/** 生成预览页；画面轨还是空的、或草稿合成不了时给出原因（一句话，不带组件 id） */
 export const previewState = (
   draft: WholeFilmDraft,
   media: CompositionMedia,

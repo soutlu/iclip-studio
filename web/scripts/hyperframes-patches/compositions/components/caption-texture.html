@@ -6,7 +6,7 @@
 
   本文件对原组件的改动：
   1. 改成 <template> 子合成；台词来自 window.__hyperframes.getVariables().words
-     （[{ text, start, end, sentence }]，整片秒数），去掉写死的台词与重点词。
+     （[{ text, start, end, sentence }]，成片秒数），去掉写死的台词与重点词。
   2. 去掉转大写；中文用 Noto Sans SC（本地字体文件），拉丁字母仍用 Anton。
   3. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin）；
      字号照原组件用画布量字，收进画面宽的 90%。

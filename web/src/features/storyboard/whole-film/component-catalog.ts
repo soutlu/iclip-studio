@@ -35,9 +35,9 @@ const catalogQuery = queryOptions({
 
 export const useComponentCatalog = () => useQuery(catalogQuery)
 
-/** 点卡片时组件去哪：字幕样式换掉整片的字幕样式，block 插进成片轨，其余放到特效轨 */
+/** 点卡片时组件去哪：字幕样式换掉全部字幕的样式，block 插进画面轨，其余放到特效轨 */
 export const defaultLaneLabel = (item: CatalogItem): string =>
-  item.placement === 'caption' ? '字幕样式' : item.kind === 'block' ? '成片轨' : '特效轨'
+  item.placement === 'caption' ? '字幕样式' : item.kind === 'block' ? '画面轨' : '特效轨'
 
 export const CATEGORY_ICON: Record<string, IconName> = {
   captions: 'captions',
@@ -52,7 +52,7 @@ export const CATEGORY_ICON: Record<string, IconName> = {
 /** 没有固定时长的组件至少放这么长，同 HyperFrames */
 const MIN_UNTIMED_MS = 10_000
 
-/** 组件放进成片的时长：组件自己的时长；没有时同 HyperFrames，取 10 秒与整片时长里长的那个 */
+/** 组件放进成片的时长：组件自己的时长；没有时同 HyperFrames，取 10 秒与成片时长里长的那个 */
 export const durationMsOf = (item: CatalogItem, filmMs: number): number =>
   item.duration === null ? Math.max(MIN_UNTIMED_MS, filmMs) : Math.round(item.duration * 1000)
 

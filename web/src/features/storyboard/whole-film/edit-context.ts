@@ -43,7 +43,7 @@ export type KeyframeState =
 
 export type KeyframeStates = ReadonlyMap<string, KeyframeState>
 
-/** 各版成片的关键帧表（地址 → 表）；时长也取它，记录上没记时长的成片靠它知道多长。 */
+/** 各版素材片的关键帧表（地址 → 表）；时长也取它，记录上没记时长的素材片靠它知道多长。 */
 export const useKeyframeIndexes = (urls: readonly string[]): KeyframeStates =>
   useQueries({
     queries: urls.map((url) => keyframeQuery(url)),
@@ -66,7 +66,7 @@ const sourceDurationMs = (material: Material, keyframes: KeyframeStates): number
   return material.durationMs ?? undefined
 }
 
-/** 每条成片用哪条字幕记录：识别完成的记录里最晚建的那条，与后端导出取的是同一条 */
+/** 每条素材片用哪条字幕记录：识别完成的记录里最晚建的那条，与后端导出取的是同一条 */
 const latestSubtitles = (jobs: readonly GenerationJob[]) => {
   const latest = new Map<string, GenerationJob>()
   for (const job of jobs.filter((item) => item.status === 'completed').toSorted(byCreation))
@@ -86,7 +86,7 @@ type ContextInput = {
 }
 
 /**
- * 编辑操作要的素材事实。只收时长已知的成片与音乐；画面尺寸在加入成片时另给（见 `withSourceSize`）。
+ * 编辑操作要的素材事实。只收时长已知的素材片与音乐；画面尺寸在加入成片时另给（见 `withSourceSize`）。
  */
 export const buildEditContext = ({
   materials,

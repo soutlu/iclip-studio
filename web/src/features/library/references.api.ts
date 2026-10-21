@@ -62,7 +62,7 @@ export const isDefaultReferenceScope = (scope: ReferenceScope): boolean =>
   scope.videoTypes.length === 0 &&
   scope.categories.length === 0
 
-/** 一页的卡数，与成片同一个量级。 */
+/** 一页的卡数，与成片素材同一个量级。 */
 const REFERENCES_PAGE_SIZE = 24
 
 /** 有排队或拆解中的行时轮询的间隔，与出片记录的轮询一致。 */
