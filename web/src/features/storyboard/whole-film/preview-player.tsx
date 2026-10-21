@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from 'react'
 import { StageBackdrop } from '../components/stage-backdrop'
+import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
 /** 编辑后等这么久再重载预览 */
 const RELOAD_DELAY_MS = 250
@@ -15,12 +16,22 @@ const RELOAD_DELAY_MS = 250
 /** 新播放器跳到要接着的时刻后，等这么多帧再换上（运行时在 iframe 里按帧画出那一刻） */
 const SETTLE_FRAMES = 3
 
+/**
+ * 跳到离 ms 最近的那一帧。合成页不写帧率，运行时按 30 帧走，跳转时刻向下取整到帧；报回来的帧时刻
+ * 取整到毫秒后会略小于那一帧，直接加步长再跳会少走一帧。传帧中间的时刻，取整后正好落在这一帧。
+ */
+const frameSeconds = (ms: number) => (secondsToFrame(ms / 1000) + 0.5) / STUDIO_PREVIEW_FPS
+
 /** 编辑器控制预览播放器：工具条的播放暂停、时间线上点哪跳到哪 */
 export type PreviewControl = {
   play: () => void
   pause: () => void
   seek: (ms: number) => void
+  /** 从 startMs 播到 endMs，停在 endMs 之前的最后一帧；播放、暂停、跳转都取消这一段 */
+  playRange: (startMs: number, endMs: number) => void
 }
+
+type PlayRange = { startMs: number; endMs: number }
 
 /** `@hyperframes/player` 注册的 `<hyperframes-player>` 元素上我们用到的那几样 */
 type PlayerElement = HTMLElement & {
@@ -33,6 +44,23 @@ type PlayerElement = HTMLElement & {
   readonly paused: boolean
   /** 素材就绪、加载面板淡出，页面已经画在屏幕上；每次换页重置 */
   readonly painted: boolean
+  /** 只播 [rangeStart, rangeEnd) 这一段（秒）：运行时按帧停在 rangeEnd 之前的最后一帧，发 `ended` */
+  rangeStart: number | null
+  rangeEnd: number | null
+}
+
+/**
+ * 换一段要播的范围。每改一端播放器都按新范围检查一次，暂停的播放头不在范围里就挪到范围开头；停在
+ * 段尾那一帧也算不在 [开头, 段尾) 里，所以取消时先去掉结尾，再去掉开头，播放头留在原处。
+ */
+const setPlayRange = (player: PlayerElement, range: PlayRange | null) => {
+  if (range === null) {
+    player.rangeEnd = null
+    player.rangeStart = null
+    return
+  }
+  player.rangeStart = range.startMs / 1000
+  player.rangeEnd = range.endMs / 1000
 }
 
 type PreviewPlayerProps = {
@@ -78,6 +106,8 @@ export function PreviewPlayer({
   // 正在显示的播放器；只有它的事件驱动编辑器
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
+  // 正在播的那一段；换页时交给接着放的新播放器
+  const rangeRef = useRef<PlayRange | null>(null)
   const callbacksRef = useRef({ onTime, onPlaying, onFrame })
   const sizeRef = useRef({ width, height })
   useLayoutEffect(() => {
@@ -112,25 +142,47 @@ export function PreviewPlayer({
     }
     const onPlay = () => callbacksRef.current.onPlaying(true)
     const onPause = () => callbacksRef.current.onPlaying(false)
+    const clearRange = () => {
+      if (rangeRef.current === null) return
+      rangeRef.current = null
+      setPlayRange(active, null)
+    }
+    const onEnded = () => {
+      clearRange()
+      onPause()
+    }
     active.addEventListener('timeupdate', onTimeUpdate)
     active.addEventListener('play', onPlay)
     active.addEventListener('pause', onPause)
-    active.addEventListener('ended', onPause)
+    active.addEventListener('ended', onEnded)
     controlRef.current = {
-      play: () => active.play(),
-      pause: () => active.pause(),
+      play: () => {
+        clearRange()
+        active.play()
+      },
+      pause: () => {
+        clearRange()
+        active.pause()
+      },
       // 播放器跳转后停在那里（不发 pause 事件）；原来在放就接着放
       seek: (ms) => {
+        clearRange()
         const wasPlaying = !active.paused
-        active.seek(ms / 1000)
+        active.seek(frameSeconds(ms))
         if (wasPlaying) active.play()
+      },
+      playRange: (startMs, endMs) => {
+        rangeRef.current = { startMs, endMs }
+        setPlayRange(active, rangeRef.current)
+        active.seek(frameSeconds(startMs))
+        active.play()
       },
     }
     return () => {
       active.removeEventListener('timeupdate', onTimeUpdate)
       active.removeEventListener('play', onPlay)
       active.removeEventListener('pause', onPause)
-      active.removeEventListener('ended', onPause)
+      active.removeEventListener('ended', onEnded)
       active.remove()
       controlRef.current = null
     }
@@ -181,7 +233,11 @@ export function PreviewPlayer({
         next.classList.remove('is-pending')
         activeRef.current = next
         setActive(next)
-        if (resumePlaying) next.play()
+        if (resumePlaying) {
+          // 正在播一段时，新播放器照样停在这一段的结尾
+          if (rangeRef.current !== null) setPlayRange(next, rangeRef.current)
+          next.play()
+        }
       })()
     }, RELOAD_DELAY_MS)
     return () => {

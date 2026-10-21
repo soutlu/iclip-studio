@@ -326,8 +326,6 @@ function EditorBody({
   const [viewportWidth, setViewportWidth] = useState(0)
   const [range, setRange] = useState<MaterialRange | null>(null)
   const tracksRef = useRef<TracksHandle | null>(null)
-  // 点画面轨上的段后只播这一段：播到这一刻停住；拖动播放头或再按播放时取消
-  const stopAtRef = useRef<number | null>(null)
 
   const total = filmDuration(draft)
   const scale = timelineScale(viewportWidth, total, zoom)
@@ -340,34 +338,24 @@ function EditorBody({
   const previewUrl =
     previewClip?.type === 'video' ? materials.byJob.get(previewClip.sourceJobId)?.url : undefined
   const seek = (ms: number) => {
-    stopAtRef.current = null
     leaveMaterial()
     setPlayheadMs(ms)
     previewRef.current?.seek(ms)
-  }
-  const onTime = (ms: number) => {
-    setPlayheadMs(ms)
-    const stopAt = stopAtRef.current
-    if (stopAt !== null && ms >= stopAt) {
-      stopAtRef.current = null
-      previewRef.current?.pause()
-    }
   }
   const togglePlay = () => {
     if (materialView !== null) {
       materialPreviewRef.current?.toggle()
       return
     }
-    stopAtRef.current = null
     if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
-  /** 点画面轨上的段：选中，播放头移到段首并把这一段播一遍 */
+  /** 点画面轨上的段：选中，播放头移到段首并把这一段播一遍，停在段尾；拖动播放头或再按播放时取消 */
   const playClip = (clip: Layer0Clip) => {
     setSelection({ kind: 'clip', id: clip.id })
-    seek(clip.start)
-    stopAtRef.current = clip.start + clip.duration
-    previewRef.current?.play()
+    leaveMaterial()
+    setPlayheadMs(clip.start)
+    previewRef.current?.playRange(clip.start, clip.start + clip.duration)
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
@@ -826,7 +814,7 @@ function EditorBody({
           message={playBlocked}
           onFrame={setPreviewFrame}
           onPlaying={setPlaying}
-          onTime={onTime}
+          onTime={setPlayheadMs}
           srcdoc={preview.kind === 'ready' ? preview.html : undefined}
           width={canvas.width}
         >
@@ -844,10 +832,7 @@ function EditorBody({
               const result = moveEditOf(draft, op)
               return result !== null && apply(result)
             }}
-            onPause={() => {
-              stopAtRef.current = null
-              previewRef.current?.pause()
-            }}
+            onPause={() => previewRef.current?.pause()}
             onSelect={selectOnCanvas}
             playheadMs={playhead}
             selection={selection}
