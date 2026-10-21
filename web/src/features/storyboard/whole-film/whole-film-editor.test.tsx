@@ -400,6 +400,23 @@ describe('成片编辑器 · 时间线', () => {
     expect(playhead).toHaveValue('1.1')
   })
 
+  it('播放头按帧走：停在报回毫秒偏小的那一帧上，⇧→ 仍正好走 1 秒', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    // 预览播放器换上来之后，跳转才经过它按帧取整
+    await waitFor(() =>
+      expect(document.querySelector('hyperframes-player:not(.is-pending)')).not.toBeNull(),
+    )
+    await user.click(await blockButton(/^选中：第 1 段/))
+    const playhead = screen.getByRole('slider', { name: '时间线播放位置' })
+    // 1.34 秒落在第 40 帧，播放器报回 1.3333… 秒，取整成 1333 毫秒
+    fireEvent.change(playhead, { target: { value: '1.34' } })
+    expect(playhead).toHaveValue('1.333')
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+    expect(playhead).toHaveValue('2.333')
+  })
+
   it('音量推子按 dB：0 dB 在正中，←/→ 0.5 dB、⇧ 3 dB，双击回 0 dB，草稿里存倍数', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())

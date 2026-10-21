@@ -108,7 +108,8 @@ const openWith = async (
   await expect(
     film.getByRole('group', { name: new RegExp(`^第 ${layer0.length} 段`) }),
   ).toBeVisible()
-  // 预览播放器换上来时会报一次它的时刻：等它换上来，之后点段、走播放头才不会被它拨回去
+  // 预览播放器换上来时会报一次它的时刻：等它换上来（画好之后还要等几帧才换），之后点段、走播放头
+  // 才不会被它拨回去
   await expect
     .poll(() =>
       dialog
@@ -116,7 +117,9 @@ const openWith = async (
         .locator('hyperframes-player')
         .evaluateAll(
           (players) =>
-            players.length === 1 && (players[0] as HTMLElement & { painted: boolean }).painted,
+            players.length === 1 &&
+            (players[0] as HTMLElement & { painted: boolean }).painted &&
+            !players[0].classList.contains('is-pending'),
         ),
     )
     .toBe(true)
@@ -152,10 +155,8 @@ const pixelsPerSecond = async (dialog: Locator) => {
   return { pps: box.width / Number(await ruler.getAttribute('max')), left: box.x }
 }
 
-/** 播放器按 30 帧报时刻，读数与播放头最多差一帧 */
+/** 合成页按 30 帧走（与素材自己的帧率无关），读数落在帧上，与要去的时刻最多差一帧 */
 const FRAME_MS = 34
-/** 点段播放停在段尾时，允许多走的时长 */
-const STOP_OVERSHOOT_MS = 150
 
 /** 从时间线的语义控件找到真实的横向滚动宿主，避免依赖样式类或固定 DOM 层级。 */
 const scrollViewport = async (ruler: Locator) => {
@@ -191,14 +192,14 @@ const settledClockMs = async (clock: Locator) => {
   return Number(last) * 1000
 }
 
-/** 点段播到段尾自己停下：读数两次一样，且停在段尾。播放器报的时刻过了段尾才暂停，实测多走 60–90 毫秒 */
+/** 点段播到段尾自己停下：读数两次一样，且停在段尾之前的最后一帧，不露出下一段 */
 const expectStoppedAt = async (clock: Locator, endMs: number) => {
   let last = Number.NaN
   await expect
     .poll(
       async () => {
         const now = Number(await clock.inputValue()) * 1000
-        const stopped = now === last && now >= endMs && now <= endMs + STOP_OVERSHOOT_MS
+        const stopped = now === last && now >= endMs - FRAME_MS && now < endMs
         last = now
         return stopped
       },
@@ -588,7 +589,7 @@ test.describe('成片编辑器 · 时间线', () => {
     const guide = dialog.getByTestId('timeline-hover-guide')
     const preview = page.getByText('00:04.00', { exact: true })
     // 点段会自动播放到段尾；停下之后再验证悬停不会改变实际播放时间。
-    await expect.poll(async () => Number(await ruler.inputValue())).toBeGreaterThanOrEqual(5.2)
+    await expectStoppedAt(ruler, 5_200)
     await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
     await settledClockMs(dialog.getByRole('slider', { name: '时间线播放位置' }))
     const before = await ruler.inputValue()

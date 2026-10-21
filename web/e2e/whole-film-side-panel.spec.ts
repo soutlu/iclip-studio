@@ -185,22 +185,24 @@ test('放下有可填项的卡片随即打开浮层：点卡片、拖到画面�
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   const film = dialog.getByRole('group', { name: '画面轨', exact: true })
-  await openCategory(dialog, '视觉特效')
+  // 用不画 WebGL 的组件：CI 机器没有 GPU，WebGL 组件在每次改动后的预览重载里要软件渲染好几秒，
+  // 后面的拖动都排在它后面
+  await openCategory(dialog, '场景')
 
   // 点卡片（block → 画面轨）
-  await dialog.getByRole('button', { name: /^宇宙星球，画面轨/ }).click()
-  const first = page.getByRole('dialog', { name: /宇宙星球/ })
+  await dialog.getByRole('button', { name: /^霓虹边框姓名条，画面轨/ }).click()
+  const first = page.getByRole('dialog', { name: /霓虹边框姓名条/ })
   await expect(first).toBeVisible()
   await expect(
-    film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 宇宙星球/ }),
+    film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 霓虹边框姓名条/ }),
   ).toHaveAttribute('aria-pressed', 'true')
   await page.keyboard.press('Escape')
   await expect(first).toBeHidden()
 
   // 拖到画面轨
-  await dragCard(page, dialog.getByRole('button', { name: /^旋涡星系，/ }), film)
-  await expect(page.getByRole('dialog', { name: /旋涡星系/ })).toBeVisible()
-  await expect(film.getByRole('button', { name: /组件 · 旋涡星系/ })).toHaveAttribute(
+  await dragCard(page, dialog.getByRole('button', { name: /^希区柯克变焦，/ }), film)
+  await expect(page.getByRole('dialog', { name: /希区柯克变焦/ })).toBeVisible()
+  await expect(film.getByRole('button', { name: /组件 · 希区柯克变焦/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -209,11 +211,11 @@ test('放下有可填项的卡片随即打开浮层：点卡片、拖到画面�
   // 拖到特效轨
   await dragCard(
     page,
-    dialog.getByRole('button', { name: /^网点光场，/ }),
+    dialog.getByRole('button', { name: /^AI 答案排名，/ }),
     dialog.getByRole('group', { name: '特效轨' }),
   )
-  await expect(page.getByRole('dialog', { name: /网点光场/ })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: /^选中：特效 · 网点光场/ })).toHaveAttribute(
+  await expect(page.getByRole('dialog', { name: /AI 答案排名/ })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /^选中：特效 · AI 答案排名/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -222,14 +224,14 @@ test('放下有可填项的卡片随即打开浮层：点卡片、拖到画面�
   // 没有可填项的拖到特效轨：只选中，不弹
   await dragCard(
     page,
-    dialog.getByRole('button', { name: /^液体背景，/ }),
+    dialog.getByRole('button', { name: /^标志片尾，/ }),
     dialog.getByRole('group', { name: '特效轨' }),
   )
-  await expect(dialog.getByRole('button', { name: /^选中：特效 · 液体背景/ })).toHaveAttribute(
+  await expect(dialog.getByRole('button', { name: /^选中：特效 · 标志片尾/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
-  await expect(page.getByRole('dialog', { name: /液体背景/ })).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: /标志片尾/ })).toHaveCount(0)
 })
 
 test('组件参数可编辑并保存，清空文字恢复默认；删除组件会移除草稿内容', async ({ page }) => {
