@@ -34,7 +34,7 @@ gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=pus
 
 ## 镜像与流水线
 
-三个镜像：`iclip-server`（[server/Dockerfile](../server/Dockerfile)）、`iclip-web`（[web/Dockerfile](../web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](../web/nginx.conf)）与 `iclip-render`（[render/Dockerfile](../render/Dockerfile)，成片渲染服务，只有 linux/amd64：Chrome headless shell 只出这一种 Linux 版本）。[release-images](../.github/workflows/release-images.yml) 在 GitHub Actions 上并行构建，经专用 DMIT 代理上传到 ACR，部署时从 ACR 拉取。渲染镜像构建时要从 npm、GitHub 与 Google 的 Chrome 下载站取组件库、ffmpeg 与 Chrome，冷构建比另两个慢。
+三个镜像：`iclip-server`（[server/Dockerfile](../server/Dockerfile)）、`iclip-web`（[web/Dockerfile](../web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](../web/nginx.conf)）与 `iclip-render`（[render/Dockerfile](../render/Dockerfile)，成片渲染服务，只有 linux/amd64：Chrome headless shell 只出这一种 Linux 版本）。[release-images](../.github/workflows/release-images.yml) 在 GitHub Actions 上并行构建，直接上传到 ACR，部署时从 ACR 拉取。渲染镜像构建时要从 npm、GitHub 与 Google 的 Chrome 下载站取组件库、ffmpeg 与 Chrome，冷构建比另两个慢。
 
 - **版本**：推送 `vX.Y.Z` 标签即构建并上传三个镜像。三个镜像都上传并核验成功、且该版本提交仍是 `main` 的最新提交时，才更新 `latest`。
 - **试打包**：手动选择分支运行只生成 `branch-<分支名>` 镜像，不更新正式版本和 `latest`。
@@ -42,15 +42,11 @@ gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=pus
 
 ## 仓库配置
 
-Actions variables：`ACR_REGISTRY`、`ACR_NAMESPACE`；secrets：`ACR_USERNAME`、`ACR_PASSWORD`、`ACR_DMIT_CONFIG`。
+Actions variables：`ACR_REGISTRY`、`ACR_NAMESPACE`；secrets：`ACR_USERNAME`、`ACR_PASSWORD`。
 
-`ACR_DMIT_CONFIG` 保存完整的 Mihomo 配置：HTTP/mixed 端口监听 `127.0.0.1:17891`，只有一个 DMIT 节点，所有代理流量固定走该节点，日志设为 `silent`；不含订阅、分流规则集或直连回退。节点参数只保存在 Secret 中，不提交到仓库。
+## 运行记录
 
-## 代理与运行记录
-
-每个镜像 job 在上传前启动独立代理并检查 ACR 连通性；只有上传步骤走代理，失败直接报错。job 结束时清理进程和临时配置，无需本机 Clash 在线。
-
-运行 Summary 显示构建、代理、上传、摘要核验结果及上传耗时；日志保留每层进度和整个上传命令的实际耗时，不把 Skopeo 的本地读取速率当作上传网速。
+运行 Summary 显示构建、上传、摘要核验结果及上传耗时；日志保留每层进度和整个上传命令的实际耗时，不把 Skopeo 的本地读取速率当作上传网速。
 
 ## 失败处理
 
