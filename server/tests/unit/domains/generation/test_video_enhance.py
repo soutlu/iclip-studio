@@ -166,7 +166,7 @@ def new_rows(repo: InMemoryGenerationRepository, seeded: set[uuid.UUID]) -> list
 
 
 async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
-    """来源是别人在别的对话里的成片也提得了；记录种类跟来源、不挂对话、没有原作，镜号抄来源，
+    """来源是别人在别的对话里的成片也提得了；记录是视频、不挂对话、没有原作，镜号抄来源，
     请求是配置的模型与帧率、来源的原片地址；排进视频那条队列，不碰任何对话的收尾标记。"""
 
     source = take("720p", owner_user_id=uuid.uuid4(), task_id=uuid.uuid4(), metadata={"k": 1})
@@ -209,7 +209,9 @@ async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
     }
 
 
-async def test_a_whole_film_gets_an_enhancement_of_its_own_kind() -> None:
+async def test_a_whole_film_gets_a_video_enhancement() -> None:
+    """高清版产出的总是一个视频：整片的高清版种类也是视频，来源是那次导出。"""
+
     first = take("480p")
     exported = film(first)
     repo = InMemoryGenerationRepository([first, exported])
@@ -220,7 +222,7 @@ async def test_a_whole_film_gets_an_enhancement_of_its_own_kind() -> None:
 
     assert response.status_code == 202, response.text
     (job,) = new_rows(repo, {first.id, exported.id})
-    assert (job.kind, job.operation, job.source_job_id) == ("whole_film", "enhance", exported.id)
+    assert (job.kind, job.operation, job.source_job_id) == ("video", "enhance", exported.id)
     assert (job.conversation_id, job.shot_index) == (None, None)
     assert isinstance(job.request, VideoEnhanceRequest)
     assert job.request.video_url == exported.output_url

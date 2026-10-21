@@ -20,7 +20,7 @@ const DONE: ExportView = {
 
 const enhanceJob = (status: 'submitted' | 'failed' | 'completed') =>
   makeGenerationJob({
-    kind: 'whole_film',
+    kind: 'video',
     operation: 'enhance',
     outputUrl: status === 'completed' ? 'https://downloads.example.test/film-hd.mp4' : null,
     sourceJobId: EXPORT_ID,

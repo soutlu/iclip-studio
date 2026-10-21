@@ -95,7 +95,6 @@ afterEach(() => {
 describe('EnhanceNotices', () => {
   it.each([
     { label: '第 2 组', record: { shotIndex: 2 } },
-    { label: '整片', record: { kind: 'whole_film' as const, shotIndex: null } },
     { label: '视频', record: { shotIndex: null } },
   ])('自己的做好了：提示「$label的高清版 1080p 已生成」', async ({ label, record }) => {
     serveRecord(record)

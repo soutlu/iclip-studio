@@ -1,4 +1,4 @@
-"""超分记录落在生成记录表里：两种来源的往返、按来源找它们，以及它们不混进视频的在途与成片口径。"""
+"""超分记录落在生成记录表里：两种来源的往返、按来源找它们，以及它们不混进视频的在跑与成片口径。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
 from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER
-from iclip.domains.generation.schemas import KIND_WHOLE_FILM, OPERATION_ENHANCE
+from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_ENHANCE
 from tests.helpers.fork_lineage import complete, finished, make_user
 from tests.helpers.generation import (
     make_enhancement,
@@ -22,9 +22,11 @@ HD_URL = "https://cdn.example.test/hd.mp4"
 HD_WATERMARK_URL = "https://cdn.example.test/hd-wm.mp4"
 
 
-async def test_enhancements_of_a_take_and_of_a_film_round_trip_under_their_sources_kind(
+async def test_enhancements_of_a_take_and_of_a_film_round_trip_as_videos(
     engine: AsyncEngine,
 ) -> None:
+    """成片与整片的高清版都是视频 / 超分，读回来请求、来源与镜号照旧。"""
+
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     take = await finished(repo, owner, uuid.uuid4(), "take", shot_index=4)
@@ -50,7 +52,7 @@ async def test_enhancements_of_a_take_and_of_a_film_round_trip_under_their_sourc
         )
         read = await repo.get(created.id, owner=owner)
 
-        assert (read.kind, read.operation) == (source.kind, OPERATION_ENHANCE)
+        assert (read.kind, read.operation) == (KIND_VIDEO, OPERATION_ENHANCE)
         assert read.request == created.request
         assert (read.source_job_id, read.root_job_id, read.conversation_id) == (
             source.id,
@@ -63,7 +65,6 @@ async def test_enhancements_of_a_take_and_of_a_film_round_trip_under_their_sourc
             HD_URL,
             HD_WATERMARK_URL,
         )
-    assert film.kind == KIND_WHOLE_FILM
 
 
 async def test_enhancements_of_a_source_are_everyones_newest_first_and_nothing_else(
@@ -93,17 +94,28 @@ async def test_enhancements_of_a_source_are_everyones_newest_first_and_nothing_e
 async def test_enhancements_do_not_count_as_videos_in_flight_or_masters(
     engine: AsyncEngine,
 ) -> None:
-    """超分记录不挂对话：在跑的不算来源那段对话的视频在跑，完成的不是那段对话最新的成片。"""
+    """超分记录不挂对话：在跑的不算来源那段对话的视频在跑，完成的不是那段对话最新的成片。
+    整片的高清版也是视频，同样不算导出那段对话的。"""
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     conversation = uuid.uuid4()
     take = await finished(repo, owner, conversation, "take")
+    film = await repo.create(
+        make_job(
+            whole_film_request(take.id),
+            owner_user_id=owner,
+            conversation_id=conversation,
+            provider=RENDER_PROVIDER,
+        )
+    )
+    film = await complete(repo, film, "https://cdn.example.test/film.mp4")
 
-    running = await repo.create(make_enhancement(take, "1080p", owner_user_id=owner))
-    await repo.mark_submitting(running.id)
-    done = await repo.create(make_enhancement(take, "720p", owner_user_id=owner))
-    await complete(repo, done, HD_URL)
+    for source in (take, film):
+        running = await repo.create(make_enhancement(source, "1080p", owner_user_id=owner))
+        await repo.mark_submitting(running.id)
+        done = await repo.create(make_enhancement(source, "720p", owner_user_id=owner))
+        await complete(repo, done, HD_URL)
 
     assert await repo.in_flight_by_conversation([conversation], kind="video") == {}
     assert await repo.latest_master_by_conversation([conversation]) == {

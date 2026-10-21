@@ -164,9 +164,8 @@ def test_the_stored_shape_is_chosen_by_kind_and_operation() -> None:
         request_from_payload("clip", OPERATION_COMPOSE, request_to_payload(compose_request()))
 
 
-@pytest.mark.parametrize("kind", [KIND_VIDEO, KIND_WHOLE_FILM])
-def test_an_enhancement_is_stored_as_sent_under_either_source_kind(kind: str) -> None:
-    """超分的种类跟来源走，两种都读回同一个请求；落库的就是发上游的那几个键。"""
+def test_an_enhancement_is_a_video_stored_as_sent() -> None:
+    """超分记录的种类只有视频，整片的高清版也是；落库的就是发上游的那几个键。"""
 
     original = VideoEnhanceRequest(
         model="video-enhance",
@@ -184,9 +183,10 @@ def test_an_enhancement_is_stored_as_sent_under_either_source_kind(kind: str) ->
         "video_url": "https://cdn.test/take.mp4",
         "user_name": "logan",
     }
-    assert request_from_payload(kind, OPERATION_ENHANCE, payload) == original
-    with pytest.raises(ValidationFailed, match="未知的生成类型"):
-        request_from_payload(KIND_IMAGE, OPERATION_ENHANCE, payload)
+    assert request_from_payload(KIND_VIDEO, OPERATION_ENHANCE, payload) == original
+    for kind in (KIND_WHOLE_FILM, KIND_IMAGE):
+        with pytest.raises(ValidationFailed, match="未知的生成类型"):
+            request_from_payload(kind, OPERATION_ENHANCE, payload)
 
 
 _SOURCE = str(uuid.uuid4())

@@ -531,7 +531,7 @@ class GenerationService:
 
         来源不按属主取：资料库里全站的片谁都看得到、下载得到，高清版也一样。同一来源同一档已有
         没失败的超分记录（谁提的都算），直接给那一条，不新建、不排队；失败的可以重做。超分记录
-        不挂对话、没有原作，镜号抄来源，种类跟来源走。"""
+        不挂对话、没有原作，镜号抄来源；产出的总是一个视频，种类一律是视频。"""
 
         enhance = self._require_enhance()
         source = await self._repo.get(request.source_job_id, owner=None)
@@ -558,7 +558,6 @@ class GenerationService:
                     video_url=source.output_url,
                     user_name=request.user_name,
                 ),
-                kind=source.kind,
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
                 provider=self._video_provider_name,
@@ -816,24 +815,14 @@ def _pending_job(
     task_id: uuid.UUID | None,
     metadata: dict[str, Any] | None,
     shot_index: int | None,
-    kind: GenerationKind | None = None,
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
     source_url: str | None = None,
     range_start_ms: int | None = None,
     range_end_ms: int | None = None,
 ) -> GenerationJob:
-    """一条刚受理、还在排队的记录。种类一般随请求类型定；超分的种类跟来源走，由 ``kind`` 显式给，
-    别的请求不收 ``kind``。"""
+    """一条刚受理、还在排队的记录，种类与操作随请求类型定。"""
 
-    if isinstance(request, VideoEnhanceRequest):
-        if kind is None:
-            raise RuntimeError("超分记录的种类跟来源走，受理时要显式给")
-        row_kind = kind
-    else:
-        if kind is not None:
-            raise RuntimeError(f"{request.kind} / {request.operation} 的种类随请求定，不另给")
-        row_kind = request.kind
     now = datetime.now(UTC)
     return GenerationJob(
         id=uuid.uuid4(),
@@ -848,7 +837,7 @@ def _pending_job(
         source_url=source_url,
         range_start_ms=range_start_ms,
         range_end_ms=range_end_ms,
-        kind=row_kind,
+        kind=request.kind,
         operation=request.operation,
         provider=provider,
         request=request,

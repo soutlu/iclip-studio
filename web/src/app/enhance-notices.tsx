@@ -21,9 +21,8 @@ const NOTICE_MS = 8000
 
 const enhanceRequestSchema = z.object({ resolution: zVideoEnhanceIn.shape.resolution })
 
-/** 提示里怎么称呼来源：整片、第 N 组，都不是就叫视频。 */
-const sourceLabel = (job: { kind: string; shotIndex?: number | null | undefined }): string => {
-  if (job.kind === 'whole_film') return '整片'
+/** 提示里怎么称呼来源：有镜号叫第 N 组，没有就叫视频。 */
+const sourceLabel = (job: { shotIndex?: number | null | undefined }): string => {
   if (job.shotIndex !== null && job.shotIndex !== undefined) return `第 ${job.shotIndex} 组`
   return '视频'
 }

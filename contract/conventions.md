@@ -410,7 +410,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 11. 媒体生成 (Generations)
 
-七条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）、`POST /generations/video-composites`（合成，本地拼接，不经外部服务）、`POST /generations/subtitles`（手动识别一条成片的字幕，见下文「字幕记录」）、`POST /generations/music`（生成背景音乐，见下文「音频记录」）与 `POST /generations/video-enhancements`（高清版，见下文「高清版」）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image` / `subtitle` / `audio` / `whole_film`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传、`render` 交给渲染服务、`enhance` 超分）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是有来源的 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image、video 或 audio / upload（§10）；字幕记录是 subtitle / generate，来源是被识别的成片；生成的背景音乐是 audio / generate；整片导出是 whole_film / render，经 §6「整片导出」受理，`GET /generations` 不带 `kind` 时也会列出来；高清版是 video 或 whole_film / enhance，种类同它的来源（一条成片或一条整片）。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
+七条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）、`POST /generations/video-composites`（合成，本地拼接，不经外部服务）、`POST /generations/subtitles`（手动识别一条成片的字幕，见下文「字幕记录」）、`POST /generations/music`（生成背景音乐，见下文「音频记录」）与 `POST /generations/video-enhancements`（高清版，见下文「高清版」）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image` / `subtitle` / `audio` / `whole_film`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传、`render` 交给渲染服务、`enhance` 超分）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是有来源的 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image、video 或 audio / upload（§10）；字幕记录是 subtitle / generate，来源是被识别的成片；生成的背景音乐是 audio / generate；整片导出是 whole_film / render，经 §6「整片导出」受理，`GET /generations` 不带 `kind` 时也会列出来；高清版是有来源的 video / enhance，来源是一条成片或一条整片。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
 
 业务状态每跳一格，属主连着的每条 WebSocket 都收到一帧 `event.generation.changed`（见 §5 全局帧）；帧易失且不带结果，`GET /generations` 与任务查询接口仍是事实源，浏览器在有运行中任务时保留轮询兜底。
 
@@ -477,7 +477,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 高清版
 
-- 高清版是给一条成片或一条导出完成的整片做超分得到的一条超分记录：`operation` 为 `enhance`，`kind` 同来源（成片是 `video`，整片是 `whole_film`），`sourceJobId` 是来源。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
+- 高清版是给一条成片或一条导出完成的整片做超分得到的一条超分记录：`operation` 为 `enhance`，`kind` 一律是 `video`（来源是整片也一样），`sourceJobId` 是来源。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
 - **来源不按属主取**：这两个端点读来源、读各档的超分记录都不看属主，持对应权限就能给任何一条成片或整片提高清版、看它各档的记录。这是继「资料库」（§13）「继承」（§6）之后有意放宽的又一处读范围，与资料库里全站的片谁都看得到、下载得到同一口径。答复里的超分记录可能是别人提的：`GET /generations/{id}`、按属主列与 `event.generation.changed` 帧仍只到属主，别人提的那一档按下面的读接口跟进度。
 - `POST /generations/video-enhancements` 收 `{ sourceJobId, resolution, userName }`，响应是 `GenerationEnvelope`，受理即 `202`。`resolution` 取 `720p` / `1080p`，还要在这条来源可做的档里（见下面的读接口）。`userName` 与替人办事的规则同出片。来源不存在是 `404`；来源不是成片（已完成的出片或合成）或导出完成的整片、档不在可做的档里、高清版没开通（`detail` 是「高清版没有开通，暂时不能生成」）都是 `422`，不建记录。
 - **同一来源同一档只留一条没失败的**：已有排队、提交中、等结果或已完成的超分记录（谁提的都算）时，直接答那一条，照样 `202`，不新建、不排队；失败的可以再提，另起一条，失败那条留着。
