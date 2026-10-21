@@ -278,7 +278,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - **拷过去的**：源工作区里有的才拷，`treatment.md` 原名，`film.icml` 改名 `old_film.icml`，`film.icrun` 原名，`video_shot.json` 改名 `old_video_shot.json`；连同整份素材台账。文件版本从 1 起。两份改名的不会自动打开制作页、分镜页，由 AI 导演改完再改回原名。其余文件（`brief.md`、`references/` 等）一概不拷。
 - **不拷的**：对话历史、运行记录、出片记录（新对话不继承，不是分叉）；行上 `forkedFrom` 与 `forkTurn` 都是 `null`。
-- 源的可见范围同分叉：看不见是 `404`，治理者连墓碑也能拿来做。源在跑也照拷。源工作区里既没有 `film.icml` 也没有 `video_shot.json` 是 `422`。两种失败都不建对话。
+- 源按资料库认，不看调用者打不打得开那段对话、它删没删：调用者没有 `generation:read`、或 `sameAs` 不是挂着对话的资料库卡是 `404`；调用者仍打不开源对话。源在跑也照拷。源工作区里既没有 `film.icml` 也没有 `video_shot.json` 是 `422`。两种失败都不建对话。
 - 带同一个 `id` 重发时这段对话已经在了，答复它（`200`）、不再拷，建好之后改过的文件不会被盖掉。
 - 先拷文件与台账，最后落对话行：`created` 帧发出时文件已经在了，中途失败只留下寻址不到的数据。
 
@@ -552,7 +552,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面素材片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面素材片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的素材片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
 - **卡的字段**：`face` 是卡面那一版，即对话自己最新的素材片；`take` 是它对应的出片（出片是它自己，合成沿原作取，原作可以在祖先对话里）；`userName` 是卡的作者，即对话属主的用户名，不挂对话的是出片属主的；`groupCount` / `versionCount` 是卡里有几个镜头组、一共几版，都含继承来的。
 - **版本的形状**（`face` 与详情里的每一版）：`kind` 是 `take`（出片）或 `composite`（合成）；`jobId` 是那条素材片；`watermarkOutputUrl` 合成恒为 `null`；`durationMs` 是实际时长（毫秒），出片取上游实测的、合成是本系统量的，上游没给为 `null`；`finishedAt` 是完成时刻；`userName` 是那条素材片属主的用户名。详情里的每一版另带 `take`，合成的 `take` 沿原作取。`take.prompt` 是发给模型的原文；`take.script` 是镜头组（`globalSettings` 加 `timeline[]`，每镜 `start`、`end`、`prompt`、`imageIndexes`），为 `null` 表示纯文本。`imageIndexes` 指向 `referenceImageUrls` 的第 N 张。画面尺寸不在数据里，占位比例按 `aspectRatio`。账号没有用户名时各处 `userName` 为 `null`。
-- `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、`canOpenConversation` 为真、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 三条都成立才是 `true`。列表的卡上没有这一项。
+- `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 两条都成立才是 `true`，不看 `canOpenConversation` 与删除标记。列表的卡上没有这一项。
 - `GET /library/authors` 列作者与各自的卡数（`userName`、`count`），多的在前、同数按名字，不受筛选影响。
 - `GET /library/whole-films` 列成片卡，一段对话一张，只算这段对话自己完成的导出（`kind=whole_film`）。卡的 `conversationId` 就是卡 id，`title`、`canOpenConversation` 与 `userName`（卡的作者，即对话属主）口径同素材卡；没有详情端点，卡里直接带 `versions[]`：每版 `jobId`（那条成片记录）、`outputUrl`、`finishedAt`、`userName`（导出的人的用户名）与 `sourceJobIds`（这次导出用到的素材片，按导出请求里的先后，只有组件段的导出为空），早完成的在前，第 N 条就是第 N 版；`face` 是卡面，即最后一版。成片没有水印版、不记时长，版本上没有这两项。排序、翻页、`total` 与时间窗同 `GET /library/videos`，游标是卡面完成时刻加对话 id。筛选只有 `userName`、`since` / `until` 与 `q`，`q` 只匹配对话标题；没有 `orientation`。卡上不带脚本，也没有 `canMakeSame`。下载一版时，前端按它的 `sourceJobIds` 各记一条 `video.downloaded`。
 - `GET /library/whole-films/authors` 列成片卡的作者（对话属主）与各自的成片卡数，形状与排序同 `GET /library/authors`，不受筛选影响。

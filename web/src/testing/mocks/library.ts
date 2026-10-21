@@ -241,7 +241,7 @@ const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
   const conversationId = spec.title === null ? null : idOf('7a1e0000', index)
   const canOpenConversation = conversationId !== null && spec.author === mockAuthUser.username
   return {
-    canMakeSame: canOpenConversation,
+    canMakeSame: conversationId !== null,
     groups,
     video: {
       agentId: conversationId === null ? null : 'storyboard',

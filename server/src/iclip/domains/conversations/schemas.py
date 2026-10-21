@@ -77,8 +77,10 @@ class ConversationIn(CamelModel):
     same_as: uuid.UUID | None = None
     """做同款的源对话 id（资料库卡的 id）。给了就在建对话时把源的 ``treatment.md``、
     ``film.icml``（改名 ``old_film.icml``）、``film.icrun``、``video_shot.json``（改名
-    ``old_video_shot.json``）有的拷进来，连同整份素材台账；不拷历史，也不记血缘。源看不见是
-    404，源既没有 ``film.icml`` 也没有 ``video_shot.json`` 是 422；带同一个 ``id`` 重发不再拷。"""
+    ``old_video_shot.json``）有的拷进来，连同整份素材台账；不拷历史，也不记血缘。源按资料库认，
+    不看调用者打不打得开那段对话、它删没删：调用者没有 ``generation:read``、或这个 id 不是挂着
+    对话的资料库卡是 404，源既没有 ``film.icml`` 也没有 ``video_shot.json`` 是 422；带同一个
+    ``id`` 重发不再拷。"""
 
 
 class ConversationForkIn(CamelModel):
