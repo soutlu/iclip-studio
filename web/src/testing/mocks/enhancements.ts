@@ -2,7 +2,8 @@
  *
  * 来源可以是任一对话里的成片、资料库成片素材里的一版、资料库里的整片或刚导出的整片；按来源出片时的分辨率列比它清晰的档。
  * 提交后经 pending → submitted 再落定，每跳一格照常发 event.generation.changed（不挂对话）。
- * 1080p 总是做成；720p 总是没做成，用来演示失败的提示条、红点与重试。 */
+ * 1080p 总是做成；720p 总是没做成，用来演示失败的提示条、红点与重试。
+ * 提交的记录属于当时登录的人；另有一条同事做好的：演示对话第 2 组那条成片的 720p，只能下载、不加点。 */
 
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
@@ -122,18 +123,49 @@ const recordOf = (source: MockSource, resolution: Resolution): EnhanceRecord => 
   watermarkOutputUrl: null,
 })
 
+/** 演示对话第 2 组那条 480p 的成片；同事给它做好了 720p。 */
+const COLLEAGUE_SOURCE = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
+const COLLEAGUE_ID = '33333333-3333-4333-8333-333333333333'
+
 /** 按建立先后存；同一来源同一档取最后一条。 */
 let records: EnhanceRecord[] = []
+let colleagueSeeded = false
+/** 每条记录的属主；GenerationOut 不带属主，另记。 */
+const owners = new Map<string, string>()
 const timers = new Set<ReturnType<typeof setTimeout>>()
+
+/** 同事那条要等演示对话的成片在了才建得出来，所以用到时才放，放进去之前每次都再试。 */
+const allRecords = (): EnhanceRecord[] => {
+  if (colleagueSeeded) return records
+  const source = videoSource(COLLEAGUE_SOURCE)
+  if (source !== undefined) {
+    colleagueSeeded = true
+    const finishedAt = new Date(Date.now() - 3_600_000).toISOString()
+    const done: EnhanceRecord = {
+      ...recordOf(source, '720p'),
+      createdAt: new Date(Date.now() - 3_700_000).toISOString(),
+      durationMs: source.durationMs,
+      finishedAt,
+      outputUrl: source.url,
+      status: 'completed',
+      watermarkOutputUrl: source.url,
+    }
+    records.unshift(done)
+    owners.set(done.id, COLLEAGUE_ID)
+  }
+  return records
+}
 
 export const resetMockEnhancements = () => {
   for (const timer of timers) clearTimeout(timer)
   timers.clear()
+  owners.clear()
   records = []
+  colleagueSeeded = false
 }
 
 const latestOf = (sourceId: string, resolution: Resolution) =>
-  records.findLast(
+  allRecords().findLast(
     (record) => record.sourceJobId === sourceId && resolutionOf(record.request) === resolution,
   )
 
@@ -145,9 +177,10 @@ const later = (ms: number, step: () => void) => {
   timers.add(timer)
 }
 
-const accept = (source: MockSource, resolution: Resolution): EnhanceRecord => {
+const accept = (source: MockSource, resolution: Resolution, owner: string): EnhanceRecord => {
   const created = recordOf(source, resolution)
-  records.push(created)
+  allRecords().push(created)
+  owners.set(created.id, owner)
   announceMockGeneration(null, created)
   later(SUBMITTED_AFTER_MS, () => {
     created.status = 'submitted'
@@ -175,16 +208,17 @@ const accept = (source: MockSource, resolution: Resolution): EnhanceRecord => {
 
 const notFound = () => HttpResponse.json({ detail: '没有这条记录' }, { status: 404 })
 
-export const enhancementHandlers = [
+/** `activeUserId` 给出当前登录的人：提交的记录归他，`mine` 按他算。 */
+export const enhancementHandlers = (activeUserId: () => string) => [
   http.get('*/api/generations/:jobId/enhancements', ({ params }) => {
     const source = sourceOf(String(params['jobId']))
     if (source === undefined) return notFound()
     return HttpResponse.json({
       downloadedJobIds: source.downloadedJobIds,
-      tiers: offeredTiers(source).map((resolution) => ({
-        job: latestOf(source.id, resolution) ?? null,
-        resolution,
-      })),
+      tiers: offeredTiers(source).map((resolution) => {
+        const job = latestOf(source.id, resolution) ?? null
+        return { job, mine: job !== null && owners.get(job.id) === activeUserId(), resolution }
+      }),
     })
   }),
 
@@ -198,13 +232,15 @@ export const enhancementHandlers = [
       return HttpResponse.json({ detail: `这条视频不能再提到 ${resolution}` }, { status: 422 })
     const existing = latestOf(sourceJobId, resolution)
     const generation =
-      existing !== undefined && existing.status !== 'failed' ? existing : accept(source, resolution)
+      existing !== undefined && existing.status !== 'failed'
+        ? existing
+        : accept(source, resolution, activeUserId())
     return HttpResponse.json({ generation }, { status: 202 })
   }),
 
   // 只认超分记录；排在其他 /generations/... 的 GET 之后，不抢它们。
   http.get('*/api/generations/:jobId', ({ params }) => {
-    const found = records.find((record) => record.id === params['jobId'])
+    const found = allRecords().find((record) => record.id === params['jobId'])
     return found === undefined ? notFound() : HttpResponse.json({ generation: found })
   }),
 ]

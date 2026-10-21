@@ -4945,6 +4945,10 @@ export type VideoEnhanceIn = {
 export type VideoEnhanceTierOut = {
   job: GenerationOut | null
   /**
+   * Mine
+   */
+  mine: boolean
+  /**
    * Resolution
    */
   resolution: '720p' | '1080p'

@@ -460,7 +460,7 @@ export const handlers = [
   ...workspaceHandlers,
   ...filmHandlers,
   ...wholeFilmHandlers,
-  ...enhancementHandlers,
+  ...enhancementHandlers(activeUserId),
   ...audioHandlers,
 
   ...transcriptHandlers,

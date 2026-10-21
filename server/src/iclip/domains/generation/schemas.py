@@ -718,6 +718,8 @@ class VideoEnhanceTierOut(CamelModel):
 
     resolution: VideoEnhanceResolution
     job: GenerationOut | None
+    mine: bool
+    """``job`` 的属主是不是这次读的主体；没有记录为 false。"""
 
 
 class VideoEnhancementsOut(CamelModel):

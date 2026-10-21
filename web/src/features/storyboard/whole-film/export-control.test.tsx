@@ -34,7 +34,10 @@ const serveTiers = (tiers: Tier[]) => {
   server.use(
     http.get(`*/api/generations/${EXPORT_ID}/enhancements`, () => {
       state.reads += 1
-      return HttpResponse.json({ downloadedJobIds: USED, tiers })
+      return HttpResponse.json({
+        downloadedJobIds: USED,
+        tiers: tiers.map((tier) => ({ ...tier, mine: true })),
+      })
     }),
   )
   return state

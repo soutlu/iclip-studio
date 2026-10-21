@@ -2600,6 +2600,7 @@ export const zVideoEnhanceIn = z.object({
  */
 export const zVideoEnhanceTierOut = z.object({
   job: zGenerationOut.nullable(),
+  mine: z.boolean(),
   resolution: z.enum(['720p', '1080p']),
 })
 

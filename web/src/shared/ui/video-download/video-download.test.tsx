@@ -213,7 +213,8 @@ describe('VideoDownload · 高清版', () => {
   const ENHANCEMENTS_URL = `*/api/generations/${JOB_ID}/enhancements`
 
   type GenerationJob = z.output<typeof zGenerationOut>
-  type Tier = { resolution: '1080p' | '720p'; job: GenerationJob | null }
+  /** `mine` 缺省为 true：记录是自己的。 */
+  type Tier = { resolution: '1080p' | '720p'; job: GenerationJob | null; mine?: boolean }
 
   const enhanceJob = (status: GenerationJob['status'], overrides: Partial<GenerationJob> = {}) =>
     makeGenerationJob({
@@ -224,18 +225,29 @@ describe('VideoDownload · 高清版', () => {
       ...overrides,
     })
 
-  /** 各档按给的样子答；`reads` 是读了几次。 */
-  const serveTiers = (...answers: Tier[][]) => {
-    const state = { reads: 0 }
+  /** 各档按给的样子答，`answer(...)` 换成另一种答法；`reads` 是读了几次。 */
+  const serveTiers = (tiers: Tier[]) => {
+    const state = {
+      answer: (next: Tier[]) => {
+        current = next
+      },
+      reads: 0,
+    }
+    let current = tiers
     server.use(
       http.get(ENHANCEMENTS_URL, () => {
-        const tiers = answers[Math.min(state.reads, answers.length - 1)] ?? []
         state.reads += 1
-        return HttpResponse.json({ downloadedJobIds: [JOB_ID], tiers })
+        return HttpResponse.json({
+          downloadedJobIds: [JOB_ID],
+          tiers: current.map((tier) => ({ ...tier, mine: tier.mine ?? true })),
+        })
       }),
     )
     return state
   }
+
+  const ring = (button: HTMLElement) => button.querySelector('[data-enhance-ring]')
+  const dot = (button: HTMLElement) => button.querySelector('[data-enhance-dot]')
 
   /** 提交收下的请求体；`release` 之前悬着，答复是一条刚受理的超分记录。 */
   const holdSubmits = () => {
@@ -344,16 +356,16 @@ describe('VideoDownload · 高清版', () => {
   })
 
   it('点「生成高清版」：菜单不关，请求还在路上时那一行就变成在做，提交的是这条来源这一档', async () => {
-    const tiers = serveTiers(
-      [{ job: null, resolution: '1080p' }],
-      [{ job: enhanceJob('pending'), resolution: '1080p' }],
-    )
+    const tiers = serveTiers([{ job: null, resolution: '1080p' }])
     const submits = holdSubmits()
     const { user } = await renderEnhanceable()
     // 菜单开着时它外面的内容对读屏隐藏，按钮先拿到手。
     const trigger = screen.getByRole('button', { name: '下载视频' })
     expect(trigger).not.toHaveAccessibleDescription()
     const menu = await openMenu(user)
+    // 打开时重拉的那一次落定后再点，免得它把在路上的那一行盖回去。
+    await waitFor(() => expect(tiers.reads).toBe(2))
+    tiers.answer([{ job: enhanceJob('pending'), resolution: '1080p' }])
 
     await user.click(within(menu).getByRole('menuitem', { name: /^生成高清版 1080p/ }))
 
@@ -368,22 +380,22 @@ describe('VideoDownload · 高清版', () => {
     expect(submits.bodies).toHaveLength(1)
 
     submits.release()
-    await waitFor(() => expect(tiers.reads).toBe(2))
+    await waitFor(() => expect(tiers.reads).toBe(3))
     expect(within(menu).getByRole('menuitem', { name: /^正在生成高清版 1080p/ })).toBeVisible()
     expect(trigger).toHaveAccessibleDescription('高清版正在生成')
+    expect(ring(trigger)).not.toBeNull()
   })
 
-  it('点没做成的那一行重试：菜单不关，那一行变成在做，按钮上的红点换成绿点', async () => {
-    serveTiers(
-      [{ job: enhanceJob('failed'), resolution: '1080p' }],
-      [{ job: enhanceJob('pending'), resolution: '1080p' }],
-    )
+  it('点没做成的那一行重试：菜单不关，那一行变成在做，按钮上的红点换成外圈转圈', async () => {
+    const tiers = serveTiers([{ job: enhanceJob('failed'), resolution: '1080p' }])
     const submits = holdSubmits()
     const { user } = await renderEnhanceable()
     // 菜单开着时它外面的内容对读屏隐藏，按钮先拿到手。
     const trigger = screen.getByRole('button', { name: '下载视频' })
     expect(trigger).toHaveAccessibleDescription('高清版生成失败')
     const menu = await openMenu(user)
+    await waitFor(() => expect(tiers.reads).toBe(2))
+    tiers.answer([{ job: enhanceJob('pending'), resolution: '1080p' }])
 
     await user.click(within(menu).getByRole('menuitem', { name: '高清版 1080p 生成失败，请重试' }))
 
@@ -392,6 +404,8 @@ describe('VideoDownload · 高清版', () => {
       await within(menu).findByRole('menuitem', { name: /^正在生成高清版 1080p/ }),
     ).toBeVisible()
     expect(trigger).toHaveAccessibleDescription('高清版正在生成')
+    expect(ring(trigger)).not.toBeNull()
+    expect(dot(trigger)).toBeNull()
     submits.release()
     await waitFor(() =>
       expect(submits.bodies).toEqual([{ resolution: '1080p', sourceJobId: JOB_ID }]),
@@ -414,7 +428,9 @@ describe('VideoDownload · 高清版', () => {
       toast('第 2 组的高清版 1080p 已生成', { id: enhanceNoticeId(JOB_ID, '1080p') })
     })
     expect(await screen.findByText('第 2 组的高清版 1080p 已生成')).toBeVisible()
-    expect(screen.getByRole('button', { name: '下载视频' })).not.toHaveAccessibleDescription()
+    expect(screen.getByRole('button', { name: '下载视频' })).toHaveAccessibleDescription(
+      '高清版已生成',
+    )
 
     const menu = await openMenu(user)
     await user.click(within(menu).getByRole('menuitem', { name: '下载高清版 1080p' }))
@@ -449,10 +465,154 @@ describe('VideoDownload · 高清版', () => {
     expect(screen.getByRole('button', { name: '下载视频' })).not.toHaveAccessibleDescription()
   })
 
-  it('不显示状态点时，按钮上不带高清版的状态', async () => {
+  it('带字按钮：有一档在做或有没看过的结果，按钮上都不标', async () => {
+    serveTiers([
+      { job: enhanceJob('submitted'), resolution: '1080p' },
+      { job: enhanceJob('failed'), resolution: '720p' },
+    ])
+    await renderEnhanceable({ children: '下载整片' })
+    const button = screen.getByRole('button', { name: '下载整片' })
+    expect(button).not.toHaveAccessibleDescription()
+    expect(ring(button)).toBeNull()
+    expect(dot(button)).toBeNull()
+  })
+
+  it('有一档在做（别人的也算）：按钮外圈转一段细弧，不出点', async () => {
+    serveTiers([
+      { job: enhanceJob('submitted'), mine: false, resolution: '1080p' },
+      { job: enhanceJob('failed'), resolution: '720p' },
+    ])
+    await renderEnhanceable()
+    const button = screen.getByRole('button', { name: '下载视频' })
+
+    expect(button).toHaveAccessibleDescription('高清版正在生成')
+    expect(ring(button)).not.toBeNull()
+    expect(dot(button)).toBeNull()
+  })
+
+  it.each([
+    { color: 'bg-primary', description: '高清版已生成', state: 'done', status: 'completed' },
+    { color: 'bg-error', description: '高清版生成失败', state: 'failed', status: 'failed' },
+  ] as const)(
+    '自己的 $status：右上角出 $color 的点，没有外圈',
+    async ({ color, description, state, status }) => {
+      serveTiers([
+        {
+          job: enhanceJob(status, { outputUrl: status === 'completed' ? HD : null }),
+          resolution: '1080p',
+        },
+      ])
+      await renderEnhanceable()
+      const button = screen.getByRole('button', { name: '下载视频' })
+
+      expect(button).toHaveAccessibleDescription(description)
+      expect(dot(button)).toHaveAttribute('data-enhance-dot', state)
+      expect(dot(button)).toHaveClass(color)
+      expect(ring(button)).toBeNull()
+    },
+  )
+
+  it('别人的做好、没做成：不出点，菜单里照样能下载', async () => {
+    serveTiers([
+      { job: enhanceJob('completed', { outputUrl: HD }), mine: false, resolution: '1080p' },
+      { job: enhanceJob('failed'), mine: false, resolution: '720p' },
+    ])
+    const { user } = await renderEnhanceable()
+    const button = screen.getByRole('button', { name: '下载视频' })
+
+    expect(button).not.toHaveAccessibleDescription()
+    expect(dot(button)).toBeNull()
+    expect(ring(button)).toBeNull()
+    const menu = await openMenu(user)
+    expect(within(menu).getByRole('menuitem', { name: '下载高清版 1080p' })).toBeVisible()
+  })
+
+  it('打开菜单就算看过：点消失，重新挂载后也不回来；打开时重拉各档', async () => {
+    const job = enhanceJob('completed', { outputUrl: HD })
+    const tiers = serveTiers([{ job, resolution: '1080p' }])
+    const { unmount, user } = await renderEnhanceable()
+    expect(screen.getByRole('button', { name: '下载视频' })).toHaveAccessibleDescription(
+      '高清版已生成',
+    )
+    expect(tiers.reads).toBe(1)
+
+    await openMenu(user)
+    await waitFor(() => expect(tiers.reads).toBe(2))
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const button = screen.getByRole('button', { name: '下载视频' })
+    expect(button).not.toHaveAccessibleDescription()
+    expect(dot(button)).toBeNull()
+    unmount()
+    await renderEnhanceable()
+    const remounted = screen.getByRole('button', { name: '下载视频' })
+    expect(remounted).not.toHaveAccessibleDescription()
+    expect(dot(remounted)).toBeNull()
+  })
+
+  it('打开菜单时重拉：别人刚提交的那一档转起来，菜单里那一行变成在做', async () => {
+    const tiers = serveTiers([{ job: null, resolution: '1080p' }])
+    const { user } = await renderEnhanceable()
+    const button = screen.getByRole('button', { name: '下载视频' })
+    expect(ring(button)).toBeNull()
+    tiers.answer([{ job: enhanceJob('submitted'), mine: false, resolution: '1080p' }])
+
+    const menu = await openMenu(user)
+
+    expect(
+      await within(menu).findByRole('menuitem', { name: /^正在生成高清版 1080p/ }),
+    ).toBeVisible()
+    expect(tiers.reads).toBe(2)
+    expect(ring(button)).not.toBeNull()
+  })
+
+  it('菜单开着时出了结果：那一行原地变成下载，关上菜单也不出点', async () => {
+    const tiers = serveTiers([{ job: enhanceJob('submitted'), resolution: '1080p' }])
+    const { queryClient, user } = await renderEnhanceable()
+    const menu = await openMenu(user)
+    await waitFor(() => expect(tiers.reads).toBe(2))
+
+    tiers.answer([{ job: enhanceJob('completed', { outputUrl: HD }), resolution: '1080p' }])
+    // 状态跳转帧到了：app 层失效这条来源的查询。
+    await act(() => queryClient.invalidateQueries({ queryKey: ['video-enhancements', JOB_ID] }))
+    expect(await within(menu).findByRole('menuitem', { name: '下载高清版 1080p' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const button = screen.getByRole('button', { name: '下载视频' })
+    expect(button).not.toHaveAccessibleDescription()
+    expect(dot(button)).toBeNull()
+  })
+
+  it('下载中图标转圈与外圈细弧并存：转圈只落在图标上，细弧自己转', async () => {
     serveTiers([{ job: enhanceJob('submitted'), resolution: '1080p' }])
-    await renderEnhanceable({ showEnhanceDot: false })
-    expect(screen.getByRole('button', { name: '下载视频' })).not.toHaveAccessibleDescription()
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get(CLEAN, async () => {
+        await gate
+        return new HttpResponse(new Uint8Array([1]), { headers: { 'Content-Type': 'video/mp4' } })
+      }),
+      http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
+    )
+    const { user } = await renderEnhanceable()
+    const menu = await openMenu(user)
+
+    await user.click(within(menu).getByRole('menuitem', { name: '下载原片' }))
+
+    const busy = await screen.findByRole('button', { name: '正在准备下载…' })
+    const arc = ring(busy)
+    expect(arc).not.toBeNull()
+    expect(busy).toHaveClass('[&>svg]:animate-spin')
+    // 只有图标是按钮的直接子 svg；细弧是另一个元素，不吃按钮上的转圈。
+    const direct = [...busy.children].filter((child) => child.tagName.toLowerCase() === 'svg')
+    expect(direct).toHaveLength(1)
+    expect(direct).not.toContain(arc)
+    expect(arc).toHaveClass('video-download-ring')
+    release()
   })
 
   it('不给 enhanceSourceId：不读高清版，菜单只有原片与水印版', async () => {

@@ -104,12 +104,15 @@ export const useSubmitVideoEnhancement = () => {
   })
 }
 
-/** 菜单里一档的样子：还没做、在做（从 `since` 起计时）、做好（`url` 是高清原片）、没做成。 */
+/**
+ * 菜单里一档的样子：还没做、在做（从 `since` 起计时）、做好（`url` 是高清原片）、没做成。
+ * 有了结果的两种带上那条超分记录的 `jobId`，`mine` 是它是不是自己的。
+ */
 export type EnhanceTierRow =
   | { state: 'none'; resolution: EnhanceResolution }
   | { state: 'running'; resolution: EnhanceResolution; since: string }
-  | { state: 'done'; resolution: EnhanceResolution; url: string }
-  | { state: 'failed'; resolution: EnhanceResolution }
+  | { state: 'done'; resolution: EnhanceResolution; url: string; jobId: string; mine: boolean }
+  | { state: 'failed'; resolution: EnhanceResolution; jobId: string; mine: boolean }
 
 type PendingSubmit = { resolution: EnhanceResolution; since: string }
 
@@ -121,20 +124,38 @@ export const enhanceTierRows = (
   tiers: VideoEnhancements['tiers'],
   pending: readonly PendingSubmit[],
 ): EnhanceTierRow[] =>
-  tiers.map(({ job, resolution }): EnhanceTierRow => {
+  tiers.map(({ job, mine, resolution }): EnhanceTierRow => {
     const submitting = pending.find((item) => item.resolution === resolution)
     if (submitting !== undefined) return { resolution, since: submitting.since, state: 'running' }
     if (job === null) return { resolution, state: 'none' }
     if (isRunning(job.status)) return { resolution, since: job.createdAt, state: 'running' }
     if (job.status === 'completed' && job.outputUrl !== null)
-      return { resolution, state: 'done', url: job.outputUrl }
-    return { resolution, state: 'failed' }
+      return { jobId: job.id, mine, resolution, state: 'done', url: job.outputUrl }
+    return { jobId: job.id, mine, resolution, state: 'failed' }
   })
 
-/** 下载按钮上的点：有在做的为 running，否则最近一次没做成的为 failed，都没有为 null。 */
-export const enhanceBadge = (rows: readonly EnhanceTierRow[]): 'running' | 'failed' | null => {
+/** 自己的、有了结果的那几档的超分记录 id；打开下载菜单时把它们记成看过。 */
+export const settledOwnJobIds = (rows: readonly EnhanceTierRow[]): string[] =>
+  rows.flatMap((row) =>
+    (row.state === 'done' || row.state === 'failed') && row.mine ? [row.jobId] : [],
+  )
+
+export type EnhanceBadge = 'running' | 'failed' | 'done'
+
+/**
+ * 下载按钮上的高清版状态，只出一种：有一档在做（谁的都算）为 running；否则有自己的、没看过的
+ * 没做成为 failed；再否则有自己的、没看过的做好为 done；都没有为 null。
+ */
+export const enhanceBadge = (
+  rows: readonly EnhanceTierRow[],
+  seen: ReadonlySet<string>,
+): EnhanceBadge | null => {
   if (rows.some((row) => row.state === 'running')) return 'running'
-  if (rows.some((row) => row.state === 'failed')) return 'failed'
+  const unseen = new Set(settledOwnJobIds(rows).filter((id) => !seen.has(id)))
+  const has = (state: 'done' | 'failed') =>
+    rows.some((row) => row.state === state && unseen.has(row.jobId))
+  if (has('failed')) return 'failed'
+  if (has('done')) return 'done'
   return null
 }
 

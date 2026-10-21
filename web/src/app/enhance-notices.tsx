@@ -12,6 +12,7 @@ import {
   videoEnhancementsKeys,
   videoEnhancementsQuery,
 } from '@/shared/api/video-enhancements'
+import { markEnhancementsSeen } from '@/shared/api/video-enhancements-seen'
 import type { SessionUpdate } from '@/shared/transcript/connection'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { toast } from '@/shared/ui/toast'
@@ -46,6 +47,9 @@ export function EnhanceNotices() {
     const { resolution } = enhanceRequestSchema.parse(job.request)
     const id = enhanceNoticeId(sourceJobId, resolution)
     const label = sourceLabel(job)
+    // 点了提示条（sonner 点 action 不触发 onDismiss，所以在 action 里另记）或手动关掉都算看过；
+    // 8 秒自己收起走 onAutoClose，不算。
+    const seen = () => markEnhancementsSeen([job.id])
     if (job.status === 'completed' && job.outputUrl !== null) {
       const { downloadedJobIds } = await queryClient.fetchQuery(videoEnhancementsQuery(sourceJobId))
       const outputUrl = job.outputUrl
@@ -53,18 +57,27 @@ export function EnhanceNotices() {
         action: {
           label: '下载',
           onClick: () => {
+            seen()
             for (const downloaded of downloadedJobIds) recordVideoDownloaded(downloaded)
             void download(outputUrl, `生成的视频（高清版 ${resolution}）`)
           },
         },
         duration: NOTICE_MS,
         id,
+        onDismiss: seen,
       })
     } else if (job.status === 'failed') {
       toast.error(`${label}的高清版 ${resolution} 生成失败，请重试`, {
-        action: { label: '重试', onClick: () => submit.mutate({ resolution, sourceJobId }) },
+        action: {
+          label: '重试',
+          onClick: () => {
+            seen()
+            submit.mutate({ resolution, sourceJobId })
+          },
+        },
         duration: NOTICE_MS,
         id,
+        onDismiss: seen,
       })
     }
   }

@@ -487,6 +487,29 @@ async def test_each_tier_carries_its_most_recent_enhancement_by_anyone() -> None
     assert body["tiers"][0]["job"]["sourceUrl"] == source.output_url
 
 
+async def test_each_tier_says_whether_its_record_is_the_readers() -> None:
+    """``mine`` 只看这一档最近那条的属主是不是读的人；没有记录为 false。"""
+
+    reader = principal("generation:read")
+    source = take("480p")
+    others = take("480p")
+    own = make_enhancement(source, "1080p", owner_user_id=reader.user_id)
+    theirs = make_enhancement(others, "1080p", owner_user_id=uuid.uuid4())
+    repo = InMemoryGenerationRepository([source, others, own, theirs])
+
+    mine = await read(repo, source.id, granted=reader)
+    not_mine = await read(repo, others.id, granted=reader)
+
+    assert [(tier["resolution"], tier["mine"]) for tier in mine.json()["tiers"]] == [
+        ("1080p", True),
+        ("720p", False),
+    ]
+    assert [(tier["resolution"], tier["mine"]) for tier in not_mine.json()["tiers"]] == [
+        ("1080p", False),
+        ("720p", False),
+    ]
+
+
 async def test_downloads_count_against_the_take_or_the_films_videos() -> None:
     lead, later = take("720p"), take("480p")
     exported = film(lead, later)
