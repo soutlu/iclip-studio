@@ -129,7 +129,7 @@ async def _profile(content: bytes) -> tuple[int, int, bool]:
 async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
     sources: dict[str, bytes],
 ) -> None:
-    """换进去的那段画幅更大，成片仍照原片——原片整条更长。"""
+    """换进去的那段画幅更大，合成仍照原片——原片整条更长。"""
 
     key, content = await _compose(
         [
@@ -140,7 +140,7 @@ async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
         sources,
     )
 
-    assert key.startswith("iclip/agent/video-masters/"), "成片长期保留，不进过期规则"
+    assert key.startswith("iclip/agent/video-masters/"), "合成长期保留，不进过期规则"
     assert 3100 <= await duration_ms_of(content) <= 3700, "总长是各段之和"
     assert await _profile(content) == (320, 240, True), (
         "对齐到原片；有一段带音轨就出音轨，没音轨的那段补静音"
@@ -171,7 +171,7 @@ async def test_sources_are_downloaded_from_the_rewritten_addresses(
 async def test_a_composite_still_aligns_to_the_original_when_the_edit_covers_most_of_it(
     sources: dict[str, bytes],
 ) -> None:
-    """编辑区间超过一半：换进去的那段在成片里占大头，成片仍照原片。"""
+    """编辑区间超过一半：换进去的那段在合成里占大头，合成仍照原片。"""
 
     _, content = await _compose(
         [
@@ -222,7 +222,7 @@ async def test_a_tail_that_starts_at_the_end_of_the_base_is_skipped(
 
 
 _FRAME = 0.1
-"""素材是 10 fps，成片照原片也是。"""
+"""素材是 10 fps，合成照原片也是。"""
 
 
 def _assert_keyframes(actual: list[float], expected: list[float]) -> None:
@@ -236,9 +236,9 @@ def _assert_keyframes(actual: list[float], expected: list[float]) -> None:
 async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_them(
     codec: MediaCodec,
 ) -> None:
-    """换进去的那段中途画面突变，编码器自己会在那里插关键帧；成片里不该有。
+    """换进去的那段中途画面突变，编码器自己会在那里插关键帧；合成里不该有。
 
-    换进去的那段没有音轨，原片有：成片在这一段配静音。每一档编解码都要守这条，产物也要解得开。"""
+    换进去的那段没有音轨，原片有：合成在这一段配静音。每一档编解码都要守这条，产物也要解得开。"""
 
     with TemporaryDirectory(prefix="clip-fixture-") as tmp:
         root = Path(tmp)
@@ -276,12 +276,12 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
         # 后段 [3, 4) 从 3 起：起点与 3.4。基底的 1.3、2.2 不在取到的段里。
         [0, 0.6, 1.0, 2.6, 3.0, 3.4],
     )
-    assert (await _profile(content))[2], "静音段配了静音，成片照原片带音轨"
+    assert (await _profile(content))[2], "静音段配了静音，合成照原片带音轨"
     await decode_all(content, codec)
 
 
 async def test_a_long_stretch_without_source_keyframes_gets_none(codec: MediaCodec) -> None:
-    """编码器默认隔一段（x264 是 250 帧，10 fps 下 25 秒）至少放一个关键帧；成片里不该有。"""
+    """编码器默认隔一段（x264 是 250 帧，10 fps 下 25 秒）至少放一个关键帧；合成里不该有。"""
 
     with TemporaryDirectory(prefix="clip-fixture-") as tmp:
         root = Path(tmp)

@@ -642,7 +642,7 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
 async def test_audit_list_carries_only_each_conversations_own_latest_master(
     media_app: FastAPI, pg_url: str
 ) -> None:
-    """全部对话列表的每一段带自己名下最新一条成片的地址：源对话有，只继承了它的副本为空。"""
+    """全部对话列表的每一段带自己名下最新一条素材片的地址：源对话有，只继承了它的副本为空。"""
 
     engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)

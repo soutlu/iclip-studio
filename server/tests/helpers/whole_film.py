@@ -1,4 +1,4 @@
-"""整片草稿文档的构造器：按 wire 形状（camelCase、整数毫秒）拼字典，测试只改要验证的那几处。"""
+"""成片草稿文档的构造器：按 wire 形状（camelCase、整数毫秒）拼字典，测试只改要验证的那几处。"""
 
 from __future__ import annotations
 

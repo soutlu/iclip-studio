@@ -46,7 +46,7 @@ def ago(**delta: float) -> datetime:
 
 class Seed:
     """一组固定的数据：三个人（一个只跑过没出片）、两张需求单、八段对话、八条带镜号的视频与一条没镜号的，
-    外加 C1 两镜各被下载过（镜 1 下的是出片、两个人各一次，镜 2 下的是它名下的成片）。"""
+    外加 C1 两镜各被下载过（镜 1 下的是出片、两个人各一次，镜 2 下的是它名下的素材片）。"""
 
     def __init__(self) -> None:
         self.sara = uuid.uuid4()
@@ -55,8 +55,8 @@ class Seed:
         self.stuck_task = uuid.uuid4()
         self.c1 = uuid.uuid4()  # 需求单下、两镜、镜 2 试了三次
         self.c2 = uuid.uuid4()  # 需求单下、钥匙直提没有运行、镜 2 悬挂在上游
-        self.c3 = uuid.uuid4()  # 没挂需求单的成片
-        self.c4 = uuid.uuid4()  # 有运行无成片、两天没动
+        self.c3 = uuid.uuid4()  # 没挂需求单的出片
+        self.c4 = uuid.uuid4()  # 有运行无出片、两天没动
         self.c5 = uuid.uuid4()  # 已删
         self.c1_agent_job_at = ago(hours=2)
         self.c2_created_at = ago(hours=5)
@@ -197,7 +197,7 @@ class Seed:
                 shot: int,
                 created_at: datetime,
             ) -> None:
-                """视频编辑确认合成的成片：先在 ``root`` 那次出片上有一段编辑，合成以 ``root``
+                """视频编辑确认合成的素材片：先在 ``root`` 那次出片上有一段编辑，合成以 ``root``
                 为来源、把编辑段夹进去；两条都抄着原作的镜号 ``shot``。"""
 
                 edit = await video(
@@ -365,7 +365,7 @@ class Seed:
                 finished_at=ago(minutes=4),
                 edit_of=self.missing_shot_video,
             )
-            # 镜 1 的出片被两个人各下载一次，仍只算一镜；镜 2 下载的是名下的成片，算回镜 2。
+            # 镜 1 的出片被两个人各下载一次，仍只算一镜；镜 2 下载的是名下的素材片，算回镜 2。
             await master(
                 self.c1_shot2_master,
                 self.c1,
@@ -467,7 +467,7 @@ class Seed:
             )
             await agent_job(self.c4, user_name=DEREK, at=ago(hours=49))
 
-            # C5：Eva 替 Sara 跑了一轮就被属主删掉了；Eva 只有这一次运行，没有成片也没有用量。
+            # C5：Eva 替 Sara 跑了一轮就被属主删掉了；Eva 只有这一次运行，没有出片也没有用量。
             await conversation(
                 self.c5,
                 owner=self.sara,
@@ -516,7 +516,7 @@ async def executions_by_id(service: AuditService) -> dict[uuid.UUID, ExecutionOu
 async def test_overall_counts_every_metric_on_its_own_anchor(
     reports: PgAuditReports, seed: Seed
 ) -> None:
-    """成片件数按「需求单一件、无单对话一件」；镜只算成功过的、次数只数成功的，失败与悬在上游的
+    """出片件数按「需求单一件、无单对话一件」；镜只算成功过的、次数只数成功的，失败与悬在上游的
     都不计，成了又重出的不算一次通过；运行含已删对话的；周期缺运行时从对话创建起算。"""
 
     overall = await reports.overall(Scope())
@@ -547,7 +547,7 @@ async def test_overall_counts_every_metric_on_its_own_anchor(
 
 
 async def test_window_applies_to_each_metric_anchor(reports: PgAuditReports, seed: Seed) -> None:
-    """近两小时：只剩 C1 的四条成片、两镜、一段周期与两行用量；运行数左闭，恰在 since 的 C1 那轮算进来。"""
+    """近两小时：只剩 C1 的四条出片、两镜、一段周期与两行用量；运行数左闭，恰在 since 的 C1 那轮算进来。"""
 
     recent = await reports.overall(Scope(since=ago(hours=2)))
 
@@ -688,7 +688,7 @@ async def test_executions_carry_whole_conversation_detail(
     assert c2.usage == []
     assert (c3.task_id, c3.task_title) == (None, None)
     assert c3.metrics.delivered_orphan_conversations == 1
-    # 跑过没出片：没有成片时刻、没有镜；删掉的照列。
+    # 跑过没出片：没有出片时刻、没有镜；删掉的照列。
     c4, c5 = rows[seed.c4], rows[seed.c5]
     assert (c4.delivered_at, c4.shots, c4.metrics.runs) == (None, [], 1)
     assert c5.deleted_at == ago(hours=1) and c5.user_name == EVA
@@ -710,7 +710,7 @@ async def test_executions_window_falls_on_creation_and_user_filters_rows(
 async def test_effective_shots_are_downloaded_shots(
     reports: PgAuditReports, service: AuditService, seed: Seed
 ) -> None:
-    """有效镜是下载过的镜，下载成片算它原作所在的镜，同一镜下载几次都只算一镜；还没成过的镜
+    """有效镜是下载过的镜，下载素材片算它原作所在的镜，同一镜下载几次都只算一镜；还没成过的镜
     （C2 镜 2 悬在上游）不算镜、不进分母；分母为零的有效率是空。四个维度同一口径。"""
 
     overall = await reports.overall(Scope())
@@ -1037,7 +1037,7 @@ async def plant_composite(
     base: uuid.UUID,
     at: datetime,
 ) -> uuid.UUID:
-    """在出片 ``base`` 上合成的一条成片：来源与原作都是它，镜号随它。"""
+    """在出片 ``base`` 上合成的一条素材片：来源与原作都是它，镜号随它。"""
 
     composite = uuid.uuid4()
     await conn.execute(

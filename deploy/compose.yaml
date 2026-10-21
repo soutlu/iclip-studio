@@ -1,4 +1,4 @@
-# 单机部署：后端 → nginx 前端，另有只在内网可达的整片渲染服务。数据库迁移由操作者手动执行，部署和服务启动不执行迁移。
+# 单机部署：后端 → nginx 前端，另有只在内网可达的成片渲染服务。数据库迁移由操作者手动执行，部署和服务启动不执行迁移。
 # Postgres 用服务器现有实例，本项目独占一个数据库。
 # 变量与凭证来自同目录的 .env，server 容器也整份加载它；env 文件不进仓库。
 # 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
@@ -36,8 +36,8 @@ services:
       retries: 5
       start_period: 20s
 
-  # 整片导出的渲染服务：只在 compose 网络里可达（后端 WHOLE_FILM_RENDER_URL=http://render:8080），
-  # 不对外开端口。RENDER_ALLOWED_MEDIA_HOSTS 列出它会取素材的主机，见 docs/deploy.md「整片渲染服务」。
+  # 成片导出的渲染服务：只在 compose 网络里可达（后端 WHOLE_FILM_RENDER_URL=http://render:8080），
+  # 不对外开端口。RENDER_ALLOWED_MEDIA_HOSTS 列出它会取素材的主机，见 docs/deploy.md「成片渲染服务」。
   render:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-render:${IMAGE_TAG:-latest}
     restart: unless-stopped

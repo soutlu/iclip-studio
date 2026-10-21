@@ -81,7 +81,7 @@ jobs:
                   format) web_format=true ;;
                   all) server=true; web=true; render=true ;;
                 esac
-                # 渲染服务打包 web 的整片合成构建、组件目录与后端合同的 zod 生成物，它们变了也要查渲染服务。
+                # 渲染服务打包 web 的成片合成构建、组件目录与后端合同的 zod 生成物，它们变了也要查渲染服务。
                 case "$path" in
                   web/src/features/storyboard/whole-film/composition/*|web/src/features/storyboard/whole-film/catalog/*|web/src/shared/api/generated/*)
                     render=true ;;

@@ -365,7 +365,7 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
 async def test_latest_master_by_conversation_takes_each_conversations_newest_master(
     engine: AsyncEngine,
 ) -> None:
-    """审计列表要的最新成片：按完成时刻取最晚的出片或合成，同一刻取 id 大的；编辑段、失败与在途的
+    """审计列表要的最新素材片：按完成时刻取最晚的出片或合成，同一刻取 id 大的；编辑段、失败与在途的
     出片、没有地址的记录、图片都不算；每段对话只看记在自己名下的。"""
 
     repo = SqlGenerationRepository(engine)
@@ -378,7 +378,7 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     )
     take = await finished(repo, owner, newest, "take")
     started_first = await complete(repo, started_first, "https://example.test/started-first.mp4")
-    # 下面几条都比它晚，但都不是成片。
+    # 下面几条都比它晚，但都不是素材片。
     await complete(
         repo,
         await repo.create(make_edit(take, owner_user_id=owner, conversation_id=newest)),
@@ -421,7 +421,7 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     tie_winner = max(pair, key=lambda job: job.id)
 
     await finished(repo, owner, nothing, "nothing-image", image_request())
-    # 没问到的对话里最晚的成片，不串进别的对话。
+    # 没问到的对话里最晚的素材片，不串进别的对话。
     await finished(repo, owner, uuid.uuid4(), "outsider")
 
     latest = await repo.latest_master_by_conversation(
@@ -439,8 +439,8 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
 async def test_latest_master_by_conversation_leaves_inherited_masters_out(
     engine: AsyncEngine,
 ) -> None:
-    """分叉副本读得到祖先的成片，最新成片却只看它自己名下的：只在继承来的出片上剪了一段、还没合成的
-    副本没有成片。"""
+    """分叉副本读得到祖先的素材片，最新素材片却只看它自己名下的：只在继承来的出片上剪了一段、还没合成的
+    副本没有素材片。"""
 
     chain = await three_level_fork(engine)
     repo = SqlGenerationRepository(engine)

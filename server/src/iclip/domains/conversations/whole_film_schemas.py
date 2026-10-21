@@ -1,4 +1,4 @@
-"""整片草稿的 wire 形状与文档规则。
+"""成片草稿的 wire 形状与文档规则。
 
 文档的字段名就是前端编辑器与渲染服务读写的那份 JSON，时间一律是整数毫秒。这里只判文档自身的
 形状与时间线规则；片段出自哪条记录、合不合格由用例经端口核对，组件名不对照组件库（渲染服务判）。
@@ -18,7 +18,7 @@ from iclip.domains.conversations.schemas import CamelModel
 MIN_CLIP_MS: Final = 100
 """画面轨每段、每个特效块至少这么长。"""
 MAX_FILM_MS: Final = 120_000
-"""整片（画面轨首尾相接的总长）至多两分钟，特效块也不能在这之后结束。"""
+"""成片（画面轨首尾相接的总长）至多两分钟，特效块也不能在这之后结束。"""
 MAX_LAYER0_CLIPS: Final = MAX_FILM_MS // MIN_CLIP_MS
 """防大包的上限：两分钟按最短时长排满的段数，正常编辑用不到。"""
 MAX_OVERLAYS: Final = MAX_FILM_MS // MIN_CLIP_MS
@@ -71,7 +71,7 @@ class WholeFilmCanvas(CamelModel):
 
 
 class WholeFilmVideoClip(CamelModel):
-    """画面轨上的一段成片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。"""
+    """画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。"""
 
     id: ClipId
     type: Literal["video"]
@@ -110,8 +110,8 @@ class WholeFilmCaptionEdit(CamelModel):
 
 
 class WholeFilmCaptions(CamelModel):
-    """字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。
-    ``x``、``y`` 是整片字幕在画面上挪开的位置，所有字幕共用一个。"""
+    """字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
+    ``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。"""
 
     component: ComponentName
     edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
@@ -121,7 +121,7 @@ class WholeFilmCaptions(CamelModel):
 
 
 class WholeFilmMusic(CamelModel):
-    """背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。"""
+    """背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。"""
 
     job_id: uuid.UUID
     offset: Ms
@@ -129,7 +129,7 @@ class WholeFilmMusic(CamelModel):
 
 
 class WholeFilmOverlay(CamelModel):
-    """特效轨上的一个组件，按整片时间放在 ``[start, start + duration)``，从组件自己时间里的
+    """特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
     ``playbackStart`` 起播。
 
     同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
@@ -149,7 +149,7 @@ class WholeFilmOverlay(CamelModel):
 
 
 class WholeFilmDocument(CamelModel):
-    """一段对话的整片草稿。"""
+    """一段对话的成片草稿。"""
 
     canvas: WholeFilmCanvas | None
     layer0: Annotated[list[WholeFilmClip], Field(max_length=MAX_LAYER0_CLIPS)]
@@ -166,7 +166,7 @@ class WholeFilmDocument(CamelModel):
         return self
 
     def total_ms(self) -> int:
-        """整片总长：同 HyperFrames，所有轨上内容的最远结束，即画面轨的结尾（各段时长之和）与
+        """成片总长：同 HyperFrames，所有轨上内容的最远结束，即画面轨的结尾（各段时长之和）与
         特效块最晚的结尾里大的那个。两者都不超过上限，总长也就不超过。"""
 
         overlay_end = max(
@@ -175,7 +175,7 @@ class WholeFilmDocument(CamelModel):
         return max(sum(clip.duration for clip in self.layer0), overlay_end)
 
     def video_sources(self) -> tuple[uuid.UUID, ...]:
-        """画面轨里各段视频出自的成片，去重，按在画面轨里第一次出现的先后。"""
+        """画面轨里各段视频出自的素材片，去重，按在画面轨里第一次出现的先后。"""
 
         return tuple(
             dict.fromkeys(
@@ -205,7 +205,7 @@ def _check_layer0(layer0: list[WholeFilmClip]) -> None:
             )
         end += clip.duration
     if end > MAX_FILM_MS:
-        raise ValueError(f"整片 {end} 毫秒，超过了 {MAX_FILM_MS} 毫秒的上限")
+        raise ValueError(f"成片 {end} 毫秒，超过了 {MAX_FILM_MS} 毫秒的上限")
 
 
 def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
@@ -221,7 +221,7 @@ def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
 
 def _check_overlays(overlays: list[WholeFilmOverlay]) -> None:
     """特效块不在两分钟之后结束，同一行里彼此不重叠；不同行可以重叠，也可以超出画面轨的结尾
-    （整片随之变长）。"""
+    （成片随之变长）。"""
 
     rows: dict[int, list[WholeFilmOverlay]] = {}
     for overlay in overlays:
@@ -271,7 +271,7 @@ class WholeFilmExportIn(CamelModel):
 
 class WholeFilmExportStartedOut(CamelModel):
     """已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
-    用到的成片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。"""
+    用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。"""
 
     export_id: uuid.UUID
     source_job_ids: list[uuid.UUID]

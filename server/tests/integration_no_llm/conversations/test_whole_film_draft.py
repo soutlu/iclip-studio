@@ -1,4 +1,4 @@
-"""整片草稿端点：按版本整份保存与读回、读写权限同工作区文件、引用的记录要是这段对话的。
+"""成片草稿端点：按版本整份保存与读回、读写权限同工作区文件、引用的记录要是这段对话的。
 
 记录经生成仓储直接落库，媒体生成没开：草稿只读生成记录，不依赖媒体生成。文档自身的每条规则见
 单测 ``test_whole_film_document``，这里只走几条确认 422 接上了，含旧形状（转场、片头片尾）的草稿。"""
@@ -332,7 +332,7 @@ async def subtitle_of_inherited_take(scene: Scene) -> dict[str, Any]:
 
 
 async def subtitle_of_a_take_off_the_track(scene: Scene) -> dict[str, Any]:
-    """改过字的那条成片的片段都从画面轨删掉了，改字还留在草稿里。"""
+    """改过字的那条素材片的片段都从画面轨删掉了，改字还留在草稿里。"""
 
     another = await finished(scene.repo, scene.owner, scene.mine, "another")
     subtitle = await scene.repo.create(make_subtitle(another))
@@ -361,7 +361,7 @@ async def video_as_subtitle(scene: Scene) -> dict[str, Any]:
         pytest.param(other_conversations_take, False, id="别的对话的出片"),
         pytest.param(unknown_take, False, id="没有这条"),
         pytest.param(unfinished_take, False, id="还没出完的出片"),
-        pytest.param(edit_segment, False, id="编辑段不是成片"),
+        pytest.param(edit_segment, False, id="编辑段不是素材片"),
         pytest.param(generated_music, True, id="生成的音乐"),
         pytest.param(uploaded_music, True, id="挂到这段对话的上传音乐"),
         pytest.param(other_conversations_music, False, id="别的对话的音乐"),

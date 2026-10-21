@@ -1353,7 +1353,7 @@ async def test_an_edit_needs_a_finished_take_as_its_base(role: str) -> None:
         )
 
     assert response.status_code == 422, response.text
-    assert "成片" in response.json()["detail"]
+    assert "素材片" in response.json()["detail"]
     assert set(repo.jobs) == seeded
 
 
@@ -1669,11 +1669,11 @@ async def test_a_composite_needs_a_finished_master_as_its_base(role: str) -> Non
         )
 
     assert response.status_code == 422, response.text
-    assert "基底必须是一条已完成的成片" in response.json()["detail"]
+    assert "基底必须是一条已完成的素材片" in response.json()["detail"]
     assert set(repo.jobs) == seeded
 
 
-@pytest.mark.parametrize("role", ["别的基底的编辑段", "还在跑的编辑段", "另一条成片"])
+@pytest.mark.parametrize("role", ["别的基底的编辑段", "还在跑的编辑段", "另一条素材片"])
 async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: str) -> None:
     """每段要么出自基底本身，要么出自基于这个基底的一条已完成编辑段；别的一律拒，不落库。"""
 

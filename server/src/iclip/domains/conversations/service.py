@@ -77,7 +77,7 @@ BusyConversationIds = Callable[[uuid.UUID | None], Awaitable[frozenset[uuid.UUID
 """此刻在跑（含等审批）的对话 id；给属主就按属主算，给 None 算全平台。"""
 
 LatestMasterUrls = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, str]]]
-"""批量读这些对话各自名下最新一条成片的地址（不含分叉继承来的），由组合根注入；没有成片的 id 不在结果里。"""
+"""批量读这些对话各自名下最新一条素材片的地址（不含分叉继承来的），由组合根注入；没有素材片的 id 不在结果里。"""
 
 GenerateTitle = Callable[[str], Awaitable[str | None]]
 """由组合根注入的标题生成器；返回 None 表示本次不生成标题。"""
@@ -284,10 +284,10 @@ class ConversationFilm(Protocol):
 
 
 class WholeFilmDraftReferences(Protocol):
-    """保存整片草稿前核对它引用的生成记录，由组合根接到生成记录上。
+    """保存成片草稿前核对它引用的生成记录，由组合根接到生成记录上。
 
-    画面轨的每段要出自这段对话自己的或继承来的一条成片，音乐要是这段对话的一条已完成的音频记录，
-    改字的字幕记录要是这段对话自己的或继承来的一条成片的字幕。不合格抛 ValidationFailed，消息是
+    画面轨的每段要出自这段对话自己的或继承来的一条素材片，音乐要是这段对话的一条已完成的音频记录，
+    改字的字幕记录要是这段对话自己的或继承来的一条素材片的字幕。不合格抛 ValidationFailed，消息是
     给人看的一句话，不区分「没有这条」与「不是这段对话的」。"""
 
     async def __call__(
@@ -300,7 +300,7 @@ class WholeFilmRenderUnavailable(Exception):
 
 
 class WholeFilmExports(Protocol):
-    """整片导出，由组合根接到生成记录与渲染服务上：每次导出是一条整片生成记录，由生成队列交给
+    """成片导出，由组合根接到生成记录与渲染服务上：每次导出是一条成片生成记录，由生成队列交给
     渲染服务。归属（属主、这段对话）由用例核对过才调进来。"""
 
     async def start(
@@ -311,7 +311,7 @@ class WholeFilmExports(Protocol):
         revision: int,
         document: WholeFilmDocument,
     ) -> uuid.UUID:
-        """记下这次导出要的成片、音乐与字幕，建一条整片生成记录排队，返回它的 id。
+        """记下这次导出要的素材片、音乐与字幕，建一条成片生成记录排队，返回它的 id。
 
         用到的记录没有产物地址抛 ValidationFailed。"""
         ...
@@ -325,12 +325,12 @@ class WholeFilmExports(Protocol):
     async def cancel(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID, export_id: uuid.UUID
     ) -> None:
-        """取消一次导出。不是这段对话、这个属主的整片导出抛 NotFound；正在交给渲染服务抛
+        """取消一次导出。不是这段对话、这个属主的成片导出抛 NotFound；正在交给渲染服务抛
         Conflict；渲染服务连不上抛 ``WholeFilmRenderUnavailable``；已结束的不改。"""
         ...
 
 
-_EXPORTS_OFF = "整片导出没有开通"
+_EXPORTS_OFF = "成片导出没有开通"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -387,7 +387,7 @@ class AuditPage:
     total: int
     running_total: int
     latest_master_urls: Mapping[uuid.UUID, str]
-    """这一页里各段对话自己名下最新一条成片的地址；没有成片的不在里面。"""
+    """这一页里各段对话自己名下最新一条素材片的地址；没有素材片的不在里面。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -700,7 +700,7 @@ class ConversationService:
     async def whole_film_draft(
         self, principal: Principal, conversation_id: uuid.UUID
     ) -> tuple[WholeFilmDraft, WholeFilmDocument] | None:
-        """读这段对话的整片草稿与解析好的文档；可见范围同读工作区文件，还没存过返回 None。"""
+        """读这段对话的成片草稿与解析好的文档；可见范围同读工作区文件，还没存过返回 None。"""
 
         conversation = await self._readable(principal, conversation_id)
         found = await self._drafts.get(conversation.id)
@@ -716,7 +716,7 @@ class ConversationService:
         revision: int,
         document: WholeFilmDocument,
     ) -> WholeFilmDraft:
-        """整份覆盖整片草稿；只有属主能存，口径同覆盖工作区文件。
+        """整份覆盖成片草稿；只有属主能存，口径同覆盖工作区文件。
 
         ``revision`` 是读到的那一版（还没有草稿是 0），对不上是 409；引用的记录不合格是 422。"""
 
@@ -729,13 +729,13 @@ class ConversationService:
             updated_by=principal.user_id,
         )
         if saved is None:
-            raise Conflict("整片草稿已经有更新的一版，重新读取后再改")
+            raise Conflict("成片草稿已经有更新的一版，重新读取后再改")
         return saved
 
     async def export_whole_film(
         self, principal: Principal, conversation_id: uuid.UUID, *, revision: int
     ) -> tuple[uuid.UUID, tuple[uuid.UUID, ...]]:
-        """按当前草稿导出一条整片，返回导出 id 与用到的成片（去重，按第一次出现的先后）。
+        """按当前草稿导出一条成片，返回导出 id 与用到的素材片（去重，按第一次出现的先后）。
 
         只有属主能导，口径同存草稿；``revision`` 不是存着的那一版是 409，画面轨是空的是 422。"""
 
@@ -743,10 +743,10 @@ class ConversationService:
         exports = self._require_exports()
         found = await self._drafts.get(conversation.id)
         if (found.revision if found is not None else 0) != revision:
-            raise Conflict("整片草稿已经有更新的一版，重新读取后再导出")
+            raise Conflict("成片草稿已经有更新的一版，重新读取后再导出")
         document = None if found is None else WholeFilmDocument.model_validate(found.document)
         if document is None or not document.layer0:
-            raise ValidationFailed("画面轨里还没有内容，导不出整片")
+            raise ValidationFailed("画面轨里还没有内容，导不出成片")
         export_id = await exports.start(
             principal, conversation_id=conversation.id, revision=revision, document=document
         )
@@ -1052,7 +1052,7 @@ class ConversationService:
         cursor: str | None = None,
     ) -> AuditPage:
         """治理者按建立时间倒序分页查询全平台对话，附当前筛选下的总数与在跑数，以及这一页各段
-        自己名下最新一条成片的地址。
+        自己名下最新一条素材片的地址。
 
         给了 ``owner_user_id`` 时占着的集合按该属主算，不给才算全平台；busy 集只取一次，
         列表与两个计数才对得上。``deleted`` 决定属主删掉的墓碑收不收，这是唯一列得出墓碑的口。

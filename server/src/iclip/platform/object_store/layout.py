@@ -31,12 +31,12 @@ class MediaPaths:
         return f"{OSS_ROOT}/generated-music/{job_id}.{ext}"
 
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
-        """拼出来的成片，长期保留，不进过期规则。"""
+        """拼出来的素材片（合成），长期保留，不进过期规则。"""
 
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
 
     def whole_film(self, *, job_id: uuid.UUID) -> str:
-        """导出的整片，按它那条生成记录的 id 命名，长期保留，不进过期规则。"""
+        """导出的成片，按它那条生成记录的 id 命名，长期保留，不进过期规则。"""
 
         return f"{OSS_ROOT}/whole-films/{job_id}.mp4"
 

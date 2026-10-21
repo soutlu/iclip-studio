@@ -175,7 +175,7 @@ async def test_run_seconds_count_top_level_runs_that_reached_an_end(
 async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
     engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
-    """X 运行完 29 分钟后出片：空档照算，49 分钟。Y 空了 31 分钟：断开，两段各 10 分钟；成片后的
+    """X 运行完 29 分钟后出片：空档照算，49 分钟。Y 空了 31 分钟：断开，两段各 10 分钟；出片后的
     那轮在交付周期外，不进单任务时长。Z 一轮跑了 60 分钟，期间一条失败出片，结束 20 分钟后再出片：
     空档对的是已合并段的结束，不是上一条出片的结束，所以整段 90 分钟。"""
 
@@ -237,7 +237,7 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
     assert overall.agent_run_seconds is not None
     assert overall.agent_run_seconds.count == 4
     assert overall.agent_run_seconds.avg == (600 + 600 + 600 + 3600) / 4
-    # 只有 X 那条成片记了提交时刻：视频生成时长只有它一个样本。
+    # 只有 X 那条出片记了提交时刻：视频生成时长只有它一个样本。
     assert overall.upstream_seconds is not None
     assert (overall.upstream_seconds.count, overall.upstream_seconds.avg) == (1, 540)
     assert overall.runs == 5 and overall.active_users == 1
@@ -246,7 +246,7 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
 async def test_length_counts_only_known_durations_and_discards_all_but_the_last_take(
     engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
-    """片长只读成片的 ``duration_ms``，空的不计；同一镜全时段最后一条以外的是废片——按时间窗、
+    """片长只读出片的 ``duration_ms``，空的不计；同一镜全时段最后一条以外的是废片——按时间窗、
     按人切开看也是，窗里或某人名下的最后一条不因此变成「最后一条」。"""
 
     async with engine.begin() as conn:
@@ -306,7 +306,7 @@ DAY0 = date(2026, 8, 3)
 
 async def plant_week(engine: AsyncEngine) -> dict[str, uuid.UUID]:
     """新加坡时区 8 月 3 日起的一周：第 2 天没人跑；第 3 天两个人跑。九张需求单与一段没挂单的对话
-    共十件成片，需求单 1 在第 0、1 天各出一次片（算一件）。另有三镜重出过：挂在当天已有成片的
+    共十件出片，需求单 1 在第 0、1 天各出一次片（算一件）。另有三镜重出过：挂在当天已有出片的
     需求单下，不添件数；失败的不计次数，其中一段对话已删。还有一镜只失败过，哪里都不出现。
     上一期只有一轮运行。"""
 
@@ -414,7 +414,7 @@ async def test_daily_overview_marks_inactive_days_and_dedupes_deliveries(
     assert series[3].metrics.active_users == 2
     assert sum(point.metrics.deliveries for point in series) == 11
 
-    # 最后一期的 7 日窗恰好就是本期，件数也够 10 件，不用往前补：每件成片的 token 与本期一致，
+    # 最后一期的 7 日窗恰好就是本期，件数也够 10 件，不用往前补：每件出片的 token 与本期一致，
     # 分母是去重后的 10 件，不是各天件数相加的 11 件。
     ma7 = series[-1].ma7
     assert ma7 is not None

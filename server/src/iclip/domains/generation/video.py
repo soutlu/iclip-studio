@@ -254,7 +254,7 @@ def _progress_from_body(
 
 
 def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: str) -> int | None:
-    """上游实测的成片时长 ``output_duration_seconds`` 折成毫秒；没给或给坏了都是 ``None``。
+    """上游实测的产物时长 ``output_duration_seconds`` 折成毫秒；没给或给坏了都是 ``None``。
 
     ``result.duration_ms`` 是生成耗时、请求里的 ``seconds`` 是目标时长，都不拿来顶替。"""
 
@@ -270,7 +270,7 @@ def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: s
                 return ms
     # 时长只是附带信息，给坏了不该让已经出好的片判失败。
     _logger.warning(
-        "视频上游给的成片时长不可用",
+        "视频上游给的产物时长不可用",
         job_id=job_id,
         task_id=task_id,
         output_duration_seconds=seconds,

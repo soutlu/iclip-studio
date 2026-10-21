@@ -1,4 +1,4 @@
-"""资料库端点：持 ``generation:read`` 就能看全站的成片卡与整片卡连同来源对话，打不打得开对话按对话
+"""资料库端点：持 ``generation:read`` 就能看全站的素材卡与成片卡连同来源对话，打不打得开对话按对话
 自己的可读范围。"""
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ async def plant_file(pg_url: str, owner: uuid.UUID, conversation_id: uuid.UUID, 
 async def plant_whole_film(
     pg_url: str, *, owner: uuid.UUID, conversation_id: uuid.UUID, sources: list[uuid.UUID]
 ) -> uuid.UUID:
-    """``conversation_id`` 上一次完成的整片导出，画面轨按先后用到 ``sources``；返回整片记录 id。"""
+    """``conversation_id`` 上一次完成的成片导出，画面轨按先后用到 ``sources``；返回成片记录 id。"""
 
     film = uuid.uuid4()
     async with connected(pg_url) as conn:
@@ -165,7 +165,7 @@ async def test_whole_films_need_generation_read(client: httpx.AsyncClient, pg_ur
 async def test_whole_film_authors_count_whole_film_cards_by_conversation_owner(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """整片卡的作者是对话属主：Lena 记在 Nora 对话上的导出仍算 Nora 的卡；只有成片没有导出的对话
+    """成片卡的作者是对话属主：Lena 记在 Nora 对话上的导出仍算 Nora 的卡；只有素材片没有导出的对话
     不算。"""
 
     nora = await login_as(client, pg_url, "nora", "editor")
@@ -194,8 +194,8 @@ async def test_whole_film_authors_count_whole_film_cards_by_conversation_owner(
 async def test_whole_film_cards_carry_every_version_and_the_conversation(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """属主看到自己的整片卡、打得开对话；同事看到同一张卡，打不开对话。卡面是最后一版，每版带用到的
-    成片，没有水印版与时长。"""
+    """属主看到自己的成片卡、打得开对话；同事看到同一张卡，打不开对话。卡面是最后一版，每版带用到的
+    素材片，没有水印版与时长。"""
 
     owner = await login_as(client, pg_url, "nora", "editor")
     conversation_id, video_id = await plant_video(pg_url, owner=owner, user_name="nora")

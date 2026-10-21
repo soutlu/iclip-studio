@@ -205,7 +205,7 @@ class TestVideoJob:
 
     status: TestVideoStatus
     url: str | None
-    """成片地址；还没完成或失败了为 ``None``。"""
+    """试生成地址；还没完成或失败了为 ``None``。"""
     error_message: str | None
     """上游给的失败原文。"""
     prompt: str | None

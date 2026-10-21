@@ -259,7 +259,7 @@ async def test_video_poll_maps_terminal_and_running_states() -> None:
         SUCCEEDED_RESULT["output_url"],
         SUCCEEDED_RESULT["watermark_output_url"],
     ), "上游发布好的地址直接存，不转存"
-    assert fetched == ["video.test"], "只问了状态，没去下载成片"
+    assert fetched == ["video.test"], "只问了状态，没去下载产物"
     assert (await video_provider(running).poll(job)).outcome == "running"
     rejected = await video_provider(failed).poll(job)
     assert (rejected.outcome, rejected.error_code) == ("failed", "NSFW")
@@ -274,7 +274,7 @@ def succeeded_with(result: Mapping[str, object]) -> HttpVideoProvider:
 
 
 async def test_video_poll_takes_the_measured_output_duration() -> None:
-    """成片时长取上游实测的秒数折成毫秒；``result.duration_ms`` 是生成耗时，不读。"""
+    """产物时长取上游实测的秒数折成毫秒；``result.duration_ms`` 是生成耗时，不读。"""
 
     provider = succeeded_with(
         SUCCEEDED_RESULT | {"output_duration_seconds": 10.041667, "duration_ms": 45000}

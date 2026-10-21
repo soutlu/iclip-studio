@@ -1,4 +1,4 @@
-"""字幕记录：成片完成后自动排一条、手动端点另起一条、识别结果落库与读出、失败不重投。
+"""字幕记录：素材片完成后自动排一条、手动端点另起一条、识别结果落库与读出、失败不重投。
 
 用内存仓储与真实队列协程，provider 全是替身，不碰识别服务。"""
 
@@ -125,7 +125,7 @@ def build_world(
     asr_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
-    """装一个真队列与真服务：成片完成的回调接到服务上，与装配一致。"""
+    """装一个真队列与真服务：素材片完成的回调接到服务上，与装配一致。"""
 
     store = repo if repo is not None else InMemoryGenerationRepository()
     for job in jobs:
@@ -264,7 +264,7 @@ async def test_a_completed_edit_segment_is_not_transcribed() -> None:
 
 
 async def test_a_completed_enhancement_is_not_transcribed() -> None:
-    """高清版不是成片：上游报成功落了两个地址，也不为它排字幕。"""
+    """高清版不是素材片：上游报成功落了两个地址，也不为它排字幕。"""
 
     enhancement = replace(
         make_enhancement(completed_take()),
@@ -550,7 +550,7 @@ async def test_a_readable_record_that_is_not_a_master_is_rejected(kind: str) -> 
         response = await http.post("/generations/subtitles", json={"sourceJobId": str(target.id)})
 
     assert response.status_code == 422, response.text
-    assert "成片" in response.json()["detail"]
+    assert "素材片" in response.json()["detail"]
     assert new_rows(world, seeded) == []
 
 

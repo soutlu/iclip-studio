@@ -346,7 +346,7 @@ async def _edit(
     created: float,
     finished: float,
 ) -> None:
-    """在 ``base`` 那条成片上改一段：来源是它，原作与镜号随它。"""
+    """在 ``base`` 那条素材片上改一段：来源是它，原作与镜号随它。"""
 
     await conn.execute(
         text(
@@ -387,7 +387,7 @@ async def _composite(
     url_name: str | None = None,
     duration_ms: int | None = None,
 ) -> None:
-    """在 ``base`` 那条成片上剪一段再合成：先落编辑段（合成前两分钟建、前一分钟完成），合成以基底为
+    """在 ``base`` 那条素材片上剪一段再合成：先落编辑段（合成前两分钟建、前一分钟完成），合成以基底为
     来源、把编辑段夹进去，原作与镜号随基底。合成请求按别名落库，归属标签的键是 ``userName``。"""
 
     edit_id = uuid.uuid4()
@@ -753,7 +753,7 @@ async def test_a_video_upload_is_not_a_card_or_a_version(
 async def test_subtitle_records_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """字幕记录是成片的附属结果，不是片：挂在对话上、完成得比卡面还晚，卡与版本都不变。"""
+    """字幕记录是素材片的附属结果，不是片：挂在对话上、完成得比卡面还晚，卡与版本都不变。"""
 
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
@@ -847,7 +847,7 @@ async def _whole_film(
     sources: Sequence[uuid.UUID] = (),
     status: str = STATUS_COMPLETED,
 ) -> None:
-    """挂在 ``conversation_id`` 上的一次整片导出，画面轨按先后用到 ``sources``；只有完成的有地址，
+    """挂在 ``conversation_id`` 上的一次成片导出，画面轨按先后用到 ``sources``；只有完成的有地址，
     还没结束的没有完成时刻。"""
 
     completed = status == STATUS_COMPLETED
@@ -877,8 +877,8 @@ async def _whole_film(
 async def test_whole_films_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """成片素材的卡不收整片：挂在有卡的对话上、完成得比卡面还晚，卡面、组与版都不变；挂在一段没有
-    别的成片的对话上，也不成卡。"""
+    """素材卡不收成片：挂在有卡的对话上、完成得比卡面还晚，卡面、组与版都不变；挂在一段没有
+    别的素材片的对话上，也不成卡。"""
 
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
@@ -896,11 +896,11 @@ async def test_whole_films_are_not_cards_or_versions(
 
 
 class Films:
-    """在 ``Seed`` 上加的整片导出，时刻同样是距 BASE 的分钟数。
+    """在 ``Seed`` 上加的成片导出，时刻同样是距 BASE 的分钟数。
 
     c1（Nora）：W0（45 完成，c4、c5 建立前就有）、W1（200，用到 A、D）、Lena 记在这段对话上的 W2（300，
     卡面，用到 D、A、B），另有一条失败的与一条还没结束的。c4（Lena 的副本）：自己的 W4（250）。
-    c2（Lena）：只有组件段的 W5（150，没有用到成片）。c5 没有自己的导出。还有一条挂在不存在的对话上的。
+    c2（Lena）：只有组件段的 W5（150，没有用到素材片）。c5 没有自己的导出。还有一条挂在不存在的对话上的。
     """
 
     def __init__(self) -> None:
@@ -971,7 +971,7 @@ async def test_a_whole_film_card_holds_its_conversations_own_exports(
 ) -> None:
     """一段对话一张卡，只装自己完成的导出：c4、c5 不继承 c1 的，c5 因此没有卡；失败的、还没结束的、
     挂在不存在的对话上的都不收。卡里按完成先后编版本，卡面是最后一版；作者是对话属主，每一版的归属人
-    是导出的人，用到的成片按请求里的先后。"""
+    是导出的人，用到的素材片按请求里的先后。"""
 
     rows = await reports.whole_films(WholeFilmScope(), limit=20, after=None)
 
@@ -1005,8 +1005,8 @@ async def test_a_whole_film_card_holds_its_conversations_own_exports(
 async def test_high_definition_versions_are_neither_takes_nor_exports(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:
-    """高清版（超分记录）完成得比所有卡面都晚，成片素材的卡、组、版与整片卡、整片版本都不变：
-    成片与整片的高清版种类都是视频，都不挂对话。"""
+    """高清版（超分记录）完成得比所有卡面都晚，素材卡、组、版与成片卡、成片版本都不变：
+    素材片与成片的高清版种类都是视频，都不挂对话。"""
 
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))

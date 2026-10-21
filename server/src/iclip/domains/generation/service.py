@@ -95,7 +95,7 @@ class EnhanceTier:
 @dataclass(frozen=True, slots=True)
 class VideoEnhancements:
     downloaded_job_ids: tuple[uuid.UUID, ...]
-    """下载高清版时记下载事件的成片：视频是它自己，整片是它导出时用到的各条。"""
+    """下载高清版时记下载事件的素材片：视频是它自己，成片是它导出时用到的各条。"""
     tiers: tuple[EnhanceTier, ...]
 
 
@@ -413,7 +413,7 @@ class GenerationService:
         if video is None:
             raise NotFound(f"没有这次生成: {request.source_job_id}")
         if not is_base_master(video) or video.output_url is None:
-            raise ValidationFailed("只能识别成片：已完成的出片或合成")
+            raise ValidationFailed("只能识别素材片：已完成的出片或合成")
         return await self._queue_new(
             _pending_job(
                 SubtitleRequest(model=subtitles.model, video_url=video.output_url),
@@ -471,7 +471,7 @@ class GenerationService:
     async def submit_whole_film(
         self, principal: Principal, *, conversation_id: uuid.UUID, request: WholeFilmRequest
     ) -> GenerationJob:
-        """把一次整片导出记成一条生成记录、排进渲染服务那条队列。
+        """把一次成片导出记成一条生成记录、排进渲染服务那条队列。
 
         归属与对话由调用方核对过。导出不是动手创作，不抹对话的收尾标记。"""
 
@@ -490,7 +490,7 @@ class GenerationService:
         )
 
     async def cancel_whole_film(self, job: GenerationJob) -> None:
-        """取消一次整片导出，记为失败、错误码 ``CANCELLED``；调用方已核对归属。
+        """取消一次成片导出，记为失败、错误码 ``CANCELLED``；调用方已核对归属。
 
         还在排队就直接记；正在交给渲染服务答 409；已交出去的先让渲染服务取消（它查不到也行）再记，
         渲染服务连不上抛 ``RenderUnavailable``、记录不动；已有结论的不改。"""
@@ -507,7 +507,7 @@ class GenerationService:
             return
         await render.cancel(job.id)
         if await self._mark_cancelled(job.id, only_if_status=STATUS_SUBMITTED) is None:
-            _logger.info("整片导出在取消之前已有结论，不改它", job_id=job.id)
+            _logger.info("成片导出在取消之前已有结论，不改它", job_id=job.id)
 
     async def _mark_cancelled(
         self, job_id: uuid.UUID, *, only_if_status: GenerationStatus
@@ -521,13 +521,13 @@ class GenerationService:
 
     def _require_render(self) -> RenderClient:
         if self._render is None:
-            raise ValidationFailed("整片导出没有开通")
+            raise ValidationFailed("成片导出没有开通")
         return self._render
 
     async def submit_video_enhance(
         self, principal: Principal, request: VideoEnhanceIn
     ) -> GenerationJob:
-        """给一条成片或一条导出完成的整片提一档高清版，记一条超分记录、排进视频那条队列。
+        """给一条素材片或一条导出完成的成片提一档高清版，记一条超分记录、排进视频那条队列。
 
         来源不按属主取：资料库里全站的片谁都看得到、下载得到，高清版也一样。同一来源同一档已有
         没失败的超分记录（谁提的都算），直接给那一条，不新建、不排队；失败的可以重做。超分记录
@@ -536,7 +536,7 @@ class GenerationService:
         enhance = self._require_enhance()
         source = await self._repo.get(request.source_job_id, owner=None)
         if not _enhanceable(source) or source.output_url is None:
-            raise ValidationFailed("只有成片（已完成的出片或合成）与导出完成的整片能做高清版")
+            raise ValidationFailed("只有素材片（已完成的出片或合成）与导出完成的成片能做高清版")
         tiers = await self._enhance_tiers(enhance, source)
         if request.resolution not in tiers:
             if not tiers:
@@ -612,8 +612,8 @@ class GenerationService:
         )
 
     async def _short_edge(self, source: GenerationJob) -> int | None:
-        """来源的短边像素，按出片请求里的分辨率推，不探测文件：合成取原作的，整片取画面轨第一条
-        成片的。推不出来是 ``None``。"""
+        """来源的短边像素，按出片请求里的分辨率推，不探测文件：合成取原作的，成片取画面轨第一条
+        素材片的。推不出来是 ``None``。"""
 
         video = source
         if video.kind == KIND_WHOLE_FILM:
@@ -752,11 +752,11 @@ class GenerationService:
 
 def _require_base(job: GenerationJob) -> None:
     if not is_base_master(job):
-        raise ValidationFailed("基底必须是一条已完成的成片（出片或合成）")
+        raise ValidationFailed("基底必须是一条已完成的素材片（出片或合成）")
 
 
 def _enhanceable(job: GenerationJob) -> bool:
-    """能做高清版的来源：一条成片，或一条导出完成、有地址的整片。"""
+    """能做高清版的来源：一条素材片，或一条导出完成、有地址的成片。"""
 
     if is_base_master(job):
         return True
@@ -769,7 +769,7 @@ def _enhanceable(job: GenerationJob) -> bool:
 
 
 def _downloaded_with(source: GenerationJob) -> tuple[uuid.UUID, ...]:
-    """下载这条来源的高清版时记下载事件的成片，口径同下载来源本身。"""
+    """下载这条来源的高清版时记下载事件的素材片，口径同下载来源本身。"""
 
     if isinstance(source.request, WholeFilmRequest):
         return tuple(video.job_id for video in source.request.videos)

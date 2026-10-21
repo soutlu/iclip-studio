@@ -1,4 +1,4 @@
-"""整片草稿文档的形状与时间线规则：每条规则一个合规矩、一个不合规矩的例子。"""
+"""成片草稿文档的形状与时间线规则：每条规则一个合规矩、一个不合规矩的例子。"""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
     parsed = parse(document)
 
     assert parsed.model_dump(mode="json", by_alias=True) == document
-    # 画面轨 8 秒，o2 到 9 秒结束：整片到所有轨上内容的最远结束
+    # 画面轨 8 秒，o2 到 9 秒结束：成片到所有轨上内容的最远结束
     assert parsed.total_ms() == 9000
     assert parsed.video_sources() == (SOURCE,)
 
@@ -371,7 +371,7 @@ def test_clip_ids_are_unique_across_the_document() -> None:
 @pytest.mark.parametrize(
     ("overlays", "problem"),
     [
-        pytest.param([overlay("o1", start=0, duration=5000)], None, id="铺满整片"),
+        pytest.param([overlay("o1", start=0, duration=5000)], None, id="从头铺到尾"),
         pytest.param(
             [
                 overlay("o1", start=0, duration=3000, track=0),

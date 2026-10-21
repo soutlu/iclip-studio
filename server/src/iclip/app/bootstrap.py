@@ -155,7 +155,7 @@ def _object_store(
     injected: PublicBucket | None,
 ) -> tuple[PublicBucket | None, Callable[[str], str], ServerUploadSigner | None]:
     """桶、服务端下载用的地址换算与给别的服务端签上传地址的端口。注入了桶（测试）时没有签名端口，
-    整片导出开不了。"""
+    成片导出开不了。"""
 
     if injected is not None:
         return injected, _as_is, None
@@ -473,7 +473,7 @@ def build_app(
         )
 
     if render_client is not None and settings.media_generation is None:
-        raise RuntimeError("整片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
+        raise RuntimeError("成片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -485,7 +485,7 @@ def build_app(
         render: RenderSetup | None = None
         if render_client is not None:
             if server_uploads is None:
-                raise RuntimeError("整片导出已启用却没有上传签名；注入的测试桶不支持整片导出")
+                raise RuntimeError("成片导出已启用却没有上传签名；注入的测试桶不支持成片导出")
             render = RenderSetup(
                 client=render_client, uploads=server_uploads, public_url=public_objects.public_url
             )
