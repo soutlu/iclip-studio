@@ -8,6 +8,7 @@ import {
   addMockConversation,
   addMockUser,
   handlers,
+  loginAs,
   mockGovernor,
 } from './handlers'
 import { seedDemoTasks } from './demo-tasks'
@@ -150,6 +151,11 @@ seedDemoTasks([
 
 if (window.localStorage.getItem('cue.mock.sidebar-large-collection') === 'true') {
   seedSidebarHistory()
+}
+
+// 临时原型打开即进入演示治理者身份；此入口只由 mock 模式载入。
+if (new URLSearchParams(window.location.search).get('variant') === 'tag-admin') {
+  loginAs(mockGovernor)
 }
 
 export const worker = setupWorker(...handlers)

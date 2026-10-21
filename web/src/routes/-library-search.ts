@@ -21,6 +21,8 @@ const zLibraryTab = z.enum(LIBRARY_TAB_VALUES)
 
 export const librarySearchSchema = z.object({
   ...dateRangeSearchFields,
+  /** 临时设计原型的入口，仅 mock 模式使用。 */
+  variant: z.literal('tag-admin').optional().catch(undefined),
   tab: zLibraryTab.optional().catch(undefined),
   orientation: z.enum(['portrait', 'landscape']).optional().catch(undefined),
   q: z.string().max(100).optional().catch(undefined),

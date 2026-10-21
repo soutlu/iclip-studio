@@ -1,5 +1,6 @@
 export { LibraryRoute } from './components/library-route'
 export { LibraryTabsList } from './components/library-page-header'
+export { LibraryTagPrototypePage } from './components/library-tag-prototype-page'
 export { HitCasesRoute, type HitCaseTarget } from './components/hit-cases-route'
 export { ReferencesRoute } from './components/references-route'
 export { WholeFilmsRoute } from './components/whole-films-route'

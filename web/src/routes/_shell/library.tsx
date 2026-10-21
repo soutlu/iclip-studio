@@ -4,6 +4,7 @@ import {
   HitCasesRoute,
   LibraryRoute,
   LibraryTabsList,
+  LibraryTagPrototypePage,
   ReferencesRoute,
   WholeFilmsRoute,
   type HitCaseScope,
@@ -94,6 +95,17 @@ function LibraryPage() {
       window.location.origin,
     ).href
   const myUserName = user?.username ?? null
+
+  if (__TAG_ADMIN_PROTOTYPE__ && search.variant === 'tag-admin') {
+    return (
+      <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tabFromSearch(search)}>
+        <LibraryTagPrototypePage
+          onClose={() => void navigate({ search: { tab: 'hit-cases' } })}
+          tabs={<LibraryTabsList />}
+        />
+      </TabsRoot>
+    )
+  }
 
   return (
     <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tabFromSearch(search)}>
