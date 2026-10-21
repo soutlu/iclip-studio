@@ -41,6 +41,13 @@ ERROR_TIMEOUT: Final = "timeout"
 TAGGING_TIMEOUT_SECONDS: Final = 10 * 60
 """打标中的条目最多等这么久，超过即按 ``timeout`` 收尾。"""
 
+AI_VALUE_LIMIT: Final = 500
+"""``auto_fill = ai`` 的全部维度下的取值（含小类）合计最多这么多：一次打标把它们全部写进输出约束，
+实测 500 个时模型仍答得合格式。"""
+
+MAX_TAG_NAME_CHARS: Final = 50
+MAX_TAG_GUIDE_CHARS: Final = 1000
+
 
 @dataclass(frozen=True, slots=True)
 class TagNode:
@@ -100,6 +107,7 @@ class TaggingFailed(Exception):
 
 
 __all__ = [
+    "AI_VALUE_LIMIT",
     "AUTO_FILL_AI",
     "BUSY_STATUSES",
     "ENTRY_KINDS",
@@ -109,6 +117,8 @@ __all__ = [
     "ERROR_TIMEOUT",
     "KIND_HIT_CASE",
     "KIND_REFERENCE",
+    "MAX_TAG_GUIDE_CHARS",
+    "MAX_TAG_NAME_CHARS",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",

@@ -3734,6 +3734,67 @@
         "title": "LibraryAuthorsOut",
         "type": "object"
       },
+      "LibraryTagCreateIn": {
+        "additionalProperties": false,
+        "description": "加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。",
+        "properties": {
+          "autoFill": {
+            "anyOf": [
+              {
+                "const": "ai",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autofill"
+          },
+          "guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parentId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentid"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "LibraryTagCreateIn",
+        "type": "object"
+      },
       "LibraryTagOut": {
         "additionalProperties": false,
         "description": "标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。",
@@ -3795,6 +3856,59 @@
           "children"
         ],
         "title": "LibraryTagOut",
+        "type": "object"
+      },
+      "LibraryTagUpdateIn": {
+        "additionalProperties": false,
+        "description": "改一个标签，不给的项不动；上级改不了。",
+        "properties": {
+          "autoFill": {
+            "anyOf": [
+              {
+                "const": "ai",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autofill"
+          },
+          "guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "title": "LibraryTagUpdateIn",
         "type": "object"
       },
       "LibraryTagsOut": {
@@ -15206,6 +15320,171 @@
           }
         ],
         "summary": "Library Tags",
+        "tags": [
+          "library-tags"
+        ]
+      },
+      "post": {
+        "description": "加一个维度或取值，答复新的节点。已有的条目不跟着重打。",
+        "operationId": "create_library_tag_library_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryTagCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTagOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Create Library Tag",
+        "tags": [
+          "library-tags"
+        ]
+      }
+    },
+    "/library-tags/{tag_id}": {
+      "delete": {
+        "description": "删掉一个标签连同它的下级，两库条目上的这些标签一起去掉。",
+        "operationId": "delete_library_tag_library_tags__tag_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Library Tag",
+        "tags": [
+          "library-tags"
+        ]
+      },
+      "patch": {
+        "description": "改名、判断说明、AI 打标或同级里的先后，答复改完的节点。已打的标签不跟着重打。",
+        "operationId": "update_library_tag_library_tags__tag_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryTagUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTagOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Update Library Tag",
         "tags": [
           "library-tags"
         ]

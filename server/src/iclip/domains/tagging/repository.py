@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
 from iclip.domains.tagging.models import (
+    AutoFill,
     Claim,
     EntryKey,
     TagCounts,
@@ -15,12 +17,50 @@ from iclip.domains.tagging.models import (
 )
 
 
+class TagTreeWriter(Protocol):
+    """一次改树：同一时刻只有一个改树的事务在跑，块正常结束提交、出错回滚；同一上级下撞名在这里就是
+    ``ValidationFailed``。"""
+
+    async def tree(self) -> tuple[TagNode, ...]:
+        """拿到写锁之后的整棵树，同 ``TagStore.tree``。"""
+        ...
+
+    async def insert(
+        self,
+        tag_id: uuid.UUID,
+        *,
+        parent_id: uuid.UUID | None,
+        name: str,
+        guide: str | None,
+        auto_fill: AutoFill | None,
+        position: int,
+    ) -> None: ...
+
+    async def update(
+        self, tag_id: uuid.UUID, *, name: str, guide: str | None, auto_fill: AutoFill | None
+    ) -> None:
+        """三项都按给的写。"""
+        ...
+
+    async def place(self, ordered: Sequence[uuid.UUID]) -> None:
+        """一组同级按给的先后重新编成 0..n-1。"""
+        ...
+
+    async def delete(self, tag_id: uuid.UUID) -> bool:
+        """删掉它；下级与条目上的它由外键级联删掉。没有这个标签给 ``False``。"""
+        ...
+
+
 class TagStore(Protocol):
     """``library_tags``、``library_entries``、``library_entry_tags`` 的数据访问。状态跳转都是带条件的
     更新。"""
 
     async def tree(self) -> tuple[TagNode, ...]:
         """全部维度，各带下级，同级按 ``position``、再按 id 排。"""
+        ...
+
+    def edit(self) -> AbstractAsyncContextManager[TagTreeWriter]:
+        """开一次改树，见 ``TagTreeWriter``。"""
         ...
 
     async def counts(self) -> Mapping[uuid.UUID, TagCounts]:
@@ -92,4 +132,4 @@ class TaggingQueuePort(Protocol):
         ...
 
 
-__all__ = ["SourceText", "TagStore", "Tagger", "TaggingQueuePort"]
+__all__ = ["SourceText", "TagStore", "TagTreeWriter", "Tagger", "TaggingQueuePort"]

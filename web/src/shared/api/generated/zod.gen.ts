@@ -907,6 +907,31 @@ export const zLibraryAuthorsOut = z.object({
 })
 
 /**
+ * LibraryTagCreateIn
+ *
+ * 加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。
+ */
+export const zLibraryTagCreateIn = z.object({
+  autoFill: z.literal('ai').nullish(),
+  guide: z.string().nullish(),
+  name: z.string(),
+  parentId: z.uuid().nullish(),
+  position: z.int().nullish(),
+})
+
+/**
+ * LibraryTagUpdateIn
+ *
+ * 改一个标签，不给的项不动；上级改不了。
+ */
+export const zLibraryTagUpdateIn = z.object({
+  autoFill: z.literal('ai').nullish(),
+  guide: z.string().nullish(),
+  name: z.string().nullish(),
+  position: z.int().nullish(),
+})
+
+/**
  * MetricFiltersIn
  *
  * 表现下限，全部可选；省略的维度不设限。
@@ -3497,6 +3522,33 @@ export const zSearchVideosInspirationsVideosSearchPostResponse = zVideoSearchOut
  * Successful Response
  */
 export const zLibraryTagsLibraryTagsGetResponse = zLibraryTagsOut
+
+export const zCreateLibraryTagLibraryTagsPostBody = zLibraryTagCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateLibraryTagLibraryTagsPostResponse = zLibraryTagOut
+
+export const zDeleteLibraryTagLibraryTagsTagIdDeletePath = z.object({
+  tag_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDeleteLibraryTagLibraryTagsTagIdDeleteResponse = z.void()
+
+export const zUpdateLibraryTagLibraryTagsTagIdPatchBody = zLibraryTagUpdateIn
+
+export const zUpdateLibraryTagLibraryTagsTagIdPatchPath = z.object({
+  tag_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateLibraryTagLibraryTagsTagIdPatchResponse = zLibraryTagOut
 
 /**
  * Successful Response

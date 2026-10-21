@@ -45,4 +45,36 @@ class LibraryTagsOut(CamelModel):
     """全部维度，按 ``position`` 排。"""
 
 
-__all__ = ["LibraryTagOut", "LibraryTagsOut", "TagCountsOut"]
+class LibraryTagCreateIn(CamelModel):
+    """加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。"""
+
+    parent_id: uuid.UUID | None = None
+    """上级；不给或 ``null`` 是加一个维度。"""
+    name: str
+    guide: str | None = None
+    auto_fill: AutoFill | None = None
+    """只有维度能给。"""
+    position: int | None = None
+    """排到同级里的第几个（0 起），超出范围夹到首尾；不给排在最后。"""
+
+
+class LibraryTagUpdateIn(CamelModel):
+    """改一个标签，不给的项不动；上级改不了。"""
+
+    name: str | None = None
+    """不给或 ``null`` 不改。"""
+    guide: str | None = None
+    """给了 ``null`` 或空串就清掉。"""
+    auto_fill: AutoFill | None = None
+    """只有维度能设 ``ai``；给了 ``null`` 是改回只靠人填。"""
+    position: int | None = None
+    """移到同级里的第几个（0 起），超出范围夹到首尾；不给或 ``null`` 不动。"""
+
+
+__all__ = [
+    "LibraryTagCreateIn",
+    "LibraryTagOut",
+    "LibraryTagUpdateIn",
+    "LibraryTagsOut",
+    "TagCountsOut",
+]

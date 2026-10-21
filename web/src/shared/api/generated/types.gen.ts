@@ -2029,6 +2029,34 @@ export type LibraryAuthorsOut = {
 }
 
 /**
+ * LibraryTagCreateIn
+ *
+ * 加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。
+ */
+export type LibraryTagCreateIn = {
+  /**
+   * Autofill
+   */
+  autoFill?: 'ai' | null
+  /**
+   * Guide
+   */
+  guide?: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Parentid
+   */
+  parentId?: string | null
+  /**
+   * Position
+   */
+  position?: number | null
+}
+
+/**
  * LibraryTagOut
  *
  * 标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。
@@ -2059,6 +2087,30 @@ export type LibraryTagOut = {
    * Position
    */
   position: number
+}
+
+/**
+ * LibraryTagUpdateIn
+ *
+ * 改一个标签，不给的项不动；上级改不了。
+ */
+export type LibraryTagUpdateIn = {
+  /**
+   * Autofill
+   */
+  autoFill?: 'ai' | null
+  /**
+   * Guide
+   */
+  guide?: string | null
+  /**
+   * Name
+   */
+  name?: string | null
+  /**
+   * Position
+   */
+  position?: number | null
 }
 
 /**
@@ -7907,6 +7959,97 @@ export type LibraryTagsLibraryTagsGetResponses = {
 
 export type LibraryTagsLibraryTagsGetResponse =
   LibraryTagsLibraryTagsGetResponses[keyof LibraryTagsLibraryTagsGetResponses]
+
+export type CreateLibraryTagLibraryTagsPostData = {
+  body: LibraryTagCreateIn
+  path?: never
+  query?: never
+  url: '/library-tags'
+}
+
+export type CreateLibraryTagLibraryTagsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateLibraryTagLibraryTagsPostError =
+  CreateLibraryTagLibraryTagsPostErrors[keyof CreateLibraryTagLibraryTagsPostErrors]
+
+export type CreateLibraryTagLibraryTagsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: LibraryTagOut
+}
+
+export type CreateLibraryTagLibraryTagsPostResponse =
+  CreateLibraryTagLibraryTagsPostResponses[keyof CreateLibraryTagLibraryTagsPostResponses]
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Tag Id
+     */
+    tag_id: string
+  }
+  query?: never
+  url: '/library-tags/{tag_id}'
+}
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteError =
+  DeleteLibraryTagLibraryTagsTagIdDeleteErrors[keyof DeleteLibraryTagLibraryTagsTagIdDeleteErrors]
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteResponse =
+  DeleteLibraryTagLibraryTagsTagIdDeleteResponses[keyof DeleteLibraryTagLibraryTagsTagIdDeleteResponses]
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchData = {
+  body: LibraryTagUpdateIn
+  path: {
+    /**
+     * Tag Id
+     */
+    tag_id: string
+  }
+  query?: never
+  url: '/library-tags/{tag_id}'
+}
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchError =
+  UpdateLibraryTagLibraryTagsTagIdPatchErrors[keyof UpdateLibraryTagLibraryTagsTagIdPatchErrors]
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryTagOut
+}
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchResponse =
+  UpdateLibraryTagLibraryTagsTagIdPatchResponses[keyof UpdateLibraryTagLibraryTagsTagIdPatchResponses]
 
 export type AuthorsLibraryAuthorsGetData = {
   body?: never
