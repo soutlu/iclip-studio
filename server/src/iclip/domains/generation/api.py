@@ -292,7 +292,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:read")],
     ) -> VideoEnhancementsOut:
         """一条视频能做的高清版各档（比它清晰的，按运行配置的先后）与各档最近的一条超分记录（谁提的
-        都算），以及下载高清版时要记下载事件的成片。
+        都算，``mine`` 标它是不是读的人的），以及下载高清版时要记下载事件的成片。
 
         来源不按属主取，id 不存在 404。来源不是成片或导出完成的整片时两项都空；高清版没开通时
         ``tiers`` 为空。
@@ -309,6 +309,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
                     job=None
                     if tier.job is None
                     else generation_out(tier.job, source_address=addresses.get(tier.job.id)),
+                    mine=tier.job is not None and tier.job.owner_user_id == principal.user_id,
                 )
                 for tier in found.tiers
             ],

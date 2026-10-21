@@ -90,7 +90,6 @@ export function ExportControl({ view, blocked, onStart, onCancel }: ExportContro
             downloadedJobIds={view.sourceJobIds}
             enhanceSourceId={view.exportId}
             originalLabel="下载整片"
-            showEnhanceDot={false}
             url={view.downloadUrl}
             watermarkUrl={null}
           >

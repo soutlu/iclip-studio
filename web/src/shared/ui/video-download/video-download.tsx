@@ -1,14 +1,19 @@
-import { useId, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useId, useLayoutEffect, useState, type ReactNode } from 'react'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { recordVideoDownloaded } from '@/shared/api/tracking'
 import {
   enhanceBadge,
   enhanceNoticeId,
+  settledOwnJobIds,
   useEnhanceTiers,
   useSubmitVideoEnhancement,
+  videoEnhancementsKeys,
+  type EnhanceBadge,
   type EnhanceResolution,
   type EnhanceTierRow,
 } from '@/shared/api/video-enhancements'
+import { markEnhancementsSeen, useSeenEnhancements } from '@/shared/api/video-enhancements-seen'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
@@ -29,8 +34,6 @@ type VideoDownloadProps = {
   enhanceSourceId?: string
   /** 只有原片时菜单第一项的名字，整片传「下载整片」。 */
   originalLabel?: string
-  /** 图标按钮右上角的高清版状态点：有在做的为绿，最近一次没做成为红。带字按钮不画点。 */
-  showEnhanceDot?: boolean
   /** 片长，用来估高清版要多久；不知道就不估。 */
   durationMs?: number | null | undefined
 }
@@ -43,13 +46,39 @@ const estimateText = (durationMs: number | null | undefined): string | undefined
     ? undefined
     : `约 ${Math.ceil(((durationMs / 1000) * ENHANCE_SLOWDOWN) / 60)} 分钟`
 
-const DOT_LABEL = { failed: '高清版生成失败', running: '高清版正在生成' } as const
+const BADGE_LABEL: Record<EnhanceBadge, string> = {
+  done: '高清版已生成',
+  failed: '高清版生成失败',
+  running: '高清版正在生成',
+}
 
 const FALLBACK_NAME = '生成的视频'
 
 /**
+ * 图标按钮上的高清版状态：在做是沿按钮外沿转的一段细弧（样式见 video-download.css），颜色跟按钮的图标走；
+ * 做好、没做成是右上角的绿点、红点。
+ */
+function EnhanceBadgeMark({ badge }: { badge: EnhanceBadge }) {
+  if (badge === 'running') {
+    return <span aria-hidden className="video-download-ring" data-enhance-ring="" />
+  }
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute top-0 right-0 size-2 rounded-full ring-[1.5px] ring-surface-container-lowest',
+        badge === 'done' ? 'bg-primary' : 'bg-error',
+      )}
+      data-enhance-dot={badge}
+    />
+  )
+}
+
+/**
  * 视频的下载按钮：只有原片且没有高清档时点了就下；否则先开菜单，选原片、水印版或各档高清版。
  * 高清版一档一行：还没做的点了就提交，菜单不关，那一行原地变成「正在生成」；做好的直接下载。
+ * 图标按钮另外标出高清版的状态（见 `enhanceBadge`）；打开菜单就把自己各档已有的结果记成看过，
+ * 菜单开着时出的结果也算看过；打开时顺带重拉各档，别人刚提交的也看得到。带字按钮什么都不标。
  */
 export function VideoDownload({
   children,
@@ -58,14 +87,31 @@ export function VideoDownload({
   durationMs,
   enhanceSourceId,
   originalLabel = '下载原片',
-  showEnhanceDot = true,
   url,
   watermarkUrl,
 }: VideoDownloadProps) {
   const { downloading, download: fetchAndSave } = useMediaDownload()
   const rows = useEnhanceTiers(enhanceSourceId)
   const submit = useSubmitVideoEnhancement()
+  const queryClient = useQueryClient()
+  const seen = useSeenEnhancements()
+  const [menuOpen, setMenuOpen] = useState(false)
   const descriptionId = useId()
+  const settledIds = settledOwnJobIds(rows)
+  const settledKey = settledIds.join(',')
+
+  // 菜单开着时某一档出了结果，那一行原地变了，等于当场看到。画之前就记，点不闪一下。
+  useLayoutEffect(() => {
+    if (menuOpen && settledKey !== '') markEnhancementsSeen(settledKey.split(','))
+  }, [menuOpen, settledKey])
+
+  const onMenuOpenChange = (open: boolean) => {
+    setMenuOpen(open)
+    if (!open || enhanceSourceId === undefined) return
+    markEnhancementsSeen(settledIds)
+    // 没有在做的档时不轮询、别人的帧也收不到，打开时重拉一次。
+    void queryClient.invalidateQueries({ queryKey: videoEnhancementsKeys.source(enhanceSourceId) })
+  }
 
   // 下载事件与取字节并行发出，不等它回来。
   const download = (href: string, fallbackName: string) => {
@@ -84,26 +130,16 @@ export function VideoDownload({
 
   const direct = watermarkUrl === null && rows.length === 0
   const onClick = direct ? () => download(url, FALLBACK_NAME) : undefined
-  const badge = showEnhanceDot && children === undefined ? enhanceBadge(rows) : null
+  const badge = children === undefined ? enhanceBadge(rows, seen) : null
   const trigger =
     children === undefined ? (
       <IconButton
         aria-busy={downloading}
         aria-describedby={badge === null ? undefined : descriptionId}
-        badge={
-          badge === null ? undefined : (
-            <span
-              aria-hidden
-              className={cn(
-                'pointer-events-none absolute top-0 right-0 size-2 rounded-full ring-[1.5px] ring-surface-container-lowest',
-                badge === 'running' ? 'bg-primary' : 'bg-error',
-              )}
-            />
-          )
-        }
+        badge={badge === null ? undefined : <EnhanceBadgeMark badge={badge} />}
         className={cn(
           'shrink-0 border-[0.5px] border-hairline text-on-surface aria-disabled:cursor-wait aria-disabled:opacity-60',
-          downloading && '[&_svg]:animate-spin',
+          downloading && '[&>svg]:animate-spin',
           className,
         )}
         disabled={downloading}
@@ -127,7 +163,7 @@ export function VideoDownload({
   const description =
     badge === null ? null : (
       <span hidden id={descriptionId}>
-        {DOT_LABEL[badge]}
+        {BADGE_LABEL[badge]}
       </span>
     )
   if (direct) {
@@ -140,7 +176,7 @@ export function VideoDownload({
   }
   return (
     <>
-      <MenuRoot>
+      <MenuRoot onOpenChange={onMenuOpenChange}>
         {/* disabled 交给菜单触发器：它拦下自己的按下与按键，再转交给按钮。 */}
         <MenuTrigger asChild disabled={downloading}>
           {trigger}

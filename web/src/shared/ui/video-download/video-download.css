@@ -1,0 +1,36 @@
+/* 高清版在做：沿下载按钮外沿转的一段细弧，跟着按钮的圆角走（圆按钮是圆，方按钮是圆角方），
+   颜色取按钮的图标色。转的是渐变的起始角，元素本身不转，方按钮的外形才不会跟着转。 */
+@property --video-download-ring-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.video-download-ring {
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--video-download-ring-angle),
+    currentColor 0 28%,
+    color-mix(in srgb, currentColor 18%, transparent) 28% 100%
+  );
+  mask:
+    linear-gradient(white 0 0) content-box exclude,
+    linear-gradient(white 0 0);
+  pointer-events: none;
+  animation: video-download-ring 1.2s linear infinite;
+}
+
+@keyframes video-download-ring {
+  to {
+    --video-download-ring-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-download-ring {
+    animation: none;
+  }
+}

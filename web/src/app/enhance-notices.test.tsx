@@ -1,7 +1,8 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useSeenEnhancements } from '@/shared/api/video-enhancements-seen'
 import { Toaster, toast } from '@/shared/ui/toast'
 import { VideoDownload } from '@/shared/ui/video-download'
 import { makeGenerationJob } from '@/testing/generation-job'
@@ -20,22 +21,28 @@ const OTHER_USER = '22222222-2222-4222-8222-222222222222'
 type Record = Parameters<typeof makeGenerationJob>[0]
 
 /** 一帧超分记录的状态跳转：不挂对话，信封上只有属主与 epoch。 */
-const enhanceFrame = (status: string, owner = mockAuthUser.id, operation = 'enhance') => ({
+const enhanceFrame = (
+  status: string,
+  owner = mockAuthUser.id,
+  operation = 'enhance',
+  id = ENHANCED,
+) => ({
   epoch: 'e1',
   owner_user_id: owner,
-  payload: { id: ENHANCED, kind: 'video', operation, status },
+  payload: { id, kind: 'video', operation, status },
   type: 'event.generation.changed',
 })
 
-/** 这条超分记录与它来源的各档；返回读记录与读各档的次数。 */
+/** 这条超分记录（缺省是 ENHANCED）与它来源的各档；返回读记录与读各档的次数。 */
 const serveRecord = (record: Record = {}) => {
   const reads = { enhancements: 0, record: 0 }
+  const id = record.id ?? ENHANCED
   server.use(
-    http.get(`*/api/generations/${ENHANCED}`, () => {
+    http.get(`*/api/generations/${id}`, () => {
       reads.record += 1
       return HttpResponse.json({
         generation: makeGenerationJob({
-          id: ENHANCED,
+          id,
           operation: 'enhance',
           outputUrl: HD,
           request: { resolution: '1080p' },
@@ -190,6 +197,99 @@ describe('EnhanceNotices', () => {
     expect(reads.enhancements).toBe(2)
     expect(reads.record).toBe(0)
     expect(screen.queryByText(/高清版/)).not.toBeInTheDocument()
+  })
+
+  describe('看过', () => {
+    /** 每个用例一条新的超分记录：看过的记录在模块里，跨用例留着。 */
+    const freshRecord = (record: Record = {}) => {
+      const id = crypto.randomUUID()
+      serveRecord({ id, ...record })
+      server.use(
+        http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
+        http.get(HD, () => new HttpResponse(new Uint8Array([1]))),
+        http.post('*/api/generations/video-enhancements', () =>
+          HttpResponse.json(
+            { generation: makeGenerationJob({ operation: 'enhance', sourceJobId: SOURCE }) },
+            { status: 202 },
+          ),
+        ),
+      )
+      vi.stubGlobal(
+        'URL',
+        class extends URL {
+          static override createObjectURL = () => 'blob:http://localhost/video'
+          static override revokeObjectURL() {}
+        },
+      )
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      return id
+    }
+
+    /** 一直挂着读看过的记录；`.current` 随记录更新。 */
+    const watchSeen = () => renderHook(() => useSeenEnhancements()).result
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it.each([
+      { action: '下载', record: {}, status: 'completed', text: '第 2 组的高清版 1080p 已生成' },
+      {
+        action: '重试',
+        record: { outputUrl: null, status: 'failed' as const },
+        status: 'failed',
+        text: '第 2 组的高清版 1080p 生成失败，请重试',
+      },
+    ])('点提示条上的「$action」：这条记录算看过', async ({ action, record, status, text }) => {
+      const id = freshRecord(record)
+      const seen = watchSeen()
+      const { socket } = await renderNotices()
+
+      act(() => socket.deliver(enhanceFrame(status, mockAuthUser.id, 'enhance', id)))
+      expect(await screen.findByText(text)).toBeVisible()
+      expect(seen.current.has(id)).toBe(false)
+      await userEvent.click(screen.getByRole('button', { name: action }))
+
+      await waitFor(() => expect(seen.current.has(id)).toBe(true))
+    })
+
+    it('手动划走提示条：这条记录算看过', async () => {
+      const id = freshRecord()
+      const seen = watchSeen()
+      const { socket } = await renderNotices()
+      act(() => socket.deliver(enhanceFrame('completed', mockAuthUser.id, 'enhance', id)))
+      const notice = (await screen.findByText('第 2 组的高清版 1080p 已生成')).closest('li')
+      if (notice === null) throw new Error('提示条不在列表里')
+
+      // 默认在底部居中，往下划过阈值即关闭；第一次移动先锁定方向。
+      fireEvent.pointerDown(notice, { clientX: 0, clientY: 0, pointerId: 1 })
+      fireEvent.pointerMove(notice, { clientX: 0, clientY: 5, pointerId: 1 })
+      fireEvent.pointerMove(notice, { clientX: 0, clientY: 120, pointerId: 1 })
+      fireEvent.pointerUp(notice, { clientX: 0, clientY: 120, pointerId: 1 })
+
+      await waitFor(() => expect(seen.current.has(id)).toBe(true))
+    })
+
+    it('8 秒自己收起：不算看过', async () => {
+      const id = freshRecord()
+      const seen = watchSeen()
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const { socket } = await renderNotices()
+      act(() => socket.deliver(enhanceFrame('completed', mockAuthUser.id, 'enhance', id)))
+      expect(await screen.findByText('第 2 组的高清版 1080p 已生成')).toBeVisible()
+
+      act(() => {
+        vi.advanceTimersByTime(8_000)
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+
+      await waitFor(() =>
+        expect(screen.queryByText('第 2 组的高清版 1080p 已生成')).not.toBeInTheDocument(),
+      )
+      expect(seen.current.has(id)).toBe(false)
+    })
   })
 
   it('断线重连后刷新各处的高清版，补上断线期间的跳转', async () => {
