@@ -1,8 +1,10 @@
 /** 资料库「爆款素材库」页签：从成片素材里挑进来的素材片，按标签筛选；卡片同成片素材，另带打标状态。
- * 点开用成片素材的查看器，定位到这条素材片所在的卡与那一版；上一条、下一条在爆款列表里走。 */
+ * 点开用成片素材的查看器，定位到这条素材片所在的卡与那一版；上一条、下一条在爆款列表里走。
+ * 治理者在筛选条最右多一个「管理标签」开关，打开后管理面板替换卡片列表。 */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
+import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
 import { FilterBarRoot } from '@/shared/ui/filter-bar'
 import { ListEmpty, ListError } from '@/shared/ui/list-state'
@@ -23,6 +25,7 @@ import { useLoadNextPageWhen } from './library-next-page'
 import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
+import { LibraryTagAdmin, ManageTagsToggle } from './library-tag-admin'
 import { LibraryTagFilters } from './library-tag-filters'
 import { LibraryViewer } from './library-viewer'
 
@@ -52,6 +55,9 @@ export function HitCasesRoute({
   const { mainRef, getScrollElement } = useLibraryPageScroll()
   const tagTree = useLibraryTags()
   const tags = tagTree.data?.index
+  const { data: user } = useUser()
+  const canManageTags = hasPermission(user, PERMISSION.usersManage)
+  const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
   // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试。
   const scope =
@@ -109,7 +115,17 @@ export function HitCasesRoute({
         )
       }
       filters={
-        <HitCaseFilters onChange={onScopeChange} scope={scope} tags={tags} trailing={counter} />
+        <HitCaseFilters
+          manageTags={
+            canManageTags
+              ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
+              : undefined
+          }
+          onChange={onScopeChange}
+          scope={scope}
+          tags={tags}
+          trailing={counter}
+        />
       }
       header={
         <LibraryPageHeader
@@ -120,51 +136,55 @@ export function HitCasesRoute({
       label="资料库"
       mainRef={mainRef}
     >
-      <LibraryList
-        blocker={
-          tags === undefined && tagTree.isError ? (
-            <ListError
-              message={errorMessageOf(tagTree.error, '读取标签失败')}
-              onRetry={() => void tagTree.refetch()}
+      {canManageTags && managingTags && tags !== undefined ? (
+        <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
+      ) : (
+        <LibraryList
+          blocker={
+            tags === undefined && tagTree.isError ? (
+              <ListError
+                message={errorMessageOf(tagTree.error, '读取标签失败')}
+                onRetry={() => void tagTree.refetch()}
+              />
+            ) : undefined
+          }
+          empty={
+            <ListEmpty>
+              {filtered
+                ? '暂无匹配的爆款素材，请更换或清除标签筛选'
+                : '暂无爆款素材，请在「成片素材」中打开一条视频，在「爆款素材」页签点击「加入爆款素材库」'}
+            </ListEmpty>
+          }
+          errorMessage="读取爆款素材失败"
+          estimateHeight={cardHeightFor}
+          getScrollElement={getScrollElement}
+          items={loaded}
+          keyOf={(item) => item.jobId}
+          pending={tagTree.isPending}
+          query={hitCases}
+          renderItem={(item, width) => (
+            <LibraryCard
+              onOpen={(_id, at) => open(item, false, at)}
+              status={
+                item.tagStatus === 'failed' || isTaggingBusy(item.tagStatus) ? (
+                  <TaggingBadge status={item.tagStatus} />
+                ) : undefined
+              }
+              video={{
+                face: item.face,
+                id: item.jobId,
+                take: item.take,
+                title: item.title,
+                userName: item.face.userName,
+              }}
+              width={width}
             />
-          ) : undefined
-        }
-        empty={
-          <ListEmpty>
-            {filtered
-              ? '暂无匹配的爆款素材，请更换或清除标签筛选'
-              : '暂无爆款素材，请在「成片素材」中打开一条视频，在「爆款素材」页签点击「加入爆款素材库」'}
-          </ListEmpty>
-        }
-        errorMessage="读取爆款素材失败"
-        estimateHeight={cardHeightFor}
-        getScrollElement={getScrollElement}
-        items={loaded}
-        keyOf={(item) => item.jobId}
-        pending={tagTree.isPending}
-        query={hitCases}
-        renderItem={(item, width) => (
-          <LibraryCard
-            onOpen={(_id, at) => open(item, false, at)}
-            status={
-              item.tagStatus === 'failed' || isTaggingBusy(item.tagStatus) ? (
-                <TaggingBadge status={item.tagStatus} />
-              ) : undefined
-            }
-            video={{
-              face: item.face,
-              id: item.jobId,
-              take: item.take,
-              title: item.title,
-              userName: item.face.userName,
-            }}
-            width={width}
-          />
-        )}
-        shown={loaded.length}
-        skeletonLabel="正在读取爆款素材"
-        total={total}
-      />
+          )}
+          shown={loaded.length}
+          skeletonLabel="正在读取爆款素材"
+          total={total}
+        />
+      )}
     </LibraryPageShell>
   )
 }
@@ -173,18 +193,21 @@ export function HitCasesRoute({
 const TRIGGER_CLASS =
   'h-(--control-height-sm) rounded-full border border-chip-border bg-chip-bg px-3.5 text-body-sm'
 
-/** 爆款素材的筛选条：标签树每个维度一个多选，右侧是条数；排法与灵感库的筛选条一致。 */
+/** 爆款素材的筛选条：标签树每个维度一个多选，右侧是条数与治理者的「管理标签」；排法与灵感库的筛选条一致。 */
 function HitCaseFilters({
   scope,
   onChange,
   tags,
   trailing,
+  manageTags,
 }: {
   scope: HitCaseScope
   onChange: (next: HitCaseScope) => void
   /** 标签树的查找表；还没读到时不出标签筛选。 */
   tags: TagIndex | undefined
   trailing: string | undefined
+  /** 给了就在最右放「管理标签」开关（只给治理者）。 */
+  manageTags: { open: boolean; onToggle: () => void } | undefined
 }) {
   return (
     <FilterBarRoot className="gap-2">
@@ -197,8 +220,19 @@ function HitCaseFilters({
           value={scope.tags}
         />
       )}
-      {trailing === undefined ? null : (
-        <span className="ml-auto pl-2 text-body-sm text-on-surface-faint">{trailing}</span>
+      {trailing === undefined && manageTags === undefined ? null : (
+        <span className="ml-auto flex items-center gap-3 pl-2">
+          {trailing === undefined ? null : (
+            <span className="text-body-sm text-on-surface-faint">{trailing}</span>
+          )}
+          {manageTags === undefined ? null : (
+            <ManageTagsToggle
+              className={TRIGGER_CLASS}
+              onToggle={manageTags.onToggle}
+              open={manageTags.open}
+            />
+          )}
+        </span>
       )}
     </FilterBarRoot>
   )

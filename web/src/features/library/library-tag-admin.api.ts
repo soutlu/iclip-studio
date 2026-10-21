@@ -1,5 +1,5 @@
 /** 治理者改标签树：加、改、删一个标签。合同见 contract/conventions.md §15「改树」。
- * 成功后标签树重读；删标签会去掉条目上的标签、改名会改卡面上的标签名，参考视频的列表与详情一并重读。 */
+ * 成功后标签树重读；删标签会去掉条目上的标签、改名会改卡面上的标签名，两库的列表与详情一并重读。 */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
@@ -8,6 +8,7 @@ import {
   zDeleteLibraryTagLibraryTagsTagIdDeleteResponse,
   zLibraryTagOut,
 } from '@/shared/api/generated/zod.gen'
+import { hitCaseQueryKeys } from './hit-cases.api'
 import { libraryTagQueryKeys } from './library-tags.api'
 import { referenceQueryKeys } from './references.api'
 
@@ -18,6 +19,7 @@ const useRefresh = () => {
   const queryClient = useQueryClient()
   return () => {
     void queryClient.invalidateQueries({ queryKey: referenceQueryKeys.all })
+    void queryClient.invalidateQueries({ queryKey: hitCaseQueryKeys.all })
     return queryClient.invalidateQueries({ queryKey: libraryTagQueryKeys.tree })
   }
 }

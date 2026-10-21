@@ -1,14 +1,13 @@
 /** 参考视频的筛选条：全部 / 我的、按人、标签树每个维度一个多选、时间；治理者在最右多一个「管理标签」开关。
  * 标签的名称、说明与条数都取自标签树。 */
 
-import { Icon } from '@/shared/icons'
 import { dateRangeLabel } from '@/shared/lib/date-range'
-import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { DateRangeFilter, FilterBarRoot, PickerFilter, useFilterBar } from '@/shared/ui/filter-bar'
 import type { PickerSource } from '@/shared/ui/search-picker'
 import type { TagIndex } from '../library-tags'
 import { isDefaultReferenceScope, type ReferenceScope } from '../references.api'
+import { ManageTagsToggle } from './library-tag-admin'
 import { LibraryTagFilters } from './library-tag-filters'
 
 type ReferenceFiltersProps = {
@@ -120,22 +119,11 @@ function Filters({
             <span className="text-body-sm text-on-surface-faint">{trailing}</span>
           )}
           {manageTags === undefined ? null : (
-            <button
-              aria-pressed={manageTags.open}
-              className={cn(
-                TRIGGER_CLASS,
-                'inline-flex ui-state cursor-pointer items-center gap-1.5 text-on-surface ui-focus',
-                manageTags.open && 'bg-state-active',
-              )}
-              onClick={() => {
-                close()
-                manageTags.onToggle()
-              }}
-              type="button"
-            >
-              <Icon decorative name="settings" size="xs" />
-              管理标签
-            </button>
+            <ManageTagsToggle
+              className={TRIGGER_CLASS}
+              onToggle={manageTags.onToggle}
+              open={manageTags.open}
+            />
           )}
         </span>
       )}

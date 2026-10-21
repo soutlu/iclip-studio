@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
+import { loginAs, mockAuthUser, mockGovernor } from '@/testing/mocks/handlers'
 import { resetMockHitCases } from '@/testing/mocks/hit-cases'
 import { mockLibraryVersionIds, mockLibraryVideos } from '@/testing/mocks/library'
 import { mockTagId } from '@/testing/mocks/library-tags'
+import { resetMockReferences } from '@/testing/mocks/references'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { stubScrollViewport } from '@/testing/scroll-viewport'
@@ -174,5 +176,38 @@ describe('从爆款素材库打开', () => {
     expect(
       within(screen.getByRole('dialog')).getByRole('button', { name: '下一条' }),
     ).toHaveAttribute('aria-disabled', 'true')
+  })
+})
+
+describe('爆款素材库的管理标签', () => {
+  it('非治理者看不到入口', async () => {
+    loginAs(mockAuthUser)
+    resetMockHitCases([{ jobId: faceOf(SANDALS).jobId }])
+    await renderWithProviders(<Harness />)
+
+    await screen.findByRole('article', { name: SANDALS })
+    expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
+  })
+
+  it('治理者打开后面板替换卡片列表，条数算上爆款，「完成」回到列表', async () => {
+    loginAs(mockGovernor)
+    resetMockReferences([])
+    resetMockHitCases([{ jobId: faceOf(SANDALS).jobId, tagIds: [mockTagId('AMZ')] }])
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: SANDALS })
+
+    await user.click(screen.getByRole('button', { name: '管理标签' }))
+    const panel = await screen.findByRole('region', { name: '管理标签' })
+
+    expect(screen.getByRole('button', { name: '管理标签' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('article')).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: /^切换维度/ }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '平台&渠道' }))
+    const values = await within(panel).findByRole('list', { name: '平台&渠道的取值' })
+    expect(within(values).getByText('灵感库 0 · 爆款 1')).toBeVisible()
+    expect(within(values).getAllByText('灵感库 0 · 爆款 0')).toHaveLength(4)
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    expect(await screen.findByRole('article', { name: SANDALS })).toBeVisible()
   })
 })
