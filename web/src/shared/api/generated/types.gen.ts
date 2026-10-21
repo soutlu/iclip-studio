@@ -440,76 +440,6 @@ export type BrandTemplatesOut = {
 }
 
 /**
- * CategoryCountOut
- */
-export type CategoryCountOut = {
-  /**
-   * Count
-   */
-  count: number
-  /**
-   * Name
-   */
-  name:
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-}
-
-/**
  * ClipEditDurationOut
  *
  * 片段编辑接受的实际参考视频时长范围，单位秒。
@@ -2099,6 +2029,49 @@ export type LibraryAuthorsOut = {
 }
 
 /**
+ * LibraryTagOut
+ *
+ * 标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。
+ */
+export type LibraryTagOut = {
+  /**
+   * Autofill
+   */
+  autoFill: 'ai' | null
+  /**
+   * Children
+   */
+  children: Array<LibraryTagOut>
+  counts: TagCountsOut
+  /**
+   * Guide
+   */
+  guide: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Position
+   */
+  position: number
+}
+
+/**
+ * LibraryTagsOut
+ */
+export type LibraryTagsOut = {
+  /**
+   * Dimensions
+   */
+  dimensions: Array<LibraryTagOut>
+}
+
+/**
  * LibraryVideoDetailOut
  */
 export type LibraryVideoDetailOut = {
@@ -2720,86 +2693,29 @@ export type ReferenceCreateIn = {
  */
 export type ReferenceFiltersOut = {
   /**
-   * Categories
-   */
-  categories: Array<CategoryCountOut>
-  /**
    * Owners
    */
   owners: Array<OwnerCountOut>
+}
+
+/**
+ * ReferenceTagsIn
+ *
+ * 整份替换这条参考视频在所有维度上的标签。
+ */
+export type ReferenceTagsIn = {
   /**
-   * Videotypes
+   * Tagids
    */
-  videoTypes: Array<VideoTypeCountOut>
+  tagIds: Array<string>
 }
 
 /**
  * ReferenceUpdateIn
  *
- * 整份改：拆解正文与两组标签都照给的存，重复的标签去掉。
+ * 改拆解正文。
  */
 export type ReferenceUpdateIn = {
-  /**
-   * Categories
-   */
-  categories: Array<
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-  >
   /**
    * Document
    */
@@ -2808,19 +2724,6 @@ export type ReferenceUpdateIn = {
    * Version
    */
   version: number
-  /**
-   * Videotypes
-   */
-  videoTypes: Array<
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
-  >
 }
 
 /**
@@ -2838,67 +2741,6 @@ export type ReferenceVideoItemOut = {
    */
   canEdit: boolean
   /**
-   * Categories
-   */
-  categories: Array<
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-  >
-  /**
    * Createdat
    */
   createdAt: string
@@ -2911,6 +2753,18 @@ export type ReferenceVideoItemOut = {
    */
   id: string
   /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+  /**
    * Updatedat
    */
   updatedAt: string
@@ -2922,19 +2776,6 @@ export type ReferenceVideoItemOut = {
    * Version
    */
   version: number
-  /**
-   * Videotypes
-   */
-  videoTypes: Array<
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
-  >
   /**
    * Videourl
    */
@@ -2956,67 +2797,6 @@ export type ReferenceVideoOut = {
    */
   canEdit: boolean
   /**
-   * Categories
-   */
-  categories: Array<
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-  >
-  /**
    * Createdat
    */
   createdAt: string
@@ -3032,6 +2812,18 @@ export type ReferenceVideoOut = {
    * Id
    */
   id: string
+  /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
   testVideo: TestVideoOut | null
   /**
    * Updatedat
@@ -3045,19 +2837,6 @@ export type ReferenceVideoOut = {
    * Version
    */
   version: number
-  /**
-   * Videotypes
-   */
-  videoTypes: Array<
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
-  >
   /**
    * Videourl
    */
@@ -3450,6 +3229,22 @@ export type SubtitleWord = {
    * Text
    */
   text: string
+}
+
+/**
+ * TagCountsOut
+ *
+ * 带这个标签或它任一下级的条目数。
+ */
+export type TagCountsOut = {
+  /**
+   * Hitcases
+   */
+  hitCases: number
+  /**
+   * References
+   */
+  references: number
 }
 
 /**
@@ -5207,36 +5002,6 @@ export type VideoTaskResult = {
    * Watermark Output Url
    */
   watermark_output_url: string
-}
-
-/**
- * VideoTypeCountOut
- */
-export type VideoTypeCountOut = {
-  /**
-   * Count
-   */
-  count: number
-  /**
-   * Label
-   */
-  label: string
-  /**
-   * Rule
-   */
-  rule: string
-  /**
-   * Value
-   */
-  value:
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
 }
 
 /**
@@ -8126,6 +7891,23 @@ export type SearchVideosInspirationsVideosSearchPostResponses = {
 export type SearchVideosInspirationsVideosSearchPostResponse =
   SearchVideosInspirationsVideosSearchPostResponses[keyof SearchVideosInspirationsVideosSearchPostResponses]
 
+export type LibraryTagsLibraryTagsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/library-tags'
+}
+
+export type LibraryTagsLibraryTagsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryTagsOut
+}
+
+export type LibraryTagsLibraryTagsGetResponse =
+  LibraryTagsLibraryTagsGetResponses[keyof LibraryTagsLibraryTagsGetResponses]
+
 export type AuthorsLibraryAuthorsGetData = {
   body?: never
   path?: never
@@ -8305,79 +8087,9 @@ export type ListReferencesReferencesGetData = {
   path?: never
   query?: {
     /**
-     * Videotypes
+     * Tags
      */
-    videoTypes?: Array<
-      | 'live_clip'
-      | 'slideshow'
-      | 'drama'
-      | 'review'
-      | 'talking_head'
-      | 'try_on'
-      | 'lifestyle'
-      | 'product_showcase'
-    > | null
-    /**
-     * Categories
-     */
-    categories?: Array<
-      | '高跟鞋'
-      | '平底鞋'
-      | '乐福鞋'
-      | '牛津鞋'
-      | '一脚蹬'
-      | '穆勒鞋'
-      | '拖鞋'
-      | '短靴'
-      | '中筒靴'
-      | '及膝靴'
-      | '过膝靴'
-      | '高跟凉鞋'
-      | '坡跟凉鞋'
-      | '厚底凉鞋'
-      | '平底凉鞋'
-      | '夹趾拖'
-      | '凉拖鞋'
-      | '运动凉鞋'
-      | '跑鞋'
-      | '足球鞋'
-      | '篮球鞋'
-      | '啦啦队鞋'
-      | '棒&垒球鞋'
-      | '滑板鞋'
-      | '舞蹈鞋'
-      | '橄榄球鞋'
-      | '高尔夫鞋'
-      | '网球鞋'
-      | '训练鞋'
-      | '女性骑行鞋'
-      | '健步鞋'
-      | '板鞋'
-      | '徒步鞋'
-      | '徒步靴'
-      | '雪地靴'
-      | '雨靴'
-      | '水鞋'
-      | '猎靴'
-      | '医疗用鞋'
-      | '餐厨用鞋'
-      | '军事用靴'
-      | '工业用鞋'
-      | '工业用靴'
-      | '皮带'
-      | '钱包'
-      | '包'
-      | '袜子'
-      | '鞋垫'
-      | 'T恤'
-      | '衬衫'
-      | '卫衣'
-      | '毛衣'
-      | '外套'
-      | '裤子'
-      | '半身裙'
-      | '连衣裙'
-    > | null
+    tags?: Array<string> | null
     /**
      * Username
      */
@@ -8597,6 +8309,70 @@ export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
 
 export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
   RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
+
+export type RetagReferenceReferencesReferenceIdTaggingPostData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/tagging'
+}
+
+export type RetagReferenceReferencesReferenceIdTaggingPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RetagReferenceReferencesReferenceIdTaggingPostError =
+  RetagReferenceReferencesReferenceIdTaggingPostErrors[keyof RetagReferenceReferencesReferenceIdTaggingPostErrors]
+
+export type RetagReferenceReferencesReferenceIdTaggingPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type RetagReferenceReferencesReferenceIdTaggingPostResponse =
+  RetagReferenceReferencesReferenceIdTaggingPostResponses[keyof RetagReferenceReferencesReferenceIdTaggingPostResponses]
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutData = {
+  body: ReferenceTagsIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/tags'
+}
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutError =
+  ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors]
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponse =
+  ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses]
 
 export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData = {
   body: TestVideoIn

@@ -1,4 +1,5 @@
-"""参考视频端点：端点权限、只收本人的视频上传、属主检查与状态码；拆解没配置时只挂读端点，上传不可用时不挂建行。
+"""参考视频端点：端点权限、只收本人的视频上传、属主检查与状态码、改标签与重新打标；拆解没配置时只挂
+读端点与改标签，上传不可用时不挂建行。
 
 拆解与打标是替身，队列连接器是内存替身（不跑 lifespan，排进去的任务不执行）。"""
 
@@ -11,6 +12,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
@@ -27,6 +29,7 @@ from tests.helpers.references import (
     plant_reference,
     upload_video,
 )
+from tests.helpers.tagging import plant_entry, tag_id
 
 PASSWORD = "password-123"
 
@@ -56,7 +59,7 @@ async def studio_app(
             object_store=bucket,
             queue_connector=InMemoryConnector(),
             reference_breakdowns=breakdowns,
-            reference_tagger=tagger,
+            library_tagger=tagger,
             media_codec=SOFTWARE,
         )
     finally:
@@ -138,37 +141,69 @@ async def test_only_the_owner_edits_and_removes(
     upload_id = await upload_video(http, bucket)
     reference = (await http.post("/references", json={"uploadId": upload_id})).json()
     path = f"/references/{reference['id']}"
-    edit = {"version": 1, "document": "改过", "videoTypes": ["review"], "categories": ["跑鞋"]}
+    edit = {"version": 1, "document": "改过"}
+    tags = {"tagIds": []}
 
     await login_as(http, pg_url, "sara", "editor")
     seen = await http.get(path)
     assert (seen.status_code, seen.json()["canEdit"]) == (200, False)
     assert (await http.patch(path, json=edit)).status_code == 403
+    assert (await http.put(f"{path}/tags", json=tags)).status_code == 403
+    assert (await http.post(f"{path}/tagging")).status_code == 403
     assert (await http.delete(path)).status_code == 403
     assert (await http.post(f"{path}/breakdowns")).status_code == 403
 
     await login_as(http, pg_url, "maya", "editor")
-    # 还在排队：改与重拆都撞上拆解中。
+    # 还在排队：改、重拆与重新打标都撞上拆解中；改标签不看拆解。
     assert (await http.patch(path, json=edit)).status_code == 409
     assert (await http.post(f"{path}/breakdowns")).status_code == 409
+    assert (await http.post(f"{path}/tagging")).status_code == 409
+    assert (await http.put(f"{path}/tags", json=tags)).status_code == 200
     assert (await http.delete(path)).status_code == 204
     assert (await http.get(path)).status_code == 404
     assert (await http.get("/references")).json()["items"] == []
 
 
-async def test_edit_takes_only_listed_tags(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+async def test_tags_take_only_values_of_the_tree(
+    http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
     await login_as(http, pg_url, "maya", "editor")
-    upload_id = await upload_video(http, bucket)
-    reference = (await http.post("/references", json={"uploadId": upload_id})).json()
+    maya = uuid.UUID((await http.get("/users/me")).json()["user"]["id"])
+    reference_id = await plant_reference(engine, owner=maya)
+    path = f"/references/{reference_id}/tags"
+    dimension = await tag_id(engine, "品类")
+    runner = await tag_id(engine, "品类", "跑鞋")
+    amz = await tag_id(engine, "平台&渠道", "AMZ")
 
-    response = await http.patch(
-        f"/references/{reference['id']}",
-        json={"version": 1, "document": "x", "videoTypes": ["vlog"], "categories": []},
-    )
+    unknown = await http.put(path, json={"tagIds": [str(uuid.uuid4())]})
+    whole_dimension = await http.put(path, json={"tagIds": [str(dimension)]})
+    replaced = await http.put(path, json={"tagIds": [str(runner), str(amz)]})
+    filtered = await http.get("/references", params={"tags": [str(dimension), str(amz)]})
+    bad_filter = await http.get("/references", params={"tags": [str(uuid.uuid4())]})
 
-    assert response.status_code == 422
+    assert (unknown.status_code, whole_dimension.status_code) == (422, 422)
+    assert replaced.status_code == 200, replaced.text
+    assert set(replaced.json()["tagIds"]) == {str(runner), str(amz)}
+    assert [item["id"] for item in filtered.json()["items"]] == [str(reference_id)]
+    assert bad_filter.status_code == 422
+
+
+async def test_tags_cannot_change_while_tagging_and_retagging_queues(
+    http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    await login_as(http, pg_url, "maya", "editor")
+    maya = uuid.UUID((await http.get("/users/me")).json()["user"]["id"])
+    reference_id = await plant_reference(engine, owner=maya)
+    await plant_entry(engine, reference_id, status="completed")
+    path = f"/references/{reference_id}"
+
+    retagged = await http.post(f"{path}/tagging")
+    again = await http.post(f"{path}/tagging")
+    edited = await http.put(f"{path}/tags", json={"tagIds": []})
+
+    assert retagged.status_code == 200, retagged.text
+    assert (retagged.json()["tagStatus"], retagged.json()["tagError"]) == ("pending", None)
+    assert (again.status_code, edited.status_code) == (409, 409)
 
 
 async def test_a_viewer_reads_but_cannot_upload_or_rerun(
@@ -185,8 +220,7 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
 
     assert (listed.status_code, listed.json()["canUpload"]) == (200, False)
     assert filters.status_code == 200
-    assert len(filters.json()["videoTypes"]) == 8
-    assert filters.json()["owners"] == [{"userName": "maya", "count": 1}]
+    assert filters.json() == {"owners": [{"userName": "maya", "count": 1}]}
     assert rerun.status_code == 403
 
 
@@ -227,7 +261,7 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
             engine=engine,
             queue_connector=InMemoryConnector(),
             reference_breakdowns=breakdowns,
-            reference_tagger=tagger,
+            library_tagger=tagger,
             media_codec=SOFTWARE,
         )
         async with make_client(app) as client:
@@ -260,12 +294,20 @@ async def test_without_breakdown_configured_only_reads_are_mounted(
         async with make_client(app) as client:
             await register_and_login(client, username="maya", email="maya@example.com")
             await set_roles_in_db(migrated_pg, "maya@example.com", ["editor"])
+            maya = uuid.UUID((await client.get("/users/me")).json()["user"]["id"])
+            reference_id = await plant_reference(engine, owner=maya)
             listed = await client.get("/references")
             created = await client.post("/references", json={"uploadId": str(uuid.uuid4())})
             rerun = await client.post(f"/references/{uuid.uuid4()}/breakdowns")
+            retag = await client.post(f"/references/{reference_id}/tagging")
+            tagged = await client.put(f"/references/{reference_id}/tags", json={"tagIds": []})
+            tree = await client.get("/library-tags")
     finally:
         await engine.dispose()
 
     assert (listed.status_code, listed.json()["canUpload"]) == (200, False)
     assert created.status_code == 405
     assert rerun.status_code == 404
+    assert retag.status_code == 404
+    assert tagged.status_code == 200, tagged.text
+    assert tree.status_code == 200

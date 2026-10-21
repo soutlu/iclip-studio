@@ -39,6 +39,7 @@ from iclip.app.conversation_workspace import (
 )
 from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
+from iclip.app.library_tagging import LibrarySourceText, build_library_tagger
 from iclip.app.logging import configure_logging
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
@@ -103,7 +104,10 @@ from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.domains.references.module import BreakdownSetup, build_references_module
-from iclip.domains.references.repository import Tagger, VideoBreakdowns
+from iclip.domains.references.repository import VideoBreakdowns
+from iclip.domains.tagging.infra_sql import SqlTagStore
+from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
+from iclip.domains.tagging.repository import Tagger
 from iclip.domains.tasks.infra_sql import SqlTaskRepository
 from iclip.domains.tasks.module import build_tasks_module
 from iclip.domains.tracking.infra_sql import SqlTrackingRepository
@@ -355,7 +359,7 @@ def build_app(
     queue_connector: procrastinate.BaseConnector | None = None,
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
-    reference_tagger: Tagger | None = None,
+    library_tagger: Tagger | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     reload_source: ReloadSource | None = None,
@@ -524,24 +528,35 @@ def build_app(
             probe_font=brand_font_probe or template_font_prober(http_client, fetch_url),
         )
 
+    reference_store = SqlReferenceStore(active_engine)
     breakdown_setup: BreakdownSetup | None = None
+    tagging_setup: TaggingSetup | None = None
     if settings.iclip_studio is not None and connector is not None:
         if codec is None or breakdown_concurrency is None:
             raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
-        default_breakdowns, default_tagger = build_reference_breakdown(
-            settings.iclip_studio, http_client, codec, fetch_url=fetch_url
-        )
         breakdown_setup = BreakdownSetup(
-            breakdowns=reference_breakdowns or default_breakdowns,
-            tagger=reference_tagger or default_tagger,
+            breakdowns=reference_breakdowns
+            or build_reference_breakdown(
+                settings.iclip_studio, http_client, codec, fetch_url=fetch_url
+            ),
             connector=connector,
             concurrency=breakdown_concurrency,
         )
+        tagging_setup = TaggingSetup(
+            tagger=library_tagger or build_library_tagger(settings.iclip_studio, http_client),
+            connector=connector,
+        )
+    tagging = build_tagging_module(
+        SqlTagStore(active_engine),
+        source_text=LibrarySourceText(reference_store),
+        setup=tagging_setup,
+    )
     references = build_references_module(
-        SqlReferenceStore(active_engine),
+        reference_store,
         act_as=identity.act_as,
         own_video_upload=own_video_upload,
         breakdown=breakdown_setup,
+        tagging=tagging.service,
         uploads_available=public_objects is not None,
         test_videos=GenerationTestVideos(
             generation_repo, generation.service if generation is not None else None
@@ -773,9 +788,13 @@ def build_app(
             generation.queue.start()
         if references.queue is not None:
             references.queue.start()
+        if tagging.queue is not None:
+            tagging.queue.start()
         try:
             yield
         finally:
+            if tagging.queue is not None:
+                await tagging.queue.stop()
             if references.queue is not None:
                 await references.queue.stop()
             if generation is not None:
@@ -825,6 +844,8 @@ def build_app(
     for router in library.routers:
         app.include_router(router)
     for router in references.routers:
+        app.include_router(router)
+    for router in tagging.routers:
         app.include_router(router)
     if brand_templates is not None:
         for router in brand_templates.routers:

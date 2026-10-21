@@ -569,15 +569,28 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 14. 参考视频 (References)
 
-资料库里用户上传的、agent 在对话里拆过的视频，一条视频一行，带当前拆解与两组标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`；修改、重拆、移除另限属主（替人办事的钥匙与治理者也行），试生成只限属主本人，看得见的别人的那条是 `403`。拆解没配置时只挂读端点（`POST /references` 与 `POST /references/{id}/breakdowns` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。媒体生成没配置时 `POST /references/{id}/test-generations` 不在。
+资料库里用户上传的、agent 在对话里拆过的视频，一条视频一行，带当前拆解与标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`；修改、改标签、重拆、重新打标、移除另限属主（替人办事的钥匙与治理者也行），试生成只限属主本人，看得见的别人的那条是 `403`。拆解没配置时只挂读端点与 `PUT /references/{id}/tags`（`POST /references`、`POST /references/{id}/breakdowns` 与 `POST /references/{id}/tagging` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。媒体生成没配置时 `POST /references/{id}/test-generations` 不在。
 
 - **建行**：`POST /references` 体是 `{ uploadId }`，只收调用者本人确认过的视频上传（§10）；别人的、图片的、不存在的 `uploadId` 一律 `404`。新建的行 `201`，排上第一次拆解；同一条视频已在表里就交回那一行、状态码 `200`，不再拆；移除过的那一行回到资料库，属主换成这次上传的人，拆解照旧。
-- **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解与打标中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 与标签不动。客户端按 `errorCode` 出一句话，不展示原始报错。
-- **标签**：`videoTypes` 与 `categories` 都可以几个，空就是未标注；取值是合同里的两个枚举，拆完自动打，打标失败只留空标签、拆解照常完成。
-- `GET /references` 按 §3 的排序（建立时间倒序），翻页 `limit` 与 `cursor`，规则同 §6。筛选：`videoTypes`、`categories` 可以重复给，同一组里命中任一即算，两组都给时两组都要命中；`userName`（属主）；`q` 按字面包含匹配拆解全文，不区分大小写，首尾空白去掉后为空即不筛；`since` / `until` 左闭右开，作用在建立时刻上。移除的不在列表里。列表项不带 `document`，正文在详情里。`total` 只在第一页给，`canUpload` 是这位读者能不能加参考视频（拆解已配置、上传可用且持 `uploads:write`）。
-- `GET /references/filters` 给 `videoTypes`（全部八种，按清单先后，各带 `label`、`rule` 与条数，没用到的为 0）、`categories`（用到的品类各带条数，多的在前、同数按清单先后）与 `owners`（名下有参考视频的属主用户名各带条数，多的在前、同数按用户名，是按人筛选的候选），只数没移除的，不受筛选影响。
-- `GET /references/{id}` 是一条连同 `document`（当前拆解的 Markdown 原文，还没拆完过为 `null`）与 `testVideo`；移除了是 `404`。`canEdit` 是这位读者能不能改、重拆、移除。`testVideo` 是属主名下这条参考视频最新的一次试生成，所有读者看到的是同一条，没有试生成过为 `null`：`status` 是 `running`（还没结束）/ `completed` / `failed`，`url` 是试生成地址，`errorMessage` 是上游给的失败原文；`stale` 为 `true` 表示按当前拆解拼出的提示词与这次用的不同（改过或重拆过拆解，或当前拆解拼不出提示词）。答复单条详情的端点都带 `testVideo`，列表项不带。
-- `PATCH /references/{id}` 体是 `{ version, document, videoTypes, categories }`，整份改，重复的标签去掉，成功后 `version` 加一。`version` 对不上，或这一行正在排队或拆解，都是 `409`；清单外的标签、空的 `document` 是 `422`。
-- `POST /references/{id}/breakdowns` 重新拆解：`completed` 或 `failed` 的行回到 `pending` 再排队，答复改完的整行；正在排队或拆解是 `409`。拆成就覆盖拆解与标签、`version` 加一，人改过的也会被覆盖。
+- **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 不动。客户端按 `errorCode` 出一句话，不展示原始报错。
+- **标签**：每条都带 `tagIds`、`tagStatus` 与 `tagError`，含义与打标规则见 §15。拆成（含重拆成功）后自动排一次打标，`tagStatus` 回到 `pending`；拆解自己不动标签，没拆成也不打标。
+- `GET /references` 按 §3 的排序（建立时间倒序），翻页 `limit` 与 `cursor`，规则同 §6。筛选：`tags` 可以重复给，按 §15 的规则匹配，不存在的标签是 `422`；`userName`（属主）；`q` 按字面包含匹配拆解全文，不区分大小写，首尾空白去掉后为空即不筛；`since` / `until` 左闭右开，作用在建立时刻上。移除的不在列表里。列表项不带 `document`，正文在详情里。`total` 只在第一页给，`canUpload` 是这位读者能不能加参考视频（拆解已配置、上传可用且持 `uploads:write`）。
+- `GET /references/filters` 只给 `owners`（名下有参考视频的属主用户名各带条数，多的在前、同数按用户名，是按人筛选的候选），只数没移除的，不受筛选影响。标签的候选与条数在 `GET /library-tags`。
+- `GET /references/{id}` 是一条连同 `document`（当前拆解的 Markdown 原文，还没拆完过为 `null`）与 `testVideo`；移除了是 `404`。`canEdit` 是这位读者能不能改、改标签、重拆、重新打标、移除。`testVideo` 是属主名下这条参考视频最新的一次试生成，所有读者看到的是同一条，没有试生成过为 `null`：`status` 是 `running`（还没结束）/ `completed` / `failed`，`url` 是试生成地址，`errorMessage` 是上游给的失败原文；`stale` 为 `true` 表示按当前拆解拼出的提示词与这次用的不同（改过或重拆过拆解，或当前拆解拼不出提示词）。答复单条详情的端点都带 `testVideo`，列表项不带。
+- `PATCH /references/{id}` 体是 `{ version, document }`，改拆解正文，成功后 `version` 加一。`version` 对不上，或这一行正在排队或拆解，都是 `409`；空的 `document` 是 `422`。改拆解不重新打标。
+- `PUT /references/{id}/tags` 体是 `{ tagIds }`，整份替换这条在所有维度上的标签（规则见 §15），答复改完的整行；不看拆解状态。
+- `POST /references/{id}/breakdowns` 重新拆解：`completed` 或 `failed` 的行回到 `pending` 再排队，答复改完的整行；正在排队或拆解是 `409`。拆成就覆盖拆解、`version` 加一，人改过的也会被覆盖，接着重新打标。
+- `POST /references/{id}/tagging` 按当前拆解重新打标，答复改完的整行（`tagStatus` 为 `pending`）。拆解还在排队、拆解中或从没拆成是 `409`，正在排队或打标也是 `409`。打标没配置（同拆解没配置）时不在。
 - `POST /references/{id}/test-generations` 试生成：体是 `{ aspectRatio, userName? }`，`aspectRatio` 取 `9:16`、`16:9`、`1:1`、`3:4`、`4:3`，`userName` 同 §11；只用当前拆解的文字拼一段提示词生成一条视频，与原片对照看拆解全不全，答复改完的整行。只限属主本人。拆解还在排队、拆解中或从没拆成是 `409`，上一次试生成还没结束也是 `409`；拆解格式不全拼不出提示词、或拼出来超过 4000 字是 `422`。这次试生成是属主名下一条普通的视频生成（§11），不挂对话、没有镜号：模型 wan3、480p，时长取最后一镜的结束时刻向上取整，画幅照给的，带声音，`metadata` 是 `{ referenceId }`；它不进资料库的成片素材。
 - `DELETE /references/{id}` 只从资料库移除（`204`），对话里按地址仍用它的拆解；之后对这一行的读写都是 `404`。
+
+## 15. 资料库标签 (Library Tags)
+
+资料库条目共用的一棵标签树，现在只有参考视频（§14）打标签，语义见 [CONTEXT.md「标签」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`。
+
+- `GET /library-tags` 给整棵树：`dimensions` 是全部维度，每个节点带 `id`、`name`、`guide`（怎么判断，打标提示词里也写这一句，可为 `null`）、`position` 与 `children`，同级按 `position` 排好。`autoFill` 只在维度上有值：`ai` 是 AI 打这个维度，`null` 只靠人填；取值上恒为 `null`。维度下是取值，取值下最多再有一层。`counts` 是带这个标签或它任一下级的条目数，同一条只算一次：`references` 只数没移除的参考视频，`hitCases` 现在恒为 0。打标配没配都挂着。
+- **一条的标签**：`tagIds` 是所有维度上的标签，指这棵树里的取值，不会是维度；空就是未标注。顺序不表达含义，按树分组显示。
+- **改标签**：`PUT …/tags` 体是 `{ tagIds }`，整份替换所有维度，重复的去掉，空数组即全部清掉；同时有人删了其中某个标签，那一个跳过。不存在的标签、给了维度本身是 `422`；这一条正在排队或打标是 `409`。
+- **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的拆解；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
+- **重新打标**：`POST …/tagging` 把这一条改回 `pending` 再排队；正在排队或打标是 `409`。
+- **按标签筛选**（列表的 `tags`）：选中的标签按所在维度分组，同一维度里命中任一即算，不同维度都要命中；选了上级也算它的全部下级，选了维度就是这一维度的任一取值。不存在的标签是 `422`。

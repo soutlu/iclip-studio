@@ -1,8 +1,8 @@
 """参考视频 HTTP 端点，约定见合同「参考视频」一节。
 
-读要 ``generation:read``；建行要 ``uploads:write``；重拆与试生成都是付费调用，另要 ``generation:submit``；
-修改与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点；上传不可用时另不挂建行，重拆照挂；
-媒体生成没开时不挂试生成。"""
+读要 ``generation:read``；建行要 ``uploads:write``；重拆、重新打标与试生成都是付费调用，另要
+``generation:submit``；修改、改标签与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点与
+改标签；上传不可用时另不挂建行，重拆照挂；打标没配置时不挂重新打标；媒体生成没开时不挂试生成。"""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ from iclip.domains.identity.public import (
     require_permission,
     resolve_user_name,
 )
-from iclip.domains.references.models import CategoryValue, VideoTypeValue
 from iclip.domains.references.schemas import (
     ReferenceCreateIn,
     ReferenceFiltersOut,
+    ReferenceTagsIn,
     ReferenceUpdateIn,
     ReferenceVideoOut,
     ReferenceVideosOut,
@@ -37,18 +37,19 @@ def create_references_router(
     act_as: ActAs,
     uploadable: bool,
     rerunnable: bool,
+    retaggable: bool,
     testable: bool,
 ) -> APIRouter:
     """``uploadable`` 为假（拆解没配置或上传不可用）时不挂建行；``rerunnable`` 为假（拆解没配置）时
-    不挂重拆；``testable`` 为假（媒体生成没开）时不挂试生成。"""
+    不挂重拆；``retaggable`` 为假（打标没配置）时不挂重新打标；``testable`` 为假（媒体生成没开）时
+    不挂试生成。"""
 
     router = APIRouter(prefix="/references", tags=["references"])
 
     @router.get("", response_model=ReferenceVideosOut)
     async def list_references(
         principal: Annotated[Principal, require_permission("generation:read")],
-        video_types: Annotated[list[VideoTypeValue] | None, Query(alias="videoTypes")] = None,
-        categories: Annotated[list[CategoryValue] | None, Query()] = None,
+        tags: Annotated[list[uuid.UUID] | None, Query()] = None,
         user_name: Annotated[str | None, Query(alias="userName", max_length=150)] = None,
         q: Annotated[str | None, Query(max_length=100)] = None,
         since: datetime | None = None,
@@ -58,14 +59,14 @@ def create_references_router(
     ) -> ReferenceVideosOut:
         """全站没移除的参考视频，建立晚的排前面。
 
-        ``videoTypes``、``categories`` 可以重复给，同一组里命中任一即算；``userName`` 筛属主；``q``
-        按字面包含匹配拆解全文；时间窗 ``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。
+        ``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在
+        的标签是 ``422``。``userName`` 筛属主；``q`` 按字面包含匹配拆解全文；时间窗
+        ``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。
         """
 
         return await service.list(
             principal,
-            video_types=video_types or (),
-            categories=categories or (),
+            tags=tags or (),
             user_name=user_name,
             q=q,
             since=since,
@@ -79,7 +80,7 @@ def create_references_router(
     async def reference_filters(
         _: Annotated[Principal, require_permission("generation:read")],
     ) -> ReferenceFiltersOut:
-        """全部片子类型与用到的品类，各带条数；只数没移除的，不受筛选影响。"""
+        """名下有参考视频的属主，各带条数；只数没移除的，不受筛选影响。"""
 
         return await service.filters()
 
@@ -98,9 +99,20 @@ def create_references_router(
         reference_id: uuid.UUID,
         body: ReferenceUpdateIn,
     ) -> ReferenceVideoOut:
-        """属主改拆解正文与两组标签，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。"""
+        """属主改拆解正文，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。"""
 
         return await service.update(principal, reference_id, body)
+
+    @router.put("/{reference_id}/tags", response_model=ReferenceVideoOut)
+    async def replace_reference_tags(
+        principal: Annotated[Principal, require_permission("generation:read")],
+        reference_id: uuid.UUID,
+        body: ReferenceTagsIn,
+    ) -> ReferenceVideoOut:
+        """属主整份替换各维度的标签。正在打标是 ``409``；不存在的标签或给了维度是 ``422``；别人的
+        是 ``403``。"""
+
+        return await service.replace_tags(principal, reference_id, body)
 
     @router.delete("/{reference_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def remove_reference(
@@ -138,9 +150,23 @@ def create_references_router(
             ],
             reference_id: uuid.UUID,
         ) -> ReferenceVideoOut:
-            """属主重新拆解：重新排队，拆成就覆盖拆解与标签，失败保留原来的。正在拆是 ``409``。"""
+            """属主重新拆解：重新排队，拆成就覆盖拆解并重新打标，失败保留原来的。正在拆是 ``409``。"""
 
             return await service.rerun(principal, reference_id)
+
+    if retaggable:
+
+        @router.post("/{reference_id}/tagging", response_model=ReferenceVideoOut)
+        async def retag_reference(
+            principal: Annotated[
+                Principal, require_permission("generation:read", "generation:submit")
+            ],
+            reference_id: uuid.UUID,
+        ) -> ReferenceVideoOut:
+            """属主按当前拆解重新打标：AI 维度整组重写，人工维度不动。拆解还没完成或正在打标是
+            ``409``，别人的是 ``403``。"""
+
+            return await service.retag(principal, reference_id)
 
     if testable:
 

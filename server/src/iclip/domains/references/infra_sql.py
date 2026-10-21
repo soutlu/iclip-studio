@@ -20,25 +20,25 @@ from sqlalchemy import (
     Uuid,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.domains.references.models import (
-    CATEGORIES,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
     STATUS_RUNNING,
-    VIDEO_TYPES,
     BreakdownErrorCode,
-    CategoryValue,
     Claim,
     ReferenceCursor,
     ReferenceVideo,
     Scope,
-    Tags,
-    VideoTypeValue,
+)
+from iclip.domains.tagging.public import (
+    KIND_REFERENCE,
+    entry_columns_sql,
+    entry_filter_sql,
+    entry_join_sql,
 )
 
 DB_SCHEMA: Final = "iclip"
@@ -58,8 +58,6 @@ reference_videos_table = Table(
         ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_reference_videos_owner"),
         nullable=False,
     ),
-    Column("video_types", ARRAY(Text), nullable=False, server_default=text("'{}'")),
-    Column("categories", ARRAY(Text), nullable=False, server_default=text("'{}'")),
     Column("breakdown_status", Text, nullable=False),
     Column("error_code", Text, nullable=True),
     # 唯一一份当前拆解，不留历史。
@@ -88,16 +86,15 @@ reference_videos_table = Table(
         "id",
         postgresql_where=text("deleted_at IS NULL"),
     ),
-    Index("ix_reference_videos_video_types", "video_types", postgresql_using="gin"),
-    Index("ix_reference_videos_categories", "categories", postgresql_using="gin"),
 )
 
-_ROW: Final = """
-SELECT r.id, r.video_url, r.owner_user_id, u.username AS owner_user_name, r.video_types,
-       r.categories, r.breakdown_status, r.error_code, r.document, r.version, r.created_at,
-       r.updated_at, r.deleted_at
+_ROW: Final = f"""
+SELECT r.id, r.video_url, r.owner_user_id, u.username AS owner_user_name,
+       r.breakdown_status, r.error_code, r.document, r.version, r.created_at,
+       r.updated_at, r.deleted_at, {entry_columns_sql()}
 FROM iclip.reference_videos r
-JOIN iclip.users u ON u.id = r.owner_user_id"""
+JOIN iclip.users u ON u.id = r.owner_user_id
+{entry_join_sql(kind=KIND_REFERENCE, subject_expr="r.id")}"""
 
 _BY_ID: Final = text(f"{_ROW}\nWHERE r.id = :id")
 _BY_URL: Final = text(f"{_ROW}\nWHERE r.video_url = :video_url")
@@ -111,36 +108,25 @@ RETURNING id""")
 
 _FILTER: Final = r"""
 WHERE r.deleted_at IS NULL
-  AND (cardinality(CAST(:video_types AS text[])) = 0
-       OR r.video_types && CAST(:video_types AS text[]))
-  AND (cardinality(CAST(:categories AS text[])) = 0
-       OR r.categories && CAST(:categories AS text[]))
   AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
   AND (CAST(:pattern AS text) IS NULL OR r.document ILIKE CAST(:pattern AS text) ESCAPE '\')
   AND (CAST(:since AS timestamptz) IS NULL OR r.created_at >= CAST(:since AS timestamptz))
   AND (CAST(:until AS timestamptz) IS NULL OR r.created_at < CAST(:until AS timestamptz))"""
 
-_LIST: Final = text(f"""{_ROW}{_FILTER}
+
+def _list_statement(tag_filter: str) -> Any:
+    return text(f"""{_ROW}{_FILTER}{tag_filter}
   AND (CAST(:after_at AS timestamptz) IS NULL
        OR (r.created_at, r.id) < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
 ORDER BY r.created_at DESC, r.id DESC
 LIMIT :limit""")
 
-_COUNT: Final = text(f"""
+
+def _count_statement(tag_filter: str) -> Any:
+    return text(f"""
 SELECT count(*) FROM iclip.reference_videos r
-JOIN iclip.users u ON u.id = r.owner_user_id{_FILTER}""")
+JOIN iclip.users u ON u.id = r.owner_user_id{_FILTER}{tag_filter}""")
 
-_TYPE_COUNTS: Final = text("""
-SELECT t.value, count(*) AS n
-FROM iclip.reference_videos r, unnest(r.video_types) AS t(value)
-WHERE r.deleted_at IS NULL
-GROUP BY t.value""")
-
-_CATEGORY_COUNTS: Final = text("""
-SELECT c.value, count(*) AS n
-FROM iclip.reference_videos r, unnest(r.categories) AS c(value)
-WHERE r.deleted_at IS NULL
-GROUP BY c.value""")
 
 _OWNER_COUNTS: Final = text("""
 SELECT u.username, count(*) AS n
@@ -152,8 +138,7 @@ ORDER BY n DESC, u.username""")
 
 _UPDATE: Final = text("""
 UPDATE iclip.reference_videos
-SET document = :document, video_types = CAST(:video_types AS text[]),
-    categories = CAST(:categories AS text[]), version = version + 1, updated_at = now()
+SET document = :document, version = version + 1, updated_at = now()
 WHERE id = :id AND deleted_at IS NULL AND version = :version
   AND breakdown_status IN (:completed, :failed)
 RETURNING version""")
@@ -174,12 +159,11 @@ _CLAIM: Final = text("""
 UPDATE iclip.reference_videos
 SET breakdown_status = :running, started_at = now(), updated_at = now()
 WHERE id = :id AND breakdown_status = :pending
-RETURNING id, video_url, started_at""")
+RETURNING id, video_url, owner_user_id, started_at""")
 
 _FINISH: Final = text("""
 UPDATE iclip.reference_videos
 SET breakdown_status = :completed, document = :document,
-    video_types = CAST(:video_types AS text[]), categories = CAST(:categories AS text[]),
     error_code = NULL, version = version + 1, updated_at = now()
 WHERE id = :id AND breakdown_status = :running AND started_at = :started_at
 RETURNING id""")
@@ -215,8 +199,9 @@ def _row_of(row: RowMapping) -> ReferenceVideo:
         video_url=row["video_url"],
         owner_user_id=row["owner_user_id"],
         owner_user_name=row["owner_user_name"],
-        video_types=tuple(row["video_types"]),
-        categories=tuple(row["categories"]),
+        tag_ids=tuple(row["tag_ids"]),
+        tag_status=row["tag_status"],
+        tag_error=row["tag_error"],
         breakdown_status=row["breakdown_status"],
         error_code=row["error_code"],
         document=row["document"],
@@ -236,8 +221,6 @@ def _like_pattern(q: str) -> str:
 
 def _scope_params(scope: Scope) -> dict[str, Any]:
     return {
-        "video_types": list(scope.video_types),
-        "categories": list(scope.categories),
         "user_name": scope.user_name,
         "pattern": None if scope.q is None else _like_pattern(scope.q),
         "since": scope.since,
@@ -245,8 +228,8 @@ def _scope_params(scope: Scope) -> dict[str, Any]:
     }
 
 
-def _tag_params(tags: Tags) -> dict[str, Any]:
-    return {"video_types": list(tags.video_types), "categories": list(tags.categories)}
+def _tag_filter(scope: Scope) -> tuple[str, dict[str, Any]]:
+    return entry_filter_sql(scope.tag_groups, kind=KIND_REFERENCE, subject_expr="r.id")
 
 
 async def _one(conn: AsyncConnection, statement: Any, params: Mapping[str, Any]) -> RowMapping:
@@ -296,35 +279,28 @@ class SqlReferenceStore:
     async def list(
         self, scope: Scope, *, limit: int, after: ReferenceCursor | None
     ) -> Sequence[ReferenceVideo]:
+        tag_filter, tag_params = _tag_filter(scope)
         params = {
             **_scope_params(scope),
+            **tag_params,
             "after_at": after.at if after else None,
             "after_id": after.reference_id if after else None,
             "limit": limit,
         }
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(_LIST, params)).mappings().all()
+            rows = (await conn.execute(_list_statement(tag_filter), params)).mappings().all()
         return [_row_of(row) for row in rows]
 
     async def count(self, scope: Scope) -> int:
+        tag_filter, tag_params = _tag_filter(scope)
         async with self._engine.connect() as conn:
-            return int((await conn.execute(_COUNT, _scope_params(scope))).scalar_one())
-
-    async def filter_counts(
-        self,
-    ) -> tuple[Mapping[VideoTypeValue, int], Sequence[tuple[CategoryValue, int]]]:
-        async with self._engine.connect() as conn:
-            types = {row[0]: int(row[1]) for row in await conn.execute(_TYPE_COUNTS)}
-            categories = {row[0]: int(row[1]) for row in await conn.execute(_CATEGORY_COUNTS)}
-        type_counts: dict[VideoTypeValue, int] = {
-            one.value: types.get(one.value, 0) for one in VIDEO_TYPES
-        }
-        # 条数多的在前，同数按清单的先后；表里只会有清单里的值，写入都经过校验。
-        listed: list[tuple[CategoryValue, int]] = [
-            (name, categories[name]) for name in CATEGORIES if name in categories
-        ]
-        used = sorted(listed, key=lambda item: -item[1])
-        return type_counts, used
+            return int(
+                (
+                    await conn.execute(
+                        _count_statement(tag_filter), {**_scope_params(scope), **tag_params}
+                    )
+                ).scalar_one()
+            )
 
     async def owner_counts(self) -> Sequence[tuple[str, int]]:
         async with self._engine.connect() as conn:
@@ -337,7 +313,6 @@ class SqlReferenceStore:
         *,
         version: int,
         document: str,
-        tags: Tags,
     ) -> int | None:
         async with self._engine.begin() as conn:
             row = (
@@ -347,7 +322,6 @@ class SqlReferenceStore:
                         "id": reference_id,
                         "version": version,
                         "document": document,
-                        **_tag_params(tags),
                         "completed": STATUS_COMPLETED,
                         "failed": STATUS_FAILED,
                     },
@@ -399,9 +373,14 @@ class SqlReferenceStore:
             )
         if row is None:
             return None
-        return Claim(id=row["id"], video_url=row["video_url"], started_at=row["started_at"])
+        return Claim(
+            id=row["id"],
+            video_url=row["video_url"],
+            owner_user_id=row["owner_user_id"],
+            started_at=row["started_at"],
+        )
 
-    async def finish(self, claim: Claim, *, document: str, tags: Tags) -> bool:
+    async def finish(self, claim: Claim, *, document: str) -> bool:
         async with self._engine.begin() as conn:
             row = (
                 await conn.execute(
@@ -410,7 +389,6 @@ class SqlReferenceStore:
                         "id": claim.id,
                         "started_at": claim.started_at,
                         "document": document,
-                        **_tag_params(tags),
                         "completed": STATUS_COMPLETED,
                         "running": STATUS_RUNNING,
                     },

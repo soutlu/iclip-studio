@@ -1,6 +1,6 @@
 """参考视频的后台拆解。自带一个 procrastinate App，队列 ``references``，与生成队列共用组合根的连接器。
 
-一次任务：接手（``pending`` → ``running``）→ 拆解 → 打标 → 一次写回。拆解任务**不挂自动重试**：
+一次任务：接手（``pending`` → ``running``）→ 拆解 → 写回 → 排一次打标。拆解任务**不挂自动重试**：
 崩在半路自动重投会再付一次钱。崩在半路的行停在拆解中，由每分钟一次的周期任务按超时收尾；重拆由
 人或 AI 导演决定。"""
 
@@ -14,13 +14,9 @@ from typing import Final
 import procrastinate
 import structlog
 
-from iclip.domains.references.models import (
-    BREAKDOWN_TIMEOUT_SECONDS,
-    BreakdownFailed,
-    TaggingFailed,
-    Tags,
-)
-from iclip.domains.references.repository import ReferenceStore, Tagger, VideoBreakdowns
+from iclip.domains.references.models import BREAKDOWN_TIMEOUT_SECONDS, BreakdownFailed
+from iclip.domains.references.repository import ReferenceStore, VideoBreakdowns
+from iclip.domains.tagging.public import KIND_REFERENCE, EntryKey, TaggingService
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -50,13 +46,13 @@ class ReferenceQueue:
         store: ReferenceStore,
         *,
         breakdowns: VideoBreakdowns,
-        tagger: Tagger,
+        tagging: TaggingService,
         connector: procrastinate.BaseConnector,
         settings: ReferenceQueueSettings | None = None,
     ) -> None:
         self._store = store
         self._breakdowns = breakdowns
-        self._tagger = tagger
+        self._tagging = tagging
         self._settings = settings or ReferenceQueueSettings()
         self._app = procrastinate.App(connector=connector)
         self._worker: asyncio.Task[None] | None = None
@@ -78,7 +74,7 @@ class ReferenceQueue:
         await self._run.defer_async(reference_id=str(reference_id))
 
     async def run_breakdown(self, reference_id: str) -> None:
-        """拆一次：接手不到（已被别的执行接手或已有结论）就不做。"""
+        """拆一次：接手不到（已被别的执行接手或已有结论）就不做；拆成写回后排一次打标。"""
 
         claim = await self._store.claim(uuid.UUID(reference_id))
         if claim is None:
@@ -96,18 +92,12 @@ class ReferenceQueue:
                 written=written,
             )
             return
-        tags = await self._tag(claim.id, document)
-        if not await self._store.finish(claim, document=document, tags=tags):
+        if not await self._store.finish(claim, document=document):
             _logger.info("参考视频在写回之前已被收尾，这次的结果不写", reference_id=claim.id)
-
-    async def _tag(self, reference_id: uuid.UUID, document: str) -> Tags:
-        """打标失败不算拆解失败：拆解照常保存，标签留空。"""
-
-        try:
-            return await self._tagger.tag(document)
-        except TaggingFailed as exc:
-            _logger.warning("参考视频打标失败，标签留空", reference_id=reference_id, error=str(exc))
-            return Tags()
+            return
+        await self._tagging.enqueue(
+            EntryKey(kind=KIND_REFERENCE, subject_id=claim.id), created_by=claim.owner_user_id
+        )
 
     async def time_out_stalled(self) -> int:
         """拆解中超过 ``BREAKDOWN_TIMEOUT_SECONDS`` 的行收成 ``failed / timeout``，交回几行。"""
