@@ -1,9 +1,9 @@
 /** 高清版（超分）的 mock：读各档、提交一档与读一条超分记录，规矩照 contract/conventions.md「高清版」。
  *
- * 来源可以是任一对话里的成片、资料库成片素材里的一版、资料库里的整片或刚导出的整片；按来源出片时的分辨率列比它清晰的档。
+ * 来源可以是任一对话里的素材片、资料库成片素材里的一版、资料库里的成片或刚导出的成片；按来源出片时的分辨率列比它清晰的档。
  * 提交后经 pending → submitted 再落定，每跳一格照常发 event.generation.changed（不挂对话）。
  * 1080p 总是做成；720p 总是没做成，用来演示失败的提示条、红点与重试。
- * 提交的记录属于当时登录的人；另有一条同事做好的：演示对话第 2 组那条成片的 720p，只能下载、不加点。 */
+ * 提交的记录属于当时登录的人；另有一条同事做好的：演示对话第 2 组那条素材片的 720p，只能下载、不加点。 */
 
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
@@ -65,7 +65,7 @@ const videoSource = (id: string): MockSource | undefined => {
   }
 }
 
-/** 整片按画面轨第一条成片定清晰度。 */
+/** 成片按画面轨第一条素材片定清晰度。 */
 const filmSource = (id: string, url: string, sourceJobIds: readonly string[]): MockSource => ({
   downloadedJobIds: sourceJobIds,
   durationMs: null,
@@ -119,7 +119,7 @@ const recordOf = (source: MockSource, resolution: Resolution): EnhanceRecord => 
   watermarkOutputUrl: null,
 })
 
-/** 演示对话第 2 组那条 480p 的成片；同事给它做好了 720p。 */
+/** 演示对话第 2 组那条 480p 的素材片；同事给它做好了 720p。 */
 const COLLEAGUE_SOURCE = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
 const COLLEAGUE_ID = '33333333-3333-4333-8333-333333333333'
 
@@ -130,7 +130,7 @@ let colleagueSeeded = false
 const owners = new Map<string, string>()
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
-/** 同事那条要等演示对话的成片在了才建得出来，所以用到时才放，放进去之前每次都再试。 */
+/** 同事那条要等演示对话的素材片在了才建得出来，所以用到时才放，放进去之前每次都再试。 */
 const allRecords = (): EnhanceRecord[] => {
   if (colleagueSeeded) return records
   const source = videoSource(COLLEAGUE_SOURCE)
