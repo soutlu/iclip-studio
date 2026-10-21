@@ -12,7 +12,7 @@ export const columnGapFor = (width: number): number => (width < 700 ? 10 : 16)
 
 const CARD_BODY_HEIGHT = 68
 
-export const cardHeightFor = (video: LibraryVideo, columnWidth: number): number => {
+export const cardHeightFor = (video: Pick<LibraryVideo, 'take'>, columnWidth: number): number => {
   const { w, h } = aspectOf(video.take.aspectRatio)
   return (columnWidth * h) / w + CARD_BODY_HEIGHT
 }

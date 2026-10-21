@@ -9,6 +9,8 @@ import {
 } from './mocks/handlers'
 import { resetMockEnhancements } from './mocks/enhancements'
 import { resetMockFilm } from './mocks/film'
+import { resetMockHitCases } from './mocks/hit-cases'
+import { resetMockLibraryTags } from './mocks/library-tags'
 import { resetMockClock } from './mocks/paging'
 import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
@@ -100,6 +102,9 @@ afterEach(() => {
   resetMockConversations()
   resetMockEnhancements()
   resetMockFilm()
+  // 先放回预置的树，演示行的标签按名字取 id。
+  resetMockLibraryTags()
+  resetMockHitCases()
   resetMockReferences()
   resetMockSession()
   resetMockTasks()

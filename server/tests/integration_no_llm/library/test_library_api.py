@@ -315,10 +315,11 @@ async def test_everyone_gets_the_conversation_only_readers_can_open_it(
     assert owner_after_delete.json()["video"]["canOpenConversation"] is False
 
 
-async def test_can_make_same_needs_an_openable_conversation_with_a_film_or_shot_file(
+async def test_can_make_same_needs_a_conversation_with_a_film_or_shot_file(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """做得了同款：卡挂着对话、读者打得开、工作区里有 ``film.icml`` 或 ``video_shot.json``。"""
+    """做得了同款：卡挂着对话、工作区里有 ``film.icml`` 或 ``video_shot.json``；不看读者打不打得开
+    那段对话、它删没删。"""
 
     owner = await login_as(client, pg_url, "nora", "editor")
     with_film, _ = await plant_video(pg_url, owner=owner, user_name="nora")
@@ -343,7 +344,11 @@ async def test_can_make_same_needs_an_openable_conversation_with_a_film_or_shot_
     assert await can_make_same(orphan) is False, "不挂对话的卡没有对话可拷"
 
     await login_as(client, pg_url, "lena", "editor")
-    assert await can_make_same(with_film) is False, "打不开那段对话就做不了"
+    detail = (await client.get(f"{VIDEOS}/{with_film}")).json()
+    assert detail["video"]["canOpenConversation"] is False
+    assert detail["canMakeSame"] is True, "打不开那段对话也做得了"
+    await mark_deleted(pg_url, with_film)
+    assert await can_make_same(with_film) is True, "删了也做得了"
 
 
 async def test_bad_parameters_are_422(client: httpx.AsyncClient, pg_url: str) -> None:

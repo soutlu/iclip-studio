@@ -75,10 +75,15 @@ depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
 path = "iclip.domains.audit"
 depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
 
-# 资料库同样是跨模块的只读读模型，按表名直接查。
+# 资料库同样是跨模块的只读读模型，按表名直接查；爆款素材库的条目与标签经 tagging 写。
 [[modules]]
 path = "iclip.domains.library"
-depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
+depends_on = [
+    "iclip.common",
+    "iclip.platform.paging",
+    "iclip.domains.identity",
+    "iclip.domains.tagging",
+]
 
 # 埋点核对主语资格时按表名读生成记录，不依赖生成域。
 [[modules]]
@@ -107,10 +112,20 @@ depends_on = [
     "iclip.domains.identity",
 ]
 
-# 参考视频的拆解与打标、上传记录都是端口，由组合根接到能力包与生成域上。
+# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与能力包上；条数按表名读参考视频的移除标记。
+[[modules]]
+path = "iclip.domains.tagging"
+depends_on = ["iclip.common", "iclip.domains.identity"]
+
+# 参考视频的拆解、上传记录都是端口，由组合根接到能力包与生成域上；标签经 tagging。
 [[modules]]
 path = "iclip.domains.references"
-depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
+depends_on = [
+    "iclip.common",
+    "iclip.platform.paging",
+    "iclip.domains.identity",
+    "iclip.domains.tagging",
+]
 
 # 品牌资源的视频上传记录、视频与字体探测是端口，由组合根接上；生成域不依赖它。
 [[modules]]
@@ -176,6 +191,7 @@ depends_on = [
     "iclip.domains.audit",
     "iclip.domains.library",
     "iclip.domains.references",
+    "iclip.domains.tagging",
     "iclip.domains.brand_templates",
     "iclip.domains.tracking",
     "iclip.harness",

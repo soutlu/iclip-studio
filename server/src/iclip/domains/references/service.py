@@ -1,7 +1,8 @@
-"""参考视频用例：建行与排拆解、列表与筛选、修改、重拆、移除、试生成，以及给对话里的拆解工具用的
-``ensure``。
+"""参考视频用例：建行与排拆解、列表与筛选、修改、改标签、重拆、重新打标、移除、试生成，以及给对话
+里的拆解工具用的 ``ensure``。
 
-端点权限由路由声明；这里管行级归属：谁都看得到，只有属主能改、能重拆、能移除；试生成只限属主本人。"""
+端点权限由路由声明；这里管行级归属：谁都看得到，只有属主能改、能改标签、能重拆、能重新打标、能
+移除；试生成只限属主本人。"""
 
 from __future__ import annotations
 
@@ -22,15 +23,11 @@ from iclip.domains.references.models import (
     STATUS_PENDING,
     STATUS_RUNNING,
     TEST_VIDEO_RUNNING,
-    VIDEO_TYPES,
-    CategoryValue,
     Outcome,
     ReferenceCursor,
     ReferenceVideo,
     Scope,
-    Tags,
     TestVideoJob,
-    VideoTypeValue,
 )
 from iclip.domains.references.repository import (
     BreakdownQueue,
@@ -39,18 +36,18 @@ from iclip.domains.references.repository import (
     TestVideos,
 )
 from iclip.domains.references.schemas import (
-    CategoryCountOut,
     OwnerCountOut,
     ReferenceFiltersOut,
+    ReferenceTagsIn,
     ReferenceUpdateIn,
     ReferenceVideoItemOut,
     ReferenceVideoOut,
     ReferenceVideosOut,
     TestVideoIn,
     TestVideoOut,
-    VideoTypeCountOut,
 )
 from iclip.domains.references.test_prompt import build_test_prompt
+from iclip.domains.tagging.public import KIND_REFERENCE, EntryKey, TaggingService
 from iclip.platform.paging import check_limit, decode_cursor, encode_cursor
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -95,8 +92,9 @@ def _item_fields(principal: Principal, row: ReferenceVideo) -> dict[str, object]
         "id": row.id,
         "video_url": row.video_url,
         "user_name": row.owner_user_name,
-        "video_types": list(row.video_types),
-        "categories": list(row.categories),
+        "tag_ids": list(row.tag_ids),
+        "tag_status": row.tag_status,
+        "tag_error": row.tag_error,
         "breakdown_status": row.breakdown_status,
         "error_code": row.error_code,
         "version": row.version,
@@ -133,10 +131,15 @@ def _item(principal: Principal, row: ReferenceVideo) -> ReferenceVideoItemOut:
     return ReferenceVideoItemOut.model_validate(_item_fields(principal, row))
 
 
+def _entry_key(reference_id: uuid.UUID) -> EntryKey:
+    return EntryKey(kind=KIND_REFERENCE, subject_id=reference_id)
+
+
 class ReferenceService:
     """``queue`` 为 ``None`` 即拆解没配置：读照常，建行、重拆与 ``ensure`` 不可用。``uploads_available``
     为假即上传没装配（没有对象存储）：建行不可用，重拆与 ``ensure`` 照常。``test_videos`` 一直在：
-    详情都带最新的一次试生成；它能不能提交由组合根定，提交不了时试生成的入口不挂。"""
+    详情都带最新的一次试生成；它能不能提交由组合根定，提交不了时试生成的入口不挂。标签都经
+    ``tagging``：改标签一直可用，重新打标看它配没配。"""
 
     def __init__(
         self,
@@ -144,6 +147,7 @@ class ReferenceService:
         *,
         own_video_upload: OwnVideoUpload,
         queue: BreakdownQueue | None,
+        tagging: TaggingService,
         uploads_available: bool,
         test_videos: TestVideos,
         poll_seconds: float = ENSURE_POLL_SECONDS,
@@ -152,6 +156,7 @@ class ReferenceService:
         self._store = store
         self._own_video_upload = own_video_upload
         self._queue = queue
+        self._tagging = tagging
         self._test_videos = test_videos
         self._uploads_available = uploads_available
         self._poll_seconds = poll_seconds
@@ -167,6 +172,12 @@ class ReferenceService:
         """资料库收上传，且读者持 ``uploads:write``。"""
 
         return self.accepts_uploads and principal.has(UPLOAD_PERMISSION)
+
+    @property
+    def can_retag(self) -> bool:
+        """能不能重新打标：打标已配置。"""
+
+        return self._tagging.can_tag
 
     async def create(
         self, principal: Principal, upload_id: uuid.UUID
@@ -188,6 +199,7 @@ class ReferenceService:
             requested_by=principal.user_id,
             api_key_id=principal.api_key_id,
         )
+        await self._tagging.ensure(_entry_key(row.id), created_by=row.owner_user_id)
         if created:
             await self._enqueue(queue, row.id)
         elif row.deleted_at is not None:
@@ -199,8 +211,7 @@ class ReferenceService:
         self,
         principal: Principal,
         *,
-        video_types: Sequence[VideoTypeValue] = (),
-        categories: Sequence[CategoryValue] = (),
+        tags: Sequence[uuid.UUID] = (),
         user_name: str | None = None,
         q: str | None = None,
         since: datetime | None = None,
@@ -208,7 +219,8 @@ class ReferenceService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> ReferenceVideosOut:
-        """建立晚的排前面；满页才给下一页游标，总数只在第一页给。"""
+        """建立晚的排前面；满页才给下一页游标，总数只在第一页给。``tags`` 按维度分组：维度之间都要
+        命中，同一维度里命中任一即算，选了上级也算它的下级；不存在的标签是 ``ValidationFailed``。"""
 
         check_limit(limit)
         since, until = _as_utc(since), _as_utc(until)
@@ -216,8 +228,7 @@ class ReferenceService:
             raise ValidationFailed("since 必须早于 until")
         keyword = q.strip() if q is not None else ""
         scope = Scope(
-            video_types=_unique(video_types),
-            categories=_unique(categories),
+            tag_groups=await self._tagging.filter_groups(_unique(tags)),
             user_name=user_name,
             q=keyword or None,
             since=since,
@@ -239,20 +250,10 @@ class ReferenceService:
         )
 
     async def filters(self) -> ReferenceFiltersOut:
-        """全部片子类型、用到的品类与名下有参考视频的属主，各带条数；只数没移除的。"""
+        """名下有参考视频的属主，各带条数；只数没移除的。"""
 
-        type_counts, category_counts = await self._store.filter_counts()
         owner_counts = await self._store.owner_counts()
         return ReferenceFiltersOut(
-            video_types=[
-                VideoTypeCountOut(
-                    value=one.value, label=one.label, rule=one.rule, count=type_counts[one.value]
-                )
-                for one in VIDEO_TYPES
-            ],
-            categories=[
-                CategoryCountOut(name=name, count=count) for name, count in category_counts
-            ],
             owners=[OwnerCountOut(user_name=name, count=count) for name, count in owner_counts],
         )
 
@@ -262,24 +263,48 @@ class ReferenceService:
     async def update(
         self, principal: Principal, reference_id: uuid.UUID, body: ReferenceUpdateIn
     ) -> ReferenceVideoOut:
-        """属主改拆解正文与两组标签。版本对不上、正在拆解都是 ``Conflict``。"""
+        """属主改拆解正文。版本对不上、正在拆解都是 ``Conflict``。"""
 
         row = await self._listed(reference_id)
         _require_owner(principal, row)
         if row.breakdown_status in _BUSY:
             raise Conflict("这条参考视频正在拆解，拆完再改")
         written = await self._store.update(
-            reference_id,
-            version=body.version,
-            document=body.document,
-            tags=Tags(video_types=_unique(body.video_types), categories=_unique(body.categories)),
+            reference_id, version=body.version, document=body.document
         )
         if written is None:
             raise Conflict("这条参考视频已经变了（别处改过、刚拆完或正在拆），刷新后再改")
         return await self._detail(principal, await self._get(reference_id))
 
+    async def replace_tags(
+        self, principal: Principal, reference_id: uuid.UUID, body: ReferenceTagsIn
+    ) -> ReferenceVideoOut:
+        """属主整份替换各维度的标签。正在打标是 ``Conflict``；不存在的标签、维度本身是
+        ``ValidationFailed``。"""
+
+        row = await self._listed(reference_id)
+        _require_owner(principal, row)
+        await self._tagging.replace(
+            _entry_key(reference_id), _unique(body.tag_ids), created_by=row.owner_user_id
+        )
+        return await self._detail(principal, await self._get(reference_id))
+
+    async def retag(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:
+        """属主按当前拆解重新打标：AI 维度整组重写，人工维度不动。拆解还没完成、正在打标都是
+        ``Conflict``。"""
+
+        if not self._tagging.can_tag:
+            raise RuntimeError("打标没配置，重新打标的入口不该挂上")
+        row = await self._listed(reference_id)
+        _require_owner(principal, row)
+        if row.breakdown_status in _BUSY or row.document is None:
+            raise Conflict("拆解尚未完成，无法重新打标")
+        await self._tagging.retag(_entry_key(reference_id), created_by=row.owner_user_id)
+        return await self._detail(principal, await self._get(reference_id))
+
     async def rerun(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:
-        """属主重新拆解：已完成或已失败的行重新排队，拆成就覆盖拆解与标签。正在拆是 ``Conflict``。"""
+        """属主重新拆解：已完成或已失败的行重新排队，拆成就覆盖拆解、再重新打标。正在拆是
+        ``Conflict``。"""
 
         queue = self._require_queue()
         row = await self._listed(reference_id)
@@ -342,6 +367,7 @@ class ReferenceService:
             requested_by=principal.user_id,
             api_key_id=principal.api_key_id,
         )
+        await self._tagging.ensure(_entry_key(row.id), created_by=row.owner_user_id)
         if row.document is not None:
             return Outcome(document=row.document)
         if created:

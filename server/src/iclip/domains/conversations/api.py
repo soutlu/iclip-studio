@@ -133,7 +133,8 @@ def create_conversations_router(
     ) -> ConversationEnvelope:
         """开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。
 
-        带 ``sameAs`` 是做同款：源看不见是 404，源没有工程文件或分镜文件是 422。
+        带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的
+        资料库卡是 404，源没有工程文件或分镜文件是 422。
         """
 
         principal = await act_as(principal, body.user_name)

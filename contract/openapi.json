@@ -849,83 +849,6 @@
         "title": "BrandTemplatesOut",
         "type": "object"
       },
-      "CategoryCountOut": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "name": {
-            "enum": [
-              "高跟鞋",
-              "平底鞋",
-              "乐福鞋",
-              "牛津鞋",
-              "一脚蹬",
-              "穆勒鞋",
-              "拖鞋",
-              "短靴",
-              "中筒靴",
-              "及膝靴",
-              "过膝靴",
-              "高跟凉鞋",
-              "坡跟凉鞋",
-              "厚底凉鞋",
-              "平底凉鞋",
-              "夹趾拖",
-              "凉拖鞋",
-              "运动凉鞋",
-              "跑鞋",
-              "足球鞋",
-              "篮球鞋",
-              "啦啦队鞋",
-              "棒&垒球鞋",
-              "滑板鞋",
-              "舞蹈鞋",
-              "橄榄球鞋",
-              "高尔夫鞋",
-              "网球鞋",
-              "训练鞋",
-              "女性骑行鞋",
-              "健步鞋",
-              "板鞋",
-              "徒步鞋",
-              "徒步靴",
-              "雪地靴",
-              "雨靴",
-              "水鞋",
-              "猎靴",
-              "医疗用鞋",
-              "餐厨用鞋",
-              "军事用靴",
-              "工业用鞋",
-              "工业用靴",
-              "皮带",
-              "钱包",
-              "包",
-              "袜子",
-              "鞋垫",
-              "T恤",
-              "衬衫",
-              "卫衣",
-              "毛衣",
-              "外套",
-              "裤子",
-              "半身裙",
-              "连衣裙"
-            ],
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "count"
-        ],
-        "title": "CategoryCountOut",
-        "type": "object"
-      },
       "ClipEditDurationOut": {
         "additionalProperties": false,
         "description": "片段编辑接受的实际参考视频时长范围，单位秒。",
@@ -3439,6 +3362,297 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HitCaseEntryOut": {
+        "additionalProperties": false,
+        "description": "一条素材片在爆款素材库里的条目。",
+        "properties": {
+          "addedAt": {
+            "format": "date-time",
+            "title": "Addedat",
+            "type": "string"
+          },
+          "addedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addedby"
+          },
+          "tagError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_source_text",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagerror"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          },
+          "tagStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagstatus"
+          }
+        },
+        "required": [
+          "tagIds",
+          "tagStatus",
+          "tagError",
+          "addedAt",
+          "addedBy"
+        ],
+        "title": "HitCaseEntryOut",
+        "type": "object"
+      },
+      "HitCaseIn": {
+        "additionalProperties": false,
+        "description": "入选时一起写上的标签。",
+        "properties": {
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          }
+        },
+        "title": "HitCaseIn",
+        "type": "object"
+      },
+      "HitCaseOut": {
+        "additionalProperties": false,
+        "description": "爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。",
+        "properties": {
+          "addedAt": {
+            "format": "date-time",
+            "title": "Addedat",
+            "type": "string"
+          },
+          "cardId": {
+            "format": "uuid",
+            "title": "Cardid",
+            "type": "string"
+          },
+          "face": {
+            "$ref": "#/components/schemas/FaceOut"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "tagError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_source_text",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagerror"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          },
+          "tagStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagstatus"
+          },
+          "take": {
+            "$ref": "#/components/schemas/TakeOut"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "jobId",
+          "cardId",
+          "title",
+          "face",
+          "take",
+          "tagIds",
+          "tagStatus",
+          "tagError",
+          "addedAt"
+        ],
+        "title": "HitCaseOut",
+        "type": "object"
+      },
+      "HitCaseStateOut": {
+        "additionalProperties": false,
+        "description": "一条素材片与爆款素材库的关系：能不能入选、入选了没有。",
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HitCaseEntryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ineligibleReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_material",
+                  "no_conversation",
+                  "no_treatment"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ineligiblereason"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "eligible",
+          "ineligibleReason",
+          "entry"
+        ],
+        "title": "HitCaseStateOut",
+        "type": "object"
+      },
+      "HitCaseTagsIn": {
+        "additionalProperties": false,
+        "description": "整份替换这条爆款素材在所有维度上的标签。",
+        "properties": {
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tagIds"
+        ],
+        "title": "HitCaseTagsIn",
+        "type": "object"
+      },
+      "HitCasesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HitCaseOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total"
+        ],
+        "title": "HitCasesOut",
+        "type": "object"
+      },
       "ImageContent": {
         "additionalProperties": false,
         "properties": {
@@ -3809,6 +4023,200 @@
           "items"
         ],
         "title": "LibraryAuthorsOut",
+        "type": "object"
+      },
+      "LibraryTagCreateIn": {
+        "additionalProperties": false,
+        "description": "加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。",
+        "properties": {
+          "autoFill": {
+            "anyOf": [
+              {
+                "const": "ai",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autofill"
+          },
+          "guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parentId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentid"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "LibraryTagCreateIn",
+        "type": "object"
+      },
+      "LibraryTagOut": {
+        "additionalProperties": false,
+        "description": "标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。",
+        "properties": {
+          "autoFill": {
+            "anyOf": [
+              {
+                "const": "ai",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autofill"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryTagOut"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/TagCountsOut"
+          },
+          "guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "autoFill",
+          "guide",
+          "position",
+          "counts",
+          "children"
+        ],
+        "title": "LibraryTagOut",
+        "type": "object"
+      },
+      "LibraryTagUpdateIn": {
+        "additionalProperties": false,
+        "description": "改一个标签，不给的项不动；上级改不了。",
+        "properties": {
+          "autoFill": {
+            "anyOf": [
+              {
+                "const": "ai",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autofill"
+          },
+          "guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "title": "LibraryTagUpdateIn",
+        "type": "object"
+      },
+      "LibraryTagsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensions": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryTagOut"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dimensions"
+        ],
+        "title": "LibraryTagsOut",
         "type": "object"
       },
       "LibraryVideoDetailOut": {
@@ -5045,105 +5453,43 @@
       "ReferenceFiltersOut": {
         "additionalProperties": false,
         "properties": {
-          "categories": {
-            "items": {
-              "$ref": "#/components/schemas/CategoryCountOut"
-            },
-            "title": "Categories",
-            "type": "array"
-          },
           "owners": {
             "items": {
               "$ref": "#/components/schemas/OwnerCountOut"
             },
             "title": "Owners",
             "type": "array"
-          },
-          "videoTypes": {
-            "items": {
-              "$ref": "#/components/schemas/VideoTypeCountOut"
-            },
-            "title": "Videotypes",
-            "type": "array"
           }
         },
         "required": [
-          "videoTypes",
-          "categories",
           "owners"
         ],
         "title": "ReferenceFiltersOut",
         "type": "object"
       },
-      "ReferenceUpdateIn": {
+      "ReferenceTagsIn": {
         "additionalProperties": false,
-        "description": "整份改：拆解正文与两组标签都照给的存，重复的标签去掉。",
+        "description": "整份替换这条参考视频在所有维度上的标签。",
         "properties": {
-          "categories": {
+          "tagIds": {
             "items": {
-              "enum": [
-                "高跟鞋",
-                "平底鞋",
-                "乐福鞋",
-                "牛津鞋",
-                "一脚蹬",
-                "穆勒鞋",
-                "拖鞋",
-                "短靴",
-                "中筒靴",
-                "及膝靴",
-                "过膝靴",
-                "高跟凉鞋",
-                "坡跟凉鞋",
-                "厚底凉鞋",
-                "平底凉鞋",
-                "夹趾拖",
-                "凉拖鞋",
-                "运动凉鞋",
-                "跑鞋",
-                "足球鞋",
-                "篮球鞋",
-                "啦啦队鞋",
-                "棒&垒球鞋",
-                "滑板鞋",
-                "舞蹈鞋",
-                "橄榄球鞋",
-                "高尔夫鞋",
-                "网球鞋",
-                "训练鞋",
-                "女性骑行鞋",
-                "健步鞋",
-                "板鞋",
-                "徒步鞋",
-                "徒步靴",
-                "雪地靴",
-                "雨靴",
-                "水鞋",
-                "猎靴",
-                "医疗用鞋",
-                "餐厨用鞋",
-                "军事用靴",
-                "工业用鞋",
-                "工业用靴",
-                "皮带",
-                "钱包",
-                "包",
-                "袜子",
-                "鞋垫",
-                "T恤",
-                "衬衫",
-                "卫衣",
-                "毛衣",
-                "外套",
-                "裤子",
-                "半身裙",
-                "连衣裙"
-              ],
+              "format": "uuid",
               "type": "string"
             },
-            "title": "Categories",
+            "title": "Tagids",
             "type": "array"
-          },
+          }
+        },
+        "required": [
+          "tagIds"
+        ],
+        "title": "ReferenceTagsIn",
+        "type": "object"
+      },
+      "ReferenceUpdateIn": {
+        "additionalProperties": false,
+        "description": "改拆解正文。",
+        "properties": {
           "document": {
             "minLength": 1,
             "title": "Document",
@@ -5152,30 +5498,11 @@
           "version": {
             "title": "Version",
             "type": "integer"
-          },
-          "videoTypes": {
-            "items": {
-              "enum": [
-                "live_clip",
-                "slideshow",
-                "drama",
-                "review",
-                "talking_head",
-                "try_on",
-                "lifestyle",
-                "product_showcase"
-              ],
-              "type": "string"
-            },
-            "title": "Videotypes",
-            "type": "array"
           }
         },
         "required": [
           "version",
-          "document",
-          "videoTypes",
-          "categories"
+          "document"
         ],
         "title": "ReferenceUpdateIn",
         "type": "object"
@@ -5197,71 +5524,6 @@
           "canEdit": {
             "title": "Canedit",
             "type": "boolean"
-          },
-          "categories": {
-            "items": {
-              "enum": [
-                "高跟鞋",
-                "平底鞋",
-                "乐福鞋",
-                "牛津鞋",
-                "一脚蹬",
-                "穆勒鞋",
-                "拖鞋",
-                "短靴",
-                "中筒靴",
-                "及膝靴",
-                "过膝靴",
-                "高跟凉鞋",
-                "坡跟凉鞋",
-                "厚底凉鞋",
-                "平底凉鞋",
-                "夹趾拖",
-                "凉拖鞋",
-                "运动凉鞋",
-                "跑鞋",
-                "足球鞋",
-                "篮球鞋",
-                "啦啦队鞋",
-                "棒&垒球鞋",
-                "滑板鞋",
-                "舞蹈鞋",
-                "橄榄球鞋",
-                "高尔夫鞋",
-                "网球鞋",
-                "训练鞋",
-                "女性骑行鞋",
-                "健步鞋",
-                "板鞋",
-                "徒步鞋",
-                "徒步靴",
-                "雪地靴",
-                "雨靴",
-                "水鞋",
-                "猎靴",
-                "医疗用鞋",
-                "餐厨用鞋",
-                "军事用靴",
-                "工业用鞋",
-                "工业用靴",
-                "皮带",
-                "钱包",
-                "包",
-                "袜子",
-                "鞋垫",
-                "T恤",
-                "衬衫",
-                "卫衣",
-                "毛衣",
-                "外套",
-                "裤子",
-                "半身裙",
-                "连衣裙"
-              ],
-              "type": "string"
-            },
-            "title": "Categories",
-            "type": "array"
           },
           "createdAt": {
             "format": "date-time",
@@ -5290,6 +5552,48 @@
             "title": "Id",
             "type": "string"
           },
+          "tagError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_source_text",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagerror"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          },
+          "tagStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagstatus"
+          },
           "updatedAt": {
             "format": "date-time",
             "title": "Updatedat",
@@ -5310,23 +5614,6 @@
             "title": "Version",
             "type": "integer"
           },
-          "videoTypes": {
-            "items": {
-              "enum": [
-                "live_clip",
-                "slideshow",
-                "drama",
-                "review",
-                "talking_head",
-                "try_on",
-                "lifestyle",
-                "product_showcase"
-              ],
-              "type": "string"
-            },
-            "title": "Videotypes",
-            "type": "array"
-          },
           "videoUrl": {
             "title": "Videourl",
             "type": "string"
@@ -5336,8 +5623,9 @@
           "id",
           "videoUrl",
           "userName",
-          "videoTypes",
-          "categories",
+          "tagIds",
+          "tagStatus",
+          "tagError",
           "breakdownStatus",
           "errorCode",
           "version",
@@ -5365,71 +5653,6 @@
           "canEdit": {
             "title": "Canedit",
             "type": "boolean"
-          },
-          "categories": {
-            "items": {
-              "enum": [
-                "高跟鞋",
-                "平底鞋",
-                "乐福鞋",
-                "牛津鞋",
-                "一脚蹬",
-                "穆勒鞋",
-                "拖鞋",
-                "短靴",
-                "中筒靴",
-                "及膝靴",
-                "过膝靴",
-                "高跟凉鞋",
-                "坡跟凉鞋",
-                "厚底凉鞋",
-                "平底凉鞋",
-                "夹趾拖",
-                "凉拖鞋",
-                "运动凉鞋",
-                "跑鞋",
-                "足球鞋",
-                "篮球鞋",
-                "啦啦队鞋",
-                "棒&垒球鞋",
-                "滑板鞋",
-                "舞蹈鞋",
-                "橄榄球鞋",
-                "高尔夫鞋",
-                "网球鞋",
-                "训练鞋",
-                "女性骑行鞋",
-                "健步鞋",
-                "板鞋",
-                "徒步鞋",
-                "徒步靴",
-                "雪地靴",
-                "雨靴",
-                "水鞋",
-                "猎靴",
-                "医疗用鞋",
-                "餐厨用鞋",
-                "军事用靴",
-                "工业用鞋",
-                "工业用靴",
-                "皮带",
-                "钱包",
-                "包",
-                "袜子",
-                "鞋垫",
-                "T恤",
-                "衬衫",
-                "卫衣",
-                "毛衣",
-                "外套",
-                "裤子",
-                "半身裙",
-                "连衣裙"
-              ],
-              "type": "string"
-            },
-            "title": "Categories",
-            "type": "array"
           },
           "createdAt": {
             "format": "date-time",
@@ -5469,6 +5692,48 @@
             "title": "Id",
             "type": "string"
           },
+          "tagError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_source_text",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagerror"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          },
+          "tagStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagstatus"
+          },
           "testVideo": {
             "anyOf": [
               {
@@ -5499,23 +5764,6 @@
             "title": "Version",
             "type": "integer"
           },
-          "videoTypes": {
-            "items": {
-              "enum": [
-                "live_clip",
-                "slideshow",
-                "drama",
-                "review",
-                "talking_head",
-                "try_on",
-                "lifestyle",
-                "product_showcase"
-              ],
-              "type": "string"
-            },
-            "title": "Videotypes",
-            "type": "array"
-          },
           "videoUrl": {
             "title": "Videourl",
             "type": "string"
@@ -5525,8 +5773,9 @@
           "id",
           "videoUrl",
           "userName",
-          "videoTypes",
-          "categories",
+          "tagIds",
+          "tagStatus",
+          "tagError",
           "breakdownStatus",
           "errorCode",
           "version",
@@ -6200,6 +6449,26 @@
           "text"
         ],
         "title": "SubtitleWord",
+        "type": "object"
+      },
+      "TagCountsOut": {
+        "additionalProperties": false,
+        "description": "带这个标签或它任一下级的条目数。",
+        "properties": {
+          "hitCases": {
+            "title": "Hitcases",
+            "type": "integer"
+          },
+          "references": {
+            "title": "References",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "references",
+          "hitCases"
+        ],
+        "title": "TagCountsOut",
         "type": "object"
       },
       "TakeOut": {
@@ -9709,45 +9978,6 @@
         "title": "VideoTaskResult",
         "type": "object"
       },
-      "VideoTypeCountOut": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "rule": {
-            "title": "Rule",
-            "type": "string"
-          },
-          "value": {
-            "enum": [
-              "live_clip",
-              "slideshow",
-              "drama",
-              "review",
-              "talking_head",
-              "try_on",
-              "lifestyle",
-              "product_showcase"
-            ],
-            "title": "Value",
-            "type": "string"
-          }
-        },
-        "required": [
-          "value",
-          "label",
-          "rule",
-          "count"
-        ],
-        "title": "VideoTypeCountOut",
-        "type": "object"
-      },
       "WholeFilmCanvas": {
         "additionalProperties": false,
         "properties": {
@@ -11908,7 +12138,7 @@
         ]
       },
       "post": {
-        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：源看不见是 404，源没有工程文件或分镜文件是 422。",
+        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的\n资料库卡是 404，源没有工程文件或分镜文件是 422。",
         "operationId": "create_conversation_conversations_post",
         "requestBody": {
           "content": {
@@ -15352,6 +15582,205 @@
         ]
       }
     },
+    "/library-tags": {
+      "get": {
+        "description": "整棵标签树，每个标签带灵感库与爆款素材库里各有几条带它或它的下级。",
+        "operationId": "library_tags_library_tags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Library Tags",
+        "tags": [
+          "library-tags"
+        ]
+      },
+      "post": {
+        "description": "加一个维度或取值，答复新的节点。已有的条目不跟着重打。",
+        "operationId": "create_library_tag_library_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryTagCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTagOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Create Library Tag",
+        "tags": [
+          "library-tags"
+        ]
+      }
+    },
+    "/library-tags/{tag_id}": {
+      "delete": {
+        "description": "删掉一个标签连同它的下级，两库条目上的这些标签一起去掉。",
+        "operationId": "delete_library_tag_library_tags__tag_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Library Tag",
+        "tags": [
+          "library-tags"
+        ]
+      },
+      "patch": {
+        "description": "改名、判断说明、AI 打标或同级里的先后，答复改完的节点。已打的标签不跟着重打。",
+        "operationId": "update_library_tag_library_tags__tag_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryTagUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTagOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Update Library Tag",
+        "tags": [
+          "library-tags"
+        ]
+      }
+    },
     "/library/authors": {
       "get": {
         "description": "素材卡的作者与各自的卡数，多的排前面、同数按名字，不受筛选影响；给按人筛选用。",
@@ -15381,6 +15810,391 @@
           }
         ],
         "summary": "Authors",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases": {
+      "get": {
+        "description": "爆款素材库里的素材片，入选晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``total`` 只在第一页给。",
+        "operationId": "list_hit_cases_library_hit_cases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCasesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Hit Cases",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/{job_id}": {
+      "delete": {
+        "description": "移出爆款素材库，标签一并删掉；没入选也是 ``204``。",
+        "operationId": "remove_hit_case_library_hit_cases__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Remove Hit Case",
+        "tags": [
+          "library"
+        ]
+      },
+      "get": {
+        "description": "这条素材片能不能进爆款素材库、进了没有；没有这条视频是 ``404``。",
+        "operationId": "hit_case_state_library_hit_cases__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Hit Case State",
+        "tags": [
+          "library"
+        ]
+      },
+      "put": {
+        "description": "把这条素材片加进爆款素材库，连同带来的标签，并排一次打标。\n\n不能入选是 ``422``；已入选原样返回，不改标签、不重新打标；不存在的标签或给了维度是 ``422``。",
+        "operationId": "add_hit_case_library_hit_cases__job_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitCaseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Add Hit Case",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/{job_id}/tagging": {
+      "post": {
+        "description": "按所在对话当前的新片执行方案重新打标：AI 维度整组重写，人工维度不动。没入选是\n``404``；正在打标是 ``409``。",
+        "operationId": "retag_hit_case_library_hit_cases__job_id__tagging_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read",
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read",
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Retag Hit Case",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/{job_id}/tags": {
+      "put": {
+        "description": "整份替换这条爆款素材各维度的标签。没入选是 ``404``；正在打标是 ``409``；不存在的标签或给了\n维度是 ``422``。",
+        "operationId": "replace_hit_case_tags_library_hit_cases__job_id__tags_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitCaseTagsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Replace Hit Case Tags",
         "tags": [
           "library"
         ]
@@ -15782,27 +16596,18 @@
     },
     "/references": {
       "get": {
-        "description": "全站没移除的参考视频，建立晚的排前面。\n\n``videoTypes``、``categories`` 可以重复给，同一组里命中任一即算；``userName`` 筛属主；``q``\n按字面包含匹配拆解全文；时间窗 ``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
+        "description": "全站没移除的参考视频，建立晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``userName`` 筛属主；``q`` 按字面包含匹配拆解全文；时间窗\n``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
         "operationId": "list_references_references_get",
         "parameters": [
           {
             "in": "query",
-            "name": "videoTypes",
+            "name": "tags",
             "required": false,
             "schema": {
               "anyOf": [
                 {
                   "items": {
-                    "enum": [
-                      "live_clip",
-                      "slideshow",
-                      "drama",
-                      "review",
-                      "talking_head",
-                      "try_on",
-                      "lifestyle",
-                      "product_showcase"
-                    ],
+                    "format": "uuid",
                     "type": "string"
                   },
                   "type": "array"
@@ -15811,84 +16616,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Videotypes"
-            }
-          },
-          {
-            "in": "query",
-            "name": "categories",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "items": {
-                    "enum": [
-                      "高跟鞋",
-                      "平底鞋",
-                      "乐福鞋",
-                      "牛津鞋",
-                      "一脚蹬",
-                      "穆勒鞋",
-                      "拖鞋",
-                      "短靴",
-                      "中筒靴",
-                      "及膝靴",
-                      "过膝靴",
-                      "高跟凉鞋",
-                      "坡跟凉鞋",
-                      "厚底凉鞋",
-                      "平底凉鞋",
-                      "夹趾拖",
-                      "凉拖鞋",
-                      "运动凉鞋",
-                      "跑鞋",
-                      "足球鞋",
-                      "篮球鞋",
-                      "啦啦队鞋",
-                      "棒&垒球鞋",
-                      "滑板鞋",
-                      "舞蹈鞋",
-                      "橄榄球鞋",
-                      "高尔夫鞋",
-                      "网球鞋",
-                      "训练鞋",
-                      "女性骑行鞋",
-                      "健步鞋",
-                      "板鞋",
-                      "徒步鞋",
-                      "徒步靴",
-                      "雪地靴",
-                      "雨靴",
-                      "水鞋",
-                      "猎靴",
-                      "医疗用鞋",
-                      "餐厨用鞋",
-                      "军事用靴",
-                      "工业用鞋",
-                      "工业用靴",
-                      "皮带",
-                      "钱包",
-                      "包",
-                      "袜子",
-                      "鞋垫",
-                      "T恤",
-                      "衬衫",
-                      "卫衣",
-                      "毛衣",
-                      "外套",
-                      "裤子",
-                      "半身裙",
-                      "连衣裙"
-                    ],
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Categories"
+              "title": "Tags"
             }
           },
           {
@@ -16082,7 +16810,7 @@
     },
     "/references/filters": {
       "get": {
-        "description": "全部片子类型与用到的品类，各带条数；只数没移除的，不受筛选影响。",
+        "description": "名下有参考视频的属主，各带条数；只数没移除的，不受筛选影响。",
         "operationId": "reference_filters_references_filters_get",
         "responses": {
           "200": {
@@ -16217,7 +16945,7 @@
         ]
       },
       "patch": {
-        "description": "属主改拆解正文与两组标签，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。",
+        "description": "属主改拆解正文，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。",
         "operationId": "update_reference_references__reference_id__patch",
         "parameters": [
           {
@@ -16283,7 +17011,7 @@
     },
     "/references/{reference_id}/breakdowns": {
       "post": {
-        "description": "属主重新拆解：重新排队，拆成就覆盖拆解与标签，失败保留原来的。正在拆是 ``409``。",
+        "description": "属主重新拆解：重新排队，拆成就覆盖拆解并重新打标，失败保留原来的。正在拆是 ``409``。",
         "operationId": "rerun_reference_references__reference_id__breakdowns_post",
         "parameters": [
           {
@@ -16334,6 +17062,130 @@
           }
         ],
         "summary": "Rerun Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}/tagging": {
+      "post": {
+        "description": "属主按当前拆解重新打标：AI 维度整组重写，人工维度不动。拆解还没完成或正在打标是\n``409``，别人的是 ``403``。",
+        "operationId": "retag_reference_references__reference_id__tagging_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read",
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read",
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Retag Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}/tags": {
+      "put": {
+        "description": "属主整份替换各维度的标签。正在打标是 ``409``；不存在的标签或给了维度是 ``422``；别人的\n是 ``403``。",
+        "operationId": "replace_reference_tags_references__reference_id__tags_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceTagsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Replace Reference Tags",
         "tags": [
           "references"
         ]

@@ -4,8 +4,11 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+from iclip.domains.library.models import HitCaseIneligible
+from iclip.domains.tagging.public import TagErrorCode, TagStatus
 
 
 class CamelModel(BaseModel):
@@ -115,8 +118,8 @@ class LibraryVideoDetailOut(CamelModel):
     groups: list[ShotGroupOut]
     """有镜号的组按镜号从小到大在前；没镜号的组在后，按出片完成先后。"""
     can_make_same: bool
-    """这位读者能不能拿这张卡做同款：卡挂着对话、读者打得开它（同 ``canOpenConversation``），
-    且那段对话的工作区里有 ``film.icml`` 或 ``video_shot.json``。只在详情里给。"""
+    """能不能拿这张卡做同款：卡挂着对话，且那段对话的工作区里有 ``film.icml`` 或
+    ``video_shot.json``；不看读者打不打得开那段对话、它删没删。只在详情里给。"""
 
 
 class WholeFilmVersionOut(CamelModel):
@@ -166,8 +169,81 @@ class LibraryAuthorsOut(CamelModel):
     items: list[LibraryAuthorOut]
 
 
+class HitCaseOut(CamelModel):
+    """爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。"""
+
+    job_id: uuid.UUID
+    """这一版素材片；入选、改标签、移出都按它。"""
+    card_id: uuid.UUID
+    """它在成片素材里所属的卡，按它打开那张卡的详情、定位到 ``job_id`` 这一版。"""
+    title: str | None
+    """所在对话的标题，对话删了照给。"""
+    face: FaceOut
+    """这一版的版本头；``userName`` 是这一版属主的用户名。"""
+    take: TakeOut
+    """这一版对应的出片，合成沿原作取。"""
+    tag_ids: list[uuid.UUID]
+    """所有维度上的标签，指 ``GET /library-tags`` 里的节点；空就是未标注。"""
+    tag_status: TagStatus | None
+    """打标状态；没配打标时入选后为 ``null``。"""
+    tag_error: TagErrorCode | None
+    """最近一次打标失败的原因；打成之后清掉。"""
+    added_at: datetime
+    """入选时刻，列表按它从晚到早排。"""
+
+
+class HitCasesOut(CamelModel):
+    items: list[HitCaseOut]
+    next_cursor: str | None
+    total: int | None
+    """当前筛选下一共几条；只有第一页（不带 ``cursor``）给，翻页时为 ``None``。"""
+
+
+class HitCaseEntryOut(CamelModel):
+    """一条素材片在爆款素材库里的条目。"""
+
+    tag_ids: list[uuid.UUID]
+    tag_status: TagStatus | None
+    tag_error: TagErrorCode | None
+    added_at: datetime
+    added_by: str | None
+    """把它加进来的人的用户名；账号没有用户名时为 ``None``。"""
+
+
+class HitCaseStateOut(CamelModel):
+    """一条素材片与爆款素材库的关系：能不能入选、入选了没有。"""
+
+    job_id: uuid.UUID
+    eligible: bool
+    """能不能入选：是素材片，且所在对话的工作区里有新片执行方案。已入选的也照算。"""
+    ineligible_reason: HitCaseIneligible | None
+    """不能入选的原因；能入选为 ``None``。"""
+    entry: HitCaseEntryOut | None
+    """没入选为 ``None``。"""
+
+
+class HitCaseIn(CamelModel):
+    """入选时一起写上的标签。"""
+
+    tag_ids: list[uuid.UUID] = Field(default_factory=list)
+    """取值的 id，不能是维度；重复的去掉。已入选时不看它。"""
+
+
+class HitCaseTagsIn(CamelModel):
+    """整份替换这条爆款素材在所有维度上的标签。"""
+
+    tag_ids: list[uuid.UUID]
+    """取值的 id，不能是维度；重复的去掉，空就是全部清掉。"""
+
+
 __all__ = [
     "FaceOut",
+    "HitCaseEntryOut",
+    "HitCaseIn",
+    "HitCaseOut",
+    "HitCaseStateOut",
+    "HitCaseTagsIn",
+    "HitCasesOut",
     "LibraryAuthorOut",
     "LibraryAuthorsOut",
     "LibraryVideoDetailOut",

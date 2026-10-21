@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
-import { mockLibraryVideos } from '@/testing/mocks/library'
+import { mockLibraryVersionIds, mockLibraryVideos } from '@/testing/mocks/library'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { stubScrollViewport } from '@/testing/scroll-viewport'
@@ -14,9 +14,11 @@ import { LibraryRoute } from './library-route'
 function Harness({
   onScope,
   initialVideo = null,
+  version = null,
 }: {
   onScope?: (scope: LibraryScope) => void
   initialVideo?: string | null
+  version?: string | null
 }) {
   const [scope, setScope] = useState(DEFAULT_LIBRARY_SCOPE)
   const [videoId, setVideoId] = useState(initialVideo)
@@ -32,6 +34,7 @@ function Harness({
       scope={scope}
       shareLinkOf={(id) => `https://iclip.test/library?video=${id}`}
       tabs={null}
+      versionId={version}
       videoId={videoId}
     />
   )
@@ -312,6 +315,28 @@ describe('library viewer', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
   })
 
+  it('opens on the version given in the address, and its 爆款素材 tab is about that version', async () => {
+    const card = mockLibraryVideos().find((video) => video.title === SKATE)
+    const second = mockLibraryVersionIds(SKATE)[1]
+    if (card === undefined || second === undefined) throw new Error('滑板女孩至少要有两版')
+    const stateReads: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      const path = new URL(request.url).pathname
+      if (path.includes('/library/hit-cases/')) stateReads.push(path.split('/').at(-1) ?? '')
+    })
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness initialVideo={card.id} version={second} />)
+
+    const viewer = await screen.findByRole('dialog', { name: SKATE })
+    const versions = await within(viewer).findByRole('group', { name: '该镜头组的版本' })
+    expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('2')
+
+    await user.click(within(viewer).getByRole('tab', { name: '爆款素材' }))
+    expect(await within(viewer).findByRole('button', { name: '加入爆款素材库' })).toBeVisible()
+    // 只问过地址里那一版，没问过卡面那一版。
+    expect(new Set(stateReads)).toEqual(new Set([second]))
+  })
+
   it('opens a card with every version of its shot group and seeks to a cut', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
@@ -496,7 +521,7 @@ describe('library viewer', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    // 挂住详情；放行后不回响应，交给默认的 mock（属主的卡做得了同款）。
+    // 挂住详情；放行后不回响应，交给默认的 mock（挂着对话的卡做得了同款）。
     server.use(
       http.get('*/api/library/videos/:id', async () => {
         await held
@@ -526,8 +551,11 @@ describe('library viewer', () => {
   it('explains why a card cannot be made the same way, on focus and on click', async () => {
     const user = userEvent.setup()
     const { router } = await renderWithProviders(<Harness />)
-    const viewer = await openCard(user, SANDALS)
-    await within(viewer).findByRole('group', { name: '镜头组' })
+    // 不挂对话的卡没有对话可拷，做不了同款。
+    const viewer = await openCard(user, '接口提交')
+    // 只有一组一版，没有镜头组那一行；等「版本」出现，就是详情读回来了。
+    await user.click(within(viewer).getByRole('tab', { name: '参数与来源' }))
+    await within(viewer).findByText('第 1 版', { selector: 'dd' })
     const search = router.state.location.search
 
     const make = within(viewer).getByRole('button', { name: '做同款' })
@@ -543,7 +571,7 @@ describe('library viewer', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
       '该视频没有可用的制作文件，无法做同款',
     )
-    expect(screen.getByRole('dialog', { name: SANDALS })).toBe(viewer)
+    expect(screen.getByRole('dialog', { name: '接口提交' })).toBe(viewer)
     expect(router.state.location.search).toEqual(search)
   })
 

@@ -182,71 +182,6 @@ export const zBrandTemplatesOut = z.object({
 })
 
 /**
- * CategoryCountOut
- */
-export const zCategoryCountOut = z.object({
-  count: z.int(),
-  name: z.enum([
-    '高跟鞋',
-    '平底鞋',
-    '乐福鞋',
-    '牛津鞋',
-    '一脚蹬',
-    '穆勒鞋',
-    '拖鞋',
-    '短靴',
-    '中筒靴',
-    '及膝靴',
-    '过膝靴',
-    '高跟凉鞋',
-    '坡跟凉鞋',
-    '厚底凉鞋',
-    '平底凉鞋',
-    '夹趾拖',
-    '凉拖鞋',
-    '运动凉鞋',
-    '跑鞋',
-    '足球鞋',
-    '篮球鞋',
-    '啦啦队鞋',
-    '棒&垒球鞋',
-    '滑板鞋',
-    '舞蹈鞋',
-    '橄榄球鞋',
-    '高尔夫鞋',
-    '网球鞋',
-    '训练鞋',
-    '女性骑行鞋',
-    '健步鞋',
-    '板鞋',
-    '徒步鞋',
-    '徒步靴',
-    '雪地靴',
-    '雨靴',
-    '水鞋',
-    '猎靴',
-    '医疗用鞋',
-    '餐厨用鞋',
-    '军事用靴',
-    '工业用鞋',
-    '工业用靴',
-    '皮带',
-    '钱包',
-    '包',
-    '袜子',
-    '鞋垫',
-    'T恤',
-    '衬衫',
-    '卫衣',
-    '毛衣',
-    '外套',
-    '裤子',
-    '半身裙',
-    '连衣裙',
-  ]),
-})
-
-/**
  * ClipEditDurationOut
  *
  * 片段编辑接受的实际参考视频时长范围，单位秒。
@@ -879,6 +814,49 @@ export const zHttpValidationError = z.object({
 })
 
 /**
+ * HitCaseEntryOut
+ *
+ * 一条素材片在爆款素材库里的条目。
+ */
+export const zHitCaseEntryOut = z.object({
+  addedAt: z.iso.datetime(),
+  addedBy: z.string().nullable(),
+  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagIds: z.array(z.uuid()),
+  tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
+})
+
+/**
+ * HitCaseIn
+ *
+ * 入选时一起写上的标签。
+ */
+export const zHitCaseIn = z.object({
+  tagIds: z.array(z.uuid()).optional(),
+})
+
+/**
+ * HitCaseStateOut
+ *
+ * 一条素材片与爆款素材库的关系：能不能入选、入选了没有。
+ */
+export const zHitCaseStateOut = z.object({
+  eligible: z.boolean(),
+  entry: zHitCaseEntryOut.nullable(),
+  ineligibleReason: z.enum(['not_material', 'no_conversation', 'no_treatment']).nullable(),
+  jobId: z.uuid(),
+})
+
+/**
+ * HitCaseTagsIn
+ *
+ * 整份替换这条爆款素材在所有维度上的标签。
+ */
+export const zHitCaseTagsIn = z.object({
+  tagIds: z.array(z.uuid()),
+})
+
+/**
  * ImageContent
  */
 export const zImageContent = z.object({
@@ -969,6 +947,31 @@ export const zLibraryAuthorOut = z.object({
  */
 export const zLibraryAuthorsOut = z.object({
   items: z.array(zLibraryAuthorOut),
+})
+
+/**
+ * LibraryTagCreateIn
+ *
+ * 加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。
+ */
+export const zLibraryTagCreateIn = z.object({
+  autoFill: z.literal('ai').nullish(),
+  guide: z.string().nullish(),
+  name: z.string(),
+  parentId: z.uuid().nullish(),
+  position: z.int().nullish(),
+})
+
+/**
+ * LibraryTagUpdateIn
+ *
+ * 改一个标签，不给的项不动；上级改不了。
+ */
+export const zLibraryTagUpdateIn = z.object({
+  autoFill: z.literal('ai').nullish(),
+  guide: z.string().nullish(),
+  name: z.string().nullish(),
+  position: z.int().nullish(),
 })
 
 /**
@@ -1117,85 +1120,29 @@ export const zReferenceCreateIn = z.object({
 })
 
 /**
+ * ReferenceFiltersOut
+ */
+export const zReferenceFiltersOut = z.object({
+  owners: z.array(zOwnerCountOut),
+})
+
+/**
+ * ReferenceTagsIn
+ *
+ * 整份替换这条参考视频在所有维度上的标签。
+ */
+export const zReferenceTagsIn = z.object({
+  tagIds: z.array(z.uuid()),
+})
+
+/**
  * ReferenceUpdateIn
  *
- * 整份改：拆解正文与两组标签都照给的存，重复的标签去掉。
+ * 改拆解正文。
  */
 export const zReferenceUpdateIn = z.object({
-  categories: z.array(
-    z.enum([
-      '高跟鞋',
-      '平底鞋',
-      '乐福鞋',
-      '牛津鞋',
-      '一脚蹬',
-      '穆勒鞋',
-      '拖鞋',
-      '短靴',
-      '中筒靴',
-      '及膝靴',
-      '过膝靴',
-      '高跟凉鞋',
-      '坡跟凉鞋',
-      '厚底凉鞋',
-      '平底凉鞋',
-      '夹趾拖',
-      '凉拖鞋',
-      '运动凉鞋',
-      '跑鞋',
-      '足球鞋',
-      '篮球鞋',
-      '啦啦队鞋',
-      '棒&垒球鞋',
-      '滑板鞋',
-      '舞蹈鞋',
-      '橄榄球鞋',
-      '高尔夫鞋',
-      '网球鞋',
-      '训练鞋',
-      '女性骑行鞋',
-      '健步鞋',
-      '板鞋',
-      '徒步鞋',
-      '徒步靴',
-      '雪地靴',
-      '雨靴',
-      '水鞋',
-      '猎靴',
-      '医疗用鞋',
-      '餐厨用鞋',
-      '军事用靴',
-      '工业用鞋',
-      '工业用靴',
-      '皮带',
-      '钱包',
-      '包',
-      '袜子',
-      '鞋垫',
-      'T恤',
-      '衬衫',
-      '卫衣',
-      '毛衣',
-      '外套',
-      '裤子',
-      '半身裙',
-      '连衣裙',
-    ]),
-  ),
   document: z.string().min(1),
   version: z.int(),
-  videoTypes: z.array(
-    z.enum([
-      'live_clip',
-      'slideshow',
-      'drama',
-      'review',
-      'talking_head',
-      'try_on',
-      'lifestyle',
-      'product_showcase',
-    ]),
-  ),
 })
 
 /**
@@ -1206,86 +1153,17 @@ export const zReferenceUpdateIn = z.object({
 export const zReferenceVideoItemOut = z.object({
   breakdownStatus: z.enum(['pending', 'running', 'completed', 'failed']),
   canEdit: z.boolean(),
-  categories: z.array(
-    z.enum([
-      '高跟鞋',
-      '平底鞋',
-      '乐福鞋',
-      '牛津鞋',
-      '一脚蹬',
-      '穆勒鞋',
-      '拖鞋',
-      '短靴',
-      '中筒靴',
-      '及膝靴',
-      '过膝靴',
-      '高跟凉鞋',
-      '坡跟凉鞋',
-      '厚底凉鞋',
-      '平底凉鞋',
-      '夹趾拖',
-      '凉拖鞋',
-      '运动凉鞋',
-      '跑鞋',
-      '足球鞋',
-      '篮球鞋',
-      '啦啦队鞋',
-      '棒&垒球鞋',
-      '滑板鞋',
-      '舞蹈鞋',
-      '橄榄球鞋',
-      '高尔夫鞋',
-      '网球鞋',
-      '训练鞋',
-      '女性骑行鞋',
-      '健步鞋',
-      '板鞋',
-      '徒步鞋',
-      '徒步靴',
-      '雪地靴',
-      '雨靴',
-      '水鞋',
-      '猎靴',
-      '医疗用鞋',
-      '餐厨用鞋',
-      '军事用靴',
-      '工业用鞋',
-      '工业用靴',
-      '皮带',
-      '钱包',
-      '包',
-      '袜子',
-      '鞋垫',
-      'T恤',
-      '衬衫',
-      '卫衣',
-      '毛衣',
-      '外套',
-      '裤子',
-      '半身裙',
-      '连衣裙',
-    ]),
-  ),
   createdAt: z.iso.datetime(),
   errorCode: z
     .enum(['video_unreadable', 'model_call_failed', 'model_failed', 'timeout'])
     .nullable(),
   id: z.uuid(),
+  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagIds: z.array(z.uuid()),
+  tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
   updatedAt: z.iso.datetime(),
   userName: z.string().nullable(),
   version: z.int(),
-  videoTypes: z.array(
-    z.enum([
-      'live_clip',
-      'slideshow',
-      'drama',
-      'review',
-      'talking_head',
-      'try_on',
-      'lifestyle',
-      'product_showcase',
-    ]),
-  ),
   videoUrl: z.string(),
 })
 
@@ -1522,6 +1400,38 @@ export const zGenerationsPageOut = z.object({
 })
 
 /**
+ * TagCountsOut
+ *
+ * 带这个标签或它任一下级的条目数。
+ */
+export const zTagCountsOut = z.object({
+  hitCases: z.int(),
+  references: z.int(),
+})
+
+/**
+ * LibraryTagOut
+ *
+ * 标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。
+ */
+export const zLibraryTagOut = z.object({
+  autoFill: z.literal('ai').nullable(),
+  children: z.array(z.lazy((): any => zLibraryTagOut)),
+  counts: zTagCountsOut,
+  guide: z.string().nullable(),
+  id: z.uuid(),
+  name: z.string(),
+  position: z.int(),
+})
+
+/**
+ * LibraryTagsOut
+ */
+export const zLibraryTagsOut = z.object({
+  dimensions: z.array(zLibraryTagOut),
+})
+
+/**
  * TakeOut
  *
  * 一版素材片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
@@ -1536,6 +1446,32 @@ export const zTakeOut = z.object({
   resolution: z.string().nullable(),
   script: zScriptOut.nullable(),
   seconds: z.int().nullable(),
+})
+
+/**
+ * HitCaseOut
+ *
+ * 爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。
+ */
+export const zHitCaseOut = z.object({
+  addedAt: z.iso.datetime(),
+  cardId: z.uuid(),
+  face: zFaceOut,
+  jobId: z.uuid(),
+  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagIds: z.array(z.uuid()),
+  tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
+  take: zTakeOut,
+  title: z.string().nullable(),
+})
+
+/**
+ * HitCasesOut
+ */
+export const zHitCasesOut = z.object({
+  items: z.array(zHitCaseOut),
+  nextCursor: z.string().nullable(),
+  total: z.int().nullable(),
 })
 
 /**
@@ -1770,88 +1706,19 @@ export const zTestVideoOut = z.object({
 export const zReferenceVideoOut = z.object({
   breakdownStatus: z.enum(['pending', 'running', 'completed', 'failed']),
   canEdit: z.boolean(),
-  categories: z.array(
-    z.enum([
-      '高跟鞋',
-      '平底鞋',
-      '乐福鞋',
-      '牛津鞋',
-      '一脚蹬',
-      '穆勒鞋',
-      '拖鞋',
-      '短靴',
-      '中筒靴',
-      '及膝靴',
-      '过膝靴',
-      '高跟凉鞋',
-      '坡跟凉鞋',
-      '厚底凉鞋',
-      '平底凉鞋',
-      '夹趾拖',
-      '凉拖鞋',
-      '运动凉鞋',
-      '跑鞋',
-      '足球鞋',
-      '篮球鞋',
-      '啦啦队鞋',
-      '棒&垒球鞋',
-      '滑板鞋',
-      '舞蹈鞋',
-      '橄榄球鞋',
-      '高尔夫鞋',
-      '网球鞋',
-      '训练鞋',
-      '女性骑行鞋',
-      '健步鞋',
-      '板鞋',
-      '徒步鞋',
-      '徒步靴',
-      '雪地靴',
-      '雨靴',
-      '水鞋',
-      '猎靴',
-      '医疗用鞋',
-      '餐厨用鞋',
-      '军事用靴',
-      '工业用鞋',
-      '工业用靴',
-      '皮带',
-      '钱包',
-      '包',
-      '袜子',
-      '鞋垫',
-      'T恤',
-      '衬衫',
-      '卫衣',
-      '毛衣',
-      '外套',
-      '裤子',
-      '半身裙',
-      '连衣裙',
-    ]),
-  ),
   createdAt: z.iso.datetime(),
   document: z.string().nullable(),
   errorCode: z
     .enum(['video_unreadable', 'model_call_failed', 'model_failed', 'timeout'])
     .nullable(),
   id: z.uuid(),
+  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagIds: z.array(z.uuid()),
+  tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
   testVideo: zTestVideoOut.nullable(),
   updatedAt: z.iso.datetime(),
   userName: z.string().nullable(),
   version: z.int(),
-  videoTypes: z.array(
-    z.enum([
-      'live_clip',
-      'slideshow',
-      'drama',
-      'review',
-      'talking_head',
-      'try_on',
-      'lifestyle',
-      'product_showcase',
-    ]),
-  ),
   videoUrl: z.string(),
 })
 
@@ -2739,34 +2606,6 @@ export const zVideoTaskOut = z.object({
   status: z.enum(['queued', 'running', 'succeeded', 'failed']),
   task_id: z.uuid(),
   type: z.literal('video').optional().default('video'),
-})
-
-/**
- * VideoTypeCountOut
- */
-export const zVideoTypeCountOut = z.object({
-  count: z.int(),
-  label: z.string(),
-  rule: z.string(),
-  value: z.enum([
-    'live_clip',
-    'slideshow',
-    'drama',
-    'review',
-    'talking_head',
-    'try_on',
-    'lifestyle',
-    'product_showcase',
-  ]),
-})
-
-/**
- * ReferenceFiltersOut
- */
-export const zReferenceFiltersOut = z.object({
-  categories: z.array(zCategoryCountOut),
-  owners: z.array(zOwnerCountOut),
-  videoTypes: z.array(zVideoTypeCountOut),
 })
 
 /**
@@ -3751,7 +3590,99 @@ export const zSearchVideosInspirationsVideosSearchPostResponse = zVideoSearchOut
 /**
  * Successful Response
  */
+export const zLibraryTagsLibraryTagsGetResponse = zLibraryTagsOut
+
+export const zCreateLibraryTagLibraryTagsPostBody = zLibraryTagCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateLibraryTagLibraryTagsPostResponse = zLibraryTagOut
+
+export const zDeleteLibraryTagLibraryTagsTagIdDeletePath = z.object({
+  tag_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDeleteLibraryTagLibraryTagsTagIdDeleteResponse = z.void()
+
+export const zUpdateLibraryTagLibraryTagsTagIdPatchBody = zLibraryTagUpdateIn
+
+export const zUpdateLibraryTagLibraryTagsTagIdPatchPath = z.object({
+  tag_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateLibraryTagLibraryTagsTagIdPatchResponse = zLibraryTagOut
+
+/**
+ * Successful Response
+ */
 export const zAuthorsLibraryAuthorsGetResponse = zLibraryAuthorsOut
+
+export const zListHitCasesLibraryHitCasesGetQuery = z.object({
+  tags: z.array(z.uuid()).nullish(),
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  cursor: z.string().nullish(),
+})
+
+/**
+ * Successful Response
+ */
+export const zListHitCasesLibraryHitCasesGetResponse = zHitCasesOut
+
+export const zRemoveHitCaseLibraryHitCasesJobIdDeletePath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRemoveHitCaseLibraryHitCasesJobIdDeleteResponse = z.void()
+
+export const zHitCaseStateLibraryHitCasesJobIdGetPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zHitCaseStateLibraryHitCasesJobIdGetResponse = zHitCaseStateOut
+
+export const zAddHitCaseLibraryHitCasesJobIdPutBody = zHitCaseIn
+
+export const zAddHitCaseLibraryHitCasesJobIdPutPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAddHitCaseLibraryHitCasesJobIdPutResponse = zHitCaseStateOut
+
+export const zRetagHitCaseLibraryHitCasesJobIdTaggingPostPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRetagHitCaseLibraryHitCasesJobIdTaggingPostResponse = zHitCaseStateOut
+
+export const zReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutBody = zHitCaseTagsIn
+
+export const zReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponse = zHitCaseStateOut
 
 export const zVideosLibraryVideosGetQuery = z.object({
   userName: z.string().max(150).nullish(),
@@ -3797,82 +3728,7 @@ export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
 export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
 
 export const zListReferencesReferencesGetQuery = z.object({
-  videoTypes: z
-    .array(
-      z.enum([
-        'live_clip',
-        'slideshow',
-        'drama',
-        'review',
-        'talking_head',
-        'try_on',
-        'lifestyle',
-        'product_showcase',
-      ]),
-    )
-    .nullish(),
-  categories: z
-    .array(
-      z.enum([
-        '高跟鞋',
-        '平底鞋',
-        '乐福鞋',
-        '牛津鞋',
-        '一脚蹬',
-        '穆勒鞋',
-        '拖鞋',
-        '短靴',
-        '中筒靴',
-        '及膝靴',
-        '过膝靴',
-        '高跟凉鞋',
-        '坡跟凉鞋',
-        '厚底凉鞋',
-        '平底凉鞋',
-        '夹趾拖',
-        '凉拖鞋',
-        '运动凉鞋',
-        '跑鞋',
-        '足球鞋',
-        '篮球鞋',
-        '啦啦队鞋',
-        '棒&垒球鞋',
-        '滑板鞋',
-        '舞蹈鞋',
-        '橄榄球鞋',
-        '高尔夫鞋',
-        '网球鞋',
-        '训练鞋',
-        '女性骑行鞋',
-        '健步鞋',
-        '板鞋',
-        '徒步鞋',
-        '徒步靴',
-        '雪地靴',
-        '雨靴',
-        '水鞋',
-        '猎靴',
-        '医疗用鞋',
-        '餐厨用鞋',
-        '军事用靴',
-        '工业用鞋',
-        '工业用靴',
-        '皮带',
-        '钱包',
-        '包',
-        '袜子',
-        '鞋垫',
-        'T恤',
-        '衬衫',
-        '卫衣',
-        '毛衣',
-        '外套',
-        '裤子',
-        '半身裙',
-        '连衣裙',
-      ]),
-    )
-    .nullish(),
+  tags: z.array(z.uuid()).nullish(),
   userName: z.string().max(150).nullish(),
   q: z.string().max(100).nullish(),
   since: z.iso.datetime().nullish(),
@@ -3935,6 +3791,26 @@ export const zRerunReferenceReferencesReferenceIdBreakdownsPostPath = z.object({
  * Successful Response
  */
 export const zRerunReferenceReferencesReferenceIdBreakdownsPostResponse = zReferenceVideoOut
+
+export const zRetagReferenceReferencesReferenceIdTaggingPostPath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRetagReferenceReferencesReferenceIdTaggingPostResponse = zReferenceVideoOut
+
+export const zReplaceReferenceTagsReferencesReferenceIdTagsPutBody = zReferenceTagsIn
+
+export const zReplaceReferenceTagsReferencesReferenceIdTagsPutPath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReplaceReferenceTagsReferencesReferenceIdTagsPutResponse = zReferenceVideoOut
 
 export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostBody = zTestVideoIn
 

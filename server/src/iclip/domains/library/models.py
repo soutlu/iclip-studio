@@ -40,4 +40,28 @@ class VideoCursor:
     video_id: uuid.UUID
 
 
-__all__ = ["Orientation", "Scope", "VideoCursor", "WholeFilmScope"]
+HitCaseIneligible = Literal["not_material", "no_conversation", "no_treatment"]
+"""一条视频为什么进不了爆款素材库：``not_material`` 不是素材片（资料库收录口径，试生成除外）；
+``no_conversation`` 不挂对话或那段对话不存在；``no_treatment`` 所在对话的工作区里没有新片执行方案。"""
+
+
+@dataclass(frozen=True, slots=True)
+class MaterialSource:
+    """一条生成记录够不够格进爆款素材库要看的事实。对话按 job 自己的 ``conversation_id`` 认，删了的
+    照样算；不挂对话或对话不存在时两项都是 ``None``。"""
+
+    job_id: uuid.UUID
+    is_material: bool
+    conversation_id: uuid.UUID | None
+    conversation_owner: uuid.UUID | None
+    """所在对话的属主：新片执行方案在他名下那段对话的工作区里。"""
+
+
+__all__ = [
+    "HitCaseIneligible",
+    "MaterialSource",
+    "Orientation",
+    "Scope",
+    "VideoCursor",
+    "WholeFilmScope",
+]

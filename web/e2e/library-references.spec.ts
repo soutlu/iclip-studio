@@ -3,13 +3,13 @@ import { login } from './login'
 
 const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.meta.url).pathname
 
-test('资料库切到灵感库，页签与两组标签筛选都在地址里，退回还原；键盘能切页签', async ({ page }) => {
+test('资料库切到灵感库，页签与标签筛选都在地址里，退回还原；键盘能切页签', async ({ page }) => {
   await page.goto('/')
   await login(page, 'tester')
   await page.getByRole('button', { name: '资料库' }).click()
 
   const tabs = page.getByRole('tablist', { name: '资料库内容' }).getByRole('tab')
-  await expect(tabs).toHaveText(['成片素材', '灵感库', '成片'])
+  await expect(tabs).toHaveText(['成片素材', '灵感库', '爆款素材库', '成片'])
   const videosTab = page.getByRole('tab', { name: '成片素材' })
   await expect(videosTab).toHaveAttribute('aria-selected', 'true')
   await videosTab.focus()
@@ -20,22 +20,28 @@ test('资料库切到灵感库，页签与两组标签筛选都在地址里，�
   const main = page.getByRole('main', { name: '资料库' })
   await expect(main.getByText('共 13 条')).toBeVisible()
 
-  await main.getByRole('button', { name: '片子类型：片子类型' }).click()
-  const types = page.getByRole('dialog', { name: '选择片子类型' })
-  await types.getByRole('checkbox', { name: /场景种草/ }).click()
-  await types.getByRole('checkbox', { name: /图文混剪/ }).click()
-  await expect(main.getByText('找到 3 条')).toBeVisible()
+  // 选大类也算它的小类：开箱测评型本身一条，标准开箱流程一条。
+  await main.getByRole('button', { name: '内容结构：内容结构' }).click()
+  const structure = page.getByRole('dialog', { name: '选择内容结构' })
+  await structure.getByRole('option', { name: /开箱测评型/ }).click()
+  await expect(main.getByText('找到 2 条')).toBeVisible()
+  // 不同维度都要命中。
+  await main.getByRole('button', { name: '品类：品类' }).click()
+  const category = page.getByRole('dialog', { name: '选择品类' })
+  await category.getByRole('combobox', { name: '搜索品类' }).fill('拖鞋')
+  await category.getByRole('option', { name: /^拖鞋/ }).click()
+  await expect(main.getByText('找到 2 条')).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(page).toHaveURL(/videoTypes=/)
+  await expect(page).toHaveURL(/tags=/)
 
   // mock 会话不跨刷新保存，用离开再退回验证页签与筛选从地址还原。
   await page.getByRole('button', { name: '需求单' }).click()
   await expect(page).toHaveURL('/tasks')
   await page.goBack()
   await expect(page.getByRole('tab', { name: '灵感库' })).toHaveAttribute('aria-selected', 'true')
-  // 条件按清单先后排：图文混剪在场景种草前面。
-  await expect(main.getByRole('button', { name: '片子类型：图文混剪 +1' })).toBeVisible()
-  await expect(main.getByText('找到 3 条')).toBeVisible()
+  await expect(main.getByRole('button', { name: '内容结构：开箱测评型' })).toBeVisible()
+  await expect(main.getByRole('button', { name: '品类：拖鞋' })).toBeVisible()
+  await expect(main.getByText('找到 2 条')).toBeVisible()
 })
 
 test('属主试生成：提交后显示生成中，完成后原片与试生成两格左右并排', async ({ page }) => {
@@ -45,7 +51,7 @@ test('属主试生成：提交后显示生成中，完成后原片与试生成�
   await page.getByRole('tab', { name: '灵感库' }).click()
   const main = page.getByRole('main', { name: '资料库' })
 
-  const name = '上身展示 · 短靴 · 卫衣 · 裤子'
+  const name = 'TikTok · 短靴 · 卫衣 · 裤子 · 户外/公园散步 · 动态上身展示'
   await main
     .getByRole('article', { name })
     .getByRole('button', { name: /查看详情/ })
@@ -73,7 +79,7 @@ test('属主试生成：提交后显示生成中，完成后原片与试生成�
   expect(result.x).toBeGreaterThanOrEqual(original.x + original.width)
 })
 
-test('上传一条视频：先排队、拆完自动出标签；改拆解保存；同一个文件再传一次打开原来那条', async ({
+test('上传一条视频：先排队、拆完接着打标、打完自动出标签；改拆解保存；同一个文件再传一次打开原来那条', async ({
   page,
 }) => {
   await page.goto('/')
@@ -93,11 +99,12 @@ test('上传一条视频：先排队、拆完自动出标签；改拆解保存�
   await expect(main.getByText('共 14 条')).toBeVisible()
   const newest = main.getByRole('article').first()
   await expect(newest.getByText(/排队中|拆解中/)).toBeVisible()
-  // mock 几秒后拆完，列表每 5 秒轮询一次。
-  await expect(newest).toHaveAccessibleName('开箱测评 · 产品展示 · 拖鞋', { timeout: 15_000 })
+  // mock 几秒后拆完、再过几秒打完标，列表每 5 秒轮询一次。
+  const tagged = '拖鞋 · 居家/日常放松 · 标准开箱流程'
+  await expect(newest).toHaveAccessibleName(tagged, { timeout: 20_000 })
 
   await newest.getByRole('button', { name: /查看详情/ }).click()
-  const dialog = page.getByRole('dialog', { name: '开箱测评 · 产品展示 · 拖鞋' })
+  const dialog = page.getByRole('dialog', { name: tagged })
   await expect(dialog.getByRole('heading', { name: '出场元素' })).toBeVisible()
   await dialog.getByRole('button', { name: '编辑拆解' }).click()
   const editor = dialog.getByRole('textbox', { name: '拆解' })

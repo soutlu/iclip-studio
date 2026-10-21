@@ -1,4 +1,5 @@
-"""做同款的适配：对话域建对话时的拷贝端口与资料库的「做得了同款」判断，接到文件存储与素材台账上。
+"""做同款的适配：对话域建对话时的认源与拷贝端口、资料库的「做得了同款」判断，接到资料库读模型、
+文件存储与素材台账上。
 
 拷哪几份文件、拷过去叫什么、什么样的对话做得了同款都只在这里定，两处共用。"""
 
@@ -10,11 +11,13 @@ from typing import Final
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import namespace_for
+from iclip.domains.library.repository import LibraryReports
 from iclip.platform.file_store.store import FileStore
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 
 TREATMENT_PATH: Final = "treatment.md"
-"""AI 导演写的创作方案；只是 skill 里的约定，代码里别处不读它。"""
+"""AI 导演写的新片执行方案，路径是 skill 里的约定。做同款把它拷进新对话；爆款素材库看素材片所在
+对话有没有它来判断能否入选，并按它的内容打标（见 ``app/library_tagging.py``）。"""
 
 SAME_STYLE_FILES: Final = (
     (TREATMENT_PATH, TREATMENT_PATH),
@@ -66,4 +69,18 @@ class SameStyleCopier:
         return True
 
 
-__all__ = ["SameStyleCopier"]
+class LibrarySameStyleSource:
+    """对话域 ``SameStyleSource`` 的实现：按资料库的卡认源。
+
+    挂着对话的卡以对话 id 为卡 id，不挂对话的以出片 id 为卡 id、没有属主；所以卡有属主，卡 id
+    就是那段对话的 id。资料库不看删除标记，删了的对话照样认。"""
+
+    def __init__(self, reports: LibraryReports) -> None:
+        self._reports = reports
+
+    async def __call__(self, card_id: uuid.UUID) -> uuid.UUID | None:
+        row = await self._reports.card_of(card_id)
+        return None if row is None else row.conversation_owner
+
+
+__all__ = ["LibrarySameStyleSource", "SameStyleCopier"]

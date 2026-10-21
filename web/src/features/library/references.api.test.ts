@@ -10,33 +10,36 @@ import {
   nearestTestAspectRatio,
   referenceSearchParams,
   useReference,
+  type ReferenceDetail,
+  type TagStatus,
   type TestVideo,
 } from './references.api'
 
 const NOW = new Date('2026-09-23T12:00:00Z')
+
+const TAG_A = '5a900000-0000-4000-8000-000000000001'
+const TAG_B = '5a900000-0000-4000-8000-000000000002'
 
 describe('referenceSearchParams', () => {
   it('默认范围只带页大小', () => {
     expect(referenceSearchParams(DEFAULT_REFERENCE_SCOPE, null, NOW).toString()).toBe('limit=24')
   })
 
-  it('两组标签是重复的同名参数，关键词去掉首尾空白，游标原样带上', () => {
+  it('标签是重复的同名参数，关键词去掉首尾空白，游标原样带上', () => {
     const params = referenceSearchParams(
       {
-        categories: ['拖鞋', '卫衣'],
         q: '  滑板 ',
         range: '7d',
         since: null,
+        tags: [TAG_A, TAG_B],
         until: null,
         userName: 'Maya.Cheng',
-        videoTypes: ['try_on', 'lifestyle'],
       },
       '2026-09-20T10:00:00+00:00|abc',
       NOW,
     )
 
-    expect(params.getAll('videoTypes')).toEqual(['try_on', 'lifestyle'])
-    expect(params.getAll('categories')).toEqual(['拖鞋', '卫衣'])
+    expect(params.getAll('tags')).toEqual([TAG_A, TAG_B])
     expect(params.get('q')).toBe('滑板')
     expect(params.get('userName')).toBe('Maya.Cheng')
     expect(params.get('since')).toBe('2026-09-16T12:00:00.000Z')
@@ -44,22 +47,28 @@ describe('referenceSearchParams', () => {
   })
 })
 
+const ID = '5ef00000-0000-4000-8000-000000000043'
+
+const detailOf = (overrides: Partial<ReferenceDetail> = {}): ReferenceDetail => ({
+  breakdownStatus: 'completed',
+  canEdit: true,
+  createdAt: '2026-09-23T11:00:00Z',
+  document: '# 拆解',
+  errorCode: null,
+  id: ID,
+  tagError: null,
+  tagIds: [],
+  tagStatus: 'completed',
+  testVideo: null,
+  updatedAt: '2026-09-23T11:00:00Z',
+  userName: 'tester',
+  version: 1,
+  videoUrl: 'https://assets.example.com/a.mp4',
+  ...overrides,
+})
+
 describe('createReference', () => {
-  const reference = {
-    breakdownStatus: 'pending',
-    canEdit: true,
-    categories: [],
-    createdAt: '2026-09-23T12:00:00Z',
-    document: null,
-    errorCode: null,
-    id: '5ef00000-0000-4000-8000-000000000042',
-    testVideo: null,
-    updatedAt: '2026-09-23T12:00:00Z',
-    userName: 'tester',
-    version: 1,
-    videoTypes: [],
-    videoUrl: 'https://assets.example.com/a.mp4',
-  }
+  const reference = detailOf({ breakdownStatus: 'pending', document: null, tagStatus: null })
 
   it.each([
     [201, true],
@@ -97,7 +106,22 @@ describe('nearestTestAspectRatio', () => {
 })
 
 describe('useReference', () => {
-  const ID = '5ef00000-0000-4000-8000-000000000043'
+  /** 挂上详情查询，答复由 `current()` 现给，交回读了几次与查询结果。 */
+  const watch = (current: () => ReferenceDetail) => {
+    const counter = { reads: 0 }
+    server.use(
+      http.get('*/api/references/:id', () => {
+        counter.reads += 1
+        return HttpResponse.json(current())
+      }),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useReference(ID), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children),
+    })
+    return { counter, result }
+  }
 
   it('试生成进行中时轮询，结束后停', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -109,47 +133,48 @@ describe('useReference', () => {
         status: 'running',
         url: null,
       }
-      let reads = 0
-      server.use(
-        http.get('*/api/references/:id', () => {
-          reads += 1
-          return HttpResponse.json({
-            breakdownStatus: 'completed',
-            canEdit: true,
-            categories: [],
-            createdAt: '2026-09-23T11:00:00Z',
-            document: '# 拆解',
-            errorCode: null,
-            id: ID,
-            testVideo,
-            updatedAt: '2026-09-23T11:00:00Z',
-            userName: 'tester',
-            version: 1,
-            videoTypes: [],
-            videoUrl: 'https://assets.example.com/a.mp4',
-          })
-        }),
-      )
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      const { result } = renderHook(() => useReference(ID), {
-        wrapper: ({ children }: { children: ReactNode }) =>
-          createElement(QueryClientProvider, { client: queryClient }, children),
-      })
+      const { counter, result } = watch(() => detailOf({ testVideo }))
       await waitFor(() => expect(result.current.data?.testVideo?.status).toBe('running'))
-      expect(reads).toBe(1)
+      expect(counter.reads).toBe(1)
 
       await vi.advanceTimersByTimeAsync(5000)
-      await waitFor(() => expect(reads).toBe(2))
+      await waitFor(() => expect(counter.reads).toBe(2))
 
       testVideo = { ...testVideo, status: 'completed', url: 'https://assets.example.com/t.mp4' }
       await vi.advanceTimersByTimeAsync(5000)
       await waitFor(() => expect(result.current.data?.testVideo?.status).toBe('completed'))
-      const settled = reads
+      const settled = counter.reads
 
       await vi.advanceTimersByTimeAsync(20_000)
-      expect(reads).toBe(settled)
+      expect(counter.reads).toBe(settled)
     } finally {
       vi.useRealTimers()
     }
   })
+
+  it.each(['completed', 'failed'] as const)(
+    '打标排队或打标中时轮询，到 %s 就停',
+    async (terminal) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        let tagStatus: TagStatus = 'pending'
+        const { counter, result } = watch(() => detailOf({ tagStatus }))
+        await waitFor(() => expect(result.current.data?.tagStatus).toBe('pending'))
+
+        tagStatus = 'running'
+        await vi.advanceTimersByTimeAsync(5000)
+        await waitFor(() => expect(result.current.data?.tagStatus).toBe('running'))
+
+        tagStatus = terminal
+        await vi.advanceTimersByTimeAsync(5000)
+        await waitFor(() => expect(result.current.data?.tagStatus).toBe(terminal))
+        const settled = counter.reads
+
+        await vi.advanceTimersByTimeAsync(20_000)
+        expect(counter.reads).toBe(settled)
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 })

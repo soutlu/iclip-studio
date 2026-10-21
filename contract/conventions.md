@@ -278,7 +278,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - **拷过去的**：源工作区里有的才拷，`treatment.md` 原名，`film.icml` 改名 `old_film.icml`，`film.icrun` 原名，`video_shot.json` 改名 `old_video_shot.json`；连同整份素材台账。文件版本从 1 起。两份改名的不会自动打开制作页、分镜页，由 AI 导演改完再改回原名。其余文件（`brief.md`、`references/` 等）一概不拷。
 - **不拷的**：对话历史、运行记录、出片记录（新对话不继承，不是分叉）；行上 `forkedFrom` 与 `forkTurn` 都是 `null`。
-- 源的可见范围同分叉：看不见是 `404`，治理者连墓碑也能拿来做。源在跑也照拷。源工作区里既没有 `film.icml` 也没有 `video_shot.json` 是 `422`。两种失败都不建对话。
+- 源按资料库认，不看调用者打不打得开那段对话、它删没删：调用者没有 `generation:read`、或 `sameAs` 不是挂着对话的资料库卡是 `404`；调用者仍打不开源对话。源在跑也照拷。源工作区里既没有 `film.icml` 也没有 `video_shot.json` 是 `422`。两种失败都不建对话。
 - 带同一个 `id` 重发时这段对话已经在了，答复它（`200`）、不再拷，建好之后改过的文件不会被盖掉。
 - 先拷文件与台账，最后落对话行：`created` 帧发出时文件已经在了，中途失败只留下寻址不到的数据。
 
@@ -546,13 +546,13 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 13. 资料库 (Library)
 
-「成片素材」页（全站素材片连同出片时脚本）的三个只读端点与「成片」页（全站导出的成片）的两个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张素材卡是一段对话的分镜，装着这段对话读得到的全部素材片；一张成片卡装着一段对话自己的全部导出。
+「成片素材」页（全站素材片连同出片时脚本）的三个只读端点与「成片」页（全站导出的成片）的两个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张素材卡是一段对话的分镜，装着这段对话读得到的全部素材片；一张成片卡装着一段对话自己的全部导出。「爆款素材库」页的端点也在 `/library` 下，约定见 §16。
 
 - **可见范围**：任何持 `generation:read` 的人都能看到全部卡、脚本与来源对话。卡的 `id` 是对话 id，不挂对话（对话不存在也算）的卡是那条出片的 id。`conversationId` 对所有人都给，不挂对话为 `null`；`title`、`agentId`、`taskId` 取自来源对话，对话删了照给。`canOpenConversation` 是这位读者能不能打开那段对话，口径同 §6 的对话可读范围：谁读得到那段对话，谁就能打开；治理者含墓碑。不挂对话的卡恒为 `false`。
 - `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面素材片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面素材片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的素材片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
 - **卡的字段**：`face` 是卡面那一版，即对话自己最新的素材片；`take` 是它对应的出片（出片是它自己，合成沿原作取，原作可以在祖先对话里）；`userName` 是卡的作者，即对话属主的用户名，不挂对话的是出片属主的；`groupCount` / `versionCount` 是卡里有几个镜头组、一共几版，都含继承来的。
 - **版本的形状**（`face` 与详情里的每一版）：`kind` 是 `take`（出片）或 `composite`（合成）；`jobId` 是那条素材片；`watermarkOutputUrl` 合成恒为 `null`；`durationMs` 是实际时长（毫秒），出片取上游实测的、合成是本系统量的，上游没给为 `null`；`finishedAt` 是完成时刻；`userName` 是那条素材片属主的用户名。详情里的每一版另带 `take`，合成的 `take` 沿原作取。`take.prompt` 是发给模型的原文；`take.script` 是镜头组（`globalSettings` 加 `timeline[]`，每镜 `start`、`end`、`prompt`、`imageIndexes`），为 `null` 表示纯文本。`imageIndexes` 指向 `referenceImageUrls` 的第 N 张。画面尺寸不在数据里，占位比例按 `aspectRatio`。账号没有用户名时各处 `userName` 为 `null`。
-- `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、`canOpenConversation` 为真、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 三条都成立才是 `true`。列表的卡上没有这一项。
+- `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 两条都成立才是 `true`，不看 `canOpenConversation` 与删除标记。列表的卡上没有这一项。
 - `GET /library/authors` 列作者与各自的卡数（`userName`、`count`），多的在前、同数按名字，不受筛选影响。
 - `GET /library/whole-films` 列成片卡，一段对话一张，只算这段对话自己完成的导出（`kind=whole_film`）。卡的 `conversationId` 就是卡 id，`title`、`canOpenConversation` 与 `userName`（卡的作者，即对话属主）口径同素材卡；没有详情端点，卡里直接带 `versions[]`：每版 `jobId`（那条成片记录）、`outputUrl`、`finishedAt`、`userName`（导出的人的用户名）与 `sourceJobIds`（这次导出用到的素材片，按导出请求里的先后，只有组件段的导出为空），早完成的在前，第 N 条就是第 N 版；`face` 是卡面，即最后一版。成片没有水印版、不记时长，版本上没有这两项。排序、翻页、`total` 与时间窗同 `GET /library/videos`，游标是卡面完成时刻加对话 id。筛选只有 `userName`、`since` / `until` 与 `q`，`q` 只匹配对话标题；没有 `orientation`。卡上不带脚本，也没有 `canMakeSame`。下载一版时，前端按它的 `sourceJobIds` 各记一条 `video.downloaded`。
 - `GET /library/whole-films/authors` 列成片卡的作者（对话属主）与各自的成片卡数，形状与排序同 `GET /library/authors`，不受筛选影响。
@@ -569,15 +569,46 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 14. 参考视频 (References)
 
-资料库里用户上传的、agent 在对话里拆过的视频，一条视频一行，带当前拆解与两组标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`；修改、重拆、移除另限属主（替人办事的钥匙与治理者也行），试生成只限属主本人，看得见的别人的那条是 `403`。拆解没配置时只挂读端点（`POST /references` 与 `POST /references/{id}/breakdowns` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。媒体生成没配置时 `POST /references/{id}/test-generations` 不在。
+资料库里用户上传的、agent 在对话里拆过的视频，一条视频一行，带当前拆解与标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`；修改、改标签、重拆、重新打标、移除另限属主（替人办事的钥匙与治理者也行），试生成只限属主本人，看得见的别人的那条是 `403`。拆解没配置时只挂读端点与 `PUT /references/{id}/tags`（`POST /references`、`POST /references/{id}/breakdowns` 与 `POST /references/{id}/tagging` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。媒体生成没配置时 `POST /references/{id}/test-generations` 不在。
 
 - **建行**：`POST /references` 体是 `{ uploadId }`，只收调用者本人确认过的视频上传（§10）；别人的、图片的、不存在的 `uploadId` 一律 `404`。新建的行 `201`，排上第一次拆解；同一条视频已在表里就交回那一行、状态码 `200`，不再拆；移除过的那一行回到资料库，属主换成这次上传的人，拆解照旧。
-- **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解与打标中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 与标签不动。客户端按 `errorCode` 出一句话，不展示原始报错。
-- **标签**：`videoTypes` 与 `categories` 都可以几个，空就是未标注；取值是合同里的两个枚举，拆完自动打，打标失败只留空标签、拆解照常完成。
-- `GET /references` 按 §3 的排序（建立时间倒序），翻页 `limit` 与 `cursor`，规则同 §6。筛选：`videoTypes`、`categories` 可以重复给，同一组里命中任一即算，两组都给时两组都要命中；`userName`（属主）；`q` 按字面包含匹配拆解全文，不区分大小写，首尾空白去掉后为空即不筛；`since` / `until` 左闭右开，作用在建立时刻上。移除的不在列表里。列表项不带 `document`，正文在详情里。`total` 只在第一页给，`canUpload` 是这位读者能不能加参考视频（拆解已配置、上传可用且持 `uploads:write`）。
-- `GET /references/filters` 给 `videoTypes`（全部八种，按清单先后，各带 `label`、`rule` 与条数，没用到的为 0）、`categories`（用到的品类各带条数，多的在前、同数按清单先后）与 `owners`（名下有参考视频的属主用户名各带条数，多的在前、同数按用户名，是按人筛选的候选），只数没移除的，不受筛选影响。
-- `GET /references/{id}` 是一条连同 `document`（当前拆解的 Markdown 原文，还没拆完过为 `null`）与 `testVideo`；移除了是 `404`。`canEdit` 是这位读者能不能改、重拆、移除。`testVideo` 是属主名下这条参考视频最新的一次试生成，所有读者看到的是同一条，没有试生成过为 `null`：`status` 是 `running`（还没结束）/ `completed` / `failed`，`url` 是试生成地址，`errorMessage` 是上游给的失败原文；`stale` 为 `true` 表示按当前拆解拼出的提示词与这次用的不同（改过或重拆过拆解，或当前拆解拼不出提示词）。答复单条详情的端点都带 `testVideo`，列表项不带。
-- `PATCH /references/{id}` 体是 `{ version, document, videoTypes, categories }`，整份改，重复的标签去掉，成功后 `version` 加一。`version` 对不上，或这一行正在排队或拆解，都是 `409`；清单外的标签、空的 `document` 是 `422`。
-- `POST /references/{id}/breakdowns` 重新拆解：`completed` 或 `failed` 的行回到 `pending` 再排队，答复改完的整行；正在排队或拆解是 `409`。拆成就覆盖拆解与标签、`version` 加一，人改过的也会被覆盖。
+- **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 不动。客户端按 `errorCode` 出一句话，不展示原始报错。
+- **标签**：每条都带 `tagIds`、`tagStatus` 与 `tagError`，含义与打标规则见 §15。拆成（含重拆成功）后自动排一次打标，`tagStatus` 回到 `pending`；拆解自己不动标签，没拆成也不打标。
+- `GET /references` 按 §3 的排序（建立时间倒序），翻页 `limit` 与 `cursor`，规则同 §6。筛选：`tags` 可以重复给，按 §15 的规则匹配，不存在的标签是 `422`；`userName`（属主）；`q` 按字面包含匹配拆解全文，不区分大小写，首尾空白去掉后为空即不筛；`since` / `until` 左闭右开，作用在建立时刻上。移除的不在列表里。列表项不带 `document`，正文在详情里。`total` 只在第一页给，`canUpload` 是这位读者能不能加参考视频（拆解已配置、上传可用且持 `uploads:write`）。
+- `GET /references/filters` 只给 `owners`（名下有参考视频的属主用户名各带条数，多的在前、同数按用户名，是按人筛选的候选），只数没移除的，不受筛选影响。标签的候选与条数在 `GET /library-tags`。
+- `GET /references/{id}` 是一条连同 `document`（当前拆解的 Markdown 原文，还没拆完过为 `null`）与 `testVideo`；移除了是 `404`。`canEdit` 是这位读者能不能改、改标签、重拆、重新打标、移除。`testVideo` 是属主名下这条参考视频最新的一次试生成，所有读者看到的是同一条，没有试生成过为 `null`：`status` 是 `running`（还没结束）/ `completed` / `failed`，`url` 是试生成地址，`errorMessage` 是上游给的失败原文；`stale` 为 `true` 表示按当前拆解拼出的提示词与这次用的不同（改过或重拆过拆解，或当前拆解拼不出提示词）。答复单条详情的端点都带 `testVideo`，列表项不带。
+- `PATCH /references/{id}` 体是 `{ version, document }`，改拆解正文，成功后 `version` 加一。`version` 对不上，或这一行正在排队或拆解，都是 `409`；空的 `document` 是 `422`。改拆解不重新打标。
+- `PUT /references/{id}/tags` 体是 `{ tagIds }`，整份替换这条在所有维度上的标签（规则见 §15），答复改完的整行；不看拆解状态。
+- `POST /references/{id}/breakdowns` 重新拆解：`completed` 或 `failed` 的行回到 `pending` 再排队，答复改完的整行；正在排队或拆解是 `409`。拆成就覆盖拆解、`version` 加一，人改过的也会被覆盖，接着重新打标。
+- `POST /references/{id}/tagging` 按当前拆解重新打标，答复改完的整行（`tagStatus` 为 `pending`）。拆解还在排队、拆解中或从没拆成是 `409`，正在排队或打标也是 `409`。打标没配置（同拆解没配置）时不在。
 - `POST /references/{id}/test-generations` 试生成：体是 `{ aspectRatio, userName? }`，`aspectRatio` 取 `9:16`、`16:9`、`1:1`、`3:4`、`4:3`，`userName` 同 §11；只用当前拆解的文字拼一段提示词生成一条视频，与原片对照看拆解全不全，答复改完的整行。只限属主本人。拆解还在排队、拆解中或从没拆成是 `409`，上一次试生成还没结束也是 `409`；拆解格式不全拼不出提示词、或拼出来超过 4000 字是 `422`。这次试生成是属主名下一条普通的视频生成（§11），不挂对话、没有镜号：模型 wan3、480p，时长取最后一镜的结束时刻向上取整，画幅照给的，带声音，`metadata` 是 `{ referenceId }`；它不进资料库的成片素材。
 - `DELETE /references/{id}` 只从资料库移除（`204`），对话里按地址仍用它的拆解；之后对这一行的读写都是 `404`。
+
+## 15. 资料库标签 (Library Tags)
+
+资料库条目共用的一棵标签树，参考视频（§14）与爆款素材（§16）打标签，语义见 [CONTEXT.md「标签」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`。
+
+- `GET /library-tags` 给整棵树：`dimensions` 是全部维度，每个节点带 `id`、`name`、`guide`（怎么判断，打标提示词里也写这一句，可为 `null`）、`position` 与 `children`，同级按 `position` 排好。`autoFill` 只在维度上有值：`ai` 是 AI 打这个维度，`null` 只靠人填；取值上恒为 `null`。维度下是取值，取值下最多再有一层。`counts` 是带这个标签或它任一下级的条目数，同一条只算一次：`references` 只数没移除的参考视频，`hitCases` 数在库的爆款素材。打标配没配都挂着。
+- **一条的标签**：`tagIds` 是所有维度上的标签，指这棵树里的取值，不会是维度；空就是未标注。顺序不表达含义，按树分组显示。
+- **改标签**：`PUT …/tags` 体是 `{ tagIds }`，整份替换所有维度，重复的去掉，空数组即全部清掉；同时有人删了其中某个标签，那一个跳过。不存在的标签、给了维度本身是 `422`；这一条正在排队或打标是 `409`。
+- **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的文字（参考视频没有拆解，爆款素材所在对话没有新片执行方案或只有空白）；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
+- **重新打标**：`POST …/tagging` 把这一条改回 `pending` 再排队；正在排队或打标是 `409`。
+- **按标签筛选**（列表的 `tags`）：选中的标签按所在维度分组，同一维度里命中任一即算，不同维度都要命中；选了上级也算它的全部下级，选了维度就是这一维度的任一取值。不存在的标签是 `422`。
+- **改树**（治理者）：`POST /library-tags` 体是 `{ parentId?, name, guide?, autoFill?, position? }`，`parentId` 为空是加维度，`201` 答复新节点（条数为 0、没有下级）；`PATCH /library-tags/{id}` 体是 `{ name?, guide?, autoFill?, position? }`，不给的项不动，`guide` 给 `null` 或空串即清掉，`autoFill` 给 `null` 即改回只靠人填，上级改不了，答复改完的节点；`DELETE /library-tags/{id}` 是 `204`。没有这个标签是 `404`，下面的规则不合格都是 `422`，`detail` 是给人看的一句话：
+  - `name` 去掉首尾空白后不能为空，最多 50 个字；`guide` 最多 1000 个字。
+  - 上级只能是维度或维度的直接下级，即取值下最多再分一层；上级不存在也是 `422`。
+  - 维度之间不重名；同一维度里的取值不论哪一层都不重名。
+  - `autoFill` 只能设在维度上；所有 `autoFill` 为 `ai` 的维度下的取值（含小类）合计最多 500 个，在这些维度下加取值、把维度改成 `ai` 时都查。
+  - `position` 是放到同级里的第几个（0 起），超出范围夹到首尾，同级随之重新编成 0..n-1；新建时不给排在最后。
+- 删一个标签连同它的全部下级，两库条目上的这些标签一起去掉，删前用树上的 `counts` 提示影响面。改名、改 `guide`、开关 `autoFill` 都不重打已有的条目，只影响之后的打标；已打上的标签留着，要按新树重打得逐条重新打标。
+
+## 16. 爆款素材 (Hit Cases)
+
+从成片素材里挑出来的素材片，一条是一版（`jobId` 是那条生成记录），不是一张卡；语义见 [CONTEXT.md「爆款素材」](../docs/CONTEXT.md#术语)。端点都在 `/library/hit-cases` 下，权限看 `openapi.json`：看得见就能入选、改标签、移出，不看属主；重新打标另要 `generation:submit`。标签与打标状态的含义见 §15。
+
+- **能否入选**：`GET /library/hit-cases/{jobId}` 给 `eligible` 与 `ineligibleReason`，入选了的另带 `entry`（标签、打标状态、`addedAt` 与 `addedBy`，入选的人的用户名），没入选为 `null`。原因三种：`not_material` 不是素材片（成片素材的收录口径，试生成除外）；`no_conversation` 不挂对话或那段对话不存在；`no_treatment` 所在对话的工作区里没有 `treatment.md`。对话删了照样认，已入选的也照算。没有这条生成记录是 `404`。客户端按原因出一句话，不展示文件名。
+- **入选**：`PUT /library/hit-cases/{jobId}` 体是 `{ tagIds? }`，答复同上。不能入选是 `422`，说明按原因写；已入选就原样交回，不改标签、不再排打标，带来的 `tagIds` 不看；否则建条目、整份写上带来的标签（规则同 §15 改标签，不存在的标签或给了维度是 `422`，什么都不建），打标配了就排一次打标（`tagStatus` 为 `pending`），没配时条目照建、`tagStatus` 留 `null`。
+- **改标签**：`PUT /library/hit-cases/{jobId}/tags` 同 §15；没入选是 `404`，正在排队或打标是 `409`。
+- **重新打标**：`POST /library/hit-cases/{jobId}/tagging` 按所在对话当前的 `treatment.md` 重打；没入选是 `404`，正在排队或打标是 `409`。打标没配置时不挂这个端点。
+- **移出**：`DELETE /library/hit-cases/{jobId}` 删掉条目连同标签，`204`；没入选也是 `204`。
+- **列表**：`GET /library/hit-cases` 按入选时刻倒序（再按 `jobId`），是 §3 的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是入选时刻加 `jobId`；`total` 只在第一页给。筛选只有 `tags`（§15）。只列仍是素材片的。每项带 `cardId`（这一版在成片素材里所属的卡，按 §13 的卡 id 规则）、`title`（所在对话的标题）、`face` 与 `take`（形状同 §13 的版本头与出片）、标签与打标状态、`addedAt`；打开查看器时按 `cardId` 读 §13 的卡详情，选中 `jobId` 那一版。

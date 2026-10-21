@@ -427,6 +427,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             fork_transcript=start,
             copy_workspace=copy_no_workspace,
             copy_same_style=_untouched,
+            same_style_source=_untouched,
             event_watermark=SessionEventClock().snapshot,
             announce_row=_untouched,
             announce_deleted=_untouched,

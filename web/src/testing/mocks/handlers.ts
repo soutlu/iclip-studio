@@ -12,6 +12,7 @@ import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
+import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
@@ -25,7 +26,8 @@ import {
   type MockConversation,
 } from './conversations'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
-import { referenceHandlers } from './references'
+import { libraryTagHandlers } from './library-tags'
+import { forgetMockReferenceTags, mockReferenceTagSets, referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
 import { wholeFilmHandlers } from './whole-film'
@@ -470,4 +472,12 @@ export const handlers = [
   ...libraryHandlers,
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...hitCaseHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...libraryTagHandlers(
+    () => ({ hitCases: mockHitCaseTagSets(), references: mockReferenceTagSets() }),
+    (ids) => {
+      forgetMockReferenceTags(ids)
+      forgetMockHitCaseTags(ids)
+    },
+  ),
 ]

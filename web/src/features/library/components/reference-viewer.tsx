@@ -15,22 +15,24 @@ import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import { VideoPlayer } from '@/shared/ui/video-player'
 import { PLACEHOLDER_VIDEO_RATIO } from '../library-layout'
-import { failureMessageOf, tagsOf, UNTAGGED_YET, type VideoTypeLabels } from '../reference-labels'
+import { isAiDimension, tagNamesOf, type TagIndex } from '../library-tags'
+import { failureMessageOf, taggingFailureOf, UNTAGGED_YET } from '../reference-labels'
 import {
-  CATEGORY_VALUES,
   isBreakdownBusy,
+  isTaggingBusy,
   nearestTestAspectRatio,
   useReference,
   useRemoveReference,
+  useReplaceReferenceTags,
   useRerunReference,
+  useRetagReference,
   useStartTestVideo,
   useUpdateReference,
-  VIDEO_TYPE_VALUES,
   type ReferenceDetail,
   type ReferenceItem,
 } from '../references.api'
 import { AuthorAvatar } from './author-avatar'
-import { ReferenceTagRow } from './reference-tags'
+import { LibraryTagEditor } from './library-tag-editor'
 import { LibraryViewerFrame } from './library-viewer-frame'
 import { ViewerPending, ViewerStage } from './library-viewer-stage'
 import { CompareOverlay, TestVideoCell } from './test-video-slot'
@@ -39,14 +41,42 @@ const INVERTED_CLASS = 'rounded-full disabled:bg-disabled-container'
 
 const CONFLICT_MESSAGE = '该拆解已被修改，刷新将丢弃本次修改'
 
+/** AI 维度旁的提示：重拆与重新打标都会整组重写这一维度。 */
+const REFERENCE_AI_HINT = '由 AI 自动打标，重新拆解或重新打标时会重写该项标签'
+
 const isConflict = (error: unknown) => error instanceof ApiError && error.status === 409
 
-type Mode = 'view' | 'edit' | 'confirm-rerun' | 'confirm-remove'
+type Mode = 'view' | 'edit' | 'confirm-rerun' | 'confirm-retag' | 'confirm-remove'
+
+/** 底栏原地确认的说明与确认按钮；`aiDimensions` 是 AI 打的维度名，如「品类、场景」，没有时为空。 */
+const CONFIRMS: Record<
+  'confirm-rerun' | 'confirm-retag' | 'confirm-remove',
+  { message: (aiDimensions: string) => string; action: string }
+> = {
+  'confirm-remove': {
+    action: '移除',
+    message: () => '移除后该视频不再出现在资料库中，AI 导演仍可使用它的拆解',
+  },
+  'confirm-rerun': {
+    action: '重新拆解',
+    message: (ai) =>
+      ai === ''
+        ? '重新拆解会覆盖当前的拆解，包括手动修改过的内容'
+        : `重新拆解会覆盖当前的拆解，并重写${ai}的标签，包括手动修改过的内容`,
+  },
+  'confirm-retag': {
+    action: '重新打标',
+    message: (ai) =>
+      ai === ''
+        ? '重新打标会按当前的拆解重新打标签'
+        : `重新打标会按当前的拆解重写${ai}的标签，包括手动修改过的内容`,
+  },
+}
 
 type ReferenceViewerProps = {
   referenceId: string
   listed: ReferenceItem | undefined
-  labels: VideoTypeLabels
+  tags: TagIndex
   myUserName: string | null
   onClose: () => void
   onAuthor: (userName: string) => void
@@ -56,7 +86,7 @@ type ReferenceViewerProps = {
 export function ReferenceViewer({
   referenceId,
   listed,
-  labels,
+  tags,
   myUserName,
   onClose,
   onAuthor,
@@ -86,7 +116,6 @@ export function ReferenceViewer({
       ) : (
         <ViewerBody
           detail={detail.data}
-          labels={labels}
           mode={mode}
           myUserName={myUserName}
           onAuthor={onAuthor}
@@ -94,6 +123,7 @@ export function ReferenceViewer({
           onModeChange={setMode}
           onRefresh={() => void detail.refetch()}
           reference={reference}
+          tags={tags}
         />
       )}
     </LibraryViewerFrame>
@@ -103,7 +133,7 @@ export function ReferenceViewer({
 type ViewerBodyProps = {
   reference: ReferenceItem
   detail: ReferenceDetail | undefined
-  labels: VideoTypeLabels
+  tags: TagIndex
   mode: Mode
   myUserName: string | null
   onModeChange: (mode: Mode) => void
@@ -117,7 +147,7 @@ type Preview = { media: LightboxMedia; player: 'original' | 'test' }
 function ViewerBody({
   reference,
   detail,
-  labels,
+  tags,
   mode,
   myUserName,
   onModeChange,
@@ -150,38 +180,37 @@ function ViewerBody({
     else if (previousModeRef.current === 'edit') editorRef.current?.focus()
   }, [conflict])
   const update = useUpdateReference(reference.id)
+  const replaceTags = useReplaceReferenceTags(reference.id)
   const rerun = useRerunReference(reference.id)
+  const retag = useRetagReference(reference.id)
   const remove = useRemoveReference(reference.id)
   const startTest = useStartTestVideo(reference.id)
   const { downloading, download } = useMediaDownload()
 
   const busy = isBreakdownBusy(reference.breakdownStatus)
+  const tagging = isTaggingBusy(reference.tagStatus)
   const document = detail?.document ?? null
-  const tags = tagsOf(reference, labels)
-  const title = tags.length === 0 ? '参考视频' : tags.join(' · ')
+  const tagNames = tagNamesOf(tags, reference.tagIds)
+  const title = tagNames.length === 0 ? '参考视频' : tagNames.join(' · ')
   const author = reference.userName
-  const tagsEditable = reference.canEdit && detail !== undefined && document !== null && !busy
   const saving = update.isPending
+  // 重新打标照当前拆解：拆解得在、不在拆，也不在打标。
+  const canRetag =
+    reference.canEdit && detail !== undefined && document !== null && !busy && !tagging
+  const aiDimensions = tags.dimensions
+    .filter(isAiDimension)
+    .map((dimension) => dimension.name)
+    .join('、')
 
-  const saveTags = (patch: Pick<ReferenceDetail, 'videoTypes' | 'categories'>) => {
-    if (detail === undefined || document === null) return
-    update.mutate(
-      {
-        categories: patch.categories,
-        document,
-        version: detail.version,
-        videoTypes: patch.videoTypes,
+  const saveTags = (tagIds: string[]) =>
+    replaceTags.mutate(tagIds, {
+      onError: (error) => {
+        if (isConflict(error)) {
+          toast.error('正在打标，标签无法保存；请在打标完成后重试')
+          onRefresh()
+        } else toast.error(errorMessageOf(error, '标签保存失败'))
       },
-      {
-        onError: (error) => {
-          if (isConflict(error)) {
-            toast.error('该拆解已被修改，标签无法保存；已刷新为最新内容')
-            onRefresh()
-          } else toast.error(errorMessageOf(error, '标签保存失败'))
-        },
-      },
-    )
-  }
+    })
 
   const startEdit = () => {
     if (document === null) return
@@ -193,12 +222,7 @@ function ViewerBody({
   const saveDocument = () => {
     if (detail === undefined) return
     update.mutate(
-      {
-        categories: detail.categories,
-        document: draft,
-        version: detail.version,
-        videoTypes: detail.videoTypes,
-      },
+      { document: draft, version: detail.version },
       {
         onError: (error) => {
           if (isConflict(error)) setConflict(true)
@@ -219,6 +243,18 @@ function ViewerBody({
           toast.error('该视频正在拆解，无法重新拆解；请在拆解完成后重试')
           onRefresh()
         } else toast.error(errorMessageOf(error, '重新拆解提交失败'))
+        onModeChange('view')
+      },
+      onSuccess: () => onModeChange('view'),
+    })
+
+  const confirmRetag = () =>
+    retag.mutate(undefined, {
+      onError: (error) => {
+        if (isConflict(error)) {
+          toast.error('该视频正在拆解或打标，无法重新打标；请在完成后重试')
+          onRefresh()
+        } else toast.error(errorMessageOf(error, '重新打标提交失败'))
         onModeChange('view')
       },
       onSuccess: () => onModeChange('view'),
@@ -340,40 +376,19 @@ function ViewerBody({
               </span>
             </button>
           )}
-          <div className="mt-4 grid gap-2.5">
-            <ReferenceTagRow
-              busy={saving}
-              editable={tagsEditable && mode === 'view'}
-              emptyText={busy ? UNTAGGED_YET : '未标注'}
-              label="片子类型"
-              onChange={(ids) =>
-                saveTags({
-                  categories: reference.categories,
-                  videoTypes: VIDEO_TYPE_VALUES.filter((type) => ids.includes(type)),
-                })
-              }
-              options={VIDEO_TYPE_VALUES.flatMap((type) => {
-                const label = labels.get(type)
-                return label === undefined ? [] : [{ id: type, label }]
-              })}
-              values={reference.videoTypes.flatMap((type) => {
-                const label = labels.get(type)
-                return label === undefined ? [] : [{ id: type, label }]
-              })}
+          <div className="mt-4">
+            <LibraryTagEditor
+              aiHint={REFERENCE_AI_HINT}
+              busy={replaceTags.isPending || tagging}
+              editable={reference.canEdit && mode === 'view'}
+              index={tags}
+              onChange={saveTags}
+              value={reference.tagIds}
             />
-            <ReferenceTagRow
-              busy={saving}
-              editable={tagsEditable && mode === 'view'}
-              emptyText={busy ? UNTAGGED_YET : '未标注'}
-              label="品类"
-              onChange={(ids) =>
-                saveTags({
-                  categories: ids.flatMap((id) => CATEGORY_VALUES.filter((name) => name === id)),
-                  videoTypes: reference.videoTypes,
-                })
-              }
-              options={CATEGORY_VALUES.map((name) => ({ id: name, label: name }))}
-              values={reference.categories.map((name) => ({ id: name, label: name }))}
+            <TagStatusLine
+              canRetag={canRetag && mode === 'view'}
+              onRetag={() => onModeChange('confirm-retag')}
+              reference={reference}
             />
           </div>
         </header>
@@ -457,15 +472,13 @@ function ViewerBody({
                 保存
               </Button>
             </>
-          ) : mode === 'confirm-rerun' || mode === 'confirm-remove' ? (
+          ) : mode === 'confirm-rerun' || mode === 'confirm-retag' || mode === 'confirm-remove' ? (
             <>
               <span
                 className="min-w-0 flex-1 text-body-sm text-balance text-on-surface"
                 role="status"
               >
-                {mode === 'confirm-rerun'
-                  ? '重新拆解会覆盖当前的拆解和标签，包括手动修改过的内容'
-                  : '移除后该视频不再出现在资料库中，AI 导演仍可使用它的拆解'}
+                {CONFIRMS[mode].message(aiDimensions)}
               </span>
               <Button
                 className="shrink-0 rounded-full"
@@ -476,11 +489,20 @@ function ViewerBody({
               </Button>
               <Button
                 className={cn('shrink-0', INVERTED_CLASS)}
-                loading={mode === 'confirm-rerun' ? rerun.isPending : remove.isPending}
-                onClick={mode === 'confirm-rerun' ? confirmRerun : confirmRemove}
+                loading={
+                  { 'confirm-remove': remove, 'confirm-rerun': rerun, 'confirm-retag': retag }[mode]
+                    .isPending
+                }
+                onClick={
+                  {
+                    'confirm-remove': confirmRemove,
+                    'confirm-rerun': confirmRerun,
+                    'confirm-retag': confirmRetag,
+                  }[mode]
+                }
                 variant="inverted"
               >
-                {mode === 'confirm-rerun' ? '重新拆解' : '移除'}
+                {CONFIRMS[mode].action}
               </Button>
             </>
           ) : reference.canEdit ? (
@@ -512,6 +534,13 @@ function ViewerBody({
                   />
                 </MenuTrigger>
                 <MenuSurface align="end" side="top">
+                  <MenuItem
+                    disabled={!canRetag}
+                    icon="tag"
+                    onSelect={() => onModeChange('confirm-retag')}
+                  >
+                    重新打标
+                  </MenuItem>
                   {document === null ? null : (
                     <MenuItem icon="copy" onSelect={() => void copyDocument()}>
                       复制拆解
@@ -559,6 +588,46 @@ function ViewerBody({
       />
     </>
   )
+}
+
+/** 标签下面的一行后台状态：还没拆完时说拆完自动打；正在打标；没打成按原因说一句，能重新打标的人原地点「重新打标」。 */
+function TagStatusLine({
+  reference,
+  canRetag,
+  onRetag,
+}: {
+  reference: ReferenceItem
+  canRetag: boolean
+  onRetag: () => void
+}) {
+  const { breakdownStatus, tagStatus, tagError } = reference
+  if (isTaggingBusy(tagStatus))
+    return (
+      <p
+        className="mt-3 flex items-center gap-2 text-body-sm text-on-surface-variant"
+        role="status"
+      >
+        <Icon className="shrink-0 animate-spin" decorative name="spinner" size="xs" />
+        正在打标，完成后自动更新标签
+      </p>
+    )
+  if (tagStatus === 'failed')
+    return (
+      <div className="mt-3 flex items-center gap-3" role="alert">
+        <p className="flex min-w-0 flex-1 items-start gap-2 text-body-sm text-on-surface">
+          <Icon className="mt-1 shrink-0 text-error" decorative name="alert" size="xs" />
+          <span className="min-w-0">{taggingFailureOf(tagError, canRetag)}</span>
+        </p>
+        {canRetag ? (
+          <Button className="shrink-0 rounded-full" onClick={onRetag} size="md" variant="outlined">
+            重新打标
+          </Button>
+        ) : null}
+      </div>
+    )
+  if (tagStatus === null && isBreakdownBusy(breakdownStatus))
+    return <p className="mt-3 text-body-sm text-on-surface-faint">{UNTAGGED_YET}</p>
+  return null
 }
 
 function BreakdownBody({

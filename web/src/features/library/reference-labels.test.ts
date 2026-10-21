@@ -1,39 +1,52 @@
 import { describe, expect, it } from 'vitest'
-import { failureMessageOf, referenceTitleOf, type VideoTypeLabels } from './reference-labels'
+import { mockLibraryTagTree, mockTagId } from '@/testing/mocks/library-tags'
+import { tagIndexOf } from './library-tags'
+import { failureMessageOf, referenceTitleOf, taggingFailureOf } from './reference-labels'
 
-const LABELS: VideoTypeLabels = new Map([
-  ['try_on', '上身展示'],
-  ['review', '开箱测评'],
-])
+const INDEX = tagIndexOf(mockLibraryTagTree())
 
 describe('referenceTitleOf', () => {
-  it('拆完的：片子类型的名称在前、品类在后，用「 · 」连起来', () => {
+  it('有标签：标签名按树的先后，用「 · 」连起来', () => {
     expect(
       referenceTitleOf(
-        { breakdownStatus: 'completed', categories: ['拖鞋'], videoTypes: ['review', 'try_on'] },
-        LABELS,
+        {
+          breakdownStatus: 'completed',
+          tagIds: [mockTagId('标准开箱流程'), mockTagId('拖鞋')],
+          tagStatus: 'completed',
+        },
+        INDEX,
       ),
-    ).toEqual({ placeholder: false, text: '开箱测评 · 上身展示 · 拖鞋' })
+    ).toEqual({ placeholder: false, text: '拖鞋 · 标准开箱流程' })
   })
 
-  it('名称表里没有的取值不显示，不把取值原文给人看', () => {
+  it('树里没有的 id 不显示，不把 id 给人看', () => {
+    const unknown = '00000000-0000-4000-8000-000000000000'
     expect(
       referenceTitleOf(
-        { breakdownStatus: 'completed', categories: [], videoTypes: ['drama'] },
-        LABELS,
-      ).text,
-    ).not.toContain('drama')
+        { breakdownStatus: 'completed', tagIds: [unknown], tagStatus: 'completed' },
+        INDEX,
+      ),
+    ).toEqual({ placeholder: true, text: '未标注' })
   })
 
-  it.each(['completed', 'failed'] as const)('%s 且没有标签：未标注', (breakdownStatus) => {
-    expect(referenceTitleOf({ breakdownStatus, categories: [], videoTypes: [] }, LABELS)).toEqual({
+  it.each([
+    ['completed', 'completed'],
+    ['completed', 'failed'],
+    ['failed', null],
+  ] as const)('拆解 %s、打标 %s 且没有标签：未标注', (breakdownStatus, tagStatus) => {
+    expect(referenceTitleOf({ breakdownStatus, tagIds: [], tagStatus }, INDEX)).toEqual({
       placeholder: true,
       text: '未标注',
     })
   })
 
-  it.each(['pending', 'running'] as const)('%s：还没拆完，不当未标注', (breakdownStatus) => {
-    const title = referenceTitleOf({ breakdownStatus, categories: [], videoTypes: [] }, LABELS)
+  it.each([
+    ['pending', null],
+    ['running', null],
+    ['completed', 'pending'],
+    ['completed', 'running'],
+  ] as const)('拆解 %s、打标 %s：还没打完，不当未标注', (breakdownStatus, tagStatus) => {
+    const title = referenceTitleOf({ breakdownStatus, tagIds: [], tagStatus }, INDEX)
     expect(title.placeholder).toBe(true)
     expect(title.text).not.toBe('未标注')
   })
@@ -52,5 +65,20 @@ describe('failureMessageOf', () => {
     expect(failureMessageOf('model_call_failed', true)).not.toBe(
       failureMessageOf('model_call_failed', false),
     )
+  })
+})
+
+describe('taggingFailureOf', () => {
+  const CODES = ['no_source_text', 'model_call_failed', 'model_failed', 'timeout'] as const
+
+  it('每种原因一句不同的话，不带原因的代码', () => {
+    const messages = CODES.map((code) => taggingFailureOf(code, true))
+    expect(new Set(messages).size).toBe(CODES.length)
+    messages.forEach((message, index) => expect(message).not.toContain(CODES[index]))
+  })
+
+  it('能重新打标才请人点「重新打标」', () => {
+    expect(taggingFailureOf('timeout', true)).toContain('「重新打标」')
+    expect(taggingFailureOf('timeout', false)).not.toContain('「重新打标」')
   })
 })

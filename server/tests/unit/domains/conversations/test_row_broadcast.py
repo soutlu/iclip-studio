@@ -229,6 +229,7 @@ def build(
         fork_transcript=cast("ForkTranscript", object()),
         copy_workspace=_untouched,
         copy_same_style=_untouched,
+        same_style_source=_untouched,
         event_watermark=clock.snapshot,
         announce_row=announced.row,
         announce_deleted=announced.gone,

@@ -7,14 +7,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, TypedDict
 
 import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.reference_breakdown import ArkTagger, ArkVideoBreakdowns
+from iclip.app.library_tagging import ArkTagger
+from iclip.app.reference_breakdown import ArkVideoBreakdowns
 from iclip.app.reference_test_video import TEST_VIDEO_MODEL
 from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
 from iclip.capabilities.video_breakdown.ports import SampledVideo
@@ -119,14 +120,26 @@ def responses_body(text_out: str, *, status: str = "completed") -> dict[str, Any
     }
 
 
-def tag_answer(
-    video_types: Sequence[str] = ("review",), categories: Sequence[str] = ("跑鞋",)
-) -> httpx.Response:
+class TagCategorySelection(TypedDict):
+    category: str
+    subcategories: Sequence[str]
+
+
+type TagSelection = str | TagCategorySelection
+
+
+DEFAULT_TAGS: Mapping[str, Sequence[TagSelection]] = {
+    "d1": ("跑鞋",),
+    "d2": (),
+    "d3": ({"category": "开箱测评型", "subcategories": ("对比测评",)},),
+}
+"""按预置树作答：``d1`` 品类、``d2`` 场景、``d3`` 内容结构。"""
+
+
+def tag_answer(answer: Mapping[str, Sequence[TagSelection]] = DEFAULT_TAGS) -> httpx.Response:
     return httpx.Response(
         200,
-        json=responses_body(
-            json.dumps({"videoTypes": list(video_types), "categories": list(categories)})
-        ),
+        json=responses_body(json.dumps({key: list(values) for key, values in answer.items()})),
     )
 
 
@@ -177,7 +190,7 @@ class FakeSampler:
 def ark_pipeline(
     ark: FakeArk, *, sampler: FakeSampler | None = None
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
-    """真的拆解与打标适配器，HTTP 与抽帧都是替身。"""
+    """真的拆解与打标适配器，共用一个方舟模型，HTTP 与抽帧都是替身。"""
 
     model = ArkBreakdownModel(
         httpx.AsyncClient(transport=httpx.MockTransport(ark)),
@@ -212,21 +225,19 @@ async def plant_reference(
     video_url: str = VIDEO,
     status: str = "completed",
     document: str | None = DOCUMENT,
-    video_types: Sequence[str] = (),
-    categories: Sequence[str] = (),
     error_code: str | None = None,
     started_minutes_ago: float | None = None,
     created_minutes_ago: float = 0,
 ) -> uuid.UUID:
-    """直接种一行；``started_minutes_ago`` 给了就把开始时刻放到那么久以前。"""
+    """直接种一行，不带条目；``started_minutes_ago`` 给了就把开始时刻放到那么久以前。"""
 
     reference_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO iclip.reference_videos (id, video_url, owner_user_id, video_types,"
-                " categories, breakdown_status, error_code, document, started_at, created_at)"
-                " VALUES (:id, :url, :owner, CAST(:types AS text[]), CAST(:cats AS text[]),"
+                "INSERT INTO iclip.reference_videos (id, video_url, owner_user_id,"
+                " breakdown_status, error_code, document, started_at, created_at)"
+                " VALUES (:id, :url, :owner,"
                 " :status, :error_code, :document,"
                 " CASE WHEN CAST(:started AS float8) IS NULL THEN NULL"
                 "      ELSE now() - make_interval(secs => CAST(:started AS float8) * 60)"
@@ -237,8 +248,6 @@ async def plant_reference(
                 "id": reference_id,
                 "url": video_url,
                 "owner": owner,
-                "types": list(video_types),
-                "cats": list(categories),
                 "status": status,
                 "error_code": error_code,
                 "document": document,
@@ -265,6 +274,7 @@ async def reference_row(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[st
 
 
 __all__ = [
+    "DEFAULT_TAGS",
     "DOCUMENT",
     "STUDIO_ENVS",
     "STUDIO_MEDIA_ENVS",

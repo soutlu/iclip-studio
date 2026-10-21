@@ -440,76 +440,6 @@ export type BrandTemplatesOut = {
 }
 
 /**
- * CategoryCountOut
- */
-export type CategoryCountOut = {
-  /**
-   * Count
-   */
-  count: number
-  /**
-   * Name
-   */
-  name:
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-}
-
-/**
  * ClipEditDurationOut
  *
  * 片段编辑接受的实际参考视频时长范围，单位秒。
@@ -1911,6 +1841,135 @@ export type HttpValidationError = {
 }
 
 /**
+ * HitCaseEntryOut
+ *
+ * 一条素材片在爆款素材库里的条目。
+ */
+export type HitCaseEntryOut = {
+  /**
+   * Addedat
+   */
+  addedAt: string
+  /**
+   * Addedby
+   */
+  addedBy: string | null
+  /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+}
+
+/**
+ * HitCaseIn
+ *
+ * 入选时一起写上的标签。
+ */
+export type HitCaseIn = {
+  /**
+   * Tagids
+   */
+  tagIds?: Array<string>
+}
+
+/**
+ * HitCaseOut
+ *
+ * 爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。
+ */
+export type HitCaseOut = {
+  /**
+   * Addedat
+   */
+  addedAt: string
+  /**
+   * Cardid
+   */
+  cardId: string
+  face: FaceOut
+  /**
+   * Jobid
+   */
+  jobId: string
+  /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+  take: TakeOut
+  /**
+   * Title
+   */
+  title: string | null
+}
+
+/**
+ * HitCaseStateOut
+ *
+ * 一条素材片与爆款素材库的关系：能不能入选、入选了没有。
+ */
+export type HitCaseStateOut = {
+  /**
+   * Eligible
+   */
+  eligible: boolean
+  entry: HitCaseEntryOut | null
+  /**
+   * Ineligiblereason
+   */
+  ineligibleReason: 'not_material' | 'no_conversation' | 'no_treatment' | null
+  /**
+   * Jobid
+   */
+  jobId: string
+}
+
+/**
+ * HitCaseTagsIn
+ *
+ * 整份替换这条爆款素材在所有维度上的标签。
+ */
+export type HitCaseTagsIn = {
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+}
+
+/**
+ * HitCasesOut
+ */
+export type HitCasesOut = {
+  /**
+   * Items
+   */
+  items: Array<HitCaseOut>
+  /**
+   * Nextcursor
+   */
+  nextCursor: string | null
+  /**
+   * Total
+   */
+  total: number | null
+}
+
+/**
  * ImageContent
  */
 export type ImageContent = {
@@ -2096,6 +2155,101 @@ export type LibraryAuthorsOut = {
    * Items
    */
   items: Array<LibraryAuthorOut>
+}
+
+/**
+ * LibraryTagCreateIn
+ *
+ * 加一个维度或取值。名称、层级、重名与 AI 取值上限的规则见合同「标签」一节。
+ */
+export type LibraryTagCreateIn = {
+  /**
+   * Autofill
+   */
+  autoFill?: 'ai' | null
+  /**
+   * Guide
+   */
+  guide?: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Parentid
+   */
+  parentId?: string | null
+  /**
+   * Position
+   */
+  position?: number | null
+}
+
+/**
+ * LibraryTagOut
+ *
+ * 标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。
+ */
+export type LibraryTagOut = {
+  /**
+   * Autofill
+   */
+  autoFill: 'ai' | null
+  /**
+   * Children
+   */
+  children: Array<LibraryTagOut>
+  counts: TagCountsOut
+  /**
+   * Guide
+   */
+  guide: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Position
+   */
+  position: number
+}
+
+/**
+ * LibraryTagUpdateIn
+ *
+ * 改一个标签，不给的项不动；上级改不了。
+ */
+export type LibraryTagUpdateIn = {
+  /**
+   * Autofill
+   */
+  autoFill?: 'ai' | null
+  /**
+   * Guide
+   */
+  guide?: string | null
+  /**
+   * Name
+   */
+  name?: string | null
+  /**
+   * Position
+   */
+  position?: number | null
+}
+
+/**
+ * LibraryTagsOut
+ */
+export type LibraryTagsOut = {
+  /**
+   * Dimensions
+   */
+  dimensions: Array<LibraryTagOut>
 }
 
 /**
@@ -2720,86 +2874,29 @@ export type ReferenceCreateIn = {
  */
 export type ReferenceFiltersOut = {
   /**
-   * Categories
-   */
-  categories: Array<CategoryCountOut>
-  /**
    * Owners
    */
   owners: Array<OwnerCountOut>
+}
+
+/**
+ * ReferenceTagsIn
+ *
+ * 整份替换这条参考视频在所有维度上的标签。
+ */
+export type ReferenceTagsIn = {
   /**
-   * Videotypes
+   * Tagids
    */
-  videoTypes: Array<VideoTypeCountOut>
+  tagIds: Array<string>
 }
 
 /**
  * ReferenceUpdateIn
  *
- * 整份改：拆解正文与两组标签都照给的存，重复的标签去掉。
+ * 改拆解正文。
  */
 export type ReferenceUpdateIn = {
-  /**
-   * Categories
-   */
-  categories: Array<
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-  >
   /**
    * Document
    */
@@ -2808,19 +2905,6 @@ export type ReferenceUpdateIn = {
    * Version
    */
   version: number
-  /**
-   * Videotypes
-   */
-  videoTypes: Array<
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
-  >
 }
 
 /**
@@ -2838,67 +2922,6 @@ export type ReferenceVideoItemOut = {
    */
   canEdit: boolean
   /**
-   * Categories
-   */
-  categories: Array<
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-  >
-  /**
    * Createdat
    */
   createdAt: string
@@ -2911,6 +2934,18 @@ export type ReferenceVideoItemOut = {
    */
   id: string
   /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+  /**
    * Updatedat
    */
   updatedAt: string
@@ -2922,19 +2957,6 @@ export type ReferenceVideoItemOut = {
    * Version
    */
   version: number
-  /**
-   * Videotypes
-   */
-  videoTypes: Array<
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
-  >
   /**
    * Videourl
    */
@@ -2956,67 +2978,6 @@ export type ReferenceVideoOut = {
    */
   canEdit: boolean
   /**
-   * Categories
-   */
-  categories: Array<
-    | '高跟鞋'
-    | '平底鞋'
-    | '乐福鞋'
-    | '牛津鞋'
-    | '一脚蹬'
-    | '穆勒鞋'
-    | '拖鞋'
-    | '短靴'
-    | '中筒靴'
-    | '及膝靴'
-    | '过膝靴'
-    | '高跟凉鞋'
-    | '坡跟凉鞋'
-    | '厚底凉鞋'
-    | '平底凉鞋'
-    | '夹趾拖'
-    | '凉拖鞋'
-    | '运动凉鞋'
-    | '跑鞋'
-    | '足球鞋'
-    | '篮球鞋'
-    | '啦啦队鞋'
-    | '棒&垒球鞋'
-    | '滑板鞋'
-    | '舞蹈鞋'
-    | '橄榄球鞋'
-    | '高尔夫鞋'
-    | '网球鞋'
-    | '训练鞋'
-    | '女性骑行鞋'
-    | '健步鞋'
-    | '板鞋'
-    | '徒步鞋'
-    | '徒步靴'
-    | '雪地靴'
-    | '雨靴'
-    | '水鞋'
-    | '猎靴'
-    | '医疗用鞋'
-    | '餐厨用鞋'
-    | '军事用靴'
-    | '工业用鞋'
-    | '工业用靴'
-    | '皮带'
-    | '钱包'
-    | '包'
-    | '袜子'
-    | '鞋垫'
-    | 'T恤'
-    | '衬衫'
-    | '卫衣'
-    | '毛衣'
-    | '外套'
-    | '裤子'
-    | '半身裙'
-    | '连衣裙'
-  >
-  /**
    * Createdat
    */
   createdAt: string
@@ -3032,6 +2993,18 @@ export type ReferenceVideoOut = {
    * Id
    */
   id: string
+  /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
   testVideo: TestVideoOut | null
   /**
    * Updatedat
@@ -3045,19 +3018,6 @@ export type ReferenceVideoOut = {
    * Version
    */
   version: number
-  /**
-   * Videotypes
-   */
-  videoTypes: Array<
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
-  >
   /**
    * Videourl
    */
@@ -3450,6 +3410,22 @@ export type SubtitleWord = {
    * Text
    */
   text: string
+}
+
+/**
+ * TagCountsOut
+ *
+ * 带这个标签或它任一下级的条目数。
+ */
+export type TagCountsOut = {
+  /**
+   * Hitcases
+   */
+  hitCases: number
+  /**
+   * References
+   */
+  references: number
 }
 
 /**
@@ -5207,36 +5183,6 @@ export type VideoTaskResult = {
    * Watermark Output Url
    */
   watermark_output_url: string
-}
-
-/**
- * VideoTypeCountOut
- */
-export type VideoTypeCountOut = {
-  /**
-   * Count
-   */
-  count: number
-  /**
-   * Label
-   */
-  label: string
-  /**
-   * Rule
-   */
-  rule: string
-  /**
-   * Value
-   */
-  value:
-    | 'live_clip'
-    | 'slideshow'
-    | 'drama'
-    | 'review'
-    | 'talking_head'
-    | 'try_on'
-    | 'lifestyle'
-    | 'product_showcase'
 }
 
 /**
@@ -8126,6 +8072,114 @@ export type SearchVideosInspirationsVideosSearchPostResponses = {
 export type SearchVideosInspirationsVideosSearchPostResponse =
   SearchVideosInspirationsVideosSearchPostResponses[keyof SearchVideosInspirationsVideosSearchPostResponses]
 
+export type LibraryTagsLibraryTagsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/library-tags'
+}
+
+export type LibraryTagsLibraryTagsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryTagsOut
+}
+
+export type LibraryTagsLibraryTagsGetResponse =
+  LibraryTagsLibraryTagsGetResponses[keyof LibraryTagsLibraryTagsGetResponses]
+
+export type CreateLibraryTagLibraryTagsPostData = {
+  body: LibraryTagCreateIn
+  path?: never
+  query?: never
+  url: '/library-tags'
+}
+
+export type CreateLibraryTagLibraryTagsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateLibraryTagLibraryTagsPostError =
+  CreateLibraryTagLibraryTagsPostErrors[keyof CreateLibraryTagLibraryTagsPostErrors]
+
+export type CreateLibraryTagLibraryTagsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: LibraryTagOut
+}
+
+export type CreateLibraryTagLibraryTagsPostResponse =
+  CreateLibraryTagLibraryTagsPostResponses[keyof CreateLibraryTagLibraryTagsPostResponses]
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Tag Id
+     */
+    tag_id: string
+  }
+  query?: never
+  url: '/library-tags/{tag_id}'
+}
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteError =
+  DeleteLibraryTagLibraryTagsTagIdDeleteErrors[keyof DeleteLibraryTagLibraryTagsTagIdDeleteErrors]
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteLibraryTagLibraryTagsTagIdDeleteResponse =
+  DeleteLibraryTagLibraryTagsTagIdDeleteResponses[keyof DeleteLibraryTagLibraryTagsTagIdDeleteResponses]
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchData = {
+  body: LibraryTagUpdateIn
+  path: {
+    /**
+     * Tag Id
+     */
+    tag_id: string
+  }
+  query?: never
+  url: '/library-tags/{tag_id}'
+}
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchError =
+  UpdateLibraryTagLibraryTagsTagIdPatchErrors[keyof UpdateLibraryTagLibraryTagsTagIdPatchErrors]
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryTagOut
+}
+
+export type UpdateLibraryTagLibraryTagsTagIdPatchResponse =
+  UpdateLibraryTagLibraryTagsTagIdPatchResponses[keyof UpdateLibraryTagLibraryTagsTagIdPatchResponses]
+
 export type AuthorsLibraryAuthorsGetData = {
   body?: never
   path?: never
@@ -8142,6 +8196,206 @@ export type AuthorsLibraryAuthorsGetResponses = {
 
 export type AuthorsLibraryAuthorsGetResponse =
   AuthorsLibraryAuthorsGetResponses[keyof AuthorsLibraryAuthorsGetResponses]
+
+export type ListHitCasesLibraryHitCasesGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Tags
+     */
+    tags?: Array<string> | null
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Cursor
+     */
+    cursor?: string | null
+  }
+  url: '/library/hit-cases'
+}
+
+export type ListHitCasesLibraryHitCasesGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListHitCasesLibraryHitCasesGetError =
+  ListHitCasesLibraryHitCasesGetErrors[keyof ListHitCasesLibraryHitCasesGetErrors]
+
+export type ListHitCasesLibraryHitCasesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCasesOut
+}
+
+export type ListHitCasesLibraryHitCasesGetResponse =
+  ListHitCasesLibraryHitCasesGetResponses[keyof ListHitCasesLibraryHitCasesGetResponses]
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}'
+}
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteError =
+  RemoveHitCaseLibraryHitCasesJobIdDeleteErrors[keyof RemoveHitCaseLibraryHitCasesJobIdDeleteErrors]
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteResponse =
+  RemoveHitCaseLibraryHitCasesJobIdDeleteResponses[keyof RemoveHitCaseLibraryHitCasesJobIdDeleteResponses]
+
+export type HitCaseStateLibraryHitCasesJobIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}'
+}
+
+export type HitCaseStateLibraryHitCasesJobIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type HitCaseStateLibraryHitCasesJobIdGetError =
+  HitCaseStateLibraryHitCasesJobIdGetErrors[keyof HitCaseStateLibraryHitCasesJobIdGetErrors]
+
+export type HitCaseStateLibraryHitCasesJobIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type HitCaseStateLibraryHitCasesJobIdGetResponse =
+  HitCaseStateLibraryHitCasesJobIdGetResponses[keyof HitCaseStateLibraryHitCasesJobIdGetResponses]
+
+export type AddHitCaseLibraryHitCasesJobIdPutData = {
+  body: HitCaseIn
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}'
+}
+
+export type AddHitCaseLibraryHitCasesJobIdPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AddHitCaseLibraryHitCasesJobIdPutError =
+  AddHitCaseLibraryHitCasesJobIdPutErrors[keyof AddHitCaseLibraryHitCasesJobIdPutErrors]
+
+export type AddHitCaseLibraryHitCasesJobIdPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type AddHitCaseLibraryHitCasesJobIdPutResponse =
+  AddHitCaseLibraryHitCasesJobIdPutResponses[keyof AddHitCaseLibraryHitCasesJobIdPutResponses]
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}/tagging'
+}
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostError =
+  RetagHitCaseLibraryHitCasesJobIdTaggingPostErrors[keyof RetagHitCaseLibraryHitCasesJobIdTaggingPostErrors]
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostResponse =
+  RetagHitCaseLibraryHitCasesJobIdTaggingPostResponses[keyof RetagHitCaseLibraryHitCasesJobIdTaggingPostResponses]
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutData = {
+  body: HitCaseTagsIn
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}/tags'
+}
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutError =
+  ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutErrors[keyof ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutErrors]
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponse =
+  ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponses[keyof ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponses]
 
 export type VideosLibraryVideosGetData = {
   body?: never
@@ -8305,79 +8559,9 @@ export type ListReferencesReferencesGetData = {
   path?: never
   query?: {
     /**
-     * Videotypes
+     * Tags
      */
-    videoTypes?: Array<
-      | 'live_clip'
-      | 'slideshow'
-      | 'drama'
-      | 'review'
-      | 'talking_head'
-      | 'try_on'
-      | 'lifestyle'
-      | 'product_showcase'
-    > | null
-    /**
-     * Categories
-     */
-    categories?: Array<
-      | '高跟鞋'
-      | '平底鞋'
-      | '乐福鞋'
-      | '牛津鞋'
-      | '一脚蹬'
-      | '穆勒鞋'
-      | '拖鞋'
-      | '短靴'
-      | '中筒靴'
-      | '及膝靴'
-      | '过膝靴'
-      | '高跟凉鞋'
-      | '坡跟凉鞋'
-      | '厚底凉鞋'
-      | '平底凉鞋'
-      | '夹趾拖'
-      | '凉拖鞋'
-      | '运动凉鞋'
-      | '跑鞋'
-      | '足球鞋'
-      | '篮球鞋'
-      | '啦啦队鞋'
-      | '棒&垒球鞋'
-      | '滑板鞋'
-      | '舞蹈鞋'
-      | '橄榄球鞋'
-      | '高尔夫鞋'
-      | '网球鞋'
-      | '训练鞋'
-      | '女性骑行鞋'
-      | '健步鞋'
-      | '板鞋'
-      | '徒步鞋'
-      | '徒步靴'
-      | '雪地靴'
-      | '雨靴'
-      | '水鞋'
-      | '猎靴'
-      | '医疗用鞋'
-      | '餐厨用鞋'
-      | '军事用靴'
-      | '工业用鞋'
-      | '工业用靴'
-      | '皮带'
-      | '钱包'
-      | '包'
-      | '袜子'
-      | '鞋垫'
-      | 'T恤'
-      | '衬衫'
-      | '卫衣'
-      | '毛衣'
-      | '外套'
-      | '裤子'
-      | '半身裙'
-      | '连衣裙'
-    > | null
+    tags?: Array<string> | null
     /**
      * Username
      */
@@ -8597,6 +8781,70 @@ export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
 
 export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
   RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
+
+export type RetagReferenceReferencesReferenceIdTaggingPostData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/tagging'
+}
+
+export type RetagReferenceReferencesReferenceIdTaggingPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RetagReferenceReferencesReferenceIdTaggingPostError =
+  RetagReferenceReferencesReferenceIdTaggingPostErrors[keyof RetagReferenceReferencesReferenceIdTaggingPostErrors]
+
+export type RetagReferenceReferencesReferenceIdTaggingPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type RetagReferenceReferencesReferenceIdTaggingPostResponse =
+  RetagReferenceReferencesReferenceIdTaggingPostResponses[keyof RetagReferenceReferencesReferenceIdTaggingPostResponses]
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutData = {
+  body: ReferenceTagsIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/tags'
+}
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutError =
+  ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors]
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponse =
+  ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses]
 
 export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData = {
   body: TestVideoIn

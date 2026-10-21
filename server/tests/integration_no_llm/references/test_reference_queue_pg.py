@@ -1,5 +1,6 @@
-"""参考视频的后台拆解：一次任务接手、拆解、打标、一次写回；四种失败各落各的原因并保留原来的拆解；
-超时收尾；任务抛出后不重投。拆解与打标走真的适配器，HTTP 与抽帧是替身。"""
+"""参考视频的后台拆解：一次任务接手、拆解、写回，拆成再排一次打标；拆解不碰标签；四种失败各落各的
+原因并保留原来的拆解；超时收尾；任务抛出后不重投。拆解走真的适配器，HTTP 与抽帧是替身，打标队列
+只记下排了谁。"""
 
 from __future__ import annotations
 
@@ -11,19 +12,30 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.domains.identity.models import Principal
+from iclip.domains.identity.rbac import ROLE_PERMISSIONS
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from iclip.domains.references.models import BREAKDOWN_TIMEOUT_SECONDS, Tags
+from iclip.domains.references.models import BREAKDOWN_TIMEOUT_SECONDS
 from iclip.domains.references.queue import QUEUE, ReferenceQueue
+from iclip.domains.references.repository import VideoBreakdowns
+from iclip.domains.references.service import ReferenceService
 from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
     FakeSampler,
+    NoTestVideos,
     ark_pipeline,
     plant_reference,
     plant_user,
     reference_row,
     responses_body,
-    tag_answer,
+)
+from tests.helpers.tagging import (
+    RecordingTaggingQueue,
+    entry_of,
+    plant_entry,
+    tag_id,
+    tagging_service,
 )
 
 OLD_DOCUMENT = "# 出场元素\n旧的那份"
@@ -31,50 +43,100 @@ OLD_DOCUMENT = "# 出场元素\n旧的那份"
 
 def make_queue(
     engine: AsyncEngine,
-    ark: FakeArk,
+    breakdowns: VideoBreakdowns,
+    tagging: RecordingTaggingQueue,
     *,
-    sampler: FakeSampler | None = None,
     connector: InMemoryConnector | None = None,
 ) -> ReferenceQueue:
-    breakdowns, tagger = ark_pipeline(ark, sampler=sampler)
     return ReferenceQueue(
         SqlReferenceStore(engine),
         breakdowns=breakdowns,
-        tagger=tagger,
+        tagging=tagging_service(engine, tagging),
         connector=connector or InMemoryConnector(),
     )
 
 
-async def pending_row(engine: AsyncEngine) -> uuid.UUID:
-    """排着队的一行，带着上一次的拆解与标签。"""
+def ark_breakdowns(ark: FakeArk, *, sampler: FakeSampler | None = None) -> VideoBreakdowns:
+    return ark_pipeline(ark, sampler=sampler)[0]
+
+
+async def no_uploads(principal: Principal, upload_id: uuid.UUID) -> str | None:
+    raise AssertionError("这里不该读上传记录")
+
+
+async def pending_row(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID, set[uuid.UUID]]:
+    """排着队的一行，带着上一次的拆解，条目上有一个人工标签与一个 AI 标签。"""
 
     owner = await plant_user(engine, "maya")
-    return await plant_reference(
-        engine,
-        owner=owner,
-        status="pending",
-        document=OLD_DOCUMENT,
-        video_types=("drama",),
-        categories=("拖鞋",),
+    reference_id = await plant_reference(
+        engine, owner=owner, status="pending", document=OLD_DOCUMENT
     )
+    tags = {await tag_id(engine, "平台&渠道", "AMZ"), await tag_id(engine, "品类", "拖鞋")}
+    entry_id = await plant_entry(engine, reference_id, status="completed", tags=list(tags))
+    return reference_id, entry_id, tags
 
 
-async def test_a_breakdown_writes_back_the_document_and_deduplicated_tags(
+async def test_a_breakdown_writes_the_document_and_queues_tagging_without_touching_tags(
     engine: AsyncEngine,
 ) -> None:
-    ark = FakeArk(tag=tag_answer(("review", "try_on", "review"), ("跑鞋", "袜子", "跑鞋")))
-    reference_id = await pending_row(engine)
+    ark = FakeArk()
+    tagging = RecordingTaggingQueue()
+    reference_id, entry_id, tags = await pending_row(engine)
 
-    await make_queue(engine, ark).run_breakdown(str(reference_id))
+    await make_queue(engine, ark_breakdowns(ark), tagging).run_breakdown(str(reference_id))
 
     row = await reference_row(engine, reference_id)
     assert row["breakdown_status"] == "completed"
     assert row["document"] == DOCUMENT
-    assert (row["video_types"], row["categories"]) == (["review", "try_on"], ["跑鞋", "袜子"])
     assert row["error_code"] is None
     assert row["version"] == 2
-    assert row["started_at"] is not None
     assert ark.breakdown_calls == 1
+    assert ark.tag_requests == [], "拆解队列自己不打标"
+    entry = await entry_of(engine, reference_id)
+    assert (entry["tag_status"], entry["tags"]) == ("pending", tags)
+    assert tagging.enqueued == [entry_id]
+
+
+async def test_a_successful_rerun_queues_tagging_again(engine: AsyncEngine) -> None:
+    owner = await plant_user(engine, "maya")
+    reference_id = await plant_reference(engine, owner=owner)
+    entry_id = await plant_entry(engine, reference_id, status="failed", error="model_failed")
+    tagging = RecordingTaggingQueue()
+    store = SqlReferenceStore(engine)
+    queue = make_queue(engine, ark_breakdowns(FakeArk()), tagging)
+
+    references = ReferenceService(
+        store,
+        own_video_upload=no_uploads,
+        queue=queue,
+        tagging=tagging_service(engine, tagging),
+        uploads_available=False,
+        test_videos=NoTestVideos(),
+    )
+    maya = Principal(
+        kind="user", user_id=owner, permissions=ROLE_PERMISSIONS["editor"], audit_label="maya"
+    )
+    await references.rerun(maya, reference_id)
+    assert tagging.enqueued == [], "排上重拆时还不打标"
+
+    await queue.run_breakdown(str(reference_id))
+
+    assert tagging.enqueued == [entry_id]
+    assert (await entry_of(engine, reference_id))["tag_status"] == "pending"
+
+
+async def test_a_breakdown_of_a_row_without_an_entry_creates_one_for_the_owner(
+    engine: AsyncEngine,
+) -> None:
+    owner = await plant_user(engine, "maya")
+    reference_id = await plant_reference(engine, owner=owner, status="pending", document=None)
+    tagging = RecordingTaggingQueue()
+
+    await make_queue(engine, ark_breakdowns(FakeArk()), tagging).run_breakdown(str(reference_id))
+
+    entry = await entry_of(engine, reference_id)
+    assert (entry["tag_status"], entry["created_by"]) == ("pending", owner)
+    assert tagging.enqueued == [entry["id"]]
 
 
 @pytest.mark.parametrize(
@@ -136,39 +198,20 @@ async def test_a_breakdown_writes_back_the_document_and_deduplicated_tags(
 async def test_a_failed_breakdown_records_its_reason_and_keeps_the_old_breakdown(
     engine: AsyncEngine, ark: FakeArk, sampler: FakeSampler | None, error_code: str
 ) -> None:
-    reference_id = await pending_row(engine)
+    reference_id, _, tags = await pending_row(engine)
+    tagging = RecordingTaggingQueue()
 
-    await make_queue(engine, ark, sampler=sampler).run_breakdown(str(reference_id))
+    await make_queue(engine, ark_breakdowns(ark, sampler=sampler), tagging).run_breakdown(
+        str(reference_id)
+    )
 
     row = await reference_row(engine, reference_id)
     assert (row["breakdown_status"], row["error_code"]) == ("failed", error_code)
     assert row["document"] == OLD_DOCUMENT
-    assert (row["video_types"], row["categories"]) == (["drama"], ["拖鞋"])
     assert row["version"] == 1
-    assert ark.tag_requests == [], "没拆成就不打标"
-
-
-@pytest.mark.parametrize(
-    "tag",
-    [
-        pytest.param(tag_answer(("review",), ("拖鞋", "人字拖")), id="unknown-category"),
-        pytest.param(tag_answer(("vlog",), ()), id="unknown-type"),
-        pytest.param(httpx.Response(200, json=responses_body("{videoTypes: [")), id="bad-json"),
-        pytest.param(httpx.Response(500, text="boom"), id="call-failed"),
-        pytest.param(httpx.ConnectError("refused"), id="unreachable"),
-    ],
-)
-async def test_failed_tagging_leaves_tags_empty_and_still_completes(
-    engine: AsyncEngine, tag: httpx.Response | Exception
-) -> None:
-    reference_id = await pending_row(engine)
-
-    await make_queue(engine, FakeArk(tag=tag)).run_breakdown(str(reference_id))
-
-    row = await reference_row(engine, reference_id)
-    assert row["breakdown_status"] == "completed"
-    assert row["document"] == DOCUMENT
-    assert (row["video_types"], row["categories"]) == ([], [])
+    assert tagging.enqueued == [], "没拆成就不打标"
+    entry = await entry_of(engine, reference_id)
+    assert (entry["tag_status"], entry["tags"]) == ("completed", tags)
 
 
 async def test_a_row_not_waiting_in_line_is_not_broken_down(engine: AsyncEngine) -> None:
@@ -176,7 +219,9 @@ async def test_a_row_not_waiting_in_line_is_not_broken_down(engine: AsyncEngine)
     reference_id = await plant_reference(engine, owner=owner, status="completed")
     ark = FakeArk()
 
-    await make_queue(engine, ark).run_breakdown(str(reference_id))
+    await make_queue(engine, ark_breakdowns(ark), RecordingTaggingQueue()).run_breakdown(
+        str(reference_id)
+    )
 
     assert ark.requests == []
     assert (await reference_row(engine, reference_id))["version"] == 1
@@ -193,7 +238,6 @@ async def test_running_rows_past_the_limit_time_out_and_keep_their_breakdown(
         video_url="https://cdn.example.test/a.mp4",
         status="running",
         document=OLD_DOCUMENT,
-        categories=("拖鞋",),
         started_minutes_ago=limit_minutes + 1,
     )
     fresh = await plant_reference(
@@ -204,11 +248,12 @@ async def test_running_rows_past_the_limit_time_out_and_keep_their_breakdown(
         started_minutes_ago=limit_minutes - 1,
     )
 
-    assert await make_queue(engine, FakeArk()).time_out_stalled() == 1
+    queue = make_queue(engine, ark_breakdowns(FakeArk()), RecordingTaggingQueue())
+    assert await queue.time_out_stalled() == 1
 
     timed_out = await reference_row(engine, stalled)
     assert (timed_out["breakdown_status"], timed_out["error_code"]) == ("failed", "timeout")
-    assert (timed_out["document"], timed_out["categories"]) == (OLD_DOCUMENT, ["拖鞋"])
+    assert timed_out["document"] == OLD_DOCUMENT
     assert (await reference_row(engine, fresh))["breakdown_status"] == "running"
 
 
@@ -217,7 +262,7 @@ async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rer
 ) -> None:
     """超时收尾后又重拆的行，上一次迟到的结果不写进去。"""
 
-    reference_id = await pending_row(engine)
+    reference_id, _, _ = await pending_row(engine)
     store = SqlReferenceStore(engine)
     first = await store.claim(reference_id)
     assert first is not None
@@ -236,7 +281,7 @@ async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rer
     second = await store.claim(reference_id)
     assert second is not None
 
-    assert not await store.finish(first, document="迟到的", tags=Tags())
+    assert not await store.finish(first, document="迟到的")
 
     row = await reference_row(engine, reference_id)
     assert (row["breakdown_status"], row["document"]) == ("running", OLD_DOCUMENT)
@@ -245,7 +290,7 @@ async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rer
 async def test_a_task_that_raises_is_not_run_again(engine: AsyncEngine) -> None:
     """崩在半路的任务停在 failed，不重投：再跑一次就是再付一次钱。"""
 
-    reference_id = await pending_row(engine)
+    reference_id, _, _ = await pending_row(engine)
     connector = InMemoryConnector()
     calls: list[str] = []
 
@@ -254,10 +299,7 @@ async def test_a_task_that_raises_is_not_run_again(engine: AsyncEngine) -> None:
             calls.append(video_url)
             raise RuntimeError("进程里出了没料到的错")
 
-    _, tagger = ark_pipeline(FakeArk())
-    queue = ReferenceQueue(
-        SqlReferenceStore(engine), breakdowns=Crashing(), tagger=tagger, connector=connector
-    )
+    queue = make_queue(engine, Crashing(), RecordingTaggingQueue(), connector=connector)
     await queue.app.open_async()
     try:
         await queue.enqueue_breakdown(reference_id)

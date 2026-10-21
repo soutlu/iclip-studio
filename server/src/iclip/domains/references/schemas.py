@@ -12,10 +12,9 @@ from pydantic.alias_generators import to_camel
 from iclip.domains.references.models import (
     BreakdownErrorCode,
     BreakdownStatus,
-    CategoryValue,
     TestVideoStatus,
-    VideoTypeValue,
 )
+from iclip.domains.tagging.public import TagErrorCode, TagStatus
 
 MAX_USER_NAME_CHARS: Final = 200
 """与 ``generation.schemas.MAX_USER_NAME_CHARS`` 同一个数；参考视频不依赖生成域，照抄。"""
@@ -33,13 +32,18 @@ class ReferenceCreateIn(CamelModel):
 
 
 class ReferenceUpdateIn(CamelModel):
-    """整份改：拆解正文与两组标签都照给的存，重复的标签去掉。"""
+    """改拆解正文。"""
 
     version: int
     """读到那一份的版本号；对不上是 ``409``。"""
     document: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    video_types: list[VideoTypeValue]
-    categories: list[CategoryValue]
+
+
+class ReferenceTagsIn(CamelModel):
+    """整份替换这条参考视频在所有维度上的标签。"""
+
+    tag_ids: list[uuid.UUID]
+    """取值的 id，不能是维度；重复的去掉，空就是全部清掉。"""
 
 
 class ReferenceVideoItemOut(CamelModel):
@@ -49,16 +53,19 @@ class ReferenceVideoItemOut(CamelModel):
     video_url: str
     user_name: str | None
     """属主的用户名：上传的人，或第一次拆它的人；账号没有用户名时为 ``None``。"""
-    video_types: list[VideoTypeValue]
-    """可以几个；空就是未标注。"""
-    categories: list[CategoryValue]
+    tag_ids: list[uuid.UUID]
+    """所有维度上的标签，指 ``GET /library-tags`` 里的节点；空就是未标注。"""
+    tag_status: TagStatus | None
+    """打标状态；还没打过标为 ``null``。"""
+    tag_error: TagErrorCode | None
+    """最近一次打标失败的原因；打成之后清掉。"""
     breakdown_status: BreakdownStatus
     error_code: BreakdownErrorCode | None
     """最近一次失败的原因；拆成之后清掉。"""
     version: int
     """拆完或改过一次就加一。"""
     can_edit: bool
-    """这位读者能不能改、重拆、移除：属主才能。"""
+    """这位读者能不能改、改标签、重拆、重新打标、移除：属主才能。"""
     created_at: datetime
     updated_at: datetime
 
@@ -110,19 +117,6 @@ class ReferenceVideosOut(CamelModel):
     """这位读者能不能往资料库加参考视频：拆解已配置，且持 ``uploads:write``。"""
 
 
-class VideoTypeCountOut(CamelModel):
-    value: VideoTypeValue
-    label: str
-    rule: str
-    """怎么判断这一类，与打标提示词里写的同一句。"""
-    count: int
-
-
-class CategoryCountOut(CamelModel):
-    name: CategoryValue
-    count: int
-
-
 class OwnerCountOut(CamelModel):
     user_name: str
     count: int
@@ -130,25 +124,20 @@ class OwnerCountOut(CamelModel):
 
 
 class ReferenceFiltersOut(CamelModel):
-    video_types: list[VideoTypeCountOut]
-    """全部片子类型，按清单的先后，没用到的数量为 0。"""
-    categories: list[CategoryCountOut]
-    """用到的品类，条数多的在前，同数按清单的先后。"""
     owners: list[OwnerCountOut]
     """名下有参考视频的属主，条数多的在前，同数按用户名。"""
 
 
 __all__ = [
     "MAX_USER_NAME_CHARS",
-    "CategoryCountOut",
     "OwnerCountOut",
     "ReferenceCreateIn",
     "ReferenceFiltersOut",
+    "ReferenceTagsIn",
     "ReferenceUpdateIn",
     "ReferenceVideoItemOut",
     "ReferenceVideoOut",
     "ReferenceVideosOut",
     "TestVideoIn",
     "TestVideoOut",
-    "VideoTypeCountOut",
 ]

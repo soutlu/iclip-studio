@@ -227,6 +227,9 @@ const ICONS = {
   locked: LockKeyhole,
   logout: LogOut,
   more: Ellipsis,
+  /** 列表里的一项往前、往后挪一位 */
+  'move-up': ArrowUp,
+  'move-down': ArrowDown,
   music: Music,
   next: ArrowRight,
   'panel-left': PanelLeft,

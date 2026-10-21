@@ -262,7 +262,7 @@ describe('首页真实数据流程', () => {
 describe('首页做同款', () => {
   const SAME_PLACEHOLDER = '参照该视频做同款，请输入要替换的内容'
   const PHRASES = ['换人物', '换产品', '换场景']
-  /** 测试用户自己的卡，mock 里做得了同款。 */
+  /** 挂着对话的卡，mock 里做得了同款。 */
   const sourceCard = () => {
     const card = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
     if (card === undefined) throw new Error('mock 里没有这张卡')
@@ -408,8 +408,8 @@ describe('首页做同款', () => {
     },
     {
       scene: '这张卡做不了同款',
-      // 别人的卡，mock 里打不开那段对话。
-      id: () => mockLibraryVideos().find((video) => video.title === '春夏凉鞋合集')?.id,
+      // 不挂对话的卡，没有对话可拷。
+      id: () => mockLibraryVideos().find((video) => video.conversationId === null)?.id,
       message: /该视频没有可用的制作文件，无法做同款/,
     },
   ])('$scene：提示原因并回到普通首页', async ({ id, message }) => {
