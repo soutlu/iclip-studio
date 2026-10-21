@@ -28,7 +28,7 @@ export const openingTextOf = (take: LibraryTake): string => {
 }
 
 /** 卡片标题：来源对话的标题；不挂对话的出片是接口调用方直接交的。 */
-export const cardTitleOf = (video: LibraryVideo): string => video.title ?? '接口提交'
+export const cardTitleOf = (video: Pick<LibraryVideo, 'title'>): string => video.title ?? '接口提交'
 
 /** 镜头数：有分镜就是分镜的镜数，纯文本没有镜的概念。 */
 export const cutCountOf = (take: LibraryTake): number | null =>

@@ -261,22 +261,27 @@ export const mockTagMatcher = (
   return (tagIds) => [...groups.values()].every((group) => tagIds.some((id) => group.has(id)))
 }
 
-const withCounts = (current: Node, entries: readonly (readonly string[])[]): LibraryTagOut => {
+/** 两库各条目的标签，条数照它现算。 */
+type TagSets = {
+  references?: readonly (readonly string[])[]
+  hitCases?: readonly (readonly string[])[]
+}
+
+const withCounts = (current: Node, entries: TagSets): LibraryTagOut => {
   const covered = new Set([current.id, ...(places.get(current.id)?.descendants ?? [])])
+  const count = (sets: readonly (readonly string[])[] = []) =>
+    sets.filter((tagIds) => tagIds.some((id) => covered.has(id))).length
   return {
     ...current,
     children: current.children.map((child) => withCounts(child, entries)),
-    counts: {
-      hitCases: 0,
-      references: entries.filter((tagIds) => tagIds.some((id) => covered.has(id))).length,
-    },
+    counts: { hitCases: count(entries.hitCases), references: count(entries.references) },
   }
 }
 
-/** `GET /library-tags` 的答复；`entries` 是各条目的标签，条数照它现算。 */
-export const mockLibraryTagTree = (
-  entries: readonly (readonly string[])[] = [],
-): LibraryTagsOut => ({ dimensions: tree.map((dimension) => withCounts(dimension, entries)) })
+/** `GET /library-tags` 的答复；`entries` 是两库各条目的标签，条数照它现算。 */
+export const mockLibraryTagTree = (entries: TagSets = {}): LibraryTagsOut => ({
+  dimensions: tree.map((dimension) => withCounts(dimension, entries)),
+})
 
 const AI_VALUE_LIMIT = 500
 
@@ -319,14 +324,14 @@ const moveTo = <T>(list: T[], item: T, index: number) => {
   list.splice(0, list.length, ...rest)
 }
 
-const publicNode = (id: string, entries: readonly (readonly string[])[]) => {
+const publicNode = (id: string, entries: TagSets) => {
   const place = places.get(id)
   return place === undefined ? undefined : withCounts(place.node, entries)
 }
 
-/** `entries` 给出此刻每条没移除的参考视频的标签；`forget` 把删掉的标签从条目上去掉。 */
+/** `entries` 给出此刻每条没移除的参考视频与在库的爆款素材的标签；`forget` 把删掉的标签从两库条目上去掉。 */
 export const libraryTagHandlers = (
-  entries: () => readonly (readonly string[])[],
+  entries: () => TagSets,
   forget: (ids: ReadonlySet<string>) => void,
 ) => [
   http.get('*/api/library-tags', () => HttpResponse.json(mockLibraryTagTree(entries()))),

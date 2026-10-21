@@ -19,6 +19,7 @@ import { VIDEO_PLAYER_SELECTOR } from '@/shared/ui/video-player'
 import { useLibraryVideo, type LibraryVideo, type LibraryVideoDetail } from '../library.api'
 import { cardTitleOf, durationSecondsOf, formatSecond, versionsOf } from '../library-media'
 import { AuthorAvatar } from './author-avatar'
+import { HitCasePanel, HitCasePanelSkeleton } from './hit-case-panel'
 import { LibraryParamsPanel, LibraryScriptPanel } from './library-script'
 import { LibraryVersionBar, LibraryVersionBarSkeleton } from './library-version-bar'
 import { LibraryViewerFrame } from './library-viewer-frame'
@@ -27,21 +28,29 @@ import { ViewerPending, ViewerStage, ViewerVideo } from './library-viewer-stage'
 // 恰好跳到镜头起点时画面可能停在上一镜的最后一帧，往后让一点。
 const SEEK_NUDGE_S = 0.05
 
+/** 右栏的页签；切到别的卡或别的版时留在原来的页签上。 */
+type DetailPanel = 'script' | 'params' | 'hit-case'
+
 type LibraryViewerProps = {
   videoId: string
+  /** 打开时先选中的那一版；卡里没有这一版就选卡面。 */
+  versionId: string | null
   listed: LibraryVideo | undefined
   startAt: number | null
+  /** 上一条、下一条的 id，原样交给 `onNavigate`；是卡 id 还是版本 id 由调用方定。 */
   prevId: string | null
   nextId: string | null
   shareLink: string
   onNavigate: (id: string) => void
   onClose: () => void
-  onAuthor: (userName: string) => void
+  /** 点作者按人筛选；不给就只显示作者。 */
+  onAuthor?: ((userName: string) => void) | undefined
   onRestoreFocus: () => boolean
 }
 
 export function LibraryViewer({
   videoId,
+  versionId,
   listed,
   startAt,
   prevId,
@@ -54,6 +63,7 @@ export function LibraryViewer({
 }: LibraryViewerProps) {
   const detail = useLibraryVideo(videoId)
   const video = detail.data?.video ?? listed
+  const [panel, setPanel] = useState<DetailPanel>('script')
 
   // React portal 里的嵌套浮层（菜单、参考图大图）的按键也冒泡到这里，它们自己用方向键。
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -96,10 +106,13 @@ export function LibraryViewer({
           detailError={
             detail.isError ? errorMessageOf(detail.error, '读取该视频的全部版本失败') : null
           }
-          key={videoId}
+          initialVersionId={versionId}
+          key={`${videoId}:${versionId ?? ''}`}
           onAuthor={onAuthor}
           onClose={onClose}
+          onPanelChange={setPanel}
           onRetry={() => void detail.refetch()}
+          panel={panel}
           shareLink={shareLink}
           startAt={startAt}
           video={video}
@@ -135,26 +148,35 @@ type ViewerBodyProps = {
   video: LibraryVideo
   detail: LibraryVideoDetail | undefined
   detailError: string | null
+  initialVersionId: string | null
   startAt: number | null
   shareLink: string
+  panel: DetailPanel
+  onPanelChange: (panel: DetailPanel) => void
   onClose: () => void
-  onAuthor: (userName: string) => void
+  onAuthor: ((userName: string) => void) | undefined
   onRetry: () => void
 }
+
+const isDetailPanel = (value: string): value is DetailPanel =>
+  value === 'script' || value === 'params' || value === 'hit-case'
 
 function ViewerBody({
   video,
   detail,
   detailError,
+  initialVersionId,
   startAt,
   shareLink,
+  panel,
+  onPanelChange,
   onClose,
   onAuthor,
   onRetry,
 }: ViewerBodyProps) {
   const playerRef = useRef<HTMLVideoElement>(null)
   const pendingStartRef = useRef(startAt)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialVersionId)
   const [currentTime, setCurrentTime] = useState(0)
   const [preview, setPreview] = useState<LightboxMedia | null>(null)
   const { copied, copy } = useCopyFeedback()
@@ -235,20 +257,18 @@ function ViewerBody({
         className="flex min-h-0 w-full flex-col max-md:flex-none md:w-95 md:shrink-0 md:border-l md:border-hairline lg:w-105"
       >
         <header className="px-6 pt-4 max-md:px-4">
-          {author === null ? null : (
+          {author === null ? null : onAuthor === undefined ? (
+            <div className="-ml-1 inline-flex max-w-full items-center gap-2.5 py-1 pr-3 pl-1">
+              <AuthorLine at={version.finishedAt} author={author} />
+            </div>
+          ) : (
             <button
               className="-ml-1 inline-flex max-w-full ui-state cursor-pointer items-center gap-2.5 rounded-full py-1 pr-3 pl-1 text-left ui-focus"
               onClick={() => onAuthor(author)}
               title={`仅显示 ${author} 的视频`}
               type="button"
             >
-              <AuthorAvatar className="size-8 text-label" name={author} />
-              <span className="min-w-0">
-                <span className="block truncate text-body font-semibold">{author}</span>
-                <span className="block text-caption text-on-surface-faint">
-                  {formatRelativeTime(version.finishedAt)}
-                </span>
-              </span>
+              <AuthorLine at={version.finishedAt} author={author} />
             </button>
           )}
           <DialogTitle className="mt-3 text-title-lg font-semibold">{title}</DialogTitle>
@@ -269,7 +289,13 @@ function ViewerBody({
           )}
         </header>
 
-        <TabsRoot className="flex min-h-0 flex-1 flex-col max-md:flex-none" defaultValue="script">
+        <TabsRoot
+          className="flex min-h-0 flex-1 flex-col max-md:flex-none"
+          onValueChange={(value) => {
+            if (isDetailPanel(value)) onPanelChange(value)
+          }}
+          value={panel}
+        >
           <TabsList
             aria-label="详情内容"
             className="mx-6 mt-3 h-10 shrink-0 gap-4 border-b border-hairline max-md:mx-4"
@@ -279,6 +305,9 @@ function ViewerBody({
             </TabsTrigger>
             <TabsTrigger className="px-0 after:inset-x-0" value="params">
               参数与来源
+            </TabsTrigger>
+            <TabsTrigger className="px-0 after:inset-x-0" value="hit-case">
+              爆款素材
             </TabsTrigger>
           </TabsList>
           <TabsContent
@@ -301,6 +330,17 @@ function ViewerBody({
               version={version}
               video={video}
             />
+          </TabsContent>
+          <TabsContent
+            className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6 max-md:overflow-visible max-md:px-4"
+            value="hit-case"
+          >
+            {/* 版本还没读全时卡面那一版可能不是要找的那一版，读全了再问它的爆款状态。 */}
+            {detail === undefined && detailError === null ? (
+              <HitCasePanelSkeleton />
+            ) : (
+              <HitCasePanel jobId={version.jobId} key={version.jobId} />
+            )}
           </TabsContent>
         </TabsRoot>
 
@@ -337,6 +377,18 @@ function ViewerBody({
           if (at !== undefined && playerRef.current !== null) playerRef.current.currentTime = at
         }}
       />
+    </>
+  )
+}
+
+function AuthorLine({ author, at }: { author: string; at: string }) {
+  return (
+    <>
+      <AuthorAvatar className="size-8 text-label" name={author} />
+      <span className="min-w-0">
+        <span className="block truncate text-body font-semibold">{author}</span>
+        <span className="block text-caption text-on-surface-faint">{formatRelativeTime(at)}</span>
+      </span>
     </>
   )
 }

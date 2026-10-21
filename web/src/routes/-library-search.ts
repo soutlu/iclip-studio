@@ -5,6 +5,7 @@ import {
   DEFAULT_REFERENCE_SCOPE,
   DEFAULT_WHOLE_FILM_SCOPE,
   LIBRARY_TAB_VALUES,
+  type HitCaseScope,
   type LibraryScope,
   type LibraryTab,
   type ReferenceScope,
@@ -26,6 +27,8 @@ export const librarySearchSchema = z.object({
   userName: z.string().min(1).optional().catch(undefined),
   tags: z.array(z.uuid()).min(1).optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
+  /** 与 `video` 一起用：打开那张卡时先选中这一版。 */
+  version: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
   film: z.uuid().optional().catch(undefined),
 })
@@ -78,6 +81,15 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
     userName: scope.userName ?? undefined,
   }
 }
+
+export const hitCaseScopeFromSearch = (search: LibrarySearch): HitCaseScope => ({
+  tags: search.tags ?? [],
+})
+
+export const searchFromHitCaseScope = (scope: HitCaseScope): LibrarySearch => ({
+  tab: 'hit-cases',
+  tags: scope.tags.length === 0 ? undefined : [...scope.tags],
+})
 
 export function wholeFilmScopeFromSearch(search: LibrarySearch): WholeFilmScope {
   return {

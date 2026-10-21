@@ -14,8 +14,11 @@ import { cutCountOf, formatClock, formatSecond, keyframesOf, type Keyframe } fro
 
 const canHover = () => window.matchMedia('(hover: hover)').matches
 
+/** 故事板只看这一版的画面与脚本。 */
+type StoryboardVideo = Pick<LibraryVideo, 'face' | 'take'>
+
 type StoryboardBadgeProps = {
-  video: LibraryVideo
+  video: StoryboardVideo
   seconds: number | null
   /** 窄列上只留镜数，不显示时长。 */
   compact: boolean
@@ -143,7 +146,7 @@ export function StoryboardBadge({
 }
 
 type StoryboardStripProps = {
-  video: LibraryVideo
+  video: StoryboardVideo
   frames: readonly Keyframe[]
   seconds: number | null
   /** 浮层自带标题行；底部面板的标题在面板表头里。 */

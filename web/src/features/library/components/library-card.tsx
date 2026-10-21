@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectOf } from '@/shared/lib/aspect-ratio'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -41,14 +41,22 @@ const usePreviewIntent = () => {
   }
 }
 
+/** 卡上用得到的：成片素材的一张卡，或爆款素材的一版。`id` 是打开它、找回焦点用的 id；
+ * 组数与版数只有成片素材的卡有。 */
+export type CardVideo = Pick<LibraryVideo, 'id' | 'title' | 'userName' | 'face' | 'take'> &
+  Partial<Pick<LibraryVideo, 'groupCount' | 'versionCount'>>
+
 type LibraryCardProps = {
-  video: LibraryVideo
+  video: CardVideo
   width: number
-  onAuthor: (userName: string) => void
+  /** 点作者按人筛选；不给就不能点。 */
+  onAuthor?: (userName: string) => void
   onOpen: (id: string, startAt: number | null) => void
+  /** 画面左下角另加的状态，悬停露出正文时隐去。 */
+  status?: ReactNode
 }
 
-export function LibraryCard({ video, width, onAuthor, onOpen }: LibraryCardProps) {
+export function LibraryCard({ video, width, onAuthor, onOpen, status }: LibraryCardProps) {
   const { face, take } = video
   const aspect = aspectOf(take.aspectRatio)
   const poster =
@@ -101,13 +109,19 @@ export function LibraryCard({ video, width, onAuthor, onOpen }: LibraryCardProps
 
         <div className="pointer-events-none absolute top-2 left-2 flex gap-1.5">
           {face.kind === 'composite' ? <Tag variant="success">合成</Tag> : null}
-          {video.groupCount > 1 ? (
+          {(video.groupCount ?? 0) > 1 ? (
             <span className="library-card-badge">{video.groupCount} 组</span>
           ) : null}
-          {video.versionCount > 1 ? (
+          {(video.versionCount ?? 0) > 1 ? (
             <span className="library-card-badge">{video.versionCount} 版</span>
           ) : null}
         </div>
+        {/* 放左下角：窄列上顶部一行已被角标与故事板占满。 */}
+        {status === undefined ? null : (
+          <div className="library-card-hide-on-hover pointer-events-none absolute bottom-2 left-2">
+            {status}
+          </div>
+        )}
         <StoryboardBadge
           compact={compact}
           onFocusFrame={setStoryboardAt}
@@ -115,7 +129,8 @@ export function LibraryCard({ video, width, onAuthor, onOpen }: LibraryCardProps
           seconds={seconds}
           video={video}
         />
-        {take.model === null || compact ? null : (
+        {/* 有状态时让出底边，免得两个角标挤在一起。 */}
+        {take.model === null || compact || status !== undefined ? null : (
           <span className="library-card-badge library-card-hide-on-hover pointer-events-none absolute right-2 bottom-2">
             {take.model}
           </span>

@@ -41,6 +41,9 @@ const INVERTED_CLASS = 'rounded-full disabled:bg-disabled-container'
 
 const CONFLICT_MESSAGE = '该拆解已被修改，刷新将丢弃本次修改'
 
+/** AI 维度旁的提示：重拆与重新打标都会整组重写这一维度。 */
+const REFERENCE_AI_HINT = '由 AI 自动打标，重新拆解或重新打标时会重写该项标签'
+
 const isConflict = (error: unknown) => error instanceof ApiError && error.status === 409
 
 type Mode = 'view' | 'edit' | 'confirm-rerun' | 'confirm-retag' | 'confirm-remove'
@@ -375,6 +378,7 @@ function ViewerBody({
           )}
           <div className="mt-4">
             <LibraryTagEditor
+              aiHint={REFERENCE_AI_HINT}
               busy={replaceTags.isPending || tagging}
               editable={reference.canEdit && mode === 'view'}
               index={tags}
