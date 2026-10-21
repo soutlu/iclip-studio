@@ -21,7 +21,13 @@ import type {
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockAuthUser } from './auth-user'
-import { isMockAiTag, isMockTagValue, mockTagId, mockTagMatcher } from './library-tags'
+import {
+  findMockTagId,
+  isMockAiTag,
+  isMockTagValue,
+  mockTagId,
+  mockTagMatcher,
+} from './library-tags'
 import { pageBy } from './paging'
 import { mockConfirmedUpload } from './uploads'
 
@@ -306,7 +312,11 @@ const advance = (row: Row, now: number) => {
   else
     Object.assign(row, {
       tagError: null,
-      tagIds: [...row.tagIds.filter((id) => !isMockAiTag(id)), ...tagIdsOf(...DEMO_AI_TAGS)],
+      // 治理者可能已删掉或改了名的，打不上就跳过。
+      tagIds: [
+        ...row.tagIds.filter((id) => !isMockAiTag(id)),
+        ...DEMO_AI_TAGS.flatMap((name) => findMockTagId(name) ?? []),
+      ],
       tagQueuedAt: null,
       tagStatus: 'completed',
     } satisfies Partial<Row>)
@@ -335,6 +345,11 @@ const find = (id: unknown) => live().find((row) => row.id === id)
 
 /** 此刻每条没移除的参考视频的标签，标签树的条数照它现算。 */
 export const mockReferenceTagSets = (): string[][] => live().map((row) => row.tagIds)
+
+/** 治理者删了标签：每一条（含已移除的）去掉这些标签。 */
+export const forgetMockReferenceTags = (ids: ReadonlySet<string>) => {
+  for (const row of rows) row.tagIds = row.tagIds.filter((id) => !ids.has(id))
+}
 
 const NOT_FOUND = () => HttpResponse.json({ detail: '资料库里没有这条参考视频' }, { status: 404 })
 

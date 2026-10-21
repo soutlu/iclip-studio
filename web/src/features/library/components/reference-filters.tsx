@@ -1,6 +1,9 @@
-/** 参考视频的筛选条：全部 / 我的、按人、标签树每个维度一个多选、时间。标签的名称、说明与条数都取自标签树。 */
+/** 参考视频的筛选条：全部 / 我的、按人、标签树每个维度一个多选、时间；治理者在最右多一个「管理标签」开关。
+ * 标签的名称、说明与条数都取自标签树。 */
 
+import { Icon } from '@/shared/icons'
 import { dateRangeLabel } from '@/shared/lib/date-range'
+import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { DateRangeFilter, FilterBarRoot, PickerFilter, useFilterBar } from '@/shared/ui/filter-bar'
 import type { PickerSource } from '@/shared/ui/search-picker'
@@ -18,6 +21,8 @@ type ReferenceFiltersProps = {
   tags: TagIndex | undefined
   /** 右侧的计数，如「共 32 条」。 */
   trailing?: React.ReactNode
+  /** 给了就在最右放「管理标签」开关（只给治理者）。 */
+  manageTags?: { open: boolean; onToggle: () => void } | undefined
 }
 
 // 弹层触发器照 chip 的外形，与左右两组 chip 排在一条线上。
@@ -37,7 +42,15 @@ export function ReferenceFilters(props: ReferenceFiltersProps) {
   )
 }
 
-function Filters({ scope, onChange, myUserName, authors, tags, trailing }: ReferenceFiltersProps) {
+function Filters({
+  scope,
+  onChange,
+  myUserName,
+  authors,
+  tags,
+  trailing,
+  manageTags,
+}: ReferenceFiltersProps) {
   const { close } = useFilterBar()
   const apply = (patch: Partial<ReferenceScope>) => {
     close()
@@ -101,8 +114,30 @@ function Filters({ scope, onChange, myUserName, authors, tags, trailing }: Refer
         value={scope}
       />
 
-      {trailing === undefined ? null : (
-        <span className="ml-auto pl-2 text-body-sm text-on-surface-faint">{trailing}</span>
+      {trailing === undefined && manageTags === undefined ? null : (
+        <span className="ml-auto flex items-center gap-3 pl-2">
+          {trailing === undefined ? null : (
+            <span className="text-body-sm text-on-surface-faint">{trailing}</span>
+          )}
+          {manageTags === undefined ? null : (
+            <button
+              aria-pressed={manageTags.open}
+              className={cn(
+                TRIGGER_CLASS,
+                'inline-flex ui-state cursor-pointer items-center gap-1.5 text-on-surface ui-focus',
+                manageTags.open && 'bg-state-active',
+              )}
+              onClick={() => {
+                close()
+                manageTags.onToggle()
+              }}
+              type="button"
+            >
+              <Icon decorative name="settings" size="xs" />
+              管理标签
+            </button>
+          )}
+        </span>
       )}
     </>
   )
