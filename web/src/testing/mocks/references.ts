@@ -1,16 +1,19 @@
-/** 参考视频的 mock：内存里的一张表，筛选、翻页、改、重拆、移除与试生成照合同 §14 做。
+/** 参考视频的 mock：内存里的一张表，筛选、翻页、改、改标签、重拆、重新打标、移除与试生成照合同 §14、§15 做。
  *
- * 上传建的行和重拆的行按时间往前走：先排队，过一会儿拆解中，再过一会儿拆完（带演示拆解与标签），
- * dev:mock 下轮询看得见状态变化。同一份文件内容再传一次交回原来那一行（200）。
+ * 上传建的行和重拆的行按时间往前走：先排队，过一会儿拆解中，再过一会儿拆完（带演示拆解），
+ * 拆完接着打标：排队、打标中，再过一会儿打完，AI 维度换成演示标签、人工维度不动。dev:mock 下轮询看得见状态变化。
+ * 同一份文件内容再传一次交回原来那一行（200）。
  * 试生成同样按时间往前走：提交后生成中，过一会儿完成，试生成与原片同一个示例视频；改过或重拆过拆解就标为过时。
  * 演示行覆盖各种状态：拆完的、没标签的、排队与拆解中的、没拆成的（有无上一次拆解）、别人的；
+ * 打标有打完的、排队与打标中的（静止）、没打成的；
  * 试生成有未试生成、生成中、完成（含横版）、拆解已更新、失败，以及别人的完成与未试生成。
- * 单测要断言具体内容就先 `resetMockReferences([])` 再用 `addMockReference` 放自己的行。 */
+ * 标签 id 用 `mockTagId(名字)` 取。单测要断言具体内容就先 `resetMockReferences([])` 再用 `addMockReference` 放自己的行。 */
 
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
 import type {
   zReferenceFiltersOut,
+  zReferenceTagsIn,
   zReferenceUpdateIn,
   zReferenceVideoOut,
 } from '@/shared/api/generated/zod.gen'
@@ -18,42 +21,19 @@ import type {
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockAuthUser } from './auth-user'
+import { isMockAiTag, isMockTagValue, mockTagId, mockTagMatcher } from './library-tags'
 import { pageBy } from './paging'
 import { mockConfirmedUpload } from './uploads'
 
 type Reference = z.output<typeof zReferenceVideoOut>
 type TestVideo = NonNullable<Reference['testVideo']>
-type VideoType = Reference['videoTypes'][number]
-type Category = Reference['categories'][number]
 type Filters = z.output<typeof zReferenceFiltersOut>
 
-/** 片子类型的名称与判断说明，按合同清单的先后。 */
-const VIDEO_TYPES: readonly { value: VideoType; label: string; rule: string }[] = [
-  { label: '直播切片', rule: '画面来自直播间，主播在直播布景前讲', value: 'live_clip' },
-  { label: '图文混剪', rule: '由图片、零散素材拼成，或是动画、三维渲染', value: 'slideshow' },
-  { label: '剧情', rule: '有角色和情节，人物之间的互动推着故事往前走', value: 'drama' },
-  { label: '开箱测评', rule: '拆包装上手，或在片中做测试、对比', value: 'review' },
-  { label: '口播', rule: '有人对着镜头讲，说话占了大部分时长', value: 'talking_head' },
-  { label: '上身展示', rule: '模特穿上或戴上产品，展示上身效果', value: 'try_on' },
-  { label: '场景种草', rule: '人物在生活场景里自然地使用产品，不对着镜头讲解', value: 'lifestyle' },
-  { label: '产品展示', rule: '产品本身是主体，拍特写、细节、功能', value: 'product_showcase' },
-]
+/** 一组标签名换成 id。 */
+const tagIdsOf = (...names: string[]) => names.map(mockTagId)
 
-/** 品类清单的先后：条数相同时按它排。只列演示里会出现的几个，其余排在后面。 */
-const CATEGORY_ORDER: readonly Category[] = [
-  '平底鞋',
-  '乐福鞋',
-  '穆勒鞋',
-  '拖鞋',
-  '短靴',
-  '凉拖鞋',
-  '板鞋',
-  '雪地靴',
-  'T恤',
-  '卫衣',
-  '外套',
-  '裤子',
-]
+/** 打完标时写回的 AI 维度标签。 */
+const DEMO_AI_TAGS = ['拖鞋', '居家/日常放松', '标准开箱流程'] as const
 
 const DEMO_DOCUMENT = `# 出场元素
 
@@ -113,6 +93,10 @@ const HOUR_MS = 60 * 60_000
 const PENDING_MS = 1500
 const SETTLE_MS = 4000
 
+/** 打标排进去之后多久进打标中、多久打完。 */
+const TAG_PENDING_MS = 1000
+const TAG_SETTLE_MS = 2500
+
 /** 试生成提交后多久完成。 */
 const TEST_SETTLE_MS = 5000
 
@@ -122,6 +106,8 @@ type Row = Reference & {
   contentKey: string | null
   /** 后台拆解的进度：什么时候排进去的。没有就是静止的演示行。 */
   queuedAt: number | null
+  /** 后台打标的进度：什么时候排进去的。没有就是静止的演示状态。 */
+  tagQueuedAt: number | null
   /** 试生成什么时候提交的；没有就是静止的演示状态。 */
   testQueuedAt: number | null
 }
@@ -131,14 +117,13 @@ let seq = 0
 
 const idOf = (n: number) => `5ef00000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
-/** 一行参考视频；没给的字段按「拆完、有演示拆解、属主是测试用户」补。 */
+/** 一行参考视频；没给的字段按「拆完、打完标、有演示拆解、属主是测试用户」补。 */
 export const addMockReference = (overrides: Partial<Reference> = {}): Reference => {
   seq += 1
   const at = new Date(Date.now() - seq * 60_000).toISOString()
   const row: Row = {
     breakdownStatus: 'completed',
     canEdit: true,
-    categories: [],
     contentKey: null,
     createdAt: at,
     document: DEMO_DOCUMENT,
@@ -146,12 +131,16 @@ export const addMockReference = (overrides: Partial<Reference> = {}): Reference 
     id: idOf(seq),
     queuedAt: null,
     removed: false,
+    tagError: null,
+    tagIds: [],
+    tagQueuedAt: null,
+    // 与回填同一口径：有拆解的算打完了标，没拆完过的还没打过。
+    tagStatus: overrides.document === null ? null : 'completed',
     testQueuedAt: null,
     testVideo: null,
     updatedAt: at,
     userName: mockAuthUser.username,
     version: 1,
-    videoTypes: [],
     videoUrl: sampleVideoUrl,
     ...overrides,
   }
@@ -185,66 +174,82 @@ const seedDemo = () => {
       videoUrl: sampleWideUrl,
     },
     {
-      categories: ['短靴', '卫衣', '裤子'],
       createdAt: ago(0.2),
+      tagIds: tagIdsOf('TikTok', '短靴', '卫衣', '裤子', '户外/公园散步', '动态上身展示'),
       userName: me,
-      videoTypes: ['try_on'],
     },
     {
-      categories: ['拖鞋'],
       createdAt: ago(2),
+      tagIds: tagIdsOf('拖鞋', '居家/日常放松', '标准开箱流程', '360°全景展示'),
       testVideo: demoTestVideo({ url: sampleVideoUrl }),
       userName: 'Maya.Cheng',
-      videoTypes: ['review', 'product_showcase'],
     },
     {
       breakdownStatus: 'failed',
-      categories: ['拖鞋'],
       createdAt: ago(5),
       errorCode: 'model_call_failed',
+      tagIds: tagIdsOf('拖鞋', '开箱测评型'),
       // 静止的生成中：从 42 秒前开始，dev:mock 下一直走表。
       testVideo: demoTestVideo({ createdAt: ago(42 / 3600), status: 'running' }),
       userName: me,
-      videoTypes: ['review', 'product_showcase'],
     },
+    // 静止的打标中：人工维度的标签留着，AI 维度等打完再换。
     {
-      categories: ['短靴'],
       createdAt: ago(26),
+      tagIds: tagIdsOf('AMZ', '短靴'),
+      tagStatus: 'running',
       userName: 'Sara.Hong',
-      videoTypes: ['lifestyle'],
       videoUrl: sampleWideUrl,
     },
-    { categories: ['拖鞋'], createdAt: ago(30), userName: 'Nora.Ho', videoTypes: ['slideshow'] },
+    {
+      createdAt: ago(30),
+      tagIds: tagIdsOf('拖鞋', '图文幻灯片'),
+      userName: 'Nora.Ho',
+    },
+    // 没打成：AI 维度已清空，只剩人工维度。
     {
       createdAt: ago(50),
+      tagError: 'model_call_failed',
+      tagIds: tagIdsOf('DTC'),
+      tagStatus: 'failed',
       testVideo: demoTestVideo({ url: sampleWideUrl }),
       userName: me,
       videoUrl: sampleWideUrl,
     },
     {
-      categories: ['板鞋', 'T恤'],
       createdAt: ago(75),
+      tagIds: tagIdsOf('板鞋', 'T恤', '通勤/长时间站立', '专家评测解说'),
       userName: 'Maya.Cheng',
-      videoTypes: ['talking_head', 'try_on'],
     },
     {
-      categories: ['穆勒鞋', '凉拖鞋', '平底鞋', '乐福鞋', '雪地靴', '外套'],
       createdAt: ago(100),
       document: LONG_DOCUMENT,
+      tagIds: tagIdsOf(
+        'INS',
+        'ADS',
+        '穆勒鞋',
+        '凉拖鞋',
+        '平底鞋',
+        '乐福鞋',
+        '雪地靴',
+        '外套',
+        '居家/日常放松',
+        '动态场景跟拍',
+        '多场景快速切换',
+        '痛点解决方案',
+      ),
       testVideo: demoTestVideo({ stale: true, url: sampleVideoUrl }),
       userName: me,
-      videoTypes: ['try_on', 'lifestyle', 'talking_head', 'product_showcase'],
     },
-    { categories: ['穆勒鞋'], createdAt: ago(120), userName: 'Sara.Hong', videoTypes: ['try_on'] },
+    { createdAt: ago(120), tagIds: [], tagStatus: 'pending', userName: 'Sara.Hong' },
     {
-      categories: ['拖鞋'],
       createdAt: ago(170),
+      tagIds: tagIdsOf('拖鞋', '产品展示型'),
       testVideo: demoTestVideo({
         errorMessage: '视频时长 45 秒，超出模型支持的时长',
         status: 'failed',
       }),
       userName: me,
-      videoTypes: ['product_showcase'],
     },
   ]
   for (const overrides of demo)
@@ -264,8 +269,8 @@ const markTestStale = (row: Row) => {
   if (row.testVideo !== null) row.testVideo = { ...row.testVideo, stale: true }
 }
 
-/** 按时间推进后台拆解：排队 → 拆解中 → 拆完，拆完写回演示拆解与标签、版本加一；
- * 试生成到点就完成。 */
+/** 按时间推进后台拆解：排队 → 拆解中 → 拆完，拆完写回演示拆解、版本加一，接着排上打标；
+ * 打标：排队 → 打标中 → 打完，AI 维度换成演示标签、人工维度不动；试生成到点就完成。 */
 const advance = (row: Row, now: number) => {
   if (
     row.testQueuedAt !== null &&
@@ -275,23 +280,36 @@ const advance = (row: Row, now: number) => {
     row.testVideo = { ...row.testVideo, status: 'completed', url: row.videoUrl }
     row.testQueuedAt = null
   }
-  if (row.queuedAt === null) return
-  const elapsed = now - row.queuedAt
-  if (elapsed < PENDING_MS) row.breakdownStatus = 'pending'
-  else if (elapsed < SETTLE_MS) row.breakdownStatus = 'running'
-  else {
-    Object.assign(row, {
-      breakdownStatus: 'completed',
-      categories: ['拖鞋'],
-      document: DEMO_DOCUMENT,
-      errorCode: null,
-      queuedAt: null,
-      updatedAt: new Date(now).toISOString(),
-      version: row.version + 1,
-      videoTypes: ['review', 'product_showcase'],
-    } satisfies Partial<Row>)
-    markTestStale(row)
+  if (row.queuedAt !== null) {
+    const elapsed = now - row.queuedAt
+    if (elapsed < PENDING_MS) row.breakdownStatus = 'pending'
+    else if (elapsed < SETTLE_MS) row.breakdownStatus = 'running'
+    else {
+      Object.assign(row, {
+        breakdownStatus: 'completed',
+        document: DEMO_DOCUMENT,
+        errorCode: null,
+        queuedAt: null,
+        // 打标从拆完的那一刻算起，不看这次是哪一刻来读的。
+        tagQueuedAt: row.queuedAt + SETTLE_MS,
+        tagStatus: 'pending',
+        updatedAt: new Date(now).toISOString(),
+        version: row.version + 1,
+      } satisfies Partial<Row>)
+      markTestStale(row)
+    }
   }
+  if (row.tagQueuedAt === null) return
+  const elapsed = now - row.tagQueuedAt
+  if (elapsed < TAG_PENDING_MS) row.tagStatus = 'pending'
+  else if (elapsed < TAG_SETTLE_MS) row.tagStatus = 'running'
+  else
+    Object.assign(row, {
+      tagError: null,
+      tagIds: [...row.tagIds.filter((id) => !isMockAiTag(id)), ...tagIdsOf(...DEMO_AI_TAGS)],
+      tagQueuedAt: null,
+      tagStatus: 'completed',
+    } satisfies Partial<Row>)
 }
 
 const live = (): Row[] => {
@@ -306,13 +324,17 @@ const publicOf = (row: Row, viewer: string): Reference => {
     removed: _removed,
     contentKey: _contentKey,
     queuedAt: _queuedAt,
+    tagQueuedAt: _tagQueuedAt,
     testQueuedAt: _testQueuedAt,
     ...reference
   } = row
-  return { ...reference, canEdit: row.userName === viewer }
+  return { ...reference, canEdit: row.userName === viewer, tagIds: [...row.tagIds] }
 }
 
 const find = (id: unknown) => live().find((row) => row.id === id)
+
+/** 此刻每条没移除的参考视频的标签，标签树的条数照它现算。 */
+export const mockReferenceTagSets = (): string[][] => live().map((row) => row.tagIds)
 
 const NOT_FOUND = () => HttpResponse.json({ detail: '资料库里没有这条参考视频' }, { status: 404 })
 
@@ -328,17 +350,18 @@ const fingerprint = (body: ArrayBuffer): string | null => {
   return `${body.byteLength}:${(hash >>> 0).toString(16)}`
 }
 
-const matches = (row: Row, query: URLSearchParams): boolean => {
-  const types = query.getAll('videoTypes')
-  const categories = query.getAll('categories')
+const matches = (
+  row: Row,
+  query: URLSearchParams,
+  tagMatch: (tagIds: readonly string[]) => boolean,
+): boolean => {
   const userName = query.get('userName')
   const since = query.get('since')
   const until = query.get('until')
   const q = query.get('q')?.trim().toLowerCase()
   const at = Date.parse(row.createdAt)
   return (
-    (types.length === 0 || row.videoTypes.some((type) => types.includes(type))) &&
-    (categories.length === 0 || row.categories.some((name) => categories.includes(name))) &&
+    tagMatch(row.tagIds) &&
     (userName === null || row.userName === userName) &&
     (since === null || at >= Date.parse(since)) &&
     (until === null || at < Date.parse(until)) &&
@@ -347,40 +370,30 @@ const matches = (row: Row, query: URLSearchParams): boolean => {
 }
 
 const filtersOf = (all: readonly Row[]): Filters => {
-  const typeCounts = new Map<VideoType, number>()
-  const categoryCounts = new Map<Category, number>()
-  for (const row of all) {
-    for (const type of row.videoTypes) typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1)
-    for (const name of row.categories) categoryCounts.set(name, (categoryCounts.get(name) ?? 0) + 1)
-  }
   const ownerCounts = new Map<string, number>()
   for (const row of all) {
     if (row.userName !== null)
       ownerCounts.set(row.userName, (ownerCounts.get(row.userName) ?? 0) + 1)
   }
-  const orderOf = (name: Category) => {
-    const index = CATEGORY_ORDER.indexOf(name)
-    return index < 0 ? CATEGORY_ORDER.length : index
-  }
   return {
-    categories: [...categoryCounts]
-      .map(([name, count]) => ({ count, name }))
-      .sort((a, b) => b.count - a.count || orderOf(a.name) - orderOf(b.name)),
     owners: [...ownerCounts]
       .map(([userName, count]) => ({ count, userName }))
       .sort((a, b) => b.count - a.count || a.userName.localeCompare(b.userName)),
-    videoTypes: VIDEO_TYPES.map((type) => ({ ...type, count: typeCounts.get(type.value) ?? 0 })),
   }
 }
 
 const isBusy = (row: Row) => row.breakdownStatus === 'pending' || row.breakdownStatus === 'running'
+const isTagBusy = (row: Row) => row.tagStatus === 'pending' || row.tagStatus === 'running'
 
-/** `viewer` 给出此刻登录的用户名：属主才能改、重拆、移除。 */
+/** `viewer` 给出此刻登录的用户名：属主才能改、改标签、重拆、重新打标、移除。 */
 export const referenceHandlers = (viewer: () => string) => [
   http.get('*/api/references', ({ request }) => {
     const query = new URL(request.url).searchParams
     const cursor = query.get('cursor')
-    const all = live().filter((row) => matches(row, query))
+    const tagMatch = mockTagMatcher(query.getAll('tags'))
+    if (tagMatch === null)
+      return HttpResponse.json({ detail: [{ msg: '没有这个标签' }] }, { status: 422 })
+    const all = live().filter((row) => matches(row, query, tagMatch))
     const page = pageBy(
       all,
       (row) => [row.createdAt, row.id],
@@ -416,7 +429,6 @@ export const referenceHandlers = (viewer: () => string) => [
     const row: Row = {
       breakdownStatus: 'pending',
       canEdit: true,
-      categories: [],
       contentKey,
       createdAt: now,
       document: null,
@@ -424,12 +436,15 @@ export const referenceHandlers = (viewer: () => string) => [
       id: idOf(1000 + seq),
       queuedAt: Date.now(),
       removed: false,
+      tagError: null,
+      tagIds: [],
+      tagQueuedAt: null,
+      tagStatus: null,
       testQueuedAt: null,
       testVideo: null,
       updatedAt: now,
       userName: viewer(),
       version: 1,
-      videoTypes: [],
       videoUrl: upload.url,
     }
     rows.push(row)
@@ -453,12 +468,35 @@ export const referenceHandlers = (viewer: () => string) => [
       return HttpResponse.json({ detail: '这条参考视频已经变了' }, { status: 409 })
     if (body.document !== row.document) markTestStale(row)
     Object.assign(row, {
-      categories: [...new Set(body.categories)],
       document: body.document,
       updatedAt: new Date().toISOString(),
       version: row.version + 1,
-      videoTypes: [...new Set(body.videoTypes)],
     } satisfies Partial<Row>)
+    return HttpResponse.json(publicOf(row, viewer()))
+  }),
+
+  http.put('*/api/references/:id/tags', async ({ params, request }) => {
+    const row = find(params['id'])
+    if (row === undefined) return NOT_FOUND()
+    if (row.userName !== viewer())
+      return HttpResponse.json({ detail: '只有属主能改标签' }, { status: 403 })
+    const { tagIds } = (await request.json()) as z.input<typeof zReferenceTagsIn>
+    if (!tagIds.every(isMockTagValue))
+      return HttpResponse.json({ detail: [{ msg: '没有这个标签' }] }, { status: 422 })
+    if (isTagBusy(row)) return HttpResponse.json({ detail: '正在打标' }, { status: 409 })
+    row.tagIds = [...new Set(tagIds)]
+    return HttpResponse.json(publicOf(row, viewer()))
+  }),
+
+  http.post('*/api/references/:id/tagging', ({ params }) => {
+    const row = find(params['id'])
+    if (row === undefined) return NOT_FOUND()
+    if (row.userName !== viewer())
+      return HttpResponse.json({ detail: '只有属主能重新打标' }, { status: 403 })
+    if (isBusy(row) || row.document === null)
+      return HttpResponse.json({ detail: '拆解尚未完成，无法重新打标' }, { status: 409 })
+    if (isTagBusy(row)) return HttpResponse.json({ detail: '正在打标' }, { status: 409 })
+    Object.assign(row, { tagQueuedAt: Date.now(), tagStatus: 'pending' } satisfies Partial<Row>)
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 

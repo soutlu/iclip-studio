@@ -1,22 +1,12 @@
-/** 参考视频的筛选条：全部 / 我的、按人、片子类型（多选）、品类（平铺可搜多选）、时间。两组标签的名称、说明与条数都取自后端。 */
+/** 参考视频的筛选条：全部 / 我的、按人、标签树每个维度一个多选、时间。标签的名称、说明与条数都取自标签树。 */
 
 import { dateRangeLabel } from '@/shared/lib/date-range'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
-import {
-  DateRangeFilter,
-  FilterBarRoot,
-  MultiPickerFilter,
-  PickerFilter,
-  useFilterBar,
-} from '@/shared/ui/filter-bar'
+import { DateRangeFilter, FilterBarRoot, PickerFilter, useFilterBar } from '@/shared/ui/filter-bar'
 import type { PickerSource } from '@/shared/ui/search-picker'
-import {
-  CATEGORY_VALUES,
-  isDefaultReferenceScope,
-  VIDEO_TYPE_VALUES,
-  type ReferenceFilters as ReferenceFilterOptions,
-  type ReferenceScope,
-} from '../references.api'
+import type { TagIndex } from '../library-tags'
+import { isDefaultReferenceScope, type ReferenceScope } from '../references.api'
+import { LibraryTagFilters } from './library-tag-filters'
 
 type ReferenceFiltersProps = {
   scope: ReferenceScope
@@ -24,13 +14,8 @@ type ReferenceFiltersProps = {
   /** 当前登录账号的用户名；没有用户名的账号不显示「我的」。 */
   myUserName: string | null
   authors: PickerSource
-  /** 两组标签的候选；读取中或失败时弹层里给状态。 */
-  options: {
-    data: ReferenceFilterOptions | undefined
-    isPending: boolean
-    error: string | undefined
-    onRetry: () => void
-  }
+  /** 标签树的查找表；还没读到时不出标签筛选。 */
+  tags: TagIndex | undefined
   /** 右侧的计数，如「共 32 条」。 */
   trailing?: React.ReactNode
 }
@@ -52,41 +37,22 @@ export function ReferenceFilters(props: ReferenceFiltersProps) {
   )
 }
 
-function Filters({
-  scope,
-  onChange,
-  myUserName,
-  authors,
-  options,
-  trailing,
-}: ReferenceFiltersProps) {
+function Filters({ scope, onChange, myUserName, authors, tags, trailing }: ReferenceFiltersProps) {
   const { close } = useFilterBar()
   const apply = (patch: Partial<ReferenceScope>) => {
     close()
     onChange({ ...scope, ...patch })
   }
   const mine = myUserName !== null && scope.userName === myUserName
-  const pickerState = {
-    error: options.error,
-    isPending: options.isPending,
-    onRetry: options.onRetry,
-  }
 
   return (
     <>
       <ChipGroup
         aria-label="范围"
         onValueChange={(value) => {
-          // 「全部」清掉人、时间与两组标签，关键词另由搜索框管；再点一次已选的 chip 等于取消。
+          // 「全部」清掉人、时间与标签，关键词另由搜索框管；再点一次已选的 chip 等于取消。
           if (value === 'all')
-            apply({
-              categories: [],
-              range: 'all',
-              since: null,
-              until: null,
-              userName: null,
-              videoTypes: [],
-            })
+            apply({ range: 'all', since: null, tags: [], until: null, userName: null })
           else if (value === 'mine') apply({ userName: myUserName })
           else if (mine) apply({ userName: null })
         }}
@@ -113,45 +79,18 @@ function Filters({
 
       <Divider />
 
-      {/* 两组标签勾一项就重查一次，弹层留着接着勾。 */}
-      <MultiPickerFilter
-        {...pickerState}
-        className={TRIGGER_CLASS}
-        icon="video-type"
-        id="video-type"
-        noun="片子类型"
-        onChange={(ids) =>
-          onChange({ ...scope, videoTypes: VIDEO_TYPE_VALUES.filter((type) => ids.includes(type)) })
-        }
-        options={(options.data?.videoTypes ?? []).map((type) => ({
-          count: type.count,
-          description: type.rule,
-          id: type.value,
-          label: type.label,
-        }))}
-        value={scope.videoTypes}
-        width="w-80 max-w-[calc(100vw-24px)]"
-      />
-      <MultiPickerFilter
-        {...pickerState}
-        className={TRIGGER_CLASS}
-        icon="tag"
-        id="category"
-        noun="品类"
-        onChange={(ids) =>
-          onChange({ ...scope, categories: CATEGORY_VALUES.filter((name) => ids.includes(name)) })
-        }
-        options={(options.data?.categories ?? []).map((category) => ({
-          count: category.count,
-          id: category.name,
-          label: category.name,
-        }))}
-        searchable
-        value={scope.categories}
-        width="w-65 max-w-[calc(100vw-24px)]"
-      />
-
-      <Divider />
+      {tags === undefined ? null : (
+        <>
+          <LibraryTagFilters
+            className={TRIGGER_CLASS}
+            countKey="references"
+            index={tags}
+            onChange={(next) => onChange({ ...scope, tags: next })}
+            value={scope.tags}
+          />
+          <Divider />
+        </>
+      )}
 
       <DateRangeFilter
         className={TRIGGER_CLASS}

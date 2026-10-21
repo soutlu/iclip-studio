@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast, Toaster } from '@/shared/ui/toast'
 import { pasteFilesIntoComposer } from '@/testing/editor'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
+import { mockTagId } from '@/testing/mocks/library-tags'
 import { addMockReference, resetMockReferences } from '@/testing/mocks/references'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -17,12 +18,14 @@ function Harness({
   onScope,
   onReference,
   initialReference = null,
+  initialScope = DEFAULT_REFERENCE_SCOPE,
 }: {
   onScope?: (scope: ReferenceScope) => void
   onReference?: (id: string | null) => void
   initialReference?: string | null
+  initialScope?: ReferenceScope
 }) {
-  const [scope, setScope] = useState(DEFAULT_REFERENCE_SCOPE)
+  const [scope, setScope] = useState(initialScope)
   const [referenceId, setReferenceId] = useState(initialReference)
   return (
     <>
@@ -86,12 +89,14 @@ const fileInput = () => {
   return input
 }
 
+const tags = (...names: string[]) => names.map(mockTagId)
+
 const MINE_TAGGED = {
-  categories: ['短靴', '卫衣'] as const,
   createdAt: '2026-09-23T11:00:00Z',
   id: '5ef00000-0000-4000-8000-0000000000a1',
-  videoTypes: ['try_on'] as const,
+  tagIds: tags('AMZ', '短靴', '卫衣', '动态上身展示'),
 }
+const MINE_TITLE = 'AMZ · 短靴 · 卫衣 · 动态上身展示'
 
 beforeEach(() => {
   stubScrollViewport({ role: 'main', name: '资料库' }, { width: 1200, height: 900 })
@@ -104,13 +109,9 @@ afterEach(() => {
 })
 
 describe('参考视频列表', () => {
-  it('卡片：状态角标、标签行（没有标签是「未标注」，没拆完说拆完自动打）、属主；底部计数', async () => {
+  it('卡片：状态角标、标签行（按标签树的先后；没有标签是「未标注」，没拆完说拆完自动打）、属主；底部计数', async () => {
     resetMockReferences([
-      {
-        ...MINE_TAGGED,
-        categories: [...MINE_TAGGED.categories],
-        videoTypes: [...MINE_TAGGED.videoTypes],
-      },
+      MINE_TAGGED,
       { breakdownStatus: 'running', createdAt: '2026-09-23T11:30:00Z', document: null },
       { breakdownStatus: 'pending', createdAt: '2026-09-23T11:40:00Z', document: null },
       {
@@ -120,10 +121,21 @@ describe('参考视频列表', () => {
         errorCode: 'video_unreadable',
       },
       { createdAt: '2026-09-23T09:00:00Z', userName: 'Maya.Cheng' },
+      {
+        createdAt: '2026-09-23T08:00:00Z',
+        tagIds: tags('DTC'),
+        tagStatus: 'running',
+      },
+      {
+        createdAt: '2026-09-23T07:00:00Z',
+        tagError: 'model_failed',
+        tagIds: tags('INS'),
+        tagStatus: 'failed',
+      },
     ])
     await renderWithProviders(<Harness />)
 
-    const tagged = await screen.findByRole('article', { name: '上身展示 · 短靴 · 卫衣' })
+    const tagged = await screen.findByRole('article', { name: MINE_TITLE })
     expect(within(tagged).getByRole('button', { name: /tester/ })).toBeVisible()
     const [pending, running] = screen.getAllByRole('article')
     expect(within(pending as HTMLElement).getByText('排队中')).toBeVisible()
@@ -131,7 +143,10 @@ describe('参考视频列表', () => {
     expect(within(pending as HTMLElement).getByText('拆解完成后自动打标签')).toBeVisible()
     expect(screen.getByText('拆解失败')).toBeVisible()
     expect(screen.getAllByRole('article', { name: '未标注' })).toHaveLength(2)
-    expect(screen.getByText('共 5 条')).toBeVisible()
+    // 打标中与没打成：人工维度的标签照旧显示，角标说打标的状态。
+    expect(within(screen.getByRole('article', { name: 'DTC' })).getByText('正在打标')).toBeVisible()
+    expect(within(screen.getByRole('article', { name: 'INS' })).getByText('打标失败')).toBeVisible()
+    expect(screen.getByText('共 7 条')).toBeVisible()
   })
 
   it('canUpload 为假：没有上传按钮、选文件入口，空列表也不是拖放区', async () => {
@@ -154,61 +169,115 @@ describe('参考视频列表', () => {
     expect(screen.getByRole('button', { name: '选择文件' })).toBeVisible()
   })
 
-  it('片子类型多选：名称与说明取自后端，勾一项重查一次、弹层留着，两项命中任一；「全部」清掉', async () => {
-    resetMockReferences([
-      {
-        ...MINE_TAGGED,
-        categories: [...MINE_TAGGED.categories],
-        videoTypes: [...MINE_TAGGED.videoTypes],
-      },
-      { categories: ['拖鞋'], createdAt: '2026-09-23T10:00:00Z', videoTypes: ['lifestyle'] },
-      { categories: ['拖鞋'], createdAt: '2026-09-23T09:00:00Z', videoTypes: ['review'] },
-    ])
-    const queries = recordListQueries()
-    const user = userEvent.setup()
+  it('标签筛选：每个维度一个下拉，按标签树的先后', async () => {
+    resetMockReferences([MINE_TAGGED])
     await renderWithProviders(<Harness />)
     await screen.findAllByRole('article')
 
-    await user.click(screen.getByRole('button', { name: '片子类型：片子类型' }))
-    const popup = await screen.findByRole('dialog', { name: '选择片子类型' })
-    expect(within(popup).getAllByRole('checkbox')).toHaveLength(8)
-    expect(within(popup).getByText('模特穿上或戴上产品，展示上身效果')).toBeVisible()
+    const triggers = screen
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'))
+      .filter((name) => /^(品牌|平台&渠道|品类|场景|内容结构)：/.test(name ?? ''))
+    expect(triggers).toEqual([
+      '品牌：品牌',
+      '平台&渠道：平台&渠道',
+      '品类：品类',
+      '场景：场景',
+      '内容结构：内容结构',
+    ])
+  })
 
-    await user.click(within(popup).getByRole('checkbox', { name: /上身展示/ }))
-    await user.click(within(popup).getByRole('checkbox', { name: /场景种草/ }))
-    await waitFor(() => expect(cardNames()).toEqual(['上身展示 · 短靴 · 卫衣', '场景种草 · 拖鞋']))
-    expect(queries.at(-1)?.getAll('videoTypes')).toEqual(['try_on', 'lifestyle'])
+  it('两层的维度：大类可勾、小类缩进在它下面，条数取自标签树；选大类也算小类，勾一项写进 tags 重查一次、弹层留着；「全部」清掉', async () => {
+    resetMockReferences([
+      { createdAt: '2026-09-23T11:00:00Z', tagIds: tags('拖鞋', '对比测评') },
+      { createdAt: '2026-09-23T10:00:00Z', tagIds: tags('短靴', '开箱测评型') },
+      { createdAt: '2026-09-23T09:00:00Z', tagIds: tags('拖鞋', '图文幻灯片') },
+    ])
+    const queries = recordListQueries()
+    const onScope = vi.fn()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness onScope={onScope} />)
+    await screen.findAllByRole('article')
+
+    await user.click(screen.getByRole('button', { name: '内容结构：内容结构' }))
+    const popup = await screen.findByRole('dialog', { name: '选择内容结构' })
+    const names = within(popup)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    // 大类带判断句；条数含下级。
+    expect(names.slice(15, 19)).toEqual([
+      '开箱测评型拆包装上手，或在片中做测试、对比2',
+      '标准开箱流程0',
+      '极速上手体验0',
+      '对比测评1',
+    ])
+
+    await user.type(within(popup).getByRole('combobox', { name: '搜索内容结构' }), '开箱测评')
+    await user.click(within(popup).getByRole('option', { name: /开箱测评型/ }))
+    await waitFor(() => expect(cardNames()).toEqual(['拖鞋 · 对比测评', '短靴 · 开箱测评型']))
+    expect(queries.at(-1)?.getAll('tags')).toEqual([mockTagId('开箱测评型')])
+    expect(onScope).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tags: [mockTagId('开箱测评型')] }),
+    )
     expect(screen.getByText('找到 2 条')).toBeVisible()
+    expect(screen.getByRole('dialog', { name: '选择内容结构' })).toBeVisible()
 
     await user.keyboard('{Escape}')
     await user.click(screen.getByRole('radio', { name: '全部' }))
     await waitFor(() => expect(cardNames()).toHaveLength(3))
-    expect(queries.at(-1)?.has('videoTypes')).toBe(false)
+    expect(queries.at(-1)?.has('tags')).toBe(false)
   })
 
-  it('品类平铺可搜多选：只列用到的，带条数', async () => {
+  it('地址里带着标签时标签树读失败：给出原因与重试，不一直停在加载中；重试成功后按标签列出', async () => {
     resetMockReferences([
-      { categories: ['拖鞋', '卫衣'], createdAt: '2026-09-23T11:00:00Z' },
-      { categories: ['拖鞋'], createdAt: '2026-09-23T10:00:00Z' },
-      { categories: ['短靴'], createdAt: '2026-09-23T09:00:00Z' },
+      { createdAt: '2026-09-23T11:00:00Z', tagIds: tags('拖鞋') },
+      { createdAt: '2026-09-23T10:00:00Z', tagIds: tags('短靴') },
+    ])
+    let failing = true
+    server.use(
+      http.get('*/api/library-tags', () =>
+        failing ? HttpResponse.json({ detail: '服务暂不可用' }, { status: 500 }) : undefined,
+      ),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(
+      <Harness initialScope={{ ...DEFAULT_REFERENCE_SCOPE, tags: tags('拖鞋') }} />,
+    )
+
+    const retry = await screen.findByRole('button', { name: '重新加载' })
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+
+    failing = false
+    await user.click(retry)
+    await waitFor(() => expect(cardNames()).toEqual(['拖鞋']))
+  })
+
+  it('不同维度都要命中：品类与内容结构各选一项，交回的 tags 按树的先后', async () => {
+    resetMockReferences([
+      { createdAt: '2026-09-23T11:00:00Z', tagIds: tags('拖鞋', '对比测评') },
+      { createdAt: '2026-09-23T10:00:00Z', tagIds: tags('短靴', '开箱测评型') },
+      { createdAt: '2026-09-23T09:00:00Z', tagIds: tags('拖鞋', '图文幻灯片') },
     ])
     const queries = recordListQueries()
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await screen.findAllByRole('article')
 
-    await user.click(screen.getByRole('button', { name: '品类：品类' }))
-    const popup = await screen.findByRole('dialog', { name: '选择品类' })
-    expect(
-      within(popup)
-        .getAllByRole('option')
-        .map((option) => option.textContent),
-    ).toEqual(['拖鞋2', '短靴1', '卫衣1'])
+    await user.click(screen.getByRole('button', { name: '内容结构：内容结构' }))
+    const structure = await screen.findByRole('dialog', { name: '选择内容结构' })
+    await user.type(within(structure).getByRole('combobox', { name: '搜索内容结构' }), '对比')
+    await user.click(within(structure).getByRole('option', { name: /对比测评/ }))
+    await screen.findByText('找到 1 条')
 
-    await user.type(within(popup).getByRole('combobox', { name: '搜索品类' }), '短')
-    await user.keyboard('{ArrowDown}{Enter}')
-    await waitFor(() => expect(queries.at(-1)?.getAll('categories')).toEqual(['短靴']))
-    expect(await screen.findByText('找到 1 条')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '品类：品类' }))
+    const category = await screen.findByRole('dialog', { name: '选择品类' })
+    await user.type(within(category).getByRole('combobox', { name: '搜索品类' }), '短靴')
+    await user.click(within(category).getByRole('option', { name: /短靴/ }))
+
+    await waitFor(() =>
+      expect(queries.at(-1)?.getAll('tags')).toEqual([mockTagId('短靴'), mockTagId('对比测评')]),
+    )
+    expect(await screen.findByText('暂无匹配的参考视频，请更换关键词或清除筛选')).toBeVisible()
   })
 
   it('按人筛：点卡片上的属主；候选取自后端的属主名单，还没翻到的属主也能选', async () => {
@@ -244,18 +313,31 @@ describe('参考视频列表', () => {
     expect(onScope).toHaveBeenLastCalledWith(expect.objectContaining({ userName: 'Maya.Cheng' }))
   })
 
-  it('还有没拆完的行就轮询，拆完后自动换上标签', async () => {
+  it('还有没拆完或没打完标的行就轮询，打完后自动换上标签，筛选里的条数跟着变', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const row = addMockReference({ breakdownStatus: 'running', document: null })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
       await renderWithProviders(<Harness />)
       expect(await screen.findByText('拆解中')).toBeVisible()
 
-      resetMockReferences([{ ...row, breakdownStatus: 'completed', categories: ['拖鞋'] }])
+      resetMockReferences([{ ...row, breakdownStatus: 'completed', tagStatus: 'running' }])
       await vi.advanceTimersByTimeAsync(5000)
+      expect(await screen.findByText('正在打标')).toBeVisible()
 
+      resetMockReferences([{ ...row, breakdownStatus: 'completed', tagIds: tags('拖鞋') }])
+      await vi.advanceTimersByTimeAsync(5000)
       expect(await screen.findByRole('article', { name: '拖鞋' })).toBeVisible()
-      expect(screen.queryByText('拆解中')).not.toBeInTheDocument()
+      expect(screen.queryByText('正在打标')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '品类：品类' }))
+      const popup = await screen.findByRole('dialog', { name: '选择品类' })
+      await user.type(within(popup).getByRole('combobox', { name: '搜索品类' }), '拖鞋')
+      expect(
+        within(popup)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toContain('拖鞋1')
     } finally {
       vi.useRealTimers()
     }
@@ -287,22 +369,18 @@ describe('上传参考视频', () => {
   })
 
   it('传了已经在资料库里的视频（200）：不新添卡片，提示一句并打开原来那一条', async () => {
-    const existing = addMockReference({
-      ...MINE_TAGGED,
-      categories: [...MINE_TAGGED.categories],
-      videoTypes: [...MINE_TAGGED.videoTypes],
-    })
+    const existing = addMockReference(MINE_TAGGED)
     server.use(http.post('*/api/references', () => HttpResponse.json(existing, { status: 200 })))
     const onReference = vi.fn()
     const user = userEvent.setup()
     await renderWithProviders(<Harness onReference={onReference} />)
-    await screen.findByRole('article', { name: '上身展示 · 短靴 · 卫衣' })
+    await screen.findByRole('article', { name: MINE_TITLE })
 
     await user.upload(fileInput(), video('同一条.mp4'))
 
     expect(await screen.findByText('该视频此前已上传，已打开其详情')).toBeVisible()
     expect(onReference).toHaveBeenLastCalledWith(existing.id)
-    expect(await screen.findByRole('dialog', { name: '上身展示 · 短靴 · 卫衣' })).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: MINE_TITLE })).toBeVisible()
   })
 
   it('页面上粘贴视频文件就上传；焦点在输入框里、剪贴板里只有文字时不接', async () => {
@@ -353,9 +431,7 @@ describe('参考视频详情', () => {
   ) => {
     const row = addMockReference({
       ...MINE_TAGGED,
-      categories: [...MINE_TAGGED.categories],
       document: '# 出场元素\n\n第一版拆解',
-      videoTypes: [...MINE_TAGGED.videoTypes],
       ...overrides,
     })
     await renderWithProviders(
@@ -365,33 +441,145 @@ describe('参考视频详情', () => {
     return { dialog, row }
   }
 
-  it('属主：标签小块能去掉，「+」从清单里加；改动整份带 version 提交', async () => {
+  it('属主：每个维度一行；标签能去掉，「+」从这一维度里加；每次改动把所有维度的标签整份 PUT', async () => {
     const writes = recordWrites()
     const user = userEvent.setup()
     const { dialog, row } = await openDetail()
     await within(dialog).findByText('第一版拆解')
 
+    expect(
+      within(dialog)
+        .getAllByRole('group')
+        .map((group) => group.getAttribute('aria-label'))
+        .filter((name) => ['品牌', '平台&渠道', '品类', '场景', '内容结构'].includes(name ?? '')),
+    ).toEqual(['品牌', '平台&渠道', '品类', '场景', '内容结构'])
+
     await user.click(within(dialog).getByRole('button', { name: '移除卫衣' }))
     await waitFor(() => expect(within(dialog).queryByText('卫衣')).not.toBeInTheDocument())
     expect(writes.at(-1)).toEqual({
-      body: {
-        categories: ['短靴'],
-        document: '# 出场元素\n\n第一版拆解',
-        version: 1,
-        videoTypes: ['try_on'],
-      },
-      method: 'PATCH',
-      path: `/references/${row.id}`,
+      body: { tagIds: tags('AMZ', '短靴', '动态上身展示') },
+      method: 'PUT',
+      path: `/references/${row.id}/tags`,
     })
 
-    await user.click(within(dialog).getByRole('button', { name: '添加品类' }))
-    const picker = await screen.findByRole('dialog', { name: '添加品类' })
-    await user.type(within(picker).getByRole('combobox', { name: '搜索品类' }), '拖鞋')
-    await user.click(within(picker).getByRole('option', { name: '拖鞋' }))
+    // 两层的维度：清单里大类与小类都在，选小类加进去。
+    await user.click(within(dialog).getByRole('button', { name: '添加内容结构' }))
+    const picker = await screen.findByRole('dialog', { name: '添加内容结构' })
+    await user.type(within(picker).getByRole('combobox', { name: '搜索内容结构' }), '开箱')
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['开箱测评型', '标准开箱流程'])
+    await user.click(within(picker).getByRole('option', { name: '标准开箱流程' }))
     await waitFor(() =>
-      expect(writes.at(-1)?.body).toMatchObject({ categories: ['短靴', '拖鞋'], version: 2 }),
+      expect(writes.at(-1)?.body).toEqual({
+        tagIds: tags('AMZ', '短靴', '动态上身展示', '标准开箱流程'),
+      }),
     )
-    expect(await within(dialog).findByText('拖鞋')).toBeVisible()
+    expect(await within(dialog).findByText('标准开箱流程')).toBeVisible()
+    expect(writes.some((write) => write.method === 'PATCH')).toBe(false)
+  })
+
+  it('AI 打的维度名字旁有提示：重新打标会重写这些标签；人工维度没有', async () => {
+    const { dialog } = await openDetail()
+    await within(dialog).findByText('第一版拆解')
+
+    for (const name of ['品类', '场景', '内容结构'])
+      expect(
+        within(within(dialog).getByRole('group', { name })).getByRole('img', {
+          name: /重新打标.*重写/,
+        }),
+      ).toBeInTheDocument()
+    for (const name of ['品牌', '平台&渠道'])
+      expect(
+        within(within(dialog).getByRole('group', { name })).queryByRole('img'),
+      ).not.toBeInTheDocument()
+  })
+
+  it('正在打标：说明一句，标签先不能改，「重新打标」不能点', async () => {
+    const user = userEvent.setup()
+    const { dialog } = await openDetail({ tagStatus: 'running' })
+    await within(dialog).findByText('第一版拆解')
+
+    expect(within(dialog).getByRole('status')).toHaveTextContent('正在打标')
+    expect(within(dialog).getByRole('button', { name: '移除卫衣' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: '添加品类' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await user.click(within(dialog).getByRole('button', { name: '更多操作' }))
+    expect(await screen.findByRole('menuitem', { name: '重新打标' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('打标失败：按原因说一句给人看的话，不出现原因代码；点「重新打标」原地确认后提交，随即显示正在打标', async () => {
+    const writes = recordWrites()
+    const user = userEvent.setup()
+    const { dialog, row } = await openDetail({
+      tagError: 'model_call_failed',
+      tagIds: tags('AMZ'),
+      tagStatus: 'failed',
+    })
+    await within(dialog).findByText('第一版拆解')
+
+    const alert = within(dialog).getByRole('alert')
+    expect(alert).toHaveTextContent(/打标服务连接失败/)
+    expect(alert).not.toHaveTextContent('model_call_failed')
+
+    await user.click(within(alert).getByRole('button', { name: '重新打标' }))
+    expect(
+      within(dialog).getByText(/重新打标会按当前的拆解重写品类、场景、内容结构的标签/),
+    ).toBeVisible()
+    const confirm = within(dialog).getByRole('button', { name: '重新打标' })
+    expect(confirm).toHaveFocus()
+    await user.click(confirm)
+
+    expect(await within(dialog).findByText(/正在打标/)).toBeVisible()
+    expect(writes.at(-1)).toMatchObject({ method: 'POST', path: `/references/${row.id}/tagging` })
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('拆解没完成时不能重新打标', async () => {
+    const user = userEvent.setup()
+    const { dialog } = await openDetail({ breakdownStatus: 'running', document: null })
+    await within(dialog).findByText(/正在拆解/)
+    await user.click(within(dialog).getByRole('button', { name: '更多操作' }))
+    expect(await screen.findByRole('menuitem', { name: '重新打标' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('别人的没打成：只说原因，没有「重新打标」', async () => {
+    const { dialog } = await openDetail({
+      tagError: 'timeout',
+      tagStatus: 'failed',
+      userName: 'Maya.Cheng',
+    })
+    await within(dialog).findByText('第一版拆解')
+
+    const alert = within(dialog).getByRole('alert')
+    expect(alert).toHaveTextContent('打标超时')
+    expect(alert).not.toHaveTextContent('「重新打标」')
+    expect(within(dialog).queryByRole('button', { name: '重新打标' })).not.toBeInTheDocument()
+  })
+
+  it('改标签时正在打标（409）：提示一句并读回最新的', async () => {
+    server.use(
+      http.put('*/api/references/:id/tags', () =>
+        HttpResponse.json({ detail: '正在打标' }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    const { dialog } = await openDetail()
+    await within(dialog).findByText('第一版拆解')
+
+    await user.click(within(dialog).getByRole('button', { name: '移除卫衣' }))
+    expect(await screen.findByText('正在打标，标签无法保存；请在打标完成后重试')).toBeVisible()
+    expect(within(dialog).getByText('卫衣')).toBeVisible()
   })
 
   it('编辑拆解：原地换成文本框，保存带 version，回到查看看到新的拆解', async () => {
@@ -469,7 +657,9 @@ describe('参考视频详情', () => {
 
     await user.click(within(dialog).getByRole('button', { name: '重新拆解' }))
     expect(
-      within(dialog).getByText('重新拆解会覆盖当前的拆解和标签，包括手动修改过的内容'),
+      within(dialog).getByText(
+        '重新拆解会覆盖当前的拆解，并重写品类、场景、内容结构的标签，包括手动修改过的内容',
+      ),
     ).toBeVisible()
     const confirm = within(dialog).getByRole('button', { name: '重新拆解' })
     expect(confirm).toHaveFocus()
@@ -686,13 +876,12 @@ describe('参考视频详情', () => {
   it('拆解中：标签处说拆完自动打，正文是占位，编辑与重拆先不能点', async () => {
     const { dialog } = await openDetail({
       breakdownStatus: 'running',
-      categories: [],
       document: null,
-      videoTypes: [],
+      tagIds: [],
     })
 
     expect(await within(dialog).findByText(/正在拆解/)).toBeVisible()
-    expect(within(dialog).getAllByText('拆解完成后自动打标签')).toHaveLength(2)
+    expect(within(dialog).getByText('拆解完成后自动打标签')).toBeVisible()
     expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toBeDisabled()
     expect(within(dialog).getByRole('button', { name: '重新拆解' })).toBeDisabled()
   })

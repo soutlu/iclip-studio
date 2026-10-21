@@ -13,19 +13,18 @@ from iclip.domains.references.queue import ReferenceQueue, ReferenceQueueSetting
 from iclip.domains.references.repository import (
     OwnVideoUpload,
     ReferenceStore,
-    Tagger,
     TestVideos,
     VideoBreakdowns,
 )
 from iclip.domains.references.service import ReferenceService
+from iclip.domains.tagging.public import TaggingService
 
 
 @dataclass(frozen=True, slots=True)
 class BreakdownSetup:
-    """拆解配好时才有的那一组：拆解、打标、队列连接器与并发。"""
+    """拆解配好时才有的那一组：拆解、队列连接器与并发。"""
 
     breakdowns: VideoBreakdowns
-    tagger: Tagger
     connector: procrastinate.BaseConnector
     concurrency: int
 
@@ -46,19 +45,23 @@ def build_references_module(
     act_as: ActAs,
     own_video_upload: OwnVideoUpload,
     breakdown: BreakdownSetup | None,
+    tagging: TaggingService,
     uploads_available: bool,
     test_videos: TestVideos,
     testable: bool,
 ) -> ReferencesModule:
-    """``breakdown`` 为 ``None`` 即拆解没配置：只挂读端点，列表的 ``canUpload`` 恒为假。
-    ``uploads_available`` 为假即上传模块没装配：不挂建行，``canUpload`` 同样恒为假，重拆照挂。
-    ``testable`` 为假即媒体生成没开、``test_videos`` 提交不了：不挂试生成，详情照样带最新的一次。"""
+    """``breakdown`` 为 ``None`` 即拆解没配置：只挂读端点与改标签，列表的 ``canUpload`` 恒为假；配了
+    就要求 ``tagging`` 也能排打标，拆完要排。``uploads_available`` 为假即上传模块没装配：不挂建行，
+    ``canUpload`` 同样恒为假，重拆照挂。``testable`` 为假即媒体生成没开、``test_videos`` 提交不了：
+    不挂试生成，详情照样带最新的一次。"""
 
+    if breakdown is not None and not tagging.can_tag:
+        raise RuntimeError("拆解配好了却不能打标；拆完要排打标")
     queue = (
         ReferenceQueue(
             store,
             breakdowns=breakdown.breakdowns,
-            tagger=breakdown.tagger,
+            tagging=tagging,
             connector=breakdown.connector,
             settings=ReferenceQueueSettings(concurrency=breakdown.concurrency),
         )
@@ -69,6 +72,7 @@ def build_references_module(
         store,
         own_video_upload=own_video_upload,
         queue=queue,
+        tagging=tagging,
         uploads_available=uploads_available,
         test_videos=test_videos,
     )
@@ -79,6 +83,7 @@ def build_references_module(
                 act_as=act_as,
                 uploadable=service.accepts_uploads,
                 rerunnable=queue is not None,
+                retaggable=service.can_retag,
                 testable=testable,
             ),
         ),

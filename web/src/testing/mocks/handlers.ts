@@ -25,7 +25,8 @@ import {
   type MockConversation,
 } from './conversations'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
-import { referenceHandlers } from './references'
+import { libraryTagHandlers } from './library-tags'
+import { mockReferenceTagSets, referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
 import { wholeFilmHandlers } from './whole-film'
@@ -470,4 +471,5 @@ export const handlers = [
   ...libraryHandlers,
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...libraryTagHandlers(mockReferenceTagSets),
 ]

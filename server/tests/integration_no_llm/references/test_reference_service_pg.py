@@ -1,5 +1,6 @@
-"""参考视频用例与仓储：建行幂等、属主检查、版本冲突、拆解中不许改与重拆、移除后列表不见但按地址
-仍能用、AI 导演的 ``ensure``、筛选。用例接真的 Postgres 仓储，排队与上传记录是替身。"""
+"""参考视频用例与仓储：建行幂等与建条目、属主检查、版本冲突、拆解中不许改与重拆、改标签与重新打标、
+移除后列表不见但按地址仍能用、AI 导演的 ``ensure``、按标签筛选。用例接真的 Postgres 仓储，排队与
+上传记录是替身。"""
 
 from __future__ import annotations
 
@@ -11,13 +12,13 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import Conflict, NotFound, PermissionDenied
+from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ROLE_PERMISSIONS
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from iclip.domains.references.models import ReferenceVideo, Tags
+from iclip.domains.references.models import ReferenceVideo
 from iclip.domains.references.repository import OwnVideoUpload
-from iclip.domains.references.schemas import ReferenceUpdateIn
+from iclip.domains.references.schemas import ReferenceTagsIn, ReferenceUpdateIn
 from iclip.domains.references.service import ReferenceService
 from tests.helpers.references import (
     DOCUMENT,
@@ -26,6 +27,13 @@ from tests.helpers.references import (
     plant_reference,
     plant_user,
     reference_row,
+)
+from tests.helpers.tagging import (
+    RecordingTaggingQueue,
+    entry_of,
+    plant_entry,
+    tag_id,
+    tagging_service,
 )
 
 
@@ -51,7 +59,7 @@ class RecordingQueue:
         if self._finish_with is not None:
             claim = await self._store.claim(reference_id)
             assert claim is not None
-            await self._store.finish(claim, document=self._finish_with, tags=Tags())
+            await self._store.finish(claim, document=self._finish_with)
 
 
 class BrokenQueue:
@@ -73,11 +81,13 @@ def service(
     queue: RecordingQueue | BrokenQueue,
     *,
     owned: Mapping[tuple[uuid.UUID, uuid.UUID], str] | None = None,
+    tagging: RecordingTaggingQueue | None = None,
 ) -> ReferenceService:
     return ReferenceService(
         SqlReferenceStore(engine),
         own_video_upload=uploads_of(owned or {}),
         queue=queue,
+        tagging=tagging_service(engine, tagging or RecordingTaggingQueue()),
         uploads_available=True,
         test_videos=NoTestVideos(),
         poll_seconds=0.01,
@@ -106,6 +116,9 @@ async def test_creating_twice_from_the_same_video_makes_one_row_and_one_breakdow
     assert queue.enqueued == [created.id]
     listed = await references.list(principal(maya))
     assert [item.id for item in listed.items] == [created.id]
+    entry = await entry_of(engine, created.id)
+    assert (entry["tag_status"], entry["created_by"], entry["tags"]) == (None, maya, set())
+    assert (created.tag_ids, created.tag_status, created.tag_error) == ([], None, None)
 
 
 async def test_someone_elses_upload_is_not_found(engine: AsyncEngine) -> None:
@@ -137,12 +150,19 @@ async def test_only_the_owner_edits_reruns_and_removes(engine: AsyncEngine) -> N
     maya, sara = await plant_user(engine, "maya"), await plant_user(engine, "sara")
     reference_id = await plant_reference(engine, owner=maya)
     references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
-    body = ReferenceUpdateIn(version=1, document="改过", video_types=[], categories=[])
+    body = ReferenceUpdateIn(version=1, document="改过")
+    runner = await tag_id(engine, "品类", "跑鞋")
 
     seen = await references.get(principal(sara), reference_id)
     assert seen.can_edit is False
     with pytest.raises(PermissionDenied):
         await references.update(principal(sara), reference_id, body)
+    with pytest.raises(PermissionDenied):
+        await references.replace_tags(
+            principal(sara), reference_id, ReferenceTagsIn(tag_ids=[runner])
+        )
+    with pytest.raises(PermissionDenied):
+        await references.retag(principal(sara), reference_id)
     with pytest.raises(PermissionDenied):
         await references.rerun(principal(sara), reference_id)
     with pytest.raises(PermissionDenied):
@@ -156,23 +176,13 @@ async def test_an_edit_with_a_stale_version_conflicts(engine: AsyncEngine) -> No
     references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
 
     edited = await references.update(
-        principal(maya),
-        reference_id,
-        ReferenceUpdateIn(
-            version=1,
-            document="改过的拆解",
-            video_types=["review", "review"],
-            categories=["跑鞋"],
-        ),
+        principal(maya), reference_id, ReferenceUpdateIn(version=1, document="改过的拆解")
     )
     assert (edited.version, edited.document) == (2, "改过的拆解")
-    assert (edited.video_types, edited.categories) == (["review"], ["跑鞋"])
 
     with pytest.raises(Conflict):
         await references.update(
-            principal(maya),
-            reference_id,
-            ReferenceUpdateIn(version=1, document="又改", video_types=[], categories=[]),
+            principal(maya), reference_id, ReferenceUpdateIn(version=1, document="又改")
         )
     assert (await reference_row(engine, reference_id))["document"] == "改过的拆解"
 
@@ -190,7 +200,7 @@ async def test_edits_and_reruns_conflict_while_breaking_down(
         await references.update(
             principal(maya),
             reference_id,
-            ReferenceUpdateIn(version=1, document="改", video_types=[], categories=[]),
+            ReferenceUpdateIn(version=1, document="改"),
         )
     with pytest.raises(Conflict):
         await references.rerun(principal(maya), reference_id)
@@ -287,6 +297,9 @@ async def test_two_ensures_of_a_new_video_break_it_down_once(engine: AsyncEngine
     assert len(queue.enqueued) == 1
     (item,) = (await references.list(principal(maya))).items
     assert item.user_name in {"maya", "sara"}
+    entry = await entry_of(engine, item.id)
+    assert entry["tag_status"] is None, "对话里拆的视频也有条目"
+    assert entry["created_by"] in {maya, sara}
 
 
 async def test_ensure_puts_a_failed_video_back_in_line_and_waits_for_the_new_result(
@@ -336,6 +349,7 @@ async def test_two_ensures_of_a_failed_video_put_it_back_in_line_once(engine: As
         LockstepStore(engine),
         own_video_upload=uploads_of({}),
         queue=queue,
+        tagging=tagging_service(engine, RecordingTaggingQueue()),
         uploads_available=True,
         test_videos=NoTestVideos(),
         poll_seconds=0.01,
@@ -351,28 +365,39 @@ async def test_two_ensures_of_a_failed_video_put_it_back_in_line_once(engine: As
     assert queue.enqueued == [reference_id]
 
 
-async def test_filters_match_any_tag_in_a_group_and_q_searches_the_breakdown(
+async def test_tag_filters_and_across_dimensions_or_within_and_parents_include_children(
     engine: AsyncEngine,
 ) -> None:
     maya = await plant_user(engine, "maya")
+    sandal_tag = await tag_id(engine, "品类", "凉拖鞋")
+    runner_tag = await tag_id(engine, "品类", "跑鞋")
+    sock_tag = await tag_id(engine, "品类", "袜子")
+    review = await tag_id(engine, "内容结构", "开箱测评型")
+    compare = await tag_id(engine, "内容结构", "开箱测评型", "对比测评")
+    drama = await tag_id(engine, "内容结构", "剧情叙事型")
     sandal = await plant_reference(
         engine,
         owner=maya,
         video_url="https://cdn.example.test/1.mp4",
         document="# 出场元素\n凉拖鞋 100%纯棉",
-        video_types=("review",),
-        categories=("凉拖鞋",),
-        created_minutes_ago=3,
+        created_minutes_ago=4,
     )
+    await plant_entry(engine, sandal, tags=[sandal_tag, review])
     runner = await plant_reference(
         engine,
         owner=maya,
         video_url="https://cdn.example.test/2.mp4",
         document="# 出场元素\n跑鞋",
-        video_types=("try_on", "drama"),
-        categories=("跑鞋", "袜子"),
+        created_minutes_ago=3,
+    )
+    await plant_entry(engine, runner, tags=[runner_tag, sock_tag, compare])
+    gone = await plant_reference(
+        engine,
+        owner=maya,
+        video_url="https://cdn.example.test/4.mp4",
         created_minutes_ago=2,
     )
+    await plant_entry(engine, gone, tags=[runner_tag, drama])
     untagged = await plant_reference(
         engine,
         owner=maya,
@@ -381,28 +406,125 @@ async def test_filters_match_any_tag_in_a_group_and_q_searches_the_breakdown(
         created_minutes_ago=1,
     )
     references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
+    await references.remove(principal(maya), gone)
     reader = principal(maya, "viewer")
 
     async def ids(**filters: Any) -> list[uuid.UUID]:
-        return [item.id for item in (await references.list(reader, **filters)).items]
+        page = await references.list(reader, **filters)
+        assert page.total == len(page.items)
+        return [item.id for item in page.items]
 
     assert await ids() == [untagged, runner, sandal]
-    assert await ids(video_types=["review", "drama"]) == [runner, sandal]
-    assert await ids(categories=["袜子"]) == [runner]
-    assert await ids(categories=["凉拖鞋", "跑鞋"], video_types=["review"]) == [sandal]
+    assert await ids(tags=[sock_tag]) == [runner]
+    assert await ids(tags=[sandal_tag, runner_tag]) == [runner, sandal], "同一维度命中任一"
+    assert await ids(tags=[runner_tag, review]) == [runner], "维度之间都要命中；大类含小类"
+    assert await ids(tags=[compare]) == [runner], "小类不含大类本身"
+    assert await ids(tags=[sandal_tag, drama]) == []
+    assert await ids(tags=[drama]) == [], "移除的不在列表里"
     assert await ids(q="跑鞋") == [runner]
     assert await ids(q="100%") == [sandal], "% 按字面匹配，不是通配符"
     assert await ids(user_name="nobody") == []
+    with pytest.raises(ValidationFailed):
+        await ids(tags=[uuid.uuid4()])
 
-    filters = await references.filters()
-    counts = {one.value: one.count for one in filters.video_types}
-    assert (counts["review"], counts["try_on"], counts["live_clip"]) == (1, 1, 0)
-    assert len(filters.video_types) == 8
-    assert {one.name: one.count for one in filters.categories} == {
-        "凉拖鞋": 1,
-        "跑鞋": 1,
-        "袜子": 1,
-    }
+    (listed,) = [item for item in (await references.list(reader)).items if item.id == runner]
+    assert set(listed.tag_ids) == {runner_tag, sock_tag, compare}
+
+
+async def test_replacing_tags_overwrites_every_dimension(engine: AsyncEngine) -> None:
+    maya = await plant_user(engine, "maya")
+    reference_id = await plant_reference(engine, owner=maya)
+    amz = await tag_id(engine, "平台&渠道", "AMZ")
+    await plant_entry(
+        engine, reference_id, status="completed", tags=[amz, await tag_id(engine, "品类", "拖鞋")]
+    )
+    dtc = await tag_id(engine, "平台&渠道", "DTC")
+    runner = await tag_id(engine, "品类", "跑鞋")
+    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
+
+    replaced = await references.replace_tags(
+        principal(maya), reference_id, ReferenceTagsIn(tag_ids=[dtc, runner, runner])
+    )
+
+    assert set(replaced.tag_ids) == {dtc, runner}
+    assert (await entry_of(engine, reference_id))["tags"] == {dtc, runner}
+
+
+async def test_replacing_tags_creates_the_entry_when_missing(engine: AsyncEngine) -> None:
+    maya = await plant_user(engine, "maya")
+    reference_id = await plant_reference(engine, owner=maya)
+    amz = await tag_id(engine, "平台&渠道", "AMZ")
+    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
+
+    await references.replace_tags(principal(maya), reference_id, ReferenceTagsIn(tag_ids=[amz]))
+
+    entry = await entry_of(engine, reference_id)
+    assert (entry["tags"], entry["created_by"]) == ({amz}, maya)
+
+
+@pytest.mark.parametrize("status", ["pending", "running"])
+async def test_tags_cannot_change_while_tagging(engine: AsyncEngine, status: str) -> None:
+    maya = await plant_user(engine, "maya")
+    reference_id = await plant_reference(engine, owner=maya)
+    slipper = await tag_id(engine, "品类", "拖鞋")
+    await plant_entry(engine, reference_id, status=status, tags=[slipper])
+    tagging = RecordingTaggingQueue()
+    references = service(engine, RecordingQueue(SqlReferenceStore(engine)), tagging=tagging)
+
+    with pytest.raises(Conflict):
+        await references.replace_tags(
+            principal(maya),
+            reference_id,
+            ReferenceTagsIn(tag_ids=[await tag_id(engine, "品类", "跑鞋")]),
+        )
+    with pytest.raises(Conflict):
+        await references.retag(principal(maya), reference_id)
+    assert (await entry_of(engine, reference_id))["tags"] == {slipper}
+    assert tagging.enqueued == []
+
+
+async def test_unknown_tags_and_dimensions_are_rejected(engine: AsyncEngine) -> None:
+    maya = await plant_user(engine, "maya")
+    reference_id = await plant_reference(engine, owner=maya)
+    slipper = await tag_id(engine, "品类", "拖鞋")
+    await plant_entry(engine, reference_id, tags=[slipper])
+    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
+
+    for wrong in (uuid.uuid4(), await tag_id(engine, "品类")):
+        with pytest.raises(ValidationFailed):
+            await references.replace_tags(
+                principal(maya), reference_id, ReferenceTagsIn(tag_ids=[wrong])
+            )
+    assert (await entry_of(engine, reference_id))["tags"] == {slipper}
+
+
+async def test_retagging_needs_a_finished_breakdown_and_queues_the_entry(
+    engine: AsyncEngine,
+) -> None:
+    maya = await plant_user(engine, "maya")
+    done = await plant_reference(engine, owner=maya, video_url="https://cdn.example.test/d.mp4")
+    entry_id = await plant_entry(engine, done, status="failed", error="model_failed")
+    never = await plant_reference(
+        engine,
+        owner=maya,
+        video_url="https://cdn.example.test/n.mp4",
+        status="failed",
+        document=None,
+        error_code="video_unreadable",
+    )
+    breaking = await plant_reference(
+        engine, owner=maya, video_url="https://cdn.example.test/b.mp4", status="running"
+    )
+    tagging = RecordingTaggingQueue()
+    references = service(engine, RecordingQueue(SqlReferenceStore(engine)), tagging=tagging)
+
+    for not_ready in (never, breaking):
+        with pytest.raises(Conflict):
+            await references.retag(principal(maya), not_ready)
+    retagged = await references.retag(principal(maya), done)
+
+    assert (retagged.tag_status, retagged.tag_error) == ("pending", "model_failed")
+    assert tagging.enqueued == [entry_id]
 
 
 async def test_filters_list_owners_by_count_and_skip_removed_rows(engine: AsyncEngine) -> None:

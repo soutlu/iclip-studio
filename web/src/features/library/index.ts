@@ -5,9 +5,4 @@ export { WholeFilmsRoute } from './components/whole-films-route'
 export { DEFAULT_LIBRARY_TAB, LIBRARY_TAB_VALUES, type LibraryTab } from './library-tabs'
 export { DEFAULT_WHOLE_FILM_SCOPE, type WholeFilmScope } from './whole-films.api'
 export { DEFAULT_LIBRARY_SCOPE, type LibraryScope, useLibraryVideo } from './library.api'
-export {
-  DEFAULT_REFERENCE_SCOPE,
-  type ReferenceScope,
-  zCategory,
-  zVideoType,
-} from './references.api'
+export { DEFAULT_REFERENCE_SCOPE, type ReferenceScope } from './references.api'

@@ -92,7 +92,7 @@ async def media_app(
             object_store=MemoryObjectStore(),
             queue_connector=InMemoryConnector(),
             reference_breakdowns=breakdowns,
-            reference_tagger=tagger,
+            library_tagger=tagger,
             media_codec=SOFTWARE,
         )
     finally:
@@ -343,22 +343,12 @@ async def test_stale_follows_the_prompt_the_breakdown_makes(
     detail = f"/references/{reference_id}"
 
     current = (await http.get(detail)).json()
-    tags_only = await http.patch(
-        detail,
-        json={
-            "version": current["version"],
-            "document": current["document"],
-            "videoTypes": ["lifestyle"],
-            "categories": ["拖鞋"],
-        },
-    )
+    tags_only = await http.put(f"{detail}/tags", json={"tagIds": []})
     edited = await http.patch(
         detail,
         json={
-            "version": tags_only.json()["version"],
+            "version": current["version"],
             "document": FULL.replace("她的右脚踩上滑板。", "她的左脚踩上滑板。"),
-            "videoTypes": ["lifestyle"],
-            "categories": ["拖鞋"],
         },
     )
 

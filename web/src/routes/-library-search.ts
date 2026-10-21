@@ -9,8 +9,6 @@ import {
   type LibraryTab,
   type ReferenceScope,
   type WholeFilmScope,
-  zCategory,
-  zVideoType,
 } from '@/features/library'
 import {
   dateRangeFromSearch,
@@ -26,8 +24,7 @@ export const librarySearchSchema = z.object({
   orientation: z.enum(['portrait', 'landscape']).optional().catch(undefined),
   q: z.string().max(100).optional().catch(undefined),
   userName: z.string().min(1).optional().catch(undefined),
-  videoTypes: z.array(zVideoType).min(1).optional().catch(undefined),
-  categories: z.array(zCategory).min(1).optional().catch(undefined),
+  tags: z.array(z.uuid()).min(1).optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
   film: z.uuid().optional().catch(undefined),
@@ -65,10 +62,9 @@ export function searchFromScope(scope: LibraryScope): LibrarySearch {
 export function referenceScopeFromSearch(search: LibrarySearch): ReferenceScope {
   return {
     ...dateRangeFromSearch(search, DEFAULT_REFERENCE_SCOPE),
-    categories: search.categories ?? [],
     q: search.q ?? '',
+    tags: search.tags ?? [],
     userName: search.userName ?? null,
-    videoTypes: search.videoTypes ?? [],
   }
 }
 
@@ -76,11 +72,10 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
   const q = scope.q.trim()
   return {
     ...dateRangeToSearch(scope, DEFAULT_REFERENCE_SCOPE),
-    categories: scope.categories.length === 0 ? undefined : [...scope.categories],
     q: q === '' ? undefined : q,
     tab: 'references',
+    tags: scope.tags.length === 0 ? undefined : [...scope.tags],
     userName: scope.userName ?? undefined,
-    videoTypes: scope.videoTypes.length === 0 ? undefined : [...scope.videoTypes],
   }
 }
 

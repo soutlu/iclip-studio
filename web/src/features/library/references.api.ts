@@ -1,4 +1,5 @@
-/** 资料库「参考视频」的接口：筛选翻成查询串、列表与详情的读取和轮询、建行与改、重拆、移除、试生成。合同见 contract/conventions.md §14。 */
+/** 资料库「参考视频」的接口：筛选翻成查询串、列表与详情的读取和轮询、建行与改、改标签、重拆、重新打标、移除、试生成。
+ * 合同见 contract/conventions.md §14、§15。 */
 
 import {
   skipToken,
@@ -15,62 +16,63 @@ import {
   zReferenceVideoOut,
   zReferenceVideosOut,
   zTestVideoIn,
+  type zReferenceTagsIn,
   type zReferenceUpdateIn,
   type zReferenceVideoItemOut,
 } from '@/shared/api/generated/zod.gen'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { dateRangeBounds, UNBOUNDED_RANGE, type DateRange } from '@/shared/lib/date-range'
+import { libraryTagQueryKeys } from './library-tags.api'
 
 export type ReferencesPage = z.output<typeof zReferenceVideosOut>
 export type ReferenceItem = z.output<typeof zReferenceVideoItemOut>
 export type ReferenceDetail = z.output<typeof zReferenceVideoOut>
-export type ReferenceFilters = z.output<typeof zReferenceFiltersOut>
 export type ReferenceUpdate = z.input<typeof zReferenceUpdateIn>
-export type VideoType = ReferenceItem['videoTypes'][number]
-export type Category = ReferenceItem['categories'][number]
+type ReferenceTagsIn = z.input<typeof zReferenceTagsIn>
 export type BreakdownStatus = ReferenceItem['breakdownStatus']
 export type BreakdownError = NonNullable<ReferenceItem['errorCode']>
+export type TagStatus = ReferenceItem['tagStatus']
+export type TagError = NonNullable<ReferenceItem['tagError']>
 export type TestVideo = NonNullable<ReferenceDetail['testVideo']>
 export type TestAspectRatio = z.input<typeof zTestVideoIn>['aspectRatio']
 
-/** 合同里的两份清单：片子类型的取值（名称与说明另由 /references/filters 给）与全部品类，都按合同的先后。 */
-export const zVideoType = zReferenceVideoOut.shape.videoTypes.element
-export const zCategory = zReferenceVideoOut.shape.categories.element
-export const VIDEO_TYPE_VALUES: readonly VideoType[] = zVideoType.options
-export const CATEGORY_VALUES: readonly Category[] = zCategory.options
-
-/** 列表的筛选：属主、时间范围、拆解全文关键词，以及两组标签（组内命中任一，两组都给时都要命中）。 */
+/** 列表的筛选：属主、时间范围、拆解全文关键词，以及选中的标签（同一维度命中任一，不同维度都要命中）。 */
 export interface ReferenceScope extends DateRange {
   userName: string | null
   q: string
-  videoTypes: readonly VideoType[]
-  categories: readonly Category[]
+  tags: readonly string[]
 }
 
 export const DEFAULT_REFERENCE_SCOPE: ReferenceScope = {
   ...UNBOUNDED_RANGE,
-  categories: [],
   q: '',
+  tags: [],
   userName: null,
-  videoTypes: [],
 }
 
 export const isDefaultReferenceScope = (scope: ReferenceScope): boolean =>
   scope.userName === null &&
   scope.q.trim() === '' &&
   scope.range === 'all' &&
-  scope.videoTypes.length === 0 &&
-  scope.categories.length === 0
+  scope.tags.length === 0
 
 /** 一页的卡数，与成片素材同一个量级。 */
 const REFERENCES_PAGE_SIZE = 24
 
-/** 有排队或拆解中的行时轮询的间隔，与出片记录的轮询一致。 */
+/** 有排队、拆解中或打标中的行时轮询的间隔，与出片记录的轮询一致。 */
 const POLL_MS = 5000
 
 /** 后台还没拆完：排队或拆解中。 */
 export const isBreakdownBusy = (status: BreakdownStatus): boolean =>
   status === 'pending' || status === 'running'
+
+/** 后台还没打完标：排队或打标中。 */
+export const isTaggingBusy = (status: TagStatus): boolean =>
+  status === 'pending' || status === 'running'
+
+/** 这一行还有后台在跑，结果会自己变：拆解或打标还没结束。 */
+export const isReferenceBusy = (item: Pick<ReferenceItem, 'breakdownStatus' | 'tagStatus'>) =>
+  isBreakdownBusy(item.breakdownStatus) || isTaggingBusy(item.tagStatus)
 
 /** 试生成可选的画幅，按合同的先后。 */
 const TEST_ASPECT_RATIOS: readonly TestAspectRatio[] = zTestVideoIn.shape.aspectRatio.options
@@ -89,7 +91,7 @@ export const nearestTestAspectRatio = (ratio: number): TestAspectRatio => {
   return best
 }
 
-/** now 可注入方便测试；预设范围按此刻往前数。两组标签是重复的同名参数。 */
+/** now 可注入方便测试；预设范围按此刻往前数。标签是重复的同名参数。 */
 export const referenceSearchParams = (
   scope: ReferenceScope,
   cursor: string | null,
@@ -100,8 +102,7 @@ export const referenceSearchParams = (
   if (since !== null) params.set('since', since.toISOString())
   if (until !== null) params.set('until', until.toISOString())
   if (scope.userName !== null) params.set('userName', scope.userName)
-  for (const value of scope.videoTypes) params.append('videoTypes', value)
-  for (const value of scope.categories) params.append('categories', value)
+  for (const id of scope.tags) params.append('tags', id)
   const keyword = scope.q.trim()
   if (keyword !== '') params.set('q', keyword)
   params.set('limit', String(REFERENCES_PAGE_SIZE))
@@ -118,9 +119,11 @@ export const referenceQueryKeys = {
 
 const READ_LIST_FAILED = '读取参考视频失败'
 
-/** 已读的页里有还没拆完的行就轮询，全部拆完停下；缓存留 30 分钟，看完详情退回来不缩回第一页。 */
-export const useReferences = (scope: ReferenceScope) =>
+/** 已读的页里有还没拆完或还没打完标的行就轮询，全部结束停下；缓存留 30 分钟，看完详情退回来不缩回第一页。
+ * `enabled` 为假时先不读（筛选里的标签还没对过标签树）。 */
+export const useReferences = (scope: ReferenceScope, enabled = true) =>
   useInfiniteQuery({
+    enabled,
     gcTime: 30 * 60_000,
     queryFn: ({ pageParam, signal }) =>
       apiFetch(
@@ -132,15 +135,11 @@ export const useReferences = (scope: ReferenceScope) =>
     getNextPageParam: (last: ReferencesPage) => last.nextCursor,
     queryKey: referenceQueryKeys.list(scope),
     refetchInterval: ({ state }) =>
-      state.data?.pages.some((page) =>
-        page.items.some((item) => isBreakdownBusy(item.breakdownStatus)),
-      )
-        ? POLL_MS
-        : false,
+      state.data?.pages.some((page) => page.items.some(isReferenceBusy)) ? POLL_MS : false,
   })
 
-/** 两组筛选的候选与条数；`poll` 为真时跟着列表一起轮询，拆完自动打的标签会改条数。 */
-export const useReferenceFilters = (poll: boolean) =>
+/** 按人筛选的候选（属主与条数）；标签的候选与条数在标签树里。 */
+export const useReferenceFilters = () =>
   useQuery({
     queryFn: ({ signal }) =>
       apiFetch('/references/filters', zReferenceFiltersOut, {
@@ -148,12 +147,11 @@ export const useReferenceFilters = (poll: boolean) =>
         signal,
       }),
     queryKey: referenceQueryKeys.filters,
-    refetchInterval: poll ? POLL_MS : false,
   })
 
 const referencePath = (id: string) => `/references/${encodeURIComponent(id)}`
 
-/** 一条连同拆解正文与最新的试生成；还没拆完或试生成还没结束时轮询，结果自动出现。`id` 为 null 时不读。 */
+/** 一条连同拆解正文与最新的试生成；还没拆完、还没打完标或试生成还没结束时轮询，结果自动出现。`id` 为 null 时不读。 */
 export const useReference = (id: string | null) =>
   useQuery({
     queryFn:
@@ -167,7 +165,7 @@ export const useReference = (id: string | null) =>
     queryKey: referenceQueryKeys.detail(id ?? ''),
     refetchInterval: ({ state }) =>
       state.data !== undefined &&
-      (isBreakdownBusy(state.data.breakdownStatus) || state.data.testVideo?.status === 'running')
+      (isReferenceBusy(state.data) || state.data.testVideo?.status === 'running')
         ? POLL_MS
         : false,
   })
@@ -184,7 +182,7 @@ export const createReference = async (
   return { created: response.status === 201, reference: data }
 }
 
-/** 改、重拆、移除之后：详情换成服务端交回的那一行，列表与条数重读。 */
+/** 改、改标签、重拆、重新打标、移除之后：详情换成服务端交回的那一行，列表、属主条数与标签条数重读。 */
 const useSettle = () => {
   const queryClient = useQueryClient()
   return (reference: ReferenceDetail | null, id: string) => {
@@ -192,10 +190,11 @@ const useSettle = () => {
     else queryClient.setQueryData(referenceQueryKeys.detail(id), reference)
     void queryClient.invalidateQueries({ queryKey: ['references', 'list'] })
     void queryClient.invalidateQueries({ queryKey: referenceQueryKeys.filters })
+    void queryClient.invalidateQueries({ queryKey: libraryTagQueryKeys.tree })
   }
 }
 
-/** 整份改拆解与两组标签；版本对不上或正在拆是 409，调用方按 `ApiError.status` 提示。 */
+/** 改拆解正文；版本对不上或正在拆是 409，调用方按 `ApiError.status` 提示。 */
 export const useUpdateReference = (id: string) => {
   const settle = useSettle()
   return useMutation({
@@ -216,6 +215,33 @@ export const useRerunReference = (id: string) => {
     mutationFn: () =>
       apiFetch(`${referencePath(id)}/breakdowns`, zReferenceVideoOut, {
         fallbackErrorMessage: '重新拆解提交失败',
+        method: 'POST',
+      }),
+    onSuccess: (reference) => settle(reference, id),
+  })
+}
+
+/** 整份替换这条在所有维度上的标签；正在排队或打标是 409，调用方按 `ApiError.status` 提示。 */
+export const useReplaceReferenceTags = (id: string) => {
+  const settle = useSettle()
+  return useMutation({
+    mutationFn: (tagIds: readonly string[]) =>
+      apiFetch(`${referencePath(id)}/tags`, zReferenceVideoOut, {
+        body: { tagIds: [...tagIds] } satisfies ReferenceTagsIn,
+        fallbackErrorMessage: '标签保存失败',
+        method: 'PUT',
+      }),
+    onSuccess: (reference) => settle(reference, id),
+  })
+}
+
+/** 按当前拆解重新打标：回到排队，答复改完的整行。拆解没完成或正在打标是 409。 */
+export const useRetagReference = (id: string) => {
+  const settle = useSettle()
+  return useMutation({
+    mutationFn: () =>
+      apiFetch(`${referencePath(id)}/tagging`, zReferenceVideoOut, {
+        fallbackErrorMessage: '重新打标提交失败',
         method: 'POST',
       }),
     onSuccess: (reference) => settle(reference, id),

@@ -1,22 +1,19 @@
-"""参考视频的端口：自有表的仓储，以及由组合根接上的拆解、打标、上传记录与试生成。"""
+"""参考视频的端口：自有表的仓储，以及由组合根接上的拆解、上传记录与试生成。"""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
     BreakdownErrorCode,
-    CategoryValue,
     Claim,
     ReferenceCursor,
     ReferenceVideo,
     Scope,
-    Tags,
     TestVideoJob,
-    VideoTypeValue,
 )
 from iclip.domains.references.test_prompt import TestPrompt
 
@@ -50,12 +47,6 @@ class ReferenceStore(Protocol):
         """筛选范围里没移除的行数。"""
         ...
 
-    async def filter_counts(
-        self,
-    ) -> tuple[Mapping[VideoTypeValue, int], Sequence[tuple[CategoryValue, int]]]:
-        """没移除的行里每种片子类型、每个用到的品类各有几条；品类按条数多的在前。"""
-        ...
-
     async def owner_counts(self) -> Sequence[tuple[str, int]]:
         """没移除的行按属主的用户名各有几条；条数多的在前，同数按用户名。"""
         ...
@@ -66,10 +57,8 @@ class ReferenceStore(Protocol):
         *,
         version: int,
         document: str,
-        tags: Tags,
     ) -> int | None:
-        """改拆解正文与两组标签，版本加一，交回新版本。没移除、版本对得上、不在拆解中才改；
-        否则给 ``None``。"""
+        """改拆解正文，版本加一，交回新版本。没移除、版本对得上、不在拆解中才改；否则给 ``None``。"""
         ...
 
     async def requeue(
@@ -85,20 +74,20 @@ class ReferenceStore(Protocol):
         ...
 
     async def abandon_pending(self, reference_id: uuid.UUID) -> None:
-        """排队没排上：还在 ``pending`` 的这一行改成 ``failed / model_call_failed``，拆解与标签不动。"""
+        """排队没排上：还在 ``pending`` 的这一行改成 ``failed / model_call_failed``，拆解不动。"""
         ...
 
     async def claim(self, reference_id: uuid.UUID) -> Claim | None:
         """``pending`` 改成 ``running`` 并记开始时刻；不在 ``pending`` 给 ``None``。"""
         ...
 
-    async def finish(self, claim: Claim, *, document: str, tags: Tags) -> bool:
-        """这一次拆完：覆盖拆解与标签、清掉失败原因、版本加一。这一次已被收尾（不在拆解中，或开始
-        时刻对不上）给 ``False``，不写。"""
+    async def finish(self, claim: Claim, *, document: str) -> bool:
+        """这一次拆完：覆盖拆解、清掉失败原因、版本加一。这一次已被收尾（不在拆解中，或开始时刻
+        对不上）给 ``False``，不写。"""
         ...
 
     async def fail(self, claim: Claim, *, error_code: BreakdownErrorCode) -> bool:
-        """这一次没拆成：记失败原因，拆解与标签不动。已被收尾给 ``False``，不写。"""
+        """这一次没拆成：记失败原因，拆解不动。已被收尾给 ``False``，不写。"""
         ...
 
     async def time_out_stalled(self, *, older_than_seconds: int) -> int:
@@ -119,14 +108,6 @@ class VideoBreakdowns(Protocol):
 
     async def breakdown(self, video_url: str) -> str:
         """拆不成抛 ``BreakdownFailed``，带上落到行上的失败原因。"""
-        ...
-
-
-class Tagger(Protocol):
-    """按拆解全文给视频打两组标签；每次调用都是一次付费模型调用。"""
-
-    async def tag(self, document: str) -> Tags:
-        """给不出可用的标签抛 ``TaggingFailed``；交回的两组已去重，只含清单里的值。"""
         ...
 
 
@@ -168,7 +149,6 @@ __all__ = [
     "BreakdownQueue",
     "OwnVideoUpload",
     "ReferenceStore",
-    "Tagger",
     "TestVideos",
     "VideoBreakdowns",
 ]
