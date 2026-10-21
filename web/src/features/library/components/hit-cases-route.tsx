@@ -26,6 +26,7 @@ import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
 import { LibraryTagAdmin, ManageTagsToggle } from './library-tag-admin'
+import { LibraryTagAdminPrototype } from './library-tag-admin-prototype'
 import { LibraryTagFilters } from './library-tag-filters'
 import { LibraryViewer } from './library-viewer'
 
@@ -115,17 +116,19 @@ export function HitCasesRoute({
         )
       }
       filters={
-        <HitCaseFilters
-          manageTags={
-            canManageTags
-              ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
-              : undefined
-          }
-          onChange={onScopeChange}
-          scope={scope}
-          tags={tags}
-          trailing={counter}
-        />
+        __TAG_ADMIN_PROTOTYPE__ && canManageTags && managingTags && tags !== undefined ? null : (
+          <HitCaseFilters
+            manageTags={
+              canManageTags
+                ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
+                : undefined
+            }
+            onChange={onScopeChange}
+            scope={scope}
+            tags={tags}
+            trailing={counter}
+          />
+        )
       }
       header={
         <LibraryPageHeader
@@ -137,7 +140,11 @@ export function HitCasesRoute({
       mainRef={mainRef}
     >
       {canManageTags && managingTags && tags !== undefined ? (
-        <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
+        __TAG_ADMIN_PROTOTYPE__ ? (
+          <LibraryTagAdminPrototype index={tags} onClose={() => setManagingTags(false)} />
+        ) : (
+          <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
+        )
       ) : (
         <LibraryList
           blocker={

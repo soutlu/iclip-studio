@@ -26,6 +26,7 @@ import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
 import { LibraryTagAdmin } from './library-tag-admin'
+import { LibraryTagAdminPrototype } from './library-tag-admin-prototype'
 import { ReferenceCard, UploadingCard } from './reference-card'
 import { ReferenceFilters } from './reference-filters'
 import { ReferenceViewer } from './reference-viewer'
@@ -159,19 +160,21 @@ export function ReferencesRoute({
         </>
       }
       filters={
-        <ReferenceFilters
-          authors={owners}
-          manageTags={
-            canManageTags
-              ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
-              : undefined
-          }
-          myUserName={myUserName}
-          onChange={onScopeChange}
-          scope={scope}
-          tags={tags}
-          trailing={counter}
-        />
+        __TAG_ADMIN_PROTOTYPE__ && canManageTags && managingTags && tags !== undefined ? null : (
+          <ReferenceFilters
+            authors={owners}
+            manageTags={
+              canManageTags
+                ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
+                : undefined
+            }
+            myUserName={myUserName}
+            onChange={onScopeChange}
+            scope={scope}
+            tags={tags}
+            trailing={counter}
+          />
+        )
       }
       header={
         <LibraryPageHeader
@@ -190,7 +193,11 @@ export function ReferencesRoute({
       mainRef={mainRef}
     >
       {canManageTags && managingTags && tags !== undefined ? (
-        <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
+        __TAG_ADMIN_PROTOTYPE__ ? (
+          <LibraryTagAdminPrototype index={tags} onClose={() => setManagingTags(false)} />
+        ) : (
+          <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
+        )
       ) : (
         <LibraryList
           blocker={

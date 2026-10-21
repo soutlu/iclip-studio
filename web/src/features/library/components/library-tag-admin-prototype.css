@@ -3,6 +3,22 @@
   color: var(--color-on-surface);
 }
 
+.tag-admin-prototype__create-form {
+  display: grid;
+  gap: 8px;
+}
+
+.tag-admin-prototype__create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tag-admin-prototype__create-actions > button {
+  min-width: 64px;
+}
+
 .tag-admin-prototype__toolbar {
   display: flex;
   flex-wrap: wrap;

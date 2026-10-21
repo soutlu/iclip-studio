@@ -18,8 +18,7 @@ import { isAiDimension, type LibraryTag, type TagIndex } from '../library-tags'
 import './library-tag-admin-prototype.css'
 
 type Editing = { kind: 'add' | 'rename'; id: string; focus: boolean } | null
-type DialogState =
-  { kind: 'create' } | { kind: 'rules' | 'delete'; tag: LibraryTag; dimension: boolean } | null
+type DialogState = { kind: 'rules' | 'delete'; tag: LibraryTag; dimension: boolean } | null
 type Column = 'left' | 'middle' | 'right'
 
 const COLUMNS: readonly Column[] = ['left', 'middle', 'right']
@@ -57,7 +56,13 @@ export function LibraryTagAdminPrototype({
     return brand === undefined ? null : { focus: false, id: brand.id, kind: 'add' }
   })
   const [dialog, setDialog] = useState<DialogState>(null)
-  // 原型的初始版式按维度名称确定；后续改名保持位置，新维度排在左列末尾。
+  const [creatingDimension, setCreatingDimension] = useState(false)
+  const addDimensionRef = useRef<HTMLButtonElement>(null)
+  const closeCreate = () => {
+    setCreatingDimension(false)
+    addDimensionRef.current?.focus()
+  }
+  // 原型的初始版式按维度名称确定；后续改名保持位置，新维度排在左列首位。
   const [columnById] = useState(
     () =>
       new Map(index.dimensions.map((dimension) => [dimension.id, initialColumn(dimension.name)])),
@@ -81,7 +86,7 @@ export function LibraryTagAdminPrototype({
   const actions: Actions = {
     add: async (name, parentId) => {
       try {
-        await create.mutateAsync({ name, parentId })
+        await create.mutateAsync({ name, parentId, ...(parentId === null ? { position: 0 } : {}) })
         setEditing(null)
         setSearch('')
         return true
@@ -125,9 +130,15 @@ export function LibraryTagAdminPrototype({
           wrapperClassName="tag-admin-prototype__search"
         />
         <Button
+          aria-expanded={creatingDimension}
           disabled={busy}
           leadingIcon="add"
-          onClick={() => setDialog({ kind: 'create' })}
+          onClick={() => {
+            setSearch('')
+            setEditing(null)
+            setCreatingDimension(true)
+          }}
+          ref={addDimensionRef}
           size="md"
           variant="outlined"
         >
@@ -145,7 +156,7 @@ export function LibraryTagAdminPrototype({
       </div>
       <p className="tag-admin-prototype__hint">{RETAG_HINT}</p>
 
-      {visibleDimensions.length > 0 ? (
+      {visibleDimensions.length > 0 || creatingDimension ? (
         <div className="tag-admin-prototype__grid">
           {COLUMNS.map((column) => {
             const siblings = index.dimensions.filter(
@@ -153,6 +164,24 @@ export function LibraryTagAdminPrototype({
             )
             return (
               <div className="tag-admin-prototype__column" key={column}>
+                {column === 'left' && creatingDimension ? (
+                  <section aria-label="新维度" className="tag-admin-prototype__card">
+                    <div className="tag-admin-prototype__card-heading">
+                      <h3>新维度</h3>
+                    </div>
+                    <CreateDimensionForm
+                      busy={busy}
+                      onCancel={closeCreate}
+                      onSubmit={async (name) => {
+                        if (await actions.add(name, null)) {
+                          closeCreate()
+                          return true
+                        }
+                        return false
+                      }}
+                    />
+                  </section>
+                ) : null}
                 {visibleDimensions
                   .filter((tag) => (columnById.get(tag.id) ?? 'left') === column)
                   .map((dimension) => (
@@ -184,28 +213,7 @@ export function LibraryTagAdminPrototype({
       <DialogRoot onOpenChange={(open) => !open && setDialog(null)} open={dialog !== null}>
         {dialog === null ? null : (
           <DialogSurface aria-describedby={undefined} returnFocus>
-            {dialog.kind === 'create' ? (
-              <>
-                <DialogHeader closeLabel="关闭添加维度" title="添加维度" />
-                <DialogBody>
-                  <NameForm
-                    busy={busy}
-                    focus
-                    label="维度名称"
-                    onCancel={() => setDialog(null)}
-                    onSubmit={async (name) => {
-                      if (await actions.add(name, null)) {
-                        setDialog(null)
-                        setSearch('')
-                        return true
-                      }
-                      return false
-                    }}
-                    placeholder="输入维度名称"
-                  />
-                </DialogBody>
-              </>
-            ) : dialog.kind === 'rules' ? (
+            {dialog.kind === 'rules' ? (
               <RulesEditor
                 busy={busy}
                 dimension={dialog.dimension}
@@ -555,6 +563,67 @@ function TagMenu({
         </MenuItem>
       </MenuSurface>
     </MenuRoot>
+  )
+}
+
+/** 新维度在分组区就地编辑，保存后由真实维度卡接替。 */
+function CreateDimensionForm({
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  busy: boolean
+  onCancel: () => void
+  onSubmit: (name: string) => Promise<boolean>
+}) {
+  const [name, setName] = useState('')
+  const fieldId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => inputRef.current?.focus(), [])
+
+  return (
+    <form
+      className="tag-admin-prototype__create-form"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!busy && name.trim()) void onSubmit(name.trim())
+      }}
+    >
+      <label className="sr-only" htmlFor={fieldId}>
+        维度名称
+      </label>
+      <Input
+        className="rounded-sm"
+        disabled={busy}
+        id={fieldId}
+        maxLength={50}
+        onChange={(event) => setName(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault()
+          if (event.key === 'Escape' && !busy) {
+            event.preventDefault()
+            onCancel()
+          }
+        }}
+        placeholder="例如：投放目标"
+        ref={inputRef}
+        value={name}
+      />
+      <div className="tag-admin-prototype__create-actions">
+        <Button disabled={busy} onClick={onCancel} size="md" variant="ghost">
+          取消
+        </Button>
+        <Button
+          disabled={!name.trim()}
+          loading={busy}
+          size="md"
+          type="submit"
+          variant={name.trim() ? 'inverted' : 'tonal'}
+        >
+          创建维度
+        </Button>
+      </div>
+    </form>
   )
 }
 
