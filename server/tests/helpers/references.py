@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 from sqlalchemy import text
@@ -120,11 +120,23 @@ def responses_body(text_out: str, *, status: str = "completed") -> dict[str, Any
     }
 
 
-DEFAULT_TAGS: Mapping[str, Sequence[str]] = {"d1": ("跑鞋",), "d2": (), "d3": ("对比测评",)}
+class TagCategorySelection(TypedDict):
+    category: str
+    subcategories: Sequence[str]
+
+
+type TagSelection = str | TagCategorySelection
+
+
+DEFAULT_TAGS: Mapping[str, Sequence[TagSelection]] = {
+    "d1": ("跑鞋",),
+    "d2": (),
+    "d3": ({"category": "开箱测评型", "subcategories": ("对比测评",)},),
+}
 """按预置树作答：``d1`` 品类、``d2`` 场景、``d3`` 内容结构。"""
 
 
-def tag_answer(answer: Mapping[str, Sequence[str]] = DEFAULT_TAGS) -> httpx.Response:
+def tag_answer(answer: Mapping[str, Sequence[TagSelection]] = DEFAULT_TAGS) -> httpx.Response:
     return httpx.Response(
         200,
         json=responses_body(json.dumps({key: list(values) for key, values in answer.items()})),

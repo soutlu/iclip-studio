@@ -4,6 +4,7 @@ HTTP 是替身。"""
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Sequence
 
@@ -76,7 +77,15 @@ async def pending_entry(
 
 
 async def test_ai_dimensions_are_rewritten_and_manual_ones_kept(engine: AsyncEngine) -> None:
-    ark = FakeArk(tag=tag_answer({"d1": ["跑鞋"], "d2": [], "d3": ["开箱测评型", "对比测评"]}))
+    ark = FakeArk(
+        tag=tag_answer(
+            {
+                "d1": ["跑鞋"],
+                "d2": [],
+                "d3": [{"category": "开箱测评型", "subcategories": ["对比测评"]}],
+            }
+        )
+    )
     reference_id, entry_id, tags = await pending_entry(engine)
 
     await make_queue(engine, ark_tagger(ark)).run_tagging(str(entry_id))
@@ -109,9 +118,12 @@ async def test_the_request_only_offers_the_ai_dimensions_of_the_current_tree(
         "户外/公园散步",
         "通勤/长时间站立",
     ]
-    assert {"开箱测评型", "对比测评"} <= set(properties["d3"]["items"]["enum"])
-    offered = {value for one in properties.values() for value in one["items"]["enum"]}
-    assert "AMZ" not in offered, "人工维度不给模型选"
+    groups = {
+        one["properties"]["category"]["enum"][0]: one["properties"]["subcategories"]
+        for one in properties["d3"]["items"]["anyOf"]
+    }
+    assert "对比测评" in {one["enum"][0] for one in groups["开箱测评型"]["items"]["anyOf"]}
+    assert "AMZ" not in json.dumps(properties, ensure_ascii=False), "人工维度不给模型选"
 
 
 @pytest.mark.parametrize(

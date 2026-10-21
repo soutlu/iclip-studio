@@ -1,5 +1,5 @@
-"""打标请求按给的 AI 维度现拼：字段 ``d1…dn``、取值只能是那一维度里的名字；解析只收清单里的名字，
-名字换成 id，选了下级就去掉上级；模型调用失败按能不能再试落两种原因。"""
+"""打标请求按 AI 维度生成平铺或层级选项，解析校验归属并保留多选；
+标签名字换成 id，选了下级就去掉上级，模型调用失败按能不能再试落两种原因。"""
 
 from __future__ import annotations
 
@@ -54,8 +54,14 @@ def dimension(name: str, *values: TagNode, guide: str | None = None) -> TagNode:
 CATEGORY = dimension("品类", node("跑鞋"), node("拖鞋"), guide="看出场的产品")
 STRUCTURE = dimension(
     "内容结构",
-    node("开箱测评型", node("对比测评", guide="Comparison Battle"), guide="拆包装上手"),
-    node("口播讲解型"),
+    node(
+        "开箱测评型",
+        node("对比测评", guide="Comparison Battle"),
+        node("标准开箱流程"),
+        guide="拆包装上手",
+    ),
+    node("口播讲解型", node("专家评测解说")),
+    node("剧情叙事型"),
 )
 
 
@@ -63,7 +69,7 @@ def ids_of(dim: TagNode) -> dict[str, uuid.UUID]:
     return {one.name: one.id for one in dim.descendants()}
 
 
-def test_each_dimension_is_one_field_limited_to_its_own_names() -> None:
+def test_each_dimension_has_its_own_options_and_descriptions_in_schema() -> None:
     request = build_tag_request([CATEGORY, STRUCTURE])
 
     fmt = request.text_format
@@ -71,38 +77,98 @@ def test_each_dimension_is_one_field_limited_to_its_own_names() -> None:
     schema = fmt["schema"]
     assert schema["required"] == ["d1", "d2"]
     assert schema["additionalProperties"] is False
-    assert schema["properties"]["d1"]["items"]["enum"] == ["跑鞋", "拖鞋"]
-    assert schema["properties"]["d2"]["items"]["enum"] == ["开箱测评型", "对比测评", "口播讲解型"]
-    for name in ("品类", "内容结构", "看出场的产品", "拆包装上手", "Comparison Battle"):
-        assert name in request.system_prompt
+    product = schema["properties"]["d1"]
+    assert product["items"]["enum"] == ["跑鞋", "拖鞋"]
+    assert "品类" in product["description"]
+    assert CATEGORY.guide in product["description"]
+
+    structure = schema["properties"]["d2"]
+    assert "内容结构" in structure["description"]
+    branches = structure["items"]["anyOf"]
+    assert [branch["properties"]["category"]["enum"] for branch in branches] == [
+        ["开箱测评型"],
+        ["口播讲解型"],
+        ["剧情叙事型"],
+    ]
+    for branch in branches:
+        assert branch["required"] == ["category", "subcategories"]
+        assert branch["additionalProperties"] is False
+    unboxing = branches[0]["properties"]
+    assert unboxing["category"]["description"] == STRUCTURE.children[0].guide
+    options = unboxing["subcategories"]["items"]["anyOf"]
+    assert [option["enum"] for option in options] == [["对比测评"], ["标准开箱流程"]]
+    assert options[0]["description"] == STRUCTURE.children[0].children[0].guide
+    assert branches[2]["properties"]["subcategories"]["maxItems"] == 0
+    for name in ("品类", "内容结构", "跑鞋", "对比测评"):
+        assert name not in request.system_prompt
+
+
+def test_flat_options_keep_their_configured_guides() -> None:
+    dim = dimension("场景", node("室内", guide="室内环境"), node("户外"))
+    items = build_tag_request([dim]).text_format["schema"]["properties"]["d1"]["items"]
+
+    assert items["anyOf"] == [
+        {"type": "string", "enum": ["室内"], "description": "室内环境"},
+        {"type": "string", "enum": ["户外"]},
+    ]
 
 
 def test_the_request_follows_the_dimensions_it_is_given() -> None:
-    request = build_tag_request([STRUCTURE])
+    custom = dimension("自定义维度", node("上层", node("下层")))
+    request = build_tag_request([custom])
 
     assert list(request.text_format["schema"]["properties"]) == ["d1"]
-    assert "品类" not in request.system_prompt
+    assert "品类" not in json.dumps(request.text_format, ensure_ascii=False)
+    raw = json.dumps({"d1": [{"category": "上层", "subcategories": ["下层"]}]})
+    assert parse_tag_answer(raw, request) == (ids_of(custom)["下层"],)
 
 
-def test_names_become_ids_and_a_chosen_child_drops_its_parent() -> None:
+def test_multiple_categories_and_children_become_unique_most_specific_ids() -> None:
     request = build_tag_request([CATEGORY, STRUCTURE])
     categories, structure = ids_of(CATEGORY), ids_of(STRUCTURE)
-    raw = json.dumps({"d1": ["跑鞋", "跑鞋"], "d2": ["开箱测评型", "对比测评", "口播讲解型"]})
+    raw = json.dumps(
+        {
+            "d1": ["跑鞋", "拖鞋", "跑鞋"],
+            "d2": [
+                {"category": "开箱测评型", "subcategories": []},
+                {
+                    "category": "开箱测评型",
+                    "subcategories": ["对比测评", "标准开箱流程", "对比测评"],
+                },
+                {"category": "口播讲解型", "subcategories": ["专家评测解说"]},
+                {"category": "剧情叙事型", "subcategories": []},
+            ],
+        }
+    )
 
     assert parse_tag_answer(raw, request) == (
         categories["跑鞋"],
+        categories["拖鞋"],
         structure["对比测评"],
-        structure["口播讲解型"],
+        structure["标准开箱流程"],
+        structure["专家评测解说"],
+        structure["剧情叙事型"],
     )
 
 
 def test_a_parent_alone_is_kept_and_empty_arrays_mean_nothing() -> None:
     request = build_tag_request([CATEGORY, STRUCTURE])
+    raw = json.dumps({"d1": [], "d2": [{"category": "开箱测评型", "subcategories": []}]})
 
-    assert parse_tag_answer('{"d1": [], "d2": ["开箱测评型"]}', request) == (
-        ids_of(STRUCTURE)["开箱测评型"],
-    )
+    assert parse_tag_answer(raw, request) == (ids_of(STRUCTURE)["开箱测评型"],)
     assert parse_tag_answer('{"d1": [], "d2": []}', request) == ()
+
+
+def test_an_empty_dimension_only_accepts_an_empty_array() -> None:
+    request = build_tag_request([dimension("新维度")])
+    field = request.text_format["schema"]["properties"]["d1"]
+
+    assert field["type"] == "array"
+    assert field["maxItems"] == 0
+    assert parse_tag_answer('{"d1": []}', request) == ()
+    with pytest.raises(TaggingFailed) as caught:
+        parse_tag_answer('{"d1": ["任意标签"]}', request)
+    assert caught.value.code == "model_failed"
 
 
 @pytest.mark.parametrize(
@@ -113,6 +179,45 @@ def test_a_parent_alone_is_kept_and_empty_arrays_mean_nothing() -> None:
         pytest.param('{"d1": []}', id="missing-key"),
         pytest.param('{"d1": [], "d2": [], "d3": []}', id="extra-key"),
         pytest.param('{"d1": "跑鞋", "d2": []}', id="not-an-array"),
+        pytest.param('{"d1": [], "d2": ["开箱测评型"]}', id="hierarchical-value-is-not-an-object"),
+        pytest.param('{"d1": [null], "d2": []}', id="flat-value-is-not-a-string"),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "开箱测评型", "subcategories": ["专家评测解说"]}]}',
+            id="child-from-another-parent",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "对比测评", "subcategories": []}]}',
+            id="child-used-as-parent",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "剧情叙事型", "subcategories": ["对比测评"]}]}',
+            id="leaf-category-cannot-have-children",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "不存在", "subcategories": []}]}',
+            id="unknown-parent",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "开箱测评型", "subcategories": ["不存在"]}]}',
+            id="unknown-child",
+        ),
+        pytest.param('{"d1": [], "d2": [{"category": "开箱测评型"}]}', id="missing-subcategories"),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "开箱测评型", "subcategories": [], "extra": true}]}',
+            id="extra-category-field",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "开箱测评型", "subcategories": "对比测评"}]}',
+            id="subcategories-is-not-an-array",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": null, "subcategories": []}]}',
+            id="category-is-not-a-string",
+        ),
+        pytest.param(
+            '{"d1": [], "d2": [{"category": "开箱测评型", "subcategories": [null]}]}',
+            id="child-is-not-a-string",
+        ),
         pytest.param("```json\n{}\n```", id="not-json"),
         pytest.param("[]", id="not-an-object"),
     ],
