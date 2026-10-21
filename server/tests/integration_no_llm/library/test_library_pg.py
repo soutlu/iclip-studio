@@ -1006,7 +1006,7 @@ async def test_high_definition_versions_are_neither_takes_nor_exports(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:
     """高清版（超分记录）完成得比所有卡面都晚，成片素材的卡、组、版与整片卡、整片版本都不变：
-    成片的高清版种类是视频，整片的高清版种类是整片，都不挂对话。"""
+    成片与整片的高清版种类都是视频，都不挂对话。"""
 
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
@@ -1015,11 +1015,7 @@ async def test_high_definition_versions_are_neither_takes_nor_exports(
         for row in await reports.whole_films(WholeFilmScope(), limit=20, after=None)
     ]
     async with engine.begin() as conn:
-        for kind, source in (
-            (KIND_VIDEO, seed.a),
-            (KIND_VIDEO, seed.m),
-            (KIND_WHOLE_FILM, films.w2),
-        ):
+        for source in (seed.a, seed.m, films.w2):
             request = VideoEnhanceRequest(
                 model="video-enhance",
                 resolution="1080p",
@@ -1039,7 +1035,7 @@ async def test_high_definition_versions_are_neither_takes_nor_exports(
                 {
                     "id": uuid.uuid4(),
                     "owner": seed.lena,
-                    "kind": kind,
+                    "kind": KIND_VIDEO,
                     "operation": OPERATION_ENHANCE,
                     "request": json.dumps(request_to_payload(request)),
                     "status": STATUS_COMPLETED,

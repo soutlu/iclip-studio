@@ -517,10 +517,9 @@ class VideoEnhanceIn(CamelModel):
 
 
 class VideoEnhanceRequest(SnakeModel):
-    """一次超分交给上游的全部输入，字段照上游超分接口，原样转发。
+    """一次超分交给上游的全部输入，字段照上游超分接口，原样转发。"""
 
-    没有 ``kind``：超分记录的种类跟来源走（成片是 video，整片是 whole_film），受理时显式定。"""
-
+    kind: ClassVar[GenerationKind] = KIND_VIDEO
     operation: ClassVar[GenerationOperation] = OPERATION_ENHANCE
 
     model: ModelName

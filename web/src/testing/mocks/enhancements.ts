@@ -28,7 +28,6 @@ const FAILING_TIER: Resolution = '720p'
 
 type MockSource = {
   id: string
-  kind: 'video' | 'whole_film'
   /** 出片时的分辨率；推不出为 null，列全部档。 */
   resolution: string | null
   shotIndex: number | null
@@ -49,7 +48,6 @@ const videoSource = (id: string): MockSource | undefined => {
       downloadedJobIds: [id],
       durationMs: take.durationMs,
       id,
-      kind: 'video',
       resolution: resolutionOf(take.request),
       shotIndex: take.shotIndex,
       url: take.outputUrl,
@@ -61,7 +59,6 @@ const videoSource = (id: string): MockSource | undefined => {
     downloadedJobIds: [id],
     durationMs: found.version.durationMs,
     id,
-    kind: 'video',
     resolution: found.version.take.resolution ?? null,
     shotIndex: found.shotIndex,
     url: found.version.outputUrl,
@@ -73,7 +70,6 @@ const filmSource = (id: string, url: string, sourceJobIds: readonly string[]): M
   downloadedJobIds: sourceJobIds,
   durationMs: null,
   id,
-  kind: 'whole_film',
   resolution:
     sourceJobIds[0] === undefined ? null : (videoSource(sourceJobIds[0])?.resolution ?? null),
   shotIndex: null,
@@ -106,7 +102,7 @@ const recordOf = (source: MockSource, resolution: Resolution): EnhanceRecord => 
   errorMessage: null,
   finishedAt: null,
   id: crypto.randomUUID(),
-  kind: source.kind,
+  kind: 'video',
   metadata: null,
   operation: 'enhance',
   outputUrl: null,

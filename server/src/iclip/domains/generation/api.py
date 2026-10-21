@@ -137,7 +137,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
         """给一条成片或一条导出完成的整片做一档高清版（超分），记一条超分记录（操作 ``enhance``，
-        种类跟来源走）；完成后 ``outputUrl`` / ``watermarkOutputUrl`` 同出片。
+        种类 ``video``）；完成后 ``outputUrl`` / ``watermarkOutputUrl`` 同出片。
 
         ``sourceJobId`` 不按属主取：资料库里看得到的片谁都能提。来源不存在 404；不是成片或整片、
         ``resolution`` 不比来源清晰（可做的档见 ``GET /generations/{id}/enhancements``）、高清版没开通

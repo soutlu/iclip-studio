@@ -31,7 +31,9 @@ from iclip.domains.generation.models import (
 from iclip.domains.generation.queue import GenerationQueue, StillRunning
 from iclip.domains.generation.render import PROVIDER_NAME
 from iclip.domains.generation.schemas import (
+    KIND_VIDEO,
     KIND_WHOLE_FILM,
+    OPERATION_ENHANCE,
     OPERATION_RENDER,
     SubtitleSentence,
     SubtitleWord,
@@ -544,7 +546,7 @@ async def test_a_high_definition_version_of_an_export_is_not_the_latest_export(
     pg_url: str,
     generations: SqlGenerationRepository,
 ) -> None:
-    """给导出做的高清版是种类同为整片的超分记录，它不挂对话：最新一次导出照旧是那次导出，也取消不了它。"""
+    """给导出做的高清版是视频 / 超分，不挂对话：最新一次导出照旧是那次导出，也取消不了它。"""
 
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
@@ -552,7 +554,7 @@ async def test_a_high_definition_version_of_an_export_is_not_the_latest_export(
         generations, await generations.create(_whole_film(owner, mine)), f"{PUBLIC}/own.mp4"
     )
     enhancement = await generations.create(make_enhancement(own, owner_user_id=owner))
-    assert enhancement.kind == KIND_WHOLE_FILM
+    assert (enhancement.kind, enhancement.operation) == (KIND_VIDEO, OPERATION_ENHANCE)
 
     found = await latest(client, mine)
     assert found is not None and found["id"] == str(own.id)
