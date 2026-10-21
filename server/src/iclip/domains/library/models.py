@@ -11,7 +11,7 @@ Orientation = Literal["portrait", "landscape"]
 
 @dataclass(frozen=True, slots=True)
 class Scope:
-    """一次查询的筛选范围，只看卡自己的成片。时间窗 ``[since, until)`` 作用在卡面成片的完成时刻上。"""
+    """一次查询的筛选范围，只看卡自己的素材片。时间窗 ``[since, until)`` 作用在卡面素材片的完成时刻上。"""
 
     user_name: str | None = None
     """卡的作者。"""
@@ -19,12 +19,12 @@ class Scope:
     until: datetime | None = None
     orientation: Orientation | None = None
     q: str | None = None
-    """关键词，按字面包含匹配卡面成片对应那条出片的正文与对话标题，不区分大小写。"""
+    """关键词，按字面包含匹配卡面素材片对应那条出片的正文与对话标题，不区分大小写。"""
 
 
 @dataclass(frozen=True, slots=True)
 class WholeFilmScope:
-    """整片卡的筛选范围。时间窗 ``[since, until)`` 作用在卡面整片的完成时刻上。"""
+    """成片卡的筛选范围。时间窗 ``[since, until)`` 作用在卡面成片的完成时刻上。"""
 
     user_name: str | None = None
     """卡的作者，即对话属主。"""

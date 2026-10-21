@@ -1,5 +1,5 @@
 """删生成记录表 CHECK 约束的迁移：升级后一条约束都不剩、新种类直接落得进去，主键外键照旧；降级
-原样加回 12 条；有整片导出的记录时拒绝降级。
+原样加回 12 条；有成片导出的记录时拒绝降级。
 
 升降级在一次性库上做，不动会话共用的测试库。"""
 
@@ -57,7 +57,7 @@ async def _constraints(url: str, contype: str) -> set[str]:
 
 
 async def _whole_film(url: str) -> uuid.UUID:
-    """落一条排队中的整片导出记录，返回它的 id。"""
+    """落一条排队中的成片导出记录，返回它的 id。"""
 
     engine = build_engine(url, poolclass=NullPool)
     try:
@@ -89,7 +89,7 @@ async def _scalar(url: str, statement: str) -> Any:
 
 
 def test_upgrade_drops_every_check_and_keeps_keys(scratch_db: str) -> None:
-    """0034 不收整片导出那种行；升级后 12 条约束都没了，那种行落得进去，主键与两条外键还在。"""
+    """0034 不收成片导出那种行；升级后 12 条约束都没了，那种行落得进去，主键与两条外键还在。"""
 
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
@@ -118,7 +118,7 @@ def test_downgrade_puts_the_checks_back(scratch_db: str) -> None:
 
 
 def test_downgrade_refuses_while_whole_film_records_exist(scratch_db: str) -> None:
-    """有整片导出的记录就拒绝降级，记录与版本原样留着、约束不加回。"""
+    """有成片导出的记录就拒绝降级，记录与版本原样留着、约束不加回。"""
 
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, CHECKS_DROPPED)

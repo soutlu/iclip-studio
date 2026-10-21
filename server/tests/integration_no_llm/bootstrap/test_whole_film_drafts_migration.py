@@ -1,4 +1,4 @@
-"""整片草稿表与音乐上传挂对话的迁移：草稿表的约束、升降级往返，以及有挂了对话的音乐上传时拒绝降级。
+"""成片草稿表与音乐上传挂对话的迁移：草稿表的约束、升降级往返，以及有挂了对话的音乐上传时拒绝降级。
 
 降级在一次性库上做，不动会话共用的测试库。"""
 
@@ -22,10 +22,10 @@ from tests.helpers.fork_lineage import make_user, open_conversation
 from tests.helpers.migrations import alembic_config
 
 BEFORE_DRAFTS = "0f74c2a89d31"
-"""0030，整片草稿表之前的那一版。"""
+"""0030，成片草稿表之前的那一版。"""
 
 DRAFTS = "a38f28430ec1"
-"""0031，有整片草稿表，上传还都不挂对话。"""
+"""0031，有成片草稿表，上传还都不挂对话。"""
 
 AUDIO_UPLOADS_ATTACHED = "529b24b8d9d4"
 """0032，音乐上传可以挂对话。"""

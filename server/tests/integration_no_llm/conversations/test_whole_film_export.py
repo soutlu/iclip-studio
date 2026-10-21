@@ -1,6 +1,6 @@
-"""整片导出：每次导出是一条整片生成记录，由生成队列交给渲染服务；端点受理、读最新一次与取消。
+"""成片导出：每次导出是一条成片生成记录，由生成队列交给渲染服务；端点受理、读最新一次与取消。
 
-草稿经 HTTP 存，成片、音乐与字幕记录经生成仓储直接落库；渲染服务用桩，队列不起 worker，测试直接
+草稿经 HTTP 存，素材片、音乐与字幕记录经生成仓储直接落库；渲染服务用桩，队列不起 worker，测试直接
 调应用装配好的那个生成队列的 ``run_submit`` / ``run_poll``。对象存储按环境变量装真的 OSS 适配器
 （带内网 endpoint），签名与地址换算都在本地算，不发请求。"""
 
@@ -161,7 +161,7 @@ async def latest(http: httpx.AsyncClient, conversation_id: uuid.UUID) -> dict[st
 async def started_export(
     http: httpx.AsyncClient, generations: SqlGenerationRepository, owner: uuid.UUID
 ) -> tuple[uuid.UUID, str, uuid.UUID]:
-    """新开一段对话、存一份用一条成片的草稿并导出；给出对话、导出 id 与那条成片。"""
+    """新开一段对话、存一份用一条素材片的草稿并导出；给出对话、导出 id 与那条素材片。"""
 
     conversation = await new_conversation(http)
     take = await finished(generations, owner, conversation, f"take-{uuid.uuid4()}")
@@ -224,8 +224,8 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
     render: StubRender,
     queue: GenerationQueue,
 ) -> None:
-    """受理即记一条整片生成记录；队列把草稿原样、各成片与音乐（本桶对象换成内网地址）、有字幕的那条
-    成片的逐词字幕与签好的上传地址交给渲染服务；渲染中读得到它的进度，完成后记录带上整片的公开地址。
+    """受理即记一条成片生成记录；队列把草稿原样、各素材片与音乐（本桶对象换成内网地址）、有字幕的那条
+    素材片的逐词字幕与签好的上传地址交给渲染服务；渲染中读得到它的进度，完成后记录带上成片的公开地址。
     导出不抹对话的收尾标记。"""
 
     owner = uuid.UUID(await login_as_editor(client, pg_url))
@@ -297,7 +297,7 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
             "subtitleJobId": str(subtitle.id),
             "sentences": [SENTENCE.model_dump(mode="json", by_alias=True)],
         }
-    }, "没完成的字幕记录不算，没字幕的成片不在里面"
+    }, "没完成的字幕记录不算，没字幕的素材片不在里面"
     upload = urlsplit(payload["upload"]["url"])
     assert (upload.netloc, upload.path) == (INTERNAL_HOST, f"/{key}")
     expires = datetime.fromtimestamp(int(parse_qs(upload.query)["Expires"][0]), UTC)
@@ -600,7 +600,7 @@ async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
     queue: GenerationQueue,
 ) -> None:
     """版本号不是存着的那一版 409；还没有草稿、画面轨是空的都导不出 422，都不记导出。
-    画面轨只有组件段也能导，用到的成片为空。"""
+    画面轨只有组件段也能导，用到的素材片为空。"""
 
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
@@ -647,6 +647,6 @@ async def test_exports_are_unavailable_without_a_render_service(
         read = await http.get(exports_url(mine, "latest"))
         cancelled = await http.delete(exports_url(mine, str(uuid.uuid4())))
 
-    assert (started.status_code, started.json()) == (422, {"detail": "整片导出没有开通"})
+    assert (started.status_code, started.json()) == (422, {"detail": "成片导出没有开通"})
     assert read.status_code == 422
     assert cancelled.status_code == 422

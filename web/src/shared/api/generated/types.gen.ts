@@ -972,8 +972,8 @@ export type ConversationTaskIn = {
  *
  * 审计列表里的一段对话。
  *
- * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
- * 没有成片为 null。
+ * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条素材片（出片或合成）的地址，不含分叉继承来的；
+ * 没有素材片为 null。
  */
 export type ConversationsAuditItemOut = {
   activity: ConversationActivityOut
@@ -1252,7 +1252,7 @@ export type ExecutionThresholdsOut = {
 /**
  * FaceOut
  *
- * 一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
+ * 一版素材片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
  */
 export type FaceOut = {
   /**
@@ -2116,7 +2116,7 @@ export type LibraryVideoDetailOut = {
 /**
  * LibraryVideoOut
  *
- * 资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；
+ * 资料库的一张素材卡：一段对话的分镜，装着这段对话读得到的全部素材片（自己的加继承来的）；
  * 不挂对话的出片一条一张卡，同原作的合成跟着它。
  */
 export type LibraryVideoOut = {
@@ -2259,7 +2259,7 @@ export type MetricsOut = {
   /**
    * Deliveries
    *
-   * 成片件数：有成片的需求单各一件，加没挂需求单却有成片的对话各一件。
+   * 出片件数：有出片的需求单各一件，加没挂需求单却有出片的对话各一件。
    */
   readonly deliveries: number
   /**
@@ -2350,7 +2350,7 @@ export type MovingAverageOut = {
  *
  * 一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
  *
- * 件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+ * 件数类（出片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
  * 其余在整个窗里重算比率或平均。补窗规则见合同 §12。
  */
 export type MovingAveragesOut = {
@@ -2605,7 +2605,7 @@ export type Permission =
 /**
  * PersonOut
  *
- * 一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。
+ * 一个人在时间窗里的指标；出片数同一需求单只算一件，没挂需求单的有出片对话各算一件。
  */
 export type PersonOut = {
   metrics: MetricsOut
@@ -3369,7 +3369,7 @@ export type StyleMatchOut = {
 /**
  * SubtitleIn
  *
- * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ * 手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
  *
  * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
  * 服务不收它，不进 ``request``。
@@ -3455,7 +3455,7 @@ export type SubtitleWord = {
 /**
  * TakeOut
  *
- * 一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
+ * 一版素材片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
  */
 export type TakeOut = {
   /**
@@ -4918,7 +4918,7 @@ export type VideoEditIn = {
 /**
  * VideoEnhanceIn
  *
- * 给一条成片或一条导出的整片做高清版的受理输入。
+ * 给一条素材片或一条导出的成片做高清版的受理输入。
  *
  * ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。
  */
@@ -4957,7 +4957,7 @@ export type VideoEnhanceTierOut = {
 /**
  * VideoEnhancementsOut
  *
- * 一条视频能做的高清版各档，以及下载高清版时记下载事件的成片。
+ * 一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。
  */
 export type VideoEnhancementsOut = {
   /**
@@ -5276,8 +5276,8 @@ export type WholeFilmCaptionEdit = {
 /**
  * WholeFilmCaptions
  *
- * 字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。
- * ``x``、``y`` 是整片字幕在画面上挪开的位置，所有字幕共用一个。
+ * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
+ * ``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。
  */
 export type WholeFilmCaptions = {
   /**
@@ -5305,7 +5305,7 @@ export type WholeFilmCaptions = {
 /**
  * WholeFilmCardOut
  *
- * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。整片没有脚本，不能做同款。
+ * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。
  */
 export type WholeFilmCardOut = {
   /**
@@ -5390,7 +5390,7 @@ export type WholeFilmComponentClip = {
 /**
  * WholeFilmDocument
  *
- * 一段对话的整片草稿。
+ * 一段对话的成片草稿。
  */
 export type WholeFilmDocument = {
   canvas: WholeFilmCanvas | null
@@ -5524,7 +5524,7 @@ export type WholeFilmExportOut = {
  * WholeFilmExportStartedOut
  *
  * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
- * 用到的成片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
+ * 用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
  */
 export type WholeFilmExportStartedOut = {
   /**
@@ -5540,7 +5540,7 @@ export type WholeFilmExportStartedOut = {
 /**
  * WholeFilmMusic
  *
- * 背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。
+ * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
  */
 export type WholeFilmMusic = {
   /**
@@ -5560,7 +5560,7 @@ export type WholeFilmMusic = {
 /**
  * WholeFilmOverlay
  *
- * 特效轨上的一个组件，按整片时间放在 ``[start, start + duration)``，从组件自己时间里的
+ * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
  * ``playbackStart`` 起播。
  *
  * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
@@ -5615,7 +5615,7 @@ export type WholeFilmOverlay = {
 /**
  * WholeFilmVersionOut
  *
- * 整片卡里的一版：这段对话的一次已完成导出。
+ * 成片卡里的一版：这段对话的一次已完成导出。
  */
 export type WholeFilmVersionOut = {
   /**
@@ -5643,7 +5643,7 @@ export type WholeFilmVersionOut = {
 /**
  * WholeFilmVideoClip
  *
- * 画面轨上的一段成片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
+ * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
  */
 export type WholeFilmVideoClip = {
   /**

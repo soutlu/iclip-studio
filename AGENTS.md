@@ -24,7 +24,7 @@
 本地只跑与改动相关的检查，通过后再推送；生产构建与全量 e2e 交给 CI，不在本地重复。
 
 - 后端变更提交前执行 `make lint`、`make format-check` 与 `make typecheck`，并运行与改动直接相关的 pytest；改了端点再跑 `make contract`，改了模块依赖关系再跑 `make tach`。完整测试由 CI 运行，本地不重复跑 `make check`。前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
-- 整片渲染服务（`render/`，以及它编进去的前端整片合成代码、组件目录与生成的合同）变更在 `render/` 执行 `pnpm lint`、`pnpm typecheck` 与 `pnpm test`；本机找不到 chrome-headless-shell 时真实渲染的集成测试跳过并写明原因。
+- 成片渲染服务（`render/`，以及它编进去的前端成片合成代码、组件目录与生成的合同）变更在 `render/` 执行 `pnpm lint`、`pnpm typecheck` 与 `pnpm test`；本机找不到 chrome-headless-shell 时真实渲染的集成测试跳过并写明原因。
 - 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
 - 数据库测试只用一次性测试库或临时 schema；`TEST_DATABASE_URL` 不得指向业务库。迁移检查范围见 [测试规范](docs/test-design.md)。

@@ -138,7 +138,7 @@ class AuditService:
     async def people(
         self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
     ) -> AuditPeopleOut:
-        """时间窗里出过片或跑过的人，成片多的在前、再看运行次数、同数按名字；时间窗与粒度同总览。"""
+        """时间窗里出过片或跑过的人，出片多的在前、再看运行次数、同数按名字；时间窗与粒度同总览。"""
 
         window = plan_window(
             since=_as_utc(since),

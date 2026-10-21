@@ -130,7 +130,7 @@ def submits(app: FastAPI) -> list[dict[str, Any]]:
 
 
 def take(resolution: str | None = "720p", **fields: Any) -> GenerationJob:
-    """一条别人在别的对话里出的已完成成片，默认 720p、第 3 镜。"""
+    """一条别人在别的对话里出的已完成素材片，默认 720p、第 3 镜。"""
 
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", NOW)
@@ -166,7 +166,7 @@ def new_rows(repo: InMemoryGenerationRepository, seeded: set[uuid.UUID]) -> list
 
 
 async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
-    """来源是别人在别的对话里的成片也提得了；记录是视频、不挂对话、没有原作，镜号抄来源，
+    """来源是别人在别的对话里的素材片也提得了；记录是视频、不挂对话、没有原作，镜号抄来源，
     请求是配置的模型与帧率、来源的原片地址；排进视频那条队列，不碰任何对话的收尾标记。"""
 
     source = take("720p", owner_user_id=uuid.uuid4(), task_id=uuid.uuid4(), metadata={"k": 1})
@@ -210,7 +210,7 @@ async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
 
 
 async def test_a_whole_film_gets_a_video_enhancement() -> None:
-    """高清版产出的总是一个视频：整片的高清版种类也是视频，来源是那次导出。"""
+    """高清版产出的总是一个视频：成片的高清版种类也是视频，来源是那次导出。"""
 
     first = take("480p")
     exported = film(first)

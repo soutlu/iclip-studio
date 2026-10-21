@@ -1,4 +1,4 @@
-"""整片渲染服务：内网 HTTP 客户端，以及把一条整片导出记录交给它渲染的 provider。
+"""成片渲染服务：内网 HTTP 客户端，以及把一条成片导出记录交给它渲染的 provider。
 
 接口形状以渲染服务的 ``render/src/server.ts`` 为准（POST / GET / DELETE ``/exports``，不鉴权）。
 渲染服务一次只渲染一个、先进先出，排队与进度只在它的内存里；本系统的事实是生成记录。成片由渲染服务
@@ -157,7 +157,7 @@ def _unexpected(response: httpx.Response) -> RenderUnavailable:
 
 @dataclass(frozen=True, slots=True)
 class RenderSetup:
-    """开通整片导出要的几样：渲染服务的客户端、往公开桶签上传地址的端口与按 key 拼公网地址。"""
+    """开通成片导出要的几样：渲染服务的客户端、往公开桶签上传地址的端口与按 key 拼公网地址。"""
 
     client: RenderClient
     uploads: ServerUploadSigner
@@ -165,7 +165,7 @@ class RenderSetup:
 
 
 class RenderProvider:
-    """整片导出这家 provider：提交是交给渲染服务排队，轮询是读渲染服务里那次导出。
+    """成片导出这家 provider：提交是交给渲染服务排队，轮询是读渲染服务里那次导出。
 
     ``fetch_url`` 把本桶对象的公网地址换成内网地址（没配内网 endpoint 时原样）；上游发布的出片地址
     原样交给渲染服务，它的主机要在渲染服务的允许列表里。"""
@@ -184,7 +184,7 @@ class RenderProvider:
         request = request_of(job, WholeFilmRequest, provider=PROVIDER_NAME)
         if job.conversation_id is None:
             raise ProviderError(
-                "整片导出记录没有对话",
+                "成片导出记录没有对话",
                 code="PROVIDER_CONVERSATION_MISSING",
                 retryable=False,
             )

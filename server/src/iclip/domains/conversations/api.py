@@ -468,7 +468,7 @@ def create_conversations_router(
         conversation_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("agent:read")],
     ) -> WholeFilmDraftOut:
-        """读这段对话的整片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
+        """读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
         ``document`` 与 ``updatedAt`` 为 null。"""
 
         found = await service.whole_film_draft(principal, conversation_id)
@@ -485,7 +485,7 @@ def create_conversations_router(
         body: WholeFilmDraftIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmDraftSavedOut:
-        """整份保存整片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有
+        """整份保存成片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有
         草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。"""
 
         saved = await service.save_whole_film_draft(
@@ -503,7 +503,7 @@ def create_conversations_router(
         body: WholeFilmExportIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmExportStartedOut:
-        """按当前草稿导出一条整片：记成一条整片生成记录排队，答复导出 id 与用到的成片。只有属主能导；
+        """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id 与用到的素材片。只有属主能导；
         ``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。
         渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。"""
 
@@ -519,7 +519,7 @@ def create_conversations_router(
         conversation_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("agent:read")],
     ) -> WholeFilmExportLatestOut:
-        """这段对话最新的一次导出走到哪一步，``done`` 时带整片的地址；还没导出过 ``export`` 为
+        """这段对话最新的一次导出走到哪一步，``done`` 时带成片的地址；还没导出过 ``export`` 为
         null。只有属主能看。"""
 
         found = await service.latest_whole_film_export(principal, conversation_id)

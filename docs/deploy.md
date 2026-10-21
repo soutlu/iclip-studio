@@ -26,7 +26,7 @@
 
    - 只看前端时用 `pnpm dev:mock`，不连后端。端口与代理目标见[前端启动参数](../web/README.md#启动参数)。
 
-6. 要在本机导出整片时（要求开着 OSS 与媒体生成），再开一个终端起渲染服务，并在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为 `http://localhost:8080`：
+6. 要在本机导出成片时（要求开着 OSS 与媒体生成），再开一个终端起渲染服务，并在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为 `http://localhost:8080`：
 
    ```bash
    cd render && RENDER_ALLOWED_MEDIA_HOSTS=<素材主机> RENDER_REGISTRY_ROOT=../web/public/hyperframes pnpm dev
@@ -36,11 +36,11 @@
 
 ## 服务器部署
 
-单机部署用 [deploy/compose.yaml](../deploy/compose.yaml)，起后端、前端与整片渲染服务三个容器，镜像从 ACR 拉取。
+单机部署用 [deploy/compose.yaml](../deploy/compose.yaml)，起后端、前端与成片渲染服务三个容器，镜像从 ACR 拉取。
 
 1. 安装 NVIDIA 驱动与 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)。后端与渲染服务的容器都要申请显卡，申请不到就起不来。
    - 没有显卡：删掉 compose.yaml 里 `server` 与 `render` 的 `deploy` 段，改用软件编解码与软件渲染。
-   - 确认后端用上了显卡：启动日志「本地视频编解码已选定」那一条的 `codec` 为 `nvenc`；渲染服务见[整片渲染服务](#整片渲染服务)。
+   - 确认后端用上了显卡：启动日志「本地视频编解码已选定」那一条的 `codec` 为 `nvenc`；渲染服务见[成片渲染服务](#成片渲染服务)。
 2. 在服务器现有的 Postgres 上，以管理员身份给本项目建一个独占的库和账号：
 
    ```sql
@@ -54,7 +54,7 @@
    - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
    - 高清版（超分）：在 `.env` 把 `VIDEO_ENHANCE_SUBMIT_URL` 设为上游超分接口的完整提交地址（与 `VIDEO_SUBMIT_URL` 同一台服务，查询地址与 key 共用），并在 `configs/config.yaml` 的 `media_generation.video` 下写 `enhance` 段（`model`、从高到低的 `resolutions`、`fps`，取值见[配置模型](../server/src/iclip/config/models.py)）；不设地址则高清版没有开通，设了地址却没写这一段启动报错。
-   - 整片导出：在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为渲染服务在 compose 网络里的地址（如 `http://render:8080`），要求同时配了 OSS 与媒体生成；不设则导出端点答「整片导出没有开通」。渲染服务的 `RENDER_ALLOWED_MEDIA_HOSTS` 要列出它会取素材的主机：本桶的内网 host `<OSS_BUCKET>.<OSS_INTERNAL_ENDPOINT 的 host>`（没配内网 endpoint 时是 `<OSS_BUCKET>.<OSS_ENDPOINT 的 host>`），以及上游视频服务发布出片的主机。
+   - 成片导出：在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为渲染服务在 compose 网络里的地址（如 `http://render:8080`），要求同时配了 OSS 与媒体生成；不设则导出端点答「成片导出没有开通」。渲染服务的 `RENDER_ALLOWED_MEDIA_HOSTS` 要列出它会取素材的主机：本桶的内网 host `<OSS_BUCKET>.<OSS_INTERNAL_ENDPOINT 的 host>`（没配内网 endpoint 时是 `<OSS_BUCKET>.<OSS_ENDPOINT 的 host>`），以及上游视频服务发布出片的主机。
 4. 用有 DDL 权限的账号执行目标版本的数据库迁移。部署和服务启动都不会自动迁移。
 5. 登录镜像仓库，拉取并启动：
 
@@ -70,16 +70,16 @@
 
 后端只跑 1 个 worker。实时订阅存在进程内存里，增加 worker 前先看[运行、记录与订阅](architecture.md#5-运行记录与订阅)。
 
-### 整片渲染服务
+### 成片渲染服务
 
 `render` 容器只在 compose 网络里监听 8080，不对外开端口，后端经 `WHOLE_FILM_RENDER_URL=http://render:8080` 调它（职责见[架构](architecture.md#3-身份与模块协作)）。
 
 - **素材主机**：`.env` 里的 `RENDER_ALLOWED_MEDIA_HOSTS`（逗号分隔，带端口就写上端口）由 compose 传给它，取值见上面第 3 步。不设时容器启动即退出，日志是「配置不完整」；导出请求里的素材主机不在名单里答 400 `media-host-not-allowed`。
 - **显卡**：compose 给它申请 `gpu, compute, utility, video, graphics` 五项能力，Chrome 用显卡渲染要 `graphics`，NVENC 编码要 `video`。确认用上了显卡：`docker compose exec render node -e "fetch('http://127.0.0.1:8080/health').then(r=>r.text()).then(console.log)"` 的 `gpu` 为 `hardware`，启动日志「渲染环境」那一条的 `gpu` 为 `hardware`、`videoEncoder` 为 `nvenc`。是 `software` 时另有一条 warning「浏览器使用软件渲染」，渲染照常，只是更慢。
 - **字体**：组件用的网页字体只用组件库里的字体文件，西文用原字体、中文用 Noto Sans SC，与编辑器预览一致；镜像另带 Noto CJK 兜底系统字体。渲染期间不从外网取字体。
-- **资源**：Chrome 要共享内存，compose 设了 `shm_size: 2gb`；临时项目目录在卷 `render-tmp`，每次导出结束即删。导出排队、进度只在内存里，重启容器后进行中的导出记为失败（`RENDER_LOST`），用户要重新导出；已完成的整片在桶里，不受影响。
+- **资源**：Chrome 要共享内存，compose 设了 `shm_size: 2gb`；临时项目目录在卷 `render-tmp`，每次导出结束即删。导出排队、进度只在内存里，重启容器后进行中的导出记为失败（`RENDER_LOST`），用户要重新导出；已完成的成片在桶里，不受影响。
 - **日志**：`docker compose logs render`，每行一个 JSON，`event` 是中文短句；一次导出按 `exportId` 串起「导出已排队」到「导出完成」或「导出失败」。
-- **上线核对**：部署或升级后导出一条片尾用 `logo-brand-close`、字标写中文的整片，与编辑器预览对比片尾字标的大小和位置。这类组件在自己的脚本里量字宽来定字号，HyperFrames 只在运行组件脚本前等正在加载的字体（最多 5 秒），量的时候字形若还没到位，字标大小就与预览不同；Apple Silicon 上模拟运行 amd64 镜像时字标小约 6%，原生运行的导出与预览一致。差得明显时检查容器的 CPU 与显卡（`/health` 的 `gpu`）。
+- **上线核对**：部署或升级后导出一条片尾用 `logo-brand-close`、字标写中文的成片，与编辑器预览对比片尾字标的大小和位置。这类组件在自己的脚本里量字宽来定字号，HyperFrames 只在运行组件脚本前等正在加载的字体（最多 5 秒），量的时候字形若还没到位，字标大小就与预览不同；Apple Silicon 上模拟运行 amd64 镜像时字标小约 6%，原生运行的导出与预览一致。差得明显时检查容器的 CPU 与显卡（`/health` 的 `gpu`）。
 
 ### 升级
 

@@ -42,7 +42,7 @@ def create_audit_router(service: AuditService) -> APIRouter:
         until: datetime | None = None,
         timezone: TimezoneQuery = "UTC",
     ) -> AuditPeopleOut:
-        """按人：时间窗里出过片或跑过的每个人一行指标，外加每期成片数；一次全给。
+        """按人：时间窗里出过片或跑过的每个人一行指标，外加每期出片数；一次全给。
 
         时间窗与粒度规则同总览，见合同 §12。
         """

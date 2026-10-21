@@ -59,7 +59,7 @@ IDLE_ACTIVITY = ConversationActivity()
 
 @dataclass(frozen=True, slots=True)
 class WholeFilmDraft:
-    """一段对话的整片草稿：只有当前一份，每存一次版本号加一，第一次存是 1。"""
+    """一段对话的成片草稿：只有当前一份，每存一次版本号加一，第一次存是 1。"""
 
     conversation_id: uuid.UUID
     document: Mapping[str, Any]
@@ -100,7 +100,7 @@ class WholeFilmExportError:
 
 @dataclass(frozen=True, slots=True)
 class WholeFilmExport:
-    """一次整片导出，即那条整片生成记录给人看的样子。"""
+    """一次成片导出，即那条成片生成记录给人看的样子。"""
 
     id: uuid.UUID
     status: WholeFilmExportStatus
@@ -110,9 +110,9 @@ class WholeFilmExport:
     """排队时前面还有几个；渲染服务答不上来或不在排队为 None。"""
     error: WholeFilmExportError | None
     download_url: str | None
-    """只在 done 时有：整片的公开地址，长期有效。"""
+    """只在 done 时有：成片的公开地址，长期有效。"""
     source_job_ids: tuple[uuid.UUID, ...]
-    """这次用到的成片，去重、按在画面轨里第一次出现的先后。"""
+    """这次用到的素材片，去重、按在画面轨里第一次出现的先后。"""
 
 
 __all__ = [

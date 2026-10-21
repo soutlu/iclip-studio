@@ -118,7 +118,7 @@ class ForkChain:
     in_flight: GenerationJob
     """父名下、孙建立时还在跑、之后才完成的出片（已是完成态）：孙继承不到。"""
     parent_edit: GenerationJob
-    """父名下、孙建立之前完成的编辑段，基底是 ``from_parent``：孙继承得到，但它不是成片。"""
+    """父名下、孙建立之前完成的编辑段，基底是 ``from_parent``：孙继承得到，但它不是素材片。"""
     failed: GenerationJob
     """父名下失败的出片。"""
     parent_after_child: GenerationJob

@@ -261,7 +261,7 @@ async def test_poll_success_and_failure_reach_terminal_states() -> None:
 
 
 async def test_a_polled_result_lands_its_reported_duration_on_the_record() -> None:
-    """上游报成功时带回的成片时长随完成落进记录。"""
+    """上游报成功时带回的产物时长随完成落进记录。"""
 
     job = make_job(video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1")
     repo = InMemoryGenerationRepository([job])

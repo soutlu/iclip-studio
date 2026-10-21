@@ -117,7 +117,7 @@ class ProductCatalogEnv(EnvSettings):
 
 class WholeFilmRenderEnv(EnvSettings):
     url: RequiredEnv = Field(validation_alias=WHOLE_FILM_RENDER_URL_ENV)
-    """整片渲染服务的内网根地址（compose 里的服务名），只给服务端用。"""
+    """成片渲染服务的内网根地址（compose 里的服务名），只给服务端用。"""
 
     @field_validator("url")
     @classmethod
@@ -486,7 +486,7 @@ class ResolvedSettings:
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
-    """整片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
+    """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
     models: tuple[ResolvedModel, ...]
     title_model: str | None
     compaction: ResolvedCompaction
@@ -664,7 +664,7 @@ def _resolve_whole_film_render(
     if missing:
         raise RuntimeError(
             f"配了 {WHOLE_FILM_RENDER_URL_ENV} 但没开{'与'.join(missing)}：每次导出是一条生成记录，"
-            f"由生成队列交给渲染服务，整片上传进桶。补上它们"
+            f"由生成队列交给渲染服务，成片上传进桶。补上它们"
         )
     return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
 

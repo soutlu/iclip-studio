@@ -37,7 +37,7 @@ from iclip.platform.http import validation_error_detail
 TEST_VIDEO_MODEL: Final = "wan3.0-video-prime"
 TEST_VIDEO_RESOLUTION: Final = "480p"
 REFERENCE_KEY: Final = "referenceId"
-"""试生成记录的 ``metadata`` 里记参考视频 id 的键；资料库的成片按它把试生成排除在外。"""
+"""试生成记录的 ``metadata`` 里记参考视频 id 的键；资料库的成片素材按它把试生成排除在外。"""
 
 
 class GenerationTestVideos:

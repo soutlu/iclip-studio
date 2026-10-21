@@ -579,7 +579,7 @@ def test_whole_film_render_is_off_until_its_url_is_set(
 def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """每次导出是一条生成记录，整片上传进桶：没有桶、没开媒体生成都导不出来，报出缺的那一样。"""
+    """每次导出是一条生成记录，成片上传进桶：没有桶、没开媒体生成都导不出来，报出缺的那一样。"""
 
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)

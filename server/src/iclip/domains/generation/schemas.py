@@ -360,7 +360,7 @@ class VideoComposeRequest(CamelModel):
 
 
 class SubtitleIn(CamelModel):
-    """手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+    """手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
 
     归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
     服务不收它，不进 ``request``。"""
@@ -470,7 +470,7 @@ class MusicRequest(CamelModel):
 
 
 class WholeFilmVideoSource(CamelModel):
-    """导出用到的一条成片：记录 id 与它的公开地址。"""
+    """导出用到的一条素材片：记录 id 与它的公开地址。"""
 
     job_id: uuid.UUID
     url: DownloadUrl
@@ -482,7 +482,7 @@ class WholeFilmMusicSource(CamelModel):
 
 
 class WholeFilmSubtitles(CamelModel):
-    """一条成片最新的那条已完成字幕记录的逐句结果。"""
+    """一条素材片最新的那条已完成字幕记录的逐句结果。"""
 
     source_job_id: uuid.UUID
     subtitle_job_id: uuid.UUID
@@ -490,9 +490,9 @@ class WholeFilmSubtitles(CamelModel):
 
 
 class WholeFilmRequest(CamelModel):
-    """一次整片导出交给渲染服务的全部输入，受理时定下，之后不变。生成域不解析草稿。
+    """一次成片导出交给渲染服务的全部输入，受理时定下，之后不变。生成域不解析草稿。
 
-    ``videos`` 是画面轨用到的成片，去重、按第一次出现的先后；用列表是因为 JSONB 不保留键序。"""
+    ``videos`` 是画面轨用到的素材片，去重、按第一次出现的先后；用列表是因为 JSONB 不保留键序。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER
@@ -507,7 +507,7 @@ class WholeFilmRequest(CamelModel):
 
 
 class VideoEnhanceIn(CamelModel):
-    """给一条成片或一条导出的整片做高清版的受理输入。
+    """给一条素材片或一条导出的成片做高清版的受理输入。
 
     ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。"""
 
@@ -722,10 +722,10 @@ class VideoEnhanceTierOut(CamelModel):
 
 
 class VideoEnhancementsOut(CamelModel):
-    """一条视频能做的高清版各档，以及下载高清版时记下载事件的成片。"""
+    """一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。"""
 
     downloaded_job_ids: list[uuid.UUID]
-    """视频是它自己；整片是它导出时用到的各条成片。来源做不了高清版时为空。"""
+    """视频是它自己；成片是它导出时用到的各条素材片。来源做不了高清版时为空。"""
     tiers: list[VideoEnhanceTierOut]
     """比来源清晰的那几档，按运行配置的先后；没开通或来源做不了高清版时为空。"""
 

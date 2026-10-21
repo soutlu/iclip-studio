@@ -84,7 +84,7 @@ class MetricsOut(CamelModel):
     """发起过运行的人数；按天为 0 即非活跃日。"""
     delivered_conversations: int
     cycle_seconds: SpreadOut | None
-    """对话交付周期：首次运行到最后一条成片，含中间的空档。"""
+    """对话交付周期：首次运行到最后一条出片，含中间的空档。"""
     active_cycle_seconds: SpreadOut | None
     """单任务时长：同一区间里只算 agent 运行与视频生成的时段，相隔超过 30 分钟的空档不计。"""
     agent_run_seconds: SpreadOut | None
@@ -92,9 +92,9 @@ class MetricsOut(CamelModel):
     upstream_seconds: SpreadOut | None
     """单个视频提交上游到完成。"""
     length_videos: int
-    """有片长的成片条数；片长读生成记录的 ``duration_ms``，为空的不计。"""
+    """有片长的出片条数；片长读生成记录的 ``duration_ms``，为空的不计。"""
     length_seconds: float
-    """成片片长合计。"""
+    """出片片长合计。"""
     discarded_length_seconds: float
     """其中废片的片长：同一镜成功过多条时，除最后一条以外的。"""
     usage: UsageOut
@@ -102,7 +102,7 @@ class MetricsOut(CamelModel):
     @computed_field
     @property
     def deliveries(self) -> int:
-        """成片件数：有成片的需求单各一件，加没挂需求单却有成片的对话各一件。"""
+        """出片件数：有出片的需求单各一件，加没挂需求单却有出片的对话各一件。"""
 
         return self.delivered_tasks + self.delivered_orphan_conversations
 
@@ -200,7 +200,7 @@ class MovingAverageOut(CamelModel):
 class MovingAveragesOut(CamelModel):
     """一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
 
-    件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+    件数类（出片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
     其余在整个窗里重算比率或平均。补窗规则见合同 §12。
     """
 
@@ -268,19 +268,19 @@ class PeriodDeliveriesOut(CamelModel):
 
 
 class PersonOut(CamelModel):
-    """一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。"""
+    """一个人在时间窗里的指标；出片数同一需求单只算一件，没挂需求单的有出片对话各算一件。"""
 
     user_name: str
     metrics: MetricsOut
     trend: list[PeriodDeliveriesOut]
-    """时间窗内每一期的成片数，早的在前，每期都在；粒度见 ``AuditPeopleOut.bucket``。"""
+    """时间窗内每一期的出片数，早的在前，每期都在；粒度见 ``AuditPeopleOut.bucket``。"""
 
 
 class AuditPeopleOut(CamelModel):
     bucket: OverviewBucket
     """``trend`` 的粒度，与总览同一规则。"""
     items: list[PersonOut]
-    """时间窗里出过片或跑过的人，一次全给，成片多的在前。"""
+    """时间窗里出过片或跑过的人，一次全给，出片多的在前。"""
 
 
 class ExecutionShotOut(CamelModel):
@@ -303,9 +303,9 @@ class ExecutionThresholdsOut(CamelModel):
     """提交上游超过这么多小时还没结果算视频悬挂。"""
     spend_times: int
     task_conversations: int
-    """需求单在时间窗里挂了至少这么多段执行、且从来没有过成片算卡住。"""
+    """需求单在时间窗里挂了至少这么多段执行、且从来没有过出片算卡住。"""
     spend_tokens: float | None
-    """本期消耗离群的门槛：本期每件成片平均 token × ``spend_times``；本期没有成片时为空。"""
+    """本期消耗离群的门槛：本期每件出片平均 token × ``spend_times``；本期没有出片时为空。"""
 
 
 class ExecutionOut(CamelModel):
@@ -320,7 +320,7 @@ class ExecutionOut(CamelModel):
     started_at: datetime
     """首次运行时刻，没有运行就是建立时刻；只用来显示，筛选与排序用 ``created_at``。"""
     delivered_at: datetime | None
-    """最后一条成片的时刻；还没有成片为空。"""
+    """最后一条出片的时刻；还没有出片为空。"""
     deleted_at: datetime | None
     metrics: MetricsOut
     shots: list[ExecutionShotOut]

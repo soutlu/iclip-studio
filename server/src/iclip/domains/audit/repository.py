@@ -51,16 +51,16 @@ class AuditReports(Protocol):
     async def delivery_units(
         self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Mapping[datetime, frozenset[str]]:
-        """每个时段里有成片的件：需求单 id，没挂需求单的是 ``c:`` 加对话 id；锚点同成片件数。
+        """每个时段里有出片的件：需求单 id，没挂需求单的是 ``c:`` 加对话 id；锚点同出片件数。
 
-        只列有成片的时段。跨时段求件数时对集合取并，与 ``MetricsOut.deliveries`` 同一口径。
+        只列有出片的时段。跨时段求件数时对集合取并，与 ``MetricsOut.deliveries`` 同一口径。
         """
         ...
 
     async def user_deliveries(
         self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Mapping[str, Mapping[datetime, int]]:
-        """每人每个时段的成片件数，与 ``MetricsOut.deliveries`` 同一口径；只列有成片的时段。"""
+        """每人每个时段的出片件数，与 ``MetricsOut.deliveries`` 同一口径；只列有出片的时段。"""
         ...
 
     async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:

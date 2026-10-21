@@ -266,7 +266,7 @@ class _StoredVideoRequest(BaseModel):
 
 
 class _StoredWholeFilmSource(BaseModel):
-    """整片导出请求里 ``videos`` 的一项（按别名落库），只取成片 id。"""
+    """成片导出请求里 ``videos`` 的一项（按别名落库），只取素材片 id。"""
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 

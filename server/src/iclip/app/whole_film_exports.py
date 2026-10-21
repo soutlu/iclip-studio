@@ -1,6 +1,6 @@
-"""整片导出的组合根适配：把草稿换成一条整片生成记录的请求，读最新一次导出，取消。
+"""成片导出的组合根适配：把草稿换成一条成片生成记录的请求，读最新一次导出，取消。
 
-每次导出是一条整片生成记录，由生成队列交给渲染服务（见 ``generation/render.py``）；这里只在记录
+每次导出是一条成片生成记录，由生成队列交给渲染服务（见 ``generation/render.py``）；这里只在记录
 已交给渲染服务时转问它的排队位置与进度。"""
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from iclip.domains.identity.public import Principal
 _logger = structlog.stdlib.get_logger(__name__)
 
 SUBTITLE_SCAN_LIMIT: Final = 50
-"""每条成片往回看几条字幕记录找最新的已完成那条；手动重识别不会多到这个数。"""
+"""每条素材片往回看几条字幕记录找最新的已完成那条；手动重识别不会多到这个数。"""
 
 _NOT_THIS_EXPORT: Final = "没有这次导出"
 
@@ -80,7 +80,7 @@ class WholeFilmExportAdapter:
         urls = await self._generations.output_urls(set(wanted))
         for job_id in wanted:
             if job_id not in urls:
-                raise ValidationFailed(f"记录 {job_id} 没有产物地址，导不出整片")
+                raise ValidationFailed(f"记录 {job_id} 没有产物地址，导不出成片")
         request = WholeFilmRequest(
             revision=revision,
             document=document.model_dump(mode="json", by_alias=True),
@@ -96,9 +96,9 @@ class WholeFilmExportAdapter:
         return job.id
 
     async def _subtitles(self, sources: tuple[uuid.UUID, ...]) -> list[WholeFilmSubtitles]:
-        """每条成片最新的一条已完成字幕记录（含逐词时间）；一条都没有的成片不在里面。
+        """每条素材片最新的一条已完成字幕记录（含逐词时间）；一条都没有的素材片不在里面。
 
-        不看属主：出处已在存草稿时核过是这段对话读得到的成片，它的字幕跟着读。"""
+        不看属主：出处已在存草稿时核过是这段对话读得到的素材片，它的字幕跟着读。"""
 
         found: list[WholeFilmSubtitles] = []
         for source in sources:
@@ -165,7 +165,7 @@ class WholeFilmExportAdapter:
             status = "done"
         elif job.status == STATUS_FAILED:
             if job.error_code is None or job.error_message is None:
-                raise RuntimeError(f"整片记录 {job.id} 失败了却没有错误码与原因")
+                raise RuntimeError(f"成片记录 {job.id} 失败了却没有错误码与原因")
             if job.error_code == CANCELLED:
                 status = "cancelled"
             else:
@@ -203,7 +203,7 @@ def _recorded_stage(provider_status: str | None) -> RenderStage:
 
 def _source_job_ids(job: GenerationJob) -> tuple[uuid.UUID, ...]:
     if not isinstance(job.request, WholeFilmRequest):
-        raise RuntimeError(f"整片记录 {job.id} 的请求不是整片导出的形状")
+        raise RuntimeError(f"成片记录 {job.id} 的请求不是成片导出的形状")
     return tuple(video.job_id for video in job.request.videos)
 
 

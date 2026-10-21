@@ -285,9 +285,9 @@ def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
-    """识别成片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
+    """识别素材片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
 
-    assert video.output_url is not None, "只识别有地址的成片"
+    assert video.output_url is not None, "只识别有地址的素材片"
     fields.setdefault("owner_user_id", video.owner_user_id)
     fields.setdefault("conversation_id", video.conversation_id)
     fields.setdefault("task_id", video.task_id)
@@ -299,7 +299,7 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
-    """一次整片导出的请求：画面轨按先后用到 ``sources`` 这几条成片（地址随 id 起），草稿是空的，
+    """一次成片导出的请求：画面轨按先后用到 ``sources`` 这几条素材片（地址随 id 起），草稿是空的，
     没有音乐与字幕。"""
 
     return WholeFilmRequest(
@@ -317,7 +317,7 @@ def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
 def make_enhancement(
     source: GenerationJob, resolution: VideoEnhanceResolution = "1080p", **fields: Any
 ) -> GenerationJob:
-    """给来源 ``source``（成片或整片）做的一条超分记录：种类是视频，镜号随来源，不挂对话，默认排队中。"""
+    """给来源 ``source``（素材片或成片）做的一条超分记录：种类是视频，镜号随来源，不挂对话，默认排队中。"""
 
     assert source.output_url is not None, "只给有地址的来源做高清版"
     fields.setdefault("shot_index", source.shot_index)
@@ -611,9 +611,9 @@ class InMemoryGenerationRepository:
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]
     ) -> Mapping[uuid.UUID, str]:
-        """取最新成片的排序与成片判定只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
+        """取最新素材片的排序与素材片判定只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
 
-        raise AssertionError("unit 层不走最新成片")
+        raise AssertionError("unit 层不走最新素材片")
 
     async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
         rows = [

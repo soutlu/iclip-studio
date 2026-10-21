@@ -17,9 +17,9 @@ RETRY_AT_LEAST: Final = 3
 STUCK_HOURS: Final = 1
 """出片停在 ``submitted``、提交上游超过这么多小时算视频悬挂。"""
 SPEND_TIMES: Final = 3
-"""对话 token 合计超过本期每件成片平均 token 的这么多倍算消耗离群。"""
+"""对话 token 合计超过本期每件出片平均 token 的这么多倍算消耗离群。"""
 TASK_CONVERSATIONS: Final = 3
-"""需求单在本期至少有这么多段执行、又从来没有成片算卡住。"""
+"""需求单在本期至少有这么多段执行、又从来没有出片算卡住。"""
 
 SortValue = datetime | float | int
 """排序键的取值：``start`` 是时刻，``retries`` / ``cycle`` 是浮点，``tokens`` 是整数。"""
@@ -44,7 +44,7 @@ class ExecutionCursor:
 
 
 def spend_tokens(tokens_per_delivery: float | None) -> float | None:
-    """消耗离群的门槛：本期每件成片平均 token × ``SPEND_TIMES``；本期没有成片为空。"""
+    """消耗离群的门槛：本期每件出片平均 token × ``SPEND_TIMES``；本期没有出片为空。"""
 
     return None if tokens_per_delivery is None else tokens_per_delivery * SPEND_TIMES
 

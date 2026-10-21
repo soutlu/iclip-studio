@@ -1,4 +1,4 @@
-"""按人页签的 Postgres 口径：谁上榜、成片去重、按粒度铺满的每期成片数与排序。"""
+"""按人页签的 Postgres 口径：谁上榜、出片去重、按粒度铺满的每期出片数与排序。"""
 
 from __future__ import annotations
 
@@ -81,8 +81,8 @@ async def plant_people(engine: AsyncEngine) -> None:
 async def test_daily_people_rank_dedupe_and_fill_every_day(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """成片多的在前，同数看运行次数，再同按名字；只跑过的人排在后面也在。同一需求单两段对话只算
-    一件，当天的每期成片数也只算一件；窗外的那件不算。每人的趋势七天每天都在，没成片的天是 0。"""
+    """出片多的在前，同数看运行次数，再同按名字；只跑过的人排在后面也在。同一需求单两段对话只算
+    一件，当天的每期出片数也只算一件；窗外的那件不算。每人的趋势七天每天都在，没出片的天是 0。"""
 
     await plant_people(engine)
 

@@ -81,13 +81,13 @@ class TestVideoOut(CamelModel):
     """属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。"""
 
     status: TestVideoStatus
-    """``running`` 还没结束；``completed`` 有成片；``failed`` 没生成成。"""
+    """``running`` 还没结束；``completed`` 有试生成结果；``failed`` 没生成成。"""
     url: str | None
-    """成片地址；只有 ``completed`` 有。"""
+    """试生成地址；只有 ``completed`` 有。"""
     error_message: str | None
     """上游给的失败原文，只有 ``failed`` 可能有；不翻译、不归类。"""
     stale: bool
-    """当前拆解拼出的提示词与这次试生成用的不同：拆解改过或重拆过，这条成片对照的已不是当前拆解。
+    """当前拆解拼出的提示词与这次试生成用的不同：拆解改过或重拆过，这条出片对照的已不是当前拆解。
     当前拆解拼不出提示词时也为真。"""
     created_at: datetime
 

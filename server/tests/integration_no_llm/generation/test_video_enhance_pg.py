@@ -1,4 +1,4 @@
-"""超分记录落在生成记录表里：两种来源的往返、按来源找它们，以及它们不混进视频的在跑与成片口径。"""
+"""超分记录落在生成记录表里：两种来源的往返、按来源找它们，以及它们不混进视频的在跑与素材片口径。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ HD_WATERMARK_URL = "https://cdn.example.test/hd-wm.mp4"
 async def test_enhancements_of_a_take_and_of_a_film_round_trip_as_videos(
     engine: AsyncEngine,
 ) -> None:
-    """成片与整片的高清版都是视频 / 超分，读回来请求、来源与镜号照旧。"""
+    """素材片与成片的高清版都是视频 / 超分，读回来请求、来源与镜号照旧。"""
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
@@ -94,8 +94,8 @@ async def test_enhancements_of_a_source_are_everyones_newest_first_and_nothing_e
 async def test_enhancements_do_not_count_as_videos_in_flight_or_masters(
     engine: AsyncEngine,
 ) -> None:
-    """超分记录不挂对话：在跑的不算来源那段对话的视频在跑，完成的不是那段对话最新的成片。
-    整片的高清版也是视频，同样不算导出那段对话的。"""
+    """超分记录不挂对话：在跑的不算来源那段对话的视频在跑，完成的不是那段对话最新的素材片。
+    成片的高清版也是视频，同样不算导出那段对话的。"""
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)

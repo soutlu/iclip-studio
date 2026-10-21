@@ -34,7 +34,7 @@ gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=pus
 
 ## 镜像与流水线
 
-三个镜像：`iclip-server`（[server/Dockerfile](../server/Dockerfile)）、`iclip-web`（[web/Dockerfile](../web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](../web/nginx.conf)）与 `iclip-render`（[render/Dockerfile](../render/Dockerfile)，整片渲染服务，只有 linux/amd64：Chrome headless shell 只出这一种 Linux 版本）。[release-images](../.github/workflows/release-images.yml) 在 GitHub Actions 上并行构建，经专用 DMIT 代理上传到 ACR，部署时从 ACR 拉取。渲染镜像构建时要从 npm、GitHub 与 Google 的 Chrome 下载站取组件库、ffmpeg 与 Chrome，冷构建比另两个慢。
+三个镜像：`iclip-server`（[server/Dockerfile](../server/Dockerfile)）、`iclip-web`（[web/Dockerfile](../web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](../web/nginx.conf)）与 `iclip-render`（[render/Dockerfile](../render/Dockerfile)，成片渲染服务，只有 linux/amd64：Chrome headless shell 只出这一种 Linux 版本）。[release-images](../.github/workflows/release-images.yml) 在 GitHub Actions 上并行构建，经专用 DMIT 代理上传到 ACR，部署时从 ACR 拉取。渲染镜像构建时要从 npm、GitHub 与 Google 的 Chrome 下载站取组件库、ffmpeg 与 Chrome，冷构建比另两个慢。
 
 - **版本**：推送 `vX.Y.Z` 标签即构建并上传三个镜像。三个镜像都上传并核验成功、且该版本提交仍是 `main` 的最新提交时，才更新 `latest`。
 - **试打包**：手动选择分支运行只生成 `branch-<分支名>` 镜像，不更新正式版本和 `latest`。

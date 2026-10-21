@@ -22,7 +22,7 @@ def create_tracking_router(service: TrackingService) -> APIRouter:
         """记一条事件。发起人取自凭证，发生时刻取服务端时钟。
 
         ``video.downloaded`` 必带 ``jobId``、不带 ``conversationId``，缺了或多带是 ``422``；
-        ``jobId`` 须是一条成功、有地址的独立视频或成片，不存在与不合格同样是 ``404``。
+        ``jobId`` 须是一条素材片（成功、有地址的出片或合成），不存在与不合格同样是 ``404``。
         """
 
         await service.record(principal, body)

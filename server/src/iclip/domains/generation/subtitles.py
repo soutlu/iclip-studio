@@ -1,5 +1,5 @@
 """千问录音文件识别：开说话人分离才拿得到全部句子的起止时间（``output.sentences``），而说话人分离只收
-单声道音频，所以先在本地把成片抽成单声道 mp3。"""
+单声道音频，所以先在本地把素材片抽成单声道 mp3。"""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class QwenSubtitleProvider:
         request = request_of(job, SubtitleRequest, provider=PROVIDER_NAME)
         audio = await self._speech_audio(request.video_url)
         if audio is None:
-            _logger.info("成片没有音轨，字幕记为没有口播", job_id=job.id)
+            _logger.info("素材片没有音轨，字幕记为没有口播", job_id=job.id)
             return ProviderSubmission(
                 provider_task_id=str(job.id), provider_status="no_audio", sentences=()
             )
