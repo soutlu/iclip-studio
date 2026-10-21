@@ -76,6 +76,7 @@
 
 - **素材主机**：`.env` 里的 `RENDER_ALLOWED_MEDIA_HOSTS`（逗号分隔，带端口就写上端口）由 compose 传给它，取值见上面第 3 步。不设时容器启动即退出，日志是「配置不完整」；导出请求里的素材主机不在名单里答 400 `media-host-not-allowed`。
 - **显卡**：compose 给它申请 `gpu, compute, utility, video, graphics` 五项能力，Chrome 用显卡渲染要 `graphics`，NVENC 编码要 `video`。确认用上了显卡：`docker compose exec render node -e "fetch('http://127.0.0.1:8080/health').then(r=>r.text()).then(console.log)"` 的 `gpu` 为 `hardware`，启动日志「渲染环境」那一条的 `gpu` 为 `hardware`、`videoEncoder` 为 `nvenc`。是 `software` 时另有一条 warning「浏览器使用软件渲染」，渲染照常，只是更慢。
+  - 宿主机须安装与 NVIDIA 驱动版本一致的 EGL / OpenGL 图形用户态库；只有 CUDA 计算库时，NVENC 可用，但 Chrome 不能使用 GPU。使用 NVIDIA CDI 时，补装图形库后须重新生成 CDI 设备清单，再重建 `render` 容器，让新增的驱动库挂入容器。
 - **字体**：组件用的网页字体只用组件库里的字体文件，西文用原字体、中文用 Noto Sans SC，与编辑器预览一致；镜像另带 Noto CJK 兜底系统字体。渲染期间不从外网取字体。
 - **资源**：Chrome 要共享内存，compose 设了 `shm_size: 2gb`；临时项目目录在卷 `render-tmp`，每次导出结束即删。导出排队、进度只在内存里，重启容器后进行中的导出记为失败（`RENDER_LOST`），用户要重新导出；已完成的成片在桶里，不受影响。
 - **日志**：`docker compose logs render`，每行一个 JSON，`event` 是中文短句；一次导出按 `exportId` 串起「导出已排队」到「导出完成」或「导出失败」。
