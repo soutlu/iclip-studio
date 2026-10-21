@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import AsyncGenerator, Collection, Mapping, Sequence
+from contextlib import asynccontextmanager
 from typing import Any, Final
 
 from sqlalchemy import (
@@ -24,8 +25,10 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.models import (
     AUTO_FILL_AI,
     BUSY_STATUSES,
@@ -37,6 +40,7 @@ from iclip.domains.tagging.models import (
     STATUS_FAILED,
     STATUS_PENDING,
     STATUS_RUNNING,
+    AutoFill,
     Claim,
     EntryKey,
     EntryKind,
@@ -162,6 +166,29 @@ SELECT id, parent_id, name, auto_fill, guide, position
 FROM iclip.library_tags
 ORDER BY position, id""")
 
+_LOCK_TREE: Final = text("SELECT pg_advisory_xact_lock(hashtext('iclip.library_tags'))")
+"""改树的事务一个接一个：跨层重名与 AI 取值上限要读整棵树再判，只靠行锁和唯一约束挡不住并发。"""
+
+_INSERT_TAG: Final = text("""
+INSERT INTO iclip.library_tags (id, parent_id, name, guide, auto_fill, position)
+VALUES (:id, :parent_id, :name, :guide, :auto_fill, :position)""")
+
+_UPDATE_TAG: Final = text("""
+UPDATE iclip.library_tags
+SET name = :name, guide = :guide, auto_fill = :auto_fill, updated_at = now()
+WHERE id = :id""")
+
+_PLACE_TAGS: Final = text("""
+UPDATE iclip.library_tags t SET position = v.position
+FROM unnest(CAST(:ids AS uuid[]), CAST(:positions AS int[])) AS v(id, position)
+WHERE t.id = v.id AND t.position <> v.position""")
+
+_DELETE_TAG: Final = text("DELETE FROM iclip.library_tags WHERE id = :id RETURNING id")
+
+_DUPLICATE_NAME_CONSTRAINTS: Final = frozenset(
+    {"uq_library_tags_parent_name", "uq_library_tags_dimension_name"}
+)
+
 _COUNTS: Final = text("""
 WITH RECURSIVE closure(ancestor, tag_id) AS (
     SELECT id, id FROM iclip.library_tags
@@ -286,6 +313,62 @@ async def _clear_ai(conn: AsyncConnection, entry_ids: Sequence[uuid.UUID]) -> No
         await conn.execute(_CLEAR_AI, {"entry_ids": list(entry_ids), "ai": AUTO_FILL_AI})
 
 
+def _violated_constraint(error: IntegrityError) -> str:
+    """违反的约束名；asyncpg 把它挂在被包起来的原异常上。"""
+
+    cause = getattr(error.orig, "__cause__", None)
+    return getattr(cause, "constraint_name", None) or ""
+
+
+class _SqlTagTreeWriter:
+    """``TagTreeWriter`` 的 Postgres 实现，用一条已拿到写锁的事务连接。"""
+
+    def __init__(self, conn: AsyncConnection) -> None:
+        self._conn = conn
+
+    async def tree(self) -> tuple[TagNode, ...]:
+        rows = (await self._conn.execute(_TREE)).mappings().all()
+        return _build_tree(rows)
+
+    async def insert(
+        self,
+        tag_id: uuid.UUID,
+        *,
+        parent_id: uuid.UUID | None,
+        name: str,
+        guide: str | None,
+        auto_fill: AutoFill | None,
+        position: int,
+    ) -> None:
+        await self._conn.execute(
+            _INSERT_TAG,
+            {
+                "id": tag_id,
+                "parent_id": parent_id,
+                "name": name,
+                "guide": guide,
+                "auto_fill": auto_fill,
+                "position": position,
+            },
+        )
+
+    async def update(
+        self, tag_id: uuid.UUID, *, name: str, guide: str | None, auto_fill: AutoFill | None
+    ) -> None:
+        await self._conn.execute(
+            _UPDATE_TAG, {"id": tag_id, "name": name, "guide": guide, "auto_fill": auto_fill}
+        )
+
+    async def place(self, ordered: Sequence[uuid.UUID]) -> None:
+        if ordered:
+            await self._conn.execute(
+                _PLACE_TAGS, {"ids": list(ordered), "positions": list(range(len(ordered)))}
+            )
+
+    async def delete(self, tag_id: uuid.UUID) -> bool:
+        return (await self._conn.execute(_DELETE_TAG, {"id": tag_id})).first() is not None
+
+
 class SqlTagStore:
     """``TagStore`` 的 Postgres 实现。"""
 
@@ -296,6 +379,18 @@ class SqlTagStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(_TREE)).mappings().all()
         return _build_tree(rows)
+
+    @asynccontextmanager
+    async def edit(self) -> AsyncGenerator[_SqlTagTreeWriter]:
+        try:
+            async with self._engine.begin() as conn:
+                await conn.execute(_LOCK_TREE)
+                yield _SqlTagTreeWriter(conn)
+        except IntegrityError as exc:
+            # 服务层已按树查过重名；走到这里是有人绕过了写锁直接改表。
+            if _violated_constraint(exc) in _DUPLICATE_NAME_CONSTRAINTS:
+                raise ValidationFailed("同一上级下已有同名标签") from exc
+            raise
 
     async def counts(self) -> Mapping[uuid.UUID, TagCounts]:
         async with self._engine.connect() as conn:

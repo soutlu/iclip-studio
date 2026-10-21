@@ -1,0 +1,332 @@
+"""治理者改标签树：``POST /library-tags``、``PATCH /library-tags/{id}``、``DELETE /library-tags/{id}``。
+
+只有 ``users:manage`` 能改；名称、层级、重名、AI 打标与取值上限不合格都是 422，同上级撞唯一约束也是；
+``position`` 把同级重新编成 0..n-1；删掉的标签连同下级从条目上去掉，条数跟着变。
+
+预置的树各用例共用：这里只在自己加的「测试」维度里动，用完删掉。"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from collections.abc import AsyncGenerator
+from typing import Any
+
+import httpx
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.common.errors import ValidationFailed
+from iclip.domains.tagging.infra_sql import SqlTagStore
+from iclip.domains.tagging.models import AI_VALUE_LIMIT
+from iclip.domains.tagging.schemas import LibraryTagCreateIn
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.references import plant_reference, plant_user
+from tests.helpers.tagging import plant_entry, tag_id, tagging_service
+
+PREFIX = "测试"
+
+
+@pytest.fixture
+async def scratch(engine: AsyncEngine) -> AsyncGenerator[None]:
+    """用例结束时删掉名字以「测试」开头的维度，连同下级与条目上的这些标签。"""
+
+    yield
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("DELETE FROM iclip.library_tags WHERE parent_id IS NULL AND name LIKE :prefix"),
+            {"prefix": f"{PREFIX}%"},
+        )
+
+
+async def login_as_governor(client: httpx.AsyncClient, pg_url: str) -> None:
+    await register_and_login(client, username="root", email="root@example.com")
+    await set_roles_in_db(pg_url, "root@example.com", ["root"])
+
+
+async def create(client: httpx.AsyncClient, **body: Any) -> dict[str, Any]:
+    response = await client.post("/library-tags", json=body)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+async def dimension(client: httpx.AsyncClient, name: str) -> dict[str, Any]:
+    (found,) = [
+        one
+        for one in (await client.get("/library-tags")).json()["dimensions"]
+        if one["name"] == name
+    ]
+    return found
+
+
+async def plant_values(engine: AsyncEngine, parent: str, count: int) -> None:
+    """直接往表里塞 ``count`` 个取值，造 AI 取值上限的场面。"""
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.library_tags (id, parent_id, name, position)"
+                " SELECT gen_random_uuid(), CAST(:parent AS uuid), '塞' || g, g"
+                " FROM generate_series(1, :count) AS g"
+            ),
+            {"parent": parent, "count": count},
+        )
+
+
+async def ai_value_count(client: httpx.AsyncClient) -> int:
+    def size(node: dict[str, Any]) -> int:
+        return sum(1 + size(child) for child in node["children"])
+
+    dimensions = (await client.get("/library-tags")).json()["dimensions"]
+    return sum(size(one) for one in dimensions if one["autoFill"] == "ai")
+
+
+async def test_only_governors_change_the_tree(
+    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+) -> None:
+    some = str(await tag_id(engine, "场景", "居家/日常放松"))
+    calls = (
+        ("POST", "/library-tags", {"name": f"{PREFIX}维度"}),
+        ("PATCH", f"/library-tags/{some}", {"name": "居家"}),
+        ("DELETE", f"/library-tags/{some}", None),
+    )
+    for method, url, body in calls:
+        assert (await client.request(method, url, json=body)).status_code == 401
+
+    await login_as_editor(client, migrated_pg)
+
+    for method, url, body in calls:
+        assert (await client.request(method, url, json=body)).status_code == 403
+    assert await tag_id(engine, "场景", "居家/日常放松") == uuid.UUID(some)
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_governor_adds_a_dimension_values_and_a_sub_value(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    await login_as_governor(client, migrated_pg)
+
+    made = await create(client, name=f"  {PREFIX}结构 ", autoFill="ai", guide=" 选最贴切的 ")
+    assert {key: made[key] for key in ("name", "autoFill", "guide", "counts", "children")} == {
+        "name": f"{PREFIX}结构",
+        "autoFill": "ai",
+        "guide": "选最贴切的",
+        "counts": {"references": 0, "hitCases": 0},
+        "children": [],
+    }
+    first = await create(client, parentId=made["id"], name="大类甲")
+    second = await create(client, parentId=made["id"], name="大类乙", guide="")
+    sub = await create(client, parentId=first["id"], name="小类")
+    assert (first["autoFill"], second["guide"], sub["position"]) == (None, None, 0)
+    front = await create(client, parentId=made["id"], name="大类丙", position=0)
+    assert front["position"] == 0
+
+    tree = await dimension(client, f"{PREFIX}结构")
+    assert [(one["name"], one["position"]) for one in tree["children"]] == [
+        ("大类丙", 0),
+        ("大类甲", 1),
+        ("大类乙", 2),
+    ]
+    assert [one["name"] for one in tree["children"][1]["children"]] == ["小类"]
+    assert tree["position"] == len((await client.get("/library-tags")).json()["dimensions"]) - 1
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_governor_renames_and_switches_fields_and_moves_within_siblings(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    await login_as_governor(client, migrated_pg)
+    made = await create(client, name=f"{PREFIX}渠道")
+    a, b, c, d = [await create(client, parentId=made["id"], name=name) for name in "甲乙丙丁"]
+
+    renamed = await client.patch(
+        f"/library-tags/{b['id']}", json={"name": " 乙二 ", "guide": "说明"}
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert (renamed.json()["name"], renamed.json()["guide"]) == ("乙二", "说明")
+    cleared = (await client.patch(f"/library-tags/{b['id']}", json={"guide": None})).json()
+    assert (cleared["name"], cleared["guide"]) == ("乙二", None)
+
+    switched = await client.patch(f"/library-tags/{made['id']}", json={"autoFill": "ai"})
+    assert switched.json()["autoFill"] == "ai"
+    assert [one["name"] for one in switched.json()["children"]] == ["甲", "乙二", "丙", "丁"]
+    back = await client.patch(f"/library-tags/{made['id']}", json={"autoFill": None})
+    assert back.json()["autoFill"] is None
+
+    async def order() -> list[tuple[str, int]]:
+        children = (await dimension(client, f"{PREFIX}渠道"))["children"]
+        return [(one["name"], one["position"]) for one in children]
+
+    moved = await client.patch(f"/library-tags/{c['id']}", json={"position": 0})
+    assert moved.json()["position"] == 0
+    assert await order() == [("丙", 0), ("甲", 1), ("乙二", 2), ("丁", 3)]
+    await client.patch(f"/library-tags/{a['id']}", json={"position": 99})
+    assert await order() == [("丙", 0), ("乙二", 1), ("丁", 2), ("甲", 3)]
+    await client.patch(f"/library-tags/{d['id']}", json={"position": -1})
+    assert await order() == [("丁", 0), ("丙", 1), ("乙二", 2), ("甲", 3)]
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_invalid_changes_are_422_with_a_readable_reason(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    await login_as_governor(client, migrated_pg)
+    made = await create(client, name=f"{PREFIX}结构")
+    value = await create(client, parentId=made["id"], name="大类")
+    sub = await create(client, parentId=value["id"], name="小类")
+
+    cases: list[tuple[str, str, dict[str, Any], str]] = [
+        ("POST", "", {"name": "   "}, "请填写名称"),
+        ("POST", "", {"name": "字" * 51}, "名称最多 50 个字"),
+        ("POST", "", {"name": f"{PREFIX}长", "guide": "字" * 1001}, "判断说明最多 1000 个字"),
+        ("POST", "", {"name": "x", "parentId": str(uuid.uuid4())}, "上级标签不存在"),
+        ("POST", "", {"name": "再一层", "parentId": sub["id"]}, "小类下无法再添加下级"),
+        ("POST", "", {"name": "品类"}, "已有名为「品类」的维度"),
+        ("POST", "", {"name": "小类", "parentId": made["id"]}, f"「{PREFIX}结构」中已有「小类」"),
+        ("POST", "", {"name": "大类", "parentId": value["id"]}, f"「{PREFIX}结构」中已有「大类」"),
+        ("POST", "", {"name": "新", "parentId": made["id"], "autoFill": "ai"}, "只有维度可设"),
+        ("PATCH", f"/{value['id']}", {"autoFill": "ai"}, "只有维度可设为 AI 打标"),
+        ("PATCH", f"/{sub['id']}", {"name": "大类"}, f"「{PREFIX}结构」中已有「大类」"),
+        ("PATCH", f"/{made['id']}", {"name": "内容结构"}, "已有名为「内容结构」的维度"),
+        ("PATCH", f"/{made['id']}", {"name": ""}, "请填写名称"),
+    ]
+    for method, path, body, reason in cases:
+        response = await client.request(method, f"/library-tags{path}", json=body)
+        assert response.status_code == 422, (body, response.text)
+        assert reason in response.json()["detail"], (body, response.text)
+
+    moved = await client.patch(f"/library-tags/{sub['id']}", json={"parentId": made["id"]})
+    assert moved.status_code == 422
+    missing = uuid.uuid4()
+    assert (await client.patch(f"/library-tags/{missing}", json={"name": "x"})).status_code == 404
+    assert (await client.delete(f"/library-tags/{missing}")).status_code == 404
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_ai_values_stop_at_the_limit(
+    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+) -> None:
+    await login_as_governor(client, migrated_pg)
+    ai = await create(client, name=f"{PREFIX}AI", autoFill="ai")
+    await plant_values(engine, ai["id"], AI_VALUE_LIMIT - await ai_value_count(client))
+    assert await ai_value_count(client) == AI_VALUE_LIMIT
+
+    full = await client.post("/library-tags", json={"parentId": ai["id"], "name": "多一个"})
+    assert full.status_code == 422
+    assert f"最多 {AI_VALUE_LIMIT} 个" in full.json()["detail"]
+    manual = await create(client, name=f"{PREFIX}人工")
+    await create(client, parentId=manual["id"], name="人工维度不受限")
+
+    switched = await client.patch(f"/library-tags/{manual['id']}", json={"autoFill": "ai"})
+    assert switched.status_code == 422
+    assert f"超过上限 {AI_VALUE_LIMIT} 个" in switched.json()["detail"]
+
+    assert (await client.delete(f"/library-tags/{ai['id']}")).status_code == 204
+    switched = await client.patch(f"/library-tags/{manual['id']}", json={"autoFill": "ai"})
+    assert switched.status_code == 200, switched.text
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_deleting_takes_the_tag_and_its_children_off_entries(
+    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+) -> None:
+    await login_as_governor(client, migrated_pg)
+    made = await create(client, name=f"{PREFIX}结构")
+    value = await create(client, parentId=made["id"], name="大类")
+    sub = await create(client, parentId=value["id"], name="小类")
+    other = await create(client, parentId=made["id"], name="另一类")
+    kept = await tag_id(engine, "场景", "居家/日常放松")
+    owner = await plant_user(engine, "maya")
+    one = await plant_reference(engine, owner=owner, video_url="https://cdn.example.test/1.mp4")
+    entry = await plant_entry(engine, one, tags=[uuid.UUID(sub["id"]), kept])
+    two = await plant_reference(engine, owner=owner, video_url="https://cdn.example.test/2.mp4")
+    await plant_entry(engine, two, tags=[uuid.UUID(other["id"])])
+    assert (await dimension(client, f"{PREFIX}结构"))["counts"]["references"] == 2
+
+    assert (await client.delete(f"/library-tags/{value['id']}")).status_code == 204
+
+    tree = await dimension(client, f"{PREFIX}结构")
+    assert [one["name"] for one in tree["children"]] == ["另一类"]
+    assert tree["counts"]["references"] == 1
+    assert await entry_tags(engine, entry) == {kept}
+
+    assert (await client.delete(f"/library-tags/{made['id']}")).status_code == 204
+    names = [one["name"] for one in (await client.get("/library-tags")).json()["dimensions"]]
+    assert f"{PREFIX}结构" not in names
+    async with engine.connect() as conn:
+        left = (
+            await conn.execute(
+                text("SELECT count(*) FROM iclip.library_entry_tags WHERE tag_id = :id"),
+                {"id": other["id"]},
+            )
+        ).scalar_one()
+    assert left == 0
+
+
+async def entry_tags(engine: AsyncEngine, entry_id: uuid.UUID) -> set[uuid.UUID]:
+    async with engine.connect() as conn:
+        return set(
+            (
+                await conn.execute(
+                    text("SELECT tag_id FROM iclip.library_entry_tags WHERE entry_id = :id"),
+                    {"id": entry_id},
+                )
+            ).scalars()
+        )
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_a_same_parent_name_clash_at_the_table_is_422_not_500(
+    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+) -> None:
+    """服务层查过重名，唯一约束只在有人绕过写锁时才撞上；撞上了同样是给人看的 422。"""
+
+    await login_as_governor(client, migrated_pg)
+    made = await create(client, name=f"{PREFIX}渠道")
+    await create(client, parentId=made["id"], name="AMZ")
+
+    with pytest.raises(ValidationFailed, match="同一上级下已有同名标签"):
+        async with SqlTagStore(engine).edit() as writer:
+            await writer.insert(
+                uuid.uuid4(),
+                parent_id=uuid.UUID(made["id"]),
+                name="AMZ",
+                guide=None,
+                auto_fill=None,
+                position=1,
+            )
+    assert [one["name"] for one in (await dimension(client, f"{PREFIX}渠道"))["children"]] == [
+        "AMZ"
+    ]
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_a_concurrent_add_waits_and_then_sees_the_other_name(
+    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+) -> None:
+    """同一维度里两处同时加同名：表上的唯一约束只管同一上级，靠写锁让后到的等先到的提交再读树。"""
+
+    await login_as_governor(client, migrated_pg)
+    made = await create(client, name=f"{PREFIX}结构")
+    value = await create(client, parentId=made["id"], name="大类")
+    service = tagging_service(engine)
+
+    async with SqlTagStore(engine).edit() as first:
+        second = asyncio.create_task(
+            service.create(LibraryTagCreateIn(parent_id=uuid.UUID(value["id"]), name="撞名"))
+        )
+        # 让后到的那一个先跑到等锁（没有锁就是已经读完树）。
+        await asyncio.sleep(0.3)
+        assert not second.done()
+        await first.insert(
+            uuid.uuid4(),
+            parent_id=uuid.UUID(made["id"]),
+            name="撞名",
+            guide=None,
+            auto_fill=None,
+            position=1,
+        )
+
+    with pytest.raises(ValidationFailed, match=f"「{PREFIX}结构」中已有「撞名」"):
+        await second

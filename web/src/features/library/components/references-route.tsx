@@ -1,7 +1,8 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { errorMessageOf } from '@/shared/api/client'
 import { MEDIA_VIDEO_ACCEPT } from '@/shared/api/media-upload'
+import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
 import { ListEmpty, ListError } from '@/shared/ui/list-state'
@@ -24,6 +25,7 @@ import { LibraryList } from './library-list'
 import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
+import { LibraryTagAdmin } from './library-tag-admin'
 import { ReferenceCard, UploadingCard } from './reference-card'
 import { ReferenceFilters } from './reference-filters'
 import { ReferenceViewer } from './reference-viewer'
@@ -52,6 +54,9 @@ export function ReferencesRoute({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const tagTree = useLibraryTags()
   const tags = tagTree.data?.index
+  const { data: user } = useUser()
+  const canManageTags = hasPermission(user, PERMISSION.usersManage)
+  const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
   // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试，不一直停在骨架上。
   const scope =
@@ -156,6 +161,11 @@ export function ReferencesRoute({
       filters={
         <ReferenceFilters
           authors={owners}
+          manageTags={
+            canManageTags
+              ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
+              : undefined
+          }
           myUserName={myUserName}
           onChange={onScopeChange}
           scope={scope}
@@ -179,48 +189,52 @@ export function ReferencesRoute({
       label="资料库"
       mainRef={mainRef}
     >
-      <LibraryList
-        blocker={
-          tags === undefined ? (
-            <ListError
-              message={errorMessageOf(tagTree.error, '读取标签失败')}
-              onRetry={() => void tagTree.refetch()}
-            />
-          ) : undefined
-        }
-        empty={
-          filtered ? (
-            <ListEmpty>暂无匹配的参考视频，请更换关键词或清除筛选</ListEmpty>
-          ) : canUpload ? (
-            <EmptyDropZone onPick={pickFiles} />
-          ) : (
-            <ListEmpty>暂无参考视频</ListEmpty>
-          )
-        }
-        errorMessage="读取参考视频失败"
-        estimateHeight={(_entry, width) => placeholderCardHeightFor(width)}
-        getScrollElement={getScrollElement}
-        items={entries}
-        keyOf={(entry) => (entry.kind === 'upload' ? entry.upload.key : entry.item.id)}
-        pending={tagTree.isPending}
-        query={references}
-        renderItem={(entry, width) =>
-          entry.kind === 'upload' ? (
-            <UploadingCard myUserName={myUserName} upload={entry.upload} />
-          ) : tags === undefined ? null : (
-            <ReferenceCard
-              item={entry.item}
-              onAuthor={filterByAuthor}
-              onOpen={(id) => onReferenceChange(id, false)}
-              tags={tags}
-              width={width}
-            />
-          )
-        }
-        shown={loaded.length}
-        skeletonLabel="正在读取参考视频"
-        total={total}
-      />
+      {canManageTags && managingTags && tags !== undefined ? (
+        <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
+      ) : (
+        <LibraryList
+          blocker={
+            tags === undefined ? (
+              <ListError
+                message={errorMessageOf(tagTree.error, '读取标签失败')}
+                onRetry={() => void tagTree.refetch()}
+              />
+            ) : undefined
+          }
+          empty={
+            filtered ? (
+              <ListEmpty>暂无匹配的参考视频，请更换关键词或清除筛选</ListEmpty>
+            ) : canUpload ? (
+              <EmptyDropZone onPick={pickFiles} />
+            ) : (
+              <ListEmpty>暂无参考视频</ListEmpty>
+            )
+          }
+          errorMessage="读取参考视频失败"
+          estimateHeight={(_entry, width) => placeholderCardHeightFor(width)}
+          getScrollElement={getScrollElement}
+          items={entries}
+          keyOf={(entry) => (entry.kind === 'upload' ? entry.upload.key : entry.item.id)}
+          pending={tagTree.isPending}
+          query={references}
+          renderItem={(entry, width) =>
+            entry.kind === 'upload' ? (
+              <UploadingCard myUserName={myUserName} upload={entry.upload} />
+            ) : tags === undefined ? null : (
+              <ReferenceCard
+                item={entry.item}
+                onAuthor={filterByAuthor}
+                onOpen={(id) => onReferenceChange(id, false)}
+                tags={tags}
+                width={width}
+              />
+            )
+          }
+          shown={loaded.length}
+          skeletonLabel="正在读取参考视频"
+          total={total}
+        />
+      )}
     </LibraryPageShell>
   )
 }

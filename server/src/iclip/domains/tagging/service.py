@@ -1,4 +1,4 @@
-"""资料库标签用例：读标签树与条数、建条目、排打标、整份改标签、把筛选选中的标签展开成组。
+"""资料库标签用例：读与改标签树、建条目、排打标、整份改标签、把筛选选中的标签展开成组。
 
 谁能改哪一条由所属的库判断；这里只管条目与标签本身。"""
 
@@ -9,10 +9,17 @@ from collections.abc import Collection, Mapping, Sequence
 
 import structlog
 
-from iclip.common.errors import Conflict, ValidationFailed
+from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.tagging.models import EntryKey, TagCounts, TagNode
 from iclip.domains.tagging.repository import TaggingQueuePort, TagStore
-from iclip.domains.tagging.schemas import LibraryTagOut, LibraryTagsOut, TagCountsOut
+from iclip.domains.tagging.rules import check_change, check_new, clean_guide, clean_name, reorder
+from iclip.domains.tagging.schemas import (
+    LibraryTagCreateIn,
+    LibraryTagOut,
+    LibraryTagsOut,
+    LibraryTagUpdateIn,
+    TagCountsOut,
+)
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -90,6 +97,74 @@ class TaggingService:
         tree = await self._store.tree()
         counts = await self._store.counts()
         return LibraryTagsOut(dimensions=[_tag_out(dimension, counts) for dimension in tree])
+
+    async def create(self, body: LibraryTagCreateIn) -> LibraryTagOut:
+        """加一个维度或取值，排到同级里的 ``position``（不给排最后），同级跟着重新编号。规矩见
+        ``rules``；不合格是 ``ValidationFailed``。已有的条目不跟着重打。"""
+
+        name = clean_name(body.name)
+        guide = clean_guide(body.guide)
+        tag_id = uuid.uuid4()
+        async with self._store.edit() as tree_writer:
+            siblings = check_new(
+                await tree_writer.tree(),
+                parent_id=body.parent_id,
+                name=name,
+                auto_fill=body.auto_fill,
+            )
+            ids = [sibling.id for sibling in siblings]
+            order = reorder(ids, tag_id, len(ids) if body.position is None else body.position)
+            await tree_writer.insert(
+                tag_id,
+                parent_id=body.parent_id,
+                name=name,
+                guide=guide,
+                auto_fill=body.auto_fill,
+                position=order.index(tag_id),
+            )
+            await tree_writer.place(order)
+        return await self._node_out(tag_id)
+
+    async def update(self, tag_id: uuid.UUID, body: LibraryTagUpdateIn) -> LibraryTagOut:
+        """改名、判断说明、``auto_fill`` 或同级里的先后；不给的项不动。没有这个标签是 ``NotFound``，
+        不合格是 ``ValidationFailed``。已打的标签不跟着重打，改动只影响之后的打标。"""
+
+        given = body.model_fields_set
+        name = None if body.name is None else clean_name(body.name)
+        guide = clean_guide(body.guide)
+        async with self._store.edit() as tree_writer:
+            node, siblings = check_change(
+                await tree_writer.tree(),
+                tag_id,
+                name=name,
+                auto_fill=body.auto_fill,
+                sets_auto_fill="auto_fill" in given,
+            )
+            await tree_writer.update(
+                tag_id,
+                name=node.name if name is None else name,
+                guide=guide if "guide" in given else node.guide,
+                auto_fill=body.auto_fill if "auto_fill" in given else node.auto_fill,
+            )
+            if body.position is not None:
+                ids = [sibling.id for sibling in siblings]
+                await tree_writer.place(reorder(ids, tag_id, body.position))
+        return await self._node_out(tag_id)
+
+    async def delete(self, tag_id: uuid.UUID) -> None:
+        """删掉一个标签；它的下级与两库条目上的这些标签由外键级联删掉。没有这个标签是 ``NotFound``。"""
+
+        async with self._store.edit() as tree_writer:
+            if not await tree_writer.delete(tag_id):
+                raise NotFound("标签不存在")
+
+    async def _node_out(self, tag_id: uuid.UUID) -> LibraryTagOut:
+        """写完之后读到的这一个节点，带下级与条数；读之前已被别人删掉是 ``NotFound``。"""
+
+        node = _index(await self._store.tree()).get(tag_id)
+        if node is None:
+            raise NotFound("标签不存在")
+        return _tag_out(node, await self._store.counts())
 
     async def filter_groups(
         self, tag_ids: Sequence[uuid.UUID]
