@@ -12,12 +12,15 @@ import {
 } from '@/shared/ui/search-list'
 import { FilterPopup } from './filter-bar'
 
-/** 一个候选：`description` 是名字下面一行说明，`count` 是右侧的条数。 */
+/** 一个候选：`description` 是名字下面一行说明，`count` 是右侧的条数。
+ * 分两层的清单里，`group` 的一行是下面几行的上级（本身也能勾），`depth` 为 1 的行缩进排在它下面。 */
 export type MultiPickerOption = {
   id: string
   label: string
   description?: string | undefined
   count?: number | undefined
+  depth?: 0 | 1 | undefined
+  group?: boolean | undefined
 }
 
 type MultiPickerFilterProps = {
@@ -127,15 +130,22 @@ export function MultiPickerFilter({
   )
 }
 
-/** 一行：左边勾、中间名字与说明、右边条数。 */
+/** 一行：左边勾、中间名字与说明、右边条数；下级行整体缩进一格，上级行名字加粗。 */
 function OptionContent({ option, selected }: { option: MultiPickerOption; selected: boolean }) {
   return (
     <>
-      <span className="grid size-(--icon-sm) shrink-0 place-items-center pt-0.5">
+      <span
+        className={cn(
+          'grid size-(--icon-sm) shrink-0 place-items-center pt-0.5',
+          option.depth === 1 && 'ml-4',
+        )}
+      >
         {selected ? <Icon decorative name="check" size="sm" /> : null}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={cn('block truncate', selected && 'font-medium')}>{option.label}</span>
+        <span className={cn('block truncate', (selected || option.group) && 'font-medium')}>
+          {option.label}
+        </span>
         {option.description === undefined ? null : (
           <span className="mt-0.5 block text-caption text-on-surface-faint">
             {option.description}

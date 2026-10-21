@@ -1,26 +1,27 @@
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { PLACEHOLDER_VIDEO_RATIO } from '../library-layout'
-import { referenceTitleOf, UNTAGGED_YET, type VideoTypeLabels } from '../reference-labels'
+import type { TagIndex } from '../library-tags'
+import { referenceTitleOf, UNTAGGED_YET } from '../reference-labels'
 import type { PendingUpload } from '../reference-upload'
-import type { ReferenceItem } from '../references.api'
+import { isTaggingBusy, type ReferenceItem } from '../references.api'
 import { AuthorAvatar } from './author-avatar'
 import { CardByline } from './card-byline'
 import { PlaceholderRatioCard } from './placeholder-ratio-card'
 
 type ReferenceCardProps = {
   item: ReferenceItem
-  labels: VideoTypeLabels
+  tags: TagIndex
   width: number
   onOpen: (id: string) => void
   onAuthor: (userName: string) => void
 }
 
-export function ReferenceCard({ item, labels, width, onOpen, onAuthor }: ReferenceCardProps) {
-  const title = referenceTitleOf(item, labels)
+export function ReferenceCard({ item, tags, width, onOpen, onAuthor }: ReferenceCardProps) {
+  const title = referenceTitleOf(item, tags)
   return (
     <PlaceholderRatioCard
-      badges={<StatusBadge status={item.breakdownStatus} />}
+      badges={<StatusBadge item={item} />}
       cardId={item.id}
       label={title.text}
       onOpen={() => onOpen(item.id)}
@@ -46,16 +47,29 @@ export function ReferenceCard({ item, labels, width, onOpen, onAuthor }: Referen
   )
 }
 
-function StatusBadge({ status }: { status: ReferenceItem['breakdownStatus'] }) {
-  if (status === 'completed') return null
+/** 左上角的后台状态：拆解没结束或没拆成时说拆解；拆完了再说打标（排队与打标中合成一种）。 */
+function StatusBadge({ item }: { item: Pick<ReferenceItem, 'breakdownStatus' | 'tagStatus'> }) {
+  const { breakdownStatus: status, tagStatus } = item
+  if (status !== 'completed')
+    return (
+      <span className="library-card-badge pointer-events-none absolute top-2 left-2">
+        {status === 'running' ? (
+          <Icon className="animate-spin" decorative name="spinner" size="xs" />
+        ) : status === 'failed' ? (
+          <Icon decorative name="alert" size="xs" />
+        ) : null}
+        {status === 'pending' ? '排队中' : status === 'running' ? '拆解中' : '拆解失败'}
+      </span>
+    )
+  if (!isTaggingBusy(tagStatus) && tagStatus !== 'failed') return null
   return (
     <span className="library-card-badge pointer-events-none absolute top-2 left-2">
-      {status === 'running' ? (
-        <Icon className="animate-spin" decorative name="spinner" size="xs" />
-      ) : status === 'failed' ? (
+      {tagStatus === 'failed' ? (
         <Icon decorative name="alert" size="xs" />
-      ) : null}
-      {status === 'pending' ? '排队中' : status === 'running' ? '拆解中' : '拆解失败'}
+      ) : (
+        <Icon className="animate-spin" decorative name="spinner" size="xs" />
+      )}
+      {tagStatus === 'failed' ? '打标失败' : '正在打标'}
     </span>
   )
 }
