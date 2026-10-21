@@ -1,5 +1,5 @@
 /** 资料库的标签筛选：标签树里每个维度一个多选弹层，按树的先后排；两层的维度里大类可勾，小类缩进排在它下面。
- * 条数按 `countKey` 取哪一库的。灵感库与以后的爆款素材库共用，只放在 `FilterBarRoot` 里。 */
+ * 条数按 `countKey` 取哪一库的。灵感库与爆款素材库共用，只放在 `FilterBarRoot` 里。 */
 
 import { cn } from '@/shared/lib/utils'
 import { MultiPickerFilter } from '@/shared/ui/filter-bar'
@@ -34,6 +34,7 @@ export function LibraryTagFilters({
   className,
 }: LibraryTagFiltersProps) {
   return index.dimensions.map((dimension) => {
+    if (dimension.children.length === 0) return null
     const options = tagOptionsOf(dimension).map((option) => ({
       count: option.counts[countKey],
       depth: option.depth,

@@ -36,7 +36,7 @@ const DAY_MS = 24 * 60 * 60_000
 const LOCAL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
 /**
- * 范围两端的时刻：预设按此刻往前数 N×24 小时；自定义包含结束日全天，按用户本地时区算。
+ * 左闭右开范围的两端：预设按此刻往前数 N×24 小时；自定义上界取结束日的次日零点，按用户本地时区算。
  * 日历上的预设高亮是含今天在内的 N 个整日，与这里的起点差一个部分日，只是展示口径。
  */
 export function dateRangeBounds(
@@ -49,7 +49,7 @@ export function dateRangeBounds(
   if (value.range === 'custom') {
     const since = value.since === null ? null : parseLocalDate(value.since)
     const until = value.until === null ? null : parseLocalDate(value.until)
-    until?.setHours(23, 59, 59, 999)
+    if (until !== null) until.setDate(until.getDate() + 1)
     return { since, until }
   }
   return { since: null, until: null }

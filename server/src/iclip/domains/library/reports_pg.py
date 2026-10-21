@@ -10,7 +10,13 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.shot_prompt import parse_shot_prompt
-from iclip.domains.library.models import MaterialSource, Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import (
+    HitCaseScope,
+    MaterialSource,
+    Scope,
+    VideoCursor,
+    WholeFilmScope,
+)
 from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
@@ -268,25 +274,44 @@ LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
 WHERE le.id IS NOT NULL AND {_MASTER}"""
 """在库的爆款素材：有条目、仍是素材片；卡 id 的算法同 ``own_masters``。"""
 
+_HIT_CASES_FILTER: Final = """
+  AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
+  AND (CAST(:since AS timestamptz) IS NULL OR le.created_at >= CAST(:since AS timestamptz))
+  AND (CAST(:until AS timestamptz) IS NULL OR le.created_at < CAST(:until AS timestamptz))"""
 
-def _hit_cases_statement(tag_filter: str) -> TextClause:
+_HIT_CASE_AUTHORS: Final = text(f"""
+SELECT u.username AS user_name, count(*) AS n{_HIT_CASES_FROM}
+  AND u.username IS NOT NULL
+GROUP BY u.username
+ORDER BY n DESC, u.username""")
+
+
+def _hit_cases_statement(scope_filter: str) -> TextClause:
     return text(f"""
 SELECT g.id, g.operation, g.output_url, g.watermark_output_url, g.duration_ms, g.finished_at,
        u.username AS user_name, COALESCE(c.id, g.root_job_id, g.id) AS card_id, c.title,
        t.id AS take_id, t.request AS take_request, le.created_at AS added_at,
-       {entry_columns_sql()}{_HIT_CASES_FROM}{tag_filter}
+       {entry_columns_sql()}{_HIT_CASES_FROM}{scope_filter}
   AND (CAST(:after_at AS timestamptz) IS NULL
        OR (le.created_at, g.id) < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
 ORDER BY le.created_at DESC, g.id DESC
 LIMIT :limit""")
 
 
-def _count_hit_cases_statement(tag_filter: str) -> TextClause:
-    return text(f"SELECT count(*) AS n{_HIT_CASES_FROM}{tag_filter}")
+def _count_hit_cases_statement(scope_filter: str) -> TextClause:
+    return text(f"SELECT count(*) AS n{_HIT_CASES_FROM}{scope_filter}")
 
 
-def _hit_case_filter(tag_groups: Sequence[Sequence[uuid.UUID]]) -> tuple[str, dict[str, Any]]:
-    return entry_filter_sql(tag_groups, kind=KIND_HIT_CASE, subject_expr="g.id")
+def _hit_case_filter(scope: HitCaseScope) -> tuple[str, dict[str, Any]]:
+    tag_filter, tag_params = entry_filter_sql(
+        scope.tag_groups, kind=KIND_HIT_CASE, subject_expr="g.id"
+    )
+    return _HIT_CASES_FILTER + tag_filter, {
+        **tag_params,
+        "user_name": scope.user_name,
+        "since": scope.since,
+        "until": scope.until,
+    }
 
 
 class _StoredCut(BaseModel):
@@ -522,27 +547,30 @@ class PgLibraryReports:
 
     async def hit_cases(
         self,
-        tag_groups: Sequence[Sequence[uuid.UUID]],
+        scope: HitCaseScope,
         *,
         limit: int,
         after: VideoCursor | None,
     ) -> Sequence[HitCaseOut]:
-        tag_filter, tag_params = _hit_case_filter(tag_groups)
+        scope_filter, scope_params = _hit_case_filter(scope)
         params = {
-            **tag_params,
+            **scope_params,
             "after_at": after.at if after else None,
             "after_id": after.video_id if after else None,
             "limit": limit,
         }
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(_hit_cases_statement(tag_filter), params)).mappings().all()
+            rows = (await conn.execute(_hit_cases_statement(scope_filter), params)).mappings().all()
         return [_hit_case_of(row) for row in rows]
 
-    async def count_hit_cases(self, tag_groups: Sequence[Sequence[uuid.UUID]]) -> int:
-        tag_filter, tag_params = _hit_case_filter(tag_groups)
+    async def count_hit_cases(self, scope: HitCaseScope) -> int:
+        scope_filter, scope_params = _hit_case_filter(scope)
         async with self._engine.connect() as conn:
-            result = await conn.execute(_count_hit_cases_statement(tag_filter), tag_params)
+            result = await conn.execute(_count_hit_cases_statement(scope_filter), scope_params)
             return int(result.scalar_one())
+
+    async def hit_case_authors(self) -> Sequence[LibraryAuthorOut]:
+        return await self._authors(_HIT_CASE_AUTHORS)
 
     async def videos(
         self, scope: Scope, *, limit: int, after: VideoCursor | None

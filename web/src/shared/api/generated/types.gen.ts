@@ -8206,6 +8206,18 @@ export type ListHitCasesLibraryHitCasesGetData = {
      */
     tags?: Array<string> | null
     /**
+     * Username
+     */
+    userName?: string | null
+    /**
+     * Since
+     */
+    since?: string | null
+    /**
+     * Until
+     */
+    until?: string | null
+    /**
      * Limit
      */
     limit?: number
@@ -8236,6 +8248,23 @@ export type ListHitCasesLibraryHitCasesGetResponses = {
 
 export type ListHitCasesLibraryHitCasesGetResponse =
   ListHitCasesLibraryHitCasesGetResponses[keyof ListHitCasesLibraryHitCasesGetResponses]
+
+export type HitCaseAuthorsLibraryHitCasesAuthorsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/library/hit-cases/authors'
+}
+
+export type HitCaseAuthorsLibraryHitCasesAuthorsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryAuthorsOut
+}
+
+export type HitCaseAuthorsLibraryHitCasesAuthorsGetResponse =
+  HitCaseAuthorsLibraryHitCasesAuthorsGetResponses[keyof HitCaseAuthorsLibraryHitCasesAuthorsGetResponses]
 
 export type RemoveHitCaseLibraryHitCasesJobIdDeleteData = {
   body?: never

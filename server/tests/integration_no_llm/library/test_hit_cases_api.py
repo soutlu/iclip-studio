@@ -1,5 +1,5 @@
 """爆款素材库端点：能否入选与三种 422、入选幂等、入选带人工标签并排一次打标、改标签与重新打标要先
-入选且不在打标、移出连同标签、按标签筛选与翻页、标签树里的条数；没配打标时照样入选但不打标。
+入选且不在打标、移出连同标签、按作者/入选时间/标签筛选与翻页、标签树里的条数；没配打标时照样入选但不打标。
 
 打标是替身，队列连接器是内存替身（不跑 lifespan，排进去的任务不执行），排了几次看连接器里的任务。"""
 
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -117,6 +118,7 @@ async def hit_case_count(client: httpx.AsyncClient, *path: str) -> int:
 async def test_anonymous_is_401(http: httpx.AsyncClient) -> None:
     job = uuid.uuid4()
     assert (await http.get(HIT_CASES)).status_code == 401
+    assert (await http.get(f"{HIT_CASES}/authors")).status_code == 401
     assert (await http.get(f"{HIT_CASES}/{job}")).status_code == 401
     assert (await http.put(f"{HIT_CASES}/{job}", json={})).status_code == 401
     assert (await http.delete(f"{HIT_CASES}/{job}")).status_code == 401
@@ -334,6 +336,129 @@ async def test_the_list_filters_by_tags_and_pages_by_when_they_were_added(
     assert [item["jobId"] for item in page_one["items"]] == [str(a), str(b)]
     assert [item["jobId"] for item in page_two["items"]] == [str(c)]
     assert (page_two["total"], page_two["nextCursor"]) == (None, None)
+
+
+async def test_authors_follow_the_material_owner_not_the_curator_or_conversation_owner(
+    http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    """作者候选按在库版本计数，筛选与卡面作者一致；入选人与对话属主不参与作者判定。"""
+
+    await login_as(http, pg_url, "maya", "editor")
+    nora = await plant_named_user(engine, "nora")
+    vera = await plant_named_user(engine, "vera")
+    conversation, first = await plant_material(engine, nora)
+    second = await plant_job(engine, nora, conversation)
+    third = await plant_job(engine, vera, conversation)
+    failed = await plant_job(engine, vera, conversation, status="failed")
+    await plant_job(engine, vera, conversation)
+    await plant_hit_case(engine, failed)
+    for job_id in (first, second, third):
+        added = await http.put(f"{HIT_CASES}/{job_id}", json={})
+        assert added.status_code == 200, added.text
+        assert added.json()["entry"]["addedBy"] == "maya"
+
+    authors = await http.get(f"{HIT_CASES}/authors")
+    assert authors.status_code == 200, authors.text
+    assert authors.json() == {
+        "items": [{"userName": "nora", "count": 2}, {"userName": "vera", "count": 1}]
+    }
+    author = await http.get(HIT_CASES, params={"userName": "vera"})
+    assert author.status_code == 200, author.text
+    assert [item["jobId"] for item in author.json()["items"]] == [str(third)]
+    assert author.json()["items"][0]["face"]["userName"] == "vera"
+    assert author.json()["total"] == 1
+    curator = await http.get(HIT_CASES, params={"userName": "maya"})
+    assert curator.json()["items"] == []
+    assert curator.json()["total"] == 0
+
+
+async def test_author_time_and_tags_filter_together_with_matching_count_and_cursor(
+    http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    """时间看入选时刻，左闭右开；组合筛选的计数与后续页使用同一范围。"""
+
+    await login_as(http, pg_url, "maya", "editor")
+    nora = await plant_named_user(engine, "nora")
+    vera = await plant_named_user(engine, "vera")
+    conversation = await plant_conversation(engine, nora)
+    amz = await tag_id(engine, "平台&渠道", "AMZ")
+    dtc = await tag_id(engine, "平台&渠道", "DTC")
+    since = datetime(2026, 1, 10, tzinfo=UTC)
+    until = since + timedelta(days=1)
+
+    async def added(owner: uuid.UUID, tag: uuid.UUID, at: datetime) -> uuid.UUID:
+        job_id = await plant_job(engine, owner, conversation)
+        entry_id = await plant_hit_case(engine, job_id, tags=[tag])
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE iclip.library_entries SET created_at = :at WHERE id = :id"),
+                {"at": at, "id": entry_id},
+            )
+        return job_id
+
+    before = await added(nora, amz, since - timedelta(microseconds=1))
+    lower = await added(nora, amz, since)
+    middle = await added(nora, amz, since + timedelta(hours=12))
+    upper = await added(nora, amz, until)
+    await added(nora, dtc, since + timedelta(hours=1))
+    await added(vera, amz, since + timedelta(hours=2))
+
+    params = {
+        "userName": "nora",
+        "tags": str(amz),
+        "since": "2026-01-10T01:00:00+01:00",
+        "until": until.isoformat(),
+        "limit": "1",
+    }
+    first = await http.get(HIT_CASES, params=params)
+    assert first.status_code == 200, first.text
+    assert [item["jobId"] for item in first.json()["items"]] == [str(middle)]
+    assert first.json()["total"] == 2
+    second = await http.get(HIT_CASES, params={**params, "cursor": first.json()["nextCursor"]})
+    assert second.status_code == 200, second.text
+    assert [item["jobId"] for item in second.json()["items"]] == [str(lower)]
+    assert second.json()["total"] is None
+    last = await http.get(HIT_CASES, params={**params, "cursor": second.json()["nextCursor"]})
+    assert last.json()["items"] == []
+    assert last.json()["nextCursor"] is None
+
+    # 不带时区沿用资料库的 UTC 口径，时间上下界也可以单独使用。
+    since_only = await http.get(
+        HIT_CASES,
+        params={"userName": "nora", "tags": str(amz), "since": "2026-01-10T00:00:00"},
+    )
+    assert [item["jobId"] for item in since_only.json()["items"]] == [
+        str(upper),
+        str(middle),
+        str(lower),
+    ]
+    until_only = await http.get(
+        HIT_CASES,
+        params={"userName": "nora", "tags": str(amz), "until": until.isoformat()},
+    )
+    assert [item["jobId"] for item in until_only.json()["items"]] == [
+        str(middle),
+        str(lower),
+        str(before),
+    ]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"since": "invalid"},
+        {"until": "invalid"},
+        {"since": "2026-01-11T00:00:00Z", "until": "2026-01-10T00:00:00Z"},
+        {"since": "2026-01-10T00:00:00Z", "until": "2026-01-10T00:00:00Z"},
+        {"userName": "a" * 151},
+    ],
+)
+async def test_invalid_author_or_time_filters_are_422(
+    http: httpx.AsyncClient, pg_url: str, params: dict[str, str]
+) -> None:
+    await login_as(http, pg_url, "maya", "editor")
+    response = await http.get(HIT_CASES, params=params)
+    assert response.status_code == 422, response.text
 
 
 async def test_the_card_id_opens_the_card_holding_that_version(

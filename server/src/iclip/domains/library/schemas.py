@@ -162,7 +162,7 @@ class WholeFilmCardsOut(CamelModel):
 class LibraryAuthorOut(CamelModel):
     user_name: str
     count: int
-    """这个人作者的卡有几张。"""
+    """这个人作者的卡有几张，爆款素材按入选的版本计数。"""
 
 
 class LibraryAuthorsOut(CamelModel):

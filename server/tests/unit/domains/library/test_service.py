@@ -12,7 +12,13 @@ import pytest
 from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.models import PrincipalKind
 from iclip.domains.identity.public import ACT_AS_PERMISSION, MANAGE_PERMISSION, Principal
-from iclip.domains.library.models import MaterialSource, Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import (
+    HitCaseScope,
+    MaterialSource,
+    Scope,
+    VideoCursor,
+    WholeFilmScope,
+)
 from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
@@ -185,14 +191,17 @@ class FakeReports:
 
     async def hit_cases(
         self,
-        tag_groups: Sequence[Sequence[uuid.UUID]],
+        scope: HitCaseScope,
         *,
         limit: int,
         after: VideoCursor | None,
     ) -> Sequence[HitCaseOut]:
         raise AssertionError("这里不该读爆款素材")
 
-    async def count_hit_cases(self, tag_groups: Sequence[Sequence[uuid.UUID]]) -> int:
+    async def count_hit_cases(self, scope: HitCaseScope) -> int:
+        raise AssertionError("这里不该读爆款素材")
+
+    async def hit_case_authors(self) -> Sequence[LibraryAuthorOut]:
         raise AssertionError("这里不该读爆款素材")
 
 

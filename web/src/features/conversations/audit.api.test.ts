@@ -34,14 +34,14 @@ describe('auditSearchParams', () => {
     expect(params.has('until')).toBe(false)
   })
 
-  it('自定义日期按本地零点与当天最后一毫秒发 ISO，不把裸日期当 UTC', () => {
+  it('自定义日期按本地零点与结束日次日零点发 ISO，不把裸日期当 UTC', () => {
     const params = auditSearchParams(
       { ...DEFAULT_AUDIT_FILTERS, range: 'custom', since: '2026-09-01', until: '2026-09-03' },
       null,
       { now: NOW },
     )
     expect(params.get('since')).toBe(new Date(2026, 8, 1).toISOString())
-    expect(params.get('until')).toBe(new Date(2026, 8, 3, 23, 59, 59, 999).toISOString())
+    expect(params.get('until')).toBe(new Date(2026, 8, 4).toISOString())
   })
 
   it('自定义只填一头时另一头不带；填坏的日期忽略', () => {

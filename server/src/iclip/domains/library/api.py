@@ -116,16 +116,35 @@ def create_library_router(service: LibraryService, hit_cases: HitCaseService) ->
     async def list_hit_cases(
         _: Annotated[Principal, require_permission("generation:read")],
         tags: Annotated[list[uuid.UUID] | None, Query()] = None,
+        user_name: Annotated[str | None, Query(alias="userName", max_length=150)] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
         cursor: str | None = None,
     ) -> HitCasesOut:
         """爆款素材库里的素材片，入选晚的排前面。
 
         ``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在
-        的标签是 ``422``。``total`` 只在第一页给。
+        的标签是 ``422``。``userName`` 筛这一版素材片的作者，时间窗 ``[since, until)`` 作用在
+        入选时刻上；这些条件都要满足。``total`` 只在第一页给。
         """
 
-        return await hit_cases.list(tags=tags or (), limit=limit, cursor=cursor)
+        return await hit_cases.list(
+            tags=tags or (),
+            user_name=user_name,
+            since=since,
+            until=until,
+            limit=limit,
+            cursor=cursor,
+        )
+
+    @router.get("/hit-cases/authors", response_model=LibraryAuthorsOut)
+    async def hit_case_authors(
+        _: Annotated[Principal, require_permission("generation:read")],
+    ) -> LibraryAuthorsOut:
+        """爆款素材的作者与各自的条数，多的排前面、同数按名字，不受筛选影响；给按人筛选用。"""
+
+        return await hit_cases.authors()
 
     @router.get("/hit-cases/{job_id}", response_model=HitCaseStateOut)
     async def hit_case_state(

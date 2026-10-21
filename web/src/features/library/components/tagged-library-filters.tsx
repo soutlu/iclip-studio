@@ -1,18 +1,19 @@
-/** 参考视频的筛选条：全部 / 我的、按人、标签树每个维度一个多选、时间；治理者在最右多一个「管理标签」开关。
+/** 灵感库和爆款素材库共用的筛选条：全部 / 我的、按人、标签树每个维度一个多选、时间；治理者在最右多一个「管理标签」开关。
  * 标签的名称、说明与条数都取自标签树。 */
 
 import { dateRangeLabel } from '@/shared/lib/date-range'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { DateRangeFilter, FilterBarRoot, PickerFilter, useFilterBar } from '@/shared/ui/filter-bar'
 import type { PickerSource } from '@/shared/ui/search-picker'
-import type { TagIndex } from '../library-tags'
-import { isDefaultReferenceScope, type ReferenceScope } from '../references.api'
+import { isDefaultLibraryTagScope, type LibraryTagScope } from '../library-tag-scope'
+import type { TagCountKey, TagIndex } from '../library-tags'
 import { ManageTagsToggle } from './library-tag-admin'
 import { LibraryTagFilters } from './library-tag-filters'
 
-type ReferenceFiltersProps = {
-  scope: ReferenceScope
-  onChange: (next: ReferenceScope) => void
+type TaggedLibraryFiltersProps<S extends LibraryTagScope> = {
+  scope: S
+  onChange: (next: S) => void
+  countKey: TagCountKey
   /** 当前登录账号的用户名；没有用户名的账号不显示「我的」。 */
   myUserName: string | null
   authors: PickerSource
@@ -33,7 +34,9 @@ function Divider() {
   return <span aria-hidden className="mx-1 h-4.5 w-px bg-border max-sm:hidden" />
 }
 
-export function ReferenceFilters(props: ReferenceFiltersProps) {
+export function TaggedLibraryFilters<S extends LibraryTagScope>(
+  props: TaggedLibraryFiltersProps<S>,
+) {
   return (
     <FilterBarRoot className="gap-2">
       <Filters {...props} />
@@ -41,7 +44,7 @@ export function ReferenceFilters(props: ReferenceFiltersProps) {
   )
 }
 
-function Filters({
+function Filters<S extends LibraryTagScope>({
   scope,
   onChange,
   myUserName,
@@ -49,9 +52,10 @@ function Filters({
   tags,
   trailing,
   manageTags,
-}: ReferenceFiltersProps) {
+  countKey,
+}: TaggedLibraryFiltersProps<S>) {
   const { close } = useFilterBar()
-  const apply = (patch: Partial<ReferenceScope>) => {
+  const apply = (patch: Partial<LibraryTagScope>) => {
     close()
     onChange({ ...scope, ...patch })
   }
@@ -69,7 +73,7 @@ function Filters({
           else if (mine) apply({ userName: null })
         }}
         type="single"
-        value={isDefaultReferenceScope({ ...scope, q: '' }) ? 'all' : mine ? 'mine' : ''}
+        value={isDefaultLibraryTagScope(scope) ? 'all' : mine ? 'mine' : ''}
       >
         <FilterChip value="all">全部</FilterChip>
         {myUserName === null ? null : <FilterChip value="mine">我的</FilterChip>}
@@ -91,18 +95,18 @@ function Filters({
 
       <Divider />
 
-      {tags === undefined ? null : (
+      {tags?.dimensions.some((dimension) => dimension.children.length > 0) ? (
         <>
           <LibraryTagFilters
             className={TRIGGER_CLASS}
-            countKey="references"
+            countKey={countKey}
             index={tags}
             onChange={(next) => onChange({ ...scope, tags: next })}
             value={scope.tags}
           />
           <Divider />
         </>
-      )}
+      ) : null}
 
       <DateRangeFilter
         className={TRIGGER_CLASS}

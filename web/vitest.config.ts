@@ -4,7 +4,6 @@ import { defineConfig } from 'vitest/config'
 
 // 单测配置独立于 vite.config.ts：不需要路由生成、tailwind 与代理，只要 JSX 与 @ 别名。
 export default defineConfig({
-  define: { __TAG_ADMIN_PROTOTYPE__: false },
   plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },

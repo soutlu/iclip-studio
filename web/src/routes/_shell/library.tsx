@@ -4,9 +4,9 @@ import {
   HitCasesRoute,
   LibraryRoute,
   LibraryTabsList,
-  LibraryTagPrototypePage,
   ReferencesRoute,
   WholeFilmsRoute,
+  useLibraryTaggingRefresh,
   type HitCaseScope,
   type HitCaseTarget,
   type LibraryScope,
@@ -42,6 +42,7 @@ export const Route = createFileRoute('/_shell/library')({
 const TAB_CONTENT_CLASS = 'flex min-h-0 flex-1 flex-col'
 
 function LibraryPage() {
+  useLibraryTaggingRefresh()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
   const router = useRouter()
@@ -95,17 +96,6 @@ function LibraryPage() {
       window.location.origin,
     ).href
   const myUserName = user?.username ?? null
-
-  if (__TAG_ADMIN_PROTOTYPE__ && search.variant === 'tag-admin') {
-    return (
-      <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tabFromSearch(search)}>
-        <LibraryTagPrototypePage
-          onClose={() => void navigate({ search: { tab: 'hit-cases' } })}
-          tabs={<LibraryTabsList />}
-        />
-      </TabsRoot>
-    )
-  }
 
   return (
     <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tabFromSearch(search)}>

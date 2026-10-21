@@ -9,6 +9,7 @@ from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, visible_owner_incl_act_as
 from iclip.domains.library.models import (
     HitCaseIneligible,
+    HitCaseScope,
     MaterialSource,
     Orientation,
     Scope,
@@ -225,21 +226,33 @@ class HitCaseService:
         return self._tagging.can_tag
 
     async def list(
-        self, *, tags: Sequence[uuid.UUID] = (), limit: int = 20, cursor: str | None = None
+        self,
+        *,
+        tags: Sequence[uuid.UUID] = (),
+        user_name: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
     ) -> HitCasesOut:
         """入选晚的排前面；满页才给下一页游标，总数只在第一页给。``tags`` 按维度分组：维度之间都要
         命中，同一维度命中任一，选了上级也算下级；不存在的标签是 ``ValidationFailed``。"""
 
         check_limit(limit)
+        since, until = _window(since, until)
         groups = await self._tagging.filter_groups(_unique(tags))
+        scope = HitCaseScope(tag_groups=groups, user_name=user_name, since=since, until=until)
         after = _after(cursor)
-        rows = await self._reports.hit_cases(groups, limit=limit, after=after)
+        rows = await self._reports.hit_cases(scope, limit=limit, after=after)
         next_cursor = None
         if len(rows) == limit:
             last = rows[-1]
             next_cursor = encode_cursor(last.added_at, last.job_id)
-        total = await self._reports.count_hit_cases(groups) if after is None else None
+        total = await self._reports.count_hit_cases(scope) if after is None else None
         return HitCasesOut(items=list(rows), next_cursor=next_cursor, total=total)
+
+    async def authors(self) -> LibraryAuthorsOut:
+        return LibraryAuthorsOut(items=list(await self._reports.hit_case_authors()))
 
     async def state(self, job_id: uuid.UUID) -> HitCaseStateOut:
         """这条能不能入选、入选了没有；没有这条生成记录是 ``NotFound``。"""

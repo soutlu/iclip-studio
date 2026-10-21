@@ -1,4 +1,4 @@
-/** 资料库「爆款素材库」页签：从成片素材里挑进来的素材片，按标签筛选；卡片同成片素材，另带打标状态。
+/** 资料库「爆款素材库」页签：从成片素材里挑进来的素材片，按作者、入库时间和标签筛选；卡片同成片素材，另带打标状态。
  * 点开用成片素材的查看器，定位到这条素材片所在的卡与那一版；上一条、下一条在爆款列表里走。
  * 治理者在筛选条最右多一个「管理标签」开关，打开后管理面板替换卡片列表。 */
 
@@ -6,16 +6,16 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
-import { FilterBarRoot } from '@/shared/ui/filter-bar'
 import { ListEmpty, ListError } from '@/shared/ui/list-state'
 import {
   isDefaultHitCaseScope,
+  useHitCaseAuthorSource,
   useHitCases,
   type HitCase,
   type HitCaseScope,
 } from '../hit-cases.api'
 import { cardHeightFor } from '../library-layout'
-import { knownTagIds, type TagIndex } from '../library-tags'
+import { useLibraryTagScope } from '../library-tag-scope'
 import { useLibraryTags } from '../library-tags.api'
 import { isTaggingBusy } from '../references.api'
 import { focusCardOpener } from './card-focus'
@@ -25,10 +25,9 @@ import { useLoadNextPageWhen } from './library-next-page'
 import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
-import { LibraryTagAdmin, ManageTagsToggle } from './library-tag-admin'
-import { LibraryTagAdminPrototype } from './library-tag-admin-prototype'
-import { LibraryTagFilters } from './library-tag-filters'
+import { LibraryTagAdmin } from './library-tag-admin'
 import { LibraryViewer } from './library-viewer'
+import { TaggedLibraryFilters } from './tagged-library-filters'
 
 /** 打开的是哪一条：所在的卡与那一版。 */
 export type HitCaseTarget = { cardId: string; jobId: string }
@@ -58,11 +57,11 @@ export function HitCasesRoute({
   const tags = tagTree.data?.index
   const { data: user } = useUser()
   const canManageTags = hasPermission(user, PERMISSION.usersManage)
+  const authors = useHitCaseAuthorSource()
   const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
   // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试。
-  const scope =
-    tags === undefined ? requestedScope : { tags: knownTagIds(tags, requestedScope.tags) }
+  const scope = useLibraryTagScope(requestedScope, tags, onScopeChange)
   const hitCases = useHitCases(
     scope,
     tags !== undefined || requestedScope.tags.length === 0 || tagTree.isError,
@@ -116,13 +115,16 @@ export function HitCasesRoute({
         )
       }
       filters={
-        __TAG_ADMIN_PROTOTYPE__ && canManageTags && managingTags && tags !== undefined ? null : (
-          <HitCaseFilters
+        canManageTags && managingTags && tags !== undefined ? null : (
+          <TaggedLibraryFilters
+            authors={authors}
+            countKey="hitCases"
             manageTags={
               canManageTags
                 ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
                 : undefined
             }
+            myUserName={user?.username ?? null}
             onChange={onScopeChange}
             scope={scope}
             tags={tags}
@@ -140,11 +142,7 @@ export function HitCasesRoute({
       mainRef={mainRef}
     >
       {canManageTags && managingTags && tags !== undefined ? (
-        __TAG_ADMIN_PROTOTYPE__ ? (
-          <LibraryTagAdminPrototype index={tags} onClose={() => setManagingTags(false)} />
-        ) : (
-          <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
-        )
+        <LibraryTagAdmin index={tags} onClose={() => setManagingTags(false)} />
       ) : (
         <LibraryList
           blocker={
@@ -158,7 +156,7 @@ export function HitCasesRoute({
           empty={
             <ListEmpty>
               {filtered
-                ? '暂无匹配的爆款素材，请更换或清除标签筛选'
+                ? '暂无匹配的爆款素材，请更换或清除筛选'
                 : '暂无爆款素材，请在「成片素材」中打开一条视频，在「爆款素材」页签点击「加入爆款素材库」'}
             </ListEmpty>
           }
@@ -193,55 +191,6 @@ export function HitCasesRoute({
         />
       )}
     </LibraryPageShell>
-  )
-}
-
-// 弹层触发器照 chip 的外形，与灵感库的筛选条同一个样子。
-const TRIGGER_CLASS =
-  'h-(--control-height-sm) rounded-full border border-chip-border bg-chip-bg px-3.5 text-body-sm'
-
-/** 爆款素材的筛选条：标签树每个维度一个多选，右侧是条数与治理者的「管理标签」；排法与灵感库的筛选条一致。 */
-function HitCaseFilters({
-  scope,
-  onChange,
-  tags,
-  trailing,
-  manageTags,
-}: {
-  scope: HitCaseScope
-  onChange: (next: HitCaseScope) => void
-  /** 标签树的查找表；还没读到时不出标签筛选。 */
-  tags: TagIndex | undefined
-  trailing: string | undefined
-  /** 给了就在最右放「管理标签」开关（只给治理者）。 */
-  manageTags: { open: boolean; onToggle: () => void } | undefined
-}) {
-  return (
-    <FilterBarRoot className="gap-2">
-      {tags === undefined ? null : (
-        <LibraryTagFilters
-          className={TRIGGER_CLASS}
-          countKey="hitCases"
-          index={tags}
-          onChange={(next) => onChange({ ...scope, tags: next })}
-          value={scope.tags}
-        />
-      )}
-      {trailing === undefined && manageTags === undefined ? null : (
-        <span className="ml-auto flex items-center gap-3 pl-2">
-          {trailing === undefined ? null : (
-            <span className="text-body-sm text-on-surface-faint">{trailing}</span>
-          )}
-          {manageTags === undefined ? null : (
-            <ManageTagsToggle
-              className={TRIGGER_CLASS}
-              onToggle={manageTags.onToggle}
-              open={manageTags.open}
-            />
-          )}
-        </span>
-      )}
-    </FilterBarRoot>
   )
 }
 

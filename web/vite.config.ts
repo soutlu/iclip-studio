@@ -60,8 +60,6 @@ export default defineConfig(({ mode }) => {
   const useBrowserMocks = profile.browserMocks !== 'disabled'
 
   return {
-    // 临时标签原型只在完整 mock 环境开放，真实后端模式不挂载。
-    define: { __TAG_ADMIN_PROTOTYPE__: useBrowserMocks },
     // mock 构建只供 e2e 的 preview 使用，与生产产物分目录，互不覆盖。
     build: useBrowserMocks ? { outDir: 'dist-mock' } : {},
     plugins: [
