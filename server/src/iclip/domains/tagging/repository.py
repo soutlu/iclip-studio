@@ -106,6 +106,10 @@ class TagStore(Protocol):
         """开始超过这么久还在打标中的条目改成 ``failed / timeout``、清掉 AI 维度的标签，交回几条。"""
         ...
 
+    async def remove(self, key: EntryKey) -> None:
+        """删掉这一条，它的标签随外键级联删掉；没有这一条不报错。"""
+        ...
+
 
 class SourceText(Protocol):
     """打标读的文字：按条目的种类取，由组合根接上。"""

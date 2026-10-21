@@ -13,13 +13,24 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.library_tagging import LibrarySourceText
+from iclip.app.library_tagging import HitCaseTreatments, LibrarySourceText
+from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.models import TAGGING_TIMEOUT_SECONDS, EntryKey, TagNode
 from iclip.domains.tagging.queue import TaggingQueue
 from iclip.domains.tagging.repository import Tagger
 from iclip.domains.tagging.service import TaggingService
+from iclip.platform.file_store.pg import PgFileStore
+from tests.helpers.hit_cases import (
+    TREATMENT,
+    hit_case_rows,
+    plant_conversation,
+    plant_hit_case,
+    plant_job,
+    plant_material,
+    plant_treatment,
+)
 from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
@@ -34,7 +45,11 @@ from tests.helpers.tagging import add_tag, delete_tag, entry_of, plant_entry, ta
 def make_queue(engine: AsyncEngine, tagger: Tagger) -> TaggingQueue:
     return TaggingQueue(
         SqlTagStore(engine),
-        source_text=LibrarySourceText(SqlReferenceStore(engine)),
+        source_text=LibrarySourceText(
+            SqlReferenceStore(engine),
+            library=PgLibraryReports(engine),
+            treatments=HitCaseTreatments(PgFileStore(engine)),
+        ),
         tagger=tagger,
         connector=InMemoryConnector(),
     )
@@ -128,6 +143,54 @@ async def test_no_text_to_read_fails_without_calling_the_model(engine: AsyncEngi
     entry = await entry_of(engine, reference_id)
     assert (entry["tag_status"], entry["tag_error"]) == ("failed", "no_source_text")
     assert entry["tags"] == {tags["amz"]}
+    assert ark.requests == []
+
+
+async def test_a_hit_case_is_tagged_from_its_conversations_treatment(
+    engine: AsyncEngine,
+) -> None:
+    ark = FakeArk()
+    owner = await plant_user(engine, "nora")
+    _, job_id = await plant_material(engine, owner)
+    amz = await tag_id(engine, "平台&渠道", "AMZ")
+    entry_id = await plant_hit_case(engine, job_id, tags=[amz], status="pending")
+
+    await make_queue(engine, ark_tagger(ark)).run_tagging(str(entry_id))
+
+    (sent,) = ark.tag_requests
+    assert sent["input"][1]["content"] == [{"type": "input_text", "text": TREATMENT}]
+    assert await hit_case_rows(engine, job_id) == (1, 3), "AMZ 留着，另打上跑鞋与对比测评"
+
+
+async def test_a_hit_case_without_treatment_text_has_nothing_to_tag(engine: AsyncEngine) -> None:
+    """没有新片执行方案、只有空白、不挂对话、记录不存在，都取不到文字；打标记 ``no_source_text``。"""
+
+    owner = await plant_user(engine, "nora")
+    blank_conversation = await plant_conversation(engine, owner)
+    await plant_treatment(engine, owner, blank_conversation, " \n")
+    blank = await plant_job(engine, owner, blank_conversation)
+    missing = await plant_job(engine, owner, await plant_conversation(engine, owner))
+    detached = await plant_job(engine, owner, None)
+    source = LibrarySourceText(
+        SqlReferenceStore(engine),
+        library=PgLibraryReports(engine),
+        treatments=HitCaseTreatments(PgFileStore(engine)),
+    )
+
+    for job_id in (blank, missing, detached, uuid.uuid4()):
+        assert await source.text(EntryKey(kind="hit_case", subject_id=job_id)) is None
+
+    ark = FakeArk()
+    entry_id = await plant_hit_case(engine, missing, status="pending")
+    await make_queue(engine, ark_tagger(ark)).run_tagging(str(entry_id))
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT tag_status, tag_error FROM iclip.library_entries WHERE id = :id"),
+                {"id": entry_id},
+            )
+        ).one()
+    assert tuple(row) == ("failed", "no_source_text")
     assert ark.requests == []
 
 

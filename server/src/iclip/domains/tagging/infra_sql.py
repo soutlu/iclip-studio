@@ -277,6 +277,9 @@ SELECT id, tag_status FROM iclip.library_entries
 WHERE kind = :kind AND {col} = :subject_id
 FOR UPDATE""")
 
+_REMOVE: Final = _by_kind("""
+DELETE FROM iclip.library_entries WHERE kind = :kind AND {col} = :subject_id""")
+
 
 def _key_of(row: RowMapping) -> EntryKey:
     kind: EntryKind = row["kind"]
@@ -538,6 +541,10 @@ class SqlTagStore:
             )
             await _clear_ai(conn, ids)
         return len(ids)
+
+    async def remove(self, key: EntryKey) -> None:
+        async with self._engine.begin() as conn:
+            await conn.execute(_REMOVE[key.kind], _key_params(key))
 
 
 def entry_join_sql(*, kind: EntryKind, subject_expr: str, alias: str = "le") -> str:

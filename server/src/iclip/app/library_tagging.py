@@ -14,9 +14,12 @@ from typing import Any, Final
 
 import httpx
 
+from iclip.app.conversation_same_style import TREATMENT_PATH
 from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
 from iclip.capabilities.video_breakdown.ports import BreakdownError
+from iclip.capabilities.workspace.scope import namespace_for
 from iclip.config import ResolvedIclipStudio
+from iclip.domains.library.repository import LibraryReports
 from iclip.domains.references.repository import ReferenceStore
 from iclip.domains.tagging.models import (
     ERROR_MODEL_CALL_FAILED,
@@ -26,6 +29,7 @@ from iclip.domains.tagging.models import (
     TaggingFailed,
     TagNode,
 )
+from iclip.platform.file_store.store import FileStore
 
 TAG_REASONING_EFFORT: Final = "low"
 
@@ -164,17 +168,53 @@ class ArkTagger:
         return parse_tag_answer(raw, request)
 
 
-class LibrarySourceText:
-    """``SourceText`` 的实现：灵感库的条目读参考视频当前的拆解。"""
+class HitCaseTreatments:
+    """爆款素材的新片执行方案：素材片所在对话（按对话属主与对话 id 定位）工作区里的 ``treatment.md``。
+    只读当前那一份，不存快照。"""
 
-    def __init__(self, references: ReferenceStore) -> None:
+    def __init__(self, store: FileStore) -> None:
+        self._store = store
+
+    async def exists(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:
+        """那段对话的工作区里有没有这份文件；空文件也算有。"""
+
+        entries = await self._store.entries(
+            namespace_for(owner, str(conversation_id)), prefix=TREATMENT_PATH
+        )
+        return any(entry.path == TREATMENT_PATH for entry in entries)
+
+    async def text(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> str | None:
+        """这份文件的内容；没有或只有空白给 ``None``。"""
+
+        stored = await self._store.read(namespace_for(owner, str(conversation_id)), TREATMENT_PATH)
+        if stored is None or not stored.content.strip():
+            return None
+        return stored.content
+
+
+class LibrarySourceText:
+    """``SourceText`` 的实现：灵感库的条目读参考视频当前的拆解；爆款素材读它所在对话当前的新片执行
+    方案，不挂对话或对话不存在时没有文字。"""
+
+    def __init__(
+        self,
+        references: ReferenceStore,
+        *,
+        library: LibraryReports,
+        treatments: HitCaseTreatments,
+    ) -> None:
         self._references = references
+        self._library = library
+        self._treatments = treatments
 
     async def text(self, key: EntryKey) -> str | None:
-        if key.kind != KIND_REFERENCE:
-            raise RuntimeError(f"还没有给 {key.kind} 取打标文字的适配")
-        row = await self._references.get(key.subject_id)
-        return None if row is None else row.document
+        if key.kind == KIND_REFERENCE:
+            row = await self._references.get(key.subject_id)
+            return None if row is None else row.document
+        source = await self._library.material_of(key.subject_id)
+        if source is None or source.conversation_owner is None or source.conversation_id is None:
+            return None
+        return await self._treatments.text(source.conversation_owner, source.conversation_id)
 
 
 def build_library_tagger(settings: ResolvedIclipStudio, client: httpx.AsyncClient) -> ArkTagger:
@@ -195,6 +235,7 @@ __all__ = [
     "TAG_REASONING_EFFORT",
     "TAG_TIMEOUT_SECONDS",
     "ArkTagger",
+    "HitCaseTreatments",
     "LibrarySourceText",
     "TagRequest",
     "build_library_tagger",

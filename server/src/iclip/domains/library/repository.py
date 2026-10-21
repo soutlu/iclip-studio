@@ -5,8 +5,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import MaterialSource, Scope, VideoCursor, WholeFilmScope
 from iclip.domains.library.schemas import (
+    HitCaseEntryOut,
+    HitCaseOut,
     LibraryAuthorOut,
     LibraryVideoOut,
     ShotGroupOut,
@@ -48,6 +50,27 @@ class LibraryReports(Protocol):
     async def count_whole_films(self, scope: WholeFilmScope) -> int: ...
 
     async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]: ...
+
+    async def material_of(self, job_id: uuid.UUID) -> MaterialSource | None:
+        """这条生成记录是不是素材片、所在对话与它的属主；没有这条记录给 ``None``。"""
+        ...
+
+    async def hit_case_entry(self, job_id: uuid.UUID) -> HitCaseEntryOut | None:
+        """这条素材片在爆款素材库里的条目；没入选给 ``None``。"""
+        ...
+
+    async def hit_cases(
+        self,
+        tag_groups: Sequence[Sequence[uuid.UUID]],
+        *,
+        limit: int,
+        after: VideoCursor | None,
+    ) -> Sequence[HitCaseOut]:
+        """爆款素材，入选晚的在前，只列仍是素材片的；``tag_groups`` 每组命中任一、组间都要命中。
+        游标是入选时刻加素材片 id。"""
+        ...
+
+    async def count_hit_cases(self, tag_groups: Sequence[Sequence[uuid.UUID]]) -> int: ...
 
 
 __all__ = ["CardRow", "LibraryReports", "WholeFilmCardRow"]

@@ -39,7 +39,11 @@ from iclip.app.conversation_workspace import (
 )
 from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
-from iclip.app.library_tagging import LibrarySourceText, build_library_tagger
+from iclip.app.library_tagging import (
+    HitCaseTreatments,
+    LibrarySourceText,
+    build_library_tagger,
+)
 from iclip.app.logging import configure_logging
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
@@ -546,9 +550,13 @@ def build_app(
             tagger=library_tagger or build_library_tagger(settings.iclip_studio, http_client),
             connector=connector,
         )
+    library_reports = PgLibraryReports(active_engine)
+    hit_case_treatments = HitCaseTreatments(workspace_store)
     tagging = build_tagging_module(
         SqlTagStore(active_engine),
-        source_text=LibrarySourceText(reference_store),
+        source_text=LibrarySourceText(
+            reference_store, library=library_reports, treatments=hit_case_treatments
+        ),
         setup=tagging_setup,
     )
     references = build_references_module(
@@ -653,9 +661,11 @@ def build_app(
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
-    library_reports = PgLibraryReports(active_engine)
     library = build_library_module(
-        library_reports, has_production_files=same_style.has_production_files
+        library_reports,
+        has_production_files=same_style.has_production_files,
+        tagging=tagging.service,
+        has_treatment=hit_case_treatments.exists,
     )
     conversations = build_conversations_module(
         conversation_repo,
