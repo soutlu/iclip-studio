@@ -12,14 +12,12 @@ test('治理者在灵感库管理标签：添加取值后回到列表，筛选�
   await main.getByRole('button', { name: '管理标签' }).click()
   const panel = main.getByRole('region', { name: '管理标签' })
   await expect(main.getByRole('article')).toHaveCount(0)
-  await panel.getByRole('button', { name: /^切换维度/ }).click()
-  await page.getByRole('menuitemradio', { name: '场景' }).click()
   await expect(panel.getByRole('heading', { name: '场景' })).toBeVisible()
-
-  await panel.getByRole('textbox', { name: '取值名称' }).fill('海边度假')
-  await panel.getByRole('button', { name: '添加取值' }).click()
+  await panel.getByRole('button', { name: '给场景添加标签' }).click()
+  await panel.getByRole('textbox', { name: '场景的标签名称' }).fill('海边度假')
+  await panel.getByRole('button', { name: '添加', exact: true }).click()
   await expect(
-    panel.getByRole('list', { name: '场景的取值' }).getByText('海边度假', { exact: true }),
+    panel.getByRole('list', { name: '场景的标签' }).getByText('海边度假', { exact: true }),
   ).toBeVisible()
 
   await panel.getByRole('button', { name: '完成' }).click()

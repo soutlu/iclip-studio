@@ -169,7 +169,7 @@ describe('参考视频列表', () => {
     expect(screen.getByRole('button', { name: '选择文件' })).toBeVisible()
   })
 
-  it('标签筛选：每个维度一个下拉，按标签树的先后', async () => {
+  it('标签筛选按标签树顺序，空维度暂不显示', async () => {
     resetMockReferences([MINE_TAGGED])
     await renderWithProviders(<Harness />)
     await screen.findAllByRole('article')
@@ -179,12 +179,34 @@ describe('参考视频列表', () => {
       .map((button) => button.getAttribute('aria-label'))
       .filter((name) => /^(品牌|平台&渠道|品类|场景|内容结构)：/.test(name ?? ''))
     expect(triggers).toEqual([
-      '品牌：品牌',
       '平台&渠道：平台&渠道',
       '品类：品类',
       '场景：场景',
       '内容结构：内容结构',
     ])
+  })
+
+  it('地址中失效的标签会清理，同时保留关键词、人员、时间与其他标签', async () => {
+    const invalidId = '5a900000-0000-4000-8000-000000000fff'
+    const initialScope: ReferenceScope = {
+      ...DEFAULT_REFERENCE_SCOPE,
+      q: '户外',
+      range: '7d',
+      tags: [invalidId, mockTagId('AMZ')],
+      userName: 'tester',
+    }
+    const onScope = vi.fn()
+    const queries = recordListQueries()
+    await renderWithProviders(<Harness initialScope={initialScope} onScope={onScope} />)
+
+    await waitFor(() =>
+      expect(onScope).toHaveBeenLastCalledWith({ ...initialScope, tags: [mockTagId('AMZ')] }),
+    )
+    await screen.findByText('暂无匹配的参考视频，请更换关键词或清除筛选')
+    expect(queries.every((query) => !query.getAll('tags').includes(invalidId))).toBe(true)
+    expect(queries.at(-1)?.get('q')).toBe('户外')
+    expect(queries.at(-1)?.get('userName')).toBe('tester')
+    expect(queries.at(-1)?.has('since')).toBe(true)
   })
 
   it('两层的维度：大类可勾、小类缩进在它下面，条数取自标签树；选大类也算小类，勾一项写进 tags 重查一次、弹层留着；「全部」清掉', async () => {

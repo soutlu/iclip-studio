@@ -41,6 +41,7 @@ describe('librarySearchParams', () => {
 
     const since = new Date(params.get('since') ?? '')
     const until = new Date(params.get('until') ?? '')
-    expect(until.getTime() - since.getTime()).toBe(24 * 60 * 60_000 - 1)
+    expect(since).toEqual(new Date(2026, 8, 14))
+    expect(until).toEqual(new Date(2026, 8, 15))
   })
 })

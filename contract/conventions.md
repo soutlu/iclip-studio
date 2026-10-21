@@ -298,7 +298,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 治理者使用 `users:manage` 扩大读取范围，操作本身所需的 `agent:read` / `agent:run` 仍须具备。其他人的改名、换归属、删除、发消息路径返回 `404`；工作区覆盖写入返回 `403`。
 
-- `GET /conversations/audit` 列全平台的对话，排序按 §3。筛选 `ownerUserId`、`taskId`、`since`、`until`（后两个作用在 `createdAt` 上，与排序同一列；§12 的报表按各指标自己的事件时刻分期，同一段时间两边不是同一批对话）、`state`（四值同上）与 `deleted`（`live` 缺省只看活着的，`deleted` 只看属主删掉的，`all` 都看），可任意组合。
+- `GET /conversations/audit` 列全平台的对话，排序按 §3。筛选 `ownerUserId`、`taskId`、`since`、`until`（时间窗 `[since, until)` 左闭右开，作用在 `createdAt` 上，与排序同一列；§12 的报表按各指标自己的事件时刻分期，同一段时间两边不是同一批对话）、`state`（四值同上）与 `deleted`（`live` 缺省只看活着的，`deleted` 只看属主删掉的，`all` 都看），可任意组合。
 - 响应带两个真总数，都不随翻页变：`total` 是当前筛选下一共几段，`runningTotal` 是同一组属主 / 需求单 / 时间 / 删没删筛选下此刻在跑的几段（不受 `state` 影响）。
 - 已删对话是墓碑：行上 `deletedAt` 非空，只有带 `deleted` 的审计列表能列出它。治理者按 id 读它的 transcript、工作区文件与订阅都照常，`GET /transcript` 顶层多一个可选 `deleted_at`；属主与其他人读它都是 `404`；对话自身的写路径（改名、换归属、再删、发消息、改工作区文件）对谁都关着，一律 `404`，只有治理者对自己墓碑的工作区覆盖写入是 `403`（这个口子先读整行再判属主，分得出「看得见但不能改」；其余写路径是带属主条件的单条更新，分不出）。生成任务的 `conversationId` 只是归档标签，不校验对话，见 §11。
 - 翻页给 `limit` 与 `cursor`：`cursor` 原样回传响应里的 `nextCursor`，为 `null` 表示没有更多了。自己编一个形状不对的是 `422`。
@@ -611,4 +611,5 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **改标签**：`PUT /library/hit-cases/{jobId}/tags` 同 §15；没入选是 `404`，正在排队或打标是 `409`。
 - **重新打标**：`POST /library/hit-cases/{jobId}/tagging` 按所在对话当前的 `treatment.md` 重打；没入选是 `404`，正在排队或打标是 `409`。打标没配置时不挂这个端点。
 - **移出**：`DELETE /library/hit-cases/{jobId}` 删掉条目连同标签，`204`；没入选也是 `204`。
-- **列表**：`GET /library/hit-cases` 按入选时刻倒序（再按 `jobId`），是 §3 的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是入选时刻加 `jobId`；`total` 只在第一页给。筛选只有 `tags`（§15）。只列仍是素材片的。每项带 `cardId`（这一版在成片素材里所属的卡，按 §13 的卡 id 规则）、`title`（所在对话的标题）、`face` 与 `take`（形状同 §13 的版本头与出片）、标签与打标状态、`addedAt`；打开查看器时按 `cardId` 读 §13 的卡详情，选中 `jobId` 那一版。
+- **列表**：`GET /library/hit-cases` 按入选时刻倒序（再按 `jobId`），是 §3 的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是入选时刻加 `jobId`；`total` 只在第一页给。`tags`（§15）、作者 `userName` 与入选时间窗 `[since, until)` 同时满足才入选结果；作者是这一版素材片属主的用户名，与 `face.userName` 一致，不是入选人或对话属主。时间不带时区按 UTC，`since` 不早于 `until` 是 `422`。列表、分页与总数使用同一筛选范围，只列仍是素材片的。每项带 `cardId`（这一版在成片素材里所属的卡，按 §13 的卡 id 规则）、`title`（所在对话的标题）、`face` 与 `take`（形状同 §13 的版本头与出片）、标签与打标状态、`addedAt`；打开查看器时按 `cardId` 读 §13 的卡详情，选中 `jobId` 那一版。
+- **作者候选**：`GET /library/hit-cases/authors` 按上述列表的收录与作者口径，给全库作者和各自的版本数，不受筛选影响；按数量降序、同数按用户名升序，没有用户名的不列。

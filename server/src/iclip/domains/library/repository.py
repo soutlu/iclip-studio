@@ -5,7 +5,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from iclip.domains.library.models import MaterialSource, Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import (
+    HitCaseScope,
+    MaterialSource,
+    Scope,
+    VideoCursor,
+    WholeFilmScope,
+)
 from iclip.domains.library.schemas import (
     HitCaseEntryOut,
     HitCaseOut,
@@ -61,16 +67,17 @@ class LibraryReports(Protocol):
 
     async def hit_cases(
         self,
-        tag_groups: Sequence[Sequence[uuid.UUID]],
+        scope: HitCaseScope,
         *,
         limit: int,
         after: VideoCursor | None,
     ) -> Sequence[HitCaseOut]:
-        """爆款素材，入选晚的在前，只列仍是素材片的；``tag_groups`` 每组命中任一、组间都要命中。
-        游标是入选时刻加素材片 id。"""
+        """爆款素材，入选晚的在前，只列仍是素材片的；游标是入选时刻加素材片 id。"""
         ...
 
-    async def count_hit_cases(self, tag_groups: Sequence[Sequence[uuid.UUID]]) -> int: ...
+    async def count_hit_cases(self, scope: HitCaseScope) -> int: ...
+
+    async def hit_case_authors(self) -> Sequence[LibraryAuthorOut]: ...
 
 
 __all__ = ["CardRow", "LibraryReports", "WholeFilmCardRow"]

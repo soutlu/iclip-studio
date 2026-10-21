@@ -6,6 +6,7 @@ import {
   LibraryTabsList,
   ReferencesRoute,
   WholeFilmsRoute,
+  useLibraryTaggingRefresh,
   type HitCaseScope,
   type HitCaseTarget,
   type LibraryScope,
@@ -41,6 +42,7 @@ export const Route = createFileRoute('/_shell/library')({
 const TAB_CONTENT_CLASS = 'flex min-h-0 flex-1 flex-col'
 
 function LibraryPage() {
+  useLibraryTaggingRefresh()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
   const router = useRouter()

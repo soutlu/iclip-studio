@@ -12226,7 +12226,7 @@
     },
     "/conversations/audit": {
       "get": {
-        "description": "治理者查全平台的对话：按人、按单、按时间段、按状态、按删没删筛，最近建的排前面。\n\n``since`` / ``until`` 作用在建立时刻上，与排序同一列——\n同页报表按各指标自己的事件时刻分期，两边不是同一批对话；\n``state`` 的四值与侧栏同一口径；``deleted`` 缺省只看活着的，``deleted`` 只看属主删掉的，\n``all`` 都看。``total`` 与 ``runningTotal`` 是真总数，不随翻页变。",
+        "description": "治理者查全平台的对话：按人、按单、按时间段、按状态、按删没删筛，最近建的排前面。\n\n时间窗 ``[since, until)`` 左闭右开，作用在建立时刻上，与排序同一列——\n同页报表按各指标自己的事件时刻分期，两边不是同一批对话；\n``state`` 的四值与侧栏同一口径；``deleted`` 缺省只看活着的，``deleted`` 只看属主删掉的，\n``all`` 都看。``total`` 与 ``runningTotal`` 是真总数，不随翻页变。",
         "operationId": "audit_conversations_conversations_audit_get",
         "parameters": [
           {
@@ -15817,7 +15817,7 @@
     },
     "/library/hit-cases": {
       "get": {
-        "description": "爆款素材库里的素材片，入选晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``total`` 只在第一页给。",
+        "description": "爆款素材库里的素材片，入选晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``userName`` 筛这一版素材片的作者，时间窗 ``[since, until)`` 作用在\n入选时刻上；这些条件都要满足。``total`` 只在第一页给。",
         "operationId": "list_hit_cases_library_hit_cases_get",
         "parameters": [
           {
@@ -15838,6 +15838,57 @@
                 }
               ],
               "title": "Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "userName",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 150,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
             }
           },
           {
@@ -15904,6 +15955,40 @@
           }
         ],
         "summary": "List Hit Cases",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/authors": {
+      "get": {
+        "description": "爆款素材的作者与各自的条数，多的排前面、同数按名字，不受筛选影响；给按人筛选用。",
+        "operationId": "hit_case_authors_library_hit_cases_authors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryAuthorsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Hit Case Authors",
         "tags": [
           "library"
         ]

@@ -499,6 +499,55 @@ async def test_audit_is_governor_only_and_filters(
         assert (await governor.get(AUDIT, params={"since": today})).status_code == 200
 
 
+async def test_audit_time_window_includes_since_and_excludes_until(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """列表、翻页、总数和在跑数都按左闭右开筛建立时间，相邻日期不重复收零点的对话。"""
+
+    owner = await login_as_editor(client, pg_url)
+    since = datetime(2026, 10, 21, tzinfo=UTC)
+    until = since + timedelta(days=1)
+    conversations: list[str] = []
+    for index, at in enumerate(
+        (since - timedelta(microseconds=1), since, until - timedelta(microseconds=1), until)
+    ):
+        conversation_id = str((await open_conversation(client, title=f"边界 {index}"))["id"])
+        conversations.append(conversation_id)
+        async with connected(pg_url) as conn:
+            await conn.execute(
+                text("UPDATE iclip.conversations SET created_at = :at WHERE id = :id"),
+                {"at": at, "id": conversation_id},
+            )
+        if at in (since, until):
+            await plant_job(
+                pg_url,
+                owner=owner,
+                conversation_id=conversation_id,
+                status="running",
+                prompt_id=f"prm_boundary_{index}",
+            )
+
+    async with make_client(app) as governor:
+        await login_as_root(governor, pg_url)
+        params = {"since": since.isoformat(), "until": until.isoformat(), "limit": 1}
+        first = await governor.get(AUDIT, params=params)
+        assert first.status_code == 200, first.text
+        assert [item["id"] for item in first.json()["items"]] == [conversations[2]]
+        assert (first.json()["total"], first.json()["runningTotal"]) == (2, 1)
+        second = await governor.get(AUDIT, params={**params, "cursor": first.json()["nextCursor"]})
+        assert second.status_code == 200, second.text
+        assert [item["id"] for item in second.json()["items"]] == [conversations[1]]
+        assert (second.json()["total"], second.json()["runningTotal"]) == (2, 1)
+
+        next_day = await governor.get(
+            AUDIT,
+            params={"since": until.isoformat(), "until": (until + timedelta(days=1)).isoformat()},
+        )
+        assert next_day.status_code == 200, next_day.text
+        assert [item["id"] for item in next_day.json()["items"]] == [conversations[3]]
+        assert (next_day.json()["total"], next_day.json()["runningTotal"]) == (1, 1)
+
+
 async def test_audit_pages_by_cursor(app: FastAPI, client: httpx.AsyncClient, pg_url: str) -> None:
 
     await login_as_editor(client, pg_url)

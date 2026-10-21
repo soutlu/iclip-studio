@@ -3626,6 +3626,9 @@ export const zAuthorsLibraryAuthorsGetResponse = zLibraryAuthorsOut
 
 export const zListHitCasesLibraryHitCasesGetQuery = z.object({
   tags: z.array(z.uuid()).nullish(),
+  userName: z.string().max(150).nullish(),
+  since: z.iso.datetime().nullish(),
+  until: z.iso.datetime().nullish(),
   limit: z.int().gte(1).lte(100).optional().default(20),
   cursor: z.string().nullish(),
 })
@@ -3634,6 +3637,11 @@ export const zListHitCasesLibraryHitCasesGetQuery = z.object({
  * Successful Response
  */
 export const zListHitCasesLibraryHitCasesGetResponse = zHitCasesOut
+
+/**
+ * Successful Response
+ */
+export const zHitCaseAuthorsLibraryHitCasesAuthorsGetResponse = zLibraryAuthorsOut
 
 export const zRemoveHitCaseLibraryHitCasesJobIdDeletePath = z.object({
   job_id: z.uuid(),

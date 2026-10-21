@@ -14,8 +14,16 @@ import { stubScrollViewport } from '@/testing/scroll-viewport'
 import { DEFAULT_HIT_CASE_SCOPE, type HitCaseScope } from '../hit-cases.api'
 import { HitCasesRoute, type HitCaseTarget } from './hit-cases-route'
 
-function Harness({ onTarget }: { onTarget?: (target: HitCaseTarget | null) => void }) {
-  const [scope, setScope] = useState<HitCaseScope>(DEFAULT_HIT_CASE_SCOPE)
+function Harness({
+  onTarget,
+  onScope,
+  initialScope = DEFAULT_HIT_CASE_SCOPE,
+}: {
+  onTarget?: (target: HitCaseTarget | null) => void
+  onScope?: (scope: HitCaseScope) => void
+  initialScope?: HitCaseScope
+}) {
+  const [scope, setScope] = useState<HitCaseScope>(initialScope)
   const [target, setTarget] = useState<HitCaseTarget | null>(null)
   return (
     <HitCasesRoute
@@ -25,6 +33,7 @@ function Harness({ onTarget }: { onTarget?: (target: HitCaseTarget | null) => vo
         setTarget(next)
       }}
       onScopeChange={(next) => {
+        onScope?.(next)
         setScope(next)
         setTarget(null)
       }}
@@ -115,7 +124,53 @@ describe('爆款素材库列表', () => {
 
     await user.click(within(popup).getByRole('checkbox', { name: /^AMZ/ }))
     await user.click(within(popup).getByRole('checkbox', { name: /^TikTok/ }))
-    expect(await screen.findByText('暂无匹配的爆款素材，请更换或清除标签筛选')).toBeVisible()
+    expect(await screen.findByText('暂无匹配的爆款素材，请更换或清除筛选')).toBeVisible()
+  })
+
+  it('人员来自库内版本作者，与入库时间和标签组合；我的不按入库操作者筛选', async () => {
+    loginAs(mockAuthUser)
+    const [older] = mockLibraryVersionIds(SKATE)
+    if (older === undefined) throw new Error('滑板女孩需要旧版本')
+    resetMockHitCases([
+      {
+        addedAt: minutesAgo(1),
+        addedBy: 'Nora.Ho',
+        jobId: faceOf(SKATE).jobId,
+        tagIds: [mockTagId('AMZ')],
+      },
+      { addedAt: minutesAgo(8 * 24 * 60), jobId: older, tagIds: [mockTagId('AMZ')] },
+      {
+        addedAt: minutesAgo(2),
+        addedBy: mockAuthUser.username,
+        jobId: faceOf(SANDALS).jobId,
+        tagIds: [mockTagId('AMZ')],
+      },
+    ])
+    const queries = recordListQueries()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await screen.findByText('共 3 条')
+
+    await user.click(screen.getByRole('button', { name: '人：人' }))
+    const people = await screen.findByRole('dialog', { name: '选择人' })
+    expect(within(people).getByRole('option', { name: /tester/ })).toBeVisible()
+    expect(within(people).getByRole('option', { name: /Nora.Ho/ })).toBeVisible()
+    expect(within(people).queryByRole('option', { name: /Maya.Cheng/ })).toBeNull()
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('radio', { name: '我的' }))
+    expect(await screen.findByText('找到 2 条')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '时间：时间' }))
+    await user.click(screen.getByRole('radio', { name: '近 7 天' }))
+    expect(await screen.findByText('找到 1 条')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '平台&渠道：平台&渠道' }))
+    await user.click(await screen.findByRole('checkbox', { name: /^AMZ/ }))
+
+    await waitFor(() => expect(queries.at(-1)?.getAll('tags')).toEqual([mockTagId('AMZ')]))
+    expect(queries.at(-1)?.get('userName')).toBe(mockAuthUser.username)
+    expect(queries.at(-1)?.has('since')).toBe(true)
+    expect(screen.getByRole('article', { name: SKATE })).toBeVisible()
+    expect(screen.queryByRole('article', { name: SANDALS })).toBeNull()
   })
 
   it('空的时候说怎么把素材片加进来', async () => {
@@ -189,25 +244,59 @@ describe('爆款素材库的管理标签', () => {
     expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
   })
 
-  it('治理者打开后面板替换卡片列表，条数算上爆款，「完成」回到列表', async () => {
+  it('管理时隐藏筛选和列表，完成后保留人员、时间与标签筛选', async () => {
     loginAs(mockGovernor)
     resetMockReferences([])
     resetMockHitCases([{ jobId: faceOf(SANDALS).jobId, tagIds: [mockTagId('AMZ')] }])
+    const initialScope: HitCaseScope = {
+      ...DEFAULT_HIT_CASE_SCOPE,
+      range: '7d',
+      tags: [mockTagId('AMZ')],
+      userName: 'Nora.Ho',
+    }
+    const onScope = vi.fn()
     const user = userEvent.setup()
-    await renderWithProviders(<Harness />)
+    await renderWithProviders(<Harness initialScope={initialScope} onScope={onScope} />)
     await screen.findByRole('article', { name: SANDALS })
 
     await user.click(screen.getByRole('button', { name: '管理标签' }))
     const panel = await screen.findByRole('region', { name: '管理标签' })
 
-    expect(screen.getByRole('button', { name: '管理标签' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: '人：Nora.Ho' })).toBeNull()
     expect(screen.queryByRole('article')).toBeNull()
-    await user.click(within(panel).getByRole('button', { name: /^切换维度/ }))
-    await user.click(await screen.findByRole('menuitemradio', { name: '平台&渠道' }))
-    const values = await within(panel).findByRole('list', { name: '平台&渠道的取值' })
-    expect(within(values).getByText('灵感库 0 · 爆款 1')).toBeVisible()
-    expect(within(values).getAllByText('灵感库 0 · 爆款 0')).toHaveLength(4)
+    expect(within(panel).getByRole('heading', { name: '平台&渠道' })).toBeVisible()
     await user.click(within(panel).getByRole('button', { name: '完成' }))
     expect(await screen.findByRole('article', { name: SANDALS })).toBeVisible()
+    expect(screen.getByRole('button', { name: '人：Nora.Ho' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '时间：近 7 天' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '平台&渠道：AMZ' })).toBeVisible()
+    expect(onScope).not.toHaveBeenCalled()
+  })
+
+  it('删除已选标签后清理条件，保留人员和时间', async () => {
+    loginAs(mockGovernor)
+    resetMockHitCases([{ jobId: faceOf(SANDALS).jobId, tagIds: [mockTagId('AMZ')] }])
+    const initialScope: HitCaseScope = {
+      ...DEFAULT_HIT_CASE_SCOPE,
+      range: '7d',
+      tags: [mockTagId('AMZ')],
+      userName: 'Nora.Ho',
+    }
+    const onScope = vi.fn()
+    const user = userEvent.setup()
+    const queries = recordListQueries()
+    await renderWithProviders(<Harness initialScope={initialScope} onScope={onScope} />)
+    await screen.findByRole('article', { name: SANDALS })
+    await user.click(screen.getByRole('button', { name: '管理标签' }))
+    await user.click(screen.getByRole('button', { name: '管理AMZ' }))
+    await user.click(await screen.findByRole('menuitem', { name: '删除' }))
+    const confirmation = await screen.findByRole('dialog', { name: '删除「AMZ」' })
+    await user.click(within(confirmation).getByRole('button', { name: '删除' }))
+    await waitFor(() => expect(onScope).toHaveBeenLastCalledWith({ ...initialScope, tags: [] }))
+    await user.click(screen.getByRole('button', { name: '完成' }))
+    expect(await screen.findByRole('article', { name: SANDALS })).toBeVisible()
+    expect(queries.at(-1)?.get('userName')).toBe('Nora.Ho')
+    expect(queries.at(-1)?.has('since')).toBe(true)
+    expect(queries.at(-1)?.has('tags')).toBe(false)
   })
 })

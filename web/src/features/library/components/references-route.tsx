@@ -9,7 +9,7 @@ import { ListEmpty, ListError } from '@/shared/ui/list-state'
 import type { PickerSource } from '@/shared/ui/search-picker'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { placeholderCardHeightFor } from '../library-layout'
-import { knownTagIds } from '../library-tags'
+import { useLibraryTagScope } from '../library-tag-scope'
 import { useLibraryTags } from '../library-tags.api'
 import { useReferenceUpload, type PendingUpload } from '../reference-upload'
 import {
@@ -27,8 +27,8 @@ import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
 import { LibraryTagAdmin } from './library-tag-admin'
 import { ReferenceCard, UploadingCard } from './reference-card'
-import { ReferenceFilters } from './reference-filters'
 import { ReferenceViewer } from './reference-viewer'
+import { TaggedLibraryFilters } from './tagged-library-filters'
 
 type GridEntry =
   { kind: 'upload'; upload: PendingUpload } | { kind: 'reference'; item: ReferenceItem }
@@ -59,10 +59,7 @@ export function ReferencesRoute({
   const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
   // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试，不一直停在骨架上。
-  const scope =
-    tags === undefined
-      ? requestedScope
-      : { ...requestedScope, tags: knownTagIds(tags, requestedScope.tags) }
+  const scope = useLibraryTagScope(requestedScope, tags, onScopeChange)
   const references = useReferences(
     scope,
     tags !== undefined || requestedScope.tags.length === 0 || tagTree.isError,
@@ -159,19 +156,22 @@ export function ReferencesRoute({
         </>
       }
       filters={
-        <ReferenceFilters
-          authors={owners}
-          manageTags={
-            canManageTags
-              ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
-              : undefined
-          }
-          myUserName={myUserName}
-          onChange={onScopeChange}
-          scope={scope}
-          tags={tags}
-          trailing={counter}
-        />
+        canManageTags && managingTags && tags !== undefined ? null : (
+          <TaggedLibraryFilters
+            authors={owners}
+            countKey="references"
+            manageTags={
+              canManageTags
+                ? { onToggle: () => setManagingTags((open) => !open), open: managingTags }
+                : undefined
+            }
+            myUserName={myUserName}
+            onChange={onScopeChange}
+            scope={scope}
+            tags={tags}
+            trailing={counter}
+          />
+        )
       }
       header={
         <LibraryPageHeader

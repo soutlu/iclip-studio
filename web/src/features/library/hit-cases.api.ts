@@ -2,6 +2,7 @@
  * 合同见 contract/conventions.md §15、§16。 */
 
 import {
+  queryOptions,
   skipToken,
   useInfiniteQuery,
   useMutation,
@@ -9,7 +10,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import type { z } from 'zod'
-import { apiFetch } from '@/shared/api/client'
+import { apiFetch, ApiError } from '@/shared/api/client'
 import {
   zHitCasesOut,
   zHitCaseStateOut,
@@ -18,6 +19,13 @@ import {
   type zHitCaseOut,
   type zHitCaseTagsIn,
 } from '@/shared/api/generated/zod.gen'
+import { dateRangeBounds } from '@/shared/lib/date-range'
+import { libraryQueryKeys, useAuthorSource } from './library.api'
+import {
+  DEFAULT_LIBRARY_TAG_SCOPE,
+  isDefaultLibraryTagScope,
+  type LibraryTagScope,
+} from './library-tag-scope'
 import { libraryTagQueryKeys } from './library-tags.api'
 import { isTaggingBusy } from './references.api'
 
@@ -27,14 +35,12 @@ export type HitCaseState = z.output<typeof zHitCaseStateOut>
 export type HitCaseEntry = NonNullable<HitCaseState['entry']>
 export type HitCaseIneligible = NonNullable<HitCaseState['ineligibleReason']>
 
-/** 列表的筛选：只有标签（同一维度命中任一，不同维度都要命中）。 */
-export interface HitCaseScope {
-  tags: readonly string[]
-}
+/** 人员按素材版本作者筛选，时间按入库时间筛选。 */
+export type HitCaseScope = LibraryTagScope
 
-export const DEFAULT_HIT_CASE_SCOPE: HitCaseScope = { tags: [] }
+export const DEFAULT_HIT_CASE_SCOPE: HitCaseScope = DEFAULT_LIBRARY_TAG_SCOPE
 
-export const isDefaultHitCaseScope = (scope: HitCaseScope): boolean => scope.tags.length === 0
+export const isDefaultHitCaseScope = isDefaultLibraryTagScope
 
 /** 一页的卡数，与成片素材同一个量级。 */
 const HIT_CASES_PAGE_SIZE = 24
@@ -45,13 +51,20 @@ const POLL_MS = 5000
 export const hitCaseSearchParams = (
   scope: HitCaseScope,
   cursor: string | null,
+  now: Date = new Date(),
 ): URLSearchParams => {
   const params = new URLSearchParams()
+  const { since, until } = dateRangeBounds(scope, now)
+  if (since !== null) params.set('since', since.toISOString())
+  if (until !== null) params.set('until', until.toISOString())
+  if (scope.userName !== null) params.set('userName', scope.userName)
   for (const id of scope.tags) params.append('tags', id)
   params.set('limit', String(HIT_CASES_PAGE_SIZE))
   if (cursor !== null) params.set('cursor', cursor)
   return params
 }
+
+export const useHitCaseAuthorSource = () => useAuthorSource('/library/hit-cases/authors')
 
 export const hitCaseQueryKeys = {
   all: ['hit-cases'] as const,
@@ -82,20 +95,35 @@ export const useHitCases = (scope: HitCaseScope, enabled = true) =>
 const hitCasePath = (jobId: string) => `/library/hit-cases/${encodeURIComponent(jobId)}`
 
 /** 一条素材片能不能入选、入选了没有；正在排队或打标时轮询，打完自动更新。`jobId` 为 null 时不读。 */
-export const useHitCaseState = (jobId: string | null) =>
-  useQuery({
+export const hitCaseStateOptions = (jobId: string | null) =>
+  queryOptions({
     queryFn:
       jobId === null
         ? skipToken
-        : ({ signal }) =>
-            apiFetch(hitCasePath(jobId), zHitCaseStateOut, {
+        : async ({ client, signal }) => {
+            const previous = client.getQueryData<HitCaseState>(hitCaseQueryKeys.state(jobId))
+            const next = await apiFetch(hitCasePath(jobId), zHitCaseStateOut, {
               fallbackErrorMessage: '读取爆款素材状态失败',
               signal,
-            }),
+            })
+            if (
+              isTaggingBusy(previous?.entry?.tagStatus ?? null) &&
+              !isTaggingBusy(next.entry?.tagStatus ?? null)
+            ) {
+              void client.invalidateQueries({ queryKey: ['hit-cases', 'list'] })
+              void client.invalidateQueries({ queryKey: libraryTagQueryKeys.tree })
+            }
+            return next
+          },
     queryKey: hitCaseQueryKeys.state(jobId ?? ''),
     refetchInterval: ({ state }) =>
-      isTaggingBusy(state.data?.entry?.tagStatus ?? null) ? POLL_MS : false,
+      !(state.error instanceof ApiError && state.error.status === 404) &&
+      isTaggingBusy(state.data?.entry?.tagStatus ?? null)
+        ? POLL_MS
+        : false,
   })
+
+export const useHitCaseState = (jobId: string | null) => useQuery(hitCaseStateOptions(jobId))
 
 /** 入选、改标签、重新打标、移出之后：这一条换成服务端交回的状态，列表与标签条数重读。 */
 const useSettle = (jobId: string) => {
@@ -105,6 +133,9 @@ const useSettle = (jobId: string) => {
       void queryClient.invalidateQueries({ queryKey: hitCaseQueryKeys.state(jobId) })
     else queryClient.setQueryData(hitCaseQueryKeys.state(jobId), state)
     void queryClient.invalidateQueries({ queryKey: ['hit-cases', 'list'] })
+    void queryClient.invalidateQueries({
+      queryKey: libraryQueryKeys.authors('/library/hit-cases/authors'),
+    })
     void queryClient.invalidateQueries({ queryKey: libraryTagQueryKeys.tree })
   }
 }

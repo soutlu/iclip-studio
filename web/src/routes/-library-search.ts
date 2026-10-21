@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  DEFAULT_HIT_CASE_SCOPE,
   DEFAULT_LIBRARY_SCOPE,
   DEFAULT_LIBRARY_TAB,
   DEFAULT_REFERENCE_SCOPE,
@@ -83,12 +84,16 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
 }
 
 export const hitCaseScopeFromSearch = (search: LibrarySearch): HitCaseScope => ({
+  ...dateRangeFromSearch(search, DEFAULT_HIT_CASE_SCOPE),
   tags: search.tags ?? [],
+  userName: search.userName ?? null,
 })
 
 export const searchFromHitCaseScope = (scope: HitCaseScope): LibrarySearch => ({
+  ...dateRangeToSearch(scope, DEFAULT_HIT_CASE_SCOPE),
   tab: 'hit-cases',
   tags: scope.tags.length === 0 ? undefined : [...scope.tags],
+  userName: scope.userName ?? undefined,
 })
 
 export function wholeFilmScopeFromSearch(search: LibrarySearch): WholeFilmScope {

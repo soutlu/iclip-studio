@@ -227,7 +227,7 @@ def _audit_conditions(scope: AuditFilter, state: StateFilter | None) -> list[Col
     if scope.since is not None:
         conditions.append(_ROWS.created_at >= scope.since)
     if scope.until is not None:
-        conditions.append(_ROWS.created_at <= scope.until)
+        conditions.append(_ROWS.created_at < scope.until)
     return conditions
 
 
