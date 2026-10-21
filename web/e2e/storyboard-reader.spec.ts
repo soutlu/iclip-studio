@@ -33,7 +33,7 @@ const watchGenerationPosts = (page: Page) => {
   return posts
 }
 
-test('分镜可以键盘切组、切帧和查看成片，浏览操作不写文件或提交生成', async ({ page }) => {
+test('分镜可以键盘切组、切帧和查看素材片，浏览操作不写文件或提交生成', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 700 })
   const writes: string[] = []
   page.on('request', (request) => {
@@ -66,8 +66,8 @@ test('分镜可以键盘切组、切帧和查看成片，浏览操作不写文�
   await expect(group.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
   await expect(group.getByRole('button', { name: '编辑图片', exact: true })).toHaveCount(1)
 
-  // 第 2 组的成片常驻在文案列底部：在途、失败、成功各一张。
-  const takes = group.getByRole('region', { name: '本组成片', exact: true })
+  // 第 2 组的素材片常驻在文案列底部：在途、失败、成功各一张。
+  const takes = group.getByRole('region', { name: '本组素材片', exact: true })
   await expect(takes.getByRole('listitem')).toHaveCount(3)
   await expect(takes).toBeInViewport({ ratio: 1 })
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
@@ -297,7 +297,7 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
   expect(generationPosts).toEqual([])
 })
 
-test('翻到第 3 组出片：请求取当前组，成片区先出在途卡、出片后变成可播', async ({ page }) => {
+test('翻到第 3 组出片：请求取当前组，素材片区先出在途卡、出片后变成可播', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
   await openStoryboardShot(panel, 3)
@@ -317,13 +317,13 @@ test('翻到第 3 组出片：请求取当前组，成片区先出在途卡、�
   expect(request.postDataJSON()).toMatchObject({ shot_index: 3, shot: third.prompt })
 
   // 新的一张排在最前，先是在途卡；mock 三秒后出片，推送帧到了就刷新。
-  const takes = group.getByRole('region', { name: '本组成片', exact: true })
+  const takes = group.getByRole('region', { name: '本组素材片', exact: true })
   await expect(takes.getByRole('listitem')).toHaveCount(2)
   const newest = takes.getByRole('listitem').first()
   await expect(newest.getByRole('button', { name: /生成中$/ })).toBeVisible()
-  await expect(newest.getByRole('button', { name: /的成片$/ })).toBeVisible({ timeout: 15_000 })
+  await expect(newest.getByRole('button', { name: /的素材片$/ })).toBeVisible({ timeout: 15_000 })
   await expect(takes.getByRole('button', { name: /生成中$/ })).toHaveCount(0)
-  await expect(takes.getByRole('button', { name: /的成片$/ })).toHaveCount(2)
+  await expect(takes.getByRole('button', { name: /的素材片$/ })).toHaveCount(2)
 })
 
 test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {

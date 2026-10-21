@@ -272,7 +272,7 @@ const ICONS = {
   blend: Blend,
   type: Type,
   film: Film,
-  /** 整片的特效轨 */
+  /** 成片编辑器的特效轨 */
   layers: Layers,
 } as const
 

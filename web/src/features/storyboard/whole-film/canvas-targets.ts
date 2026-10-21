@@ -10,7 +10,7 @@ const CAPTION_PREFIX = 'caption:'
 
 /**
  * 一块字幕的身份：哪段画面里、哪条字幕记录的第几句。选中字幕记这个，不记下标：草稿一变，
- * 放进整片的字幕重新排，下标就会错位。
+ * 放进成片的字幕重新排，下标就会错位。
  */
 export const captionKey = (caption: PlacedCaption) =>
   `${caption.clipId}:${caption.subtitleJobId}:${caption.sentenceIndex}`

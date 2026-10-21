@@ -19,12 +19,12 @@ export interface CatalogVariable {
 
 export interface CatalogItem {
   name: string
-  /** 点卡片时的默认去处：block 插进成片轨，component 放到特效轨；拖放时看落在哪条轨。 */
+  /** 点卡片时的默认去处：block 插进画面轨，component 放到特效轨；拖放时看落在哪条轨。 */
   kind: 'block' | 'component'
   title: string
   description: string
   category: string
-  /** `caption` 是字幕样式，只能换掉整片的字幕样式；其余组件为 null，放在哪条轨都行。 */
+  /** `caption` 是字幕样式，只能换掉全部字幕的样式；其余组件为 null，放在哪条轨都行。 */
   placement: 'caption' | null
   /** 品牌组件所属的品牌，只给组件栏分栏用；放置与合成不看它。 */
   brand?: string

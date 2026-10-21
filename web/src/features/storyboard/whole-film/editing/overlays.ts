@@ -18,8 +18,8 @@ import { done, refuse, type EditResult } from './result'
 import { moveStartMs, nextId, resizeMs } from './timeline'
 
 // 特效轨照 HyperFrames：`track` 是显示的行（数小的在上，从 0 起连续），同一行里不重叠；`zIndex` 是
-// 特效块之间的叠放次序（相同时数组里后面的在上），渲染只看它。特效块不跟随成片轨，可以超出成片轨
-// 的结尾（整片随之变长），只是不能在整片总长上限之后结束；放不下时拒绝，不截短。
+// 特效块之间的叠放次序（相同时数组里后面的在上），渲染只看它。特效块不跟随画面轨，可以超出画面轨
+// 的结尾（成片随之变长），只是不能在成片总长上限之后结束；放不下时拒绝，不截短。
 
 /** 落到哪：已有的第 `track` 行，或在第 `insertAt` 行之前开一行（等于行数时开在最下面） */
 export type OverlayRow = { track: number } | { insertAt: number }

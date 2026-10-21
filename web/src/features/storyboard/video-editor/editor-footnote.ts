@@ -56,7 +56,7 @@ export const editorFootnote = ({
 }: FootnoteInput): string => {
   if (notice !== null) return notice
   if (!loaded) return ''
-  if (view === 'version') return `正在查看 ${viewedLabel}；点击「整片」可返回当前选用内容`
+  if (view === 'version') return `正在查看 ${viewedLabel}；点击「整条」可返回当前选用内容`
   if (submitting) return '正在提交，请等待提交完成后再离开'
   if (waitingComposite) return '正在合成，完成后将生成新版本；合成期间无法剪辑'
   if (view === 'whole') return '正在预览时间线当前选用内容；点击片段可查看和切换版本'
@@ -69,6 +69,6 @@ export const editorFootnote = ({
   }
   if (generating) return 'AI 生成中，关闭窗口不影响生成；其他段可继续剪辑，生成完成后可合成'
   if (changed)
-    return `${difference === undefined ? '' : `${difference}；`}已保存各片段选择，点击「合成成片」按选用版本生成整片`
+    return `${difference === undefined ? '' : `${difference}；`}已保存各片段选择，点击「合成新版本」按选用版本合成新的一版`
   return '点击片段选中并播放，按住 Shift 可选择相邻片段；拖动两端可裁剪，按住中间可调序'
 }

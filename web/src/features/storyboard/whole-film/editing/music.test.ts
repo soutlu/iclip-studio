@@ -22,11 +22,11 @@ const context = contextOf(
   },
 )
 
-/** 整片 10 秒 */
+/** 成片 10 秒 */
 const film = () => draftOf([video('v1', 's1', 0, 10_000)])
 
 describe('setMusic', () => {
-  it('起点收进 [0, 音乐时长 − 整片时长]，音量默认 1', () => {
+  it('起点收进 [0, 音乐时长 − 成片时长]，音量默认 1', () => {
     const { draft } = expectOk(setMusic(film(), { jobId: 'long', offsetMs: 25_000 }, context))
     expect(draft.music).toEqual({ jobId: 'long', offset: 20_000, volume: 1 })
     const negative = expectOk(setMusic(film(), { jobId: 'long', offsetMs: -5 }, context)).draft
@@ -40,13 +40,13 @@ describe('setMusic', () => {
     expect(second.music).toEqual({ jobId: 'short', offset: 0, volume: MAX_VOLUME })
   })
 
-  it('音乐比整片短：照样用，起点为 0，差多少由 musicShortfallMs 报告，不循环', () => {
+  it('音乐比成片短：照样用，起点为 0，差多少由 musicShortfallMs 报告，不循环', () => {
     const { draft } = expectOk(setMusic(film(), { jobId: 'short', offsetMs: 1_000 }, context))
     expect(draft.music?.offset).toBe(0)
     expect(musicShortfallMs(draft, context)).toBe(2_000)
   })
 
-  it('加段让整片变长后，音乐不够长也由 musicShortfallMs 报告', () => {
+  it('加段让成片变长后，音乐不够长也由 musicShortfallMs 报告', () => {
     const withMusic = expectOk(setMusic(film(), { jobId: 'long', offsetMs: 20_000 }, context)).draft
     expect(musicShortfallMs(withMusic, context)).toBe(0)
     const longer = expectOk(
@@ -61,7 +61,7 @@ describe('setMusic', () => {
     expect(musicShortfallMs(film(), context)).toBe(0)
   })
 
-  it('音乐铺满整片，整片包括超出成片轨的特效块', () => {
+  it('音乐铺满成片，成片包括超出画面轨的特效块', () => {
     const withOverlay = draftOf([video('v1', 's1', 0, 10_000)], {
       overlays: [overlay('o1', 8_000, 4_000)],
     })
@@ -109,7 +109,7 @@ describe('setMusicOffset / setMusicVolume / removeMusic', () => {
 })
 
 describe('filmBeats', () => {
-  it('拍点换算到整片时间，起点之前的拍点不算；不截到片尾', () => {
+  it('拍点换算到成片时间，起点之前的拍点不算；不截到片尾', () => {
     const { draft } = expectOk(setMusic(film(), { jobId: 'long', offsetMs: 600 }, context))
     expect(filmBeats(draft, context)).toEqual([
       { timeMs: 400, strength: 0.5 },

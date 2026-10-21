@@ -79,7 +79,7 @@ export type MusicView = { url: string; title: string; peaks: PeaksState }
 export type ComponentFace = { title: string; thumbnail: string | undefined; icon: IconName }
 
 /**
- * 指针落在成片区的哪一处：哪条轨的哪个时刻（毫秒），以及在特效轨上对应哪一行。拖到特效轨的东西
+ * 指针落在时间线的哪一处：哪条轨的哪个时刻（毫秒），以及在特效轨上对应哪一行。拖到特效轨的东西
  * 带着长度时，时刻是两端吸附后的开始时间，`guideMs` 是吸附线。
  */
 export type DropPoint = {
@@ -92,7 +92,7 @@ export type DropPoint = {
 /** 落在某处会怎样：放得下时是放进去之后的草稿，放不下时是原因 */
 export type Attempt = { ok: true; draft: WholeFilmDraft } | { ok: false; reason: string }
 
-/** 从素材区、组件栏拖到成片区的东西 */
+/** 从素材区、组件栏拖到时间线的东西 */
 export type CarryPayload = {
   durationMs: number
   /** 三种来源使用相同的缩略图、名称与时长卡片。 */
@@ -103,7 +103,7 @@ export type CarryPayload = {
   drop: (point: DropPoint) => boolean
 }
 
-/** 成片区给拖东西过来的一方用的接口 */
+/** 时间线给拖东西过来的一方用的接口 */
 export type TracksHandle = {
   /** 带着东西移到这里：预览完整占位和相邻片段让位，松手前不写草稿 */
   carry: (clientX: number, clientY: number, payload: CarryPayload) => void
@@ -131,10 +131,10 @@ type FilmTracksProps = {
   onSeek: (ms: number) => void
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** 点成片轨上的一段：选中它，从段首播这一段 */
+  /** 点画面轨上的一段：选中它，从段首播这一段 */
   onClipClick: (clip: Layer0Clip) => void
   snap: boolean
-  /** 拍点（整片时间） */
+  /** 拍点（成片时间） */
   beats: readonly MusicBeat[]
   clipLabel: (clip: VideoClip) => string
   componentFace: (name: string) => ComponentFace
@@ -145,7 +145,7 @@ type FilmTracksProps = {
   onViewportWidth: (width: number) => void
   tracksRef: RefObject<TracksHandle | null>
   popovers: ComponentPopovers
-  /** 放进整片的字幕（每段画面里的一份句子） */
+  /** 放进成片的字幕（每段画面里的一份句子） */
   captions: readonly PlacedCaption[]
   /** 改字时输入框里的整句：改过的字或识别结果 */
   sentenceText: (caption: PlacedCaption) => string
@@ -169,7 +169,7 @@ const ROWS_TOP_PX = 2
 /** 在所有行上方、下方这么近的地方松手就新开一行 */
 const NEW_ROW_ABOVE_PX = 8
 const NEW_ROW_BELOW_PX = 10
-/** 成片轨上方这么近也算拖到了成片轨上 */
+/** 画面轨上方这么近也算拖到了画面轨上 */
 const DROP_SLOP_PX = 16
 /** 相邻轨之间的空隙里，离哪条轨这么近就算那条轨 */
 const LANE_SLOP_PX = 4
@@ -202,7 +202,7 @@ type Lift = {
   clientY: number
   moved: boolean
   origin: InsertionBox
-  /** 松手会插到第几段之前（按原来的顺序）；不在成片轨上为 undefined */
+  /** 松手会插到第几段之前（按原来的顺序）；不在画面轨上为 undefined */
   to: number | undefined
   returning: boolean
   destination?: InsertionBox | undefined
@@ -865,7 +865,7 @@ export function FilmTracks({
       return {
         result,
         guideMs: after?.start === snapped.ms ? snapped.guideMs : null,
-        // 拖过整片总长上限：停在放得下的地方并写明原因
+        // 拖过成片总长上限：停在放得下的地方并写明原因
         note:
           result.ok && snapped.ms + overlay.duration <= MAX_FILM_MS ? undefined : FILM_LIMIT_TEXT,
         row,
@@ -917,7 +917,7 @@ export function FilmTracks({
     if (popovers.hasFields(component)) popovers.onOpen(id)
   }
 
-  // ---- 成片段拖动排序：保留捕获指针的节点，预演位置，松手才提交 ----
+  // ---- 画面轨上的段拖动排序：保留捕获指针的节点，预演位置，松手才提交 ----
   const liftPointer = (clip: Layer0Clip, index: number): PointerHandlers => ({
     onPointerDown: (event) => {
       if (event.button !== 0) return
@@ -1010,7 +1010,7 @@ export function FilmTracks({
     </PopupRoot>
   )
 
-  /** 成片段里画的东西：视频段上面是画面、下面是原声；组件段上面是组件的画面、下面写组件名 */
+  /** 画面轨上的段里画的东西：视频段上面是画面、下面是原声；组件段上面是组件的画面、下面写组件名 */
   const clipBody = (clip: Layer0Clip) => {
     if (clip.type === 'component') {
       const face = componentFace(clip.component)
@@ -1183,7 +1183,7 @@ export function FilmTracks({
       <div className="wf-track-heads">
         <span aria-hidden="true" className="wf-track-head is-film">
           <Icon decorative name="video" size="sm" />
-          成片
+          画面
         </span>
         <span aria-hidden="true" className="wf-track-head is-overlay">
           <span
@@ -1233,7 +1233,7 @@ export function FilmTracks({
               onSeek(Math.min(timeAt(event.clientX), total))
             }}
           >
-            <div aria-label="成片画面轨" className="wf-lane is-film" ref={filmLaneRef} role="group">
+            <div aria-label="画面轨" className="wf-lane is-film" ref={filmLaneRef} role="group">
               {shown.layer0.map((clip, index) => {
                 const name = `第 ${index + 1} 段 · ${
                   clip.type === 'video'
@@ -1463,7 +1463,7 @@ export function FilmTracks({
                       clicks.reset()
                       const current = draft.music
                       if (current === null || musicMedia === undefined) return
-                      // 往左拖是用歌里更靠后的一段：整片 0 秒对齐的位置后移
+                      // 往左拖是用歌里更靠后的一段：成片 0 秒对齐的位置后移
                       gesture.start(event, (deltaPx) => ({
                         result: setMusicOffset(
                           draft,
@@ -1513,7 +1513,7 @@ export function FilmTracks({
                   className="wf-lane-hint is-end"
                   style={{ left: `${msToPx(total - shortfall, pps)}px` }}
                 >
-                  音乐比整片短 {seconds(shortfall)} 秒，不循环补齐
+                  音乐比成片短 {seconds(shortfall)} 秒，不循环补齐
                 </span>
               ) : null}
             </div>

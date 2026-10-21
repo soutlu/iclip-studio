@@ -26,7 +26,7 @@ describe('trimRange：挪选区的一端', () => {
   })
 })
 
-describe('usedSpans：成片轨上每版成片用了哪些段', () => {
+describe('usedSpans：画面轨上每版素材片用了哪些段', () => {
   it('按版本分开，同一版用了几段就记几段；组件段不算', () => {
     const used = usedSpans([
       video('v1', 'a', 1_000, 2_000),
@@ -43,7 +43,7 @@ describe('usedSpans：成片轨上每版成片用了哪些段', () => {
     })
   })
 
-  it('成片轨上没有视频时什么都没用', () => {
+  it('画面轨上没有视频时什么都没用', () => {
     expect(usedSpans([card('c1', 2_000)]).size).toBe(0)
   })
 })

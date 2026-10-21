@@ -1,7 +1,7 @@
 import type { ComponentVariables, WholeFilmDraft } from './draft'
 import { done, refuse, type EditResult } from './result'
 
-/** 改组件片段（成片轨上的组件段、特效块）的可填项；只影响这条整片 */
+/** 改组件片段（画面轨上的组件段、特效块）的可填项；只影响这条成片 */
 export const setComponentVariables = (
   draft: WholeFilmDraft,
   args: { id: string; variables: ComponentVariables },

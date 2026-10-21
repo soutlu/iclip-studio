@@ -127,13 +127,13 @@ function EditorHeader({ actions, title }: { actions: ReactNode; title: string })
     <DialogHeader
       actions={actions}
       className="editor-header"
-      closeLabel="关闭整片编辑"
+      closeLabel="关闭成片编辑"
       title={title}
     />
   )
 }
 
-/** 整片编辑器：把这段对话的各条成片剪成一条整片，草稿自动存在服务端。 */
+/** 成片编辑器：把这段对话的各条素材片剪成一条成片，草稿自动存在服务端。 */
 export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: Props) {
   const draftQuery = useWholeFilmDraftQuery(conversationId)
   const catalogQuery = useComponentCatalog()
@@ -175,13 +175,13 @@ export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: 
                   action={{ label: '重试', onClick: () => void failed.refetch() }}
                   message={errorMessageOf(
                     failed.error,
-                    failed === draftQuery ? '整片草稿读取失败' : '组件库读取失败',
+                    failed === draftQuery ? '成片草稿读取失败' : '组件库读取失败',
                   )}
                 />
               </div>
             ) : (
               <p className="wf-state" role="status">
-                正在读取整片草稿…
+                正在读取成片草稿…
               </p>
             )}
           </>
@@ -237,7 +237,7 @@ function EditorBody({
   const [materialMs, setMaterialMs] = useState(0)
   const [materialPlaying, setMaterialPlaying] = useState(false)
   const materialPreviewRef = useRef<MaterialPreviewControl | null>(null)
-  // 拖播放头、点成片轨或做成片编辑时回到成片；播放暂停控制当前预览。
+  // 拖播放头、点画面轨或做成片编辑时回到成片；播放暂停控制当前预览。
   const leaveMaterial = () => {
     setMaterialView(null)
     setMaterialPlaying(false)
@@ -326,7 +326,7 @@ function EditorBody({
   const [viewportWidth, setViewportWidth] = useState(0)
   const [range, setRange] = useState<MaterialRange | null>(null)
   const tracksRef = useRef<TracksHandle | null>(null)
-  // 点成片段后只播这一段：播到这一刻停住；拖动播放头或再按播放时取消
+  // 点画面轨上的段后只播这一段：播到这一刻停住；拖动播放头或再按播放时取消
   const stopAtRef = useRef<number | null>(null)
 
   const total = filmDuration(draft)
@@ -362,7 +362,7 @@ function EditorBody({
     if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
-  /** 点成片段：选中，播放头移到段首并把这一段播一遍 */
+  /** 点画面轨上的段：选中，播放头移到段首并把这一段播一遍 */
   const playClip = (clip: Layer0Clip) => {
     setSelection({ kind: 'clip', id: clip.id })
     seek(clip.start)
@@ -425,7 +425,7 @@ function EditorBody({
     return true
   }
 
-  /** 拖着素材区选中的范围 picked：落在成片轨上插到最近的切点 */
+  /** 拖着素材区选中的范围 picked：落在画面轨上插到最近的切点 */
   const materialPayload = (
     picked: MaterialRange,
     origin?: MaterialCarry['origin'],
@@ -772,7 +772,7 @@ function EditorBody({
           />
         }
       />
-      <div aria-label="整片编辑器" className="wf-workspace" role="group">
+      <div aria-label="成片编辑器" className="wf-workspace" role="group">
         <TabsRoot
           className="wf-side"
           onValueChange={(value) => setSideTab(value as SideTab)}
@@ -895,7 +895,7 @@ function EditorBody({
           />
           <SoundRow
             clipBlocked={
-              selectedIndex < 0 ? '先在成片轨上选中一段视频' : REFUSAL_TEXT['not-a-video']
+              selectedIndex < 0 ? '先在画面轨上选中一段视频' : REFUSAL_TEXT['not-a-video']
             }
             clipText={clipText}
             clipVolume={selectedVideo?.volume}
@@ -1011,11 +1011,11 @@ function EditorBody({
               videos.isError ? (
                 <InlineAlert
                   action={{ label: '重试', onClick: () => void videos.refetch() }}
-                  message={errorMessageOf(videos.error, '读取成片失败')}
+                  message={errorMessageOf(videos.error, '读取素材片失败')}
                 />
               ) : videos.isPending ? (
                 <p className="wf-panel-note" role="status">
-                  正在读取成片…
+                  正在读取素材片…
                 </p>
               ) : undefined
             }

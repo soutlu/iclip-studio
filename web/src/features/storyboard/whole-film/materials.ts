@@ -4,7 +4,7 @@ import type { Edge } from '../editing/timeline-drag'
 import { labelLineage } from '../editing/version-lineage'
 import { MIN_CLIP_MS, type Layer0Clip } from './editing/draft'
 
-/** 视频素材区里的一版成片：出自哪个镜头组、哪条原作，叫什么版本。 */
+/** 视频素材区里的一版素材片：出自哪个镜头组、哪条原作，叫什么版本。 */
 export type Material = {
   jobId: string
   url: string
@@ -33,7 +33,7 @@ export type MaterialGroup = {
   takes: readonly MaterialTake[]
 }
 
-/** 素材区里选中的一段：哪一版成片的哪个范围（素材时间，毫秒） */
+/** 素材区里选中的一段：哪一版素材片的哪个范围（素材时间，毫秒） */
 export type MaterialRange = { jobId: string; takeId: string; startMs: number; endMs: number }
 
 /** 把选区的一端挪 deltaMs：不出素材的头尾，选区至少留 MIN_CLIP_MS */
@@ -53,10 +53,10 @@ export const trimRange = (
         endMs: Math.max(Math.min(durationMs, range.endMs + deltaMs), range.startMs + MIN_CLIP_MS),
       }
 
-/** 成片轨上的一段视频用了素材里的哪一段（毫秒） */
+/** 画面轨上的一段视频用了素材里的哪一段（毫秒） */
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }
 
-/** 成片轨上每版成片已经用了哪些段，按成片轨上的先后，以 jobId 分 */
+/** 画面轨上每版素材片已经用了哪些段，按画面轨上的先后，以 jobId 分 */
 export const usedSpans = (
   layer0: readonly Layer0Clip[],
 ): ReadonlyMap<string, readonly UsedSpan[]> => {
@@ -91,7 +91,7 @@ const takeLetter = (index: number): string => {
   return result
 }
 
-/** 按镜头组、组里的原作排好这段对话的成片；一条原作的合成跟着它，按完成先后编版本。 */
+/** 按镜头组、组里的原作排好这段对话的素材片；一条原作的合成跟着它，按完成先后编版本。 */
 export const materialCatalog = (groups: readonly ConversationVideoGroup[]): MaterialCatalog => {
   const catalog = groups.map((group): MaterialGroup => {
     const byTake = new Map<string, typeof group.videos>()

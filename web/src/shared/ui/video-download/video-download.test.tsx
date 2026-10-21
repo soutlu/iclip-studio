@@ -153,11 +153,11 @@ describe('VideoDownload', () => {
     const user = userEvent.setup()
     const { rerender } = await renderWithProviders(
       <VideoDownload downloadedJobIds={[JOB_ID, OTHER]} url={CLEAN} watermarkUrl={null}>
-        下载整片
+        下载成片
       </VideoDownload>,
     )
 
-    const button = screen.getByRole('button', { name: '下载整片' })
+    const button = screen.getByRole('button', { name: '下载成片' })
     await user.click(button)
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(button).toBeEnabled())
@@ -170,7 +170,7 @@ describe('VideoDownload', () => {
 
     rerender(
       <VideoDownload downloadedJobIds={[]} url={CLEAN} watermarkUrl={null}>
-        下载整片
+        下载成片
       </VideoDownload>,
     )
     await waitFor(() => expect(button).toBeEnabled())
@@ -447,9 +447,9 @@ describe('VideoDownload · 高清版', () => {
 
   it('只有原片：有能做的档就先开菜单，第一项用调用方给的名字', async () => {
     serveTiers([{ job: null, resolution: '1080p' }])
-    const { user } = await renderEnhanceable({ originalLabel: '下载整片', watermarkUrl: null })
+    const { user } = await renderEnhanceable({ originalLabel: '下载成片', watermarkUrl: null })
     const menu = await openMenu(user)
-    expect(itemNames(menu)).toEqual(['下载整片', '生成高清版 1080p约 2 分钟'])
+    expect(itemNames(menu)).toEqual(['下载成片', '生成高清版 1080p约 2 分钟'])
   })
 
   it('只有原片且没有能做的档：点了直接下载', async () => {
@@ -470,8 +470,8 @@ describe('VideoDownload · 高清版', () => {
       { job: enhanceJob('submitted'), resolution: '1080p' },
       { job: enhanceJob('failed'), resolution: '720p' },
     ])
-    await renderEnhanceable({ children: '下载整片' })
-    const button = screen.getByRole('button', { name: '下载整片' })
+    await renderEnhanceable({ children: '下载成片' })
+    const button = screen.getByRole('button', { name: '下载成片' })
     expect(button).not.toHaveAccessibleDescription()
     expect(ring(button)).toBeNull()
     expect(dot(button)).toBeNull()

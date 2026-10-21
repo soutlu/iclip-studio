@@ -420,7 +420,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(bluePixels(withDefaults.headline)).toBeLessThan(10)
   }, 600_000)
 
-  it('两段视频中间夹一个组件段，加一个超出成片轨结尾的特效块与字幕：组件段、特效块都上画面，整片随特效块变长', async () => {
+  it('两段视频中间夹一个组件段，加一个超出画面轨结尾的特效块与字幕：组件段、特效块都上画面，成片随特效块变长', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({
       registryDir: REGISTRY,
@@ -431,8 +431,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const clip = `${origin}/clip.mp4`
     const gray = `${origin}/gray.mp4`
     const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-    // 成片轨：测试图 0–2 秒、组件段（标志片尾）2–4 秒、灰底 4–6 秒；特效块（姓名条）4.5–7 秒，
-    // 比成片轨多出 1 秒；测试图那段带一句字幕。
+    // 画面轨：测试图 0–2 秒、组件段（标志片尾）2–4 秒、灰底 4–6 秒；特效块（姓名条）4.5–7 秒，
+    // 比画面轨多出 1 秒；测试图那段带一句字幕。
     const rendered = await worker.render(
       {
         id: 'model-b',
@@ -493,7 +493,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       expect(meanDifference(segment!, testCard!, whole)).toBeGreaterThan(10)
       expect(meanDifference(segment!, grayBefore!, whole)).toBeGreaterThan(3)
       expect(meanDifference(segment!, Buffer.alloc(segment!.length), whole)).toBeGreaterThan(3)
-      // 姓名条叠在灰底上；过了成片轨的结尾仍在空画面（黑底）上。
+      // 姓名条叠在灰底上；过了画面轨的结尾仍在空画面（黑底）上。
       const nameArea = { x: 70, y: 225, width: 260, height: 60 }
       expect(meanDifference(overlayOnGray!, grayBefore!, nameArea)).toBeGreaterThan(6)
       expect(

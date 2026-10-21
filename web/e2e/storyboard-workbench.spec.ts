@@ -86,27 +86,27 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
 })
 
 for (const width of [1335, 390]) {
-  test(`成片区 ${width}px：没出过片的组不占位；有片的组从新到旧排列，新结果可直接查看`, async ({
+  test(`素材片区 ${width}px：没出过片的组不占位；有片的组从新到旧排列，新结果可直接查看`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
     const first = panel.getByRole('region', { name: '镜头组 1' })
     await expect(first.getByRole('textbox', { name: '全局设定' })).toBeVisible()
-    await expect(first.getByRole('region', { name: '本组成片' })).toHaveCount(0)
+    await expect(first.getByRole('region', { name: '本组素材片' })).toHaveCount(0)
 
     await openStoryboardShot(panel, 2)
     const group = panel.getByRole('region', { name: '镜头组 2' })
-    const takes = group.getByRole('region', { name: '本组成片', exact: true })
+    const takes = group.getByRole('region', { name: '本组素材片', exact: true })
     const cards = takes.getByRole('listitem')
     // 第 2 组的种子：在途（最新）、失败、成功（最早）。
     await expect(cards).toHaveCount(3)
     await expect(cards.nth(0).getByRole('button', { name: /生成中$/ })).toBeVisible()
     await expect(cards.nth(1).getByRole('button', { name: /生成失败$/ })).toBeVisible()
-    await expect(cards.nth(2).getByRole('button', { name: /的成片$/ })).toBeVisible()
+    await expect(cards.nth(2).getByRole('button', { name: /的素材片$/ })).toBeVisible()
 
     if (width === 390) {
-      // 上下排：成片区排在正文之后，随主体滚到底才整块露出来。
+      // 上下排：素材片区排在正文之后，随主体滚到底才整块露出来。
       await group.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
       await expect(takes).toBeInViewport({ ratio: 1 })
       // 横滑到最旧那张再出一条片：新卡排到最前，行滚回开头让它露出来。
@@ -141,7 +141,7 @@ for (const width of [1335, 390]) {
       await expect(cards).toHaveCount(6)
       await expect(cards.first()).toBeInViewport()
     } else {
-      // 左右排：成片区钉在列底，正文自己滚到底它也不动。
+      // 左右排：素材片区钉在列底，正文自己滚到底它也不动。
       await expect(takes).toBeInViewport({ ratio: 1 })
       await group
         .getByRole('region', { name: '分镜文案' })
@@ -152,7 +152,7 @@ for (const width of [1335, 390]) {
 }
 
 for (const width of [1335, 390]) {
-  test(`成片播放 ${width}px：点卡片在舞台上用共享播放器播、不开灯箱，点文案回到帧，成片区和当前分镜不动`, async ({
+  test(`素材片播放 ${width}px：点卡片在舞台上用共享播放器播、不开灯箱，点文案回到帧，素材片区和当前分镜不动`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 934 })
@@ -164,11 +164,11 @@ for (const width of [1335, 390]) {
       '台词并成一句',
       { timeout: 20_000 },
     )
-    const takes = group.getByRole('region', { name: '本组成片', exact: true })
+    const takes = group.getByRole('region', { name: '本组素材片', exact: true })
     await expect(takes.getByRole('listitem')).toHaveCount(3)
     // 卡上只挂封面，不挂 <video>。
     await expect(takes.locator('video')).toHaveCount(0)
-    const card = takes.getByRole('button', { name: /的成片$/ })
+    const card = takes.getByRole('button', { name: /的素材片$/ })
     await expect(card).toHaveCount(1)
     await card.click()
     const player = group.getByRole('group', { name: '播放器：生成的视频', exact: true })

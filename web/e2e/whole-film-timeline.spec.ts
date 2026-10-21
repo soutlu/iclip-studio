@@ -2,13 +2,13 @@ import { expect, test, type ElementHandle, type Locator, type Page } from '@play
 import type { WholeFilmDocument } from '../src/shared/api/generated/types.gen'
 import { openConversation } from './helpers'
 
-// 整片编辑器的成片区：拖放、排序、特效轨、刻度、工具栏与声音行。草稿直接存进 mock 再打开编辑器。
+// 成片编辑器的时间线：拖放、排序、特效轨、刻度、工具栏与声音行。草稿直接存进 mock 再打开编辑器。
 
 const WIDTH = 1440
 const HEIGHT = 900
 
 const CONVERSATION = '0d3e5a10-7c4b-4e2f-9a61-000000000001'
-/** 演示对话第 2 组那条 6 秒的竖版成片，每秒一个镜头 */
+/** 演示对话第 2 组那条 6 秒的竖版素材片，每秒一个镜头 */
 const SOURCE = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
 
 type Clip = WholeFilmDocument['layer0'][number]
@@ -53,7 +53,7 @@ const BASE = [
   video('v5', 5_100, 6_000),
 ]
 
-/** 登录后把草稿直接存进 mock（片段按顺序首尾相接），再打开整片编辑器 */
+/** 登录后把草稿直接存进 mock（片段按顺序首尾相接），再打开成片编辑器 */
 const openWith = async (
   page: Page,
   {
@@ -102,9 +102,9 @@ const openWith = async (
     },
     { conversation: CONVERSATION, layer0: placed, overlays, music },
   )
-  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   await expect(
     film.getByRole('group', { name: new RegExp(`^第 ${layer0.length} 段`) }),
   ).toBeVisible()
@@ -207,7 +207,7 @@ const expectStoppedAt = async (clock: Locator, endMs: number) => {
     .toBe(true)
 }
 
-/** 成片轨上各段左边缘的位置，用于核对预演让位与取消恢复。 */
+/** 画面轨上各段左边缘的位置，用于核对预演让位与取消恢复。 */
 const clipLefts = (film: Locator) =>
   film
     .getByRole('group', { name: /^第 \d+ 段/ })
@@ -225,7 +225,7 @@ const liftShot = async (page: Page, dialog: Locator, shotNumber: number) => {
   await page.mouse.move(range.cx, range.cy - 30, { steps: 4 })
 }
 
-test.describe('整片编辑器 · 成片区', () => {
+test.describe('成片编辑器 · 时间线', () => {
   test('从素材竖直拖起镜头：按完整时长预演让位，松手才插入一次；拖到别的轨取消', async ({
     page,
   }) => {
@@ -289,14 +289,14 @@ test.describe('整片编辑器 · 成片区', () => {
       .poll(() => viewport.evaluate((element) => element.scrollWidth > element.clientWidth))
       .toBe(true)
     const box = await boxOf(viewport)
-    const film = await boxOf(dialog.getByRole('group', { name: '成片画面轨' }))
+    const film = await boxOf(dialog.getByRole('group', { name: '画面轨', exact: true }))
     await liftShot(page, dialog, 2)
     await page.mouse.move(box.x + box.width - 10, film.cy, { steps: 8 })
     await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
     await page.mouse.up()
   })
 
-  test('整片最长 120 秒：放不下时说明原因，松手不加入；拉长与挪动到上限停住', async ({ page }) => {
+  test('成片最长 120 秒：放不下时说明原因，松手不加入；拉长与挪动到上限停住', async ({ page }) => {
     const nineteen = Array.from({ length: 19 }, (_, k) => video(`v${k + 1}`, 0, 6_000))
     const { dialog, film } = await openWith(page, {
       layer0: [...nineteen, card('c1', 'hw-title', 5_500)],
@@ -306,12 +306,12 @@ test.describe('整片编辑器 · 成片区', () => {
     await liftShot(page, dialog, 2)
     await page.mouse.move(filmBox.x + filmBox.width / 2, filmBox.y + 12, { steps: 8 })
     await expect(
-      page.getByRole('status').filter({ hasText: '加入后整片超过 120 秒，无法加入' }),
+      page.getByRole('status').filter({ hasText: '加入后成片超过 120 秒，无法加入' }),
     ).toBeVisible()
     await page.mouse.up()
     await expect(film.getByRole('group')).toHaveCount(20)
     await expect(
-      page.getByText('加入后整片超过 120 秒，无法加入；请先缩短或删除其他片段'),
+      page.getByText('加入后成片超过 120 秒，无法加入；请先缩短或删除其他片段'),
     ).toBeVisible()
 
     // 拉长最后一段：到 120 秒停住，写明原因
@@ -321,7 +321,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.down()
     await page.mouse.move(handle.cx + 200, handle.cy, { steps: 6 })
     await expect(
-      dialog.getByRole('status').filter({ hasText: '整片最长 120 秒，不能再拉长' }),
+      dialog.getByRole('status').filter({ hasText: '成片最长 120 秒，不能再拉长' }),
     ).toBeVisible()
     await page.mouse.up()
     await expect
@@ -334,11 +334,11 @@ test.describe('整片编辑器 · 成片区', () => {
     const overlays = dialog.getByRole('group', { name: '特效轨' })
     await overlays.getByRole('button', { name: /^选中：特效 · 手绘箭头/ }).click()
     await page.keyboard.press('ArrowRight')
-    await expect(page.getByText('整片最长 120 秒，不能再拉长')).toBeVisible()
+    await expect(page.getByText('成片最长 120 秒，不能再拉长')).toBeVisible()
     await expect(overlays.getByRole('group', { name: /116\.0–120\.0 秒$/ })).toBeVisible()
   })
 
-  test('成片轨内拖动排序：完整占位与邻段预演，松手才保存；Esc 或拖出轨道取消', async ({ page }) => {
+  test('画面轨内拖动排序：完整占位与邻段预演，松手才保存；Esc 或拖出轨道取消', async ({ page }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE })
     const before = await clipLefts(film)
     const beforeDraft = await readDraft(page)
@@ -383,7 +383,7 @@ test.describe('整片编辑器 · 成片区', () => {
       .toBeLessThan(1)
     expect(await readDraft(page)).toEqual(movedDraft)
 
-    // 拖出成片轨（到素材区）松手：不挪，缩影退回
+    // 拖出画面轨（到素材区）松手：不挪，缩影退回
     const third = await boxOf(film.getByRole('button', { name: /^选中：第 3 段/ }))
     const materials = await boxOf(dialog.getByRole('region', { name: '视频素材区' }))
     await page.mouse.move(third.cx, third.cy)
@@ -401,7 +401,7 @@ test.describe('整片编辑器 · 成片区', () => {
       layer0: [BASE[1], BASE[2], card('c2', 'hw-title', 1_500), BASE[3], BASE[4], BASE[5]],
     })
     const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
-    // 点段：播放头到段首，把这一段播一遍，播到段尾停下。组件可以放在成片轨任意位置：第 3 段是组件段
+    // 点段：播放头到段首，把这一段播一遍，播到段尾停下。组件可以放在画面轨任意位置：第 3 段是组件段
     await film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 手写标题/ }).click()
     await expect(dialog.getByText('当前片段 · 第 3 段 · 没有原声')).toBeVisible()
     await expectStoppedAt(clock, 4_700)
@@ -537,7 +537,7 @@ test.describe('整片编辑器 · 成片区', () => {
     const cardLocator = dialog.getByRole('button', { name: /^手绘圈注，/ })
     await cardLocator.scrollIntoViewIfNeeded()
     const cardButton = await boxOf(cardLocator)
-    const film = await boxOf(dialog.getByRole('group', { name: '成片画面轨' }))
+    const film = await boxOf(dialog.getByRole('group', { name: '画面轨', exact: true }))
     await page.mouse.move(cardButton.cx, cardButton.cy)
     await page.mouse.down()
     await page.mouse.move(cardButton.cx + 20, cardButton.cy + 20, { steps: 4 })
@@ -777,7 +777,7 @@ const seekTo = async (dialog: Locator, secondsAt: number) => {
   await settledClockMs(clock)
 }
 
-test.describe('整片编辑器 · 画面点选、原位改字与拖动', () => {
+test.describe('成片编辑器 · 画面点选、原位改字与拖动', () => {
   test('点画面上的字幕选中时间线上那一句；双击在画面上改字，回车后时间线跟着变', async ({
     page,
   }) => {
@@ -945,7 +945,7 @@ test.describe('整片编辑器 · 画面点选、原位改字与拖动', () => {
     await expect.poll(() => placedInPreview(dialog, 'o1')).toMatchObject({ dataX: null })
   })
 
-  test('拖动画面上的字幕：整片字幕一起挪，位置记在草稿的字幕上', async ({ page }) => {
+  test('拖动画面上的字幕：全部字幕一起挪，位置记在草稿的字幕上', async ({ page }) => {
     const { dialog } = await openWith(page, { layer0: [video('v1', 0, 6_000)] })
     await seekTo(dialog, 1)
     const line = await shownInPreview(dialog, '[data-hf-id="caption:0"] .caption-line')
@@ -963,7 +963,7 @@ test.describe('整片编辑器 · 画面点选、原位改字与拖动', () => {
       .toBe(String((await readDraft(page))?.captions.y))
   })
 
-  test('成片轨上的视频段只能选中，拖不动；拖动中按 Esc 放弃，元素回到原处，编辑器不关', async ({
+  test('画面轨上的视频段只能选中，拖不动；拖动中按 Esc 放弃，元素回到原处，编辑器不关', async ({
     page,
   }) => {
     const { dialog, film } = await openWith(page, {

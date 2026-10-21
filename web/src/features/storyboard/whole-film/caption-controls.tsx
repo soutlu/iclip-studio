@@ -7,7 +7,7 @@ import type { useSubtitleRecognition } from './use-subtitle-recognition'
 type Recognition = ReturnType<typeof useSubtitleRecognition>
 
 /**
- * 字幕标题：整片字幕的开关、选样式；固定大小的识别入口独立显示提交、运行与重试状态。
+ * 字幕标题：全部字幕的开关、选样式；固定大小的识别入口独立显示提交、运行与重试状态。
  * 开关的名字随状态说下一步（关闭字幕 / 打开字幕），没有字幕时也能点。
  */
 export function CaptionControls({

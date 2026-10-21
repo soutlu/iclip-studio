@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openConversation } from './helpers'
 
-/** 有分镜、还没有出片的演示对话；各用例按需给镜头组出片（mock 的成片 6 秒，每秒一个镜头） */
+/** 有分镜、还没有出片的演示对话；各用例按需给镜头组出片（mock 的素材片 6 秒，每秒一个镜头） */
 const CONVERSATION = '无图分镜草稿'
 
 const conversationIdOf = (page: Page) => new URL(page.url()).pathname.split('/').at(-1) ?? ''
@@ -74,15 +74,15 @@ const waitCompleted = (page: Page, ids: readonly string[]) =>
     )
     .toBe(ids.length)
 
-/** 进对话、按镜头组出片、打开整片编辑器 */
+/** 进对话、按镜头组出片、打开成片编辑器 */
 const openWith = async (page: Page, shots: readonly number[]) => {
   await page.setViewportSize({ width: 1449, height: 982 })
   const panel = await openConversation(page, CONVERSATION)
   await addTakes(page, shots)
-  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page
     .getByRole('dialog')
-    .filter({ has: page.getByRole('group', { name: '整片编辑器', exact: true }) })
+    .filter({ has: page.getByRole('group', { name: '成片编辑器', exact: true }) })
   await expect(dialog).toBeVisible()
   const materials = dialog.getByRole('region', { name: '视频素材区' })
   // 镜头表读好了才有镜头按钮
@@ -102,7 +102,7 @@ const shotOf = (materials: Locator, group: number, take: string, shot: number) =
     name: new RegExp(`^生成 ${take} 镜头 ${shot}，`),
   })
 
-const filmLane = (dialog: Locator) => dialog.getByRole('group', { name: '成片画面轨' })
+const filmLane = (dialog: Locator) => dialog.getByRole('group', { name: '画面轨', exact: true })
 
 const previewVideo = (dialog: Locator) =>
   dialog.locator('video').evaluate((video: HTMLVideoElement) => ({
@@ -150,7 +150,7 @@ test('缩放成片时间线不会改变素材镜头的位置和大小', async ({
   expect([await first.boundingBox(), await last.boundingBox()]).toEqual(before)
 })
 
-test('素材暂停续播与段尾重播；点成片段播放，拖播放头返回成片', async ({ page }) => {
+test('素材暂停续播与段尾重播；点画面轨上的段播放，拖播放头返回成片', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const video = dialog.locator('video')
@@ -271,7 +271,7 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   await expect(end).toHaveAttribute('aria-valuetext', '3.5 秒')
 })
 
-test('在选区里按下即拖整段选区，松手在成片轨上加入', async ({ page }) => {
+test('在选区里按下即拖整段选区，松手在画面轨上加入', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 2).click()
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围 1\.0–2\.0 秒/ })
@@ -380,10 +380,10 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   const [take] = await addTakes(page, [1])
   if (take === undefined) throw new Error('没有出片')
   await composeVersion(page, take)
-  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page
     .getByRole('dialog')
-    .filter({ has: page.getByRole('group', { name: '整片编辑器', exact: true }) })
+    .filter({ has: page.getByRole('group', { name: '成片编辑器', exact: true }) })
   const materials = dialog.getByRole('region', { name: '视频素材区' })
 
   const picker = materials.getByRole('button', { name: /^生成 A的版本：/ })

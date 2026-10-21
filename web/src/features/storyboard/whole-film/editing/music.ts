@@ -3,7 +3,7 @@ import { MAX_VOLUME, type WholeFilmDraft } from './draft'
 import { done, refuse, type EditResult } from './result'
 import { clamp, filmDuration, musicOf } from './timeline'
 
-// 音乐铺满整片（含片头片尾），不循环：offset 收进 [0, 音乐时长 − 整片时长]。整片比音乐长时
+// 音乐铺满成片（含片头片尾），不循环：offset 收进 [0, 音乐时长 − 成片时长]。成片比音乐长时
 // offset 只能是 0，差多少由 musicShortfallMs 报告。
 
 const fitOffset = (offsetMs: number, musicMs: number, filmMs: number) =>
@@ -27,7 +27,7 @@ export const setMusic = (
   })
 }
 
-/** 拖音乐换用歌里的另一段；整片的切点不动 */
+/** 拖音乐换用歌里的另一段；成片的切点不动 */
 export const setMusicOffset = (
   draft: WholeFilmDraft,
   args: { offsetMs: number },
@@ -59,7 +59,7 @@ export const musicShortfallMs = (draft: WholeFilmDraft, context: EditContext): n
   return Math.max(0, draft.music.offset + filmDuration(draft) - media.durationMs)
 }
 
-/** 音乐的拍点换算到整片时间（音乐不动，整片 0 秒对齐歌里的 offset）；不截到片尾 */
+/** 音乐的拍点换算到成片时间（音乐不动，成片 0 秒对齐歌里的 offset）；不截到片尾 */
 export const filmBeats = (draft: WholeFilmDraft, context: EditContext): MusicBeat[] => {
   if (!draft.music) return []
   const { offset } = draft.music

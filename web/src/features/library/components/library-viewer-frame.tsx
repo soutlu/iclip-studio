@@ -1,4 +1,4 @@
-/** 资料库详情的外壳：铺满视口的弹窗，中间一个左播右文的框；成片与参考视频的详情共用。 */
+/** 资料库详情的外壳：铺满视口的弹窗，中间一个左播右文的框；成片素材、参考视频与成片的详情共用。 */
 
 import type { KeyboardEvent, ReactNode } from 'react'
 import { DialogRoot, DialogSurface } from '@/shared/ui/dialog'

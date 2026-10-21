@@ -1,4 +1,4 @@
-/** 资料库「成片」的接口：导出的整片，一段对话一张卡。合同见 contract/conventions.md §13。 */
+/** 资料库「成片」的接口：导出的成片，一段对话一张卡。合同见 contract/conventions.md §13。 */
 
 import { useInfiniteQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
@@ -25,7 +25,7 @@ export const useLibraryWholeFilms = (scope: WholeFilmScope) =>
       apiFetch(
         `/library/whole-films?${librarySearchParams(scope, pageParam).toString()}`,
         zWholeFilmCardsOut,
-        { fallbackErrorMessage: '读取整片失败', signal },
+        { fallbackErrorMessage: '读取成片失败', signal },
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (last: WholeFilmsPage) => last.nextCursor,

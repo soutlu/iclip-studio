@@ -14,10 +14,10 @@ const POLL_MS = 1_500
 
 /** 失败原因（`error.code`）换成给人看的话；渲染服务自己带的 message 是给开发看的，不直接显示 */
 const FAILURE_TEXT: Record<string, string> = {
-  'render-failed': '整片渲染失败，请重新导出',
-  'upload-failed': '整片上传失败，请重新导出',
+  'render-failed': '成片渲染失败，请重新导出',
+  'upload-failed': '成片上传失败，请重新导出',
   'media-unreachable': '有素材读不到，请稍后重新导出',
-  timeout: '整片渲染超时，请重新导出',
+  timeout: '成片渲染超时，请重新导出',
   RENDER_LOST: '渲染服务重启过，请重新导出',
   PROVIDER_TIMEOUT: '排队太久，请重新导出',
   RENDER_UNAVAILABLE: '渲染服务连不上，请稍后重新导出',
@@ -30,7 +30,7 @@ export type ExportView =
   /** `progress` 为 null：只知道在渲染，渲染服务还答不上进度 */
   | { kind: 'rendering'; progress: number | null }
   | { kind: 'uploading' }
-  /** `exportId`：这次导出的整片记录，高清版按它做；`sourceJobIds`：这次导出用到的成片，下载时各记一次下载 */
+  /** `exportId`：这次导出的成片记录，高清版按它做；`sourceJobIds`：这次导出用到的素材片，下载时各记一次下载 */
   | { kind: 'done'; exportId: string; downloadUrl: string; sourceJobIds: readonly string[] }
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' }
@@ -41,8 +41,8 @@ const isRunning = (status: WholeFilmExportOut['status']) =>
 const failureText = (error: WholeFilmExportOut['error']) =>
   // 渲染服务不收这份草稿：它给的那句就是原因，同提交时被拒的说法
   error?.code === 'RENDER_REJECTED'
-    ? `整片导出失败：${error.message}`
-    : (FAILURE_TEXT[error?.code ?? ''] ?? '整片导出失败，请重新导出')
+    ? `成片导出失败：${error.message}`
+    : (FAILURE_TEXT[error?.code ?? ''] ?? '成片导出失败，请重新导出')
 
 const viewOf = (state: WholeFilmExportOut): ExportView => {
   switch (state.status) {
@@ -69,7 +69,7 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
 }
 
 /**
- * 导出整片：显示这段对话最近一次导出，没结束就轮询到结束，所以重开编辑器接着看进度或下载；
+ * 导出成片：显示这段对话最近一次导出，没结束就轮询到结束，所以重开编辑器接着看进度或下载；
  * 关掉编辑器不影响导出。提交时先把手上的改动存好，按存好的那一版提交。
  *
  * `settle` 存好草稿并给出服务端那一版的 revision，存不好时为 undefined（原因由草稿那边显示）。
@@ -128,7 +128,7 @@ export function useWholeFilmExport(
       if (result !== undefined) await latest.refetch()
       setLocal(null)
     } catch (error) {
-      setLocal({ kind: 'failed', message: errorMessageOf(error, '整片导出失败') })
+      setLocal({ kind: 'failed', message: errorMessageOf(error, '成片导出失败') })
     }
   }
 

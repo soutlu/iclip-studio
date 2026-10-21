@@ -34,7 +34,7 @@ type ReaderSearch = {
   shot?: number | undefined
   /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
-  /** 整片编辑器开着；属于整段对话，换组不关。 */
+  /** 成片编辑器开着；属于整段对话，换组不关。 */
   wholeFilm?: true | undefined
 }
 
@@ -144,7 +144,7 @@ function StoryboardWorkspace({
         }),
       )
     })
-  // 选中成片的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
+  // 选中素材片的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
   const refill = (prompt: Shot['prompt']) => {
     const problem = validateShot({ ...shot, prompt })
     if (problem !== undefined) {
@@ -158,7 +158,7 @@ function StoryboardWorkspace({
     generations.data === undefined
       ? undefined
       : takesOfShot(generations.data, shot.index, document.aspect_ratio)
-  // 选中的成片不在本组列表里了（换了组、被删）就回到帧。
+  // 选中的素材片不在本组列表里了（换了组、被删）就回到帧。
   const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
 
   return (
@@ -190,7 +190,7 @@ function StoryboardWorkspace({
             }}
             onUploaded={(content, frame, url, follow) => {
               draft.recordUpload(shot.index, frame, url)
-              // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着成片就接着放。
+              // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着素材片就接着放。
               if (follow) go({ content, frame })
             }}
             onUploadingChange={gate.onUploadingChange}

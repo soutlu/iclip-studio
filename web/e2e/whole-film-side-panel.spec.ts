@@ -26,10 +26,10 @@ const serveBrandFixtures = (page: Page) =>
       }),
   )
 
-/** 演示对话里有两首音乐；打开它的整片编辑器 */
+/** 演示对话里有两首音乐；打开它的成片编辑器 */
 const openWholeFilm = async (page: Page) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
   await expect(dialog).toBeVisible()
   return dialog
@@ -72,7 +72,7 @@ const dragCard = async (page: Page, card: Locator, target: Locator) => {
   await page.mouse.up()
 }
 
-/** 成片轨上各段的左边缘，用于核对预演让位与特效不移动成片。 */
+/** 画面轨上各段的左边缘，用于核对预演让位与特效不移动画面轨上的段。 */
 const clipLefts = (film: Locator) =>
   film
     .getByRole('group', { name: /^第 \d+ 段/ })
@@ -90,7 +90,7 @@ const pixelsPerSecond = async (dialog: Locator) => {
   return (await boxOf(ruler)).width / Number(await ruler.getAttribute('max'))
 }
 
-/** 在素材区「镜头组 2」选一个镜头，按 Enter 插到播放头处，让成片轨上有画面 */
+/** 在素材区「镜头组 2」选一个镜头，按 Enter 插到播放头处，让画面轨上有画面 */
 const addShot = async (dialog: Locator, shot: number) => {
   const materials = dialog
     .getByRole('region', { name: '视频素材区' })
@@ -161,11 +161,11 @@ test('品牌与分类各自保留选择，字幕样式可切换，品牌卡可�
   )
   await expect(inUse).toHaveAttribute('aria-pressed', 'false')
 
-  // 品牌卡和别的卡一样：点它按组件类型放（block 进成片轨），拖到哪条轨就放在哪。
+  // 品牌卡和别的卡一样：点它按组件类型放（block 进画面轨），拖到哪条轨就放在哪。
   // 暖屿 片尾没有可填项，放下只选中；拾步 片头有可填项，放下就打开浮层
   await dialog.getByRole('tab', { name: '品牌' }).click()
-  await dialog.getByRole('button', { name: /^暖屿 片尾，成片轨/ }).click()
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  await dialog.getByRole('button', { name: /^暖屿 片尾，画面轨/ }).click()
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 暖屿 片尾/ })).toBeVisible()
   await expect(
     film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 暖屿 片尾/ }),
@@ -181,14 +181,14 @@ test('品牌与分类各自保留选择，字幕样式可切换，品牌卡可�
   await expect(page.getByRole('dialog', { name: /拾步 片头/ })).toBeVisible()
 })
 
-test('放下有可填项的卡片随即打开浮层：点卡片、拖到成片轨、拖到特效轨都一样', async ({ page }) => {
+test('放下有可填项的卡片随即打开浮层：点卡片、拖到画面轨、拖到特效轨都一样', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   await openCategory(dialog, '视觉特效')
 
-  // 点卡片（block → 成片轨）
-  await dialog.getByRole('button', { name: /^宇宙星球，成片轨/ }).click()
+  // 点卡片（block → 画面轨）
+  await dialog.getByRole('button', { name: /^宇宙星球，画面轨/ }).click()
   const first = page.getByRole('dialog', { name: /宇宙星球/ })
   await expect(first).toBeVisible()
   await expect(
@@ -197,7 +197,7 @@ test('放下有可填项的卡片随即打开浮层：点卡片、拖到成片�
   await page.keyboard.press('Escape')
   await expect(first).toBeHidden()
 
-  // 拖到成片轨
+  // 拖到画面轨
   await dragCard(page, dialog.getByRole('button', { name: /^旋涡星系，/ }), film)
   await expect(page.getByRole('dialog', { name: /旋涡星系/ })).toBeVisible()
   await expect(film.getByRole('button', { name: /组件 · 旋涡星系/ })).toHaveAttribute(
@@ -266,13 +266,13 @@ test('组件参数可编辑并保存，清空文字恢复默认；删除组件�
   await expect(dialog.getByRole('group', { name: /^特效 · 逐词居中/ })).toHaveCount(0)
   await expect.poll(async () => (await readDraft(page))?.overlays).toEqual([])
 
-  // 成片轨组件同样可以在关闭后重新打开并修改参数。
-  await dialog.getByRole('button', { name: /^AI 答案排名，成片轨/ }).click()
+  // 画面轨组件同样可以在关闭后重新打开并修改参数。
+  await dialog.getByRole('button', { name: /^AI 答案排名，画面轨/ }).click()
   const segmentPop = page.getByRole('dialog', { name: /AI 答案排名/ })
   await expect(segmentPop).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(segmentPop).toBeHidden()
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   await film.getByRole('button', { name: /^选中：第 1 段 · 组件 · AI 答案排名/ }).click()
   await expect(segmentPop.getByRole('group', { name: '底色' })).toBeVisible()
   await segmentPop.getByRole('button', { name: '移除' }).click()
@@ -280,12 +280,12 @@ test('组件参数可编辑并保存，清空文字恢复默认；删除组件�
   await expect.poll(async () => (await readDraft(page))?.layer0).toEqual([])
 })
 
-test('拖卡片到成片轨：按时长让位，离开恢复，松手才新增一次', async ({ page }) => {
+test('拖卡片到画面轨：按时长让位，离开恢复，松手才新增一次', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   await addShot(dialog, 1)
   await addShot(dialog, 2)
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   await expect(film.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
   await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(2)
   const before = await clipLefts(film)
@@ -293,7 +293,7 @@ test('拖卡片到成片轨：按时长让位，离开恢复，松手才新增�
   const pps = await pixelsPerSecond(dialog)
   const preview = film.getByTestId('timeline-insertion-preview')
 
-  // 成片轨：预演占用组件的完整时长，邻段让位，但尚未保存新段。
+  // 画面轨：预演占用组件的完整时长，邻段让位，但尚未保存新段。
   await openCategory(dialog, '场景')
   await liftCard(page, dialog.getByRole('button', { name: /^标志片尾，/ }))
   const second = await boxOf(film.getByRole('group', { name: /^第 2 段/ }))
@@ -309,7 +309,7 @@ test('拖卡片到成片轨：按时长让位，离开恢复，松手才新增�
   await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(2)
   expect(await readDraft(page)).toEqual(beforeDraft)
 
-  // 字幕轨不收这张卡：不提示；拖回成片轨松手才插进去
+  // 字幕轨不收这张卡：不提示；拖回画面轨松手才插进去
   const captions = await boxOf(dialog.getByRole('group', { name: '字幕轨' }))
   await page.mouse.move(second.x + 4, captions.y + captions.height / 2, { steps: 4 })
   await expect(preview).toBeHidden()
@@ -334,12 +334,12 @@ test('拖卡片到成片轨：按时长让位，离开恢复，松手才新增�
   })
 })
 
-test('拖卡片到特效轨：预演不挪成片，新行落位或取消后保存正确草稿', async ({ page }) => {
+test('拖卡片到特效轨：预演不挪画面轨，新行落位或取消后保存正确草稿', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   await addShot(dialog, 1)
   await addShot(dialog, 2)
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   const overlays = dialog.getByRole('group', { name: '特效轨' })
   const effectPreview = overlays.getByTestId('timeline-insertion-preview')
   await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(2)
@@ -347,7 +347,7 @@ test('拖卡片到特效轨：预演不挪成片，新行落位或取消后保�
   const pps = await pixelsPerSecond(dialog)
   const filmBeforeEffect = await clipLefts(film)
 
-  // 特效轨：显示完整占用区间，成片位置和保存的草稿保持不变。
+  // 特效轨：显示完整占用区间，画面轨上各段的位置和保存的草稿保持不变。
   await openCategory(dialog, '社交')
   await liftCard(page, dialog.getByRole('button', { name: /^手绘箭头，/ }))
   const lane = await boxOf(overlays)

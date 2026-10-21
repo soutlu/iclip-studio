@@ -13,7 +13,7 @@ import { GenerateMusic, MusicPanel } from './music-panel'
 describe('生成音乐浮层', () => {
   it('点触发按钮向上弹出；填好描述提交到这段对话，提交后收起', async () => {
     const user = userEvent.setup()
-    const conversation = addMockConversation('整片配乐')
+    const conversation = addMockConversation('成片配乐')
     const bodies: unknown[] = []
     server.use(
       http.post('*/api/generations/music', async ({ request }) => {

@@ -365,10 +365,10 @@ function authorsOf(cards: readonly { userName: string | null }[]) {
 
 type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
 
-/** 两段任务的导出：第一段导出过两次，第二段一次；每次用到的成片取自成片素材的卡面。 */
+/** 两段任务的导出：第一段导出过两次，第二段一次；每次用到的素材片取自成片素材的卡面。 */
 export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
   const sources = mockLibraryVideos(now).map((video) => video.face.jobId)
-  return ['春夏品牌整片', '城市漫步整片'].map((title, index) => {
+  return ['春夏品牌成片', '城市漫步成片'].map((title, index) => {
     const versions = Array.from({ length: index === 0 ? 2 : 1 }, (_, version) => ({
       jobId: `fa000001-0000-4000-8000-${String(index * 10 + version + 1).padStart(12, '0')}`,
       outputUrl: version === 0 ? sampleVideoUrl : sampleWideUrl,
@@ -377,7 +377,7 @@ export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[]
       sourceJobIds: sources.slice(index + version, index + version + 2),
     }))
     const face = versions.at(-1)
-    if (face === undefined) throw new Error('整片夹具必须有版本')
+    if (face === undefined) throw new Error('成片夹具必须有版本')
     return {
       conversationId: `fa000002-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
       title,

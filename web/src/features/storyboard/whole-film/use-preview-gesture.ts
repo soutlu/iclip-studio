@@ -8,7 +8,7 @@ import type { EditResult } from './editing/result'
 export type GestureStep = {
   result: EditResult
   guideMs?: number | null
-  /** 拖不过去的原因（如到了整片总长上限），拖动中写在旁边 */
+  /** 拖不过去的原因（如到了成片总长上限），拖动中写在旁边 */
   note?: string | undefined
   /** 原因写在哪个时刻上方 */
   noteAtMs?: number | undefined

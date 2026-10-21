@@ -179,7 +179,7 @@ describe('ConversationRowStore 合并规则（合同 §5 水位）', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
-  it('带额外字段的行（全部对话页的成片地址）解析后保留这些字段，池里只存对话行本身', () => {
+  it('带额外字段的行（全部对话页的素材片地址）解析后保留这些字段，池里只存对话行本身', () => {
     const store = new ConversationRowStore()
     const audit = { ...row({ lastSeq: 1 }), latestMasterUrl: 'https://cdn.example/a.mp4' }
 

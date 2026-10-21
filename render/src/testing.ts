@@ -10,7 +10,7 @@ export const SOURCE_JOB = '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c'
 export const SUBTITLE_JOB = '7a2c6d4f-3b5e-4f9a-8c2d-1e3f4a5b6c7d'
 export const MUSIC_JOB = '8b3d7e5a-4c6f-4a0b-9d3e-2f4a5b6c7d8e'
 
-/** 一份合法的 POST /exports 请求体：一段成片带字幕、配乐、一个包装。 */
+/** 一份合法的 POST /exports 请求体：一段素材片带字幕、配乐、一个包装。 */
 export function exportRequest(
   overrides: { id?: string; mediaHost?: string } = {},
 ): Record<string, unknown> {

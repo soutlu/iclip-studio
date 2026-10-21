@@ -36,7 +36,7 @@ type ComponentPopoverProps = {
 
 /**
  * 组件段与特效块共用的调整浮层：一行一项列出组件的全部可填项。文字项没填过时空着、组件的默认字作
- * 灰色提示，清空即回到默认字。每次改动是一步编辑，只影响这条整片。
+ * 灰色提示，清空即回到默认字。每次改动是一步编辑，只影响这条成片。
  */
 export function ComponentPopover({ item, values, onChange, onRemove }: ComponentPopoverProps) {
   const set = (id: string, value: VariableValue | undefined) => {

@@ -106,7 +106,9 @@ export function VideoEditor({ conversationId, root, loading, shotIndex, onClose 
           <DialogHeader title="编辑视频" closeLabel="关闭视频编辑" />
           <DialogBody>
             <p className="text-body-sm text-on-surface-muted" role="status">
-              {loading ? '正在读取视频记录…' : '未找到该视频记录，请关闭后在「本组成片」中重新打开'}
+              {loading
+                ? '正在读取视频记录…'
+                : '未找到该视频记录，请关闭后在「本组素材片」中重新打开'}
             </p>
           </DialogBody>
         </DialogSurface>
@@ -583,7 +585,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       size="md"
       title={generating ? 'AI 生成尚未完成，无法合成' : undefined}
     >
-      {waitingComposite ? '合成中' : '合成成片'}
+      {waitingComposite ? '合成中' : '合成新版本'}
     </Button>
   ) : undefined
 
@@ -823,7 +825,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                   onClick={() => chooseScope('whole')}
                   type="button"
                 >
-                  整片
+                  整条
                 </button>
                 <button
                   aria-pressed={viewingClips}
@@ -865,7 +867,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                 entries={strip.entries}
                 onSelect={pick}
                 selectedKey={viewedFailure?.id ?? strip.selectedKey}
-                title={viewingClips && positions !== undefined ? positions : '整片'}
+                title={viewingClips && positions !== undefined ? positions : '整条'}
               />
             }
           />

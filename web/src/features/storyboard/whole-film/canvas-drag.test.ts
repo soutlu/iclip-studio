@@ -8,7 +8,7 @@ const film = () =>
   })
 
 describe('拖哪个元素', () => {
-  it('特效块拖它自己，字幕的任何一句都拖整片字幕；成片轨上的段、音乐与空处不拖', () => {
+  it('特效块拖它自己，字幕的任何一句都拖全部字幕；画面轨上的段、音乐与空处不拖', () => {
     expect(dragTargetOf({ kind: 'overlay', id: 'o1' })).toBe('o1')
     expect(dragTargetOf({ kind: 'caption', key: 'v1:sub:3' })).toBe('captions')
     expect(dragTargetOf({ kind: 'clip', id: 'v1' })).toBeUndefined()
@@ -79,7 +79,7 @@ describe('吸附', () => {
 })
 
 describe('松手后的移动写进草稿', () => {
-  it('拖的是特效块就挪那一块，是整片字幕就挪字幕', () => {
+  it('拖的是特效块就挪那一块，是全部字幕就挪字幕', () => {
     const draft = film()
     const moved = (target: string, x: number, y: number) => {
       const result = moveEditOf(draft, { type: 'moveElement', target, x, y })
@@ -93,7 +93,7 @@ describe('松手后的移动写进草稿', () => {
     expect(moved('captions', 0, -90).captions).toEqual({ ...draft.captions, x: 0, y: -90 })
   })
 
-  it('别的元素（成片轨上的段、草稿里没有的）与别的操作不处理', () => {
+  it('别的元素（画面轨上的段、草稿里没有的）与别的操作不处理', () => {
     const draft = film()
     expect(moveEditOf(draft, { type: 'moveElement', target: 'v1', x: 1, y: 1 })).toBeNull()
     expect(moveEditOf(draft, { type: 'moveElement', target: 'gone', x: 1, y: 1 })).toBeNull()

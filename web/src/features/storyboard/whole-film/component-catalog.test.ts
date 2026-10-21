@@ -34,17 +34,17 @@ describe('组件目录', () => {
   })
 
   it.each([
-    ['有固定时长的取自己的时长，不看整片多长', 'yt-logo-intro', 30_000, 6_000],
+    ['有固定时长的取自己的时长，不看成片多长', 'yt-logo-intro', 30_000, 6_000],
     ['有固定时长的转场类组件同样取自己的时长', 'grid-pixelate-wipe', 0, 1_200],
-    ['没有固定时长、整片不到 10 秒：10 秒', 'logo-brand-close', 3_000, 10_000],
-    ['没有固定时长、整片超过 10 秒：整片多长就多长', 'count-up', 15_000, 15_000],
+    ['没有固定时长、成片不到 10 秒：10 秒', 'logo-brand-close', 3_000, 10_000],
+    ['没有固定时长、成片超过 10 秒：成片多长就多长', 'count-up', 15_000, 15_000],
   ])('放进成片的时长：%s', (_, name, filmMs, ms) => {
     expect(durationMsOf(item(name), filmMs)).toBe(ms)
   })
 
-  it('点卡片的默认去处：字幕样式、block 进成片轨、其余进特效轨', () => {
+  it('点卡片的默认去处：字幕样式、block 进画面轨、其余进特效轨', () => {
     expect(defaultLaneLabel(item('caption-highlight'))).toBe('字幕样式')
-    expect(defaultLaneLabel(item('logo-outro'))).toBe('成片轨')
+    expect(defaultLaneLabel(item('logo-outro'))).toBe('画面轨')
     expect(defaultLaneLabel(item('hw-arrow'))).toBe('特效轨')
   })
 

@@ -10,7 +10,7 @@ import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
 
-const STALE_NOTICE = '整片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
+const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
 
 type Options = {
   /** 停下多久后保存 */
@@ -19,7 +19,7 @@ type Options = {
 }
 
 /**
- * 一段对话的整片草稿：编辑历史（一次编辑一步撤销）与自动保存。
+ * 一段对话的成片草稿：编辑历史（一次编辑一步撤销）与自动保存。
  *
  * 停止编辑 `debounceMs` 后整份保存，同一时刻只有一次保存在途，后面的改动等它回来再存。
  * 服务端已有更新的一版（409）时换成那一版、清空历史，并用一句话告诉用户。加载后不主动保存；
@@ -77,11 +77,11 @@ export function useDraftSession(
             setSave({ kind: 'idle' })
             return 'reloaded' as const
           } catch (reloadError) {
-            setSave({ kind: 'failed', message: errorMessageOf(reloadError, '整片草稿读取失败') })
+            setSave({ kind: 'failed', message: errorMessageOf(reloadError, '成片草稿读取失败') })
             return 'failed' as const
           }
         }
-        setSave({ kind: 'failed', message: errorMessageOf(error, '整片草稿保存失败') })
+        setSave({ kind: 'failed', message: errorMessageOf(error, '成片草稿保存失败') })
         return 'failed' as const
       }
     })()

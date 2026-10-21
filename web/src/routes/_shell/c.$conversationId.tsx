@@ -19,7 +19,7 @@ const ConversationSearchSchema = z.object({
   take: z.string().optional().catch(undefined),
   /** 视频编辑器开在哪条出片记录上（编辑链的根）。 */
   video: z.string().min(1).optional().catch(undefined),
-  /** 整片编辑器开着。 */
+  /** 成片编辑器开着。 */
   wholeFilm: z.literal(true).optional().catch(undefined),
 })
 

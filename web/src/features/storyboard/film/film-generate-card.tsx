@@ -160,7 +160,7 @@ export function FilmGenerateCard({
 
 function Generating({ since }: { since: string }) {
   const elapsed = useElapsed(since)
-  // 占的是将要出来的那张图的位置，与在途成片一样铺满画幅框；描述卡不进画幅框。
+  // 占的是将要出来的那张图的位置，与在途素材片一样铺满画幅框；描述卡不进画幅框。
   return (
     <div className="storyboard-hero">
       <div aria-label={`生成中，已用 ${elapsed}`} className="storyboard-take-stage" role="status">

@@ -25,14 +25,14 @@ export const ANOMALY_META: Record<ExecutionAnomalyKind, AnomalyMeta> = {
   spend: {
     label: '消耗离群',
     tone: 'warn',
-    // 本期没有成片时算不出门槛的 token 数，只说倍数。
+    // 本期没有出片时算不出门槛的 token 数，只说倍数。
     describe: ({ spendTimes, spendTokens }) =>
-      `单段对话的 token 超过所选时间范围内每件成片平均消耗的 ${spendTimes} 倍${spendTokens === null ? '' : `（${fmtTokens(spendTokens)} token）`}`,
+      `单段对话的 token 超过所选时间范围内每件出片平均消耗的 ${spendTimes} 倍${spendTokens === null ? '' : `（${fmtTokens(spendTokens)} token）`}`,
   },
   task_stuck: {
     label: '需求单卡住',
     tone: 'warn',
-    describe: ({ taskConversations }) => `已关联 ${taskConversations} 段以上对话，尚无成片`,
+    describe: ({ taskConversations }) => `已关联 ${taskConversations} 段以上对话，尚无出片`,
   },
 }
 

@@ -99,7 +99,7 @@ describe('useDraftSession', () => {
     await waitFor(() => expect(result.current.draft).toEqual(newer))
     expect(result.current.canUndo).toBe(false)
     expect(onNotice).toHaveBeenCalledWith(
-      '整片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃',
+      '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃',
     )
     await settled(result)
     expect(mockWholeFilmDraft(CONVERSATION)?.revision).toBe(2)
@@ -116,7 +116,7 @@ describe('useDraftSession', () => {
     await waitFor(() =>
       expect(result.current.save).toEqual({
         kind: 'failed',
-        message: '整片草稿保存失败：服务暂时不可用',
+        message: '成片草稿保存失败：服务暂时不可用',
       }),
     )
     volume(result, 0.6)

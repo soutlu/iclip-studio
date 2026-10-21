@@ -25,7 +25,7 @@ export const workbenchControl = cva(
   },
 )
 
-/** 叠在深色舞台上的玻璃按钮（StageAction、成片信息与下载按钮）：浅深主题都是深底白字。带字时文字包在带
+/** 叠在深色舞台上的玻璃按钮（StageAction、素材片信息与下载按钮）：浅深主题都是深底白字。带字时文字包在带
  * `STAGE_ACTION_TEXT` 的 span 里，舞台窄时由 storyboard.css 收起文字、按钮收成方形；不带字就是方形图标按钮。 */
 export const stageActionClass = 'storyboard-stage-glass storyboard-stage-tool ui-focus'
 export const STAGE_ACTION_TEXT = 'storyboard-action-text'

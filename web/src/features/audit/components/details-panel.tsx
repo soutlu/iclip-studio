@@ -34,7 +34,7 @@ type DetailsPanelProps = {
 }
 
 const PEOPLE_INFO =
-  '成片数：同一需求单下的多段对话合计为 1 件；未关联需求单的对话，每段有成功出片的计为 1 件。仅运行过、未出片的人也会列出。'
+  '出片件数：同一需求单下的多段对话合计为 1 件；未关联需求单的对话，每段有成功出片的计为 1 件。仅运行过、未出片的人也会列出。'
 
 export function DetailsPanel({
   range,

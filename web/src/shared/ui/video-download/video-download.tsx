@@ -22,7 +22,7 @@ import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/s
 import { toast } from '@/shared/ui/toast'
 
 type VideoDownloadProps = {
-  /** 每下载一次，按这些生成记录各记一条下载事件：成片是它自己，导出的整片是它用到的各条成片；为空就不记。下载高清版同样按它记。 */
+  /** 每下载一次，按这些生成记录各记一条下载事件：素材片是它自己，导出的成片是它用到的各条素材片；为空就不记。下载高清版同样按它记。 */
   downloadedJobIds: readonly string[]
   url: string
   watermarkUrl: string | null
@@ -30,9 +30,9 @@ type VideoDownloadProps = {
   className?: string
   /** 可见文字；给了就渲染成共用的带字按钮（下载图标在前），可访问名称就是这段文字。缺省是描边小圆图标按钮。 */
   children?: ReactNode
-  /** 能做高清版的那条记录（成片或导出的整片）；给了就读它各档的高清版，菜单里多出高清项。不给就和没有高清版时一样。 */
+  /** 能做高清版的那条记录（素材片或导出的成片）；给了就读它各档的高清版，菜单里多出高清项。不给就和没有高清版时一样。 */
   enhanceSourceId?: string
-  /** 只有原片时菜单第一项的名字，整片传「下载整片」。 */
+  /** 只有原片时菜单第一项的名字，成片传「下载成片」。 */
   originalLabel?: string
   /** 片长，用来估高清版要多久；不知道就不估。 */
   durationMs?: number | null | undefined

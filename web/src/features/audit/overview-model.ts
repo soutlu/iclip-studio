@@ -51,7 +51,7 @@ export const SAMPLES = {
 
 type SampleKey = keyof typeof SAMPLES
 
-/** 两期件数都不到这个数时，成片数不比：0 比 1 就是「降 100%」。 */
+/** 两期件数都不到这个数时，出片件数不比：0 比 1 就是「降 100%」。 */
 const THIN_DELIVERIES = 5
 
 /** 「出得多」的门槛：单镜成功生成 3 次及以上，与异常「反复重试」同一个门槛。 */
@@ -119,7 +119,7 @@ export const TOKEN_PARTS = [
 
 export const METRICS = {
   deliveries: {
-    label: '成片数',
+    label: '出片件数',
     unit: '件',
     kind: 'bar',
     raw: (m) => m.deliveries,
@@ -163,7 +163,7 @@ export const METRICS = {
     ticks: rateTicks,
   },
   perDelivery: {
-    label: '每件成片 · token',
+    label: '每件出片 · token',
     unit: 'token',
     kind: 'stack',
     sample: 'deliveries',
@@ -325,7 +325,7 @@ export function cardHead(key: CardKey, overview: Overview, previousRange: string
       return {
         aside: null,
         delta,
-        detail: `${daily}成片视频 ${fmtCount(current.completedVideos)} 条 · 需求单 ${current.deliveredTasks} · 无单对话 ${current.deliveredOrphanConversations}`,
+        detail: `${daily}出片 ${fmtCount(current.completedVideos)} 条 · 需求单 ${current.deliveredTasks} · 无单对话 ${current.deliveredOrphanConversations}`,
         unit: '件',
         value: fmtCount(current.deliveries),
       }
@@ -386,7 +386,7 @@ export function cardHead(key: CardKey, overview: Overview, previousRange: string
           : null,
         detail:
           current.deliveries === 0
-            ? '所选时间范围内暂无成片'
+            ? '所选时间范围内暂无出片'
             : `每件：输入 ${each(current.usage.inputTokens)} · 输出 ${each(current.usage.outputTokens)} · 缓存写入 ${each(current.usage.cacheWriteTokens)} · 缓存读取 ${each(current.usage.cacheReadTokens)}`,
         unit: magnitude === '' ? 'token' : `${magnitude} token`,
         value,

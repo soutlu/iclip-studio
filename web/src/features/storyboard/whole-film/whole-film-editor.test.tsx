@@ -98,7 +98,7 @@ const song = makeGenerationJob({
 
 /** 这段对话的生成记录；按 kind 筛，与后端同一口径 */
 const serveGenerations = (records: GenerationJob[]) => {
-  const conversation = addMockConversation('整片编辑', undefined, undefined, CONVERSATION)
+  const conversation = addMockConversation('成片编辑', undefined, undefined, CONVERSATION)
   server.use(
     http.get('*/api/generations', ({ request }) => {
       const kind = new URL(request.url).searchParams.get('kind')
@@ -123,13 +123,13 @@ const openEditor = async (records: GenerationJob[] = takes) => {
       <Toaster />
     </>,
   )
-  await screen.findByRole('group', { name: '整片编辑器' })
+  await screen.findByRole('group', { name: '成片编辑器' })
   /** 关掉编辑器：页面上不再渲染它 */
   const close = () => rendered.rerender(<Toaster />)
   return { onClose, close, queryClient: rendered.queryClient }
 }
 
-const filmLane = () => screen.getByRole('group', { name: '成片画面轨' })
+const filmLane = () => screen.getByRole('group', { name: '画面轨' })
 
 // jsdom 没有指针捕获，按下轨道上的块时组件会捕获指针，这里补上。
 const capturable = (element: HTMLElement) =>
@@ -139,7 +139,7 @@ const capturable = (element: HTMLElement) =>
     releasePointerCapture: () => undefined,
   })
 
-/** 成片区里的一块（选中按钮）；名字以选中：开头 */
+/** 画面轨上的一块（选中按钮）；名字以选中：开头 */
 const blockButton = async (name: RegExp) =>
   capturable(await within(filmLane()).findByRole('button', { name }))
 
@@ -159,7 +159,7 @@ const clipsAroundComponent = () =>
     video('v2', TAKE_B, 0, 1_500),
   ])
 
-describe('整片编辑器', () => {
+describe('成片编辑器', () => {
   it('素材区按镜头组、原作分轨', async () => {
     await openEditor()
     const materials = await screen.findByRole('region', { name: '视频素材区' })
@@ -252,7 +252,7 @@ describe('整片编辑器', () => {
 
     expect(
       await screen.findByText(
-        '整片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃',
+        '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃',
         undefined,
         { timeout: 4000 },
       ),
@@ -337,7 +337,7 @@ describe('整片编辑器', () => {
   })
 })
 
-describe('整片编辑器 · 时间线', () => {
+describe('成片编辑器 · 时间线', () => {
   const editorDialog = () => screen.getByRole('dialog')
 
   it('Delete 删除选中的段，⌘Z 撤销；没选中时什么也不删', async () => {
@@ -434,7 +434,7 @@ const generalTab = async (user: ReturnType<typeof userEvent.setup>, category: st
   return screen.getByRole('list', { name: '组件' })
 }
 
-describe('整片编辑器 · 组件', () => {
+describe('成片编辑器 · 组件', () => {
   it('通用栏默认第一个分类、没有「全部」；品牌栏在真实目录里是空的；切栏后各记自己的分类', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -473,7 +473,7 @@ describe('整片编辑器 · 组件', () => {
     fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
       target: { value: '1.5' },
     })
-    await user.click(within(list).getByRole('button', { name: /^标志片尾，成片轨/ }))
+    await user.click(within(list).getByRole('button', { name: /^标志片尾，画面轨/ }))
     expect(
       await within(filmLane()).findByRole('group', { name: '第 2 段 · 组件 · 标志片尾，6.0 秒' }),
     ).toBeInTheDocument()
@@ -541,7 +541,7 @@ describe('整片编辑器 · 组件', () => {
       'true',
     )
 
-    await user.click(within(list).getByRole('button', { name: /^标志片尾，成片轨/ }))
+    await user.click(within(list).getByRole('button', { name: /^标志片尾，画面轨/ }))
     await waitFor(() => expect(popover).not.toBeInTheDocument())
     expect(
       within(filmLane()).getByRole('button', { name: /^选中：第 \d 段 · 组件 · 标志片尾/ }),
@@ -885,13 +885,13 @@ describe('整片编辑器 · 组件', () => {
       const input = within(lane).getByRole('textbox')
       expect(input).toHaveValue('你好世界')
       await user.clear(input)
-      await user.type(input, '你好，整片{Enter}')
+      await user.type(input, '你好，成片{Enter}')
       expect(
-        await within(lane).findByRole('button', { name: '字幕：你好，整片，点此改字' }),
+        await within(lane).findByRole('button', { name: '字幕：你好，成片，点此改字' }),
       ).toBeInTheDocument()
       await waitSaved((document) =>
         expect(document?.captions.edits).toEqual([
-          { subtitleJobId: latest.id, sentenceIndex: 0, text: '你好，整片' },
+          { subtitleJobId: latest.id, sentenceIndex: 0, text: '你好，成片' },
         ]),
       )
     })
@@ -902,13 +902,13 @@ describe('整片编辑器 · 组件', () => {
         ...twoClips(),
         captions: {
           component: 'default-caption',
-          edits: [{ subtitleJobId: latest.id, sentenceIndex: 0, text: '你好，整片' }],
+          edits: [{ subtitleJobId: latest.id, sentenceIndex: 0, text: '你好，成片' }],
         },
       })
       await openEditor([...takes, latest, older])
       const lane = screen.getByRole('group', { name: '字幕轨' })
       await user.click(
-        await within(lane).findByRole('button', { name: '字幕：你好，整片，点此改字' }),
+        await within(lane).findByRole('button', { name: '字幕：你好，成片，点此改字' }),
       )
       await user.clear(within(lane).getByRole('textbox'))
       await user.keyboard('{Enter}')
@@ -959,7 +959,7 @@ describe('整片编辑器 · 组件', () => {
   })
 })
 
-describe('整片编辑器 · 导出', () => {
+describe('成片编辑器 · 导出', () => {
   /** 记下发出的下载埋点 */
   const trackDownloads = () => {
     const events: unknown[] = []
@@ -1042,7 +1042,7 @@ describe('整片编辑器 · 导出', () => {
   const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
   const RENDERING = { status: 'rendering', progress: 0.4 }
 
-  it('导出：按存好的这一版提交，完成后下载；每下载一次，对用到的每条成片各记一次', async () => {
+  it('导出：按存好的这一版提交，完成后下载；每下载一次，对用到的每条素材片各记一次', async () => {
     const user = userEvent.setup()
     const events = trackDownloads()
     const saved = stubSaving()
@@ -1060,7 +1060,7 @@ describe('整片编辑器 · 导出', () => {
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('button', { name: '导出' }))
-    const download = await screen.findByRole('button', { name: '下载整片' })
+    const download = await screen.findByRole('button', { name: '下载成片' })
     // 打开时可能先把草稿规整存过一版：提交的是提交那一刻存着的那一版
     expect(revisions).toEqual([mockWholeFilmDraft(CONVERSATION)?.revision])
     await user.click(download)
@@ -1098,7 +1098,7 @@ describe('整片编辑器 · 导出', () => {
     serveLatest(DONE)
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    expect(await screen.findByRole('button', { name: '下载整片' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: '下载成片' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '重新导出' })).toBeInTheDocument()
   })
 
@@ -1147,7 +1147,7 @@ describe('整片编辑器 · 导出', () => {
         revisions.push(body.revision)
         return revisions.length === 1
           ? HttpResponse.json(
-              { detail: '整片草稿已经有更新的一版，重新读取后再导出' },
+              { detail: '成片草稿已经有更新的一版，重新读取后再导出' },
               { status: 409 },
             )
           : HttpResponse.json({ exportId: EXPORT_ID, sourceJobIds: [TAKE_A] }, { status: 202 })
@@ -1157,7 +1157,7 @@ describe('整片编辑器 · 导出', () => {
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByRole('button', { name: '下载整片' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '下载成片' })).toBeInTheDocument()
     const stored = mockWholeFilmDraft(CONVERSATION)?.revision
     expect(revisions).toEqual([stored, stored])
   })
@@ -1166,13 +1166,13 @@ describe('整片编辑器 · 导出', () => {
     const user = userEvent.setup()
     server.use(
       http.post(EXPORTS_URL, () =>
-        HttpResponse.json({ detail: '整片导出没有开通' }, { status: 422 }),
+        HttpResponse.json({ detail: '成片导出没有开通' }, { status: 422 }),
       ),
     )
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByText(/：整片导出没有开通$/)).toHaveAttribute('role', 'status')
+    expect(await screen.findByText(/：成片导出没有开通$/)).toHaveAttribute('role', 'status')
     expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
@@ -1181,7 +1181,7 @@ describe('整片编辑器 · 导出', () => {
     ['渲染服务重启过', 'RENDER_LOST', 'render service restarted', '渲染服务重启过，请重新导出'],
     ['交出去太久没结束', 'PROVIDER_TIMEOUT', 'no end after 6 h', '排队太久，请重新导出'],
     ['渲染服务连不上', 'RENDER_UNAVAILABLE', 'connect refused', '渲染服务连不上，请稍后重新导出'],
-    ['没见过的错误码', 'SUBMIT_INTERRUPTED', 'worker restarted', '整片导出失败，请重新导出'],
+    ['没见过的错误码', 'SUBMIT_INTERRUPTED', 'worker restarted', '成片导出失败，请重新导出'],
   ])('导出失败（%s）：按原因说一句话，不露给开发看的原文', async (_, code, message, text) => {
     serveLatest({ status: 'failed', error: { code, message } })
     putMockWholeFilmDraft(CONVERSATION, twoClips())

@@ -1,7 +1,7 @@
 import { toOffset, type CaptionEdit, type WholeFilmDraft } from './draft'
 import { done, type EditResult } from './result'
 
-// 字幕放进整片的位置由合成构建算（composition/captions.ts 的 placeCaptions），这里只改草稿。
+// 字幕放进成片的位置由合成构建算（composition/captions.ts 的 placeCaptions），这里只改草稿。
 
 const sameSentence = (edit: CaptionEdit, subtitleJobId: string, sentenceIndex: number) =>
   edit.subtitleJobId === subtitleJobId && edit.sentenceIndex === sentenceIndex
@@ -35,7 +35,7 @@ export const clearCaptionText = (
   )
 }
 
-/** 整片关掉或打开字幕；样式与改过的字不动 */
+/** 关掉或打开全部字幕；样式与改过的字不动 */
 export const setCaptionsHidden = (draft: WholeFilmDraft, args: { hidden: boolean }): EditResult =>
   done(
     // 有这个字段之前存的草稿没写它，按开着算
@@ -45,7 +45,7 @@ export const setCaptionsHidden = (draft: WholeFilmDraft, args: { hidden: boolean
   )
 
 /**
- * 在画面上挪字幕：整片字幕共用一个位置。x、y 是画面像素，取整并裁在 ±4096 以内；
+ * 在画面上挪字幕：全部字幕共用一个位置。x、y 是画面像素，取整并裁在 ±4096 以内；
  * 位置没变时原样返回
  */
 export const setCaptionsPosition = (

@@ -189,18 +189,18 @@ describe('ConversationsRoute', () => {
     expect(screen.queryByText('正在读取全部任务')).not.toBeInTheDocument()
   })
 
-  it('封面先取需求单商品图，没有再取最新成片首帧，都没有就不放图', async () => {
+  it('封面先取需求单商品图，没有再取最新素材片首帧，都没有就不放图', async () => {
     const productImage = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/products/shirt.jpg'
     const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/cut.mp4'
     const withImage = addMockTask('带商品图的需求')
     const withoutImage = addMockTask('没有商品图的需求')
-    const both = addMockConversation('商品图与成片都有')
+    const both = addMockConversation('商品图与素材片都有')
     both.taskId = withImage.id
     mockLatestMasterUrls.set(both.id, master)
-    const frameOnly = addMockConversation('需求单没图的成片')
+    const frameOnly = addMockConversation('需求单没图的素材片')
     frameOnly.taskId = withoutImage.id
     mockLatestMasterUrls.set(frameOnly.id, master)
-    const localMaster = addMockConversation('成片不在 OSS')
+    const localMaster = addMockConversation('素材片不在 OSS')
     mockLatestMasterUrls.set(localMaster.id, 'https://example.com/cut.webm')
     addMockConversation('什么都没有')
     await renderWithProviders(
@@ -216,17 +216,19 @@ describe('ConversationsRoute', () => {
     )
 
     expect(
-      within(await rowOf('商品图与成片都有')).getByRole('img', { name: '商品图与成片都有的封面' }),
+      within(await rowOf('商品图与素材片都有')).getByRole('img', {
+        name: '商品图与素材片都有的封面',
+      }),
     ).toHaveAttribute('src', `${productImage}?x-oss-process=image/resize,s_160/format,webp`)
-    expect(within(await rowOf('需求单没图的成片')).getByRole('img')).toHaveAttribute(
+    expect(within(await rowOf('需求单没图的素材片')).getByRole('img')).toHaveAttribute(
       'src',
       `${master}?x-oss-process=video/snapshot,t_0,f_jpg,w_256,h_0,m_fast`,
     )
-    expect(within(await rowOf('成片不在 OSS')).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(await rowOf('素材片不在 OSS')).queryByRole('img')).not.toBeInTheDocument()
     expect(within(await rowOf('什么都没有')).queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('需求单预览还在读时不先放成片首帧', async () => {
+  it('需求单预览还在读时不先放素材片首帧', async () => {
     const task = addMockTask('还在读的需求')
     const conversation = addMockConversation('等预览的片')
     conversation.taskId = task.id
@@ -452,14 +454,14 @@ describe('ConversationsRoute', () => {
     await waitFor(() => expectTotals(2, 2), AUDIT_REFRESH_TIMEOUT)
   })
 
-  it('列着的对话出了新成片：重拉后封面换成新成片的首帧', async () => {
+  it('列着的对话出了新素材片：重拉后封面换成新素材片的首帧', async () => {
     const other = addMockUser('小王')
     const theirs = addMockConversation('小王的秋季片')
     theirs.ownerUserId = other.id
     const { socket } = await render()
     expect(within(await rowOf('小王的秋季片')).queryByRole('img')).not.toBeInTheDocument()
 
-    // 先改 MSW 里的事实：成片出来了，审计列表那一行带上它的地址。
+    // 先改 MSW 里的事实：素材片出来了，审计列表那一行带上它的地址。
     const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/new-cut.mp4'
     mockLatestMasterUrls.set(theirs.id, master)
     socket.deliver(videoCompleted(theirs.id))

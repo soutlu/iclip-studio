@@ -1,4 +1,4 @@
-/** 整片编辑器读写的接口：草稿（合同 §6「整片草稿」）、音乐与字幕记录、生成背景音乐与识别字幕。 */
+/** 成片编辑器读写的接口：草稿（合同 §6「成片草稿」）、音乐与字幕记录、生成背景音乐与识别字幕。 */
 
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
@@ -35,7 +35,7 @@ export const wholeFilmQueryKeys = {
 
 export const readWholeFilmDraft = (conversationId: string, signal?: AbortSignal) =>
   apiFetch(draftPath(conversationId), zWholeFilmDraftOut, {
-    fallbackErrorMessage: '整片草稿读取失败',
+    fallbackErrorMessage: '成片草稿读取失败',
     ...(signal === undefined ? {} : { signal }),
   })
 
@@ -53,7 +53,7 @@ export const useWholeFilmDraftQuery = (conversationId: string) =>
 export const saveWholeFilmDraft = (conversationId: string, body: WholeFilmDraftIn) =>
   apiFetch(draftPath(conversationId), zWholeFilmDraftSavedOut, {
     body,
-    fallbackErrorMessage: '整片草稿保存失败',
+    fallbackErrorMessage: '成片草稿保存失败',
     method: 'PUT',
   })
 
@@ -61,13 +61,13 @@ const exportsPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}/whole-film/exports`
 
 /**
- * 按服务端存着的那一版草稿导出（合同 §6「整片导出」），受理即排队；`revision` 不是存着的那一版是 409，
+ * 按服务端存着的那一版草稿导出（合同 §6「成片导出」），受理即排队；`revision` 不是存着的那一版是 409，
  * 没开通、画面轨是空的是 422（都带一句可以给人看的原因）。渲染服务不收、连不上都在导出状态里报失败。
  */
 export const startWholeFilmExport = (conversationId: string, revision: number) =>
   apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
     body: { revision },
-    fallbackErrorMessage: '整片导出失败',
+    fallbackErrorMessage: '成片导出失败',
     method: 'POST',
   })
 

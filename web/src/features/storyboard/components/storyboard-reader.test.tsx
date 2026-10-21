@@ -212,15 +212,15 @@ const renderReader = async (initialPath = '/?shot=1&content=scene:1', readOnly =
   return rendered
 }
 
-/** 成片区里的卡，新的在前。 */
+/** 素材片区里的卡，新的在前。 */
 const findTakes = async () =>
-  within(await screen.findByRole('region', { name: '本组成片' })).getAllByRole('listitem')
+  within(await screen.findByRole('region', { name: '本组素材片' })).getAllByRole('listitem')
 
 /** 各张卡的提交时刻，认卡用。 */
 const takeTimes = (takes: HTMLElement[]) =>
   takes.map((take) => take.querySelector('time')?.getAttribute('datetime'))
 
-/** 成片区里某张卡本身（整张卡是一个按钮）。 */
+/** 素材片区里某张卡本身（整张卡是一个按钮）。 */
 const takeCard = (take: HTMLElement) => within(take).getByRole('button')
 
 /** 文案列里的一段：全局设定或「镜头 N」。 */
@@ -552,7 +552,7 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it('顶栏组号展开镜头组列表，标出并聚焦当前组，点一组切过去、列表收起、焦点回到组号，成片区只列当前组', async () => {
+  it('顶栏组号展开镜头组列表，标出并聚焦当前组，点一组切过去、列表收起、焦点回到组号，素材片区只列当前组', async () => {
     provide()
     const { router } = await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
@@ -604,7 +604,7 @@ describe('StoryboardReader', () => {
     await waitFor(() => expect(groupPill()).toHaveFocus())
   })
 
-  it('接口提交的出片（只有镜号、正文不是结构化 shot）照样列在本组成片区，点卡片在舞台上播、不开灯箱，焦点留在卡上', async () => {
+  it('接口提交的出片（只有镜号、正文不是结构化 shot）照样列在本组素材片区，点卡片在舞台上播、不开灯箱，焦点留在卡上', async () => {
     provide()
     // 网关只发 shot_index 与正文，记录上只有镜号。
     server.use(
@@ -625,7 +625,7 @@ describe('StoryboardReader', () => {
     await renderReader()
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     const [take] = await findTakes()
-    if (take === undefined) throw new Error('成片区缺这条出片')
+    if (take === undefined) throw new Error('素材片区缺这条出片')
     const card = takeCard(take)
 
     await userEvent.click(card)
@@ -666,7 +666,7 @@ describe('StoryboardReader', () => {
         }),
       )
 
-    it('成片区列出更早那页的本组出片', async () => {
+    it('素材片区列出更早那页的本组出片', async () => {
       provide()
       serveTwoPages()
       await renderReader()
@@ -722,24 +722,24 @@ describe('StoryboardReader', () => {
       within(await screen.findByRole('group', { name: '视频版本' }))
         .getAllByRole('button')
         .map((entry) => entry.getAttribute('aria-label'))
-    /** 舞台选中某条成片（按提交时刻认），再点舞台上的「编辑视频」。 */
+    /** 舞台选中某条素材片（按提交时刻认），再点舞台上的「编辑视频」。 */
     const editFromStage = async (job: GenerationJob) => {
       const page = await screen.findByRole('region', { name: '镜头组 1' })
       const takes = await findTakes()
       const take = takes[takeTimes(takes).indexOf(job.createdAt)]
-      if (take === undefined) throw new Error('成片区缺这条出片')
+      if (take === undefined) throw new Error('素材片区缺这条出片')
       await userEvent.click(takeCard(take))
       await userEvent.click(within(page).getByRole('button', { name: '编辑视频' }))
     }
 
-    it('刷新后、导航去掉 ?video= 后，从舞台重选成片点编辑视频，打开的还是原来那条根，版本条有 V1、原片', async () => {
+    it('刷新后、导航去掉 ?video= 后，从舞台重选素材片点编辑视频，打开的还是原来那条根，版本条有 V1、原片', async () => {
       provide()
       serveRecords()
       const first = await renderReader(`/?shot=1&content=scene:1&video=${editableJob.id}`)
       await screen.findByRole('dialog', { name: /^编辑视频/ })
       await waitFor(async () => expect(await versionLabels()).toEqual(['V1', '原片']))
 
-      // 刷新并且地址里没了 video：舞台选中重置，成片区只列出片、不列合成。
+      // 刷新并且地址里没了 video：舞台选中重置，素材片区只列出片、不列合成。
       first.unmount()
       const { router } = await renderReader('/?shot=1&content=scene:1')
       expect(screen.queryByRole('dialog', { name: /^编辑视频/ })).toBeNull()
@@ -790,8 +790,8 @@ describe('StoryboardReader', () => {
     act(() => within(page).getByRole('textbox', { name: '镜头 2 的描述' }).focus())
     await waitFor(() => expect(segmentOf(page, '镜头 2')).toHaveAttribute('aria-current', 'true'))
     const [take] = await findTakes()
-    if (take === undefined) throw new Error('成片区缺这条出片')
-    // 选中成片照样能看、能下载；回填与编辑视频都不出现。
+    if (take === undefined) throw new Error('素材片区缺这条出片')
+    // 选中素材片照样能看、能下载；回填与编辑视频都不出现。
     await userEvent.click(takeCard(take))
     expect(within(page).getByRole('group', { name: '播放器：生成的视频' })).toBeVisible()
     expect(within(page).getByRole('button', { name: '下载视频' })).not.toHaveAttribute(
@@ -802,33 +802,33 @@ describe('StoryboardReader', () => {
     expect(files.writes).toEqual([])
   })
 
-  it('地址带着整片就打开整片编辑器，关掉回到分镜页；顶栏「整片」再打开', async () => {
+  it('地址带着成片就打开成片编辑器，关掉回到分镜页；顶栏「成片」再打开', async () => {
     provide()
     await renderReader('/?shot=1&wholeFilm=true')
     const editor = await screen.findByRole('dialog', { name: '夜景延时素材生成' })
-    await userEvent.click(within(editor).getByRole('button', { name: '关闭整片编辑' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '关闭成片编辑' }))
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: '夜景延时素材生成' })).toBeNull(),
     )
-    await userEvent.click(screen.getByRole('button', { name: '整片' }))
+    await userEvent.click(screen.getByRole('button', { name: '成片' }))
     expect(await screen.findByRole('dialog', { name: '夜景延时素材生成' })).toBeInTheDocument()
   })
 
-  it('只读时没有「整片」入口，地址里带着也不打开', async () => {
+  it('只读时没有「成片」入口，地址里带着也不打开', async () => {
     provide()
     await renderReader('/?shot=1&wholeFilm=true', true)
     await screen.findByRole('region', { name: '镜头组 1' })
-    expect(screen.queryByRole('button', { name: '整片' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '成片' })).toBeNull()
     expect(screen.queryByRole('dialog', { name: '夜景延时素材生成' })).toBeNull()
   })
 
-  it('选中成片后点回填，把那次出片的镜头组写回当前组并保存', async () => {
+  it('选中素材片后点回填，把那次出片的镜头组写回当前组并保存', async () => {
     const files = provide()
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [editableJob] })))
     await renderReader()
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     const [take] = await findTakes()
-    if (take === undefined) throw new Error('成片区缺这条出片')
+    if (take === undefined) throw new Error('素材片区缺这条出片')
     await userEvent.click(takeCard(take))
     await userEvent.click(within(page).getByRole('button', { name: '回填提示词' }))
     expect(await screen.findByText('已将历史提示词回填到当前镜头组')).toBeVisible()
@@ -854,7 +854,7 @@ describe('StoryboardReader', () => {
     expect(saved.shots[0]?.image_urls).toEqual(document.shots[0]?.image_urls)
   })
 
-  it('浏览与播放成片不会触发写入', async () => {
+  it('浏览与播放素材片不会触发写入', async () => {
     provide()
     const requests: { method: string; url: string }[] = []
     server.events.on('request:start', ({ request }) => {
@@ -867,7 +867,7 @@ describe('StoryboardReader', () => {
     await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
     await userEvent.click(screen.getByRole('button', { name: '复制完整提示词' }))
     const [take] = await findTakes()
-    if (take === undefined) throw new Error('成片区缺这条出片')
+    if (take === undefined) throw new Error('素材片区缺这条出片')
     await userEvent.click(takeCard(take))
     expect(within(page).getByRole('group', { name: '播放器：生成的视频' })).toBeVisible()
     await userEvent.click(within(page).getByRole('button', { name: '镜头 1' }))
@@ -893,9 +893,9 @@ describe('StoryboardReader', () => {
     )
     const { socket } = await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    const tray = await screen.findByRole('region', { name: '本组成片' })
+    const tray = await screen.findByRole('region', { name: '本组素材片' })
     expect(within(tray).getByRole('button', { name: /生成中$/ })).toBeVisible()
-    expect(within(tray).queryByRole('button', { name: /的成片$/ })).not.toBeInTheDocument()
+    expect(within(tray).queryByRole('button', { name: /的素材片$/ })).not.toBeInTheDocument()
 
     act(() => {
       socket.deliver({
@@ -912,7 +912,7 @@ describe('StoryboardReader', () => {
       })
     })
 
-    expect(await within(tray).findByRole('button', { name: /的成片$/ })).toBeVisible()
+    expect(await within(tray).findByRole('button', { name: /的素材片$/ })).toBeVisible()
     expect(within(tray).queryByRole('button', { name: /生成中$/ })).not.toBeInTheDocument()
     expect(served).toBe(2)
   })
@@ -991,7 +991,7 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it('出片栏里换模型、关音频后出片：请求体照上游形状取当前组内容，分辨率默认 720p，提交后成片区最前面出现在途卡', async () => {
+  it('出片栏里换模型、关音频后出片：请求体照上游形状取当前组内容，分辨率默认 720p，提交后素材片区最前面出现在途卡', async () => {
     provide()
     const user = userEvent.setup()
     const [firstShot] = document.shots
@@ -1033,7 +1033,7 @@ describe('StoryboardReader', () => {
     await waitFor(async () => expect(takeTimes(await findTakes())).toHaveLength(2))
     const [newest] = await findTakes()
     expect(within(newest as HTMLElement).getByRole('button', { name: /生成中$/ })).toBeVisible()
-    // 出片不替人切走：舞台还是原来那帧，新卡只出现在成片区最前面。
+    // 出片不替人切走：舞台还是原来那帧，新卡只出现在素材片区最前面。
     expect(screen.getByRole('img', { name: '镜头组 1 第 2 帧' })).toBeVisible()
     expect(within(newest as HTMLElement).getByRole('button')).toHaveAttribute(
       'aria-pressed',
@@ -2255,7 +2255,7 @@ describe('StoryboardReader', () => {
     })
   })
 
-  describe('选中成片：舞台播放，舞台工具条换成成片的操作', () => {
+  describe('选中素材片：舞台播放，舞台工具条换成素材片的操作', () => {
     const failedJob = makeGenerationJob({
       id: '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a',
       createdAt: '2026-09-01T10:04:00Z',
@@ -2270,13 +2270,13 @@ describe('StoryboardReader', () => {
     const cardOf = async (job: GenerationJob) => {
       const takes = await findTakes()
       const take = takes.find((item) => takeTimes([item])[0] === job.createdAt)
-      if (take === undefined) throw new Error('成片区缺这条出片')
+      if (take === undefined) throw new Error('素材片区缺这条出片')
       return { card: takeCard(take), take }
     }
     const player = (page: HTMLElement) =>
       within(page).queryByRole('group', { name: '播放器：生成的视频' })
 
-    it('点成片卡：舞台播放这条视频，舞台右上出现下载、编辑视频、回填；卡上没有别的按钮，文案列撤掉选中', async () => {
+    it('点素材片卡：舞台播放这条视频，舞台右上出现下载、编辑视频、回填；卡上没有别的按钮，文案列撤掉选中', async () => {
       provide()
       serveTakes([editableJob])
       await renderReader()
@@ -2307,7 +2307,7 @@ describe('StoryboardReader', () => {
       expect(within(take).getAllByRole('button')).toEqual([card])
     })
 
-    it('下载：取这条成片的字节交给浏览器保存，并以它的记录 id 上报 video.downloaded', async () => {
+    it('下载：取这条素材片的字节交给浏览器保存，并以它的记录 id 上报 video.downloaded', async () => {
       provide()
       serveTakes([editableJob])
       const events: unknown[] = []
@@ -2345,7 +2345,7 @@ describe('StoryboardReader', () => {
       expect(fetched).toEqual([editableJob.outputUrl])
     })
 
-    it('编辑视频打开这条成片的视频编辑器', async () => {
+    it('编辑视频打开这条素材片的视频编辑器', async () => {
       provide()
       serveTakes([editableJob])
       const { router } = await renderReader()
@@ -2361,7 +2361,7 @@ describe('StoryboardReader', () => {
       expect(await within(editor).findByRole('group', { name: '播放控件' })).toBeVisible()
     })
 
-    it('在途的成片：舞台是骨架加走表，工具条只有 ⓘ 与回填；失败的成片：舞台写出完整原因，下载与编辑置灰说原因', async () => {
+    it('在途的素材片：舞台是骨架加走表，工具条只有 ⓘ 与回填；失败的素材片：舞台写出完整原因，下载与编辑置灰说原因', async () => {
       provide()
       serveTakes([runningJob, failedJob])
       await renderReader()
@@ -2396,7 +2396,7 @@ describe('StoryboardReader', () => {
       )
     })
 
-    it('点文案段（包括原来选中的那段）、点 @N、切组都回到帧；选中的成片从列表里消失也回到帧', async () => {
+    it('点文案段（包括原来选中的那段）、点 @N、切组都回到帧；选中的素材片从列表里消失也回到帧', async () => {
       provide()
       serveTakes([editableJob])
       const { queryClient } = await renderReader()
@@ -2470,7 +2470,7 @@ describe('StoryboardReader', () => {
     })
 
     it.each(['新增', '替换'])(
-      '%s上传期间选中成片：上传完成照常写进草稿，舞台接着放视频',
+      '%s上传期间选中素材片：上传完成照常写进草稿，舞台接着放视频',
       async (mode) => {
         const files = provide()
         serveTakes([editableJob])
@@ -2510,7 +2510,7 @@ describe('StoryboardReader', () => {
       },
     )
 
-    it('新增上传期间选中成片后上传失败：失败留在原段的 chip 上，舞台接着放视频，点开 chip 能重试', async () => {
+    it('新增上传期间选中素材片后上传失败：失败留在原段的 chip 上，舞台接着放视频，点开 chip 能重试', async () => {
       const files = provide()
       serveTakes([editableJob])
       const release = delayedUpload(503)
@@ -2536,7 +2536,7 @@ describe('StoryboardReader', () => {
       expect(files.snapshot().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([4, 2, 1])
     })
 
-    it('成片的操作是舞台右上的图标按钮，按 Tab 移过去就提示名字；ⓘ 的可访问名与提示里都有分辨率 · 时长 · 时间与模型', async () => {
+    it('素材片的操作是舞台右上的图标按钮，按 Tab 移过去就提示名字；ⓘ 的可访问名与提示里都有分辨率 · 时长 · 时间与模型', async () => {
       const specified = makeGenerationJob({
         id: 'f1c2d3e4-5a6b-4c7d-8e9f-0a1b2c3d4e5f',
         createdAt: '2026-09-01T10:04:00Z',
@@ -2553,7 +2553,7 @@ describe('StoryboardReader', () => {
 
       const download = within(page).getByRole('button', { name: '下载视频' })
       expect(download.textContent).toBe('')
-      const info = within(page).getByRole('button', { name: /^成片信息：/ })
+      const info = within(page).getByRole('button', { name: /^素材片信息：/ })
       // 图标按钮在按 Tab 移过去时提示名字：从 ⓘ 往后移一格。
       act(() => info.focus())
       await userEvent.tab()
@@ -2562,7 +2562,7 @@ describe('StoryboardReader', () => {
       act(() => download.blur())
       await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
 
-      expect(info).toHaveAccessibleName(/^成片信息：720p · 0:06 · .+，vendor-a-seedance-2-5$/)
+      expect(info).toHaveAccessibleName(/^素材片信息：720p · 0:06 · .+，vendor-a-seedance-2-5$/)
       act(() => info.focus())
       await waitFor(() => {
         const tooltip = screen.getByRole('tooltip')

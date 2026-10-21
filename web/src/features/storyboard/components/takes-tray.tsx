@@ -1,5 +1,5 @@
-/** 成片区：文案列末尾一行横滑的本组出片卡，新的在前。吸附到卡、两端还能滚时渐隐，工作台够宽时带左右箭头；
- * 位置、出血与显隐见 storyboard.css 的「成片区」一节。数据整形在 `takes.ts`，这里只排版和转交选中。 */
+/** 素材片区：文案列末尾一行横滑的本组出片卡，新的在前。吸附到卡、两端还能滚时渐隐，工作台够宽时带左右箭头；
+ * 位置、出血与显隐见 storyboard.css 的「素材片区」一节。数据整形在 `takes.ts`，这里只排版和转交选中。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/shared/icons'
@@ -9,13 +9,13 @@ import { useScrollFade } from './use-scroll-fade'
 import { workbenchControl } from './workbench-control'
 
 type TakeSelection = {
-  /** 舞台正在看的那条成片。 */
+  /** 舞台正在看的那条素材片。 */
   selectedId: string | undefined
   onSelect: (jobId: string) => void
 }
 
 type TakesTrayProps = TakeSelection & {
-  /** 本组成片，见 `takesOfShot`；还在读是 undefined。 */
+  /** 本组素材片，见 `takesOfShot`；还在读是 undefined。 */
   takes: readonly Take[] | undefined
   /** 读取失败的原因；有它就只说原因。 */
   error: string | undefined
@@ -25,7 +25,7 @@ type TakesTrayProps = TakeSelection & {
 export function TakesTray({ error, takes, ...selection }: TakesTrayProps) {
   if (error !== undefined)
     return (
-      <section aria-label="本组成片" className="storyboard-takes">
+      <section aria-label="本组素材片" className="storyboard-takes">
         <p className="storyboard-takes-head text-error" role="alert">
           {error}
         </p>
@@ -54,10 +54,10 @@ function TakesRail({ onSelect, selectedId, takes }: TakeSelection & { takes: rea
   const control = workbenchControl({ shape: 'icon', size: 'sm' })
 
   return (
-    <section aria-label="本组成片" className="storyboard-takes">
+    <section aria-label="本组素材片" className="storyboard-takes">
       <div className="storyboard-takes-head">
         <h3>
-          本组成片<span className="storyboard-takes-count">{takes.length}</span>
+          本组素材片<span className="storyboard-takes-count">{takes.length}</span>
         </h3>
         {/* 放得下就没有箭头；工作台窄于 776 时样式收起，靠滑。 */}
         {fade === 'none' ? null : (

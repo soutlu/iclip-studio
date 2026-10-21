@@ -33,7 +33,7 @@ interface Effects {
   /** 只有按状态筛选的侧栏拓扑与分页列表可能换成员。 */
   filtered: boolean
   audit: boolean
-  /** 出了新成片的对话：全部对话页列着它时要重拉，那一行的封面只在那份查询里。 */
+  /** 出了新素材片的对话：全部对话页列着它时要重拉，那一行的封面只在那份查询里。 */
   masters: Set<string>
   /** 重连后对齐搜索结果的成员。 */
   search: boolean
@@ -183,14 +183,14 @@ const reduce = (
       if (conversationId === null || update.jobKind !== 'video') return
       // 帧上只有单条任务的状态，行上要的是视频汇总：补读这一行。别人的对话只在池里已有这一行时补。
       if (mine || rows.get(conversationId) !== undefined) effects.rows.add(conversationId)
-      // 帧上分不出成片还是编辑段，编辑段完成也会多重拉一次，无害。
+      // 帧上分不出素材片还是编辑段，编辑段完成也会多重拉一次，无害。
       if (update.status === 'completed') effects.masters.add(conversationId)
       return
     }
   }
 }
 
-/** 全部对话页的哪一份缓存列着这段对话；最新成片的地址只在那份查询里，单行补读带不回来。 */
+/** 全部对话页的哪一份缓存列着这段对话；最新素材片的地址只在那份查询里，单行补读带不回来。 */
 const listedInAudit = (queryClient: QueryClient, conversationId: string): boolean =>
   queryClient
     .getQueriesData<InfiniteData<AuditPage>>({ queryKey: conversationsQueryKeys.auditAll })

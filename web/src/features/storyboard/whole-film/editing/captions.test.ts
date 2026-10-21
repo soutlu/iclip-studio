@@ -60,7 +60,7 @@ describe('改字、字幕样式与字幕开关', () => {
     expect(expectOk(setCaptionsHidden(off, { hidden: true })).draft).toBe(off)
   })
 
-  it('挪字幕：整片共用一个位置，取整并裁在 ±4096 以内', () => {
+  it('挪字幕：全部字幕共用一个位置，取整并裁在 ±4096 以内', () => {
     const moved = expectOk(setCaptionsPosition(film(), { x: -12.5, y: 300.2 })).draft
     expect(moved.captions).toEqual({ ...film().captions, x: -12, y: 300 })
     const far = expectOk(setCaptionsPosition(film(), { x: -5_000, y: 4_097 })).draft

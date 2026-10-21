@@ -1,9 +1,9 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openConversation } from './helpers'
 
-/** 演示对话里：第 2 组一条竖版 6 秒成片，第 3 组一条横版成片；这段对话有一首生成的音乐、一首上传的音乐。 */
+/** 演示对话里：第 2 组一条竖版 6 秒素材片，第 3 组一条横版素材片；这段对话有一首生成的音乐、一首上传的音乐。 */
 const openWholeFilm = async (page: Page, panel: Locator) => {
-  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(/[?&]wholeFilm=true/)
@@ -41,8 +41,8 @@ const readyPlayer = async (dialog: Locator) => {
   return player
 }
 
-test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关掉再开草稿还在', async ({ page }) => {
-  // 一条走完整片编辑全程的长用例，本地约 15 秒；CI 分片并行时会超过默认的 30 秒
+test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关掉再开草稿还在', async ({ page }) => {
+  // 一条走完成片编辑全程的长用例，本地约 15 秒；CI 分片并行时会超过默认的 30 秒
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
@@ -53,7 +53,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
     .getByRole('group', { name: '镜头组 2' })
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   const first = film.getByRole('group', { name: /^第 1 段/ })
   await expect(first).toBeVisible()
 
@@ -95,7 +95,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await beatSync.click()
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
-  // 组件栏：component 卡片放到特效轨、block 卡片插进成片轨、字幕样式
+  // 组件栏：component 卡片放到特效轨、block 卡片插进画面轨、字幕样式
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = dialog.getByRole('radiogroup', { name: '分类' })
   await categories.getByRole('radio', { name: /^场景/ }).click()
@@ -120,7 +120,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(intro).toBeHidden()
 
   await seek(page, dialog, 0)
-  await components.getByRole('button', { name: /^标志片尾，成片轨/ }).click()
+  await components.getByRole('button', { name: /^标志片尾，画面轨/ }).click()
   await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 标志片尾/ })).toBeVisible()
 
   await seek(page, dialog, 1)
@@ -167,19 +167,19 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await captionInput.press('Enter')
   await captionSaved
 
-  // 导出：mock 渲染排队、渲染、上传后给下载地址；下载时对用到的成片各记一次
+  // 导出：mock 渲染排队、渲染、上传后给下载地址；下载时对用到的素材片各记一次
   const exported = page.waitForResponse(
     (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
   )
   await dialog.getByRole('button', { name: '导出', exact: true }).click()
   const { exportId } = (await (await exported).json()) as { exportId: string }
-  // 导出完成后读这次导出能做的高清版；mock 里能做，「下载整片」先开菜单。
+  // 导出完成后读这次导出能做的高清版；mock 里能做，「下载成片」先开菜单。
   const tiers = page.waitForResponse(
     (response) => response.url().includes(`/generations/${exportId}/enhancements`),
     { timeout: 20_000 },
   )
   await expect(dialog.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
-  const download = dialog.getByRole('button', { name: '下载整片' })
+  const download = dialog.getByRole('button', { name: '下载成片' })
   await expect(download).toBeVisible({ timeout: 15_000 })
   await tiers
   const tracked = page.waitForRequest(
@@ -187,16 +187,16 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   )
   const fileSaved = page.waitForEvent('download')
   await download.click()
-  await page.getByRole('menuitem', { name: '下载整片', exact: true }).click()
+  await page.getByRole('menuitem', { name: '下载成片', exact: true }).click()
   expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
   expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
 
   // 关掉再打开：成片留着，接着显示最近一次导出
-  await dialog.getByRole('button', { name: '关闭整片编辑' }).click()
+  await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
   await expect(dialog).toBeHidden()
   const reopened = await openWholeFilm(page, panel)
-  await expect(reopened.getByRole('button', { name: '下载整片' })).toBeVisible()
-  const reopenedFilm = reopened.getByRole('group', { name: '成片画面轨' })
+  await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
+  const reopenedFilm = reopened.getByRole('group', { name: '画面轨', exact: true })
   await expect(reopenedFilm.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
   await expect(reopened.getByRole('group', { name: /^音乐 · 音乐 2，/ })).toBeVisible()
   await expect(reopened.getByRole('button', { name: '撤销' })).toHaveAttribute(
@@ -205,7 +205,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   )
 })
 
-test('整片编辑器在窄屏上纵向排开', async ({ page }) => {
+test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
   const dialog = await openWholeFilm(page, panel)

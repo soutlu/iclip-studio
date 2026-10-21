@@ -53,9 +53,9 @@ const renderTray = async (
   return { onSelect }
 }
 
-/** 成片区里按从新到旧排的卡。 */
+/** 素材片区里按从新到旧排的卡。 */
 const cards = () =>
-  within(screen.getByRole('region', { name: '本组成片' })).getAllByRole('listitem')
+  within(screen.getByRole('region', { name: '本组素材片' })).getAllByRole('listitem')
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -64,7 +64,7 @@ afterEach(() => {
 describe('TakesTray', () => {
   it('整张卡是唯一的按钮：成功、在途、失败都能点，点了交出这条记录；卡上没有别的操作', async () => {
     const { onSelect } = await renderTray([completed, failed, running])
-    const names = [/生成中$/, /生成失败$/, /的成片$/]
+    const names = [/生成中$/, /生成失败$/, /的素材片$/]
     for (const [index, card] of cards().entries()) {
       const button = within(card).getByRole('button')
       expect(button).toHaveAccessibleName(names[index])
@@ -135,13 +135,13 @@ describe('TakesTray', () => {
     },
   ])('$when 时整块不占位', async ({ jobs }) => {
     await renderTray(jobs)
-    expect(screen.queryByRole('region', { name: '本组成片' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '本组素材片' })).not.toBeInTheDocument()
   })
 
   it('读取失败时说原因', async () => {
     await renderTray(undefined, { error: '读取视频记录失败' })
     expect(
-      within(screen.getByRole('region', { name: '本组成片' })).getByRole('alert'),
+      within(screen.getByRole('region', { name: '本组素材片' })).getByRole('alert'),
     ).toHaveTextContent('读取视频记录失败')
   })
 })

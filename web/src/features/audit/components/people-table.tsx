@@ -1,4 +1,4 @@
-/** 按人：一人一行，成片数带长度条，末列是每期成片的迷你图；点表头在前端排序。 */
+/** 按人：一人一行，出片件数带长度条，末列是每期出片的迷你图；点表头在前端排序。 */
 
 import { useState } from 'react'
 import { cn } from '@/shared/lib/utils'
@@ -16,12 +16,12 @@ type PeopleTableProps = {
 }
 
 const TREND_TITLE: Record<OverviewBucket, string> = {
-  hour: '每小时成片',
-  day: '每天成片',
-  week: '每周成片',
+  hour: '每小时出片',
+  day: '每天出片',
+  week: '每周出片',
 }
 
-/** 成片数长度条最长多少 px。 */
+/** 出片件数长度条最长多少 px。 */
 const BAR_MAX = 80
 
 export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
@@ -45,7 +45,7 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
               人
             </th>
             <SortHeader column="deliveries" onSort={onSort} sort={sort}>
-              成片数
+              出片件数
             </SortHeader>
             <SortHeader column="attempts" onSort={onSort} sort={sort}>
               每镜头重试次数
@@ -57,7 +57,7 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
               单任务平均时长
             </SortHeader>
             <SortHeader column="perDelivery" onSort={onSort} sort={sort}>
-              每件成片消耗
+              每件出片消耗
             </SortHeader>
             <th className={cn(TH, '@6xl:w-38')} scope="col">
               {TREND_TITLE[bucket]}

@@ -107,7 +107,7 @@ export type InsertionPreviewPosition = {
   alignEnd: boolean
 }
 
-/** 占位长度等于完整时长，内部颜色表示可放置；成片与特效使用相同结构。 */
+/** 占位长度等于完整时长，内部颜色表示可放置；画面轨与特效轨使用相同结构。 */
 export function InsertionPreview({
   face,
   position,

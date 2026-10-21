@@ -9,13 +9,13 @@ import { MIN_CLIP_MS, type Layer0Clip, type WholeFilmDraft } from './draft'
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max)
 
-/** 成片轨（第 0 层）的结尾：各段时长之和 */
+/** 画面轨（第 0 层）的结尾：各段时长之和 */
 export const layer0End = (draft: Pick<WholeFilmDraft, 'layer0'>): number =>
   draft.layer0.reduce((sum, clip) => sum + clip.duration, 0)
 
 /**
- * 整片时长：同 HyperFrames，所有轨上内容的最远结束，即成片轨的结尾与特效块最晚的结尾里大的那个；
- * 特效块超出成片轨的部分叠在空画面上照样渲染，音乐也铺到这里。
+ * 成片时长：同 HyperFrames，所有轨上内容的最远结束，即画面轨的结尾与特效块最晚的结尾里大的那个；
+ * 特效块超出画面轨的部分叠在空画面上照样渲染，音乐也铺到这里。
  */
 export const filmDuration = (draft: Pick<WholeFilmDraft, 'layer0' | 'overlays'>): number =>
   Math.max(layer0End(draft), ...draft.overlays.map((overlay) => overlay.start + overlay.duration))
@@ -44,13 +44,13 @@ export const insertIndexAt = (layer0: readonly Layer0Clip[], timeMs: number): nu
 /** 上下文必须带齐草稿引用到的素材；缺了是调用方的错 */
 export const sourceOf = (context: EditContext, sourceJobId: string): SourceMedia => {
   const source = context.sources[sourceJobId]
-  if (!source) throw new Error(`整片编辑上下文缺少成片 ${sourceJobId}`)
+  if (!source) throw new Error(`成片编辑上下文缺少素材片 ${sourceJobId}`)
   return source
 }
 
 export const musicOf = (context: EditContext, jobId: string): MusicMedia => {
   const music = context.music[jobId]
-  if (!music) throw new Error(`整片编辑上下文缺少音乐 ${jobId}`)
+  if (!music) throw new Error(`成片编辑上下文缺少音乐 ${jobId}`)
   return music
 }
 

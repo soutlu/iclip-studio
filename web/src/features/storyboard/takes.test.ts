@@ -152,13 +152,13 @@ describe('takesOfShot', () => {
 describe('takeActionsOf', () => {
   const take = (spec: Partial<GenerationJob>) => {
     const [only] = takesOfShot([job({ id: 'x', ...spec })], 2, '9:16')
-    if (only === undefined) throw new Error('缺成片')
+    if (only === undefined) throw new Error('缺素材片')
     return only
   }
   const enabled = { kind: 'enabled' }
   const hidden = { kind: 'hidden' }
   const blocked = (reason: string) => ({ kind: 'blocked', reason })
-  const refillBlocked = blocked('该成片未记录分镜结构，无法回填')
+  const refillBlocked = blocked('该素材片未记录分镜结构，无法回填')
 
   it.each([
     {

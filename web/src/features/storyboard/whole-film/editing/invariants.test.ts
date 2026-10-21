@@ -70,8 +70,8 @@ const violations = (draft: WholeFilmDraft): string[] => {
     ...(draft.music ? [draft.music.offset] : []),
   ]
   check(ints.every(Number.isInteger), '时间都是整数毫秒')
-  check(total <= MAX_FILM_MS, '整片不超过 120 秒')
-  check(layer0End(draft) <= total, '整片不短于成片轨')
+  check(total <= MAX_FILM_MS, '成片不超过 120 秒')
+  check(layer0End(draft) <= total, '成片不短于画面轨')
   const videos = draft.layer0.filter((c) => c.type === 'video')
   check((draft.canvas === null) === (videos.length === 0), '画布跟着有没有视频段')
   const ids = [...draft.layer0, ...draft.overlays].map((item) => item.id)

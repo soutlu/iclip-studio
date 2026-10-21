@@ -74,7 +74,7 @@ describe('全部对话的需求单预览', () => {
       'https://example.com/shirt.jpg',
     )
     expect(within(recentRow).getByText(recent.title)).toBeVisible()
-    // 封面只认商品图：这张需求单只有参考图，也没有成片，列表行就不放图。两张需求单同一批读回，上面那张有图时这里也到了。
+    // 封面只认商品图：这张需求单只有参考图，也没有素材片，列表行就不放图。两张需求单同一批读回，上面那张有图时这里也到了。
     for (const title of ['外套尝试一', '外套尝试二']) {
       const row = await screen.findByRole('link', { name: new RegExp(title) })
       expect(within(row).getByText(historical.title)).toBeVisible()
