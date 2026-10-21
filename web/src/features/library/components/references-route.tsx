@@ -53,11 +53,15 @@ export function ReferencesRoute({
   const tagTree = useLibraryTags()
   const tags = tagTree.data?.index
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
+  // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试，不一直停在骨架上。
   const scope =
     tags === undefined
       ? requestedScope
       : { ...requestedScope, tags: knownTagIds(tags, requestedScope.tags) }
-  const references = useReferences(scope, tags !== undefined || requestedScope.tags.length === 0)
+  const references = useReferences(
+    scope,
+    tags !== undefined || requestedScope.tags.length === 0 || tagTree.isError,
+  )
   const loaded = references.data?.pages.flatMap((page) => page.items) ?? []
   const total = references.data?.pages[0]?.total ?? undefined
   const canUpload = references.data?.pages[0]?.canUpload ?? false

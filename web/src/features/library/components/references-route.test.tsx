@@ -18,12 +18,14 @@ function Harness({
   onScope,
   onReference,
   initialReference = null,
+  initialScope = DEFAULT_REFERENCE_SCOPE,
 }: {
   onScope?: (scope: ReferenceScope) => void
   onReference?: (id: string | null) => void
   initialReference?: string | null
+  initialScope?: ReferenceScope
 }) {
-  const [scope, setScope] = useState(DEFAULT_REFERENCE_SCOPE)
+  const [scope, setScope] = useState(initialScope)
   const [referenceId, setReferenceId] = useState(initialReference)
   return (
     <>
@@ -224,6 +226,30 @@ describe('参考视频列表', () => {
     await user.click(screen.getByRole('radio', { name: '全部' }))
     await waitFor(() => expect(cardNames()).toHaveLength(3))
     expect(queries.at(-1)?.has('tags')).toBe(false)
+  })
+
+  it('地址里带着标签时标签树读失败：给出原因与重试，不一直停在加载中；重试成功后按标签列出', async () => {
+    resetMockReferences([
+      { createdAt: '2026-09-23T11:00:00Z', tagIds: tags('拖鞋') },
+      { createdAt: '2026-09-23T10:00:00Z', tagIds: tags('短靴') },
+    ])
+    let failing = true
+    server.use(
+      http.get('*/api/library-tags', () =>
+        failing ? HttpResponse.json({ detail: '服务暂不可用' }, { status: 500 }) : undefined,
+      ),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(
+      <Harness initialScope={{ ...DEFAULT_REFERENCE_SCOPE, tags: tags('拖鞋') }} />,
+    )
+
+    const retry = await screen.findByRole('button', { name: '重新加载' })
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+
+    failing = false
+    await user.click(retry)
+    await waitFor(() => expect(cardNames()).toEqual(['拖鞋']))
   })
 
   it('不同维度都要命中：品类与内容结构各选一项，交回的 tags 按树的先后', async () => {
