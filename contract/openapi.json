@@ -11908,7 +11908,7 @@
         ]
       },
       "post": {
-        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：源看不见是 404，源没有工程文件或分镜文件是 422。",
+        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的\n资料库卡是 404，源没有工程文件或分镜文件是 422。",
         "operationId": "create_conversation_conversations_post",
         "requestBody": {
           "content": {

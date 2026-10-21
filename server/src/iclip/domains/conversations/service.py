@@ -194,6 +194,15 @@ class CopySameStyle(Protocol):
     ) -> bool: ...
 
 
+class SameStyleSource(Protocol):
+    """做同款认源：资料库里这张卡挂着的对话的属主。
+
+    挂着对话的卡，卡 id 就是对话 id。不是资料库卡、或卡不挂对话时给 ``None``；不看那段对话
+    删没删。"""
+
+    async def __call__(self, card_id: uuid.UUID) -> uuid.UUID | None: ...
+
+
 ListDerivedFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[Sequence[DerivedFile]]]
 """列出工作区文件，参数为 (属主, 对话 id)。"""
 
@@ -453,6 +462,7 @@ class ConversationService:
         fork_transcript: ForkTranscript,
         copy_workspace: CopyConversationWorkspace,
         copy_same_style: CopySameStyle,
+        same_style_source: SameStyleSource,
         event_watermark: EventWatermarkOf,
         announce_row: AnnounceConversationRow,
         announce_deleted: AnnounceConversationDeleted,
@@ -462,6 +472,7 @@ class ConversationService:
         self._draft_references = draft_references
         self._exports = exports
         self._copy_same_style = copy_same_style
+        self._same_style_source = same_style_source
         self._event_watermark = event_watermark
         self._announce_row = announce_row
         self._announce_deleted = announce_deleted
@@ -815,8 +826,9 @@ class ConversationService:
         ``conversation_id`` 由调用方铸时按它幂等：重发同一个 id 返回已有那一段。
         落库的那一段挂着需求单，就以它的属主认领那张单，重发也认领一次。
 
-        给了 ``same_as`` 就是做同款：先把那段对话的制作文件与素材台账拷进来，再落对话行。
-        源看不见抛 ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
+        给了 ``same_as`` 就是做同款：先把那张资料库卡挂着的对话的制作文件与素材台账拷进来，再落
+        对话行。调用者没有 ``generation:read``、或 ``same_as`` 不是挂着对话的资料库卡抛
+        ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
         这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。"""
 
         now = datetime.now(UTC)
@@ -863,15 +875,20 @@ class ConversationService:
     async def _copy_same_as(
         self, principal: Principal, *, source_id: uuid.UUID, target_id: uuid.UUID
     ) -> None:
-        """做同款的拷贝：源的可见范围同分叉，在跑也照拷。
+        """做同款的拷贝：源按资料库认，看得到资料库、源是挂着对话的卡就能拷，不看那段对话调用者
+        读不读得到、删没删，在跑也照拷。
 
         先拷文件与素材、对话行由调用方最后落，与分叉同一个顺序：中途失败只留下寻址不到的数据，
         agent 也不会在拷到一半的工作区里开跑。"""
 
-        source = await self._readable(principal, source_id)
+        if not principal.has("generation:read"):
+            raise NotFound("资料库里没有这条视频")
+        source_owner = await self._same_style_source(source_id)
+        if source_owner is None:
+            raise NotFound("资料库里没有这条视频")
         if not await self._copy_same_style(
-            source_owner=source.owner_user_id,
-            source_id=source.id,
+            source_owner=source_owner,
+            source_id=source_id,
             target_owner=principal.user_id,
             target_id=target_id,
         ):

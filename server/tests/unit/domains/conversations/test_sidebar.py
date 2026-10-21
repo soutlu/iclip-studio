@@ -161,6 +161,7 @@ def build(
         fork_transcript=cast("ForkTranscript", object()),
         copy_workspace=_untouched,
         copy_same_style=_untouched,
+        same_style_source=_untouched,
         event_watermark=SessionEventClock().snapshot,
         announce_row=_untouched,
         announce_deleted=_untouched,

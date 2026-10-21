@@ -131,15 +131,14 @@ class LibraryService:
         return LibraryVideoDetailOut(
             video=video,
             groups=list(groups),
-            can_make_same=await self._can_make_same(video, row),
+            can_make_same=await self._can_make_same(row),
         )
 
-    async def _can_make_same(self, video: LibraryVideoOut, row: CardRow) -> bool:
-        if not video.can_open_conversation:
+    async def _can_make_same(self, row: CardRow) -> bool:
+        conversation_id = row.video.conversation_id
+        if conversation_id is None or row.conversation_owner is None:
             return False
-        if video.conversation_id is None or row.conversation_owner is None:
-            return False
-        return await self._has_production_files(row.conversation_owner, video.conversation_id)
+        return await self._has_production_files(row.conversation_owner, conversation_id)
 
     async def authors(self) -> LibraryAuthorsOut:
         return LibraryAuthorsOut(items=list(await self._reports.authors()))

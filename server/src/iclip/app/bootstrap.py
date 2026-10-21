@@ -30,7 +30,7 @@ from iclip.app.brand_templates import template_font_prober
 from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
-from iclip.app.conversation_same_style import SameStyleCopier
+from iclip.app.conversation_same_style import LibrarySameStyleSource, SameStyleCopier
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
     validate_film,
@@ -638,8 +638,9 @@ def build_app(
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
+    library_reports = PgLibraryReports(active_engine)
     library = build_library_module(
-        PgLibraryReports(active_engine), has_production_files=same_style.has_production_files
+        library_reports, has_production_files=same_style.has_production_files
     )
     conversations = build_conversations_module(
         conversation_repo,
@@ -681,6 +682,7 @@ def build_app(
         fork_transcript=ForkTranscriptAdapter(queue=job_queue, history=transcript_history),
         copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
         copy_same_style=same_style,
+        same_style_source=LibrarySameStyleSource(library_reports),
     )
     uploads: UploadsModule | None = None
     owned_fetcher: PublicFetcher | None = None
