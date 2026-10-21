@@ -10,10 +10,12 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.shot_prompt import parse_shot_prompt
-from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import MaterialSource, Scope, VideoCursor, WholeFilmScope
 from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
+    HitCaseEntryOut,
+    HitCaseOut,
     LibraryAuthorOut,
     LibraryVideoOut,
     ScriptCutOut,
@@ -23,6 +25,12 @@ from iclip.domains.library.schemas import (
     VersionOut,
     WholeFilmCardOut,
     WholeFilmVersionOut,
+)
+from iclip.domains.tagging.public import (
+    KIND_HIT_CASE,
+    entry_columns_sql,
+    entry_filter_sql,
+    entry_join_sql,
 )
 
 _COMPOSE: Final = "compose"
@@ -237,6 +245,50 @@ ORDER BY n DESC, f.user_name"""
 )
 
 
+_MATERIAL_OF: Final = text(f"""
+SELECT g.id, COALESCE(({_MASTER}), false) AS is_material,
+       c.id AS conversation_id, c.owner_user_id AS conversation_owner
+FROM iclip.generation_jobs g
+LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
+WHERE g.id = :job_id""")
+
+_HIT_CASE_ENTRY: Final = text(f"""
+SELECT le.created_at AS added_at, au.username AS added_by, {entry_columns_sql()}
+FROM iclip.generation_jobs g
+{entry_join_sql(kind=KIND_HIT_CASE, subject_expr="g.id")}
+LEFT JOIN iclip.users au ON au.id = le.created_by
+WHERE g.id = :job_id AND le.id IS NOT NULL""")
+
+_HIT_CASES_FROM: Final = f"""
+FROM iclip.generation_jobs g
+{entry_join_sql(kind=KIND_HIT_CASE, subject_expr="g.id")}
+JOIN iclip.generation_jobs t ON t.id = COALESCE(g.root_job_id, g.id)
+JOIN iclip.users u ON u.id = g.owner_user_id
+LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
+WHERE le.id IS NOT NULL AND {_MASTER}"""
+"""在库的爆款素材：有条目、仍是素材片；卡 id 的算法同 ``own_masters``。"""
+
+
+def _hit_cases_statement(tag_filter: str) -> TextClause:
+    return text(f"""
+SELECT g.id, g.operation, g.output_url, g.watermark_output_url, g.duration_ms, g.finished_at,
+       u.username AS user_name, COALESCE(c.id, g.root_job_id, g.id) AS card_id, c.title,
+       t.id AS take_id, t.request AS take_request, le.created_at AS added_at,
+       {entry_columns_sql()}{_HIT_CASES_FROM}{tag_filter}
+  AND (CAST(:after_at AS timestamptz) IS NULL
+       OR (le.created_at, g.id) < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
+ORDER BY le.created_at DESC, g.id DESC
+LIMIT :limit""")
+
+
+def _count_hit_cases_statement(tag_filter: str) -> TextClause:
+    return text(f"SELECT count(*) AS n{_HIT_CASES_FROM}{tag_filter}")
+
+
+def _hit_case_filter(tag_groups: Sequence[Sequence[uuid.UUID]]) -> tuple[str, dict[str, Any]]:
+    return entry_filter_sql(tag_groups, kind=KIND_HIT_CASE, subject_expr="g.id")
+
+
 class _StoredCut(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
@@ -425,9 +477,72 @@ def _film_cards_of(rows: Sequence[RowMapping]) -> list[WholeFilmCardRow]:
     ]
 
 
+def _hit_case_of(row: RowMapping) -> HitCaseOut:
+    return HitCaseOut(
+        job_id=row["id"],
+        card_id=row["card_id"],
+        title=row["title"],
+        face=_face_of(row),
+        take=_take_of(row["take_id"], row["take_request"]),
+        tag_ids=list(row["tag_ids"]),
+        tag_status=row["tag_status"],
+        tag_error=row["tag_error"],
+        added_at=row["added_at"],
+    )
+
+
 class PgLibraryReports:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
+
+    async def material_of(self, job_id: uuid.UUID) -> MaterialSource | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(_MATERIAL_OF, {"job_id": job_id})).mappings().first()
+        if row is None:
+            return None
+        return MaterialSource(
+            job_id=row["id"],
+            is_material=bool(row["is_material"]),
+            conversation_id=row["conversation_id"],
+            conversation_owner=row["conversation_owner"],
+        )
+
+    async def hit_case_entry(self, job_id: uuid.UUID) -> HitCaseEntryOut | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(_HIT_CASE_ENTRY, {"job_id": job_id})).mappings().first()
+        if row is None:
+            return None
+        return HitCaseEntryOut(
+            tag_ids=list(row["tag_ids"]),
+            tag_status=row["tag_status"],
+            tag_error=row["tag_error"],
+            added_at=row["added_at"],
+            added_by=row["added_by"],
+        )
+
+    async def hit_cases(
+        self,
+        tag_groups: Sequence[Sequence[uuid.UUID]],
+        *,
+        limit: int,
+        after: VideoCursor | None,
+    ) -> Sequence[HitCaseOut]:
+        tag_filter, tag_params = _hit_case_filter(tag_groups)
+        params = {
+            **tag_params,
+            "after_at": after.at if after else None,
+            "after_id": after.video_id if after else None,
+            "limit": limit,
+        }
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(_hit_cases_statement(tag_filter), params)).mappings().all()
+        return [_hit_case_of(row) for row in rows]
+
+    async def count_hit_cases(self, tag_groups: Sequence[Sequence[uuid.UUID]]) -> int:
+        tag_filter, tag_params = _hit_case_filter(tag_groups)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(_count_hit_cases_statement(tag_filter), tag_params)
+            return int(result.scalar_one())
 
     async def videos(
         self, scope: Scope, *, limit: int, after: VideoCursor | None

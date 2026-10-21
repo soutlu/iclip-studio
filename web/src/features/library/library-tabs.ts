@@ -1,6 +1,7 @@
 export const LIBRARY_TABS = [
   { label: '成片素材', value: 'videos' },
   { label: '灵感库', value: 'references' },
+  { label: '爆款素材库', value: 'hit-cases' },
   { label: '成片', value: 'whole-films' },
 ] as const
 

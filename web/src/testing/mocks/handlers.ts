@@ -12,6 +12,7 @@ import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
+import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
@@ -471,5 +472,12 @@ export const handlers = [
   ...libraryHandlers,
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
-  ...libraryTagHandlers(mockReferenceTagSets, forgetMockReferenceTags),
+  ...hitCaseHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...libraryTagHandlers(
+    () => ({ hitCases: mockHitCaseTagSets(), references: mockReferenceTagSets() }),
+    (ids) => {
+      forgetMockReferenceTags(ids)
+      forgetMockHitCaseTags(ids)
+    },
+  ),
 ]

@@ -53,12 +53,25 @@ const TAG_FAILURES: Record<TagError, { reason: string; retry: string }> = {
   timeout: { reason: '打标超时', retry: '请稍后点击「重新打标」重试' },
 }
 
-/** 打标失败的一句话：AI 打的标签已清空；`canRetag` 为真时请人点「重新打标」。原因缺失时只说失败。 */
-export const taggingFailureOf = (tagError: TagError | null, canRetag: boolean): string => {
+/** 爆款素材读的是所在对话的新片执行方案，没有可读文字时这样说。 */
+const HIT_CASE_NO_SOURCE_TEXT = {
+  reason: '所在对话暂无可读的新片执行方案，无法打标',
+  retry: '请在补充新片执行方案后点击「重新打标」重试',
+}
+
+/** 打标失败的一句话：AI 打的标签已清空；`canRetag` 为真时请人点「重新打标」。原因缺失时只说失败。
+ * `library` 决定没有可读文字时说的是拆解还是新片执行方案。 */
+export const taggingFailureOf = (
+  tagError: TagError | null,
+  canRetag: boolean,
+  library: 'references' | 'hit-cases' = 'references',
+): string => {
   const failure =
     tagError === null
       ? { reason: '打标失败', retry: '请稍后点击「重新打标」重试' }
-      : TAG_FAILURES[tagError]
+      : tagError === 'no_source_text' && library === 'hit-cases'
+        ? HIT_CASE_NO_SOURCE_TEXT
+        : TAG_FAILURES[tagError]
   return canRetag
     ? `${failure.reason}，AI 打的标签已清空；${failure.retry}。`
     : `${failure.reason}，AI 打的标签已清空。`

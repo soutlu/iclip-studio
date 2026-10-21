@@ -265,6 +265,25 @@ const mockLibraryCards = (now: number): LibraryCard[] =>
 export const mockLibraryVideos = (now: number = Date.now()): LibraryVideo[] =>
   mockLibraryCards(now).map((card) => card.video)
 
+/** 按标题找到的那张卡里全部版本的 id，按组与版本的先后；单测按它挑非卡面的一版。 */
+export const mockLibraryVersionIds = (title: string): string[] => {
+  const card = mockLibraryCards(Date.now()).find(({ video }) => video.title === title)
+  if (card === undefined) throw new Error(`成片素材 mock 里没有「${title}」`)
+  return card.groups.flatMap((group) => group.versions.map((version) => version.jobId))
+}
+
+/** 成片素材里这一版与它所在的卡；没有为 undefined。爆款素材的 mock 按它拼列表项、判能否入选。 */
+export const findMockLibraryCardOf = (
+  jobId: string,
+): { video: LibraryVideo; version: Version } | undefined => {
+  for (const card of mockLibraryCards(Date.now()))
+    for (const group of card.groups) {
+      const version = group.versions.find((candidate) => candidate.jobId === jobId)
+      if (version !== undefined) return { version, video: card.video }
+    }
+  return undefined
+}
+
 /** 成片素材里的一版（出片或合成）与它的镜号，高清版的 mock 按它定来源；没有为 undefined。 */
 export const findMockLibraryVersion = (
   jobId: string,

@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { toast, Toaster } from '@/shared/ui/toast'
 import { loginAs, mockAuthUser, mockGovernor } from '@/testing/mocks/handlers'
+import { resetMockHitCases } from '@/testing/mocks/hit-cases'
+import { mockLibraryVideos } from '@/testing/mocks/library'
 import { mockTagId } from '@/testing/mocks/library-tags'
 import { resetMockReferences } from '@/testing/mocks/references'
 import { server } from '@/testing/mocks/server'
@@ -68,6 +70,7 @@ const valueNames = (dimension: string) =>
 beforeEach(() => {
   stubScrollViewport({ role: 'main', name: '资料库' }, { width: 1200, height: 900 })
   resetMockReferences([])
+  resetMockHitCases([])
 })
 
 afterEach(() => {
@@ -161,6 +164,9 @@ describe('管理标签', () => {
       { tagIds: [mockTagId('AMZ'), mockTagId('短靴')] },
       { tagIds: [mockTagId('DTC')] },
     ])
+    const [video] = mockLibraryVideos()
+    if (video === undefined) throw new Error('成片素材 mock 为空')
+    resetMockHitCases([{ jobId: video.face.jobId, tagIds: [mockTagId('AMZ')] }])
     const amz = mockTagId('AMZ')
     const writes = recordTagWrites()
     const user = userEvent.setup()
@@ -170,7 +176,7 @@ describe('管理标签', () => {
 
     await user.click(screen.getByRole('button', { name: '删除AMZ' }))
     expect(screen.getByRole('status')).toHaveTextContent(
-      '删除后，灵感库 2 条、爆款 0 条会去掉该标签',
+      '删除后，灵感库 2 条、爆款 1 条会去掉该标签',
     )
     await user.click(screen.getByRole('button', { name: '取消' }))
     expect(writes).toEqual([])

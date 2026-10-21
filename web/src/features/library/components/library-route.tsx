@@ -23,6 +23,8 @@ type LibraryRouteProps = {
   onScopeChange: (next: LibraryScope) => void
   myUserName: string | null
   videoId: string | null
+  /** 打开 `videoId` 那张卡时先选中的一版；切到别的卡时由调用方清掉。 */
+  versionId?: string | null
   onVideoChange: (id: string | null, replace: boolean) => void
   shareLinkOf: (id: string) => string
 }
@@ -33,6 +35,7 @@ export function LibraryRoute({
   onScopeChange,
   myUserName,
   videoId,
+  versionId = null,
   onVideoChange,
   shareLinkOf,
 }: LibraryRouteProps) {
@@ -74,6 +77,7 @@ export function LibraryRoute({
             prevId={prevId}
             shareLink={shareLinkOf(videoId)}
             startAt={startAt?.id === videoId ? startAt.at : null}
+            versionId={versionId}
             videoId={videoId}
           />
         )

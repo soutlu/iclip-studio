@@ -10,6 +10,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Input, Textarea } from '@/shared/ui/field'
+import { useFilterBar } from '@/shared/ui/filter-bar'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import {
@@ -32,6 +33,38 @@ const deleteMessageOf = (tag: LibraryTag, dimension: boolean) => {
   return tag.children.length > 0
     ? `删除后，${affected}会去掉该标签，连同其下级`
     : `删除后，${affected}会去掉该标签`
+}
+
+/** 筛选条最右的「管理标签」开关，只给治理者；放在 `FilterBarRoot` 里，点它先收起开着的筛选弹层。 */
+export function ManageTagsToggle({
+  className,
+  open,
+  onToggle,
+}: {
+  /** 照筛选条触发器的外形。 */
+  className: string
+  open: boolean
+  onToggle: () => void
+}) {
+  const { close } = useFilterBar()
+  return (
+    <button
+      aria-pressed={open}
+      className={cn(
+        className,
+        'inline-flex ui-state cursor-pointer items-center gap-1.5 text-on-surface ui-focus',
+        open && 'bg-state-active',
+      )}
+      onClick={() => {
+        close()
+        onToggle()
+      }}
+      type="button"
+    >
+      <Icon decorative name="settings" size="xs" />
+      管理标签
+    </button>
+  )
 }
 
 type LibraryTagAdminProps = {

@@ -9,7 +9,7 @@ test('资料库切到灵感库，页签与标签筛选都在地址里，退回�
   await page.getByRole('button', { name: '资料库' }).click()
 
   const tabs = page.getByRole('tablist', { name: '资料库内容' }).getByRole('tab')
-  await expect(tabs).toHaveText(['成片素材', '灵感库', '成片'])
+  await expect(tabs).toHaveText(['成片素材', '灵感库', '爆款素材库', '成片'])
   const videosTab = page.getByRole('tab', { name: '成片素材' })
   await expect(videosTab).toHaveAttribute('aria-selected', 'true')
   await videosTab.focus()

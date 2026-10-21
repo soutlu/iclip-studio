@@ -1841,6 +1841,135 @@ export type HttpValidationError = {
 }
 
 /**
+ * HitCaseEntryOut
+ *
+ * 一条素材片在爆款素材库里的条目。
+ */
+export type HitCaseEntryOut = {
+  /**
+   * Addedat
+   */
+  addedAt: string
+  /**
+   * Addedby
+   */
+  addedBy: string | null
+  /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+}
+
+/**
+ * HitCaseIn
+ *
+ * 入选时一起写上的标签。
+ */
+export type HitCaseIn = {
+  /**
+   * Tagids
+   */
+  tagIds?: Array<string>
+}
+
+/**
+ * HitCaseOut
+ *
+ * 爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。
+ */
+export type HitCaseOut = {
+  /**
+   * Addedat
+   */
+  addedAt: string
+  /**
+   * Cardid
+   */
+  cardId: string
+  face: FaceOut
+  /**
+   * Jobid
+   */
+  jobId: string
+  /**
+   * Tagerror
+   */
+  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+  /**
+   * Tagstatus
+   */
+  tagStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+  take: TakeOut
+  /**
+   * Title
+   */
+  title: string | null
+}
+
+/**
+ * HitCaseStateOut
+ *
+ * 一条素材片与爆款素材库的关系：能不能入选、入选了没有。
+ */
+export type HitCaseStateOut = {
+  /**
+   * Eligible
+   */
+  eligible: boolean
+  entry: HitCaseEntryOut | null
+  /**
+   * Ineligiblereason
+   */
+  ineligibleReason: 'not_material' | 'no_conversation' | 'no_treatment' | null
+  /**
+   * Jobid
+   */
+  jobId: string
+}
+
+/**
+ * HitCaseTagsIn
+ *
+ * 整份替换这条爆款素材在所有维度上的标签。
+ */
+export type HitCaseTagsIn = {
+  /**
+   * Tagids
+   */
+  tagIds: Array<string>
+}
+
+/**
+ * HitCasesOut
+ */
+export type HitCasesOut = {
+  /**
+   * Items
+   */
+  items: Array<HitCaseOut>
+  /**
+   * Nextcursor
+   */
+  nextCursor: string | null
+  /**
+   * Total
+   */
+  total: number | null
+}
+
+/**
  * ImageContent
  */
 export type ImageContent = {
@@ -8067,6 +8196,206 @@ export type AuthorsLibraryAuthorsGetResponses = {
 
 export type AuthorsLibraryAuthorsGetResponse =
   AuthorsLibraryAuthorsGetResponses[keyof AuthorsLibraryAuthorsGetResponses]
+
+export type ListHitCasesLibraryHitCasesGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Tags
+     */
+    tags?: Array<string> | null
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Cursor
+     */
+    cursor?: string | null
+  }
+  url: '/library/hit-cases'
+}
+
+export type ListHitCasesLibraryHitCasesGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListHitCasesLibraryHitCasesGetError =
+  ListHitCasesLibraryHitCasesGetErrors[keyof ListHitCasesLibraryHitCasesGetErrors]
+
+export type ListHitCasesLibraryHitCasesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCasesOut
+}
+
+export type ListHitCasesLibraryHitCasesGetResponse =
+  ListHitCasesLibraryHitCasesGetResponses[keyof ListHitCasesLibraryHitCasesGetResponses]
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}'
+}
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteError =
+  RemoveHitCaseLibraryHitCasesJobIdDeleteErrors[keyof RemoveHitCaseLibraryHitCasesJobIdDeleteErrors]
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type RemoveHitCaseLibraryHitCasesJobIdDeleteResponse =
+  RemoveHitCaseLibraryHitCasesJobIdDeleteResponses[keyof RemoveHitCaseLibraryHitCasesJobIdDeleteResponses]
+
+export type HitCaseStateLibraryHitCasesJobIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}'
+}
+
+export type HitCaseStateLibraryHitCasesJobIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type HitCaseStateLibraryHitCasesJobIdGetError =
+  HitCaseStateLibraryHitCasesJobIdGetErrors[keyof HitCaseStateLibraryHitCasesJobIdGetErrors]
+
+export type HitCaseStateLibraryHitCasesJobIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type HitCaseStateLibraryHitCasesJobIdGetResponse =
+  HitCaseStateLibraryHitCasesJobIdGetResponses[keyof HitCaseStateLibraryHitCasesJobIdGetResponses]
+
+export type AddHitCaseLibraryHitCasesJobIdPutData = {
+  body: HitCaseIn
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}'
+}
+
+export type AddHitCaseLibraryHitCasesJobIdPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AddHitCaseLibraryHitCasesJobIdPutError =
+  AddHitCaseLibraryHitCasesJobIdPutErrors[keyof AddHitCaseLibraryHitCasesJobIdPutErrors]
+
+export type AddHitCaseLibraryHitCasesJobIdPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type AddHitCaseLibraryHitCasesJobIdPutResponse =
+  AddHitCaseLibraryHitCasesJobIdPutResponses[keyof AddHitCaseLibraryHitCasesJobIdPutResponses]
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}/tagging'
+}
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostError =
+  RetagHitCaseLibraryHitCasesJobIdTaggingPostErrors[keyof RetagHitCaseLibraryHitCasesJobIdTaggingPostErrors]
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type RetagHitCaseLibraryHitCasesJobIdTaggingPostResponse =
+  RetagHitCaseLibraryHitCasesJobIdTaggingPostResponses[keyof RetagHitCaseLibraryHitCasesJobIdTaggingPostResponses]
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutData = {
+  body: HitCaseTagsIn
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/library/hit-cases/{job_id}/tags'
+}
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutError =
+  ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutErrors[keyof ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutErrors]
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: HitCaseStateOut
+}
+
+export type ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponse =
+  ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponses[keyof ReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponses]
 
 export type VideosLibraryVideosGetData = {
   body?: never

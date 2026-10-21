@@ -3362,6 +3362,297 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HitCaseEntryOut": {
+        "additionalProperties": false,
+        "description": "一条素材片在爆款素材库里的条目。",
+        "properties": {
+          "addedAt": {
+            "format": "date-time",
+            "title": "Addedat",
+            "type": "string"
+          },
+          "addedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addedby"
+          },
+          "tagError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_source_text",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagerror"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          },
+          "tagStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagstatus"
+          }
+        },
+        "required": [
+          "tagIds",
+          "tagStatus",
+          "tagError",
+          "addedAt",
+          "addedBy"
+        ],
+        "title": "HitCaseEntryOut",
+        "type": "object"
+      },
+      "HitCaseIn": {
+        "additionalProperties": false,
+        "description": "入选时一起写上的标签。",
+        "properties": {
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          }
+        },
+        "title": "HitCaseIn",
+        "type": "object"
+      },
+      "HitCaseOut": {
+        "additionalProperties": false,
+        "description": "爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。",
+        "properties": {
+          "addedAt": {
+            "format": "date-time",
+            "title": "Addedat",
+            "type": "string"
+          },
+          "cardId": {
+            "format": "uuid",
+            "title": "Cardid",
+            "type": "string"
+          },
+          "face": {
+            "$ref": "#/components/schemas/FaceOut"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "tagError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_source_text",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagerror"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          },
+          "tagStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagstatus"
+          },
+          "take": {
+            "$ref": "#/components/schemas/TakeOut"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "jobId",
+          "cardId",
+          "title",
+          "face",
+          "take",
+          "tagIds",
+          "tagStatus",
+          "tagError",
+          "addedAt"
+        ],
+        "title": "HitCaseOut",
+        "type": "object"
+      },
+      "HitCaseStateOut": {
+        "additionalProperties": false,
+        "description": "一条素材片与爆款素材库的关系：能不能入选、入选了没有。",
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HitCaseEntryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ineligibleReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_material",
+                  "no_conversation",
+                  "no_treatment"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ineligiblereason"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "eligible",
+          "ineligibleReason",
+          "entry"
+        ],
+        "title": "HitCaseStateOut",
+        "type": "object"
+      },
+      "HitCaseTagsIn": {
+        "additionalProperties": false,
+        "description": "整份替换这条爆款素材在所有维度上的标签。",
+        "properties": {
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Tagids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tagIds"
+        ],
+        "title": "HitCaseTagsIn",
+        "type": "object"
+      },
+      "HitCasesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HitCaseOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total"
+        ],
+        "title": "HitCasesOut",
+        "type": "object"
+      },
       "ImageContent": {
         "additionalProperties": false,
         "properties": {
@@ -15519,6 +15810,391 @@
           }
         ],
         "summary": "Authors",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases": {
+      "get": {
+        "description": "爆款素材库里的素材片，入选晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``total`` 只在第一页给。",
+        "operationId": "list_hit_cases_library_hit_cases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCasesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Hit Cases",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/{job_id}": {
+      "delete": {
+        "description": "移出爆款素材库，标签一并删掉；没入选也是 ``204``。",
+        "operationId": "remove_hit_case_library_hit_cases__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Remove Hit Case",
+        "tags": [
+          "library"
+        ]
+      },
+      "get": {
+        "description": "这条素材片能不能进爆款素材库、进了没有；没有这条视频是 ``404``。",
+        "operationId": "hit_case_state_library_hit_cases__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Hit Case State",
+        "tags": [
+          "library"
+        ]
+      },
+      "put": {
+        "description": "把这条素材片加进爆款素材库，连同带来的标签，并排一次打标。\n\n不能入选是 ``422``；已入选原样返回，不改标签、不重新打标；不存在的标签或给了维度是 ``422``。",
+        "operationId": "add_hit_case_library_hit_cases__job_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitCaseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Add Hit Case",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/{job_id}/tagging": {
+      "post": {
+        "description": "按所在对话当前的新片执行方案重新打标：AI 维度整组重写，人工维度不动。没入选是\n``404``；正在打标是 ``409``。",
+        "operationId": "retag_hit_case_library_hit_cases__job_id__tagging_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read",
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read",
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Retag Hit Case",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/hit-cases/{job_id}/tags": {
+      "put": {
+        "description": "整份替换这条爆款素材各维度的标签。没入选是 ``404``；正在打标是 ``409``；不存在的标签或给了\n维度是 ``422``。",
+        "operationId": "replace_hit_case_tags_library_hit_cases__job_id__tags_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitCaseTagsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitCaseStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Replace Hit Case Tags",
         "tags": [
           "library"
         ]

@@ -22,7 +22,8 @@ export function LibraryTabsList() {
 
 type LibraryPageHeaderProps = {
   description?: string
-  search: { label: string; placeholder: string; value: string; onSearch: (q: string) => void }
+  /** 关键词搜索；不给就不显示搜索框。 */
+  search?: { label: string; placeholder: string; value: string; onSearch: (q: string) => void }
   action?: ReactNode
   tabs: ReactNode
 }
@@ -37,12 +38,16 @@ export function LibraryPageHeader({ description, search, action, tabs }: Library
             <p className="mt-2 text-body text-on-surface-variant">{description}</p>
           )}
         </div>
-        <div className="flex w-full items-center gap-3 sm:w-auto">
-          <div className={action === undefined ? 'w-full sm:w-100' : 'min-w-0 flex-1 sm:w-80'}>
-            <SearchBox {...search} />
+        {search === undefined && action === undefined ? null : (
+          <div className="flex w-full items-center gap-3 sm:w-auto">
+            {search === undefined ? null : (
+              <div className={action === undefined ? 'w-full sm:w-100' : 'min-w-0 flex-1 sm:w-80'}>
+                <SearchBox {...search} />
+              </div>
+            )}
+            {action}
           </div>
-          {action}
-        </div>
+        )}
       </header>
       {tabs}
     </>

@@ -16,7 +16,8 @@ from iclip.platform.file_store.store import FileStore
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 
 TREATMENT_PATH: Final = "treatment.md"
-"""AI 导演写的创作方案；只是 skill 里的约定，代码里别处不读它。"""
+"""AI 导演写的新片执行方案，路径是 skill 里的约定。做同款把它拷进新对话；爆款素材库看素材片所在
+对话有没有它来判断能否入选，并按它的内容打标（见 ``app/library_tagging.py``）。"""
 
 SAME_STYLE_FILES: Final = (
     (TREATMENT_PATH, TREATMENT_PATH),

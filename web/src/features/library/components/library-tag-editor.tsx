@@ -1,6 +1,6 @@
 /** 详情里的标签：标签树里每个维度一行，按树的先后。能改时每个标签带「移除」，末尾的「+」从这一维度的取值里挑一个加上；
  * 每次改动交回整份（跨全部维度），由调用方去保存。AI 打的维度在名字旁带一个小提示。
- * 灵感库与以后的爆款素材库共用。 */
+ * 灵感库与爆款素材库共用；爆款入选前只给人工维度时，调用方传一份只含这些维度的查找表。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
@@ -27,9 +27,6 @@ import {
   type TagOption,
 } from '../library-tags'
 
-/** AI 维度旁的提示：重拆与重新打标都会整组重写这一维度。 */
-const AI_HINT = '由 AI 自动打标，重新拆解或重新打标时会重写该项标签'
-
 type LibraryTagEditorProps = {
   index: TagIndex
   /** 这一条的全部标签，跨维度。 */
@@ -40,6 +37,8 @@ type LibraryTagEditorProps = {
   busy: boolean
   /** 交回改完的整份，按树的先后。 */
   onChange: (tags: string[]) => void
+  /** AI 维度旁的提示：说清哪些操作会整组重写这一维度，各库不同。 */
+  aiHint: string
 }
 
 export function LibraryTagEditor({
@@ -48,11 +47,13 @@ export function LibraryTagEditor({
   editable,
   busy,
   onChange,
+  aiHint,
 }: LibraryTagEditorProps) {
   return (
     <div className="grid gap-2.5">
       {index.dimensions.map((dimension) => (
         <TagRow
+          aiHint={aiHint}
           busy={busy}
           dimension={dimension}
           editable={editable}
@@ -72,9 +73,10 @@ type TagRowProps = {
   busy: boolean
   /** 交回这一维度上的取值。 */
   onChange: (ids: string[]) => void
+  aiHint: string
 }
 
-function TagRow({ dimension, values, editable, busy, onChange }: TagRowProps) {
+function TagRow({ dimension, values, editable, busy, onChange, aiHint }: TagRowProps) {
   const [adding, setAdding] = useState(false)
   const label = dimension.name
   const ids = values.map((value) => value.id)
@@ -84,7 +86,7 @@ function TagRow({ dimension, values, editable, busy, onChange }: TagRowProps) {
     <div aria-label={label} className="flex items-start gap-3" role="group">
       <span className="flex w-20 shrink-0 items-center gap-1 pt-0.5 text-body-sm text-on-surface-faint">
         <span className="truncate">{label}</span>
-        {isAiDimension(dimension) ? <AiHint /> : null}
+        {isAiDimension(dimension) ? <AiHint hint={aiHint} /> : null}
       </span>
       <ul aria-label={label} className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         {values.length === 0 ? (
@@ -146,16 +148,16 @@ function TagRow({ dimension, values, editable, busy, onChange }: TagRowProps) {
   )
 }
 
-/** 名字旁的小图标；悬停时说明重拆与重新打标会重写这一维度，读屏从图标的名字读到同一句。 */
-function AiHint() {
+/** 名字旁的小图标；悬停时说明哪些操作会重写这一维度，读屏从图标的名字读到同一句。 */
+function AiHint({ hint }: { hint: string }) {
   return (
     <TooltipRoot>
       <TooltipTrigger asChild>
         <span className="grid shrink-0 place-items-center">
-          <Icon label={AI_HINT} name="sparkles" size="xs" />
+          <Icon label={hint} name="sparkles" size="xs" />
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top">{AI_HINT}</TooltipContent>
+      <TooltipContent side="top">{hint}</TooltipContent>
     </TooltipRoot>
   )
 }

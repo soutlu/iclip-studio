@@ -12,10 +12,12 @@ import pytest
 from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.models import PrincipalKind
 from iclip.domains.identity.public import ACT_AS_PERMISSION, MANAGE_PERMISSION, Principal
-from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import MaterialSource, Scope, VideoCursor, WholeFilmScope
 from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
+    HitCaseEntryOut,
+    HitCaseOut,
     LibraryAuthorOut,
     LibraryVideoOut,
     ShotGroupOut,
@@ -173,6 +175,25 @@ class FakeReports:
 
     async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]:
         return [LibraryAuthorOut(user_name="Nora.Ho", count=len(self.films))]
+
+    # 爆款素材库的读法由它的集成测试覆盖，这里的用例不会调到。
+    async def material_of(self, job_id: uuid.UUID) -> MaterialSource | None:
+        raise AssertionError("这里不该读爆款素材")
+
+    async def hit_case_entry(self, job_id: uuid.UUID) -> HitCaseEntryOut | None:
+        raise AssertionError("这里不该读爆款素材")
+
+    async def hit_cases(
+        self,
+        tag_groups: Sequence[Sequence[uuid.UUID]],
+        *,
+        limit: int,
+        after: VideoCursor | None,
+    ) -> Sequence[HitCaseOut]:
+        raise AssertionError("这里不该读爆款素材")
+
+    async def count_hit_cases(self, tag_groups: Sequence[Sequence[uuid.UUID]]) -> int:
+        raise AssertionError("这里不该读爆款素材")
 
 
 def library(

@@ -215,6 +215,11 @@ class TaggingService:
         if not await self._store.replace(key, set(tag_ids)):
             raise Conflict("正在打标，打完再改标签")
 
+    async def remove(self, key: EntryKey) -> None:
+        """从库里拿掉这一条：条目与它的标签一并删掉；没有这一条不报错。"""
+
+        await self._store.remove(key)
+
     async def _defer(self, queue: TaggingQueuePort, entry_id: uuid.UUID) -> None:
         """排不上就把这一条收成 ``failed / model_call_failed``，免得它一直停在排队中；再抛给调用方。"""
 

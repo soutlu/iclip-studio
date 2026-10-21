@@ -814,6 +814,49 @@ export const zHttpValidationError = z.object({
 })
 
 /**
+ * HitCaseEntryOut
+ *
+ * 一条素材片在爆款素材库里的条目。
+ */
+export const zHitCaseEntryOut = z.object({
+  addedAt: z.iso.datetime(),
+  addedBy: z.string().nullable(),
+  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagIds: z.array(z.uuid()),
+  tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
+})
+
+/**
+ * HitCaseIn
+ *
+ * 入选时一起写上的标签。
+ */
+export const zHitCaseIn = z.object({
+  tagIds: z.array(z.uuid()).optional(),
+})
+
+/**
+ * HitCaseStateOut
+ *
+ * 一条素材片与爆款素材库的关系：能不能入选、入选了没有。
+ */
+export const zHitCaseStateOut = z.object({
+  eligible: z.boolean(),
+  entry: zHitCaseEntryOut.nullable(),
+  ineligibleReason: z.enum(['not_material', 'no_conversation', 'no_treatment']).nullable(),
+  jobId: z.uuid(),
+})
+
+/**
+ * HitCaseTagsIn
+ *
+ * 整份替换这条爆款素材在所有维度上的标签。
+ */
+export const zHitCaseTagsIn = z.object({
+  tagIds: z.array(z.uuid()),
+})
+
+/**
  * ImageContent
  */
 export const zImageContent = z.object({
@@ -1403,6 +1446,32 @@ export const zTakeOut = z.object({
   resolution: z.string().nullable(),
   script: zScriptOut.nullable(),
   seconds: z.int().nullable(),
+})
+
+/**
+ * HitCaseOut
+ *
+ * 爆款素材库的一条：成片素材里被挑进来的一条素材片（一版），连同它的标签。
+ */
+export const zHitCaseOut = z.object({
+  addedAt: z.iso.datetime(),
+  cardId: z.uuid(),
+  face: zFaceOut,
+  jobId: z.uuid(),
+  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagIds: z.array(z.uuid()),
+  tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
+  take: zTakeOut,
+  title: z.string().nullable(),
+})
+
+/**
+ * HitCasesOut
+ */
+export const zHitCasesOut = z.object({
+  items: z.array(zHitCaseOut),
+  nextCursor: z.string().nullable(),
+  total: z.int().nullable(),
 })
 
 /**
@@ -3554,6 +3623,66 @@ export const zUpdateLibraryTagLibraryTagsTagIdPatchResponse = zLibraryTagOut
  * Successful Response
  */
 export const zAuthorsLibraryAuthorsGetResponse = zLibraryAuthorsOut
+
+export const zListHitCasesLibraryHitCasesGetQuery = z.object({
+  tags: z.array(z.uuid()).nullish(),
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  cursor: z.string().nullish(),
+})
+
+/**
+ * Successful Response
+ */
+export const zListHitCasesLibraryHitCasesGetResponse = zHitCasesOut
+
+export const zRemoveHitCaseLibraryHitCasesJobIdDeletePath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRemoveHitCaseLibraryHitCasesJobIdDeleteResponse = z.void()
+
+export const zHitCaseStateLibraryHitCasesJobIdGetPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zHitCaseStateLibraryHitCasesJobIdGetResponse = zHitCaseStateOut
+
+export const zAddHitCaseLibraryHitCasesJobIdPutBody = zHitCaseIn
+
+export const zAddHitCaseLibraryHitCasesJobIdPutPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAddHitCaseLibraryHitCasesJobIdPutResponse = zHitCaseStateOut
+
+export const zRetagHitCaseLibraryHitCasesJobIdTaggingPostPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRetagHitCaseLibraryHitCasesJobIdTaggingPostResponse = zHitCaseStateOut
+
+export const zReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutBody = zHitCaseTagsIn
+
+export const zReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReplaceHitCaseTagsLibraryHitCasesJobIdTagsPutResponse = zHitCaseStateOut
 
 export const zVideosLibraryVideosGetQuery = z.object({
   userName: z.string().max(150).nullish(),

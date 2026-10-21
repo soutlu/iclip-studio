@@ -546,7 +546,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 13. 资料库 (Library)
 
-「成片素材」页（全站素材片连同出片时脚本）的三个只读端点与「成片」页（全站导出的成片）的两个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张素材卡是一段对话的分镜，装着这段对话读得到的全部素材片；一张成片卡装着一段对话自己的全部导出。
+「成片素材」页（全站素材片连同出片时脚本）的三个只读端点与「成片」页（全站导出的成片）的两个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张素材卡是一段对话的分镜，装着这段对话读得到的全部素材片；一张成片卡装着一段对话自己的全部导出。「爆款素材库」页的端点也在 `/library` 下，约定见 §16。
 
 - **可见范围**：任何持 `generation:read` 的人都能看到全部卡、脚本与来源对话。卡的 `id` 是对话 id，不挂对话（对话不存在也算）的卡是那条出片的 id。`conversationId` 对所有人都给，不挂对话为 `null`；`title`、`agentId`、`taskId` 取自来源对话，对话删了照给。`canOpenConversation` 是这位读者能不能打开那段对话，口径同 §6 的对话可读范围：谁读得到那段对话，谁就能打开；治理者含墓碑。不挂对话的卡恒为 `false`。
 - `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面素材片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面素材片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的素材片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
@@ -586,12 +586,12 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 15. 资料库标签 (Library Tags)
 
-资料库条目共用的一棵标签树，现在只有参考视频（§14）打标签，语义见 [CONTEXT.md「标签」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`。
+资料库条目共用的一棵标签树，参考视频（§14）与爆款素材（§16）打标签，语义见 [CONTEXT.md「标签」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`。
 
-- `GET /library-tags` 给整棵树：`dimensions` 是全部维度，每个节点带 `id`、`name`、`guide`（怎么判断，打标提示词里也写这一句，可为 `null`）、`position` 与 `children`，同级按 `position` 排好。`autoFill` 只在维度上有值：`ai` 是 AI 打这个维度，`null` 只靠人填；取值上恒为 `null`。维度下是取值，取值下最多再有一层。`counts` 是带这个标签或它任一下级的条目数，同一条只算一次：`references` 只数没移除的参考视频，`hitCases` 现在恒为 0。打标配没配都挂着。
+- `GET /library-tags` 给整棵树：`dimensions` 是全部维度，每个节点带 `id`、`name`、`guide`（怎么判断，打标提示词里也写这一句，可为 `null`）、`position` 与 `children`，同级按 `position` 排好。`autoFill` 只在维度上有值：`ai` 是 AI 打这个维度，`null` 只靠人填；取值上恒为 `null`。维度下是取值，取值下最多再有一层。`counts` 是带这个标签或它任一下级的条目数，同一条只算一次：`references` 只数没移除的参考视频，`hitCases` 数在库的爆款素材。打标配没配都挂着。
 - **一条的标签**：`tagIds` 是所有维度上的标签，指这棵树里的取值，不会是维度；空就是未标注。顺序不表达含义，按树分组显示。
 - **改标签**：`PUT …/tags` 体是 `{ tagIds }`，整份替换所有维度，重复的去掉，空数组即全部清掉；同时有人删了其中某个标签，那一个跳过。不存在的标签、给了维度本身是 `422`；这一条正在排队或打标是 `409`。
-- **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的拆解；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
+- **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的文字（参考视频没有拆解，爆款素材所在对话没有新片执行方案或只有空白）；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
 - **重新打标**：`POST …/tagging` 把这一条改回 `pending` 再排队；正在排队或打标是 `409`。
 - **按标签筛选**（列表的 `tags`）：选中的标签按所在维度分组，同一维度里命中任一即算，不同维度都要命中；选了上级也算它的全部下级，选了维度就是这一维度的任一取值。不存在的标签是 `422`。
 - **改树**（治理者）：`POST /library-tags` 体是 `{ parentId?, name, guide?, autoFill?, position? }`，`parentId` 为空是加维度，`201` 答复新节点（条数为 0、没有下级）；`PATCH /library-tags/{id}` 体是 `{ name?, guide?, autoFill?, position? }`，不给的项不动，`guide` 给 `null` 或空串即清掉，`autoFill` 给 `null` 即改回只靠人填，上级改不了，答复改完的节点；`DELETE /library-tags/{id}` 是 `204`。没有这个标签是 `404`，下面的规则不合格都是 `422`，`detail` 是给人看的一句话：
@@ -601,3 +601,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - `autoFill` 只能设在维度上；所有 `autoFill` 为 `ai` 的维度下的取值（含小类）合计最多 500 个，在这些维度下加取值、把维度改成 `ai` 时都查。
   - `position` 是放到同级里的第几个（0 起），超出范围夹到首尾，同级随之重新编成 0..n-1；新建时不给排在最后。
 - 删一个标签连同它的全部下级，两库条目上的这些标签一起去掉，删前用树上的 `counts` 提示影响面。改名、改 `guide`、开关 `autoFill` 都不重打已有的条目，只影响之后的打标；已打上的标签留着，要按新树重打得逐条重新打标。
+
+## 16. 爆款素材 (Hit Cases)
+
+从成片素材里挑出来的素材片，一条是一版（`jobId` 是那条生成记录），不是一张卡；语义见 [CONTEXT.md「爆款素材」](../docs/CONTEXT.md#术语)。端点都在 `/library/hit-cases` 下，权限看 `openapi.json`：看得见就能入选、改标签、移出，不看属主；重新打标另要 `generation:submit`。标签与打标状态的含义见 §15。
+
+- **能否入选**：`GET /library/hit-cases/{jobId}` 给 `eligible` 与 `ineligibleReason`，入选了的另带 `entry`（标签、打标状态、`addedAt` 与 `addedBy`，入选的人的用户名），没入选为 `null`。原因三种：`not_material` 不是素材片（成片素材的收录口径，试生成除外）；`no_conversation` 不挂对话或那段对话不存在；`no_treatment` 所在对话的工作区里没有 `treatment.md`。对话删了照样认，已入选的也照算。没有这条生成记录是 `404`。客户端按原因出一句话，不展示文件名。
+- **入选**：`PUT /library/hit-cases/{jobId}` 体是 `{ tagIds? }`，答复同上。不能入选是 `422`，说明按原因写；已入选就原样交回，不改标签、不再排打标，带来的 `tagIds` 不看；否则建条目、整份写上带来的标签（规则同 §15 改标签，不存在的标签或给了维度是 `422`，什么都不建），打标配了就排一次打标（`tagStatus` 为 `pending`），没配时条目照建、`tagStatus` 留 `null`。
+- **改标签**：`PUT /library/hit-cases/{jobId}/tags` 同 §15；没入选是 `404`，正在排队或打标是 `409`。
+- **重新打标**：`POST /library/hit-cases/{jobId}/tagging` 按所在对话当前的 `treatment.md` 重打；没入选是 `404`，正在排队或打标是 `409`。打标没配置时不挂这个端点。
+- **移出**：`DELETE /library/hit-cases/{jobId}` 删掉条目连同标签，`204`；没入选也是 `204`。
+- **列表**：`GET /library/hit-cases` 按入选时刻倒序（再按 `jobId`），是 §3 的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是入选时刻加 `jobId`；`total` 只在第一页给。筛选只有 `tags`（§15）。只列仍是素材片的。每项带 `cardId`（这一版在成片素材里所属的卡，按 §13 的卡 id 规则）、`title`（所在对话的标题）、`face` 与 `take`（形状同 §13 的版本头与出片）、标签与打标状态、`addedAt`；打开查看器时按 `cardId` 读 §13 的卡详情，选中 `jobId` 那一版。
