@@ -19,6 +19,7 @@ from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.models import TAGGING_TIMEOUT_SECONDS, EntryKey, TagNode
 from iclip.domains.tagging.queue import TaggingQueue
 from iclip.domains.tagging.repository import Tagger
+from iclip.domains.tagging.service import TaggingService
 from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
@@ -221,3 +222,22 @@ async def test_running_entries_past_the_limit_time_out_and_lose_only_ai_tags(
     assert timed_out["tags"] == {amz}
     still = await entry_of(engine, fresh)
     assert (still["tag_status"], still["tags"]) == ("running", {slipper})
+
+
+class BrokenTaggingQueue:
+    async def enqueue_tagging(self, entry_id: uuid.UUID) -> None:
+        raise ConnectionError("队列连不上")
+
+
+async def test_an_entry_that_cannot_be_queued_fails_instead_of_staying_pending(
+    engine: AsyncEngine,
+) -> None:
+    reference_id, _, tags = await pending_entry(engine)
+    tagging = TaggingService(SqlTagStore(engine), queue=BrokenTaggingQueue())
+
+    with pytest.raises(ConnectionError):
+        await tagging.enqueue(EntryKey(kind="reference", subject_id=reference_id), created_by=None)
+
+    entry = await entry_of(engine, reference_id)
+    assert (entry["tag_status"], entry["tag_error"]) == ("failed", "model_call_failed")
+    assert entry["tags"] == {tags["amz"]}
