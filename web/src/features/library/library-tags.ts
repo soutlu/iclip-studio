@@ -8,13 +8,13 @@ export type LibraryTagTree = LibraryTagsOut
 /** 条数按哪一库数：灵感库是 `references`，爆款素材库是 `hitCases`。 */
 export type TagCountKey = keyof LibraryTag['counts']
 
-/** 维度下的一个取值；`depth` 0 是维度的直接下级（两层的维度里是大类），1 是小类。 */
+/** 维度下的一个取值；`depth` 从维度的直接下级开始计为 0。 */
 export type TagEntry = {
   id: string
   name: string
   dimensionId: string
   parentId: string | null
-  depth: 0 | 1
+  depth: number
   /** 在整棵树里的先后，按它排标签。 */
   order: number
 }
@@ -28,26 +28,25 @@ export interface TagIndex {
 
 export const tagIndexOf = (tree: LibraryTagTree): TagIndex => {
   const byId = new Map<string, TagEntry>()
-  for (const dimension of tree.dimensions)
-    for (const tag of dimension.children) {
+  const visit = (
+    tags: readonly LibraryTag[],
+    dimensionId: string,
+    parentId: string | null,
+    depth: number,
+  ) => {
+    for (const tag of tags) {
       byId.set(tag.id, {
-        depth: 0,
-        dimensionId: dimension.id,
+        depth,
+        dimensionId,
         id: tag.id,
         name: tag.name,
         order: byId.size,
-        parentId: null,
+        parentId,
       })
-      for (const child of tag.children)
-        byId.set(child.id, {
-          depth: 1,
-          dimensionId: dimension.id,
-          id: child.id,
-          name: child.name,
-          order: byId.size,
-          parentId: tag.id,
-        })
+      visit(tag.children, dimensionId, tag.id, depth + 1)
     }
+  }
+  for (const dimension of tree.dimensions) visit(dimension.children, dimension.id, null, 0)
   return { byId, dimensions: tree.dimensions }
 }
 
@@ -87,36 +86,35 @@ export const replaceDimensionTags = (
     ...next.filter((id) => index.byId.get(id)?.dimensionId === dimensionId),
   ])
 
-/** 维度摊平成候选：大类在前、它的小类跟在后面；两层的维度里大类 `group` 为真。说明取自 `guide`，只给上一层。 */
+/** 维度摊平成候选：父级在前、后代紧随；有下级的候选 `group` 为真。说明只给维度的直接下级。 */
 export type TagOption = {
   id: string
   label: string
   description: string | undefined
-  depth: 0 | 1
+  depth: number
   group: boolean
   counts: LibraryTag['counts']
 }
 
-export const tagOptionsOf = (dimension: LibraryTag): TagOption[] =>
-  dimension.children.flatMap((tag: LibraryTag) => [
-    {
-      counts: tag.counts,
-      depth: 0 as const,
-      description: tag.guide ?? undefined,
-      group: tag.children.length > 0,
-      id: tag.id,
-      label: tag.name,
-    },
-    // 小类不带说明：预置的说明是给模型看的英文名，排在清单里只添噪音。
-    ...tag.children.map((child: LibraryTag) => ({
-      counts: child.counts,
-      depth: 1 as const,
-      description: undefined,
-      group: false,
-      id: child.id,
-      label: child.name,
-    })),
-  ])
+export const tagOptionsOf = (dimension: LibraryTag): TagOption[] => {
+  const options: TagOption[] = []
+  const visit = (tags: readonly LibraryTag[], depth: number) => {
+    for (const tag of tags) {
+      options.push({
+        counts: tag.counts,
+        depth,
+        // 更深的取值不带说明：预置说明里包含给模型看的英文名。
+        description: depth === 0 ? (tag.guide ?? undefined) : undefined,
+        group: tag.children.length > 0,
+        id: tag.id,
+        label: tag.name,
+      })
+      visit(tag.children, depth + 1)
+    }
+  }
+  visit(dimension.children, 0)
+  return options
+}
 
 /** AI 打的维度：打标与重拆会整组重写这些维度。 */
 export const isAiDimension = (dimension: LibraryTag): boolean => dimension.autoFill === 'ai'

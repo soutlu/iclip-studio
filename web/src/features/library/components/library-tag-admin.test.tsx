@@ -108,7 +108,7 @@ describe('管理标签', () => {
     expect(screen.queryByRole('region', { name: '管理标签' })).toBeNull()
   })
 
-  it('添加标签与小类：发出带上级的请求，树重读后新的一行出现', async () => {
+  it('直接添加下级后可连续录入同级，保留焦点并按录入顺序插入', async () => {
     loginAs(mockGovernor)
     const writes = recordTagWrites()
     const user = userEvent.setup()
@@ -117,19 +117,64 @@ describe('管理标签', () => {
     await user.click(screen.getByRole('button', { name: '给场景添加标签' }))
     await user.type(screen.getByRole('textbox', { name: '场景的标签名称' }), '海边度假{Enter}')
     await waitFor(() => expect(valueNames('场景')).toContain('海边度假'))
-    expect(screen.queryByRole('textbox', { name: '场景的标签名称' })).toBeNull()
-    await selectAction(user, '海边度假', '添加小类')
-    await user.type(screen.getByRole('textbox', { name: '海边度假的小类名称' }), '沙滩{Enter}')
+    const sceneName = screen.getByRole('textbox', { name: '场景的标签名称' })
+    expect(sceneName).toHaveValue('')
+    expect(sceneName).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: '给海边度假添加下级' }))
+    const childName = screen.getByRole('textbox', { name: '海边度假的小类名称' })
+    expect(childName).toHaveFocus()
+    await user.type(childName, '沙滩{Enter}')
+    const children = await screen.findByRole('list', { name: '海边度假的小类' })
+    expect(await within(children).findByText('沙滩')).toBeVisible()
+    await waitFor(() => expect(childName).toHaveValue(''))
+    expect(childName).toHaveFocus()
+    await user.keyboard('海边步道{Enter}')
+    expect(await within(children).findByText('海边步道')).toBeVisible()
+    await waitFor(() => expect(childName).toHaveValue(''))
+    expect(childName).toHaveFocus()
     expect(
-      await within(await screen.findByRole('list', { name: '海边度假的小类' })).findByText('沙滩'),
-    ).toBeVisible()
+      within(children)
+        .getAllByRole('button', { name: /^管理/ })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['管理沙滩', '管理海边步道'])
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: '海边度假的小类名称' })).toBeNull()
+    expect(children).toBeVisible()
     const added = writes.filter((write) => write.method === 'POST')
     expect(added[0]).toEqual({
-      body: { name: '海边度假', parentId: mockTagId('场景') },
+      body: { name: '海边度假', parentId: mockTagId('场景'), position: 0 },
       method: 'POST',
       path: '/library-tags',
     })
-    expect(added[1]?.body).toEqual({ name: '沙滩', parentId: mockTagId('海边度假') })
+    expect(added.slice(1).map((write) => write.body)).toEqual([
+      { name: '沙滩', parentId: mockTagId('海边度假'), position: 0 },
+      { name: '海边步道', parentId: mockTagId('海边度假'), position: 1 },
+    ])
+  })
+
+  it('录入下级时点祖先不会收起分支或丢失草稿，结束后可正常折叠', async () => {
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await openAdmin(user)
+    const parent = screen.getByRole('button', { name: '产品展示型' })
+    expect(parent).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: '给360°全景展示添加下级' }))
+    const input = screen.getByRole('textbox', { name: '360°全景展示的小类名称' })
+    await user.type(input, '旋转鞋底特写')
+    await user.click(parent)
+    expect(parent).toHaveAttribute('aria-expanded', 'true')
+    expect(input).toHaveValue('旋转鞋底特写')
+    expect(input).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: '360°全景展示的小类名称' })).toBeNull()
+    expect(parent).toHaveAttribute('aria-expanded', 'true')
+    await user.click(parent)
+    expect(parent).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: '给360°全景展示添加下级' })).toBeNull()
+    await user.click(parent)
+    expect(screen.getByRole('button', { name: '给360°全景展示添加下级' })).toBeVisible()
   })
 
   it('就地改名与同级排序：树重读后保持更新的顺序', async () => {
@@ -143,10 +188,10 @@ describe('管理标签', () => {
     await user.clear(input)
     await user.type(input, 'Amazon{Enter}')
     await waitFor(() => expect(valueNames('平台&渠道')[0]).toBe('Amazon'))
-    await selectAction(user, 'DTC', '上移')
+    await selectAction(user, 'DTC', '同级上移')
     await waitFor(() => expect(valueNames('平台&渠道').slice(0, 2)).toEqual(['DTC', 'Amazon']))
     await user.click(screen.getByRole('button', { name: '管理DTC' }))
-    expect(await screen.findByRole('menuitem', { name: '上移' })).toHaveAttribute(
+    expect(await screen.findByRole('menuitem', { name: '同级上移' })).toHaveAttribute(
       'aria-disabled',
       'true',
     )
@@ -162,11 +207,11 @@ describe('管理标签', () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     const panel = await openAdmin(user)
-    await selectAction(user, '品类', '上移')
+    await selectAction(user, '品类', '同级上移')
     await waitFor(() =>
       expect(dimensionNames()).toEqual(['品牌', '品类', '平台&渠道', '场景', '内容结构']),
     )
-    await selectAction(user, '内容结构', '上移')
+    await selectAction(user, '内容结构', '同级上移')
     await waitFor(() =>
       expect(dimensionNames()).toEqual(['品牌', '品类', '平台&渠道', '内容结构', '场景']),
     )

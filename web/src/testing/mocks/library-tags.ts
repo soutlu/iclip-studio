@@ -191,16 +191,22 @@ const seedTree = (): Node[] => {
 }
 
 /** 每个节点在树里的位置：所在维度（维度自己就是它）、上级与全部下级。 */
-type Place = { node: Node; dimension: Node; parent: Node | null; descendants: string[] }
+type Place = {
+  node: Node
+  dimension: Node
+  parent: Node | null
+  depth: number
+  descendants: string[]
+}
 
 let tree: Node[] = []
 const places = new Map<string, Place>()
-const walk = (current: Node, dimension: Node, parent: Node | null): string[] => {
+const walk = (current: Node, dimension: Node, parent: Node | null, depth = 0): string[] => {
   const descendants = current.children.flatMap((child) => [
     child.id,
-    ...walk(child, dimension, current),
+    ...walk(child, dimension, current, depth + 1),
   ])
-  places.set(current.id, { descendants, dimension, node: current, parent })
+  places.set(current.id, { depth, descendants, dimension, node: current, parent })
   return descendants
 }
 /** 树改过之后重算各节点的位置，同级的 `position` 重新编成 0..n-1。 */
@@ -334,7 +340,9 @@ export const libraryTagHandlers = (
   entries: () => TagSets,
   forget: (ids: ReadonlySet<string>) => void,
 ) => [
-  http.get('*/api/library-tags', () => HttpResponse.json(mockLibraryTagTree(entries()))),
+  http.get('*/api/library-tags', () => {
+    return HttpResponse.json(mockLibraryTagTree(entries()))
+  }),
 
   http.post('*/api/library-tags', async ({ request }) => {
     const body = (await request.json()) as LibraryTagCreateIn
@@ -345,8 +353,7 @@ export const libraryTagHandlers = (
     const parentId = body.parentId ?? null
     const parent = parentId === null ? null : places.get(parentId)
     if (parent === undefined) return invalid('上级标签不存在')
-    if (parent !== null && parent.parent !== null && parent.parent.id !== parent.dimension.id)
-      return invalid('小类下无法再添加下级')
+    if (parent !== null && parent.depth >= 3) return invalid('最多支持三级标签，无法再添加下级')
     if (parent !== null && (body.autoFill ?? null) !== null)
       return invalid('只有维度可设为 AI 打标')
     const duplicate = duplicateOf(parent?.dimension ?? null, name, null)

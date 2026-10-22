@@ -1,4 +1,4 @@
-/** 资料库的标签筛选：标签树里每个维度一个多选弹层，按树的先后排；两层的维度里大类可勾，小类缩进排在它下面。
+/** 资料库的标签筛选：标签树里每个维度一个多选弹层，按树的先后排；父级可勾，后代逐级缩进。
  * 条数按 `countKey` 取哪一库的。灵感库与爆款素材库共用，只放在 `FilterBarRoot` 里。 */
 
 import { cn } from '@/shared/lib/utils'
@@ -43,7 +43,7 @@ export function LibraryTagFilters({
       id: option.id,
       label: option.label,
     }))
-    const twoLevel = options.some((option) => option.group)
+    const nested = options.some((option) => option.group)
     return (
       // 勾一项就重查一次，弹层留着接着勾。
       <MultiPickerFilter
@@ -56,7 +56,7 @@ export function LibraryTagFilters({
         options={options}
         searchable={options.length >= SEARCHABLE_FROM}
         value={dimensionEntriesOf(index, dimension.id, value).map((entry) => entry.id)}
-        width={cn(twoLevel ? 'w-80' : 'w-65', 'max-w-[calc(100vw-24px)]')}
+        width={cn(nested ? 'w-80' : 'w-65', 'max-w-[calc(100vw-24px)]')}
       />
     )
   })
