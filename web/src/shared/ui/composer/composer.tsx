@@ -44,6 +44,8 @@ export type ComposerHandle<N extends ComposerNode = never> = {
   /** 在文末追加 parts，不替换当前选区；每次追加可单独撤销。不受附件上限约束。 */
   append: (parts: readonly ComposerPart<N>[]) => void
   focus: () => void
+  /** 移除指定附件的节点并保留其他输入；触发 onChange，可撤销。 */
+  removeAttachment: (attId: string) => void
 }
 
 /** `@` 菜单要渲染的东西。选项必须渲染成 `role="option"`，文档顺序与 `items` 一一对应（分组标题不带这个角色）；
@@ -262,6 +264,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
       },
       focus: () => editorRef.current.focusEditor(),
       insert: (parts) => editorRef.current.insertParts(parts),
+      removeAttachment: (attId) => editorRef.current.removeAttachment(attId),
       restore: (submission) => {
         setNotice(null)
         editorRef.current.restoreDoc(submission.parts)
