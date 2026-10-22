@@ -208,7 +208,6 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
             添加维度
           </Button>
         ) : null}
-        <span className="tag-admin__legend">使用量：灵感库 / 爆款素材库</span>
         <Button
           className="tag-admin__done"
           onClick={focusedDimension ? () => focusDimension(null) : onClose}
@@ -218,9 +217,6 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
           {focusedDimension ? '完成编辑' : '完成'}
         </Button>
       </div>
-      <p className="tag-admin__hint">
-        {isTagTreePrototype() ? '交互原型 · 修改仅保存在本次演示中' : RETAG_HINT}
-      </p>
 
       {focusedDimension ? (
         <div className="tag-admin__focus-area">
@@ -448,7 +444,6 @@ function DimensionCard({
                 depth={0}
                 initiallyExpanded={initiallyExpanded}
                 key={tag.id}
-                path={[dimension.name]}
                 query={childQuery}
                 siblings={dimension.children}
                 tag={tag}
@@ -458,7 +453,6 @@ function DimensionCard({
               <li className="tag-admin__new-row" key="new-tag">
                 <NameForm
                   busy={actions.busy}
-                  context={dimension.name}
                   continuous
                   error={actions.error}
                   focus={actions.editing?.focus ?? false}
@@ -479,7 +473,6 @@ function DimensionCard({
                 depth={0}
                 initiallyExpanded={initiallyExpanded}
                 key={tag.id}
-                path={[dimension.name]}
                 query={childQuery}
                 siblings={dimension.children}
                 tag={tag}
@@ -512,7 +505,6 @@ function TagRow({
   query,
   initiallyExpanded,
   actions,
-  path,
 }: {
   tag: LibraryTag
   siblings: readonly LibraryTag[]
@@ -520,7 +512,6 @@ function TagRow({
   query: string
   initiallyExpanded: ReadonlySet<string>
   actions: Actions
-  path: readonly string[]
 }) {
   const [open, setOpen] = useState(() => initiallyExpanded.has(tag.id))
   const adding = actions.editing?.id === tag.id && actions.editing.kind === 'add'
@@ -532,14 +523,12 @@ function TagRow({
       ? tag.children
       : tag.children.filter((child) => matchesSearch(child, query))
   const insertion = adding ? (actions.editing?.position ?? 0) : 0
-  const nodePath = [...path, tag.name]
   const childRow = (child: LibraryTag) => (
     <TagRow
       actions={actions}
       depth={depth + 1}
       initiallyExpanded={initiallyExpanded}
       key={child.id}
-      path={nodePath}
       query={query}
       siblings={tag.children}
       tag={child}
@@ -610,7 +599,6 @@ function TagRow({
             <li className="tag-admin__child-form" key="new-tag">
               <NameForm
                 busy={actions.busy}
-                context={nodePath.join(' / ')}
                 continuous
                 error={actions.error}
                 focus

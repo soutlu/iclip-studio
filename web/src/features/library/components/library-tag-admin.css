@@ -45,19 +45,8 @@
   height: var(--icon-md);
 }
 
-.tag-admin__legend {
-  margin-left: auto;
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-}
-
 .tag-admin__done {
   margin-left: auto;
-}
-
-.tag-admin__legend + .tag-admin__done {
-  margin-left: 8px;
 }
 
 .tag-admin__hint {
@@ -269,23 +258,11 @@
   padding: 8px 4px 16px;
 }
 
-.tag-admin__input-context,
-.tag-admin__input-help,
 .tag-admin__input-error {
   width: 100%;
   overflow-wrap: anywhere;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
-}
-
-.tag-admin__input-context {
-  margin-bottom: 4px;
-  color: var(--color-on-surface-variant);
-}
-
-.tag-admin__input-help {
-  margin-top: 4px;
-  color: var(--color-on-surface-faint);
 }
 
 .tag-admin__input-error {
@@ -417,16 +394,6 @@
   }
 }
 
-@container (max-width: 839px) {
-  .tag-admin__legend {
-    display: none;
-  }
-
-  .tag-admin__legend + .tag-admin__done {
-    margin-left: auto;
-  }
-}
-
 @container (max-width: 599px) {
   .tag-admin__card--focused {
     padding: 16px 12px;
@@ -463,10 +430,6 @@
 
   .tag-admin__toolbar h2 {
     margin-right: auto;
-  }
-
-  .tag-admin__legend + .tag-admin__done {
-    margin-left: 0;
   }
 }
 

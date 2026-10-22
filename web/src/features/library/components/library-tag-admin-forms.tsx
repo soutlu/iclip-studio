@@ -77,7 +77,6 @@ export function NameForm({
   focus = false,
   rename = false,
   continuous = false,
-  context,
   error,
 }: {
   label: string
@@ -89,7 +88,6 @@ export function NameForm({
   focus?: boolean
   rename?: boolean
   continuous?: boolean
-  context?: string
   error?: string | null
 }) {
   const [value, setValue] = useState(initialValue)
@@ -117,7 +115,6 @@ export function NameForm({
           })
       }}
     >
-      {context ? <p className="tag-admin__input-context">添加到 {context}</p> : null}
       <Input
         aria-describedby={error ? errorId : undefined}
         aria-invalid={Boolean(error)}
@@ -158,8 +155,6 @@ export function NameForm({
         <p className="tag-admin__input-error" id={errorId} role="alert">
           {error}
         </p>
-      ) : continuous ? (
-        <p className="tag-admin__input-help">Enter 添加并继续 · Esc 结束</p>
       ) : null}
     </form>
   )

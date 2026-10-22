@@ -135,7 +135,12 @@ export function HitCasesRoute({
       }
       header={
         <LibraryPageHeader
-          description="收录从成片素材中挑选的优秀视频及其标签。选择任一视频，可直接基于它再创作。"
+          {...(managingTags
+            ? {}
+            : {
+                description:
+                  '收录从成片素材中挑选的优秀视频及其标签。选择任一视频，可直接基于它再创作。',
+              })}
           tabs={tabs}
         />
       }
