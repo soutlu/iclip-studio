@@ -5195,6 +5195,7 @@
           "tasks:read",
           "tasks:write",
           "inspirations:read",
+          "library_tags:manage",
           "uploads:write",
           "generation:read",
           "generation:submit",
@@ -15653,12 +15654,12 @@
         "security": [
           {
             "SessionCookie": [
-              "users:manage"
+              "library_tags:manage"
             ]
           },
           {
             "BearerToken": [
-              "users:manage"
+              "library_tags:manage"
             ]
           }
         ],
@@ -15702,12 +15703,12 @@
         "security": [
           {
             "SessionCookie": [
-              "users:manage"
+              "library_tags:manage"
             ]
           },
           {
             "BearerToken": [
-              "users:manage"
+              "library_tags:manage"
             ]
           }
         ],
@@ -15766,12 +15767,12 @@
         "security": [
           {
             "SessionCookie": [
-              "users:manage"
+              "library_tags:manage"
             ]
           },
           {
             "BearerToken": [
-              "users:manage"
+              "library_tags:manage"
             ]
           }
         ],

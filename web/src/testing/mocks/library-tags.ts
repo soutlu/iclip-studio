@@ -1,5 +1,5 @@
 /** 资料库标签树的 mock：照迁移预置的五个维度（品牌空、平台&渠道人工、品类 / 场景 / 内容结构由 AI 打），
- * id 固定可复现。条数由调用方给出各条目的标签现算；按标签筛选的匹配照合同 §15 做。治理者改树的三个写接口
+ * id 固定可复现。条数由调用方给出各条目的标签现算；按标签筛选的匹配照合同 §15 做。改树的三个写接口
  * 改内存里的树，每例由 `resetMockLibraryTags` 放回预置的树。单测与演示行用 `mockTagId(名字)` 取 id。 */
 
 import { http, HttpResponse } from 'msw'
@@ -228,7 +228,7 @@ export const resetMockLibraryTags = () => {
 }
 resetMockLibraryTags()
 
-/** 按名字取 id；不在树里给 undefined（演示数据跟着治理者改过的树走）。 */
+/** 按名字取 id；不在树里给 undefined（演示数据跟着修改后的树走）。 */
 export const findMockTagId = (name: string): string | undefined => {
   for (const place of places.values()) if (place.node.name === name) return place.node.id
   return undefined

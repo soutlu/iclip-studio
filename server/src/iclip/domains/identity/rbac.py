@@ -15,6 +15,7 @@ type Permission = Literal[
     "tasks:read",
     "tasks:write",
     "inspirations:read",
+    "library_tags:manage",
     "uploads:write",
     "generation:read",
     "generation:submit",
@@ -47,6 +48,7 @@ _EDITOR = frozenset(PERMISSIONS) - {
     MANAGE_PERMISSION,
     ACT_AS_PERMISSION,
     "api_keys:issue",
+    "library_tags:manage",
 }
 _ROOT = frozenset(PERMISSIONS)
 

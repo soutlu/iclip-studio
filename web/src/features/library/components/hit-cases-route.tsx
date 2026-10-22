@@ -1,6 +1,6 @@
 /** 资料库「爆款素材库」页签：从成片素材里挑进来的素材片，按作者、入库时间和标签筛选；卡片同成片素材，另带打标状态。
  * 点开用成片素材的查看器，定位到这条素材片所在的卡与那一版；上一条、下一条在爆款列表里走。
- * 治理者在筛选条最右多一个「管理标签」开关，打开后管理面板替换卡片列表。 */
+ * 有标签管理权限时，筛选条最右显示「管理标签」开关，打开后管理面板替换卡片列表。 */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -56,7 +56,7 @@ export function HitCasesRoute({
   const tagTree = useLibraryTags()
   const tags = tagTree.data?.index
   const { data: user } = useUser()
-  const canManageTags = hasPermission(user, PERMISSION.usersManage)
+  const canManageTags = hasPermission(user, PERMISSION.libraryTagsManage)
   const authors = useHitCaseAuthorSource()
   const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。

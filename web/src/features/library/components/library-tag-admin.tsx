@@ -19,7 +19,7 @@ import { isAiDimension, type LibraryTag, type TagIndex } from '../library-tags'
 import { CreateDimensionForm, NameForm, RulesEditor } from './library-tag-admin-forms'
 import './library-tag-admin.css'
 
-/** 筛选条最右的「管理标签」开关，只给治理者；放在 `FilterBarRoot` 里，点它先收起开着的筛选弹层。 */
+/** 筛选条最右的「管理标签」开关，由调用方按权限展示；放在 `FilterBarRoot` 里，点它先收起开着的筛选弹层。 */
 export function ManageTagsToggle({
   className,
   open,

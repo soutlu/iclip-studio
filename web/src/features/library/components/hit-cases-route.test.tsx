@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PERMISSION } from '@/shared/auth'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { loginAs, mockAuthUser, mockGovernor } from '@/testing/mocks/handlers'
 import { resetMockHitCases } from '@/testing/mocks/hit-cases'
@@ -235,13 +236,23 @@ describe('从爆款素材库打开', () => {
 })
 
 describe('爆款素材库的管理标签', () => {
-  it('非治理者看不到入口', async () => {
-    loginAs(mockAuthUser)
+  it.each([
+    { name: '普通用户', permissions: [], canManage: false },
+    { name: '仅用户管理权限', permissions: [PERMISSION.usersManage], canManage: false },
+    { name: '单独标签管理权限', permissions: [PERMISSION.libraryTagsManage], canManage: true },
+  ])('$name：按标签管理权限展示入口', async ({ permissions, canManage }) => {
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, ...permissions] })
     resetMockHitCases([{ jobId: faceOf(SANDALS).jobId }])
     await renderWithProviders(<Harness />)
 
     await screen.findByRole('article', { name: SANDALS })
-    expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
+    if (canManage) {
+      await userEvent.setup().click(screen.getByRole('button', { name: '管理标签' }))
+      const panel = await screen.findByRole('region', { name: '管理标签' })
+      expect(within(panel).getByRole('heading', { name: '场景' })).toBeVisible()
+    } else {
+      expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
+    }
   })
 
   it('管理时隐藏筛选和列表，完成后保留人员、时间与标签筛选', async () => {
