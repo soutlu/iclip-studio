@@ -9,7 +9,7 @@ type HomeSameStyle = {
   onExit: () => void
 }
 
-type HomeRouteProps = Omit<HomeComposerProps, 'sameStyle'> & {
+type HomeRouteProps = Omit<HomeComposerProps, 'sameStyle' | 'onReferenceRemoved'> & {
   /** 给了就是做同款：顶部换成源视频的封面，输入框换提示并带快捷词。 */
   sameStyle?: HomeSameStyle | undefined
 }
@@ -33,7 +33,11 @@ export function HomeRoute({ sameStyle, ...props }: HomeRouteProps) {
             <h1 className="sr-only">做同款</h1>
           </div>
         )}
-        <HomeComposer {...props} sameStyle={sameStyle !== undefined} />
+        <HomeComposer
+          {...props}
+          onReferenceRemoved={sameStyle?.onExit}
+          sameStyle={sameStyle !== undefined}
+        />
       </div>
     </main>
   )

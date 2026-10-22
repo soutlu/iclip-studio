@@ -668,7 +668,7 @@ describe('参考视频详情', () => {
 
     expect(within(dialog).queryByRole('textbox', { name: '拆解' })).not.toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeVisible()
-    expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toHaveFocus()
+    expect(within(dialog).getByRole('button', { name: '做同款' })).toHaveFocus()
   })
 
   it('重新拆解：底栏原地确认，确认后排队、编辑先不能点', async () => {
@@ -677,7 +677,8 @@ describe('参考视频详情', () => {
     const { dialog, row } = await openDetail()
     await within(dialog).findByText('第一版拆解')
 
-    await user.click(within(dialog).getByRole('button', { name: '重新拆解' }))
+    await user.click(within(dialog).getByRole('button', { name: '更多操作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '重新拆解' }))
     expect(
       within(dialog).getByText(
         '重新拆解会覆盖当前的拆解，并重写品类、场景、内容结构的标签，包括手动修改过的内容',
@@ -693,7 +694,11 @@ describe('参考视频详情', () => {
       path: `/references/${row.id}/breakdowns`,
     })
     expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toBeDisabled()
-    expect(within(dialog).getByRole('button', { name: '重新拆解' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: '更多操作' }))
+    expect(await screen.findByRole('menuitem', { name: '重新拆解' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 
   it('移除：从「更多操作」进，底栏确认后关掉详情', async () => {
@@ -733,7 +738,11 @@ describe('参考视频详情', () => {
       const alert = await within(dialog).findByRole('alert')
       expect(alert).toHaveTextContent(message)
       expect(alert).not.toHaveTextContent(errorCode)
-      expect(within(dialog).getByRole('button', { name: '重新拆解' })).toBeEnabled()
+      await userEvent.setup().click(within(dialog).getByRole('button', { name: '更多操作' }))
+      expect(await screen.findByRole('menuitem', { name: '重新拆解' })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
     },
   )
 
@@ -896,6 +905,7 @@ describe('参考视频详情', () => {
   })
 
   it('拆解中：标签处说拆完自动打，正文是占位，编辑与重拆先不能点', async () => {
+    const user = userEvent.setup()
     const { dialog } = await openDetail({
       breakdownStatus: 'running',
       document: null,
@@ -905,6 +915,25 @@ describe('参考视频详情', () => {
     expect(await within(dialog).findByText(/正在拆解/)).toBeVisible()
     expect(within(dialog).getByText('拆解完成后自动打标签')).toBeVisible()
     expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toBeDisabled()
-    expect(within(dialog).getByRole('button', { name: '重新拆解' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: '更多操作' }))
+    expect(await screen.findByRole('menuitem', { name: '重新拆解' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 })
+
+it.each(['tester', 'someone-else'])(
+  '灵感做同款：%s 的素材拆解未完成也能进入首页，不触发写请求',
+  async (userName) => {
+    const writes = recordWrites()
+    const row = addMockReference({ userName, breakdownStatus: 'running', document: null })
+    const { router } = await renderWithProviders(<Harness initialReference={row.id} />)
+    const user = userEvent.setup()
+    const dialog = await screen.findByRole('dialog')
+    await user.click(await within(dialog).findByRole('button', { name: '做同款' }))
+    await waitFor(() => expect(router.state.location.search).toEqual({ reference: row.id }))
+    expect(router.state.location.pathname).toBe('/')
+    expect(writes).toEqual([])
+  },
+)

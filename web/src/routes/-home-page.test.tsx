@@ -14,6 +14,7 @@ import {
   mockGovernor,
 } from '@/testing/mocks/handlers'
 import { mockLibraryVideos } from '@/testing/mocks/library'
+import { addMockReference } from '@/testing/mocks/references'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { HomePage } from './-home-page'
@@ -630,4 +631,109 @@ describe('首页草稿', () => {
     await waitFor(() => expect(editor()).toHaveTextContent('第一段第二段'))
     expect(screen.getAllByText(notice)).toHaveLength(1)
   })
+})
+
+describe('灵感库做同款', () => {
+  it('保留草稿、加入一次视频附件并复用同款界面；补充要求后才发送，建对话不带 sameAs', async () => {
+    loginAs(mockAuthUser)
+    const reference = addMockReference({ videoUrl: 'https://example.com/reference.mp4' })
+    const writes: { path: string; body: Record<string, unknown> }[] = []
+    server.events.on('request:start', async ({ request }) => {
+      if (request.method !== 'POST') return
+      writes.push({
+        path: new URL(request.url).pathname,
+        body: (await request.clone().json()) as Record<string, unknown>,
+      })
+    })
+    server.use(
+      http.post('*/api/conversations/:conversationId/prompts', async ({ request }) => {
+        const body = (await request.json()) as { prompt_id: string }
+        return promptReceipt(body.prompt_id)
+      }),
+    )
+    const { router, user, queryClient } = await renderHome()
+    const editor = screen.getByLabelText('输入消息')
+    pasteTextIntoComposer(editor, '保留这个创作要求')
+    await router.navigate({ to: '/', search: { reference: reference.id } })
+    await within(editor).findByText('参考视频')
+    expect(editor).not.toHaveTextContent(reference.videoUrl)
+    expect(editor).toHaveTextContent('保留这个创作要求')
+    expect(editor).toHaveFocus()
+    expect(screen.getByRole('heading', { name: '做同款' })).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    await queryClient.invalidateQueries()
+    expect(within(editor).getAllByText('参考视频')).toHaveLength(1)
+    expect(writes).toEqual([])
+    await user.click(screen.getByRole('button', { name: '换产品' }))
+    await user.keyboard('黑色跑鞋')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/c\//))
+    const create = writes.find((write) => write.path === '/api/conversations')
+    expect(create).toBeDefined()
+    expect(create?.body).not.toHaveProperty('sameAs')
+    const prompt = writes.find((write) => write.path.endsWith('/prompts'))
+    expect(prompt?.body['content']).toEqual(
+      expect.arrayContaining([{ type: 'video', source: { kind: 'url', url: reference.videoUrl } }]),
+    )
+    expect(prompt?.body['content']).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(reference.videoUrl),
+        }),
+      ]),
+    )
+    expect(JSON.stringify(prompt?.body)).toContain('把产品换成黑色跑鞋')
+    expect(writes.some((write) => write.path.includes('/uploads'))).toBe(false)
+  })
+
+  it('参考视频读取失败时退出同款，不加入附件，保留草稿', async () => {
+    loginAs(mockAuthUser)
+    const reference = addMockReference({ videoUrl: 'https://example.com/unavailable.mp4' })
+    server.use(
+      http.get('*/api/references/:id', () =>
+        HttpResponse.json({ detail: '参考视频已移除' }, { status: 404 }),
+      ),
+    )
+    const { router } = await renderHome()
+    const editor = screen.getByLabelText('输入消息')
+    pasteTextIntoComposer(editor, '原有草稿')
+    await router.navigate({ to: '/', search: { reference: reference.id } })
+    await screen.findByText(/参考视频已移除/)
+    expect(screen.queryByRole('button', { name: '不做同款' })).not.toBeInTheDocument()
+    expect(editor).toHaveTextContent('原有草稿')
+    expect(editor).not.toHaveTextContent(reference.videoUrl)
+  })
+})
+
+it('已有同地址视频不重复加入；取消同款只移除参考附件，保留文字和其他附件', async () => {
+  loginAs(mockAuthUser)
+  const reference = addMockReference({ videoUrl: 'https://example.com/reuse.mp4' })
+  sessionStorage.setItem(
+    'cue:home-draft-v1',
+    JSON.stringify({
+      agent: null,
+      collection: null,
+      parts: [
+        { kind: 'text', text: '保留文字要求' },
+        {
+          kind: 'media',
+          mediaKind: 'image',
+          name: '产品图.png',
+          url: 'https://example.com/product.png',
+        },
+        { kind: 'media', mediaKind: 'video', name: '已有视频.mp4', url: reference.videoUrl },
+      ],
+    }),
+  )
+  const { user } = await renderHome(`/?reference=${reference.id}`)
+  const editor = screen.getByLabelText('输入消息')
+  await waitFor(() => expect(editor).toHaveFocus())
+  expect(within(editor).getAllByText('已有视频.mp4')).toHaveLength(1)
+  expect(within(editor).queryByText('参考视频')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '不做同款' }))
+  await waitFor(() => expect(within(editor).queryByText('已有视频.mp4')).not.toBeInTheDocument())
+  expect(editor).toHaveTextContent('保留文字要求')
+  expect(within(editor).getByText('产品图.png')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Cue' })).toBeInTheDocument()
 })

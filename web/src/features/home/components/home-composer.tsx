@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ComposerHandle, ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
-import { Composer } from '@/shared/ui/composer'
+import { Composer, readyAttachment } from '@/shared/ui/composer'
 
 // 首页用一句完整的创作要求做占位，示范该写什么；对话页等其他输入框仍用默认占位。
 const PLACEHOLDER = '例如：给这双白色帆布鞋写一份 15 秒的产品分镜'
@@ -29,6 +29,10 @@ export type HomeComposerProps = {
   onSend?: ((submission: ComposerSubmission) => Promise<boolean>) | undefined
   /** 做同款：换成做同款的提示，工具行左侧放快捷词。 */
   sameStyle?: boolean | undefined
+  /** 灵感库原视频地址，作为就绪视频附件加入；取消时只移除这个附件。 */
+  referenceUrl?: string | undefined
+  /** 用户删除参考视频附件后退出做同款。 */
+  onReferenceRemoved?: (() => void) | undefined
   sending?: boolean | undefined
 }
 
@@ -43,13 +47,20 @@ export function HomeComposer({
   onFocusHandled,
   onSend,
   sameStyle = false,
+  referenceUrl,
+  onReferenceRemoved,
   sending = false,
 }: HomeComposerProps) {
   const composerRef = useRef<ComposerHandle>(null)
   const submittingRef = useRef(false)
   const [initialParts] = useState(draftParts)
+  const partsRef = useRef<readonly ComposerPart[]>(initialParts ?? [])
+  const referenceRef = useRef<{ url: string; attId: string } | null>(null)
 
   useEffect(() => {
+    // StrictMode 会重建编辑器，附件跟踪也从实际恢复的草稿重新开始。
+    partsRef.current = initialParts ?? []
+    referenceRef.current = null
     if (initialParts === undefined || initialParts.length === 0) return
     composerRef.current?.restore({
       media: initialParts.flatMap((part) => (part.kind === 'media' ? [part.media] : [])),
@@ -63,6 +74,40 @@ export function HomeComposer({
     composerRef.current?.focus()
     onFocusHandled?.()
   }, [focusRequested, onFocusHandled])
+
+  useEffect(() => {
+    if (referenceUrl === referenceRef.current?.url) return
+    const previous = referenceRef.current
+    referenceRef.current = null
+    if (previous !== null) composerRef.current?.removeAttachment(previous.attId)
+    if (referenceUrl === undefined) return
+    const existing = partsRef.current.find(
+      (part) =>
+        part.kind === 'media' && part.media.kind === 'video' && part.media.url === referenceUrl,
+    )
+    const media =
+      existing?.kind === 'media'
+        ? existing.media
+        : readyAttachment({ kind: 'video', name: '参考视频', url: referenceUrl })
+    referenceRef.current = { url: referenceUrl, attId: media.attId }
+    if (existing === undefined) composerRef.current?.append([{ kind: 'media', media }])
+    composerRef.current?.focus()
+  }, [referenceUrl])
+
+  const changeDraft = (parts: readonly ComposerPart[]) => {
+    const reference = referenceRef.current
+    const isReference = (part: ComposerPart) =>
+      part.kind === 'media' && part.media.attId === reference?.attId
+    // append 后的通知可能仍是旧快照；只有观察到附件从有到无才视为删除。
+    const removed =
+      reference !== null && partsRef.current.some(isReference) && !parts.some(isReference)
+    partsRef.current = parts
+    onDraftChange?.(parts)
+    if (removed) {
+      referenceRef.current = null
+      onReferenceRemoved?.()
+    }
+  }
 
   const send = async (submission: ComposerSubmission) => {
     if (onSend === undefined || sending || submittingRef.current) return
@@ -97,7 +142,7 @@ export function HomeComposer({
             </div>
           ) : undefined
         }
-        onChange={onDraftChange}
+        onChange={changeDraft}
         onSubmit={(submission) => {
           void send(submission)
         }}
