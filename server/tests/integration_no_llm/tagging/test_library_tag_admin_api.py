@@ -1,6 +1,6 @@
-"""治理者改标签树：``POST /library-tags``、``PATCH /library-tags/{id}``、``DELETE /library-tags/{id}``。
+"""标签管理：``POST /library-tags``、``PATCH /library-tags/{id}``、``DELETE /library-tags/{id}``。
 
-只有 ``users:manage`` 能改；名称、层级、重名、AI 打标与取值上限不合格都是 422，同上级撞唯一约束也是；
+只有 ``library_tags:manage`` 能改；名称、层级、重名、AI 打标与取值上限不合格都是 422，同上级撞唯一约束也是；
 ``position`` 把同级重新编成 0..n-1；删掉的标签连同下级从条目上去掉，条数跟着变。
 
 预置的树各用例共用：这里只在自己加的「测试」维度里动，用完删掉。"""
@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -21,6 +22,7 @@ from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.models import AI_VALUE_LIMIT
 from iclip.domains.tagging.schemas import LibraryTagCreateIn
+from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.references import plant_reference, plant_user
 from tests.helpers.tagging import plant_entry, tag_id, tagging_service
@@ -82,8 +84,9 @@ async def ai_value_count(client: httpx.AsyncClient) -> int:
     return sum(size(one) for one in dimensions if one["autoFill"] == "ai")
 
 
-async def test_only_governors_change_the_tree(
-    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+@pytest.mark.usefixtures("scratch")
+async def test_direct_tag_management_grant_allows_tree_changes_without_user_management(
+    app: FastAPI, client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
 ) -> None:
     some = str(await tag_id(engine, "场景", "居家/日常放松"))
     calls = (
@@ -94,11 +97,33 @@ async def test_only_governors_change_the_tree(
     for method, url, body in calls:
         assert (await client.request(method, url, json=body)).status_code == 401
 
-    await login_as_editor(client, migrated_pg)
+    user_id = await login_as_editor(client, migrated_pg)
 
     for method, url, body in calls:
         assert (await client.request(method, url, json=body)).status_code == 403
     assert await tag_id(engine, "场景", "居家/日常放松") == uuid.UUID(some)
+
+    async with make_client(app) as root:
+        await login_as_governor(root, migrated_pg)
+        granted = await root.patch(
+            f"/users/{user_id}", json={"directPermissions": ["library_tags:manage"]}
+        )
+        assert granted.status_code == 200, granted.text
+        assert granted.json()["user"]["roles"] == ["editor"]
+        assert granted.json()["user"]["directPermissions"] == ["library_tags:manage"]
+
+    made = await create(client, name=f"{PREFIX}授权")
+    renamed = await client.patch(f"/library-tags/{made['id']}", json={"name": f"{PREFIX}改名"})
+    assert renamed.status_code == 200, renamed.text
+    assert (await dimension(client, f"{PREFIX}改名"))["id"] == made["id"]
+    assert (await client.delete(f"/library-tags/{made['id']}")).status_code == 204
+    assert made["id"] not in {
+        one["id"] for one in (await client.get("/library-tags")).json()["dimensions"]
+    }
+    assert (await client.get("/users")).status_code == 403
+    assert (
+        await client.patch(f"/users/{user_id}", json={"directPermissions": ["users:manage"]})
+    ).status_code == 403
 
 
 @pytest.mark.usefixtures("scratch")

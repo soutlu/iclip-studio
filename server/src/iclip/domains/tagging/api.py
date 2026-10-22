@@ -31,7 +31,7 @@ def create_tagging_router(service: TaggingService) -> APIRouter:
     @router.post("", response_model=LibraryTagOut, status_code=201)
     async def create_library_tag(
         body: LibraryTagCreateIn,
-        _: Annotated[Principal, require_permission("users:manage")],
+        _: Annotated[Principal, require_permission("library_tags:manage")],
     ) -> LibraryTagOut:
         """加一个维度或取值，答复新的节点。已有的条目不跟着重打。"""
 
@@ -41,7 +41,7 @@ def create_tagging_router(service: TaggingService) -> APIRouter:
     async def update_library_tag(
         tag_id: uuid.UUID,
         body: LibraryTagUpdateIn,
-        _: Annotated[Principal, require_permission("users:manage")],
+        _: Annotated[Principal, require_permission("library_tags:manage")],
     ) -> LibraryTagOut:
         """改名、判断说明、AI 打标或同级里的先后，答复改完的节点。已打的标签不跟着重打。"""
 
@@ -50,7 +50,7 @@ def create_tagging_router(service: TaggingService) -> APIRouter:
     @router.delete("/{tag_id}", status_code=204)
     async def delete_library_tag(
         tag_id: uuid.UUID,
-        _: Annotated[Principal, require_permission("users:manage")],
+        _: Annotated[Principal, require_permission("library_tags:manage")],
     ) -> Response:
         """删掉一个标签连同它的下级，两库条目上的这些标签一起去掉。"""
 

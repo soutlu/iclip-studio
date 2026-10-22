@@ -10,6 +10,7 @@ export const PERMISSION = {
   generationRead: 'generation:read',
   generationSubmit: 'generation:submit',
   inspirationsRead: 'inspirations:read',
+  libraryTagsManage: 'library_tags:manage',
   tasksRead: 'tasks:read',
   tasksWrite: 'tasks:write',
   uploadsWrite: 'uploads:write',

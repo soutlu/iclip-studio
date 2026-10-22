@@ -594,7 +594,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的文字（参考视频没有拆解，爆款素材所在对话没有新片执行方案或只有空白）；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
 - **重新打标**：`POST …/tagging` 把这一条改回 `pending` 再排队；正在排队或打标是 `409`。
 - **按标签筛选**（列表的 `tags`）：选中的标签按所在维度分组，同一维度里命中任一即算，不同维度都要命中；选了上级也算它的全部下级，选了维度就是这一维度的任一取值。不存在的标签是 `422`。
-- **改树**（治理者）：`POST /library-tags` 体是 `{ parentId?, name, guide?, autoFill?, position? }`，`parentId` 为空是加维度，`201` 答复新节点（条数为 0、没有下级）；`PATCH /library-tags/{id}` 体是 `{ name?, guide?, autoFill?, position? }`，不给的项不动，`guide` 给 `null` 或空串即清掉，`autoFill` 给 `null` 即改回只靠人填，上级改不了，答复改完的节点；`DELETE /library-tags/{id}` 是 `204`。没有这个标签是 `404`，下面的规则不合格都是 `422`，`detail` 是给人看的一句话：
+- **改树**：`POST /library-tags` 体是 `{ parentId?, name, guide?, autoFill?, position? }`，`parentId` 为空是加维度，`201` 答复新节点（条数为 0、没有下级）；`PATCH /library-tags/{id}` 体是 `{ name?, guide?, autoFill?, position? }`，不给的项不动，`guide` 给 `null` 或空串即清掉，`autoFill` 给 `null` 即改回只靠人填，上级改不了，答复改完的节点；`DELETE /library-tags/{id}` 是 `204`。没有这个标签是 `404`，下面的规则不合格都是 `422`，`detail` 是给人看的一句话：
   - `name` 去掉首尾空白后不能为空，最多 50 个字；`guide` 最多 1000 个字。
   - 维度下最多三级取值，第三级取值不能再加下级；上级不存在也是 `422`。
   - 维度之间不重名；同一维度里的取值不论哪一层都不重名。
