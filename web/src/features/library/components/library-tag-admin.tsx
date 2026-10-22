@@ -1,5 +1,5 @@
-/** 资料库共用标签管理：维护同一棵标签树，维度与取值都以服务端顺序展示。 */
-import { useId, useRef, useState } from 'react'
+/** 交互原型：在现有标签管理中验证宽区编辑、三级树与连续录入。 */
+import { useId, useRef, useState, type CSSProperties } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import type { LibraryTagUpdateIn } from '@/shared/api/generated/types.gen'
 import { Icon } from '@/shared/icons'
@@ -16,6 +16,7 @@ import {
   useUpdateLibraryTag,
 } from '../library-tag-admin.api'
 import { isAiDimension, type LibraryTag, type TagIndex } from '../library-tags'
+import { isTagTreePrototype } from '../tag-tree-prototype'
 import { CreateDimensionForm, NameForm, RulesEditor } from './library-tag-admin-forms'
 import './library-tag-admin.css'
 
@@ -51,7 +52,7 @@ export function ManageTagsToggle({
   )
 }
 
-type Editing = { kind: 'add' | 'rename'; id: string; focus: boolean } | null
+type Editing = { kind: 'add' | 'rename'; id: string; focus: boolean; position?: number } | null
 type DialogState = { kind: 'rules' | 'delete'; tag: LibraryTag; dimension: boolean } | null
 const RETAG_HINT = '修改仅影响之后的打标，已有标签不会重打。'
 
@@ -73,6 +74,7 @@ const matchesSearch = (tag: LibraryTag, query: string): boolean =>
 type Actions = {
   busy: boolean
   editing: Editing
+  error: string | null
   edit: (next: Editing) => void
   openDialog: (next: DialogState) => void
   add: (name: string, parentId: string | null) => Promise<boolean>
@@ -81,6 +83,13 @@ type Actions = {
 
 export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: () => void }) {
   const [search, setSearch] = useState('')
+  const [focusedId, setFocusedId] = useState<string | null>(() =>
+    isTagTreePrototype()
+      ? (index.dimensions.find((item) => item.name === '场景')?.id ?? null)
+      : null,
+  )
+  const [formError, setFormError] = useState<string | null>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const [editing, setEditing] = useState<Editing>(() => {
     const emptyDimension = index.dimensions.find((dimension) => dimension.children.length === 0)
     return emptyDimension === undefined
@@ -100,8 +109,8 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
         index.dimensions.flatMap((dimension) =>
           dimension.children
             .filter((tag) => tag.children.length > 0)
-            .slice(0, 2)
-            .map((tag) => tag.id),
+            .slice(0, 1)
+            .flatMap((tag) => [tag.id, ...tag.children.slice(0, 1).map((child) => child.id)]),
         ),
       ),
   )
@@ -112,16 +121,35 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
   const query = search.trim().toLocaleLowerCase()
   const hasMatches = index.dimensions.some((tag) => matchesSearch(tag, query))
   const columns = dimensionColumnsOf(index.dimensions)
+  const focusedDimension = index.dimensions.find((dimension) => dimension.id === focusedId)
+  const focusDimension = (id: string | null) => {
+    setFocusedId(id)
+    setEditing(null)
+    setFormError(null)
+    panelRef.current?.scrollIntoView({ block: 'start' })
+  }
 
   const actions: Actions = {
     add: async (name, parentId) => {
+      setFormError(null)
       try {
-        await create.mutateAsync({ name, parentId, ...(parentId === null ? { position: 0 } : {}) })
-        setEditing(null)
-        setSearch('')
+        const added = await create.mutateAsync({
+          name,
+          parentId,
+          position: parentId === null ? 0 : (editing?.position ?? 0),
+        })
+        if (parentId === null) setEditing(null)
+        else
+          setEditing((current) =>
+            current?.kind === 'add' && current.id === parentId
+              ? { ...current, position: added.position + 1 }
+              : current,
+          )
         return true
       } catch (error) {
-        toast.error(errorMessageOf(error, '添加失败，请重试'))
+        const message = errorMessageOf(error, '添加失败，请重试')
+        if (parentId === null) toast.error(message)
+        else setFormError(message)
         return false
       }
     },
@@ -136,13 +164,17 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
         return false
       }
     },
-    edit: setEditing,
+    edit: (next) => {
+      setFormError(null)
+      setEditing(next)
+    },
     editing,
+    error: formError,
     openDialog: setDialog,
   }
 
   return (
-    <section aria-label="管理标签" className="tag-admin">
+    <section aria-label="管理标签" className="tag-admin" ref={panelRef}>
       <div className="tag-admin__toolbar">
         <h2>管理标签</h2>
         <Input
@@ -159,29 +191,62 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
           value={search}
           wrapperClassName="tag-admin__search"
         />
-        <Button
-          aria-expanded={creatingDimension}
-          disabled={busy}
-          leadingIcon="add"
-          onClick={() => {
-            setSearch('')
-            setEditing(null)
-            setCreatingDimension(true)
-          }}
-          ref={addDimensionRef}
-          size="md"
-          variant="outlined"
-        >
-          添加维度
-        </Button>
+        {focusedDimension === undefined ? (
+          <Button
+            aria-expanded={creatingDimension}
+            disabled={busy}
+            leadingIcon="add"
+            onClick={() => {
+              setSearch('')
+              setEditing(null)
+              setCreatingDimension(true)
+            }}
+            ref={addDimensionRef}
+            size="md"
+            variant="outlined"
+          >
+            添加维度
+          </Button>
+        ) : null}
         <span className="tag-admin__legend">使用量：灵感库 / 爆款素材库</span>
-        <Button className="tag-admin__done" onClick={onClose} size="md" variant="inverted">
-          完成
+        <Button
+          className="tag-admin__done"
+          onClick={focusedDimension ? () => focusDimension(null) : onClose}
+          size="md"
+          variant="inverted"
+        >
+          {focusedDimension ? '完成编辑' : '完成'}
         </Button>
       </div>
-      <p className="tag-admin__hint">{RETAG_HINT}</p>
+      <p className="tag-admin__hint">
+        {isTagTreePrototype() ? '交互原型 · 修改仅保存在本次演示中' : RETAG_HINT}
+      </p>
 
-      {hasMatches || creatingDimension ? (
+      {focusedDimension ? (
+        <div className="tag-admin__focus-area">
+          <div className="tag-admin__focus-nav">
+            <Button
+              leadingIcon="back"
+              onClick={() => focusDimension(null)}
+              size="md"
+              variant="ghost"
+            >
+              全部维度
+            </Button>
+            <Icon decorative name="disclosure" size="xs" />
+            <span>{focusedDimension.name}</span>
+          </div>
+          <DimensionCard
+            actions={actions}
+            dimension={focusedDimension}
+            focused
+            initiallyExpanded={initiallyExpanded}
+            onFocus={focusDimension}
+            query={query}
+            siblings={index.dimensions}
+          />
+        </div>
+      ) : hasMatches || creatingDimension ? (
         <div className="tag-admin__grid">
           {columns.map((column) => (
             <div className="tag-admin__column" key={column.id}>
@@ -211,6 +276,7 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
                     dimension={dimension}
                     initiallyExpanded={initiallyExpanded}
                     key={dimension.id}
+                    onFocus={focusDimension}
                     query={query}
                     siblings={index.dimensions}
                   />
@@ -302,27 +368,48 @@ function DimensionCard({
   query,
   initiallyExpanded,
   actions,
+  focused = false,
+  onFocus,
 }: {
   dimension: LibraryTag
   siblings: readonly LibraryTag[]
   query: string
   initiallyExpanded: ReadonlySet<string>
   actions: Actions
+  focused?: boolean
+  onFocus: (id: string) => void
 }) {
   const [showAll, setShowAll] = useState(false)
   const headingId = useId()
   const childQuery = dimension.name.toLocaleLowerCase().includes(query) ? '' : query
-  const matching = dimension.children.filter((tag) => matchesSearch(tag, childQuery))
-  const children = showAll || query ? matching : matching.slice(0, 10)
   const adding = actions.editing?.id === dimension.id && actions.editing.kind === 'add'
+  const matching = adding
+    ? dimension.children
+    : dimension.children.filter((tag) => matchesSearch(tag, childQuery))
+  const children = focused || showAll || query ? matching : matching.slice(0, 10)
+  const insertion = adding ? (actions.editing?.position ?? 0) : 0
   const renaming = actions.editing?.id === dimension.id && actions.editing.kind === 'rename'
 
   return (
-    <section aria-labelledby={headingId} className="tag-admin__card">
+    <section
+      aria-labelledby={headingId}
+      className={cn('tag-admin__card', focused && 'tag-admin__card--focused')}
+    >
       <div className="tag-admin__card-heading">
         <h3 id={headingId}>{dimension.name}</h3>
         <span className="tag-admin__mode">{isAiDimension(dimension) ? '自动' : '人工'}</span>
         <div className="tag-admin__card-tools">
+          {!focused ? (
+            <Button
+              aria-label={`展开编辑${dimension.name}`}
+              className="tag-admin__expand-editor"
+              onClick={() => onFocus(dimension.id)}
+              size="md"
+              variant="ghost"
+            >
+              展开编辑
+            </Button>
+          ) : null}
           <IconButton
             disabled={actions.busy}
             label={`给${dimension.name}添加标签`}
@@ -346,22 +433,7 @@ function DimensionCard({
           rename
         />
       ) : null}
-      {adding ? (
-        <NameForm
-          busy={actions.busy}
-          focus={actions.editing?.focus ?? false}
-          label={`${dimension.name}的标签名称`}
-          onCancel={() => actions.edit(null)}
-          onSubmit={async (name) => {
-            const added = await actions.add(name, dimension.id)
-            if (added) setShowAll(true)
-            return added
-          }}
-          placeholder="输入标签名称"
-        />
-      ) : null}
-
-      {dimension.children.length > 0 ? (
+      {dimension.children.length > 0 || adding ? (
         <>
           <div aria-hidden className="tag-admin__count-head">
             <span />
@@ -370,19 +442,51 @@ function DimensionCard({
             <span />
           </div>
           <ul aria-label={`${dimension.name}的标签`} className="tag-admin__list">
-            {children.map((tag) => (
+            {children.slice(0, insertion).map((tag) => (
               <TagRow
                 actions={actions}
                 depth={0}
                 initiallyExpanded={initiallyExpanded}
                 key={tag.id}
+                path={[dimension.name]}
+                query={childQuery}
+                siblings={dimension.children}
+                tag={tag}
+              />
+            ))}
+            {adding ? (
+              <li className="tag-admin__new-row" key="new-tag">
+                <NameForm
+                  busy={actions.busy}
+                  context={dimension.name}
+                  continuous
+                  error={actions.error}
+                  focus={actions.editing?.focus ?? false}
+                  label={`${dimension.name}的标签名称`}
+                  onCancel={() => actions.edit(null)}
+                  onSubmit={async (name) => {
+                    const added = await actions.add(name, dimension.id)
+                    if (added) setShowAll(true)
+                    return added
+                  }}
+                  placeholder="输入标签名称"
+                />
+              </li>
+            ) : null}
+            {children.slice(insertion).map((tag) => (
+              <TagRow
+                actions={actions}
+                depth={0}
+                initiallyExpanded={initiallyExpanded}
+                key={tag.id}
+                path={[dimension.name]}
                 query={childQuery}
                 siblings={dimension.children}
                 tag={tag}
               />
             ))}
           </ul>
-          {!query && matching.length > 10 ? (
+          {!focused && !query && matching.length > 10 ? (
             <button
               aria-expanded={showAll}
               className="tag-admin__show-all ui-focus"
@@ -408,25 +512,45 @@ function TagRow({
   query,
   initiallyExpanded,
   actions,
+  path,
 }: {
   tag: LibraryTag
   siblings: readonly LibraryTag[]
-  depth: 0 | 1
+  depth: number
   query: string
   initiallyExpanded: ReadonlySet<string>
   actions: Actions
+  path: readonly string[]
 }) {
   const [open, setOpen] = useState(() => initiallyExpanded.has(tag.id))
   const adding = actions.editing?.id === tag.id && actions.editing.kind === 'add'
   const renaming = actions.editing?.id === tag.id && actions.editing.kind === 'rename'
   const hasChildren = tag.children.length > 0
   const expanded = open || Boolean(query) || adding
-  const children = tag.name.toLocaleLowerCase().includes(query)
-    ? tag.children
-    : tag.children.filter((child) => matchesSearch(child, query))
+  const children =
+    adding || tag.name.toLocaleLowerCase().includes(query)
+      ? tag.children
+      : tag.children.filter((child) => matchesSearch(child, query))
+  const insertion = adding ? (actions.editing?.position ?? 0) : 0
+  const nodePath = [...path, tag.name]
+  const childRow = (child: LibraryTag) => (
+    <TagRow
+      actions={actions}
+      depth={depth + 1}
+      initiallyExpanded={initiallyExpanded}
+      key={child.id}
+      path={nodePath}
+      query={query}
+      siblings={tag.children}
+      tag={child}
+    />
+  )
 
   return (
-    <li className={cn('tag-admin__item', hasChildren && 'tag-admin__branch')}>
+    <li
+      className={cn('tag-admin__item', hasChildren && 'tag-admin__branch')}
+      style={{ '--tag-depth': depth } as CSSProperties}
+    >
       {renaming ? (
         <NameForm
           busy={actions.busy}
@@ -439,7 +563,7 @@ function TagRow({
           rename
         />
       ) : (
-        <div className={cn('tag-admin__row', depth === 1 && 'tag-admin__child')}>
+        <div className={cn('tag-admin__row', adding && 'tag-admin__row--active')}>
           {hasChildren ? (
             <button
               aria-expanded={expanded}
@@ -465,39 +589,44 @@ function TagRow({
           >
             {tag.counts.hitCases}
           </span>
-          <TagMenu actions={actions} depth={depth} siblings={siblings} tag={tag} />
+          <div className="tag-admin__row-tools">
+            {depth < 2 ? (
+              <IconButton
+                disabled={actions.busy}
+                label={`给${tag.name}添加下级`}
+                name="add"
+                onClick={() => actions.edit({ focus: true, id: tag.id, kind: 'add', position: 0 })}
+                size="xs"
+              />
+            ) : null}
+            <TagMenu actions={actions} depth={depth} siblings={siblings} tag={tag} />
+          </div>
         </div>
       )}
-      {expanded && hasChildren ? (
+      {expanded && (hasChildren || adding) ? (
         <ul aria-label={`${tag.name}的小类`} className="tag-admin__children">
-          {children.map((child) => (
-            <TagRow
-              actions={actions}
-              depth={1}
-              initiallyExpanded={initiallyExpanded}
-              key={child.id}
-              query={query}
-              siblings={tag.children}
-              tag={child}
-            />
-          ))}
+          {children.slice(0, insertion).map(childRow)}
+          {adding ? (
+            <li className="tag-admin__child-form" key="new-tag">
+              <NameForm
+                busy={actions.busy}
+                context={nodePath.join(' / ')}
+                continuous
+                error={actions.error}
+                focus
+                label={`${tag.name}的小类名称`}
+                onCancel={() => actions.edit(null)}
+                onSubmit={async (name) => {
+                  const added = await actions.add(name, tag.id)
+                  if (added) setOpen(true)
+                  return added
+                }}
+                placeholder="输入小类名称"
+              />
+            </li>
+          ) : null}
+          {children.slice(insertion).map(childRow)}
         </ul>
-      ) : null}
-      {adding ? (
-        <div className="tag-admin__child-form">
-          <NameForm
-            busy={actions.busy}
-            focus
-            label={`${tag.name}的小类名称`}
-            onCancel={() => actions.edit(null)}
-            onSubmit={async (name) => {
-              const added = await actions.add(name, tag.id)
-              if (added) setOpen(true)
-              return added
-            }}
-            placeholder="输入小类名称"
-          />
-        </div>
       ) : null}
     </li>
   )
@@ -514,7 +643,7 @@ function TagMenu({
   siblings: readonly LibraryTag[]
   actions: Actions
   dimension?: boolean
-  depth?: 0 | 1
+  depth?: number
 }) {
   const redirectFocusRef = useRef(false)
   const position = siblings.findIndex((sibling) => sibling.id === tag.id)
@@ -549,7 +678,7 @@ function TagMenu({
         <MenuItem icon="edit" onSelect={() => edit('rename')}>
           重命名
         </MenuItem>
-        {depth === 0 ? (
+        {depth < 2 ? (
           <MenuItem icon="add" onSelect={() => edit('add')}>
             {dimension ? '添加标签' : '添加小类'}
           </MenuItem>
@@ -563,14 +692,14 @@ function TagMenu({
           icon="move-up"
           onSelect={() => previous && void actions.change(tag, { position: previous.position })}
         >
-          上移
+          同级上移
         </MenuItem>
         <MenuItem
           disabled={next === undefined}
           icon="move-down"
           onSelect={() => next && void actions.change(tag, { position: next.position })}
         >
-          下移
+          同级下移
         </MenuItem>
         <MenuSeparator />
         <MenuItem destructive icon="delete" onSelect={() => openDialog('delete')}>

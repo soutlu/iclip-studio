@@ -9,6 +9,7 @@ import type {
   LibraryTagsOut,
   LibraryTagUpdateIn,
 } from '@/shared/api/generated/types.gen'
+import { BRAND_TAGS_PROTOTYPE, SCENE_TAGS_PROTOTYPE } from './scene-tags-prototype'
 
 type Node = Omit<LibraryTagOut, 'counts' | 'children'> & { children: Node[] }
 
@@ -191,16 +192,23 @@ const seedTree = (): Node[] => {
 }
 
 /** 每个节点在树里的位置：所在维度（维度自己就是它）、上级与全部下级。 */
-type Place = { node: Node; dimension: Node; parent: Node | null; descendants: string[] }
+type Place = {
+  node: Node
+  dimension: Node
+  parent: Node | null
+  depth: number
+  descendants: string[]
+}
 
 let tree: Node[] = []
+let scenePrototypeEnabled = false
 const places = new Map<string, Place>()
-const walk = (current: Node, dimension: Node, parent: Node | null): string[] => {
+const walk = (current: Node, dimension: Node, parent: Node | null, depth = 0): string[] => {
   const descendants = current.children.flatMap((child) => [
     child.id,
-    ...walk(child, dimension, current),
+    ...walk(child, dimension, current, depth + 1),
   ])
-  places.set(current.id, { descendants, dimension, node: current, parent })
+  places.set(current.id, { depth, descendants, dimension, node: current, parent })
   return descendants
 }
 /** 树改过之后重算各节点的位置，同级的 `position` 重新编成 0..n-1。 */
@@ -218,9 +226,35 @@ const reindex = () => {
 /** 每例清空后放回预置的树，id 与上一次相同；演示行的标签要在它之后重放。 */
 export const resetMockLibraryTags = () => {
   tree = seedTree()
+  scenePrototypeEnabled = false
   reindex()
 }
 resetMockLibraryTags()
+
+/** 演示资料先按默认树初始化，再为指定原型页启用独立场景树，避免改动默认 seed 的稳定 id。 */
+const syncScenePrototype = () => {
+  const enabled =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('variant') === 'tag-tree'
+  if (enabled === scenePrototypeEnabled) return
+  tree = seedTree()
+  scenePrototypeEnabled = enabled
+  if (enabled) {
+    const scene = tree.find((dimension) => dimension.name === '场景')
+    const brand = tree.find((dimension) => dimension.name === '品牌')
+    if (scene === undefined || brand === undefined) throw new Error('原型需要场景和品牌维度')
+    scene.children = SCENE_TAGS_PROTOTYPE.map(([name, groups], position) =>
+      node(name, position, {
+        children: groups.map(([group, names], index) =>
+          node(group, index, { children: leaves(names) }),
+        ),
+      }),
+    )
+    scene.guide = null
+    brand.children = leaves(BRAND_TAGS_PROTOTYPE)
+  }
+  reindex()
+}
 
 /** 按名字取 id；不在树里给 undefined（演示数据跟着治理者改过的树走）。 */
 export const findMockTagId = (name: string): string | undefined => {
@@ -334,9 +368,13 @@ export const libraryTagHandlers = (
   entries: () => TagSets,
   forget: (ids: ReadonlySet<string>) => void,
 ) => [
-  http.get('*/api/library-tags', () => HttpResponse.json(mockLibraryTagTree(entries()))),
+  http.get('*/api/library-tags', () => {
+    syncScenePrototype()
+    return HttpResponse.json(mockLibraryTagTree(entries()))
+  }),
 
   http.post('*/api/library-tags', async ({ request }) => {
+    syncScenePrototype()
     const body = (await request.json()) as LibraryTagCreateIn
     const name = cleanName(body.name)
     if (typeof name !== 'string') return invalid(name.error)
@@ -345,8 +383,10 @@ export const libraryTagHandlers = (
     const parentId = body.parentId ?? null
     const parent = parentId === null ? null : places.get(parentId)
     if (parent === undefined) return invalid('上级标签不存在')
-    if (parent !== null && parent.parent !== null && parent.parent.id !== parent.dimension.id)
-      return invalid('小类下无法再添加下级')
+    if (parent !== null && parent.depth >= (scenePrototypeEnabled ? 3 : 2))
+      return invalid(
+        scenePrototypeEnabled ? '最多支持三级标签，无法再添加下级' : '小类下无法再添加下级',
+      )
     if (parent !== null && (body.autoFill ?? null) !== null)
       return invalid('只有维度可设为 AI 打标')
     const duplicate = duplicateOf(parent?.dimension ?? null, name, null)
@@ -369,6 +409,7 @@ export const libraryTagHandlers = (
   }),
 
   http.patch('*/api/library-tags/:id', async ({ params, request }) => {
+    syncScenePrototype()
     const place = places.get(String(params['id']))
     if (place === undefined) return NOT_FOUND()
     const body = (await request.json()) as LibraryTagUpdateIn
@@ -402,6 +443,7 @@ export const libraryTagHandlers = (
   }),
 
   http.delete('*/api/library-tags/:id', ({ params }) => {
+    syncScenePrototype()
     const place = places.get(String(params['id']))
     if (place === undefined) return NOT_FOUND()
     const siblings = place.parent === null ? tree : place.parent.children

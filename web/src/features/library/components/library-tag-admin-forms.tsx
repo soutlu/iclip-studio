@@ -76,6 +76,9 @@ export function NameForm({
   initialValue = '',
   focus = false,
   rename = false,
+  continuous = false,
+  context,
+  error,
 }: {
   label: string
   placeholder: string
@@ -85,9 +88,13 @@ export function NameForm({
   initialValue?: string
   focus?: boolean
   rename?: boolean
+  continuous?: boolean
+  context?: string
+  error?: string | null
 }) {
   const [value, setValue] = useState(initialValue)
   const inputRef = useRef<HTMLInputElement>(null)
+  const errorId = useId()
   useEffect(() => {
     if (!focus) return
     inputRef.current?.focus()
@@ -101,13 +108,22 @@ export function NameForm({
         event.preventDefault()
         if (busy || !value.trim()) return
         if (rename && value.trim() === initialValue) onCancel()
-        else void onSubmit(value.trim())
+        else
+          void onSubmit(value.trim()).then((saved) => {
+            if (saved && continuous) {
+              setValue('')
+              inputRef.current?.focus({ preventScroll: true })
+            }
+          })
       }}
     >
+      {context ? <p className="tag-admin__input-context">添加到 {context}</p> : null}
       <Input
+        aria-describedby={error ? errorId : undefined}
+        aria-invalid={Boolean(error)}
         aria-label={label}
         className="tag-admin__name-input"
-        disabled={busy}
+        disabled={busy && !continuous}
         maxLength={50}
         onChange={(event) => setValue(event.currentTarget.value)}
         onKeyDown={(event) => {
@@ -122,11 +138,12 @@ export function NameForm({
           }
         }}
         placeholder={placeholder}
+        readOnly={busy}
         ref={inputRef}
         value={value}
       />
       <Button disabled={busy} onClick={onCancel} size="md" variant="ghost">
-        取消
+        {continuous ? '结束' : '取消'}
       </Button>
       <Button
         disabled={!value.trim()}
@@ -137,6 +154,13 @@ export function NameForm({
       >
         {rename ? '保存' : '添加'}
       </Button>
+      {error ? (
+        <p className="tag-admin__input-error" id={errorId} role="alert">
+          {error}
+        </p>
+      ) : continuous ? (
+        <p className="tag-admin__input-help">Enter 添加并继续 · Esc 结束</p>
+      ) : null}
     </form>
   )
 }

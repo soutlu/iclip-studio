@@ -7,6 +7,7 @@ import {
   tagIndexOf,
   tagNamesOf,
   tagOptionsOf,
+  type LibraryTag,
 } from './library-tags'
 
 const index = tagIndexOf(mockLibraryTagTree())
@@ -60,6 +61,48 @@ describe('dimensionEntriesOf / knownTagIds', () => {
 })
 
 describe('tagOptionsOf', () => {
+  it('三级取值全部可选，并按父子顺序显示和替换已选标签', () => {
+    const node = (name: string, children: LibraryTag[] = []): LibraryTag => ({
+      ...dimension('场景'),
+      children,
+      id: name,
+      name,
+    })
+    const scene = node('场景', [
+      node('城市通勤与生活', [
+        node('早晚高峰通勤', [node('地铁/公交拥挤站立 (防滑/耐脏)'), node('骑行/共享单车')]),
+        node('商务办公场景'),
+      ]),
+      node('专业运动与竞技'),
+    ])
+    const nestedIndex = tagIndexOf({
+      dimensions: [dimension('平台&渠道'), scene],
+    })
+    const leafId = '地铁/公交拥挤站立 (防滑/耐脏)'
+
+    expect(tagOptionsOf(scene).map(({ label, depth, group }) => ({ depth, group, label }))).toEqual(
+      [
+        { depth: 0, group: true, label: '城市通勤与生活' },
+        { depth: 1, group: true, label: '早晚高峰通勤' },
+        { depth: 2, group: false, label: '地铁/公交拥挤站立 (防滑/耐脏)' },
+        { depth: 2, group: false, label: '骑行/共享单车' },
+        { depth: 1, group: false, label: '商务办公场景' },
+        { depth: 0, group: false, label: '专业运动与竞技' },
+      ],
+    )
+    expect(nestedIndex.byId.get(leafId)).toMatchObject({
+      depth: 2,
+      dimensionId: scene.id,
+      parentId: '早晚高峰通勤',
+    })
+    expect(
+      replaceDimensionTags(nestedIndex, [id('AMZ'), '商务办公场景'], scene.id, [
+        '专业运动与竞技',
+        leafId,
+      ]),
+    ).toEqual([id('AMZ'), leafId, '专业运动与竞技'])
+  })
+
   it('两层的维度：大类是可选的组头，小类缩进跟在它后面', () => {
     const options = tagOptionsOf(dimension('内容结构'))
     expect(options.slice(0, 3).map(({ label, depth, group }) => ({ depth, group, label }))).toEqual(
