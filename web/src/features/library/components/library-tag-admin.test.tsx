@@ -152,19 +152,6 @@ describe('管理标签', () => {
     ])
   })
 
-  it('展开编辑只展示当前维度，完成编辑后回到全部维度概览', async () => {
-    loginAs(mockGovernor)
-    const user = userEvent.setup()
-    await renderWithProviders(<Harness />)
-    await openAdmin(user)
-    await user.click(screen.getByRole('button', { name: '展开编辑场景' }))
-    expect(dimensionNames()).toEqual(['场景'])
-    expect(screen.getByRole('button', { name: '全部维度' })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: '完成编辑' }))
-    expect(dimensionNames()).toEqual(['品牌', '平台&渠道', '品类', '场景', '内容结构'])
-    expect(screen.getByRole('button', { name: '展开编辑场景' })).toBeVisible()
-  })
-
   it('就地改名与同级排序：树重读后保持更新的顺序', async () => {
     loginAs(mockGovernor)
     const writes = recordTagWrites()

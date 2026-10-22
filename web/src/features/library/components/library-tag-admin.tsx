@@ -1,4 +1,4 @@
-/** 交互原型：在现有标签管理中验证宽区编辑、三级树与连续录入。 */
+/** 交互原型：在现有标签管理中验证三级树与连续录入。 */
 import { useId, useRef, useState, type CSSProperties } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import type { LibraryTagUpdateIn } from '@/shared/api/generated/types.gen'
@@ -16,7 +16,6 @@ import {
   useUpdateLibraryTag,
 } from '../library-tag-admin.api'
 import { isAiDimension, type LibraryTag, type TagIndex } from '../library-tags'
-import { isTagTreePrototype } from '../tag-tree-prototype'
 import { CreateDimensionForm, NameForm, RulesEditor } from './library-tag-admin-forms'
 import './library-tag-admin.css'
 
@@ -83,13 +82,7 @@ type Actions = {
 
 export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: () => void }) {
   const [search, setSearch] = useState('')
-  const [focusedId, setFocusedId] = useState<string | null>(() =>
-    isTagTreePrototype()
-      ? (index.dimensions.find((item) => item.name === '场景')?.id ?? null)
-      : null,
-  )
   const [formError, setFormError] = useState<string | null>(null)
-  const panelRef = useRef<HTMLElement>(null)
   const [editing, setEditing] = useState<Editing>(() => {
     const emptyDimension = index.dimensions.find((dimension) => dimension.children.length === 0)
     return emptyDimension === undefined
@@ -121,13 +114,6 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
   const query = search.trim().toLocaleLowerCase()
   const hasMatches = index.dimensions.some((tag) => matchesSearch(tag, query))
   const columns = dimensionColumnsOf(index.dimensions)
-  const focusedDimension = index.dimensions.find((dimension) => dimension.id === focusedId)
-  const focusDimension = (id: string | null) => {
-    setFocusedId(id)
-    setEditing(null)
-    setFormError(null)
-    panelRef.current?.scrollIntoView({ block: 'start' })
-  }
 
   const actions: Actions = {
     add: async (name, parentId) => {
@@ -174,7 +160,7 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
   }
 
   return (
-    <section aria-label="管理标签" className="tag-admin" ref={panelRef}>
+    <section aria-label="管理标签" className="tag-admin">
       <div className="tag-admin__toolbar">
         <h2>管理标签</h2>
         <Input
@@ -191,58 +177,27 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
           value={search}
           wrapperClassName="tag-admin__search"
         />
-        {focusedDimension === undefined ? (
-          <Button
-            aria-expanded={creatingDimension}
-            disabled={busy}
-            leadingIcon="add"
-            onClick={() => {
-              setSearch('')
-              setEditing(null)
-              setCreatingDimension(true)
-            }}
-            ref={addDimensionRef}
-            size="md"
-            variant="outlined"
-          >
-            添加维度
-          </Button>
-        ) : null}
         <Button
-          className="tag-admin__done"
-          onClick={focusedDimension ? () => focusDimension(null) : onClose}
+          aria-expanded={creatingDimension}
+          disabled={busy}
+          leadingIcon="add"
+          onClick={() => {
+            setSearch('')
+            setEditing(null)
+            setCreatingDimension(true)
+          }}
+          ref={addDimensionRef}
           size="md"
-          variant="inverted"
+          variant="outlined"
         >
-          {focusedDimension ? '完成编辑' : '完成'}
+          添加维度
+        </Button>
+        <Button className="tag-admin__done" onClick={onClose} size="md" variant="inverted">
+          完成
         </Button>
       </div>
 
-      {focusedDimension ? (
-        <div className="tag-admin__focus-area">
-          <div className="tag-admin__focus-nav">
-            <Button
-              leadingIcon="back"
-              onClick={() => focusDimension(null)}
-              size="md"
-              variant="ghost"
-            >
-              全部维度
-            </Button>
-            <Icon decorative name="disclosure" size="xs" />
-            <span>{focusedDimension.name}</span>
-          </div>
-          <DimensionCard
-            actions={actions}
-            dimension={focusedDimension}
-            focused
-            initiallyExpanded={initiallyExpanded}
-            onFocus={focusDimension}
-            query={query}
-            siblings={index.dimensions}
-          />
-        </div>
-      ) : hasMatches || creatingDimension ? (
+      {hasMatches || creatingDimension ? (
         <div className="tag-admin__grid">
           {columns.map((column) => (
             <div className="tag-admin__column" key={column.id}>
@@ -272,7 +227,6 @@ export function LibraryTagAdmin({ index, onClose }: { index: TagIndex; onClose: 
                     dimension={dimension}
                     initiallyExpanded={initiallyExpanded}
                     key={dimension.id}
-                    onFocus={focusDimension}
                     query={query}
                     siblings={index.dimensions}
                   />
@@ -364,16 +318,12 @@ function DimensionCard({
   query,
   initiallyExpanded,
   actions,
-  focused = false,
-  onFocus,
 }: {
   dimension: LibraryTag
   siblings: readonly LibraryTag[]
   query: string
   initiallyExpanded: ReadonlySet<string>
   actions: Actions
-  focused?: boolean
-  onFocus: (id: string) => void
 }) {
   const [showAll, setShowAll] = useState(false)
   const headingId = useId()
@@ -382,30 +332,16 @@ function DimensionCard({
   const matching = adding
     ? dimension.children
     : dimension.children.filter((tag) => matchesSearch(tag, childQuery))
-  const children = focused || showAll || query ? matching : matching.slice(0, 10)
+  const children = showAll || query ? matching : matching.slice(0, 10)
   const insertion = adding ? (actions.editing?.position ?? 0) : 0
   const renaming = actions.editing?.id === dimension.id && actions.editing.kind === 'rename'
 
   return (
-    <section
-      aria-labelledby={headingId}
-      className={cn('tag-admin__card', focused && 'tag-admin__card--focused')}
-    >
+    <section aria-labelledby={headingId} className="tag-admin__card">
       <div className="tag-admin__card-heading">
         <h3 id={headingId}>{dimension.name}</h3>
         <span className="tag-admin__mode">{isAiDimension(dimension) ? '自动' : '人工'}</span>
         <div className="tag-admin__card-tools">
-          {!focused ? (
-            <Button
-              aria-label={`展开编辑${dimension.name}`}
-              className="tag-admin__expand-editor"
-              onClick={() => onFocus(dimension.id)}
-              size="md"
-              variant="ghost"
-            >
-              展开编辑
-            </Button>
-          ) : null}
           <IconButton
             disabled={actions.busy}
             label={`给${dimension.name}添加标签`}
@@ -479,7 +415,7 @@ function DimensionCard({
               />
             ))}
           </ul>
-          {!focused && !query && matching.length > 10 ? (
+          {!query && matching.length > 10 ? (
             <button
               aria-expanded={showAll}
               className="tag-admin__show-all ui-focus"

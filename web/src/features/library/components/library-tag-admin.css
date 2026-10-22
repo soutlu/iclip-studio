@@ -263,49 +263,8 @@
   overflow-wrap: anywhere;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
-}
-
-.tag-admin__input-error {
   margin-top: 4px;
   color: var(--color-error);
-}
-
-.tag-admin__focus-area {
-  margin-top: 20px;
-}
-
-.tag-admin__focus-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-body-sm);
-}
-
-.tag-admin__focus-nav > button {
-  padding-left: 0;
-}
-
-.tag-admin__card--focused {
-  padding: 24px;
-}
-
-.tag-admin__card--focused .tag-admin__card-heading {
-  margin-bottom: 20px;
-}
-
-.tag-admin__card--focused .tag-admin__row {
-  min-height: var(--control-height-md);
-  padding-block: 2px;
-}
-
-.tag-admin__expand-editor {
-  min-height: var(--control-height-xs);
-  height: var(--control-height-xs);
-  padding-inline: 6px;
-  font-size: var(--text-label);
-  color: var(--color-on-surface-variant);
 }
 
 .tag-admin__empty {
@@ -395,16 +354,16 @@
 }
 
 @container (max-width: 599px) {
-  .tag-admin__card--focused {
+  .tag-admin__card {
     padding: 16px 12px;
   }
 
-  .tag-admin__card--focused .tag-admin__row {
+  .tag-admin__row {
     grid-template-columns: minmax(0, 1fr) 56px;
   }
 
-  .tag-admin__card--focused .tag-admin__count,
-  .tag-admin__card--focused .tag-admin__count-head {
+  .tag-admin__count,
+  .tag-admin__count-head {
     display: none;
   }
 
