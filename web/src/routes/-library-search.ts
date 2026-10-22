@@ -22,8 +22,6 @@ const zLibraryTab = z.enum(LIBRARY_TAB_VALUES)
 
 export const librarySearchSchema = z.object({
   ...dateRangeSearchFields,
-  /** 临时交互原型；数据与登录仅由 mock 入口提供。 */
-  variant: z.literal('tag-tree').optional().catch(undefined),
   tab: zLibraryTab.optional().catch(undefined),
   orientation: z.enum(['portrait', 'landscape']).optional().catch(undefined),
   q: z.string().max(100).optional().catch(undefined),

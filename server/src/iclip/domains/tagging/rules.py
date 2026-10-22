@@ -19,8 +19,8 @@ from iclip.domains.tagging.models import (
     TagNode,
 )
 
-MAX_DEPTH = 2
-"""维度是 0，取值是 1，取值下的一层是 2。"""
+MAX_DEPTH = 3
+"""维度是 0，取值最多三级，深度依次是 1、2、3。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +103,7 @@ def check_new(
     if place is None:
         raise ValidationFailed("上级标签不存在")
     if place.depth >= MAX_DEPTH:
-        raise ValidationFailed("小类下无法再添加下级")
+        raise ValidationFailed("标签最多三级，无法再添加下级")
     if auto_fill is not None:
         raise ValidationFailed("只有维度可设为 AI 打标")
     _check_unique(tree, place.dimension, name, self_id=None)

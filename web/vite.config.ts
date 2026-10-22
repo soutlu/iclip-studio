@@ -60,7 +60,6 @@ export default defineConfig(({ mode }) => {
   const useBrowserMocks = profile.browserMocks !== 'disabled'
 
   return {
-    define: { __TAG_TREE_PROTOTYPE__: JSON.stringify(mode === 'mock') },
     // mock 构建只供 e2e 的 preview 使用，与生产产物分目录，互不覆盖。
     build: useBrowserMocks ? { outDir: 'dist-mock' } : {},
     plugins: [

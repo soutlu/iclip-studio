@@ -1412,7 +1412,7 @@ export const zTagCountsOut = z.object({
 /**
  * LibraryTagOut
  *
- * 标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。
+ * 标签树的一个节点：顶层是维度，维度下最多三级取值。
  */
 export const zLibraryTagOut = z.object({
   autoFill: z.literal('ai').nullable(),

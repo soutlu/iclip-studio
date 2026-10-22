@@ -152,6 +152,31 @@ describe('管理标签', () => {
     ])
   })
 
+  it('录入下级时点祖先不会收起分支或丢失草稿，结束后可正常折叠', async () => {
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await openAdmin(user)
+    const parent = screen.getByRole('button', { name: '产品展示型' })
+    expect(parent).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: '给360°全景展示添加下级' }))
+    const input = screen.getByRole('textbox', { name: '360°全景展示的小类名称' })
+    await user.type(input, '旋转鞋底特写')
+    await user.click(parent)
+    expect(parent).toHaveAttribute('aria-expanded', 'true')
+    expect(input).toHaveValue('旋转鞋底特写')
+    expect(input).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: '360°全景展示的小类名称' })).toBeNull()
+    expect(parent).toHaveAttribute('aria-expanded', 'true')
+    await user.click(parent)
+    expect(parent).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: '给360°全景展示添加下级' })).toBeNull()
+    await user.click(parent)
+    expect(screen.getByRole('button', { name: '给360°全景展示添加下级' })).toBeVisible()
+  })
+
   it('就地改名与同级排序：树重读后保持更新的顺序', async () => {
     loginAs(mockGovernor)
     const writes = recordTagWrites()

@@ -1,4 +1,4 @@
-/** 交互原型：在现有标签管理中验证三级树与连续录入。 */
+/** 标签管理：同一面板展开三级标签树，就地增改与连续录入。 */
 import { useId, useRef, useState, type CSSProperties } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import type { LibraryTagUpdateIn } from '@/shared/api/generated/types.gen'
@@ -69,6 +69,9 @@ const dimensionColumnsOf = (dimensions: readonly LibraryTag[]) => {
 const matchesSearch = (tag: LibraryTag, query: string): boolean =>
   tag.name.toLocaleLowerCase().includes(query) ||
   tag.children.some((child) => matchesSearch(child, query))
+
+const containsTag = (tag: LibraryTag, id: string): boolean =>
+  tag.id === id || tag.children.some((child) => containsTag(child, id))
 
 type Actions = {
   busy: boolean
@@ -453,11 +456,13 @@ function TagRow({
   const adding = actions.editing?.id === tag.id && actions.editing.kind === 'add'
   const renaming = actions.editing?.id === tag.id && actions.editing.kind === 'rename'
   const hasChildren = tag.children.length > 0
-  const expanded = open || Boolean(query) || adding
-  const children =
-    adding || tag.name.toLocaleLowerCase().includes(query)
-      ? tag.children
-      : tag.children.filter((child) => matchesSearch(child, query))
+  // 编辑中不能卸载这条分支，否则行内表单的未保存内容和焦点都会丢失。
+  const editingBranch = actions.editing !== null && containsTag(tag, actions.editing.id)
+  const expanded = open || Boolean(query) || editingBranch
+  const childQuery = tag.name.toLocaleLowerCase().includes(query) ? '' : query
+  const children = adding
+    ? tag.children
+    : tag.children.filter((child) => matchesSearch(child, childQuery))
   const insertion = adding ? (actions.editing?.position ?? 0) : 0
   const childRow = (child: LibraryTag) => (
     <TagRow
@@ -465,7 +470,7 @@ function TagRow({
       depth={depth + 1}
       initiallyExpanded={initiallyExpanded}
       key={child.id}
-      query={query}
+      query={childQuery}
       siblings={tag.children}
       tag={child}
     />
@@ -491,9 +496,15 @@ function TagRow({
         <div className={cn('tag-admin__row', adding && 'tag-admin__row--active')}>
           {hasChildren ? (
             <button
+              aria-disabled={editingBranch}
               aria-expanded={expanded}
               className="tag-admin__branch-label ui-focus"
-              onClick={() => setOpen(!open)}
+              onClick={() => {
+                if (!editingBranch) setOpen(!open)
+              }}
+              onPointerDown={(event) => {
+                if (editingBranch) event.preventDefault()
+              }}
               type="button"
             >
               <Icon decorative name={expanded ? 'expand' : 'disclosure'} size="xs" />

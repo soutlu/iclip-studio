@@ -1,4 +1,4 @@
-"""改标签树的规则：名称与判断说明的整理，层级最多到小类，维度之间与同一维度里不论哪一层都不重名，
+"""改标签树的规则：名称与判断说明的整理，维度下最多三级取值，维度之间与同一维度里不论哪一层都不重名，
 只有维度能设 AI 打标，AI 维度的取值合计不过上限；同级按给的位置重新排，超出范围夹到首尾。"""
 
 from __future__ import annotations
@@ -85,11 +85,14 @@ def test_a_new_dimension_goes_among_the_dimensions() -> None:
     assert check_new(TREE, parent_id=None, name="品牌", auto_fill="ai") == TREE
 
 
-def test_values_go_under_a_dimension_or_a_value_but_no_deeper() -> None:
+def test_values_allow_three_levels_below_a_dimension_but_no_deeper() -> None:
     assert check_new(TREE, parent_id=STRUCTURE_ID, name="新大类", auto_fill=None) == (REVIEW, TALK)
     assert check_new(TREE, parent_id=REVIEW_ID, name="新小类", auto_fill=None) == (COMPARE,)
-    with pytest.raises(ValidationFailed, match="小类下无法再添加下级"):
-        check_new(TREE, parent_id=COMPARE.id, name="再一层", auto_fill=None)
+    assert check_new(TREE, parent_id=COMPARE.id, name="具体场景", auto_fill=None) == ()
+    last = node("末级")
+    deep = node("场景", children=(node("大类", children=(node("中类", children=(last,)),)),))
+    with pytest.raises(ValidationFailed, match="标签最多三级"):
+        check_new((deep,), parent_id=last.id, name="第四级", auto_fill=None)
 
 
 def test_a_missing_parent_is_rejected() -> None:

@@ -1,6 +1,5 @@
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
-import { isTagTreePrototype } from '@/features/library/tag-tree-prototype'
 import {
   zConversationIn,
   zTaskCreateIn,
@@ -47,7 +46,7 @@ export {
 
 export type MockUser = typeof mockAuthUser
 
-let currentUser: MockUser | null = isTagTreePrototype() ? mockGovernor : null
+let currentUser: MockUser | null = null
 
 /**
  * 单测的登录态：直接把 mock 会话设成这个用户，`/users/me`、按属主过滤的列表与认领都认它，退出登录照常清掉。

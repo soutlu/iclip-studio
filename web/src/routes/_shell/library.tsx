@@ -49,25 +49,16 @@ function LibraryPage() {
   const { data: user } = useUser()
   const pushedRef = useRef(false)
   const setScope = (next: LibraryScope) =>
-    void navigate({ replace: true, search: { ...searchFromScope(next), variant: search.variant } })
+    void navigate({ replace: true, search: searchFromScope(next) })
   const setReferenceScope = (next: ReferenceScope) =>
-    void navigate({
-      replace: true,
-      search: { ...searchFromReferenceScope(next), variant: search.variant },
-    })
+    void navigate({ replace: true, search: searchFromReferenceScope(next) })
   const setWholeFilmScope = (next: WholeFilmScope) =>
-    void navigate({
-      replace: true,
-      search: { ...searchFromWholeFilmScope(next), variant: search.variant },
-    })
+    void navigate({ replace: true, search: searchFromWholeFilmScope(next) })
   const setHitCaseScope = (next: HitCaseScope) =>
-    void navigate({
-      replace: true,
-      search: { ...searchFromHitCaseScope(next), variant: search.variant },
-    })
+    void navigate({ replace: true, search: searchFromHitCaseScope(next) })
   const setTab = (value: string) => {
     pushedRef.current = false
-    void navigate({ replace: true, search: { ...searchFromTab(value), variant: search.variant } })
+    void navigate({ replace: true, search: searchFromTab(value) })
   }
   const setDetail =
     (key: 'video' | 'reference' | 'film') => (id: string | null, replace: boolean) => {

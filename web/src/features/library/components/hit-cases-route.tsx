@@ -18,7 +18,6 @@ import { cardHeightFor } from '../library-layout'
 import { useLibraryTagScope } from '../library-tag-scope'
 import { useLibraryTags } from '../library-tags.api'
 import { isTaggingBusy } from '../references.api'
-import { isTagTreePrototype } from '../tag-tree-prototype'
 import { focusCardOpener } from './card-focus'
 import { LibraryCard } from './library-card'
 import { LibraryList } from './library-list'
@@ -59,7 +58,7 @@ export function HitCasesRoute({
   const { data: user } = useUser()
   const canManageTags = hasPermission(user, PERMISSION.usersManage)
   const authors = useHitCaseAuthorSource()
-  const [managingTags, setManagingTags] = useState(isTagTreePrototype)
+  const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
   // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试。
   const scope = useLibraryTagScope(requestedScope, tags, onScopeChange)
