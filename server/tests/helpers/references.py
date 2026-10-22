@@ -122,7 +122,7 @@ def responses_body(text_out: str, *, status: str = "completed") -> dict[str, Any
 
 class TagCategorySelection(TypedDict):
     category: str
-    subcategories: Sequence[str]
+    subcategories: Sequence[TagSelection]
 
 
 type TagSelection = str | TagCategorySelection

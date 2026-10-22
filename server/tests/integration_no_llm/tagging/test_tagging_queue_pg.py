@@ -100,6 +100,39 @@ async def test_ai_dimensions_are_rewritten_and_manual_ones_kept(engine: AsyncEng
     }, "选了小类就不留大类；旧的 AI 标签换掉，人工的留着"
 
 
+async def test_three_level_choices_are_written_without_ancestors_and_keep_manual_tags(
+    engine: AsyncEngine,
+) -> None:
+    reference_id, entry_id, tags = await pending_entry(engine)
+    scene = await tag_id(engine, "场景")
+    city = await add_tag(engine, scene, "城市")
+    try:
+        commute = await add_tag(engine, city, "通勤")
+        walk = await add_tag(engine, commute, "步行")
+        ark = FakeArk(
+            tag=tag_answer(
+                {
+                    "d1": [],
+                    "d2": [
+                        {
+                            "category": "城市",
+                            "subcategories": [{"category": "通勤", "subcategories": ["步行"]}],
+                        }
+                    ],
+                    "d3": [],
+                }
+            )
+        )
+
+        await make_queue(engine, ark_tagger(ark)).run_tagging(str(entry_id))
+
+        entry = await entry_of(engine, reference_id)
+        assert (entry["tag_status"], entry["tag_error"]) == ("completed", None)
+        assert entry["tags"] == {tags["amz"], walk}
+    finally:
+        await delete_tag(engine, city)
+
+
 async def test_the_request_only_offers_the_ai_dimensions_of_the_current_tree(
     engine: AsyncEngine,
 ) -> None:

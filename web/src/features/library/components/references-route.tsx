@@ -176,7 +176,9 @@ export function ReferencesRoute({
       header={
         <LibraryPageHeader
           action={canUpload ? <UploadButton onPick={pickFiles} /> : undefined}
-          description="收录可供参考的视频及其拆解。选择任一视频，可参照其拍摄。"
+          {...(managingTags
+            ? {}
+            : { description: '收录可供参考的视频及其拆解。选择任一视频，可参照其拍摄。' })}
           search={{
             label: '搜索拆解',
             onSearch: (q) => onScopeChange({ ...scope, q }),

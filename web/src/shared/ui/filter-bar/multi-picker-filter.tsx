@@ -13,13 +13,13 @@ import {
 import { FilterPopup } from './filter-bar'
 
 /** 一个候选：`description` 是名字下面一行说明，`count` 是右侧的条数。
- * 分两层的清单里，`group` 的一行是下面几行的上级（本身也能勾），`depth` 为 1 的行缩进排在它下面。 */
+ * 分层清单里，`group` 的一行是下面几行的上级（本身也能勾），`depth` 从 0 开始逐级缩进。 */
 export type MultiPickerOption = {
   id: string
   label: string
   description?: string | undefined
   count?: number | undefined
-  depth?: 0 | 1 | undefined
+  depth?: number | undefined
   group?: boolean | undefined
 }
 
@@ -138,6 +138,7 @@ function OptionContent({ option, selected }: { option: MultiPickerOption; select
         className={cn(
           'grid size-(--icon-sm) shrink-0 place-items-center pt-0.5',
           option.depth === 1 && 'ml-4',
+          option.depth === 2 && 'ml-8',
         )}
       >
         {selected ? <Icon decorative name="check" size="sm" /> : null}

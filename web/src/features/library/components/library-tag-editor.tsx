@@ -165,7 +165,7 @@ function AiHint({ hint }: { hint: string }) {
   )
 }
 
-/** 可搜的清单：大类在前、小类缩进跟在后面。 */
+/** 可搜的清单：父级在前，后代逐级缩进。 */
 function AddPicker({
   label,
   options,
@@ -187,6 +187,7 @@ function AddPicker({
               className={cn(
                 'flex min-w-0 flex-1 items-center gap-2.5',
                 tag?.depth === 1 && 'pl-4',
+                tag?.depth === 2 && 'pl-8',
                 tag?.group === true && 'font-medium',
               )}
             >

@@ -1,7 +1,7 @@
 """资料库打标的组合根适配：把 tagging 声明的两个端口接到方舟 Responses 接口与各库的文字上。
 
 打标是一次纯文本调用。输出约束按当前标签树里 ``auto_fill = ai`` 的维度现拼：每个维度是字段
-``d1…dn``，名字与说明放在 JSON Schema 中；有小类的维度按大类组织选项，其余维度直接选名字。
+``d1…dn``，名字与说明放在 JSON Schema 中；有下级的维度按树组织选项，其余维度直接选名字。
 ``parse_tag_answer`` 校验输出并换成标签 id。"""
 
 from __future__ import annotations
@@ -45,7 +45,8 @@ _INTRO: Final = (
 )
 
 _HIERARCHY_DESCRIPTION: Final = (
-    "每个对象表示一个选中的大类，subcategories表示该大类下选中的小类，可多选或为空。"
+    "每个对象表示一个选中的标签，subcategories表示它的直接下级选择。"
+    "下级仍有子标签时继续使用同样的对象结构，各层都可多选或为空。"
 )
 
 
@@ -58,7 +59,7 @@ class TagRequest:
     choices: Mapping[str, Mapping[str, TagNode]]
     """每个字段（``d1``…）里能填的名字与它对应的节点。"""
     groups: Mapping[str, Mapping[str, TagNode]]
-    """有小类的字段及其可选大类；各大类的 children 限定可选小类。"""
+    """有层级的字段及其第一级选项；沿各节点的 children 逐层限定可选下级。"""
     parents: Mapping[uuid.UUID, uuid.UUID | None]
     """这些维度里每个节点的上级。"""
 
@@ -73,11 +74,12 @@ def _choice(node: TagNode) -> dict[str, Any]:
 def _choice_array(nodes: Sequence[TagNode]) -> dict[str, Any]:
     if not nodes:
         return {"type": "array", "items": {"type": "string"}, "maxItems": 0}
-    items = (
-        {"anyOf": [_choice(node) for node in nodes]}
-        if any(node.guide for node in nodes)
-        else {"type": "string", "enum": [node.name for node in nodes]}
-    )
+    if any(node.children for node in nodes):
+        items = {"anyOf": [_group(node) for node in nodes]}
+    elif any(node.guide for node in nodes):
+        items = {"anyOf": [_choice(node) for node in nodes]}
+    else:
+        items = {"type": "string", "enum": [node.name for node in nodes]}
     return {"type": "array", "items": items}
 
 
@@ -107,15 +109,10 @@ def build_tag_request(dimensions: Sequence[TagNode]) -> TagRequest:
             named[node.name] = node
             parents[node.id] = node.parent_id
         description = dimension.name + (f"：{dimension.guide}" if dimension.guide else "")
+        properties[key] = _choice_array(dimension.children)
         if any(node.children for node in dimension.children):
             groups[key] = {node.name: node for node in dimension.children}
-            properties[key] = {
-                "type": "array",
-                "items": {"anyOf": [_group(node) for node in dimension.children]},
-            }
             description = f"{description.rstrip('。')}。{_HIERARCHY_DESCRIPTION}"
-        else:
-            properties[key] = _choice_array(dimension.children)
         properties[key]["description"] = description
         choices[key] = named
     return TagRequest(
@@ -146,13 +143,20 @@ def _selected_node(value: object, named: Mapping[str, TagNode], key: str) -> Tag
 
 def _selected_group(value: object, groups: Mapping[str, TagNode], key: str) -> tuple[TagNode, ...]:
     if not isinstance(value, dict) or set(value) != {"category", "subcategories"}:
-        raise TaggingFailed(f"打标输出的 {key} 大类对象字段不对", code=ERROR_MODEL_FAILED)
+        raise TaggingFailed(f"打标输出的 {key} 标签对象字段不对", code=ERROR_MODEL_FAILED)
     category = _selected_node(value["category"], groups, key)
     subcategories = value["subcategories"]
     if not isinstance(subcategories, list):
-        raise TaggingFailed(f"打标输出的 {key} 小类不是数组", code=ERROR_MODEL_FAILED)
+        raise TaggingFailed(f"打标输出的 {key} 下级不是数组", code=ERROR_MODEL_FAILED)
     children = {node.name: node for node in category.children}
-    return (category, *(_selected_node(child, children, key) for child in subcategories))
+    nested = any(node.children for node in category.children)
+    selected = [category]
+    for child in subcategories:
+        if nested:
+            selected.extend(_selected_group(child, children, key))
+        else:
+            selected.append(_selected_node(child, children, key))
+    return tuple(selected)
 
 
 def _ancestors(tag_id: uuid.UUID, parents: Mapping[uuid.UUID, uuid.UUID | None]) -> set[uuid.UUID]:

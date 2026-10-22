@@ -1,6 +1,7 @@
 # ADR-0006：资料库标签是数据，两库共用一棵树，打标是独立的一条流程
 
 - 状态：已接受（2026-10-21）
+- 修订（2026-10-21，[ADR-0007](0007-library-tag-value-depth.md)）：第 1 条的取值层级上限改为三级。
 - 影响：[CONTEXT.md](../CONTEXT.md)「参考视频」「标签」词条；[contract/openapi.json](../../contract/openapi.json)；[跨端合同](../../contract/conventions.md) §14、§15；[architecture.md](../architecture.md)。
 
 ## 背景

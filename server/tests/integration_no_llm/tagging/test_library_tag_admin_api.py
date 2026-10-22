@@ -102,7 +102,7 @@ async def test_only_governors_change_the_tree(
 
 
 @pytest.mark.usefixtures("scratch")
-async def test_governor_adds_a_dimension_values_and_a_sub_value(
+async def test_governor_adds_three_levels_of_values_in_order(
     client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
     await login_as_governor(client, migrated_pg)
@@ -118,6 +118,8 @@ async def test_governor_adds_a_dimension_values_and_a_sub_value(
     first = await create(client, parentId=made["id"], name="大类甲")
     second = await create(client, parentId=made["id"], name="大类乙", guide="")
     sub = await create(client, parentId=first["id"], name="小类")
+    await create(client, parentId=sub["id"], name="具体场景乙")
+    await create(client, parentId=sub["id"], name="具体场景甲", position=0)
     assert (first["autoFill"], second["guide"], sub["position"]) == (None, None, 0)
     front = await create(client, parentId=made["id"], name="大类丙", position=0)
     assert front["position"] == 0
@@ -129,7 +131,50 @@ async def test_governor_adds_a_dimension_values_and_a_sub_value(
         ("大类乙", 2),
     ]
     assert [one["name"] for one in tree["children"][1]["children"]] == ["小类"]
+    assert [
+        (one["name"], one["position"], one["guide"])
+        for one in tree["children"][1]["children"][0]["children"]
+    ] == [("具体场景甲", 0, None), ("具体场景乙", 1, None)]
     assert tree["position"] == len((await client.get("/library-tags")).json()["dimensions"]) - 1
+
+
+@pytest.mark.usefixtures("scratch")
+async def test_deep_values_can_be_assigned_filtered_counted_and_deleted(
+    client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
+) -> None:
+    """末级可人工补标；各级筛选包含后代，计数去重，删中间节点会级联清理末级关联。"""
+
+    await login_as_governor(client, migrated_pg)
+    made = await create(client, name=f"{PREFIX}场景", autoFill="ai")
+    city = await create(client, parentId=made["id"], name="城市")
+    commute = await create(client, parentId=city["id"], name="通勤")
+    walk = await create(client, parentId=commute["id"], name="步行")
+    owner = await plant_user(engine, "maya")
+    first = await plant_reference(engine, owner=owner, video_url="https://cdn.example.test/1.mp4")
+    second = await plant_reference(engine, owner=owner, video_url="https://cdn.example.test/2.mp4")
+    for reference_id, tags in (
+        (first, [city["id"], commute["id"], walk["id"]]),
+        (second, [walk["id"]]),
+    ):
+        assigned = await client.put(f"/references/{reference_id}/tags", json={"tagIds": tags})
+        assert assigned.status_code == 200, assigned.text
+        assert set(assigned.json()["tagIds"]) == set(tags)
+
+    tree = await dimension(client, f"{PREFIX}场景")
+    for level in (tree, tree["children"][0], tree["children"][0]["children"][0]):
+        assert level["counts"] == {"references": 2, "hitCases": 0}
+    assert tree["children"][0]["children"][0]["children"][0]["counts"]["references"] == 2
+    for tag in (made, city, commute, walk):
+        listed = await client.get("/references", params={"tags": tag["id"]})
+        assert listed.status_code == 200, listed.text
+        assert {item["id"] for item in listed.json()["items"]} == {str(first), str(second)}
+        assert listed.json()["total"] == 2
+
+    assert (await client.delete(f"/library-tags/{commute['id']}")).status_code == 204
+    for reference_id, expected in ((first, [city["id"]]), (second, [])):
+        response = await client.get(f"/references/{reference_id}")
+        assert response.status_code == 200, response.text
+        assert response.json()["tagIds"] == expected
 
 
 @pytest.mark.usefixtures("scratch")
@@ -175,13 +220,14 @@ async def test_invalid_changes_are_422_with_a_readable_reason(
     made = await create(client, name=f"{PREFIX}结构")
     value = await create(client, parentId=made["id"], name="大类")
     sub = await create(client, parentId=value["id"], name="小类")
+    last = await create(client, parentId=sub["id"], name="具体场景")
 
     cases: list[tuple[str, str, dict[str, Any], str]] = [
         ("POST", "", {"name": "   "}, "请填写名称"),
         ("POST", "", {"name": "字" * 51}, "名称最多 50 个字"),
         ("POST", "", {"name": f"{PREFIX}长", "guide": "字" * 1001}, "判断说明最多 1000 个字"),
         ("POST", "", {"name": "x", "parentId": str(uuid.uuid4())}, "上级标签不存在"),
-        ("POST", "", {"name": "再一层", "parentId": sub["id"]}, "小类下无法再添加下级"),
+        ("POST", "", {"name": "再一层", "parentId": last["id"]}, "标签最多三级"),
         ("POST", "", {"name": "品类"}, "已有名为「品类」的维度"),
         ("POST", "", {"name": "小类", "parentId": made["id"]}, f"「{PREFIX}结构」中已有「小类」"),
         ("POST", "", {"name": "大类", "parentId": value["id"]}, f"「{PREFIX}结构」中已有「大类」"),

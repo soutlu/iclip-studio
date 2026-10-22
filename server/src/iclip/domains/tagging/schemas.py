@@ -26,7 +26,7 @@ class TagCountsOut(CamelModel):
 
 
 class LibraryTagOut(CamelModel):
-    """标签树的一个节点：顶层是维度，下面是取值，取值下面还可以有一层。"""
+    """标签树的一个节点：顶层是维度，维度下最多三级取值。"""
 
     id: uuid.UUID
     name: str

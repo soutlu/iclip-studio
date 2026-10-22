@@ -63,6 +63,12 @@ STRUCTURE = dimension(
     node("口播讲解型", node("专家评测解说")),
     node("剧情叙事型"),
 )
+SCENE = dimension(
+    "场景",
+    node("城市", node("通勤", node("步行"), node("骑行")), node("日常散步")),
+    node("运动", node("跑步")),
+    node("未细分场景"),
+)
 
 
 def ids_of(dim: TagNode) -> dict[str, uuid.UUID]:
@@ -111,6 +117,87 @@ def test_flat_options_keep_their_configured_guides() -> None:
         {"type": "string", "enum": ["室内"], "description": "室内环境"},
         {"type": "string", "enum": ["户外"]},
     ]
+
+
+def test_three_level_schema_keeps_each_branches_own_depth_and_options() -> None:
+    request = build_tag_request([CATEGORY, SCENE])
+    properties = request.text_format["schema"]["properties"]
+    assert properties["d1"]["items"]["enum"] == ["跑鞋", "拖鞋"]
+    city, sport, unclassified = properties["d2"]["items"]["anyOf"]
+    commute, walk = city["properties"]["subcategories"]["items"]["anyOf"]
+
+    assert commute["properties"]["category"]["enum"] == ["通勤"]
+    assert commute["properties"]["subcategories"]["items"]["enum"] == ["步行", "骑行"]
+    assert commute["required"] == ["category", "subcategories"]
+    assert commute["additionalProperties"] is False
+    assert walk["properties"]["category"]["enum"] == ["日常散步"]
+    assert walk["properties"]["subcategories"]["maxItems"] == 0
+    assert sport["properties"]["subcategories"]["items"]["enum"] == ["跑步"]
+    assert unclassified["properties"]["subcategories"]["maxItems"] == 0
+
+
+def test_three_level_answers_keep_only_the_most_specific_unique_choices() -> None:
+    raw = json.dumps(
+        {
+            "d1": [
+                {"category": "城市", "subcategories": []},
+                {
+                    "category": "城市",
+                    "subcategories": [
+                        {"category": "通勤", "subcategories": []},
+                        {"category": "通勤", "subcategories": ["步行", "骑行", "步行"]},
+                        {"category": "日常散步", "subcategories": []},
+                    ],
+                },
+                {"category": "运动", "subcategories": ["跑步"]},
+                {"category": "未细分场景", "subcategories": []},
+            ]
+        }
+    )
+    names = ids_of(SCENE)
+    assert parse_tag_answer(raw, build_tag_request([SCENE])) == tuple(
+        names[name] for name in ("步行", "骑行", "日常散步", "跑步", "未细分场景")
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "chosen"),
+    [
+        ('{"d1": []}', None),
+        ('{"d1": [{"category": "城市", "subcategories": []}]}', "城市"),
+        (
+            '{"d1": [{"category": "城市", "subcategories": '
+            '[{"category": "通勤", "subcategories": []}]}]}',
+            "通勤",
+        ),
+    ],
+)
+def test_three_level_answers_may_stop_at_any_parent_or_select_nothing(
+    raw: str, chosen: str | None
+) -> None:
+    expected = () if chosen is None else (ids_of(SCENE)[chosen],)
+    assert parse_tag_answer(raw, build_tag_request([SCENE])) == expected
+
+
+@pytest.mark.parametrize(
+    "children",
+    [
+        pytest.param(["通勤"], id="group-is-not-an-object"),
+        pytest.param(["步行"], id="skip-an-intermediate-level"),
+        pytest.param([{"category": "跑步", "subcategories": []}], id="wrong-parent"),
+        pytest.param([{"category": "通勤", "subcategories": ["跑步"]}], id="wrong-leaf-parent"),
+        pytest.param([{"category": "通勤", "subcategories": ["不存在"]}], id="unknown-leaf"),
+        pytest.param([{"category": "通勤"}], id="missing-children"),
+        pytest.param([{"category": "通勤", "subcategories": [], "extra": True}], id="extra-field"),
+        pytest.param([{"category": "通勤", "subcategories": "步行"}], id="children-not-an-array"),
+        pytest.param([{"category": "日常散步", "subcategories": ["步行"]}], id="leaf-has-children"),
+    ],
+)
+def test_three_level_answers_reject_invalid_nested_choices(children: object) -> None:
+    raw = json.dumps({"d1": [{"category": "城市", "subcategories": children}]})
+    with pytest.raises(TaggingFailed) as caught:
+        parse_tag_answer(raw, build_tag_request([SCENE]))
+    assert caught.value.code == "model_failed"
 
 
 def test_the_request_follows_the_dimensions_it_is_given() -> None:
