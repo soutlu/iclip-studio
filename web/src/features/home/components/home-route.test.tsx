@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { readyAttachment, type ComposerPart, type ComposerSubmission } from '@/shared/ui/composer'
 import { pasteTextIntoComposer } from '@/testing/editor'
@@ -113,4 +114,20 @@ describe('HomeRoute', () => {
       true,
     )
   })
+})
+
+it('StrictMode 下恢复草稿后加入参考视频，effect 重放不丢失或重复附件', async () => {
+  await renderWithProviders(
+    <StrictMode>
+      <HomeRoute
+        draftParts={[{ kind: 'text', text: '保留原草稿' }]}
+        referenceUrl="https://example.com/reference.mp4"
+      />
+    </StrictMode>,
+  )
+  const editor = screen.getByLabelText('输入消息')
+  await within(editor).findByText('参考视频')
+  expect(editor).toHaveTextContent('保留原草稿')
+  expect(within(editor).getAllByText('参考视频')).toHaveLength(1)
+  expect(editor).not.toHaveTextContent('https://example.com/reference.mp4')
 })

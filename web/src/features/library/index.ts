@@ -8,4 +8,4 @@ export { DEFAULT_LIBRARY_TAB, LIBRARY_TAB_VALUES, type LibraryTab } from './libr
 export { DEFAULT_WHOLE_FILM_SCOPE, type WholeFilmScope } from './whole-films.api'
 export { DEFAULT_LIBRARY_SCOPE, type LibraryScope, useLibraryVideo } from './library.api'
 export { DEFAULT_HIT_CASE_SCOPE, type HitCaseScope } from './hit-cases.api'
-export { DEFAULT_REFERENCE_SCOPE, type ReferenceScope } from './references.api'
+export { DEFAULT_REFERENCE_SCOPE, useReference, type ReferenceScope } from './references.api'

@@ -8,7 +8,7 @@ import {
   useStartConversation,
 } from '@/features/conversations'
 import { HomeRoute, useHomeDraft } from '@/features/home'
-import { useLibraryVideo } from '@/features/library'
+import { useLibraryVideo, useReference } from '@/features/library'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
@@ -51,49 +51,74 @@ export function HomePage() {
     setAppliedRequest(requestedCollection)
     if (requestedCollection !== undefined) chooseCollection(requestedCollection)
   }
-  // 资料库「做同款」把卡 id 带在查询串里，同合集一样：身份就绪后进入做同款一次，再从地址栏移除。
-  // 换了身份就不再算数；助手改回由源视频预选。
+  // 做同款按来源读取生成素材或灵感视频；身份就绪后消费一次查询参数。
+  // 换了身份就不再算数；只有生成素材会预选源视频的助手。
   const requestedSame = useSearch({
     select: (search) => search.same,
     strict: false,
   })
+  const requestedReference = useSearch({
+    select: (search) => search.reference,
+    strict: false,
+  })
   const [appliedSame, setAppliedSame] = useState<string | undefined>(undefined)
-  const [sameStyle, setSameStyle] = useState<{ ownerUserId: string | null; id: string } | null>(
-    null,
-  )
-  if (user !== undefined && requestedSame !== appliedSame) {
+  const [appliedReference, setAppliedReference] = useState<string | undefined>(undefined)
+  const [sameStyle, setSameStyle] = useState<{
+    ownerUserId: string | null
+    id: string
+    kind: 'video' | 'reference'
+  } | null>(null)
+  if (
+    user !== undefined &&
+    (requestedSame !== appliedSame || requestedReference !== appliedReference)
+  ) {
     setAppliedSame(requestedSame)
-    if (requestedSame !== undefined) {
-      setSameStyle({ ownerUserId: user?.id ?? null, id: requestedSame })
+    setAppliedReference(requestedReference)
+    if (requestedReference !== undefined) {
+      setSameStyle({ ownerUserId: user?.id ?? null, id: requestedReference, kind: 'reference' })
+    } else if (requestedSame !== undefined) {
+      setSameStyle({ ownerUserId: user?.id ?? null, id: requestedSame, kind: 'video' })
       chooseAgent(null)
     }
   }
   useEffect(() => {
-    if (user === undefined || (requestedCollection === undefined && requestedSame === undefined))
+    if (
+      user === undefined ||
+      (requestedCollection === undefined &&
+        requestedSame === undefined &&
+        requestedReference === undefined)
+    )
       return
     void navigate({
       replace: true,
-      search: (prev) => ({ ...prev, collection: undefined, same: undefined }),
+      search: (prev) => ({ ...prev, collection: undefined, same: undefined, reference: undefined }),
       to: '/',
     })
-  }, [navigate, requestedCollection, requestedSame, user])
-  const sameAs =
-    sameStyle !== null && sameStyle.ownerUserId === (user?.id ?? null) ? sameStyle.id : null
+  }, [navigate, requestedCollection, requestedSame, requestedReference, user])
+  const activeSameStyle =
+    sameStyle !== null && sameStyle.ownerUserId === (user?.id ?? null) ? sameStyle : null
+  const sameAs = activeSameStyle?.kind === 'video' ? activeSameStyle.id : null
+  const referenceId = activeSameStyle?.kind === 'reference' ? activeSameStyle.id : null
   // 能不能做同款只有资料库详情知道；读不了、读失败或做不了都退出做同款并说明原因。
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const source = useLibraryVideo(sameAs !== null && canReadLibrary ? sameAs : null)
+  const reference = useReference(canReadLibrary ? referenceId : null)
+  const sourceReference = referenceId === null ? undefined : reference.data
   const sourceCard = sameAs === null ? undefined : source.data
-  const sameStyleFailure =
-    sameAs === null
-      ? null
-      : !canReadLibrary
-        ? '当前账号没有查看资料库权限，无法做同款'
-        : // 上次读失败留在缓存里时，等这次重读落定再判断。
-          source.isError && !source.isFetching
-          ? errorMessageOf(source.error, '读取该视频失败，无法做同款')
-          : sourceCard?.canMakeSame === false
-            ? '该视频没有可用的制作文件，无法做同款'
-            : null
+  let sameStyleFailure: string | null = null
+  if (activeSameStyle !== null) {
+    if (!canReadLibrary) {
+      sameStyleFailure = '当前账号没有查看资料库权限，无法做同款'
+    } else if (referenceId !== null) {
+      if (reference.isError && !reference.isFetching)
+        sameStyleFailure = errorMessageOf(reference.error, '读取该参考视频失败，无法做同款')
+    } else if (source.isError && !source.isFetching) {
+      // 上次读失败留在缓存里时，等这次重读落定再判断。
+      sameStyleFailure = errorMessageOf(source.error, '读取该视频失败，无法做同款')
+    } else if (sourceCard?.canMakeSame === false) {
+      sameStyleFailure = '该视频没有可用的制作文件，无法做同款'
+    }
+  }
   // 渲染期退出，提示交给 effect 弹；每次失败一个新对象，同样的原因再来一次也照样提示。
   const [sameStyleNotice, setSameStyleNotice] = useState<{ message: string } | null>(null)
   if (sameStyleFailure !== null) {
@@ -133,6 +158,10 @@ export function HomePage() {
           ? errorMessageOf(agents.error, '读取创作助手列表失败')
           : '请先选择可用的创作助手',
       )
+      return false
+    }
+    if (referenceId !== null && sourceReference === undefined) {
+      toast.error('正在读取参考视频，请稍后再发送')
       return false
     }
     try {
@@ -234,23 +263,26 @@ export function HomePage() {
           />
         }
         draftParts={draft.initialParts}
+        referenceUrl={sourceReference?.videoUrl}
         focusRequested={composerFocus?.pending}
         onFocusHandled={composerFocus?.consume}
         onDraftChange={draft.saveParts}
         onSend={send}
         sameStyle={
-          sameAs === null
+          activeSameStyle === null
             ? undefined
             : {
                 onExit: () => setSameStyle(null),
                 video:
-                  sourceCard?.canMakeSame === true
-                    ? {
-                        aspectRatio: sourceCard.video.take.aspectRatio,
-                        outputUrl: sourceCard.video.face.outputUrl,
-                        title: sourceCard.video.title,
-                      }
-                    : null,
+                  sourceReference !== undefined
+                    ? { aspectRatio: null, outputUrl: sourceReference.videoUrl, title: null }
+                    : sourceCard?.canMakeSame === true
+                      ? {
+                          aspectRatio: sourceCard.video.take.aspectRatio,
+                          outputUrl: sourceCard.video.face.outputUrl,
+                          title: sourceCard.video.title,
+                        }
+                      : null,
               }
         }
         sending={start.isPending}

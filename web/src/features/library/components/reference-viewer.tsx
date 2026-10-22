@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
@@ -155,6 +156,7 @@ function ViewerBody({
   onClose,
   onAuthor,
 }: ViewerBodyProps) {
+  const navigate = useNavigate()
   const playerRef = useRef<HTMLVideoElement>(null)
   const testPlayerRef = useRef<HTMLVideoElement>(null)
   const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
@@ -423,6 +425,16 @@ function ViewerBody({
           className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface-container-lowest px-6 pt-3.5 pb-4.5 max-md:sticky max-md:bottom-0 max-md:px-4 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]"
           ref={footerRef}
         >
+          {mode === 'view' ? (
+            <Button
+              className={cn('flex-1', INVERTED_CLASS)}
+              leadingIcon="edit-image"
+              onClick={() => void navigate({ search: { reference: reference.id }, to: '/' })}
+              variant="inverted"
+            >
+              做同款
+            </Button>
+          ) : null}
           {mode === 'edit' && conflict ? (
             <>
               <span
@@ -508,22 +520,13 @@ function ViewerBody({
           ) : reference.canEdit ? (
             <>
               <Button
-                className={cn('flex-1', INVERTED_CLASS)}
+                className="flex-1 rounded-full"
                 disabled={busy || document === null}
                 leadingIcon="edit"
                 onClick={startEdit}
-                variant="inverted"
-              >
-                编辑拆解
-              </Button>
-              <Button
-                className="flex-1 rounded-full"
-                disabled={busy || detail === undefined}
-                leadingIcon="refresh"
-                onClick={() => onModeChange('confirm-rerun')}
                 variant="outlined"
               >
-                重新拆解
+                编辑拆解
               </Button>
               <MenuRoot>
                 <MenuTrigger asChild>
@@ -534,6 +537,13 @@ function ViewerBody({
                   />
                 </MenuTrigger>
                 <MenuSurface align="end" side="top">
+                  <MenuItem
+                    disabled={busy || detail === undefined}
+                    icon="refresh"
+                    onSelect={() => onModeChange('confirm-rerun')}
+                  >
+                    重新拆解
+                  </MenuItem>
                   <MenuItem
                     disabled={!canRetag}
                     icon="tag"
