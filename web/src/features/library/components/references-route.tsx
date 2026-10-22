@@ -55,7 +55,7 @@ export function ReferencesRoute({
   const tagTree = useLibraryTags()
   const tags = tagTree.data?.index
   const { data: user } = useUser()
-  const canManageTags = hasPermission(user, PERMISSION.usersManage)
+  const canManageTags = hasPermission(user, PERMISSION.libraryTagsManage)
   const [managingTags, setManagingTags] = useState(false)
   // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
   // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试，不一直停在骨架上。

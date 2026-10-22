@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { PERMISSION } from '@/shared/auth'
 import { toast, Toaster } from '@/shared/ui/toast'
 import { loginAs, mockAuthUser, mockGovernor } from '@/testing/mocks/handlers'
 import { resetMockHitCases } from '@/testing/mocks/hit-cases'
@@ -87,11 +88,20 @@ afterEach(() => {
 })
 
 describe('管理标签', () => {
-  it('非治理者看不到入口', async () => {
-    loginAs(mockAuthUser)
+  it.each([
+    { name: '普通用户', permissions: [], canManage: false },
+    { name: '仅用户管理权限', permissions: [PERMISSION.usersManage], canManage: false },
+    { name: '单独标签管理权限', permissions: [PERMISSION.libraryTagsManage], canManage: true },
+  ])('$name：按标签管理权限展示入口', async ({ permissions, canManage }) => {
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, ...permissions] })
     await renderWithProviders(<Harness />)
     await screen.findByRole('button', { name: '内容结构：内容结构' })
-    expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
+    if (canManage) {
+      const panel = await openAdmin(userEvent.setup())
+      expect(within(panel).getByRole('heading', { name: '场景' })).toBeVisible()
+    } else {
+      expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
+    }
   })
 
   it('治理者打开后替换卡片列表，「完成」回到列表', async () => {

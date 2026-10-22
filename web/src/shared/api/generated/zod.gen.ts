@@ -1093,6 +1093,7 @@ export const zPermission = z.enum([
   'tasks:read',
   'tasks:write',
   'inspirations:read',
+  'library_tags:manage',
   'uploads:write',
   'generation:read',
   'generation:submit',
