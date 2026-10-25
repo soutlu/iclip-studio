@@ -39,6 +39,23 @@ describe('生成音乐浮层', () => {
       { conversationId: conversation.id, prompt: '轻快的原声吉他', taskId: null },
     ])
   })
+
+  it('浮层挂在触发按钮的父元素里，不落到 body 上', async () => {
+    const user = userEvent.setup()
+    const conversation = addMockConversation('成片配乐')
+    await renderWithProviders(
+      <div data-testid="宿主">
+        <GenerateMusic conversationId={conversation.id} onNotice={vi.fn()}>
+          <button type="button">打开</button>
+        </GenerateMusic>
+      </div>,
+    )
+
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    expect(
+      await within(screen.getByTestId('宿主')).findByRole('dialog', { name: '生成音乐' }),
+    ).toBeVisible()
+  })
 })
 
 const openMusic = async (records: GenerationJob[]) => {

@@ -5,6 +5,7 @@ import { MEDIA_AUDIO_ACCEPT, uploadMediaFile } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
+import { Textarea } from '@/shared/ui/field'
 import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { BlockedReason } from '../components/blocked-reason'
@@ -357,6 +358,7 @@ export function GenerateMusic({
   const queryClient = useQueryClient()
   const inputId = useId()
   const [open, setOpen] = useState(false)
+  const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null)
   const [prompt, setPrompt] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const task = useConversationTaskId(conversationId)
@@ -399,20 +401,23 @@ export function GenerateMusic({
 
   return (
     <PopupRoot onOpenChange={setOpen} open={open}>
-      <PopupTrigger asChild>{children}</PopupTrigger>
+      <PopupTrigger asChild ref={setTrigger}>
+        {children}
+      </PopupTrigger>
       <PopupSurface
         align="start"
         aria-label="生成音乐"
         className="wf-generate"
         collisionPadding={16}
+        // 挂到 body 会落在成片弹窗外，弹窗的滚动锁会拦下文本框的滚轮
+        container={trigger?.parentElement ?? null}
         side="top"
         sideOffset={6}
       >
         <label className="wf-generate-label" htmlFor={inputId}>
           音乐描述
         </label>
-        <textarea
-          className="wf-generate-text ui-focus"
+        <Textarea
           id={inputId}
           maxLength={MAX_PROMPT_CHARS}
           onChange={(event) => setPrompt(event.target.value)}
