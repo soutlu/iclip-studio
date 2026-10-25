@@ -354,6 +354,21 @@ describe('成片编辑器 · 时间线', () => {
     expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
   })
 
+  it('焦点在挂进弹窗的生成音乐浮层上时，Delete 不删选中的段', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    const first = await blockButton(/^选中：第 1 段/)
+    await user.click(first)
+    await user.click(screen.getByRole('button', { name: '生成音乐' }))
+    const music = await screen.findByRole('dialog', { name: '生成音乐' })
+    expect(first).toHaveAttribute('aria-pressed', 'true')
+    music.focus()
+    expect(music).toHaveFocus()
+    await user.keyboard('{Delete}')
+    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
+  })
+
   it('⌥←/→ 把选中的段前后挪一位，焦点留在这一段上', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
