@@ -389,6 +389,7 @@ export function FilmTracks({
   const filmLaneRef = useRef<HTMLDivElement>(null)
   const overlayLaneRef = useRef<HTMLDivElement>(null)
   const musicLaneRef = useRef<HTMLDivElement>(null)
+  const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const clicks = useClickAfterDrag()
   const [carry, setCarry] = useState<Carrying | null>(null)
   const [lift, setLift] = useState<Lift | null>(null)
@@ -999,6 +1000,8 @@ export function FilmTracks({
         aria-label={label}
         className="wf-pop-surface"
         collisionPadding={16}
+        // 挂到 body 会落在成片弹窗外，弹窗的滚动锁会拦下浮层的滚轮；块本身带 transform，挂在时间线根上
+        container={root}
         side="top"
         sideOffset={8}
       >
@@ -1168,6 +1171,7 @@ export function FilmTracks({
   return (
     <div
       className={cn('wf-tracks', newRow !== undefined && 'is-adding-overlay-row')}
+      ref={setRoot}
       style={
         {
           '--wf-overlay-rows': laneRows,
