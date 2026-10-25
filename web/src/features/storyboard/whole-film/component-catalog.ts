@@ -1,5 +1,5 @@
 /**
- * 编辑器用到的组件目录：分类、点卡片时的默认去处与放进成片时的默认时长。
+ * 编辑器用到的组件目录：分类、点卡片时的默认去处与组件自己的时长。
  * 目录本身（`catalog/catalog.json`，约 270 KB）打开编辑器时才加载，缩略图只取地址。
  */
 
@@ -49,12 +49,14 @@ export const CATEGORY_ICON: Record<string, IconName> = {
   scenes: 'film',
 }
 
-/** 没有固定时长的组件至少放这么长，同 HyperFrames */
-const MIN_UNTIMED_MS = 10_000
-
-/** 组件放进成片的时长：组件自己的时长；没有时同 HyperFrames，取 10 秒与成片时长里长的那个 */
-export const durationMsOf = (item: CatalogItem, filmMs: number): number =>
-  item.duration === null ? Math.max(MIN_UNTIMED_MS, filmMs) : Math.round(item.duration * 1000)
+/**
+ * 组件自己的动画时长（毫秒），放进成片的默认时长，也是组件段与特效块最长能放的时长。
+ * 字幕样式没有时长，不能这样取；能放的组件没有时长是目录写错了，直接报错。
+ */
+export const durationMsOf = (item: CatalogItem): number => {
+  if (item.duration === null) throw new Error(`组件目录里「${item.name}」没有时长`)
+  return Math.round(item.duration * 1000)
+}
 
 /** 可填项现在的值：草稿里填过的，没填过取组件的默认值 */
 export const variableValue = (

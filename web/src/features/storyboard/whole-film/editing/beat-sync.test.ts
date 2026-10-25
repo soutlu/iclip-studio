@@ -125,6 +125,35 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
   })
 })
 
+describe('autoBeatSync：组件段不拉得比组件自己的时长长', () => {
+  const beats = beatsEvery(500, 61)
+  const contextWith = (cardMs: number) =>
+    contextOf({ A: source(20_000) }, { m1: { durationMs: 30_000, beats } }, { card: cardMs })
+  /** 切点 1800：组件段之后接一段视频，最近的拍在 2000 */
+  const film = (playbackStart = 0) =>
+    draftOf([card('c1', 1_800, { playbackStart }), video('v1', 'A', 0, 2_000)], { music })
+
+  it('组件时长够：出点挪到拍上', () => {
+    const { draft, moved } = expectOk(autoBeatSync(film(), contextWith(2_000)))
+    expect(moved).toBe(1)
+    expect(cutTimes(draft)).toEqual([2_000])
+  })
+
+  it('挪到拍上会超出组件时长（含左端修剪过的段）：不挪', () => {
+    for (const [cardMs, playbackStart] of [
+      [1_900, 0],
+      [2_000, 200],
+    ] as const) {
+      const before = film(playbackStart)
+      expect(expectOk(autoBeatSync(before, contextWith(cardMs)))).toMatchObject({
+        moved: 0,
+        kept: 1,
+        draft: before,
+      })
+    }
+  })
+})
+
 describe('autoBeatSync：设计稿 QA 的数值用例', () => {
   // 设计稿示例音乐的拍点（秒 × 1000），每四拍一个强拍
   const beats = [186, 789, 1_393, 1_997, 2_601, 3_204, 3_808, 4_412, 5_016, 5_619].map(

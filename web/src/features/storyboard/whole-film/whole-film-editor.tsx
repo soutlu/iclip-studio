@@ -310,8 +310,18 @@ function EditorBody({
           beats.kind === 'ready' && draft.music !== null
             ? { jobId: draft.music.jobId, beats: beats.beats }
             : undefined,
+        catalog,
       }),
-    [materials, keyframes, recognition.records, music.data, musicDurations, beats, draft.music],
+    [
+      materials,
+      keyframes,
+      recognition.records,
+      music.data,
+      musicDurations,
+      beats,
+      draft.music,
+      catalog,
+    ],
   )
 
   const [playheadMs, setPlayheadMs] = useState(0)
@@ -549,6 +559,10 @@ function EditorBody({
 
   // 音乐列表与时长读到之前，编辑操作拿不到这首音乐的事实（时长、拍点）
   const musicKnown = draft.music !== null && context.music[draft.music.jobId] !== undefined
+  // 卡点要知道每个组件段多长才能挪它的出点；组件库里没有的组件不知道
+  const unknownComponent = draft.layer0.some(
+    (clip) => clip.type === 'component' && context.components[clip.component] === undefined,
+  )
   const beatBlocked =
     draft.music === null
       ? REFUSAL_TEXT['no-music']
@@ -556,7 +570,9 @@ function EditorBody({
         ? '正在分析这首音乐的拍点，稍后再试'
         : beats.kind === 'unavailable'
           ? beats.reason
-          : undefined
+          : unknownComponent
+            ? '画面轨上有组件库里没有的组件，无法卡点；请删掉它或换一个组件'
+            : undefined
   const beatSync = () => {
     const result = autoBeatSync(draft, context)
     if (!apply(result) || !result.ok) return
@@ -595,7 +611,7 @@ function EditorBody({
    * 手上的缩影是预览图加名字的小条，拿起时的卡片位置是它退回的地方。
    */
   const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
-    durationMs: durationMsOf(item, total),
+    durationMs: durationMsOf(item),
     ghost:
       origin === undefined
         ? undefined
@@ -603,7 +619,7 @@ function EditorBody({
             origin,
             face: {
               title: item.title,
-              durationMs: durationMsOf(item, total),
+              durationMs: durationMsOf(item),
               media: <ComponentThumb iconSize="xs" item={item} />,
             },
           },

@@ -45,6 +45,8 @@ const context = contextOf(
     },
     m2: { durationMs: 5_000, beats: [{ timeMs: 0, strength: 1 }] },
   },
+  // 比随机放进去的时长（至多 12 秒）短，序列里也会修剪已经超出组件时长的块
+  { card: 6_000, other: 3_000, badge: 4_000 },
 )
 
 /** 固定种子的伪随机数（mulberry32），同一种子每次得到同一串操作 */
@@ -186,11 +188,11 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
         row: overlayRowAt(int(-10, rows * 10 + 10) / 10, rows),
       }),
     () =>
-      trimOverlay(draft, {
-        overlayId: overlayId(),
-        edge: pick(['start', 'end']),
-        deltaMs: delta(),
-      }),
+      trimOverlay(
+        draft,
+        { overlayId: overlayId(), edge: pick(['start', 'end']), deltaMs: delta() },
+        context,
+      ),
     () => removeOverlay(draft, { overlayId: overlayId() }),
     () =>
       setMusic(

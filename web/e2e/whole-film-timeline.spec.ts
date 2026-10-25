@@ -299,8 +299,9 @@ test.describe('成片编辑器 · 时间线', () => {
 
   test('成片最长 120 秒：放不下时说明原因，松手不加入；拉长与挪动到上限停住', async ({ page }) => {
     const nineteen = Array.from({ length: 19 }, (_, k) => video(`v${k + 1}`, 0, 6_000))
+    // 最后一段用 10 秒的组件，拉长时先碰到的是成片上限、不是组件自己的时长
     const { dialog, film } = await openWith(page, {
-      layer0: [...nineteen, card('c1', 'hw-title', 5_500)],
+      layer0: [...nineteen, card('c1', 'notes-typing', 5_500)],
       overlays: [overlay('o1', 'hw-arrow', 116_000, 4_000, 0)],
     })
     const filmBox = await boxOf(film)

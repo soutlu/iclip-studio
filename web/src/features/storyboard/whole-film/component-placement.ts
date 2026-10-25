@@ -3,7 +3,6 @@ import type { WholeFilmDraft } from './editing/draft'
 import { insertComponent } from './editing/layer0'
 import { addOverlay, dropOverlay, type OverlayRow } from './editing/overlays'
 import { refuse, type EditResult } from './editing/result'
-import { filmDuration } from './editing/timeline'
 
 /** 拖着东西能落到的轨；字幕轨不收拖放，字幕样式只在字幕轨标题上换 */
 export type TrackLane = 'film' | 'overlay' | 'music'
@@ -38,7 +37,7 @@ export const placedPiece = (
  * - 特效轨：点卡片时在最上面开一行、从播放头起放；拖放时落到松手处的那一行，相撞就挪到这一行
  *   最近的空位，松手在所有行之上或之下就开一行；新放的特效块叠在所有特效块之上；
  * - 音乐轨放不了组件。
- * 时长取组件自己的时长，没有时取 10 秒与成片时长里长的那个；放进去超过成片总长上限时拒绝，不缩短。
+ * 时长取组件自己的时长，与成片多长无关；放进去超过成片总长上限时拒绝，不缩短。
  * 可填项都不写进草稿，合成时取组件自己的默认值。
  */
 export const placeComponent = (
@@ -49,7 +48,7 @@ export const placeComponent = (
   const lane = placing.via === 'drop' ? placing.lane : clickLane(item)
   const timeMs = placing.via === 'drop' ? placing.timeMs : placing.playheadMs
   if (lane === 'music') return refuse('drop-elsewhere')
-  const duration = durationMsOf(item, filmDuration(draft))
+  const duration = durationMsOf(item)
   switch (lane) {
     case 'film':
       return insertComponent(draft, {

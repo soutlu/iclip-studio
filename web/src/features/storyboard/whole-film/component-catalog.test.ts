@@ -35,12 +35,33 @@ describe('组件目录', () => {
   })
 
   it.each([
-    ['有固定时长的取自己的时长，不看成片多长', 'yt-logo-intro', 30_000, 6_000],
-    ['有固定时长的转场类组件同样取自己的时长', 'grid-pixelate-wipe', 0, 1_200],
-    ['没有固定时长、成片不到 10 秒：10 秒', 'logo-brand-close', 3_000, 10_000],
-    ['没有固定时长、成片超过 10 秒：成片多长就多长', 'count-up', 15_000, 15_000],
-  ])('放进成片的时长：%s', (_, name, filmMs, ms) => {
-    expect(durationMsOf(item(name), filmMs)).toBe(ms)
+    ['yt-logo-intro', 6_000],
+    ['grid-pixelate-wipe', 1_200],
+    ['headline-slam', 3_500],
+    ['logo-brand-close', 4_000],
+    ['cursor-annotate', 2_950],
+  ])('组件自己的时长：%s %i 毫秒', (name, ms) => {
+    expect(durationMsOf(item(name))).toBe(ms)
+  })
+
+  it('能放的组件都有正数时长，字幕样式没有；没有时长的不能取', () => {
+    const placeable = catalog.items.filter((entry) => entry.placement !== 'caption')
+    const untimed = placeable.filter(
+      (entry) =>
+        entry.duration === null || !(entry.duration > 0) || !Number.isFinite(entry.duration),
+    )
+    expect(untimed.map((entry) => entry.name)).toEqual([])
+    expect(captionStyles(catalog).map((entry) => entry.duration)).toEqual([null, null, null])
+    expect(() => durationMsOf(item('default-caption'))).toThrow(
+      '组件目录里「default-caption」没有时长',
+    )
+  })
+
+  it('touch-indicator 单独放置时不显示任何内容：不收进目录，列在排除名单里', () => {
+    expect(itemOf(catalog, 'touch-indicator')).toBeUndefined()
+    expect(catalog.excluded.find((entry) => entry.name === 'touch-indicator')).toMatchObject({
+      reason: '单独放置时画面上不显示任何内容',
+    })
   })
 
   it('点卡片的默认去处：block 进画面轨、其余进特效轨', () => {

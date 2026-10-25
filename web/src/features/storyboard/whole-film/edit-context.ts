@@ -4,6 +4,7 @@ import { byCreation } from '../editing/version-lineage'
 import { keyframeQuery } from '../editing/media-analysis'
 import type { KeyframeIndex } from '../editing/keyframe-segments'
 import type { GenerationJob } from '../storyboard.api'
+import { durationMsOf, type ComponentCatalog } from './component-catalog'
 import type { EditContext, MusicBeat, SourceMedia } from './editing/context'
 import type { Material } from './materials'
 
@@ -83,10 +84,12 @@ type ContextInput = {
   musicDurations: ReadonlyMap<string, number>
   /** 当前用的这首音乐的拍点（音乐文件时间） */
   beats: { jobId: string; beats: MusicBeat[] } | undefined
+  catalog: ComponentCatalog
 }
 
 /**
- * 编辑操作要的素材事实。只收时长已知的素材片与音乐；画面尺寸在加入成片时另给（见 `withSourceSize`）。
+ * 编辑操作要的素材事实。只收时长已知的素材片与音乐，组件收目录里除字幕样式外的全部；画面尺寸在
+ * 加入成片时另给（见 `withSourceSize`）。
  */
 export const buildEditContext = ({
   materials,
@@ -95,6 +98,7 @@ export const buildEditContext = ({
   music,
   musicDurations,
   beats,
+  catalog,
 }: ContextInput): EditContext => {
   const subtitleOf = latestSubtitles(subtitles)
   const sources: Record<string, SourceMedia> = {}
@@ -119,7 +123,12 @@ export const buildEditContext = ({
     if (durationMs === undefined) continue
     songs[job.id] = { durationMs, beats: beats?.jobId === job.id ? beats.beats : [] }
   }
-  return { sources, music: songs }
+  const components = Object.fromEntries(
+    catalog.items
+      .filter((item) => item.placement !== 'caption')
+      .map((item) => [item.name, durationMsOf(item)]),
+  )
+  return { sources, music: songs, components }
 }
 
 /** 加入成片时给这条素材补上画面尺寸（第一段视频定画布） */

@@ -135,9 +135,11 @@ export const sentence = (startMs: number, endMs: number, text = '口播'): Subti
   text,
 })
 
+/** components 是组件名 → 组件自己的时长（毫秒） */
 export const contextOf = (
   sources: Record<string, SourceMedia>,
   music: Record<string, { durationMs: number; beats?: MusicBeat[] }> = {},
+  components: Record<string, number> = {},
 ): EditContext => ({
   sources,
   music: Object.fromEntries(
@@ -146,6 +148,7 @@ export const contextOf = (
       { durationMs: m.durationMs, beats: m.beats ?? [] },
     ]),
   ),
+  components,
 })
 
 /** 每段的 [开始, 结束)，便于断言首尾相接 */
