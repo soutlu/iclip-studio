@@ -7,19 +7,13 @@
   },
   "fonts": {
     "Anton": "vendor/fonts/families/anton.css",
-    "Apple Color Emoji": "vendor/fonts/families/apple-color-emoji.css",
-    "Big Shoulders Display": "vendor/fonts/families/big-shoulders-display.css",
     "Caveat": "vendor/fonts/families/caveat.css",
-    "ChatUI": "vendor/fonts/families/chatui.css",
-    "ClaudeSans": "vendor/fonts/families/claudesans.css",
-    "ClaudeSerif": "vendor/fonts/families/claudeserif.css",
     "Courier Prime": "vendor/fonts/families/courier-prime.css",
     "DM Sans": "vendor/fonts/families/dm-sans.css",
     "Figtree": "vendor/fonts/families/figtree.css",
     "Geist": "vendor/fonts/families/geist.css",
     "Inter": "vendor/fonts/families/inter.css",
     "Montserrat": "vendor/fonts/families/montserrat.css",
-    "NotificationUI": "vendor/fonts/families/notificationui.css",
     "Permanent Marker": "vendor/fonts/families/permanent-marker.css",
     "Roboto Flex": "vendor/fonts/families/roboto-flex.css",
     "Roboto Flex Variable": "vendor/fonts/families/roboto-flex-variable.css"
@@ -515,20 +509,6 @@
       "fonts": ["Inter"]
     },
     {
-      "name": "vfx-text-cursor",
-      "kind": "block",
-      "title": "光标光影文字",
-      "description": "黑底文字随光标发光，带彩色光芒",
-      "category": "vfx",
-      "placement": null,
-      "src": "compositions/vfx-text-cursor.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 8,
-      "variables": [],
-      "thumbnail": "vfx-text-cursor.svg",
-      "fonts": ["Big Shoulders Display", "Inter"]
-    },
-    {
       "name": "editorial-flash-overlay",
       "kind": "block",
       "title": "闪光叠加",
@@ -716,7 +696,7 @@
       "placement": null,
       "src": "compositions/components/grain-field.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "density",
@@ -766,7 +746,7 @@
       "placement": null,
       "src": "compositions/components/shutter-slam.html",
       "size": null,
-      "duration": null,
+      "duration": 6,
       "variables": [],
       "thumbnail": "shutter-slam.svg",
       "fonts": ["Inter"]
@@ -780,7 +760,7 @@
       "placement": null,
       "src": "compositions/components/soft-blob-touch.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "touch_x",
@@ -1011,20 +991,6 @@
       "fonts": ["Caveat"]
     },
     {
-      "name": "instagram-follow",
-      "kind": "block",
-      "title": "Instagram 关注",
-      "description": "弹出 Instagram 主页卡片和关注按钮",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/instagram-follow.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 4.5,
-      "variables": [],
-      "thumbnail": "instagram-follow.svg",
-      "fonts": ["DM Sans"]
-    },
-    {
       "name": "lt-accent-underline",
       "kind": "block",
       "title": "姓名条·下划线",
@@ -1165,20 +1131,6 @@
       "fonts": []
     },
     {
-      "name": "macos-notification",
-      "kind": "block",
-      "title": "macOS 通知",
-      "description": "弹出 macOS 风格的通知横幅",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/macos-notification.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 5,
-      "variables": [],
-      "thumbnail": "macos-notification.svg",
-      "fonts": ["Inter"]
-    },
-    {
       "name": "news-ticker",
       "kind": "block",
       "title": "新闻滚动条",
@@ -1191,20 +1143,6 @@
       "variables": [],
       "thumbnail": "news-ticker.svg",
       "fonts": []
-    },
-    {
-      "name": "reddit-post",
-      "kind": "block",
-      "title": "Reddit 帖子卡",
-      "description": "Reddit 帖子卡片，带点赞和评论",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/reddit-post.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 5,
-      "variables": [],
-      "thumbnail": "reddit-post.svg",
-      "fonts": ["DM Sans"]
     },
     {
       "name": "snow",
@@ -1240,20 +1178,6 @@
       ],
       "thumbnail": "snow.svg",
       "fonts": []
-    },
-    {
-      "name": "spotify-card",
-      "kind": "block",
-      "title": "Spotify 正在播放",
-      "description": "Spotify 播放卡片，含封面与进度条",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/spotify-card.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 5,
-      "variables": [],
-      "thumbnail": "spotify-card.svg",
-      "fonts": ["Inter"]
     },
     {
       "name": "starfield",
@@ -1316,34 +1240,6 @@
       "fonts": []
     },
     {
-      "name": "tiktok-follow",
-      "kind": "block",
-      "title": "TikTok 关注卡",
-      "description": "显示 TikTok 主页卡片和关注按钮",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/tiktok-follow.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 4.5,
-      "variables": [],
-      "thumbnail": "tiktok-follow.svg",
-      "fonts": ["DM Sans"]
-    },
-    {
-      "name": "x-post",
-      "kind": "block",
-      "title": "X 帖子卡",
-      "description": "X 帖子卡片显示点赞转发等数据",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/x-post.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 5,
-      "variables": [],
-      "thumbnail": "x-post.svg",
-      "fonts": ["Inter"]
-    },
-    {
       "name": "yt-comment-card",
       "kind": "block",
       "title": "评论卡片",
@@ -1356,20 +1252,6 @@
       "variables": [],
       "thumbnail": "yt-comment-card.svg",
       "fonts": []
-    },
-    {
-      "name": "yt-lower-third",
-      "kind": "block",
-      "title": "YouTube 订阅条",
-      "description": "画面下方显示频道头像和订阅按钮",
-      "category": "social",
-      "placement": null,
-      "src": "compositions/yt-lower-third.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 4.5,
-      "variables": [],
-      "thumbnail": "yt-lower-third.svg",
-      "fonts": ["DM Sans"]
     },
     {
       "name": "hw-arrow",
@@ -1422,7 +1304,7 @@
       "placement": null,
       "src": "compositions/components/light-sweep-pass.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "angle",
@@ -1489,7 +1371,7 @@
       "placement": null,
       "src": "compositions/components/native-notification-pop.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         { "id": "title", "type": "string", "label": "标题", "default": "标题" },
         { "id": "body", "type": "string", "label": "正文", "default": "正文" },
@@ -1618,59 +1500,6 @@
       "fonts": ["Inter"]
     },
     {
-      "name": "ai-chat-reveal",
-      "kind": "block",
-      "title": "AI 对话揭晓",
-      "description": "提问后 AI 逐字回复，结尾切到品牌卡",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/ai-chat-reveal.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 19.3333,
-      "variables": [
-        { "id": "botName", "type": "string", "label": "助手名称", "default": "助手名称" },
-        { "id": "userMessage", "type": "string", "label": "用户消息", "default": "用户消息" },
-        {
-          "id": "answer1",
-          "type": "string",
-          "label": "回答第1段",
-          "default": "不需要剪辑软件。把你想说的写下来，就能直接生成清晰流畅的视频。"
-        },
-        { "id": "answer2", "type": "string", "label": "回答第2段", "default": "简单，但不简陋。" },
-        { "id": "answer3", "type": "string", "label": "回答第3段", "default": "回答第3段" },
-        { "id": "bullet1", "type": "string", "label": "要点1", "default": "要点1" },
-        { "id": "bullet2", "type": "string", "label": "要点2", "default": "要点2" },
-        { "id": "bullet3", "type": "string", "label": "要点3", "default": "要点3" },
-        {
-          "id": "ecHeadline",
-          "type": "string",
-          "label": "结尾标题",
-          "default": "不是魔法，|是好工具。"
-        },
-        {
-          "id": "ecSub",
-          "type": "string",
-          "label": "结尾副标题",
-          "default": "品牌标语"
-        },
-        {
-          "id": "ecCta",
-          "type": "string",
-          "label": "结尾按钮文字",
-          "default": "品牌名"
-        },
-        { "id": "ecFooter", "type": "string", "label": "结尾网址", "default": "结尾网址" },
-        {
-          "id": "brandLogo",
-          "type": "image",
-          "label": "品牌标志",
-          "default": "assets/hyperframes-logo-white.svg"
-        }
-      ],
-      "thumbnail": "ai-chat-reveal.svg",
-      "fonts": []
-    },
-    {
       "name": "app-showcase",
       "kind": "block",
       "title": "应用三屏展示",
@@ -1768,34 +1597,6 @@
       ],
       "thumbnail": "camera-dolly-zoom.svg",
       "fonts": ["Inter"]
-    },
-    {
-      "name": "chatgpt-exchange",
-      "kind": "block",
-      "title": "ChatGPT 对话",
-      "description": "ChatGPT 风格问答，生成对比表格",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/chatgpt-exchange.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 14.9,
-      "variables": [],
-      "thumbnail": "chatgpt-exchange.svg",
-      "fonts": ["Apple Color Emoji", "ChatUI"]
-    },
-    {
-      "name": "claude-exchange",
-      "kind": "block",
-      "title": "Claude 对话",
-      "description": "Claude 风格问答，搜索思考后详细作答",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/claude-exchange.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 21.4,
-      "variables": [],
-      "thumbnail": "claude-exchange.svg",
-      "fonts": ["ClaudeSans", "ClaudeSerif"]
     },
     {
       "name": "code-snippet-apple-terminal-pro",
@@ -1940,72 +1741,6 @@
       "fonts": []
     },
     {
-      "name": "message-thread-reveal",
-      "kind": "block",
-      "title": "聊天对话",
-      "description": "手机上逐条弹出一段完整聊天",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/message-thread-reveal.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 25.7667,
-      "variables": [
-        { "id": "contactName", "type": "string", "label": "联系人名称", "default": "联系人名称" },
-        { "id": "questionMessage", "type": "string", "label": "开场提问", "default": "开场提问" },
-        { "id": "teaserMessage", "type": "string", "label": "首条回复", "default": "首条回复" },
-        {
-          "id": "cardImage",
-          "type": "image",
-          "label": "链接卡图片",
-          "default": "assets/card-image.jpg"
-        },
-        {
-          "id": "cardTitle",
-          "type": "string",
-          "label": "链接卡标题",
-          "default": "品牌名"
-        },
-        { "id": "cardDomain", "type": "string", "label": "链接卡网址", "default": "链接卡网址" },
-        { "id": "reactionMessage", "type": "string", "label": "链接反馈", "default": "链接反馈" },
-        { "id": "reactionEmoji", "type": "string", "label": "表情反馈", "default": "🤯🤯🤯" },
-        { "id": "benefitMessage", "type": "string", "label": "卖点回复", "default": "卖点回复" },
-        { "id": "discoveryMessage", "type": "string", "label": "来源提问", "default": "来源提问" },
-        {
-          "id": "sourceMessage",
-          "type": "string",
-          "label": "购买渠道回复",
-          "default": "购买渠道回复"
-        },
-        {
-          "id": "workflowMessage",
-          "type": "string",
-          "label": "使用方法回复",
-          "default": "使用方法回复"
-        },
-        {
-          "id": "ownershipMessage",
-          "type": "string",
-          "label": "产品说明收尾",
-          "default": "产品说明收尾"
-        },
-        { "id": "installMessage", "type": "string", "label": "意向回复", "default": "意向回复" },
-        { "id": "thanksMessage", "type": "string", "label": "结尾回复", "default": "结尾回复" },
-        {
-          "id": "brandLogo",
-          "type": "image",
-          "label": "品牌标志",
-          "default": "assets/hyperframes-logo-black.svg"
-        },
-        { "id": "ecProof", "type": "string", "label": "结尾口碑", "default": "12,000+ 位用户" },
-        { "id": "ecFeature1", "type": "string", "label": "结尾卖点1", "default": "轻松|上手" },
-        { "id": "ecFeature2", "type": "string", "label": "结尾卖点2", "default": "画质|清晰" },
-        { "id": "ecFeature3", "type": "string", "label": "结尾卖点3", "default": "随时|修改" },
-        { "id": "ecCta", "type": "string", "label": "结尾按钮文字", "default": "结尾按钮文字" }
-      ],
-      "thumbnail": "message-thread-reveal.svg",
-      "fonts": []
-    },
-    {
       "name": "mk-background",
       "kind": "block",
       "title": "简约渐变底",
@@ -2062,176 +1797,6 @@
       "fonts": []
     },
     {
-      "name": "notes-reveal",
-      "kind": "block",
-      "title": "备忘录手记",
-      "description": "备忘录逐字打出，再切到手写清单卡",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/notes-reveal.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 24.85,
-      "variables": [
-        { "id": "titleL1", "type": "string", "label": "笔记标题第1行", "default": "笔记标题第1行" },
-        { "id": "titleL2", "type": "string", "label": "笔记标题第2行", "default": "笔记标题第2行" },
-        { "id": "noteLine1", "type": "string", "label": "笔记第1行", "default": "笔记第1行" },
-        { "id": "noteLine2", "type": "string", "label": "笔记第2行", "default": "笔记第2行" },
-        { "id": "noteLine3", "type": "string", "label": "笔记第3行", "default": "笔记第3行" },
-        { "id": "noteLine4", "type": "string", "label": "笔记第4行", "default": "笔记第4行" },
-        { "id": "noteLine5", "type": "string", "label": "笔记第5行", "default": "笔记第5行" },
-        {
-          "id": "noteLine6",
-          "type": "string",
-          "label": "笔记第6行",
-          "default": "麻烦少了，更重要的是——"
-        },
-        { "id": "noteLine7", "type": "string", "label": "笔记第7行", "default": "笔记第7行" },
-        { "id": "cardTop", "type": "string", "label": "卡片标题首行", "default": "卡片标题首行" },
-        { "id": "cardMid", "type": "string", "label": "卡片标题中行", "default": "卡片标题中行" },
-        {
-          "id": "cardBottom",
-          "type": "string",
-          "label": "卡片标题末行",
-          "default": "卡片标题末行"
-        },
-        { "id": "check1Label", "type": "string", "label": "清单1名称", "default": "清单1名称" },
-        { "id": "check1Value", "type": "string", "label": "清单1标注", "default": "清单1标注" },
-        { "id": "check2Label", "type": "string", "label": "清单2名称", "default": "清单2名称" },
-        { "id": "check2Value", "type": "string", "label": "清单2标注", "default": "清单2标注" },
-        { "id": "check3Label", "type": "string", "label": "清单3名称", "default": "清单3名称" },
-        { "id": "check3Value", "type": "string", "label": "清单3标注", "default": "清单3标注" },
-        {
-          "id": "brandLogo",
-          "type": "image",
-          "label": "品牌标志",
-          "default": "assets/hyperframes-logo-black.svg"
-        },
-        { "id": "brandDomain", "type": "string", "label": "落款网址", "default": "落款网址" }
-      ],
-      "thumbnail": "notes-reveal.svg",
-      "fonts": ["Courier Prime", "Permanent Marker"]
-    },
-    {
-      "name": "notification-cascade",
-      "kind": "block",
-      "title": "通知层叠",
-      "description": "手机通知接连落下堆叠，再整体收起",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/notification-cascade.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 14,
-      "variables": [
-        { "id": "notifTitle", "type": "string", "label": "通知标题", "default": "通知标题" },
-        { "id": "message1", "type": "string", "label": "消息1", "default": "消息1" },
-        { "id": "message2", "type": "string", "label": "消息2", "default": "消息2" },
-        { "id": "message3", "type": "string", "label": "消息3", "default": "消息3" },
-        { "id": "message4", "type": "string", "label": "消息4", "default": "消息4" },
-        {
-          "id": "appName",
-          "type": "string",
-          "label": "应用名称",
-          "default": "品牌名"
-        },
-        { "id": "headlineTop", "type": "string", "label": "结尾第1行", "default": "结尾第1行" },
-        { "id": "headlineAccent", "type": "string", "label": "结尾第2行", "default": "结尾第2行" },
-        { "id": "footerText", "type": "string", "label": "结尾网址", "default": "结尾网址" },
-        {
-          "id": "brandLogo",
-          "type": "image",
-          "label": "品牌标志",
-          "default": "assets/hyperframes-logo-white.svg"
-        }
-      ],
-      "thumbnail": "notification-cascade.svg",
-      "fonts": []
-    },
-    {
-      "name": "share-sheet-carousel",
-      "kind": "block",
-      "title": "分享面板轮播",
-      "description": "分享面板弹起，卡片内快速切换预览",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/share-sheet-carousel.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 7.2333,
-      "variables": [
-        { "id": "shareTitle", "type": "string", "label": "面板标题", "default": "面板标题" },
-        {
-          "id": "senderName",
-          "type": "string",
-          "label": "发送方",
-          "default": "品牌名"
-        },
-        { "id": "itemLabel", "type": "string", "label": "分享内容", "default": "分享内容" },
-        {
-          "id": "stripText",
-          "type": "string",
-          "label": "品牌标语",
-          "default": "品牌标语"
-        },
-        {
-          "id": "acceptLabel",
-          "type": "string",
-          "label": "接受按钮文字",
-          "default": "接受按钮文字"
-        },
-        {
-          "id": "declineLabel",
-          "type": "string",
-          "label": "拒绝按钮文字",
-          "default": "拒绝按钮文字"
-        },
-        {
-          "id": "slideImage1",
-          "type": "image",
-          "label": "轮播图片1",
-          "default": "assets/slide-01.jpg"
-        },
-        {
-          "id": "slideImage2",
-          "type": "image",
-          "label": "轮播图片2",
-          "default": "assets/slide-02.jpg"
-        },
-        {
-          "id": "slideImage3",
-          "type": "image",
-          "label": "轮播图片3",
-          "default": "assets/slide-03.jpg"
-        },
-        {
-          "id": "slideImage4",
-          "type": "image",
-          "label": "轮播图片4",
-          "default": "assets/slide-04.jpg"
-        },
-        {
-          "id": "brandLogo",
-          "type": "image",
-          "label": "品牌标志",
-          "default": "assets/hyperframes-logo-black.svg"
-        }
-      ],
-      "thumbnail": "share-sheet-carousel.svg",
-      "fonts": []
-    },
-    {
-      "name": "slack-notification-ad",
-      "kind": "block",
-      "title": "Slack 通知广告",
-      "description": "锁屏涌入 Slack 请求，HeyGen 收尾",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/slack-notification-ad.html",
-      "size": { "width": 1080, "height": 1920 },
-      "duration": 12,
-      "variables": [],
-      "thumbnail": "slack-notification-ad.svg",
-      "fonts": ["NotificationUI"]
-    },
-    {
       "name": "split-flap-board",
       "kind": "block",
       "title": "翻牌显示屏",
@@ -2281,20 +1846,6 @@
       ],
       "thumbnail": "split-flap-board.svg",
       "fonts": []
-    },
-    {
-      "name": "ui-3d-reveal",
-      "kind": "block",
-      "title": "界面立体展开",
-      "description": "界面元素以立体透视方式展开",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/ui-3d-reveal.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 13,
-      "variables": [],
-      "thumbnail": "ui-3d-reveal.svg",
-      "fonts": ["Inter"]
     },
     {
       "name": "vfx-anamorphic-flare",
@@ -2447,7 +1998,7 @@
       "placement": null,
       "src": "compositions/components/agent-cursor.html",
       "size": null,
-      "duration": null,
+      "duration": 4.8,
       "variables": [
         { "id": "agent_name", "type": "string", "label": "AI助手名称", "default": "AI助手名称" },
         {
@@ -2471,7 +2022,7 @@
       "placement": null,
       "src": "compositions/components/ascii-render-pass.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "charset", "type": "string", "label": "填充字符", "default": " .:-=+*#%@" },
         {
@@ -2530,7 +2081,7 @@
       "placement": null,
       "src": "compositions/components/ascii-trail-reveal.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "label", "type": "string", "label": "面板文字", "default": "面板文字" },
         {
@@ -2567,7 +2118,7 @@
       "placement": null,
       "src": "compositions/components/aurora-drift.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "accent",
@@ -2674,7 +2225,7 @@
       "placement": null,
       "src": "compositions/components/beat-pulse-background.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "beats",
@@ -2751,7 +2302,7 @@
       "placement": null,
       "src": "compositions/components/before-after-wipe.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "label_a", "type": "string", "label": "之前标签", "default": "之前标签" },
         { "id": "label_b", "type": "string", "label": "之后标签", "default": "之后标签" },
@@ -2810,7 +2361,7 @@
       "placement": null,
       "src": "compositions/components/browser-device-stage.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         {
           "id": "chrome",
@@ -2896,7 +2447,7 @@
       "placement": null,
       "src": "compositions/components/char-slam-explode.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "text", "type": "string", "label": "标题", "default": "标题" },
         {
@@ -2933,7 +2484,7 @@
       "placement": null,
       "src": "compositions/components/chat-message.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         {
           "id": "type",
@@ -2984,7 +2535,7 @@
       "placement": null,
       "src": "compositions/components/chat-thread.html",
       "size": null,
-      "duration": null,
+      "duration": 12,
       "variables": [
         { "id": "contact", "type": "string", "label": "联系人", "default": "联系人" },
         {
@@ -3044,7 +2595,7 @@
       "placement": null,
       "src": "compositions/components/code-terminal-run.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         { "id": "prompt_glyph", "type": "string", "label": "提示符", "default": "$" },
         {
@@ -3130,7 +2681,7 @@
       "placement": null,
       "src": "compositions/components/constellation-hub.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "hub_label", "type": "string", "label": "中心节点文字", "default": "中心节点文字" },
         { "id": "nodes", "type": "string", "label": "功能列表", "default": "拍摄,剪辑,合成,分享" },
@@ -3170,7 +2721,7 @@
       "placement": null,
       "src": "compositions/components/count-up.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         { "id": "start", "type": "number", "label": "起始数值", "default": 0, "step": 1 },
         { "id": "end", "type": "number", "label": "结束数值", "default": 100, "step": 1 },
@@ -3212,7 +2763,7 @@
       "placement": null,
       "src": "compositions/components/cta-close.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "action_line", "type": "string", "label": "行动语", "default": "行动语" },
         { "id": "button_label", "type": "string", "label": "按钮文字", "default": "按钮文字" },
@@ -3251,7 +2802,7 @@
       "placement": null,
       "src": "compositions/components/cta-lockup.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "action_line", "type": "string", "label": "行动语", "default": "行动语" },
         { "id": "button_label", "type": "string", "label": "按钮文字", "default": "按钮文字" },
@@ -3280,7 +2831,7 @@
       "placement": null,
       "src": "compositions/components/cursor-annotate.html",
       "size": null,
-      "duration": null,
+      "duration": 2.95,
       "variables": [
         {
           "id": "shape",
@@ -3347,7 +2898,7 @@
       "placement": null,
       "src": "compositions/components/cursor-context-menu.html",
       "size": null,
-      "duration": null,
+      "duration": 3.9,
       "variables": [
         {
           "id": "items",
@@ -3387,7 +2938,7 @@
       "placement": null,
       "src": "compositions/components/cursor-drag-drop.html",
       "size": null,
-      "duration": null,
+      "duration": 3.6,
       "variables": [
         { "id": "card_label", "type": "string", "label": "拖动的卡片", "default": "拖动的卡片" },
         { "id": "accent", "type": "color", "label": "强调色", "default": "#0a84ff" },
@@ -3414,7 +2965,7 @@
       "placement": null,
       "src": "compositions/components/cursor-glyph-trail.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "glyphs", "type": "string", "label": "字符（已停用）", "default": "" },
         {
@@ -3475,7 +3026,7 @@
       "placement": null,
       "src": "compositions/components/cursor-marquee-select.html",
       "size": null,
-      "duration": null,
+      "duration": 3.4,
       "variables": [
         { "id": "accent", "type": "color", "label": "强调色", "default": "#0a84ff" },
         {
@@ -3532,7 +3083,7 @@
       "placement": null,
       "src": "compositions/components/cursor-text-select.html",
       "size": null,
-      "duration": null,
+      "duration": 4.2,
       "variables": [
         { "id": "title", "type": "string", "label": "段落标题", "default": "段落标题" },
         {
@@ -3556,7 +3107,7 @@
       "placement": null,
       "src": "compositions/components/cursor-zoom-follow.html",
       "size": null,
-      "duration": null,
+      "duration": 5.8,
       "variables": [
         { "id": "image", "type": "image", "label": "截图", "default": "" },
         {
@@ -3642,7 +3193,7 @@
       "placement": null,
       "src": "compositions/components/dart-cursor.html",
       "size": null,
-      "duration": null,
+      "duration": 3.6,
       "variables": [
         {
           "id": "tone",
@@ -3740,7 +3291,7 @@
       "placement": null,
       "src": "compositions/components/device-frame-stage.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         {
           "id": "device",
@@ -3786,7 +3337,7 @@
       "placement": null,
       "src": "compositions/components/drift-hold.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         {
@@ -3812,7 +3363,7 @@
       "placement": null,
       "src": "compositions/components/echo-trail.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "echoes", "type": "number", "label": "残影数量", "default": 4 },
         { "id": "delta", "type": "number", "label": "残影间隔", "default": 0.09 },
@@ -3862,7 +3413,7 @@
       "placement": null,
       "src": "compositions/components/facet-morph.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         { "id": "forms", "type": "string", "label": "形状序列", "default": "blob,mark,badge" },
         { "id": "hold_last", "type": "boolean", "label": "定格结尾", "default": true },
@@ -3901,7 +3452,7 @@
       "placement": null,
       "src": "compositions/components/focus-rack.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "label_a", "type": "string", "label": "卡片A标签", "default": "卡片A标签" },
         { "id": "label_b", "type": "string", "label": "卡片B标签", "default": "卡片B标签" },
@@ -3929,7 +3480,7 @@
       "placement": null,
       "src": "compositions/components/gesture-tap.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         { "id": "tap_label", "type": "string", "label": "点击前文字", "default": "点击前文字" },
         {
@@ -3962,7 +3513,7 @@
       "placement": null,
       "src": "compositions/components/gloss-sweep.html",
       "size": null,
-      "duration": null,
+      "duration": 2.5,
       "variables": [
         { "id": "text", "type": "string", "label": "标签", "default": "标签" },
         {
@@ -3999,7 +3550,7 @@
       "placement": null,
       "src": "compositions/components/grid-card-assemble.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "items", "type": "string", "label": "卡片列表", "default": "拍摄,剪辑,合成,发布" },
         {
@@ -4057,7 +3608,7 @@
       "placement": null,
       "src": "compositions/components/headline-slam.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "text", "type": "string", "label": "标题", "default": "标题" },
         {
@@ -4106,7 +3657,7 @@
       "placement": null,
       "src": "compositions/components/icon-morph-beat.html",
       "size": null,
-      "duration": null,
+      "duration": 2.5,
       "variables": [
         {
           "id": "pair",
@@ -4143,7 +3694,7 @@
       "placement": null,
       "src": "compositions/components/ink-bleed-reveal.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "blobs",
@@ -4189,7 +3740,7 @@
       "placement": null,
       "src": "compositions/components/kinetic-center-build.html",
       "size": null,
-      "duration": null,
+      "duration": 2,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         {
@@ -4238,7 +3789,7 @@
       "placement": null,
       "src": "compositions/components/kinetic-type-swap.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "prefix", "type": "string", "label": "前缀", "default": "前缀" },
         { "id": "options", "type": "string", "label": "候选词", "default": "更快,更好,更省心" },
@@ -4279,7 +3830,7 @@
       "placement": null,
       "src": "compositions/components/line-swap.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "line_a", "type": "string", "label": "原句", "default": "原句" },
         { "id": "line_b", "type": "string", "label": "替换句", "default": "替换句" },
@@ -4328,7 +3879,7 @@
       "placement": null,
       "src": "compositions/components/locked-nucleus-orbit.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "label", "type": "string", "label": "核心文字", "default": "核心文字" },
         {
@@ -4364,7 +3915,7 @@
       "placement": null,
       "src": "compositions/components/logo-brand-close.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "wordmark",
@@ -4414,7 +3965,7 @@
       "placement": null,
       "src": "compositions/components/logo-sting.html",
       "size": null,
-      "duration": null,
+      "duration": 2.2,
       "variables": [
         {
           "id": "wordmark",
@@ -4446,7 +3997,7 @@
       "placement": null,
       "src": "compositions/components/magnetic-cursor.html",
       "size": null,
-      "duration": null,
+      "duration": 3.6,
       "variables": [
         { "id": "accent", "type": "color", "label": "强调色", "default": "#3b82f6" },
         {
@@ -4482,7 +4033,7 @@
       "placement": null,
       "src": "compositions/components/marker-checklist-card.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "top", "type": "string", "label": "标题首行", "default": "标题首行" },
         { "id": "mid", "type": "string", "label": "标题中间词", "default": "标题中间词" },
@@ -4507,7 +4058,7 @@
       "placement": null,
       "src": "compositions/components/marker-highlight.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         { "id": "emphasis_word", "type": "string", "label": "强调词", "default": "强调词" },
@@ -4595,7 +4146,7 @@
       "placement": null,
       "src": "compositions/components/modal-morph.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "from_scale", "type": "number", "label": "起始倍数", "default": 1 },
         { "id": "expand_at", "type": "number", "label": "展开时间", "default": 1.2 },
@@ -4644,7 +4195,7 @@
       "placement": null,
       "src": "compositions/components/multi-device-splay.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         {
           "id": "accent",
@@ -4695,7 +4246,7 @@
       "placement": null,
       "src": "compositions/components/notes-typing.html",
       "size": null,
-      "duration": null,
+      "duration": 10,
       "variables": [
         {
           "id": "title",
@@ -4774,7 +4325,7 @@
       "placement": null,
       "src": "compositions/components/notification-stack.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "titles",
@@ -4833,7 +4384,7 @@
       "placement": null,
       "src": "compositions/components/offset-path-traveler.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "path",
@@ -4916,7 +4467,7 @@
       "placement": null,
       "src": "compositions/components/oversized-cursor.html",
       "size": null,
-      "duration": null,
+      "duration": 2.6,
       "variables": [
         {
           "id": "cursor_variant",
@@ -5047,7 +4598,7 @@
       "placement": null,
       "src": "compositions/components/particle-image-reveal.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "density",
@@ -5105,7 +4656,7 @@
       "placement": null,
       "src": "compositions/components/particle-text-dissolve.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         {
@@ -5164,7 +4715,7 @@
       "placement": null,
       "src": "compositions/components/per-word-rise.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         {
@@ -5213,7 +4764,7 @@
       "placement": null,
       "src": "compositions/components/physical-exit.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         {
           "id": "mode",
@@ -5251,7 +4802,7 @@
       "placement": null,
       "src": "compositions/components/press-ripple.html",
       "size": null,
-      "duration": null,
+      "duration": 2.4,
       "variables": [
         { "id": "label", "type": "string", "label": "标签", "default": "标签" },
         { "id": "done_label", "type": "string", "label": "完成文字", "default": "完成文字" },
@@ -5330,7 +4881,7 @@
       "placement": null,
       "src": "compositions/components/pull-back-reveal.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "detail_text", "type": "string", "label": "详情文字", "default": "+312%" },
         { "id": "headline", "type": "string", "label": "标题", "default": "标题" },
@@ -5393,7 +4944,7 @@
       "placement": null,
       "src": "compositions/components/push-in.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "text", "type": "string", "label": "标题", "default": "标题" },
         {
@@ -5420,7 +4971,7 @@
       "placement": null,
       "src": "compositions/components/radial-surround.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         { "id": "center_label", "type": "string", "label": "中心文字", "default": "中心文字" },
         {
@@ -5466,7 +5017,7 @@
       "placement": null,
       "src": "compositions/components/scan-band.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         {
           "id": "wordmark",
@@ -5497,7 +5048,7 @@
       "placement": null,
       "src": "compositions/components/scramble-reveal.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         {
@@ -5545,7 +5096,7 @@
       "placement": null,
       "src": "compositions/components/screen-flow-carousel.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         {
           "id": "screens",
@@ -5593,7 +5144,7 @@
       "placement": null,
       "src": "compositions/components/scroll-camera-story.html",
       "size": null,
-      "duration": null,
+      "duration": 5.5,
       "variables": [
         {
           "id": "sections",
@@ -5650,7 +5201,7 @@
       "placement": null,
       "src": "compositions/components/scroll-feed.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "speed",
@@ -5696,7 +5247,7 @@
       "placement": null,
       "src": "compositions/components/segmentation-flood.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "regions", "type": "string", "label": "区域标签", "default": "人物, 信号, 背景" },
         { "id": "flood_at", "type": "number", "label": "覆盖开始时间", "default": 0.8 },
@@ -5745,7 +5296,7 @@
       "placement": null,
       "src": "compositions/components/slit-scan-reveal.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "axis",
@@ -5794,7 +5345,7 @@
       "placement": null,
       "src": "compositions/components/social-proof-card.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "brand", "type": "string", "label": "品牌", "default": "品牌名" },
         { "id": "proof", "type": "string", "label": "口碑语", "default": "12,000+ 位用户" },
@@ -5815,7 +5366,7 @@
       "placement": null,
       "src": "compositions/components/split-tilt-cards.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "label_a", "type": "string", "label": "左侧标签", "default": "左侧标签" },
         { "id": "label_b", "type": "string", "label": "右侧标签", "default": "右侧标签" },
@@ -5890,7 +5441,7 @@
       "placement": null,
       "src": "compositions/components/spring-stack-shuffle.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "cards",
@@ -5983,7 +5534,7 @@
       "placement": null,
       "src": "compositions/components/state-chip-rail.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         {
           "id": "states",
@@ -6037,7 +5588,7 @@
       "placement": null,
       "src": "compositions/components/sticky-mock-swap.html",
       "size": null,
-      "duration": null,
+      "duration": 6,
       "variables": [
         {
           "id": "captions",
@@ -6069,7 +5620,7 @@
       "placement": null,
       "src": "compositions/components/stop-motion-cadence.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "fps",
@@ -6163,7 +5714,7 @@
       "placement": null,
       "src": "compositions/components/svg-stroke-trace.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         {
           "id": "path",
@@ -6215,7 +5766,7 @@
       "placement": null,
       "src": "compositions/components/swipe-rail.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "card_count",
@@ -6256,7 +5807,7 @@
       "placement": null,
       "src": "compositions/components/telemetry-hud.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         {
           "id": "readouts",
@@ -6336,7 +5887,7 @@
       "placement": null,
       "src": "compositions/components/testimonial-proof-card.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "quote", "type": "string", "label": "评价内容", "default": "评价内容" },
         { "id": "name", "type": "string", "label": "名称", "default": "名称" },
@@ -6378,7 +5929,7 @@
       "placement": null,
       "src": "compositions/components/text-shimmer.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         { "id": "text", "type": "string", "label": "标题", "default": "标题" },
         {
@@ -6415,7 +5966,7 @@
       "placement": null,
       "src": "compositions/components/ticker-takeover.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         {
           "id": "options",
@@ -6448,7 +5999,7 @@
       "placement": null,
       "src": "compositions/components/titlecard-calm.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "headline", "type": "string", "label": "标题", "default": "少即是多" },
         { "id": "kicker", "type": "string", "label": "引导小字", "default": "引导小字" }
@@ -6465,7 +6016,7 @@
       "placement": null,
       "src": "compositions/components/titlecard-lockup.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "wordmark",
@@ -6548,59 +6099,6 @@
       "fonts": ["Inter"]
     },
     {
-      "name": "touch-indicator",
-      "kind": "component",
-      "title": "触摸指示",
-      "description": "半透明圆点模拟手指点按或滑动",
-      "category": "scenes",
-      "placement": null,
-      "src": "compositions/components/touch-indicator.html",
-      "size": null,
-      "duration": null,
-      "variables": [
-        {
-          "id": "gesture",
-          "type": "enum",
-          "label": "手势",
-          "default": "tap",
-          "options": [
-            { "value": "tap", "label": "点按" },
-            { "value": "swipe", "label": "滑动" }
-          ]
-        },
-        {
-          "id": "polarity",
-          "type": "enum",
-          "label": "明暗模式",
-          "default": "light",
-          "options": [
-            { "value": "light", "label": "浅色配深底" },
-            { "value": "dark", "label": "深色配浅底" }
-          ]
-        },
-        {
-          "id": "targetX",
-          "type": "number",
-          "label": "目标横坐标",
-          "default": 50,
-          "min": 0,
-          "max": 100,
-          "unit": "%"
-        },
-        {
-          "id": "targetY",
-          "type": "number",
-          "label": "目标纵坐标",
-          "default": 55,
-          "min": 0,
-          "max": 100,
-          "unit": "%"
-        }
-      ],
-      "thumbnail": "touch-indicator.svg",
-      "fonts": []
-    },
-    {
       "name": "tracing-beam",
       "kind": "component",
       "title": "光束引导",
@@ -6609,7 +6107,7 @@
       "placement": null,
       "src": "compositions/components/tracing-beam.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         { "id": "labels", "type": "string", "label": "标签列表", "default": "搜索,预览,导出" },
         {
@@ -6636,7 +6134,7 @@
       "placement": null,
       "src": "compositions/components/trust-strip.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         {
           "id": "marks",
@@ -6690,7 +6188,7 @@
       "placement": null,
       "src": "compositions/components/typed-prompt.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         { "id": "prompt_glyph", "type": "string", "label": "提示符", "default": ">" },
@@ -6751,7 +6249,7 @@
       "placement": null,
       "src": "compositions/components/ui-focus-zoom.html",
       "size": null,
-      "duration": null,
+      "duration": 4.5,
       "variables": [
         {
           "id": "anchor_x",
@@ -6881,7 +6379,7 @@
       "placement": null,
       "src": "compositions/components/variable-font-flex.html",
       "size": null,
-      "duration": null,
+      "duration": 3.5,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "文字" },
         {
@@ -6958,7 +6456,7 @@
       "placement": null,
       "src": "compositions/components/velocity-throw-snap.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         {
           "id": "hero_index",
@@ -6999,7 +6497,7 @@
       "placement": null,
       "src": "compositions/components/vox-annotate.html",
       "size": null,
-      "duration": null,
+      "duration": 4,
       "variables": [
         { "id": "text", "type": "string", "label": "文字", "default": "讲好故事，而不是罗列参数" },
         { "id": "keyword", "type": "string", "label": "关键词", "default": "关键词" },
@@ -7060,7 +6558,7 @@
       "placement": null,
       "src": "compositions/components/whiteboard-ink.html",
       "size": null,
-      "duration": null,
+      "duration": 5,
       "variables": [
         {
           "id": "sketch",
@@ -7154,7 +6652,7 @@
       "placement": null,
       "src": "compositions/components/zoom-through-transition.html",
       "size": null,
-      "duration": null,
+      "duration": 3,
       "variables": [
         { "id": "from-label", "type": "string", "label": "离开页标签", "default": "离开页标签" },
         { "id": "to-label", "type": "string", "label": "进入页标签", "default": "进入页标签" },
@@ -7561,6 +7059,11 @@
     },
     { "name": "worley-noise", "title": "细胞纹理", "reason": "渲染检查不通过：用到的文件取不到" },
     {
+      "name": "ai-chat-reveal",
+      "title": "AI 对话揭晓",
+      "reason": "默认标志是 HyperFrames 的品牌标志"
+    },
+    {
       "name": "animated-bar-chart",
       "title": "动态柱状图",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
@@ -7626,9 +7129,19 @@
     },
     { "name": "caret-swap", "title": "光标换词", "reason": "渲染检查不通过：用到的文件取不到" },
     {
+      "name": "chatgpt-exchange",
+      "title": "ChatGPT 对话",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
       "name": "chromatic-aberration-wipe",
       "title": "色散滑切",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
+    },
+    {
+      "name": "claude-exchange",
+      "title": "Claude 对话",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
     },
     { "name": "colorama-wipe", "title": "炫彩擦除标题", "reason": "渲染检查不通过：渲染失败" },
     {
@@ -7686,6 +7199,11 @@
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
     {
+      "name": "instagram-follow",
+      "title": "Instagram 关注",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
       "name": "iris-reveal",
       "title": "圆形展开",
       "reason": "靠全局插槽取前后两段画面，一条成片里只能用一次，且要另放一份视频"
@@ -7699,6 +7217,11 @@
       "name": "line-by-line-slide",
       "title": "逐行滑入",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
+    },
+    {
+      "name": "macos-notification",
+      "title": "macOS 通知",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
     },
     { "name": "match-cut", "title": "匹配剪辑", "reason": "自带演示画面，接不到两段视频之间" },
     {
@@ -7717,6 +7240,11 @@
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
     {
+      "name": "message-thread-reveal",
+      "title": "聊天对话",
+      "reason": "默认标志是 HyperFrames 的品牌标志"
+    },
+    {
       "name": "micro-transitions",
       "title": "界面微动效",
       "reason": "自带演示画面，接不到两段视频之间"
@@ -7727,6 +7255,16 @@
       "reason": "靠全局插槽取前后两段画面，一条成片里只能用一次，且要另放一份视频"
     },
     { "name": "motion-blur", "title": "运动模糊", "reason": "渲染检查不通过：渲染失败" },
+    {
+      "name": "notes-reveal",
+      "title": "备忘录手记",
+      "reason": "默认标志是 HyperFrames 的品牌标志"
+    },
+    {
+      "name": "notification-cascade",
+      "title": "通知层叠",
+      "reason": "默认标志是 HyperFrames 的品牌标志"
+    },
     {
       "name": "number-pop-in",
       "title": "数字弹入",
@@ -7789,6 +7327,11 @@
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
     {
+      "name": "reddit-post",
+      "title": "Reddit 帖子卡",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
       "name": "rgb-glitch-text",
       "title": "故障文字",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
@@ -7807,6 +7350,11 @@
       "name": "settings-toggle-flow",
       "title": "设置开关流程",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
+    },
+    {
+      "name": "share-sheet-carousel",
+      "title": "分享面板轮播",
+      "reason": "默认标志是 HyperFrames 的品牌标志"
     },
     {
       "name": "shared-axis-y",
@@ -7839,6 +7387,11 @@
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
     {
+      "name": "slack-notification-ad",
+      "title": "Slack 通知广告",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
       "name": "slot-machine-roll",
       "title": "老虎机滚字",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
@@ -7847,6 +7400,11 @@
       "name": "soft-blur-in",
       "title": "柔和模糊显现",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
+    },
+    {
+      "name": "spotify-card",
+      "title": "Spotify 正在播放",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
     },
     {
       "name": "spotlight-card",
@@ -7920,6 +7478,11 @@
       "reason": "依赖的 ES 模块无法换成本地文件"
     },
     {
+      "name": "tiktok-follow",
+      "title": "TikTok 关注卡",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
       "name": "tilt-card",
       "title": "倾斜卡片",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
@@ -7933,6 +7496,11 @@
       "name": "torn-paper-rip",
       "title": "撕纸转场",
       "reason": "靠全局插槽取前后两段画面，一条成片里只能用一次，且要另放一份视频"
+    },
+    {
+      "name": "touch-indicator",
+      "title": "触摸指示",
+      "reason": "单独放置时画面上不显示任何内容"
     },
     {
       "name": "tracking-in",
@@ -7955,6 +7523,16 @@
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
     {
+      "name": "ui-3d-reveal",
+      "title": "界面立体展开",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
+      "name": "vfx-text-cursor",
+      "title": "光标光影文字",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
       "name": "vignette",
       "title": "暗角",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
@@ -7968,6 +7546,16 @@
       "name": "x-follow-card",
       "title": "X 关注卡",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
+    },
+    {
+      "name": "x-post",
+      "title": "X 帖子卡",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
+    },
+    {
+      "name": "yt-lower-third",
+      "title": "YouTube 订阅条",
+      "reason": "默认内容是 HeyGen / HyperFrames 的品牌，且不能修改"
     }
   ]
 }

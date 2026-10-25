@@ -134,7 +134,7 @@ test('品牌与分类各自保留选择，通用栏没有字幕样式，品牌�
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = chips(dialog, '分类').getByRole('radio')
   await expect(categories.first()).toBeChecked()
-  await expect(categories.first()).toHaveText(/^视觉特效\s*9$/)
+  await expect(categories.first()).toHaveText(/^视觉特效\s*8$/)
   await expect(categories.filter({ hasText: /全部|品牌|^字幕/ })).toHaveCount(0)
   await chips(dialog, '分类').getByRole('radio', { name: /^转场/ }).click()
 
@@ -317,6 +317,31 @@ test('拖卡片到画面轨：按时长让位，离开恢复，松手才新增�
     type: 'component',
     component: 'logo-outro',
     duration: 6_000,
+  })
+})
+
+test('组件按自己的时长放：拖着时缩影写的、落下的段都是组件时长，与成片多长无关', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addShot(dialog, 1)
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
+  await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(1)
+
+  // 字标定格 2.2 秒
+  await openCategory(dialog, '场景')
+  await liftCard(page, dialog.getByRole('button', { name: /^字标定格，/ }))
+  await expect(page.locator('.wf-insertion-ghost')).toContainText('2.2 秒')
+  const lane = await boxOf(film)
+  await page.mouse.move(lane.x + lane.width - 20, lane.y + lane.height / 2, { steps: 8 })
+  await expect(page.getByRole('status').filter({ hasText: /^插入.*2\.2\s*秒$/ })).toBeVisible()
+  await page.mouse.up()
+  await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(2)
+  expect((await readDraft(page))?.layer0[1]).toMatchObject({
+    type: 'component',
+    component: 'logo-sting',
+    duration: 2_200,
   })
 })
 

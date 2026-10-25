@@ -65,14 +65,17 @@ describe('placeComponent：点卡片按 kind 去处', () => {
     ])
   })
 
-  it('没有固定时长的组件：取 10 秒与成片时长里长的那个', () => {
-    // count-up 是 component、没有固定时长
+  it('时长只取组件自己的，与成片多长无关', () => {
+    // count-up 是 component，3 秒
     const short = expectOk(placeComponent(film(), item('count-up'), click(0))).draft
-    expect(short.overlays[0]?.duration).toBe(10_000)
+    expect(short.overlays[0]?.duration).toBe(3_000)
     const long = draftOf([video('v1', 's1', 0, 15_000)])
     expect(
       expectOk(placeComponent(long, item('count-up'), click(0))).draft.overlays[0]?.duration,
-    ).toBe(15_000)
+    ).toBe(3_000)
+    expect(
+      expectOk(placeComponent(long, item('headline-slam'), drop('film', 0))).draft.layer0[0],
+    ).toMatchObject({ component: 'headline-slam', duration: 3_500 })
   })
 })
 

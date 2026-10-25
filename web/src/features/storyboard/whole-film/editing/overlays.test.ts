@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { draftOf, expectOk, overlay, video } from '@/testing/whole-film'
+import { contextOf, draftOf, expectOk, overlay, video } from '@/testing/whole-film'
 import { MAX_SCALE, MIN_SCALE, type OverlayClip, type WholeFilmDraft } from './draft'
 import {
   addOverlay,
@@ -219,12 +219,20 @@ describe('moveOverlay：拖特效块', () => {
 })
 
 describe('trimOverlay', () => {
+  // badge 放得比 120 秒还长，这一组只看其他边界；短的组件 3 秒
+  const context = contextOf({}, {}, { badge: 200_000, short: 3_000 })
+
   const film = () =>
     withOverlays([
       overlay('a', 2_000, 1_000, { track: 0 }),
       overlay('b', 6_000, 2_000, { track: 0 }),
       overlay('c', 0, 9_000, { track: 1 }),
     ])
+
+  const timing = (draft: WholeFilmDraft, id: string) => {
+    const found = draft.overlays.find((o) => o.id === id)
+    return found && [found.start, found.start + found.duration, found.playbackStart]
+  }
 
   it.each([
     ['右端拉到同一行的下一块为止', 'a', 'end', 10_000, ['a', 2_000, 6_000, 0]],
@@ -234,7 +242,7 @@ describe('trimOverlay', () => {
     ['修左端：从组件自己时间里更晚处起播', 'b', 'start', 500, ['b', 6_500, 8_000, 500]],
     ['最短 0.1 秒', 'b', 'start', 10_000, ['b', 7_900, 8_000, 1_900]],
   ] as const)('%s', (_, overlayId, edge, deltaMs, expected) => {
-    const { draft } = expectOk(trimOverlay(film(), { overlayId, edge, deltaMs }))
+    const { draft } = expectOk(trimOverlay(film(), { overlayId, edge, deltaMs }, context))
     expect(
       draft.overlays.map((o) => [o.id, o.start, o.start + o.duration, o.playbackStart]),
     ).toContainEqual(expected)
@@ -246,9 +254,59 @@ describe('trimOverlay', () => {
       overlay('b', 3_000, 1_000, { track: 0, playbackStart: 600 }),
     ])
     const { draft } = expectOk(
-      trimOverlay(trimmed, { overlayId: 'b', edge: 'start', deltaMs: -5_000 }),
+      trimOverlay(trimmed, { overlayId: 'b', edge: 'start', deltaMs: -5_000 }, context),
     )
     expect(draft.overlays[1]).toMatchObject({ start: 2_400, duration: 1_600, playbackStart: 0 })
+  })
+
+  it('右端最多拉到组件自己的时长放完，往短里拖照常', () => {
+    const film = withOverlays([overlay('s', 1_000, 1_000, { component: 'short' })])
+    const longest = expectOk(
+      trimOverlay(film, { overlayId: 's', edge: 'end', deltaMs: 10_000 }, context),
+    ).draft
+    expect(timing(longest, 's')).toEqual([1_000, 4_000, 0])
+    const shorter = expectOk(
+      trimOverlay(longest, { overlayId: 's', edge: 'end', deltaMs: -500 }, context),
+    ).draft
+    expect(timing(shorter, 's')).toEqual([1_000, 3_500, 0])
+  })
+
+  it('左端修剪过的块：右端最多到组件时长减去入点；左端往外拉退到入点 0 为止，不超出组件时长', () => {
+    const film = withOverlays([
+      overlay('s', 1_000, 1_500, { component: 'short', playbackStart: 800 }),
+    ])
+    const end = expectOk(
+      trimOverlay(film, { overlayId: 's', edge: 'end', deltaMs: 10_000 }, context),
+    ).draft
+    expect(timing(end, 's')).toEqual([1_000, 3_200, 800])
+    const start = expectOk(
+      trimOverlay(end, { overlayId: 's', edge: 'start', deltaMs: -5_000 }, context),
+    ).draft
+    expect(timing(start, 's')).toEqual([200, 3_200, 0])
+  })
+
+  it('草稿里已经超出组件时长的块：拖右端时收回上限以内，往长往短拖都不报错', () => {
+    const film = withOverlays([overlay('s', 1_000, 5_000, { component: 'short' })])
+    for (const deltaMs of [300, -300]) {
+      const { draft } = expectOk(
+        trimOverlay(film, { overlayId: 's', edge: 'end', deltaMs }, context),
+      )
+      expect(timing(draft, 's')).toEqual([1_000, 4_000, 0])
+    }
+    // 入点已在组件时长之后：收到最短 0.1 秒
+    const late = withOverlays([
+      overlay('s', 1_000, 2_000, { component: 'short', playbackStart: 3_500 }),
+    ])
+    const { draft } = expectOk(
+      trimOverlay(late, { overlayId: 's', edge: 'end', deltaMs: 100 }, context),
+    )
+    expect(timing(draft, 's')).toEqual([1_000, 1_100, 3_500])
+  })
+
+  it('上下文缺少草稿里的组件：是调用方的错，直接报错', () => {
+    expect(() =>
+      trimOverlay(film(), { overlayId: 'a', edge: 'end', deltaMs: 1 }, contextOf({})),
+    ).toThrow('成片编辑上下文缺少组件 badge')
   })
 })
 
@@ -325,7 +383,11 @@ describe('setOverlayPosition：在画面上挪', () => {
     const edits = [
       moveOverlay(placed, { overlayId: 'a', deltaMs: 500 }),
       moveOverlay(placed, { overlayId: 'a', deltaMs: 0, row: { insertAt: 2 } }),
-      trimOverlay(placed, { overlayId: 'a', edge: 'start', deltaMs: 300 }),
+      trimOverlay(
+        placed,
+        { overlayId: 'a', edge: 'start', deltaMs: 300 },
+        contextOf({}, {}, { badge: 1_000 }),
+      ),
       setComponentVariables(placed, { id: 'b', variables: { label: '限时' } }),
       removeOverlay(placed, { overlayId: 'b' }),
     ]

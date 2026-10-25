@@ -32,7 +32,7 @@ export interface CatalogItem {
   src: string
   /** 组件按固定尺寸设计时的尺寸；null 表示铺满所在位置。 */
   size: { width: number; height: number } | null
-  /** 组件原定时长（秒）；没有固定时长时为 null。 */
+  /** 组件自己的动画时长（秒），放进成片的默认时长与最长时长；字幕样式铺满整片，为 null。 */
   duration: number | null
   variables: CatalogVariable[]
   /** `../catalog/thumbnails/` 下的缩略图文件名。 */

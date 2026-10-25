@@ -480,13 +480,13 @@ describe('成片编辑器 · 组件', () => {
     await user.click(screen.getByRole('tab', { name: '通用' }))
     const chips = await screen.findByRole('radiogroup', { name: '分类' })
     const radios = within(chips).getAllByRole('radio')
-    expect(radios[0]).toHaveAccessibleName(/^视觉特效\s*9$/)
+    expect(radios[0]).toHaveAccessibleName(/^视觉特效\s*8$/)
     expect(radios[0]).toBeChecked()
     expect(within(chips).queryByRole('radio', { name: /全部/ })).not.toBeInTheDocument()
     // 字幕样式是字幕轨的属性，不在组件库里
     expect(within(chips).queryByRole('radio', { name: /^字幕/ })).not.toBeInTheDocument()
     expect(within(screen.getByRole('list', { name: '组件' })).getAllByRole('button')).toHaveLength(
-      9,
+      8,
     )
     for (const radio of radios) {
       await user.click(radio)
@@ -579,6 +579,64 @@ describe('成片编辑器 · 组件', () => {
     )
   })
 
+  it('特效块与组件段的结尾拉不过组件自己的时长，往短里拖照常', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, {
+      ...draftOf([
+        video('v1', TAKE_A, 0, 2_000),
+        card('c1', 2_000, { component: 'logo-brand-close' }),
+      ]),
+      overlays: [{ ...overlayAt('o1', 0, 4_000), component: 'hw-arrow' }],
+    })
+    await openEditor()
+
+    // 手绘箭头 4 秒：已是组件时长，往长拉不动，往短拖照常
+    const overlays = screen.getByRole('group', { name: '特效轨' })
+    await user.click(
+      capturable(within(overlays).getByRole('button', { name: /^选中：特效 · 手绘箭头/ })),
+    )
+    const overlayEnd = await within(overlays).findByRole('slider', { name: '裁剪该段结尾' })
+    overlayEnd.focus()
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+    expect(
+      within(overlays).getByRole('group', { name: '特效 · 手绘箭头，第 1 行，0.0–4.0 秒' }),
+    ).toBeInTheDocument()
+    await user.keyboard('{ArrowLeft}')
+    expect(
+      within(overlays).getByRole('group', { name: '特效 · 手绘箭头，第 1 行，0.0–3.9 秒' }),
+    ).toBeInTheDocument()
+
+    // 字标逐字 4 秒：组件段从 2 秒拉到 4 秒为止
+    await user.click(await blockButton(/^选中：第 2 段 · 组件 · 字标逐字/))
+    const clipEnd = await within(filmLane()).findByRole('slider', { name: '裁剪该段结尾' })
+    clipEnd.focus()
+    await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}')
+    expect(
+      within(filmLane()).getByRole('group', { name: /^第 2 段 · 组件 · 字标逐字，4\.0 秒$/ }),
+    ).toBeInTheDocument()
+    await waitSaved((document) =>
+      expect(document?.layer0[1]).toMatchObject({ duration: 4_000, playbackStart: 0 }),
+    )
+  })
+
+  it('组件库里没有的组件：组件段和特效块都没有修剪手柄', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, {
+      ...draftOf([
+        video('v1', TAKE_A, 0, 2_000),
+        card('c1', 2_000, { component: 'touch-indicator' }),
+      ]),
+      overlays: [{ ...overlayAt('o1', 0, 1_000), component: 'touch-indicator' }],
+    })
+    await openEditor()
+    const overlays = screen.getByRole('group', { name: '特效轨' })
+    await user.click(capturable(within(overlays).getByRole('button', { name: /^选中：特效 · / })))
+    expect(within(overlays).queryByRole('slider', { name: /^裁剪/ })).not.toBeInTheDocument()
+    await user.click(await blockButton(/^选中：第 2 段 · 组件/))
+    expect(within(filmLane()).getAllByRole('button', { pressed: true })).toHaveLength(1)
+    expect(within(filmLane()).queryByRole('slider', { name: /^裁剪/ })).not.toBeInTheDocument()
+  })
+
   it('放进成片后选中新片段；有可填项的组件随即打开浮层，没有的不弹', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -586,6 +644,10 @@ describe('成片编辑器 · 组件', () => {
     const list = await generalTab(user, '场景')
     await user.click(within(list).getByRole('button', { name: /^字标定格，/ }))
     const popover = await screen.findByRole('dialog', { name: '特效 · 字标定格' })
+    // 时长是组件自己的 2.2 秒，与成片多长无关
+    expect(
+      screen.getByRole('group', { name: '特效 · 字标定格，第 1 行，0.0–2.2 秒' }),
+    ).toBeInTheDocument()
     expect(within(popover).getByLabelText('品牌名')).toHaveAttribute('placeholder', '品牌名')
     expect(screen.getByRole('button', { name: /^选中：特效 · 字标定格/ })).toHaveAttribute(
       'aria-pressed',
