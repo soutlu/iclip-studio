@@ -68,7 +68,7 @@ const insertOnEnter = (event: KeyboardEvent<HTMLElement>, onInsert: () => void) 
   return true
 }
 
-/** 视频素材区：一个镜头组一段、每条原作一条轨，区域定高、镜头组多时在区域里上下滚动。 */
+/** 视频素材区：一个镜头组一段、每条原作一行，区域定高、原作多时在区域里上下滚动。 */
 export function MaterialArea({
   groups,
   placeholder,
@@ -101,13 +101,11 @@ export function MaterialArea({
                 key={group.id}
                 role="group"
               >
-                <span aria-hidden="true" className="wf-group-label">
-                  {group.label}
-                </span>
-                {group.takes.map((take) => {
+                {group.takes.map((take, index) => {
                   const version = versionOf(take)
                   return (
                     <TakeRow
+                      groupLabel={index === 0 ? group.label : undefined}
                       key={take.id}
                       keyframes={keyframes}
                       onCarry={onCarry}
@@ -134,6 +132,8 @@ export function MaterialArea({
 }
 
 type TakeRowProps = {
+  /** 组里第一条原作带上组名，放在左列原作名上面 */
+  groupLabel: string | undefined
   take: MaterialTake
   version: Material
   keyframes: KeyframeStates
@@ -163,6 +163,7 @@ type RangeDrag = {
 }
 
 function TakeRow({
+  groupLabel,
   take,
   version,
   keyframes,
@@ -270,6 +271,11 @@ function TakeRow({
   return (
     <div className="wf-take">
       <div className="wf-take-head">
+        {groupLabel === undefined ? null : (
+          <span aria-hidden="true" className="wf-group-label">
+            {groupLabel}
+          </span>
+        )}
         <span className="wf-take-label">{take.label}</span>
         {take.versions.length > 1 ? (
           <MenuRoot>

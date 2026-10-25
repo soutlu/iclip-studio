@@ -972,14 +972,14 @@
   --wf-lane-height: 26px;
   /* 特效轨每行 24px（块高 22、行距 2），上面留 2px；与 film-tracks.tsx 的 ROW_PX、ROWS_TOP_PX 一致 */
   --wf-overlay-height: calc(var(--wf-overlay-rows, 1) * 24px + 2px);
-  --wf-music-height: 34px;
+  --wf-music-height: 26px;
 
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
   user-select: none;
 }
 
-/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是画面轨，字幕轨与音乐轨之间只空 4px */
+/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是画面轨 */
 .wf-track-heads {
   display: grid;
   grid-template-rows:
@@ -1043,11 +1043,6 @@
 
 .is-adding-overlay-row .wf-overlay-row-label {
   opacity: 1;
-}
-
-.wf-track-head:last-child,
-.wf-lane.is-music {
-  margin-top: -2px;
 }
 
 /* 轨头尾部的细边圆钮（音乐轨：生成音乐；字幕轨：识别，底色与颜色随识别状态由组件给） */
@@ -1330,7 +1325,7 @@
 }
 
 .wf-music {
-  height: 30px;
+  height: 22px;
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
@@ -1809,10 +1804,10 @@
   border-top: 1px solid var(--color-hairline);
 }
 
-/* 定高：放下第一个镜头组的两条原作并露出下一组的组名；镜头组多时在区域里上下滚动 */
+/* 定高：放下两条原作（同组或跨组，跨组时中间空 8px）；原作多时在区域里上下滚动 */
 .wf-materials-body {
   display: flex;
-  height: 118px;
+  height: 80px;
   flex-direction: column;
   gap: 8px;
   /* 结尾手柄看得见的部分在轨道右边留的 8px 里；只裁掉它透明的加宽点按区 */
@@ -1833,19 +1828,23 @@
   flex-direction: column;
 }
 
-/* 组名、原作名与时间线轨名同字号 */
+/* 组名在组里第一条原作的左列，独占一行压在原作名上面；与原作名、时间线轨名同字号 */
 .wf-group-label {
-  height: 20px;
+  height: 16px;
+  flex-basis: 100%;
+  overflow: hidden;
   color: var(--color-on-surface);
   font-size: var(--text-label);
   font-weight: 600;
-  line-height: 20px;
+  line-height: 16px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 每条原作一行，素材轨 32px 在行里居中 */
 .wf-take {
   display: grid;
-  height: 32px;
+  height: 36px;
   flex: none;
   align-items: center;
   grid-template-columns: 120px minmax(0, 1fr);
@@ -1858,8 +1857,10 @@
 .wf-take-head {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
+  align-content: center;
   align-items: center;
-  gap: 6px;
+  gap: 0 6px;
 }
 
 .wf-take-label {
@@ -2039,7 +2040,10 @@
     padding: 0;
   }
 
+  /* 轨名列只有 72px，放不下原作名加版本：折成几行，行高随左列撑开 */
   .wf-take {
+    height: auto;
+    min-height: 36px;
     grid-template-columns: 72px minmax(0, 1fr);
   }
 }
