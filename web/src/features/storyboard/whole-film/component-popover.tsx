@@ -274,7 +274,7 @@ function CommitInput({ id, type, value, placeholder, min, max, step, onCommit }:
   }
   return (
     <input
-      className="wf-input ui-focus"
+      className="wf-input ui-focus ui-focus-inline"
       id={id}
       max={max}
       min={min}
