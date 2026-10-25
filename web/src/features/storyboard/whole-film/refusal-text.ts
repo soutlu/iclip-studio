@@ -16,7 +16,7 @@ export const REFUSAL_TEXT: Readonly<Record<Refusal, string>> = {
   'nothing-to-split': `播放头不在片段中间，无法拆分；请把播放头移到离两端都超过 ${seconds(MIN_CLIP_MS)} 的位置`,
   'no-music': '还没有选用音乐，无法卡点；请先在「素材」里点「用这首」',
   'no-beats': '这首音乐还没有拍点，无法卡点',
-  'drop-elsewhere': '这里放不了这个组件；字幕样式拖到字幕轨，其他组件拖到画面轨或特效轨',
+  'drop-elsewhere': '这里放不了这个组件；请拖到画面轨或特效轨',
 }
 
 /** 拖长、挪动到成片总长上限时停住的原因 */

@@ -521,23 +521,6 @@
   box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
 }
 
-.wf-component[aria-pressed='true'] .wf-component-thumb {
-  box-shadow: 0 0 0 2px var(--color-on-surface);
-}
-
-.wf-component-check {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  color: var(--color-surface-container-lowest);
-}
-
 .wf-component-name {
   overflow: hidden;
   color: var(--color-on-surface-variant);
@@ -545,11 +528,6 @@
   line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.wf-component[aria-pressed='true'] .wf-component-name {
-  color: var(--color-on-surface);
-  font-weight: 500;
 }
 
 /* ---- 组件浮层 ---- */
@@ -917,25 +895,16 @@
   background: var(--color-hairline);
 }
 
-.wf-sound {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 20px;
-  padding: 6px 4px;
-  border-top: 0.5px solid var(--color-hairline);
+/* 原声、配乐两个推子在工具条里，紧挨缩放钮，之间一条分隔线 */
+.wf-toolbar-sound {
+  gap: 12px;
+  margin-left: auto;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
 }
 
-.wf-sound-clip {
-  min-width: 112px;
-  color: var(--color-on-surface-muted);
-}
-
-.wf-sound-clip b {
-  color: var(--color-on-surface);
-  font-weight: 500;
+.wf-toolbar-sound .wf-divider {
+  margin: 0 0 0 -4px;
 }
 
 .wf-volume,
@@ -959,7 +928,7 @@
 .wf-fader {
   position: relative;
   display: block;
-  width: 128px;
+  width: 96px;
   height: 28px;
   flex: none;
 }
@@ -1036,15 +1005,20 @@
   transition: grid-template-rows var(--dur-m) var(--ease-decel);
 }
 
+/* 四条轨头同一套几何：图标在同一列，轨名起点相同；尾部操作钮右缘离列边 6px */
 .wf-track-head {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
-  padding: 0 10px 0 4px;
+  padding: 0 6px 0 4px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   white-space: nowrap;
+}
+
+.wf-track-head > svg {
+  flex: none;
 }
 
 /* 特效轨的轨名对齐第一行 */
@@ -1091,17 +1065,21 @@
   margin-top: -2px;
 }
 
-/* 轨名旁的小「+」（音乐轨：生成音乐） */
-.wf-head-add {
+/* 轨头尾部的细边圆钮（音乐轨：生成音乐；字幕轨：识别，底色与颜色随识别状态由组件给） */
+.wf-head-add,
+.wf-caption-recognize {
   display: grid;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   flex: none;
   margin-left: auto;
   place-items: center;
   border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-head-add {
+  background: var(--color-surface-container-lowest);
   color: var(--color-on-surface-variant);
 }
 
@@ -1139,17 +1117,16 @@
   pointer-events: none;
 }
 
-/* 开关里的图标与其他轨名的图标左对齐 */
+/* 开关 22px 宽、图标居中，正好落在其他轨名的图标那一列；样式名从轨名的起点开始 */
 .wf-track-head.is-caption {
-  gap: 2px;
-  padding-right: 0;
-  padding-left: 0;
+  gap: 0;
+  padding: 0 6px 0 0;
 }
 
 .wf-caption-toggle {
   display: grid;
   width: 22px;
-  height: 24px;
+  height: 22px;
   flex: none;
   place-items: center;
   border-radius: var(--radius-xs);
@@ -1159,33 +1136,33 @@
   color: var(--color-on-surface);
 }
 
+/* 字幕开着是按下态（同下拉按钮展开时的浅墨底）；关着无底、灰色 */
+.wf-caption-toggle[aria-pressed='true'] {
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+}
+
 .wf-caption-style {
   display: flex;
   min-width: 0;
   height: 28px;
   flex: 1;
   align-items: center;
-  gap: 3px;
-  padding: 0 4px;
+  gap: 2px;
+  margin-right: 2px;
+  padding: 0 2px;
   border-radius: var(--radius-xs);
   font-size: var(--text-label);
 }
 
-.wf-caption-style[data-state='open'] {
-  background: var(--color-state-active);
+.wf-caption-style > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.wf-caption-recognize {
-  display: flex;
-  width: 52px;
-  height: 26px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-caption);
-  font-weight: 500;
+.wf-caption-style[data-state='open'] {
+  background: var(--color-state-active);
 }
 
 /* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸。 */
@@ -1201,9 +1178,38 @@
   color: var(--color-error);
 }
 
+.wf-caption-menu {
+  min-width: 184px;
+}
+
 .wf-caption-menu [role='menuitemradio'] {
-  height: 28px;
+  height: 40px;
+  gap: 12px;
   font-size: var(--text-label);
+}
+
+.wf-caption-style-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 菜单里的样式预览图；排在 .wf-component-thumb 之后，固定尺寸与内描边以这里为准 */
+.wf-caption-style-thumb {
+  width: 48px;
+  height: 27px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-caption-style-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .wf-caption-status {
@@ -1298,11 +1304,6 @@
 
 .wf-lane.is-film {
   background: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
-}
-
-/* 拖着东西经过时，能接收它的轨描一圈 */
-.wf-lane.is-drop {
-  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
 }
 
 .wf-lane > * {
@@ -2033,11 +2034,17 @@
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  /* 窄屏轨名只有 72px：开关、样式菜单的展开箭头与识别挨着放 */
-  .wf-track-head.is-caption {
-    gap: 0;
+  /* 窄屏工具条折行，缩放钮另起一行，推子后面的分隔线不留在行尾 */
+  .wf-toolbar-sound .wf-divider {
+    display: none;
   }
 
+  /* 窄屏轨名只有 72px：音乐轨收起轨名，只留图标与尾部圆钮 */
+  .wf-track-head:last-child > span[aria-hidden='true'] {
+    display: none;
+  }
+
+  /* 样式名收起，开关、样式菜单的展开箭头与识别挨着放 */
   .wf-caption-style > span {
     display: none;
   }
@@ -2045,15 +2052,6 @@
   .wf-caption-style {
     justify-content: center;
     padding: 0;
-  }
-
-  .wf-caption-recognize {
-    width: 38px;
-  }
-
-  .wf-caption-recognize:not([aria-busy='true']) > svg,
-  .wf-caption-recognize[aria-busy='true'] > span {
-    display: none;
   }
 
   .wf-take {

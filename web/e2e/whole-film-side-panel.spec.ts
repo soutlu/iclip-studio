@@ -112,7 +112,7 @@ test('侧栏分素材、品牌、通用；真实目录的品牌栏是空的', as
   await expect(dialog.getByRole('list', { name: '组件' })).toHaveCount(0)
 })
 
-test('品牌与分类各自保留选择，字幕样式可切换，品牌卡可插入不同轨道', async ({ page }) => {
+test('品牌与分类各自保留选择，通用栏没有字幕样式，品牌卡可插入不同轨道', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveBrandFixtures(page)
   const dialog = await openWholeFilm(page)
@@ -130,36 +130,20 @@ test('品牌与分类各自保留选择，字幕样式可切换，品牌卡可�
   await cards(dialog).first().hover()
   await expect(page.getByRole('tooltip')).toContainText('暖屿')
 
-  // 通用栏：没有「全部」，默认第一个分类
+  // 通用栏：没有「全部」，默认第一个分类；字幕样式不在组件库里，没有「字幕」分类
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = chips(dialog, '分类').getByRole('radio')
   await expect(categories.first()).toBeChecked()
-  await expect(categories.first()).toHaveText(/^字幕\s*3$/)
-  await expect(categories.filter({ hasText: /全部|品牌/ })).toHaveCount(0)
-  await chips(dialog, '分类')
-    .getByRole('radio', { name: /^视觉特效/ })
-    .click()
+  await expect(categories.first()).toHaveText(/^视觉特效\s*9$/)
+  await expect(categories.filter({ hasText: /全部|品牌|^字幕/ })).toHaveCount(0)
+  await chips(dialog, '分类').getByRole('radio', { name: /^转场/ }).click()
 
   // 切到素材再回来，两栏各自的小标题都还在
   await dialog.getByRole('tab', { name: '素材' }).click()
   await dialog.getByRole('tab', { name: '品牌' }).click()
   await expect(chips(dialog, '品牌').getByRole('radio', { name: /^暖屿/ })).toBeChecked()
   await dialog.getByRole('tab', { name: '通用' }).click()
-  await expect(chips(dialog, '分类').getByRole('radio', { name: /^视觉特效/ })).toBeChecked()
-
-  // 标题下拉直接切换字幕样式；组件栏同步当前样式。
-  await dialog.getByRole('tab', { name: '品牌' }).click()
-  await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
-  await expect(page.getByRole('menuitemradio', { name: '白字黑边', exact: true })).toBeChecked()
-  await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
-  await dialog.getByRole('tab', { name: '通用' }).click()
-  await chips(dialog, '分类').getByRole('radio', { name: /^字幕/ }).click()
-  const inUse = dialog.getByRole('button', { name: /^白字黑边，/ })
-  await expect(dialog.getByRole('button', { name: /^高亮字幕，/ })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await expect(inUse).toHaveAttribute('aria-pressed', 'false')
+  await expect(chips(dialog, '分类').getByRole('radio', { name: /^转场/ })).toBeChecked()
 
   // 品牌卡和别的卡一样：点它按组件类型放（block 进画面轨），拖到哪条轨就放在哪。
   // 暖屿 片尾没有可填项，放下只选中；拾步 片头有可填项，放下就打开浮层

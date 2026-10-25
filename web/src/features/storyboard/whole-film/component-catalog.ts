@@ -35,9 +35,9 @@ const catalogQuery = queryOptions({
 
 export const useComponentCatalog = () => useQuery(catalogQuery)
 
-/** 点卡片时组件去哪：字幕样式换掉全部字幕的样式，block 插进画面轨，其余放到特效轨 */
+/** 点卡片时组件去哪：block 插进画面轨，其余放到特效轨 */
 export const defaultLaneLabel = (item: CatalogItem): string =>
-  item.placement === 'caption' ? '字幕样式' : item.kind === 'block' ? '画面轨' : '特效轨'
+  item.kind === 'block' ? '画面轨' : '特效轨'
 
 export const CATEGORY_ICON: Record<string, IconName> = {
   captions: 'captions',
@@ -65,10 +65,18 @@ export const variableValue = (
 /** 侧栏的一个小标题（品牌或分类）和它下面的卡片 */
 export type ComponentGroup = { id: string; label: string; items: CatalogItem[] }
 
+/** 侧栏列出的组件：字幕样式是字幕轨的属性，只在字幕轨标题上换，不进品牌栏和通用栏 */
+const listedItems = (catalog: ComponentCatalog): CatalogItem[] =>
+  catalog.items.filter((item) => item.placement !== 'caption')
+
+/** 字幕轨标题菜单里的字幕样式，保持目录的顺序 */
+export const captionStyles = (catalog: ComponentCatalog): CatalogItem[] =>
+  catalog.items.filter((item) => item.placement === 'caption')
+
 /** 品牌栏：有品牌的组件按品牌分组，品牌按在目录里第一次出现的顺序，组内保持目录的顺序 */
 export const brandGroups = (catalog: ComponentCatalog): ComponentGroup[] => {
   const groups = new Map<string, ComponentGroup>()
-  for (const item of catalog.items) {
+  for (const item of listedItems(catalog)) {
     if (item.brand === undefined) continue
     const group = groups.get(item.brand) ?? { id: item.brand, label: item.brand, items: [] }
     group.items.push(item)
@@ -80,7 +88,7 @@ export const brandGroups = (catalog: ComponentCatalog): ComponentGroup[] => {
 /** 通用栏：没有品牌的组件按分类分组，分类按 Studio 的顺序，没有组件的分类不列 */
 export const categoryGroups = (catalog: ComponentCatalog): ComponentGroup[] =>
   catalog.categories.flatMap((category) => {
-    const items = catalog.items.filter(
+    const items = listedItems(catalog).filter(
       (item) => item.brand === undefined && item.category === category.id,
     )
     return items.length === 0 ? [] : [{ id: category.id, label: category.label, items }]

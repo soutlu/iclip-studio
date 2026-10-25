@@ -55,7 +55,6 @@ export function useSubtitleRecognition({
                 : sentenceCount === 0
                   ? 'empty'
                   : 'completed'
-  const label = status === 'failed' || status === 'read-error' ? '重试' : '识别'
   const accessibleLabel =
     status === 'read-error'
       ? `重新读取${subtitles.isError ? '字幕记录' : '对话信息'}`
@@ -67,12 +66,12 @@ export function useSubtitleRecognition({
   const message = {
     'no-video': '成片中没有视频，请先加入镜头',
     loading: '正在读取识别信息…',
-    'read-error': `${errorMessageOf(failedRead?.error, '识别信息读取失败')}；请点击「重试」重新读取`,
+    'read-error': `${errorMessageOf(failedRead?.error, '识别信息读取失败')}，请重试读取`,
     running: submitting ? '正在提交字幕识别…' : '正在识别口播…',
-    failed: `${failed?.errorMessage ?? '字幕识别失败'}；请点击「重试」`,
-    unrecognized: '有视频尚未识别，请点击「识别」提取字幕',
-    empty: '未识别到口播，可点击「识别」重新识别',
-    completed: `已有 ${sentenceCount} 句字幕，可点击「识别」重新识别`,
+    failed: `${failed?.errorMessage ?? '字幕识别失败'}，请重试`,
+    unrecognized: '有视频尚未识别，请识别字幕',
+    empty: '未识别到口播，可重新识别',
+    completed: `已有 ${sentenceCount} 句字幕，可重新识别`,
   }[status]
 
   const recognize = async () => {
@@ -110,7 +109,6 @@ export function useSubtitleRecognition({
   return {
     records: subtitles.data,
     status,
-    label,
     accessibleLabel,
     message,
     busy,

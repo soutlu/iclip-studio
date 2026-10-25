@@ -388,7 +388,6 @@ export function FilmTracks({
   const contentRef = useRef<HTMLDivElement>(null)
   const filmLaneRef = useRef<HTMLDivElement>(null)
   const overlayLaneRef = useRef<HTMLDivElement>(null)
-  const captionLaneRef = useRef<HTMLDivElement>(null)
   const musicLaneRef = useRef<HTMLDivElement>(null)
   const clicks = useClickAfterDrag()
   const [carry, setCarry] = useState<Carrying | null>(null)
@@ -539,11 +538,9 @@ export function FilmTracks({
       ? 'film'
       : overlayRow !== undefined
         ? 'overlay'
-        : near(captionLaneRef.current)
-          ? 'caption'
-          : near(musicLaneRef.current)
-            ? 'music'
-            : undefined
+        : near(musicLaneRef.current)
+          ? 'music'
+          : undefined
     if (lane === undefined) return undefined
     const row = overlayRow ?? { insertAt: 0 }
     if (lane === 'film' && durationMs !== undefined) {
@@ -1137,7 +1134,6 @@ export function FilmTracks({
       reason: hover.attempt.ok ? undefined : hover.attempt.reason,
     }
   })()
-  const captionDrop = hover?.point?.lane === 'caption' && hover.attempt?.ok === true
 
   /** 新行占用完整行高；已有行在预演中让出空间，取消后由同一动效驱动收回。 */
   const rowTop = (row: OverlayRow) =>
@@ -1431,12 +1427,7 @@ export function FilmTracks({
             </div>
             <div
               aria-label="字幕轨"
-              className={cn(
-                'wf-lane',
-                captionDrop && 'is-drop',
-                draft.captions.hidden && 'is-captions-off',
-              )}
-              ref={captionLaneRef}
+              className={cn('wf-lane', draft.captions.hidden && 'is-captions-off')}
               role="group"
             >
               <CaptionChips

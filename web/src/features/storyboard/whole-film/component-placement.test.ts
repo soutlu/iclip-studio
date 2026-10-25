@@ -65,12 +65,6 @@ describe('placeComponent：点卡片按 kind 去处', () => {
     ])
   })
 
-  it('字幕样式换掉全部字幕的样式', () => {
-    const { draft } = expectOk(placeComponent(film(), item('caption-highlight'), click(0)))
-    expect(draft.captions.component).toBe('caption-highlight')
-    expect(draft.layer0).toEqual(film().layer0)
-  })
-
   it('没有固定时长的组件：取 10 秒与成片时长里长的那个', () => {
     // count-up 是 component、没有固定时长
     const short = expectOk(placeComponent(film(), item('count-up'), click(0))).draft
@@ -122,13 +116,8 @@ describe('placeComponent：拖放只看落在哪条轨', () => {
     expect(layerIds(draft)).toEqual(['c2', 'c1', 'v1'])
   })
 
-  it.each([
-    ['字幕样式拖到画面轨', 'caption-highlight', 'film'],
-    ['字幕样式拖到特效轨', 'caption-highlight', 'overlay'],
-    ['别的组件拖到字幕轨', 'hw-arrow', 'caption'],
-    ['拖到音乐轨', 'logo-outro', 'music'],
-  ] as const)('%s：拒绝', (_, name, lane) => {
-    expect(placeComponent(film(), item(name), drop(lane, 0))).toEqual({
+  it('拖到音乐轨：拒绝', () => {
+    expect(placeComponent(film(), item('logo-outro'), drop('music', 0))).toEqual({
       ok: false,
       refusal: 'drop-elsewhere',
     })
@@ -163,10 +152,5 @@ describe('placedPiece：放置后新出现的片段', () => {
       kind: 'overlay',
       id: block.overlays.find((entry) => entry.id !== 'o1')?.id,
     })
-  })
-
-  it('换字幕样式没有新片段', () => {
-    const styled = expectOk(placeComponent(before, item('caption-highlight'), click(0))).draft
-    expect(placedPiece(before, styled)).toBeUndefined()
   })
 })

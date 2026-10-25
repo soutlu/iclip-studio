@@ -95,7 +95,7 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await beatSync.click()
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
-  // 组件栏：component 卡片放到特效轨、block 卡片插进画面轨、字幕样式
+  // 组件栏：component 卡片放到特效轨、block 卡片插进画面轨；字幕样式在字幕轨标题上换
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = dialog.getByRole('radiogroup', { name: '分类' })
   await categories.getByRole('radio', { name: /^场景/ }).click()
@@ -128,9 +128,14 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await components.getByRole('button', { name: /^手绘箭头，特效轨/ }).click()
   await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
 
-  await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
-  await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toBeVisible()
+  const captionStyle = dialog.getByRole('button', { name: /^字幕样式：/ })
+  await expect(captionStyle).toHaveText('白字黑边')
+  await captionStyle.click()
+  const highlight = page.getByRole('menuitemradio', { name: '高亮字幕', exact: true })
+  await expect(highlight.locator('img')).toHaveAttribute('src', /caption-highlight/)
+  await highlight.click()
+  await expect(captionStyle).toHaveAccessibleName('字幕样式：高亮字幕')
+  await expect(captionStyle).toHaveText('高亮字幕')
 
   // 字幕开关：关掉存进草稿（预览与导出都按它不放字幕），撤销回到开着；再关上，下面关着改字
   const turnOff = dialog.getByRole('button', { name: '关闭字幕', exact: true })
@@ -141,11 +146,12 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
       request.url().includes('/whole-film/draft') &&
       (request.postData() ?? '').includes('"hidden":true'),
   )
+  await expect(turnOff).toHaveAttribute('aria-pressed', 'true')
   await turnOff.click()
-  await expect(turnOn).toBeVisible()
+  await expect(turnOn).toHaveAttribute('aria-pressed', 'false')
   await hiddenSaved
   await dialog.getByRole('button', { name: '撤销' }).click()
-  await expect(turnOff).toBeVisible()
+  await expect(turnOff).toHaveAttribute('aria-pressed', 'true')
   await turnOff.click()
   await expect(turnOn).toBeVisible()
 

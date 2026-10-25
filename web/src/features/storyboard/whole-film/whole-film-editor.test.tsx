@@ -421,7 +421,13 @@ describe('成片编辑器 · 时间线', () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    const fader = screen.getByRole('slider', { name: '原声音量' })
+    // 两个推子在剪辑工具条里，没有单独的声音行
+    const sound = within(screen.getByRole('toolbar', { name: '剪辑工具' })).getByRole('group', {
+      name: '声音',
+    })
+    expect(within(sound).getByRole('slider', { name: '配乐' })).toBeDisabled()
+    expect(screen.queryByText('选择片段可调原声')).not.toBeInTheDocument()
+    const fader = within(sound).getByRole('slider', { name: '原声' })
     expect(fader).toBeDisabled()
     await user.click(await blockButton(/^选中：第 1 段/))
     expect(fader).toHaveValue('0')
@@ -452,19 +458,28 @@ const generalTab = async (user: ReturnType<typeof userEvent.setup>, category: st
 }
 
 describe('成片编辑器 · 组件', () => {
-  it('通用栏默认第一个分类、没有「全部」；品牌栏在真实目录里是空的；切栏后各记自己的分类', async () => {
+  it('通用栏默认第一个分类、没有「全部」与「字幕」；品牌栏在真实目录里是空的；切栏后各记自己的分类', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('tab', { name: '通用' }))
     const chips = await screen.findByRole('radiogroup', { name: '分类' })
     const radios = within(chips).getAllByRole('radio')
-    expect(radios[0]).toHaveAccessibleName(/^字幕\s*3$/)
+    expect(radios[0]).toHaveAccessibleName(/^视觉特效\s*9$/)
     expect(radios[0]).toBeChecked()
     expect(within(chips).queryByRole('radio', { name: /全部/ })).not.toBeInTheDocument()
+    // 字幕样式是字幕轨的属性，不在组件库里
+    expect(within(chips).queryByRole('radio', { name: /^字幕/ })).not.toBeInTheDocument()
     expect(within(screen.getByRole('list', { name: '组件' })).getAllByRole('button')).toHaveLength(
-      3,
+      9,
     )
+    for (const radio of radios) {
+      await user.click(radio)
+      const grid = screen.getByRole('list', { name: '组件' })
+      expect(
+        within(grid).queryByRole('button', { name: /^(白字黑边|高亮字幕|质感字幕)，/ }),
+      ).not.toBeInTheDocument()
+    }
     await user.click(within(chips).getByRole('radio', { name: /^转场\s*4$/ }))
     expect(within(screen.getByRole('list', { name: '组件' })).getAllByRole('button')).toHaveLength(
       4,
@@ -566,27 +581,40 @@ describe('成片编辑器 · 组件', () => {
     expect(screen.queryByRole('dialog', { name: /标志片尾/ })).not.toBeInTheDocument()
   })
 
-  it('字幕标题下拉选择样式，保存后组件栏同步显示当前样式', async () => {
+  it('字幕轨标题显示当前样式名；下拉菜单每项带预览图，选了就换样式并存进草稿', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    await user.click(screen.getByRole('button', { name: /^字幕样式：白字黑边/ }))
+    const trigger = screen.getByRole('button', { name: /^字幕样式：白字黑边/ })
+    expect(trigger).toHaveTextContent('白字黑边')
+    await user.click(trigger)
     expect(screen.getByRole('menuitemradio', { name: '白字黑边' })).toBeChecked()
-    await user.click(screen.getByRole('menuitemradio', { name: '高亮字幕' }))
+    const highlight = screen.getByRole('menuitemradio', { name: '高亮字幕' })
+    // 预览图是装饰性的（alt 为空），按组件目录的缩略图取地址
+    expect(highlight.querySelector('img')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/caption-highlight\.svg/),
+    )
+    await user.click(highlight)
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toHaveFocus()
-    await generalTab(user, '字幕')
-    const list = await screen.findByRole('list', { name: '组件' })
-    expect(screen.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toBeInTheDocument()
-    expect(within(list).getByRole('button', { name: /^高亮字幕，/ })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(within(list).getByRole('button', { name: /^白字黑边，/ })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
+    const changed = screen.getByRole('button', { name: /^字幕样式：高亮字幕/ })
+    expect(changed).toHaveFocus()
+    expect(changed).toHaveTextContent('高亮字幕')
     await waitSaved((document) => expect(document?.captions.component).toBe('caption-highlight'))
+  })
+
+  it('字幕开关是按下态按钮：开着按下，关掉后不按下，存进草稿', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    const turnOff = screen.getByRole('button', { name: '关闭字幕' })
+    expect(turnOff).toHaveAttribute('aria-pressed', 'true')
+    await user.click(turnOff)
+    const turnOn = screen.getByRole('button', { name: '打开字幕' })
+    expect(turnOn).toHaveAttribute('aria-pressed', 'false')
+    await waitSaved((document) => expect(document?.captions.hidden).toBe(true))
+    await user.click(turnOn)
+    expect(screen.getByRole('button', { name: '关闭字幕' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   /** 点开草稿里两段视频中间的那段组件（字标逐字）的浮层 */

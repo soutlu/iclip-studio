@@ -404,7 +404,9 @@ test.describe('成片编辑器 · 时间线', () => {
     const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
     // 点段：播放头到段首，把这一段播一遍，播到段尾停下。组件可以放在画面轨任意位置：第 3 段是组件段
     await film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 手写标题/ }).click()
-    await expect(dialog.getByText('当前片段 · 第 3 段 · 没有原声')).toBeVisible()
+    // 组件段没有原声：工具条里的原声推子置灰，悬停说明原因
+    await expect(dialog.getByRole('slider', { name: '原声', exact: true })).toBeDisabled()
+    await expect(dialog.getByTitle('组件段没有原声，无法调整原声音量')).toBeVisible()
     await expectStoppedAt(clock, 4_700)
 
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
@@ -673,7 +675,11 @@ test.describe('成片编辑器 · 时间线', () => {
   test('音量按 dB 调整并保存，双击恢复，配乐可静音', async ({ page }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
-    const source = dialog.getByRole('slider', { name: '原声音量' })
+    // 两个推子在剪辑工具条里
+    const sound = dialog.getByRole('toolbar', { name: '剪辑工具' }).getByRole('group', {
+      name: '声音',
+    })
+    const source = sound.getByRole('slider', { name: '原声', exact: true })
     await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
     await source.focus()
     await page.keyboard.press('ArrowRight')
@@ -686,9 +692,9 @@ test.describe('成片编辑器 · 时间线', () => {
     await source.dblclick()
     await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
     for (let i = 0; i < 7; i += 1) await page.keyboard.press('ArrowRight')
-    await expect(dialog.getByRole('group', { name: '声音' })).toContainText('+3.5 dB')
+    await expect(sound).toContainText('+3.5 dB')
     await dialog.getByRole('button', { name: '静音配乐' }).click()
-    await expect(dialog.getByRole('slider', { name: '配乐音量' })).toHaveAttribute(
+    await expect(sound.getByRole('slider', { name: '配乐', exact: true })).toHaveAttribute(
       'aria-valuetext',
       '静音',
     )
