@@ -185,7 +185,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
               <div className="flex min-w-0 flex-1 items-center gap-2 pl-1.5">
                 <BrandMark />
                 <span className="min-w-0 flex-1 truncate font-home-display text-title-lg font-semibold tracking-[-0.02em] text-on-surface italic">
-                  Cue
+                  iClip
                 </span>
                 <IconButton
                   aria-controls={sidebarId}
@@ -466,7 +466,7 @@ function BrandMark({ className }: { className?: string }) {
         className,
       )}
     >
-      C
+      i
     </span>
   )
 }

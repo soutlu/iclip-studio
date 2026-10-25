@@ -16,7 +16,7 @@ describe('HomeRoute', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'Cue' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'iClip' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '展开鞋盒，展示鞋履与服装' })).toBeVisible()
     expect(screen.getByLabelText('输入消息')).toBeVisible()
     expect(screen.queryByRole('button', { name: '添加附件' })).not.toBeInTheDocument()

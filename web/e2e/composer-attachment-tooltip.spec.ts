@@ -8,7 +8,7 @@ const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.
 test('首页附件悬停可查看图片与视频元数据，移开后收起', async ({ page }) => {
   await page.goto('/')
   await login(page)
-  await expect(page.getByRole('heading', { name: 'Cue' })).toBeAttached()
+  await expect(page.getByRole('heading', { name: 'iClip' })).toBeAttached()
 
   // 文件名的自然宽度大于竖屏图，用来确认文字不撑宽卡片；不超过 32 字，pill 上不截断。
   const imageName = '夜景参考图-外滩灯光延时摄影第三版终稿定稿.png'

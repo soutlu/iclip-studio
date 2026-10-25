@@ -45,7 +45,7 @@ class CueMascot {
     this.transition(target, animate ? (expanded ? 300 : 217) : 0);
   }
 
-  /** Change only the Cue wordmark color. */
+  /** Change only the iClip wordmark color. */
   setColor(color) {
     this.ensureActive();
     if (!CSS.supports('color', color)) throw new TypeError('Invalid CSS color.');

@@ -1,5 +1,5 @@
 {
-  "name": "Cue hand-authored vector mascot",
+  "name": "iClip hand-authored vector mascot",
   "approvedOn": "2026-09-13",
   "defaultEntry": "index.html",
   "representations": [
@@ -14,17 +14,17 @@
     "open": 300,
     "close": 217
   },
-  "svgBytes": 63789,
-  "riveBytes": 68648,
+  "svgBytes": 65305,
+  "riveBytes": 70020,
   "productSvgBytes": 39132,
   "bitmapAssets": 0,
   "embeddedFontAssets": 0,
-  "userApprovedVisualArtifactsUnchanged": true,
+  "userApprovedVisualArtifactsUnchanged": false,
   "files": [
     {
       "path": "README.md",
-      "bytes": 7256,
-      "sha256": "8e84944b322b973974b81e445c0aa4e60a4c6f198faa029473b7723d4a7197a7"
+      "bytes": 7386,
+      "sha256": "3d06f7521dd36c06ca6df992d383c15d3cf587567ba8bfbab1221f5e4500c4fd"
     },
     {
       "path": "animation/animation-interface.json",
@@ -33,23 +33,23 @@
     },
     {
       "path": "animation/build/cue-vector-refined.riv",
-      "bytes": 68648,
-      "sha256": "90f25665fe45fe5d1bf036efa945e96f296a3237210414b60d17a66a9f4fddfd"
+      "bytes": 70020,
+      "sha256": "f79bf32095508f7db28e39c8dd1fe8cdc94c1c28b22b5a4d457b8ad2a222216f"
     },
     {
       "path": "animation/build_vector.py",
-      "bytes": 14132,
-      "sha256": "0254b27c4c4c60a9cd1b5b5d81445976fbf00eb470ef13c8d56c9742b6b7fd1d"
+      "bytes": 14134,
+      "sha256": "030d6e58af1e1c3843c299cc6b13776c4a4355fc0e496367d7b955bb0256a166"
     },
     {
       "path": "animation/compile-report.json",
-      "bytes": 1190,
-      "sha256": "bf2cc2159038adb1f04f119abb48d01e432d6ed166f77787cdfbe253c86bc443"
+      "bytes": 1192,
+      "sha256": "fed385e28d953a7029c058f755b8152da214ddcc8c2b8decb70763c2d16e434e"
     },
     {
       "path": "animation/layout.xml",
-      "bytes": 197314,
-      "sha256": "e3408e12858ffc96b34815666b8d2ac32f4158f1f6193906dc53a3f476100709"
+      "bytes": 202965,
+      "sha256": "a9436c13d6c6272302face49e5e20704c535946c038f417971135f2e510fd39f"
     },
     {
       "path": "animation/rive.yaml",
@@ -58,18 +58,18 @@
     },
     {
       "path": "animation/scene.rml",
-      "bytes": 351260,
-      "sha256": "0f0626fc57d2a88d3410c00e2274a82b730da1ea746304d868df5ca441604966"
+      "bytes": 356911,
+      "sha256": "cb3be2960c66d443c0c9928678b3063ab613bf374fc058ecf8df225a9f97d08d"
     },
     {
       "path": "animation/vector-build.json",
       "bytes": 2544,
-      "sha256": "50ecba350f53161848e08ae9a97240d8ffbce53dbd13d514301cded832fbf16c"
+      "sha256": "fe20822fdca6b35f6ac32ba941d4b0cd35d5d206ce6d4522ea27ffe28942ad8b"
     },
     {
       "path": "animation/wordmark-provenance.json",
-      "bytes": 1299,
-      "sha256": "e3aa451b646126d6541aeebfe16bfd3121b83083e7b7b83dc536b81b282b690a"
+      "bytes": 1623,
+      "sha256": "dd8fd869cb981d0a70dd46e7dd73378642adef95c77dbaff31b07f313de5f0a6"
     },
     {
       "path": "assets/svg/heel.svg",
@@ -98,28 +98,28 @@
     },
     {
       "path": "build_svg.py",
-      "bytes": 10687,
-      "sha256": "15f4d3cd4542c27c1898b4a570ec4e4827f49ef4c81bdc29a7978a6b3c04158c"
+      "bytes": 10689,
+      "sha256": "ee072f9ec89ca4d96e44e768a18086f6c426f15489e05a3ebd29cf3095161a18"
     },
     {
       "path": "cue.js",
-      "bytes": 4834,
-      "sha256": "ad97148c3480ae14881e005a6f2337ef01204d539b411393dd05605ee818d85b"
+      "bytes": 4836,
+      "sha256": "d3c1131ac77a3c3b26a80210e1d6f946ea2c18709bffe5d556458363e697b593"
     },
     {
       "path": "cue.svg",
-      "bytes": 63789,
-      "sha256": "f7d60ac056d860c832ab33f5996ff2a31429a8394876f4c8866fdccd062baeb3"
+      "bytes": 65305,
+      "sha256": "2881969c4ff6f78ebea15b02adaa95dd0d35e446be76e04d480d188761cccc94"
     },
     {
       "path": "index.html",
-      "bytes": 67559,
-      "sha256": "2828edb4012f046fa7ebea16b26118439ee72e63fdcb94c5282b09c927984f90"
+      "bytes": 69079,
+      "sha256": "fb650b1d4f3ec69d08e56434e38c90de8065dab9e3b38c7283deb1c9d9f23960"
     },
     {
       "path": "index.template.html",
-      "bytes": 3773,
-      "sha256": "92106be624bd03274276c29c452d6620cc89c101726f43d7da1f4092523c7473"
+      "bytes": 3777,
+      "sha256": "d4af4ed7edd46effe5aa041282f7656e7228b4e4ef10e6fcfd980ffd4541618a"
     },
     {
       "path": "licenses/Source-Serif-OFL.md",

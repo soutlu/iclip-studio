@@ -76,7 +76,7 @@ const logout = async (): Promise<void> => {
 const auth = configureAuth<null | CueAuthUser, ApiError, CueLoginRequest, CueLoginRequest>({
   loginFn: loginWithPassword,
   logoutFn: logout,
-  registerFn: () => Promise.reject(new Error('Cue 不提供自助注册')),
+  registerFn: () => Promise.reject(new Error('iClip 不提供自助注册')),
   userFn: fetchCurrentUser,
   userKey: [...USER_QUERY_KEY],
 })

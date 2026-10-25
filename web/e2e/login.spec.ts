@@ -8,7 +8,7 @@ test('未登录进首页看到游客态外壳，点登录弹窗登录后就地�
 
   await page.getByRole('button', { name: '登录', exact: true }).click()
 
-  const dialog = page.getByRole('dialog', { name: '登录 Cue' })
+  const dialog = page.getByRole('dialog', { name: '登录 iClip' })
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('用户名', { exact: true }).fill('tester')
   await dialog.getByLabel('密码', { exact: true }).fill('secret')
@@ -31,7 +31,7 @@ test('点侧栏登录打开弹窗，Esc 关闭后焦点回到登录按钮', asyn
 
   const trigger = page.getByRole('button', { name: '登录', exact: true })
   await trigger.click()
-  const dialog = page.getByRole('dialog', { name: '登录 Cue' })
+  const dialog = page.getByRole('dialog', { name: '登录 iClip' })
   await expect(dialog.getByLabel('用户名', { exact: true })).toBeFocused()
 
   await page.keyboard.press('Escape')

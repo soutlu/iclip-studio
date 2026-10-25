@@ -1,52 +1,70 @@
 {
-  "sourceFont": "SourceSerif4-SemiboldItalic.ttf",
-  "sourceFontSha256": "32be5ee5d632de015365c16f92f20f770308167998afc59e0cd5e553bd78a15f",
+  "sourceFont": "web/public/fonts/SourceSerif4-Italic-SemiBold-Latin.woff2",
+  "sourceFontSha256": "ea3e78e835fe6d03d04ecaf1136496928d87b8cde4d5815e61b1930a53f6ee65",
   "fontSize": 255.0,
   "unitsPerEm": 1000,
   "fontAxes": {
     "opsz": 20.0
   },
-  "shaper": "HarfBuzz via uharfbuzz 0.56.1",
+  "shaper": "HarfBuzz via uharfbuzz 0.57.0",
   "direction": "ltr",
   "script": "Latn",
   "glyphs": [
     {
-      "glyph": "C",
-      "glyphId": 4,
+      "glyph": "i",
+      "glyphId": 36,
       "cluster": 0,
       "x": 0.0,
       "y": 0.0,
-      "advance": 150.705,
-      "advanceFontUnits": 591
+      "advance": 83.13,
+      "advanceFontUnits": 326
     },
     {
-      "glyph": "u",
-      "glyphId": 48,
+      "glyph": "C",
+      "glyphId": 4,
       "cluster": 1,
-      "x": 150.705,
+      "x": 83.13,
       "y": 0.0,
-      "advance": 147.135,
-      "advanceFontUnits": 577
+      "advance": 152.235,
+      "advanceFontUnits": 597
     },
     {
-      "glyph": "e",
-      "glyphId": 32,
+      "glyph": "l",
+      "glyphId": 39,
       "cluster": 2,
-      "x": 297.84000000000003,
+      "x": 235.365,
       "y": 0.0,
-      "advance": 111.94500000000001,
-      "advanceFontUnits": 439
+      "advance": 74.715,
+      "advanceFontUnits": 293
+    },
+    {
+      "glyph": "i",
+      "glyphId": 36,
+      "cluster": 3,
+      "x": 310.08,
+      "y": 0.0,
+      "advance": 79.56,
+      "advanceFontUnits": 312
+    },
+    {
+      "glyph": "p",
+      "glyphId": 43,
+      "cluster": 4,
+      "x": 389.64,
+      "y": 0.0,
+      "advance": 135.66,
+      "advanceFontUnits": 532
     }
   ],
-  "advance": 409.785,
-  "contours": 4,
-  "vertices": 112,
+  "advance": 525.3,
+  "contours": 9,
+  "vertices": 163,
   "textColorBinding": {
     "sourcePathIds": "0:30-0:35",
     "propertyKey": 37
   },
   "coordinateConversion": "x = font x * 255 / 1000; y = -font y * 255 / 1000; baseline unchanged",
   "fontAssetEmbedded": false,
-  "sourceSceneSha256": "3d7e99a3665b0a47aa24dadb04e367f9a55e15c7df924ac5b1637a68c3731b20",
-  "motionGraphSha256": "02c367476d8ad4eed61c7f3182329f549fba22d6dc93d92dc1cfd9eb5233148c"
+  "sourceSceneSha256": "a9436c13d6c6272302face49e5e20704c535946c038f417971135f2e510fd39f",
+  "motionGraphSha256": "56da480fed795b18ef3e8027b805af762d0841b7b57746ac5ff66d9071763a3a"
 }

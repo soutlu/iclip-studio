@@ -1,6 +1,6 @@
 """Embed the five hand-authored SVG assets as native Rive geometry.
 
-The approved scene and outlined Cue wordmark are frozen in layout.xml. This
+The approved scene and outlined iClip wordmark are frozen in layout.xml. This
 builder only fills the five static artwork slots; it does not author motion.
 Solid fills and userSpaceOnUse linear gradients retain SVG alpha semantics.
 Run with Python 3, then compile this directory with `rive . --once`.
