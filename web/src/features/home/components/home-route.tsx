@@ -15,7 +15,7 @@ type HomeRouteProps = Omit<HomeComposerProps, 'sameStyle' | 'onReferenceRemoved'
 }
 
 /**
- * 首页：吉祥物 hero 自带 Cue 字标，标题只保留给读屏；做同款时 hero 换成源视频的封面。侧栏与业务控件由路由装配。
+ * 首页：吉祥物 hero 自带 iClip 字标，标题只保留给读屏；做同款时 hero 换成源视频的封面。侧栏与业务控件由路由装配。
  * 紧凑屏（max-sm，与应用壳的 COMPACT_MAX 同为 600px）hero 缩小、内容贴顶上移，输入卡落在首屏上部。
  */
 export function HomeRoute({ sameStyle, ...props }: HomeRouteProps) {
@@ -25,7 +25,7 @@ export function HomeRoute({ sameStyle, ...props }: HomeRouteProps) {
         {sameStyle === undefined ? (
           <div className="flex flex-col items-center pb-4">
             <HeroAnimation className="w-[min(640px,92vw)] animate-in duration-(--dur-l) fade-in max-sm:w-70" />
-            <h1 className="sr-only">Cue</h1>
+            <h1 className="sr-only">iClip</h1>
           </div>
         ) : (
           <div className="flex flex-col items-center pb-10 max-sm:pb-8">

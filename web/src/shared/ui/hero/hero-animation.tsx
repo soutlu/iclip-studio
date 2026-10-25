@@ -10,7 +10,7 @@ type HeroAnimationProps = {
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** 首页吉祥物：内联 cue.svg，悬停展开、移开收起、点击固定，再点、点别处或 Escape 收起；减少动态效果时定格在展开态。Cue 字标用 currentColor，随主题变色。 */
+/** 首页吉祥物：内联 cue.svg，悬停展开、移开收起、点击固定，再点、点别处或 Escape 收起；减少动态效果时定格在展开态。iClip 字标用 currentColor，随主题变色。 */
 export function HeroAnimation({ className }: HeroAnimationProps) {
   const hostRef = useRef<HTMLButtonElement>(null)
   const mascotRef = useRef<CueMascot | null>(null)

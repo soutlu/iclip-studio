@@ -294,7 +294,7 @@ describe('首页做同款', () => {
     const { router, user } = await renderHome(`/?same=${sourceCard().id}`)
 
     expect(await screen.findByText('跑鞋手持展示')).toBeVisible()
-    expect(screen.queryByRole('heading', { name: 'Cue' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'iClip' })).not.toBeInTheDocument()
     expect(screen.getByText(SAME_PLACEHOLDER)).toBeInTheDocument()
     for (const phrase of PHRASES) {
       expect(screen.getByRole('button', { name: phrase })).toBeVisible()
@@ -302,7 +302,7 @@ describe('首页做同款', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({}))
 
     await user.click(screen.getByRole('button', { name: '不做同款' }))
-    expect(screen.getByRole('heading', { name: 'Cue' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'iClip' })).toBeInTheDocument()
     expect(screen.queryByText('跑鞋手持展示')).not.toBeInTheDocument()
     expect(screen.queryByText(SAME_PLACEHOLDER)).not.toBeInTheDocument()
     for (const phrase of PHRASES) {
@@ -418,7 +418,7 @@ describe('首页做同款', () => {
     await renderHome(`/?same=${id()}`)
 
     expect(await screen.findByText(message)).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Cue' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'iClip' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '不做同款' })).not.toBeInTheDocument()
     expect(screen.queryByText(SAME_PLACEHOLDER)).not.toBeInTheDocument()
   })
@@ -735,5 +735,5 @@ it('已有同地址视频不重复加入；取消同款只移除参考附件，�
   await waitFor(() => expect(within(editor).queryByText('已有视频.mp4')).not.toBeInTheDocument())
   expect(editor).toHaveTextContent('保留文字要求')
   expect(within(editor).getByText('产品图.png')).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: 'Cue' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'iClip' })).toBeInTheDocument()
 })

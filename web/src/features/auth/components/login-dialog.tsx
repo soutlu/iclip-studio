@@ -45,7 +45,7 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
       <DialogSurface
-        aria-label="登录 Cue"
+        aria-label="登录 iClip"
         className="max-w-[420px]"
         // Radix 默认聚焦第一个可聚焦元素，即标题栏的关闭按钮。
         onOpenAutoFocus={(event) => {
@@ -56,7 +56,7 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
         }}
         returnFocus
       >
-        <DialogHeader closeLabel="关闭登录" title="欢迎登录 Cue" />
+        <DialogHeader closeLabel="关闭登录" title="欢迎登录 iClip" />
         <DialogBody>
           {ssoProbe.isError ? (
             <InlineAlert

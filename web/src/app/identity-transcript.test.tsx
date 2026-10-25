@@ -129,12 +129,12 @@ const logout = async (user: User) => {
 
 /** 在已经打开或由侧栏打开的登录弹窗里用账号密码登录，等弹窗关上。 */
 const loginInDialog = async (user: User, account: Account) => {
-  const dialog = await screen.findByRole('dialog', { name: /登录 Cue/ })
+  const dialog = await screen.findByRole('dialog', { name: /登录 iClip/ })
   await user.type(within(dialog).getByRole('textbox', { name: '用户名' }), account.username)
   await user.type(within(dialog).getByLabelText('密码'), 'test-password')
   await user.click(within(dialog).getByRole('button', { name: '登录' }))
   await waitFor(() =>
-    expect(screen.queryByRole('dialog', { name: /登录 Cue/ })).not.toBeInTheDocument(),
+    expect(screen.queryByRole('dialog', { name: /登录 iClip/ })).not.toBeInTheDocument(),
   )
 }
 

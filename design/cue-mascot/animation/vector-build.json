@@ -11,13 +11,13 @@
   },
   "geometryCounts": {
     "Shape": 132,
-    "PointsPath": 127,
-    "StraightVertex": 159,
-    "CubicDetachedVertex": 790,
+    "PointsPath": 132,
+    "StraightVertex": 183,
+    "CubicDetachedVertex": 817,
     "LinearGradient": 91,
     "GradientStop": 222
   },
-  "motionGraphSha256": "02c367476d8ad4eed61c7f3182329f549fba22d6dc93d92dc1cfd9eb5233148c",
+  "motionGraphSha256": "56da480fed795b18ef3e8027b805af762d0841b7b57746ac5ff66d9071763a3a",
   "motionGraphUnchanged": true,
   "products": [
     {
@@ -106,5 +106,5 @@
       "svgSha256": "526d8bc712c1c72a26d3bfc6f0dc62417ab8d547d8b4fa2d6876b10e4ee2862a"
     }
   ],
-  "rmlBytes": 351260
+  "rmlBytes": 356911
 }
