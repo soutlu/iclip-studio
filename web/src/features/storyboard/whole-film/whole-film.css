@@ -657,6 +657,26 @@
   object-fit: cover;
 }
 
+/* 悬停预览盖在预览图上，大小、圆角同预览图；不接指针，点按、拖动、悬停提示照旧落在卡片上 */
+.wf-hover-slot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  pointer-events: none;
+}
+
+.wf-hover-player {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* 第一帧画出来之前透明，底下的预览图照常显示 */
+.wf-hover-player.is-pending {
+  opacity: 0;
+}
+
 .wf-component:hover:not(.is-lifting) .wf-component-thumb {
   box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
 }
