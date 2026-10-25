@@ -789,6 +789,7 @@ function EditorBody({
           </TabsContent>
           <TabsContent className="wf-side-body is-components" value="brand">
             <ComponentsPanel
+              catalog={catalog}
               emptyText="暂无品牌组件"
               groups={brandGroups(catalog)}
               groupsLabel="品牌"
@@ -796,11 +797,13 @@ function EditorBody({
               onDrop={dropComponent}
               onSelect={(id) => setSideChips((chips) => ({ ...chips, brand: id }))}
               onUse={placeFromCard}
+              origin={window.location.origin}
               selected={sideChips.brand}
             />
           </TabsContent>
           <TabsContent className="wf-side-body is-components" value="general">
             <ComponentsPanel
+              catalog={catalog}
               emptyText="暂无组件"
               groups={categoryGroups(catalog)}
               groupsLabel="分类"
@@ -808,6 +811,7 @@ function EditorBody({
               onDrop={dropComponent}
               onSelect={(id) => setSideChips((chips) => ({ ...chips, general: id }))}
               onUse={placeFromCard}
+              origin={window.location.origin}
               selected={sideChips.general}
             />
           </TabsContent>
