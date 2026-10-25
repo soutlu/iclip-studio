@@ -10033,7 +10033,7 @@
       },
       "WholeFilmCaptions": {
         "additionalProperties": false,
-        "description": "字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。\n``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。",
+        "description": "字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。\n``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；\n``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，\n编辑器在第一次离开原大、不转时写下。",
         "properties": {
           "component": {
             "maxLength": 200,
@@ -10053,6 +10053,34 @@
             "default": false,
             "title": "Hidden",
             "type": "boolean"
+          },
+          "pivotX": {
+            "default": 0,
+            "maximum": 4096.0,
+            "minimum": -4096.0,
+            "title": "Pivotx",
+            "type": "integer"
+          },
+          "pivotY": {
+            "default": 0,
+            "maximum": 4096.0,
+            "minimum": -4096.0,
+            "title": "Pivoty",
+            "type": "integer"
+          },
+          "rotation": {
+            "default": 0,
+            "exclusiveMinimum": -180.0,
+            "maximum": 180.0,
+            "title": "Rotation",
+            "type": "number"
+          },
+          "scale": {
+            "default": 1,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Scale",
+            "type": "number"
           },
           "x": {
             "default": 0,
@@ -10594,7 +10622,7 @@
       },
       "WholeFilmOverlay": {
         "additionalProperties": false,
-        "description": "特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的\n``playbackStart`` 起播。\n\n同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块\n之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。\n``x``、``y`` 是它在画面上挪开的位置。",
+        "description": "特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的\n``playbackStart`` 起播。\n\n同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块\n之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。\n``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``\n是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、\n不转时写下。",
         "properties": {
           "component": {
             "maxLength": 200,
@@ -10613,10 +10641,38 @@
             "title": "Id",
             "type": "string"
           },
+          "pivotX": {
+            "default": 0,
+            "maximum": 4096.0,
+            "minimum": -4096.0,
+            "title": "Pivotx",
+            "type": "integer"
+          },
+          "pivotY": {
+            "default": 0,
+            "maximum": 4096.0,
+            "minimum": -4096.0,
+            "title": "Pivoty",
+            "type": "integer"
+          },
           "playbackStart": {
             "minimum": 0.0,
             "title": "Playbackstart",
             "type": "integer"
+          },
+          "rotation": {
+            "default": 0,
+            "exclusiveMinimum": -180.0,
+            "maximum": 180.0,
+            "title": "Rotation",
+            "type": "number"
+          },
+          "scale": {
+            "default": 1,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Scale",
+            "type": "number"
           },
           "start": {
             "minimum": 0.0,

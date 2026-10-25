@@ -6,7 +6,9 @@ import {
   setCaptionText,
   setCaptionsHidden,
   setCaptionsPosition,
+  setCaptionsTransform,
 } from './captions'
+import { MAX_SCALE } from './draft'
 
 const film = () => draftOf([video('v1', 's1', 0, 3_000)])
 
@@ -84,6 +86,56 @@ describe('改字、字幕样式与字幕开关', () => {
     ]) {
       const { captions } = expectOk(result).draft
       expect([captions.x, captions.y]).toEqual([8, -40])
+    }
+  })
+
+  it('缩放、旋转字幕：全部字幕共用一套，倍数裁在 10%–1000%、角度规整到 (-180, 180]，转轴在离开原大、不转时记下', () => {
+    const turned = expectOk(
+      setCaptionsTransform(film(), { scale: 12, rotation: -180, pivot: { x: 540.4, y: 1_700.5 } }),
+    ).draft
+    expect(turned.captions).toEqual({
+      ...film().captions,
+      scale: MAX_SCALE,
+      rotation: 180,
+      pivotX: 540,
+      pivotY: 1_701,
+    })
+    const again = expectOk(
+      setCaptionsTransform(turned, { scale: 0.5, rotation: 190, pivot: { x: 0, y: 0 } }),
+    ).draft
+    expect(again.captions).toMatchObject({ scale: 0.5, rotation: -170, pivotX: 540, pivotY: 1_701 })
+  })
+
+  it('倍数与角度都没变时原样返回、转轴不写；改字、换样式、开关、挪位置都保留缩放与旋转', () => {
+    const draft = film()
+    const pivot = { x: 10, y: 20 }
+    expect(expectOk(setCaptionsTransform(draft, { scale: 1, rotation: 0, pivot })).draft).toBe(
+      draft,
+    )
+    // 有这几个字段之前存的草稿没写它们
+    const unset = film()
+    unset.captions = { component: unset.captions.component, edits: unset.captions.edits }
+    expect(expectOk(setCaptionsTransform(unset, { scale: 1, rotation: -360, pivot })).draft).toBe(
+      unset,
+    )
+
+    const turned = expectOk(setCaptionsTransform(draft, { scale: 0.8, rotation: 15, pivot })).draft
+    expect(expectOk(setCaptionsTransform(turned, { scale: 0.8, rotation: 375, pivot })).draft).toBe(
+      turned,
+    )
+    for (const result of [
+      setCaptionText(turned, edit(0, '甲')),
+      clearCaptionText(turned, { subtitleJobId: 'sub1', sentenceIndex: 0 }),
+      setCaptionStyle(turned, { component: 'caption-texture' }),
+      setCaptionsHidden(turned, { hidden: true }),
+      setCaptionsPosition(turned, { x: 8, y: -40 }),
+    ]) {
+      expect(expectOk(result).draft.captions).toMatchObject({
+        scale: 0.8,
+        rotation: 15,
+        pivotX: 10,
+        pivotY: 20,
+      })
     }
   })
 })

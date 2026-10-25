@@ -1,4 +1,10 @@
-import { toOffset, type CaptionEdit, type WholeFilmDraft } from './draft'
+import {
+  toOffset,
+  transformed,
+  type CaptionEdit,
+  type TransformArgs,
+  type WholeFilmDraft,
+} from './draft'
 import { done, type EditResult } from './result'
 
 // 字幕放进成片的位置由合成构建算（composition/captions.ts 的 placeCaptions），这里只改草稿。
@@ -60,6 +66,15 @@ export const setCaptionsPosition = (
       ? draft
       : { ...draft, captions: { ...draft.captions, x, y } },
   )
+}
+
+/**
+ * 在画面上缩放、旋转字幕：全部字幕共用一套，规则见 {@link transformed}；`pivot` 同特效块，是挪开
+ * 之前的坐标。倍数与角度都没变时原样返回
+ */
+export const setCaptionsTransform = (draft: WholeFilmDraft, args: TransformArgs): EditResult => {
+  const next = transformed(draft.captions, args)
+  return done(next === undefined ? draft : { ...draft, captions: { ...draft.captions, ...next } })
 }
 
 /** 换字幕样式（组件库里的字幕组件） */

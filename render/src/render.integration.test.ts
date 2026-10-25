@@ -578,7 +578,116 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       await rendered.cleanup()
     }
   }, 600_000)
+
+  it('挪过位置又缩放、旋转过的特效块：绕挪开之前的转轴缩放旋转，再整块挪开', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({
+      registryDir: REGISTRY,
+      workDir: join(dir, 'work'),
+      gpuEncode: false,
+      logger,
+    })
+    const gray = `${origin}/gray.mp4`
+    // 姓名条·色块放两次：0–2.5 秒原样，2.5–5 秒挪开 shift、绕 pivot 放大 1.5 倍、顺时针转 30°。
+    // 转轴取在色块左上角附近（不是它的中心），挪开的距离不为 0：转轴若按挪开之后的坐标算，
+    // 色块会落在别处。
+    const shift = { x: 190, y: -190 }
+    const turn = { scale: 1.5, rotation: 30, pivotX: 40, pivotY: 270 }
+    const block = (id: string, start: number, placement: object) => ({
+      id,
+      component: 'lt-color-block',
+      start,
+      duration: 2500,
+      playbackStart: 0,
+      track: 0,
+      zIndex: 1,
+      variables: {},
+      ...placement,
+    })
+    const rendered = await worker.render(
+      {
+        id: 'turned',
+        mediaUrls: [gray],
+        compose: (paths) =>
+          buildComposition({
+            draft: {
+              canvas: FRAME,
+              layer0: [
+                {
+                  id: 'g',
+                  type: 'video',
+                  start: 0,
+                  duration: 5000,
+                  playbackStart: 0,
+                  sourceJobId: SOURCE_JOB,
+                  volume: 1,
+                },
+              ],
+              captions: { component: 'default-caption', edits: [] },
+              music: null,
+              overlays: [block('still', 0, {}), block('turned', 2500, { ...shift, ...turn })],
+            },
+            media: {
+              videos: { [SOURCE_JOB]: { url: paths[gray] ?? gray } },
+              music: null,
+              subtitles: {},
+            },
+            catalog,
+          }).html,
+      },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+    try {
+      // 两处都取进场动画（0.6 秒）结束后的同一进度
+      const [still, turned] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
+      const before = blueBox(still!)
+      const after = blueBox(turned!)
+      // 原样的色块：中心与宽高从画面上量
+      const center = { x: (before.left + before.right) / 2, y: (before.top + before.bottom) / 2 }
+      const width = before.right - before.left
+      const height = before.bottom - before.top
+      // 预期：中心 = 转轴 + 挪开 + 缩放旋转（中心 − 转轴）；外框是转过的矩形的外接框
+      const angle = (turn.rotation * Math.PI) / 180
+      const [cos, sin] = [Math.cos(angle), Math.sin(angle)]
+      const [dx, dy] = [center.x - turn.pivotX, center.y - turn.pivotY]
+      const expected = {
+        x: turn.pivotX + shift.x + turn.scale * (dx * cos - dy * sin),
+        y: turn.pivotY + shift.y + turn.scale * (dx * sin + dy * cos),
+        width: turn.scale * (width * cos + height * sin),
+        height: turn.scale * (width * sin + height * cos),
+      }
+      // 转过的色块整块在画面里，外框没被画面边缘截掉
+      expect(after.left).toBeGreaterThan(0)
+      expect(after.top).toBeGreaterThan(0)
+      expect(after.right).toBeLessThan(FRAME.width - 1)
+      expect(after.bottom).toBeLessThan(FRAME.height - 1)
+      expect(Math.abs((after.left + after.right) / 2 - expected.x)).toBeLessThan(4)
+      expect(Math.abs((after.top + after.bottom) / 2 - expected.y)).toBeLessThan(4)
+      expect(Math.abs(after.right - after.left - expected.width)).toBeLessThan(6)
+      expect(Math.abs(after.bottom - after.top - expected.height)).toBeLessThan(6)
+    } finally {
+      await rendered.cleanup()
+    }
+  }, 600_000)
 })
+
+/** 整帧里实心蓝（色块 #2756ff，不算它半透明的投影）像素的外接框，右、下边是开区间。 */
+function blueBox(frame: Buffer): { left: number; top: number; right: number; bottom: number } {
+  let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity]
+  for (let y = 0; y < FRAME.height; y += 1) {
+    for (let x = 0; x < FRAME.width; x += 1) {
+      const offset = (y * FRAME.width + x) * 3
+      const [r, b] = [frame[offset] ?? 0, frame[offset + 2] ?? 0]
+      if (!(b > 180 && b - r > 100)) continue
+      left = Math.min(left, x)
+      top = Math.min(top, y)
+      right = Math.max(right, x + 1)
+      bottom = Math.max(bottom, y + 1)
+    }
+  }
+  if (!(right > left)) throw new Error('画面上没有色块')
+  return { left, top, right, bottom }
+}
 
 /** 「两段视频夹一个组件段 + 一个特效块 + 字幕」的草稿，第二段视频出自 `grayJob`。 */
 function modelBDraft(grayJob: string) {
