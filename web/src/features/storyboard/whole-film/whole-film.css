@@ -298,28 +298,60 @@
   }
 }
 
+/* 这是输入卡，与 AI 改段卡一致：不透明底，不用共用浮层的毛玻璃。
+   挂在轨头里，轨头的字号、不换行与灰字色在这里改回正文 */
 .wf-generate {
-  display: flex;
-  width: 320px;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--color-top-layer);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-3);
   color: var(--color-on-surface);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  white-space: normal;
+  backdrop-filter: none;
 }
 
-.wf-generate-label {
-  font-size: var(--text-body-sm);
+.wf-generate-head {
+  padding: 12px 16px 0;
+}
+
+.wf-generate-title {
+  font-size: var(--text-body);
   font-weight: 500;
+  line-height: var(--text-body--line-height);
 }
 
-.wf-generate-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
+.wf-generate-hint {
+  margin-top: 2px;
   color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-generate-hint.is-blocked {
+  color: var(--color-on-surface-variant);
+}
+
+.wf-generate .wf-generate-composer {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.wf-generate .composer-editor {
+  min-height: 52px;
+  max-height: 160px;
+  padding-top: 10px;
+}
+
+.wf-generate .composer-placeholder-overlay {
+  top: 10px;
 }
 
 /* ---- 预览 ---- */
