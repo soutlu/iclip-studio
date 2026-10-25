@@ -75,7 +75,7 @@ type PreviewPlayerProps = {
   controlRef: RefObject<PreviewControl | null>
   /** 正在显示的合成页 iframe：每次换上新播放器、画好之后给一次；拆掉、合成不了时给 null */
   onFrame: (iframe: HTMLIFrameElement | null) => void
-  /** 盖在画面上的一层（画面点选） */
+  /** 铺满预览卡片的一层（画面点选）：选中框、把手能画到画面外 */
   children?: ReactNode
 }
 
@@ -258,9 +258,9 @@ export function PreviewPlayer({
         >
           {/* 播放器由下面的 effect 直接放进这一层，不归 React 管 */}
           <div className="wf-player-slot" ref={hostRef} />
-          {children}
         </div>
       </div>
+      {children}
       {srcdoc === undefined && message !== undefined ? (
         <p className="wf-preview-note">{message}</p>
       ) : null}

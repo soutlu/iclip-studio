@@ -40,6 +40,7 @@ import {
 import { placeComponent, placedPiece, type Placing } from './component-placement'
 import { moveEditOf } from './canvas-drag'
 import { CanvasLayer } from './canvas-layer'
+import { transformEditOf } from './canvas-transform'
 import { captionTextEdit, componentTextEdit } from './canvas-text-edit'
 import { CaptionControls, CaptionStatus } from './caption-controls'
 import { ComponentPopover } from './component-popover'
@@ -809,6 +810,7 @@ function EditorBody({
           <CanvasLayer
             canvas={canvas}
             captions={captions}
+            componentTitle={(name) => componentFace(name).title}
             draft={draft}
             iframe={previewFrame}
             onCaptionText={editCaption}
@@ -822,7 +824,12 @@ function EditorBody({
             }}
             onPause={() => previewRef.current?.pause()}
             onSelect={selectOnCanvas}
+            onTransform={(target, args) => {
+              const result = transformEditOf(draft, target, args)
+              return result !== null && apply(result)
+            }}
             playheadMs={playhead}
+            playing={playing}
             selection={selection}
             sentenceText={sentenceText}
             snap={snap}

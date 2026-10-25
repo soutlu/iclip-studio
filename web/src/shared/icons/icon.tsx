@@ -101,6 +101,7 @@ import {
   Type,
   Film,
   Layers,
+  RotateCw,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -277,6 +278,8 @@ const ICONS = {
   film: Film,
   /** 成片编辑器的特效轨 */
   layers: Layers,
+  /** 成片画面上的旋转把手 */
+  rotate: RotateCw,
 } as const
 
 export type IconName = keyof typeof ICONS

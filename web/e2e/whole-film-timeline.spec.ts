@@ -784,6 +784,55 @@ const seekTo = async (dialog: Locator, secondsAt: number) => {
   await settledClockMs(clock)
 }
 
+/** 预览画面（正在显示的播放器）在页面上的范围；点选层铺满整张预览卡片，比画面大 */
+const pictureOf = (dialog: Locator) =>
+  boxOf(
+    dialog
+      .getByRole('region', { name: '预览' })
+      .locator('hyperframes-player:not(.is-pending)')
+      .last(),
+  )
+
+/** 画面上的选中框与它转过的角度（计算后的 CSS rotate） */
+const selectionFrame = (dialog: Locator) => dialog.locator('.wf-canvas-frame')
+const frameRotate = (dialog: Locator) =>
+  selectionFrame(dialog).evaluate((frame) => getComputedStyle(frame).rotate)
+
+/** 点 p 绕 center 顺时针转 degrees（页面坐标 y 向下） */
+const turnAround = (
+  center: { x: number; y: number },
+  point: { x: number; y: number },
+  degrees: number,
+) => {
+  const r = (degrees * Math.PI) / 180
+  const dx = point.x - center.x
+  const dy = point.y - center.y
+  return {
+    x: center.x + dx * Math.cos(r) - dy * Math.sin(r),
+    y: center.y + dx * Math.sin(r) + dy * Math.cos(r),
+  }
+}
+
+/** 按住选中框上的把手，分几步拖到 to 再松手；shift 时全程按住 Shift */
+const dragHandle = async (
+  page: Page,
+  handle: Locator,
+  to: (from: { x: number; y: number }) => { x: number; y: number },
+  { shift = false } = {},
+) => {
+  const from = await boxOf(handle)
+  const target = to({ x: from.cx, y: from.cy })
+  if (shift) await page.keyboard.down('Shift')
+  await page.mouse.move(from.cx, from.cy)
+  await page.mouse.down()
+  await page.mouse.move(target.x, target.y, { steps: 8 })
+  await page.mouse.up()
+  if (shift) await page.keyboard.up('Shift')
+}
+
+/** 霓虹边框姓名条在 180×320 画布上不变换时画出来那块的中心（画布像素） */
+const NEON_CENTER = { x: 55, y: 182 }
+
 test.describe('成片编辑器 · 画面点选、原位改字与拖动', () => {
   test('点画面上的字幕选中时间线上那一句；双击在画面上改字，回车后时间线跟着变', async ({
     page,
@@ -840,8 +889,8 @@ test.describe('成片编辑器 · 画面点选、原位改字与拖动', () => {
     await expect(page.getByRole('dialog', { name: /霓虹边框姓名条/ })).toBeHidden()
 
     // 点画面上没有特效的地方：选中底下的视频段
-    const panel = await boxOf(dialog.locator('.wf-canvas'))
-    await page.mouse.click(panel.x + panel.width / 2, panel.y + 12)
+    const picture = await pictureOf(dialog)
+    await page.mouse.click(picture.cx, picture.y + 12)
     await expect(film.getByRole('button', { name: /^选中：第 1 段/ })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -981,8 +1030,8 @@ test.describe('成片编辑器 · 画面点选、原位改字与拖动', () => {
     const saved = JSON.stringify(await readDraft(page))
 
     // 画面上没有特效的地方是底下的视频段
-    const panel = await boxOf(dialog.locator('.wf-canvas'))
-    await dragBy(page, { x: panel.x + panel.width / 2, y: panel.y + 12 }, 30, 40)
+    const picture = await pictureOf(dialog)
+    await dragBy(page, { x: picture.cx, y: picture.y + 12 }, 30, 40)
     await expect(dialog.locator('.wf-canvas')).not.toHaveClass(/is-dragging/)
     await page.mouse.up()
     await expect(film.getByRole('button', { name: /^选中：第 1 段/ })).toHaveAttribute(
@@ -1006,5 +1055,215 @@ test.describe('成片编辑器 · 画面点选、原位改字与拖动', () => {
       'true',
     )
     expect(JSON.stringify(await readDraft(page))).toBe(saved)
+  })
+})
+
+test.describe('成片编辑器 · 画面上缩放、旋转与拖出画面', () => {
+  const neon = () => overlay('o1', 'lt-neon-border', 0, 4_000, 0)
+  const neonBlock = (dialog: Locator) =>
+    dialog
+      .getByRole('group', { name: '特效轨' })
+      .getByRole('button', { name: /^选中：特效 · 霓虹边框姓名条/ })
+
+  /** 打开只有一段视频和一个姓名条的成片，停在 2 秒，点画面上的姓名条选中它 */
+  const selectNeon = async (page: Page, placed: Partial<Overlay> = {}) => {
+    const { dialog, film } = await openWith(page, {
+      layer0: [video('v1', 0, 6_000)],
+      overlays: [{ ...neon(), ...placed }],
+    })
+    await seekTo(dialog, 2)
+    const name = await shownInPreview(dialog, '[data-hf-id="o1"] [data-var-text="name"]')
+    await page.mouse.click(name.x, name.y)
+    await expect(neonBlock(dialog)).toHaveAttribute('aria-pressed', 'true')
+    await expect(selectionFrame(dialog)).toBeVisible()
+    return { dialog, film, name }
+  }
+
+  test('拖右下角等比放大：拖的时候显示倍数，松手记下倍数与转轴，撤销回到原大', async ({ page }) => {
+    const { dialog } = await selectNeon(page)
+    const picture = await pictureOf(dialog)
+    const frame = await boxOf(selectionFrame(dialog))
+    const corner = await boxOf(selectionFrame(dialog).locator('[data-corner="se"]'))
+    // 绕选中框的中心（画出来那块的中心）把角拉到 1.5 倍远
+    await page.mouse.move(corner.cx, corner.cy)
+    await page.mouse.down()
+    await page.mouse.move(
+      frame.cx + (corner.cx - frame.cx) * 1.5,
+      frame.cy + (corner.cy - frame.cy) * 1.5,
+      { steps: 8 },
+    )
+    const readout = dialog.locator('.wf-canvas-readout')
+    await expect(readout).toBeVisible()
+    await expect(readout).toHaveText(/^1[45]\d%$/)
+    await page.mouse.up()
+    await expect(readout).toBeHidden()
+
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.scale ?? 1).not.toBe(1)
+    const scaled = (await readDraft(page))?.overlays[0]
+    expect(scaled?.scale).toBeGreaterThan(1.45)
+    expect(scaled?.scale).toBeLessThan(1.55)
+    expect(scaled?.rotation ?? 0).toBe(0)
+    // 转轴是画出来那块的中心（挪开之前的画布像素）
+    const scale = picture.width / 180
+    expect(Math.abs((scaled?.pivotX ?? 0) - (frame.cx - picture.x) / scale)).toBeLessThanOrEqual(
+      1.5,
+    )
+    expect(Math.abs((scaled?.pivotY ?? 0) - (frame.cy - picture.y) / scale)).toBeLessThanOrEqual(
+      1.5,
+    )
+    // 选中框跟着变大
+    await expect
+      .poll(async () => (await boxOf(selectionFrame(dialog))).width)
+      .toBeGreaterThan(frame.width * 1.4)
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.scale ?? 1).toBe(1)
+  })
+
+  test('按住 Shift 拖旋转把手：角度按 15° 一档记下，选中框跟着转', async ({ page }) => {
+    const { dialog } = await selectNeon(page)
+    const frame = await boxOf(selectionFrame(dialog))
+    await dragHandle(
+      page,
+      selectionFrame(dialog).locator('[data-handle="rotate"]'),
+      (from) => turnAround({ x: frame.cx, y: frame.cy }, from, 40),
+      { shift: true },
+    )
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.rotation ?? 0).not.toBe(0)
+    const rotation = (await readDraft(page))?.overlays[0]?.rotation ?? 0
+    expect(rotation % 15).toBe(0)
+    expect(rotation).toBe(45)
+    await expect.poll(() => frameRotate(dialog)).toBe('45deg')
+  })
+
+  test('转过、缩放过的姓名条照样跟着指针拖，换页后不多挪；再转时沿用原来的转轴', async ({
+    page,
+  }) => {
+    const { dialog, name } = await selectNeon(page, {
+      scale: 1.5,
+      rotation: 30,
+      pivotX: NEON_CENTER.x,
+      pivotY: NEON_CENTER.y,
+    })
+    await expect.poll(() => frameRotate(dialog)).toBe('30deg')
+    const before = await placedInPreview(dialog, 'o1')
+    if (before === null) throw new Error('预览里没有姓名条')
+
+    await dragBy(page, name, 40, -30)
+    await page.mouse.up()
+    const released = await placedInPreview(dialog, 'o1')
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.x ?? 0).not.toBe(0)
+    const moved = (await readDraft(page))?.overlays[0]
+    if (moved?.x === undefined || moved.y === undefined) throw new Error('姓名条不见了')
+    // 转过的不吸附：画布位移就是指针位移按缩放换算后取整
+    expect(Math.abs(moved.x * before.scale - 40)).toBeLessThanOrEqual(before.scale)
+    expect(Math.abs(moved.y * before.scale + 30)).toBeLessThanOrEqual(before.scale)
+    expect(moved).toMatchObject({ scale: 1.5, rotation: 30, pivotX: 55, pivotY: 182 })
+    // 换上的新页面停在拖到的地方；松手时画面上已经在那里，换页前后同一个位置
+    await expect
+      .poll(async () => (await placedInPreview(dialog, 'o1'))?.dataX)
+      .toBe(String(moved.x))
+    const after = await placedInPreview(dialog, 'o1')
+    if (after === null || released === null) throw new Error('姓名条不见了')
+    expect(Math.abs(after.left - before.left - moved.x * after.scale)).toBeLessThanOrEqual(1)
+    expect(Math.abs(after.top - before.top - moved.y * after.scale)).toBeLessThanOrEqual(1)
+    expect(Math.abs(released.left - after.left)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(released.top - after.top)).toBeLessThanOrEqual(0.5)
+
+    const frame = await boxOf(selectionFrame(dialog))
+    await dragHandle(page, selectionFrame(dialog).locator('[data-handle="rotate"]'), (from) =>
+      turnAround({ x: frame.cx, y: frame.cy }, from, 20),
+    )
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.rotation).not.toBe(30)
+    expect((await readDraft(page))?.overlays[0]).toMatchObject({
+      x: moved.x,
+      y: moved.y,
+      pivotX: 55,
+      pivotY: 182,
+    })
+  })
+
+  test('拖出画面：选中框伸到画面外；取消选中后画面外画虚线轮廓，点它选中', async ({ page }) => {
+    const { dialog, name } = await selectNeon(page)
+    const picture = await pictureOf(dialog)
+    await dragBy(page, name, picture.width * 0.6, 0)
+    await page.mouse.up()
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.x ?? 0).toBeGreaterThan(0)
+    // 姓名条右边（不挪时在画布 106 像素处）挪到了 180 宽的画布外
+    expect(((await readDraft(page))?.overlays[0]?.x ?? 0) + 106).toBeGreaterThan(180)
+    await expect
+      .poll(async () => {
+        const frame = await boxOf(selectionFrame(dialog))
+        return frame.x + frame.width > picture.x + picture.width
+      })
+      .toBe(true)
+
+    // 点画面外的空处取消选中
+    await page.mouse.click(picture.x - 30, picture.cy)
+    await expect(neonBlock(dialog)).toHaveAttribute('aria-pressed', 'false')
+    await expect(selectionFrame(dialog)).toBeHidden()
+    const outline = dialog.getByRole('button', { name: /^选中画面外的特效 · 霓虹边框姓名条/ })
+    await expect(outline).toBeVisible()
+    // 点轮廓伸在画面外的那一段
+    const box = await boxOf(outline)
+    await page.mouse.click((picture.x + picture.width + box.x + box.width) / 2, box.cy)
+    await expect(neonBlock(dialog)).toHaveAttribute('aria-pressed', 'true')
+    await expect(selectionFrame(dialog)).toBeVisible()
+    await expect(outline).toBeHidden()
+  })
+
+  test('点选画面上的一块后，别的伸出画面的块照样画轮廓', async ({ page }) => {
+    // 第二个姓名条往右挪 120，右边到了画布 226 像素处，伸出 180 宽的画布
+    const { dialog } = await openWith(page, {
+      layer0: [video('v1', 0, 6_000)],
+      overlays: [neon(), { ...overlay('o2', 'lt-neon-border', 0, 4_000, 1), x: 120 }],
+    })
+    await seekTo(dialog, 2)
+    const outline = dialog.getByRole('button', { name: /^选中画面外的特效 · 霓虹边框姓名条/ })
+    await expect(outline).toHaveCount(1)
+    const name = await shownInPreview(dialog, '[data-hf-id="o1"] [data-var-text="name"]')
+    // 像人点那样按住一会儿再松开
+    await page.mouse.click(name.x, name.y, { delay: 200 })
+    await expect(
+      dialog
+        .getByRole('group', { name: '特效轨' })
+        .getByRole('button', { name: /^选中：特效 · 霓虹边框姓名条，第 1 行/ }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    await expect(outline).toBeVisible()
+  })
+
+  test('拖字幕选中框的角：全部字幕一起缩放，记在草稿的字幕上', async ({ page }) => {
+    const { dialog } = await openWith(page, { layer0: [video('v1', 0, 6_000)] })
+    await seekTo(dialog, 1)
+    const line = await shownInPreview(dialog, '[data-hf-id="caption:0"] .caption-line')
+    await page.mouse.click(line.x, line.y)
+    await expect(selectionFrame(dialog)).toBeVisible()
+    await dragHandle(page, selectionFrame(dialog).locator('[data-corner="se"]'), (from) => ({
+      x: from.x + 30,
+      y: from.y + 10,
+    }))
+    await expect.poll(async () => (await readDraft(page))?.captions.scale ?? 1).toBeGreaterThan(1)
+    expect((await readDraft(page))?.captions.pivotY ?? 0).toBeGreaterThan(0)
+    expect((await readDraft(page))?.overlays).toEqual([])
+  })
+
+  test('点画面上的视频段：选中框铺满画面，没有缩放、旋转把手', async ({ page }) => {
+    const { dialog, film } = await openWith(page, {
+      layer0: [video('v1', 0, 6_000)],
+      overlays: [neon()],
+    })
+    await seekTo(dialog, 2)
+    const picture = await pictureOf(dialog)
+    await page.mouse.click(picture.cx, picture.y + 12)
+    await expect(film.getByRole('button', { name: /^选中：第 1 段/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(selectionFrame(dialog)).toBeVisible()
+    await expect(selectionFrame(dialog).locator('[data-handle]')).toHaveCount(0)
+    const frame = await boxOf(selectionFrame(dialog))
+    expect(Math.abs(frame.x - picture.x - 2)).toBeLessThanOrEqual(1)
+    expect(Math.abs(frame.width - picture.width + 4)).toBeLessThanOrEqual(1)
+    expect(Math.abs(frame.height - picture.height + 4)).toBeLessThanOrEqual(1)
   })
 })
