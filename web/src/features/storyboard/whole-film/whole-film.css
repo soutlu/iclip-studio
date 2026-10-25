@@ -383,7 +383,8 @@
   display: block;
 }
 
-/* 画面点选层盖在播放器上；原位改字时让指针进到合成页里 */
+/* 画面点选层铺满预览卡片（不只盖画面），选中框、把手、框外轮廓都能画到画面外；原位改字时让指针
+   进到合成页里 */
 .wf-canvas {
   position: absolute;
   inset: 0;
@@ -393,13 +394,131 @@
   pointer-events: none;
 }
 
-/* 选中框：白色细框加一圈深色，压在任何画面上都看得清 */
+/* 选中框：白色细框加一圈深色，压在任何画面上都看得清；跟着组件绕自己的中心转 */
 .wf-canvas-frame {
   position: absolute;
   border-radius: var(--radius-xs);
   outline: 1.5px solid var(--color-on-scrim);
   box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+  transform-origin: center;
   pointer-events: none;
+}
+
+/* 四角把手：白色小方块加一圈深色，热区比看到的大 */
+.wf-canvas-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: var(--radius-none);
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  pointer-events: auto;
+}
+
+.wf-canvas-handle::before {
+  position: absolute;
+  inset: -5px;
+  content: '';
+}
+
+.wf-canvas-handle[data-corner='nw'] {
+  top: 0;
+  left: 0;
+}
+
+.wf-canvas-handle[data-corner='ne'] {
+  top: 0;
+  left: 100%;
+}
+
+.wf-canvas-handle[data-corner='se'] {
+  top: 100%;
+  left: 100%;
+}
+
+.wf-canvas-handle[data-corner='sw'] {
+  top: 100%;
+  left: 0;
+}
+
+/* 旋转把手：选中框下方 12px 的白色圆钮，跟着选中框一起转（同 Studio） */
+.wf-canvas-rotate {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  /* 圆钮两种主题都是白的，图标取两种主题都是黑的遮罩色 */
+  color: var(--color-scrim);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-scrim) 30%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-scrim) 25%, transparent);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.wf-canvas-rotate::before {
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  content: '';
+}
+
+.wf-canvas-rotate svg {
+  width: 11px;
+  height: 11px;
+}
+
+.wf-canvas.is-rotating,
+.wf-canvas.is-rotating .wf-canvas-rotate {
+  cursor: grabbing;
+}
+
+/* 拖角、拖把手时指针旁边显示当前倍数或角度，松手消失 */
+.wf-canvas-readout {
+  position: absolute;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 72%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-canvas-readout[hidden] {
+  display: none;
+}
+
+/* 没选中的特效、字幕伸出画面的部分：淡虚线轮廓，点一下选中；画面里那块由行内 clip-path 挖掉
+   （同 Studio 的 OffCanvasIndicators） */
+.wf-canvas-offframes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wf-canvas-offframe {
+  position: absolute;
+  padding: 0;
+  border: 1px dashed color-mix(in srgb, var(--color-on-surface) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  transform-origin: center;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.wf-canvas-offframe:hover {
+  border-color: var(--color-on-surface);
 }
 
 .wf-canvas-frame.is-full {

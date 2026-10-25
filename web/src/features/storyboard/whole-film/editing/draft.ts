@@ -38,7 +38,9 @@ export const MAX_SCALE = 10
 const clampScale = (value: number): number => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value))
 
 /** 角度（顺时针）规整到 (-180, 180]，同服务端：-180 记成 180 */
-const normalizeDegrees = (value: number): number => {
+export const normalizeDegrees = (value: number): number => {
+  // 已经在范围里的原样返回：折一圈再减 360 会带出浮点误差（-2.3 变成 -2.3000000000000114）
+  if (value > -180 && value <= 180) return value + 0
   // 先折进 [0, 360)：取余后加 360 再取余，结果总是正数，不会出现 -0
   const turned = ((value % 360) + 360) % 360
   return turned > 180 ? turned - 360 : turned

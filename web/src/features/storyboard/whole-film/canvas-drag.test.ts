@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { draftOf, expectOk, overlay, video } from '@/testing/whole-film'
-import { canvasDelta, dragTargetOf, moveEditOf, positionOf, snapDrag } from './canvas-drag'
+import { canvasDelta, dragTargetOf, moveEditOf, snapDrag } from './canvas-drag'
 
 const film = () =>
   draftOf([video('v1', 's1', 0, 3_000)], {
@@ -14,14 +14,6 @@ describe('拖哪个元素', () => {
     expect(dragTargetOf({ kind: 'clip', id: 'v1' })).toBeUndefined()
     expect(dragTargetOf({ kind: 'music' })).toBeUndefined()
     expect(dragTargetOf(null)).toBeUndefined()
-  })
-
-  it('按下时的位置取草稿里记着的；没写位置的按没挪过算', () => {
-    const draft = film()
-    expect(positionOf(draft, 'o2')).toEqual({ x: 30, y: -20 })
-    expect(positionOf(draft, 'captions')).toEqual({ x: 0, y: 0 })
-    const { x: _x, y: _y, ...captions } = draft.captions
-    expect(positionOf({ ...draft, captions }, 'captions')).toEqual({ x: 0, y: 0 })
   })
 })
 
@@ -51,28 +43,36 @@ describe('吸附', () => {
   const moving = { left: 100, top: 400, width: 100, height: 40 }
 
   it('靠近画面的竖中线时吸住，画一条横跨整个画面高度的参考线', () => {
-    const snapped = snapDrag({ moving, frame, dx: 27, dy: 0, enabled: true })
+    const snapped = snapDrag({ moving, frame, dx: 27, dy: 0, enabled: true, rotated: false })
     expect(snapped.dx).toBe(30)
     expect(snapped.guides).toEqual([{ left: 180, top: 0, width: 1, height: 640 }])
   })
 
   it('靠近画面边缘时吸住，参考线横跨整个画面宽度', () => {
-    const snapped = snapDrag({ moving, frame, dx: 0, dy: 197, enabled: true })
+    const snapped = snapDrag({ moving, frame, dx: 0, dy: 197, enabled: true, rotated: false })
     expect(snapped.dy).toBe(200)
     expect(snapped.guides).toEqual([{ left: 0, top: 640, width: 360, height: 1 }])
   })
 
   it('关掉吸附，或刚起步（位移还不到 4 像素）时不吸', () => {
-    expect(snapDrag({ moving, frame, dx: 27, dy: 0, enabled: false })).toEqual({
+    expect(snapDrag({ moving, frame, dx: 27, dy: 0, enabled: false, rotated: false })).toEqual({
       dx: 27,
       dy: 0,
       guides: [],
     })
     // 这块的竖中线离画面中线 1 像素，刚按下时不该被拽过去
     const near = { ...moving, left: 131 }
-    expect(snapDrag({ moving: near, frame, dx: 2, dy: 1, enabled: true })).toEqual({
+    expect(snapDrag({ moving: near, frame, dx: 2, dy: 1, enabled: true, rotated: false })).toEqual({
       dx: 2,
       dy: 1,
+      guides: [],
+    })
+  })
+
+  it('转过角度的块吸附开着也不吸', () => {
+    expect(snapDrag({ moving, frame, dx: 27, dy: 0, enabled: true, rotated: true })).toEqual({
+      dx: 27,
+      dy: 0,
       guides: [],
     })
   })

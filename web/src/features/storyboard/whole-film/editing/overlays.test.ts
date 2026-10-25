@@ -363,8 +363,9 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
     const rotationOf = (rotation: number) =>
       expectOk(setOverlayTransform(film(), { overlayId: 'a', scale: 1, rotation, pivot })).draft
         .overlays[0]?.rotation
-    expect([-180, 190, 540, -190, 180, -179.5, 720.5].map(rotationOf)).toEqual([
-      180, -170, 180, 170, 180, -179.5, 0.5,
+    // 范围里的小数原样记下，不带出浮点误差
+    expect([-180, 190, 540, -190, 180, -179.5, 720.5, -2.3].map(rotationOf)).toEqual([
+      180, -170, 180, 170, 180, -179.5, 0.5, -2.3,
     ])
   })
 
