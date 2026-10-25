@@ -552,13 +552,13 @@ describe('成片编辑器 · 组件', () => {
           track: 0,
           zIndex: 1,
           variables: {},
-          // 服务端的形状：没挪过的位置、原大不转的倍数与角度也写着，没记的转轴是 null
+          // 服务端的形状：没挪过的位置、原大不转的倍数、角度与转轴也写着
           x: 0,
           y: 0,
           scale: 1,
           rotation: 0,
-          pivotX: null,
-          pivotY: null,
+          pivotX: 0,
+          pivotY: 0,
         },
       ]),
     )

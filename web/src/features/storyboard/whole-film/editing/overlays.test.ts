@@ -368,7 +368,7 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
     ])
   })
 
-  it('转轴在第一次缩放或旋转时记下（取整、裁法同位置），之后沿用', () => {
+  it('转轴在离开原大、不转时记下（取整、裁法同位置），变换着时沿用，回到原大、不转后再变换重取', () => {
     const first = expectOk(
       setOverlayTransform(film(), {
         overlayId: 'a',
@@ -378,7 +378,7 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
       }),
     ).draft
     expect(first.overlays[0]).toMatchObject({ pivotX: 121, pivotY: -4_096 })
-    // 再转、再缩、缩回原大都沿用第一次的转轴
+    // 变换着时再转、再缩、缩回原大都沿用记下的转轴
     const again = expectOk(
       setOverlayTransform(first, {
         overlayId: 'a',
@@ -397,9 +397,20 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
       setOverlayTransform(again, { overlayId: 'a', scale: 1, rotation: 0, pivot: { x: 3, y: 4 } }),
     ).draft
     expect(back.overlays[0]).toMatchObject({ scale: 1, rotation: 0, pivotX: 121, pivotY: -4_096 })
+    // 回到原大、不转之后画面上没有变换，下一次变换取新的转轴
+    const anew = expectOk(
+      setOverlayTransform(back, { overlayId: 'a', scale: 1, rotation: 45, pivot: { x: 5, y: 6 } }),
+    ).draft
+    expect(anew.overlays[0]).toMatchObject({ scale: 1, rotation: 45, pivotX: 5, pivotY: 6 })
+    // 有这几个字段之前存的草稿没写它们，按原大、不转算，第一次变换就记下转轴
+    const { scale: _s, rotation: _r, pivotX: _px, pivotY: _py, ...legacy } = overlay('a', 0, 1_000)
+    const legacyTurned = expectOk(
+      setOverlayTransform(withOverlays([legacy]), { overlayId: 'a', scale: 2, rotation: 0, pivot }),
+    ).draft
+    expect(legacyTurned.overlays[0]).toMatchObject({ scale: 2, pivotX: 200, pivotY: 300 })
   })
 
-  it('倍数与角度都没变时原样返回，转轴也不记；没写这些字段的块按原大、不转算；不认识的 id 被拒', () => {
+  it('倍数与角度都没变时原样返回，转轴也不写；没写这些字段的块按原大、不转算；不认识的 id 被拒', () => {
     const draft = film()
     expect(
       expectOk(setOverlayTransform(draft, { overlayId: 'a', scale: 1, rotation: 0, pivot })).draft,

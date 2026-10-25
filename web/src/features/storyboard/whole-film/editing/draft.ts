@@ -44,25 +44,28 @@ const normalizeDegrees = (value: number): number => {
   return turned > 180 ? turned - 360 : turned
 }
 
-/** 缩放、旋转一块的参数：倍数、顺时针角度，与第一次变换时取的转轴（画面像素） */
+/** 缩放、旋转一块的参数：倍数、顺时针角度，与从原大、不转变换时取的转轴（画面像素） */
 export type TransformArgs = { scale: number; rotation: number; pivot: { x: number; y: number } }
 
 type Transform = Pick<OverlayClip, 'scale' | 'rotation' | 'pivotX' | 'pivotY'>
 
 /**
- * 特效块、字幕缩放旋转之后的这几项：倍数裁在 10%–1000%，角度规整到 (-180, 180]；转轴只在还没记过
- * 时取 `pivot`（取整、裁法同位置），之后沿用，再转、再缩画面不跳。倍数与角度都没变时为 undefined，
- * 转轴也不记。有这几个字段之前存的草稿没写，按原大、不转算。
+ * 特效块、字幕缩放旋转之后的这几项：倍数裁在 10%–1000%，角度规整到 (-180, 180]。转轴在离开原大、
+ * 不转时取 `pivot`（取整、裁法同位置），已经缩放或旋转着时沿用记下的，再转、再缩画面不跳；原大、
+ * 不转时画面上没有变换，重取转轴也不会跳。倍数与角度都没变时为 undefined，什么也不写。
+ * 有这几个字段之前存的草稿没写，按原大、不转、转轴 (0, 0) 算，同 x、y。
  */
 export const transformed = (current: Transform, args: TransformArgs): Transform | undefined => {
   const scale = clampScale(args.scale)
   const rotation = normalizeDegrees(args.rotation)
-  if (scale === (current.scale ?? 1) && rotation === (current.rotation ?? 0)) return undefined
+  const from = { scale: current.scale ?? 1, rotation: current.rotation ?? 0 }
+  if (scale === from.scale && rotation === from.rotation) return undefined
+  const identity = from.scale === 1 && from.rotation === 0
   return {
     scale,
     rotation,
-    pivotX: current.pivotX ?? toOffset(args.pivot.x),
-    pivotY: current.pivotY ?? toOffset(args.pivot.y),
+    pivotX: identity ? toOffset(args.pivot.x) : (current.pivotX ?? 0),
+    pivotY: identity ? toOffset(args.pivot.y) : (current.pivotY ?? 0),
   }
 }
 

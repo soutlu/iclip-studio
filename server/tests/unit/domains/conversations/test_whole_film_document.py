@@ -174,8 +174,8 @@ def test_positions_stay_within_the_largest_canvas(
 
 
 def test_transforms_default_to_unscaled_and_unrotated() -> None:
-    """没写缩放、旋转与转轴的字幕与特效块（有这几个字段之前存的）按原大、不转读，转轴取画面中心
-    （读出来是 null）。"""
+    """没写缩放、旋转与转轴的字幕与特效块（有这几个字段之前存的）按原大、不转读，读出来补上
+    1、0 与转轴 (0, 0)。"""
 
     document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
     for placed in (document["captions"], document["overlays"][0]):
@@ -183,7 +183,7 @@ def test_transforms_default_to_unscaled_and_unrotated() -> None:
 
     dumped = parse(document).model_dump(mode="json", by_alias=True)
 
-    defaults = {"scale": 1, "rotation": 0, "pivotX": None, "pivotY": None}
+    defaults = {"scale": 1, "rotation": 0, "pivotX": 0, "pivotY": 0}
     assert {key: dumped["captions"][key] for key in defaults} == defaults
     assert {key: dumped["overlays"][0][key] for key in defaults} == defaults
 

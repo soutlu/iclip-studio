@@ -3,7 +3,6 @@
  * 素材地址另查主机白名单。接口见 docs/architecture.md「成片渲染服务」。
  */
 import * as z from 'zod'
-import { withPivots } from '../../web/src/features/storyboard/whole-film/composition/build'
 import { zSubtitleSentence, zWholeFilmDocument } from '../../web/src/shared/api/generated/zod.gen'
 
 const zHttpUrl = z.url({ protocol: /^https?$/ })
@@ -11,7 +10,7 @@ const zHttpUrl = z.url({ protocol: /^https?$/ })
 export const zExportRequest = z.object({
   id: z.uuid(),
   conversationId: z.uuid(),
-  document: zWholeFilmDocument.transform(withPivots),
+  document: zWholeFilmDocument,
   media: z.object({
     videos: z.record(z.string(), z.object({ url: zHttpUrl })),
     music: z.object({ url: zHttpUrl }).nullable(),

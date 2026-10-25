@@ -89,7 +89,7 @@ describe('改字、字幕样式与字幕开关', () => {
     }
   })
 
-  it('缩放、旋转字幕：全部字幕共用一套，倍数裁在 10%–1000%、角度规整到 (-180, 180]，转轴记一次', () => {
+  it('缩放、旋转字幕：全部字幕共用一套，倍数裁在 10%–1000%、角度规整到 (-180, 180]，转轴在离开原大、不转时记下', () => {
     const turned = expectOk(
       setCaptionsTransform(film(), { scale: 12, rotation: -180, pivot: { x: 540.4, y: 1_700.5 } }),
     ).draft
@@ -106,7 +106,7 @@ describe('改字、字幕样式与字幕开关', () => {
     expect(again.captions).toMatchObject({ scale: 0.5, rotation: -170, pivotX: 540, pivotY: 1_701 })
   })
 
-  it('倍数与角度都没变时原样返回、转轴不记；改字、换样式、开关、挪位置都保留缩放与旋转', () => {
+  it('倍数与角度都没变时原样返回、转轴不写；改字、换样式、开关、挪位置都保留缩放与旋转', () => {
     const draft = film()
     const pivot = { x: 10, y: 20 }
     expect(expectOk(setCaptionsTransform(draft, { scale: 1, rotation: 0, pivot })).draft).toBe(

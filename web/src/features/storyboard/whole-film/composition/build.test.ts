@@ -5,7 +5,7 @@ import type {
   WholeFilmOverlay,
   WholeFilmVideoClip,
 } from '@/shared/api/generated'
-import { buildComposition, CompositionError, withPivots, type CompositionMedia } from './build'
+import { buildComposition, CompositionError, type CompositionMedia } from './build'
 import type { CatalogItem, ComponentCatalog } from './catalog'
 
 const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogItem => ({
@@ -600,10 +600,17 @@ describe('buildComposition', () => {
     expect(doc.querySelectorAll('[data-x], [data-y], [data-hf-edit-base-y]')).toHaveLength(3)
   })
 
-  it('缩放、旋转过的特效块与字幕：外层写 rotate、scale，绕记下的转轴，没记时绕画面中心', () => {
+  it('缩放、旋转过的特效块与字幕：外层写 rotate、scale，绕记下的转轴，没写时转轴是 (0, 0)', () => {
     const doc = parse(
       build({
-        captions: { component: 'default-caption', edits: [], scale: 0.8, rotation: 0 },
+        captions: {
+          component: 'default-caption',
+          edits: [],
+          scale: 0.8,
+          rotation: 0,
+          pivotX: 360,
+          pivotY: 1100,
+        },
         overlays: [
           ov('o1', 'lower-third', 0, 1000, {
             x: 40,
@@ -620,27 +627,17 @@ describe('buildComposition', () => {
     )
     const styleOf = (hfId: string) =>
       doc.querySelector(`.place[data-hf-id="${hfId}"]`)?.getAttribute('style')
-    // 画布 720×1280：中心 (360, 640)
     expect(styleOf('o1')).toBe('z-index:1;rotate:30deg;scale:1.5;transform-origin:100px -12px')
-    expect(styleOf('o2')).toBe('z-index:4;rotate:-90.5deg;scale:1;transform-origin:360px 640px')
-    expect(styleOf('captions')).toBe('z-index:3;rotate:0deg;scale:0.8;transform-origin:360px 640px')
+    // 有这几个字段之前存的草稿没写转轴，同 x、y 按 0 读
+    expect(styleOf('o2')).toBe('z-index:4;rotate:-90.5deg;scale:1;transform-origin:0px 0px')
+    expect(styleOf('captions')).toBe(
+      'z-index:3;rotate:0deg;scale:0.8;transform-origin:360px 1100px',
+    )
     // 原大、不转时转轴记着也不写
     expect(styleOf('o3')).toBe('z-index:1')
     // 位置照写 data-x/y，宿主本身不变换
     expect(doc.querySelector('.place[data-hf-id="o1"]')?.getAttribute('data-x')).toBe('40')
     expect(doc.querySelector('#ov-0')?.hasAttribute('style')).toBe(false)
-  })
-
-  it('withPivots：没写的转轴补成 null，写了的与其余字段原样', () => {
-    const parsed = draft({
-      captions: { component: 'default-caption', edits: [], scale: 2 },
-      overlays: [ov('o1', 'lower-third', 0, 1000, { pivotX: 10, pivotY: -20 })],
-    })
-    expect(withPivots(parsed)).toEqual({
-      ...parsed,
-      captions: { ...parsed.captions, pivotX: null, pivotY: null },
-      overlays: [{ ...parsed.overlays[0], pivotX: 10, pivotY: -20 }],
-    })
   })
 
   it('原大、不转、没挪过时页面与没写这些字段的草稿一字不差，外层只写叠放次序', () => {
@@ -649,7 +646,7 @@ describe('buildComposition', () => {
       layer0,
       overlays: [ov('o1', 'lower-third', 0, 1000), ov('o2', 'scribble', 0, 1000)],
     }).html
-    const identity = { x: 0, y: 0, scale: 1, rotation: 0, pivotX: null, pivotY: null }
+    const identity = { x: 0, y: 0, scale: 1, rotation: 0, pivotX: 0, pivotY: 0 }
     const written = build({
       layer0,
       captions: { component: 'default-caption', edits: [], ...identity },

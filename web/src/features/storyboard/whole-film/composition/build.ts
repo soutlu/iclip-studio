@@ -5,7 +5,7 @@
  * 合成页里组件、运行时的路径都相对组件目录根；素材地址原样使用调用方给的。
  */
 // 草稿类型取后端合同的生成类型；只导入类型，打包时整行去掉，render/ 用 esbuild 打包不需要解析 @/。
-import type { WholeFilmCaptions, WholeFilmDocument, WholeFilmOverlay } from '@/shared/api/generated'
+import type { WholeFilmDocument, WholeFilmOverlay } from '@/shared/api/generated'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './catalog'
 import { captionWords, placeCaptions, type SubtitleRecord } from './captions'
 import { escapeAttribute, jsonAttribute, seconds } from './html'
@@ -107,36 +107,6 @@ interface HostOptions {
 /** 草稿里特效块、字幕的位置与变换；有这些字段之前存的草稿没写，按没挪、原大、不转算 */
 type Placement = Pick<WholeFilmOverlay, 'x' | 'y' | 'scale' | 'rotation' | 'pivotX' | 'pivotY'>
 
-/** 转轴可以是 undefined 的一块：按合同的 zod 校验出来的形状 */
-type LoosePivot<T> = Omit<T, 'pivotX' | 'pivotY'> & {
-  pivotX?: number | null | undefined
-  pivotY?: number | null | undefined
-}
-
-/** 按合同的 zod 校验出来的草稿 */
-type ParsedDocument = Omit<WholeFilmDocument, 'captions' | 'overlays'> & {
-  captions: LoosePivot<WholeFilmCaptions>
-  overlays: LoosePivot<WholeFilmOverlay>[]
-}
-
-/**
- * 按合同的 zod 校验过的草稿 → 生成类型的草稿（{@link buildComposition} 与编辑器收的）。合同里特效块与
- * 字幕的转轴可以不写（取画面中心），zod 解析结果的类型因此带 undefined，生成的类型不带；这里补成
- * null，同服务端发出的草稿，其余原样。
- */
-export function withPivots(document: ParsedDocument): WholeFilmDocument {
-  const filled = <T extends LoosePivot<object>>(placed: T) => ({
-    ...placed,
-    pivotX: placed.pivotX ?? null,
-    pivotY: placed.pivotY ?? null,
-  })
-  return {
-    ...document,
-    captions: filled(document.captions),
-    overlays: document.overlays.map(filled),
-  }
-}
-
 const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
 
 /**
@@ -152,16 +122,16 @@ function positionAttributes(placement: Placement): string {
 }
 
 /**
- * 缩放与旋转写成 CSS 的 `rotate`、`scale`，绕转轴（画面像素，没记时取画面中心）；没缩放也没旋转
- * 时不写。CSS 按 translate → rotate → scale 的次序合成这几个属性，HyperFrames 的位置是 `translate`，
- * 转轴因此是挪开之前的坐标。
+ * 缩放与旋转写成 CSS 的 `rotate`、`scale`，绕转轴（画面像素）；没缩放也没旋转时不写。CSS 按
+ * translate → rotate → scale 的次序合成这几个属性，HyperFrames 的位置是 `translate`，转轴因此是
+ * 挪开之前的坐标。
  */
-function transformStyle(placement: Placement, canvas: HostOptions['canvas']): string {
+function transformStyle(placement: Placement): string {
   const scale = placement.scale ?? 1
   const rotation = placement.rotation ?? 0
   if (scale === 1 && rotation === 0) return ''
-  const px = placement.pivotX ?? canvas.width / 2
-  const py = placement.pivotY ?? canvas.height / 2
+  const px = placement.pivotX ?? 0
+  const py = placement.pivotY ?? 0
   return `;rotate:${rotation}deg;scale:${scale};transform-origin:${px}px ${py}px`
 }
 
@@ -172,7 +142,7 @@ function transformStyle(placement: Placement, canvas: HostOptions['canvas']): st
 function placed(options: HostOptions, placement: Placement, inner: string): string {
   return (
     `<div class="place" data-hf-id="${escapeAttribute(options.hfId)}"${positionAttributes(placement)}` +
-    ` style="z-index:${options.z}${transformStyle(placement, options.canvas)}">${inner}</div>`
+    ` style="z-index:${options.z}${transformStyle(placement)}">${inner}</div>`
   )
 }
 

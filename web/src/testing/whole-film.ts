@@ -51,7 +51,7 @@ export const card = (
 
 /**
  * 特效轨上的一块；默认在第 0 行、zIndex 为 1，画面上没挪过、原大、不转（同服务端发出的：位置、
- * 缩放、旋转与转轴总是写着，转轴没记时是 null）
+ * 缩放、旋转与转轴总是写着）
  */
 export const overlay = (
   id: string,
@@ -67,8 +67,8 @@ export const overlay = (
     y = 0,
     scale = 1,
     rotation = 0,
-    pivotX = null,
-    pivotY = null,
+    pivotX = 0,
+    pivotY = 0,
   }: Partial<OverlayClip> = {},
 ): OverlayClip => ({
   id,
@@ -103,8 +103,8 @@ export const draftOf = (
       y: 0,
       scale: 1,
       rotation: 0,
-      pivotX: null,
-      pivotY: null,
+      pivotX: 0,
+      pivotY: 0,
     },
     music: null,
     overlays: [],

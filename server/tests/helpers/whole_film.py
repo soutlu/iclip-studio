@@ -53,7 +53,7 @@ def overlay(
     y: int = 0,
     scale: float = 1,
     rotation: float = 0,
-    pivot: tuple[int, int] | None = None,
+    pivot: tuple[int, int] = (0, 0),
 ) -> dict[str, Any]:
     return {
         "id": clip_id,
@@ -70,13 +70,8 @@ def overlay(
     }
 
 
-def _transform(scale: float, rotation: float, pivot: tuple[int, int] | None) -> dict[str, Any]:
-    return {
-        "scale": scale,
-        "rotation": rotation,
-        "pivotX": pivot[0] if pivot else None,
-        "pivotY": pivot[1] if pivot else None,
-    }
+def _transform(scale: float, rotation: float, pivot: tuple[int, int]) -> dict[str, Any]:
+    return {"scale": scale, "rotation": rotation, "pivotX": pivot[0], "pivotY": pivot[1]}
 
 
 def butted(clips: Sequence[tuple[str, int]], *, source_job_id: uuid.UUID) -> list[dict[str, Any]]:
@@ -101,7 +96,7 @@ def draft_document(
     captions_at: tuple[int, int] = (0, 0),
     captions_scale: float = 1,
     captions_rotation: float = 0,
-    captions_pivot: tuple[int, int] | None = None,
+    captions_pivot: tuple[int, int] = (0, 0),
     music: dict[str, Any] | None = None,
     overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
