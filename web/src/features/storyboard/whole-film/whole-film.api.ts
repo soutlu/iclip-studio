@@ -18,6 +18,7 @@ import {
   storyboardQueryKeys,
   type GenerationJob,
 } from '../storyboard.api'
+import { withPivots } from './composition/build'
 
 const draftPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}/whole-film/draft`
@@ -33,8 +34,14 @@ export const wholeFilmQueryKeys = {
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
 
+// 草稿按生成类型交给编辑器与合成构建，转轴的类型差别见 withPivots
+const zDraftOut = zWholeFilmDraftOut.transform((out) => ({
+  ...out,
+  document: out.document === null ? null : withPivots(out.document),
+}))
+
 export const readWholeFilmDraft = (conversationId: string, signal?: AbortSignal) =>
-  apiFetch(draftPath(conversationId), zWholeFilmDraftOut, {
+  apiFetch(draftPath(conversationId), zDraftOut, {
     fallbackErrorMessage: '成片草稿读取失败',
     ...(signal === undefined ? {} : { signal }),
   })

@@ -51,6 +51,9 @@ def overlay(
     playback_start: int = 0,
     x: int = 0,
     y: int = 0,
+    scale: float = 1,
+    rotation: float = 0,
+    pivot: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": clip_id,
@@ -63,6 +66,16 @@ def overlay(
         "variables": {},
         "x": x,
         "y": y,
+        **_transform(scale, rotation, pivot),
+    }
+
+
+def _transform(scale: float, rotation: float, pivot: tuple[int, int] | None) -> dict[str, Any]:
+    return {
+        "scale": scale,
+        "rotation": rotation,
+        "pivotX": pivot[0] if pivot else None,
+        "pivotY": pivot[1] if pivot else None,
     }
 
 
@@ -86,10 +99,14 @@ def draft_document(
     edits: list[dict[str, Any]] | None = None,
     captions_hidden: bool = False,
     captions_at: tuple[int, int] = (0, 0),
+    captions_scale: float = 1,
+    captions_rotation: float = 0,
+    captions_pivot: tuple[int, int] | None = None,
     music: dict[str, Any] | None = None,
     overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），字幕开着、在原位，没有音乐与特效块。"""
+    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），字幕开着、在原位、没缩放没旋转，
+    没有音乐与特效块。"""
 
     source = source_job_id or uuid.uuid4()
     default_layer = butted([("a", 3000), ("b", 2000)], source_job_id=source)
@@ -102,6 +119,7 @@ def draft_document(
             "hidden": captions_hidden,
             "x": captions_at[0],
             "y": captions_at[1],
+            **_transform(captions_scale, captions_rotation, captions_pivot),
         },
         "music": music,
         "overlays": overlays or [],

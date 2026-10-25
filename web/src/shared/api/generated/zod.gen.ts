@@ -2632,12 +2632,17 @@ export const zWholeFilmCaptionEdit = z.object({
  * WholeFilmCaptions
  *
  * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
- * ``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。
+ * ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
+ * ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素），没写时取画面中心。
  */
 export const zWholeFilmCaptions = z.object({
   component: z.string().min(1).max(200),
   edits: z.array(zWholeFilmCaptionEdit).max(1000),
   hidden: z.boolean().optional().default(false),
+  pivotX: z.int().gte(-4096).lte(4096).nullish(),
+  pivotY: z.int().gte(-4096).lte(4096).nullish(),
+  rotation: z.number().gt(-180).lte(180).optional().default(0),
+  scale: z.number().gte(0.1).lte(10).optional().default(1),
   x: z.int().gte(-4096).lte(4096).optional().default(0),
   y: z.int().gte(-4096).lte(4096).optional().default(0),
 })
@@ -2738,13 +2743,18 @@ export const zWholeFilmMusic = z.object({
  *
  * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
  * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
- * ``x``、``y`` 是它在画面上挪开的位置。
+ * ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
+ * 是缩放与旋转的转轴（画面像素），没写时取画面中心。
  */
 export const zWholeFilmOverlay = z.object({
   component: z.string().min(1).max(200),
   duration: z.int().gte(100),
   id: z.string().min(1).max(64),
+  pivotX: z.int().gte(-4096).lte(4096).nullish(),
+  pivotY: z.int().gte(-4096).lte(4096).nullish(),
   playbackStart: z.int().gte(0),
+  rotation: z.number().gt(-180).lte(180).optional().default(0),
+  scale: z.number().gte(0.1).lte(10).optional().default(1),
   start: z.int().gte(0),
   track: z.int().gte(0),
   variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),

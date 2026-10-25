@@ -5,7 +5,7 @@
  * 合成页里组件、运行时的路径都相对组件目录根；素材地址原样使用调用方给的。
  */
 // 草稿类型取后端合同的生成类型；只导入类型，打包时整行去掉，render/ 用 esbuild 打包不需要解析 @/。
-import type { WholeFilmDocument, WholeFilmOverlay } from '@/shared/api/generated'
+import type { WholeFilmCaptions, WholeFilmDocument, WholeFilmOverlay } from '@/shared/api/generated'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './catalog'
 import { captionWords, placeCaptions, type SubtitleRecord } from './captions'
 import { escapeAttribute, jsonAttribute, seconds } from './html'
@@ -59,7 +59,7 @@ export class CompositionError extends Error {
 // zIndex 叠，相同时按草稿里的先后（页面上后写的在上），不看 track。
 const Z = { layer0: 1, overlay: 2, captions: 3 } as const
 
-/** 字幕宿主的 data-hf-id：全部字幕在画面上整体拖动时按它找到宿主；每一句另有 `caption:N` */
+/** 字幕外层（.place）的 data-hf-id：全部字幕在画面上整体拖动时按它找到这层；每一句另有 `caption:N` */
 export const CAPTIONS_HF_ID = 'captions'
 const TRACK = { layer0: 0, captions: 2, overlay: 3, music: 4 } as const
 
@@ -85,11 +85,14 @@ interface HostOptions {
   id: string
   /**
    * 草稿里这一段、这一块的 id，写成 data-hf-id，编辑器在画面上点选、拖动时按它认出是哪一块；
-   * 字幕宿主写 `captions`。
+   * 字幕写 `captions`。
    */
   hfId: string
-  /** 在画面上挪开的位置（画面像素）；画面轨上的组件段没有 */
-  position?: { x?: number | undefined; y?: number | undefined }
+  /**
+   * 特效块与字幕在画面上的位置、缩放与旋转；给了就在宿主外面包一层 {@link placed}。画面轨上的
+   * 组件段没有，宿主直接写 data-hf-id 与 z-index
+   */
+  placement?: Placement
   item: CatalogItem
   startMs: number
   durationMs: number
@@ -101,6 +104,39 @@ interface HostOptions {
   canvas: { width: number; height: number }
 }
 
+/** 草稿里特效块、字幕的位置与变换；有这些字段之前存的草稿没写，按没挪、原大、不转算 */
+type Placement = Pick<WholeFilmOverlay, 'x' | 'y' | 'scale' | 'rotation' | 'pivotX' | 'pivotY'>
+
+/** 转轴可以是 undefined 的一块：按合同的 zod 校验出来的形状 */
+type LoosePivot<T> = Omit<T, 'pivotX' | 'pivotY'> & {
+  pivotX?: number | null | undefined
+  pivotY?: number | null | undefined
+}
+
+/** 按合同的 zod 校验出来的草稿 */
+type ParsedDocument = Omit<WholeFilmDocument, 'captions' | 'overlays'> & {
+  captions: LoosePivot<WholeFilmCaptions>
+  overlays: LoosePivot<WholeFilmOverlay>[]
+}
+
+/**
+ * 按合同的 zod 校验过的草稿 → 生成类型的草稿（{@link buildComposition} 与编辑器收的）。合同里特效块与
+ * 字幕的转轴可以不写（取画面中心），zod 解析结果的类型因此带 undefined，生成的类型不带；这里补成
+ * null，同服务端发出的草稿，其余原样。
+ */
+export function withPivots(document: ParsedDocument): WholeFilmDocument {
+  const filled = <T extends LoosePivot<object>>(placed: T) => ({
+    ...placed,
+    pivotX: placed.pivotX ?? null,
+    pivotY: placed.pivotY ?? null,
+  })
+  return {
+    ...document,
+    captions: filled(document.captions),
+    overlays: document.overlays.map(filled),
+  }
+}
+
 const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
 
 /**
@@ -108,11 +144,36 @@ const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
  * `data-hf-edit-base-x/y`（我们的基准总是 0）就是挪开的画面像素，预览的运行时与导出时 producer
  * 注入的脚本都按它在这个元素上加一层 CSS `translate`。没挪过（都是 0）时不写，页面与有位置之前一样。
  */
-function positionAttributes(position: HostOptions['position']): string {
-  const x = position?.x ?? 0
-  const y = position?.y ?? 0
+function positionAttributes(placement: Placement): string {
+  const x = placement.x ?? 0
+  const y = placement.y ?? 0
   if (x === 0 && y === 0) return ''
   return ` data-x="${x}" data-y="${y}" data-hf-edit-base-x="0" data-hf-edit-base-y="0"`
+}
+
+/**
+ * 缩放与旋转写成 CSS 的 `rotate`、`scale`，绕转轴（画面像素，没记时取画面中心）；没缩放也没旋转
+ * 时不写。CSS 按 translate → rotate → scale 的次序合成这几个属性，HyperFrames 的位置是 `translate`，
+ * 转轴因此是挪开之前的坐标。
+ */
+function transformStyle(placement: Placement, canvas: HostOptions['canvas']): string {
+  const scale = placement.scale ?? 1
+  const rotation = placement.rotation ?? 0
+  if (scale === 1 && rotation === 0) return ''
+  const px = placement.pivotX ?? canvas.width / 2
+  const py = placement.pivotY ?? canvas.height / 2
+  return `;rotate:${rotation}deg;scale:${scale};transform-origin:${px}px ${py}px`
+}
+
+/**
+ * 铺满画面的普通 div（.place）：data-hf-id、位置（data-x/y）、缩放、旋转与叠放次序都写在这层，
+ * 组件宿主本身不变换，同 HyperFrames。没缩放、没旋转时只多这一层。
+ */
+function placed(options: HostOptions, placement: Placement, inner: string): string {
+  return (
+    `<div class="place" data-hf-id="${escapeAttribute(options.hfId)}"${positionAttributes(placement)}` +
+    ` style="z-index:${options.z}${transformStyle(placement, options.canvas)}">${inner}</div>`
+  )
 }
 
 /**
@@ -122,26 +183,31 @@ function positionAttributes(position: HostOptions['position']): string {
  * id 一致时把根节点展平进宿主，声明式绑定（data-var-*、--变量）才按宿主取到这一处的取值；
  * 同一组件挂多处时由 HyperFrames 改成各自的 `名称__hfN`。
  *
- * data-hf-id 与位置写在最外层：铺满的写在宿主上，固定尺寸的写在缩放盒子上。`translate` 先于盒子
- * 自己的 `transform`（居中、缩放）作用，挪开的距离因此是画面像素，不随组件缩放。
+ * 特效块与字幕外面再包一层 {@link placed}，data-hf-id 写在那层；画面轨上的组件段写在最外层：
+ * 铺满的写在宿主上，固定尺寸的写在缩放盒子上。
  */
 function componentHost(options: HostOptions): string {
-  const { id, item, canvas, size } = { ...options, size: options.item.size }
-  const hfId = ` data-hf-id="${escapeAttribute(options.hfId)}"${positionAttributes(options.position)}`
+  const { id, item, canvas, size, placement } = { ...options, size: options.item.size }
   const host = (extra: string) =>
     `<div id="${id}" data-composition-id="${escapeAttribute(item.name)}"${extra}` +
     ` data-composition-src="${escapeAttribute(item.src)}"` +
     ` data-start="${seconds(options.startMs)}" data-duration="${seconds(options.durationMs)}"` +
     ` data-playback-start="${seconds(options.playbackStartMs)}" data-track-index="${options.track}"` +
     ` data-variable-values="${jsonAttribute(options.variables)}"></div>`
-  // 铺满的宿主由页面样式（.fill）定成画面大小：根节点写了 data-width/height 时，HyperFrames 展平时
-  // 会把它写到宿主的行内样式上。
-  if (!size) return host(` class="fill"${hfId} style="z-index:${options.z}"`)
-  const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
-  return (
-    `<div class="fit"${hfId} style="width:${size.width}px;height:${size.height}px;` +
-    `transform:translate(-50%,-50%) scale(${round4(scale)});z-index:${options.z}">${host('')}</div>`
-  )
+  // marks：写在最外层的 data-hf-id；z：叠放次序，接在最外层的行内样式后面
+  const box = (marks: string, z: string) => {
+    // 铺满的宿主由页面样式（.fill）定成画面大小：根节点写了 data-width/height 时，HyperFrames
+    // 展平时会把它写到宿主的行内样式上。
+    if (!size) return host(` class="fill"${marks}${z === '' ? '' : ` style="${z}"`}`)
+    const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
+    return (
+      `<div class="fit"${marks} style="width:${size.width}px;height:${size.height}px;` +
+      `transform:translate(-50%,-50%) scale(${round4(scale)})${z === '' ? '' : `;${z}`}">` +
+      `${host('')}</div>`
+    )
+  }
+  if (placement !== undefined) return placed(options, placement, box('', ''))
+  return box(` data-hf-id="${escapeAttribute(options.hfId)}"`, `z-index:${options.z}`)
 }
 
 /** 组件字体整套字形的 CSS；组件目录给组件列了字体却没有对应 CSS 是目录本身的错。 */
@@ -205,7 +271,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
     return componentHost({
       id: `ov-${index}`,
       hfId: overlay.id,
-      position: overlay,
+      placement: overlay,
       item,
       startMs: overlay.start,
       durationMs: overlay.duration,
@@ -230,7 +296,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       : componentHost({
           id: 'captions',
           hfId: CAPTIONS_HF_ID,
-          position: draft.captions,
+          placement: draft.captions,
           item: captionItem,
           startMs: 0,
           durationMs: totalMs,
@@ -257,6 +323,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
     .join('\n')
 
   const total = seconds(totalMs)
+  // .place 与 .fill 宿主一样是透明铺满的一层，不设 pointer-events:none：它会传给组件内容
   const html = `<!doctype html>
 <html>
 <head>
@@ -271,6 +338,7 @@ html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;f
 #stage .layer0{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:${Z.layer0}}
 #stage .fill{position:absolute;inset:0;width:100%!important;height:100%!important}
 #stage .fit{position:absolute;left:50%;top:50%}
+#stage .place{position:absolute;inset:0}
 #stage .overlays{position:absolute;inset:0;z-index:${Z.overlay}}
 </style>
 </head>

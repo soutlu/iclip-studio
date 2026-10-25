@@ -4,6 +4,7 @@
 import { http, HttpResponse } from 'msw'
 import type { WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { zWholeFilmDraftIn, zWholeFilmExportIn } from '@/shared/api/generated/zod.gen'
+import { withPivots } from '@/features/storyboard/whole-film/composition/build'
 
 type StoredDraft = { revision: number; document: WholeFilmDocument; updatedAt: string }
 
@@ -94,7 +95,8 @@ export const wholeFilmHandlers = [
     const current = drafts.get(conversationId)?.revision ?? 0
     if (parsed.data.revision !== current)
       return HttpResponse.json({ detail: STALE_DRAFT_DETAIL }, { status: 409 })
-    const stored = putMockWholeFilmDraft(conversationId, parsed.data.document)
+    // 同后端存下、发回的形状：没写的转轴是 null
+    const stored = putMockWholeFilmDraft(conversationId, withPivots(parsed.data.document))
     return HttpResponse.json({ revision: stored.revision, updatedAt: stored.updatedAt })
   }),
 

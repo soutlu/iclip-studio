@@ -10,7 +10,9 @@ import {
   MAX_FILM_MS,
   MIN_CLIP_MS,
   toOffset,
+  transformed,
   type ComponentVariables,
+  type TransformArgs,
   type OverlayClip,
   type WholeFilmDraft,
 } from './draft'
@@ -235,6 +237,24 @@ export const setOverlayPosition = (
   return done({
     ...draft,
     overlays: draft.overlays.map((o) => (o === overlay ? { ...o, x, y } : o)),
+  })
+}
+
+/**
+ * 在画面上缩放、旋转一个特效块，规则见 {@link transformed}。`pivot` 是画出来那块的中心减去当前
+ * x、y，即挪开之前的坐标（平移在缩放、旋转之后生效）。倍数与角度都没变时原样返回
+ */
+export const setOverlayTransform = (
+  draft: WholeFilmDraft,
+  args: { overlayId: string } & TransformArgs,
+): EditResult => {
+  const overlay = draft.overlays.find((o) => o.id === args.overlayId)
+  if (!overlay) return refuse('unknown-clip')
+  const next = transformed(overlay, args)
+  if (next === undefined) return done(draft)
+  return done({
+    ...draft,
+    overlays: draft.overlays.map((o) => (o === overlay ? { ...o, ...next } : o)),
   })
 }
 

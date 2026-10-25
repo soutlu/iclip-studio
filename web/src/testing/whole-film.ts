@@ -49,7 +49,10 @@ export const card = (
   variables,
 })
 
-/** 特效轨上的一块；默认在第 0 行、zIndex 为 1，画面上没挪过（同服务端发出的：x、y 总是写着） */
+/**
+ * 特效轨上的一块；默认在第 0 行、zIndex 为 1，画面上没挪过、原大、不转（同服务端发出的：位置、
+ * 缩放、旋转与转轴总是写着，转轴没记时是 null）
+ */
 export const overlay = (
   id: string,
   start: number,
@@ -62,6 +65,10 @@ export const overlay = (
     variables = {},
     x = 0,
     y = 0,
+    scale = 1,
+    rotation = 0,
+    pivotX = null,
+    pivotY = null,
   }: Partial<OverlayClip> = {},
 ): OverlayClip => ({
   id,
@@ -74,6 +81,10 @@ export const overlay = (
   variables,
   x,
   y,
+  scale,
+  rotation,
+  pivotX,
+  pivotY,
 })
 
 export const draftOf = (
@@ -83,8 +94,18 @@ export const draftOf = (
   let at = 0
   return {
     canvas: layer0.some((clip) => clip.type === 'video') ? { width: 1080, height: 1920 } : null,
-    // 同服务端发出的草稿：hidden、x、y 总是写着
-    captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [], hidden: false, x: 0, y: 0 },
+    // 同服务端发出的草稿：hidden、位置、缩放、旋转与转轴总是写着
+    captions: {
+      component: DEFAULT_CAPTION_COMPONENT,
+      edits: [],
+      hidden: false,
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      pivotX: null,
+      pivotY: null,
+    },
     music: null,
     overlays: [],
     ...rest,
