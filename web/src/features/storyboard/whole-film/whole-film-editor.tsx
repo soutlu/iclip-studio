@@ -206,7 +206,7 @@ const isTextEntry = (target: HTMLElement) =>
   (target instanceof HTMLInputElement && target.type !== 'range')
 
 /**
- * 编辑器的单键快捷键只在弹窗里、不在打字时生效；挂在弹窗里的浮层（role="dialog"）与挂在弹窗外的
+ * 编辑器的单键快捷键只在弹窗里、不在打字时生效；浮层（role="dialog"，挂在弹窗里也算）与挂在弹窗外的
  * 菜单都不算，标签页的方向键与空格留给标签页自己。
  */
 const isShortcutTarget = (event: KeyboardEvent<HTMLDivElement>) =>

@@ -533,8 +533,6 @@
   max-height: var(--radix-popover-content-available-height);
   overflow-y: auto;
   padding: 10px 12px;
-  /* 挂在时间线根上，不随它禁止选字 */
-  user-select: text;
 }
 
 .wf-pop {

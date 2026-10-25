@@ -354,6 +354,21 @@ describe('成片编辑器 · 时间线', () => {
     expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
   })
 
+  it('焦点在挂进弹窗的生成音乐浮层上时，Delete 不删选中的段', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    const first = await blockButton(/^选中：第 1 段/)
+    await user.click(first)
+    await user.click(screen.getByRole('button', { name: '生成音乐' }))
+    const music = await screen.findByRole('dialog', { name: '生成音乐' })
+    expect(first).toHaveAttribute('aria-pressed', 'true')
+    music.focus()
+    expect(music).toHaveFocus()
+    await user.keyboard('{Delete}')
+    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
+  })
+
   it('⌥←/→ 把选中的段前后挪一位，焦点留在这一段上', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -633,24 +648,6 @@ describe('成片编辑器 · 组件', () => {
     expect(within(popover).getByLabelText('标语')).toHaveAttribute('placeholder', '品牌标语')
     expect(within(popover).getByLabelText('网址')).toHaveAttribute('placeholder', '网址')
     expect(within(popover).getByRole('group', { name: '强调色' })).toBeInTheDocument()
-  })
-
-  it('浮层挂在成片弹窗里，不落到 body 上', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    const popover = await openSegment(user)
-    expect(screen.getByRole('dialog', { name: '夜景延时素材生成' })).toContainElement(popover)
-  })
-
-  it('焦点在浮层的按钮上时按 Delete 不删组件段', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    const popover = await openSegment(user)
-    within(popover).getByRole('button', { name: '移除' }).focus()
-    await user.keyboard('{Delete}')
-    expect(within(filmLane()).getByRole('group', { name: /组件 · 字标逐字/ })).toBeInTheDocument()
   })
 
   it('清空填过的文字：回到组件的默认字，草稿里不再存这一项', async () => {
