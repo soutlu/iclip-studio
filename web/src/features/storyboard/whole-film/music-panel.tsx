@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactElement } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { MEDIA_AUDIO_ACCEPT, uploadMediaFile } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
-import { Textarea } from '@/shared/ui/field'
+import { Composer, type ComposerHandle } from '@/shared/ui/composer'
 import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { BlockedReason } from '../components/blocked-reason'
@@ -356,10 +356,12 @@ export function GenerateMusic({
   initialPrompt?: string
 }) {
   const queryClient = useQueryClient()
-  const inputId = useId()
+  const hintId = useId()
+  const [composer, setComposer] = useState<ComposerHandle | null>(null)
   const [open, setOpen] = useState(false)
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null)
-  const [prompt, setPrompt] = useState<string | null>(null)
+  // 用户输入的文字；null 表示还没动过，框里是预填的描述
+  const [typed, setTyped] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const task = useConversationTaskId(conversationId)
   // 工程文件里写了配乐就拿它当默认描述；没有工程文件（404）就空着
@@ -368,30 +370,49 @@ export function GenerateMusic({
     enabled: open,
     retry: (count, error) => !isMissing(error) && count < 1,
   })
-  const suggested = initialPrompt ?? film.data?.film.musicDescription ?? ''
-  const text = prompt ?? suggested
+  const musicDescription = film.data?.film.musicDescription ?? ''
+  const suggested = initialPrompt ?? musicDescription
+  const text = (typed ?? suggested).trim()
   const reason = submitting
     ? '正在提交，请稍候'
     : task.isError
       ? '对话信息读取失败，无法生成；请关闭后重新打开成片编辑器'
       : task.data === undefined
         ? '正在读取对话信息，稍后再试'
-        : text.trim() === ''
+        : text === ''
           ? '尚未填写音乐描述，无法生成；请用一句话描述想要的音乐'
-          : undefined
+          : text.length > MAX_PROMPT_CHARS
+            ? `描述超过 ${MAX_PROMPT_CHARS} 字，无法生成；请删减到 ${MAX_PROMPT_CHARS} 字以内`
+            : undefined
+  const hint =
+    reason ??
+    (initialPrompt !== undefined && text === initialPrompt.trim()
+      ? '已填入上次的描述，可直接修改'
+      : initialPrompt === undefined && text === musicDescription.trim()
+        ? '已填入工程文件里的配乐描述，可直接修改'
+        : '生成后出现在左侧「音乐」列表')
 
-  const generate = async () => {
+  // Composer 不受控：每次打开都是新挂上的，挂上时写入手上的文字；用户还没输入时，后到的工程文件配乐也写进去。
+  // 浮层内容比 open 晚一轮挂上，所以跟着 Composer 句柄走，不跟 open 走
+  const fill = useEffectEvent((target: ComposerHandle) =>
+    target.restore({ media: [], parts: text === '' ? [] : [{ kind: 'text', text }], text: '' }),
+  )
+  const pristine = typed === null
+  useEffect(() => {
+    if (composer !== null) fill(composer)
+  }, [composer])
+  useEffect(() => {
+    if (composer !== null && pristine) fill(composer)
+  }, [composer, pristine, suggested])
+
+  const generate = async (prompt: string) => {
     if (reason !== undefined) return
     setSubmitting(true)
     try {
-      const job = await submitMusic({
-        conversationId,
-        prompt: text.trim(),
-        taskId: task.data ?? null,
-      })
+      const job = await submitMusic({ conversationId, prompt, taskId: task.data ?? null })
       await refreshConversationMusic(queryClient, conversationId, job)
       setOpen(false)
-      setPrompt(null)
+      setTyped(null)
     } catch (error) {
       onNotice(errorMessageOf(error, '音乐生成提交失败'))
     } finally {
@@ -406,40 +427,55 @@ export function GenerateMusic({
       </PopupTrigger>
       <PopupSurface
         align="start"
+        aria-describedby={hintId}
         aria-label="生成音乐"
         className="wf-generate"
         collisionPadding={16}
-        // 挂到 body 会落在成片弹窗外，弹窗的滚动锁会拦下文本框的滚轮
+        // 挂到 body 会落在成片弹窗外，弹窗的滚动锁会拦下输入框的滚轮
         container={trigger?.parentElement ?? null}
+        onFocusOutside={(event) => {
+          // 焦点在 body 时浮层里有节点被移除（预填换掉占位、提交钮换成转圈），成片弹窗的 FocusScope 会把
+          // 焦点拉回弹窗容器；这不是用户离开，留住浮层并把焦点还给输入框。点到外面仍照常关闭
+          if (event.target !== trigger?.closest('[role="dialog"]')) return
+          event.preventDefault()
+          if (open) composer?.focus()
+        }}
         side="top"
         sideOffset={6}
       >
-        <label className="wf-generate-label" htmlFor={inputId}>
-          音乐描述
-        </label>
-        <Textarea
-          id={inputId}
-          maxLength={MAX_PROMPT_CHARS}
-          onChange={(event) => setPrompt(event.target.value)}
-          placeholder={
-            film.isPending && open ? '正在读取工程文件里的配乐…' : '用一句话描述想要的音乐'
-          }
-          rows={4}
-          value={text}
-        />
-        <div className="wf-generate-foot">
-          <BlockedReason reason={reason}>
-            <Button
-              aria-disabled={reason === undefined ? undefined : true}
-              leadingIcon="music"
-              loading={submitting}
-              onClick={() => void generate()}
-              size="md"
-            >
-              生成
-            </Button>
-          </BlockedReason>
+        <div className="wf-generate-head">
+          <p className="wf-generate-title">生成音乐</p>
+          <p
+            className={cn('wf-generate-hint', reason !== undefined && !submitting && 'is-blocked')}
+            id={hintId}
+          >
+            {hint}
+          </p>
         </div>
+        <Composer
+          ariaLabel="音乐描述"
+          attachmentsEnabled={false}
+          className="wf-generate-composer"
+          onChange={(parts) =>
+            setTyped(parts.map((part) => (part.kind === 'text' ? part.text : '')).join(''))
+          }
+          onSubmit={(submission) => void generate(submission.text)}
+          placeholder={
+            film.isPending && open
+              ? '正在读取工程文件里的配乐…'
+              : '描述想要的音乐：风格、情绪、乐器、节奏'
+          }
+          ref={setComposer}
+          sending={submitting}
+          submitAction={{
+            disabled: reason !== undefined,
+            emphasis: 'primary',
+            icon: 'music',
+            label: '生成音乐',
+            pendingLabel: '正在提交',
+            size: 'sm',
+          }}
+        />
       </PopupSurface>
     </PopupRoot>
   )
