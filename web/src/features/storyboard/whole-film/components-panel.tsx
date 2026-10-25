@@ -23,8 +23,6 @@ type ComponentsPanelProps = {
   onSelect: (id: string) => void
   /** 这一栏没有卡片时的说明 */
   emptyText: string
-  /** 成片在用的字幕样式：这张卡描墨色框并打勾 */
-  captionComponent: string
   /** 点卡片：按组件的默认去处放进成片 */
   onUse: (item: CatalogItem) => void
   /** 拿着卡片移动；null 是拖动中途作废 */
@@ -47,7 +45,6 @@ export function ComponentsPanel({
   selected,
   onSelect,
   emptyText,
-  captionComponent,
   onUse,
   onCarry,
   onDrop,
@@ -76,9 +73,6 @@ export function ComponentsPanel({
         {group.items.map((item) => (
           <li key={item.name}>
             <ComponentCard
-              captionInUse={
-                item.placement === 'caption' ? item.name === captionComponent : undefined
-              }
               item={item}
               onCarry={(carry) => onCarry(item, carry)}
               onDrop={(carry) => onDrop(item, carry)}
@@ -115,8 +109,6 @@ export function ComponentThumb({
 
 type CardProps = {
   item: CatalogItem
-  /** 字幕样式卡是不是成片在用的那个；其余组件为 undefined */
-  captionInUse: boolean | undefined
   onUse: () => void
   onCarry: (carry: CardCarry | null) => void
   onDrop: (carry: CardCarry) => void
@@ -130,7 +122,7 @@ type Press = {
   moved: boolean
 }
 
-function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps) {
+function ComponentCard({ item, onUse, onCarry, onDrop }: CardProps) {
   const pressRef = useRef<Press | null>(null)
   const [lifting, setLifting] = useState(false)
   const [tip, setTip] = useState(false)
@@ -186,7 +178,6 @@ function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps
       <TooltipTrigger asChild>
         <button
           aria-label={`${item.title}，${defaultLaneLabel(item)}：${item.description}`}
-          aria-pressed={captionInUse}
           className={cn('wf-component ui-focus', lifting && 'is-lifting')}
           onClick={() => {
             if (!clicks.take()) onUse()
@@ -199,11 +190,6 @@ function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps
         >
           <span className="wf-component-frame">
             <ComponentThumb item={item} />
-            {captionInUse === true ? (
-              <span className="wf-component-check">
-                <Icon decorative name="check" size="xs" />
-              </span>
-            ) : null}
           </span>
           <span className="wf-component-name">{item.title}</span>
         </button>

@@ -27,6 +27,7 @@ import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import {
   brandGroups,
+  captionStyles,
   CATEGORY_ICON,
   categoryGroups,
   durationMsOf,
@@ -74,7 +75,7 @@ import {
   withSourceSize,
   type KeyframeStates,
 } from './edit-context'
-import { EditorToolbar, SoundRow } from './editor-toolbar'
+import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import {
   FilmTracks,
@@ -589,7 +590,7 @@ function EditorBody({
     overlayRow: point.overlayRow,
   })
   /**
-   * 拖着组件卡：落在哪条轨就是哪种用法；字幕样式只落在字幕轨，音乐轨不收组件。
+   * 拖着组件卡：落在画面轨插成一段，落在特效轨放成特效块，音乐轨不收组件。
    * 手上的缩影是预览图加名字的小条，拿起时的卡片位置是它退回的地方。
    */
   const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
@@ -723,17 +724,6 @@ function EditorBody({
       : `${takeLetterOf(material)} · 镜头 ${shot}`
   }
 
-  const selectedIndex = draft.layer0.findIndex((clip) => clip.id === selectedId)
-  const clipText =
-    selectedIndex < 0 ? (
-      '选择片段可调原声'
-    ) : (
-      <>
-        当前片段 · <b>第 {selectedIndex + 1} 段</b>
-        {selectedVideo === undefined ? ' · 没有原声' : ''}
-      </>
-    )
-
   // ---- 素材预览 ----
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -782,7 +772,6 @@ function EditorBody({
           </TabsContent>
           <TabsContent className="wf-side-body is-components" value="brand">
             <ComponentsPanel
-              captionComponent={draft.captions.component}
               emptyText="暂无品牌组件"
               groups={brandGroups(catalog)}
               groupsLabel="品牌"
@@ -795,7 +784,6 @@ function EditorBody({
           </TabsContent>
           <TabsContent className="wf-side-body is-components" value="general">
             <ComponentsPanel
-              captionComponent={draft.captions.component}
               emptyText="暂无组件"
               groups={categoryGroups(catalog)}
               groupsLabel="分类"
@@ -877,12 +865,11 @@ function EditorBody({
             snap={snap}
             splitBlocked={split.ok ? undefined : REFUSAL_TEXT[split.refusal]}
             totalMs={total}
-          />
-          <SoundRow
             clipBlocked={
-              selectedIndex < 0 ? '先在画面轨上选中一段视频' : REFUSAL_TEXT['not-a-video']
+              draft.layer0.some((clip) => clip.id === selectedId)
+                ? REFUSAL_TEXT['not-a-video']
+                : '先在画面轨上选中一段视频'
             }
-            clipText={clipText}
             clipVolume={selectedVideo?.volume}
             musicVolume={draft.music?.volume}
             onClipVolume={(volume) => {
@@ -910,7 +897,7 @@ function EditorBody({
                 }
                 recognition={recognition}
                 statusId={captionStatusId}
-                styles={catalog.items.filter((item) => item.placement === 'caption')}
+                styles={captionStyles(catalog)}
               />
             }
             captionStatus={

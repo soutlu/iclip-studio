@@ -3,6 +3,7 @@ import { withBrandFixtures } from '@/testing/whole-film'
 import catalogJson from './catalog/catalog.json'
 import {
   brandGroups,
+  captionStyles,
   categoryGroups,
   defaultLaneLabel,
   durationMsOf,
@@ -42,8 +43,7 @@ describe('组件目录', () => {
     expect(durationMsOf(item(name), filmMs)).toBe(ms)
   })
 
-  it('点卡片的默认去处：字幕样式、block 进画面轨、其余进特效轨', () => {
-    expect(defaultLaneLabel(item('caption-highlight'))).toBe('字幕样式')
+  it('点卡片的默认去处：block 进画面轨、其余进特效轨', () => {
     expect(defaultLaneLabel(item('logo-outro'))).toBe('画面轨')
     expect(defaultLaneLabel(item('hw-arrow'))).toBe('特效轨')
   })
@@ -57,10 +57,27 @@ describe('组件目录', () => {
 describe('侧栏分组', () => {
   const names = (items: CatalogItem[]) => items.map((entry) => entry.name)
 
-  it('真实目录没有品牌组件：品牌栏没有小标题，通用栏收下全部组件', () => {
+  it('真实目录没有品牌组件：品牌栏没有小标题，通用栏收下字幕样式以外的全部组件', () => {
     expect(brandGroups(catalog)).toEqual([])
     const groups = categoryGroups(catalog)
-    expect(groups.flatMap((group) => group.items)).toHaveLength(catalog.items.length)
+    expect(groups.flatMap((group) => group.items)).toHaveLength(catalog.items.length - 3)
+    expect(groups.map((group) => group.id)).not.toContain('captions')
+    expect(groups[0]?.label).toBe('视觉特效')
+  })
+
+  it('字幕样式不进品牌栏和通用栏，只列在字幕样式菜单里，保持目录的顺序', () => {
+    const branded = withBrandFixtures(catalog)
+    const brandedCaption = { ...item('caption-texture'), name: 'brand-caption', brand: '拾步' }
+    const withCaption = { ...branded, items: [...branded.items, brandedCaption] }
+    const listed = [...brandGroups(withCaption), ...categoryGroups(withCaption)].flatMap(
+      (group) => group.items,
+    )
+    expect(listed.some((entry) => entry.placement === 'caption')).toBe(false)
+    expect(names(captionStyles(catalog))).toEqual([
+      'default-caption',
+      'caption-highlight',
+      'caption-texture',
+    ])
   })
 
   it('品牌栏按品牌分组，品牌按目录里第一次出现的顺序，组内保持目录的顺序', () => {
@@ -77,8 +94,11 @@ describe('侧栏分组', () => {
       ...branded,
       items: branded.items.filter((entry) => entry.category !== 'transitions'),
     })
+    // 字幕分类只有字幕样式，也不列
     expect(groups.map((group) => group.id)).toEqual(
-      catalog.categories.map((category) => category.id).filter((id) => id !== 'transitions'),
+      catalog.categories
+        .map((category) => category.id)
+        .filter((id) => id !== 'transitions' && id !== 'captions'),
     )
     const all = groups.flatMap((group) => group.items)
     expect(all.some((entry) => entry.brand !== undefined)).toBe(false)
