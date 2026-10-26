@@ -564,7 +564,8 @@ export function fontFaceDescriptors(text) {
 }
 
 /**
- * 一个组件字体的中文字形：同名的 @font-face，只覆盖中日韩码位，字形取 Noto Sans SC。
+ * 一个组件字体的中文字形：同名的 @font-face，只覆盖中日韩码位，字形取 Noto Sans SC。只给组件里
+ * 写死的字体用：这些组件的 font-family 没有中文兜底，不配的话中文会落到各平台不同的系统字体。
  *
  * `descriptors` 是这个字体的西文字形用过的全部字重、字形描述，每一种各出一组描述完全相同的中文字形。
  * 浏览器先按字重、字形在同名的 @font-face 里挑出最接近的一组，再在组里按 unicode-range 取字：
@@ -647,14 +648,14 @@ const FONT_FORMATS = { woff2: 'woff2', woff: 'woff', ttf: 'truetype', otf: 'open
 
 /**
  * 源目录 fonts/ 下字体文件的 @font-face：faces 里每个字重、字形各一条，`font-display: block`。
- * 字体文件拷到 `outDir` 里同样的路径，url() 相对 `cssPath`。返回 CSS 与各条的字重、字形描述
- * （给 cjkTwinFaces 配中文字形）。文件不在源目录的 fonts/ 下、不存在或格式认不出时抛出。
+ * 字体文件拷到 `outDir` 里同样的路径，url() 相对 `cssPath`。返回 CSS，只有这些条目、不配中文字形：
+ * 这类字体只经字体可填项使用，合成页设的字体变量自带 Noto Sans SC 兜底（见 build.ts）。
+ * 文件不在源目录的 fonts/ 下、不存在或格式认不出时抛出。
  */
 export async function localFontFaces({ family, faces, cssPath, libraryDir, outDir }) {
   if (!Array.isArray(faces) || faces.length === 0)
     throw new SyncError(`字体「${family}」的 faces 要列出至少一个字体文件`)
   const rules = []
-  const descriptors = []
   for (const face of faces) {
     const file = posix.normalize(String(face.file ?? ''))
     if (!file.startsWith('fonts/'))
@@ -667,13 +668,12 @@ export async function localFontFaces({ family, faces, cssPath, libraryDir, outDi
     await writeFile(join(outDir, file), await readFile(source))
     const weight = String(face.weight ?? 400)
     const style = face.style ?? 'normal'
-    descriptors.push({ family, weight, style })
     rules.push(
       `@font-face{font-family:'${family}';font-style:${style};font-display:block;font-weight:${weight};` +
         `src:url(${posix.relative(posix.dirname(cssPath), file)}) format('${format}')}`,
     )
   }
-  return { css: rules.join('\n'), descriptors }
+  return rules.join('\n')
 }
 
 /** 列出目录下全部文件（相对路径，正斜杠）。 */

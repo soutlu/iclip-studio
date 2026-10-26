@@ -15,6 +15,9 @@ type ComponentVariables = WholeFilmOverlay['variables']
 /** 草稿还没定画布（画面轨上没有视频）时的画面尺寸：竖屏 1080×1920。 */
 export const DEFAULT_CANVAS = { width: 1080, height: 1920 } as const
 
+/** 组件目录 `runtime.cjkFont` 那份 CSS 定义的字体：合成页的默认字体，也是字体变量里中文的兜底。 */
+const CJK_FAMILY = 'Noto Sans SC'
+
 export interface CompositionMedia {
   /** 按 `sourceJobId`：素材片地址。 */
   videos: Readonly<Record<string, { url: string }>>
@@ -105,10 +108,11 @@ function componentValues(
 
 /**
  * 换字体：HyperFrames 组件的标题读 `--font-display`、正文读 `--font-body`，自己不定义这两个变量；
- * 设在宿主上，经 CSS 继承传进组件。`--font-mono` 不动。
+ * 设在宿主上，经 CSS 继承传进组件。`--font-mono` 不动。品牌字体的 CSS 只有它自己的字形，缺的字
+ * （中文）按 CSS 逐字兜底落到 {@link CJK_FAMILY}，合成页总是引用它的 CSS。
  */
 function fontVariables(family: string): string {
-  const value = `'${family}', sans-serif`
+  const value = `'${family}', '${CJK_FAMILY}', sans-serif`
   return `--font-display:${value};--font-body:${value}`
 }
 
@@ -362,7 +366,7 @@ ${fontLinks}
 <script src="${escapeAttribute(catalog.runtime.gsap)}"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'Noto Sans SC',sans-serif}
+html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'${CJK_FAMILY}',sans-serif}
 #stage{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
 #stage .layer0{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:${Z.layer0}}
 #stage .fill{position:absolute;inset:0;width:100%!important;height:100%!important}

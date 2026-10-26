@@ -511,7 +511,8 @@ describe('buildComposition', () => {
 
   describe('字体项', () => {
     const BRAND_VARIABLES =
-      "--font-display:'Brand Serif', sans-serif;--font-body:'Brand Serif', sans-serif"
+      "--font-display:'Brand Serif', 'Noto Sans SC', sans-serif;" +
+      "--font-body:'Brand Serif', 'Noto Sans SC', sans-serif"
     const linksOf = (doc: Document) =>
       [...doc.querySelectorAll('head link[rel="stylesheet"]')].map((node) =>
         node.getAttribute('href'),

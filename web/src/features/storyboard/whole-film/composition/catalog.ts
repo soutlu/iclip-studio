@@ -42,7 +42,7 @@ export interface CatalogItem {
   variables: CatalogVariable[]
   /** `<version>/thumbnails/` 下的缩略图文件名。 */
   thumbnail: string | null
-  /** 组件用到的网页字体，合成页给它们补上中文字形（见 {@link ComponentCatalog.fonts}）。 */
+  /** 组件用到的网页字体，合成页引用它们的 CSS（见 {@link ComponentCatalog.fonts}）。 */
   fonts: string[]
 }
 
@@ -68,10 +68,11 @@ export interface ComponentCatalog {
    */
   runtime: { hyperframes: string; gsap: string; cjkFont: string }
   /**
-   * 字体名 → 它整套字形的 CSS 与品牌：西文字形是组件库里请求过的全部字重（品牌字体是组件库自带的字体
-   * 文件），加上同名、只覆盖中日韩码位、字形取 Noto Sans SC 的中文字形。只写字体名不引用字体文件的组件
-   * 也能拿到这个字体，中文不再落到各平台各不相同的系统字体；渲染服务把它内联进合成页，HyperFrames 就
-   * 不再另补同名字体。
+   * 字体名 → 它整套字形的 CSS 与品牌。组件里写的字体：西文字形是组件库里请求过的全部字重，加上同名、
+   * 只覆盖中日韩码位、字形取 Noto Sans SC 的中文字形，只写字体名不引用字体文件的组件也能拿到这个字体，
+   * 中文不再落到各平台各不相同的系统字体。组件库自带字体文件的字体（品牌字体）只有它自己的字形，经字体
+   * 可填项使用，中文由字体变量里的 Noto Sans SC 兜底。渲染服务把它内联进合成页，HyperFrames 就不再另补
+   * 同名字体。
    */
   fonts: Record<string, CatalogFont>
   categories: { id: string; label: string }[]

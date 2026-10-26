@@ -27,7 +27,7 @@ RUN pnpm build && pnpm prune --prod
 # ---------------------------------------------------------------- 运行
 FROM ${NODE_IMAGE} AS runtime
 
-# Chrome 依赖的系统库与字体；fonts-noto-cjk 给没有中文字形的字体兜底（组件目录里的网页字体另有中文补字）。
+# Chrome 依赖的系统库与字体；fonts-noto-cjk 给没有中文字形的字体兜底（组件目录里的字体，中文另由组件库的 Noto Sans SC 补上）。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \

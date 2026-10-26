@@ -228,8 +228,8 @@ describe('localFontFaces', () => {
     { file: 'fonts/brand/brand-bold.ttf', weight: 700, style: 'italic' },
   ]
 
-  it('每个字重、字形一条 @font-face（font-display: block），字体文件拷进输出目录的同一路径', async () => {
-    const { css, descriptors } = await localFontFaces({
+  it('每个字重、字形一条 @font-face（font-display: block），不配中文字形；字体文件拷进输出目录的同一路径', async () => {
+    const css = await localFontFaces({
       family: 'Brand Sans',
       faces,
       cssPath: 'vendor/fonts/families/brand-sans.css',
@@ -241,10 +241,6 @@ describe('localFontFaces', () => {
         "src:url(../../../fonts/brand/brand.woff2) format('woff2')}",
       "@font-face{font-family:'Brand Sans';font-style:italic;font-display:block;font-weight:700;" +
         "src:url(../../../fonts/brand/brand-bold.ttf) format('truetype')}",
-    ])
-    expect(descriptors).toEqual([
-      { family: 'Brand Sans', weight: '400', style: 'normal' },
-      { family: 'Brand Sans', weight: '700', style: 'italic' },
     ])
     expect(await readFile(join(outDir, 'fonts/brand/brand.woff2'))).toEqual(
       await readFile(FONT_FILE),

@@ -249,9 +249,10 @@ async function assemble(temp, catalog, lock) {
   }
 
   // 7. 组件字体的整套字形：组件目录里每个字体一份 CSS，合成页按用到的组件与选中的字体引用，渲染服务把它
-  //    内联进合成页。写了 faces 的字体用源目录 fonts/ 下的字体文件，每个字重、字形一条 @font-face。其余
-  //    字体来自组件：有些组件只写字体名、不引用字体文件，所以西文字形收组件库各处向 Google Fonts 请求过的
-  //    全部字重。中文字形对这个字体出现过的每种字重、字形各出一组（原因见 cjkTwinFaces）。
+  //    内联进合成页。写了 faces 的字体用源目录 fonts/ 下的字体文件，每个字重、字形一条 @font-face，不配
+  //    中文字形（中文由字体变量里的 Noto Sans SC 兜底，见 localFontFaces）。其余字体来自组件：有些组件只写
+  //    字体名、不引用字体文件，所以西文字形收组件库各处向 Google Fonts 请求过的全部字重。中文字形对这个
+  //    字体出现过的每种字重、字形各出一组（原因见 cjkTwinFaces）。
   const googleFaces = new Map()
   for (const { families } of fontCss.values()) {
     for (const { family, faces } of families) {
@@ -269,15 +270,14 @@ async function assemble(temp, catalog, lock) {
   const notoDir = await openPackage(notoPackage.name, notoPackage.version)
   for (const [family, { css: cssPath, faces: localFaces }] of Object.entries(catalog.fonts)) {
     if (localFaces !== undefined) {
-      const local = await localFontFaces({
+      const css = await localFontFaces({
         family,
         faces: localFaces,
         cssPath,
         libraryDir,
         outDir: temp,
       })
-      const cjk = await cjkTwinFaces(family, local.descriptors, notoDir)
-      await writeOut(cssPath, `${local.css}\n${cjk}\n`)
+      await writeOut(cssPath, `${css}\n`)
       continue
     }
     const faces = googleFaces.get(family)
