@@ -9,7 +9,7 @@ import type {
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
 import { draftOf, video } from '@/testing/whole-film'
-import { setClipVolume } from './editing/layer0'
+import { setClipsVolume } from './editing/layer0'
 import { REFUSAL_TEXT } from './refusal-text'
 import { useDraftSession } from './use-draft-session'
 
@@ -44,7 +44,7 @@ type Session = ReturnType<typeof open>['result']
 
 const volume = (result: Session, value: number) => {
   act(() => {
-    result.current.apply(setClipVolume(result.current.draft, { clipId: 'v1', volume: value }))
+    result.current.apply(setClipsVolume(result.current.draft, { clipIds: ['v1'], volume: value }))
   })
 }
 

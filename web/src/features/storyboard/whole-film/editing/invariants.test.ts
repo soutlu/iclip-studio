@@ -6,11 +6,11 @@ import { clearCaptionText, setCaptionText } from './captions'
 import { MAX_FILM_MS, MAX_VOLUME, MIN_CLIP_MS, type WholeFilmDraft } from './draft'
 import { commitEdit } from './history'
 import {
-  deleteClip,
+  deleteClips,
   insertComponent,
   insertMaterial,
-  moveClip,
-  setClipVolume,
+  moveClips,
+  setClipsVolume,
   splitClip,
   trimClip,
 } from './layer0'
@@ -127,6 +127,12 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
   }
   const total = filmDuration(draft)
   const clipId = () => pick([...draft.layer0.map((c) => c.id), 'missing'])
+  /** 连着的一到三段，偶尔混进不在草稿里的 */
+  const clipIds = () => {
+    const from = int(0, draft.layer0.length)
+    const ids = draft.layer0.slice(from, from + int(1, 3)).map((c) => c.id)
+    return random() < 0.1 ? [...ids, 'missing'] : ids
+  }
   const overlayId = () => pick([...draft.overlays.map((o) => o.id), 'missing'])
   const delta = () => int(-8_000, 8_000)
   const rows = overlayRowCount(draft.overlays)
@@ -137,8 +143,10 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
       draft,
       {
         sourceJobId: pick(['a', 'b', 'c', 'big', 'missing']),
-        playbackStart: int(-100, 8_000),
-        duration: int(50, 6_000),
+        pieces: Array.from({ length: int(1, 3) }, () => ({
+          playbackStart: int(-100, 8_000),
+          duration: int(50, 6_000),
+        })),
         at: at(),
       },
       context,
@@ -154,7 +162,7 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
         variables: { wordmark: '拾步' },
         at: at(),
       }),
-    () => moveClip(draft, { clipId: clipId(), to: int(-1, draft.layer0.length + 1) }),
+    () => moveClips(draft, { clipIds: clipIds(), to: int(-1, draft.layer0.length + 1) }),
     () =>
       trimClip(
         draft,
@@ -162,8 +170,8 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
         context,
       ),
     () => splitClip(draft, { timeMs: int(0, total) }),
-    () => deleteClip(draft, { clipId: clipId() }),
-    () => setClipVolume(draft, { clipId: clipId(), volume: int(-1, 5) }),
+    () => deleteClips(draft, { clipIds: clipIds() }),
+    () => setClipsVolume(draft, { clipIds: clipIds(), volume: int(-1, 5) }),
     () => setComponentVariables(draft, { id: clipId(), variables: { wordmark: '品牌' } }),
     () =>
       addOverlay(draft, {

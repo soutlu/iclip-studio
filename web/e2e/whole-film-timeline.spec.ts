@@ -384,6 +384,46 @@ test.describe('成片编辑器 · 时间线', () => {
     expect(await readDraft(page)).toEqual(movedDraft)
   })
 
+  test('画面轨多选：Shift 扩选后画面上没有选中框；按住任一选中段整块拖动，松手仍选着这几段', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    const segment = (n: number) =>
+      film.getByRole('button', { name: new RegExp(`^选中：第 ${n} 段`) })
+    const preview = film.getByTestId('timeline-insertion-preview')
+
+    // 单选视频段：画面上有选中框，两端各一个修剪手柄
+    await segment(2).click()
+    await expect(selectionFrame(dialog)).toBeVisible()
+    await expect(film.getByRole('slider')).toHaveCount(2)
+    // Shift 扩选：画面上不画选中框，修剪手柄仍只在选区两端
+    await segment(3).click({ modifiers: ['Shift'] })
+    await expect(segment(2)).toHaveAttribute('aria-pressed', 'true')
+    await expect(segment(3)).toHaveAttribute('aria-pressed', 'true')
+    await expect(selectionFrame(dialog)).toBeHidden()
+    await expect(film.getByRole('slider')).toHaveCount(2)
+
+    // 按住选区里的第 3 段拖到第 5 段后半：v1、v2 一起挪到 v4 之后，占位按两段一共的长度
+    const { pps } = await pixelsPerSecond(dialog)
+    const from = await boxOf(segment(3))
+    const fifth = await boxOf(film.getByRole('group', { name: /^第 5 段/ }))
+    await page.mouse.move(from.cx, from.cy)
+    await page.mouse.down()
+    await page.mouse.move(from.cx + 20, from.cy, { steps: 3 })
+    await page.mouse.move(fifth.x + fifth.width - 4, from.cy, { steps: 8 })
+    await expect(preview).toBeVisible()
+    await expect
+      .poll(async () => Math.abs((await boxOf(preview)).width - 3.2 * pps))
+      .toBeLessThan(3)
+    await page.mouse.up()
+    await expect
+      .poll(async () => (await readDraft(page))?.layer0.map((clip) => clip.id))
+      .toEqual(['c1', 'v3', 'v4', 'v1', 'v2', 'v5'])
+    await expect(segment(4)).toHaveAttribute('aria-pressed', 'true')
+    await expect(segment(5)).toHaveAttribute('aria-pressed', 'true')
+    await expect(segment(3)).toHaveAttribute('aria-pressed', 'false')
+  })
+
   test('点段只选中、播放头到段首，播放中点段停在段首；Delete 删除、⌘Z 撤销、⌥→ 挪一位、修剪与 ←/→ 微调、方向键走播放头', async ({
     page,
   }) => {

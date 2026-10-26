@@ -1523,6 +1523,17 @@
   z-index: var(--z-local-2);
 }
 
+/* 画面轨的选区外框：贴着选中的段，单选、多选都画，同编辑视频 */
+.wf-selection-box {
+  position: absolute;
+  top: 2px;
+  z-index: var(--z-local-2);
+  height: 48px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
+  pointer-events: none;
+}
+
 .wf-clip-label {
   position: absolute;
   top: 3px;
@@ -2105,12 +2116,14 @@
   pointer-events: none;
 }
 
+/* 选中的范围：外围一圈选区外框，同画面轨与编辑视频 */
 .wf-range {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
   border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
   cursor: grab;
   touch-action: none;
 }

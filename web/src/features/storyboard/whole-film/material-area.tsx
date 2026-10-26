@@ -14,11 +14,14 @@ import {
 } from '../editing/timeline-drag'
 import type { KeyframeStates } from './edit-context'
 import {
+  shiftShot,
+  shotRange,
   trimRange,
   type Material,
   type MaterialGroup,
   type MaterialRange,
   type MaterialTake,
+  type ShotSpan,
   type UsedSpan,
 } from './materials'
 
@@ -40,8 +43,10 @@ type MaterialAreaProps = {
   range: MaterialRange | null
   /** 画面轨上每版素材片已经用了的段，按 jobId 分；轨道底边画一道 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
-  /** 点镜头（或点选区）：选中它，预览放这一段 */
+  /** 点镜头、Shift 点镜头（或点选区）：选中这一段，预览放它 */
   onPick: (range: MaterialRange) => void
+  /** Shift 点掉了最后一个选中的镜头：什么也不选 */
+  onClear: () => void
   /** 在选区外按下一个镜头拖起来：只选中它，不放预览 */
   onSelect: (range: MaterialRange) => void
   /** 拖或微调选区的一端：预览停在这一端 */
@@ -78,6 +83,7 @@ export function MaterialArea({
   range,
   used,
   onPick,
+  onClear,
   onSelect,
   onTrim,
   onInsert,
@@ -110,6 +116,7 @@ export function MaterialArea({
                       keyframes={keyframes}
                       onCarry={onCarry}
                       onDrop={onDrop}
+                      onClear={onClear}
                       onInsert={onInsert}
                       onPick={onPick}
                       onSelect={onSelect}
@@ -142,6 +149,7 @@ type TakeRowProps = {
   used: readonly UsedSpan[]
   previewMs: number | undefined
   onPick: (range: MaterialRange) => void
+  onClear: () => void
   onSelect: (range: MaterialRange) => void
   onTrim: (range: MaterialRange, edge: Edge) => void
   onInsert: () => void
@@ -171,6 +179,7 @@ function TakeRow({
   used,
   previewMs,
   onPick,
+  onClear,
   onSelect,
   onTrim,
   onInsert,
@@ -185,10 +194,32 @@ function TakeRow({
   const state = keyframes.get(version.url)
   const durationMs = state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
   const shown = range !== null && range.jobId === version.jobId ? range : null
+  const shots: ShotSpan[] =
+    state?.kind === 'ready'
+      ? keyframeRanges(state.index).map((shot) => ({
+          startMs: Math.round(shot.start * 1000),
+          endMs: Math.round(shot.end * 1000),
+        }))
+      : []
 
   const msPerPx = () => {
     const width = stripRef.current?.getBoundingClientRect().width ?? 0
     return durationMs === undefined || width <= 0 ? 0 : durationMs / width
+  }
+
+  /** 点一个镜头：按着 Shift 时扩选或去掉一端，否则只选它 */
+  const pickShot = (shot: ShotSpan, extend: boolean) => {
+    const clicked = shotRange(version.jobId, take.id, shot)
+    const next = extend ? shiftShot(range, clicked, shots) : clicked
+    if (next === null) onClear()
+    else onPick(next)
+  }
+
+  /** 指针横坐标下的镜头；选区盖住了选中的镜头，在选区上 Shift 点时靠它知道点的是哪个 */
+  const shotAtX = (clientX: number) => {
+    const left = stripRef.current?.getBoundingClientRect().left ?? 0
+    const ms = (clientX - left) * msPerPx()
+    return shots.find((shot) => shot.startMs <= ms && ms < shot.endMs)
   }
 
   const press = (
@@ -253,8 +284,13 @@ function TakeRow({
       clickAfterDrag.swallow()
       onDrop(event.clientX, event.clientY, current.base)
     }
-    // 在选区里点一下（没拖动）：预览放这段选区；点选区外的镜头由它的 click 处理
-    else if (current.edge === 'body' && !current.fromShot) onPick(current.base)
+    // 在选区里点一下（没拖动）：预览放这段选区，Shift 点是扩选或去掉指针下的那个镜头；点选区外的
+    // 镜头由它的 click 处理
+    else if (current.edge === 'body' && !current.fromShot) {
+      const shot = event.shiftKey ? shotAtX(event.clientX) : undefined
+      if (shot === undefined) onPick(current.base)
+      else pickShot(shot, true)
+    }
   }
 
   const cancel = () => {
@@ -312,13 +348,10 @@ function TakeRow({
         ) : state.kind === 'failed' ? (
           <span className="wf-take-note">{state.message}</span>
         ) : (
-          keyframeRanges(state.index).map((shot, at) => {
-            const startMs = Math.round(shot.start * 1000)
-            const endMs = Math.round(shot.end * 1000)
-            const length = endMs - startMs
+          shots.map((shot, at) => {
+            const { startMs, endMs } = shot
             const totalMs = Math.round(state.index.duration * 1000)
-            const picked = shown !== null && shown.startMs === startMs && shown.endMs === endMs
-            const shotRange = { jobId: version.jobId, takeId: take.id, startMs, endMs }
+            const picked = shown?.shots.some((item) => item.startMs === startMs) === true
             return (
               <button
                 aria-keyshortcuts="Enter"
@@ -326,22 +359,26 @@ function TakeRow({
                 aria-pressed={picked}
                 className="wf-shot ui-focus"
                 key={startMs}
-                onClick={() => {
-                  if (!clickAfterDrag.take()) onPick(shotRange)
+                onClick={(event) => {
+                  if (!clickAfterDrag.take()) pickShot(shot, event.shiftKey)
                 }}
                 onKeyDown={(event) => insertOnEnter(event, onInsert)}
                 // 在选区外按下镜头即可拖：拖起来时先选中这个镜头
                 onPointerCancel={cancel}
-                onPointerDown={(event) => press(event, 'body', shotRange, true)}
+                onPointerDown={(event) =>
+                  press(event, 'body', shotRange(version.jobId, take.id, shot), true)
+                }
                 onPointerMove={drag}
                 onPointerUp={release}
                 style={{
                   left: percent(startMs, totalMs),
-                  width: `calc(${percent(length, totalMs)} - 2px)`,
+                  width: `calc(${percent(endMs - startMs, totalMs)} - 2px)`,
                 }}
                 type="button"
               >
-                <Frames part={{ mediaUrl: version.url, start: shot.start, end: shot.end }} />
+                <Frames
+                  part={{ mediaUrl: version.url, start: startMs / 1000, end: endMs / 1000 }}
+                />
               </button>
             )
           })
@@ -361,7 +398,7 @@ function TakeRow({
             ))}
         {shown !== null && durationMs !== undefined ? (
           <div
-            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，拖到画面轨上可加入，按 Enter 插到播放头处`}
+            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，${shown.shots.length} 个镜头，拖到画面轨上可加入，按 Enter 插到播放头处`}
             className={cn('wf-range', lifting && 'is-lifting')}
             onPointerCancel={cancel}
             onPointerDown={(event) => press(event, 'body')}

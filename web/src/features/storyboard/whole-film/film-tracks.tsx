@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
   type RefObject,
@@ -32,7 +33,7 @@ import {
   type VideoClip,
   type WholeFilmDraft,
 } from './editing/draft'
-import { moveClip, trimClip } from './editing/layer0'
+import { moveClips, trimClip } from './editing/layer0'
 import { musicShortfallMs, setMusicOffset } from './editing/music'
 import {
   moveOverlay,
@@ -44,6 +45,7 @@ import {
 import type { EditResult } from './editing/result'
 import { cutsOf, filmDuration, insertIndexAt, layer0End } from './editing/timeline'
 import { FILM_LIMIT_TEXT } from './refusal-text'
+import { clipIdsOf, clipSelection, type Selection } from './selection'
 import {
   msToPx,
   pxToMs,
@@ -64,14 +66,6 @@ import {
 } from './timeline-insertion'
 import { useInsertionMotion, type MotionSnapshot } from './use-insertion-motion'
 import { usePreviewGesture, type GestureStep } from './use-preview-gesture'
-
-/** 选中的一块；字幕只能在画面上点选，记它的 {@link captionKey} */
-export type Selection =
-  | { kind: 'clip'; id: string }
-  | { kind: 'overlay'; id: string }
-  | { kind: 'music' }
-  | { kind: 'caption'; key: string }
-  | null
 
 export type MusicView = { url: string; title: string; peaks: PeaksState }
 
@@ -131,8 +125,8 @@ type FilmTracksProps = {
   onSeek: (ms: number) => void
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** 点画面轨上的一段：选中它，播放头停在段首 */
-  onClipClick: (clip: Layer0Clip) => void
+  /** 点画面轨上的一段（extend：按着 Shift）：选中它或扩选、去掉一端，播放头停在选区开头 */
+  onClipClick: (clip: Layer0Clip, extend: boolean) => void
   snap: boolean
   /** 拍点（成片时间） */
   beats: readonly MusicBeat[]
@@ -181,6 +175,9 @@ const ON_BEAT_MS = 10
 
 type Edge = 'start' | 'end'
 
+/** 画面轨上连着的几段一共多长 */
+const spanMs = (clips: readonly Layer0Clip[]) => clips.reduce((sum, clip) => sum + clip.duration, 0)
+
 type Carrying = {
   clientX: number
   clientY: number
@@ -192,9 +189,14 @@ type Carrying = {
   destination?: InsertionBox | undefined
 }
 
+/** 按住画面轨上的段拖动排序：按住的是选中的段时拖整个选区，否则只拖这一段 */
 type Lift = {
-  clipId: string
+  /** 拖着的段，按画面轨先后 */
+  clipIds: readonly string[]
+  /** 拖着的第一段原来在第几段 */
   from: number
+  /** 拖着的几段一共多长 */
+  durationMs: number
   pointerId: number
   originX: number
   originY: number
@@ -220,7 +222,7 @@ type BlockProps = {
   name: string
   selected: boolean
   style: CSSProperties
-  onSelect: () => void
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void
   pointer: PointerHandlers
   handles: ReactNode
   /** 点开的浮层（组件块才有） */
@@ -243,7 +245,7 @@ type BlockProps = {
   children: ReactNode
 }
 
-/** 轨道上的一块：整块是一个选中按钮（按住可拖），选中后两端出现修剪手柄 */
+/** 轨道上的一块：整块是一个选中按钮（按住可拖），选中后在选区两端出现修剪手柄 */
 function Block({
   className,
   name,
@@ -475,13 +477,15 @@ export function FilmTracks({
   /** 占位内保持当前插入点；跨过相邻片段中点才换位，避免让位动画反过来推动落点。 */
   const filmIndex = (clientX: number, duration: number, lifted?: Lift) => {
     const items =
-      lifted === undefined ? draft.layer0 : draft.layer0.filter((clip) => clip.id !== lifted.clipId)
+      lifted === undefined
+        ? draft.layer0
+        : draft.layer0.filter((clip) => !lifted.clipIds.includes(clip.id))
     const point = timeAt(clientX)
     const existing =
       lifted !== undefined
         ? lifted.moved && lifted.to !== undefined
           ? lifted.to > lifted.from
-            ? lifted.to - 1
+            ? lifted.to - lifted.clipIds.length
             : lifted.to
           : undefined
         : carry !== null &&
@@ -512,7 +516,7 @@ export function FilmTracks({
         start += item.duration
       }
     }
-    return lifted !== undefined && index > lifted.from ? index + 1 : index
+    return lifted !== undefined && index > lifted.from ? index + lifted.clipIds.length : index
   }
 
   /** 指针下是哪条轨的哪一刻；带着长度拖到特效轨时，开头、结尾吸附到切点、播放头、拍点、其他块边缘和刻度 */
@@ -583,9 +587,7 @@ export function FilmTracks({
     ...current,
     clientX,
     clientY,
-    to: overFilm(clientX, clientY)
-      ? filmIndex(clientX, draft.layer0[current.from]?.duration ?? 0, current)
-      : undefined,
+    to: overFilm(clientX, clientY) ? filmIndex(clientX, current.durationMs, current) : undefined,
   })
 
   const rememberLanding = (id: string, lane: 'film' | 'overlay') => {
@@ -656,24 +658,23 @@ export function FilmTracks({
         const attempt = point === undefined ? undefined : payload.attempt(point)
         const dropped = point !== undefined && attempt !== undefined && payload.drop(point)
         let destination: InsertionBox | undefined
-        if (dropped && attempt.ok) {
-          const added =
-            point.lane === 'film'
-              ? attempt.draft.layer0.find(
-                  (clip) => !draft.layer0.some((before) => before.id === clip.id),
-                )
-              : attempt.draft.overlays.find(
-                  (clip) => !draft.overlays.some((before) => before.id === clip.id),
-                )
+        if (dropped && attempt.ok && point.lane === 'film') {
+          // 素材选了几个镜头时连着加入几段：缩影落到这几段一起占的位置
+          const added = attempt.draft.layer0.filter(
+            (clip) => !draft.layer0.some((before) => before.id === clip.id),
+          )
+          const [first] = added
+          if (first !== undefined) {
+            rememberLanding(first.id, 'film')
+            destination = destinationOf(first.start, spanMs(added), 'film')
+          }
+        } else if (dropped && attempt.ok) {
+          const added = attempt.draft.overlays.find(
+            (clip) => !draft.overlays.some((before) => before.id === clip.id),
+          )
           if (added !== undefined) {
-            const lane = point.lane === 'film' ? 'film' : 'overlay'
-            rememberLanding(added.id, lane)
-            destination = destinationOf(
-              added.start,
-              added.duration,
-              lane,
-              'track' in added ? added.track : 0,
-            )
+            rememberLanding(added.id, 'overlay')
+            destination = destinationOf(added.start, added.duration, 'overlay', added.track)
           }
         }
         if (carry?.payload.ghost !== undefined)
@@ -758,7 +759,8 @@ export function FilmTracks({
     return () => cancelAnimationFrame(frame)
   }, [dragging])
 
-  const selectedId = selection !== null && 'id' in selection ? selection.id : undefined
+  const selectedOverlay = selection?.kind === 'overlay' ? selection.id : undefined
+  const selectedClips = clipIdsOf(selection)
   const place = (start: number, duration: number) => ({
     left: `${msToPx(start, pps)}px`,
     width: `${Math.max(6, msToPx(duration, pps) - 2)}px`,
@@ -912,15 +914,29 @@ export function FilmTracks({
       />
     ))
 
-  const clipEdges = (clip: Layer0Clip): Edge[] => (editable(clip) ? ['start', 'end'] : [])
+  /**
+   * 选中的段在选区两端的修剪手柄：前一段没选中的出开头的手柄，后一段没选中的出结尾的手柄，所以
+   * 单选两端都有，多选只有第一段的开头与最后一段的结尾
+   */
+  const clipEdges = (clip: Layer0Clip, index: number): Edge[] => {
+    if (!editable(clip)) return []
+    const chosen = (at: number) => {
+      const neighbor = draft.layer0[at]
+      return neighbor !== undefined && selectedClips.includes(neighbor.id)
+    }
+    return [
+      ...(chosen(index - 1) ? [] : (['start'] as const)),
+      ...(chosen(index + 1) ? [] : (['end'] as const)),
+    ]
+  }
 
-  /** 点选组件段或特效块：有可填项时弹出浮层 */
+  /** 点选特效块：有可填项时弹出浮层 */
   const openPopover = (id: string, component: string) => {
     if (popovers.hasFields(component)) popovers.onOpen(id)
   }
 
   // ---- 画面轨上的段拖动排序：保留捕获指针的节点，预演位置，松手才提交 ----
-  const liftPointer = (clip: Layer0Clip, index: number): PointerHandlers => ({
+  const liftPointer = (clip: Layer0Clip): PointerHandlers => ({
     onPointerDown: (event) => {
       if (event.button !== 0) return
       liftCancelledRef.current = false
@@ -929,9 +945,15 @@ export function FilmTracks({
       clicks.reset()
       event.currentTarget.setPointerCapture(event.pointerId)
       const box = event.currentTarget.getBoundingClientRect()
+      const block = selectedClips.includes(clip.id)
+        ? draft.layer0.filter((item) => selectedClips.includes(item.id))
+        : [clip]
+      const clipIds = block.map((item) => item.id)
+      const from = draft.layer0.findIndex((item) => clipIds.includes(item.id))
       setLift({
-        clipId: clip.id,
-        from: index,
+        clipIds,
+        from,
+        durationMs: spanMs(block),
         pointerId: event.pointerId,
         originX: event.clientX,
         originY: event.clientY,
@@ -939,7 +961,7 @@ export function FilmTracks({
         clientY: event.clientY,
         moved: false,
         origin: { left: box.left, top: box.top, width: box.width, height: box.height },
-        to: index,
+        to: from,
         returning: false,
       })
     },
@@ -966,16 +988,16 @@ export function FilmTracks({
       clicks.swallow()
       const done = lift
       const result =
-        done.to === undefined ? undefined : moveClip(draft, { clipId: clip.id, to: done.to })
-      if (result?.ok === true && apply(result)) {
-        const placed = result.draft.layer0.find((item) => item.id === clip.id)
+        done.to === undefined ? undefined : moveClips(draft, { clipIds: done.clipIds, to: done.to })
+      if (result !== undefined && apply(result) && result.ok) {
+        const placed = result.draft.layer0.find((item) => item.id === done.clipIds[0])
         if (placed === undefined) throw new Error('重排结果缺少被移动的片段')
-        rememberLanding(clip.id, 'film')
-        onSelect({ kind: 'clip', id: clip.id })
+        rememberLanding(placed.id, 'film')
+        onSelect(clipSelection(done.clipIds))
         setLift({
           ...done,
           returning: true,
-          destination: destinationOf(placed.start, placed.duration, 'film') ?? done.origin,
+          destination: destinationOf(placed.start, done.durationMs, 'film') ?? done.origin,
         })
       } else setLift({ ...done, returning: true, destination: done.origin })
     },
@@ -1067,7 +1089,7 @@ export function FilmTracks({
   const insertClock = (index: number) => draft.layer0[index]?.start ?? layer0End(draft)
   const marker: { index: number; text: string; blocked: boolean } | undefined = (() => {
     if (lift !== null && lift.moved && !lift.returning && lift.to !== undefined) {
-      const final = lift.to > lift.from ? lift.to - 1 : lift.to
+      const final = lift.to > lift.from ? lift.to - lift.clipIds.length : lift.to
       return { index: lift.to, text: `移到第 ${final + 1} 段`, blocked: false }
     }
     if (hover?.point?.lane !== 'film' || hover.attempt === undefined) return undefined
@@ -1081,10 +1103,10 @@ export function FilmTracks({
       : { index, text: hover.attempt.reason, blocked: true }
   })()
   const liftedClip =
-    lift === null ? undefined : draft.layer0.find((clip) => clip.id === lift.clipId)
+    lift === null ? undefined : draft.layer0.find((clip) => clip.id === lift.clipIds[0])
   const liftResult =
     lift?.moved === true && !lift.returning && lift.to !== undefined
-      ? moveClip(draft, { clipId: lift.clipId, to: lift.to })
+      ? moveClips(draft, { clipIds: lift.clipIds, to: lift.to })
       : undefined
   const projected =
     hover?.point?.lane === 'film' && hover.attempt?.ok === true
@@ -1096,19 +1118,21 @@ export function FilmTracks({
     marker === undefined
       ? undefined
       : lift?.moved === true && !lift.returning
-        ? projected.layer0.find((clip) => clip.id === lift.clipId)
+        ? projected.layer0.find((clip) => clip.id === lift.clipIds[0])
         : hover?.attempt?.ok === true
           ? projected.layer0.find((clip) => !draft.layer0.some((before) => before.id === clip.id))
           : undefined
-  const clipFace = (clip: Layer0Clip): InsertionFace => {
+  /** 拖着的段手上的缩影：第一段的画面与名字，拖着几段时名字后注明段数，时长是几段一共的 */
+  const liftFace = (clip: Layer0Clip, { clipIds, durationMs }: Lift): InsertionFace => {
+    const more = clipIds.length > 1 ? ` 等 ${clipIds.length} 段` : ''
     if (clip.type === 'component') {
       const face = componentFace(clip.component)
-      return { title: face.title, durationMs: clip.duration, media: <ComponentThumb face={face} /> }
+      return { title: face.title + more, durationMs, media: <ComponentThumb face={face} /> }
     }
     const url = urlOf(clip.sourceJobId)
     return {
-      title: clipLabel(clip),
-      durationMs: clip.duration,
+      title: clipLabel(clip) + more,
+      durationMs,
       media:
         url === undefined ? (
           <Icon decorative name="video" size="sm" />
@@ -1124,7 +1148,8 @@ export function FilmTracks({
     }
   }
   const insertionFace =
-    carry?.payload.ghost?.face ?? (liftedClip === undefined ? undefined : clipFace(liftedClip))
+    carry?.payload.ghost?.face ??
+    (liftedClip === undefined || lift === null ? undefined : liftFace(liftedClip, lift))
   const overlayDrop = (() => {
     if (hover?.point?.lane !== 'overlay' || hover.attempt === undefined) return undefined
     const placed = hover.attempt.ok
@@ -1168,6 +1193,15 @@ export function FilmTracks({
   const insertionActive = hover !== null || (lift?.moved === true && !lift.returning)
   const overlayAnimating = insertionActive || moving !== undefined
   const projectedById = new Map(projected.layer0.map((clip) => [clip.id, clip]))
+  // 画面轨的选区外框：选中的段每连着的一串画一个；拖着东西预演时不画
+  const selectionRuns: { first: Layer0Clip; last: Layer0Clip }[] = []
+  if (!insertionActive)
+    shown.layer0.forEach((clip, index) => {
+      if (!selectedClips.includes(clip.id)) return
+      const run = selectionRuns.at(-1)
+      if (run !== undefined && run.last === shown.layer0[index - 1]) run.last = clip
+      else selectionRuns.push({ first: clip, last: clip })
+    })
   const previewWidth = Math.max(contentWidth, msToPx(layer0End(projected), pps))
 
   return (
@@ -1246,7 +1280,7 @@ export function FilmTracks({
                     className={cn('wf-clip', clip.type === 'component' && 'is-card')}
                     clipId={clip.id}
                     handles={trimHandles(
-                      clipEdges(clip),
+                      clipEdges(clip, index),
                       clip.duration,
                       '该段',
                       (event, edge) => startTrim(event, clip, edge),
@@ -1259,22 +1293,23 @@ export function FilmTracks({
                       driver: motion,
                       x: msToPx((projectedById.get(clip.id) ?? clip).start, pps),
                       width: Math.max(6, msToPx(clip.duration, pps) - 2),
-                      opacity: lift?.clipId === clip.id && lift.moved && !lift.returning ? 0 : 1,
+                      opacity:
+                        lift?.clipIds.includes(clip.id) === true && lift.moved && !lift.returning
+                          ? 0
+                          : 1,
                       animate: insertionActive,
                       initial: landing?.id === clip.id ? landing.snapshot : undefined,
                     }}
-                    onSelect={() => {
-                      if (clicks.take()) return
-                      onClipClick(clip)
-                      if (clip.type === 'component') openPopover(clip.id, clip.component)
+                    onSelect={(event) => {
+                      if (!clicks.take()) onClipClick(clip, event.shiftKey)
                     }}
-                    pointer={liftPointer(clip, index)}
+                    pointer={liftPointer(clip)}
                     popover={
                       clip.type === 'component'
                         ? popoverOf(clip.id, `组件 · ${componentFace(clip.component).title}`)
                         : undefined
                     }
-                    selected={selectedId === clip.id}
+                    selected={selectedClips.includes(clip.id)}
                     shortcuts="Delete Alt+ArrowLeft Alt+ArrowRight"
                     style={place(clip.start, clip.duration)}
                   >
@@ -1282,6 +1317,14 @@ export function FilmTracks({
                   </Block>
                 )
               })}
+              {selectionRuns.map(({ first, last }) => (
+                <span
+                  aria-hidden="true"
+                  className="wf-selection-box"
+                  key={first.id}
+                  style={place(first.start, last.start + last.duration - first.start)}
+                />
+              ))}
               <InsertionPreview
                 elementRef={filmPreviewRef}
                 face={insertionFace}
@@ -1371,7 +1414,7 @@ export function FilmTracks({
                       onPointerDown: (event) => startOverlayMove(event, overlay),
                     }}
                     popover={popoverOf(overlay.id, `特效 · ${face.title}`)}
-                    selected={selectedId === overlay.id}
+                    selected={selectedOverlay === overlay.id}
                     shortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Delete"
                     style={{ ...place(timed.start, timed.duration), top: 0 }}
                   >

@@ -317,6 +317,60 @@ test('在选区外按下镜头即拖：先选中这个镜头再拖，松手加�
   await expect(dialog.getByText(/^素材 · 镜头组/)).toHaveCount(0)
 })
 
+test('Shift 选连着的几个镜头：在选区上 Shift 点去掉一端，两端抓手不越过镜头边界，拖到画面轨按镜头加入几段', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const film = filmLane(dialog)
+  const group = groupOf(materials, 1)
+  const range = group.getByRole('group', { name: /^选中的范围/ })
+  /** 按住 Shift 点页面上的一处：选中的镜头被选区盖着，点它就是点选区 */
+  const shiftClickAt = async (locator: Locator) => {
+    const { x, y } = await centerOf(locator)
+    await page.keyboard.down('Shift')
+    await page.mouse.click(x, y)
+    await page.keyboard.up('Shift')
+  }
+
+  await shotOf(materials, 1, 'A', 2).click()
+  await shotOf(materials, 1, 'A', 3).click({ modifiers: ['Shift'] })
+  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+
+  // 在选区上 Shift 点最右的镜头：去掉它；再 Shift 点回来
+  await shiftClickAt(shotOf(materials, 1, 'A', 4))
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–3\.0 秒，2 个镜头/)
+  await expect(shotOf(materials, 1, 'A', 4)).toHaveAttribute('aria-pressed', 'false')
+  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+
+  // 左抓手往里停在第一个镜头结尾前 0.1 秒，往外可以拉过镜头开头；右抓手往里停在最后一个镜头开头后 0.1 秒
+  const start = group.getByRole('slider', { name: '裁剪该段开头' })
+  const end = group.getByRole('slider', { name: '裁剪该段结尾' })
+  await start.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(start).toHaveAttribute('aria-valuenow', '1.9')
+  await page.keyboard.press('Shift+ArrowLeft')
+  await expect(start).toHaveAttribute('aria-valuenow', '0.9')
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowLeft')
+  await expect(end).toHaveAttribute('aria-valuenow', '3.1')
+  for (let step = 0; step < 4; step += 1) await page.keyboard.press('ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuenow', '3.5')
+
+  // 拖到画面轨：按镜头拆成三段，第一段、最后一段带两端的裁剪
+  const from = await centerOf(range)
+  const to = await centerOf(film)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 8 })
+  await page.mouse.up()
+  await expect(film.getByRole('group', { name: '第 1 段 · A · 镜头 1，1.1 秒' })).toBeVisible()
+  await expect(film.getByRole('group', { name: '第 2 段 · A · 镜头 3，1.0 秒' })).toBeVisible()
+  await expect(film.getByRole('group', { name: '第 3 段 · A · 镜头 4，0.5 秒' })).toBeVisible()
+  await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(3)
+})
+
 test('撤销、重做也是成片编辑：预览回到成片', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1, 1])
   const film = filmLane(dialog)

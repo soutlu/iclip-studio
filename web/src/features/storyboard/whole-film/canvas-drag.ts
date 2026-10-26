@@ -8,7 +8,7 @@ import { setCaptionsPosition } from './editing/captions'
 import { toOffset, type WholeFilmDraft } from './editing/draft'
 import { setOverlayPosition } from './editing/overlays'
 import type { EditResult } from './editing/result'
-import type { Selection } from './film-tracks'
+import type { Selection } from './selection'
 import {
   buildCompositionSnapTarget,
   resolveGuideLineRect,
