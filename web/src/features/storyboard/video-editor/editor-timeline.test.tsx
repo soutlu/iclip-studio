@@ -123,9 +123,9 @@ it('多选时只在选区最外两端出抓手，拖动时外框和气泡按整�
       onDelete={() => {}}
     />,
   )
-  expect(screen.getAllByRole('slider', { name: /^裁剪该段/ })).toHaveLength(2)
-  const start = screen.getByRole('slider', { name: '裁剪该段开头' })
-  const end = Object.assign(screen.getByRole('slider', { name: '裁剪该段结尾' }), {
+  expect(screen.getAllByRole('slider', { name: /^裁剪(开头|结尾)$/ })).toHaveLength(2)
+  const start = screen.getByRole('slider', { name: '裁剪开头' })
+  const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
     setPointerCapture: () => undefined,
     hasPointerCapture: () => false,
     releasePointerCapture: () => undefined,

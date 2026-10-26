@@ -581,7 +581,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   const release = await holdDrag(
     page,
     dialog,
-    dialog.getByRole('slider', { name: '裁剪该段结尾' }),
+    dialog.getByRole('slider', { name: '裁剪结尾' }),
     1.4,
   )
   await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 0.4 秒 · 缩短 0.6 秒')
@@ -599,12 +599,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   )
 
   // 拖过头停在最短的 0.2 秒。
-  const tooFar = await holdDrag(
-    page,
-    dialog,
-    dialog.getByRole('slider', { name: '裁剪该段结尾' }),
-    1,
-  )
+  const tooFar = await holdDrag(page, dialog, dialog.getByRole('slider', { name: '裁剪结尾' }), 1)
   await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 0.2 秒 · 缩短 0.2 秒')
   await tooFar()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.2 秒')
@@ -616,8 +611,8 @@ test('多选两段：抓手只在选区两端，拖右抓手收短最后一段�
 
   await segment(dialog, 2).click()
   await segment(dialog, 3).click({ modifiers: ['Shift'] })
-  const startHandle = dialog.getByRole('slider', { name: '裁剪该段开头' })
-  const endHandle = dialog.getByRole('slider', { name: '裁剪该段结尾' })
+  const startHandle = dialog.getByRole('slider', { name: '裁剪开头' })
+  const endHandle = dialog.getByRole('slider', { name: '裁剪结尾' })
   await expect(startHandle).toHaveCount(1)
   await expect(endHandle).toHaveCount(1)
   // 左抓手在第 2 段开头、右抓手在第 3 段结尾，第 2、3 段之间没有抓手。
@@ -632,7 +627,7 @@ test('多选两段：抓手只在选区两端，拖右抓手收短最后一段�
   await expect(controls(dialog)).toContainText('共 5.5 秒 · 比 原片 短 0.5 秒')
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
   await expect(segment(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
-  await expect(dialog.getByRole('slider', { name: /^裁剪该段/ })).toHaveCount(2)
+  await expect(dialog.getByRole('slider', { name: /^裁剪(开头|结尾)$/ })).toHaveCount(2)
 })
 
 test('拖动调序：插入处一条墨线，原声跟着走；合成请求就是草稿', async ({ page }) => {
@@ -704,7 +699,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
 
   // 只选中一段：两端出手柄，卡弹在舞台上。
   await segment(dialog, 2).click()
-  await expect(dialog.getByRole('slider', { name: '裁剪该段结尾' })).toBeVisible()
+  await expect(dialog.getByRole('slider', { name: '裁剪结尾' })).toBeVisible()
   await expect(card(dialog)).toBeVisible()
 
   await segment(dialog, 3).click({ modifiers: ['Shift'] })
@@ -790,12 +785,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   // 再编辑预览当前结果，候选仍归属基底区间；可继续裁剪，不要求先合成。
   await segment(dialog, 2).click()
   await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
-  const release = await holdDrag(
-    page,
-    dialog,
-    dialog.getByRole('slider', { name: '裁剪该段结尾' }),
-    3,
-  )
+  const release = await holdDrag(page, dialog, dialog.getByRole('slider', { name: '裁剪结尾' }), 3)
   await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 2.0 秒 · 缩短 1.0 秒')
   await expect(card(dialog)).toHaveCount(0)
   await release()

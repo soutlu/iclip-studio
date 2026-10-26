@@ -13,12 +13,12 @@ import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
 
 /**
- * 预览在放素材：点镜头时从选区开头放到出点停下（play），拖选区一端时停在那一端的画面。
- * 每次点镜头都换一个新对象，同一个镜头再点也从头放。
+ * 预览切到素材：选中镜头时停在选区开头，拖选区一端时停在那一端的画面，都不播放；按播放或空格才从
+ * 选区里放到出点停下。每次选中都换一个新对象，同一个镜头再点也回到开头。
  */
 export type MaterialView = {
   range: MaterialRange
-  show: 'play' | Edge
+  show: Edge
 }
 
 export type MaterialPreviewControl = { toggle: () => void }
@@ -103,8 +103,7 @@ export function MaterialPreview({
     const at = show === 'end' ? range.endMs : range.startMs
     video.currentTime = at / 1000
     report(at)
-    if (show === 'play') play()
-    else pause()
+    pause()
     return () => {
       cancelled = true
       pause()

@@ -43,11 +43,11 @@ type MaterialAreaProps = {
   range: MaterialRange | null
   /** 画面轨上每版素材片已经用了的段，按 jobId 分；轨道底边画一道 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
-  /** 点镜头、Shift 点镜头（或点选区）：选中这一段，预览放它 */
+  /** 点镜头、Shift 点镜头（在选区上点也是点它下面的镜头）：选中这一段，预览停在它开头、不播放 */
   onPick: (range: MaterialRange) => void
   /** Shift 点掉了最后一个选中的镜头：什么也不选 */
   onClear: () => void
-  /** 在选区外按下一个镜头拖起来：只选中它，不放预览 */
+  /** 在选区外按下一个镜头拖起来：只选中它，预览不切到素材 */
   onSelect: (range: MaterialRange) => void
   /** 拖或微调选区的一端：预览停在这一端 */
   onTrim: (range: MaterialRange, edge: Edge) => void
@@ -215,7 +215,7 @@ function TakeRow({
     else onPick(next)
   }
 
-  /** 指针横坐标下的镜头；选区盖住了选中的镜头，在选区上 Shift 点时靠它知道点的是哪个 */
+  /** 指针横坐标下的镜头；选区盖住了选中的镜头，在选区上点时靠它知道点的是哪个 */
   const shotAtX = (clientX: number) => {
     const left = stripRef.current?.getBoundingClientRect().left ?? 0
     const ms = (clientX - left) * msPerPx()
@@ -284,12 +284,11 @@ function TakeRow({
       clickAfterDrag.swallow()
       onDrop(event.clientX, event.clientY, current.base)
     }
-    // 在选区里点一下（没拖动）：预览放这段选区，Shift 点是扩选或去掉指针下的那个镜头；点选区外的
-    // 镜头由它的 click 处理
+    // 在选区里点一下（没拖动）就是点指针下的那个镜头，同点选区外的镜头；点选区外的镜头由它的 click
+    // 处理
     else if (current.edge === 'body' && !current.fromShot) {
-      const shot = event.shiftKey ? shotAtX(event.clientX) : undefined
-      if (shot === undefined) onPick(current.base)
-      else pickShot(shot, true)
+      const shot = shotAtX(event.clientX)
+      if (shot !== undefined) pickShot(shot, event.shiftKey)
     }
   }
 

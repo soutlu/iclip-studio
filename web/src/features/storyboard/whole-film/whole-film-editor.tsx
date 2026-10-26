@@ -1005,7 +1005,7 @@ function EditorBody({
               setRange(null)
               leaveMaterial()
             }}
-            onPick={(picked) => showMaterial(picked, 'play')}
+            onPick={(picked) => showMaterial(picked, 'start')}
             onSelect={setRange}
             onTrim={showMaterial}
             onVersion={(takeId, jobId) => {

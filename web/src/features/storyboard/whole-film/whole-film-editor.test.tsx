@@ -225,7 +225,7 @@ describe('成片编辑器', () => {
     await openEditor()
 
     await user.click(await blockButton(/选中：第 1 段 · A · 镜头 1，2\.0 秒/))
-    const end = await within(filmLane()).findByRole('slider', { name: '裁剪该段结尾' })
+    const end = await within(filmLane()).findByRole('slider', { name: '裁剪结尾' })
     end.focus()
     await user.keyboard('{ArrowLeft}')
     expect(
@@ -546,8 +546,8 @@ describe('成片编辑器 · 画面轨多选', () => {
     expect(selected()).toEqual([2, 3])
     expect(within(toolbar).getByRole('button', { name: '播放' })).toBeVisible()
     expect(playheadSlider()).toHaveValue('2')
-    expect(within(filmLane()).getAllByRole('slider', { name: '裁剪该段开头' })).toHaveLength(1)
-    expect(within(filmLane()).getAllByRole('slider', { name: '裁剪该段结尾' })).toHaveLength(1)
+    expect(within(filmLane()).getAllByRole('slider', { name: '裁剪开头' })).toHaveLength(1)
+    expect(within(filmLane()).getAllByRole('slider', { name: '裁剪结尾' })).toHaveLength(1)
 
     await shiftClick(user, 1)
     expect(selected()).toEqual([1, 2, 3])
@@ -678,12 +678,12 @@ describe('成片编辑器 · 画面轨多选', () => {
     putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
     await openEditor()
     await selectRun(user, 1, 2)
-    within(filmLane()).getByRole('slider', { name: '裁剪该段结尾' }).focus()
+    within(filmLane()).getByRole('slider', { name: '裁剪结尾' }).focus()
     await user.keyboard('{ArrowLeft}')
     expect(
       within(filmLane()).getByRole('group', { name: '第 2 段 · 组件 · 测试可填项，1.9 秒' }),
     ).toBeInTheDocument()
-    within(filmLane()).getByRole('slider', { name: '裁剪该段开头' }).focus()
+    within(filmLane()).getByRole('slider', { name: '裁剪开头' }).focus()
     await user.keyboard('{ArrowRight}')
     expect(
       within(filmLane()).getByRole('group', { name: /^第 1 段 .*，1\.9 秒$/ }),
@@ -745,6 +745,9 @@ describe('成片编辑器 · 素材多镜头', () => {
     await shiftShot(2)
     await shiftShot(3)
     for (const n of [1, 2, 3]) expect(await shot(n)).toHaveAttribute('aria-pressed', 'true')
+    // 点镜头、Shift 扩选都只选中，预览停在选区开头，不播放
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled()
+    expect(screen.getByText(/选区 0\.0–6\.0/)).toBeInTheDocument()
     expect(
       within(materials).getByRole('group', { name: /^选中的范围 0\.0–6\.0 秒，3 个镜头/ }),
     ).toBeInTheDocument()
@@ -758,11 +761,11 @@ describe('成片编辑器 · 素材多镜头', () => {
     await shiftShot(1)
 
     // 左抓手往里最多到第一个镜头的结尾前 0.1 秒，右抓手往里最多到最后一个镜头的开头后 0.1 秒
-    const start = within(materials).getByRole('slider', { name: '裁剪该段开头' })
+    const start = within(materials).getByRole('slider', { name: '裁剪开头' })
     start.focus()
     await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}')
     expect(start).toHaveAttribute('aria-valuenow', '1.9')
-    const end = within(materials).getByRole('slider', { name: '裁剪该段结尾' })
+    const end = within(materials).getByRole('slider', { name: '裁剪结尾' })
     end.focus()
     await user.keyboard('{Shift>}{ArrowLeft}{ArrowLeft}{ArrowLeft}{/Shift}')
     expect(end).toHaveAttribute('aria-valuenow', '4.6')
@@ -933,7 +936,7 @@ describe('成片编辑器 · 组件', () => {
     await user.click(
       capturable(within(overlays).getByRole('button', { name: /^选中：特效 · 测试叠加/ })),
     )
-    const overlayEnd = await within(overlays).findByRole('slider', { name: '裁剪该段结尾' })
+    const overlayEnd = await within(overlays).findByRole('slider', { name: '裁剪结尾' })
     overlayEnd.focus()
     await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
     expect(
@@ -946,7 +949,7 @@ describe('成片编辑器 · 组件', () => {
 
     // 测试可填项 5 秒：组件段从 2 秒拉到 5 秒为止
     await user.click(await blockButton(/^选中：第 2 段 · 组件 · 测试可填项/))
-    const clipEnd = await within(filmLane()).findByRole('slider', { name: '裁剪该段结尾' })
+    const clipEnd = await within(filmLane()).findByRole('slider', { name: '裁剪结尾' })
     clipEnd.focus()
     await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}')
     expect(

@@ -306,7 +306,7 @@ test.describe('成片编辑器 · 时间线', () => {
 
     // 拉长最后一段：到 120 秒停住，写明原因
     await film.getByRole('button', { name: /^选中：第 21 段/ }).click()
-    const handle = await boxOf(film.getByRole('slider', { name: '裁剪该段结尾' }))
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪结尾' }))
     await page.mouse.move(handle.cx, handle.cy)
     await page.mouse.down()
     await page.mouse.move(handle.cx + 200, handle.cy, { steps: 6 })
@@ -465,7 +465,7 @@ test.describe('成片编辑器 · 时间线', () => {
 
     // 修剪：拖结尾手柄，再用 ← 微调 0.1 秒
     const segment = film.getByRole('group', { name: /^第 2 段/ })
-    const end = film.getByRole('slider', { name: '裁剪该段结尾' })
+    const end = film.getByRole('slider', { name: '裁剪结尾' })
     const handle = await boxOf(end)
     await page.mouse.move(handle.cx, handle.cy)
     await page.mouse.down()
