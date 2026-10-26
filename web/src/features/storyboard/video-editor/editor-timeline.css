@@ -153,12 +153,14 @@
   pointer-events: none;
 }
 
-/* 只保留 AI 输入卡的选区定位锚点，不绘制选中外框。 */
+/* 选区外框，也是 AI 输入卡的定位锚点；多选时没有裁剪抓手，只靠它看出选了哪几段。 */
 .video-editor-timeline-box {
   position: absolute;
-  top: calc(var(--timeline-track-top) - 3px);
+  top: var(--timeline-track-top);
   z-index: var(--z-local-2);
-  height: 52px;
+  height: 46px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
   pointer-events: none;
 }
 

@@ -389,10 +389,7 @@ export function EditorTimeline({
               aria-hidden="true"
               className="video-editor-timeline-box"
               ref={selectionBoxRef}
-              style={{
-                left: `calc(${percent(selectionBox.from)} - 3px)`,
-                width: `calc(${percent(selectionBox.to - selectionBox.from)} + 4px)`,
-              }}
+              style={span(selectionBox.from, selectionBox.to - selectionBox.from)}
             />
           )}
 
