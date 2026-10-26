@@ -1026,7 +1026,7 @@ function EditorBody({
                 </p>
               ) : undefined
             }
-            previewMs={materialView === null ? undefined : materialMs}
+            playingMs={materialPlaying ? materialMs : undefined}
             range={range}
             used={usedSpans(draft.layer0)}
             versionOf={versionOf}

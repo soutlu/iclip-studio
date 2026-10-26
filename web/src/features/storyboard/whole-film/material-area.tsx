@@ -54,8 +54,8 @@ type MaterialAreaProps = {
   onTrim: (range: MaterialRange, edge: Edge) => void
   /** 镜头或选区两端上按 Enter：把选区插到播放头处 */
   onInsert: () => void
-  /** 预览在放选区时，素材里放到的时刻（毫秒） */
-  previewMs: number | undefined
+  /** 素材预览在播放时，素材里放到的时刻（毫秒）；不在播放时为 undefined，选区里不画播放头 */
+  playingMs: number | undefined
   /** 拖着 range 到画面轨上松手；落在轨上返回 true */
   onDrop: (clientX: number, clientY: number, range: MaterialRange) => boolean
   /** 拖动中指针移到哪；取消时为 null */
@@ -88,7 +88,7 @@ export function MaterialArea({
   onSelect,
   onTrim,
   onInsert,
-  previewMs,
+  playingMs,
   onDrop,
   onCarry,
 }: MaterialAreaProps) {
@@ -123,7 +123,7 @@ export function MaterialArea({
                       onSelect={onSelect}
                       onTrim={onTrim}
                       onVersion={onVersion}
-                      previewMs={range?.takeId === take.id ? previewMs : undefined}
+                      playingMs={range?.takeId === take.id ? playingMs : undefined}
                       range={range?.takeId === take.id ? range : null}
                       take={take}
                       used={used.get(version.jobId) ?? []}
@@ -148,7 +148,7 @@ type TakeRowProps = {
   range: MaterialRange | null
   /** 这一版在画面轨上已经用了的段 */
   used: readonly UsedSpan[]
-  previewMs: number | undefined
+  playingMs: number | undefined
   onPick: (range: MaterialRange) => void
   onClear: () => void
   onSelect: (range: MaterialRange) => void
@@ -178,7 +178,7 @@ function TakeRow({
   keyframes,
   range,
   used,
-  previewMs,
+  playingMs,
   onPick,
   onClear,
   onSelect,
@@ -437,11 +437,12 @@ function TakeRow({
             })}
           </div>
         ) : null}
-        {shown !== null && durationMs !== undefined && previewMs !== undefined ? (
+        {shown !== null && durationMs !== undefined && playingMs !== undefined ? (
           <span
             aria-hidden="true"
             className="wf-material-playhead"
-            style={{ left: percent(previewMs, durationMs) }}
+            data-testid="material-playhead"
+            style={{ left: percent(playingMs, durationMs) }}
           />
         ) : null}
       </div>
