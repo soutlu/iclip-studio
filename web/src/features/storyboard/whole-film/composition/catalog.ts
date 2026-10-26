@@ -1,6 +1,7 @@
 /**
- * 组件目录（`../catalog/catalog.json`）的结构。目录人工维护；组件文件由
- * `web/scripts/hyperframes-registry.mjs` 按同样的相对路径同步。
+ * 组件目录（组件库根上的 `catalog.json`）的结构。目录随组件库在部署侧维护，由
+ * `web/scripts/hyperframes-registry.mjs` 组装：组件文件、运行时与封面放在 `<version>/` 下，
+ * 路径都相对它。
  */
 
 export type VariableValue = string | number | boolean
@@ -35,7 +36,7 @@ export interface CatalogItem {
   /** 组件自己的动画时长（秒），放进成片的默认时长与最长时长；字幕样式铺满整片，为 null。 */
   duration: number | null
   variables: CatalogVariable[]
-  /** `../catalog/thumbnails/` 下的缩略图文件名。 */
+  /** `<version>/thumbnails/` 下的缩略图文件名。 */
   thumbnail: string | null
   /** 组件用到的网页字体，合成页给它们补上中文字形（见 {@link ComponentCatalog.fonts}）。 */
   fonts: string[]
@@ -48,7 +49,7 @@ export interface ExcludedItem {
 }
 
 export interface ComponentCatalog {
-  /** HyperFrames 版本，也是组件目录在站点上的目录名。 */
+  /** 组件库的版本号（组装时按全部输入算出），也是组件文件所在的目录名。 */
   version: string
   /**
    * 合成页要加载的运行时脚本与中文字体 CSS，相对组件目录根。中文字体是合成页的默认字体，

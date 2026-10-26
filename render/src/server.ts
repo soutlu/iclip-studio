@@ -10,14 +10,15 @@ import {
   buildComposition,
   CompositionError,
 } from '../../web/src/features/storyboard/whole-film/composition/build'
-import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import type { ExportQueue } from './jobs'
+import type { ComponentLibrary } from './library'
 import type { Logger } from './log'
 import { disallowedMediaHosts, parseExportRequest } from './request'
 
 export interface ServerContext {
   queue: ExportQueue
-  catalog: ComponentCatalog
+  /** 当前的组件库；每次受理导出读一次，渲染用受理时那一版。 */
+  library: () => Promise<ComponentLibrary>
   allowedHosts: Set<string>
   logger: Logger
   health: () => { gpu: 'hardware' | 'software'; chrome: string }
@@ -74,6 +75,7 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     fail(res, 400, 'media-host-not-allowed', `素材地址的主机不在允许范围：${rejected.join('、')}`)
     return
   }
+  const library = await context.library()
   // 渲染时用取到本地的素材再生成一次；这里先按原地址生成，草稿有问题当场答 400。
   const compose = (paths: Readonly<Record<string, string>>) => {
     const local = (url: string) => paths[url] ?? url
@@ -89,7 +91,7 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
         music: request.media.music ? { url: local(request.media.music.url) } : null,
         subtitles: request.media.subtitles,
       },
-      catalog: context.catalog,
+      catalog: library.catalog,
     }).html
   }
   try {
@@ -109,6 +111,7 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
   const accepted = context.queue.submit({
     id: request.id,
     conversationId: request.conversationId,
+    registryDir: library.dir,
     mediaUrls: [...new Set([...videoUrls, ...musicUrl])],
     compose,
     upload: request.upload,

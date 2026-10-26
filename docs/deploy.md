@@ -32,7 +32,7 @@
    cd render && RENDER_ALLOWED_MEDIA_HOSTS=<素材主机> RENDER_REGISTRY_ROOT=../web/public/hyperframes pnpm dev
    ```
 
-   - 组件库用 `make setup` 同步到 `web/public/hyperframes/` 的那一份；Chrome 由 `PRODUCER_HEADLESS_SHELL_PATH` 指定，不设时用 `~/.cache/puppeteer` 里装好的 chrome-headless-shell（版本与 [render/Dockerfile](../render/Dockerfile) 里的一致，用 `npx @puppeteer/browsers install chrome-headless-shell@<版本> --path ~/.cache/puppeteer` 安装），PATH 中还要有 `ffmpeg` 和 `ffprobe`。各变量的含义见 [config.ts](../render/src/config.ts)。
+   - 组件库用 `make setup`（或在 `web/` 运行 `pnpm hf:registry`）组装到 `web/public/hyperframes/` 的测试组件库；要看正式组件时按[发布组件库](#发布组件库)第 1 步组装到本机另一个目录，`RENDER_REGISTRY_ROOT` 指向它。Chrome 由 `PRODUCER_HEADLESS_SHELL_PATH` 指定，不设时用 `~/.cache/puppeteer` 里装好的 chrome-headless-shell（版本与 [render/Dockerfile](../render/Dockerfile) 里的一致，用 `npx @puppeteer/browsers install chrome-headless-shell@<版本> --path ~/.cache/puppeteer` 安装），PATH 中还要有 `ffmpeg` 和 `ffprobe`。各变量的含义见 [config.ts](../render/src/config.ts)。
 
 ## 服务器部署
 
@@ -52,6 +52,7 @@
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
    - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
+   - `components/`：成片的组件库，web 与渲染服务只读挂载，镜像里没有；按[发布组件库](#发布组件库)放好，没有它编辑器读不到组件目录、导出失败
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
    - 高清版（超分）：在 `.env` 把 `VIDEO_ENHANCE_SUBMIT_URL` 设为上游超分接口的完整提交地址（与 `VIDEO_SUBMIT_URL` 同一台服务，查询地址与 key 共用），并在 `configs/config.yaml` 的 `media_generation.video` 下写 `enhance` 段（`model`、从高到低的 `resolutions`、`fps`，取值见[配置模型](../server/src/iclip/config/models.py)）；不设地址则高清版没有开通，设了地址却没写这一段启动报错。
    - 成片导出：在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为渲染服务在 compose 网络里的地址（如 `http://render:8080`），要求同时配了 OSS 与媒体生成；不设则导出端点答「成片导出没有开通」。渲染服务的 `RENDER_ALLOWED_MEDIA_HOSTS` 要列出它会取素材的主机：本桶的内网 host `<OSS_BUCKET>.<OSS_INTERNAL_ENDPOINT 的 host>`（没配内网 endpoint 时是 `<OSS_BUCKET>.<OSS_ENDPOINT 的 host>`），以及上游视频服务发布出片的主机。
@@ -82,10 +83,38 @@
 - **日志**：`docker compose logs render`，每行一个 JSON，`event` 是中文短句；一次导出按 `exportId` 串起「导出已排队」到「导出完成」或「导出失败」。
 - **上线核对**：部署或升级后导出一条片尾用 `logo-brand-close`、字标写中文的成片，与编辑器预览对比片尾字标的大小和位置。这类组件在自己的脚本里量字宽来定字号，HyperFrames 只在运行组件脚本前等正在加载的字体（最多 5 秒），量的时候字形若还没到位，字标大小就与预览不同；Apple Silicon 上模拟运行 amd64 镜像时字标小约 6%，原生运行的导出与预览一致。差得明显时检查容器的 CPU 与显卡（`/health` 的 `gpu`）。
 
+### 发布组件库
+
+成片的组件库（组件目录、组件、运行时、字体与封面）在私有组件库目录里维护，不随镜像发版；部署目录的 `components/` 挂给 web（站点上的 `/hyperframes/`）与渲染服务（`RENDER_REGISTRY_ROOT`）。增减组件只发布组件库，不用重启容器。服务器上不需要 git、node 或任何组装步骤。
+
+1. 在本机组装：在公开仓库检出的 `web/` 下（先 `pnpm install`）运行
+
+   ```bash
+   pnpm hf:registry --library <私有组件库目录> --out <本机输出目录>
+   ```
+
+   输出 `catalog.json`（组件目录，带版本号）与 `<版本号>/`（这一版的全部文件）。版本号是全部输入的摘要，输入不变时版本号不变。
+
+2. 先上传版本目录：
+
+   ```bash
+   rsync -a <本机输出目录>/<版本号> <服务器>:<部署目录>/components/
+   ```
+
+3. 再上传 `catalog.json`：
+
+   ```bash
+   rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components/
+   ```
+
+   rsync 默认先写临时文件再改名，这一步是原子替换；不要加 `--inplace`。compose 挂载的是整个 `components/` 目录，改名替换后容器里立即看到新文件。
+
+`catalog.json` 不缓存，编辑器重新打开即读到新目录；版本目录长期缓存，所以一个版本目录上传后不再改动，旧版本目录留着给还开着的编辑器用，不再需要时手动删除。渲染服务每次受理导出时读一次 `catalog.json`。
+
 ### 升级
 
 1. 新版本有表结构变化时，先执行该版本的数据库迁移。
-2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤时补做。
+2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤时补做。compose.yaml 新挂载了部署目录里的目录时，先把目录放好再启动：第一次升级到挂载 `components/` 的版本前，先按[发布组件库](#发布组件库)放好组件库。
 3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
 
 ### 改配置

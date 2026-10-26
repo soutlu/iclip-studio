@@ -1,7 +1,8 @@
 /**
  * 用真实的 @hyperframes/producer 渲染：一份 2 秒的草稿（画面、字幕、配乐）经本机上传目标收下，
  * 核对成片的时长、画面尺寸与音轨；另把组件可填项的取值与目录默认值各渲染一遍，比较画面。
- * 需要 chrome-headless-shell、ffmpeg 与同步好的组件库；缺任何一样时整组跳过，跳过原因写在用例名里。
+ * 组件来自组装好的测试组件库（在 web/ 运行 pnpm hf:registry；RENDER_REGISTRY_ROOT 可另指）。
+ * 需要 chrome-headless-shell、ffmpeg 与组装好的组件库；缺任何一样时整组跳过，跳过原因写在用例名里。
  */
 import { execFile, spawnSync } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync } from 'node:fs'
@@ -16,15 +17,20 @@ import { resolveHeadlessShellPath } from '@hyperframes/engine'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildComposition } from '../../web/src/features/storyboard/whole-film/composition/build'
 import { ExportQueue } from './jobs'
+import { loadLibrary, type ComponentLibrary } from './library'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
-import { catalog, memoryLogger, SOURCE_JOB, SUBTITLE_JOB, MUSIC_JOB } from './testing'
+import { memoryLogger, SOURCE_JOB, SUBTITLE_JOB, MUSIC_JOB } from './testing'
 
 const run = promisify(execFile)
-const REGISTRY = join(
-  process.env['RENDER_REGISTRY_ROOT'] ?? join(import.meta.dirname, '../../web/public/hyperframes'),
-  catalog.version,
-)
+const REGISTRY_ROOT =
+  process.env['RENDER_REGISTRY_ROOT'] ?? join(import.meta.dirname, '../../web/public/hyperframes')
+const library: ComponentLibrary | null = existsSync(join(REGISTRY_ROOT, 'catalog.json'))
+  ? await loadLibrary(REGISTRY_ROOT)
+  : null
+// 跳过时不会用到：用例都在 describe.skipIf 里
+const catalog = library?.catalog as ComponentLibrary['catalog']
+const REGISTRY = library?.dir ?? ''
 
 function skipReason(): string | null {
   let chrome: string | undefined
@@ -37,8 +43,8 @@ function skipReason(): string | null {
   for (const tool of ['ffmpeg', 'ffprobe']) {
     if (spawnSync(tool, ['-version']).status !== 0) return `找不到 ${tool}`
   }
-  if (!existsSync(join(REGISTRY, catalog.runtime.hyperframes))) {
-    return `组件库没有同步（${REGISTRY}；在 web/ 运行 pnpm hf:registry）`
+  if (library === null || !existsSync(join(library.dir, library.catalog.runtime.hyperframes))) {
+    return `组件库没有组装（${REGISTRY_ROOT}；在 web/ 运行 pnpm hf:registry）`
   }
   return null
 }
@@ -46,6 +52,11 @@ function skipReason(): string | null {
 const reason = skipReason()
 
 const FRAME = { width: 640, height: 360 }
+/**
+ * 测试可填项（fixture-fields）在 640×360 画面上的文字所在：1920×1080 的设计稿缩到 1/3 后，色底在
+ * 左下 (40, 240)–(340, 313)，字从 x≈56 起、竖直居中
+ */
+const TEXT_AREA = { x: 60, y: 258, width: 260, height: 38 }
 
 /** 成片在 `at` 秒处的一帧，逐像素 RGB。 */
 async function frameAt(file: string, at: number): Promise<Buffer> {
@@ -221,7 +232,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const { logger } = memoryLogger()
     const queue = new ExportQueue({
       worker: createProducerWorker({
-        registryDir: REGISTRY,
         workDir: join(dir, 'work'),
         gpuEncode: false,
         logger,
@@ -231,7 +241,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     })
     const service = createExportServer({
       queue,
-      catalog,
+      library: () => loadLibrary(REGISTRY_ROOT),
       allowedHosts: new Set([new URL(origin).host]),
       logger,
       health: () => ({ gpu: 'software', chrome: 'test' }),
@@ -322,16 +332,15 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
 
-  it('组件可填项在画面上生效：同一组件两处各显示自己的文字，强调色经 CSS 变量生效', async () => {
+  it('组件可填项在画面上生效：同一组件两处各显示自己的文字，底色经 CSS 变量生效', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({
-      registryDir: REGISTRY,
       workDir: join(dir, 'work'),
       gpuEncode: false,
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 姓名条只改文字：它的强调色走脚本，不改就只剩文字一处不同。
+    // 测试可填项放三处：第一处只改底色（默认蓝色），后两处只改文字，不改就只剩文字一处不同。
     const film = (values: boolean, video: string) =>
       buildComposition({
         draft: {
@@ -352,44 +361,45 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           overlays: [
             {
               id: 'h',
-              component: 'headline-slam',
+              component: 'fixture-fields',
               start: 0,
               duration: 2000,
               playbackStart: 0,
               track: 0,
               zIndex: 1,
-              variables: values ? { text: 'Ship it today', accent: 'blue' } : {},
+              variables: values ? { accent: '#e5484d' } : {},
             },
             {
               id: 'n1',
-              component: 'lt-neon-border',
+              component: 'fixture-fields',
               start: 2000,
               duration: 2000,
               playbackStart: 0,
               track: 0,
               zIndex: 2,
-              variables: values ? { name: '拾步 · 秋冬新款', role: '品牌主理人' } : {},
+              variables: values ? { text: '秋冬新款上市' } : {},
             },
             {
               id: 'n2',
-              component: 'lt-neon-border',
+              component: 'fixture-fields',
               start: 4000,
               duration: 2000,
               playbackStart: 0,
               track: 0,
               zIndex: 3,
-              variables: values ? { name: '第二条姓名', role: '第二个职位' } : {},
+              variables: values ? { text: '第二处文字' } : {},
             },
           ],
         },
         media: { videos: { [SOURCE_JOB]: { url: video } }, music: null, subtitles: {} },
         catalog,
       }).html
-    // 取帧：标题在 1 秒；两处姓名条在各自时段里的同一进度（开始后 1.3 秒）。
+    // 取帧：改底色的那处在 1 秒；改文字的两处在各自时段里的同一进度（开始后 1.3 秒）。
     const frames = async (values: boolean) => {
       const rendered = await worker.render(
         {
           id: values ? 'values' : 'defaults',
+          registryDir: REGISTRY,
           mediaUrls: [gray],
           compose: (paths) => film(values, paths[gray] ?? gray),
         },
@@ -408,22 +418,19 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const withValues = await frames(true)
     const withDefaults = await frames(false)
 
-    // 姓名条的文字区：1920×1080 的设计稿缩到 640×360 后在左下。
-    const nameArea = { x: 70, y: 225, width: 260, height: 60 }
-    // 默认值的两处姓名条一模一样，差别只是编码噪声；填了取值的两处与默认值、彼此都不同。
-    expect(meanDifference(withDefaults.first, withDefaults.second, nameArea)).toBeLessThan(3)
-    expect(meanDifference(withValues.first, withDefaults.first, nameArea)).toBeGreaterThan(6)
-    expect(meanDifference(withValues.second, withDefaults.second, nameArea)).toBeGreaterThan(6)
-    expect(meanDifference(withValues.first, withValues.second, nameArea)).toBeGreaterThan(6)
-    // 标题的强调色选蓝色（默认绿色）。
-    expect(bluePixels(withValues.headline)).toBeGreaterThan(100)
-    expect(bluePixels(withDefaults.headline)).toBeLessThan(10)
+    // 默认值的两处一模一样，差别只是编码噪声；填了取值的两处与默认值、彼此都不同。
+    expect(meanDifference(withDefaults.first, withDefaults.second, TEXT_AREA)).toBeLessThan(3)
+    expect(meanDifference(withValues.first, withDefaults.first, TEXT_AREA)).toBeGreaterThan(6)
+    expect(meanDifference(withValues.second, withDefaults.second, TEXT_AREA)).toBeGreaterThan(6)
+    expect(meanDifference(withValues.first, withValues.second, TEXT_AREA)).toBeGreaterThan(6)
+    // 底色默认蓝色，改成红色后画面上没有蓝。
+    expect(bluePixels(withDefaults.headline)).toBeGreaterThan(100)
+    expect(bluePixels(withValues.headline)).toBeLessThan(10)
   }, 600_000)
 
   it('两段视频中间夹一个组件段，加一个超出画面轨结尾的特效块与字幕：组件段、特效块都上画面，成片随特效块变长', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({
-      registryDir: REGISTRY,
       workDir: join(dir, 'work'),
       gpuEncode: false,
       logger,
@@ -431,11 +438,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const clip = `${origin}/clip.mp4`
     const gray = `${origin}/gray.mp4`
     const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-    // 画面轨：测试图 0–2 秒、组件段（标志片尾）2–4 秒、灰底 4–6 秒；特效块（姓名条）4.5–7 秒，
+    // 画面轨：测试图 0–2 秒、组件段（测试画面）2–4 秒、灰底 4–6 秒；特效块（测试可填项）4.5–7 秒，
     // 比画面轨多出 1 秒；测试图那段带一句字幕。
     const rendered = await worker.render(
       {
         id: 'model-b',
+        registryDir: REGISTRY,
         mediaUrls: [clip, gray],
         compose: (paths) =>
           buildComposition({
@@ -493,11 +501,10 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       expect(meanDifference(segment!, testCard!, whole)).toBeGreaterThan(10)
       expect(meanDifference(segment!, grayBefore!, whole)).toBeGreaterThan(3)
       expect(meanDifference(segment!, Buffer.alloc(segment!.length), whole)).toBeGreaterThan(3)
-      // 姓名条叠在灰底上；过了画面轨的结尾仍在空画面（黑底）上。
-      const nameArea = { x: 70, y: 225, width: 260, height: 60 }
-      expect(meanDifference(overlayOnGray!, grayBefore!, nameArea)).toBeGreaterThan(6)
+      // 特效块叠在灰底上；过了画面轨的结尾仍在空画面（黑底）上。
+      expect(meanDifference(overlayOnGray!, grayBefore!, TEXT_AREA)).toBeGreaterThan(6)
       expect(
-        meanDifference(overlayPastEnd!, Buffer.alloc(overlayPastEnd!.length), nameArea),
+        meanDifference(overlayPastEnd!, Buffer.alloc(overlayPastEnd!.length), TEXT_AREA),
       ).toBeGreaterThan(6)
     } finally {
       await rendered.cleanup()
@@ -507,18 +514,17 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   it('在画面上挪过位置的特效块（固定尺寸组件）导出在挪到的地方，原处只剩底下的画面', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({
-      registryDir: REGISTRY,
       workDir: join(dir, 'work'),
       gpuEncode: false,
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 姓名条·色块：1920×1080 的设计稿缩到 640×360，左下角一块实心蓝底（#2756ff）。同一组件放两次：
+    // 测试可填项：1920×1080 的设计稿缩到 640×360，左下角一块实心蓝底（#2756ff）。同一组件放两次：
     // 0–2.5 秒在原处，2.5–5 秒挪开 (300, -150) 画面像素。
     const shifted = { x: 300, y: -150 }
     const block = (id: string, start: number, at: { x: number; y: number }) => ({
       id,
-      component: 'lt-color-block',
+      component: 'fixture-fields',
       start,
       duration: 2500,
       playbackStart: 0,
@@ -530,6 +536,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const rendered = await worker.render(
       {
         id: 'moved',
+        registryDir: REGISTRY,
         mediaUrls: [gray],
         compose: (paths) =>
           buildComposition({
@@ -564,7 +571,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       // 两处都取进场动画（0.6 秒）结束后的同一进度
       const [still, moved] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
       // 色块左边距里一条没有字的竖条
-      const home = { x: 42, y: 285, width: 7, height: 30 }
+      const home = { x: 42, y: 270, width: 7, height: 30 }
       const away = { ...home, x: home.x + shifted.x, y: home.y + shifted.y }
       const isBlue = ([r, , b]: [number, number, number]) => b > 180 && b - r > 100
       const isGray = (color: [number, number, number]) =>
@@ -582,20 +589,19 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   it('挪过位置又缩放、旋转过的特效块：绕挪开之前的转轴缩放旋转，再整块挪开', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({
-      registryDir: REGISTRY,
       workDir: join(dir, 'work'),
       gpuEncode: false,
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 姓名条·色块放两次：0–2.5 秒原样，2.5–5 秒挪开 shift、绕 pivot 放大 1.5 倍、顺时针转 30°。
+    // 测试可填项放两次：0–2.5 秒原样，2.5–5 秒挪开 shift、绕 pivot 放大 1.2 倍、顺时针转 20°。
     // 转轴取在色块左上角附近（不是它的中心），挪开的距离不为 0：转轴若按挪开之后的坐标算，
     // 色块会落在别处。
-    const shift = { x: 190, y: -190 }
-    const turn = { scale: 1.5, rotation: 30, pivotX: 40, pivotY: 270 }
+    const shift = { x: 120, y: -160 }
+    const turn = { scale: 1.2, rotation: 20, pivotX: 50, pivotY: 250 }
     const block = (id: string, start: number, placement: object) => ({
       id,
-      component: 'lt-color-block',
+      component: 'fixture-fields',
       start,
       duration: 2500,
       playbackStart: 0,
@@ -607,6 +613,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const rendered = await worker.render(
       {
         id: 'turned',
+        registryDir: REGISTRY,
         mediaUrls: [gray],
         compose: (paths) =>
           buildComposition({
@@ -709,7 +716,7 @@ function modelBDraft(grayJob: string) {
         start: 2000,
         duration: 2000,
         playbackStart: 0,
-        component: 'logo-outro',
+        component: 'fixture-scene',
         variables: {},
       },
       {
@@ -727,13 +734,13 @@ function modelBDraft(grayJob: string) {
     overlays: [
       {
         id: 'o',
-        component: 'lt-neon-border',
+        component: 'fixture-fields',
         start: 4500,
         duration: 2500,
         playbackStart: 0,
         track: 0,
         zIndex: 1,
-        variables: { name: '拾步 · 秋冬新款', role: '品牌主理人' },
+        variables: { text: '秋冬新款上市' },
       },
     ],
   }

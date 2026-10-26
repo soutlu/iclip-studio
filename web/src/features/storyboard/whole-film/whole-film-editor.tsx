@@ -584,7 +584,7 @@ function EditorBody({
     const item = itemOf(catalog, name)
     return {
       title: item?.title ?? '组件库里没有的组件',
-      thumbnail: item === undefined ? undefined : thumbnailOf(item),
+      thumbnail: item === undefined ? undefined : thumbnailOf(catalog, item),
       icon: (item === undefined ? undefined : CATEGORY_ICON[item.category]) ?? 'grid',
     }
   }
@@ -620,7 +620,7 @@ function EditorBody({
             face: {
               title: item.title,
               durationMs: durationMsOf(item),
-              media: <ComponentThumb iconSize="xs" item={item} />,
+              media: <ComponentThumb catalog={catalog} iconSize="xs" item={item} />,
             },
           },
     attempt: (point) => {
@@ -671,6 +671,7 @@ function EditorBody({
       )
     return (
       <ComponentPopover
+        catalog={catalog}
         item={item}
         onChange={(variables: ComponentVariables) =>
           apply(setComponentVariables(draft, { id, variables }))
@@ -916,6 +917,7 @@ function EditorBody({
             beats={musicKnown ? filmBeats(draft, context) : []}
             captionControls={
               <CaptionControls
+                catalog={catalog}
                 component={draft.captions.component}
                 hidden={draft.captions.hidden === true}
                 onStyle={(component) => apply(setCaptionStyle(draft, { component }))}

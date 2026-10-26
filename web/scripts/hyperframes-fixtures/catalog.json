@@ -1,0 +1,104 @@
+{
+  "runtime": {
+    "hyperframes": "vendor/hyperframes/hyperframe.runtime.iife.js",
+    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js",
+    "cjkFont": "vendor/fonts/noto-sans-sc.css"
+  },
+  "fonts": {},
+  "categories": [
+    { "id": "captions", "label": "字幕" },
+    { "id": "vfx", "label": "视觉特效" },
+    { "id": "transitions", "label": "转场" },
+    { "id": "effects", "label": "效果" },
+    { "id": "text-effects", "label": "文字效果" },
+    { "id": "social", "label": "社交" },
+    { "id": "scenes", "label": "场景" }
+  ],
+  "items": [
+    {
+      "name": "default-caption",
+      "kind": "component",
+      "title": "测试字幕",
+      "description": "按句显示的白字，压在画面下方",
+      "category": "captions",
+      "placement": "caption",
+      "src": "compositions/fixtures/default-caption.html",
+      "size": null,
+      "duration": null,
+      "variables": [],
+      "thumbnail": "default-caption.svg",
+      "fonts": []
+    },
+    {
+      "name": "fixture-scene",
+      "kind": "block",
+      "title": "测试画面",
+      "description": "6 秒的渐变画面，圆点从左滑到右",
+      "category": "scenes",
+      "placement": null,
+      "src": "compositions/fixtures/fixture-scene.html",
+      "size": { "width": 1920, "height": 1080 },
+      "duration": 6,
+      "variables": [],
+      "thumbnail": "fixture-scene.svg",
+      "fonts": []
+    },
+    {
+      "name": "fixture-overlay",
+      "kind": "component",
+      "title": "测试叠加",
+      "description": "4 秒的圆环叠在画面中间",
+      "category": "effects",
+      "placement": null,
+      "src": "compositions/fixtures/fixture-overlay.html",
+      "size": null,
+      "duration": 4,
+      "variables": [],
+      "thumbnail": "fixture-overlay.svg",
+      "fonts": []
+    },
+    {
+      "name": "fixture-fields",
+      "kind": "component",
+      "title": "测试可填项",
+      "description": "左下角一块色底文字条，文字、粗细与底色可改",
+      "category": "text-effects",
+      "placement": null,
+      "src": "compositions/fixtures/fixture-fields.html",
+      "size": { "width": 1920, "height": 1080 },
+      "duration": 5,
+      "variables": [
+        { "id": "text", "type": "string", "label": "文字", "default": "示例文字" },
+        {
+          "id": "weight",
+          "type": "enum",
+          "label": "字体粗细",
+          "default": "400",
+          "options": [
+            { "value": "400", "label": "常规" },
+            { "value": "700", "label": "加粗" }
+          ]
+        },
+        { "id": "accent", "type": "color", "label": "底色", "default": "#2756ff" }
+      ],
+      "thumbnail": "fixture-fields.svg",
+      "fonts": []
+    },
+    {
+      "name": "fixture-brand-card",
+      "kind": "block",
+      "title": "示例品牌 片尾",
+      "description": "示例品牌的纯色片尾",
+      "category": "scenes",
+      "placement": null,
+      "brand": "示例品牌",
+      "src": "compositions/fixtures/fixture-brand-card.html",
+      "size": { "width": 1920, "height": 1080 },
+      "duration": 3,
+      "variables": [],
+      "thumbnail": "fixture-brand-card.svg",
+      "fonts": []
+    }
+  ],
+  "excluded": []
+}

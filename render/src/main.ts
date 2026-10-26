@@ -1,29 +1,24 @@
 /**
- * 渲染服务入口：读配置 → 检查组件库与 Chrome → 探测浏览器渲染方式（hardware / software）与视频编码器
- * 并写进日志 → 起 HTTP 服务。启动时清掉上次留下的临时项目目录。
+ * 渲染服务入口：读配置 → 检查 Chrome → 探测浏览器渲染方式（hardware / software）与视频编码器
+ * 并写进日志 → 起 HTTP 服务。启动时清掉上次留下的临时项目目录。组件库每次受理导出时读（见 library.ts）。
  */
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
   detectGpuEncoder,
   resolveBrowserGpuMode,
   resolveHeadlessShellPath,
 } from '@hyperframes/engine'
-import catalogJson from '../../web/src/features/storyboard/whole-film/catalog/catalog.json'
-import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import { ConfigError, loadConfig } from './config'
 import { ExportQueue } from './jobs'
+import { loadLibrary } from './library'
 import { createLogger } from './log'
 import { restrictFetch } from './network'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
 
 const run = promisify(execFile)
-// catalog.json 人工维护，形状即 ComponentCatalog（JSON 推不出字面量联合）。
-const catalog = catalogJson as unknown as ComponentCatalog
 
 async function main(): Promise<void> {
   const bootLogger = createLogger()
@@ -40,17 +35,6 @@ async function main(): Promise<void> {
   const logger = createLogger(config.logLevel)
   restrictFetch(config.allowedHosts, logger)
 
-  // 组件库按 HyperFrames 版本放在根目录下，与 web 镜像里 /hyperframes/<版本>/ 是同一份内容。
-  const registryDir = join(config.registryRoot, catalog.version)
-  const runtime = join(registryDir, catalog.runtime.hyperframes)
-  if (!existsSync(runtime)) {
-    logger.error('组件库不完整', { registryDir, missing: catalog.runtime.hyperframes })
-    process.exit(1)
-  }
-  if (!existsSync(join(registryDir, '.hyperframes-sync.json'))) {
-    logger.warn('组件库没有同步标记', { registryDir })
-  }
-
   const chromePath = resolveHeadlessShellPath()
   if (!chromePath) {
     logger.error('找不到 chrome-headless-shell', {
@@ -66,15 +50,13 @@ async function main(): Promise<void> {
     chromePath,
     gpu,
     videoEncoder: encoder ?? 'libx264（软件）',
-    registryDir,
-    hyperframes: catalog.version,
+    registryRoot: config.registryRoot,
   })
   if (gpu === 'software') logger.warn('浏览器使用软件渲染', { reason: '探测不到可用的 GPU' })
 
   await rm(config.workDir, { recursive: true, force: true })
   const queue = new ExportQueue({
     worker: createProducerWorker({
-      registryDir,
       workDir: config.workDir,
       gpuEncode: encoder !== null,
       logger,
@@ -87,7 +69,7 @@ async function main(): Promise<void> {
 
   const server = createExportServer({
     queue,
-    catalog,
+    library: () => loadLibrary(config.registryRoot),
     allowedHosts: config.allowedHosts,
     logger,
     health: () => ({ gpu, chrome }),

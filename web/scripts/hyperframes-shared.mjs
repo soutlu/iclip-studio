@@ -1,6 +1,6 @@
 /**
- * hyperframes-registry.mjs（构建时同步组件库）与 render/scripts/smoke-catalog.mjs（组件的冒烟筛选）共用：
- * 版本与路径、下载与校验、组件库条目的读取与归类、外链本地化规则。
+ * hyperframes-registry.mjs（组装组件库）与 render/scripts/smoke-catalog.mjs（组件的冒烟筛选）共用：
+ * 版本与路径、组件库版本号、下载与校验、组件库条目的读取与归类、外链本地化规则。
  *
  * 外链本地化：组件库里的组件从 jsDelivr 取 GSAP、three 等脚本，从 Google Fonts 取字体；国内取不到，
  * 一律换成本地 `vendor/` 下的文件。脚本取 npm 上的同一版本（jsDelivr 的 /npm/ 本来就是 npm 包里的原文件），
@@ -10,7 +10,7 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -27,10 +27,39 @@ export const TARBALL = {
 
 export const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const CACHE_DIR = join(WEB_ROOT, 'node_modules', '.cache', 'hyperframes', HF_VERSION)
-export const OUTPUT_DIR = join(WEB_ROOT, 'public', 'hyperframes', HF_VERSION)
-export const LOCK_PATH = join(WEB_ROOT, 'scripts', 'hyperframes-registry.lock.json')
-export const PATCHES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-patches')
-export const CATALOG_DIR = join(WEB_ROOT, 'src', 'features', 'storyboard', 'whole-film', 'catalog')
+/** 入库的测试组件库：不带参数组装时用它。 */
+export const FIXTURES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-fixtures')
+/** 不带参数组装时的输出目录（开发与 e2e 从这里取）。 */
+export const DEFAULT_OUT = join(WEB_ROOT, 'public', 'hyperframes')
+
+/** 组件库源目录里参与组装的文件：目录、锁文件、改写与封面。其余文件（说明、.git 等）不算输入。 */
+const LIBRARY_INPUTS = ['catalog.json', 'registry.lock.json', 'patches', 'thumbnails']
+
+/**
+ * 组件库的版本号：源目录里参与组装的全部文件（路径与内容）、组装脚本的源码与 HyperFrames 版本
+ * 一起取 sha256 的前 12 位。输入相同则版本号相同，任一输入变了版本号就变。
+ */
+export async function libraryVersion(library) {
+  const hash = createHash('sha256')
+  const add = (data) => hash.update(data).update('\0')
+  add(HF_VERSION)
+  for (const script of ['hyperframes-registry.mjs', 'hyperframes-shared.mjs']) {
+    add(script)
+    add(await readFile(join(WEB_ROOT, 'scripts', script)))
+  }
+  for (const entry of LIBRARY_INPUTS) {
+    const path = join(library, entry)
+    if (!existsSync(path)) continue
+    const files = (await stat(path)).isDirectory()
+      ? (await listFiles(path)).map((file) => posix.join(entry, file))
+      : [entry]
+    for (const file of files) {
+      add(file)
+      add(await readFile(join(library, file)))
+    }
+  }
+  return hash.digest('hex').slice(0, 12)
+}
 
 /** 合成页加载的运行时脚本（相对组件目录根）；组件里的 GSAP 也换成这一份。 */
 /** 中文字体：字幕组件与合成页的默认字体都用它，经 `<link>` 引用这份 CSS。 */
@@ -63,7 +92,8 @@ async function download(url) {
   return Buffer.from(await response.arrayBuffer())
 }
 
-async function writeAtomic(path, data) {
+/** 先写同目录的临时文件再改名：读的一方要么看到旧文件，要么看到完整的新文件。 */
+export async function writeAtomic(path, data) {
   await mkdir(dirname(path), { recursive: true })
   const temp = `${path}.${process.pid}.tmp`
   await writeFile(temp, data)

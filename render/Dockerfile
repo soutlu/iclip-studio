@@ -1,5 +1,5 @@
-# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根：要用 web/ 的组件库同步脚本、组件目录、
-# 成片合成构建与后端合同的 zod 生成物。
+# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根：要用 web/ 的成片合成构建与后端合同的
+# zod 生成物。镜像里不带组件库：部署时把组件库目录挂到 RENDER_REGISTRY_ROOT（见 deploy/compose.yaml）。
 #
 #   docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render .
 #
@@ -9,24 +9,9 @@
 
 ARG NODE_IMAGE=node:22.23.3-bookworm-slim
 
-# ---------------------------------------------------------------- 组件库
-FROM ${NODE_IMAGE} AS registry
-# 本机网络到 npm 官方源慢时可换镜像源：--build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
-ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
-ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY \
-    PNPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
-WORKDIR /app/web
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./
-# 同步脚本只需要 @hyperframes/core（取运行时文件），装生产依赖即可。
-RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" \
-    && pnpm install --frozen-lockfile --prod
-COPY web/scripts/ scripts/
-COPY web/src/features/storyboard/whole-film/catalog/ src/features/storyboard/whole-film/catalog/
-# 按锁文件下载、逐个核对摘要，输出到 public/hyperframes/<版本>/。
-RUN node scripts/hyperframes-registry.mjs
-
 # ---------------------------------------------------------------- 打包
 FROM ${NODE_IMAGE} AS bundle
+# 本机网络到 npm 官方源慢时可换镜像源：--build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY \
     PNPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
@@ -99,7 +84,6 @@ WORKDIR /app
 COPY --from=bundle /app/render/package.json ./
 COPY --from=bundle /app/render/node_modules ./node_modules
 COPY --from=bundle /app/render/dist ./dist
-COPY --from=registry /app/web/public/hyperframes/ /app/registry/
 
 # 卷挂载在父目录，启动与退出时清理 work 子目录，不删除挂载点。
 RUN mkdir -p /tmp/iclip-render && chown node:node /tmp/iclip-render

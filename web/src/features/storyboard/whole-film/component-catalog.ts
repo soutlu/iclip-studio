@@ -1,6 +1,7 @@
 /**
  * 编辑器用到的组件目录：分类、点卡片时的默认去处与组件自己的时长。
- * 目录本身（`catalog/catalog.json`，约 270 KB）打开编辑器时才加载，缩略图只取地址。
+ * 目录本身是部署侧组件库里的 `/hyperframes/catalog.json`，打开编辑器时才读；组件、运行时与封面
+ * 在 `/hyperframes/<version>/` 下。
  */
 
 import { queryOptions, useQuery } from '@tanstack/react-query'
@@ -16,19 +17,20 @@ import type { ComponentVariables } from './editing/draft'
 
 export type { CatalogItem, CatalogVariable, ComponentCatalog, VariableValue }
 
-const THUMBNAILS = import.meta.glob<string>('./catalog/thumbnails/*.svg', {
-  eager: true,
-  query: '?url&no-inline',
-  import: 'default',
-})
-
 /** 组件的缩略图地址；目录里没有缩略图的组件为 undefined */
-export const thumbnailOf = (item: CatalogItem): string | undefined =>
-  item.thumbnail === null ? undefined : THUMBNAILS[`./catalog/thumbnails/${item.thumbnail}`]
+export const thumbnailOf = (catalog: ComponentCatalog, item: CatalogItem): string | undefined =>
+  item.thumbnail === null
+    ? undefined
+    : `/hyperframes/${catalog.version}/thumbnails/${item.thumbnail}`
 
 const catalogQuery = queryOptions({
   queryKey: ['whole-film', 'component-catalog'],
-  queryFn: async () => (await import('./catalog/catalog.json')).default as ComponentCatalog,
+  queryFn: async ({ signal }) => {
+    const response = await fetch('/hyperframes/catalog.json', { signal })
+    if (!response.ok) throw new Error(`组件库目录读取失败（${response.status}）`)
+    // 组装工具写出的目录，形状即 ComponentCatalog（JSON 推不出字面量联合）
+    return (await response.json()) as ComponentCatalog
+  },
   staleTime: Infinity,
   gcTime: Infinity,
 })
