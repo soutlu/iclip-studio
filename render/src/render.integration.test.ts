@@ -1,6 +1,7 @@
 /**
  * 用真实的 @hyperframes/producer 渲染：一份 2 秒的草稿（画面、字幕、配乐）经本机上传目标收下，
- * 核对成片的时长、画面尺寸与音轨；另把组件可填项的取值与目录默认值各渲染一遍，比较画面。
+ * 核对成片的时长、画面尺寸与音轨；另把组件可填项的取值与目录默认值各渲染一遍、字幕在默认字体与
+ * 品牌字体下各渲染一遍，比较画面。
  * 组件来自组装好的测试组件库（在 web/ 运行 pnpm hf:registry；RENDER_REGISTRY_ROOT 可另指）。
  * 需要 chrome-headless-shell、ffmpeg 与组装好的组件库；缺任何一样时整组跳过，跳过原因写在用例名里。
  */
@@ -426,6 +427,91 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     // 底色默认蓝色，改成红色后画面上没有蓝。
     expect(bluePixels(withDefaults.headline)).toBeGreaterThan(100)
     expect(bluePixels(withValues.headline)).toBeLessThan(10)
+  }, 600_000)
+
+  it('字幕选了品牌字体：外层设的字体变量传进字幕组件，字形与默认字体明显不同', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({
+      workDir: join(dir, 'work'),
+      gpuEncode: false,
+      logger,
+    })
+    const gray = `${origin}/gray.mp4`
+    // 测试组件库里带品牌的字体（字体项的选项），与测试字幕默认的 Noto Sans SC 是两种字形
+    const brandFont = Object.entries(catalog.fonts).find(([, font]) => font.brand)?.[0]
+    expect(brandFont).toBeDefined()
+    // 西文字：中文字形在两种字体下都取 Noto Sans SC，看不出差别
+    const film = (variables: Record<string, string>, video: string) =>
+      buildComposition({
+        draft: {
+          canvas: FRAME,
+          layer0: [
+            {
+              id: 'g',
+              type: 'video',
+              start: 0,
+              duration: 3000,
+              playbackStart: 0,
+              sourceJobId: SOURCE_JOB,
+              volume: 1,
+            },
+          ],
+          captions: { component: 'default-caption', edits: [], variables },
+          music: null,
+          overlays: [],
+        },
+        media: {
+          videos: { [SOURCE_JOB]: { url: video } },
+          music: null,
+          subtitles: {
+            [SOURCE_JOB]: {
+              subtitleJobId: SUBTITLE_JOB,
+              sentences: [
+                {
+                  startMs: 0,
+                  endMs: 1500,
+                  text: 'Graphic Type',
+                  speaker: null,
+                  words: [
+                    { startMs: 0, endMs: 700, text: 'Graphic', punctuation: '' },
+                    { startMs: 700, endMs: 1500, text: 'Type', punctuation: '' },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        catalog,
+      }).html
+    // 1 秒时字幕在画面上，2.5 秒时这句已经结束
+    const frames = async (id: string, variables: Record<string, string>) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: REGISTRY,
+          mediaUrls: [gray],
+          compose: (paths) => film(variables, paths[gray] ?? gray),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return {
+          caption: await frameAt(rendered.file, 1),
+          blank: await frameAt(rendered.file, 2.5),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const own = await frames('caption-own-font', {})
+    const brand = await frames('caption-brand-font', { font: brandFont ?? '' })
+
+    // 字幕在 640×360 画面下方居中，字高约 24 像素
+    const area = { x: 100, y: 280, width: 440, height: 56 }
+    // 两次都有字（与这句结束后的空画面不同），字形彼此明显不同
+    expect(meanDifference(own.caption, own.blank, area)).toBeGreaterThan(6)
+    expect(meanDifference(brand.caption, brand.blank, area)).toBeGreaterThan(6)
+    expect(meanDifference(own.caption, brand.caption, area)).toBeGreaterThan(6)
   }, 600_000)
 
   it('两段视频中间夹一个组件段，加一个超出画面轨结尾的特效块与字幕：组件段、特效块都上画面，成片随特效块变长', async () => {

@@ -12,13 +12,17 @@
  *                                                      源码包里所有文件齐全、外链能本地化的组件，写到指定目录
  *
  * 源目录：catalog.json（组件目录）、registry.lock.json（npm 包 tgz 的摘要）、patches/（改写：manifest.json
- * 记下每个文件替换的原文摘要，null 为新文件）、thumbnails/（面板封面）。
- * 输出：<输出目录>/catalog.json（组件目录加上 version）与 <输出目录>/<version>/（组件、运行时、字体、封面）。
+ * 记下每个文件替换的原文摘要，null 为新文件）、thumbnails/（面板封面）、fonts/（字体文件）。
+ * 组件目录的 fonts 是 字体名 → `{ css, brand?, faces? }`：css 是这个字体整套字形的 CSS 写到哪里；brand 是
+ * 品牌缩写，带 brand 的字体是字体可填项的选项；faces 只写在源目录，列出 fonts/ 下的字体文件
+ * `[{ file, weight, style }]`，没写 faces 的字体来自组件引用的网页字体。
+ * 输出：<输出目录>/catalog.json（见 publishedCatalog：加上 version 与字体可填项，字体去掉 faces）与
+ * <输出目录>/<version>/（组件、运行时、字体、封面）。
  * version 是全部输入的摘要（见 libraryVersion）；版本目录已存在就不再组装，只写 catalog.json。版本目录生成后
  * 不再改动，旧版本目录不删。
  *
  * 步骤：目录里有不是由改写新增的组件时，下载 tag 源码包并核对 sha256，把这些组件按 `hyperframes add` 的
- * 安装位置放好 → 外链换成本地文件（npm 包与 fontsource 字体，tgz 核对锁文件里的摘要）→ 放入 HyperFrames
+ * 安装位置放好 → 组件与改写里的外链换成本地文件（npm 包与 fontsource 字体，tgz 核对锁文件里的摘要）→ 放入 HyperFrames
  * 运行时 → 套用改写 → 组件去掉底色 → 写组件字体的整套字形 → 放入封面 → 确认没有外链残留、引用的文件都在。
  */
 import { existsSync } from 'node:fs'
@@ -33,6 +37,8 @@ import {
   HF_VERSION,
   IntegrityError,
   RUNTIME,
+  SyncError,
+  checkCatalogFonts,
   cjkTwinFaces,
   compositionTarget,
   fontFaceDescriptors,
@@ -42,9 +48,11 @@ import {
   isLatinSubset,
   libraryVersion,
   listFiles,
+  localFontFaces,
   localReferences,
   localize,
   npmPackage,
+  publishedCatalog,
   registryItems,
   sha256,
   sourceTree,
@@ -61,8 +69,6 @@ const tarballArg = option('--tarball')
 const smokeDir = option('--smoke')
 const libraryDir = resolve(option('--library') ?? FIXTURES_DIR)
 const outDir = resolve(option('--out') ?? DEFAULT_OUT)
-
-class SyncError extends Error {}
 
 /** 在 temp 里组装出完整的组件库；返回用到的 npm 包 tgz 摘要与全部文件。`lock` 为 null 时重新取摘要。 */
 async function assemble(temp, catalog, lock) {
@@ -124,20 +130,25 @@ async function assemble(temp, catalog, lock) {
     RUNTIME.gsap,
   )
   addNpm({ name: gsapName, version: gsapVersion, file: gsapFile })
-  for (const [target, { name, data }] of installed) {
-    if (!RUNTIME_TEXT.test(target)) {
-      await writeOut(target, data)
-      continue
-    }
+  const localizeText = (data, target, owner) => {
     const result = localize(data.toString('utf8'), target)
     if (result.unsupported.length > 0) {
-      throw new SyncError(`${name} 的 ${target} 有换不了的外链：${result.unsupported.join('；')}`)
+      throw new SyncError(`${owner} 的 ${target} 有换不了的外链：${result.unsupported.join('；')}`)
     }
     for (const need of result.needs) {
       if (need.npm) addNpm(need.npm)
       else fontCss.set(need.css, need.fonts)
     }
-    await writeOut(target, result.text)
+    return result.text
+  }
+  for (const [target, { name, data }] of installed) {
+    await writeOut(target, RUNTIME_TEXT.test(target) ? localizeText(data, target, name) : data)
+  }
+  // 改写的文件同样换外链，第 6 步写入；它们要的脚本与字体在下面几步一起放进 vendor/。
+  const patched = new Map()
+  for (const target of Object.keys(manifest.files)) {
+    const data = await readFile(join(patchesDir, target))
+    patched.set(target, RUNTIME_TEXT.test(target) ? localizeText(data, target, '改写') : data)
   }
 
   // 3. npm 包：tgz 核对摘要后取出用到的文件，连同许可证。
@@ -220,7 +231,7 @@ async function assemble(temp, catalog, lock) {
       if (actual !== replaces)
         throw new SyncError(`改写 ${target} 的原文已变（${actual}），需要按新原文重新改写`)
     }
-    await writeOut(target, await readFile(join(patchesDir, target)))
+    await writeOut(target, patched.get(target))
   }
 
   // 6b. 组件（不含区块）的合成文件去掉底色，照 HyperFrames Studio 安装组件时的做法
@@ -237,9 +248,11 @@ async function assemble(temp, catalog, lock) {
     if (transparent !== text) await writeFile(path, transparent)
   }
 
-  // 7. 组件字体的整套字形：组件目录里每个用到的网页字体一份 CSS，合成页按用到的组件引用，渲染服务把它
-  //    内联进合成页。有些组件只写字体名、不引用字体文件，所以西文字形收组件库各处向 Google Fonts 请求过的
-  //    全部字重；中文字形对这个字体在组件库里出现过的每种字重、字形各出一组（原因见 cjkTwinFaces）。
+  // 7. 组件字体的整套字形：组件目录里每个字体一份 CSS，合成页按用到的组件与选中的字体引用，渲染服务把它
+  //    内联进合成页。写了 faces 的字体用源目录 fonts/ 下的字体文件，每个字重、字形一条 @font-face，不配
+  //    中文字形（中文由字体变量里的 Noto Sans SC 兜底，见 localFontFaces）。其余字体来自组件：有些组件只写
+  //    字体名、不引用字体文件，所以西文字形收组件库各处向 Google Fonts 请求过的全部字重。中文字形对这个
+  //    字体出现过的每种字重、字形各出一组（原因见 cjkTwinFaces）。
   const googleFaces = new Map()
   for (const { families } of fontCss.values()) {
     for (const { family, faces } of families) {
@@ -255,7 +268,18 @@ async function assemble(temp, catalog, lock) {
   }
   const notoPackage = fontPackage(CJK_FONT.family)
   const notoDir = await openPackage(notoPackage.name, notoPackage.version)
-  for (const [family, cssPath] of Object.entries(catalog.fonts)) {
+  for (const [family, { css: cssPath, faces: localFaces }] of Object.entries(catalog.fonts)) {
+    if (localFaces !== undefined) {
+      const css = await localFontFaces({
+        family,
+        faces: localFaces,
+        cssPath,
+        libraryDir,
+        outDir: temp,
+      })
+      await writeOut(cssPath, `${css}\n`)
+      continue
+    }
     const faces = googleFaces.get(family)
     let latin = ''
     if (faces) {
@@ -343,6 +367,7 @@ async function main() {
   const catalog = await readJson(join(libraryDir, 'catalog.json'))
   if ('version' in catalog)
     throw new SyncError('源目录的 catalog.json 不写 version，组装时按输入生成')
+  checkCatalogFonts(catalog.fonts)
   if (smokeDir) {
     const lock = existsSync(lockPath) ? await readJson(lockPath) : { npm: {} }
     await rm(smokeDir, { recursive: true, force: true })
@@ -381,9 +406,15 @@ async function main() {
   await publishCatalog(catalog, version)
 }
 
-/** 写 <out>/catalog.json：源目录的组件目录加上 version，整份原子替换。 */
+/**
+ * 写 <out>/catalog.json（见 publishedCatalog），整份原子替换。字体可填项按版本目录里的组件文件判断，
+ * 版本目录已组装过、这次跳过组装时结果也一样。
+ */
 async function publishCatalog(catalog, version) {
-  const published = { version, ...catalog }
+  const versionDir = join(outDir, version)
+  const published = await publishedCatalog(catalog, version, (src) =>
+    readFile(join(versionDir, src), 'utf8'),
+  )
   await writeAtomic(join(outDir, 'catalog.json'), `${JSON.stringify(published, null, 2)}\n`)
   console.log(`组件目录已写入：${join(outDir, 'catalog.json')}（version ${version}）`)
 }

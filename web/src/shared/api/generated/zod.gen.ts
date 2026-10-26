@@ -2634,7 +2634,8 @@ export const zWholeFilmCaptionEdit = z.object({
  * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
  * ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
  * ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
- * 编辑器在第一次离开原大、不转时写下。
+ * 编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
+ * 保留，合成时只取当前样式声明过的项。
  */
 export const zWholeFilmCaptions = z.object({
   component: z.string().min(1).max(200),
@@ -2644,6 +2645,10 @@ export const zWholeFilmCaptions = z.object({
   pivotY: z.int().gte(-4096).lte(4096).optional().default(0),
   rotation: z.number().gt(-180).lte(180).optional().default(0),
   scale: z.number().gte(0.1).lte(10).optional().default(1),
+  variables: z
+    .record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)]))
+    .optional()
+    .default({}),
   x: z.int().gte(-4096).lte(4096).optional().default(0),
   y: z.int().gte(-4096).lte(4096).optional().default(0),
 })

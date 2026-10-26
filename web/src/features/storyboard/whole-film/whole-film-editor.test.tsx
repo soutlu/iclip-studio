@@ -759,6 +759,55 @@ describe('成片编辑器 · 组件', () => {
     await waitSaved((document) => expect(document?.captions.component).toBe('other-caption'))
   })
 
+  it('字幕样式有字体项时菜单里另有一组「字体」：选了存进字幕的可填项，换到没有字体项的样式也留着', async () => {
+    const user = userEvent.setup()
+    // 组装工具给读字体变量的测试字幕加上字体项；源目录的组件目录里没有，这里补上
+    serveCatalog({
+      ...fixtureCatalog,
+      items: [
+        ...fixtureCatalog.items.map((item) =>
+          item.name === 'default-caption'
+            ? {
+                ...item,
+                variables: [{ id: 'font', type: 'font' as const, label: '字体', default: '' }],
+              }
+            : item,
+        ),
+        { ...fixtureItem('default-caption'), name: 'other-caption', title: '另一种字幕' },
+      ],
+    })
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    await user.click(screen.getByRole('button', { name: /^字幕样式：测试字幕/ }))
+    const fonts = screen.getByRole('group', { name: '字体' })
+    expect(
+      within(fonts)
+        .getAllByRole('menuitemradio')
+        .map((option) => option.textContent),
+    ).toEqual(['默认', '示例品牌'])
+    expect(within(fonts).getByRole('menuitemradio', { name: '默认' })).toBeChecked()
+    await user.click(within(fonts).getByRole('menuitemradio', { name: '示例品牌' }))
+    await waitSaved((document) =>
+      expect(document?.captions.variables).toEqual({ font: 'Playfair Display' }),
+    )
+
+    await user.click(screen.getByRole('button', { name: /^字幕样式：测试字幕/ }))
+    expect(
+      within(screen.getByRole('group', { name: '字体' })).getByRole('menuitemradio', {
+        name: '示例品牌',
+      }),
+    ).toBeChecked()
+    await user.click(screen.getByRole('menuitemradio', { name: '另一种字幕' }))
+    await waitSaved((document) =>
+      expect(document?.captions).toMatchObject({
+        component: 'other-caption',
+        variables: { font: 'Playfair Display' },
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: /^字幕样式：另一种字幕/ }))
+    expect(screen.queryByRole('group', { name: '字体' })).not.toBeInTheDocument()
+  })
+
   it('字幕开关是按下态按钮：开着按下，关掉后不按下，存进草稿', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())

@@ -66,6 +66,25 @@ export const variableValue = (
   values: ComponentVariables,
 ): VariableValue => values[variable.id] ?? variable.default
 
+/** 字体项的一个选项：取值是字体名，空字符串是组件自带的字体 */
+export type FontOption = { value: string; label: string }
+
+/** 字体项的选项：「默认」（组件自带的字体）加上目录里每个带品牌的字体，选项文字是品牌缩写 */
+export const fontOptions = (catalog: ComponentCatalog): FontOption[] => [
+  { value: '', label: '默认' },
+  ...Object.entries(catalog.fonts).flatMap(([family, font]) =>
+    font.brand === undefined ? [] : [{ value: family, label: font.brand }],
+  ),
+]
+
+/** 字体项现在的值在选项里的文字；不在选项里（目录里不再是品牌字体）时直接显示字体名 */
+export const fontLabel = (options: readonly FontOption[], value: string): string =>
+  options.find((option) => option.value === value)?.label ?? value
+
+/** 组件的字体项（组装工具给读字体变量的组件加上的那一项）；没有时为 undefined */
+export const fontVariableOf = (item: CatalogItem): CatalogVariable | undefined =>
+  item.variables.find((variable) => variable.type === 'font')
+
 /** 侧栏的一个小标题（品牌或分类）和它下面的卡片 */
 export type ComponentGroup = { id: string; label: string; items: CatalogItem[] }
 

@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { FIXTURES_DIR, WEB_ROOT, libraryVersion } from './hyperframes-shared.mjs'
+import { FIXTURES_DIR, WEB_ROOT, libraryVersion, publishedCatalog } from './hyperframes-shared.mjs'
 
 // 每个用例一份测试组件库的副本，改动不碰入库的文件。
 let work
@@ -42,13 +42,26 @@ describe('libraryVersion', () => {
     await change()
     expect(await libraryVersion(library)).not.toBe(before)
   })
+
+  it('fonts/ 下的字体文件新加或改了，版本号就变', async () => {
+    await mkdir(join(library, 'fonts', 'brand'), { recursive: true })
+    const before = await libraryVersion(library)
+    await writeFile(join(library, 'fonts', 'brand', 'a.ttf'), 'a')
+    const added = await libraryVersion(library)
+    expect(added).not.toBe(before)
+    await writeFile(join(library, 'fonts', 'brand', 'a.ttf'), 'b')
+    expect(await libraryVersion(library)).not.toBe(added)
+  })
 })
 
 describe('hf:registry', () => {
-  it('版本目录已存在时跳过组装，只写带 version 的 catalog.json', async () => {
+  it('版本目录已存在时跳过组装，按版本目录里的组件文件写带 version 的 catalog.json', async () => {
     const out = join(work, 'out')
     const version = await libraryVersion(library)
-    await mkdir(join(out, version), { recursive: true })
+    // 组装过的版本目录里有组件文件：测试组件库的组件都由改写新增，原样就是组装后的
+    await cp(join(library, 'patches', 'compositions'), join(out, version, 'compositions'), {
+      recursive: true,
+    })
     await writeFile(join(out, version, 'marker'), '')
 
     const result = spawnSync(
@@ -61,9 +74,22 @@ describe('hf:registry', () => {
 
     const source = JSON.parse(await readFile(join(library, 'catalog.json'), 'utf8'))
     const published = JSON.parse(await readFile(join(out, 'catalog.json'), 'utf8'))
-    expect(published).toEqual({ version, ...source })
+    expect(published).toEqual(
+      await publishedCatalog(source, version, (src) => readFile(join(out, version, src), 'utf8')),
+    )
+    // 读字体变量的测试字幕与测试可填项补上了字体项，品牌组件自己写的保持原样
+    const fontItems = published.items.flatMap((item) =>
+      item.variables
+        .filter((variable) => variable.type === 'font')
+        .map((variable) => [item.name, variable.default]),
+    )
+    expect(fontItems).toEqual([
+      ['default-caption', ''],
+      ['fixture-fields', ''],
+      ['fixture-brand-card', 'Playfair Display'],
+    ])
     // 没有重新组装，也没有留下临时目录或临时文件
-    expect(await readdir(join(out, version))).toEqual(['marker'])
+    expect((await readdir(join(out, version))).sort()).toEqual(['compositions', 'marker'])
     expect((await readdir(out)).sort()).toEqual(['catalog.json', version].sort())
   })
 })

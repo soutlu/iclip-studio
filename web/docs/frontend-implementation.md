@@ -46,6 +46,14 @@
 - 登录状态变化后重算路由。退出登录停留当前页，由守卫决定是否回首页。
 - 身份一变（退出、登录、接口复核发现换了人），`src/app/` 的 `IdentityTranscriptProvider` 让 `TranscriptProvider` 换一套连接、本地发送状态与读取池，因为订阅身份按握手时定（见[跨端合同 §5](../../contract/conventions.md#5-agent-对话-transcript)）；界面树不重新挂载，侧栏展开、输入中的内容等界面状态照旧。按连接缓存的组件内状态在连接变化时清空。
 
+## 成片组件
+
+组件目录的结构见 [catalog.ts](../src/features/storyboard/whole-film/composition/catalog.ts)，组件库源目录的格式见[组装工具](../scripts/hyperframes-registry.mjs)的文件头。
+
+- **字体变量**：组件按 HyperFrames 的设计规范，标题读 `var(--font-display, <自带字体>)`，正文读 `var(--font-body, <自带字体>)`，自己不定义这两个变量。选了字体时，合成页在组件宿主的行内样式上设这两个变量（字体名后接 Noto Sans SC 与 `sans-serif` 兜底），经 CSS 继承传进组件，并引用这个字体的 CSS；`--font-mono` 不动。组件库自带字体文件的字体，组装出的 CSS 只有它自己的字形，中文按 CSS 逐字兜底落到合成页总会引用的 Noto Sans SC。
+- **字体可填项**：`{ "id": "font", "type": "font", "label": "字体", "default": "" }`，取值是组件目录 `fonts` 里的字体名，空字符串是组件自带的字体。组件文件读了上面任一变量、自己没写 `font` 项的，组装时自动加上；品牌组件可以自己写这一项，把默认值设成本品牌的字体。它不进 `data-variable-values`。界面上是下拉，选项是「默认」加上目录里每个带 `brand` 的字体，选项文字是品牌缩写；选回目录里的默认值时草稿里不再存这一项。
+- **字幕的可填项**：草稿的 `captions.variables` 同特效块的 `variables`，全部字幕共用一套；换样式时保留，合成时只取当前样式声明过的项。字幕不开浮层，字体在字幕轨标题的样式菜单里选，当前样式有 `font` 项时菜单里才有「字体」一组。
+
 ## 测试
 
 每个行为选择最接近用户可观察边界的一层，不在多层重复相同断言。可观察边界包括界面、交互结果、HTTP 请求与响应、路由变化。

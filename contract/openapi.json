@@ -10033,7 +10033,7 @@
       },
       "WholeFilmCaptions": {
         "additionalProperties": false,
-        "description": "字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。\n``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；\n``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，\n编辑器在第一次离开原大、不转时写下。",
+        "description": "字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。\n``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；\n``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，\n编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样\n保留，合成时只取当前样式声明过的项。",
         "properties": {
           "component": {
             "maxLength": 200,
@@ -10081,6 +10081,33 @@
             "minimum": 0.1,
             "title": "Scale",
             "type": "number"
+          },
+          "variables": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                }
+              ]
+            },
+            "default": {},
+            "maxProperties": 50,
+            "propertyNames": {
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "Variables",
+            "type": "object"
           },
           "x": {
             "default": 0,

@@ -92,6 +92,7 @@ def draft_document(
     source_job_id: uuid.UUID | None = None,
     layer0: list[dict[str, Any]] | None = None,
     edits: list[dict[str, Any]] | None = None,
+    captions_variables: dict[str, Any] | None = None,
     captions_hidden: bool = False,
     captions_at: tuple[int, int] = (0, 0),
     captions_scale: float = 1,
@@ -111,6 +112,7 @@ def draft_document(
         "captions": {
             "component": "captions-basic",
             "edits": edits or [],
+            "variables": captions_variables or {},
             "hidden": captions_hidden,
             "x": captions_at[0],
             "y": captions_at[1],

@@ -2,6 +2,7 @@ import {
   toOffset,
   transformed,
   type CaptionEdit,
+  type ComponentVariables,
   type TransformArgs,
   type WholeFilmDraft,
 } from './draft'
@@ -75,6 +76,24 @@ export const setCaptionsPosition = (
 export const setCaptionsTransform = (draft: WholeFilmDraft, args: TransformArgs): EditResult => {
   const next = transformed(draft.captions, args)
   return done(next === undefined ? draft : { ...draft, captions: { ...draft.captions, ...next } })
+}
+
+/**
+ * 改字幕样式的可填项，全部字幕共用一套；换样式时照样保留，合成时只取当前样式声明过的项。
+ * 取值没变时原样返回
+ */
+export const setCaptionsVariables = (
+  draft: WholeFilmDraft,
+  args: { variables: ComponentVariables },
+): EditResult => {
+  // 有这个字段之前存的草稿没写它，按没填过算
+  const current = draft.captions.variables ?? {}
+  const same =
+    Object.keys(current).length === Object.keys(args.variables).length &&
+    Object.entries(args.variables).every(([id, value]) => current[id] === value)
+  return done(
+    same ? draft : { ...draft, captions: { ...draft.captions, variables: args.variables } },
+  )
 }
 
 /** 换字幕样式（组件库里的字幕组件） */

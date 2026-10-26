@@ -32,8 +32,8 @@ export const FIXTURES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-fixtures')
 /** 不带参数组装时的输出目录（开发与 e2e 从这里取）。 */
 export const DEFAULT_OUT = join(WEB_ROOT, 'public', 'hyperframes')
 
-/** 组件库源目录里参与组装的文件：目录、锁文件、改写与封面。其余文件（说明、.git 等）不算输入。 */
-const LIBRARY_INPUTS = ['catalog.json', 'registry.lock.json', 'patches', 'thumbnails']
+/** 组件库源目录里参与组装的文件：目录、锁文件、改写、封面与字体文件。其余文件（说明、.git 等）不算输入。 */
+const LIBRARY_INPUTS = ['catalog.json', 'registry.lock.json', 'patches', 'thumbnails', 'fonts']
 
 /**
  * 组件库的版本号：源目录里参与组装的全部文件（路径与内容）、组装脚本的源码与 HyperFrames 版本
@@ -79,6 +79,9 @@ export const sha256 = (data) => createHash('sha256').update(data).digest('hex')
 
 /** 下载或缓存的文件与预期摘要不符。 */
 export class IntegrityError extends Error {}
+
+/** 组件库的输入组装不出来（目录、改写或字体写得不对，组件对不上）；只报这句话，不带调用栈。 */
+export class SyncError extends Error {}
 
 /** npm 源：构建期可用 NPM_CONFIG_REGISTRY 换成镜像源（见 web/Dockerfile）。 */
 const NPM_REGISTRY = (process.env.NPM_CONFIG_REGISTRY ?? 'https://registry.npmjs.org/').replace(
@@ -561,7 +564,8 @@ export function fontFaceDescriptors(text) {
 }
 
 /**
- * 一个组件字体的中文字形：同名的 @font-face，只覆盖中日韩码位，字形取 Noto Sans SC。
+ * 一个组件字体的中文字形：同名的 @font-face，只覆盖中日韩码位，字形取 Noto Sans SC。只给组件里
+ * 写死的字体用：这些组件的 font-family 没有中文兜底，不配的话中文会落到各平台不同的系统字体。
  *
  * `descriptors` 是这个字体的西文字形用过的全部字重、字形描述，每一种各出一组描述完全相同的中文字形。
  * 浏览器先按字重、字形在同名的 @font-face 里挑出最接近的一组，再在组里按 unicode-range 取字：
@@ -592,6 +596,82 @@ export async function cjkTwinFaces(family, descriptors, notoDir) {
           `src:url(../../npm/${pkg.name}@${pkg.version}/${file}) format('woff2');unicode-range:${unicodeRange}}`,
       )
     }
+  }
+  return rules.join('\n')
+}
+
+// ---------------------------------------------------------------- 字体可填项与源目录里的字体文件
+
+/**
+ * 字体可填项：取值是组件目录 fonts 里的字体名，空字符串是组件自带的字体。合成页把选中的字体设成组件
+ * 外层的 `--font-display`、`--font-body`（HyperFrames 组件按设计规范读这两个变量），见 build.ts。
+ */
+export const FONT_VARIABLE = { id: 'font', type: 'font', label: '字体', default: '' }
+
+const READS_FONT_VARIABLE = /var\(\s*--font-(?:display|body)\b/
+
+/** 组件目录 fonts 里每个字体的 CSS 位置：中文字形的 url() 按这一层目录写（见 cjkTwinFaces）。 */
+const FONT_CSS_PATH = /^vendor\/fonts\/families\/[^/]+\.css$/
+
+/** 核对源目录组件目录里的 fonts：每个字体写成 `{ css, brand?, faces? }`，css 在 vendor/fonts/families/ 下。 */
+export function checkCatalogFonts(fonts) {
+  for (const [family, font] of Object.entries(fonts)) {
+    if (typeof font !== 'object' || font === null || typeof font.css !== 'string')
+      throw new SyncError(`字体「${family}」要写成 { css, brand?, faces? }`)
+    if (!FONT_CSS_PATH.test(font.css))
+      throw new SyncError(`字体「${family}」的 css 要放在 vendor/fonts/families/ 下：${font.css}`)
+  }
+}
+
+/**
+ * 发布的组件目录：源目录的组件目录加上 version。组件文件（套完改写后）读了 `--font-display` 或
+ * `--font-body`、自己没写 font 项的条目，在可填项最后加上 {@link FONT_VARIABLE}；字体去掉只在源目录
+ * 用的 faces。`compositionText(src)` 取组件文件的内容。
+ */
+export async function publishedCatalog(catalog, version, compositionText) {
+  const items = []
+  for (const item of catalog.items) {
+    const declared = item.variables.some((variable) => variable.id === FONT_VARIABLE.id)
+    items.push(
+      !declared && READS_FONT_VARIABLE.test(await compositionText(item.src))
+        ? { ...item, variables: [...item.variables, FONT_VARIABLE] }
+        : item,
+    )
+  }
+  const fonts = Object.fromEntries(
+    Object.entries(catalog.fonts).map(([family, { faces: _faces, ...font }]) => [family, font]),
+  )
+  return { version, ...catalog, fonts, items }
+}
+
+const FONT_FORMATS = { woff2: 'woff2', woff: 'woff', ttf: 'truetype', otf: 'opentype' }
+
+/**
+ * 源目录 fonts/ 下字体文件的 @font-face：faces 里每个字重、字形各一条，`font-display: block`。
+ * 字体文件拷到 `outDir` 里同样的路径，url() 相对 `cssPath`。返回 CSS，只有这些条目、不配中文字形：
+ * 这类字体只经字体可填项使用，合成页设的字体变量自带 Noto Sans SC 兜底（见 build.ts）。
+ * 文件不在源目录的 fonts/ 下、不存在或格式认不出时抛出。
+ */
+export async function localFontFaces({ family, faces, cssPath, libraryDir, outDir }) {
+  if (!Array.isArray(faces) || faces.length === 0)
+    throw new SyncError(`字体「${family}」的 faces 要列出至少一个字体文件`)
+  const rules = []
+  for (const face of faces) {
+    const file = posix.normalize(String(face.file ?? ''))
+    if (!file.startsWith('fonts/'))
+      throw new SyncError(`字体「${family}」的文件要在 fonts/ 下：${file}`)
+    const format = FONT_FORMATS[posix.extname(file).slice(1).toLowerCase()]
+    if (!format) throw new SyncError(`字体「${family}」的文件格式认不出：${file}`)
+    const source = join(libraryDir, file)
+    if (!existsSync(source)) throw new SyncError(`字体「${family}」的文件不存在：${file}`)
+    await mkdir(dirname(join(outDir, file)), { recursive: true })
+    await writeFile(join(outDir, file), await readFile(source))
+    const weight = String(face.weight ?? 400)
+    const style = face.style ?? 'normal'
+    rules.push(
+      `@font-face{font-family:'${family}';font-style:${style};font-display:block;font-weight:${weight};` +
+        `src:url(${posix.relative(posix.dirname(cssPath), file)}) format('${format}')}`,
+    )
   }
   return rules.join('\n')
 }

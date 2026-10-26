@@ -95,10 +95,11 @@ export const draftOf = (
   let at = 0
   return {
     canvas: layer0.some((clip) => clip.type === 'video') ? { width: 1080, height: 1920 } : null,
-    // 同服务端发出的草稿：hidden、位置、缩放、旋转与转轴总是写着
+    // 同服务端发出的草稿：可填项、hidden、位置、缩放、旋转与转轴总是写着
     captions: {
       component: DEFAULT_CAPTION_COMPONENT,
       edits: [],
+      variables: {},
       hidden: false,
       x: 0,
       y: 0,

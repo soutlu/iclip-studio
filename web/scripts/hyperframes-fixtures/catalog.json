@@ -4,7 +4,12 @@
     "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js",
     "cjkFont": "vendor/fonts/noto-sans-sc.css"
   },
-  "fonts": {},
+  "fonts": {
+    "Playfair Display": {
+      "css": "vendor/fonts/families/playfair-display.css",
+      "brand": "示例品牌"
+    }
+  },
   "categories": [
     { "id": "captions", "label": "字幕" },
     { "id": "vfx", "label": "视觉特效" },
@@ -88,16 +93,18 @@
       "name": "fixture-brand-card",
       "kind": "block",
       "title": "示例品牌 片尾",
-      "description": "示例品牌的纯色片尾",
+      "description": "示例品牌的纯色片尾，中间一行字标",
       "category": "scenes",
       "placement": null,
       "brand": "示例品牌",
       "src": "compositions/fixtures/fixture-brand-card.html",
       "size": { "width": 1920, "height": 1080 },
       "duration": 3,
-      "variables": [],
+      "variables": [
+        { "id": "font", "type": "font", "label": "字体", "default": "Playfair Display" }
+      ],
       "thumbnail": "fixture-brand-card.svg",
-      "fonts": []
+      "fonts": ["Playfair Display"]
     }
   ],
   "excluded": []

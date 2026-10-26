@@ -49,7 +49,7 @@ import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-pa
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
-import { setCaptionsHidden, setCaptionStyle } from './editing/captions'
+import { setCaptionsHidden, setCaptionStyle, setCaptionsVariables } from './editing/captions'
 import {
   MAX_FILM_MS,
   type ComponentVariables,
@@ -905,6 +905,8 @@ function EditorBody({
                 component={draft.captions.component}
                 hidden={draft.captions.hidden === true}
                 onStyle={(component) => apply(setCaptionStyle(draft, { component }))}
+                onVariables={(variables) => apply(setCaptionsVariables(draft, { variables }))}
+                variables={draft.captions.variables ?? {}}
                 onToggleHidden={() =>
                   apply(setCaptionsHidden(draft, { hidden: !draft.captions.hidden }))
                 }

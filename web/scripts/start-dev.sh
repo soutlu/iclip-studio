@@ -10,6 +10,10 @@ VITE_BIN="$ROOT_DIR/node_modules/.bin/vite"
 
 cd "$ROOT_DIR"
 
-node scripts/hyperframes-registry.mjs
+if [[ -n "${HYPERFRAMES_LIBRARY:-}" ]]; then
+  node scripts/hyperframes-registry.mjs --library "$HYPERFRAMES_LIBRARY"
+else
+  node scripts/hyperframes-registry.mjs
+fi
 
 exec "$VITE_BIN" --host "$HOST" --port "$PORT" --mode "$VITE_MODE" "$@"
