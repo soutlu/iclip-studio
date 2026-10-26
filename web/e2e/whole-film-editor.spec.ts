@@ -59,11 +59,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
 
   await readyPlayer(dialog)
   await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
-  // 点段会自动播放；编辑流程先暂停，后续插入位置才不会随播放时间漂移。
-  await dialog
-    .getByRole('toolbar', { name: '剪辑工具' })
-    .getByRole('button', { name: '暂停', exact: true })
-    .click()
   const before = await first.getAttribute('aria-label')
   await film.getByRole('slider', { name: '裁剪该段结尾' }).focus()
   await page.keyboard.press('ArrowLeft')

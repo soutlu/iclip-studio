@@ -131,7 +131,7 @@ type FilmTracksProps = {
   onSeek: (ms: number) => void
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** 点画面轨上的一段：选中它，从段首播这一段 */
+  /** 点画面轨上的一段：选中它，播放头停在段首 */
   onClipClick: (clip: Layer0Clip) => void
   snap: boolean
   /** 拍点（成片时间） */

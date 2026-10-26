@@ -22,7 +22,10 @@ import { timeLabel } from './time-label'
 type Boundary = 'start' | 'end'
 
 export type EditorPreviewHandle = {
+  /** 停下并跳到 clock */
   previewAt: (clock: number, boundary?: Boundary) => void
+  /** 同播放按钮：从播放头播到结尾，正在播就暂停；按钮置灰时不起播 */
+  toggle: () => void
 }
 
 export type PreviewPlayback = { playing: boolean; muted: boolean }
@@ -73,7 +76,6 @@ type Props = {
   currentTime: number
   onTime: (clock: number) => void
   onPlay: () => void
-  playbackRequest?: { id: number; start: number; end: number } | undefined
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
@@ -97,7 +99,6 @@ export function EditorPreview({
   currentTime,
   onTime,
   onPlay,
-  playbackRequest,
   onPlaybackChange,
   externalAudio,
   aspectRatio,
@@ -115,14 +116,6 @@ export function EditorPreview({
   const elementsRef = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null])
   const pendingSeekRef = useRef<[number | null, number | null]>([null, null])
   const stopPlaybackRef = useRef<(() => void) | null>(null)
-  const playbackRangeRef = useRef<{ showing: string; start: number; end: number } | null>(null)
-  const [appliedPlayback, setAppliedPlayback] = useState<{
-    id: number
-    showing: string
-    start: number
-    end: number
-  } | null>(null)
-  const startedPlaybackRef = useRef(appliedPlayback)
   const emitTime = useEffectEvent((clock: number) => onTime(clock))
   const [active, setActive] = useState<Slot>(0)
   const [index, setIndex] = useState(0)
@@ -186,21 +179,7 @@ export function EditorPreview({
   const blockedReason = externalAudio?.blocked
   const blocked = blockedReason !== undefined
   if (blocked && playing) setPlaying(false)
-  if (
-    playbackRequest !== undefined &&
-    appliedPlayback?.id !== playbackRequest.id &&
-    segments !== undefined &&
-    segments.length > 0 &&
-    !blocked
-  ) {
-    const start = Math.min(duration, Math.max(0, playbackRequest.start))
-    const end = Math.min(duration, Math.max(start, playbackRequest.end))
-    setAppliedPlayback({ id: playbackRequest.id, showing, start, end })
-    setFailed(false)
-    setBuffering(end > start)
-    setPlaying(end > start)
-    setIndex(locateClock(segments, start)?.index ?? 0)
-  }
+  const playable = segments !== undefined && segments.length > 0 && !failed && !blocked
 
   const load = useCallback(
     (slot: Slot, segment: LaidOutSegment, offset: number, reload = false) => {
@@ -242,41 +221,36 @@ export function EditorPreview({
     setPlaying(false)
   }
 
+  const togglePlay = () => {
+    if (playing) {
+      pause()
+      return
+    }
+    if (!playable) return
+    if (currentTime >= duration) seek(0)
+    setBuffering(true)
+    setPlaying(true)
+    onPlay()
+  }
+
   useImperativeHandle(ref, () => ({
     previewAt(clock, boundary) {
       pause()
-      playbackRangeRef.current = null
       if (current === undefined) return
       seek(clock, boundary)
     },
+    toggle: togglePlay,
   }))
 
-  const hasPendingPlayback = useEffectEvent(
-    () => appliedPlayback !== null && startedPlaybackRef.current !== appliedPlayback,
-  )
   useEffect(() => {
-    playbackRangeRef.current = null
     const switched = lastShowingRef.current !== showing
     lastShowingRef.current = showing
     if (segments === undefined) {
       emitTime(0)
       return
     }
-    if (hasPendingPlayback()) return
     seekFromEffect(switched ? 0 : resumeClock())
   }, [segments, showing])
-
-  const requestPlayback = useEffectEvent(() => {
-    if (appliedPlayback === null || segments === undefined) return
-    const located = locateClock(segments, appliedPlayback.start)
-    const segment = located === undefined ? undefined : segments[located.index]
-    if (located === undefined || segment === undefined) return
-    startedPlaybackRef.current = appliedPlayback
-    playbackRangeRef.current = appliedPlayback
-    load(active, segment, located.offset)
-    emitTime(appliedPlayback.start)
-  })
-  useEffect(() => requestPlayback(), [appliedPlayback])
 
   useEffect(() => {
     const next = segments?.[index + 1]
@@ -318,16 +292,14 @@ export function EditorPreview({
       const now = element.currentTime
       const clock = segment.at + Math.min(segment.duration, Math.max(0, now - segment.start))
       const segmentEnd = segment.at + segment.duration
-      const range = playbackRangeRef.current
-      const playbackEnd = range?.showing === showing ? range.end : duration
-      if (clock >= playbackEnd || (element.ended && segmentEnd >= playbackEnd)) {
+      if (clock >= duration || (element.ended && segmentEnd >= duration)) {
         stop()
         setPlaying(false)
-        seekFromEffect(playbackEnd, 'end')
+        seekFromEffect(duration, 'end')
         return
       }
       emitTime(clock)
-      if (segmentEnd < playbackEnd && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
+      if (segmentEnd < duration && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
         stop()
         emitTime(segmentEnd)
         setBuffering(true)
@@ -339,26 +311,12 @@ export function EditorPreview({
     }
     frame = requestAnimationFrame(tick)
     return stop
-  }, [playing, index, active, segments, duration, showing, appliedPlayback])
-
-  const togglePlay = () => {
-    if (playing) {
-      pause()
-      return
-    }
-    const range = playbackRangeRef.current
-    if (range?.showing === showing) {
-      if (currentTime < range.start || currentTime >= range.end) seek(range.start)
-    } else if (currentTime >= duration) seek(0)
-    setBuffering(true)
-    setPlaying(true)
-    onPlay()
-  }
+  }, [playing, index, active, segments, duration])
 
   const playButton = (
     <IconButton
       className="editor-play"
-      disabled={segments === undefined || segments.length === 0 || failed || blocked}
+      disabled={!playable}
       tooltip={blockedReason}
       label={playing ? '暂停' : '播放'}
       name={playing ? 'pause' : 'play'}

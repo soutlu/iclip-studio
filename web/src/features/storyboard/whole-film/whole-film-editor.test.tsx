@@ -444,6 +444,32 @@ describe('成片编辑器 · 时间线', () => {
     expect(playhead).toHaveValue('2.333')
   })
 
+  it('点画面轨的段只选中、不播放，播放头在段首；播放中点段停在段首；空格从那里接着播', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    await waitFor(() =>
+      expect(document.querySelector('hyperframes-player:not(.is-pending)')).not.toBeNull(),
+    )
+    const toolbar = screen.getByRole('toolbar', { name: '剪辑工具' })
+    const playhead = screen.getByRole('slider', { name: '时间线播放位置' })
+    fireEvent.change(playhead, { target: { value: '3' } })
+    await user.click(await blockButton(/^选中：第 2 段/))
+    expect(await blockButton(/^选中：第 2 段/)).toHaveAttribute('aria-pressed', 'true')
+    expect(within(toolbar).getByRole('button', { name: '播放' })).toBeVisible()
+    expect(playhead).toHaveValue('2')
+
+    await user.click(within(toolbar).getByRole('button', { name: '播放' }))
+    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
+    await user.click(await blockButton(/^选中：第 1 段/))
+    expect(within(toolbar).getByRole('button', { name: '播放' })).toBeVisible()
+    expect(playhead).toHaveValue('0')
+    // 焦点在段上，空格播放而不是再点一次这段
+    await user.keyboard(' ')
+    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
+    expect(playhead).toHaveValue('0')
+  })
+
   it('音量推子按 dB：0 dB 在正中，←/→ 0.5 dB、⇧ 3 dB，双击回 0 dB，草稿里存倍数', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())

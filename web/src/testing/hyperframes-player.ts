@@ -11,8 +11,6 @@ class FakeHyperframesPlayer extends HTMLElement {
   currentTime = 0
   paused = true
   painted = false
-  rangeStart: number | null = null
-  rangeEnd: number | null = null
 
   attributeChangedCallback(name: string) {
     if (name !== 'srcdoc') return

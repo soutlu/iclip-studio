@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
@@ -19,6 +19,7 @@ import { EditorPreview, type EditorPreviewHandle } from '../editing/editor-previ
 import { EditorVersionStrip } from '../editing/editor-version-strip'
 import { useAudioPeaks, useKeyframes, type PeaksState } from '../editing/media-analysis'
 import { layoutPlay, type PlaySegment } from '../editing/play-layout'
+import { isShortcutTarget } from '../editing/shortcut-target'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useMediaDurations } from '../editing/use-media-durations'
 import { useStableValue } from '../editing/use-stable-value'
@@ -148,11 +149,12 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const selectionBoxRef = useRef<HTMLSpanElement>(null)
   const cardRef = useRef<AiEditCardHandle>(null)
   const [currentTime, setCurrentTime] = useState(0)
-  const [playbackRequest, setPlaybackRequest] = useState<{
-    id: number
-    start: number
-    end: number
-  }>()
+  // 选段后播放头要停的时刻（选区开头）。选段会从「整条」切到「片段」或换掉选用的片段，预览随后在自己的
+  // effect 里回到开头或原处；子组件的 effect 先跑，在这里跳才不会被它覆盖。
+  const [seekRequest, setSeekRequest] = useState<{ clock: number }>()
+  useEffect(() => {
+    if (seekRequest !== undefined) previewRef.current?.previewAt(seekRequest.clock)
+  }, [seekRequest])
   const [request, setRequest] = useState(NO_REQUEST)
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
@@ -341,17 +343,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     setNotice(null)
   }
 
-  const playSelection = (nextDraft: readonly DraftItem[], ids: readonly string[]) => {
-    const placed = layoutDraft(nextDraft).filter(({ item }) => ids.includes(item.id))
-    const first = placed[0]
-    const last = placed.at(-1)
-    if (first === undefined || last === undefined) return
-    setCurrentTime(first.at)
-    setPlaybackRequest((previous) => ({
-      id: (previous?.id ?? 0) + 1,
-      start: first.at,
-      end: last.at + last.duration,
-    }))
+  /** 选段后停下，播放头到选区开头；不播放 */
+  const seekToSelection = (nextDraft: readonly DraftItem[], ids: readonly string[]) => {
+    const first = layoutDraft(nextDraft).find(({ item }) => ids.includes(item.id))
+    if (first !== undefined) setSeekRequest({ clock: first.at })
   }
 
   const pick = (key: string) => {
@@ -371,7 +366,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     }
     if (editor === undefined || candidateGroup === undefined || !editable) return
     if (key === CURRENT_SELECTION_KEY) {
-      playSelection(draft, selection)
+      seekToSelection(draft, selection)
       return
     }
     const chosenEdit =
@@ -395,7 +390,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     )
     if (next === undefined) return
     apply(next)
-    playSelection(next.draft, next.selection)
+    seekToSelection(next.draft, next.selection)
   }
 
   if (selection.length === 0 && !cardOpen) setCardOpen(true)
@@ -406,7 +401,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     editor.select(next)
     chooseScope('clips')
     setCardOpen(true)
-    playSelection(draft, next)
+    seekToSelection(draft, next)
   }
   const collapseCard = () => setCardOpen(false)
 
@@ -631,7 +626,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       onSelect={(next) => {
         editor.select(next)
         chooseScope('clips')
-        playSelection(draft, next)
+        seekToSelection(draft, next)
       }}
       onTrim={(id, edge, value) => apply(trimClip(draft, id, edge, value))}
       onTrimPreview={(clock, edge) => previewRef.current?.previewAt(clock, edge)}
@@ -760,9 +755,20 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           collapseCard()
         }}
         onInteractOutside={(event) => event.preventDefault()}
-        onKeyDown={(event) =>
+        onKeyDown={(event) => {
           handleUndoShortcut(event, editable ? editor : undefined, () => setFailedJobId(undefined))
-        }
+          // 空格播放、暂停；焦点在按钮上时也不触发按钮
+          if (
+            event.key !== ' ' ||
+            event.defaultPrevented ||
+            event.metaKey ||
+            event.ctrlKey ||
+            !isShortcutTarget(event)
+          )
+            return
+          event.preventDefault()
+          previewRef.current?.toggle()
+        }}
       >
         <DialogHeader
           actions={composeButton}
@@ -816,7 +822,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               setFailedJobId(undefined)
             }}
             onTime={setCurrentTime}
-            playbackRequest={viewingClips ? playbackRequest : undefined}
             viewControl={
               <div aria-label="视频预览范围" className="video-editor-compare" role="group">
                 <button
