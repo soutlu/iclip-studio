@@ -610,6 +610,31 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.2 秒')
 })
 
+test('多选两段：抓手只在选区两端，拖右抓手收短最后一段，松手后两段仍选中', async ({ page }) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+
+  await segment(dialog, 2).click()
+  await segment(dialog, 3).click({ modifiers: ['Shift'] })
+  const startHandle = dialog.getByRole('slider', { name: '裁剪该段开头' })
+  const endHandle = dialog.getByRole('slider', { name: '裁剪该段结尾' })
+  await expect(startHandle).toHaveCount(1)
+  await expect(endHandle).toHaveCount(1)
+  // 左抓手在第 2 段开头、右抓手在第 3 段结尾，第 2、3 段之间没有抓手。
+  const xOf = async (handle: Locator) => (await centerOf(handle)).x
+  expect(Math.abs((await xOf(startHandle)) - (await xAt(dialog, 1)))).toBeLessThan(2)
+  expect(Math.abs((await xOf(endHandle)) - (await xAt(dialog, 3)))).toBeLessThan(2)
+
+  const release = await holdDrag(page, dialog, endHandle, 2.5)
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 1.5 秒 · 缩短 0.5 秒')
+  await release()
+  await expect(segment(dialog, 3)).toHaveAccessibleName('第 3 段 · 2–2.5 秒')
+  await expect(controls(dialog)).toContainText('共 5.5 秒 · 比 原片 短 0.5 秒')
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
+  await expect(segment(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByRole('slider', { name: /^裁剪该段/ })).toHaveCount(2)
+})
+
 test('拖动调序：插入处一条墨线，原声跟着走；合成请求就是草稿', async ({ page }) => {
   await page.setViewportSize({ width: 1335, height: 880 })
   const dialog = await openEditor(page)
@@ -683,7 +708,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await expect(card(dialog)).toBeVisible()
 
   await segment(dialog, 3).click({ modifiers: ['Shift'] })
-  await expect(dialog.getByRole('slider', { name: '裁剪该段结尾' })).toHaveCount(0)
   await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
   // 模型菜单向上展开（菜单开着时别处对读屏隐藏，按钮位置先量好）。
   const modelPicker = card(dialog).getByRole('button', { name: '编辑模型', exact: true })

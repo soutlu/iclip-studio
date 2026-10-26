@@ -167,14 +167,25 @@ export const trimBounds = (clip: DraftClip, edge: 'start' | 'end'): { min: numbe
     ? { min: clip.origin.start, max: Math.max(clip.start, roundToMs(clip.end - MIN_TRIM_SECONDS)) }
     : { min: Math.min(clip.end, roundToMs(clip.start + MIN_TRIM_SECONDS)), max: clip.origin.end }
 
-export const trimClip = (draft: Draft, id: string, edge: 'start' | 'end', value: number): Edit => {
-  const at = draft.findIndex((item) => item.id === id)
+/** 裁选区的一端：开头裁第一段的开头，结尾裁最后一段的结尾；选区仍是原来那几段。 */
+export const trimClip = (
+  draft: Draft,
+  selection: Selection,
+  edge: 'start' | 'end',
+  value: number,
+): Edit => {
+  const range = selectedRange(draft, selection)
+  if (range === undefined) return { draft, selection }
+  const at = edge === 'start' ? range.from : range.to
   const clip = draft[at]
-  if (clip === undefined || clip.kind !== 'clip') return { draft, selection: [id] }
+  if (clip === undefined || clip.kind !== 'clip') return { draft, selection }
   const { min, max } = trimBounds(clip, edge)
   const bounded = roundToMs(Math.min(max, Math.max(min, value)))
   const trimmed = clipItem({ ...clip, [edge]: bounded }, clip.origin)
-  return { draft: draft.with(at, trimmed), selection: [trimmed.id] }
+  return {
+    draft: draft.with(at, trimmed),
+    selection: selection.map((id) => (id === clip.id ? trimmed.id : id)),
+  }
 }
 
 export const moveItems = (draft: Draft, ids: Selection, before: number): Edit => {

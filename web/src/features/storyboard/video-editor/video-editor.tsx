@@ -628,7 +628,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         chooseScope('clips')
         seekToSelection(draft, next)
       }}
-      onTrim={(id, edge, value) => apply(trimClip(draft, id, edge, value))}
+      onTrim={(edge, value) => apply(trimClip(draft, selection, edge, value))}
       onTrimPreview={(clock, edge) => previewRef.current?.previewAt(clock, edge)}
       peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
       scale={scale}
