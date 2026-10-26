@@ -416,20 +416,51 @@ test('选中：普通点击只选当前片段，Shift 点击扩选；键盘左�
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
 })
 
-test('点击片段从该段起点自动播放并在末尾停止，普通点击相邻段不会扩选', async ({ page }) => {
+test('点段只选中不播放、播放头在选区开头；空格从播放头播过选区结尾、再按暂停，焦点在段上也不改选中；播放中点段停在这段开头', async ({
+  page,
+}) => {
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
   const seek = dialog.getByRole('slider', { name: '时间线播放位置' })
-  await segment(dialog, 2).click()
-  await expect(dialog.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
-  await expect.poll(async () => Number(await seek.inputValue())).toBeGreaterThanOrEqual(1)
-  await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
-  await expect(seek).toHaveValue('2')
-  await segment(dialog, 3).click()
-  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
+  const play = dialog.getByRole('button', { name: '播放', exact: true })
+  const pause = dialog.getByRole('button', { name: '暂停', exact: true })
+  const playheadAt = async () => Number(await seek.inputValue())
+
+  // 点在段的中间偏后，播放头也只在这段开头。
+  await segment(dialog, 2).click({ position: { x: 30, y: 10 } })
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
+  await expect(play).toBeVisible()
+  await expect(seek).toHaveValue('1')
+  await segment(dialog, 3).click({ modifiers: ['Shift'] })
   await expect(segment(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
-  await expect(dialog.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
-  await expectCard(dialog, '第 3 段 · 视频生成', '2.0 – 3.0 秒 · 视频和原声一起重做')
+  await expect(seek).toHaveValue('1')
+
+  // 焦点停在刚点的段上：空格播放、暂停，不会再点一次这段。
+  await expect(segment(dialog, 3)).toBeFocused()
+  await page.keyboard.press(' ')
+  await expect(pause).toBeVisible()
+  await expect.poll(playheadAt).toBeGreaterThan(3.2)
+  await page.keyboard.press(' ')
+  await expect(play).toBeVisible()
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
+  await expect(segment(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
+  await expect(segment(dialog, 4)).toHaveAttribute('aria-pressed', 'false')
+
+  // 播放中普通点击另一段：停在这段开头，只选中这一段。
+  await page.keyboard.press(' ')
+  await expect(pause).toBeVisible()
+  await segment(dialog, 4).click()
+  await expect(play).toBeVisible()
+  await expect(seek).toHaveValue('3')
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
+  await expect(segment(dialog, 4)).toHaveAttribute('aria-pressed', 'true')
+  await expectCard(dialog, '第 4 段 · 视频生成', '3.0 – 4.0 秒 · 视频和原声一起重做')
+
+  // 在修改要求里打空格只是打字。
+  await requestBox(dialog).click()
+  await page.keyboard.type('黄昏 暖光')
+  await expect(requestBox(dialog)).toHaveText('黄昏 暖光')
+  await expect(play).toBeVisible()
 })
 
 test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段选中或调序', async ({ page }) => {

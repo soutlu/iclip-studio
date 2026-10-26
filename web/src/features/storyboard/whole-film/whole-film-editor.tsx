@@ -22,6 +22,7 @@ import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { useAudioPeaks } from '../editing/media-analysis'
 import { Frames } from '../editing/timeline'
+import { isShortcutTarget } from '../editing/shortcut-target'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
@@ -201,21 +202,6 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-const isTextEntry = (target: HTMLElement) =>
-  target.isContentEditable ||
-  target instanceof HTMLTextAreaElement ||
-  (target instanceof HTMLInputElement && target.type !== 'range')
-
-/**
- * 编辑器的单键快捷键只在弹窗里、不在打字时生效；浮层（role="dialog"，挂在弹窗里也算）与挂在弹窗外的
- * 菜单都不算，标签页的方向键与空格留给标签页自己。
- */
-const isShortcutTarget = (event: KeyboardEvent<HTMLDivElement>) =>
-  event.target instanceof HTMLElement &&
-  event.target.closest('[role="dialog"]') === event.currentTarget &&
-  !isTextEntry(event.target) &&
-  event.target.closest('[role="tab"]') === null
-
 const attemptOf = (result: EditResult): Attempt =>
   result.ok ? result : { ok: false, reason: REFUSAL_TEXT[result.refusal] }
 
@@ -362,12 +348,10 @@ function EditorBody({
     if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
-  /** 点画面轨上的段：选中，播放头移到段首并把这一段播一遍，停在段尾；拖动播放头或再按播放时取消 */
-  const playClip = (clip: Layer0Clip) => {
+  /** 点画面轨上的段：选中，播放头停在段首；不播放 */
+  const selectClip = (clip: Layer0Clip) => {
     setSelection({ kind: 'clip', id: clip.id })
-    leaveMaterial()
-    setPlayheadMs(clip.start)
-    previewRef.current?.playRange(clip.start, clip.start + clip.duration)
+    seek(clip.start)
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
@@ -959,7 +943,7 @@ function EditorBody({
               />
             }
             onCaptionText={editCaption}
-            onClipClick={playClip}
+            onClipClick={selectClip}
             onSeek={seek}
             onSelect={(next) => {
               leaveMaterial()

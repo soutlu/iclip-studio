@@ -192,22 +192,6 @@ const settledClockMs = async (clock: Locator) => {
   return Number(last) * 1000
 }
 
-/** 点段播到段尾自己停下：读数两次一样，且停在段尾之前的最后一帧，不露出下一段 */
-const expectStoppedAt = async (clock: Locator, endMs: number) => {
-  let last = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await clock.inputValue()) * 1000
-        const stopped = now === last && now >= endMs - FRAME_MS && now < endMs
-        last = now
-        return stopped
-      },
-      { intervals: [250], timeout: 10_000 },
-    )
-    .toBe(true)
-}
-
 /** 画面轨上各段左边缘的位置，用于核对预演让位与取消恢复。 */
 const clipLefts = (film: Locator) =>
   film
@@ -400,24 +384,39 @@ test.describe('成片编辑器 · 时间线', () => {
     expect(await readDraft(page)).toEqual(movedDraft)
   })
 
-  test('点段移到段首、Delete 删除、⌘Z 撤销、⌥→ 挪一位、修剪与 ←/→ 微调、方向键走播放头', async ({
+  test('点段只选中、播放头到段首，播放中点段停在段首；Delete 删除、⌘Z 撤销、⌥→ 挪一位、修剪与 ←/→ 微调、方向键走播放头', async ({
     page,
   }) => {
     const { dialog, film } = await openWith(page, {
       layer0: [BASE[1], BASE[2], card('c2', 'fixture-scene', 1_500), BASE[3], BASE[4], BASE[5]],
     })
     const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
-    // 点段：播放头到段首，把这一段播一遍，播到段尾停下。组件可以放在画面轨任意位置：第 3 段是组件段
-    await film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 测试画面/ }).click()
+    const play = dialog.getByRole('button', { name: '播放', exact: true })
+    const expectPlayheadAt = (ms: number) =>
+      expect
+        .poll(async () => Math.abs(Number(await clock.inputValue()) * 1000 - ms))
+        .toBeLessThanOrEqual(FRAME_MS)
+    // 点段：只选中，不播放；点在段的后半截，播放头也到段首。组件可以放在画面轨任意位置：第 3 段是
+    // 3.2–4.7 秒的组件段
+    const component = film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 测试画面/ })
+    const componentBox = await boxOf(component)
+    await component.click({
+      position: { x: componentBox.width * 0.8, y: componentBox.height / 2 },
+    })
+    await expect(play).toBeVisible()
+    await expectPlayheadAt(3_200)
     // 组件段没有原声：工具条里的原声推子置灰，悬停说明原因
     await expect(dialog.getByRole('slider', { name: '原声', exact: true })).toBeDisabled()
     await expect(dialog.getByTitle('组件段没有原声，无法调整原声音量')).toBeVisible()
-    await expectStoppedAt(clock, 4_700)
 
+    // 播放中点第 2 段（1.5–3.2 秒）：停下，播放头停在段首
+    await play.click()
+    await expect(dialog.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
-    await expectStoppedAt(clock, 3_200)
+    await expect(play).toBeVisible()
     // 方向键挪播放头：→ 0.1 秒、⇧→ 1 秒。读数是播放器按帧报的时刻，与播放头可差一帧
     const pausedAt = await settledClockMs(clock)
+    expect(Math.abs(pausedAt - 1_500)).toBeLessThanOrEqual(FRAME_MS)
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Shift+ArrowRight')
     await expect
@@ -595,8 +594,7 @@ test.describe('成片编辑器 · 时间线', () => {
     const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
     const guide = dialog.getByTestId('timeline-hover-guide')
     const preview = page.getByText('00:04.00', { exact: true })
-    // 点段会自动播放到段尾；停下之后再验证悬停不会改变实际播放时间。
-    await expectStoppedAt(ruler, 5_200)
+    // 点段不播放；播放头停稳之后再验证悬停不会改变实际播放时间。
     await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
     await settledClockMs(dialog.getByRole('slider', { name: '时间线播放位置' }))
     const before = await ruler.inputValue()
