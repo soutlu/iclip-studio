@@ -1,4 +1,4 @@
-import { trimBounds, type Draft, type Selection } from './draft'
+import { selectedRange, trimBounds, type Draft, type DraftItem, type Selection } from './draft'
 
 export const secondsText = (value: number) => value.toFixed(1)
 
@@ -12,14 +12,17 @@ export const lengthDifference = (
   return `比 ${versionLabel} ${shorter > 0 ? '短' : '长'} ${secondsText(Math.abs(shorter))} 秒`
 }
 
+const canTrim = (item: DraftItem | undefined, edge: 'start' | 'end') => {
+  if (item?.kind !== 'clip') return false
+  const { min, max } = trimBounds(item, edge)
+  return min < max
+}
+
+// 抓手在选区两端：开头看第一段，结尾看最后一段。
 const isTrimmable = (draft: Draft, selection: Selection) => {
-  const only = selection.length === 1 ? draft.find((item) => item.id === selection[0]) : undefined
+  const range = selectedRange(draft, selection)
   return (
-    only?.kind === 'clip' &&
-    (['start', 'end'] as const).some((edge) => {
-      const { min, max } = trimBounds(only, edge)
-      return min < max
-    })
+    range !== undefined && (canTrim(draft[range.from], 'start') || canTrim(draft[range.to], 'end'))
   )
 }
 
@@ -62,7 +65,6 @@ export const editorFootnote = ({
   if (view === 'whole') return '正在预览时间线当前选用内容；点击片段可查看和切换版本'
   if (positions !== undefined) {
     if (blockReason !== undefined) return `选中${positions}：${blockReason}`
-    if (selection.length > 1) return `选中${positions}：仅重做所选段的画面和原声，其余部分保持不变`
     return isTrimmable(draft, selection)
       ? `选中${positions}：拖动两端可裁剪，按住中间拖动可调整顺序；如需 AI 重做，请在卡片中填写修改要求`
       : `选中${positions}：已是最短，无法继续裁剪；按住中间拖动可调整顺序，如需 AI 重做，请在卡片中填写修改要求`
@@ -70,5 +72,5 @@ export const editorFootnote = ({
   if (generating) return 'AI 生成中，关闭窗口不影响生成；其他段可继续剪辑，生成完成后可合成'
   if (changed)
     return `${difference === undefined ? '' : `${difference}；`}已保存各片段选择，点击「合成新版本」按选用版本合成新的一版`
-  return '点击片段选中并播放，按住 Shift 可选择相邻片段；拖动两端可裁剪，按住中间可调序'
+  return '点击片段选中，按住 Shift 可选择相邻片段；拖动两端可裁剪，按住中间可调序'
 }

@@ -22,7 +22,7 @@ const clickLane = (item: CatalogItem): TrackLane => (item.kind === 'block' ? 'fi
 export const placedPiece = (
   before: WholeFilmDraft,
   after: WholeFilmDraft,
-): { kind: 'clip' | 'overlay'; id: string } | undefined => {
+): { kind: 'clip'; id: string } | { kind: 'overlay'; id: string } | undefined => {
   const clips = new Set(before.layer0.map((clip) => clip.id))
   const clip = after.layer0.find((item) => !clips.has(item.id))
   if (clip !== undefined) return { kind: 'clip', id: clip.id }

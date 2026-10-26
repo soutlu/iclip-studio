@@ -277,7 +277,7 @@ export function TrimHandle({
 }: TrimHandleProps) {
   return (
     <button
-      aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
+      aria-label={edge === 'start' ? '裁剪开头' : '裁剪结尾'}
       aria-valuemax={roundSeconds(bounds.max)}
       aria-valuemin={roundSeconds(bounds.min)}
       aria-valuenow={roundSeconds(value)}

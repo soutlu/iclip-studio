@@ -55,7 +55,8 @@ type EditorTimelineProps = {
   onSelect: (selection: Selection) => void
   onScrub: () => void
   selectionBoxRef: Ref<HTMLSpanElement>
-  onTrim: (id: string, edge: Edge, value: number) => void
+  /** 裁选区的一端：开头对应第一段的开头，结尾对应最后一段的结尾 */
+  onTrim: (edge: Edge, value: number) => void
   onTrimPreview: (clock: number, edge: Edge) => void
   onMove: (ids: Selection, before: number) => void
   onDelete: () => void
@@ -63,7 +64,13 @@ type EditorTimelineProps = {
 
 const partKey = (part: PlaySegment) => `${part.mediaUrl}@${part.start}-${part.end}`
 
-type Trim = { pointerId: number; id: string; edge: Edge; value: number }
+type Trim = { pointerId: number; edge: Edge; value: number }
+
+/** 抓手挂着的那段：选区第一段管开头，最后一段管结尾 */
+type HandleOwner = { entry: TimelineEntry; clip: DraftClip }
+
+/** 这段素材里的某个时刻在时间线上的位置 */
+const clockOf = ({ entry, clip }: HandleOwner, value: number) => entry.at + (value - clip.start)
 
 export function EditorTimeline({
   draft,
@@ -109,9 +116,15 @@ export function EditorTimeline({
 
   const range = selectedRange(draft, selection)
   const selected = (id: string) => selection.includes(id)
-  const single =
-    editable && selection.length === 1 && trim === null && lift === null
-      ? entries.find((entry) => entry.id === selection[0] && entry.clip !== undefined)
+  const rangeFirst = range === undefined ? undefined : entries[range.from]
+  const rangeLast = range === undefined ? undefined : entries[range.to]
+  // 抓手只挂在选区最外两端：单选时两个落在同一段上。
+  const handleOwners: Record<Edge, HandleOwner> | undefined =
+    editable && lift === null && rangeFirst?.clip !== undefined && rangeLast?.clip !== undefined
+      ? {
+          start: { entry: rangeFirst, clip: rangeFirst.clip },
+          end: { entry: rangeLast, clip: rangeLast.clip },
+        }
       : undefined
 
   const click = (entry: TimelineEntry, extend: boolean) => {
@@ -177,61 +190,53 @@ export function EditorTimeline({
     onMove(dropped.payload, insertBefore(dropped.clock))
   }
 
-  const trimValue = (entry: TimelineEntry, clip: DraftClip, edge: Edge, clock: number) => {
-    const { min, max } = trimBounds(clip, edge)
-    return Math.min(max, Math.max(min, clip.start + (clock - entry.at)))
-  }
-
-  const pressHandle = (
-    event: PointerEvent<HTMLButtonElement>,
-    entry: TimelineEntry,
-    edge: Edge,
-  ) => {
-    if (entry.clip === undefined) return
+  const pressHandle = (event: PointerEvent<HTMLButtonElement>, owner: HandleOwner, edge: Edge) => {
     event.preventDefault()
     event.currentTarget.focus()
     event.currentTarget.setPointerCapture(event.pointerId)
     onScrub()
-    const value = entry.clip[edge]
-    setTrim({ pointerId: event.pointerId, id: entry.id, edge, value })
-    onTrimPreview(entry.at + (value - entry.clip.start), edge)
+    const value = owner.clip[edge]
+    setTrim({ pointerId: event.pointerId, edge, value })
+    onTrimPreview(clockOf(owner, value), edge)
   }
 
   const dragHandle = (event: PointerEvent<HTMLButtonElement>) => {
-    if (trim === null || trim.pointerId !== event.pointerId) return
-    const entry = entries.find((item) => item.id === trim.id)
-    if (entry?.clip === undefined) return
-    const value = trimValue(entry, entry.clip, trim.edge, clockAt(event.clientX))
+    if (trim === null || trim.pointerId !== event.pointerId || handleOwners === undefined) return
+    const owner = handleOwners[trim.edge]
+    const { min, max } = trimBounds(owner.clip, trim.edge)
+    const clock = clockAt(event.clientX)
+    const value = Math.min(max, Math.max(min, owner.clip.start + (clock - owner.entry.at)))
     setTrim({ ...trim, value })
-    onTrimPreview(entry.at + (value - entry.clip.start), trim.edge)
+    onTrimPreview(clockOf(owner, value), trim.edge)
   }
 
   const releaseHandle = (event: PointerEvent<HTMLButtonElement>) => {
     if (trim === null || trim.pointerId !== event.pointerId) return
     releasePointer(event)
     setTrim(null)
-    onTrim(trim.id, trim.edge, trim.value)
+    onTrim(trim.edge, trim.value)
   }
 
-  const keyHandle = (event: KeyboardEvent<HTMLButtonElement>, entry: TimelineEntry, edge: Edge) => {
+  const keyHandle = (event: KeyboardEvent<HTMLButtonElement>, owner: HandleOwner, edge: Edge) => {
     const delta = arrowStep(event)
-    if (delta === undefined || entry.clip === undefined) return
+    if (delta === undefined) return
     event.preventDefault()
-    const value = entry.clip[edge] + delta
-    onTrim(entry.id, edge, value)
-    onTrimPreview(entry.at + (value - entry.clip.start), edge)
+    const value = owner.clip[edge] + delta
+    onTrim(edge, value)
+    onTrimPreview(clockOf(owner, value), edge)
   }
 
   const boundedTime = Math.max(0, Math.min(total, currentTime))
 
+  // 拖动中的选区：被拖的一端跟着抓手，另一端不动；气泡说的是整个选区裁后多长。
   const trimmed = (() => {
-    if (trim === null) return undefined
-    const entry = entries.find((item) => item.id === trim.id)
-    if (entry?.clip === undefined) return undefined
-    const offset = trim.value - entry.clip.start
-    const from = trim.edge === 'start' ? entry.at + offset : entry.at
-    const to = trim.edge === 'start' ? entry.at + entry.duration : entry.at + offset
-    const shorter = entry.duration - (to - from)
+    if (trim === null || handleOwners === undefined) return undefined
+    const { start, end } = handleOwners
+    const entry = handleOwners[trim.edge].entry
+    const selectionEnd = end.entry.at + end.entry.duration
+    const from = trim.edge === 'start' ? clockOf(start, trim.value) : start.entry.at
+    const to = trim.edge === 'end' ? clockOf(end, trim.value) : selectionEnd
+    const shorter = selectionEnd - start.entry.at - (to - from)
     return { entry, from, to, shorter }
   })()
   const lifted =
@@ -245,21 +250,11 @@ export function EditorTimeline({
     (insertAt < liftRange.from || insertAt > liftRange.to + 1)
   const insertClock = insertAt === undefined ? 0 : (entries[insertAt]?.at ?? total)
 
-  const handleOwner = single ?? trimmed?.entry
-  const handleEntry =
-    handleOwner?.clip === undefined ? undefined : { entry: handleOwner, clip: handleOwner.clip }
-
   const selectionBox =
     trimmed !== undefined
       ? { from: trimmed.from, to: trimmed.to }
-      : range !== undefined && lifted === undefined
-        ? (() => {
-            const first = entries[range.from]
-            const last = entries[range.to]
-            return first === undefined || last === undefined
-              ? undefined
-              : { from: first.at, to: last.at + last.duration }
-          })()
+      : rangeFirst !== undefined && rangeLast !== undefined && lifted === undefined
+        ? { from: rangeFirst.at, to: rangeLast.at + rangeLast.duration }
         : undefined
 
   return (
@@ -393,23 +388,23 @@ export function EditorTimeline({
             />
           )}
 
-          {handleEntry === undefined
+          {handleOwners === undefined
             ? null
             : (['start', 'end'] as const).map((edge) => {
-                const { entry, clip } = handleEntry
-                const value = trim !== null && trim.edge === edge ? trim.value : clip[edge]
+                const owner = handleOwners[edge]
+                const value = trim !== null && trim.edge === edge ? trim.value : owner.clip[edge]
                 return (
                   <TrimHandle
-                    bounds={trimBounds(clip, edge)}
+                    bounds={trimBounds(owner.clip, edge)}
                     edge={edge}
                     key={edge}
-                    onKeyDown={(event) => keyHandle(event, entry, edge)}
+                    onKeyDown={(event) => keyHandle(event, owner, edge)}
                     onPointerCancel={releaseHandle}
-                    onPointerDown={(event) => pressHandle(event, entry, edge)}
+                    onPointerDown={(event) => pressHandle(event, owner, edge)}
                     onPointerMove={dragHandle}
                     onPointerUp={releaseHandle}
                     pressed={trim?.edge === edge}
-                    style={{ left: percent(entry.at + (value - clip.start)) }}
+                    style={{ left: percent(clockOf(owner, value)) }}
                     value={value}
                     valueText={`${roundSeconds(value)} 秒`}
                   />

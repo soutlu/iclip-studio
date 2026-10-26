@@ -6,6 +6,7 @@ const seconds = (ms: number) => `${ms / 1000} 秒`
 /** 编辑被拒时给人看的那句：原因与可以怎么做（界面文字规范见 ADR-0001）。 */
 export const REFUSAL_TEXT: Readonly<Record<Refusal, string>> = {
   'unknown-clip': '这一段已不在成片里，无法操作；请重新选择',
+  'not-contiguous': '选中的几段不相连，无法一起挪动；请重新选择',
   'unknown-source': '素材信息还没读到，无法加入成片；请稍后再试',
   'unknown-music': '音乐信息还没读到，无法使用；请稍后再试',
   'not-a-video': '组件段没有原声，无法调整原声音量',

@@ -1583,7 +1583,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     const track = await timeline()
     await waitFor(() => expect(segmentNames(track)).toHaveLength(7))
     await user.click(segmentOf(track, 3))
-    const trimEnd = screen.getByRole('slider', { name: '裁剪该段结尾' })
+    const trimEnd = screen.getByRole('slider', { name: '裁剪结尾' })
     fireEvent.keyDown(trimEnd, { key: 'ArrowLeft' })
     fireEvent.keyDown(trimEnd, { key: 'ArrowLeft' })
     await user.click(segmentOf(track, 6))

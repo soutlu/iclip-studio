@@ -61,15 +61,18 @@ export const componentMsOf = (context: EditContext, component: string): number =
   return durationMs
 }
 
-/** 新片段的 id：同前缀里最大的序号加一，同一份草稿总得到同一个结果 */
-export const nextId = (draft: WholeFilmDraft, prefix: 'v' | 'c' | 'o'): string => {
+/**
+ * 新片段的 id：同前缀里最大的序号加一，同一份草稿总得到同一个结果；一次加几段时第 offset 段（从 0
+ * 数）再往后数 offset 个
+ */
+export const nextId = (draft: WholeFilmDraft, prefix: 'v' | 'c' | 'o', offset = 0): string => {
   let max = 0
   for (const { id } of [...draft.layer0, ...draft.overlays]) {
     if (!id.startsWith(prefix)) continue
     const n = Number(id.slice(prefix.length))
     if (Number.isInteger(n) && n > max) max = n
   }
-  return `${prefix}${max + 1}`
+  return `${prefix}${max + 1 + offset}`
 }
 
 // Studio 的时间函数只有常量带单位（秒、厘秒取整），这里按毫秒调用：pixelsPerSecond = 1、clientX

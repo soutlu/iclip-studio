@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { roundToMs, type Clip } from '../editing/clip'
 import { amend, startHistory, type History } from '../editing/edit-history'
 import { keyframeRanges } from '../editing/keyframe-segments'
+import { contiguousRange, shiftSelect } from '../editing/range-select'
 
 const MIN_TRIM_SECONDS = 0.2
 
@@ -101,27 +102,23 @@ export const compositeSegments = (draft: Draft): Clip[] | undefined =>
 export const selectedRange = (
   draft: Draft,
   selection: Selection,
-): { from: number; to: number } | undefined => {
-  const from = draft.findIndex((item) => item.id === selection[0])
-  if (from < 0) return undefined
-  const ok = selection.every((id, offset) => draft[from + offset]?.id === id)
-  return ok ? { from, to: from + selection.length - 1 } : undefined
-}
+): { from: number; to: number } | undefined =>
+  contiguousRange(
+    draft.map((item) => item.id),
+    selection,
+  )
 
 const idsBetween = (draft: Draft, from: number, to: number): Selection =>
   draft.slice(Math.min(from, to), Math.max(from, to) + 1).map((item) => item.id)
 
-export const clickSelect = (draft: Draft, selection: Selection, id: string): Selection => {
-  const index = draft.findIndex((item) => item.id === id)
-  if (index < 0 || draft[index]?.kind !== 'clip') return selection
-  const range = selectedRange(draft, selection)
-  if (range === undefined) return [id]
-  if (index === range.from - 1 || index === range.to + 1)
-    return idsBetween(draft, Math.min(index, range.from), Math.max(index, range.to))
-  if (index === range.from) return selection.slice(1)
-  if (index === range.to) return selection.slice(0, -1)
-  return [id]
-}
+export const clickSelect = (draft: Draft, selection: Selection, id: string): Selection =>
+  draft.find((item) => item.id === id)?.kind === 'clip'
+    ? shiftSelect(
+        draft.map((item) => item.id),
+        selection,
+        id,
+      )
+    : selection
 
 export const stepSelect = (
   draft: Draft,
@@ -167,14 +164,25 @@ export const trimBounds = (clip: DraftClip, edge: 'start' | 'end'): { min: numbe
     ? { min: clip.origin.start, max: Math.max(clip.start, roundToMs(clip.end - MIN_TRIM_SECONDS)) }
     : { min: Math.min(clip.end, roundToMs(clip.start + MIN_TRIM_SECONDS)), max: clip.origin.end }
 
-export const trimClip = (draft: Draft, id: string, edge: 'start' | 'end', value: number): Edit => {
-  const at = draft.findIndex((item) => item.id === id)
+/** 裁选区的一端：开头裁第一段的开头，结尾裁最后一段的结尾；选区仍是原来那几段。 */
+export const trimClip = (
+  draft: Draft,
+  selection: Selection,
+  edge: 'start' | 'end',
+  value: number,
+): Edit => {
+  const range = selectedRange(draft, selection)
+  if (range === undefined) return { draft, selection }
+  const at = edge === 'start' ? range.from : range.to
   const clip = draft[at]
-  if (clip === undefined || clip.kind !== 'clip') return { draft, selection: [id] }
+  if (clip === undefined || clip.kind !== 'clip') return { draft, selection }
   const { min, max } = trimBounds(clip, edge)
   const bounded = roundToMs(Math.min(max, Math.max(min, value)))
   const trimmed = clipItem({ ...clip, [edge]: bounded }, clip.origin)
-  return { draft: draft.with(at, trimmed), selection: [trimmed.id] }
+  return {
+    draft: draft.with(at, trimmed),
+    selection: selection.map((id) => (id === clip.id ? trimmed.id : id)),
+  }
 }
 
 export const moveItems = (draft: Draft, ids: Selection, before: number): Edit => {

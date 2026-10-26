@@ -133,7 +133,7 @@ test('素材区滚动后能选择后面的镜头组与末尾镜头', async ({ pa
   await page.mouse.wheel(0, 400)
   await expect(last).toBeInViewport()
   await last.click()
-  const end = groupOf(materials, 3).getByRole('slider', { name: '裁剪该段结尾' })
+  const end = groupOf(materials, 3).getByRole('slider', { name: '裁剪结尾' })
   await expect(end).toBeInViewport()
   await end.focus()
   await page.keyboard.press('ArrowLeft')
@@ -150,15 +150,25 @@ test('缩放成片时间线不会改变素材镜头的位置和大小', async ({
   expect([await first.boundingBox(), await last.boundingBox()]).toEqual(before)
 })
 
-test('素材暂停续播与段尾重播；点画面轨上的段播放，拖播放头返回成片', async ({ page }) => {
+test('点镜头只选中、预览停在开头不播放；素材暂停续播与段尾重播；点画面轨上的段播放，拖播放头返回成片', async ({
+  page,
+}) => {
   const { dialog, materials } = await openWith(page, [1])
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const video = dialog.locator('video')
   const mediaTime = () => video.evaluate((element: HTMLVideoElement) => element.currentTime)
   const mediaPaused = () => video.evaluate((element: HTMLVideoElement) => element.paused)
+  const play = toolbar.getByRole('button', { name: '播放', exact: true })
+
+  // 点镜头：预览切到素材、停在选区开头，不播放；按播放才放
+  await shotOf(materials, 1, 'A', 2).click()
+  await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 1 })
+  await expect(play).toBeVisible()
+  await page.waitForTimeout(250)
+  expect(await previewVideo(dialog)).toEqual({ paused: true, time: 1 })
 
   // 成片为空时也能暂停素材；选择非零入点，续播和重播都不能从文件开头播放。
-  await shotOf(materials, 1, 'A', 2).click()
+  await play.click()
   expect(await mediaTime()).toBeGreaterThanOrEqual(1)
   await expect.poll(mediaTime).toBeGreaterThan(1.05)
   const pause = toolbar.getByRole('button', { name: '暂停', exact: true })
@@ -180,7 +190,7 @@ test('素材暂停续播与段尾重播；点画面轨上的段播放，拖播�
   expect(restarted).toBeLessThan(2)
 
   // 扩成三秒选区再加入成片，给真实播放器留足观察播放和暂停的时间。
-  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段结尾' })
+  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
   await end.focus()
   await page.keyboard.press('Shift+ArrowRight')
   await page.keyboard.press('Shift+ArrowRight')
@@ -198,22 +208,28 @@ test('素材暂停续播与段尾重播；点画面轨上的段播放，拖播�
     )
     .toBe(true)
 
-  // 成片已有内容时，暂停、继续仍然控制素材，不会偷偷切回成片。
+  // 在选区上点一下：只选指针下的镜头（选区正中是镜头 3），预览停在它开头
   await groupOf(materials, 1)
     .getByRole('group', { name: /^选中的范围 1.0–4.0 秒/ })
     .click()
-  await expect.poll(mediaTime).toBeGreaterThan(1.05)
+  await expect(
+    groupOf(materials, 1).getByRole('group', { name: /^选中的范围 2\.0–3\.0 秒，1 个镜头/ }),
+  ).toBeVisible()
+  await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 2 })
+
+  // 成片已有内容时，空格播放、暂停仍然控制素材，不会偷偷切回成片。
   const snap = toolbar.getByRole('button', { name: '吸附', exact: true })
   const snapping = await snap.getAttribute('aria-pressed')
   await snap.focus()
   await page.keyboard.press('Space')
   await expect(video).toBeVisible()
+  await expect.poll(mediaTime).toBeGreaterThan(2.05)
+  await page.keyboard.press('Space')
   await expect.poll(mediaPaused).toBe(true)
   const materialPausedAt = await mediaTime()
-  await page.keyboard.press('Space')
+  await page.waitForTimeout(250)
+  expect(await mediaTime()).toBeCloseTo(materialPausedAt, 2)
   await expect(snap).toHaveAttribute('aria-pressed', snapping ?? '')
-  expect(await mediaTime()).toBeGreaterThanOrEqual(materialPausedAt)
-  await expect.poll(mediaTime).toBeGreaterThan(materialPausedAt + 0.05)
 
   // 点画面轨上的段回到成片：只选中、不播放，播放头在段首；按播放从那里放
   await clip.click()
@@ -244,8 +260,8 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   const { dialog, materials } = await openWith(page, [1])
   const label = dialog.getByText(/^素材 · 镜头组/)
   await shotOf(materials, 1, 'A', 2).click()
-  const start = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段开头' })
-  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段结尾' })
+  const start = groupOf(materials, 1).getByRole('slider', { name: '裁剪开头' })
+  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
   await expect(start).toHaveAttribute('aria-valuenow', '1')
 
   await start.focus()
@@ -271,6 +287,40 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 3.5 })
   await page.mouse.up()
   await expect(end).toHaveAttribute('aria-valuetext', '3.5 秒')
+})
+
+test('选区里的播放头只在素材播放时出现：点镜头、暂停、拖抓手松手后都没有', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const playhead = groupOf(materials, 1).getByTestId('material-playhead')
+  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
+
+  await shotOf(materials, 1, 'A', 2).click()
+  await expect(dialog.locator('video')).toBeVisible()
+  await expect(playhead).toHaveCount(0)
+
+  // 扩成三秒选区，留足播放中再暂停的时间
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuetext', '4.0 秒')
+  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  await expect(playhead).toBeVisible()
+  await toolbar.getByRole('button', { name: '暂停', exact: true }).click()
+  await expect(playhead).toHaveCount(0)
+
+  // 拖结尾时看抓手本身，松手后也不留播放头
+  const third = await centerOf(shotOf(materials, 1, 'A', 3))
+  const fourth = await centerOf(shotOf(materials, 1, 'A', 4))
+  const from = await centerOf(end)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + (fourth.x - third.x), from.y, { steps: 6 })
+  await expect(end).toHaveAttribute('aria-valuetext', '5.0 秒')
+  await expect(playhead).toHaveCount(0)
+  await page.mouse.up()
+  await expect(end).toHaveAttribute('aria-valuetext', '5.0 秒')
+  await expect(playhead).toHaveCount(0)
 })
 
 test('在选区里按下即拖整段选区，松手在画面轨上加入', async ({ page }) => {
@@ -315,6 +365,72 @@ test('在选区外按下镜头即拖：先选中这个镜头再拖，松手加�
     groupOf(materials, 1).getByRole('group', { name: /^选中的范围 2\.0–3\.0 秒/ }),
   ).toBeVisible()
   await expect(dialog.getByText(/^素材 · 镜头组/)).toHaveCount(0)
+})
+
+test('Shift 选连着的几个镜头：不播放；在选区上单击只选那个镜头、Shift 点去掉一端；两端抓手不越过镜头边界，拖到画面轨按镜头加入几段', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const film = filmLane(dialog)
+  const group = groupOf(materials, 1)
+  const range = group.getByRole('group', { name: /^选中的范围/ })
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  /** 点页面上的一处：选中的镜头被选区盖着，点它就是点选区 */
+  const clickAt = async (locator: Locator, shift = false) => {
+    const { x, y } = await centerOf(locator)
+    if (shift) await page.keyboard.down('Shift')
+    await page.mouse.click(x, y)
+    if (shift) await page.keyboard.up('Shift')
+  }
+
+  await shotOf(materials, 1, 'A', 2).click()
+  await shotOf(materials, 1, 'A', 3).click({ modifiers: ['Shift'] })
+  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+  // Shift 扩选后同样不播放：预览停在选区开头
+  await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 1 })
+  await expect(toolbar.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+
+  // 在选区上单击中间的镜头：选区只剩它，预览停在它开头
+  await clickAt(shotOf(materials, 1, 'A', 3))
+  await expect(range).toHaveAccessibleName(/^选中的范围 2\.0–3\.0 秒，1 个镜头/)
+  await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 2 })
+  await shotOf(materials, 1, 'A', 2).click({ modifiers: ['Shift'] })
+  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+
+  // 在选区上 Shift 点最右的镜头：去掉它；再 Shift 点回来
+  await clickAt(shotOf(materials, 1, 'A', 4), true)
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–3\.0 秒，2 个镜头/)
+  await expect(shotOf(materials, 1, 'A', 4)).toHaveAttribute('aria-pressed', 'false')
+  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+
+  // 左抓手往里停在第一个镜头结尾前 0.1 秒，往外可以拉过镜头开头；右抓手往里停在最后一个镜头开头后 0.1 秒
+  const start = group.getByRole('slider', { name: '裁剪开头' })
+  const end = group.getByRole('slider', { name: '裁剪结尾' })
+  await start.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(start).toHaveAttribute('aria-valuenow', '1.9')
+  await page.keyboard.press('Shift+ArrowLeft')
+  await expect(start).toHaveAttribute('aria-valuenow', '0.9')
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowLeft')
+  await expect(end).toHaveAttribute('aria-valuenow', '3.1')
+  for (let step = 0; step < 4; step += 1) await page.keyboard.press('ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuenow', '3.5')
+
+  // 拖到画面轨：按镜头拆成三段，第一段、最后一段带两端的裁剪
+  const from = await centerOf(range)
+  const to = await centerOf(film)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 8 })
+  await page.mouse.up()
+  await expect(film.getByRole('group', { name: '第 1 段 · A · 镜头 1，1.1 秒' })).toBeVisible()
+  await expect(film.getByRole('group', { name: '第 2 段 · A · 镜头 3，1.0 秒' })).toBeVisible()
+  await expect(film.getByRole('group', { name: '第 3 段 · A · 镜头 4，0.5 秒' })).toBeVisible()
+  await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(3)
 })
 
 test('撤销、重做也是成片编辑：预览回到成片', async ({ page }) => {
@@ -364,7 +480,7 @@ test('Enter 把选区插到播放头处：焦点在镜头、选区两端或不�
   // 焦点在选区一端上；播放头在 0 秒，插到最前面
   await seek(page, dialog, 0)
   await shotOf(materials, 1, 'B', 4).click()
-  await groupOf(materials, 1).getByRole('slider', { name: '裁剪该段结尾' }).focus()
+  await groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' }).focus()
   await page.keyboard.press('Enter')
   await expect(film.getByRole('group', { name: '第 1 段 · B · 镜头 4，1.0 秒' })).toBeVisible()
   await expect(film.getByRole('group', { name: '第 2 段 · A · 镜头 1，1.0 秒' })).toBeVisible()

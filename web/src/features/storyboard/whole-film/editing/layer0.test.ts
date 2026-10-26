@@ -11,11 +11,11 @@ import {
 } from '@/testing/whole-film'
 import { MAX_VOLUME, type WholeFilmDraft } from './draft'
 import {
-  deleteClip,
+  deleteClips,
   insertComponent,
   insertMaterial,
-  moveClip,
-  setClipVolume,
+  moveClips,
+  setClipsVolume,
   splitClip,
   trimClip,
   type InsertAt,
@@ -48,8 +48,7 @@ const manyVideos = (count: number) =>
 
 const material = (at: InsertAt, duration = 1_000) => ({
   sourceJobId: 's1',
-  playbackStart: 5_000,
-  duration,
+  pieces: [{ playbackStart: 5_000, duration }],
   at,
 })
 
@@ -100,7 +99,7 @@ describe('insertMaterial', () => {
     const first = expectOk(
       insertMaterial(
         cardsOnly,
-        { sourceJobId: 'wide', playbackStart: 0, duration: 1_000, at: { index: 1 } },
+        { sourceJobId: 'wide', pieces: [{ playbackStart: 0, duration: 1_000 }], at: { index: 1 } },
         context,
       ),
     ).draft
@@ -114,8 +113,7 @@ describe('insertMaterial', () => {
     const room = 120_000 - filmDuration(base)
     const range = (duration: number) => ({
       sourceJobId: 'big',
-      playbackStart: 0,
-      duration,
+      pieces: [{ playbackStart: 0, duration }],
       at: { index: 0 },
     })
     expect(insertMaterial(base, range(room), context).ok).toBe(true)
@@ -123,6 +121,50 @@ describe('insertMaterial', () => {
       ok: false,
       refusal: 'film-too-long',
     })
+    // 几段一起加时按几段的总长算
+    const pieces = (last: number) => ({
+      sourceJobId: 'big',
+      pieces: [
+        { playbackStart: 0, duration: 1_000 },
+        { playbackStart: 1_000, duration: last },
+      ],
+      at: { index: 0 },
+    })
+    expect(insertMaterial(base, pieces(room - 1_000), context).ok).toBe(true)
+    expect(insertMaterial(base, pieces(room - 999), context)).toEqual({
+      ok: false,
+      refusal: 'film-too-long',
+    })
+  })
+
+  it('几段按先后连着插在落点处，各成一段、id 依次往后数', () => {
+    const { draft } = expectOk(
+      insertMaterial(
+        withCards(),
+        {
+          sourceJobId: 's1',
+          pieces: [
+            { playbackStart: 1_500, duration: 500 },
+            { playbackStart: 2_000, duration: 2_500 },
+            { playbackStart: 4_500, duration: 700 },
+          ],
+          at: { index: 1 },
+        },
+        context,
+      ),
+    )
+    expect(spans(draft)).toEqual([
+      ['c1', 0, 2_000],
+      ['v3', 2_000, 2_500],
+      ['v4', 2_500, 5_000],
+      ['v5', 5_000, 5_700],
+      ['v1', 5_700, 8_700],
+      ['v2', 8_700, 10_700],
+      ['c2', 10_700, 12_200],
+    ])
+    expect(draft.layer0.slice(1, 4).map((clip) => clip.playbackStart)).toEqual([
+      1_500, 2_000, 4_500,
+    ])
   })
 
   it('不限段数：已有 150 段照样能加', () => {
@@ -139,11 +181,20 @@ describe('insertMaterial', () => {
     ['短于 0.1 秒', { sourceJobId: 's1', playbackStart: 0, duration: 99 }, 'too-short'],
     ['超出素材结尾', { sourceJobId: 's1', playbackStart: 9_500, duration: 501 }, 'outside-source'],
     ['入点为负', { sourceJobId: 's1', playbackStart: -1, duration: 500 }, 'outside-source'],
-  ] as const)('拒绝：%s', (_, range, refusal) => {
-    expect(insertMaterial(withCards(), { ...range, at: { index: 0 } }, context)).toEqual({
-      ok: false,
-      refusal,
-    })
+  ] as const)('拒绝：%s', (_, { sourceJobId, ...piece }, refusal) => {
+    expect(
+      insertMaterial(withCards(), { sourceJobId, pieces: [piece], at: { index: 0 } }, context),
+    ).toEqual({ ok: false, refusal })
+  })
+
+  it('几段里有一段不合格就整个拒绝', () => {
+    const pieces = [
+      { playbackStart: 0, duration: 1_000 },
+      { playbackStart: 1_000, duration: 99 },
+    ]
+    expect(
+      insertMaterial(withCards(), { sourceJobId: 's1', pieces, at: { index: 0 } }, context),
+    ).toEqual({ ok: false, refusal: 'too-short' })
   })
 })
 
@@ -204,60 +255,63 @@ describe('insertComponent', () => {
   })
 })
 
-describe('moveClip', () => {
+describe('moveClips', () => {
   const three = () =>
     draftOf([video('v1', 's1', 0, 1_000), video('v2', 's1', 0, 1_000), video('v3', 's1', 0, 1_000)])
+  const move = (draft: WholeFilmDraft, clipIds: string[], to: number) =>
+    ids(expectOk(moveClips(draft, { clipIds, to })).draft)
 
   it('挪到第 to 段之前（按挪动前的序号），整轨重新首尾相接', () => {
-    const { draft } = expectOk(moveClip(three(), { clipId: 'v1', to: 2 }))
+    const { draft } = expectOk(moveClips(three(), { clipIds: ['v1'], to: 2 }))
     expect(spans(draft)).toEqual([
       ['v2', 0, 1_000],
       ['v1', 1_000, 2_000],
       ['v3', 2_000, 3_000],
     ])
-    expect(ids(expectOk(moveClip(three(), { clipId: 'v3', to: 1 })).draft)).toEqual([
-      'v1',
-      'v3',
-      'v2',
-    ])
+    expect(move(three(), ['v3'], 1)).toEqual(['v1', 'v3', 'v2'])
   })
 
   it('落点就在它自己两侧：原样返回，不算改动', () => {
     const before = three()
-    expect(expectOk(moveClip(before, { clipId: 'v2', to: 1 })).draft).toBe(before)
-    expect(expectOk(moveClip(before, { clipId: 'v2', to: 2 })).draft).toBe(before)
+    expect(expectOk(moveClips(before, { clipIds: ['v2'], to: 1 })).draft).toBe(before)
+    expect(expectOk(moveClips(before, { clipIds: ['v2'], to: 2 })).draft).toBe(before)
   })
 
   it('落点超出两端时挪到最前或最后', () => {
-    expect(ids(expectOk(moveClip(three(), { clipId: 'v3', to: -5 })).draft)).toEqual([
-      'v3',
-      'v1',
-      'v2',
-    ])
-    expect(ids(expectOk(moveClip(three(), { clipId: 'v1', to: 99 })).draft)).toEqual([
-      'v2',
-      'v3',
-      'v1',
-    ])
+    expect(move(three(), ['v3'], -5)).toEqual(['v3', 'v1', 'v2'])
+    expect(move(three(), ['v1'], 99)).toEqual(['v2', 'v3', 'v1'])
   })
 
   it('组件段与视频段一样能换到任意位置', () => {
-    expect(ids(expectOk(moveClip(withCards(), { clipId: 'c1', to: 2 })).draft)).toEqual([
-      'v1',
-      'c1',
-      'v2',
-      'c2',
+    expect(move(withCards(), ['c1'], 2)).toEqual(['v1', 'c1', 'v2', 'c2'])
+    expect(move(withCards(), ['v2'], 0)).toEqual(['v2', 'c1', 'v1', 'c2'])
+  })
+
+  it('连着的几段当成一整块挪，块里先后不变', () => {
+    expect(move(withCards(), ['v1', 'v2'], 0)).toEqual(['v1', 'v2', 'c1', 'c2'])
+    expect(move(withCards(), ['c1', 'v1'], 4)).toEqual(['v2', 'c2', 'c1', 'v1'])
+    // ⌥→ 往后挪一位：落点是块后第二段之前
+    const { draft } = expectOk(moveClips(withCards(), { clipIds: ['c1', 'v1'], to: 3 }))
+    expect(spans(draft)).toEqual([
+      ['v2', 0, 2_000],
+      ['c1', 2_000, 4_000],
+      ['v1', 4_000, 7_000],
+      ['c2', 7_000, 8_500],
     ])
-    expect(ids(expectOk(moveClip(withCards(), { clipId: 'v2', to: 0 })).draft)).toEqual([
-      'v2',
-      'c1',
-      'v1',
-      'c2',
-    ])
-    expect(moveClip(withCards(), { clipId: 'x', to: 0 })).toEqual({
-      ok: false,
-      refusal: 'unknown-clip',
-    })
+  })
+
+  it('落点在块里或紧挨两侧：原样返回', () => {
+    const before = withCards()
+    for (const to of [1, 2, 3])
+      expect(expectOk(moveClips(before, { clipIds: ['v1', 'v2'], to })).draft).toBe(before)
+  })
+
+  it.each([
+    ['有不在画面轨上的段', ['v1', 'x'], 'unknown-clip'],
+    ['没给段', [], 'unknown-clip'],
+    ['几段不相连', ['c1', 'v2'], 'not-contiguous'],
+  ] as const)('拒绝：%s', (_, clipIds, refusal) => {
+    expect(moveClips(withCards(), { clipIds, to: 0 })).toEqual({ ok: false, refusal })
   })
 })
 
@@ -420,7 +474,7 @@ describe('splitClip', () => {
   })
 })
 
-describe('deleteClip', () => {
+describe('deleteClips', () => {
   const base = () =>
     draftOf(
       [video('v1', 's1', 0, 1_000), video('v2', 's1', 0, 2_000), video('v3', 's1', 0, 3_000)],
@@ -433,53 +487,83 @@ describe('deleteClip', () => {
     )
 
   it('删段后整轨收紧', () => {
-    const { draft } = expectOk(deleteClip(base(), { clipId: 'v2' }))
+    const { draft } = expectOk(deleteClips(base(), { clipIds: ['v2'] }))
     expect(spans(draft)).toEqual([
       ['v1', 0, 1_000],
       ['v3', 1_000, 4_000],
     ])
   })
 
+  it('一次删几段，后面的段跟着前移', () => {
+    const { draft } = expectOk(deleteClips(withCards(), { clipIds: ['v1', 'v2'] }))
+    expect(spans(draft)).toEqual([
+      ['c1', 0, 2_000],
+      ['c2', 2_000, 3_500],
+    ])
+  })
+
   it('改过的字幕留着（字幕跟着素材走，段加回来时还生效）', () => {
-    const { draft } = expectOk(deleteClip(base(), { clipId: 'v1' }))
+    const { draft } = expectOk(deleteClips(base(), { clipIds: ['v1'] }))
     expect(draft.captions.edits).toHaveLength(1)
   })
 
   it('删掉组件段；没有视频段时画布清空', () => {
-    const { draft } = expectOk(deleteClip(withCards(), { clipId: 'c1' }))
+    const { draft } = expectOk(deleteClips(withCards(), { clipIds: ['c1'] }))
     expect(spans(draft)[0]).toEqual(['v1', 0, 3_000])
-    const noFirst = expectOk(deleteClip(withCards(), { clipId: 'v1' })).draft
-    const onlyCards = expectOk(deleteClip(noFirst, { clipId: 'v2' })).draft
+    const onlyCards = expectOk(deleteClips(withCards(), { clipIds: ['v1', 'v2'] })).draft
     expect(onlyCards.canvas).toBeNull()
-    expect(deleteClip(withCards(), { clipId: 'x' })).toEqual({
-      ok: false,
-      refusal: 'unknown-clip',
-    })
+  })
+
+  it.each([
+    ['有不在画面轨上的段', ['v1', 'x']],
+    ['没给段', []],
+  ])('拒绝：%s', (_, clipIds) => {
+    expect(deleteClips(withCards(), { clipIds })).toEqual({ ok: false, refusal: 'unknown-clip' })
   })
 
   it('成片变短：特效块原样留着，不截、不删', () => {
     const overlays = [overlay('o1', 2_000, 1_000), overlay('o2', 3_500, 300)]
     const film = draftOf([video('v1', 's1', 0, 2_500), video('v2', 's1', 0, 1_500)], { overlays })
-    expect(expectOk(deleteClip(film, { clipId: 'v2' })).draft.overlays).toEqual(overlays)
+    expect(expectOk(deleteClips(film, { clipIds: ['v2'] })).draft.overlays).toEqual(overlays)
   })
 })
 
-describe('setClipVolume', () => {
+describe('setClipsVolume', () => {
   it.each([
     [5, MAX_VOLUME],
     [-1, 0],
     [2.5, 2.5],
   ])('音量 %f 收进 0 到 +12 dB → %f', (volume, expected) => {
-    const { draft } = expectOk(setClipVolume(withCards(), { clipId: 'v1', volume }))
+    const { draft } = expectOk(setClipsVolume(withCards(), { clipIds: ['v1'], volume }))
     expect(draft.layer0[1]).toMatchObject({ volume: expected })
   })
 
-  it('音量没变原样返回；组件段没有原声', () => {
+  it('几段视频一起设成同一个值，组件段跳过', () => {
+    const film = draftOf([
+      { ...video('v1', 's1', 0, 1_000), volume: 0.5 },
+      card('c1', 1_000),
+      { ...video('v2', 's2', 0, 1_000), volume: 2 },
+    ])
+    const { draft } = expectOk(setClipsVolume(film, { clipIds: ['v1', 'c1', 'v2'], volume: 1.5 }))
+    expect(draft.layer0).toEqual([
+      { ...film.layer0[0], volume: 1.5 },
+      film.layer0[1],
+      { ...film.layer0[2], volume: 1.5 },
+    ])
+  })
+
+  it('音量都没变原样返回；全是组件段没有原声', () => {
     const before = withCards()
-    expect(expectOk(setClipVolume(before, { clipId: 'v1', volume: 1 })).draft).toBe(before)
-    expect(setClipVolume(before, { clipId: 'c1', volume: 1 })).toEqual({
+    expect(expectOk(setClipsVolume(before, { clipIds: ['v1', 'v2'], volume: 1 })).draft).toBe(
+      before,
+    )
+    expect(setClipsVolume(before, { clipIds: ['c1'], volume: 1 })).toEqual({
       ok: false,
       refusal: 'not-a-video',
+    })
+    expect(setClipsVolume(before, { clipIds: ['v1', 'x'], volume: 1 })).toEqual({
+      ok: false,
+      refusal: 'unknown-clip',
     })
   })
 })

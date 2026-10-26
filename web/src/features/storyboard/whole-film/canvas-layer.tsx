@@ -37,7 +37,7 @@ import {
 } from './canvas-transform'
 import type { PlacedCaption } from './composition/captions'
 import type { TransformArgs, WholeFilmDraft } from './editing/draft'
-import type { Selection } from './film-tracks'
+import type { Selection } from './selection'
 import { hitAt, ownerOf, paintedBounds, painterAt, stackAt, type Box } from './painted-bounds'
 
 /** 组件的一项文字在画面上改完：哪一块的哪一项、改成什么、改之前画面上的字 */
@@ -795,8 +795,9 @@ export function CanvasLayer({
       const variable = element.getAttribute('data-var-text')
       if (variable === null) return
       const shown = element.textContent ?? ''
-      commit = (value) =>
-        commitRef.current.onComponentText({ id: owner.id, variable, text: value, shown })
+      // 画面上点中的总是一段
+      const id = owner.kind === 'clip' ? owner.ids[0] : owner.id
+      commit = (value) => commitRef.current.onComponentText({ id, variable, text: value, shown })
     } else return
     onSelect(owner)
     const player = playerOf(iframe)

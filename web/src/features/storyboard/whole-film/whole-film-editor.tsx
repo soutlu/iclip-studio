@@ -57,10 +57,10 @@ import {
   type VideoClip,
 } from './editing/draft'
 import {
-  deleteClip,
+  deleteClips,
   insertMaterial,
-  moveClip,
-  setClipVolume,
+  moveClips,
+  setClipsVolume,
   splitClip,
   type InsertAt,
 } from './editing/layer0'
@@ -85,13 +85,13 @@ import {
   type CarryPayload,
   type ComponentFace,
   type DropPoint,
-  type Selection,
   type TracksHandle,
 } from './film-tracks'
 import { MaterialArea, type MaterialCarry } from './material-area'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
 import {
   materialCatalog,
+  rangePieces,
   shotAt,
   usedSpans,
   type Material,
@@ -104,6 +104,7 @@ import { peaksStateOf } from './music-view'
 import { compositionMedia, previewState } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
 import { FILM_LIMIT_TEXT, REFUSAL_TEXT } from './refusal-text'
+import { clickClip, clipIdsOf, type Selection } from './selection'
 import { FIT_ZOOM, nextZoom, timelineScale, type Zoom } from './timeline-scale'
 import { useDraftSession } from './use-draft-session'
 import { useSubtitleRecognition } from './use-subtitle-recognition'
@@ -200,6 +201,17 @@ const takeLetterOf = (material: Material) => material.takeLabel.replace(/^生成
 const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   const state = keyframes.get(url)
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
+}
+
+/** 素材选区写成「 · 镜头 2」或「 · 镜头 2–4」（按选中的头尾两个镜头）；镜头表还没读到时为空 */
+const shotsLabelOf = (range: MaterialRange, url: string, keyframes: KeyframeStates) => {
+  const [first] = range.shots
+  const last = range.shots.at(-1)
+  if (first === undefined || last === undefined) return ''
+  const from = shotNumberOf((first.startMs + first.endMs) / 2, url, keyframes)
+  const to = shotNumberOf((last.startMs + last.endMs) / 2, url, keyframes)
+  if (from === undefined || to === undefined) return ''
+  return from === to ? ` · 镜头 ${from}` : ` · 镜头 ${from}–${to}`
 }
 
 const attemptOf = (result: EditResult): Attempt =>
@@ -348,10 +360,19 @@ function EditorBody({
     if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
-  /** 点画面轨上的段：选中，播放头停在段首；不播放 */
-  const selectClip = (clip: Layer0Clip) => {
-    setSelection({ kind: 'clip', id: clip.id })
-    seek(clip.start)
+  /**
+   * 点画面轨上的段（extend：按着 Shift）：选中、扩选或去掉一端，播放头停在选区开头，不播放；
+   * 只选了一段组件段且它有可填项时打开浮层，选了几段时不开
+   */
+  const selectClip = (clip: Layer0Clip, extend: boolean) => {
+    const next = clickClip(draft.layer0, selection, clip.id, extend)
+    setSelection(next)
+    const ids = clipIdsOf(next)
+    setPopoverId(
+      ids.length === 1 && clip.type === 'component' && hasFields(clip.component) ? clip.id : null,
+    )
+    const first = draft.layer0.find((item) => ids.includes(item.id))
+    if (first !== undefined) seek(first.start)
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
@@ -378,12 +399,7 @@ function EditorBody({
   ) =>
     insertMaterial(
       draft,
-      {
-        sourceJobId: picked.jobId,
-        playbackStart: picked.startMs,
-        duration: picked.endMs - picked.startMs,
-        at,
-      },
+      { sourceJobId: picked.jobId, pieces: rangePieces(picked), at },
       draft.canvas === null && sourceSize !== undefined
         ? withSourceSize(context, picked.jobId, sourceSize)
         : context,
@@ -417,7 +433,6 @@ function EditorBody({
     const material = materials.byJob.get(picked.jobId)
     if (material === undefined) return undefined
     const duration = picked.endMs - picked.startMs
-    const shot = shotNumberOf((picked.startMs + picked.endMs) / 2, material.url, keyframes)
     const blocked =
       context.sources[picked.jobId] === undefined ? '正在读取素材时长，稍后再试' : undefined
     return {
@@ -428,7 +443,7 @@ function EditorBody({
           : {
               origin,
               face: {
-                title: `${takeLetterOf(material)}${shot === undefined ? '' : ` · 镜头 ${shot}`}`,
+                title: `${takeLetterOf(material)}${shotsLabelOf(picked, material.url, keyframes)}`,
                 durationMs: duration,
                 media: (
                   <Frames
@@ -460,17 +475,19 @@ function EditorBody({
     session.redo()
   }
 
-  const selectedId = selection !== null && 'id' in selection ? selection.id : undefined
+  const selectedClipIds = clipIdsOf(selection)
+  // 原声推子显示选区里第一段视频的音量
   const selectedVideo = draft.layer0.find(
-    (clip): clip is VideoClip => clip.id === selectedId && clip.type === 'video',
+    (clip): clip is VideoClip => clip.type === 'video' && selectedClipIds.includes(clip.id),
   )
+  const [splitPreferred] = selectedClipIds
   const split = splitClip(draft, {
     timeMs: playhead,
-    ...(selectedId === undefined ? {} : { clipId: selectedId }),
+    ...(splitPreferred === undefined ? {} : { clipId: splitPreferred }),
   })
   const removeResult = (target: Removable): EditResult =>
     target.kind === 'clip'
-      ? deleteClip(draft, { clipId: target.id })
+      ? deleteClips(draft, { clipIds: target.ids })
       : target.kind === 'overlay'
         ? removeOverlay(draft, { overlayId: target.id })
         : removeMusic(draft)
@@ -484,7 +501,7 @@ function EditorBody({
   }
 
   /**
-   * 单键快捷键：空格播放、暂停；Delete / ⌫ 删除选中的；⌥←/→ 把选中的段前后挪一位；选中特效块时
+   * 单键快捷键：空格播放、暂停；Delete / ⌫ 删除选中的；⌥←/→ 把选中的段整块前后挪一位；选中特效块时
    * ←/→ 把它挪 0.1 秒（⇧ 1 秒），否则播放头走 0.1 秒（⇧ 1 秒）。修剪手柄、音量推子自己处理方向键。
    */
   const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -508,9 +525,11 @@ function EditorBody({
     const stepMs = event.shiftKey ? 1_000 : 100
     if (event.altKey) {
       if (selection?.kind !== 'clip') return
-      const from = draft.layer0.findIndex((clip) => clip.id === selection.id)
-      if (apply(moveClip(draft, { clipId: selection.id, to: sign < 0 ? from - 1 : from + 2 })))
-        tracksRef.current?.focusClip(selection.id)
+      const [first] = selection.ids
+      const from = draft.layer0.findIndex((clip) => clip.id === first)
+      const to = sign < 0 ? from - 1 : from + selection.ids.length + 1
+      if (apply(moveClips(draft, { clipIds: selection.ids, to })))
+        tracksRef.current?.focusClip(first)
       return
     }
     if (selection?.kind === 'overlay') {
@@ -578,7 +597,7 @@ function EditorBody({
     if (!apply(result) || !result.ok) return false
     const placed = placedPiece(draft, result.draft)
     if (placed !== undefined) {
-      setSelection(placed)
+      setSelection(placed.kind === 'clip' ? { kind: 'clip', ids: [placed.id] } : placed)
       setPopoverId(item.variables.length > 0 ? placed.id : null)
     }
     return true
@@ -633,7 +652,7 @@ function EditorBody({
         ? {
             component: clip.component,
             variables: clip.variables,
-            selection: { kind: 'clip', id } as const,
+            selection: { kind: 'clip', ids: [id] } as const,
           }
         : overlay !== undefined
           ? {
@@ -729,10 +748,8 @@ function EditorBody({
   // ---- 素材预览 ----
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
-  const materialLabel = (material: Material, shown: MaterialRange) => {
-    const shot = shotNumberOf((shown.startMs + shown.endMs) / 2, material.url, keyframes)
-    return `素材 · ${material.groupLabel} · ${material.takeLabel}${shot === undefined ? '' : ` · 镜头 ${shot}`}`
-  }
+  const materialLabel = (material: Material, shown: MaterialRange) =>
+    `素材 · ${material.groupLabel} · ${material.takeLabel}${shotsLabelOf(shown, material.url, keyframes)}`
   const showMaterial = (shown: MaterialRange, show: MaterialView['show']) => {
     previewRef.current?.pause()
     setRange(shown)
@@ -878,16 +895,15 @@ function EditorBody({
             splitBlocked={split.ok ? undefined : REFUSAL_TEXT[split.refusal]}
             totalMs={total}
             clipBlocked={
-              draft.layer0.some((clip) => clip.id === selectedId)
+              draft.layer0.some((clip) => selectedClipIds.includes(clip.id))
                 ? REFUSAL_TEXT['not-a-video']
                 : '先在画面轨上选中一段视频'
             }
             clipVolume={selectedVideo?.volume}
             musicVolume={draft.music?.volume}
-            onClipVolume={(volume) => {
-              if (selectedVideo !== undefined)
-                apply(setClipVolume(draft, { clipId: selectedVideo.id, volume }))
-            }}
+            onClipVolume={(volume) =>
+              apply(setClipsVolume(draft, { clipIds: selectedClipIds, volume }))
+            }
             onMusicVolume={(volume) => apply(setMusicVolume(draft, { volume }))}
           />
           {session.save.kind === 'failed' ? (
@@ -985,7 +1001,11 @@ function EditorBody({
               )
             }}
             onInsert={() => insert({ timeMs: playhead })}
-            onPick={(picked) => showMaterial(picked, 'play')}
+            onClear={() => {
+              setRange(null)
+              leaveMaterial()
+            }}
+            onPick={(picked) => showMaterial(picked, 'start')}
             onSelect={setRange}
             onTrim={showMaterial}
             onVersion={(takeId, jobId) => {
@@ -1006,7 +1026,7 @@ function EditorBody({
                 </p>
               ) : undefined
             }
-            previewMs={materialView === null ? undefined : materialMs}
+            playingMs={materialPlaying ? materialMs : undefined}
             range={range}
             used={usedSpans(draft.layer0)}
             versionOf={versionOf}

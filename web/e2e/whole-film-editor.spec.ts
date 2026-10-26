@@ -60,13 +60,13 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await readyPlayer(dialog)
   await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
   const before = await first.getAttribute('aria-label')
-  await film.getByRole('slider', { name: '裁剪该段结尾' }).focus()
+  await film.getByRole('slider', { name: '裁剪结尾' }).focus()
   await page.keyboard.press('ArrowLeft')
   await expect(first).not.toHaveAttribute('aria-label', before ?? '')
 
   // 当前只有这一段，结尾滑块的值就是总长；从中间拆开。
   const total = Number(
-    await film.getByRole('slider', { name: '裁剪该段结尾' }).getAttribute('aria-valuenow'),
+    await film.getByRole('slider', { name: '裁剪结尾' }).getAttribute('aria-valuenow'),
   )
   await seek(page, dialog, total / 2)
   await dialog.getByRole('button', { name: '拆分' }).click()

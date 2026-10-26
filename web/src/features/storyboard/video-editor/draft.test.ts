@@ -116,25 +116,49 @@ describe('裁剪', () => {
   it('只在原有范围里收缩，最短 0.2 秒；本来不足 0.2 秒的只能拉长', () => {
     const draft = keyframeSegments(V, { keyframes: [0, 3, 3.1], duration: 6 })
     const long = draft[0]?.id ?? ''
-    const trimmed = trimClip(draft, long, 'end', 1.234)
+    const trimmed = trimClip(draft, [long], 'end', 1.234)
     expect(clips(trimmed.draft)[0]).toEqual([V, 0, 1.234])
     expect(trimmed.selection).toEqual([trimmed.draft[0]?.id])
     // 拉回去不能超过它当初的终点；收得太狠停在最短时长。
-    const back = trimClip(trimmed.draft, trimmed.selection[0] ?? '', 'end', 9)
+    const back = trimClip(trimmed.draft, trimmed.selection, 'end', 9)
     expect(clips(back.draft)[0]).toEqual([V, 0, 3])
-    expect(clips(trimClip(draft, long, 'start', 2.95).draft)[0]).toEqual([V, 2.8, 3])
+    expect(clips(trimClip(draft, [long], 'start', 2.95).draft)[0]).toEqual([V, 2.8, 3])
     // 0.1 秒的那段缩不了。
     const short = draft[1]?.id ?? ''
-    expect(clips(trimClip(draft, short, 'start', 3.05).draft)[1]).toEqual([V, 3, 3.1])
+    expect(clips(trimClip(draft, [short], 'start', 3.05).draft)[1]).toEqual([V, 3, 3.1])
   })
 
   it('1 秒的关键帧段也能裁，最短裁到 0.2 秒；裁回原样就等于没改', () => {
-    const trimmed = trimClip(segments, seg(1).id, 'end', 1.5)
+    const trimmed = trimClip(segments, [seg(1).id], 'end', 1.5)
     expect(clips(trimmed.draft)[1]).toEqual([V, 1, 1.5])
     expect(isUnchanged(trimmed.draft, segments)).toBe(false)
-    expect(clips(trimClip(segments, seg(1).id, 'end', 1.05).draft)[1]).toEqual([V, 1, 1.2])
-    const restored = trimClip(trimmed.draft, trimmed.selection[0] ?? '', 'end', 2)
+    expect(clips(trimClip(segments, [seg(1).id], 'end', 1.05).draft)[1]).toEqual([V, 1, 1.2])
+    const restored = trimClip(trimmed.draft, trimmed.selection, 'end', 2)
     expect(isUnchanged(restored.draft, segments)).toBe(true)
+  })
+
+  it('多选时开头裁第一段、结尾裁最后一段，裁完仍选着这几段', () => {
+    const selection = [seg(1).id, seg(2).id, seg(3).id]
+    const head = trimClip(segments, selection, 'start', 1.4)
+    expect(clips(head.draft).slice(1, 4)).toEqual([
+      [V, 1.4, 2],
+      [V, 2, 3],
+      [V, 3, 4],
+    ])
+    expect(head.selection).toEqual([head.draft[1]?.id, seg(2).id, seg(3).id])
+    // 拉回去不超过原来的起点；收得太狠停在最短 0.2 秒。
+    expect(clips(trimClip(head.draft, head.selection, 'start', 0).draft)[1]).toEqual([V, 1, 2])
+    expect(clips(trimClip(segments, selection, 'start', 1.95).draft)[1]).toEqual([V, 1.8, 2])
+
+    const tail = trimClip(segments, selection, 'end', 3.5)
+    expect(clips(tail.draft).slice(1, 4)).toEqual([
+      [V, 1, 2],
+      [V, 2, 3],
+      [V, 3, 3.5],
+    ])
+    expect(tail.selection).toEqual([seg(1).id, seg(2).id, tail.draft[3]?.id])
+    expect(clips(trimClip(tail.draft, tail.selection, 'end', 9).draft)[3]).toEqual([V, 3, 4])
+    expect(clips(trimClip(segments, selection, 'end', 3.05).draft)[3]).toEqual([V, 3, 3.2])
   })
 })
 
@@ -165,7 +189,7 @@ describe('调序、拆分、删除', () => {
     const left = split?.draft[2]
     // 左半拉不过拆点，不会盖住右半的内容。
     expect(left?.kind === 'clip' ? left.origin : undefined).toEqual({ start: 2, end: 2.4 })
-    const stretched = trimClip(split?.draft ?? [], left?.id ?? '', 'end', 3)
+    const stretched = trimClip(split?.draft ?? [], [left?.id ?? ''], 'end', 3)
     expect(clips(stretched.draft)[2]).toEqual([V, 2, 2.4])
   })
 
