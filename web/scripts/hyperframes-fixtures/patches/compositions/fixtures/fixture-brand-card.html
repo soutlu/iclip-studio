@@ -1,0 +1,68 @@
+<!doctype html>
+<!--
+  测试组件库：品牌组件，固定 1920×1080、3 秒的纯色画面，中间一行西文字标，前 0.3 秒淡入。
+  字标读标题字体变量 --font-display，组件目录里自己写了字体可填项，默认是示例品牌的字体
+  （Playfair Display，组装时从 fontsource 取）。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=block"
+    />
+    <script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        overflow: hidden;
+      }
+      body {
+        width: 1920px;
+        height: 1080px;
+      }
+
+      #root .fb-card {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0f766e;
+      }
+      #root .fb-mark {
+        font-family: var(--font-display, 'Playfair Display'), serif;
+        font-weight: 700;
+        font-size: 160px;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="fixture-brand-card"
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="3"
+    >
+      <div id="fb-clip" class="clip" data-start="0" data-duration="3" data-track-index="0">
+        <div id="fb-card" class="fb-card"><div class="fb-mark">SAMPLE</div></div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {}
+      var tl = gsap.timeline({ paused: true })
+      tl.fromTo('#fb-card', { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0)
+      tl.set({}, {}, 3)
+      window.__timelines['fixture-brand-card'] = tl
+    </script>
+  </body>
+</html>

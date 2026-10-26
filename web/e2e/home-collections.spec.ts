@@ -8,7 +8,7 @@ test('游客发送后登录，保留正文并发起对话', async ({ page }) => 
   await page.getByRole('button', { name: '发送', exact: true }).click()
 
   // 发送已经打开登录弹窗，直接填写当前表单，避免再次点击外壳的登录入口。
-  const dialog = page.getByRole('dialog', { name: '登录 Cue' })
+  const dialog = page.getByRole('dialog', { name: '登录 iClip' })
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('用户名', { exact: true }).fill('tester')
   await dialog.getByLabel('密码', { exact: true }).fill('secret')

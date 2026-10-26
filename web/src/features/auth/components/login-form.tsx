@@ -97,7 +97,7 @@ export function LoginForm({
   return (
     <form
       className="w-full"
-      aria-label="Cue 登录表单"
+      aria-label="iClip 登录表单"
       onSubmit={(event) => {
         void handleSubmit(event)
       }}

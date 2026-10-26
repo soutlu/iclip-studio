@@ -3,7 +3,7 @@ import { MAX_FILM_MS, MIN_CLIP_MS, type Layer0Clip, type WholeFilmDraft } from '
 import { trimClip } from './layer0'
 import { filmBeats } from './music'
 import type { Refusal } from './result'
-import { cutsOf, layer0End, musicOf, sourceOf } from './timeline'
+import { componentMsOf, cutsOf, layer0End, musicOf, sourceOf } from './timeline'
 
 /** 离拍点这么近就算在拍上 */
 const BEAT_EPS_MS = 10
@@ -11,13 +11,17 @@ const BEAT_EPS_MS = 10
 export type BeatSyncResult =
   { ok: true; draft: WholeFilmDraft; moved: number; kept: number } | { ok: false; refusal: Refusal }
 
-/** 切点能挪的范围：改切点前一段的时长，后面整体跟着移；视频段往后挪要出点之后还有画面 */
+/**
+ * 切点能挪的范围：改切点前一段的时长，后面整体跟着移；往后挪要出点之后还有画面（视频段看素材，
+ * 组件段看组件自己的时长）
+ */
 const cutRange = (draft: WholeFilmDraft, before: Layer0Clip, context: EditContext) => {
   const room = MAX_FILM_MS - layer0End(draft)
-  const footage =
+  const length =
     before.type === 'video'
-      ? sourceOf(context, before.sourceJobId).durationMs - before.playbackStart - before.duration
-      : Number.POSITIVE_INFINITY
+      ? sourceOf(context, before.sourceJobId).durationMs
+      : componentMsOf(context, before.component)
+  const footage = length - before.playbackStart - before.duration
   return { min: MIN_CLIP_MS - before.duration, max: Math.min(footage, room) }
 }
 

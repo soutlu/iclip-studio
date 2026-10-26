@@ -6,16 +6,19 @@ import {
   computeStackingPatches,
   type StackingDirection,
 } from '../vendor/hyperframes-studio/player/components/timelineStackingSync'
+import type { EditContext } from './context'
 import {
   MAX_FILM_MS,
   MIN_CLIP_MS,
   toOffset,
+  transformed,
   type ComponentVariables,
+  type TransformArgs,
   type OverlayClip,
   type WholeFilmDraft,
 } from './draft'
 import { done, refuse, type EditResult } from './result'
-import { moveStartMs, nextId, resizeMs } from './timeline'
+import { componentMsOf, moveStartMs, nextId, resizeMs } from './timeline'
 
 // 特效轨照 HyperFrames：`track` 是显示的行（数小的在上，从 0 起连续），同一行里不重叠；`zIndex` 是
 // 特效块之间的叠放次序（相同时数组里后面的在上），渲染只看它。特效块不跟随画面轨，可以超出画面轨
@@ -193,10 +196,14 @@ export const moveOverlay = (
   return done(unchanged ? draft : { ...draft, overlays })
 }
 
-/** 拖特效块的一端：用 Studio 的修剪，不越过同一行上相邻的块与总长上限；修开头时从组件自己时间里更晚处起播 */
+/**
+ * 拖特效块的一端：用 Studio 的修剪，不越过同一行上相邻的块与总长上限；修开头时从组件自己时间里更晚处
+ * 起播。右端最多到组件自己的时长放完（组件不拉长），已经超出的块拖右端时收回这个上限以内。
+ */
 export const trimOverlay = (
   draft: WholeFilmDraft,
   args: { overlayId: string; edge: 'start' | 'end'; deltaMs: number },
+  context: EditContext,
 ): EditResult => {
   const overlay = draft.overlays.find((o) => o.id === args.overlayId)
   if (!overlay) return refuse('unknown-clip')
@@ -205,6 +212,7 @@ export const trimOverlay = (
     minStart: Math.max(0, ...row.filter((o) => o.start < overlay.start).map(endOf)),
     maxEnd: Math.min(
       MAX_FILM_MS,
+      overlay.start + componentMsOf(context, overlay.component) - overlay.playbackStart,
       ...row.filter((o) => o.start >= overlay.start).map((o) => o.start),
     ),
   })
@@ -235,6 +243,24 @@ export const setOverlayPosition = (
   return done({
     ...draft,
     overlays: draft.overlays.map((o) => (o === overlay ? { ...o, x, y } : o)),
+  })
+}
+
+/**
+ * 在画面上缩放、旋转一个特效块，规则见 {@link transformed}。`pivot` 是画出来那块的中心减去当前
+ * x、y，即挪开之前的坐标（平移在缩放、旋转之后生效）。倍数与角度都没变时原样返回
+ */
+export const setOverlayTransform = (
+  draft: WholeFilmDraft,
+  args: { overlayId: string } & TransformArgs,
+): EditResult => {
+  const overlay = draft.overlays.find((o) => o.id === args.overlayId)
+  if (!overlay) return refuse('unknown-clip')
+  const next = transformed(overlay, args)
+  if (next === undefined) return done(draft)
+  return done({
+    ...draft,
+    overlays: draft.overlays.map((o) => (o === overlay ? { ...o, ...next } : o)),
   })
 }
 

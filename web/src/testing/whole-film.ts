@@ -1,5 +1,6 @@
-/** 成片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好。 */
+/** 成片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好；测试组件库的组件目录。 */
 
+import fixtureCatalogJson from '../../scripts/hyperframes-fixtures/catalog.json'
 import type {
   CatalogItem,
   ComponentCatalog,
@@ -49,7 +50,10 @@ export const card = (
   variables,
 })
 
-/** 特效轨上的一块；默认在第 0 行、zIndex 为 1，画面上没挪过（同服务端发出的：x、y 总是写着） */
+/**
+ * 特效轨上的一块；默认在第 0 行、zIndex 为 1，画面上没挪过、原大、不转（同服务端发出的：位置、
+ * 缩放、旋转与转轴总是写着）
+ */
 export const overlay = (
   id: string,
   start: number,
@@ -62,6 +66,10 @@ export const overlay = (
     variables = {},
     x = 0,
     y = 0,
+    scale = 1,
+    rotation = 0,
+    pivotX = 0,
+    pivotY = 0,
   }: Partial<OverlayClip> = {},
 ): OverlayClip => ({
   id,
@@ -74,6 +82,10 @@ export const overlay = (
   variables,
   x,
   y,
+  scale,
+  rotation,
+  pivotX,
+  pivotY,
 })
 
 export const draftOf = (
@@ -83,8 +95,19 @@ export const draftOf = (
   let at = 0
   return {
     canvas: layer0.some((clip) => clip.type === 'video') ? { width: 1080, height: 1920 } : null,
-    // 同服务端发出的草稿：hidden、x、y 总是写着
-    captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [], hidden: false, x: 0, y: 0 },
+    // 同服务端发出的草稿：可填项、hidden、位置、缩放、旋转与转轴总是写着
+    captions: {
+      component: DEFAULT_CAPTION_COMPONENT,
+      edits: [],
+      variables: {},
+      hidden: false,
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      pivotX: 0,
+      pivotY: 0,
+    },
     music: null,
     overlays: [],
     ...rest,
@@ -114,9 +137,11 @@ export const sentence = (startMs: number, endMs: number, text = '口播'): Subti
   text,
 })
 
+/** components 是组件名 → 组件自己的时长（毫秒） */
 export const contextOf = (
   sources: Record<string, SourceMedia>,
   music: Record<string, { durationMs: number; beats?: MusicBeat[] }> = {},
+  components: Record<string, number> = {},
 ): EditContext => ({
   sources,
   music: Object.fromEntries(
@@ -125,40 +150,26 @@ export const contextOf = (
       { durationMs: m.durationMs, beats: m.beats ?? [] },
     ]),
   ),
+  components,
 })
 
 /** 每段的 [开始, 结束)，便于断言首尾相接 */
 export const spans = (draft: WholeFilmDraft) =>
   draft.layer0.map((clip) => [clip.id, clip.start, clip.start + clip.duration] as const)
 
-/** 示例品牌组件：[品牌, 名字, 借用哪个真实组件的合成文件与缩略图] */
-const BRAND_FIXTURES = [
-  ['拾步', '拾步 片头', 'logo-sting'],
-  ['拾步', '拾步 片尾', 'logo-outro'],
-  ['暖屿', '暖屿 片头', 'logo-brand-close'],
-  ['暖屿', '暖屿 片尾', 'logo-outro'],
-] as const
-
 /**
- * 真实目录里还没有品牌组件；在它后面补上两个品牌各两张示例卡（block、2 秒），
- * 借用真实组件的合成文件与缩略图，预览与放置照常可用。
+ * 测试组件库（web/scripts/hyperframes-fixtures/）的组件目录，配一个固定的版本号；单测不依赖跑过组装工具。
  */
-export const withBrandFixtures = (catalog: ComponentCatalog): ComponentCatalog => {
-  const brandItem = ([brand, title, base]: (typeof BRAND_FIXTURES)[number], index: number) => {
-    const source = catalog.items.find((item) => item.name === base)
-    if (source === undefined) throw new Error(`目录里没有 ${base}`)
-    const item: CatalogItem = {
-      ...source,
-      name: `brand-fixture-${index + 1}`,
-      kind: 'block',
-      title,
-      description: `${brand}的品牌组件`,
-      brand,
-      duration: 2,
-    }
-    return item
-  }
-  return { ...catalog, items: [...catalog.items, ...BRAND_FIXTURES.map(brandItem)] }
+export const fixtureCatalog: ComponentCatalog = {
+  ...(fixtureCatalogJson as Omit<ComponentCatalog, 'version'>),
+  version: 'test-fixtures',
+}
+
+/** 测试组件目录里的一项；没有就报错 */
+export const fixtureItem = (name: string): CatalogItem => {
+  const item = fixtureCatalog.items.find((entry) => entry.name === name)
+  if (item === undefined) throw new Error(`测试组件目录里没有 ${name}`)
+  return item
 }
 
 export const expectOk = <T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> => {

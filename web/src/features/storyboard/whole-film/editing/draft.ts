@@ -30,6 +30,47 @@ export const MAX_OFFSET = 4096
 export const toOffset = (value: number): number =>
   Math.min(MAX_OFFSET, Math.max(-MAX_OFFSET, Math.round(value))) + 0
 
+/** 特效块、字幕等比缩放的倍数范围（10%–1000%），同服务端 */
+export const MIN_SCALE = 0.1
+export const MAX_SCALE = 10
+
+/** 缩放倍数裁在 {@link MIN_SCALE}–{@link MAX_SCALE} 以内 */
+const clampScale = (value: number): number => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value))
+
+/** 角度（顺时针）规整到 (-180, 180]，同服务端：-180 记成 180 */
+export const normalizeDegrees = (value: number): number => {
+  // 已经在范围里的原样返回：折一圈再减 360 会带出浮点误差（-2.3 变成 -2.3000000000000114）
+  if (value > -180 && value <= 180) return value + 0
+  // 先折进 [0, 360)：取余后加 360 再取余，结果总是正数，不会出现 -0
+  const turned = ((value % 360) + 360) % 360
+  return turned > 180 ? turned - 360 : turned
+}
+
+/** 缩放、旋转一块的参数：倍数、顺时针角度，与从原大、不转变换时取的转轴（画面像素） */
+export type TransformArgs = { scale: number; rotation: number; pivot: { x: number; y: number } }
+
+type Transform = Pick<OverlayClip, 'scale' | 'rotation' | 'pivotX' | 'pivotY'>
+
+/**
+ * 特效块、字幕缩放旋转之后的这几项：倍数裁在 10%–1000%，角度规整到 (-180, 180]。转轴在离开原大、
+ * 不转时取 `pivot`（取整、裁法同位置），已经缩放或旋转着时沿用记下的，再转、再缩画面不跳；原大、
+ * 不转时画面上没有变换，重取转轴也不会跳。倍数与角度都没变时为 undefined，什么也不写。
+ * 有这几个字段之前存的草稿没写，按原大、不转、转轴 (0, 0) 算，同 x、y。
+ */
+export const transformed = (current: Transform, args: TransformArgs): Transform | undefined => {
+  const scale = clampScale(args.scale)
+  const rotation = normalizeDegrees(args.rotation)
+  const from = { scale: current.scale ?? 1, rotation: current.rotation ?? 0 }
+  if (scale === from.scale && rotation === from.rotation) return undefined
+  const identity = from.scale === 1 && from.rotation === 0
+  return {
+    scale,
+    rotation,
+    pivotX: identity ? toOffset(args.pivot.x) : (current.pivotX ?? 0),
+    pivotY: identity ? toOffset(args.pivot.y) : (current.pivotY ?? 0),
+  }
+}
+
 /** 新草稿的字幕样式：组件目录里的产品默认字幕（白字黑边） */
 export const DEFAULT_CAPTION_COMPONENT = 'default-caption'
 

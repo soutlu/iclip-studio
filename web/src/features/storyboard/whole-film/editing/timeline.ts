@@ -54,6 +54,13 @@ export const musicOf = (context: EditContext, jobId: string): MusicMedia => {
   return music
 }
 
+/** 组件自己的时长（毫秒）；上下文缺了这个组件是调用方的错 */
+export const componentMsOf = (context: EditContext, component: string): number => {
+  const durationMs = context.components[component]
+  if (durationMs === undefined) throw new Error(`成片编辑上下文缺少组件 ${component}`)
+  return durationMs
+}
+
 /** 新片段的 id：同前缀里最大的序号加一，同一份草稿总得到同一个结果 */
 export const nextId = (draft: WholeFilmDraft, prefix: 'v' | 'c' | 'o'): string => {
   let max = 0

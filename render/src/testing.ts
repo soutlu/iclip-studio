@@ -1,10 +1,14 @@
-/** 测试用的请求、队列与假的渲染器。 */
-import catalogJson from '../../web/src/features/storyboard/whole-film/catalog/catalog.json'
+/** 测试用的请求、组件目录、队列与假的渲染器。 */
+import catalogJson from '../../web/scripts/hyperframes-fixtures/catalog.json'
 import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 
-export const catalog = catalogJson as unknown as ComponentCatalog
+/** 测试组件库（web/scripts/hyperframes-fixtures/）的组件目录，配一个固定的版本号；不需要组装好的组件库。 */
+export const catalog: ComponentCatalog = {
+  ...(catalogJson as Omit<ComponentCatalog, 'version'>),
+  version: 'test-fixtures',
+}
 
 export const SOURCE_JOB = '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c'
 export const SUBTITLE_JOB = '7a2c6d4f-3b5e-4f9a-8c2d-1e3f4a5b6c7d'
@@ -36,7 +40,7 @@ export function exportRequest(
       overlays: [
         {
           id: 'o',
-          component: 'store-badge-lockup',
+          component: 'fixture-overlay',
           start: 0,
           duration: 1000,
           playbackStart: 0,
@@ -93,6 +97,7 @@ interface Pending<T> {
 export function manualWorker() {
   const renders: {
     id: string
+    registryDir: string
     signal: AbortSignal
     onProgress: (progress: number) => void
     pending: Pending<RenderedFile>
@@ -108,7 +113,13 @@ export function manualWorker() {
     render: (job, { signal, onProgress }) =>
       new Promise<RenderedFile>((resolve, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true })
-        renders.push({ id: job.id, signal, onProgress, pending: { resolve, reject } })
+        renders.push({
+          id: job.id,
+          registryDir: job.registryDir,
+          signal,
+          onProgress,
+          pending: { resolve, reject },
+        })
       }),
     upload: (file, target, signal) =>
       new Promise<void>((resolve, reject) => {

@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { card, draftOf, sentence, video } from '@/testing/whole-film'
-import catalogJson from './catalog/catalog.json'
-import type { ComponentCatalog } from './component-catalog'
+import { card, draftOf, fixtureCatalog as catalog, sentence, video } from '@/testing/whole-film'
 import type { WholeFilmDraft } from './editing/draft'
 import { compositionMedia, previewState, withBaseHref } from './preview-document'
 
-const catalog = catalogJson as ComponentCatalog
 const ORIGIN = 'https://studio.example.com'
 
 const subtitles = {
@@ -43,29 +40,31 @@ describe('预览页', () => {
 
   it('用合成构建生成：素材片地址、组件段、字幕都在页里', () => {
     const draft = draftOf(
-      [card('c1', 1_500, { component: 'logo-sting' }), video('v1', 's1', 0, 1_000)],
+      [card('c1', 1_500, { component: 'fixture-scene' }), video('v1', 's1', 0, 1_000)],
       { captions: { component: 'default-caption', edits: [] } },
     )
     const state = ready(draft)
     expect(state.durationMs).toBe(2_500)
     expect(state.html).toContain('data-composition-id="main"')
     expect(state.html).toContain('src="https://oss/s1.mp4"')
-    expect(state.html).toMatch(/data-composition-src="[^"]*logo-sting/)
-    expect(state.html).toMatch(/data-composition-src="compositions\/iclip\/default-caption\.html"/)
+    expect(state.html).toMatch(/data-composition-src="[^"]*fixture-scene/)
+    expect(state.html).toMatch(
+      /data-composition-src="compositions\/fixtures\/default-caption\.html"/,
+    )
     expect(state.html).toContain('&quot;text&quot;:&quot;世&quot;')
   })
 
   it('画面轨上只有组件段（还没有画布）：也生成预览页，画面是竖屏 1080×1920', () => {
     const draft = draftOf([
-      card('c1', 1_500, { component: 'logo-sting' }),
-      card('c2', 2_000, { component: 'logo-outro' }),
+      card('c1', 1_500, { component: 'fixture-scene' }),
+      card('c2', 2_000, { component: 'fixture-brand-card' }),
     ])
     expect(draft.canvas).toBeNull()
     const state = ready(draft)
     expect(state.durationMs).toBe(3_500)
     expect(state.html).toContain('data-width="1080" data-height="1920"')
-    expect(state.html).toMatch(/data-composition-src="[^"]*logo-sting/)
-    expect(state.html).toMatch(/data-composition-src="[^"]*logo-outro/)
+    expect(state.html).toMatch(/data-composition-src="[^"]*fixture-scene/)
+    expect(state.html).toMatch(/data-composition-src="[^"]*fixture-brand-card/)
   })
 
   it('画面轨还是空的时不生成，说明原因', () => {

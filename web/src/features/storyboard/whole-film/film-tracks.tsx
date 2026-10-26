@@ -131,7 +131,7 @@ type FilmTracksProps = {
   onSeek: (ms: number) => void
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** 点画面轨上的一段：选中它，从段首播这一段 */
+  /** 点画面轨上的一段：选中它，播放头停在段首 */
   onClipClick: (clip: Layer0Clip) => void
   snap: boolean
   /** 拍点（成片时间） */
@@ -388,7 +388,6 @@ export function FilmTracks({
   const contentRef = useRef<HTMLDivElement>(null)
   const filmLaneRef = useRef<HTMLDivElement>(null)
   const overlayLaneRef = useRef<HTMLDivElement>(null)
-  const captionLaneRef = useRef<HTMLDivElement>(null)
   const musicLaneRef = useRef<HTMLDivElement>(null)
   const clicks = useClickAfterDrag()
   const [carry, setCarry] = useState<Carrying | null>(null)
@@ -539,11 +538,9 @@ export function FilmTracks({
       ? 'film'
       : overlayRow !== undefined
         ? 'overlay'
-        : near(captionLaneRef.current)
-          ? 'caption'
-          : near(musicLaneRef.current)
-            ? 'music'
-            : undefined
+        : near(musicLaneRef.current)
+          ? 'music'
+          : undefined
     if (lane === undefined) return undefined
     const row = overlayRow ?? { insertAt: 0 }
     if (lane === 'film' && durationMs !== undefined) {
@@ -767,9 +764,14 @@ export function FilmTracks({
     width: `${Math.max(6, msToPx(duration, pps) - 2)}px`,
   })
 
-  /** 视频段要知道素材多长才能修剪；组件段随时可以 */
+  /** 组件库里有这个组件，知道它多长 */
+  const knownComponent = (component: string) => context.components[component] !== undefined
+
+  /** 修剪要知道视频段的素材、组件段的组件多长；组件库里没有的组件不能修剪 */
   const editable = (clip: Layer0Clip) =>
-    clip.type === 'component' || context.sources[clip.sourceJobId] !== undefined
+    clip.type === 'component'
+      ? knownComponent(clip.component)
+      : context.sources[clip.sourceJobId] !== undefined
 
   /** 按下之后交给拖动预览的那几个指针事件 */
   const gestureFollow: Omit<PointerHandlers, 'onPointerDown'> = {
@@ -818,11 +820,11 @@ export function FilmTracks({
     })
     gesture.start(event, (deltaPx): GestureStep => {
       const snapped = snapMs(edgeMs + pxToMs(deltaPx, pps), targets, pps, snap, gridStep)
-      const result = trimOverlay(draft, {
-        overlayId: overlay.id,
-        edge,
-        deltaMs: snapped.ms - edgeMs,
-      })
+      const result = trimOverlay(
+        draft,
+        { overlayId: overlay.id, edge, deltaMs: snapped.ms - edgeMs },
+        context,
+      )
       const after = result.ok ? result.draft.overlays.find((o) => o.id === overlay.id) : undefined
       if (!result.ok || after === undefined) return { result }
       const reached = edge === 'end' ? after.start + after.duration : after.start
@@ -1137,7 +1139,6 @@ export function FilmTracks({
       reason: hover.attempt.ok ? undefined : hover.attempt.reason,
     }
   })()
-  const captionDrop = hover?.point?.lane === 'caption' && hover.attempt?.ok === true
 
   /** 新行占用完整行高；已有行在预演中让出空间，取消后由同一动效驱动收回。 */
   const rowTop = (row: OverlayRow) =>
@@ -1351,12 +1352,12 @@ export function FilmTracks({
                       initial: landing?.id === overlay.id ? landing.snapshot : undefined,
                     }}
                     handles={trimHandles(
-                      ['start', 'end'],
+                      knownComponent(overlay.component) ? ['start', 'end'] : [],
                       timed.duration,
                       '该段特效',
                       (event, edge) => startOverlayTrim(event, overlay, edge),
                       (edge, deltaMs) =>
-                        trimOverlay(draft, { overlayId: overlay.id, edge, deltaMs }),
+                        trimOverlay(draft, { overlayId: overlay.id, edge, deltaMs }, context),
                     )}
                     key={overlay.id}
                     name={`特效 · ${face.title}，第 ${overlay.track + 1} 行，${seconds(timed.start)}–${seconds(timed.start + timed.duration)} 秒`}
@@ -1431,12 +1432,7 @@ export function FilmTracks({
             </div>
             <div
               aria-label="字幕轨"
-              className={cn(
-                'wf-lane',
-                captionDrop && 'is-drop',
-                draft.captions.hidden && 'is-captions-off',
-              )}
-              ref={captionLaneRef}
+              className={cn('wf-lane', draft.captions.hidden && 'is-captions-off')}
               role="group"
             >
               <CaptionChips

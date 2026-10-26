@@ -1,4 +1,4 @@
-// 打包渲染服务：src/ 连同 web 的成片合成构建、组件目录与后端合同的 zod 生成物打成 dist/main.js；
+// 打包渲染服务：src/ 连同 web 的成片合成构建与后端合同的 zod 生成物打成 dist/main.js；
 // npm 依赖（producer、zod 等）不打包，运行时从 node_modules 取。
 import { build } from 'esbuild'
 import { dirname, join } from 'node:path'

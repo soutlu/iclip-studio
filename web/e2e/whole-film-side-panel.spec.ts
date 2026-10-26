@@ -1,30 +1,8 @@
-import { readFileSync } from 'node:fs'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import type { ComponentCatalog } from '../src/features/storyboard/whole-film/composition/catalog'
 import type { WholeFilmDocument } from '../src/shared/api/generated/types.gen'
-import { withBrandFixtures } from '../src/testing/whole-film'
 import { openConversation } from './helpers'
 
-const catalog = JSON.parse(
-  readFileSync(
-    new URL('../src/features/storyboard/whole-film/catalog/catalog.json', import.meta.url),
-    'utf8',
-  ),
-) as ComponentCatalog
-
-/**
- * 真实目录里没有品牌组件：把编辑器加载的目录模块（dev 下是 catalog.json，构建后是 catalog-*.js）
- * 换成补了示例品牌卡的同一份目录。请求经过 MSW 的 service worker，所以挂在浏览器上下文上。
- */
-const serveBrandFixtures = (page: Page) =>
-  page.context().route(
-    (url) => /\/catalog\/catalog\.json$|\/assets\/catalog-[\w-]+\.js$/.test(url.pathname),
-    (route) =>
-      route.fulfill({
-        contentType: 'text/javascript',
-        body: `export default ${JSON.stringify(withBrandFixtures(catalog))}`,
-      }),
-  )
+// 组件来自组装好的测试组件库（web/scripts/hyperframes-fixtures/）。
 
 /** 演示对话里有两首音乐；打开它的成片编辑器 */
 const openWholeFilm = async (page: Page) => {
@@ -99,185 +77,149 @@ const addShot = async (dialog: Locator, shot: number) => {
   await dialog.page().keyboard.press('Enter')
 }
 
-test('侧栏分素材、品牌、通用；真实目录的品牌栏是空的', async ({ page }) => {
+test('侧栏分素材、品牌、通用；品牌与分类各自保留选择，通用栏没有字幕样式与品牌组件', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   const tabs = dialog.getByRole('tablist', { name: '素材、品牌与通用' }).getByRole('tab')
   await expect(tabs).toHaveText(['素材', '品牌', '通用'])
   await expect(tabs.first()).toHaveAttribute('aria-selected', 'true')
 
-  await dialog.getByRole('tab', { name: '品牌' }).click()
-  await expect(dialog.getByText('暂无品牌组件')).toBeVisible()
-  await expect(chips(dialog, '品牌')).toHaveCount(0)
-  await expect(dialog.getByRole('list', { name: '组件' })).toHaveCount(0)
-})
-
-test('品牌与分类各自保留选择，字幕样式可切换，品牌卡可插入不同轨道', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await serveBrandFixtures(page)
-  const dialog = await openWholeFilm(page)
-
   // 品牌栏：一排品牌名带个数，默认第一个品牌，只列它的卡
   await dialog.getByRole('tab', { name: '品牌' }).click()
   const brands = chips(dialog, '品牌').getByRole('radio')
-  await expect(brands).toHaveText([/^拾步\s*2$/, /^暖屿\s*2$/])
+  await expect(brands).toHaveText([/^示例品牌\s*1$/])
   await expect(brands.first()).toBeChecked()
-  await expect(cards(dialog)).toHaveText(['拾步 片头', '拾步 片尾'])
-  await chips(dialog, '品牌').getByRole('radio', { name: /^暖屿/ }).click()
-  await expect(cards(dialog)).toHaveText(['暖屿 片头', '暖屿 片尾'])
-
-  // 悬停可以查看所选品牌卡的说明。
+  await expect(cards(dialog)).toHaveText(['示例品牌 片尾'])
+  // 悬停可以查看品牌卡的说明
   await cards(dialog).first().hover()
-  await expect(page.getByRole('tooltip')).toContainText('暖屿')
+  await expect(page.getByRole('tooltip')).toContainText('示例品牌的纯色片尾')
 
-  // 通用栏：没有「全部」，默认第一个分类
+  // 通用栏：没有「全部」，默认第一个分类；字幕样式不在组件库里，没有「字幕」分类
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = chips(dialog, '分类').getByRole('radio')
+  await expect(categories).toHaveText([/^效果\s*1$/, /^文字效果\s*1$/, /^场景\s*1$/])
   await expect(categories.first()).toBeChecked()
-  await expect(categories.first()).toHaveText(/^字幕\s*3$/)
-  await expect(categories.filter({ hasText: /全部|品牌/ })).toHaveCount(0)
-  await chips(dialog, '分类')
-    .getByRole('radio', { name: /^视觉特效/ })
-    .click()
+  await chips(dialog, '分类').getByRole('radio', { name: /^场景/ }).click()
+  await expect(cards(dialog)).toHaveText(['测试画面'])
 
-  // 切到素材再回来，两栏各自的小标题都还在
+  // 切到素材再回来，选过的分类还在
   await dialog.getByRole('tab', { name: '素材' }).click()
-  await dialog.getByRole('tab', { name: '品牌' }).click()
-  await expect(chips(dialog, '品牌').getByRole('radio', { name: /^暖屿/ })).toBeChecked()
   await dialog.getByRole('tab', { name: '通用' }).click()
-  await expect(chips(dialog, '分类').getByRole('radio', { name: /^视觉特效/ })).toBeChecked()
+  await expect(chips(dialog, '分类').getByRole('radio', { name: /^场景/ })).toBeChecked()
+})
 
-  // 标题下拉直接切换字幕样式；组件栏同步当前样式。
+test('品牌卡和别的卡一样：点它按组件类型放，拖到哪条轨就放在哪', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
   await dialog.getByRole('tab', { name: '品牌' }).click()
-  await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
-  await expect(page.getByRole('menuitemradio', { name: '白字黑边', exact: true })).toBeChecked()
-  await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
-  await dialog.getByRole('tab', { name: '通用' }).click()
-  await chips(dialog, '分类').getByRole('radio', { name: /^字幕/ }).click()
-  const inUse = dialog.getByRole('button', { name: /^白字黑边，/ })
-  await expect(dialog.getByRole('button', { name: /^高亮字幕，/ })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await expect(inUse).toHaveAttribute('aria-pressed', 'false')
 
-  // 品牌卡和别的卡一样：点它按组件类型放（block 进画面轨），拖到哪条轨就放在哪。
-  // 暖屿 片尾没有可填项，放下只选中；拾步 片头有可填项，放下就打开浮层
-  await dialog.getByRole('tab', { name: '品牌' }).click()
-  await dialog.getByRole('button', { name: /^暖屿 片尾，画面轨/ }).click()
+  // 点卡片：block 进画面轨；它的字体项默认是品牌字体，放下随即打开浮层
+  await dialog.getByRole('button', { name: /^示例品牌 片尾，画面轨/ }).click()
   const film = dialog.getByRole('group', { name: '画面轨', exact: true })
-  await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 暖屿 片尾/ })).toBeVisible()
+  await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 示例品牌 片尾/ })).toBeVisible()
   await expect(
-    film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 暖屿 片尾/ }),
+    film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 示例品牌 片尾/ }),
   ).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('dialog', { name: /暖屿 片尾/ })).toHaveCount(0)
-  await chips(dialog, '品牌').getByRole('radio', { name: /^拾步/ }).click()
+  const pop = page.getByRole('dialog', { name: /示例品牌 片尾/ })
+  await expect(pop.getByLabel('字体')).toHaveText('示例品牌')
+  await page.keyboard.press('Escape')
+  await expect(pop).toBeHidden()
+
+  // 拖到特效轨
   await dragCard(
     page,
-    dialog.getByRole('button', { name: /^拾步 片头，/ }),
+    dialog.getByRole('button', { name: /^示例品牌 片尾，/ }),
     dialog.getByRole('group', { name: '特效轨' }),
   )
-  await expect(dialog.getByRole('group', { name: /^特效 · 拾步 片头/ })).toBeVisible()
-  await expect(page.getByRole('dialog', { name: /拾步 片头/ })).toBeVisible()
+  await expect(dialog.getByRole('group', { name: /^特效 · 示例品牌 片尾/ })).toBeVisible()
 })
 
 test('放下有可填项的卡片随即打开浮层：点卡片、拖到画面轨、拖到特效轨都一样', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   const film = dialog.getByRole('group', { name: '画面轨', exact: true })
-  // 用不画 WebGL 的组件：CI 机器没有 GPU，WebGL 组件在每次改动后的预览重载里要软件渲染好几秒，
-  // 后面的拖动都排在它后面
-  await openCategory(dialog, '场景')
+  const overlays = dialog.getByRole('group', { name: '特效轨' })
+  const pop = page.getByRole('dialog', { name: /测试可填项/ })
+  await openCategory(dialog, '文字效果')
 
-  // 点卡片（block → 画面轨）
-  await dialog.getByRole('button', { name: /^霓虹边框姓名条，画面轨/ }).click()
-  const first = page.getByRole('dialog', { name: /霓虹边框姓名条/ })
-  await expect(first).toBeVisible()
+  // 点卡片（component → 特效轨）
+  await dialog.getByRole('button', { name: /^测试可填项，特效轨/ }).click()
+  await expect(pop).toBeVisible()
   await expect(
-    film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 霓虹边框姓名条/ }),
-  ).toHaveAttribute('aria-pressed', 'true')
+    overlays.getByRole('button', { name: /^选中：特效 · 测试可填项/, pressed: true }),
+  ).toHaveCount(1)
   await page.keyboard.press('Escape')
-  await expect(first).toBeHidden()
+  await expect(pop).toBeHidden()
 
   // 拖到画面轨
-  await dragCard(page, dialog.getByRole('button', { name: /^希区柯克变焦，/ }), film)
-  await expect(page.getByRole('dialog', { name: /希区柯克变焦/ })).toBeVisible()
-  await expect(film.getByRole('button', { name: /组件 · 希区柯克变焦/ })).toHaveAttribute(
+  await dragCard(page, dialog.getByRole('button', { name: /^测试可填项，/ }), film)
+  await expect(pop).toBeVisible()
+  await expect(film.getByRole('button', { name: /组件 · 测试可填项/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await page.keyboard.press('Escape')
 
   // 拖到特效轨
-  await dragCard(
-    page,
-    dialog.getByRole('button', { name: /^AI 答案排名，/ }),
-    dialog.getByRole('group', { name: '特效轨' }),
-  )
-  await expect(page.getByRole('dialog', { name: /AI 答案排名/ })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: /^选中：特效 · AI 答案排名/ })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await dragCard(page, dialog.getByRole('button', { name: /^测试可填项，/ }), overlays)
+  await expect(pop).toBeVisible()
+  await expect(overlays.getByRole('group', { name: /^特效 · 测试可填项/ })).toHaveCount(2)
+  await expect(
+    overlays.getByRole('button', { name: /^选中：特效 · 测试可填项/, pressed: true }),
+  ).toHaveCount(1)
   await page.keyboard.press('Escape')
 
   // 没有可填项的拖到特效轨：只选中，不弹
-  await dragCard(
-    page,
-    dialog.getByRole('button', { name: /^标志片尾，/ }),
-    dialog.getByRole('group', { name: '特效轨' }),
-  )
-  await expect(dialog.getByRole('button', { name: /^选中：特效 · 标志片尾/ })).toHaveAttribute(
+  await openCategory(dialog, '场景')
+  await dragCard(page, dialog.getByRole('button', { name: /^测试画面，/ }), overlays)
+  await expect(overlays.getByRole('button', { name: /^选中：特效 · 测试画面/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
-  await expect(page.getByRole('dialog', { name: /标志片尾/ })).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: /测试画面/ })).toHaveCount(0)
 })
 
 test('组件参数可编辑并保存，清空文字恢复默认；删除组件会移除草稿内容', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  await openCategory(dialog, '场景')
-  await dialog.getByRole('button', { name: /^逐词居中，/ }).click()
-  const pop = page.getByRole('dialog', { name: /逐词居中/ })
+  await openCategory(dialog, '文字效果')
+  await dialog.getByRole('button', { name: /^测试可填项，特效轨/ }).click()
+  const pop = page.getByRole('dialog', { name: /测试可填项/ })
   const text = pop.getByLabel('文字', { exact: true })
   await text.fill('城市的一天')
   await text.press('Tab')
-  const size = pop.getByLabel('字号', { exact: true })
-  await size.fill('80')
-  await size.press('Tab')
   await pop
     .getByRole('group', { name: '字体粗细' })
     .getByRole('button', { name: '加粗', exact: true })
     .click()
   await expect
     .poll(async () => (await readDraft(page))?.overlays[0]?.variables)
-    .toMatchObject({ text: '城市的一天', font_size: 80, font_weight: '700' })
+    .toMatchObject({ text: '城市的一天', weight: '700' })
   await page.keyboard.press('Escape')
   await expect(pop).toBeHidden()
-  const overlay = dialog.getByRole('button', { name: /^选中：特效 · 逐词居中/ })
+  const overlay = dialog.getByRole('button', { name: /^选中：特效 · 测试可填项/ })
   await overlay.click()
   await expect(text).toHaveValue('城市的一天')
-  await expect(size).toHaveValue('80')
   await text.fill('')
   await text.press('Tab')
   await expect
     .poll(async () => (await readDraft(page))?.overlays[0]?.variables)
     .not.toHaveProperty('text')
   await pop.getByRole('button', { name: '移除' }).click()
-  await expect(dialog.getByRole('group', { name: /^特效 · 逐词居中/ })).toHaveCount(0)
+  await expect(dialog.getByRole('group', { name: /^特效 · 测试可填项/ })).toHaveCount(0)
   await expect.poll(async () => (await readDraft(page))?.overlays).toEqual([])
 
   // 画面轨组件同样可以在关闭后重新打开并修改参数。
-  await dialog.getByRole('button', { name: /^AI 答案排名，画面轨/ }).click()
-  const segmentPop = page.getByRole('dialog', { name: /AI 答案排名/ })
-  await expect(segmentPop).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(segmentPop).toBeHidden()
   const film = dialog.getByRole('group', { name: '画面轨', exact: true })
-  await film.getByRole('button', { name: /^选中：第 1 段 · 组件 · AI 答案排名/ }).click()
-  await expect(segmentPop.getByRole('group', { name: '底色' })).toBeVisible()
-  await segmentPop.getByRole('button', { name: '移除' }).click()
+  await dragCard(page, dialog.getByRole('button', { name: /^测试可填项，/ }), film)
+  await expect(pop).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(pop).toBeHidden()
+  await film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 测试可填项/ }).click()
+  await expect(pop.getByRole('group', { name: '底色' })).toBeVisible()
+  await pop.getByRole('button', { name: '移除' }).click()
   await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(0)
   await expect.poll(async () => (await readDraft(page))?.layer0).toEqual([])
 })
@@ -297,13 +239,13 @@ test('拖卡片到画面轨：按时长让位，离开恢复，松手才新增�
 
   // 画面轨：预演占用组件的完整时长，邻段让位，但尚未保存新段。
   await openCategory(dialog, '场景')
-  await liftCard(page, dialog.getByRole('button', { name: /^标志片尾，/ }))
+  await liftCard(page, dialog.getByRole('button', { name: /^测试画面，/ }))
   const second = await boxOf(film.getByRole('group', { name: /^第 2 段/ }))
   await page.mouse.move(second.x + 4, second.y + second.height / 2, { steps: 8 })
   // 拖着时卡片的说明收起
   await expect(page.getByRole('tooltip')).toHaveCount(0)
   await expect(preview).toBeVisible()
-  await expect(preview).toContainText('标志片尾')
+  await expect(preview).toContainText('测试画面')
   await expect.poll(async () => Math.abs((await boxOf(preview)).width - 6 * pps)).toBeLessThan(3)
   await expect.poll(async () => Math.abs((await boxOf(preview)).x - second.x)).toBeLessThan(1)
   await expect(page.getByRole('status').filter({ hasText: /^插入/ })).toBeVisible()
@@ -324,15 +266,40 @@ test('拖卡片到画面轨：按时长让位，离开恢复，松手才新增�
   await page.mouse.move(second.x + 4, second.y + second.height / 2, { steps: 4 })
   await expect(preview).toBeVisible()
   await page.mouse.up()
-  await expect(film.getByRole('group', { name: /^第 2 段 · 组件 · 标志片尾/ })).toBeVisible()
+  await expect(film.getByRole('group', { name: /^第 2 段 · 组件 · 测试画面/ })).toBeVisible()
   await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(3)
   await expect(preview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(3)
   const withCard = await readDraft(page)
   expect(withCard?.layer0[1]).toMatchObject({
     type: 'component',
-    component: 'logo-outro',
+    component: 'fixture-scene',
     duration: 6_000,
+  })
+})
+
+test('组件按自己的时长放：拖着时缩影写的、落下的段都是组件时长，与成片多长无关', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addShot(dialog, 1)
+  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
+  await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(1)
+
+  // 示例品牌 片尾 3 秒
+  await dialog.getByRole('tab', { name: '品牌' }).click()
+  await liftCard(page, dialog.getByRole('button', { name: /^示例品牌 片尾，/ }))
+  await expect(page.locator('.wf-insertion-ghost')).toContainText('3.0 秒')
+  const lane = await boxOf(film)
+  await page.mouse.move(lane.x + lane.width - 20, lane.y + lane.height / 2, { steps: 8 })
+  await expect(page.getByRole('status').filter({ hasText: /^插入.*3\.0\s*秒$/ })).toBeVisible()
+  await page.mouse.up()
+  await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(2)
+  expect((await readDraft(page))?.layer0[1]).toMatchObject({
+    type: 'component',
+    component: 'fixture-brand-card',
+    duration: 3_000,
   })
 })
 
@@ -350,12 +317,12 @@ test('拖卡片到特效轨：预演不挪画面轨，新行落位或取消后�
   const filmBeforeEffect = await clipLefts(film)
 
   // 特效轨：显示完整占用区间，画面轨上各段的位置和保存的草稿保持不变。
-  await openCategory(dialog, '社交')
-  await liftCard(page, dialog.getByRole('button', { name: /^手绘箭头，/ }))
+  await openCategory(dialog, '效果')
+  await liftCard(page, dialog.getByRole('button', { name: /^测试叠加，/ }))
   const lane = await boxOf(overlays)
   await page.mouse.move(lane.x + 120, lane.y + lane.height / 2, { steps: 8 })
   await expect(effectPreview).toBeVisible()
-  await expect(effectPreview).toContainText('手绘箭头')
+  await expect(effectPreview).toContainText('测试叠加')
   await expect
     .poll(async () => Math.abs((await boxOf(effectPreview)).width - 4 * pps))
     .toBeLessThan(3)
@@ -368,28 +335,29 @@ test('拖卡片到特效轨：预演不挪画面轨，新行落位或取消后�
   await expect(overlays.getByRole('group', { name: /^特效 · / })).toHaveCount(0)
   expect(await readDraft(page)).toEqual(beforeDraft)
   await page.mouse.up()
-  await expect(overlays.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ })).toBeVisible()
+  await expect(overlays.getByRole('group', { name: /^特效 · 测试叠加，第 1 行/ })).toBeVisible()
   await expect(effectPreview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.overlays.length).toBe(1)
   const withEffect = await readDraft(page)
   expect(withEffect?.layer0).toEqual(beforeDraft?.layer0)
   expect(withEffect?.overlays[0]).toMatchObject({
-    component: 'hw-arrow',
+    component: 'fixture-overlay',
     duration: 4_000,
     track: 0,
   })
 
   // 拖到已有行下方预演新行，松手才提交第二个特效。
   const laneNow = await boxOf(overlays)
-  await liftCard(page, dialog.getByRole('button', { name: /^手写标题，/ }))
-  const firstRow = await boxOf(overlays.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ }))
+  await openCategory(dialog, '文字效果')
+  await liftCard(page, dialog.getByRole('button', { name: /^测试可填项，/ }))
+  const firstRow = await boxOf(overlays.getByRole('group', { name: /^特效 · 测试叠加，第 1 行/ }))
   // 快速经过上边缘再到下边缘：展开动画不改变最终命中行。
   await page.mouse.move(laneNow.x + laneNow.width / 4, firstRow.y - firstRow.height / 4)
   await page.mouse.move(laneNow.x + laneNow.width / 4, firstRow.y + firstRow.height * 1.5, {
     steps: 8,
   })
   await expect(effectPreview).toBeVisible()
-  await expect(effectPreview).toContainText('手写标题')
+  await expect(effectPreview).toContainText('测试可填项')
   await expect(page.getByRole('status').filter({ hasText: /^新增特效轨 ·/ })).toContainText(
     '松开添加',
   )
@@ -406,7 +374,7 @@ test('拖卡片到特效轨：预演不挪画面轨，新行落位或取消后�
   // 已展开第三行后拖回侧栏：新行收回，缩影退回，草稿不变。
   const cancelLane = await boxOf(overlays)
   const lastRow = await boxOf(overlays.getByRole('group', { name: /第 2 行/ }))
-  const cancelCard = dialog.getByRole('button', { name: /^手绘箭头，/ })
+  const cancelCard = dialog.getByRole('button', { name: /^测试可填项，/ })
   await liftCard(page, cancelCard)
   const cancelSource = await boxOf(cancelCard)
   await page.mouse.move(cancelLane.x + cancelLane.width / 4, lastRow.y + lastRow.height * 1.5, {

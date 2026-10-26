@@ -12,7 +12,7 @@ export const login = async (page: Page, username: 'tester' | 'governor' = 'teste
   }
 
   await loginTrigger.click()
-  const dialog = page.getByRole('dialog', { name: '登录 Cue' })
+  const dialog = page.getByRole('dialog', { name: '登录 iClip' })
   await dialog.getByLabel('用户名', { exact: true }).fill(username)
   await dialog.getByLabel('密码', { exact: true }).fill('secret')
   await dialog.getByRole('button', { name: '登录', exact: true }).click()

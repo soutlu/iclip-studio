@@ -63,6 +63,10 @@ ClipMs = Annotated[int, Field(ge=MIN_CLIP_MS)]
 Volume = Annotated[FiniteFloat, Field(ge=0, le=MAX_VOLUME)]
 Offset = Annotated[int, Field(ge=-MAX_CANVAS_EDGE, le=MAX_CANVAS_EDGE)]
 """画面像素：在画面上挪开的距离，向右、向下为正。"""
+Scale = Annotated[FiniteFloat, Field(ge=0.1, le=10)]
+"""等比缩放的倍数，1 是原大。"""
+Degrees = Annotated[FiniteFloat, Field(gt=-180, le=180)]
+"""顺时针旋转的角度。"""
 
 
 class WholeFilmCanvas(CamelModel):
@@ -111,13 +115,22 @@ class WholeFilmCaptionEdit(CamelModel):
 
 class WholeFilmCaptions(CamelModel):
     """字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
-    ``x``、``y`` 是字幕在画面上挪开的位置，所有字幕共用一个。"""
+    ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
+    ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
+    编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
+    保留，合成时只取当前样式声明过的项。"""
 
     component: ComponentName
     edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
+    # 不用 default_factory：合同里要带上 default，生成的前端 zod 才补上空表；pydantic 每次复制默认值
+    variables: Variables = Field(default={})
     hidden: bool = False
     x: Offset = 0
     y: Offset = 0
+    scale: Scale = 1
+    rotation: Degrees = 0
+    pivot_x: Offset = 0
+    pivot_y: Offset = 0
 
 
 class WholeFilmMusic(CamelModel):
@@ -134,7 +147,9 @@ class WholeFilmOverlay(CamelModel):
 
     同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
     之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
-    ``x``、``y`` 是它在画面上挪开的位置。"""
+    ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
+    是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、
+    不转时写下。"""
 
     id: ClipId
     component: ComponentName
@@ -146,6 +161,10 @@ class WholeFilmOverlay(CamelModel):
     variables: Variables
     x: Offset = 0
     y: Offset = 0
+    scale: Scale = 1
+    rotation: Degrees = 0
+    pivot_x: Offset = 0
+    pivot_y: Offset = 0
 
 
 class WholeFilmDocument(CamelModel):

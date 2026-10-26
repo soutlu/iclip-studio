@@ -31,11 +31,13 @@ export interface UploadTarget {
 }
 
 /**
- * 要渲染的内容：素材地址，以及按「素材地址 → 渲染时用的地址」生成合成页的函数
+ * 要渲染的内容：受理时那一版组件库的目录、素材地址，以及按「素材地址 → 渲染时用的地址」生成合成页的函数
  * （渲染器先把素材取到本地，再用本地路径生成合成页）。
  */
 export interface RenderJobInput {
   id: string
+  /** 组件库这一版的目录（`<RENDER_REGISTRY_ROOT>/<version>/`），合成页里组件与运行时的路径都相对它。 */
+  registryDir: string
   mediaUrls: string[]
   compose(mediaPaths: Readonly<Record<string, string>>): string
 }
@@ -206,7 +208,12 @@ export class ExportQueue {
     log.info('开始渲染')
     try {
       rendered = await this.worker.render(
-        { id: input.id, mediaUrls: input.mediaUrls, compose: input.compose },
+        {
+          id: input.id,
+          registryDir: input.registryDir,
+          mediaUrls: input.mediaUrls,
+          compose: input.compose,
+        },
         {
           signal: controller.signal,
           onProgress: (progress) => {

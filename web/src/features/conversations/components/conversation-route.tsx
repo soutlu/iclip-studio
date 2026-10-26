@@ -378,7 +378,7 @@ export function ConversationRoute({
             {showEmptyState ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
                 <span className="font-home-display text-headline-lg font-semibold text-on-surface italic">
-                  Cue
+                  iClip
                 </span>
                 <p className="text-body-sm text-on-surface-variant">
                   暂无消息，请在下方输入开始对话

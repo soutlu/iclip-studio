@@ -12,11 +12,15 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import {
+  fontLabel,
+  fontOptions,
   isLightColor,
   swatchColors,
   variableValue,
   type CatalogItem,
   type CatalogVariable,
+  type ComponentCatalog,
+  type FontOption,
   type VariableValue,
 } from './component-catalog'
 import { ComponentThumb } from './components-panel'
@@ -28,6 +32,7 @@ const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', de
 const SEGMENTED_MAX = 4
 
 type ComponentPopoverProps = {
+  catalog: ComponentCatalog
   item: CatalogItem
   values: ComponentVariables
   onChange: (values: ComponentVariables) => void
@@ -38,7 +43,14 @@ type ComponentPopoverProps = {
  * 组件段与特效块共用的调整浮层：一行一项列出组件的全部可填项。文字项没填过时空着、组件的默认字作
  * 灰色提示，清空即回到默认字。每次改动是一步编辑，只影响这条成片。
  */
-export function ComponentPopover({ item, values, onChange, onRemove }: ComponentPopoverProps) {
+export function ComponentPopover({
+  catalog,
+  item,
+  values,
+  onChange,
+  onRemove,
+}: ComponentPopoverProps) {
+  const fonts = fontOptions(catalog)
   const set = (id: string, value: VariableValue | undefined) => {
     if (values[id] === value) return
     onChange(
@@ -50,7 +62,7 @@ export function ComponentPopover({ item, values, onChange, onRemove }: Component
   return (
     <div className="wf-pop">
       <div className="wf-pop-head">
-        <ComponentThumb className="wf-pop-thumb" iconSize="xs" item={item} />
+        <ComponentThumb catalog={catalog} className="wf-pop-thumb" iconSize="xs" item={item} />
         <b>{item.title}</b>
         <IconButton
           className="wf-pop-remove"
@@ -62,6 +74,7 @@ export function ComponentPopover({ item, values, onChange, onRemove }: Component
       </div>
       {item.variables.map((variable) => (
         <VariableField
+          fonts={fonts}
           key={variable.id}
           onChange={(value) => set(variable.id, value)}
           values={values}
@@ -75,11 +88,13 @@ export function ComponentPopover({ item, values, onChange, onRemove }: Component
 type FieldProps = {
   variable: CatalogVariable
   values: ComponentVariables
+  /** 字体项的选项 */
+  fonts: readonly FontOption[]
   /** undefined 表示不再填，回到组件的默认值 */
   onChange: (value: VariableValue | undefined) => void
 }
 
-function VariableField({ variable, values, onChange }: FieldProps) {
+function VariableField({ variable, values, fonts, onChange }: FieldProps) {
   const id = useId()
   const labelId = `${id}-label`
   const stored = values[variable.id]
@@ -88,8 +103,34 @@ function VariableField({ variable, values, onChange }: FieldProps) {
   let labelFor: string | undefined = id
   let input: ReactNode
   switch (variable.type) {
+    case 'font': {
+      const current = String(value)
+      input = (
+        <MenuRoot>
+          <MenuTrigger asChild>
+            <button className="wf-select ui-state ui-focus" id={id} type="button">
+              {fontLabel(fonts, current)}
+              <Icon decorative name="expand" size="xs" />
+            </button>
+          </MenuTrigger>
+          <MenuSurface align="start" side="top">
+            {/* 选回组件目录里的默认值时不再存这一项 */}
+            <MenuRadioGroup
+              onValueChange={(next) => onChange(next === variable.default ? undefined : next)}
+              value={current}
+            >
+              {fonts.map((option) => (
+                <MenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuSurface>
+        </MenuRoot>
+      )
+      break
+    }
     case 'string':
-    case 'font':
       input = (
         <CommitInput
           id={id}
@@ -274,7 +315,7 @@ function CommitInput({ id, type, value, placeholder, min, max, step, onCommit }:
   }
   return (
     <input
-      className="wf-input ui-focus"
+      className="wf-input ui-focus ui-focus-inline"
       id={id}
       max={max}
       min={min}

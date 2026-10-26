@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { draftOf, expectOk, overlay, video } from '@/testing/whole-film'
-import type { OverlayClip, WholeFilmDraft } from './draft'
+import { contextOf, draftOf, expectOk, overlay, video } from '@/testing/whole-film'
+import { MAX_SCALE, MIN_SCALE, type OverlayClip, type WholeFilmDraft } from './draft'
 import {
   addOverlay,
   dropOverlay,
@@ -8,6 +8,7 @@ import {
   overlayRowAt,
   removeOverlay,
   setOverlayPosition,
+  setOverlayTransform,
   trimOverlay,
   type OverlayRow,
 } from './overlays'
@@ -218,12 +219,20 @@ describe('moveOverlay：拖特效块', () => {
 })
 
 describe('trimOverlay', () => {
+  // badge 放得比 120 秒还长，这一组只看其他边界；短的组件 3 秒
+  const context = contextOf({}, {}, { badge: 200_000, short: 3_000 })
+
   const film = () =>
     withOverlays([
       overlay('a', 2_000, 1_000, { track: 0 }),
       overlay('b', 6_000, 2_000, { track: 0 }),
       overlay('c', 0, 9_000, { track: 1 }),
     ])
+
+  const timing = (draft: WholeFilmDraft, id: string) => {
+    const found = draft.overlays.find((o) => o.id === id)
+    return found && [found.start, found.start + found.duration, found.playbackStart]
+  }
 
   it.each([
     ['右端拉到同一行的下一块为止', 'a', 'end', 10_000, ['a', 2_000, 6_000, 0]],
@@ -233,7 +242,7 @@ describe('trimOverlay', () => {
     ['修左端：从组件自己时间里更晚处起播', 'b', 'start', 500, ['b', 6_500, 8_000, 500]],
     ['最短 0.1 秒', 'b', 'start', 10_000, ['b', 7_900, 8_000, 1_900]],
   ] as const)('%s', (_, overlayId, edge, deltaMs, expected) => {
-    const { draft } = expectOk(trimOverlay(film(), { overlayId, edge, deltaMs }))
+    const { draft } = expectOk(trimOverlay(film(), { overlayId, edge, deltaMs }, context))
     expect(
       draft.overlays.map((o) => [o.id, o.start, o.start + o.duration, o.playbackStart]),
     ).toContainEqual(expected)
@@ -245,9 +254,59 @@ describe('trimOverlay', () => {
       overlay('b', 3_000, 1_000, { track: 0, playbackStart: 600 }),
     ])
     const { draft } = expectOk(
-      trimOverlay(trimmed, { overlayId: 'b', edge: 'start', deltaMs: -5_000 }),
+      trimOverlay(trimmed, { overlayId: 'b', edge: 'start', deltaMs: -5_000 }, context),
     )
     expect(draft.overlays[1]).toMatchObject({ start: 2_400, duration: 1_600, playbackStart: 0 })
+  })
+
+  it('右端最多拉到组件自己的时长放完，往短里拖照常', () => {
+    const film = withOverlays([overlay('s', 1_000, 1_000, { component: 'short' })])
+    const longest = expectOk(
+      trimOverlay(film, { overlayId: 's', edge: 'end', deltaMs: 10_000 }, context),
+    ).draft
+    expect(timing(longest, 's')).toEqual([1_000, 4_000, 0])
+    const shorter = expectOk(
+      trimOverlay(longest, { overlayId: 's', edge: 'end', deltaMs: -500 }, context),
+    ).draft
+    expect(timing(shorter, 's')).toEqual([1_000, 3_500, 0])
+  })
+
+  it('左端修剪过的块：右端最多到组件时长减去入点；左端往外拉退到入点 0 为止，不超出组件时长', () => {
+    const film = withOverlays([
+      overlay('s', 1_000, 1_500, { component: 'short', playbackStart: 800 }),
+    ])
+    const end = expectOk(
+      trimOverlay(film, { overlayId: 's', edge: 'end', deltaMs: 10_000 }, context),
+    ).draft
+    expect(timing(end, 's')).toEqual([1_000, 3_200, 800])
+    const start = expectOk(
+      trimOverlay(end, { overlayId: 's', edge: 'start', deltaMs: -5_000 }, context),
+    ).draft
+    expect(timing(start, 's')).toEqual([200, 3_200, 0])
+  })
+
+  it('草稿里已经超出组件时长的块：拖右端时收回上限以内，往长往短拖都不报错', () => {
+    const film = withOverlays([overlay('s', 1_000, 5_000, { component: 'short' })])
+    for (const deltaMs of [300, -300]) {
+      const { draft } = expectOk(
+        trimOverlay(film, { overlayId: 's', edge: 'end', deltaMs }, context),
+      )
+      expect(timing(draft, 's')).toEqual([1_000, 4_000, 0])
+    }
+    // 入点已在组件时长之后：收到最短 0.1 秒
+    const late = withOverlays([
+      overlay('s', 1_000, 2_000, { component: 'short', playbackStart: 3_500 }),
+    ])
+    const { draft } = expectOk(
+      trimOverlay(late, { overlayId: 's', edge: 'end', deltaMs: 100 }, context),
+    )
+    expect(timing(draft, 's')).toEqual([1_000, 1_100, 3_500])
+  })
+
+  it('上下文缺少草稿里的组件：是调用方的错，直接报错', () => {
+    expect(() =>
+      trimOverlay(film(), { overlayId: 'a', edge: 'end', deltaMs: 1 }, contextOf({})),
+    ).toThrow('成片编辑上下文缺少组件 badge')
   })
 })
 
@@ -303,24 +362,149 @@ describe('setOverlayPosition：在画面上挪', () => {
     })
   })
 
-  it('时间线上挪动、换行、修剪、改可填项都保留位置', () => {
+  it('时间线上挪动、换行、修剪、改可填项、在画面上挪都保留位置与缩放、旋转、转轴', () => {
     const placed = withOverlays([
-      overlay('a', 2_000, 1_000, { track: 0, x: 40, y: -60 }),
+      overlay('a', 2_000, 1_000, {
+        track: 0,
+        x: 40,
+        y: -60,
+        scale: 1.5,
+        rotation: -30,
+        pivotX: 300,
+        pivotY: 900,
+      }),
       overlay('b', 0, 1_000, { track: 1, x: -8, y: 12 }),
     ])
-    const positions = (draft: WholeFilmDraft) =>
-      Object.fromEntries(draft.overlays.map((o) => [o.id, [o.x, o.y]]))
-    const before = positions(placed)
+    const placements = (draft: WholeFilmDraft) =>
+      Object.fromEntries(
+        draft.overlays.map((o) => [o.id, [o.x, o.y, o.scale, o.rotation, o.pivotX, o.pivotY]]),
+      )
+    const before = placements(placed)
     const edits = [
       moveOverlay(placed, { overlayId: 'a', deltaMs: 500 }),
       moveOverlay(placed, { overlayId: 'a', deltaMs: 0, row: { insertAt: 2 } }),
-      trimOverlay(placed, { overlayId: 'a', edge: 'start', deltaMs: 300 }),
+      trimOverlay(
+        placed,
+        { overlayId: 'a', edge: 'start', deltaMs: 300 },
+        contextOf({}, {}, { badge: 1_000 }),
+      ),
       setComponentVariables(placed, { id: 'b', variables: { label: '限时' } }),
       removeOverlay(placed, { overlayId: 'b' }),
     ]
     for (const result of edits) {
-      const after = positions(expectOk(result).draft)
+      const after = placements(expectOk(result).draft)
       for (const [id, at] of Object.entries(after)) expect(at).toEqual(before[id])
     }
+    const moved = expectOk(setOverlayPosition(placed, { overlayId: 'a', x: 0, y: 0 })).draft
+    expect(placements(moved)['a']).toEqual([0, 0, 1.5, -30, 300, 900])
+  })
+})
+
+describe('setOverlayTransform：在画面上缩放、旋转', () => {
+  const film = () =>
+    withOverlays([overlay('a', 0, 1_000, { track: 0 }), overlay('b', 0, 1_000, { track: 1 })])
+  const pivot = { x: 200, y: 300 }
+
+  it('只改这一块：倍数裁在 10%–1000%，角度规整到 (-180, 180]', () => {
+    const turned = expectOk(
+      setOverlayTransform(film(), { overlayId: 'b', scale: 1.25, rotation: 45, pivot }),
+    ).draft
+    expect(turned.overlays[0]).toEqual(film().overlays[0])
+    expect(turned.overlays[1]).toMatchObject({ scale: 1.25, rotation: 45 })
+
+    const scaleOf = (scale: number) =>
+      expectOk(setOverlayTransform(film(), { overlayId: 'a', scale, rotation: 0, pivot })).draft
+        .overlays[0]?.scale
+    expect([scaleOf(0.05), scaleOf(11), scaleOf(MIN_SCALE), scaleOf(MAX_SCALE)]).toEqual([
+      MIN_SCALE,
+      MAX_SCALE,
+      0.1,
+      10,
+    ])
+
+    const rotationOf = (rotation: number) =>
+      expectOk(setOverlayTransform(film(), { overlayId: 'a', scale: 1, rotation, pivot })).draft
+        .overlays[0]?.rotation
+    // 范围里的小数原样记下，不带出浮点误差
+    expect([-180, 190, 540, -190, 180, -179.5, 720.5, -2.3].map(rotationOf)).toEqual([
+      180, -170, 180, 170, 180, -179.5, 0.5, -2.3,
+    ])
+  })
+
+  it('转轴在离开原大、不转时记下（取整、裁法同位置），变换着时沿用，回到原大、不转后再变换重取', () => {
+    const first = expectOk(
+      setOverlayTransform(film(), {
+        overlayId: 'a',
+        scale: 2,
+        rotation: 0,
+        pivot: { x: 120.6, y: -5_000 },
+      }),
+    ).draft
+    expect(first.overlays[0]).toMatchObject({ pivotX: 121, pivotY: -4_096 })
+    // 变换着时再转、再缩、缩回原大都沿用记下的转轴
+    const again = expectOk(
+      setOverlayTransform(first, {
+        overlayId: 'a',
+        scale: 0.5,
+        rotation: 90,
+        pivot: { x: 1, y: 2 },
+      }),
+    ).draft
+    expect(again.overlays[0]).toMatchObject({
+      scale: 0.5,
+      rotation: 90,
+      pivotX: 121,
+      pivotY: -4_096,
+    })
+    const back = expectOk(
+      setOverlayTransform(again, { overlayId: 'a', scale: 1, rotation: 0, pivot: { x: 3, y: 4 } }),
+    ).draft
+    expect(back.overlays[0]).toMatchObject({ scale: 1, rotation: 0, pivotX: 121, pivotY: -4_096 })
+    // 回到原大、不转之后画面上没有变换，下一次变换取新的转轴
+    const anew = expectOk(
+      setOverlayTransform(back, { overlayId: 'a', scale: 1, rotation: 45, pivot: { x: 5, y: 6 } }),
+    ).draft
+    expect(anew.overlays[0]).toMatchObject({ scale: 1, rotation: 45, pivotX: 5, pivotY: 6 })
+    // 有这几个字段之前存的草稿没写它们，按原大、不转算，第一次变换就记下转轴
+    const { scale: _s, rotation: _r, pivotX: _px, pivotY: _py, ...legacy } = overlay('a', 0, 1_000)
+    const legacyTurned = expectOk(
+      setOverlayTransform(withOverlays([legacy]), { overlayId: 'a', scale: 2, rotation: 0, pivot }),
+    ).draft
+    expect(legacyTurned.overlays[0]).toMatchObject({ scale: 2, pivotX: 200, pivotY: 300 })
+  })
+
+  it('倍数与角度都没变时原样返回，转轴也不写；没写这些字段的块按原大、不转算；不认识的 id 被拒', () => {
+    const draft = film()
+    expect(
+      expectOk(setOverlayTransform(draft, { overlayId: 'a', scale: 1, rotation: 0, pivot })).draft,
+    ).toBe(draft)
+    // 规整之后再比：360° 是 0°，300° 是 -60°
+    expect(
+      expectOk(setOverlayTransform(draft, { overlayId: 'a', scale: 1, rotation: 360, pivot }))
+        .draft,
+    ).toBe(draft)
+    const turned = expectOk(
+      setOverlayTransform(draft, { overlayId: 'a', scale: 3, rotation: -60, pivot }),
+    ).draft
+    expect(
+      expectOk(
+        setOverlayTransform(turned, {
+          overlayId: 'a',
+          scale: 3,
+          rotation: 300,
+          pivot: { x: 9, y: 9 },
+        }),
+      ).draft,
+    ).toBe(turned)
+    // 有这几个字段之前存的草稿没写它们
+    const { scale: _s, rotation: _r, pivotX: _px, pivotY: _py, ...legacy } = overlay('a', 0, 1_000)
+    const unset = withOverlays([legacy])
+    expect(
+      expectOk(setOverlayTransform(unset, { overlayId: 'a', scale: 1, rotation: 0, pivot })).draft,
+    ).toBe(unset)
+    expect(setOverlayTransform(draft, { overlayId: 'x', scale: 2, rotation: 0, pivot })).toEqual({
+      ok: false,
+      refusal: 'unknown-clip',
+    })
   })
 })

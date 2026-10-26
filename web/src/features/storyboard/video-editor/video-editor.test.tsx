@@ -367,7 +367,6 @@ describe('AI 改段的弹出卡', () => {
     expect(openCard()).toBeVisible()
     expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
 
-    await user.click(screen.getByRole('button', { name: '暂停' }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
     )
@@ -903,6 +902,95 @@ describe('AI 改段的弹出卡', () => {
   })
 })
 
+describe('选段只把播放头放到选区开头，空格播放', () => {
+  const playhead = () => screen.getByRole('slider', { name: '时间线播放位置' })
+  const playButton = () => screen.getByRole('button', { name: '播放' })
+  const pauseButton = () => screen.queryByRole('button', { name: '暂停' })
+  const readyToPlay = () => waitFor(() => expect(playButton()).not.toHaveAttribute('aria-disabled'))
+
+  it('点段只选中、不播放，播放头在这段开头；⇧ 点扩选仍在选区开头；播放中点段停在这段开头', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+
+    await user.click(segmentOf(track, 2))
+    expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
+    await readyToPlay()
+    expect(pauseButton()).toBeNull()
+    expect(playhead()).toHaveValue('1')
+
+    fireEvent.change(playhead(), { target: { value: '5.5' } })
+    await user.keyboard('{Shift>}')
+    await user.click(segmentOf(track, 3))
+    await user.keyboard('{/Shift}')
+    expect(segmentOf(track, 3)).toHaveAttribute('aria-pressed', 'true')
+    expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
+    expect(playhead()).toHaveValue('1')
+
+    await user.click(playButton())
+    expect(pauseButton()).toBeVisible()
+    await user.click(segmentOf(track, 4))
+    expect(pauseButton()).toBeNull()
+    expect(playButton()).toBeVisible()
+    expect(playhead()).toHaveValue('3')
+  })
+
+  it('←/→ 与 ⇧←/→ 播放头在选区开头；空格在段上播放、暂停，不改选中；Enter 停下并回到选区开头', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    await user.click(segmentOf(track, 2))
+
+    await user.keyboard('{ArrowRight}')
+    expect(segmentOf(track, 3)).toHaveAttribute('aria-pressed', 'true')
+    expect(playhead()).toHaveValue('2')
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+    expect(segmentOf(track, 4)).toHaveAttribute('aria-pressed', 'true')
+    expect(playhead()).toHaveValue('2')
+    await user.keyboard('{Shift>}{ArrowLeft}{ArrowLeft}{/Shift}')
+    expect(segmentOf(track, 2)).toHaveFocus()
+    expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
+    expect(segmentOf(track, 4)).toHaveAttribute('aria-pressed', 'false')
+    expect(playhead()).toHaveValue('1')
+
+    await readyToPlay()
+    await user.keyboard(' ')
+    expect(pauseButton()).toBeVisible()
+    expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
+    expect(segmentOf(track, 3)).toHaveAttribute('aria-pressed', 'true')
+    await user.keyboard(' ')
+    expect(playButton()).toBeVisible()
+
+    fireEvent.change(playhead(), { target: { value: '5.5' } })
+    await user.keyboard(' ')
+    expect(pauseButton()).toBeVisible()
+    await user.keyboard('{Enter}')
+    expect(pauseButton()).toBeNull()
+    expect(playhead()).toHaveValue('1')
+    expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('版本栏换版本：停下，播放头到选区开头', async () => {
+    restoreMedia = stubMediaDurations({ [EDITED_URL]: 2.5 })
+    serveChain([editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })])
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    await user.click(segmentOf(track, 3))
+    fireEvent.change(playhead(), { target: { value: '6' } })
+    await readyToPlay()
+    await user.click(playButton())
+    expect(pauseButton()).toBeVisible()
+
+    await user.click(versionButton('V1'))
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(pauseButton()).toBeNull()
+    expect(playhead()).toHaveValue('2')
+  })
+})
+
 describe('整条版本与片段选用', () => {
   it('整条预览按时间线选用的媒体播放，选用编辑结果后无需合成', async () => {
     serveChain([editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })])
@@ -1070,7 +1158,11 @@ describe('整条版本与片段选用', () => {
     expect(within(stage).queryByText('生成失败')).toBeNull()
     expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'true')
 
-    // 点段会从头播放选区；正在播放时点失败格，播放停下。
+    // 正在播放时点失败格，播放停下。
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
+    )
+    await user.click(screen.getByRole('button', { name: '播放' }))
     expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
     await user.click(versionButton('V1'))
     expect(within(stage).getByRole('alert')).toHaveTextContent('生成失败')

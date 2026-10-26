@@ -12,6 +12,7 @@ import {
 import { done, refuse, type EditResult } from './result'
 import {
   clamp,
+  componentMsOf,
   insertAt,
   insertIndexAt,
   layer0End,
@@ -108,8 +109,8 @@ export const moveClip = (
 
 /**
  * 修剪一段的一端，算法用 Studio 的修剪。修开头时切点不动、入点后移（组件段从组件自己时间里更晚处
- * 起播）；之后整轨收紧，后面的段跟着移。视频段不超出素材，任何一段都不短于最短时长，成片拉长到
- * 总长上限就停住。
+ * 起播）；之后整轨收紧，后面的段跟着移。视频段不超出素材，组件段不超出组件自己的时长（已经超出的
+ * 段拖结尾时收回上限以内），任何一段都不短于最短时长，成片拉长到总长上限就停住。
  */
 export const trimClip = (
   draft: WholeFilmDraft,
@@ -127,9 +128,9 @@ export const trimClip = (
           maxEnd:
             clip.start +
             Math.min(
-              clip.type === 'video'
-                ? sourceOf(context, clip.sourceJobId).durationMs - clip.playbackStart
-                : Number.POSITIVE_INFINITY,
+              (clip.type === 'video'
+                ? sourceOf(context, clip.sourceJobId).durationMs
+                : componentMsOf(context, clip.component)) - clip.playbackStart,
               clip.duration + room,
             ),
         })

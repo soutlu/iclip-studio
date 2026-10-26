@@ -51,8 +51,8 @@ def edit(index: int, text: str = "改过的字") -> dict[str, Any]:
 
 
 def test_a_full_draft_round_trips_its_wire_shape() -> None:
-    """组件段夹在两段视频之间、改字、关掉并挪过的字幕、音乐与不同行上相互重叠、挪过位置的特效块
-    都在：按 camelCase 原样读出来。"""
+    """组件段夹在两段视频之间、改字、关掉并挪过、缩放旋转过的字幕、音乐与不同行上相互重叠、挪过位置
+    又缩放旋转过的特效块都在：按 camelCase 原样读出来。"""
 
     document = draft_document(
         layer0=[
@@ -62,11 +62,26 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
             video_clip("b", start=6000, duration=2000, source_job_id=SOURCE, volume=0),
         ],
         edits=[edit(0), edit(1)],
+        captions_variables={"font": "Sample Sans"},
         captions_hidden=True,
         captions_at=(0, -240),
+        captions_scale=0.8,
+        captions_rotation=-12.5,
+        captions_pivot=(540, 1500),
         music={"jobId": str(uuid.uuid4()), "offset": 1200, "volume": 0.6},
         overlays=[
-            overlay("o2", start=6000, duration=3000, track=1, z_index=2, x=-36, y=410),
+            overlay(
+                "o2",
+                start=6000,
+                duration=3000,
+                track=1,
+                z_index=2,
+                x=-36,
+                y=410,
+                scale=1.5,
+                rotation=180,
+                pivot=(-20, 4096),
+            ),
             overlay("o1", start=0, duration=7000, track=0, z_index=1, playback_start=250),
         ],
     )
@@ -121,6 +136,17 @@ def test_captions_are_shown_when_the_draft_does_not_say() -> None:
     assert parsed.model_dump(mode="json", by_alias=True)["captions"]["hidden"] is False
 
 
+def test_caption_variables_default_to_empty() -> None:
+    """没写 ``variables`` 的字幕（有这个字段之前存的）按没填过读，读出来补上空表。"""
+
+    document = draft_document()
+    del document["captions"]["variables"]
+
+    parsed = parse(document)
+
+    assert parsed.model_dump(mode="json", by_alias=True)["captions"]["variables"] == {}
+
+
 def test_positions_default_to_where_the_component_puts_it() -> None:
     """没写 ``x``、``y`` 的字幕与特效块（有这两个字段之前存的）按没挪过读，读出来补上 0。"""
 
@@ -135,7 +161,7 @@ def test_positions_default_to_where_the_component_puts_it() -> None:
 
 
 @pytest.mark.parametrize("where", ["captions", "overlay"])
-@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("axis", ["x", "y", "pivotX", "pivotY"])
 @pytest.mark.parametrize(
     ("value", "accepted"),
     [
@@ -152,6 +178,48 @@ def test_positions_stay_within_the_largest_canvas(
     document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
     moved = document["captions"] if where == "captions" else document["overlays"][0]
     moved[axis] = value
+
+    if accepted:
+        assert parse(document).model_dump(mode="json", by_alias=True) == document
+    else:
+        rejected(document)
+
+
+def test_transforms_default_to_unscaled_and_unrotated() -> None:
+    """没写缩放、旋转与转轴的字幕与特效块（有这几个字段之前存的）按原大、不转读，读出来补上
+    1、0 与转轴 (0, 0)。"""
+
+    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
+    for placed in (document["captions"], document["overlays"][0]):
+        del placed["scale"], placed["rotation"], placed["pivotX"], placed["pivotY"]
+
+    dumped = parse(document).model_dump(mode="json", by_alias=True)
+
+    defaults = {"scale": 1, "rotation": 0, "pivotX": 0, "pivotY": 0}
+    assert {key: dumped["captions"][key] for key in defaults} == defaults
+    assert {key: dumped["overlays"][0][key] for key in defaults} == defaults
+
+
+@pytest.mark.parametrize("where", ["captions", "overlay"])
+@pytest.mark.parametrize(
+    ("field", "value", "accepted"),
+    [
+        pytest.param("scale", 0.1, True, id="缩到 0.1"),
+        pytest.param("scale", 10, True, id="放到 10"),
+        pytest.param("scale", 0.05, False, id="小于 0.1"),
+        pytest.param("scale", 11, False, id="大于 10"),
+        pytest.param("rotation", 180, True, id="转 180"),
+        pytest.param("rotation", -179.5, True, id="转 -179.5"),
+        pytest.param("rotation", -180, False, id="-180 记成 180"),
+        pytest.param("rotation", 181, False, id="超过 180"),
+    ],
+)
+def test_transforms_stay_within_their_ranges(
+    where: str, field: str, value: float, accepted: bool
+) -> None:
+    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
+    placed = document["captions"] if where == "captions" else document["overlays"][0]
+    placed[field] = value
 
     if accepted:
         assert parse(document).model_dump(mode="json", by_alias=True) == document
@@ -351,10 +419,18 @@ def test_component_names_are_non_blank_and_bounded(component: str, accepted: boo
         pytest.param({" ": 1}, False, id="空白名字"),
     ],
 )
-def test_variables_are_flat_and_bounded(variables: dict[str, Any], accepted: bool) -> None:
+@pytest.mark.parametrize("where", ["component", "captions"])
+def test_variables_are_flat_and_bounded(
+    variables: dict[str, Any], accepted: bool, where: str
+) -> None:
+    """组件段与字幕的可填项同一套规矩。"""
+
     clip = component_clip("c", start=0, duration=1000)
-    clip["variables"] = variables
-    document = draft_document(layer0=[clip])
+    if where == "component":
+        clip["variables"] = variables
+        document = draft_document(layer0=[clip])
+    else:
+        document = draft_document(layer0=[clip], captions_variables=variables)
 
     if accepted:
         parse(document)

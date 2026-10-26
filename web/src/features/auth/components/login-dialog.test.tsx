@@ -32,7 +32,7 @@ describe('LoginDialog', () => {
     const onOpenChange = vi.fn()
     serveSsoProbe(() => new HttpResponse(null, { status: 404 }))
     await renderWithProviders(<LoginDialog open onOpenChange={onOpenChange} />)
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
 
     await waitFor(() => expect(within(dialog).getByLabelText('用户名')).toHaveFocus())
 
@@ -43,7 +43,7 @@ describe('LoginDialog', () => {
   it('SSO 开启时显示飞书入口，不出现故障提示', async () => {
     serveSsoProbe(ssoOpen)
     await renderWithProviders(<LoginDialog open onOpenChange={vi.fn()} />)
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
 
     expect(await within(dialog).findByRole('button', { name: '使用飞书登录' })).toBeVisible()
     expect(within(dialog).queryByText(SSO_UNAVAILABLE)).not.toBeInTheDocument()
@@ -56,7 +56,7 @@ describe('LoginDialog', () => {
     queryClient.setQueryData([AUTH_QUERY_KEY_ROOT, 'sso-enabled'], true)
 
     await user.click(screen.getByRole('button', { name: '登录' }))
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
 
     await waitFor(() =>
       expect(within(dialog).getByRole('button', { name: '使用飞书登录' })).toHaveFocus(),
@@ -69,7 +69,7 @@ describe('LoginDialog', () => {
       return ssoOpen()
     })
     await renderWithProviders(<LoginDialog open onOpenChange={vi.fn()} />)
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
     await waitFor(() => expect(within(dialog).getByLabelText('用户名')).toHaveFocus())
 
     const ssoButton = await within(dialog).findByRole('button', { name: '使用飞书登录' })
@@ -83,7 +83,7 @@ describe('LoginDialog', () => {
     const onOpenChange = vi.fn()
     serveSsoProbe(() => new HttpResponse(null, { status: 500 }))
     await renderWithProviders(<LoginDialog open onOpenChange={onOpenChange} />)
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(SSO_UNAVAILABLE)
     expect(within(dialog).queryByRole('button', { name: '使用飞书登录' })).not.toBeInTheDocument()
@@ -99,7 +99,7 @@ describe('LoginDialog', () => {
     const user = userEvent.setup()
     serveSsoProbe(() => new HttpResponse(null, { status: 503 }))
     await renderWithProviders(<LoginDialog open onOpenChange={vi.fn()} />)
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
     await within(dialog).findByText(SSO_UNAVAILABLE)
 
     serveSsoProbe(ssoOpen)

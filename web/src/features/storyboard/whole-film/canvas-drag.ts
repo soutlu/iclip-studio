@@ -28,13 +28,6 @@ export function dragTargetOf(selection: Selection): string | undefined {
   return undefined
 }
 
-/** 这个元素在草稿里记着的位置；有位置之前存的草稿没写，按没挪过算 */
-export function positionOf(draft: WholeFilmDraft, target: string): { x: number; y: number } {
-  const moved =
-    target === CAPTIONS_HF_ID ? draft.captions : draft.overlays.find((o) => o.id === target)
-  return { x: moved?.x ?? 0, y: moved?.y ?? 0 }
-}
-
 /**
  * 拖动中屏幕上的位移换成画布像素：除以缩放（iframe 宽 / 画布宽）后取整；挪完的位置（`from` 加上它）
  * 裁在 ±4096 以内，同草稿里记的，松手后画面不会再跳。
@@ -55,7 +48,8 @@ export function canvasDelta(args: {
 /**
  * 拖动的位移过一遍吸附（Studio 的 snapEngine）：吸附对象只有画面本身，被拖的这一块靠近画面的中线
  * 或四边时吸住，不吸别的块。坐标都是同一个屏幕坐标系（`moving` 是被拖这一块画出来的范围，`frame`
- * 是画面）。返回吸附后的位移与要画的参考线，参考线横跨整个画面。
+ * 是画面）。返回吸附后的位移与要画的参考线，参考线横跨整个画面。转过角度的块不吸，同 Studio：
+ * 转过以后它的外框不再贴着画出来的形状；只缩放过的照样吸。
  */
 export function snapDrag(args: {
   moving: Rect
@@ -64,6 +58,8 @@ export function snapDrag(args: {
   dy: number
   /** 编辑器的「吸附」开关 */
   enabled: boolean
+  /** 这一块转过角度 */
+  rotated: boolean
 }): { dx: number; dy: number; guides: Rect[] } {
   const { frame } = args
   const snapped = resolveSnapAdjustment({
@@ -72,7 +68,7 @@ export function snapDrag(args: {
     proposedDy: args.dy,
     targets: [buildCompositionSnapTarget(frame)],
     threshold: SNAP_THRESHOLD_PX,
-    disabled: !args.enabled,
+    disabled: !args.enabled || args.rotated,
     disabledForTravel: !snapEngagedForTravel(args.dx, args.dy),
   })
   return {

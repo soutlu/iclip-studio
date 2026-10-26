@@ -1,43 +1,244 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
+import { pasteTextIntoComposer } from '@/testing/editor'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { addMockConversation } from '@/testing/mocks/conversations'
+import { seedMockFilm } from '@/testing/mocks/film'
 import { server } from '@/testing/mocks/server'
+import { DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { renderWithProviders } from '@/testing/render'
 import { contextOf, draftOf } from '@/testing/whole-film'
 import type { GenerationJob } from '../storyboard.api'
 import { GenerateMusic, MusicPanel } from './music-panel'
 
-describe('生成音乐浮层', () => {
-  it('点触发按钮向上弹出；填好描述提交到这段对话，提交后收起', async () => {
-    const user = userEvent.setup()
-    const conversation = addMockConversation('成片配乐')
-    const bodies: unknown[] = []
-    server.use(
-      http.post('*/api/generations/music', async ({ request }) => {
-        bodies.push(await request.clone().json())
-        return undefined
-      }),
-    )
-    await renderWithProviders(
-      <GenerateMusic conversationId={conversation.id} onNotice={vi.fn()}>
-        <button type="button">打开</button>
-      </GenerateMusic>,
-    )
+const recordMusicBodies = () => {
+  const bodies: unknown[] = []
+  server.use(
+    http.post('*/api/generations/music', async ({ request }) => {
+      bodies.push(await request.clone().json())
+      return undefined
+    }),
+  )
+  return bodies
+}
 
-    await user.click(screen.getByRole('button', { name: '打开' }))
-    const popover = await screen.findByRole('dialog', { name: '生成音乐' })
-    await user.type(screen.getByLabelText('音乐描述'), '轻快的原声吉他')
-    const submit = screen.getByRole('button', { name: '生成' })
-    await waitFor(() => expect(submit).not.toHaveAttribute('aria-disabled'))
+const openGenerate = async (conversationId: string) => {
+  const user = userEvent.setup()
+  await renderWithProviders(
+    <GenerateMusic conversationId={conversationId} onNotice={vi.fn()}>
+      <button type="button">打开</button>
+    </GenerateMusic>,
+  )
+  await user.click(screen.getByRole('button', { name: '打开' }))
+  const popover = await screen.findByRole('dialog', { name: '生成音乐' })
+  return {
+    user,
+    popover,
+    editor: within(popover).getByRole('textbox', { name: '音乐描述' }),
+    submit: within(popover).getByRole('button', { name: '生成音乐' }),
+  }
+}
+
+describe('生成音乐浮层', () => {
+  it('点触发按钮弹出；填好描述点「生成音乐」提交到这段对话，提交后收起', async () => {
+    const conversation = addMockConversation('成片配乐')
+    const bodies = recordMusicBodies()
+    const { user, popover, editor, submit } = await openGenerate(conversation.id)
+
+    pasteTextIntoComposer(editor, '轻快的原声吉他')
+    await waitFor(() => expect(submit).toBeEnabled())
+    expect(popover).toHaveAccessibleDescription('生成后出现在左侧「音乐」列表')
     await user.click(submit)
 
     await waitFor(() => expect(popover).not.toBeInTheDocument())
     expect(bodies).toEqual([
       { conversationId: conversation.id, prompt: '轻快的原声吉他', taskId: null },
     ])
+  })
+
+  it('在描述里按回车直接生成', async () => {
+    const conversation = addMockConversation('成片配乐')
+    const bodies = recordMusicBodies()
+    const { user, popover, editor, submit } = await openGenerate(conversation.id)
+
+    pasteTextIntoComposer(editor, '轻快的原声吉他')
+    await waitFor(() => expect(submit).toBeEnabled())
+    act(() => editor.focus())
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(popover).not.toBeInTheDocument())
+    expect(bodies).toEqual([
+      { conversationId: conversation.id, prompt: '轻快的原声吉他', taskId: null },
+    ])
+  })
+
+  it('没写描述时按钮不可用，灰字写原因', async () => {
+    const conversation = addMockConversation('成片配乐')
+    const { popover, submit } = await openGenerate(conversation.id)
+
+    await waitFor(() =>
+      expect(popover).toHaveAccessibleDescription(
+        '尚未填写音乐描述，无法生成；请用一句话描述想要的音乐',
+      ),
+    )
+    expect(submit).toBeDisabled()
+  })
+
+  it('工程文件写了配乐时预填它，原样提交', async () => {
+    const conversation = addMockConversation('成片配乐')
+    seedMockFilm(conversation.id, { musicDescription: '纯音乐，极简氛围钢琴小品' })
+    const bodies = recordMusicBodies()
+    const { user, popover, editor, submit } = await openGenerate(conversation.id)
+
+    await waitFor(() => expect(editor).toHaveTextContent('纯音乐，极简氛围钢琴小品'))
+    await waitFor(() => expect(submit).toBeEnabled())
+    expect(popover).toHaveAccessibleDescription('已填入工程文件里的配乐描述，可直接修改')
+    await user.click(submit)
+
+    await waitFor(() =>
+      expect(bodies).toEqual([
+        { conversationId: conversation.id, prompt: '纯音乐，极简氛围钢琴小品', taskId: null },
+      ]),
+    )
+  })
+
+  it('描述超过 3000 字时不可提交，也不截断已输入的内容', async () => {
+    const conversation = addMockConversation('成片配乐')
+    const bodies = recordMusicBodies()
+    const { user, popover, editor, submit } = await openGenerate(conversation.id)
+
+    pasteTextIntoComposer(editor, '钢'.repeat(3001))
+    await waitFor(() =>
+      expect(popover).toHaveAccessibleDescription(
+        '描述超过 3000 字，无法生成；请删减到 3000 字以内',
+      ),
+    )
+    expect(submit).toBeDisabled()
+    expect(editor.textContent).toHaveLength(3001)
+    act(() => editor.focus())
+    await user.keyboard('{Enter}')
+    expect(popover).toBeInTheDocument()
+    expect(bodies).toEqual([])
+  })
+
+  it('浮层挂在触发按钮的父元素里，不落到 body 上', async () => {
+    const user = userEvent.setup()
+    const conversation = addMockConversation('成片配乐')
+    await renderWithProviders(
+      <div data-testid="宿主">
+        <GenerateMusic conversationId={conversation.id} onNotice={vi.fn()}>
+          <button type="button">打开</button>
+        </GenerateMusic>
+      </div>,
+    )
+
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    expect(
+      await within(screen.getByTestId('宿主')).findByRole('dialog', { name: '生成音乐' }),
+    ).toBeVisible()
+  })
+
+  it('关闭后再打开，已输入的文字还在', async () => {
+    const conversation = addMockConversation('成片配乐')
+    const { user, popover, editor } = await openGenerate(conversation.id)
+
+    pasteTextIntoComposer(editor, '轻快的原声吉他')
+    await waitFor(() => expect(editor).toHaveTextContent('轻快的原声吉他'))
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(popover).not.toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    const reopened = await screen.findByRole('dialog', { name: '生成音乐' })
+    expect(within(reopened).getByRole('textbox', { name: '音乐描述' })).toHaveTextContent(
+      '轻快的原声吉他',
+    )
+  })
+
+  it('挂在成片弹窗里、焦点落在 body 时工程文件配乐才到，预填后浮层仍开着', async () => {
+    const conversation = addMockConversation('成片配乐')
+    seedMockFilm(conversation.id, { musicDescription: '纯音乐，极简氛围钢琴小品' })
+    let release = () => {}
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('*/api/conversations/:conversationId/film', async () => {
+        await released
+        return undefined
+      }),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(
+      <DialogRoot open>
+        <DialogSurface aria-describedby={undefined} aria-label="成片编辑器">
+          <div>
+            <GenerateMusic conversationId={conversation.id} onNotice={vi.fn()}>
+              <button type="button">打开</button>
+            </GenerateMusic>
+          </div>
+        </DialogSurface>
+      </DialogRoot>,
+    )
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    const popover = await screen.findByRole('dialog', { name: '生成音乐' })
+
+    // 预填把占位文字换掉会移除节点；焦点此时在 body
+    act(() => (document.activeElement as HTMLElement).blur())
+    release()
+    await waitFor(() =>
+      expect(within(popover).getByRole('textbox', { name: '音乐描述' })).toHaveTextContent(
+        '纯音乐，极简氛围钢琴小品',
+      ),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(popover).toBeInTheDocument()
+    expect(popover).toHaveAccessibleDescription('已填入工程文件里的配乐描述，可直接修改')
+  })
+
+  it('挂在成片弹窗里、焦点落在 body 时点提交，浮层一直开到提交完成', async () => {
+    const conversation = addMockConversation('成片配乐')
+    let release = () => {}
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/generations/music', async () => {
+        await released
+        return undefined
+      }),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(
+      <DialogRoot open>
+        <DialogSurface aria-describedby={undefined} aria-label="成片编辑器">
+          <div>
+            <GenerateMusic conversationId={conversation.id} onNotice={vi.fn()}>
+              <button type="button">打开</button>
+            </GenerateMusic>
+          </div>
+        </DialogSurface>
+      </DialogRoot>,
+    )
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    const popover = await screen.findByRole('dialog', { name: '生成音乐' })
+    pasteTextIntoComposer(
+      within(popover).getByRole('textbox', { name: '音乐描述' }),
+      '轻快的原声吉他',
+    )
+    const submit = within(popover).getByRole('button', { name: '生成音乐' })
+    await waitFor(() => expect(submit).toBeEnabled())
+
+    // Safari 与 Firefox-mac 点按钮不聚焦：焦点留在 body，提交钮换成转圈会移除图标节点
+    act(() => (document.activeElement as HTMLElement).blur())
+    fireEvent.click(submit)
+    expect(await within(popover).findByRole('button', { name: '正在提交' })).toBeDisabled()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(popover).toBeInTheDocument()
+
+    release()
+    await waitFor(() => expect(popover).not.toBeInTheDocument())
   })
 })
 
@@ -124,9 +325,13 @@ describe('音乐素材', () => {
     expect(within(details).getByText('音频生成服务暂不可用')).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await user.click(screen.getByRole('button', { name: '重新生成：轻快电子节奏' }))
-    expect(screen.getByLabelText('音乐描述')).toHaveValue('轻快电子节奏')
-    const submit = screen.getByRole('button', { name: '生成' })
-    await waitFor(() => expect(submit).not.toHaveAttribute('aria-disabled'))
+    const popover = await screen.findByRole('dialog', { name: '生成音乐' })
+    expect(within(popover).getByRole('textbox', { name: '音乐描述' })).toHaveTextContent(
+      '轻快电子节奏',
+    )
+    const submit = within(popover).getByRole('button', { name: '生成音乐' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    expect(popover).toHaveAccessibleDescription('已填入上次的描述，可直接修改')
     await user.click(submit)
     await waitFor(() =>
       expect(bodies).toEqual([

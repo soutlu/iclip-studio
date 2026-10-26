@@ -298,39 +298,60 @@
   }
 }
 
+/* 这是输入卡，与 AI 改段卡一致：不透明底，不用共用浮层的毛玻璃。
+   挂在轨头里，轨头的字号、不换行与灰字色在这里改回正文 */
 .wf-generate {
-  display: flex;
-  width: 320px;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-}
-
-.wf-generate-label {
-  font-size: var(--text-body-sm);
-  font-weight: 500;
-}
-
-.wf-generate-text {
-  width: 100%;
-  resize: vertical;
-  padding: 8px 10px;
-  border: 1px solid var(--color-input-border);
-  border-radius: var(--radius-md);
-  background: var(--color-input-bg);
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--color-top-layer);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-3);
   color: var(--color-on-surface);
-  font-size: var(--text-body-sm);
-  line-height: var(--text-body-sm--line-height);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  white-space: normal;
+  backdrop-filter: none;
 }
 
-.wf-generate-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
+.wf-generate-head {
+  padding: 12px 16px 0;
+}
+
+.wf-generate-title {
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+}
+
+.wf-generate-hint {
+  margin-top: 2px;
   color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-generate-hint.is-blocked {
+  color: var(--color-on-surface-variant);
+}
+
+.wf-generate .wf-generate-composer {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.wf-generate .composer-editor {
+  min-height: 52px;
+  max-height: 160px;
+  padding-top: 10px;
+}
+
+.wf-generate .composer-placeholder-overlay {
+  top: 10px;
 }
 
 /* ---- 预览 ---- */
@@ -362,7 +383,8 @@
   display: block;
 }
 
-/* 画面点选层盖在播放器上；原位改字时让指针进到合成页里 */
+/* 画面点选层铺满预览卡片（不只盖画面），选中框、把手、框外轮廓都能画到画面外；原位改字时让指针
+   进到合成页里 */
 .wf-canvas {
   position: absolute;
   inset: 0;
@@ -372,13 +394,131 @@
   pointer-events: none;
 }
 
-/* 选中框：白色细框加一圈深色，压在任何画面上都看得清 */
+/* 选中框：白色细框加一圈深色，压在任何画面上都看得清；跟着组件绕自己的中心转 */
 .wf-canvas-frame {
   position: absolute;
   border-radius: var(--radius-xs);
   outline: 1.5px solid var(--color-on-scrim);
   box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+  transform-origin: center;
   pointer-events: none;
+}
+
+/* 四角把手：白色小方块加一圈深色，热区比看到的大 */
+.wf-canvas-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: var(--radius-none);
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  pointer-events: auto;
+}
+
+.wf-canvas-handle::before {
+  position: absolute;
+  inset: -5px;
+  content: '';
+}
+
+.wf-canvas-handle[data-corner='nw'] {
+  top: 0;
+  left: 0;
+}
+
+.wf-canvas-handle[data-corner='ne'] {
+  top: 0;
+  left: 100%;
+}
+
+.wf-canvas-handle[data-corner='se'] {
+  top: 100%;
+  left: 100%;
+}
+
+.wf-canvas-handle[data-corner='sw'] {
+  top: 100%;
+  left: 0;
+}
+
+/* 旋转把手：选中框下方 12px 的白色圆钮，跟着选中框一起转（同 Studio） */
+.wf-canvas-rotate {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  /* 圆钮两种主题都是白的，图标取两种主题都是黑的遮罩色 */
+  color: var(--color-scrim);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-scrim) 30%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-scrim) 25%, transparent);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.wf-canvas-rotate::before {
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  content: '';
+}
+
+.wf-canvas-rotate svg {
+  width: 11px;
+  height: 11px;
+}
+
+.wf-canvas.is-rotating,
+.wf-canvas.is-rotating .wf-canvas-rotate {
+  cursor: grabbing;
+}
+
+/* 拖角、拖把手时指针旁边显示当前倍数或角度，松手消失 */
+.wf-canvas-readout {
+  position: absolute;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 72%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-canvas-readout[hidden] {
+  display: none;
+}
+
+/* 没选中的特效、字幕伸出画面的部分：淡虚线轮廓，点一下选中；画面里那块由行内 clip-path 挖掉
+   （同 Studio 的 OffCanvasIndicators） */
+.wf-canvas-offframes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wf-canvas-offframe {
+  position: absolute;
+  padding: 0;
+  border: 1px dashed color-mix(in srgb, var(--color-on-surface) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  transform-origin: center;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.wf-canvas-offframe:hover {
+  border-color: var(--color-on-surface);
 }
 
 .wf-canvas-frame.is-full {
@@ -517,25 +657,28 @@
   object-fit: cover;
 }
 
+/* 悬停预览盖在预览图上，大小、圆角同预览图；不接指针，点按、拖动、悬停提示照旧落在卡片上 */
+.wf-hover-slot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  pointer-events: none;
+}
+
+.wf-hover-player {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* 第一帧画出来之前透明，底下的预览图照常显示 */
+.wf-hover-player.is-pending {
+  opacity: 0;
+}
+
 .wf-component:hover:not(.is-lifting) .wf-component-thumb {
   box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
-}
-
-.wf-component[aria-pressed='true'] .wf-component-thumb {
-  box-shadow: 0 0 0 2px var(--color-on-surface);
-}
-
-.wf-component-check {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  color: var(--color-surface-container-lowest);
 }
 
 .wf-component-name {
@@ -545,11 +688,6 @@
   line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.wf-component[aria-pressed='true'] .wf-component-name {
-  color: var(--color-on-surface);
-  font-weight: 500;
 }
 
 /* ---- 组件浮层 ---- */
@@ -642,10 +780,6 @@
 
 .wf-input::placeholder {
   color: var(--color-on-surface-faint);
-}
-
-.wf-input:focus {
-  box-shadow: inset 0 0 0 1px var(--color-on-surface-faint);
 }
 
 .wf-select {
@@ -917,25 +1051,16 @@
   background: var(--color-hairline);
 }
 
-.wf-sound {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 20px;
-  padding: 6px 4px;
-  border-top: 0.5px solid var(--color-hairline);
+/* 原声、配乐两个推子在工具条里，紧挨缩放钮，之间一条分隔线 */
+.wf-toolbar-sound {
+  gap: 12px;
+  margin-left: auto;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
 }
 
-.wf-sound-clip {
-  min-width: 112px;
-  color: var(--color-on-surface-muted);
-}
-
-.wf-sound-clip b {
-  color: var(--color-on-surface);
-  font-weight: 500;
+.wf-toolbar-sound .wf-divider {
+  margin: 0 0 0 -4px;
 }
 
 .wf-volume,
@@ -959,7 +1084,7 @@
 .wf-fader {
   position: relative;
   display: block;
-  width: 128px;
+  width: 96px;
   height: 28px;
   flex: none;
 }
@@ -1018,14 +1143,14 @@
   --wf-lane-height: 26px;
   /* 特效轨每行 24px（块高 22、行距 2），上面留 2px；与 film-tracks.tsx 的 ROW_PX、ROWS_TOP_PX 一致 */
   --wf-overlay-height: calc(var(--wf-overlay-rows, 1) * 24px + 2px);
-  --wf-music-height: 34px;
+  --wf-music-height: 26px;
 
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
   user-select: none;
 }
 
-/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是画面轨，字幕轨与音乐轨之间只空 4px */
+/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是画面轨 */
 .wf-track-heads {
   display: grid;
   grid-template-rows:
@@ -1036,15 +1161,20 @@
   transition: grid-template-rows var(--dur-m) var(--ease-decel);
 }
 
+/* 四条轨头同一套几何：图标在同一列，轨名起点相同；尾部操作钮右缘离列边 6px */
 .wf-track-head {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
-  padding: 0 10px 0 4px;
+  padding: 0 6px 0 4px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   white-space: nowrap;
+}
+
+.wf-track-head > svg {
+  flex: none;
 }
 
 /* 特效轨的轨名对齐第一行 */
@@ -1086,22 +1216,21 @@
   opacity: 1;
 }
 
-.wf-track-head:last-child,
-.wf-lane.is-music {
-  margin-top: -2px;
-}
-
-/* 轨名旁的小「+」（音乐轨：生成音乐） */
-.wf-head-add {
+/* 轨头尾部的细边圆钮（音乐轨：生成音乐；字幕轨：识别，底色与颜色随识别状态由组件给） */
+.wf-head-add,
+.wf-caption-recognize {
   display: grid;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   flex: none;
   margin-left: auto;
   place-items: center;
   border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-head-add {
+  background: var(--color-surface-container-lowest);
   color: var(--color-on-surface-variant);
 }
 
@@ -1139,17 +1268,16 @@
   pointer-events: none;
 }
 
-/* 开关里的图标与其他轨名的图标左对齐 */
+/* 开关 22px 宽、图标居中，正好落在其他轨名的图标那一列；样式名从轨名的起点开始 */
 .wf-track-head.is-caption {
-  gap: 2px;
-  padding-right: 0;
-  padding-left: 0;
+  gap: 0;
+  padding: 0 6px 0 0;
 }
 
 .wf-caption-toggle {
   display: grid;
   width: 22px;
-  height: 24px;
+  height: 22px;
   flex: none;
   place-items: center;
   border-radius: var(--radius-xs);
@@ -1159,33 +1287,33 @@
   color: var(--color-on-surface);
 }
 
+/* 字幕开着是按下态（同下拉按钮展开时的浅墨底）；关着无底、灰色 */
+.wf-caption-toggle[aria-pressed='true'] {
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+}
+
 .wf-caption-style {
   display: flex;
   min-width: 0;
   height: 28px;
   flex: 1;
   align-items: center;
-  gap: 3px;
-  padding: 0 4px;
+  gap: 2px;
+  margin-right: 2px;
+  padding: 0 2px;
   border-radius: var(--radius-xs);
   font-size: var(--text-label);
 }
 
-.wf-caption-style[data-state='open'] {
-  background: var(--color-state-active);
+.wf-caption-style > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.wf-caption-recognize {
-  display: flex;
-  width: 52px;
-  height: 26px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-caption);
-  font-weight: 500;
+.wf-caption-style[data-state='open'] {
+  background: var(--color-state-active);
 }
 
 /* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸。 */
@@ -1201,9 +1329,38 @@
   color: var(--color-error);
 }
 
+.wf-caption-menu {
+  min-width: 184px;
+}
+
 .wf-caption-menu [role='menuitemradio'] {
-  height: 28px;
+  height: 40px;
+  gap: 12px;
   font-size: var(--text-label);
+}
+
+.wf-caption-style-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 菜单里的样式预览图；排在 .wf-component-thumb 之后，固定尺寸与内描边以这里为准 */
+.wf-caption-style-thumb {
+  width: 48px;
+  height: 27px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-caption-style-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .wf-caption-status {
@@ -1300,11 +1457,6 @@
   background: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
 }
 
-/* 拖着东西经过时，能接收它的轨描一圈 */
-.wf-lane.is-drop {
-  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
-}
-
 .wf-lane > * {
   pointer-events: auto;
 }
@@ -1344,7 +1496,7 @@
 }
 
 .wf-music {
-  height: 30px;
+  height: 22px;
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
@@ -1823,10 +1975,10 @@
   border-top: 1px solid var(--color-hairline);
 }
 
-/* 定高：放下第一个镜头组的两条原作并露出下一组的组名；镜头组多时在区域里上下滚动 */
+/* 定高：放下两条原作（同组或跨组，跨组时中间空 8px）；原作多时在区域里上下滚动 */
 .wf-materials-body {
   display: flex;
-  height: 118px;
+  height: 80px;
   flex-direction: column;
   gap: 8px;
   /* 结尾手柄看得见的部分在轨道右边留的 8px 里；只裁掉它透明的加宽点按区 */
@@ -1847,19 +1999,23 @@
   flex-direction: column;
 }
 
-/* 组名、原作名与时间线轨名同字号 */
+/* 组名在组里第一条原作的左列，独占一行压在原作名上面；与原作名、时间线轨名同字号 */
 .wf-group-label {
-  height: 20px;
+  height: 16px;
+  flex-basis: 100%;
+  overflow: hidden;
   color: var(--color-on-surface);
   font-size: var(--text-label);
   font-weight: 600;
-  line-height: 20px;
+  line-height: 16px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 每条原作一行，素材轨 32px 在行里居中 */
 .wf-take {
   display: grid;
-  height: 32px;
+  height: 36px;
   flex: none;
   align-items: center;
   grid-template-columns: 120px minmax(0, 1fr);
@@ -1872,8 +2028,10 @@
 .wf-take-head {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
+  align-content: center;
   align-items: center;
-  gap: 6px;
+  gap: 0 6px;
 }
 
 .wf-take-label {
@@ -2033,11 +2191,17 @@
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  /* 窄屏轨名只有 72px：开关、样式菜单的展开箭头与识别挨着放 */
-  .wf-track-head.is-caption {
-    gap: 0;
+  /* 窄屏工具条折行，缩放钮另起一行，推子后面的分隔线不留在行尾 */
+  .wf-toolbar-sound .wf-divider {
+    display: none;
   }
 
+  /* 窄屏轨名只有 72px：音乐轨收起轨名，只留图标与尾部圆钮 */
+  .wf-track-head:last-child > span[aria-hidden='true'] {
+    display: none;
+  }
+
+  /* 样式名收起，开关、样式菜单的展开箭头与识别挨着放 */
   .wf-caption-style > span {
     display: none;
   }
@@ -2047,16 +2211,10 @@
     padding: 0;
   }
 
-  .wf-caption-recognize {
-    width: 38px;
-  }
-
-  .wf-caption-recognize:not([aria-busy='true']) > svg,
-  .wf-caption-recognize[aria-busy='true'] > span {
-    display: none;
-  }
-
+  /* 轨名列只有 72px，放不下原作名加版本：折成几行，行高随左列撑开 */
   .wf-take {
+    height: auto;
+    min-height: 36px;
     grid-template-columns: 72px minmax(0, 1fr);
   }
 }

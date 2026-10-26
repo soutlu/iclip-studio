@@ -1,42 +1,74 @@
+import { useId } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import type { CatalogItem } from './component-catalog'
+import {
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRoot,
+  MenuSeparator,
+  MenuSurface,
+  MenuTrigger,
+} from '@/shared/ui/menu'
+import {
+  fontOptions,
+  fontVariableOf,
+  variableValue,
+  type CatalogItem,
+  type ComponentCatalog,
+} from './component-catalog'
+import { ComponentThumb } from './components-panel'
+import type { ComponentVariables } from './editing/draft'
 import type { useSubtitleRecognition } from './use-subtitle-recognition'
 
 type Recognition = ReturnType<typeof useSubtitleRecognition>
 
 /**
- * 字幕标题：全部字幕的开关、选样式；固定大小的识别入口独立显示提交、运行与重试状态。
- * 开关的名字随状态说下一步（关闭字幕 / 打开字幕），没有字幕时也能点。
+ * 字幕标题：全部字幕的开关、显示并更换当前样式与字体；只有图标的识别入口独立显示提交、运行与重试状态。
+ * 开关是按下态按钮（开着为按下），名字随状态说下一步（关闭字幕 / 打开字幕），没有字幕时也能点。
+ * 当前样式有字体项时，样式菜单里另有一组「字体」，改的是字幕的可填项。
  */
 export function CaptionControls({
+  catalog,
   component,
   styles,
   onStyle,
+  variables,
+  onVariables,
   hidden,
   onToggleHidden,
   recognition,
   statusId,
 }: {
+  catalog: ComponentCatalog
   component: string
   styles: readonly CatalogItem[]
   onStyle: (component: string) => void
+  /** 字幕的可填项（草稿里填过的） */
+  variables: ComponentVariables
+  onVariables: (variables: ComponentVariables) => void
   hidden: boolean
   onToggleHidden: () => void
   recognition: Recognition
   statusId: string
 }) {
-  const title = styles.find((style) => style.name === component)?.title ?? '样式不可用，请重新选择'
+  const fontHeadingId = useId()
+  const style = styles.find((candidate) => candidate.name === component)
+  const title = style?.title ?? '样式不可用，请重新选择'
+  const font = style === undefined ? undefined : fontVariableOf(style)
+  // 选回目录里的默认值时不再存这一项，同组件的字体项
+  const onFont = (value: string) => {
+    if (font === undefined) return
+    const rest = Object.fromEntries(Object.entries(variables).filter(([id]) => id !== font.id))
+    onVariables(value === font.default ? rest : { ...rest, [font.id]: value })
+  }
   const toggleLabel = hidden ? '打开字幕' : '关闭字幕'
+  const failed = recognition.status === 'failed' || recognition.status === 'read-error'
   return (
     <>
       <button
         aria-label={toggleLabel}
-        className={cn(
-          'wf-caption-toggle ui-state',
-          hidden ? 'text-on-surface' : 'text-on-surface-muted',
-        )}
+        aria-pressed={!hidden}
+        className={cn('wf-caption-toggle ui-state', hidden && 'text-on-surface-muted')}
         onClick={onToggleHidden}
         title={toggleLabel}
         type="button"
@@ -51,7 +83,7 @@ export function CaptionControls({
             title={`字幕样式：${title}`}
             type="button"
           >
-            <span>字幕</span>
+            <span>{title}</span>
             <Icon className="wf-caption-disclosure" decorative name="expand" size="xs" />
           </button>
         </MenuTrigger>
@@ -60,10 +92,37 @@ export function CaptionControls({
           <MenuRadioGroup onValueChange={onStyle} value={component}>
             {styles.map((style) => (
               <MenuRadioItem key={style.name} value={style.name}>
-                {style.title}
+                <span className="wf-caption-style-option">
+                  <ComponentThumb
+                    catalog={catalog}
+                    className="wf-caption-style-thumb"
+                    iconSize="xs"
+                    item={style}
+                  />
+                  <span className="wf-caption-style-name">{style.title}</span>
+                </span>
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
+          {font === undefined ? null : (
+            <>
+              <MenuSeparator />
+              <span className="px-2 py-1 text-caption text-on-surface-muted" id={fontHeadingId}>
+                字体
+              </span>
+              <MenuRadioGroup
+                aria-labelledby={fontHeadingId}
+                onValueChange={onFont}
+                value={String(variableValue(font, variables))}
+              >
+                {fontOptions(catalog).map((option) => (
+                  <MenuRadioItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </>
+          )}
         </MenuSurface>
       </MenuRoot>
       <button
@@ -72,7 +131,7 @@ export function CaptionControls({
         aria-label={recognition.accessibleLabel}
         className={cn(
           'wf-caption-recognize ui-state bg-surface-container-lowest text-on-surface-variant disabled:bg-surface-container',
-          recognition.status === 'failed' && 'text-error',
+          failed && 'text-error',
         )}
         disabled={recognition.disabled}
         onClick={() => void recognition.recognize()}
@@ -82,16 +141,9 @@ export function CaptionControls({
         <Icon
           className={cn(recognition.busy && 'animate-spin motion-reduce:animate-none')}
           decorative
-          name={
-            recognition.busy
-              ? 'spinner'
-              : recognition.label === '重试'
-                ? 'refresh'
-                : 'recognize-text'
-          }
+          name={recognition.busy ? 'spinner' : failed ? 'refresh' : 'recognize-text'}
           size="xs"
         />
-        <span>{recognition.label}</span>
       </button>
     </>
   )

@@ -293,7 +293,7 @@ const SHARED_BODY: FilmGroupOut['settings'][number] = {
 
 /** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。默认场景图与镜头 1 的
  * 机位图没选用、出不了片；`complete` 时全都选用了；`sharedBody` 时人物后面多一段与生图共用的身材句。工程按选用经
- * `placeView` 摆好，与后端选用时写回的一样。 */
+ * `placeView` 摆好，与后端选用时写回的一样。`musicDescription` 是工程里写的配乐描述，默认没有。 */
 export const seedMockFilm = (
   conversationId: string,
   options: {
@@ -301,6 +301,7 @@ export const seedMockFilm = (
     model?: string | undefined
     complete?: boolean
     sharedBody?: boolean
+    musicDescription?: string
   } = {},
 ) => {
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
@@ -322,7 +323,7 @@ export const seedMockFilm = (
   films.set(conversationId, {
     filmVersion,
     groups: problems > 0 ? [] : placeViews([group], picks),
-    musicDescription: null,
+    musicDescription: options.musicDescription ?? null,
     problems,
     runVersion,
   })

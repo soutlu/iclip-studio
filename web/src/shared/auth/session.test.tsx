@@ -132,12 +132,12 @@ const logout = async (user: ReturnType<typeof userEvent.setup>) => {
 
 const loginAsB = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await screen.findByRole('button', { name: '登录' }))
-  const dialog = await screen.findByRole('dialog', { name: /登录 Cue/ })
+  const dialog = await screen.findByRole('dialog', { name: /登录 iClip/ })
   await user.type(within(dialog).getByRole('textbox', { name: '用户名' }), accountB.username)
   await user.type(within(dialog).getByLabelText('密码'), 'test-password')
   await user.click(within(dialog).getByRole('button', { name: '登录' }))
   await waitFor(() =>
-    expect(screen.queryByRole('dialog', { name: /登录 Cue/ })).not.toBeInTheDocument(),
+    expect(screen.queryByRole('dialog', { name: /登录 iClip/ })).not.toBeInTheDocument(),
   )
 }
 

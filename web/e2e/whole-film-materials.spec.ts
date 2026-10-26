@@ -215,12 +215,14 @@ test('素材暂停续播与段尾重播；点画面轨上的段播放，拖播�
   expect(await mediaTime()).toBeGreaterThanOrEqual(materialPausedAt)
   await expect.poll(mediaTime).toBeGreaterThan(materialPausedAt + 0.05)
 
+  // 点画面轨上的段回到成片：只选中、不播放，播放头在段首；按播放从那里放
   await clip.click()
   await expect(video).toHaveCount(0)
   const playhead = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await expect(toolbar.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+  await expect(playhead).toHaveValue('0')
+  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
   await expect.poll(async () => Number(await playhead.inputValue())).toBeGreaterThan(0.2)
-  await seek(page, dialog, 1)
-  await expect.poll(async () => Number(await playhead.inputValue())).toBeGreaterThan(1.2)
   await pause.click()
   await expect
     .poll(() => player.evaluate((element) => (element as HTMLElement & { paused: boolean }).paused))

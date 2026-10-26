@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 组件目录的冒烟筛选：确认 catalog.json 里的组件能在我们的画面上正常渲染（本机运行；
+ * 组件目录的冒烟筛选：确认组件库源目录 catalog.json 里的组件能在我们的画面上正常渲染（本机运行；
  * 往目录里加组件或升级 HyperFrames 版本后跑，结果不入库）。
  *
- *   pnpm smoke                    跑完所有候选（已有结果的跳过，可中断后续跑）
- *   pnpm smoke --only a,b         只跑这几个
- *   pnpm smoke --fresh            清掉已有结果与冒烟用的组件库，重新同步后重跑
+ *   pnpm smoke --library <源目录>                 跑完所有候选（已有结果的跳过，可中断后续跑）
+ *   pnpm smoke --library <源目录> --only a,b      只跑这几个
+ *   pnpm smoke --library <源目录> --fresh         清掉已有结果与冒烟用的组件库，重新组装后重跑
  *
  * 候选：catalog.json 收录的全部组件，加上 excluded 里原因是「引用的素材不在运行时查找的位置」
  * 或「渲染检查不通过」的组件（要靠实际渲染确认或推翻）。每个候选用真实的合成构建放进一个最小草稿：
@@ -16,7 +16,7 @@
  *   3. 通过的从渲染结果取组件时长一半处的一帧，保存为缩略图，供人工核对画面。
  * 逐项结果写在 .cache/smoke/results/，缩略图在 .cache/smoke/thumbnails/；全部跑完汇总成
  * .cache/smoke/results.json，并打印通过与不通过的数量。不通过的组件要从 catalog.json 移到 excluded，
- * 原因以「渲染检查不通过：」开头。编辑器封面是 catalog/thumbnails/ 里另外维护的 SVG，与这里的缩略图无关。
+ * 原因以「渲染检查不通过：」开头。编辑器封面是源目录 thumbnails/ 里另外维护的 SVG，与这里的缩略图无关。
  *
  * 需要：web 已 pnpm install（同步脚本取运行时）、ffmpeg、chrome-headless-shell（producer 用）、
  * Playwright Chromium（pnpm exec playwright install chromium）。
@@ -25,7 +25,7 @@ import { execFile, spawnSync } from 'node:child_process'
 import { createReadStream, existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { dirname, extname, join, normalize, sep } from 'node:path'
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { chromium } from '@playwright/test'
@@ -36,7 +36,6 @@ const RENDER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB_ROOT = join(RENDER_ROOT, '..', 'web')
 const CACHE = join(RENDER_ROOT, '.cache', 'smoke')
 const REGISTRY = join(RENDER_ROOT, '.cache', 'smoke-registry')
-const CATALOG_PATH = join(WEB_ROOT, 'src/features/storyboard/whole-film/catalog/catalog.json')
 const PORT = Number(process.env.SMOKE_PORT ?? 8814)
 const ORIGIN = `http://127.0.0.1:${PORT}`
 const CANVAS = { width: 1280, height: 720 }
@@ -50,6 +49,9 @@ const SMOKE_REASON_PREFIX = '渲染检查不通过：'
 const args = process.argv.slice(2)
 const only = args.includes('--only') ? new Set(args[args.indexOf('--only') + 1].split(',')) : null
 const fresh = args.includes('--fresh')
+if (!args.includes('--library')) throw new Error('用 --library <组件库源目录> 指定要筛选的组件库')
+const LIBRARY = resolve(args[args.indexOf('--library') + 1])
+const CATALOG_PATH = join(LIBRARY, 'catalog.json')
 
 const shared = await import(join(WEB_ROOT, 'scripts', 'hyperframes-shared.mjs'))
 
@@ -59,7 +61,13 @@ async function ensureRegistry() {
   if (existsSync(join(REGISTRY, 'vendor'))) return
   const result = spawnSync(
     process.execPath,
-    [join(WEB_ROOT, 'scripts', 'hyperframes-registry.mjs'), '--smoke', REGISTRY],
+    [
+      join(WEB_ROOT, 'scripts', 'hyperframes-registry.mjs'),
+      '--library',
+      LIBRARY,
+      '--smoke',
+      REGISTRY,
+    ],
     { stdio: 'inherit' },
   )
   if (result.status !== 0) throw new Error('冒烟用组件库同步失败')

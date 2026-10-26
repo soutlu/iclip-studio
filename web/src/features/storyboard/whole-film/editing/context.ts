@@ -24,4 +24,6 @@ export type EditContext = {
   sources: Record<string, SourceMedia>
   /** 按音频记录的 jobId */
   music: Record<string, MusicMedia>
+  /** 按组件名：组件自己的动画时长（毫秒），组件段与特效块最长放这么长；字幕样式不在其中 */
+  components: Record<string, number>
 }

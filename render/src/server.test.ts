@@ -1,19 +1,25 @@
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ExportQueue } from './jobs'
+import type { ComponentLibrary } from './library'
 import { createExportServer } from './server'
 import { catalog, exportRequest, flush, manualWorker, memoryLogger } from './testing'
 
 let base: string
 let close: () => Promise<void>
+let renders: ReturnType<typeof manualWorker>['renders']
+/** 渲染服务每次受理时读到的组件库；用例可以换掉它，模拟发布了新的一版 */
+let current: ComponentLibrary
 
 beforeEach(async () => {
-  const { worker } = manualWorker()
+  const manual = manualWorker()
+  renders = manual.renders
+  current = { catalog, dir: '/registry/test-fixtures' }
   const { logger } = memoryLogger()
-  const queue = new ExportQueue({ worker, logger, timeoutMs: 60_000 })
+  const queue = new ExportQueue({ worker: manual.worker, logger, timeoutMs: 60_000 })
   const server = createExportServer({
     queue,
-    catalog,
+    library: async () => current,
     allowedHosts: new Set(['oss.example.com']),
     logger,
     health: () => ({ gpu: 'software', chrome: 'Chrome Headless Shell 152.0.7977.30' }),
@@ -53,6 +59,29 @@ describe('渲染服务接口', () => {
     })
   })
 
+  it('每次受理都读当前的组件库：发布新的一版后不用重启，任务用受理时那一版的目录', async () => {
+    const renamed = (component: string) => {
+      const body = exportRequest({ id: crypto.randomUUID() })
+      const document = body['document'] as { overlays: { component: string }[] }
+      document.overlays[0]!.component = component
+      return body
+    }
+    expect((await post(renamed('fixture-overlay-v2'))).status).toBe(400)
+
+    const overlay = catalog.items.find((item) => item.name === 'fixture-overlay')!
+    current = {
+      catalog: {
+        ...catalog,
+        version: 'next',
+        items: [...catalog.items, { ...overlay, name: 'fixture-overlay-v2' }],
+      },
+      dir: '/registry/next',
+    }
+    expect((await post(renamed('fixture-overlay-v2'))).status).toBe(202)
+    await flush()
+    expect(renders.map((render) => render.registryDir)).toEqual(['/registry/next'])
+  })
+
   it('画面轨上只有组件段、没有视频也没有画布：照样受理并开始渲染', async () => {
     const body = exportRequest()
     body['document'] = {
@@ -65,7 +94,7 @@ describe('渲染服务接口', () => {
           start: 0,
           duration: 2000,
           playbackStart: 0,
-          component: 'logo-outro',
+          component: 'fixture-scene',
           variables: {},
         },
       ],

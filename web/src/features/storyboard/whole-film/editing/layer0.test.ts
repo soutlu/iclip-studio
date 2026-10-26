@@ -22,12 +22,17 @@ import {
 } from './layer0'
 import { filmDuration } from './timeline'
 
-const context = contextOf({
-  s1: source(10_000),
-  s2: source(5_000),
-  big: source(200_000),
-  wide: { ...source(5_000), width: 1920, height: 1080 },
-})
+const context = contextOf(
+  {
+    s1: source(10_000),
+    s2: source(5_000),
+    big: source(200_000),
+    wide: { ...source(5_000), width: 1920, height: 1080 },
+  },
+  {},
+  // long 比 120 秒还长，只受总长上限约束
+  { card: 3_000, long: 200_000 },
+)
 
 /** 组件段 2 秒、两段视频、组件段 1.5 秒：c1 0–2000、v1 2000–5000、v2 5000–7000、c2 7000–8500 */
 const withCards = () =>
@@ -144,9 +149,9 @@ describe('insertMaterial', () => {
 
 describe('insertComponent', () => {
   const component = (at: InsertAt, duration = 1_000) => ({
-    component: 'logo-outro',
+    component: 'fixture-scene',
     duration,
-    variables: { title: '拾步' },
+    variables: { title: '示例' },
     at,
   })
 
@@ -164,8 +169,8 @@ describe('insertComponent', () => {
       start: 3_000,
       duration: 1_500,
       playbackStart: 0,
-      component: 'logo-outro',
-      variables: { title: '拾步' },
+      component: 'fixture-scene',
+      variables: { title: '示例' },
     })
   })
 
@@ -318,15 +323,48 @@ describe('trimClip', () => {
     expect(expectOk(trim(fresh, 'c1', 'start', -500)).draft).toBe(fresh)
   })
 
-  it('组件段拉长只受总长上限约束', () => {
-    const { draft } = expectOk(trim(withCards(), 'c1', 'end', 500_000))
+  it('组件段结尾最多拉到组件自己的时长放完（card 3 秒），后面的段跟着移；往短里拖照常', () => {
+    const longest = expectOk(trim(withCards(), 'c1', 'end', 50_000)).draft
+    expect(spans(longest).slice(0, 2)).toEqual([
+      ['c1', 0, 3_000],
+      ['v1', 3_000, 6_000],
+    ])
+    const shorter = expectOk(trim(longest, 'c1', 'end', -800)).draft
+    expect(shorter.layer0[0]).toMatchObject({ duration: 2_200, playbackStart: 0 })
+  })
+
+  it('左端修剪过的组件段：结尾最多到组件时长减去入点，开头往前拉退到入点 0 为止', () => {
+    const film = draftOf([card('c1', 1_500, { playbackStart: 800 }), video('v1', 's1', 0, 1_000)])
+    const end = expectOk(trim(film, 'c1', 'end', 50_000)).draft
+    expect(end.layer0[0]).toMatchObject({ duration: 2_200, playbackStart: 800 })
+    const start = expectOk(trim(end, 'c1', 'start', -5_000)).draft
+    expect(start.layer0[0]).toMatchObject({ duration: 3_000, playbackStart: 0 })
+  })
+
+  it('草稿里已经超出组件时长的组件段：拖结尾时收回上限以内，往长往短拖都不报错', () => {
+    const film = draftOf([card('c1', 5_000), video('v1', 's1', 0, 1_000)])
+    for (const deltaMs of [300, -300]) {
+      const { draft } = expectOk(trim(film, 'c1', 'end', deltaMs))
+      expect(spans(draft)).toEqual([
+        ['c1', 0, 3_000],
+        ['v1', 3_000, 4_000],
+      ])
+    }
+  })
+
+  it('组件段拉长也受总长上限约束', () => {
+    const film = draftOf([card('c1', 2_000, { component: 'long' }), video('v1', 's1', 0, 3_000)])
+    const { draft } = expectOk(trim(film, 'c1', 'end', 500_000))
     expect(filmDuration(draft)).toBe(120_000)
   })
 
-  it('上下文缺少草稿里的素材片：是调用方的错，直接报错', () => {
+  it('上下文缺少草稿里的素材片或组件：是调用方的错，直接报错', () => {
     expect(() =>
       trimClip(base(), { clipId: 'v1', edge: 'end', deltaMs: 1 }, contextOf({})),
     ).toThrow('成片编辑上下文缺少素材片 s1')
+    expect(() =>
+      trimClip(withCards(), { clipId: 'c1', edge: 'end', deltaMs: 1 }, contextOf({})),
+    ).toThrow('成片编辑上下文缺少组件 card')
   })
 })
 

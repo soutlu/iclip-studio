@@ -92,6 +92,13 @@ type EditorToolbarProps = {
   onBeatSync: () => void
   onZoom: (direction: 'in' | 'out') => void
   onFit: () => void
+  /** 选中那段视频的原声音量；没选中视频时为 undefined，推子置灰并悬停说 clipBlocked */
+  clipVolume: number | undefined
+  clipBlocked: string
+  onClipVolume: (value: number) => void
+  /** 配乐音量；没有选用音乐时为 undefined */
+  musicVolume: number | undefined
+  onMusicVolume: (value: number) => void
 }
 
 export function EditorToolbar({
@@ -114,6 +121,11 @@ export function EditorToolbar({
   onBeatSync,
   onZoom,
   onFit,
+  clipVolume,
+  clipBlocked,
+  onClipVolume,
+  musicVolume,
+  onMusicVolume,
 }: EditorToolbarProps) {
   const playLabel = playing ? '暂停' : '播放'
   return (
@@ -204,6 +216,21 @@ export function EditorToolbar({
           tip="把切点挪到最近的拍点上，音乐不动"
         />
       </div>
+      <div aria-label="声音" className="wf-toolbar-group wf-toolbar-sound" role="group">
+        <VolumeFader
+          blocked={clipVolume === undefined ? clipBlocked : undefined}
+          label="原声"
+          onCommit={onClipVolume}
+          value={clipVolume ?? 1}
+        />
+        <VolumeFader
+          blocked={musicVolume === undefined ? '还没有选用音乐' : undefined}
+          label="配乐"
+          onCommit={onMusicVolume}
+          value={musicVolume ?? 1}
+        />
+        <span aria-hidden="true" className="wf-divider" />
+      </div>
       <div className="wf-toolbar-group">
         <Tool icon="zoom-out" label="缩小时间线" onClick={() => onZoom('out')} tip="缩小时间线" />
         <Tool icon="zoom" label="放大时间线" onClick={() => onZoom('in')} tip="放大时间线" />
@@ -225,7 +252,7 @@ type VolumeFaderProps = {
  * 音量推子（同 HyperFrames）：按 dB 刻度，0 dB 在正中，最左静音、最右 +12 dB；左边的按钮静音或取消静音。
  * 拖动中只改显示，松手（或失焦）才记一步编辑；双击回到 0 dB，←/→ 每次 0.5 dB，按住 ⇧ 3 dB。
  */
-export function VolumeFader({ label, value, blocked, onCommit }: VolumeFaderProps) {
+function VolumeFader({ label, value, blocked, onCommit }: VolumeFaderProps) {
   const [live, setLive] = useState<number | null>(null)
   // 取消静音时回到静音前的音量；不记在草稿里，关掉编辑器就忘
   const [beforeMute, setBeforeMute] = useState(1)
@@ -260,7 +287,7 @@ export function VolumeFader({ label, value, blocked, onCommit }: VolumeFaderProp
         <Icon decorative name={muted ? 'audio-off' : 'audio'} size="sm" />
       </button>
       <label className="wf-volume-label">
-        <span>{label}音量</span>
+        <span>{label}</span>
         <span className="wf-fader">
           <input
             aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight"
@@ -286,42 +313,6 @@ export function VolumeFader({ label, value, blocked, onCommit }: VolumeFaderProp
         </span>
       </label>
       <output className="wf-volume-value">{gainText(shown)}</output>
-    </div>
-  )
-}
-
-type SoundRowProps = {
-  clipText: ReactNode
-  clipVolume: number | undefined
-  clipBlocked: string
-  onClipVolume: (value: number) => void
-  musicVolume: number | undefined
-  onMusicVolume: (value: number) => void
-}
-
-export function SoundRow({
-  clipText,
-  clipVolume,
-  clipBlocked,
-  onClipVolume,
-  musicVolume,
-  onMusicVolume,
-}: SoundRowProps) {
-  return (
-    <div aria-label="声音" className="wf-sound" role="group">
-      <span className="wf-sound-clip">{clipText}</span>
-      <VolumeFader
-        blocked={clipVolume === undefined ? clipBlocked : undefined}
-        label="原声"
-        onCommit={onClipVolume}
-        value={clipVolume ?? 1}
-      />
-      <VolumeFader
-        blocked={musicVolume === undefined ? '还没有选用音乐' : undefined}
-        label="配乐"
-        onCommit={onMusicVolume}
-        value={musicVolume ?? 1}
-      />
     </div>
   )
 }

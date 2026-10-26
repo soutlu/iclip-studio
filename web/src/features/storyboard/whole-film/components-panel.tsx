@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
@@ -10,10 +10,19 @@ import {
   defaultLaneLabel,
   thumbnailOf,
   type CatalogItem,
+  type ComponentCatalog,
   type ComponentGroup,
 } from './component-catalog'
+import { ComponentHoverPreview } from './component-hover-preview'
+import { hoverPreviewOf } from './hover-preview'
+
+/** 鼠标在卡片上停这么久才开始加载悬停预览，划过去的不加载 */
+export const HOVER_PREVIEW_DELAY_MS = 300
 
 type ComponentsPanelProps = {
+  /** 组件目录与站点地址：悬停预览按它们生成合成页 */
+  catalog: ComponentCatalog
+  origin: string
   /** 这一栏的小标题（品牌或分类）和各自的卡片 */
   groups: ComponentGroup[]
   /** 小标题这一排叫什么，如「品牌」「分类」 */
@@ -23,8 +32,6 @@ type ComponentsPanelProps = {
   onSelect: (id: string) => void
   /** 这一栏没有卡片时的说明 */
   emptyText: string
-  /** 成片在用的字幕样式：这张卡描墨色框并打勾 */
-  captionComponent: string
   /** 点卡片：按组件的默认去处放进成片 */
   onUse: (item: CatalogItem) => void
   /** 拿着卡片移动；null 是拖动中途作废 */
@@ -40,20 +47,40 @@ export type CardCarry = {
   origin: { left: number; top: number; width: number; height: number }
 }
 
-/** 品牌栏、通用栏：一排小标题加卡片网格；点卡片放进成片，或拖到时间线的轨上 */
+/**
+ * 品牌栏、通用栏：一排小标题加卡片网格；点卡片放进成片，或拖到时间线的轨上。
+ * 鼠标停在卡片上时在卡片里播放组件动画，同一时间只播一张。
+ */
 export function ComponentsPanel({
+  catalog,
+  origin,
   groups,
   groupsLabel,
   selected,
   onSelect,
   emptyText,
-  captionComponent,
   onUse,
   onCarry,
   onDrop,
 }: ComponentsPanelProps) {
+  // 正在播悬停预览的卡片（组件名）
+  const [hovered, setHovered] = useState<string | null>(null)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(hoverTimerRef.current), [])
+  const hoverStart = (name: string) => {
+    clearTimeout(hoverTimerRef.current)
+    hoverTimerRef.current = setTimeout(() => setHovered(name), HOVER_PREVIEW_DELAY_MS)
+  }
+  const hoverEnd = () => {
+    clearTimeout(hoverTimerRef.current)
+    setHovered(null)
+  }
+
   const group = groups.find((item) => item.id === selected) ?? groups[0]
   if (group === undefined) return <p className="wf-components-empty">{emptyText}</p>
+  const hoveredItem = group.items.find((item) => item.name === hovered)
+  const hoverPreview =
+    hoveredItem === undefined ? undefined : hoverPreviewOf(hoveredItem, catalog, origin)
   return (
     <div className="wf-components">
       <ChipGroup
@@ -76,13 +103,18 @@ export function ComponentsPanel({
         {group.items.map((item) => (
           <li key={item.name}>
             <ComponentCard
-              captionInUse={
-                item.placement === 'caption' ? item.name === captionComponent : undefined
-              }
+              catalog={catalog}
               item={item}
               onCarry={(carry) => onCarry(item, carry)}
               onDrop={(carry) => onDrop(item, carry)}
+              onHoverEnd={hoverEnd}
+              onHoverStart={() => hoverStart(item.name)}
               onUse={() => onUse(item)}
+              preview={
+                item.name === hovered && hoverPreview?.kind === 'ready'
+                  ? hoverPreview.html
+                  : undefined
+              }
             />
           </li>
         ))}
@@ -93,15 +125,17 @@ export function ComponentsPanel({
 
 /** 组件的预览图；目录里没有缩略图的用分类图标 */
 export function ComponentThumb({
+  catalog,
   item,
   className,
   iconSize = 'md',
 }: {
+  catalog: ComponentCatalog
   item: CatalogItem
   className?: string
   iconSize?: 'xs' | 'md'
 }) {
-  const thumbnail = thumbnailOf(item)
+  const thumbnail = thumbnailOf(catalog, item)
   return (
     <span className={cn('wf-component-thumb', className)}>
       {thumbnail === undefined ? (
@@ -114,12 +148,17 @@ export function ComponentThumb({
 }
 
 type CardProps = {
+  catalog: ComponentCatalog
   item: CatalogItem
-  /** 字幕样式卡是不是成片在用的那个；其余组件为 undefined */
-  captionInUse: boolean | undefined
+  /** 悬停预览的合成页；不在播时为 undefined */
+  preview: string | undefined
   onUse: () => void
   onCarry: (carry: CardCarry | null) => void
   onDrop: (carry: CardCarry) => void
+  /** 鼠标进到卡片上 */
+  onHoverStart: () => void
+  /** 鼠标离开、或拿起卡片开始拖：立即停掉悬停预览 */
+  onHoverEnd: () => void
 }
 
 type Press = {
@@ -130,7 +169,16 @@ type Press = {
   moved: boolean
 }
 
-function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps) {
+function ComponentCard({
+  catalog,
+  item,
+  preview,
+  onUse,
+  onCarry,
+  onDrop,
+  onHoverStart,
+  onHoverEnd,
+}: CardProps) {
   const pressRef = useRef<Press | null>(null)
   const [lifting, setLifting] = useState(false)
   const [tip, setTip] = useState(false)
@@ -157,6 +205,8 @@ function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps
       if (distance <= DRAG_THRESHOLD) return
       current.moved = true
       setLifting(true)
+      // 按下后指针被卡片捕获，拖走时不会先收到离开，这里停掉预览
+      onHoverEnd()
     }
     onCarry({ clientX: event.clientX, clientY: event.clientY, origin: current.origin })
   }
@@ -186,24 +236,23 @@ function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps
       <TooltipTrigger asChild>
         <button
           aria-label={`${item.title}，${defaultLaneLabel(item)}：${item.description}`}
-          aria-pressed={captionInUse}
           className={cn('wf-component ui-focus', lifting && 'is-lifting')}
           onClick={() => {
             if (!clicks.take()) onUse()
           }}
           onPointerCancel={cancel}
           onPointerDown={press}
+          onPointerEnter={(event) => {
+            if (event.pointerType === 'mouse') onHoverStart()
+          }}
+          onPointerLeave={onHoverEnd}
           onPointerMove={move}
           onPointerUp={release}
           type="button"
         >
           <span className="wf-component-frame">
-            <ComponentThumb item={item} />
-            {captionInUse === true ? (
-              <span className="wf-component-check">
-                <Icon decorative name="check" size="xs" />
-              </span>
-            ) : null}
+            <ComponentThumb catalog={catalog} item={item} />
+            {preview === undefined ? null : <ComponentHoverPreview srcdoc={preview} />}
           </span>
           <span className="wf-component-name">{item.title}</span>
         </button>

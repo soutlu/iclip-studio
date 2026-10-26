@@ -22,11 +22,13 @@ import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { useAudioPeaks } from '../editing/media-analysis'
 import { Frames } from '../editing/timeline'
+import { isShortcutTarget } from '../editing/shortcut-target'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import {
   brandGroups,
+  captionStyles,
   CATEGORY_ICON,
   categoryGroups,
   durationMsOf,
@@ -39,6 +41,7 @@ import {
 import { placeComponent, placedPiece, type Placing } from './component-placement'
 import { moveEditOf } from './canvas-drag'
 import { CanvasLayer } from './canvas-layer'
+import { transformEditOf } from './canvas-transform'
 import { captionTextEdit, componentTextEdit } from './canvas-text-edit'
 import { CaptionControls, CaptionStatus } from './caption-controls'
 import { ComponentPopover } from './component-popover'
@@ -46,7 +49,7 @@ import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-pa
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
-import { setCaptionsHidden, setCaptionStyle } from './editing/captions'
+import { setCaptionsHidden, setCaptionStyle, setCaptionsVariables } from './editing/captions'
 import {
   MAX_FILM_MS,
   type ComponentVariables,
@@ -74,7 +77,7 @@ import {
   withSourceSize,
   type KeyframeStates,
 } from './edit-context'
-import { EditorToolbar, SoundRow } from './editor-toolbar'
+import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import {
   FilmTracks,
@@ -199,21 +202,6 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-const isTextEntry = (target: HTMLElement) =>
-  target.isContentEditable ||
-  target instanceof HTMLTextAreaElement ||
-  (target instanceof HTMLInputElement && target.type !== 'range')
-
-/**
- * 编辑器的单键快捷键只在弹窗里、不在打字时生效；组件浮层与菜单挂在弹窗外，标签页的方向键与空格
- * 留给标签页自己。
- */
-const isShortcutTarget = (event: KeyboardEvent<HTMLDivElement>) =>
-  event.target instanceof HTMLElement &&
-  event.currentTarget.contains(event.target) &&
-  !isTextEntry(event.target) &&
-  event.target.closest('[role="tab"]') === null
-
 const attemptOf = (result: EditResult): Attempt =>
   result.ok ? result : { ok: false, reason: REFUSAL_TEXT[result.refusal] }
 
@@ -308,8 +296,18 @@ function EditorBody({
           beats.kind === 'ready' && draft.music !== null
             ? { jobId: draft.music.jobId, beats: beats.beats }
             : undefined,
+        catalog,
       }),
-    [materials, keyframes, recognition.records, music.data, musicDurations, beats, draft.music],
+    [
+      materials,
+      keyframes,
+      recognition.records,
+      music.data,
+      musicDurations,
+      beats,
+      draft.music,
+      catalog,
+    ],
   )
 
   const [playheadMs, setPlayheadMs] = useState(0)
@@ -350,12 +348,10 @@ function EditorBody({
     if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
-  /** 点画面轨上的段：选中，播放头移到段首并把这一段播一遍，停在段尾；拖动播放头或再按播放时取消 */
-  const playClip = (clip: Layer0Clip) => {
+  /** 点画面轨上的段：选中，播放头停在段首；不播放 */
+  const selectClip = (clip: Layer0Clip) => {
     setSelection({ kind: 'clip', id: clip.id })
-    leaveMaterial()
-    setPlayheadMs(clip.start)
-    previewRef.current?.playRange(clip.start, clip.start + clip.duration)
+    seek(clip.start)
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
@@ -547,6 +543,10 @@ function EditorBody({
 
   // 音乐列表与时长读到之前，编辑操作拿不到这首音乐的事实（时长、拍点）
   const musicKnown = draft.music !== null && context.music[draft.music.jobId] !== undefined
+  // 卡点要知道每个组件段多长才能挪它的出点；组件库里没有的组件不知道
+  const unknownComponent = draft.layer0.some(
+    (clip) => clip.type === 'component' && context.components[clip.component] === undefined,
+  )
   const beatBlocked =
     draft.music === null
       ? REFUSAL_TEXT['no-music']
@@ -554,7 +554,9 @@ function EditorBody({
         ? '正在分析这首音乐的拍点，稍后再试'
         : beats.kind === 'unavailable'
           ? beats.reason
-          : undefined
+          : unknownComponent
+            ? '画面轨上有组件库里没有的组件，无法卡点；请删掉它或换一个组件'
+            : undefined
   const beatSync = () => {
     const result = autoBeatSync(draft, context)
     if (!apply(result) || !result.ok) return
@@ -566,7 +568,7 @@ function EditorBody({
     const item = itemOf(catalog, name)
     return {
       title: item?.title ?? '组件库里没有的组件',
-      thumbnail: item === undefined ? undefined : thumbnailOf(item),
+      thumbnail: item === undefined ? undefined : thumbnailOf(catalog, item),
       icon: (item === undefined ? undefined : CATEGORY_ICON[item.category]) ?? 'grid',
     }
   }
@@ -589,11 +591,11 @@ function EditorBody({
     overlayRow: point.overlayRow,
   })
   /**
-   * 拖着组件卡：落在哪条轨就是哪种用法；字幕样式只落在字幕轨，音乐轨不收组件。
+   * 拖着组件卡：落在画面轨插成一段，落在特效轨放成特效块，音乐轨不收组件。
    * 手上的缩影是预览图加名字的小条，拿起时的卡片位置是它退回的地方。
    */
   const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
-    durationMs: durationMsOf(item, total),
+    durationMs: durationMsOf(item),
     ghost:
       origin === undefined
         ? undefined
@@ -601,8 +603,8 @@ function EditorBody({
             origin,
             face: {
               title: item.title,
-              durationMs: durationMsOf(item, total),
-              media: <ComponentThumb iconSize="xs" item={item} />,
+              durationMs: durationMsOf(item),
+              media: <ComponentThumb catalog={catalog} iconSize="xs" item={item} />,
             },
           },
     attempt: (point) => {
@@ -653,6 +655,7 @@ function EditorBody({
       )
     return (
       <ComponentPopover
+        catalog={catalog}
         item={item}
         onChange={(variables: ComponentVariables) =>
           apply(setComponentVariables(draft, { id, variables }))
@@ -723,17 +726,6 @@ function EditorBody({
       : `${takeLetterOf(material)} · 镜头 ${shot}`
   }
 
-  const selectedIndex = draft.layer0.findIndex((clip) => clip.id === selectedId)
-  const clipText =
-    selectedIndex < 0 ? (
-      '选择片段可调原声'
-    ) : (
-      <>
-        当前片段 · <b>第 {selectedIndex + 1} 段</b>
-        {selectedVideo === undefined ? ' · 没有原声' : ''}
-      </>
-    )
-
   // ---- 素材预览 ----
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -782,7 +774,7 @@ function EditorBody({
           </TabsContent>
           <TabsContent className="wf-side-body is-components" value="brand">
             <ComponentsPanel
-              captionComponent={draft.captions.component}
+              catalog={catalog}
               emptyText="暂无品牌组件"
               groups={brandGroups(catalog)}
               groupsLabel="品牌"
@@ -790,12 +782,13 @@ function EditorBody({
               onDrop={dropComponent}
               onSelect={(id) => setSideChips((chips) => ({ ...chips, brand: id }))}
               onUse={placeFromCard}
+              origin={window.location.origin}
               selected={sideChips.brand}
             />
           </TabsContent>
           <TabsContent className="wf-side-body is-components" value="general">
             <ComponentsPanel
-              captionComponent={draft.captions.component}
+              catalog={catalog}
               emptyText="暂无组件"
               groups={categoryGroups(catalog)}
               groupsLabel="分类"
@@ -803,6 +796,7 @@ function EditorBody({
               onDrop={dropComponent}
               onSelect={(id) => setSideChips((chips) => ({ ...chips, general: id }))}
               onUse={placeFromCard}
+              origin={window.location.origin}
               selected={sideChips.general}
             />
           </TabsContent>
@@ -821,6 +815,7 @@ function EditorBody({
           <CanvasLayer
             canvas={canvas}
             captions={captions}
+            componentTitle={(name) => componentFace(name).title}
             draft={draft}
             iframe={previewFrame}
             onCaptionText={editCaption}
@@ -834,7 +829,12 @@ function EditorBody({
             }}
             onPause={() => previewRef.current?.pause()}
             onSelect={selectOnCanvas}
+            onTransform={(target, args) => {
+              const result = transformEditOf(draft, target, args)
+              return result !== null && apply(result)
+            }}
             playheadMs={playhead}
+            playing={playing}
             selection={selection}
             sentenceText={sentenceText}
             snap={snap}
@@ -877,12 +877,11 @@ function EditorBody({
             snap={snap}
             splitBlocked={split.ok ? undefined : REFUSAL_TEXT[split.refusal]}
             totalMs={total}
-          />
-          <SoundRow
             clipBlocked={
-              selectedIndex < 0 ? '先在画面轨上选中一段视频' : REFUSAL_TEXT['not-a-video']
+              draft.layer0.some((clip) => clip.id === selectedId)
+                ? REFUSAL_TEXT['not-a-video']
+                : '先在画面轨上选中一段视频'
             }
-            clipText={clipText}
             clipVolume={selectedVideo?.volume}
             musicVolume={draft.music?.volume}
             onClipVolume={(volume) => {
@@ -902,15 +901,18 @@ function EditorBody({
             beats={musicKnown ? filmBeats(draft, context) : []}
             captionControls={
               <CaptionControls
+                catalog={catalog}
                 component={draft.captions.component}
                 hidden={draft.captions.hidden === true}
                 onStyle={(component) => apply(setCaptionStyle(draft, { component }))}
+                onVariables={(variables) => apply(setCaptionsVariables(draft, { variables }))}
+                variables={draft.captions.variables ?? {}}
                 onToggleHidden={() =>
                   apply(setCaptionsHidden(draft, { hidden: !draft.captions.hidden }))
                 }
                 recognition={recognition}
                 statusId={captionStatusId}
-                styles={catalog.items.filter((item) => item.placement === 'caption')}
+                styles={captionStyles(catalog)}
               />
             }
             captionStatus={
@@ -943,7 +945,7 @@ function EditorBody({
               />
             }
             onCaptionText={editCaption}
-            onClipClick={playClip}
+            onClipClick={selectClip}
             onSeek={seek}
             onSelect={(next) => {
               leaveMaterial()

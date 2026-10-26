@@ -59,11 +59,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
 
   await readyPlayer(dialog)
   await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
-  // 点段会自动播放；编辑流程先暂停，后续插入位置才不会随播放时间漂移。
-  await dialog
-    .getByRole('toolbar', { name: '剪辑工具' })
-    .getByRole('button', { name: '暂停', exact: true })
-    .click()
   const before = await first.getAttribute('aria-label')
   await film.getByRole('slider', { name: '裁剪该段结尾' }).focus()
   await page.keyboard.press('ArrowLeft')
@@ -95,42 +90,55 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await beatSync.click()
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
-  // 组件栏：component 卡片放到特效轨、block 卡片插进画面轨、字幕样式
+  // 组件栏：component 卡片放到特效轨、block 卡片插进画面轨；字幕样式在字幕轨标题上换
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = dialog.getByRole('radiogroup', { name: '分类' })
-  await categories.getByRole('radio', { name: /^场景/ }).click()
+  await categories.getByRole('radio', { name: /^文字效果/ }).click()
   const components = dialog.getByRole('list', { name: '组件' })
   const overlays = dialog.getByRole('group', { name: '特效轨' })
-  await components.getByRole('button', { name: /^字标定格，特效轨/ }).click()
-  await expect(overlays.getByRole('group', { name: /^特效 · 字标定格/ })).toBeVisible()
+  await components.getByRole('button', { name: /^测试可填项，特效轨/ }).click()
+  await expect(overlays.getByRole('group', { name: /^特效 · 测试可填项/ })).toBeVisible()
   // 有可填项的组件放下就打开浮层
-  const intro = page.getByRole('dialog', { name: '特效 · 字标定格' })
-  await expect(intro.getByLabel('品牌名')).toHaveAttribute('placeholder', '品牌名')
-  const brandSaved = page.waitForRequest(
+  const fields = page.getByRole('dialog', { name: '特效 · 测试可填项' })
+  await expect(fields.getByLabel('文字')).toHaveAttribute('placeholder', '示例文字')
+  const textSaved = page.waitForRequest(
     (request) =>
       request.method() === 'PUT' &&
       request.url().includes('/whole-film/draft') &&
-      (request.postData() ?? '').includes('拾步'),
+      (request.postData() ?? '').includes('秋冬上新'),
   )
-  await intro.getByLabel('品牌名').fill('拾步')
-  await intro.getByLabel('品牌名').press('Enter')
-  await brandSaved
+  await fields.getByLabel('文字').fill('秋冬上新')
+  await fields.getByLabel('文字').press('Enter')
+  await textSaved
   await readyPlayer(dialog)
   await page.keyboard.press('Escape')
-  await expect(intro).toBeHidden()
+  await expect(fields).toBeHidden()
 
   await seek(page, dialog, 0)
-  await components.getByRole('button', { name: /^标志片尾，画面轨/ }).click()
-  await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 标志片尾/ })).toBeVisible()
+  await categories.getByRole('radio', { name: /^场景/ }).click()
+  await components.getByRole('button', { name: /^测试画面，画面轨/ }).click()
+  await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 测试画面/ })).toBeVisible()
 
   await seek(page, dialog, 1)
-  await categories.getByRole('radio', { name: /^社交/ }).click()
-  await components.getByRole('button', { name: /^手绘箭头，特效轨/ }).click()
-  await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
+  await categories.getByRole('radio', { name: /^效果/ }).click()
+  await components.getByRole('button', { name: /^测试叠加，特效轨/ }).click()
+  await expect(dialog.getByRole('group', { name: /^特效 · 测试叠加/ })).toBeVisible()
 
-  await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
-  await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toBeVisible()
+  // 字幕样式菜单列出组件库里的字幕样式，每项带这一版组件库里的封面
+  const captionStyle = dialog.getByRole('button', { name: /^字幕样式：/ })
+  await expect(captionStyle).toHaveText('测试字幕')
+  await captionStyle.click()
+  const style = page.getByRole('menuitemradio', { name: '测试字幕', exact: true })
+  await expect(style).toBeChecked()
+  await expect(style.locator('img')).toHaveAttribute(
+    'src',
+    /^\/hyperframes\/[0-9a-f]{12}\/thumbnails\/default-caption\.svg$/,
+  )
+  await expect
+    .poll(() => style.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBeGreaterThan(0)
+  await page.keyboard.press('Escape')
+  await expect(captionStyle).toHaveAccessibleName('字幕样式：测试字幕')
 
   // 字幕开关：关掉存进草稿（预览与导出都按它不放字幕），撤销回到开着；再关上，下面关着改字
   const turnOff = dialog.getByRole('button', { name: '关闭字幕', exact: true })
@@ -141,11 +149,12 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
       request.url().includes('/whole-film/draft') &&
       (request.postData() ?? '').includes('"hidden":true'),
   )
+  await expect(turnOff).toHaveAttribute('aria-pressed', 'true')
   await turnOff.click()
-  await expect(turnOn).toBeVisible()
+  await expect(turnOn).toHaveAttribute('aria-pressed', 'false')
   await hiddenSaved
   await dialog.getByRole('button', { name: '撤销' }).click()
-  await expect(turnOff).toBeVisible()
+  await expect(turnOff).toHaveAttribute('aria-pressed', 'true')
   await turnOff.click()
   await expect(turnOn).toBeVisible()
 
