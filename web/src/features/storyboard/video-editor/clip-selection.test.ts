@@ -83,7 +83,7 @@ it('扩大范围后可选 E2 或恢复整个范围的 V1，不重复原片或丢
 })
 
 it('裁剪生成结果只归属映射后的子范围，切回 V1 不重新插入被裁掉的内容', () => {
-  const trimmed = trimClip(draft, result.id, 'start', 1.5)
+  const trimmed = trimClip(draft, [result.id], 'start', 1.5)
   const group = required(selectedGroup(trimmed.draft, trimmed.selection, 'base', [first]))
   expect(group).toMatchObject({ start: 3, end: 4, edits: [] })
   const restored = required(
