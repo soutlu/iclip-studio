@@ -289,6 +289,40 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   await expect(end).toHaveAttribute('aria-valuetext', '3.5 秒')
 })
 
+test('选区里的播放头只在素材播放时出现：点镜头、暂停、拖抓手松手后都没有', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const playhead = groupOf(materials, 1).getByTestId('material-playhead')
+  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
+
+  await shotOf(materials, 1, 'A', 2).click()
+  await expect(dialog.locator('video')).toBeVisible()
+  await expect(playhead).toHaveCount(0)
+
+  // 扩成三秒选区，留足播放中再暂停的时间
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuetext', '4.0 秒')
+  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  await expect(playhead).toBeVisible()
+  await toolbar.getByRole('button', { name: '暂停', exact: true }).click()
+  await expect(playhead).toHaveCount(0)
+
+  // 拖结尾时看抓手本身，松手后也不留播放头
+  const third = await centerOf(shotOf(materials, 1, 'A', 3))
+  const fourth = await centerOf(shotOf(materials, 1, 'A', 4))
+  const from = await centerOf(end)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + (fourth.x - third.x), from.y, { steps: 6 })
+  await expect(end).toHaveAttribute('aria-valuetext', '5.0 秒')
+  await expect(playhead).toHaveCount(0)
+  await page.mouse.up()
+  await expect(end).toHaveAttribute('aria-valuetext', '5.0 秒')
+  await expect(playhead).toHaveCount(0)
+})
+
 test('在选区里按下即拖整段选区，松手在画面轨上加入', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 2).click()
