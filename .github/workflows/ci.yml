@@ -81,9 +81,10 @@ jobs:
                   format) web_format=true ;;
                   all) server=true; web=true; render=true ;;
                 esac
-                # 渲染服务打包 web 的成片合成构建、组件目录与后端合同的 zod 生成物，它们变了也要查渲染服务。
+                # 渲染服务打包 web 的成片合成构建与后端合同的 zod 生成物，测试用 web 组装的测试组件库，
+                # 它们变了也要查渲染服务。
                 case "$path" in
-                  web/src/features/storyboard/whole-film/composition/*|web/src/features/storyboard/whole-film/catalog/*|web/src/shared/api/generated/*)
+                  web/src/features/storyboard/whole-film/composition/*|web/scripts/hyperframes-*|web/src/shared/api/generated/*)
                     render=true ;;
                 esac
                 printf '%-6s %s\n' "$scope" "$path"
@@ -317,8 +318,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-render
-      # 真实渲染的集成测试要 chrome-headless-shell 与同步好的组件库，runner 上没有，按用例名里的原因跳过；
-      # 它在本机与镜像构建后验证。
+      # 测试读 web 组装好的测试组件库（组装要用 web 依赖里的 HyperFrames 运行时）。
+      - uses: ./.github/actions/setup-web
+      - name: Assemble test component library
+        working-directory: web
+        run: pnpm hf:registry
+      # 真实渲染的集成测试还要 chrome-headless-shell 与 ffmpeg，runner 上没有，按用例名里的原因跳过；
+      # 它在本机验证。
       - name: Run unit tests
         run: pnpm test
 

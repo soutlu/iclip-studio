@@ -5,6 +5,7 @@ import { flush, manualWorker, memoryLogger } from './testing'
 const input = (id: string): ExportInput => ({
   id,
   conversationId: `conv-${id}`,
+  registryDir: '/registry/test',
   compose: () => '<html></html>',
   mediaUrls: ['https://oss.example.com/a.mp4'],
   upload: { url: 'https://upload.example.com/a.mp4', headers: {} },

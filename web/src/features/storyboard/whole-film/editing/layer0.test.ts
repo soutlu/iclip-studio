@@ -149,9 +149,9 @@ describe('insertMaterial', () => {
 
 describe('insertComponent', () => {
   const component = (at: InsertAt, duration = 1_000) => ({
-    component: 'logo-outro',
+    component: 'fixture-scene',
     duration,
-    variables: { title: '拾步' },
+    variables: { title: '示例' },
     at,
   })
 
@@ -169,8 +169,8 @@ describe('insertComponent', () => {
       start: 3_000,
       duration: 1_500,
       playbackStart: 0,
-      component: 'logo-outro',
-      variables: { title: '拾步' },
+      component: 'fixture-scene',
+      variables: { title: '示例' },
     })
   })
 

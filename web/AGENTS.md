@@ -34,20 +34,20 @@
 | `src/shared/transcript/`              | 对话协议、订阅与投影；vendor 维护要求见[目录说明](src/shared/transcript/vendor/README.md) |
 | `src/shared/workbench/`               | 产物面板宿主、布局与选择状态                                                              |
 | `src/testing/`、`e2e/`                | 测试基建、MSW 与浏览器用例                                                                |
-| `src/features/storyboard/whole-film/` | 成片编辑器；`composition/` 与 `catalog/` 同时编进渲染服务 `../render/`                    |
+| `src/features/storyboard/whole-film/` | 成片编辑器；`composition/` 同时编进渲染服务 `../render/`                                  |
 | `vite/`、`scripts/`                   | 构建助手与开发、检查命令                                                                  |
-| `scripts/hyperframes-*`               | HyperFrames 组件库按 lock 同步到 `public/hyperframes/`（不入库）                          |
+| `scripts/hyperframes-*`               | 组件库组装工具与测试组件库；`pnpm hf:registry` 组装到 `public/hyperframes/`（不入库）     |
 | `../design/cue-mascot/`               | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)                  |
 
 - `src/routes/` 负责路由装配、守卫、search params 与跨 feature 组合；业务逻辑留在 feature。共用侧边栏、登录弹窗、布局和工作台由 `_shell.tsx` 及同目录 `-` 前缀助手承载。
 - feature 之间的稳定共用能力提取到 `shared/`，跨 feature 流程在 `app/` 或 `routes/` 组合。构建期助手放 `vite/`。
-- 后端 REST 请求使用 `@/shared/api/client` 的 `apiFetch`；需要响应头或状态码时使用 `apiFetchWithResponse`。两者共用同源请求、鉴权回调和 zod 校验。裸 `fetch` / `XMLHttpRequest` 仅用于 OSS 预签名直传与外链素材下载。
+- 后端 REST 请求使用 `@/shared/api/client` 的 `apiFetch`；需要响应头或状态码时使用 `apiFetchWithResponse`。两者共用同源请求、鉴权回调和 zod 校验。裸 `fetch` / `XMLHttpRequest` 仅用于 OSS 预签名直传、外链素材下载与读组件库目录 `/hyperframes/catalog.json`。
 - 接口 schema 使用 `src/shared/api/generated/` 的生成物；额外业务校验叠在生成 schema 上。后端字段缺失时保留其空值语义，不编造业务默认值。
 - 登录与守卫规则见 [实现规范](docs/frontend-implementation.md#登录与守卫)；权限门控使用后端 `user.permissions`，不使用用户名白名单。
 - 不手改生成文件，不抬高 design-guard 基线；修复存量后可以收紧基线。
 - 分镜工作台用于查看和编辑 Agent 交付的分镜、发起媒体生成；制作页（`features/storyboard/film/`）复用它的舞台与文案列，查看和改 AI 导演的工程（见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)）。产物与渲染器登记、认领与重叠规则以 [artifact.ts](src/shared/workbench/artifact.ts) 为准，文件写回与生成约定见[跨端合同](../contract/conventions.md)。
 
-- 成片的 `composition/` 要在浏览器和 Node 里都能跑：不碰 DOM 与浏览器 API，对仓内只做 `import type`（生成的合同类型）；渲染服务另外直接用 `src/shared/api/generated/zod.gen.ts` 校验请求，改这几处后另按[开发约定](../AGENTS.md#1-命令与验证)跑渲染服务的检查。
+- 成片的 `composition/` 要在浏览器和 Node 里都能跑：不碰 DOM 与浏览器 API，组件目录由调用方传入，对仓内只做 `import type`（生成的合同类型）；渲染服务另外直接用 `src/shared/api/generated/zod.gen.ts` 校验请求，改这几处后另按[开发约定](../AGENTS.md#1-命令与验证)跑渲染服务的检查。
 
 依赖边界、导入入口、命名与语法由 [ESLint](eslint.config.js) 管理；死代码范围由 [knip](knip.json) 管理；基础 token 见根 [设计系统](../design-system.html)。
 

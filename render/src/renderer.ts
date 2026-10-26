@@ -20,8 +20,6 @@ import { producerLogger, type Logger } from './log'
 import { uploadFile } from './upload'
 
 export interface RendererOptions {
-  /** 同步好的组件库（web/public/hyperframes/<版本>/ 的同一份内容）。 */
-  registryDir: string
   /** 临时项目目录的父目录。 */
   workDir: string
   /** 有硬件视频编码器时用它编码。 */
@@ -83,9 +81,9 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
       const cleanup = () => rm(dir, { recursive: true, force: true })
       const log = options.logger.child({ exportId: job.id })
       try {
-        for (const entry of await readdir(options.registryDir)) {
+        for (const entry of await readdir(job.registryDir)) {
           if (entry.startsWith('.')) continue
-          await symlink(join(options.registryDir, entry), join(dir, entry))
+          await symlink(join(job.registryDir, entry), join(dir, entry))
         }
         const started = Date.now()
         const paths = await downloadMedia(
@@ -97,7 +95,7 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
         log.info('素材已取到', { count: job.mediaUrls.length, ms: Date.now() - started })
         await writeFile(
           join(dir, 'index.html'),
-          await declareLinkedFonts(job.compose(paths), options.registryDir),
+          await declareLinkedFonts(job.compose(paths), job.registryDir),
         )
         const output = join(dir, 'export.mp4')
         const renderJob = createRenderJob({

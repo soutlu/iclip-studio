@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  测试组件库：4 秒的叠加组件（component），铺满所在位置。根节点自带深色底，组装时按组件去底色的
+  规则换成透明，叠在画面上不把底下盖黑。
+-->
+<html lang="zh-CN" data-composition-id="fixture-overlay" data-composition-duration="4">
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <div id="root" data-composition-id="fixture-overlay" data-duration="4">
+        <style>
+          #root {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            container-type: size;
+            pointer-events: none;
+            background: #0a0a0a;
+          }
+          #root .fo-ring {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 40cqmin;
+            height: 40cqmin;
+            margin: -20cqmin 0 0 -20cqmin;
+            border: 3cqmin solid #f97316;
+            border-radius: 50%;
+          }
+        </style>
+        <div
+          id="fixture-overlay-clip"
+          class="clip"
+          data-start="0"
+          data-duration="4"
+          data-track-index="0"
+        >
+          <div class="fo-ring"></div>
+        </div>
+        <script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+        <script>
+          ;(function () {
+            var ring = document.getElementById('root').querySelector('.fo-ring')
+            var tl = gsap.timeline({ paused: true })
+            tl.fromTo(ring, { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 }, 0)
+            tl.to(ring, { rotation: 90, duration: 3, ease: 'none' }, 0.5)
+            tl.to(ring, { opacity: 0, duration: 0.5 }, 3.5)
+            window.__timelines = window.__timelines || {}
+            window.__timelines['fixture-overlay'] = tl
+          })()
+        </script>
+      </div>
+    </template>
+  </body>
+</html>

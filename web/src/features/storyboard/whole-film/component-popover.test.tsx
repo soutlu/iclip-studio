@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithTooltip } from '@/testing/render'
+import { fixtureCatalog } from '@/testing/whole-film'
 import { isLightColor, swatchColors, type CatalogItem } from './component-catalog'
 import { ComponentPopover } from './component-popover'
 import type { ComponentVariables } from './editing/draft'
@@ -47,7 +48,13 @@ const renderPopover = (values: ComponentVariables = {}) => {
   const onChange = vi.fn()
   const onRemove = vi.fn()
   renderWithTooltip(
-    <ComponentPopover item={item} onChange={onChange} onRemove={onRemove} values={values} />,
+    <ComponentPopover
+      catalog={fixtureCatalog}
+      item={item}
+      onChange={onChange}
+      onRemove={onRemove}
+      values={values}
+    />,
   )
   return { onChange, onRemove }
 }

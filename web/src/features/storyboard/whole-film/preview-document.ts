@@ -14,7 +14,7 @@ import type { ComponentCatalog } from './composition/catalog'
 import { escapeAttribute } from './composition/html'
 import type { WholeFilmDraft } from './editing/draft'
 
-/** 组件目录在站点上的位置（同步脚本写到 public/hyperframes/<版本>/） */
+/** 组件库这一版在站点上的位置（/hyperframes/<version>/） */
 export const componentBaseHref = (origin: string, catalog: ComponentCatalog) =>
   `${origin}/hyperframes/${catalog.version}/`
 

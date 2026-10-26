@@ -35,15 +35,15 @@ describe('改字、字幕样式与字幕开关', () => {
   })
 
   it('换字幕样式；同一个样式原样返回', () => {
-    const styled = expectOk(setCaptionStyle(film(), { component: 'caption-texture' })).draft
-    expect(styled.captions.component).toBe('caption-texture')
-    expect(expectOk(setCaptionStyle(styled, { component: 'caption-texture' })).draft).toBe(styled)
+    const styled = expectOk(setCaptionStyle(film(), { component: 'other-caption' })).draft
+    expect(styled.captions.component).toBe('other-caption')
+    expect(expectOk(setCaptionStyle(styled, { component: 'other-caption' })).draft).toBe(styled)
   })
 
   it('关掉字幕只改开关，样式与改过的字留着；再打开回到开着', () => {
     const edited = expectOk(
       setCaptionText(
-        expectOk(setCaptionStyle(film(), { component: 'caption-texture' })).draft,
+        expectOk(setCaptionStyle(film(), { component: 'other-caption' })).draft,
         edit(0, '甲'),
       ),
     ).draft
@@ -81,7 +81,7 @@ describe('改字、字幕样式与字幕开关', () => {
     for (const result of [
       setCaptionText(moved, edit(0, '甲')),
       clearCaptionText(moved, { subtitleJobId: 'sub1', sentenceIndex: 0 }),
-      setCaptionStyle(moved, { component: 'caption-texture' }),
+      setCaptionStyle(moved, { component: 'other-caption' }),
       setCaptionsHidden(moved, { hidden: true }),
     ]) {
       const { captions } = expectOk(result).draft
@@ -126,7 +126,7 @@ describe('改字、字幕样式与字幕开关', () => {
     for (const result of [
       setCaptionText(turned, edit(0, '甲')),
       clearCaptionText(turned, { subtitleJobId: 'sub1', sentenceIndex: 0 }),
-      setCaptionStyle(turned, { component: 'caption-texture' }),
+      setCaptionStyle(turned, { component: 'other-caption' }),
       setCaptionsHidden(turned, { hidden: true }),
       setCaptionsPosition(turned, { x: 8, y: -40 }),
     ]) {

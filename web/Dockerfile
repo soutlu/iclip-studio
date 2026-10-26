@@ -16,8 +16,8 @@ RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.spl
 COPY web/ ./
 # 类型检查会读取共享 Transcript 样例，构建上下文须为仓库根。
 COPY contract/ /app/contract/
-# HyperFrames 组件库按锁文件下载、校验后放进 public/，随静态产物发布。
-RUN pnpm hf:registry && pnpm build
+# 镜像里不带组件库：部署时把组件库目录挂到 /usr/share/nginx/html/hyperframes（见 deploy/compose.yaml）。
+RUN pnpm build
 
 FROM nginx:1.28-alpine
 

@@ -6,7 +6,8 @@
 # WEB_PORT 对外端口（缺省 80，改了 SSO_REDIRECT_URL 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务
 # 允许取素材的主机。应用变量见 server/src/iclip/config/models.py。
 # 模型、agent、skill 配置不进镜像也不进仓库：同目录的 configs/、agents/、skills/ 只读挂进后端，
-# 改文件保存即热重载。
+# 改文件保存即热重载。成片的组件库也不进镜像：同目录的 components/（catalog.json 与 <版本号>/）
+# 只读挂给 web 与 render，发布新组件库不用重启，步骤见 docs/deploy.md「发布组件库」。
 
 services:
   server:
@@ -48,6 +49,8 @@ services:
     shm_size: 2gb
     volumes:
       - render-tmp:/tmp/iclip-render
+      # 组件库，镜像里的 RENDER_REGISTRY_ROOT
+      - ./components:/app/registry:ro
     # Chrome 用显卡渲染（WebGL）要 graphics，NVENC 编码要 video；启动日志与 /health 报告实际用的是
     # hardware 还是 software。没有显卡的机器删掉这一段，渲染照常、走软件。
     deploy:
@@ -69,6 +72,9 @@ services:
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-80}:80"
+    volumes:
+      # 组件库，站点上的 /hyperframes/
+      - ./components:/usr/share/nginx/html/hyperframes:ro
     depends_on:
       server:
         condition: service_healthy

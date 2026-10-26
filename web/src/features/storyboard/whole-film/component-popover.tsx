@@ -17,6 +17,7 @@ import {
   variableValue,
   type CatalogItem,
   type CatalogVariable,
+  type ComponentCatalog,
   type VariableValue,
 } from './component-catalog'
 import { ComponentThumb } from './components-panel'
@@ -28,6 +29,7 @@ const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', de
 const SEGMENTED_MAX = 4
 
 type ComponentPopoverProps = {
+  catalog: ComponentCatalog
   item: CatalogItem
   values: ComponentVariables
   onChange: (values: ComponentVariables) => void
@@ -38,7 +40,13 @@ type ComponentPopoverProps = {
  * 组件段与特效块共用的调整浮层：一行一项列出组件的全部可填项。文字项没填过时空着、组件的默认字作
  * 灰色提示，清空即回到默认字。每次改动是一步编辑，只影响这条成片。
  */
-export function ComponentPopover({ item, values, onChange, onRemove }: ComponentPopoverProps) {
+export function ComponentPopover({
+  catalog,
+  item,
+  values,
+  onChange,
+  onRemove,
+}: ComponentPopoverProps) {
   const set = (id: string, value: VariableValue | undefined) => {
     if (values[id] === value) return
     onChange(
@@ -50,7 +58,7 @@ export function ComponentPopover({ item, values, onChange, onRemove }: Component
   return (
     <div className="wf-pop">
       <div className="wf-pop-head">
-        <ComponentThumb className="wf-pop-thumb" iconSize="xs" item={item} />
+        <ComponentThumb catalog={catalog} className="wf-pop-thumb" iconSize="xs" item={item} />
         <b>{item.title}</b>
         <IconButton
           className="wf-pop-remove"

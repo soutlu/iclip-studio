@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  测试组件库：带可填项的组件，按 1920×1080 设计、5 秒。左下角一块实心色底（x 120–1020、y 720–940），
+  里面一行字：
+    text    文字，经 data-var-text 绑定，可以在画面上双击原位改
+    weight  字体粗细（enum），脚本按取值设字重
+    accent  底色（color），运行时写成 CSS 变量 --accent
+  色底 0.1 秒起从左滑入、0.6 秒到位，4.6 秒起淡出。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        background: transparent;
+        overflow: hidden;
+      }
+      body {
+        width: 1920px;
+        height: 1080px;
+      }
+
+      #root .ff-panel {
+        position: absolute;
+        left: 120px;
+        top: 720px;
+        width: 900px;
+        height: 220px;
+        padding: 0 48px;
+        display: flex;
+        align-items: center;
+        background: var(--accent, #2756ff);
+      }
+      #root .ff-text {
+        font-family: var(--font-display, 'Noto Sans SC'), sans-serif;
+        font-size: 96px;
+        line-height: 1;
+        color: #ffffff;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="fixture-fields"
+      data-composition-variables='[
+        {"id":"text","type":"string","label":"文字","default":"示例文字"},
+        {"id":"weight","type":"enum","label":"字体粗细","default":"400","options":[{"value":"400","label":"常规"},{"value":"700","label":"加粗"}]},
+        {"id":"accent","type":"color","label":"底色","default":"#2756ff"}
+      ]'
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="5"
+    >
+      <div id="ff-clip" class="clip" data-start="0" data-duration="5" data-track-index="0">
+        <div id="ff-panel" class="ff-panel">
+          <div id="ff-text" class="ff-text" data-var-text="text">示例文字</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      ;(function () {
+        var vars =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {}
+        var panel = document.getElementById('ff-panel')
+        document.getElementById('ff-text').style.fontWeight = vars.weight === '700' ? '700' : '400'
+
+        window.__timelines = window.__timelines || {}
+        var tl = gsap.timeline({ paused: true })
+        gsap.set(panel, { x: -80, opacity: 0 })
+        tl.to(panel, { x: 0, opacity: 1, duration: 0.5, ease: 'power3.out' }, 0.1)
+        tl.to(panel, { opacity: 0, duration: 0.3 }, 4.6)
+        tl.set({}, {}, 5)
+        window.__timelines['fixture-fields'] = tl
+      })()
+    </script>
+  </body>
+</html>

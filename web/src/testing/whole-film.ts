@@ -1,5 +1,6 @@
-/** 成片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好。 */
+/** 成片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好；测试组件库的组件目录。 */
 
+import fixtureCatalogJson from '../../scripts/hyperframes-fixtures/catalog.json'
 import type {
   CatalogItem,
   ComponentCatalog,
@@ -155,34 +156,19 @@ export const contextOf = (
 export const spans = (draft: WholeFilmDraft) =>
   draft.layer0.map((clip) => [clip.id, clip.start, clip.start + clip.duration] as const)
 
-/** 示例品牌组件：[品牌, 名字, 借用哪个真实组件的合成文件与缩略图] */
-const BRAND_FIXTURES = [
-  ['拾步', '拾步 片头', 'logo-sting'],
-  ['拾步', '拾步 片尾', 'logo-outro'],
-  ['暖屿', '暖屿 片头', 'logo-brand-close'],
-  ['暖屿', '暖屿 片尾', 'logo-outro'],
-] as const
-
 /**
- * 真实目录里还没有品牌组件；在它后面补上两个品牌各两张示例卡（block、2 秒），
- * 借用真实组件的合成文件与缩略图，预览与放置照常可用。
+ * 测试组件库（web/scripts/hyperframes-fixtures/）的组件目录，配一个固定的版本号；单测不依赖跑过组装工具。
  */
-export const withBrandFixtures = (catalog: ComponentCatalog): ComponentCatalog => {
-  const brandItem = ([brand, title, base]: (typeof BRAND_FIXTURES)[number], index: number) => {
-    const source = catalog.items.find((item) => item.name === base)
-    if (source === undefined) throw new Error(`目录里没有 ${base}`)
-    const item: CatalogItem = {
-      ...source,
-      name: `brand-fixture-${index + 1}`,
-      kind: 'block',
-      title,
-      description: `${brand}的品牌组件`,
-      brand,
-      duration: 2,
-    }
-    return item
-  }
-  return { ...catalog, items: [...catalog.items, ...BRAND_FIXTURES.map(brandItem)] }
+export const fixtureCatalog: ComponentCatalog = {
+  ...(fixtureCatalogJson as Omit<ComponentCatalog, 'version'>),
+  version: 'test-fixtures',
+}
+
+/** 测试组件目录里的一项；没有就报错 */
+export const fixtureItem = (name: string): CatalogItem => {
+  const item = fixtureCatalog.items.find((entry) => entry.name === name)
+  if (item === undefined) throw new Error(`测试组件目录里没有 ${name}`)
+  return item
 }
 
 export const expectOk = <T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> => {

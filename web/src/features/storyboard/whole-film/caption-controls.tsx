@@ -1,7 +1,7 @@
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import type { CatalogItem } from './component-catalog'
+import type { CatalogItem, ComponentCatalog } from './component-catalog'
 import { ComponentThumb } from './components-panel'
 import type { useSubtitleRecognition } from './use-subtitle-recognition'
 
@@ -12,6 +12,7 @@ type Recognition = ReturnType<typeof useSubtitleRecognition>
  * 开关是按下态按钮（开着为按下），名字随状态说下一步（关闭字幕 / 打开字幕），没有字幕时也能点。
  */
 export function CaptionControls({
+  catalog,
   component,
   styles,
   onStyle,
@@ -20,6 +21,7 @@ export function CaptionControls({
   recognition,
   statusId,
 }: {
+  catalog: ComponentCatalog
   component: string
   styles: readonly CatalogItem[]
   onStyle: (component: string) => void
@@ -61,7 +63,12 @@ export function CaptionControls({
             {styles.map((style) => (
               <MenuRadioItem key={style.name} value={style.name}>
                 <span className="wf-caption-style-option">
-                  <ComponentThumb className="wf-caption-style-thumb" iconSize="xs" item={style} />
+                  <ComponentThumb
+                    catalog={catalog}
+                    className="wf-caption-style-thumb"
+                    iconSize="xs"
+                    item={style}
+                  />
                   <span className="wf-caption-style-name">{style.title}</span>
                 </span>
               </MenuRadioItem>

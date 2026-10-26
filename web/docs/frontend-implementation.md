@@ -63,5 +63,6 @@
 - 不写读取 Provider / Hook 内部状态再投射成 DOM 的探针组件。测试所需浏览器边界使用现有测试适配器或 `vi.stubGlobal`。
 - HTTP 使用 MSW，不手写 `fetch` stub。组件对外的回调 prop 可以用 `toHaveBeenCalledWith` / `toHaveBeenCalledTimes` 断言入参与次数；不对内部模块、Hook 或同仓函数做 spy；`toHaveBeenCalled*` 另用于剪贴板、`window.open` 等真实系统边界。
 - 不快照 prompt 或自然语言措辞；通过可访问名定位控件与断言业务结果即可，文案本身是明确合同的情况除外。
+- 成片编辑器的测试只用入库的测试组件库（`scripts/hyperframes-fixtures/`），测代码、不测具体组件，不引用正式组件库里的组件。单测用 `src/testing/whole-film.ts` 的 `fixtureCatalog`（目录加固定版本号，不需要先组装），`/hyperframes/catalog.json` 由 MSW 返回它；e2e 读 `dev:mock`、`build:mock` 先组装好的 `public/hyperframes/`。
 
 同仓模块 mock 等语法限制由 [ESLint](../eslint.config.js) 检查。

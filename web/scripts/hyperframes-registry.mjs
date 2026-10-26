@@ -1,35 +1,38 @@
 #!/usr/bin/env node
 /**
- * 同步 HyperFrames 组件库到 public/hyperframes/<版本>/（不入库；web 镜像、render 镜像构建时与 make setup 各跑一次）。
+ * 把一份组件库源目录组装成站点与渲染服务读的组件库（输出不入库；正式组件库在部署侧，见 docs/deploy.md）。
  *
- *   pnpm hf:registry                      按锁文件同步；已是最新时什么也不做
- *   pnpm hf:registry --update-lock        重新下载并重写锁文件（升级版本，或改了组件目录、本地化规则、补丁之后）
- *   pnpm hf:registry --tarball <路径>     用本机已有的源码包（仍核对 sha256）
- *   pnpm hf:registry --smoke <目录>       冒烟筛选用（render/scripts/smoke-catalog.mjs）：装上源码包里
- *                                         所有文件齐全、外链能本地化的组件，写到指定目录；不核对锁文件
+ *   pnpm hf:registry                                   组装入库的测试组件库（scripts/hyperframes-fixtures/）
+ *                                                      到 public/hyperframes/
+ *   pnpm hf:registry --library <源目录> --out <输出目录>  组装指定的组件库
+ *   pnpm hf:registry --update-lock [--library <源目录>]   重新下载并重写源目录的 registry.lock.json
+ *                                                      （升级版本，或改了组件目录、本地化规则、改写之后）
+ *   pnpm hf:registry --tarball <路径>                   用本机已有的 HyperFrames 源码包（仍核对 sha256）
+ *   pnpm hf:registry --library <源目录> --smoke <目录>   冒烟筛选用（render/scripts/smoke-catalog.mjs）：装上
+ *                                                      源码包里所有文件齐全、外链能本地化的组件，写到指定目录
  *
- * 步骤：下载 tag 源码包并核对 sha256 → 把组件目录（catalog.json）收录的组件按 `hyperframes add`
- * 的安装位置放好 → 外链换成本地文件（npm 包与 fontsource 字体，tgz 核对锁文件里的摘要）→ 放入
- * HyperFrames 运行时 → 套用 hyperframes-patches/ 的改写 → 组件去掉底色 → 写组件字体的整套字形 → 确认没有外链残留 →
- * 每个文件与锁文件逐一核对。
- * 输出目录里的 .hyperframes-sync.json 记录锁文件摘要；再跑时文件全部一致即跳过，有改动即报错。
+ * 源目录：catalog.json（组件目录）、registry.lock.json（npm 包 tgz 的摘要）、patches/（改写：manifest.json
+ * 记下每个文件替换的原文摘要，null 为新文件）、thumbnails/（面板封面）。
+ * 输出：<输出目录>/catalog.json（组件目录加上 version）与 <输出目录>/<version>/（组件、运行时、字体、封面）。
+ * version 是全部输入的摘要（见 libraryVersion）；版本目录已存在就不再组装，只写 catalog.json。版本目录生成后
+ * 不再改动，旧版本目录不删。
+ *
+ * 步骤：目录里有不是由改写新增的组件时，下载 tag 源码包并核对 sha256，把这些组件按 `hyperframes add` 的
+ * 安装位置放好 → 外链换成本地文件（npm 包与 fontsource 字体，tgz 核对锁文件里的摘要）→ 放入 HyperFrames
+ * 运行时 → 套用改写 → 组件去掉底色 → 写组件字体的整套字形 → 放入封面 → 确认没有外链残留、引用的文件都在。
  */
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
-  CATALOG_DIR,
   CDN_HOST_PATTERN,
   CJK_FONT,
+  DEFAULT_OUT,
+  FIXTURES_DIR,
   HF_VERSION,
   IntegrityError,
-  LOCK_PATH,
-  OUTPUT_DIR,
-  PATCHES_DIR,
   RUNTIME,
-  TARBALL,
-  WEB_ROOT,
   cjkTwinFaces,
   compositionTarget,
   fontFaceDescriptors,
@@ -37,6 +40,7 @@ import {
   fontPackage,
   installedFiles,
   isLatinSubset,
+  libraryVersion,
   listFiles,
   localReferences,
   localize,
@@ -44,88 +48,57 @@ import {
   registryItems,
   sha256,
   sourceTree,
+  writeAtomic,
 } from './hyperframes-shared.mjs'
 
-const STAMP = '.hyperframes-sync.json'
 const RUNTIME_TEXT = /\.(html?|css|m?js|cjs)$/i
 const COMPONENT_BACKGROUND = /background:\s*(?:#(?:0a0a0a|000000|000|0a0805)|rgba?\([^)]*\))\s*;/g
 
 const args = process.argv.slice(2)
+const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 const updateLock = args.includes('--update-lock')
-const tarballArg = args.includes('--tarball') ? args[args.indexOf('--tarball') + 1] : undefined
-const smokeDir = args.includes('--smoke') ? args[args.indexOf('--smoke') + 1] : undefined
+const tarballArg = option('--tarball')
+const smokeDir = option('--smoke')
+const libraryDir = resolve(option('--library') ?? FIXTURES_DIR)
+const outDir = resolve(option('--out') ?? DEFAULT_OUT)
 
 class SyncError extends Error {}
 
-/** 决定同步结果的入库输入：锁文件、组件目录、改写文件与同步脚本。任一变化都要重新组装。 */
-async function inputsDigest(lockText) {
-  const parts = [lockText, await readFile(join(CATALOG_DIR, 'catalog.json'), 'utf8')]
-  // 同步脚本本身（本地化规则等）改了也要重新组装。
-  for (const script of ['hyperframes-registry.mjs', 'hyperframes-shared.mjs']) {
-    parts.push(await readFile(join(WEB_ROOT, 'scripts', script), 'utf8'))
-  }
-  for (const path of await listFiles(PATCHES_DIR)) {
-    parts.push(path, await readFile(join(PATCHES_DIR, path), 'utf8'))
-  }
-  return sha256(parts.join('\0'))
-}
-
-/**
- * 输出目录与锁文件逐一核对。没有同步标记、或入库输入变了时返回 false（需要重新组装，
- * 组装结果再与锁文件核对）；标记与输入一致而文件对不上（被改过）时报错。
- */
-async function upToDate(lock, inputs) {
-  const stampPath = join(OUTPUT_DIR, STAMP)
-  if (!existsSync(stampPath)) return false
-  const stamp = JSON.parse(await readFile(stampPath, 'utf8'))
-  if (stamp.inputs !== inputs) return false
-  const actual = (await listFiles(OUTPUT_DIR)).filter((path) => path !== STAMP)
-  const problems = actual.filter((path) => !(path in lock.files)).map((path) => `多出 ${path}`)
-  for (const [path, digest] of Object.entries(lock.files)) {
-    if (!existsSync(join(OUTPUT_DIR, path))) problems.push(`缺少 ${path}`)
-    else if (sha256(await readFile(join(OUTPUT_DIR, path))) !== digest)
-      problems.push(`被改动 ${path}`)
-  }
-  if (problems.length > 0) {
-    throw new SyncError(
-      `${OUTPUT_DIR} 与锁文件不一致：\n  ${problems.slice(0, 20).join('\n  ')}\n删除该目录后重跑可重新同步。`,
-    )
-  }
-  return true
-}
-
-/** 组件目录（人工维护的 catalog.json）收录的组件名。 */
-async function includedNames() {
-  const catalog = JSON.parse(await readFile(join(CATALOG_DIR, 'catalog.json'), 'utf8'))
-  if (catalog.version !== HF_VERSION) {
-    throw new SyncError(`组件目录是 ${catalog.version}，同步脚本是 ${HF_VERSION}`)
-  }
-  return new Set(catalog.items.map((item) => item.name))
-}
-
-/** 在临时目录里组装出完整的组件库；返回用到的 npm 包 tgz 摘要。 */
-async function assemble(temp, lock) {
+/** 在 temp 里组装出完整的组件库；返回用到的 npm 包 tgz 摘要与全部文件。`lock` 为 null 时重新取摘要。 */
+async function assemble(temp, catalog, lock) {
   const writeOut = async (path, data) => {
     await mkdir(dirname(join(temp, path)), { recursive: true })
     await writeFile(join(temp, path), data)
   }
+  const patchesDir = join(libraryDir, 'patches')
+  const manifest = JSON.parse(await readFile(join(patchesDir, 'manifest.json'), 'utf8'))
+  const patchedNew = new Set(
+    Object.entries(manifest.files)
+      .filter(([, { replaces }]) => replaces === null)
+      .map(([target]) => target),
+  )
 
-  // 1. 按安装位置放好收录的组件；不同组件装到同一位置时内容必须相同。
-  //    冒烟筛选装上所有文件齐全、外链能本地化的组件，由渲染结果决定收不收。
-  const src = await sourceTree(tarballArg)
-  const names = smokeDir ? null : await includedNames()
-  const installable = async ({ dir, item }) => {
-    for (const file of installedFiles(item)) {
-      if (!existsSync(join(dir, file.path))) return false
-      if (!RUNTIME_TEXT.test(file.target)) continue
-      const text = await readFile(join(dir, file.path), 'utf8')
-      if (localize(text, file.target).unsupported.length > 0) return false
-    }
-    return true
-  }
+  // 1. 按安装位置放好源码包里收录的组件；不同组件装到同一位置时内容必须相同。全部组件都由改写
+  //    新增时不需要源码包。冒烟筛选装上所有文件齐全、外链能本地化的组件，由渲染结果决定收不收。
+  const fromTarball = smokeDir
+    ? null
+    : new Set(catalog.items.filter((item) => !patchedNew.has(item.src)).map((item) => item.name))
   const items = []
-  for (const entry of await registryItems(src)) {
-    if (names ? names.has(entry.name) : await installable(entry)) items.push(entry)
+  if (smokeDir || fromTarball.size > 0) {
+    const src = await sourceTree(tarballArg)
+    const installable = async ({ dir, item }) => {
+      for (const file of installedFiles(item)) {
+        if (!existsSync(join(dir, file.path))) return false
+        if (!RUNTIME_TEXT.test(file.target)) continue
+        const text = await readFile(join(dir, file.path), 'utf8')
+        if (localize(text, file.target).unsupported.length > 0) return false
+      }
+      return true
+    }
+    for (const entry of await registryItems(src)) {
+      if (fromTarball ? fromTarball.has(entry.name) : await installable(entry)) items.push(entry)
+    }
+    await writeOut('LICENSE', await readFile(join(src, 'LICENSE')))
   }
   const installed = new Map()
   for (const { name, dir, item } of items) {
@@ -138,7 +111,6 @@ async function assemble(temp, lock) {
       installed.set(file.target, { name, data })
     }
   }
-  await writeOut('LICENSE', await readFile(join(src, 'LICENSE')))
 
   // 2. 外链换成本地路径，记下要放进 vendor/ 的文件。
   const npmFiles = new Map()
@@ -175,8 +147,8 @@ async function assemble(temp, lock) {
     const key = `${name}@${version}`
     if (!opened.has(key)) {
       // 冒烟筛选可能用到锁文件之外的包：没有记录的按 npm 给的完整性核对。
-      const expected = updateLock ? null : (lock.npm[key] ?? null)
-      if (!updateLock && !smokeDir && expected === null)
+      const expected = lock === null ? null : (lock.npm[key] ?? null)
+      if (lock !== null && !smokeDir && expected === null)
         throw new SyncError(`锁文件里没有 ${key}，运行 --update-lock`)
       const pkg = await npmPackage(name, version, expected)
       npmLock[key] = pkg.sha256
@@ -237,7 +209,6 @@ async function assemble(temp, lock) {
   )
 
   // 6. 改写：manifest.json 记下每个文件替换的原文摘要（新文件为 null）；原文变了就要重新改写。
-  const manifest = JSON.parse(await readFile(join(PATCHES_DIR, 'manifest.json'), 'utf8'))
   for (const [target, { replaces }] of Object.entries(manifest.files)) {
     const path = join(temp, target)
     if (replaces === null && existsSync(path))
@@ -249,15 +220,18 @@ async function assemble(temp, lock) {
       if (actual !== replaces)
         throw new SyncError(`改写 ${target} 的原文已变（${actual}），需要按新原文重新改写`)
     }
-    await writeOut(target, await readFile(join(PATCHES_DIR, target)))
+    await writeOut(target, await readFile(join(patchesDir, target)))
   }
 
   // 6b. 组件（不含区块）的合成文件去掉底色，照 HyperFrames Studio 安装组件时的做法
   //     （packages/studio/src/utils/blockInstaller.ts 的 makeComponentBackgroundTransparent，正则原样照抄）：
-  //     组件叠在画面上，不能把底下的画面盖黑。
-  for (const { kind, item } of items) {
-    if (kind !== 'component') continue
-    const path = join(temp, compositionTarget(item))
+  //     组件叠在画面上，不能把底下的画面盖黑。组件目录说了算；冒烟筛选没有目录，按源码包的归类。
+  const componentFiles = smokeDir
+    ? items.filter(({ kind }) => kind === 'component').map(({ item }) => compositionTarget(item))
+    : catalog.items.filter((item) => item.kind === 'component').map((item) => item.src)
+  for (const target of componentFiles) {
+    const path = join(temp, target)
+    if (!existsSync(path)) throw new SyncError(`组件目录里的 ${target} 不存在`)
     const text = await readFile(path, 'utf8')
     const transparent = text.replace(COMPONENT_BACKGROUND, 'background: transparent;')
     if (transparent !== text) await writeFile(path, transparent)
@@ -281,7 +255,6 @@ async function assemble(temp, lock) {
   }
   const notoPackage = fontPackage(CJK_FONT.family)
   const notoDir = await openPackage(notoPackage.name, notoPackage.version)
-  const catalog = JSON.parse(await readFile(join(CATALOG_DIR, 'catalog.json'), 'utf8'))
   for (const [family, cssPath] of Object.entries(catalog.fonts)) {
     const faces = googleFaces.get(family)
     let latin = ''
@@ -308,7 +281,15 @@ async function assemble(temp, lock) {
     await writeOut(cssPath, `${[latin, cjk].filter(Boolean).join('\n')}\n`)
   }
 
-  // 8. 不能再有外链。
+  // 8. 面板封面。
+  const thumbnailsDir = join(libraryDir, 'thumbnails')
+  if (existsSync(thumbnailsDir)) {
+    for (const file of await listFiles(thumbnailsDir)) {
+      await writeOut(`thumbnails/${file}`, await readFile(join(thumbnailsDir, file)))
+    }
+  }
+
+  // 9. 不能再有外链。
   const files = await listFiles(temp)
   const leftovers = []
   for (const path of files.filter(
@@ -318,10 +299,13 @@ async function assemble(temp, lock) {
   }
   if (leftovers.length > 0) throw new SyncError(`仍有外链：\n  ${leftovers.join('\n  ')}`)
 
-  // 9. 组件里写死的本地路径都要能取到（按运行时的解析方式）。冒烟筛选要实际渲染这些组件来判断，跳过。
+  // 10. 组件里写死的本地路径、目录里的封面都要能取到（按运行时的解析方式）。冒烟筛选要实际渲染这些组件
+  //     来判断，跳过。
   if (smokeDir) return { npmLock, files }
   const present = new Set(files)
-  const missing = []
+  const missing = catalog.items
+    .filter((item) => item.thumbnail !== null && !present.has(`thumbnails/${item.thumbnail}`))
+    .map((item) => `${item.name} 的封面 → thumbnails/${item.thumbnail}`)
   for (const path of files.filter(
     (file) => /\.(html?|css)$/i.test(file) && !file.startsWith('vendor/npm/'),
   )) {
@@ -337,67 +321,71 @@ async function assemble(temp, lock) {
   return { npmLock, files }
 }
 
+const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'))
+
+/** 组装到 out 旁的临时目录，成功后改名为 target；失败时删掉临时目录。 */
+async function assembleInto(target, catalog, lock) {
+  const temp = `${target}.${process.pid}.tmp`
+  await rm(temp, { recursive: true, force: true })
+  await mkdir(temp, { recursive: true })
+  try {
+    const result = await assemble(temp, catalog, lock)
+    await rename(temp, target)
+    return result
+  } catch (error) {
+    await rm(temp, { recursive: true, force: true })
+    throw error
+  }
+}
+
 async function main() {
-  const lockText = existsSync(LOCK_PATH) ? await readFile(LOCK_PATH, 'utf8') : null
-  if (!updateLock && lockText === null)
-    throw new SyncError(`缺少锁文件 ${LOCK_PATH}，先运行 --update-lock`)
-  const lock = lockText === null ? null : JSON.parse(lockText)
+  const lockPath = join(libraryDir, 'registry.lock.json')
+  const catalog = await readJson(join(libraryDir, 'catalog.json'))
+  if ('version' in catalog)
+    throw new SyncError('源目录的 catalog.json 不写 version，组装时按输入生成')
   if (smokeDir) {
+    const lock = existsSync(lockPath) ? await readJson(lockPath) : { npm: {} }
     await rm(smokeDir, { recursive: true, force: true })
     await mkdir(smokeDir, { recursive: true })
-    const { files } = await assemble(smokeDir, lock)
+    const { files } = await assemble(smokeDir, catalog, lock)
     console.log(`冒烟筛选用的组件库：${smokeDir}（${files.length} 个文件）`)
     return
   }
-  if (!updateLock && (await upToDate(lock, await inputsDigest(lockText)))) {
-    console.log(`组件库已是最新：${OUTPUT_DIR}`)
+  await mkdir(outDir, { recursive: true })
+
+  if (updateLock) {
+    // 锁文件是版本号的输入：先在临时目录组装、写好锁文件，再按新的版本号放好。
+    const scratch = join(outDir, `.update-lock.${process.pid}`)
+    const { npmLock } = await assembleInto(scratch, catalog, null)
+    const sorted = Object.fromEntries(
+      Object.entries(npmLock).sort(([a], [b]) => a.localeCompare(b)),
+    )
+    await writeFile(lockPath, `${JSON.stringify({ npm: sorted }, null, 2)}\n`)
+    console.log(`锁文件已更新：${lockPath}`)
+    const version = await libraryVersion(libraryDir)
+    if (existsSync(join(outDir, version))) await rm(scratch, { recursive: true, force: true })
+    else await rename(scratch, join(outDir, version))
+    await publishCatalog(catalog, version)
     return
   }
 
-  const temp = `${OUTPUT_DIR}.tmp`
-  await rm(temp, { recursive: true, force: true })
-  await mkdir(temp, { recursive: true })
-  const { npmLock, files } = await assemble(temp, lock)
-  const digests = {}
-  let bytes = 0
-  for (const path of files) {
-    const data = await readFile(join(temp, path))
-    digests[path] = sha256(data)
-    bytes += data.length
-  }
-
-  let finalLockText = lockText
-  if (updateLock) {
-    const next = {
-      version: HF_VERSION,
-      tarball: { url: TARBALL.url, sha256: TARBALL.sha256 },
-      npm: npmLock,
-      files: digests,
-    }
-    finalLockText = `${JSON.stringify(next, null, 2)}\n`
-    await writeFile(LOCK_PATH, finalLockText)
+  if (!existsSync(lockPath)) throw new SyncError(`缺少锁文件 ${lockPath}，先运行 --update-lock`)
+  const version = await libraryVersion(libraryDir)
+  const versionDir = join(outDir, version)
+  if (existsSync(versionDir)) {
+    console.log(`组件库 ${version} 已组装过，跳过：${versionDir}`)
   } else {
-    const problems = []
-    for (const path of files) {
-      if (!(path in lock.files)) problems.push(`锁文件里没有 ${path}`)
-      else if (lock.files[path] !== digests[path]) problems.push(`摘要不符 ${path}`)
-    }
-    for (const path of Object.keys(lock.files))
-      if (!(path in digests)) problems.push(`缺少 ${path}`)
-    if (problems.length > 0) {
-      throw new SyncError(
-        `同步结果与锁文件不一致（改了组件目录或改写文件后要运行 --update-lock）：\n  ${problems.slice(0, 20).join('\n  ')}`,
-      )
-    }
+    const { files } = await assembleInto(versionDir, catalog, await readJson(lockPath))
+    console.log(`组件库已组装：${versionDir}（${files.length} 个文件）`)
   }
+  await publishCatalog(catalog, version)
+}
 
-  const stamp = { inputs: await inputsDigest(finalLockText) }
-  await writeFile(join(temp, STAMP), `${JSON.stringify(stamp)}\n`)
-  await rm(OUTPUT_DIR, { recursive: true, force: true })
-  await rename(temp, OUTPUT_DIR)
-  console.log(
-    `组件库已同步：${OUTPUT_DIR}（${files.length} 个文件，${(bytes / 1024 / 1024).toFixed(1)} MB）`,
-  )
+/** 写 <out>/catalog.json：源目录的组件目录加上 version，整份原子替换。 */
+async function publishCatalog(catalog, version) {
+  const published = { version, ...catalog }
+  await writeAtomic(join(outDir, 'catalog.json'), `${JSON.stringify(published, null, 2)}\n`)
+  console.log(`组件目录已写入：${join(outDir, 'catalog.json')}（version ${version}）`)
 }
 
 try {

@@ -103,6 +103,7 @@ export function ComponentsPanel({
         {group.items.map((item) => (
           <li key={item.name}>
             <ComponentCard
+              catalog={catalog}
               item={item}
               onCarry={(carry) => onCarry(item, carry)}
               onDrop={(carry) => onDrop(item, carry)}
@@ -124,15 +125,17 @@ export function ComponentsPanel({
 
 /** 组件的预览图；目录里没有缩略图的用分类图标 */
 export function ComponentThumb({
+  catalog,
   item,
   className,
   iconSize = 'md',
 }: {
+  catalog: ComponentCatalog
   item: CatalogItem
   className?: string
   iconSize?: 'xs' | 'md'
 }) {
-  const thumbnail = thumbnailOf(item)
+  const thumbnail = thumbnailOf(catalog, item)
   return (
     <span className={cn('wf-component-thumb', className)}>
       {thumbnail === undefined ? (
@@ -145,6 +148,7 @@ export function ComponentThumb({
 }
 
 type CardProps = {
+  catalog: ComponentCatalog
   item: CatalogItem
   /** 悬停预览的合成页；不在播时为 undefined */
   preview: string | undefined
@@ -166,6 +170,7 @@ type Press = {
 }
 
 function ComponentCard({
+  catalog,
   item,
   preview,
   onUse,
@@ -246,7 +251,7 @@ function ComponentCard({
           type="button"
         >
           <span className="wf-component-frame">
-            <ComponentThumb item={item} />
+            <ComponentThumb catalog={catalog} item={item} />
             {preview === undefined ? null : <ComponentHoverPreview srcdoc={preview} />}
           </span>
           <span className="wf-component-name">{item.title}</span>

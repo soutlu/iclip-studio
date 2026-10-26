@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  测试组件库：品牌组件，固定 1920×1080、3 秒的纯色画面，前 0.3 秒淡入。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        overflow: hidden;
+      }
+      body {
+        width: 1920px;
+        height: 1080px;
+      }
+
+      #root .fb-card {
+        position: absolute;
+        inset: 0;
+        background: #0f766e;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="fixture-brand-card"
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="3"
+    >
+      <div id="fb-clip" class="clip" data-start="0" data-duration="3" data-track-index="0">
+        <div id="fb-card" class="fb-card"></div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {}
+      var tl = gsap.timeline({ paused: true })
+      tl.fromTo('#fb-card', { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0)
+      tl.set({}, {}, 3)
+      window.__timelines['fixture-brand-card'] = tl
+    </script>
+  </body>
+</html>
