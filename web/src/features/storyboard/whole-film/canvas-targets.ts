@@ -4,7 +4,7 @@
  */
 import type { PlacedCaption } from './composition/captions'
 import type { WholeFilmDraft } from './editing/draft'
-import type { Selection } from './film-tracks'
+import type { Selection } from './selection'
 
 const CAPTION_PREFIX = 'caption:'
 
@@ -27,14 +27,14 @@ export function selectionOfHfId(
     const caption = captions[Number(index)]
     return caption === undefined ? undefined : { kind: 'caption', key: captionKey(caption) }
   }
-  if (draft.layer0.some((clip) => clip.id === hfId)) return { kind: 'clip', id: hfId }
+  if (draft.layer0.some((clip) => clip.id === hfId)) return { kind: 'clip', ids: [hfId] }
   if (draft.overlays.some((overlay) => overlay.id === hfId)) return { kind: 'overlay', id: hfId }
   return undefined
 }
 
 /**
- * 选中的这一块在合成页上写的 data-hf-id；在这一刻之外（不在它的时间范围里）、或不在画面上
- * （音乐）时为 undefined，不画选中框。
+ * 选中的这一块在合成页上写的 data-hf-id；在这一刻之外（不在它的时间范围里）、不在画面上（音乐）、
+ * 或画面轨上选了几段时为 undefined，不画选中框。
  */
 export function hfIdOnScreen(
   selection: Selection,
@@ -51,8 +51,10 @@ export function hfIdOnScreen(
       ? `${CAPTION_PREFIX}${index}`
       : undefined
   }
-  const pieces = selection.kind === 'clip' ? draft.layer0 : draft.overlays
-  const piece = pieces.find((item) => item.id === selection.id)
+  if (selection.kind === 'clip' && selection.ids.length > 1) return undefined
+  const [pieces, id] =
+    selection.kind === 'clip' ? [draft.layer0, selection.ids[0]] : [draft.overlays, selection.id]
+  const piece = pieces.find((item) => item.id === id)
   return piece !== undefined && within(piece.start, piece.start + piece.duration)
     ? piece.id
     : undefined

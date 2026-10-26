@@ -1,8 +1,10 @@
 import type { ConversationVideoGroup } from '../conversation-videos/video-groups'
 import type { SecondsRange } from '../editing/clip'
 import type { Edge } from '../editing/timeline-drag'
+import { shiftSelect } from '../editing/range-select'
 import { labelLineage } from '../editing/version-lineage'
 import { MIN_CLIP_MS, type Layer0Clip } from './editing/draft'
+import type { MaterialPiece } from './editing/layer0'
 
 /** 视频素材区里的一版素材片：出自哪个镜头组、哪条原作，叫什么版本。 */
 export type Material = {
@@ -33,25 +35,102 @@ export type MaterialGroup = {
   takes: readonly MaterialTake[]
 }
 
-/** 素材区里选中的一段：哪一版素材片的哪个范围（素材时间，毫秒） */
-export type MaterialRange = { jobId: string; takeId: string; startMs: number; endMs: number }
+/** 素材里的一个镜头：关键帧切出的起止（素材时间，毫秒） */
+export type ShotSpan = { startMs: number; endMs: number }
 
-/** 把选区的一端挪 deltaMs：不出素材的头尾，选区至少留 MIN_CLIP_MS */
+/**
+ * 素材区里选中的一段：哪一版素材片里连着的哪几个镜头（shots，镜头原本的起止，按先后、至少一个），
+ * 以及两端修剪后的范围 startMs–endMs（素材时间，毫秒）。镜头之间的边界就是加入成片时拆段的地方。
+ */
+export type MaterialRange = {
+  jobId: string
+  takeId: string
+  startMs: number
+  endMs: number
+  shots: readonly ShotSpan[]
+}
+
+/** 只选一个镜头 */
+export const shotRange = (jobId: string, takeId: string, shot: ShotSpan): MaterialRange => ({
+  jobId,
+  takeId,
+  startMs: shot.startMs,
+  endMs: shot.endMs,
+  shots: [shot],
+})
+
+/** 选区里镜头之间的边界（素材时间），按先后；只有一个镜头时为空 */
+const cutsOf = (range: MaterialRange): number[] => range.shots.slice(1).map((shot) => shot.startMs)
+
+/**
+ * 选区一端能挪到的范围（毫秒）：往外不出素材的头尾；往里不越过最近的镜头边界（只有一个镜头时是
+ * 另一端），并至少留 MIN_CLIP_MS
+ */
+export const trimLimits = (
+  range: MaterialRange,
+  edge: Edge,
+  durationMs: number,
+): { min: number; max: number } => {
+  const cuts = cutsOf(range)
+  return edge === 'start'
+    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_CLIP_MS }
+    : { min: (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS, max: durationMs }
+}
+
+/** 把选区的一端挪 deltaMs，收进 {@link trimLimits} */
 export const trimRange = (
   range: MaterialRange,
   edge: Edge,
   deltaMs: number,
   durationMs: number,
-): MaterialRange =>
-  edge === 'start'
-    ? {
-        ...range,
-        startMs: Math.min(Math.max(0, range.startMs + deltaMs), range.endMs - MIN_CLIP_MS),
-      }
-    : {
-        ...range,
-        endMs: Math.max(Math.min(durationMs, range.endMs + deltaMs), range.startMs + MIN_CLIP_MS),
-      }
+): MaterialRange => {
+  const { min, max } = trimLimits(range, edge, durationMs)
+  const key = edge === 'start' ? 'startMs' : 'endMs'
+  return { ...range, [key]: Math.min(max, Math.max(min, range[key] + deltaMs)) }
+}
+
+/** 加入成片时拆成的段：每个镜头一段，第一段、最后一段带上两端的修剪 */
+export const rangePieces = (range: MaterialRange): MaterialPiece[] =>
+  range.shots.map((shot, at) => {
+    const start = at === 0 ? range.startMs : shot.startMs
+    const end = at === range.shots.length - 1 ? range.endMs : shot.endMs
+    return { playbackStart: start, duration: end - start }
+  })
+
+/**
+ * Shift 点镜头 clicked（同一版素材里全部镜头是 shots，按先后），规则见 {@link shiftSelect}；别的
+ * 素材、别的版本里的镜头只选它，全部去掉时为 null。没变的一端保留修剪，换了镜头的一端取镜头原本的
+ * 起止；保留的修剪越过了新的镜头边界时收回到边界以内。
+ */
+export const shiftShot = (
+  range: MaterialRange | null,
+  clicked: MaterialRange,
+  shots: readonly ShotSpan[],
+): MaterialRange | null => {
+  if (range === null || range.jobId !== clicked.jobId) return clicked
+  const keys = shots.map((shot) => shot.startMs)
+  const picked = shiftSelect(
+    keys,
+    range.shots.map((shot) => shot.startMs),
+    clicked.startMs,
+  ).flatMap((key) => shots.filter((shot) => shot.startMs === key))
+  const first = picked[0]
+  const last = picked.at(-1)
+  if (first === undefined || last === undefined) return null
+  const next = { ...range, shots: picked }
+  const cuts = cutsOf(next)
+  return {
+    ...next,
+    startMs: Math.min(
+      first.startMs === range.shots[0]?.startMs ? range.startMs : first.startMs,
+      (cuts[0] ?? Infinity) - MIN_CLIP_MS,
+    ),
+    endMs: Math.max(
+      last.endMs === range.shots.at(-1)?.endMs ? range.endMs : last.endMs,
+      (cuts.at(-1) ?? -Infinity) + MIN_CLIP_MS,
+    ),
+  }
+}
 
 /** 画面轨上的一段视频用了素材里的哪一段（毫秒） */
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }

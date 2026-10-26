@@ -52,7 +52,7 @@ describe('setMusic', () => {
     const longer = expectOk(
       insertMaterial(
         withMusic,
-        { sourceJobId: 's1', playbackStart: 0, duration: 3_000, at: { index: 1 } },
+        { sourceJobId: 's1', pieces: [{ playbackStart: 0, duration: 3_000 }], at: { index: 1 } },
         context,
       ),
     ).draft

@@ -1,3 +1,4 @@
+import { contiguousRange } from '../../editing/range-select'
 import type { EditContext } from './context'
 import {
   MAX_FILM_MS,
@@ -35,37 +36,50 @@ export type InsertAt = { index: number } | { timeMs: number }
 const indexAt = (draft: WholeFilmDraft, at: InsertAt) =>
   'index' in at ? clamp(at.index, 0, draft.layer0.length) : insertIndexAt(draft.layer0, at.timeMs)
 
-/** 放进第 0 层，后面的段整体后移；成片超过总长上限时拒绝，不缩短 */
-const insertClip = (draft: WholeFilmDraft, clip: Layer0Clip, at: InsertAt): EditResult => {
-  if (clip.duration < MIN_CLIP_MS) return refuse('too-short')
+/** 把几段按先后连着插到第 index 段之前，后面的段整体后移 */
+const insertAllAt = (layer0: Layer0Clip[], index: number, clips: readonly Layer0Clip[]) =>
+  clips.reduce((lane, clip, offset) => insertAt(lane, index + offset, clip), layer0)
+
+/** 按先后连着放进第 0 层，后面的段整体后移；成片超过总长上限时拒绝，不缩短 */
+const insertClips = (
+  draft: WholeFilmDraft,
+  clips: readonly Layer0Clip[],
+  at: InsertAt,
+): EditResult => {
+  if (clips.some((clip) => clip.duration < MIN_CLIP_MS)) return refuse('too-short')
+  const added = clips.reduce((sum, clip) => sum + clip.duration, 0)
   // 特效块本来就不晚于上限结束，画面轨不超过上限，成片也就不超过
-  if (layer0End(draft) + clip.duration > MAX_FILM_MS) return refuse('film-too-long')
-  return done(normalize({ ...draft, layer0: insertAt(draft.layer0, indexAt(draft, at), clip) }))
+  if (layer0End(draft) + added > MAX_FILM_MS) return refuse('film-too-long')
+  return done(normalize({ ...draft, layer0: insertAllAt(draft.layer0, indexAt(draft, at), clips) }))
 }
 
-/** 把一段素材加入成片；第一段视频定下画布尺寸 */
+/** 素材里的一段：从素材的 playbackStart 起放 duration（毫秒） */
+export type MaterialPiece = { playbackStart: number; duration: number }
+
+/** 把同一条素材里的几段按先后连着加入成片，每段成为画面轨上的一段；第一段视频定下画布尺寸 */
 export const insertMaterial = (
   draft: WholeFilmDraft,
-  args: { sourceJobId: string; playbackStart: number; duration: number; at: InsertAt },
+  args: { sourceJobId: string; pieces: readonly MaterialPiece[]; at: InsertAt },
   context: EditContext,
 ): EditResult => {
   const source = context.sources[args.sourceJobId]
   if (!source) return refuse('unknown-source')
-  if (args.playbackStart < 0 || args.playbackStart + args.duration > source.durationMs) {
-    return refuse('outside-source')
-  }
-  const clip: VideoClip = {
-    id: nextId(draft, 'v'),
+  const outside = args.pieces.some(
+    (piece) => piece.playbackStart < 0 || piece.playbackStart + piece.duration > source.durationMs,
+  )
+  if (outside) return refuse('outside-source')
+  const clips = args.pieces.map((piece, offset): VideoClip => ({
+    id: nextId(draft, 'v', offset),
     type: 'video',
     start: 0,
-    duration: args.duration,
-    playbackStart: args.playbackStart,
+    duration: piece.duration,
+    playbackStart: piece.playbackStart,
     sourceJobId: args.sourceJobId,
     volume: 1,
-  }
-  return insertClip(
+  }))
+  return insertClips(
     { ...draft, canvas: draft.canvas ?? { width: source.width, height: source.height } },
-    clip,
+    clips,
     args.at,
   )
 }
@@ -87,24 +101,34 @@ export const insertComponent = (
     component: args.component,
     variables: args.variables,
   }
-  return insertClip(draft, clip, args.at)
+  return insertClips(draft, [clip], args.at)
 }
 
+/** 第 0 层里有没有这几段 */
+const hasAll = (draft: WholeFilmDraft, clipIds: readonly string[]) =>
+  clipIds.every((id) => draft.layer0.some((clip) => clip.id === id))
+
 /**
- * 调整一段的顺序：挪到第 `to` 个插入点，即挪动前的第 `to` 段之前，等于段数时挪到最后（拖动时由
- * {@link insertIndexAt} 按松手处算出）。落点就在它自己两侧时原样返回。
+ * 调整连着的几段（按画面轨先后给 id）的顺序，当成一整块挪到第 `to` 个插入点，即挪动前的第 `to`
+ * 段之前，等于段数时挪到最后（拖动时由 {@link insertIndexAt} 按松手处算出）。落点就在这一块里或
+ * 紧挨它两侧时原样返回；这几段不相连时拒绝。
  */
-export const moveClip = (
+export const moveClips = (
   draft: WholeFilmDraft,
-  args: { clipId: string; to: number },
+  args: { clipIds: readonly string[]; to: number },
 ): EditResult => {
-  const from = draft.layer0.findIndex((c) => c.id === args.clipId)
-  const clip = draft.layer0[from]
-  if (!clip) return refuse('unknown-clip')
+  if (args.clipIds.length === 0 || !hasAll(draft, args.clipIds)) return refuse('unknown-clip')
+  const range = contiguousRange(
+    draft.layer0.map((clip) => clip.id),
+    args.clipIds,
+  )
+  if (range === undefined) return refuse('not-contiguous')
   const to = clamp(args.to, 0, draft.layer0.length)
-  if (to === from || to === from + 1) return done(draft)
-  const others = draft.layer0.filter((c) => c.id !== clip.id)
-  return done(normalize({ ...draft, layer0: insertAt(others, to > from ? to - 1 : to, clip) }))
+  if (to >= range.from && to <= range.to + 1) return done(draft)
+  const block = draft.layer0.slice(range.from, range.to + 1)
+  const others = draft.layer0.filter((clip) => !block.includes(clip))
+  const at = to > range.to ? to - block.length : to
+  return done(normalize({ ...draft, layer0: insertAllAt(others, at, block) }))
 }
 
 /**
@@ -188,20 +212,33 @@ export const splitClip = (
   )
 }
 
-/** 删掉第 0 层的一段，后面的段跟着前移 */
-export const deleteClip = (draft: WholeFilmDraft, args: { clipId: string }): EditResult => {
-  if (!draft.layer0.some((c) => c.id === args.clipId)) return refuse('unknown-clip')
-  return done(normalize({ ...draft, layer0: draft.layer0.filter((c) => c.id !== args.clipId) }))
+/** 删掉第 0 层的几段，后面的段跟着前移 */
+export const deleteClips = (
+  draft: WholeFilmDraft,
+  args: { clipIds: readonly string[] },
+): EditResult => {
+  if (args.clipIds.length === 0 || !hasAll(draft, args.clipIds)) return refuse('unknown-clip')
+  return done(
+    normalize({ ...draft, layer0: draft.layer0.filter((c) => !args.clipIds.includes(c.id)) }),
+  )
 }
 
-/** 一段视频的原声音量，收进 0 到上限 */
-export const setClipVolume = (
+/** 几段视频的原声音量一起设成同一个值，收进 0 到上限；组件段没有原声，跳过；一段视频都没有时拒绝 */
+export const setClipsVolume = (
   draft: WholeFilmDraft,
-  args: { clipId: string; volume: number },
+  args: { clipIds: readonly string[]; volume: number },
 ): EditResult => {
-  const clip = draft.layer0.find((c) => c.id === args.clipId)
-  if (!clip) return refuse('unknown-clip')
-  if (clip.type !== 'video') return refuse('not-a-video')
+  if (args.clipIds.length === 0 || !hasAll(draft, args.clipIds)) return refuse('unknown-clip')
+  const videos = draft.layer0.filter(
+    (clip): clip is VideoClip => clip.type === 'video' && args.clipIds.includes(clip.id),
+  )
+  if (videos.length === 0) return refuse('not-a-video')
   const volume = clamp(args.volume, 0, MAX_VOLUME)
-  return done(volume === clip.volume ? draft : replaceClip(draft, { ...clip, volume }))
+  if (videos.every((clip) => clip.volume === volume)) return done(draft)
+  return done({
+    ...draft,
+    layer0: draft.layer0.map((clip) =>
+      clip.type === 'video' && args.clipIds.includes(clip.id) ? { ...clip, volume } : clip,
+    ),
+  })
 }

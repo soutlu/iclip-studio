@@ -22,8 +22,8 @@ const CAPTIONS = [placed('v1', 0, 0, 1_200), placed('v1', 1, 1_500, 2_800)]
 
 describe('selectionOfHfId', () => {
   it('草稿里的段、特效块按 id 认出；caption:N 是第 N 份字幕，记成它的身份而不是下标', () => {
-    expect(selectionOfHfId('v1', DRAFT, CAPTIONS)).toEqual({ kind: 'clip', id: 'v1' })
-    expect(selectionOfHfId('c1', DRAFT, CAPTIONS)).toEqual({ kind: 'clip', id: 'c1' })
+    expect(selectionOfHfId('v1', DRAFT, CAPTIONS)).toEqual({ kind: 'clip', ids: ['v1'] })
+    expect(selectionOfHfId('c1', DRAFT, CAPTIONS)).toEqual({ kind: 'clip', ids: ['c1'] })
     expect(selectionOfHfId('o1', DRAFT, CAPTIONS)).toEqual({ kind: 'overlay', id: 'o1' })
     expect(selectionOfHfId('caption:1', DRAFT, CAPTIONS)).toEqual({
       kind: 'caption',
@@ -39,9 +39,9 @@ describe('selectionOfHfId', () => {
 
 describe('hfIdOnScreen', () => {
   it('选中的一块在这一刻的时间范围里才给出它的 data-hf-id', () => {
-    expect(hfIdOnScreen({ kind: 'clip', id: 'v1' }, DRAFT, CAPTIONS, 0)).toBe('v1')
-    expect(hfIdOnScreen({ kind: 'clip', id: 'v1' }, DRAFT, CAPTIONS, 3_000)).toBeUndefined()
-    expect(hfIdOnScreen({ kind: 'clip', id: 'c1' }, DRAFT, CAPTIONS, 3_000)).toBe('c1')
+    expect(hfIdOnScreen({ kind: 'clip', ids: ['v1'] }, DRAFT, CAPTIONS, 0)).toBe('v1')
+    expect(hfIdOnScreen({ kind: 'clip', ids: ['v1'] }, DRAFT, CAPTIONS, 3_000)).toBeUndefined()
+    expect(hfIdOnScreen({ kind: 'clip', ids: ['c1'] }, DRAFT, CAPTIONS, 3_000)).toBe('c1')
     expect(hfIdOnScreen({ kind: 'overlay', id: 'o1' }, DRAFT, CAPTIONS, 1_500)).toBe('o1')
     expect(hfIdOnScreen({ kind: 'overlay', id: 'o1' }, DRAFT, CAPTIONS, 2_500)).toBeUndefined()
   })
@@ -54,5 +54,10 @@ describe('hfIdOnScreen', () => {
     expect(hfIdOnScreen(null, DRAFT, CAPTIONS, 0)).toBeUndefined()
     expect(hfIdOnScreen({ kind: 'music' }, DRAFT, CAPTIONS, 0)).toBeUndefined()
     expect(hfIdOnScreen({ kind: 'overlay', id: 'gone' }, DRAFT, CAPTIONS, 1_500)).toBeUndefined()
+  })
+
+  it('画面轨上选了几段时不画选中框，哪一刻都没有', () => {
+    for (const ms of [0, 4_000])
+      expect(hfIdOnScreen({ kind: 'clip', ids: ['v1', 'c1'] }, DRAFT, CAPTIONS, ms)).toBeUndefined()
   })
 })

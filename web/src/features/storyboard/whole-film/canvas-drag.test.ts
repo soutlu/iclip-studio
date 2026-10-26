@@ -11,7 +11,7 @@ describe('拖哪个元素', () => {
   it('特效块拖它自己，字幕的任何一句都拖全部字幕；画面轨上的段、音乐与空处不拖', () => {
     expect(dragTargetOf({ kind: 'overlay', id: 'o1' })).toBe('o1')
     expect(dragTargetOf({ kind: 'caption', key: 'v1:sub:3' })).toBe('captions')
-    expect(dragTargetOf({ kind: 'clip', id: 'v1' })).toBeUndefined()
+    expect(dragTargetOf({ kind: 'clip', ids: ['v1'] })).toBeUndefined()
     expect(dragTargetOf({ kind: 'music' })).toBeUndefined()
     expect(dragTargetOf(null)).toBeUndefined()
   })

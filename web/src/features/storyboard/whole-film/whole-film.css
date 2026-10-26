@@ -1523,6 +1523,17 @@
   z-index: var(--z-local-2);
 }
 
+/* 画面轨的选区外框：贴着选中的段，单选、多选都画，同编辑视频 */
+.wf-selection-box {
+  position: absolute;
+  top: 2px;
+  z-index: var(--z-local-2);
+  height: 48px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
+  pointer-events: none;
+}
+
 .wf-clip-label {
   position: absolute;
   top: 3px;
@@ -2061,6 +2072,7 @@
 
 /* 素材轨左端与画面轨对齐（轨名列同宽、时间区左边同样留 8px），按原作自身时长铺满一行；
    右边留 8px，选区结尾的手柄不撑出横向滚动 */
+/* 和 .wf-tracks 一样不让选文字：Shift 点镜头会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
 .wf-take-strip {
   position: relative;
   height: 32px;
@@ -2068,6 +2080,7 @@
   margin: 0 8px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
+  user-select: none;
 }
 
 .wf-take-note {
@@ -2105,12 +2118,14 @@
   pointer-events: none;
 }
 
+/* 选中的范围：外围一圈选区外框，同画面轨与编辑视频 */
 .wf-range {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
   border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
   cursor: grab;
   touch-action: none;
 }
