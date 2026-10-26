@@ -2072,6 +2072,7 @@
 
 /* 素材轨左端与画面轨对齐（轨名列同宽、时间区左边同样留 8px），按原作自身时长铺满一行；
    右边留 8px，选区结尾的手柄不撑出横向滚动 */
+/* 和 .wf-tracks 一样不让选文字：Shift 点镜头会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
 .wf-take-strip {
   position: relative;
   height: 32px;
@@ -2079,6 +2080,7 @@
   margin: 0 8px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
+  user-select: none;
 }
 
 .wf-take-note {

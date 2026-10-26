@@ -63,31 +63,30 @@ export const shotRange = (jobId: string, takeId: string, shot: ShotSpan): Materi
 const cutsOf = (range: MaterialRange): number[] => range.shots.slice(1).map((shot) => shot.startMs)
 
 /**
- * 把选区的一端挪 deltaMs：往外不出素材的头尾；往里不越过最近的镜头边界（只有一个镜头时是另一端），
- * 并至少留 MIN_CLIP_MS
+ * 选区一端能挪到的范围（毫秒）：往外不出素材的头尾；往里不越过最近的镜头边界（只有一个镜头时是
+ * 另一端），并至少留 MIN_CLIP_MS
  */
+export const trimLimits = (
+  range: MaterialRange,
+  edge: Edge,
+  durationMs: number,
+): { min: number; max: number } => {
+  const cuts = cutsOf(range)
+  return edge === 'start'
+    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_CLIP_MS }
+    : { min: (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS, max: durationMs }
+}
+
+/** 把选区的一端挪 deltaMs，收进 {@link trimLimits} */
 export const trimRange = (
   range: MaterialRange,
   edge: Edge,
   deltaMs: number,
   durationMs: number,
 ): MaterialRange => {
-  const cuts = cutsOf(range)
-  return edge === 'start'
-    ? {
-        ...range,
-        startMs: Math.min(
-          Math.max(0, range.startMs + deltaMs),
-          (cuts[0] ?? range.endMs) - MIN_CLIP_MS,
-        ),
-      }
-    : {
-        ...range,
-        endMs: Math.max(
-          Math.min(durationMs, range.endMs + deltaMs),
-          (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS,
-        ),
-      }
+  const { min, max } = trimLimits(range, edge, durationMs)
+  const key = edge === 'start' ? 'startMs' : 'endMs'
+  return { ...range, [key]: Math.min(max, Math.max(min, range[key] + deltaMs)) }
 }
 
 /** 加入成片时拆成的段：每个镜头一段，第一段、最后一段带上两端的修剪 */

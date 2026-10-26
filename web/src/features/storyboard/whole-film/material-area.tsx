@@ -16,6 +16,7 @@ import type { KeyframeStates } from './edit-context'
 import {
   shiftShot,
   shotRange,
+  trimLimits,
   trimRange,
   type Material,
   type MaterialGroup,
@@ -409,28 +410,31 @@ function TakeRow({
               width: percent(shown.endMs - shown.startMs, durationMs),
             }}
           >
-            {(['start', 'end'] as const).map((edge) => (
-              <TrimHandle
-                bounds={{ min: 0, max: durationMs / 1000 }}
-                edge={edge}
-                key={edge}
-                onKeyDown={(event) => {
-                  if (insertOnEnter(event, onInsert)) return
-                  const step = arrowStep(event)
-                  if (step === undefined) return
-                  event.preventDefault()
-                  onTrim(trimRange(shown, edge, Math.round(step * 1000), durationMs), edge)
-                }}
-                onPointerCancel={cancel}
-                onPointerDown={(event) => press(event, edge)}
-                onPointerMove={drag}
-                onPointerUp={release}
-                pressed={false}
-                style={edge === 'start' ? { left: 0 } : { left: '100%' }}
-                value={(edge === 'start' ? shown.startMs : shown.endMs) / 1000}
-                valueText={`${seconds(edge === 'start' ? shown.startMs : shown.endMs)} 秒`}
-              />
-            ))}
+            {(['start', 'end'] as const).map((edge) => {
+              const limits = trimLimits(shown, edge, durationMs)
+              return (
+                <TrimHandle
+                  bounds={{ min: limits.min / 1000, max: limits.max / 1000 }}
+                  edge={edge}
+                  key={edge}
+                  onKeyDown={(event) => {
+                    if (insertOnEnter(event, onInsert)) return
+                    const step = arrowStep(event)
+                    if (step === undefined) return
+                    event.preventDefault()
+                    onTrim(trimRange(shown, edge, Math.round(step * 1000), durationMs), edge)
+                  }}
+                  onPointerCancel={cancel}
+                  onPointerDown={(event) => press(event, edge)}
+                  onPointerMove={drag}
+                  onPointerUp={release}
+                  pressed={false}
+                  style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+                  value={(edge === 'start' ? shown.startMs : shown.endMs) / 1000}
+                  valueText={`${seconds(edge === 'start' ? shown.startMs : shown.endMs)} 秒`}
+                />
+              )
+            })}
           </div>
         ) : null}
         {shown !== null && durationMs !== undefined && previewMs !== undefined ? (

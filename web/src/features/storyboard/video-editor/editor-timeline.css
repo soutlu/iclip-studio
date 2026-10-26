@@ -49,11 +49,13 @@
   scrollbar-width: thin;
 }
 
+/* 不让选文字：Shift 点段会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
 .video-editor-timeline-lanes {
   position: relative;
   min-width: 520px;
   height: calc(var(--timeline-track-top) + 84px);
   isolation: isolate;
+  user-select: none;
 }
 
 .video-editor-timeline-item {
