@@ -8,6 +8,10 @@ export type VariableValue = string | number | boolean
 
 export interface CatalogVariable {
   id: string
+  /**
+   * `font` 是字体可填项：取值是 {@link ComponentCatalog.fonts} 里的字体名，空字符串是组件自带的字体；
+   * 组件读 `--font-display`、`--font-body` 时由组装工具加上（id 为 `font`）。
+   */
   type: 'string' | 'number' | 'color' | 'boolean' | 'enum' | 'font' | 'image'
   label: string
   default: VariableValue
@@ -42,6 +46,13 @@ export interface CatalogItem {
   fonts: string[]
 }
 
+export interface CatalogFont {
+  /** 这个字体整套字形的 CSS，相对组件目录根（`vendor/fonts/families/` 下）。 */
+  css: string
+  /** 品牌缩写，同组件条目的 `brand`；带品牌的字体是字体可填项的选项。 */
+  brand?: string
+}
+
 export interface ExcludedItem {
   name: string
   title: string
@@ -57,11 +68,12 @@ export interface ComponentCatalog {
    */
   runtime: { hyperframes: string; gsap: string; cjkFont: string }
   /**
-   * 网页字体 → 它整套字形的 CSS（相对组件目录根）：组件库里请求过的全部西文字重，加上同名、只覆盖
-   * 中日韩码位、字形取 Noto Sans SC 的中文字形。只写字体名不引用字体文件的组件也能拿到这个字体，中文
-   * 不再落到各平台各不相同的系统字体；渲染服务把它内联进合成页，HyperFrames 就不再另补同名字体。
+   * 字体名 → 它整套字形的 CSS 与品牌：西文字形是组件库里请求过的全部字重（品牌字体是组件库自带的字体
+   * 文件），加上同名、只覆盖中日韩码位、字形取 Noto Sans SC 的中文字形。只写字体名不引用字体文件的组件
+   * 也能拿到这个字体，中文不再落到各平台各不相同的系统字体；渲染服务把它内联进合成页，HyperFrames 就
+   * 不再另补同名字体。
    */
-  fonts: Record<string, string>
+  fonts: Record<string, CatalogFont>
   categories: { id: string; label: string }[]
   items: CatalogItem[]
   excluded: ExcludedItem[]

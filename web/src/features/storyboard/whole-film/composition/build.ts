@@ -38,6 +38,8 @@ export interface Composition {
 export type CompositionErrorCode =
   /** 组件不在目录里（或已被排除）。 */
   | 'unknown-component'
+  /** 字体可填项选的字体不在目录里。 */
+  | 'unknown-font'
   /** 草稿引用的素材片或配乐没有给出地址。 */
   | 'missing-media'
   /** 草稿本身无法合成。 */
@@ -69,15 +71,45 @@ function lookup(catalog: ComponentCatalog, name: string): CatalogItem {
   return item
 }
 
-/** 组件目录里的默认值打底，草稿里的取值覆盖。 */
-function variableValues(
+/** 组件这一处的取值：交给组件的可填项，与字体项选的字体（空字符串是组件自带的字体）。 */
+interface ComponentValues {
+  variables: Record<string, VariableValue>
+  font: string
+}
+
+/**
+ * 组件目录里的默认值打底，草稿里的取值覆盖。字体项（`font` 类型）不交给组件，单独取出，由宿主上的
+ * 字体变量生效。`declaredOnly` 时只认组件声明过的项：字幕换样式时保留着上一种样式的取值。
+ */
+function componentValues(
   item: CatalogItem,
-  values: ComponentVariables,
-): Record<string, VariableValue> {
-  const defaults = Object.fromEntries(
-    item.variables.map((variable) => [variable.id, variable.default]),
+  values: ComponentVariables = {},
+  declaredOnly = false,
+): ComponentValues {
+  const declared = new Set(item.variables.map((variable) => variable.id))
+  const merged: Record<string, VariableValue> = {
+    ...Object.fromEntries(item.variables.map((variable) => [variable.id, variable.default])),
+    ...(declaredOnly
+      ? Object.fromEntries(Object.entries(values).filter(([id]) => declared.has(id)))
+      : values),
+  }
+  const fontIds = new Set(
+    item.variables.filter((variable) => variable.type === 'font').map((variable) => variable.id),
   )
-  return { ...defaults, ...values }
+  const fontId = [...fontIds][0]
+  return {
+    variables: Object.fromEntries(Object.entries(merged).filter(([id]) => !fontIds.has(id))),
+    font: fontId === undefined ? '' : String(merged[fontId]),
+  }
+}
+
+/**
+ * 换字体：HyperFrames 组件的标题读 `--font-display`、正文读 `--font-body`，自己不定义这两个变量；
+ * 设在宿主上，经 CSS 继承传进组件。`--font-mono` 不动。
+ */
+function fontVariables(family: string): string {
+  const value = `'${family}', sans-serif`
+  return `--font-display:${value};--font-body:${value}`
 }
 
 interface HostOptions {
@@ -101,6 +133,8 @@ interface HostOptions {
   track: number
   z: number
   variables: Record<string, unknown>
+  /** 字体项选的字体；空字符串时不设字体变量，用组件自带的字体。 */
+  font: string
   canvas: { width: number; height: number }
 }
 
@@ -158,17 +192,24 @@ function placed(options: HostOptions, placement: Placement, inner: string): stri
  */
 function componentHost(options: HostOptions): string {
   const { id, item, canvas, size, placement } = { ...options, size: options.item.size }
-  const host = (extra: string) =>
-    `<div id="${id}" data-composition-id="${escapeAttribute(item.name)}"${extra}` +
-    ` data-composition-src="${escapeAttribute(item.src)}"` +
-    ` data-start="${seconds(options.startMs)}" data-duration="${seconds(options.durationMs)}"` +
-    ` data-playback-start="${seconds(options.playbackStartMs)}" data-track-index="${options.track}"` +
-    ` data-variable-values="${jsonAttribute(options.variables)}"></div>`
+  const fonts = options.font === '' ? '' : fontVariables(options.font)
+  // z：铺满的画面轨组件段的叠放次序，与字体变量一起写在宿主的行内样式上
+  const host = (extra: string, z = '') => {
+    const style = [z, fonts].filter(Boolean).join(';')
+    return (
+      `<div id="${id}" data-composition-id="${escapeAttribute(item.name)}"${extra}` +
+      (style === '' ? '' : ` style="${escapeAttribute(style)}"`) +
+      ` data-composition-src="${escapeAttribute(item.src)}"` +
+      ` data-start="${seconds(options.startMs)}" data-duration="${seconds(options.durationMs)}"` +
+      ` data-playback-start="${seconds(options.playbackStartMs)}" data-track-index="${options.track}"` +
+      ` data-variable-values="${jsonAttribute(options.variables)}"></div>`
+    )
+  }
   // marks：写在最外层的 data-hf-id；z：叠放次序，接在最外层的行内样式后面
   const box = (marks: string, z: string) => {
     // 铺满的宿主由页面样式（.fill）定成画面大小：根节点写了 data-width/height 时，HyperFrames
-    // 展平时会把它写到宿主的行内样式上。
-    if (!size) return host(` class="fill"${marks}${z === '' ? '' : ` style="${z}"`}`)
+    // 展平时会把它写到宿主的行内样式上（逐项设，不碰字体变量）。
+    if (!size) return host(` class="fill"${marks}`, z)
     const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
     return (
       `<div class="fit"${marks} style="width:${size.width}px;height:${size.height}px;` +
@@ -182,9 +223,9 @@ function componentHost(options: HostOptions): string {
 
 /** 组件字体整套字形的 CSS；组件目录给组件列了字体却没有对应 CSS 是目录本身的错。 */
 function fontCss(catalog: ComponentCatalog, family: string): string {
-  const href = catalog.fonts[family]
-  if (!href) throw new Error(`组件目录缺少字体「${family}」的 CSS`)
-  return href
+  const font = catalog.fonts[family]
+  if (!font) throw new Error(`组件目录缺少字体「${family}」的 CSS`)
+  return font.css
 }
 
 /**
@@ -202,8 +243,23 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
   const totalMs = Math.max(
     ...[...draft.layer0, ...draft.overlays].map((clip) => clip.start + clip.duration),
   )
-  // 页面上用到的组件，按它们的网页字体引用字体 CSS。
+  // 页面上用到的组件，按它们的网页字体引用字体 CSS；字体项选中的字体也引用。
   const used = new Set<CatalogItem>()
+  const chosenFonts = new Set<string>()
+  /** 组件这一处的取值；选了字体时核对它在目录里，并记下要引用它的 CSS。 */
+  const valuesOf = (
+    item: CatalogItem,
+    values: ComponentVariables | undefined,
+    declaredOnly = false,
+  ): ComponentValues => {
+    const result = componentValues(item, values, declaredOnly)
+    if (result.font !== '') {
+      if (!Object.hasOwn(catalog.fonts, result.font))
+        throw new CompositionError('unknown-font', `组件目录里没有字体「${result.font}」`)
+      chosenFonts.add(result.font)
+    }
+    return result
+  }
 
   const layer0 = draft.layer0.map((clip, index) => {
     const id = `clip-${index}`
@@ -219,7 +275,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
         playbackStartMs: clip.playbackStart,
         track: TRACK.layer0,
         z: Z.layer0,
-        variables: variableValues(item, clip.variables),
+        ...valuesOf(item, clip.variables),
         canvas,
       })
     }
@@ -248,7 +304,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       playbackStartMs: overlay.playbackStart,
       track: TRACK.overlay,
       z: overlay.zIndex,
-      variables: variableValues(item, overlay.variables),
+      ...valuesOf(item, overlay.variables),
       canvas,
     })
   })
@@ -259,23 +315,26 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
   const captionItem = lookup(catalog, draft.captions.component)
   // 关掉字幕同 HyperFrames 隐藏轨道：不放字幕宿主，也不引字幕组件的字体
   const words = draft.captions.hidden ? [] : captionWords(placeCaptions(draft, media.subtitles))
-  if (words.length > 0) used.add(captionItem)
-  const captions =
-    words.length === 0
-      ? ''
-      : componentHost({
-          id: 'captions',
-          hfId: CAPTIONS_HF_ID,
-          placement: draft.captions,
-          item: captionItem,
-          startMs: 0,
-          durationMs: totalMs,
-          playbackStartMs: 0,
-          track: TRACK.captions,
-          z: Z.captions,
-          variables: { ...variableValues(captionItem, {}), words },
-          canvas,
-        })
+  let captions = ''
+  if (words.length > 0) {
+    used.add(captionItem)
+    // 换过样式的字幕还留着上一种样式的取值，只认这种样式声明过的项
+    const values = valuesOf(captionItem, draft.captions.variables, true)
+    captions = componentHost({
+      id: 'captions',
+      hfId: CAPTIONS_HF_ID,
+      placement: draft.captions,
+      item: captionItem,
+      startMs: 0,
+      durationMs: totalMs,
+      playbackStartMs: 0,
+      track: TRACK.captions,
+      z: Z.captions,
+      variables: { ...values.variables, words },
+      font: values.font,
+      canvas,
+    })
+  }
 
   let music = ''
   if (draft.music) {
@@ -287,7 +346,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       ` data-track-index="${TRACK.music}" data-volume="${String(draft.music.volume)}"></audio>`
   }
 
-  const families = [...new Set([...used].flatMap((item) => item.fonts))].sort()
+  const families = [...new Set([...[...used].flatMap((item) => item.fonts), ...chosenFonts])].sort()
   const fontLinks = [catalog.runtime.cjkFont, ...families.map((family) => fontCss(catalog, family))]
     .map((href) => `<link rel="stylesheet" href="${escapeAttribute(href)}">`)
     .join('\n')

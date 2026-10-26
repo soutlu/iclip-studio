@@ -62,6 +62,7 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
             video_clip("b", start=6000, duration=2000, source_job_id=SOURCE, volume=0),
         ],
         edits=[edit(0), edit(1)],
+        captions_variables={"font": "Sample Sans"},
         captions_hidden=True,
         captions_at=(0, -240),
         captions_scale=0.8,
@@ -133,6 +134,17 @@ def test_captions_are_shown_when_the_draft_does_not_say() -> None:
 
     assert parsed.captions.hidden is False
     assert parsed.model_dump(mode="json", by_alias=True)["captions"]["hidden"] is False
+
+
+def test_caption_variables_default_to_empty() -> None:
+    """没写 ``variables`` 的字幕（有这个字段之前存的）按没填过读，读出来补上空表。"""
+
+    document = draft_document()
+    del document["captions"]["variables"]
+
+    parsed = parse(document)
+
+    assert parsed.model_dump(mode="json", by_alias=True)["captions"]["variables"] == {}
 
 
 def test_positions_default_to_where_the_component_puts_it() -> None:
@@ -407,10 +419,18 @@ def test_component_names_are_non_blank_and_bounded(component: str, accepted: boo
         pytest.param({" ": 1}, False, id="空白名字"),
     ],
 )
-def test_variables_are_flat_and_bounded(variables: dict[str, Any], accepted: bool) -> None:
+@pytest.mark.parametrize("where", ["component", "captions"])
+def test_variables_are_flat_and_bounded(
+    variables: dict[str, Any], accepted: bool, where: str
+) -> None:
+    """组件段与字幕的可填项同一套规矩。"""
+
     clip = component_clip("c", start=0, duration=1000)
-    clip["variables"] = variables
-    document = draft_document(layer0=[clip])
+    if where == "component":
+        clip["variables"] = variables
+        document = draft_document(layer0=[clip])
+    else:
+        document = draft_document(layer0=[clip], captions_variables=variables)
 
     if accepted:
         parse(document)

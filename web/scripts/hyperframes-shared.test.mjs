@@ -1,8 +1,17 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { cjkTwinFaces, fontFaceDescriptors } from './hyperframes-shared.mjs'
+import {
+  FONT_VARIABLE,
+  SyncError,
+  WEB_ROOT,
+  checkCatalogFonts,
+  cjkTwinFaces,
+  fontFaceDescriptors,
+  localFontFaces,
+  publishedCatalog,
+} from './hyperframes-shared.mjs'
 
 /** 生成的 @font-face 拆成 { family, weight, style, src, range }，便于逐条比对。 */
 const parseRules = (css) =>
@@ -128,5 +137,136 @@ describe('cjkTwinFaces', () => {
       ['600', '-4-700-normal.woff2'],
       ['600', '-5-700-normal.woff2'],
     ])
+  })
+})
+
+describe('publishedCatalog', () => {
+  const entry = (name, variables = []) => ({ name, src: `compositions/${name}.html`, variables })
+  const files = {
+    'compositions/title.html': '.t { font-family: var(--font-display, Inter), sans-serif }',
+    'compositions/body.html': '.b { font: 400 40px var( --font-body, Inter) }',
+    'compositions/mono.html': '.m { font-family: var(--font-mono, monospace) }',
+    'compositions/plain.html': '.p { font-family: Inter }',
+    'compositions/own.html': '.o { font-family: var(--font-display, Inter) }',
+  }
+  const source = {
+    runtime: {},
+    fonts: {
+      Inter: { css: 'vendor/fonts/families/inter.css' },
+      Brand: {
+        css: 'vendor/fonts/families/brand.css',
+        brand: 'BR',
+        faces: [{ file: 'fonts/brand.ttf', weight: 400, style: 'normal' }],
+      },
+    },
+    categories: [],
+    items: [
+      entry('title', [{ id: 'text', type: 'string', label: '文字', default: 'A' }]),
+      entry('body'),
+      entry('mono'),
+      entry('plain'),
+      entry('own', [{ id: 'font', type: 'font', label: '字体', default: 'Brand' }]),
+    ],
+    excluded: [],
+  }
+
+  it('读了 --font-display 或 --font-body 的条目在最后加上字体项，自己写了的原样；字体去掉 faces', async () => {
+    const published = await publishedCatalog(source, 'v1', async (src) => files[src])
+    expect(published.version).toBe('v1')
+    expect(Object.fromEntries(published.items.map((item) => [item.name, item.variables]))).toEqual({
+      title: [source.items[0].variables[0], FONT_VARIABLE],
+      body: [FONT_VARIABLE],
+      mono: [],
+      plain: [],
+      own: source.items[4].variables,
+    })
+    expect(FONT_VARIABLE).toEqual({ id: 'font', type: 'font', label: '字体', default: '' })
+    expect(published.fonts).toEqual({
+      Inter: { css: 'vendor/fonts/families/inter.css' },
+      Brand: { css: 'vendor/fonts/families/brand.css', brand: 'BR' },
+    })
+  })
+})
+
+describe('checkCatalogFonts', () => {
+  it.each([
+    ['只写 CSS 路径的旧写法', { Inter: 'vendor/fonts/families/inter.css' }],
+    ['没有 css', { Inter: { brand: 'BR' } }],
+    ['css 不在 vendor/fonts/families/ 下', { Inter: { css: 'vendor/fonts/inter.css' } }],
+  ])('%s：报错', (_, fonts) => {
+    expect(() => checkCatalogFonts(fonts)).toThrow(SyncError)
+  })
+
+  it('{ css, brand?, faces? } 照收', () => {
+    expect(() =>
+      checkCatalogFonts({
+        Inter: { css: 'vendor/fonts/families/inter.css' },
+        Brand: { css: 'vendor/fonts/families/brand.css', brand: 'BR', faces: [] },
+      }),
+    ).not.toThrow()
+  })
+})
+
+describe('localFontFaces', () => {
+  // 一个真实的 woff2（web 依赖里的 MiSans 西文字体），只拷进临时目录，不入库。
+  const FONT_FILE = join(WEB_ROOT, 'node_modules/misans/lib/Latin/MiSansLatin-Regular.woff2')
+  let work
+  let libraryDir
+  let outDir
+  beforeAll(async () => {
+    work = await mkdtemp(join(tmpdir(), 'hf-local-font-'))
+    libraryDir = join(work, 'library')
+    outDir = join(work, 'out')
+    await mkdir(join(libraryDir, 'fonts/brand'), { recursive: true })
+    await writeFile(join(libraryDir, 'fonts/brand/brand.woff2'), await readFile(FONT_FILE))
+    await writeFile(join(libraryDir, 'fonts/brand/brand-bold.ttf'), 'ttf')
+  })
+  afterAll(() => rm(work, { recursive: true, force: true }))
+
+  const faces = [
+    { file: 'fonts/brand/brand.woff2', weight: 400, style: 'normal' },
+    { file: 'fonts/brand/brand-bold.ttf', weight: 700, style: 'italic' },
+  ]
+
+  it('每个字重、字形一条 @font-face（font-display: block），字体文件拷进输出目录的同一路径', async () => {
+    const { css, descriptors } = await localFontFaces({
+      family: 'Brand Sans',
+      faces,
+      cssPath: 'vendor/fonts/families/brand-sans.css',
+      libraryDir,
+      outDir,
+    })
+    expect(css.split('\n')).toEqual([
+      "@font-face{font-family:'Brand Sans';font-style:normal;font-display:block;font-weight:400;" +
+        "src:url(../../../fonts/brand/brand.woff2) format('woff2')}",
+      "@font-face{font-family:'Brand Sans';font-style:italic;font-display:block;font-weight:700;" +
+        "src:url(../../../fonts/brand/brand-bold.ttf) format('truetype')}",
+    ])
+    expect(descriptors).toEqual([
+      { family: 'Brand Sans', weight: '400', style: 'normal' },
+      { family: 'Brand Sans', weight: '700', style: 'italic' },
+    ])
+    expect(await readFile(join(outDir, 'fonts/brand/brand.woff2'))).toEqual(
+      await readFile(FONT_FILE),
+    )
+    expect(await readFile(join(outDir, 'fonts/brand/brand-bold.ttf'), 'utf8')).toBe('ttf')
+  })
+
+  it.each([
+    ['没有 faces', []],
+    ['文件不在 fonts/ 下', [{ file: 'patches/brand.woff2', weight: 400, style: 'normal' }]],
+    ['跳出 fonts/', [{ file: 'fonts/../catalog.json', weight: 400, style: 'normal' }]],
+    ['文件不存在', [{ file: 'fonts/brand/missing.woff2', weight: 400, style: 'normal' }]],
+    ['格式认不出', [{ file: 'fonts/brand/brand.svg', weight: 400, style: 'normal' }]],
+  ])('%s：报错', async (_, bad) => {
+    await expect(
+      localFontFaces({
+        family: 'Brand Sans',
+        faces: bad,
+        cssPath: 'vendor/fonts/families/brand-sans.css',
+        libraryDir,
+        outDir,
+      }),
+    ).rejects.toThrow(SyncError)
   })
 })

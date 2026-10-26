@@ -44,13 +44,22 @@ const item: CatalogItem = {
   ],
 }
 
-const renderPopover = (values: ComponentVariables = {}) => {
+/** 只有字体项的组件；`fallback` 是目录里的默认值（品牌组件写成品牌字体） */
+const withFont = (fallback: string): CatalogItem => ({
+  ...item,
+  variables: [{ id: 'font', type: 'font', label: '字体', default: fallback }],
+})
+
+/** 测试组件库里唯一带品牌的字体 */
+const BRAND_FONT = 'Playfair Display'
+
+const renderPopover = (values: ComponentVariables = {}, target: CatalogItem = item) => {
   const onChange = vi.fn()
   const onRemove = vi.fn()
   renderWithTooltip(
     <ComponentPopover
       catalog={fixtureCatalog}
-      item={item}
+      item={target}
       onChange={onChange}
       onRemove={onRemove}
       values={values}
@@ -126,6 +135,43 @@ describe('组件调整浮层', () => {
     expect(onChange).toHaveBeenLastCalledWith({ weight: 'd' })
     expect(screen.queryByRole('group', { name: '动效' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('动效')).toHaveTextContent('选项a')
+  })
+
+  it('字体是向上展开的下拉：「默认」加上每个带品牌的字体，选项文字是品牌缩写；选了写进取值', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderPopover({}, withFont(''))
+    const font = screen.getByLabelText('字体')
+    expect(font).toHaveTextContent('默认')
+    await user.click(font)
+    expect(screen.getByRole('menu')).toHaveAttribute('data-side', 'top')
+    expect(screen.getAllByRole('menuitemradio').map((option) => option.textContent)).toEqual([
+      '默认',
+      '示例品牌',
+    ])
+    expect(screen.getByRole('menuitemradio', { name: '默认' })).toBeChecked()
+    await user.click(screen.getByRole('menuitemradio', { name: '示例品牌' }))
+    expect(onChange).toHaveBeenLastCalledWith({ font: BRAND_FONT })
+  })
+
+  it('选了品牌字体的显示品牌缩写；选「默认」回到组件自带的字体，不再存这一项', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderPopover({ font: BRAND_FONT }, withFont(''))
+    const font = screen.getByLabelText('字体')
+    expect(font).toHaveTextContent('示例品牌')
+    await user.click(font)
+    expect(screen.getByRole('menuitemradio', { name: '示例品牌' })).toBeChecked()
+    await user.click(screen.getByRole('menuitemradio', { name: '默认' }))
+    expect(onChange).toHaveBeenLastCalledWith({})
+  })
+
+  it('品牌组件的字体项默认是品牌字体：选「默认」存空字符串，用组件自带的字体', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderPopover({}, withFont(BRAND_FONT))
+    const font = screen.getByLabelText('字体')
+    expect(font).toHaveTextContent('示例品牌')
+    await user.click(font)
+    await user.click(screen.getByRole('menuitemradio', { name: '默认' }))
+    expect(onChange).toHaveBeenLastCalledWith({ font: '' })
   })
 
   it('开关项是开关', async () => {

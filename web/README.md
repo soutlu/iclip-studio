@@ -10,4 +10,4 @@ Vite + React SPA，使用 TanStack Router、TanStack Query 和 Tailwind CSS。�
 HOST=127.0.0.1 PORT=3015 VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:7789 pnpm dev
 ```
 
-`VITE_BACKEND_PROXY_TARGET` 不从 `.env` 文件读取。`pnpm dev:mock` 使用 `mock` mode，不连接后端。端口在主 worktree 为 3014，在其他 worktree 由所在路径决定（3100–3899，启动日志打印实际地址），可用 `PORT=3015 pnpm dev:mock` 覆盖；端口被占用时直接报错退出。
+`VITE_BACKEND_PROXY_TARGET` 不从 `.env` 文件读取。`pnpm dev` 启动前把组件库组装到 `public/hyperframes/`，默认组装入库的测试组件库；要看正式组件时用 `HYPERFRAMES_LIBRARY=<组件库源目录> pnpm dev`。`pnpm dev:mock` 使用 `mock` mode，不连接后端。端口在主 worktree 为 3014，在其他 worktree 由所在路径决定（3100–3899，启动日志打印实际地址），可用 `PORT=3015 pnpm dev:mock` 覆盖；端口被占用时直接报错退出。

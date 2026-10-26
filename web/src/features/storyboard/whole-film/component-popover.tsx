@@ -12,12 +12,15 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import {
+  fontLabel,
+  fontOptions,
   isLightColor,
   swatchColors,
   variableValue,
   type CatalogItem,
   type CatalogVariable,
   type ComponentCatalog,
+  type FontOption,
   type VariableValue,
 } from './component-catalog'
 import { ComponentThumb } from './components-panel'
@@ -47,6 +50,7 @@ export function ComponentPopover({
   onChange,
   onRemove,
 }: ComponentPopoverProps) {
+  const fonts = fontOptions(catalog)
   const set = (id: string, value: VariableValue | undefined) => {
     if (values[id] === value) return
     onChange(
@@ -70,6 +74,7 @@ export function ComponentPopover({
       </div>
       {item.variables.map((variable) => (
         <VariableField
+          fonts={fonts}
           key={variable.id}
           onChange={(value) => set(variable.id, value)}
           values={values}
@@ -83,11 +88,13 @@ export function ComponentPopover({
 type FieldProps = {
   variable: CatalogVariable
   values: ComponentVariables
+  /** 字体项的选项 */
+  fonts: readonly FontOption[]
   /** undefined 表示不再填，回到组件的默认值 */
   onChange: (value: VariableValue | undefined) => void
 }
 
-function VariableField({ variable, values, onChange }: FieldProps) {
+function VariableField({ variable, values, fonts, onChange }: FieldProps) {
   const id = useId()
   const labelId = `${id}-label`
   const stored = values[variable.id]
@@ -96,8 +103,34 @@ function VariableField({ variable, values, onChange }: FieldProps) {
   let labelFor: string | undefined = id
   let input: ReactNode
   switch (variable.type) {
+    case 'font': {
+      const current = String(value)
+      input = (
+        <MenuRoot>
+          <MenuTrigger asChild>
+            <button className="wf-select ui-state ui-focus" id={id} type="button">
+              {fontLabel(fonts, current)}
+              <Icon decorative name="expand" size="xs" />
+            </button>
+          </MenuTrigger>
+          <MenuSurface align="start" side="top">
+            {/* 选回组件目录里的默认值时不再存这一项 */}
+            <MenuRadioGroup
+              onValueChange={(next) => onChange(next === variable.default ? undefined : next)}
+              value={current}
+            >
+              {fonts.map((option) => (
+                <MenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuSurface>
+        </MenuRoot>
+      )
+      break
+    }
     case 'string':
-    case 'font':
       input = (
         <CommitInput
           id={id}

@@ -7,6 +7,7 @@ import {
   setCaptionsHidden,
   setCaptionsPosition,
   setCaptionsTransform,
+  setCaptionsVariables,
 } from './captions'
 import { MAX_SCALE } from './draft'
 
@@ -51,6 +52,20 @@ describe('改字、字幕样式与字幕开关', () => {
     expect(off.captions).toEqual({ ...edited.captions, hidden: true })
     const on = expectOk(setCaptionsHidden(off, { hidden: false })).draft
     expect(on.captions).toEqual({ ...edited.captions, hidden: false })
+  })
+
+  it('改字幕的可填项：取值没变时原样返回，没写的草稿按没填过算；换样式时留着', () => {
+    const unset = film()
+    unset.captions = { component: unset.captions.component, edits: unset.captions.edits }
+    expect(expectOk(setCaptionsVariables(unset, { variables: {} })).draft).toBe(unset)
+    const font = expectOk(setCaptionsVariables(unset, { variables: { font: 'Brand' } })).draft
+    expect(font.captions.variables).toEqual({ font: 'Brand' })
+    expect(expectOk(setCaptionsVariables(font, { variables: { font: 'Brand' } })).draft).toBe(font)
+    const styled = expectOk(setCaptionStyle(font, { component: 'other-caption' })).draft
+    expect(styled.captions).toMatchObject({
+      component: 'other-caption',
+      variables: { font: 'Brand' },
+    })
   })
 
   it('开关没变时原样返回；没写开关的草稿按开着算', () => {

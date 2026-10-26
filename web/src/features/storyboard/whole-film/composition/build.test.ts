@@ -6,7 +6,7 @@ import type {
   WholeFilmVideoClip,
 } from '@/shared/api/generated'
 import { buildComposition, CompositionError, type CompositionMedia } from './build'
-import type { CatalogItem, ComponentCatalog } from './catalog'
+import type { CatalogItem, CatalogVariable, ComponentCatalog } from './catalog'
 
 const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogItem => ({
   kind: 'component',
@@ -23,6 +23,9 @@ const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogIt
   ...spec,
 })
 
+/** 组装工具给读字体变量的组件加上的字体项 */
+const FONT: CatalogVariable = { id: 'font', type: 'font', label: '字体', default: '' }
+
 const CATALOG: ComponentCatalog = {
   version: '0.8.168',
   runtime: {
@@ -31,9 +34,10 @@ const CATALOG: ComponentCatalog = {
     cjkFont: 'vendor/fonts/noto-sans-sc.css',
   },
   fonts: {
-    Inter: 'vendor/fonts/families/inter.css',
-    Anton: 'vendor/fonts/families/anton.css',
-    'DM Sans': 'vendor/fonts/families/dm-sans.css',
+    Inter: { css: 'vendor/fonts/families/inter.css' },
+    Anton: { css: 'vendor/fonts/families/anton.css' },
+    'DM Sans': { css: 'vendor/fonts/families/dm-sans.css' },
+    'Brand Serif': { css: 'vendor/fonts/families/brand-serif.css', brand: 'BR' },
   },
   categories: [],
   excluded: [{ name: 'showreel', title: '转场合集', reason: '转场合集' }],
@@ -42,8 +46,10 @@ const CATALOG: ComponentCatalog = {
       name: 'default-caption',
       placement: 'caption',
       src: 'compositions/iclip/default-caption.html',
+      variables: [FONT],
       fonts: ['Anton'],
     }),
+    item({ name: 'plain-caption', placement: 'caption' }),
     item({
       name: 'logo-intro',
       kind: 'block',
@@ -52,13 +58,18 @@ const CATALOG: ComponentCatalog = {
       variables: [
         { id: 'wordmark', type: 'string', label: '品牌名', default: '品牌名' },
         { id: 'tone', type: 'enum', label: '色调', default: 'warm' },
+        FONT,
       ],
     }),
     item({ name: 'end-card' }),
     item({
       name: 'lower-third',
-      variables: [{ id: 'title', type: 'string', label: '标题', default: '标题' }],
+      variables: [{ id: 'title', type: 'string', label: '标题', default: '标题' }, FONT],
       fonts: ['Inter'],
+    }),
+    item({
+      name: 'brand-close',
+      variables: [{ id: 'font', type: 'font', label: '字体', default: 'Brand Serif' }],
     }),
     item({ name: 'stat-card', fonts: ['DM Sans', 'Inter'] }),
     item({
@@ -498,6 +509,97 @@ describe('buildComposition', () => {
     ).toThrow('组件目录缺少字体「Inter」的 CSS')
   })
 
+  describe('字体项', () => {
+    const BRAND_VARIABLES =
+      "--font-display:'Brand Serif', sans-serif;--font-body:'Brand Serif', sans-serif"
+    const linksOf = (doc: Document) =>
+      [...doc.querySelectorAll('head link[rel="stylesheet"]')].map((node) =>
+        node.getAttribute('href'),
+      )
+    const styleOf = (doc: Document, selector: string) =>
+      doc.querySelector(selector)?.getAttribute('style') ?? ''
+
+    it('选了字体：不进可填项；特效块、画面轨组件段与字幕的宿主上设两个字体变量，引用字体的 CSS', () => {
+      const doc = parse(
+        build({
+          layer0: [
+            comp('c', 0, 1000, 'logo-intro', { variables: { font: 'Brand Serif' } }),
+            // 带字幕的一段，字幕才上画面
+            vid('a', 1000, 3000, 'job-a'),
+          ],
+          overlays: [
+            ov('o', 'lower-third', 0, 1000, { variables: { title: '新品', font: 'Brand Serif' } }),
+          ],
+          captions: { component: 'default-caption', edits: [], variables: { font: 'Brand Serif' } },
+        }).html,
+      )
+      expect(variablesOf(doc.querySelector('#clip-0'))).toEqual({
+        wordmark: '品牌名',
+        tone: 'warm',
+      })
+      expect(variablesOf(doc.querySelector('#ov-0'))).toEqual({ title: '新品' })
+      expect(variablesOf(doc.querySelector('#captions'))).toEqual({
+        words: expect.any(Array),
+      })
+      // 固定尺寸的组件段：缩放盒子里的宿主；铺满的特效块与字幕：.place 里的宿主
+      for (const selector of ['#clip-0', '#ov-0', '#captions']) {
+        expect(styleOf(doc, selector)).toBe(BRAND_VARIABLES)
+        expect(styleOf(doc, selector)).not.toContain('--font-mono')
+      }
+      expect(linksOf(doc)).toContain('vendor/fonts/families/brand-serif.css')
+      // 字体的 CSS 与组件自己的字体一样只引用一次
+      expect(linksOf(doc).filter((href) => href?.includes('brand-serif'))).toHaveLength(1)
+    })
+
+    it('铺满的画面轨组件段：字体变量与叠放次序都在宿主的行内样式上', () => {
+      const doc = parse(
+        build({
+          layer0: [comp('c', 0, 1000, 'lower-third', { variables: { font: 'Brand Serif' } })],
+        }).html,
+      )
+      expect(styleOf(doc, '#clip-0')).toBe(`z-index:1;${BRAND_VARIABLES}`)
+    })
+
+    it('没选字体（空字符串或没填）：宿主上没有字体变量，也不引用品牌字体', () => {
+      const html = build({
+        layer0: [comp('c', 0, 1000, 'logo-intro', { variables: { font: '' } })],
+        overlays: [ov('o', 'lower-third', 0, 1000)],
+        captions: { component: 'default-caption', edits: [], variables: { font: '' } },
+      }).html
+      expect(html).not.toContain('--font-')
+      expect(html).not.toContain('brand-serif')
+      const doc = parse(html)
+      expect(variablesOf(doc.querySelector('#clip-0'))).toEqual({
+        wordmark: '品牌名',
+        tone: 'warm',
+      })
+    })
+
+    it('品牌组件的字体项默认是品牌字体：没填就用它，填空字符串回到组件自带的字体', () => {
+      const branded = parse(build({ overlays: [ov('o', 'brand-close', 0, 1000)] }).html)
+      expect(styleOf(branded, '#ov-0')).toBe(BRAND_VARIABLES)
+      expect(linksOf(branded)).toContain('vendor/fonts/families/brand-serif.css')
+      const own = build({
+        overlays: [ov('o', 'brand-close', 0, 1000, { variables: { font: '' } })],
+      }).html
+      expect(own).not.toContain('--font-')
+    })
+
+    it('字幕只认当前样式声明过的项：换到没有字体项的样式，留着的字体不生效', () => {
+      const captions = {
+        component: 'plain-caption',
+        edits: [],
+        variables: { font: 'Brand Serif', title: '上一种样式的' },
+      }
+      const html = build({ captions }).html
+      expect(variablesOf(parse(html).querySelector('#captions'))).toEqual({
+        words: expect.any(Array),
+      })
+      expect(html).not.toContain('--font-')
+      expect(html).not.toContain('brand-serif')
+    })
+  })
+
   it('页面里的 id 各不相同，与草稿里的 id 无关', () => {
     const { html } = build({
       layer0: [vid('same', 0, 3000), comp('stage', 3000, 1000, 'end-card'), vid('x', 4000, 1000)],
@@ -697,6 +799,18 @@ describe('buildComposition', () => {
     ['特效块的组件不在目录里', { overlays: [ov('o', 'nope', 0, 500)] }, MEDIA, 'unknown-component'],
     ['组件段的组件不在目录里', { layer0: [comp('c', 0, 500, 'nope')] }, MEDIA, 'unknown-component'],
     ['被排除的组件', { overlays: [ov('o', 'showreel', 0, 500)] }, MEDIA, 'unknown-component'],
+    [
+      '特效块选的字体不在目录里',
+      { overlays: [ov('o', 'lower-third', 0, 500, { variables: { font: 'Nope' } })] },
+      MEDIA,
+      'unknown-font',
+    ],
+    [
+      '字幕选的字体不在目录里',
+      { captions: { component: 'default-caption', edits: [], variables: { font: 'Nope' } } },
+      MEDIA,
+      'unknown-font',
+    ],
     ['素材片缺地址', {}, { ...MEDIA, videos: {} }, 'missing-media'],
     [
       '配乐缺地址',

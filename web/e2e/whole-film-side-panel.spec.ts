@@ -115,14 +115,17 @@ test('品牌卡和别的卡一样：点它按组件类型放，拖到哪条轨�
   const dialog = await openWholeFilm(page)
   await dialog.getByRole('tab', { name: '品牌' }).click()
 
-  // 点卡片：block 进画面轨；没有可填项，放下只选中
+  // 点卡片：block 进画面轨；它的字体项默认是品牌字体，放下随即打开浮层
   await dialog.getByRole('button', { name: /^示例品牌 片尾，画面轨/ }).click()
   const film = dialog.getByRole('group', { name: '画面轨', exact: true })
   await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 示例品牌 片尾/ })).toBeVisible()
   await expect(
     film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 示例品牌 片尾/ }),
   ).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('dialog', { name: /示例品牌 片尾/ })).toHaveCount(0)
+  const pop = page.getByRole('dialog', { name: /示例品牌 片尾/ })
+  await expect(pop.getByLabel('字体')).toHaveText('示例品牌')
+  await page.keyboard.press('Escape')
+  await expect(pop).toBeHidden()
 
   // 拖到特效轨
   await dragCard(

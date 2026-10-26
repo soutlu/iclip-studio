@@ -59,6 +59,7 @@ const EMPTY_TEXT = '成片里还没有画面；加入视频或组件后可以在
 
 const BLOCKED_TEXT: Record<CompositionErrorCode, string> = {
   'unknown-component': '成片里有组件库里没有的组件，暂时无法预览；请删掉它或换一个组件',
+  'unknown-font': '成片里有组件库里没有的字体，暂时无法预览；请给用到它的组件或字幕换一个字体',
   'missing-media': '有素材还没读到地址，暂时无法预览；请稍后再试',
   'invalid-draft': EMPTY_TEXT,
 }

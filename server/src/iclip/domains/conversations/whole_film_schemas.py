@@ -117,10 +117,13 @@ class WholeFilmCaptions(CamelModel):
     """字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
     ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
     ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
-    编辑器在第一次离开原大、不转时写下。"""
+    编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
+    保留，合成时只取当前样式声明过的项。"""
 
     component: ComponentName
     edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
+    # 不用 default_factory：合同里要带上 default，生成的前端 zod 才补上空表；pydantic 每次复制默认值
+    variables: Variables = Field(default={})
     hidden: bool = False
     x: Offset = 0
     y: Offset = 0
