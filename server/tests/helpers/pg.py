@@ -7,14 +7,19 @@
 
 from __future__ import annotations
 
+import json
 import warnings
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+from pydantic_ai_harness.media import externalize_media
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.pool import NullPool
 
+from iclip.harness.step_store_pg import PgMediaStore, snapshots_table
 from iclip.platform.db.engine import build_engine
 
 APP_TABLES = (
@@ -42,6 +47,7 @@ AGENT_RUNTIME_TABLES = (
     "agent_runtime.runs",
     "agent_runtime.events",
     "agent_runtime.snapshots",
+    "agent_runtime.snapshot_messages",
     "agent_runtime.snapshot_idempotency_keys",
     "agent_runtime.tool_effects",
     "agent_runtime.media",
@@ -107,11 +113,59 @@ async def connected(url: str) -> AsyncGenerator[AsyncConnection]:
         await engine.dispose()
 
 
+_INLINE_SNAPSHOT_AT = datetime(2026, 10, 27, 10, 0, 0, tzinfo=UTC)
+_MEDIA_THRESHOLD_BYTES = 64 * 1024
+
+
+async def insert_inline_snapshot(
+    engine: AsyncEngine,
+    *,
+    run_id: str,
+    step_index: int,
+    conversation_id: str,
+    messages: list[ModelMessage],
+) -> None:
+    """按改为引用存之前 ``save_snapshot`` 的写法落一行：外置媒体后整段历史内联。"""
+
+    messages_json = await externalize_media(
+        json.loads(ModelMessagesTypeAdapter.dump_json(messages)),
+        media_store=PgMediaStore(engine),
+        threshold_bytes=_MEDIA_THRESHOLD_BYTES,
+    )
+    async with engine.begin() as conn:
+        await conn.execute(
+            snapshots_table.insert().values(
+                run_id=run_id,
+                step_index=step_index,
+                conversation_id=conversation_id,
+                timestamp=_INLINE_SNAPSHOT_AT,
+                state="complete",
+                messages=json.dumps(messages_json),
+            )
+        )
+
+
+async def raw_snapshot_messages(engine: AsyncEngine) -> list[str]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(text("SELECT messages FROM agent_runtime.snapshots ORDER BY seq"))
+        return [row[0] for row in rows]
+
+
+async def stored_message_count(engine: AsyncEngine) -> int:
+    async with engine.connect() as conn:
+        return (
+            await conn.execute(text("SELECT count(*) FROM agent_runtime.snapshot_messages"))
+        ).scalar_one()
+
+
 __all__ = [
     "AGENT_RUNTIME_TABLES",
     "APP_TABLES",
     "LOCK_TIMEOUT",
     "connected",
+    "insert_inline_snapshot",
+    "raw_snapshot_messages",
     "reset_database",
+    "stored_message_count",
     "truncate_clean",
 ]

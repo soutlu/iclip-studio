@@ -116,6 +116,7 @@
 1. 新版本有表结构变化时，先执行该版本的数据库迁移。
 2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤时补做。compose.yaml 新挂载了部署目录里的目录时，先把目录放好再启动：第一次升级到挂载 `components/` 的版本前，先按[发布组件库](#发布组件库)放好组件库。
 3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
+4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[持久化与迁移](architecture.md#4-持久化与迁移)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
 
 ### 改配置
 
