@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { useWorkspaceFile } from '@/shared/workbench'
+import { useWorkspaceFile, workspaceQueryKeys } from '@/shared/workbench'
 import { server } from '@/testing/mocks/server'
 import type { Shot, ShotsDocument } from './shot-document'
 import { useShotsDraft } from './use-shots-draft'
@@ -40,14 +40,37 @@ const changedBody = (document: ShotsDocument, index: number, body: string): Shot
   shots: document.shots.map((shot) => (shot.index === index ? withBody(shot, body) : shot)),
 })
 
+const deferred = () => {
+  let resolve: (() => void) | undefined
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return {
+    promise,
+    release: () => {
+      if (resolve === undefined) throw new Error('响应闸门尚未初始化')
+      resolve()
+    },
+  }
+}
+
 type Write = { content: string; expectedVersion: number; path: string }
 type WriteReply = (write: Write, count: number) => Promise<Response | undefined>
 
 const serveWorkspace = (document = initialDocument(), reply?: WriteReply) => {
   let file = { content: JSON.stringify(document), path: PATH, version: 1 }
   const writes: Write[] = []
+  /** 每次读取到达时服务端的版本。 */
+  const reads: number[] = []
+  let readGate: Promise<void> | undefined
   server.use(
-    http.get(ENDPOINT, () => HttpResponse.json({ file })),
+    // 读取按到达那一刻的文件作答；闸住时晚些才返回，模拟慢于后续写入的旧读取。
+    http.get(ENDPOINT, async () => {
+      const snapshot = file
+      reads.push(snapshot.version)
+      await readGate
+      return HttpResponse.json({ file: snapshot })
+    }),
     http.put(ENDPOINT, async ({ request }) => {
       const body = (await request.json()) as Write
       writes.push(body)
@@ -62,6 +85,13 @@ const serveWorkspace = (document = initialDocument(), reply?: WriteReply) => {
   )
   return {
     writes,
+    reads,
+    /** 之后到达的读取都等到返回的闸门放开才作答。 */
+    holdReads: () => {
+      const gate = deferred()
+      readGate = gate.promise
+      return gate
+    },
     read: () => ({ document: JSON.parse(file.content) as ShotsDocument, version: file.version }),
     publish: (latest: ShotsDocument) => {
       file = { ...file, content: JSON.stringify(latest), version: file.version + 1 }
@@ -71,10 +101,12 @@ const serveWorkspace = (document = initialDocument(), reply?: WriteReply) => {
 
 const cleanups: (() => void)[] = []
 
-const renderDraft = async () => {
-  const client = new QueryClient({
+const createClient = () =>
+  new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+
+const renderDraft = async (client = createClient()) => {
   const hook = renderHook(
     () => {
       const file = useWorkspaceFile(CONVERSATION_ID, PATH)
@@ -100,20 +132,6 @@ const saveDraft = async (result: { current: ReturnType<typeof useShotsDraft> }) 
     saved = (await result.current.saveNow()) !== null
   })
   return saved
-}
-
-const deferred = () => {
-  let resolve: (() => void) | undefined
-  const promise = new Promise<void>((done) => {
-    resolve = done
-  })
-  return {
-    promise,
-    release: () => {
-      if (resolve === undefined) throw new Error('响应闸门尚未初始化')
-      resolve()
-    },
-  }
 }
 
 afterEach(() => {
@@ -344,6 +362,59 @@ describe('分镜草稿整份写回与版本冲突', () => {
       expect(result.current.hasUnsavedChanges).toBe(false)
     },
   )
+
+  it('保存前发出的读取晚于保存返回时仍显示刚保存的内容，接着打字不会把旧正文存回去', async () => {
+    const initial = initialDocument()
+    const workspace = serveWorkspace(initial)
+    const client = createClient()
+    const result = await renderDraft(client)
+    const fileKey = workspaceQueryKeys.file(CONVERSATION_ID, PATH)
+    const first = changedBody(initial, 1, '第一次修改')
+    const staleRead = workspace.holdReads()
+    try {
+      act(() => {
+        result.current.updateShot(1, (shot) => withBody(shot, '第一次修改'))
+        void client.invalidateQueries({ queryKey: fileKey })
+      })
+      await waitFor(() => expect(workspace.reads).toEqual([1, 1]))
+      expect(await saveDraft(result)).toBe(true)
+      expect(workspace.read()).toEqual({ document: first, version: 2 })
+
+      await act(async () => staleRead.release())
+      await waitFor(() =>
+        expect(client.getQueryData<{ file: { version: number } }>(fileKey)?.file.version).toBe(1),
+      )
+      expect(result.current.document).toEqual(first)
+      expect(result.current.hasUnsavedChanges).toBe(false)
+
+      // 像编辑器那样：拿页面显示的正文接着打字，再把整段提示词交回草稿。
+      const shown = result.current.document?.shots.find((shot) => shot.index === 1)
+      if (shown === undefined) throw new Error('页面上没有第一组')
+      act(() => {
+        result.current.updateShot(1, (current) => ({
+          ...current,
+          prompt: {
+            ...shown.prompt,
+            timeline: shown.prompt.timeline.map((item, position) =>
+              position === 0 ? { ...item, prompt: `${item.prompt}接着打字` } : item,
+            ),
+          },
+        }))
+      })
+      expect(await saveDraft(result)).toBe(true)
+      expect(workspace.writes[1]?.expectedVersion).toBe(2)
+      const kept = JSON.parse(workspace.writes[1]?.content ?? '{}') as ShotsDocument
+      expect(kept.shots[0]?.prompt.timeline[0]?.prompt).toBe('第一次修改 @Image1接着打字')
+
+      const latest = changedBody(kept, 3, 'AI 改了第三组')
+      workspace.publish(latest)
+      await act(() => client.invalidateQueries({ queryKey: fileKey }))
+      await waitFor(() => expect(result.current.document).toEqual(latest))
+      expect(result.current.hasUnsavedChanges).toBe(false)
+    } finally {
+      staleRead.release()
+    }
+  })
 })
 
 describe('未落盘的上传', () => {

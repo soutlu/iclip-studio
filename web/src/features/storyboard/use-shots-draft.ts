@@ -96,6 +96,7 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
   const [state, setState] = useState<SaveState>({ kind: 'idle' })
   // 只用来在保存失败时说清图片已经传上去了；同一格只记最后一次。
   const [uploads, setUploads] = useState<readonly UploadedFrame[]>([])
+  const [lastSaved, setLastSaved] = useState<Base | null>(null)
   const ledgerRef = useRef({
     base: null as Base | null,
     edited: null as ShotsDocument | null,
@@ -171,6 +172,7 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
             '分镜保存失败',
           )
           book.base = { document: mine, version: saved.file.version }
+          setLastSaved(book.base)
           landed = mine
           // 请求中的快照已落盘。后续编辑仍以最新草稿为准，不能被这次响应清除。
           const current = book.edited ?? mine
@@ -408,18 +410,24 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     [saveNow],
   )
 
+  // 保存前发出的读取可能晚于保存响应返回，把缓存盖回旧版本；比刚落盘的版本旧就不显示，更新的照常显示。
+  const shown =
+    lastSaved !== null && file !== undefined && file.version < lastSaved.version
+      ? lastSaved.document
+      : parsed
+
   // 按已落盘的文件内容判断，不看哪次请求成功：较早的一次保存成功不能抹掉后来那张图的提示。
   const hasUnsavedUpload =
     edited !== null &&
     uploads.some(
       ({ index, frame, url }) =>
         shotOf(edited, index)?.image_urls[frame - 1] === url &&
-        (parsed === null ? undefined : shotOf(parsed, index))?.image_urls[frame - 1] !== url,
+        (shown === null ? undefined : shotOf(shown, index))?.image_urls[frame - 1] !== url,
     )
 
   return {
     applyFrame,
-    document: edited ?? parsed,
+    document: edited ?? shown,
     hasUnsavedChanges: edited !== null,
     /** 草稿里有记过的上传图，而已落盘的文件那一格还不是它。 */
     hasUnsavedUpload,
