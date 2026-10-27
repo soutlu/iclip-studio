@@ -25,6 +25,7 @@ from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
 from iclip.harness.background import BackgroundOutcome, BackgroundTools
+from iclip.harness.context_compaction import COMPACTED_BY_METADATA_KEY
 from iclip.harness.job_status import JobStatus
 from iclip.harness.media import media_tag
 from iclip.harness.transcript.from_messages import (
@@ -717,6 +718,54 @@ def test_a_boundary_merged_into_a_response_still_shows_its_notice() -> None:
     assert [step.step_id for step in turns[0].steps] == ["t1.1", "t1.2"]
     assert [frame.frame_id for frame in turns[0].steps[0].frames] == ["t1.1.f1"]
     assert [frame.frame_id for frame in turns[0].steps[1].frames] == ["t1.2.compaction", "t1.2.f1"]
+
+
+def _compacted_by(run_id: str, *, cut_run: str, minute: int) -> ModelResponse:
+    """执行压缩的 run 记在边界上；边界本身随切点消息归旧 run。"""
+
+    return ModelResponse(
+        parts=[CompactionPart(content="旧账", provider_name="function")],
+        run_id=cut_run,
+        timestamp=_at(minute),
+        metadata={COMPACTED_BY_METADATA_KEY: run_id},
+    )
+
+
+def _frame_ids(turns: tuple[TranscriptTurn, ...]) -> list[list[str]]:
+    return [[frame.frame_id for step in turn.steps for frame in step.frames] for turn in turns]
+
+
+def test_a_boundary_cut_into_an_older_turn_shows_on_the_compacting_runs_next_step() -> None:
+    """切点落在旧轮时边界归旧轮，提示挂到执行压缩那个 run 的下一步，与实时投影一致。"""
+
+    turns = turns_from_messages(
+        [
+            _ask("第一问", run_id="r1", minute=0),
+            _compacted_by("r2", cut_run="r1", minute=8),
+            _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+            _ask("第二问", run_id="r2", minute=7),
+            _reply(TextPart(content="第二答"), run_id="r2", minute=9),
+        ]
+    )
+
+    assert _frame_ids(turns) == [["t1.1.f1"], ["t2.1.compaction", "t2.1.f1"]]
+
+
+def test_a_compaction_whose_run_made_no_step_shows_on_no_later_run() -> None:
+    """压缩后请求失败时实时没有下一步可挂；刷新后也不挂到之后别的 run 上。"""
+
+    turns = turns_from_messages(
+        [
+            _ask("第一问", run_id="r1", minute=0),
+            _compacted_by("r2", cut_run="r1", minute=8),
+            _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+            _ask("第二问", run_id="r2", minute=7),
+            _ask("第三问", run_id="r3", minute=10),
+            _reply(TextPart(content="第三答"), run_id="r3", minute=11),
+        ]
+    )
+
+    assert _frame_ids(turns) == [["t1.1.f1"], [], ["t3.1.f1"]]
 
 
 # --- 后台工具 -----------------------------------------------------------------

@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     CompactionPart,
+    InstructionDeltaPart,
+    LoadCapabilityCallPart,
+    LoadCapabilityReturnPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
     TextPart,
+    ToolCallPart,
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai_harness.compaction import SummarizingCompaction
+from pydantic_ai_harness.compaction._capability_loads import (  # 契约：harness 补记加载的私有标记
+    RECORDED_LOAD_METADATA_KEY,
+)
 from pydantic_ai_harness.compaction._summary import (  # 契约：harness 认摘要的私有规则
     SUMMARY_METADATA_KEY,
     SUMMARY_TIME_METADATA_KEY,
@@ -28,9 +36,12 @@ from iclip.harness.context_compaction import (
     ContextCompaction,
     compaction_boundary,
     compaction_window,
+    recorded_loads,
 )
+from iclip.harness.skills import build_skill_capabilities
 from iclip.harness.transcript.from_messages import turns_from_messages
 from iclip.harness.transcript.projector import step_responses
+from iclip.platform.transcript.ops import TextContent
 
 pytestmark = pytest.mark.unit
 
@@ -162,7 +173,7 @@ def _agent(*, max_tokens: int, keep_messages: int, store: InMemoryStepStore) -> 
                     max_messages=1, keep_messages=keep_messages, preserve_first_user_message=False
                 ),
                 max_tokens=max_tokens,
-                on_compaction=lambda _summary: None,
+                on_compaction=lambda _summary, _records: None,
             ),
             StepPersistence(store=store),
         ],
@@ -210,7 +221,7 @@ async def _run(
                     max_messages=1, keep_messages=keep_messages, preserve_first_user_message=False
                 ),
                 max_tokens=max_tokens,
-                on_compaction=summaries.append,
+                on_compaction=lambda summary, _records: summaries.append(summary),
             ),
             StepPersistence(store=store),
         ],
@@ -363,3 +374,172 @@ async def test_压过之后老轮子的步一步不少() -> None:
     assert _turn_shape(second)[: len(before)] == before
     assert sum(1 for message in second if compaction_boundary(message) is not None) == 1
     assert _notice_ids(second) == _notice_ids(first)
+
+
+# --- 按需加载的技能跨压缩 -------------------------------------------------------
+
+SKILL = "demo"
+SKILL_BODY = "按演示流程拆三组镜头"
+LOAD_PROMPT = "先加载技能"
+
+
+def _skill_library(root: Path) -> Path:
+    (root / SKILL).mkdir()
+    (root / SKILL / "SKILL.md").write_text(
+        f"---\nname: {SKILL}\ndescription: 演示技能\n---\n\n{SKILL_BODY}\n", encoding="utf-8"
+    )
+    return root
+
+
+def _skill_delivered(messages: list[ModelMessage]) -> bool:
+    """框架把已加载技能的正文作为 capability 上下文放进用户侧 part 送达。"""
+
+    return any(
+        isinstance(part, UserPromptPart)
+        and f'context id="capability:{SKILL}"' in str(part.content)
+        and SKILL_BODY in str(part.content)
+        for message in messages
+        for part in message.parts
+    )
+
+
+def _skill_model(seen: list[tuple[str, list[ModelMessage]]]) -> FunctionModel:
+    """首轮调 load_capability，其余一律回一句；摘要请求回固定摘要。"""
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if _is_summary_call(messages):
+            return ModelResponse(parts=[TextPart(SUMMARY)])
+        asked = next(
+            (
+                str(part.content)
+                for part in messages[-1].parts
+                if isinstance(part, UserPromptPart) and str(part.content) in _PROMPTS
+            ),
+            "",
+        )
+        seen.append((asked, messages))
+        if asked == LOAD_PROMPT:
+            return ModelResponse(
+                parts=[ToolCallPart("load_capability", {"id": SKILL}, tool_call_id="load-1")]
+            )
+        return ModelResponse(parts=[TextPart("好了")])
+
+    return FunctionModel(script)
+
+
+_SETUP = (LOAD_PROMPT, "第二轮", "第三轮")
+_COMPACTING = ("压缩一", "压缩二")
+_AFTER = "之后"
+_PROMPTS = (*_SETUP, *_COMPACTING, _AFTER)
+
+
+async def _skill_conversation(
+    library: Path, keep: int
+) -> tuple[list[ModelMessage], list[ModelMessage], list[tuple[str, list[ModelMessage]]]]:
+    """先加载技能再聊两轮，接着两轮各压一次，最后不压再聊一轮。
+
+    返回最终历史、第一次压缩那轮结束时的历史（下一轮开头框架合并相邻消息之前），以及模型每次收到的消息。
+    """
+
+    seen: list[tuple[str, list[ModelMessage]]] = []
+    history: list[ModelMessage] = []
+    first_compacted: list[ModelMessage] = []
+    for prompt in _PROMPTS:
+        agent = Agent(
+            _skill_model(seen),
+            capabilities=[
+                *build_skill_capabilities(library, (SKILL,)),
+                ContextCompaction(
+                    strategy=SummarizingCompaction(
+                        max_messages=1, keep_messages=keep, preserve_first_user_message=False
+                    ),
+                    max_tokens=1 if prompt in _COMPACTING else 1_000_000,
+                    on_compaction=lambda _summary, _records: None,
+                ),
+            ],
+        )
+        history = (await agent.run(prompt, message_history=history)).all_messages()
+        if prompt == _COMPACTING[0]:
+            first_compacted = list(history)
+    return history, first_compacted, seen
+
+
+CUT_SHAPES = pytest.mark.parametrize(
+    ("keep", "cut_before"),
+    [(1, ModelRequest), (2, ModelResponse), (3, ModelRequest)],
+    ids=["cut-before-last-request", "cut-before-response", "cut-before-earlier-request"],
+)
+
+
+@CUT_SHAPES
+async def test_压缩后已加载的技能保持加载(
+    tmp_path: Path, keep: int, cut_before: type[ModelMessage]
+) -> None:
+    history, first_compacted, seen = await _skill_conversation(_skill_library(tmp_path), keep)
+
+    # 补记紧跟边界：调用一条响应、返回一条请求，返回带 harness 的补记标记，之后才是保留的首条消息。
+    at = next(i for i, m in enumerate(first_compacted) if compaction_boundary(m) is not None)
+    call, returned, kept = first_compacted[at + 1 : at + 4]
+    (call_part,) = call.parts
+    assert isinstance(call_part, LoadCapabilityCallPart)
+    assert call_part.args == {"id": SKILL}
+    assert set(recorded_loads([returned])) == {call_part.tool_call_id}
+    assert isinstance(kept, cut_before)
+
+    # 加载之后的每次请求（含两次压缩那两轮与之后不压的一轮）模型都收到技能正文。
+    asked = [prompt for prompt, _ in seen]
+    assert asked == [LOAD_PROMPT, "", *_PROMPTS[1:]]
+    assert [_skill_delivered(messages) for _, messages in seen] == [False] + [True] * len(_PROMPTS)
+    assert len(_boundaries(history)) == 2
+
+
+@CUT_SHAPES
+async def test_补记不改轮次与步骤也不反复补发技能正文(
+    tmp_path: Path, keep: int, cut_before: type[ModelMessage]
+) -> None:
+    del cut_before
+    history, _, _ = await _skill_conversation(_skill_library(tmp_path), keep)
+
+    assert _turn_shape(history) == [
+        (f"t{n}", [f"t{n}.1", f"t{n}.2"] if prompt == LOAD_PROMPT else [f"t{n}.1"])
+        for n, prompt in enumerate(_PROMPTS, start=1)
+    ]
+    assert [
+        "".join(item.text for item in turn.content if isinstance(item, TextContent))
+        for turn in turns_from_messages(history)
+    ] == list(_PROMPTS)
+    # 加载排在重新送达正文的指令之后；排反了框架每次请求都会先撤下再补发一遍正文。
+    assert not [
+        part
+        for message in history
+        for part in message.parts
+        if isinstance(part, InstructionDeltaPart) and part.content is None
+    ]
+
+
+def test_补记的加载交换不算模型步骤() -> None:
+    """补记调用与边界合并后仍不计步，即使 run_id 正是这次运行。"""
+
+    recorded = LoadCapabilityReturnPart(
+        content={"message": "loaded"},
+        tool_call_id="rec-1",
+        metadata={RECORDED_LOAD_METADATA_KEY: True},
+    )
+    messages: list[ModelMessage] = [
+        ModelResponse(
+            parts=[
+                CompactionPart(content=SUMMARY, provider_name="function", metadata=MARKED),
+                LoadCapabilityCallPart(args={"id": SKILL}, tool_call_id="rec-1"),
+            ],
+            run_id="run-b",
+            timestamp=_at(9),
+        ),
+        ModelRequest(parts=[recorded], run_id="run-b", timestamp=_at(9)),
+        _ask("接着做", run_id="run-b", minute=10),
+        _reply("这一轮的话", run_id="run-b", minute=11),
+    ]
+
+    assert step_responses(messages, "run-b") == [messages[-1]]
+    assert [step.step_id for turn in turns_from_messages(messages) for step in turn.steps] == [
+        "t1.1"
+    ]

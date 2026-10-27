@@ -29,6 +29,7 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
+    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -39,13 +40,14 @@ from pydantic_ai_harness.compaction import ContextUsageEvent, estimate_context_t
 
 from iclip.harness.agents import SubAgentProfile
 from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome
-from iclip.harness.context_compaction import compaction_only
+from iclip.harness.context_compaction import compaction_only, recorded_load_call, recorded_loads
 from iclip.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
     TurnState,
     background_notice,
     background_task,
     interrupted_task_state,
+    recorded_load_card,
     settle_background_task,
     settle_tool_return,
     step_usage,
@@ -165,6 +167,10 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
     """已有结果的工具调用，供结束时识别未完成调用。"""
     _pending_summary: str | None = field(default=None, init=False)
     """待下一步骤承载的压缩摘要。"""
+    _pending_loads: list[tuple[ToolCallPart, ToolReturnPart]] = field(
+        default_factory=list[tuple[ToolCallPart, ToolReturnPart]], init=False
+    )
+    """待下一步骤承载的补记加载：调用与它的返回。"""
 
     deferred: DeferredToolRequests | None = field(default=None, init=False)
     """当前 run 的待审批请求，正常完成时为空。"""
@@ -268,10 +274,20 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
 
     # --- 一步的开合 ---------------------------------------------------------
 
-    def note_compaction(self, summary: str) -> None:
-        """暂存压缩提示，附加到下一步骤；没有后续步骤时不生成提示块。"""
+    def note_compaction(self, summary: str, records: Sequence[ModelMessage]) -> None:
+        """暂存压缩提示与补记的加载卡，附加到下一步骤；没有后续步骤时都不显示。
+
+        补记的交换由压缩写进历史、不经工具执行，没有工具事件，卡只能从这里建。
+        """
 
         self._pending_summary = summary
+        returns = recorded_loads(records)
+        self._pending_loads.extend(
+            (part, returns[part.tool_call_id])
+            for message in records
+            for part in message.parts
+            if recorded_load_call(part, returns)
+        )
 
     async def before_response(self) -> AsyncIterator[OpsBatch]:
         self._step_ordinal += 1
@@ -284,6 +300,10 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
         if self._pending_summary is not None:
             ops.append(self._compaction_frame(self._pending_summary))
             self._pending_summary = None
+        for call, returned in self._pending_loads:
+            card = recorded_load_card(call, returned, step_id=self._step_id, display=self.display)
+            ops.append(FrameUpsertOp(turn_id=self.turn_id, step_id=self._step_id, frame=card))
+        self._pending_loads.clear()
         for said, prompt_ids in self._pending_steers:
             ops.extend(self._user_frame(said, prompt_ids))
         self._pending_steers.clear()
@@ -843,17 +863,18 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
 
 
 def step_responses(messages: Sequence[ModelMessage], run_id: str | None) -> list[ModelResponse]:
-    """按 run_id 筛选当前运行的模型响应，排除纯压缩边界。
+    """按 run_id 筛选当前运行的模型响应，排除纯压缩边界与补记的加载调用。
 
     new_messages() 的起点可能被压缩边界前移，不能直接用于步骤用量归属。
-    包含实际响应的合并消息仍计为一步；run_id 为空时仅排除纯边界。
+    包含实际响应的合并消息仍计为一步；run_id 为空时仅排除压缩写入的响应。
     """
 
+    recorded = recorded_loads(messages)
     return [
         message
         for message in messages
         if isinstance(message, ModelResponse)
-        and not compaction_only(message)
+        and not compaction_only(message, recorded)
         and (run_id is None or message.run_id == run_id)
     ]
 

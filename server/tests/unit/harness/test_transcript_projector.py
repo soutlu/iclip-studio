@@ -156,7 +156,7 @@ async def test_a_compaction_notice_lands_on_the_same_step_on_both_paths() -> Non
         yield FunctionToolResultEvent(
             part=ToolReturnPart(tool_name="Read", content="x", tool_call_id="c1")
         )
-        projector.note_compaction(summary)
+        projector.note_compaction(summary, ())
         yield PartStartEvent(index=0, part=TextPart(content=""))
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="读完了"))
         yield PartEndEvent(index=0, part=TextPart(content="读完了"))

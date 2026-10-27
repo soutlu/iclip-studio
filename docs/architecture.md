@@ -108,7 +108,7 @@ Agent 运行由 [ConversationRunner](../server/src/iclip/harness/transcript/runn
 
 生成、拆解与打标三个队列共用组合根建的一个连接器：媒体生成或拆解任一配好就建它，lifespan 里打开一次、worker 都停了再关；拆解与打标的 worker 只看 `iclip_studio` 配没配，不以媒体生成为前提，拆解每个进程的并发取 `iclip_studio.breakdown_concurrency`，不写时按启动时选中的编解码取（见[配置与装配](#2-配置与装配)）。它们与对话运行在同一个进程、同一个 lifespan 里起停，对话里的 `breakdown_video` 才等得到结果。
 
-transcript 是运行记录的投影。历史由 `from_messages` 从持久消息生成，实时由 `projector` 从引擎事件生成；两条路径必须得到相同的编号和结构，共用工具 display 注册表。上下文压缩在完整历史中插入 `CompactionPart`，发送模型时从最后一条边界计算窗口，不删除原始消息。
+transcript 是运行记录的投影。历史由 `from_messages` 从持久消息生成，实时由 `projector` 从引擎事件生成；两条路径必须得到相同的编号和结构，共用工具 display 注册表。上下文压缩在完整历史中插入 `CompactionPart`，被摘掉的技能加载由摘要器补记一次、紧跟边界写入，压缩后技能仍保持加载；发送模型时从最后一条边界计算窗口，不删除原始消息。压缩提示与补记的加载卡挂在执行压缩那个 run 的下一步。
 
 子代理各自一条 transcript 流，agent_id 即其 run id，一次 `delegate_task` 就是它的第一轮；父工具调用与子运行的关联记在官方 tool_effect 账本，实时与历史都据此重建。子代理任务的终态取自子运行的结束事件；父工具返回缺失时（父运行被停或崩溃）也按同一口径。读子代理流走同一组接口带 `agent_id`，归属由子运行记录的 `parent_run_id` 回溯到会话。
 
