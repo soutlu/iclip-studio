@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from pydantic_ai import Agent
+from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.messages import (
     CompactionPart,
     InstructionDeltaPart,
@@ -39,7 +40,7 @@ from iclip.harness.context_compaction import (
     recorded_loads,
 )
 from iclip.harness.skills import build_skill_capabilities
-from iclip.harness.transcript.from_messages import turns_from_messages
+from iclip.harness.transcript.from_messages import drop_last_turn, turns_from_messages
 from iclip.harness.transcript.projector import step_responses
 from iclip.platform.transcript.ops import TextContent
 
@@ -257,6 +258,7 @@ async def test_过线就在切点插一条边界() -> None:
     part = compaction_boundary(boundaries[0])
     assert part is not None
     assert (part.content, part.provider_name) == (SUMMARY, "function")
+    assert boundaries[0].provider_name == "function"
     # 摘要器写的标记与写成时间原样留在边界上。
     assert part.metadata is not None
     assert part.metadata[SUMMARY_METADATA_KEY] is True
@@ -433,6 +435,29 @@ _AFTER = "之后"
 _PROMPTS = (*_SETUP, *_COMPACTING, _AFTER)
 
 
+async def _skill_turn(
+    library: Path,
+    seen: list[tuple[str, list[ModelMessage]]],
+    prompt: str,
+    history: list[ModelMessage],
+    keep: int,
+) -> list[ModelMessage]:
+    agent = Agent(
+        _skill_model(seen),
+        capabilities=[
+            *build_skill_capabilities(library, (SKILL,)),
+            ContextCompaction(
+                strategy=SummarizingCompaction(
+                    max_messages=1, keep_messages=keep, preserve_first_user_message=False
+                ),
+                max_tokens=1 if prompt in _COMPACTING else 1_000_000,
+                on_compaction=lambda _summary, _records: None,
+            ),
+        ],
+    )
+    return (await agent.run(prompt, message_history=history)).all_messages()
+
+
 async def _skill_conversation(
     library: Path, keep: int
 ) -> tuple[list[ModelMessage], list[ModelMessage], list[tuple[str, list[ModelMessage]]]]:
@@ -445,20 +470,7 @@ async def _skill_conversation(
     history: list[ModelMessage] = []
     first_compacted: list[ModelMessage] = []
     for prompt in _PROMPTS:
-        agent = Agent(
-            _skill_model(seen),
-            capabilities=[
-                *build_skill_capabilities(library, (SKILL,)),
-                ContextCompaction(
-                    strategy=SummarizingCompaction(
-                        max_messages=1, keep_messages=keep, preserve_first_user_message=False
-                    ),
-                    max_tokens=1 if prompt in _COMPACTING else 1_000_000,
-                    on_compaction=lambda _summary, _records: None,
-                ),
-            ],
-        )
-        history = (await agent.run(prompt, message_history=history)).all_messages()
+        history = await _skill_turn(library, seen, prompt, history, keep)
         if prompt == _COMPACTING[0]:
             first_compacted = list(history)
     return history, first_compacted, seen
@@ -490,6 +502,8 @@ async def test_压缩后已加载的技能保持加载(
     asked = [prompt for prompt, _ in seen]
     assert asked == [LOAD_PROMPT, "", *_PROMPTS[1:]]
     assert [_skill_delivered(messages) for _, messages in seen] == [False] + [True] * len(_PROMPTS)
+    assert SKILL in parse_loaded_capabilities(first_compacted)
+    assert SKILL in parse_loaded_capabilities(history)
     assert len(_boundaries(history)) == 2
 
 
@@ -514,6 +528,46 @@ async def test_补记不改轮次与步骤也不反复补发技能正文(
         for message in history
         for part in message.parts
         if isinstance(part, InstructionDeltaPart) and part.content is None
+    ]
+
+
+async def test_重新生成压缩那轮再压一次_技能仍保持加载(tmp_path: Path) -> None:
+    library = _skill_library(tmp_path)
+    seen: list[tuple[str, list[ModelMessage]]] = []
+    history: list[ModelMessage] = []
+    for prompt in (LOAD_PROMPT, "第二轮", _COMPACTING[0]):
+        history = await _skill_turn(library, seen, prompt, history, keep=3)
+    history, _ = drop_last_turn(history, {})
+    assert len(_boundaries(history)) == 1
+
+    history = await _skill_turn(library, seen, _COMPACTING[0], history, keep=3)
+    assert SKILL in parse_loaded_capabilities(history)
+    history = await _skill_turn(library, seen, _AFTER, history, keep=3)
+
+    assert [len(message.parts) for message in _boundaries(history)] == [1, 1]
+    assert SKILL in parse_loaded_capabilities(history)
+    assert [(prompt, _skill_delivered(messages)) for prompt, messages in seen[-2:]] == [
+        (_COMPACTING[0], True),
+        (_AFTER, True),
+    ]
+
+
+async def test_两次压缩之间保留条数变多_技能仍保持加载(tmp_path: Path) -> None:
+    library = _skill_library(tmp_path)
+    seen: list[tuple[str, list[ModelMessage]]] = []
+    history: list[ModelMessage] = []
+    for prompt in _SETUP:
+        history = await _skill_turn(library, seen, prompt, history, keep=1)
+    history = await _skill_turn(library, seen, _COMPACTING[0], history, keep=1)
+    history = await _skill_turn(library, seen, _COMPACTING[1], history, keep=3)
+    assert SKILL in parse_loaded_capabilities(history)
+    history = await _skill_turn(library, seen, _AFTER, history, keep=3)
+
+    assert [len(message.parts) for message in _boundaries(history)] == [1, 1]
+    assert SKILL in parse_loaded_capabilities(history)
+    assert [(prompt, _skill_delivered(messages)) for prompt, messages in seen[-2:]] == [
+        (_COMPACTING[1], True),
+        (_AFTER, True),
     ]
 
 

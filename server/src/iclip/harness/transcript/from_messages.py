@@ -119,7 +119,6 @@ def turns_from_messages(
     statuses = prompt_status_of_run or {}
     of_run = prompt_of_run or {}
     recorded = recorded_loads(messages)
-    # 压缩痕迹可能落在旧轮里，等执行压缩的 run 出下一步时才挂上，所以跨轮暂存。
     pending: list[_PendingCompaction] = []
     turns: list[TranscriptTurn] = []
     for ordinal, segments in enumerate(_group_by_turn(messages, of_run), start=1):
@@ -566,10 +565,7 @@ def _turn(
     recorded: Mapping[str, ToolReturnPart],
     pending: list[_PendingCompaction],
 ) -> TranscriptTurn:
-    """跨 run 连续编号步骤；工具卡保留在发起步骤，等待审批的卡保持 running。
-
-    recorded 是整段历史里补记的加载返回；pending 跨轮共享，本轮留下、记了压缩 run 的项交给后面的轮。
-    """
+    """跨 run 连续编号步骤；工具卡保留在发起步骤，等待审批的卡保持 running。"""
 
     turn_id = f"t{ordinal}"
     steps: list[TranscriptStep] = []
@@ -592,8 +588,6 @@ def _turn(
                 boundary = compaction_boundary(message)
                 loads = tuple(part for part in message.parts if recorded_load_call(part, recorded))
                 if boundary is not None or loads:
-                    # 压缩提示与补记的加载卡挂在压缩 run 里时间严格晚于它们的首步，
-                    # 不能按插入历史的位置决定；严格比较确保边界合并至响应后仍定位同一步。
                     pending.append(
                         _PendingCompaction(
                             at=message.timestamp,
@@ -603,7 +597,6 @@ def _turn(
                         )
                     )
             if compaction_only(message, recorded):
-                # 纯边界与补记的消息不计为模型步骤，也不是步骤之前的请求；混有其他 part 时照常处理。
                 continue
             if isinstance(message, ModelRequest):
                 _settle_tools(message, tool_frames, frames_by_step, awaiting_outcome)
@@ -691,7 +684,6 @@ def _turn(
     _close_orphan_tools(
         tool_frames, frames_by_step, keep_open=waiting, awaiting_outcome=awaiting_outcome
     )
-    # 早先的边界没记压缩 run，沿用只在所在轮内挂的规则。
     pending[:] = [item for item in pending if item.run_id is not None]
 
     messages = [message for _, group in segments for message in group]

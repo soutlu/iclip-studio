@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic_ai import Agent, Tool
+from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
@@ -620,6 +621,62 @@ async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recor
     assert {(card.state, card.display) for _, card in cards} == {
         ("done", GenericDisplay(summary="加载技能", detail=SKILL))
     }
+
+
+async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    (tmp_path / SKILL).mkdir()
+    (tmp_path / SKILL / "SKILL.md").write_text(
+        f"---\nname: {SKILL}\ndescription: 写分镜\n---\n\n{SKILL_BODY}\n", encoding="utf-8"
+    )
+    delivered: list[bool] = []
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        loads_skill_then_says(delivered),
+        store=store,
+        display=DISPLAYS,
+        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        context_limits={AGENT_ID: 1},
+        compaction_keep_messages=3,
+    )
+    service = TranscriptService(
+        store=store,
+        history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
+        queue=queue,
+        runner=runner,
+        context_limits={AGENT_ID: 1},
+        record_materials=records_nothing,
+    )
+    conversation_id = new_conversation_id()
+
+    for prompt in ("加载技能写分镜", "改第二组", "再改第三组"):
+        await submit_text(runner, queue, conversation_id, prompt)
+        await drained(queue, conversation_id)
+    await service.regenerate(conversation_id=conversation_id, turn_id="t3")
+    await drained(queue, conversation_id)
+    await submit_text(runner, queue, conversation_id, "再改第四组")
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    snapshot = await step_store.latest_conversation_snapshot(
+        conversation_id=conversation_id, include_interrupted=True
+    )
+    assert snapshot is not None
+    assert SKILL in parse_loaded_capabilities(snapshot.messages)
+    assert delivered[0] is False
+    assert all(delivered[1:])
+    cards = [
+        frame
+        for turn in live.items
+        for step in turn.steps
+        for frame in step.frames
+        if isinstance(frame, ToolFrame) and frame.name == "load_capability"
+    ]
+    assert cards
+    assert {card.state for card in cards} == {"done"}
 
 
 # --- 后台工具 -------------------------------------------------------------------

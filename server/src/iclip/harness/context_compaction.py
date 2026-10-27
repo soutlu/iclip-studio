@@ -62,7 +62,7 @@ def compacted_by(message: ModelResponse) -> str | None:
 def recorded_loads(messages: Iterable[ModelMessage]) -> dict[str, LoadCapabilityReturnPart]:
     """压缩补记的加载返回，按 tool_call_id 索引；同 id 的 load_capability 调用是补记的调用。
 
-    只认返回 part 上的标记：补记调用所在的响应紧跟边界时会被框架并进边界，响应上的标记随之丢失。
+    只认 harness 写在返回 part 上的标记。
     """
 
     return {
@@ -83,7 +83,7 @@ def recorded_load_call(
     return isinstance(part, LoadCapabilityCallPart) and part.tool_call_id in recorded
 
 
-def compaction_only(message: ModelMessage, recorded: Collection[str] = ()) -> bool:
+def compaction_only(message: ModelMessage, recorded: Collection[str]) -> bool:
     """判断非空消息是否只含压缩写入的内容：边界，或 recorded 里补记加载的调用、返回与工具揭示。
 
     这样的消息不是模型步骤，也不代表轮次时间；混有其他内容时仍按普通消息处理。
@@ -188,10 +188,11 @@ class ContextCompaction(AbstractCapability[Any]):
                     metadata=summary.metadata,
                 )
             ],
-            # 使用切点消息的 run_id；框架合并时保留前一消息的 id，避免历史响应被归入当前轮。
+            # 使用切点消息的 run_id，边界随切点留在原来那一轮。
             run_id=history[index].run_id if index < len(history) else ctx.run_id,
             # 显式记录时间；框架仅为末条请求补充运行元数据。
             timestamp=now,
+            provider_name=ctx.model.system,
             metadata=_stamped(None, ctx.run_id),
         )
         _logger.info(
@@ -201,10 +202,9 @@ class ContextCompaction(AbstractCapability[Any]):
             messages_before=len(history),
             recorded_loads=len(recorded_loads(records)),
         )
-        # 补记紧跟边界，与摘要器把它放在摘要之后一致：保留的请求里若有重新送达技能正文的指令，
-        # 须排在加载之后，否则框架此后每次请求都撤下再补发一遍正文。
-        # 补记同样显式带上 run_id 与时间。run_id 与边界相同：下次运行开头框架把补记调用并进边界、
-        # 补记返回并进后面的请求，并出的请求不带 run_id、归入前一条所在的 run，仍在原轮。
+        # 补记须排在保留的请求之前：重新送达技能正文的指令若排在加载之前，框架每次请求都会重发正文。
+        # 边界带 provider，框架不会把补记调用并进边界。
+        # 补记返回与后面的请求合并后不带 run_id，所以补记沿用边界的 run_id。
         records = [
             dataclasses.replace(
                 message,
@@ -233,7 +233,7 @@ def _summary_of(result: Sequence[ModelMessage]) -> tuple[int, CompactionPart]:
         if not isinstance(message, ModelRequest):
             continue
         for part in message.parts:
-            if isinstance(part, CompactionPart) and part.provider_name is None:
+            if isinstance(part, CompactionPart) and part.provider_name is None and part.content:
                 return index, part
     raise RuntimeError(f"摘要器的结果里没有摘要请求：{result!r}")
 
