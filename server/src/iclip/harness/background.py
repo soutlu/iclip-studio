@@ -1,13 +1,15 @@
 """Pydantic AI Harness 的 ``BackgroundTools``：供组合根挂载，并持有它写进消息的文本格式。
 
 后台工具被调用时立即回一条回执（``ToolReturnPart``），跑完后的结果作为用户内容（``UserPromptPart``）
-递入运行。transcript 的两条投影据此让回执照常结卡并开一条 tool 任务、让结果成完成通知而不成插话块；
-运行驱动据此把没等到结果的回执换成带标记的 interrupted 返回，历史重建靠标记仍认得出那是一次后台调用。
-措辞是 harness 模块里的固定常量，升级 harness 时由契约测试先红。
+递入运行，文字套在 ``<tool_result tool_name=… tool_call_id=…>`` 标签里，失败时开标签另带
+``outcome="failed"``。transcript 的两条投影据此让回执照常结卡并开一条 tool 任务、让结果成完成通知
+而不成插话块；运行驱动据此把没等到结果的回执换成带标记的 interrupted 返回，历史重建靠标记仍认得出
+那是一次后台调用。回执措辞与结果标签是 harness 模块里的固定格式，升级 harness 时由契约测试先红。
 """
 
 from __future__ import annotations
 
+import html
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -23,11 +25,13 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai_harness import BackgroundTools
 
-_OUTCOME: Final = re.compile(
-    r"Background tool '(?P<name>.+?)' \(task (?P<id>.+?)\) "
-    r"(?:completed\.\nResult: (?P<result>.*)|failed: (?P<error>.*))",
-    re.DOTALL,
+_OPEN_TAG: Final = re.compile(
+    r'<tool_result tool_name="(?P<name>[^"]*)" tool_call_id="(?P<id>[^"]*)"'
+    r'(?P<failed> outcome="failed")?>\n'
 )
+_CLOSE_TAG: Final = "\n</tool_result>"
+_ESCAPED_CLOSING_TAG: Final = re.compile(r"&lt;(?=\s*/\s*tool_result(?=[\s/>]))", re.IGNORECASE)
+"""harness 把正文里闭合标签的 ``<`` 转成 ``&lt;``，防正文提前收掉标签；解析时按同一规则换回。"""
 
 INTERRUPTED_RECEIPT: Final = "interrupted_background_receipt"
 """被中断的回执在 ``ToolReturnPart.metadata`` 里的标记键；metadata 不发给模型，随历史落库。"""
@@ -35,7 +39,7 @@ INTERRUPTED_RECEIPT: Final = "interrupted_background_receipt"
 
 @dataclass(frozen=True, slots=True)
 class BackgroundOutcome:
-    """一次后台调用的结果；``text`` 是工具自己的返回或失败原文，不含 harness 套的英文外壳。"""
+    """一次后台调用的结果；``text`` 是工具自己的返回或失败原文，不含 harness 套的标签。"""
 
     tool_call_id: str
     tool_name: str
@@ -63,24 +67,26 @@ def was_receipt(part: ToolReturnPart) -> bool:
 def parse_outcome(part: UserPromptPart) -> BackgroundOutcome | None:
     """把后台工具结果拆成调用 id、成败与工具原文；不是结果时返回 None。
 
-    harness 把文字包成 content 序列的第一项 ``TextContent``，工具返回的文件跟在后面、不进工具卡；
-    harness 0.57 之前落库的历史里，文字是纯字符串或序列的第一项字符串。
+    harness 把标签与正文写成 content 序列的第一项 ``TextContent``。工具返回带文件时，这一项只有
+    开标签和正文，文件与闭合标签作为后面的几项跟着；``ToolReturn.content`` 附带的内容排在闭合标签
+    之后。两者都不在标签里，不算进 ``text``，也不进工具卡。
     """
 
-    first = part.content if isinstance(part.content, str) else next(iter(part.content), None)
-    if isinstance(first, TextContent):
-        first = first.content
-    if not isinstance(first, str):
+    if isinstance(part.content, str):
         return None
-    matched = _OUTCOME.fullmatch(first)
-    if matched is None:
+    first = next(iter(part.content), None)
+    if not isinstance(first, TextContent):
         return None
-    result = matched["result"]
+    opened = _OPEN_TAG.match(first.content)
+    if opened is None:
+        return None
+    body = first.content[opened.end() :]
+    closed = body.find(_CLOSE_TAG)
     return BackgroundOutcome(
-        tool_call_id=matched["id"],
-        tool_name=matched["name"],
-        state="error" if result is None else "done",
-        text=matched["error"] if result is None else result,
+        tool_call_id=html.unescape(opened["id"]),
+        tool_name=html.unescape(opened["name"]),
+        state="done" if opened["failed"] is None else "error",
+        text=_ESCAPED_CLOSING_TAG.sub("<", body if closed < 0 else body[:closed]),
     )
 
 

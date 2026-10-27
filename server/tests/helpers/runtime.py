@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic_ai import Agent, Tool
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AgentCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -203,14 +203,23 @@ def make_runner(
     on_run_started: RunStarted | None = None,
     on_turn_started: TurnStarted | None = None,
     deps_for: DepsFor | None = None,
+    compaction_keep_messages: int | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """按生产接法装 runner；context_limits 不给就按 AGENT_ID 开一个窗口，deps_for 不给运行依赖为 None。"""
+    """按生产接法装 runner；context_limits 不给就按 AGENT_ID 开一个窗口，deps_for 不给运行依赖为 None。
+
+    compaction_keep_messages 不给就用 runner 的默认保留条数。
+    """
 
     queue = JobQueue(engine)
 
     async def no_deps(_row: Any) -> object:
         return None
 
+    compaction: dict[str, int] = (
+        {}
+        if compaction_keep_messages is None
+        else {"compaction_keep_messages": compaction_keep_messages}
+    )
     runner = ConversationRunner(
         agents=dict(agents),
         store=store,
@@ -228,6 +237,7 @@ def make_runner(
         on_run_started=on_run_started,
         on_turn_started=on_turn_started,
         display=display,
+        **compaction,
     )
     return runner, step_store, queue
 
@@ -243,8 +253,9 @@ def build_runner(
     context_limits: Mapping[str, int] | None = None,
     on_run_started: RunStarted | None = None,
     on_turn_started: TurnStarted | None = None,
-    capabilities: Sequence[AbstractCapability[Any]] = (),
+    capabilities: Sequence[AgentCapability[Any]] = (),
     deps_for: DepsFor | None = None,
+    compaction_keep_messages: int | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
     """一个主 agent、一个假模型的 runner；capabilities 挂在持久化之后。"""
 
@@ -269,6 +280,7 @@ def build_runner(
         on_run_started=on_run_started,
         on_turn_started=on_turn_started,
         deps_for=deps_for,
+        compaction_keep_messages=compaction_keep_messages,
     )
 
 

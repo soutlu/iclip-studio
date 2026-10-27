@@ -16,7 +16,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ThinkingPart,
     ThinkingPartDelta,
@@ -28,7 +27,13 @@ from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
 from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome, was_receipt
-from iclip.harness.context_compaction import compaction_boundary, compaction_only
+from iclip.harness.context_compaction import (
+    compacted_by,
+    compaction_boundary,
+    compaction_only,
+    recorded_load_call,
+    recorded_loads,
+)
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.prompt_media import plain_text, prompt_content
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
@@ -113,6 +118,8 @@ def turns_from_messages(
     errors = turn_errors or {}
     statuses = prompt_status_of_run or {}
     of_run = prompt_of_run or {}
+    recorded = recorded_loads(messages)
+    pending: list[_PendingCompaction] = []
     turns: list[TranscriptTurn] = []
     for ordinal, segments in enumerate(_group_by_turn(messages, of_run), start=1):
         last_run = segments[-1][0]
@@ -136,9 +143,23 @@ def turns_from_messages(
                 prompt_id=of_run.get(segments[0][0]),
                 steered=steered,
                 display=display,
+                recorded=recorded,
+                pending=pending,
             )
         )
     return tuple(turns)
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingCompaction:
+    """一次压缩留在历史里、待挂到步骤上的显示：压缩提示，或补记的加载卡。"""
+
+    at: datetime
+    """边界或补记的写入时间；只挂到时间严格晚于它的步骤。"""
+    run_id: str | None
+    """执行压缩的 run；早先的边界没有记录，只在所在轮内找步。"""
+    summary: str | None
+    loads: tuple[ToolCallPart, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,10 +363,10 @@ def _tool_returns(
         if not isinstance(message, ModelRequest):
             continue
         for part in message.parts:
-            if not isinstance(part, ToolReturnPart | RetryPromptPart):
+            if not isinstance(part, ToolReturnPart):
                 continue
             state, output, _, error = settle_tool_return(part)
-            stopped = isinstance(part, ToolReturnPart) and part.outcome == "interrupted"
+            stopped = part.outcome == "interrupted"
             found[part.tool_call_id] = (
                 str(output) if state == "done" else None,
                 None if state == "done" or stopped else error,
@@ -492,23 +513,24 @@ def _group_by_run(messages: Sequence[ModelMessage]) -> list[tuple[str, list[Mode
     grouped: dict[str, list[ModelMessage]] = {}
     current = ""
     for message in messages:
-        # 缺少 run_id 的重试提示归入前一 run，避免产生无时间的额外轮次。
+        # 缺少 run_id 的消息归入前一 run，避免产生无时间的额外轮次。
         current = message.run_id or current
         grouped.setdefault(current, []).append(message)
-    return sorted(grouped.items(), key=lambda item: _started_at(item[1]))
+    recorded = recorded_loads(messages)
+    return sorted(grouped.items(), key=lambda item: _started_at(item[1], recorded))
 
 
 _EPOCH = datetime.min.replace(tzinfo=UTC)
 
 
-def _started_at(group: Sequence[ModelMessage]) -> datetime:
-    """取首个有效消息时间，排除压缩边界的创建时间，避免改变原轮次顺序。"""
+def _started_at(group: Sequence[ModelMessage], recorded: Collection[str]) -> datetime:
+    """取首个有效消息时间，排除压缩边界与补记的创建时间，避免改变原轮次顺序。"""
 
     return next(
         (
             at
             for message in group
-            if not compaction_only(message)
+            if not compaction_only(message, recorded)
             if (at := _at(message)) is not None
         ),
         _EPOCH,
@@ -540,6 +562,8 @@ def _turn(
     prompt_id: str | None = None,
     steered: Sequence[SteeredPrompt] = (),
     display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
+    recorded: Mapping[str, ToolReturnPart],
+    pending: list[_PendingCompaction],
 ) -> TranscriptTurn:
     """跨 run 连续编号步骤；工具卡保留在发起步骤，等待审批的卡保持 running。"""
 
@@ -551,7 +575,6 @@ def _turn(
     content: tuple[PromptContent, ...] | None = None
     pending_request: ModelRequest | None = None
     pending_steers: list[_Steer] = []
-    pending_summaries: list[tuple[datetime, str]] = []
     # 有回执、还没递入结果的后台调用；轮末仍在的按中断收卡。
     awaiting_outcome: set[str] = set()
     # 插话行按轮取而不按 run：续跑会把它们挪到新 run，消息却留在旧 run 的段里。
@@ -561,16 +584,20 @@ def _turn(
     for index, (run_id, group) in enumerate(segments):
         opened = len(steps)
         for message in group:
-            if (
-                isinstance(message, ModelResponse)
-                and (boundary := compaction_boundary(message)) is not None
-            ):
-                # 压缩提示挂在时间严格晚于边界的首步，不能按边界插入历史的位置决定。
-                # 严格比较确保边界合并至响应后仍定位同一步。
-                pending_summaries.append((message.timestamp, boundary.content or ""))
-                if compaction_only(message):
-                    # 纯边界消息不计为模型步骤；包含其他响应 part 时仍计一步。
-                    continue
+            if isinstance(message, ModelResponse):
+                boundary = compaction_boundary(message)
+                loads = tuple(part for part in message.parts if recorded_load_call(part, recorded))
+                if boundary is not None or loads:
+                    pending.append(
+                        _PendingCompaction(
+                            at=message.timestamp,
+                            run_id=compacted_by(message),
+                            summary=None if boundary is None else boundary.content or "",
+                            loads=loads,
+                        )
+                    )
+            if compaction_only(message, recorded):
+                continue
             if isinstance(message, ModelRequest):
                 _settle_tools(message, tool_frames, frames_by_step, awaiting_outcome)
                 if content is None and (said := _user_content(message)):
@@ -605,13 +632,19 @@ def _turn(
             step_id = f"{turn_id}.{step_ordinal}"
             frames: dict[str, TranscriptFrame] = {}
             frames_by_step.append(frames)
-            later: list[tuple[datetime, str]] = []
-            for at, summary in pending_summaries:
-                if at < message.timestamp:
-                    _compaction_frame(frames, step_id, summary)
-                else:
-                    later.append((at, summary))
-            pending_summaries = later
+            later: list[_PendingCompaction] = []
+            for item in pending:
+                if item.at >= message.timestamp or item.run_id not in (None, run_id):
+                    later.append(item)
+                    continue
+                if item.summary is not None:
+                    _compaction_frame(frames, step_id, item.summary)
+                for call in item.loads:
+                    card = recorded_load_card(
+                        call, recorded[call.tool_call_id], step_id=step_id, display=display
+                    )
+                    frames[card.frame_id] = card
+            pending[:] = later
             for said, prompt_ids in pending_steers:
                 _user_frame(frames, step_id, said, prompt_ids)
             pending_steers.clear()
@@ -622,6 +655,7 @@ def _turn(
                 tool_frames=tool_frames,
                 subagent_of_call=subagent_of_call,
                 display=display,
+                recorded=recorded,
             )
             steps.append(
                 TranscriptStep(
@@ -650,9 +684,10 @@ def _turn(
     _close_orphan_tools(
         tool_frames, frames_by_step, keep_open=waiting, awaiting_outcome=awaiting_outcome
     )
+    pending[:] = [item for item in pending if item.run_id is not None]
 
     messages = [message for _, group in segments for message in group]
-    started, ended = _started_at(messages), _ended_at(messages)
+    started, ended = _started_at(messages, recorded), _ended_at(messages)
     return TranscriptTurn(
         turn_id=turn_id,
         trigger_prompt_id=prompt_id,
@@ -791,10 +826,16 @@ def _open_frames(
     tool_frames: dict[str, str],
     subagent_of_call: Mapping[str, str],
     display: ToolDisplayRegistry,
+    recorded: Collection[str],
 ) -> None:
-    """响应 part 转换为步骤块；正文与思考共用序号，工具使用 <stepId>.<toolCallId>。"""
+    """响应 part 转换为步骤块；正文与思考共用序号，工具使用 <stepId>.<toolCallId>。
+
+    补记的加载调用不在这里建卡，随压缩提示挂到压缩后的那一步。
+    """
 
     for part in message.parts:
+        if recorded_load_call(part, recorded):
+            continue
         if isinstance(part, ThinkingPart):
             frame_id = f"{step_id}.f{next_frame_ordinal(frames)}"
             frames[frame_id] = ThinkingFrame(frame_id=frame_id, text=thinking_text(part))
@@ -825,6 +866,17 @@ def _call_card(
     )
 
 
+def recorded_load_card(
+    call: ToolCallPart, returned: ToolReturnPart, *, step_id: str, display: ToolDisplayRegistry
+) -> ToolFrame:
+    """压缩补记的一次技能加载，按普通加载卡显示，建卡时已带结果；实时与历史共用。"""
+
+    state, output, metadata, error = settle_tool_return(returned)
+    return _call_card(call, step_id=step_id, display=display).model_copy(
+        update={"state": state, "output": output, "metadata": metadata, "error": error}
+    )
+
+
 def _settle_tools(
     message: ModelRequest,
     tool_frames: dict[str, str],
@@ -834,9 +886,9 @@ def _settle_tools(
     """回填工具结果，收尾口径见 settle_tool_return；后台工具的回执照常结卡，并记进 awaiting_outcome。"""
 
     for part in message.parts:
-        if not isinstance(part, ToolReturnPart | RetryPromptPart):
+        if not isinstance(part, ToolReturnPart):
             continue
-        if isinstance(part, ToolReturnPart) and is_receipt(part):
+        if is_receipt(part):
             awaiting_outcome.add(part.tool_call_id)
         state, output, metadata, error = settle_tool_return(part)
         _replace_tool(
@@ -872,7 +924,7 @@ def unanswered_tool_calls(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
         part.tool_call_id
         for message in messages[last + 1 :]
         for part in message.parts
-        if isinstance(part, ToolReturnPart | RetryPromptPart)
+        if isinstance(part, ToolReturnPart)
     }
     return tuple(item for item in called if item not in answered)
 
@@ -882,16 +934,14 @@ ORPHAN_TOOL_ERROR = "运行中断，这次调用没有结果"
 
 
 def settle_tool_return(
-    part: ToolReturnPart | RetryPromptPart,
+    part: ToolReturnPart,
 ) -> tuple[Literal["done", "error"], object, object, str | None]:
     """一次工具返回收尾成工具卡的 (state, output, metadata, error)；两条投影都经这里，文案才一致。
 
-    RetryPromptPart 与非成功结果以返回原文作错误；框架补的 interrupted 返回等同没有返回，
+    非成功结果（含要求重调的 retried）以返回原文作错误；框架补的 interrupted 返回等同没有返回，
     output 与 metadata 留空，错误写 ORPHAN_TOOL_ERROR。
     """
 
-    if isinstance(part, RetryPromptPart):
-        return "error", None, None, str(part.content)
     if part.outcome == "interrupted":
         return "error", None, None, ORPHAN_TOOL_ERROR
     state = TOOL_STATE_BY_OUTCOME.get(part.outcome, "error")
@@ -1024,6 +1074,7 @@ __all__ = [
     "drop_last_turn",
     "interrupted_task_state",
     "keep_turns",
+    "recorded_load_card",
     "run_error_from_events",
     "run_ids_from_messages",
     "run_state_from_events",

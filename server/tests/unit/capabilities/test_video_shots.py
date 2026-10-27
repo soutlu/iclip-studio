@@ -12,7 +12,6 @@ from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -130,16 +129,18 @@ async def invoke(
     return result.all_messages()
 
 
-def refusals(messages: list[ModelMessage]) -> list[RetryPromptPart]:
-    return [
-        part for message in messages for part in message.parts if isinstance(part, RetryPromptPart)
-    ]
-
-
-def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+def _tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
     return [
         part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)
     ]
+
+
+def refusals(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in _tool_returns(messages) if part.outcome == "retried"]
+
+
+def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in _tool_returns(messages) if part.outcome != "retried"]
 
 
 async def check_args(
@@ -448,7 +449,7 @@ async def test_delivery_rejects_invalid_reference_material_without_writing(
 
     rejected = refusals(messages)
     assert len(rejected) == 1
-    assert url not in rejected[0].model_response()
+    assert url not in rejected[0].model_response_str()
     assert await files.entries(NAMESPACE) == []
     assert await files.entries(OTHER_NAMESPACE) == []
 
@@ -515,7 +516,7 @@ async def test_invalid_shot_input_keeps_the_existing_file_on_the_agent_path(
 
 async def run_delivery_once(
     capability: VideoShots[object], shots: object
-) -> tuple[list[RetryPromptPart], list[EventDict]]:
+) -> tuple[list[ToolReturnPart], list[EventDict]]:
     """让模型只调一次交付工具，返回它收到的退回单与本次的日志。"""
 
     def call_once(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
@@ -536,10 +537,7 @@ async def run_delivery_once(
             "提交镜头组", deps=make_deps()
         )
     rejected = [
-        part
-        for message in result.all_messages()
-        for part in message.parts
-        if isinstance(part, RetryPromptPart) and part.tool_name == "write_video_shots"
+        part for part in refusals(result.all_messages()) if part.tool_name == "write_video_shots"
     ]
     return rejected, logs
 
