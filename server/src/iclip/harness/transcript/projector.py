@@ -475,7 +475,7 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
             return
         self._settled_calls.add(part.tool_call_id)
         state, output, metadata, error = settle_tool_return(part)
-        stopped = isinstance(part, ToolReturnPart) and part.outcome == "interrupted"
+        stopped = part.outcome == "interrupted"
         ops: list[EmittableOperation] = [
             FrameUpsertOp(
                 turn_id=self.turn_id,
@@ -504,7 +504,7 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
             )
             self._subagent_tasks[part.tool_call_id] = settled
             ops.append(TaskUpsertOp(task=settled))
-        if isinstance(part, ToolReturnPart) and is_receipt(part):
+        if is_receipt(part):
             # 后台工具的回执：卡照常结，调用还在后台跑，进度交给任务列表。
             started = background_task(opened, started_at=_now())
             self._background_tasks[part.tool_call_id] = started

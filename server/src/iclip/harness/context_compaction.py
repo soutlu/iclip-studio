@@ -3,7 +3,8 @@
 before_model_request 超线时把边界同时写入持久历史（ctx.messages）与本次请求，
 再把每次请求都换成最新边界后的窗口；持久历史只多出边界，不删原始消息。
 SummarizingCompaction 提供摘要和工具对完整的切点，触发条件由本模块控制。
-摘要以 user 消息置于 instructions 之后，适配 Chat Completions。
+窗口以不带 provider 的请求侧摘要开头，由框架包装成标明出处的摘要文字、以用户身份发给模型；
+摘要器认同一份摘要上的 harness 标记，据此做增量摘要。
 """
 
 from __future__ import annotations
@@ -20,10 +21,7 @@ from pydantic_ai.messages import (
     CompactionPart,
     ModelMessage,
     ModelRequest,
-    ModelRequestPart,
     ModelResponse,
-    SystemPromptPart,
-    UserPromptPart,
     post_compaction_window,
 )
 from pydantic_ai.models import ModelRequestContext
@@ -31,11 +29,6 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai_harness.compaction import SummarizingCompaction, estimate_context_tokens
 
 _logger = structlog.stdlib.get_logger(__name__)
-
-SUMMARY_FRAMING = (
-    "The summary above is secondhand; re-verify critical facts against primary sources."
-)
-"""与 harness receipt 一致的摘要后续指令。"""
 
 
 def compaction_boundary(message: ModelMessage) -> CompactionPart | None:
@@ -56,25 +49,13 @@ def compaction_only(message: ModelMessage) -> bool:
     return all(isinstance(part, CompactionPart) for part in message.parts)
 
 
-def model_window(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
-    """返回最新边界后的模型窗口。摘要使用 user 消息，确保位于 instructions 之后。"""
+def compaction_window(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
+    """返回最新边界后的窗口，发给模型和交给摘要器都用它。
 
-    return _window(
-        messages,
-        lambda summary: UserPromptPart(content=f"{summary}\n\n{SUMMARY_FRAMING}"),
-    )
-
-
-def summarizer_input(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
-    """为摘要器构造窗口，使用带其约定前缀的 system part 标记旧摘要，以支持增量更新。"""
-
-    return _window(messages, lambda summary: SystemPromptPart(content=summary))
-
-
-def _window(
-    messages: Sequence[ModelMessage], head_part: Callable[[str], ModelRequestPart]
-) -> list[ModelMessage]:
-    """按 part 级边界提取窗口，保留同一消息中边界之后的内容，并在前方插入摘要请求。"""
+    边界换成一条只含请求侧摘要的请求放在开头：内容与 metadata 取自边界，不带 provider，
+    框架按摘要包装后发出，摘要器凭 metadata 里的标记认出上一份摘要。同一消息中边界之后的
+    part 保留。
+    """
 
     window = post_compaction_window(messages)
     if not window or not isinstance(head := window[0], ModelResponse) or not head.parts:
@@ -83,7 +64,7 @@ def _window(
         return window
     rest = dataclasses.replace(head, parts=list(head.parts[1:]))
     return [
-        ModelRequest(parts=[head_part(part.content or "")]),
+        ModelRequest(parts=[CompactionPart(content=part.content, metadata=part.metadata)]),
         *([rest] if rest.parts else []),
         *window[1:],
     ]
@@ -109,7 +90,7 @@ class ContextCompaction(AbstractCapability[Any]):
 
         request = await self._compact(ctx, request_context)
         # 没超线也要裁剪，否则两次压缩之间的请求会发出完整历史。
-        return dataclasses.replace(request_context, messages=model_window(request))
+        return dataclasses.replace(request_context, messages=compaction_window(request))
 
     async def _compact(
         self, ctx: RunContext[Any], request_context: ModelRequestContext
@@ -131,18 +112,25 @@ class ContextCompaction(AbstractCapability[Any]):
         ):
             return request
 
-        window = summarizer_input(history)
+        window = compaction_window(history)
         result = await self.strategy.compact(window, ctx)
         if result is window:
             # 保留尾部消息后，没有可摘要的内容。
             _logger.info("历史超线但切不动，这次不压", run_id=ctx.run_id, messages=len(history))
             return request
 
-        summary = _summary_of(result[0])
-        preserved = result[1:]
+        summary_at, summary = _summary_of(result)
+        preserved = result[summary_at + 1 :]
         index = _cut_index(history, preserved)
         boundary = ModelResponse(
-            parts=[CompactionPart(content=summary, provider_name=ctx.model.system)],
+            parts=[
+                CompactionPart(
+                    content=summary.content,
+                    provider_name=ctx.model.system,
+                    # 摘要器的标记与写成时间原样带上，下次压缩据此认出上一份摘要。
+                    metadata=summary.metadata,
+                )
+            ],
             # 使用切点消息的 run_id；框架合并时保留前一消息的 id，避免历史响应被归入当前轮。
             run_id=history[index].run_id if index < len(history) else ctx.run_id,
             # 显式记录时间；框架仅为末条请求补充运行元数据。
@@ -156,17 +144,23 @@ class ContextCompaction(AbstractCapability[Any]):
         )
         history.insert(index, boundary)
         request.insert(_cut_index(request, preserved), boundary)
-        self.on_compaction(summary)
+        self.on_compaction(summary.content or "")
         return request
 
 
-def _summary_of(message: ModelMessage) -> str:
-    """提取摘要器首条请求末尾的摘要 part；结构不符时抛错，避免空摘要遮蔽历史。"""
+def _summary_of(result: Sequence[ModelMessage]) -> tuple[int, CompactionPart]:
+    """找出摘要器结果里那条请求侧、不带 provider 的摘要及其位置；没有时抛错，避免空摘要遮蔽历史。
 
-    last = message.parts[-1] if isinstance(message, ModelRequest) and message.parts else None
-    if not isinstance(last, SystemPromptPart):
-        raise RuntimeError(f"摘要器给的首条消息不是摘要请求：{message!r}")
-    return last.content
+    结果开头可能还有系统提示请求和保留的首条用户消息，摘要请求之后才是保留的尾部。
+    """
+
+    for index, message in enumerate(result):
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            if isinstance(part, CompactionPart) and part.provider_name is None:
+                return index, part
+    raise RuntimeError(f"摘要器的结果里没有摘要请求：{result!r}")
 
 
 def _cut_index(messages: Sequence[ModelMessage], preserved: Sequence[ModelMessage]) -> int:
@@ -179,10 +173,8 @@ def _cut_index(messages: Sequence[ModelMessage], preserved: Sequence[ModelMessag
 
 
 __all__ = [
-    "SUMMARY_FRAMING",
     "ContextCompaction",
     "compaction_boundary",
     "compaction_only",
-    "model_window",
-    "summarizer_input",
+    "compaction_window",
 ]

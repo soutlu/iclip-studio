@@ -13,10 +13,10 @@ from pydantic_ai.messages import (
     ImageUrl,
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturn,
+    ToolReturnPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -655,7 +655,9 @@ async def test_a_stringified_region_is_parsed_on_the_agent_path(store: FakeFileS
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, RetryPromptPart) and part.tool_name == "ReadMediaFile"
+        if isinstance(part, ToolReturnPart)
+        and part.outcome == "retried"
+        and part.tool_name == "ReadMediaFile"
     ]
     assert refusals == []
     assert result.output == "看完了"
@@ -922,7 +924,7 @@ async def test_edits_to_one_file_in_one_reply_both_land() -> None:
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
     assert retries == []
     assert result.output == "改完了"
@@ -975,7 +977,7 @@ async def test_a_subagent_shares_the_conversation_workspace(store: FakeFileStore
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
     assert retries == [], f"主 agent 读不到下属写的文件: {retries}"
     assert result.output == "我读到了下属写的稿子"

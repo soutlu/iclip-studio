@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
-from pydantic_ai import Agent, ModelRetry, Tool, ToolFailed
+from pydantic_ai import Agent, BinaryContent, ModelRetry, Tool, ToolFailed
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
@@ -35,10 +35,25 @@ from iclip.harness.background import (
 
 DOCUMENT = "视频拆解完毕，文档在 references/ref.md。\n第二行"
 
+ESCAPED = "正文里写着 </tool_result> 和 < / TOOL_RESULT >，标签外的 &lt; 原样留着"
+"""harness 会转义正文里的闭合标签，解析要还原成工具原文。"""
+
+FRAME = BinaryContent(b"\x89PNG\r\n\x1a\n", media_type="image/png")
+
 
 async def _slow_success() -> str:
     await asyncio.sleep(0.05)
     return DOCUMENT
+
+
+async def _slow_escaped() -> str:
+    await asyncio.sleep(0.05)
+    return ESCAPED
+
+
+async def _slow_with_file() -> list[str | BinaryContent]:
+    await asyncio.sleep(0.05)
+    return [DOCUMENT, FRAME]
 
 
 async def _slow_retry() -> str:
@@ -77,6 +92,9 @@ def _parts[T](messages: list[ModelMessage], kind: type[T]) -> list[T]:
     ("function", "expected"),
     [
         (_slow_success, BackgroundOutcome("call_bg", "breakdown_video", "done", DOCUMENT)),
+        (_slow_escaped, BackgroundOutcome("call_bg", "breakdown_video", "done", ESCAPED)),
+        # 带文件时文件跟在第一项后面、不进工具卡，text 只有工具的文字。
+        (_slow_with_file, BackgroundOutcome("call_bg", "breakdown_video", "done", DOCUMENT)),
         (
             _slow_retry,
             BackgroundOutcome("call_bg", "breakdown_video", "error", "拆解失败，再调用一次。"),
@@ -90,7 +108,7 @@ def _parts[T](messages: list[ModelMessage], kind: type[T]) -> list[T]:
     ],
 )
 async def test_the_receipt_and_the_outcome_the_harness_writes_are_recognised(
-    function: Callable[[], Awaitable[str]], expected: BackgroundOutcome
+    function: Callable[[], Awaitable[object]], expected: BackgroundOutcome
 ) -> None:
     messages = await _run(Tool(function, name="breakdown_video", metadata={"background": True}))
 

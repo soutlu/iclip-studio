@@ -21,6 +21,7 @@ TOOL_STATE_BY_OUTCOME: dict[str, Literal["done", "error"]] = {
     "failed": "error",
     "denied": "error",
     "interrupted": "error",
+    "retried": "error",
 }
 """工具结果到卡片终态的统一映射；非成功结果均为 error。"""
 

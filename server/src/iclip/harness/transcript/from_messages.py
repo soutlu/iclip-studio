@@ -16,7 +16,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ThinkingPart,
     ThinkingPartDelta,
@@ -342,10 +341,10 @@ def _tool_returns(
         if not isinstance(message, ModelRequest):
             continue
         for part in message.parts:
-            if not isinstance(part, ToolReturnPart | RetryPromptPart):
+            if not isinstance(part, ToolReturnPart):
                 continue
             state, output, _, error = settle_tool_return(part)
-            stopped = isinstance(part, ToolReturnPart) and part.outcome == "interrupted"
+            stopped = part.outcome == "interrupted"
             found[part.tool_call_id] = (
                 str(output) if state == "done" else None,
                 None if state == "done" or stopped else error,
@@ -492,7 +491,7 @@ def _group_by_run(messages: Sequence[ModelMessage]) -> list[tuple[str, list[Mode
     grouped: dict[str, list[ModelMessage]] = {}
     current = ""
     for message in messages:
-        # 缺少 run_id 的重试提示归入前一 run，避免产生无时间的额外轮次。
+        # 缺少 run_id 的消息归入前一 run，避免产生无时间的额外轮次。
         current = message.run_id or current
         grouped.setdefault(current, []).append(message)
     return sorted(grouped.items(), key=lambda item: _started_at(item[1]))
@@ -834,9 +833,9 @@ def _settle_tools(
     """回填工具结果，收尾口径见 settle_tool_return；后台工具的回执照常结卡，并记进 awaiting_outcome。"""
 
     for part in message.parts:
-        if not isinstance(part, ToolReturnPart | RetryPromptPart):
+        if not isinstance(part, ToolReturnPart):
             continue
-        if isinstance(part, ToolReturnPart) and is_receipt(part):
+        if is_receipt(part):
             awaiting_outcome.add(part.tool_call_id)
         state, output, metadata, error = settle_tool_return(part)
         _replace_tool(
@@ -872,7 +871,7 @@ def unanswered_tool_calls(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
         part.tool_call_id
         for message in messages[last + 1 :]
         for part in message.parts
-        if isinstance(part, ToolReturnPart | RetryPromptPart)
+        if isinstance(part, ToolReturnPart)
     }
     return tuple(item for item in called if item not in answered)
 
@@ -882,16 +881,14 @@ ORPHAN_TOOL_ERROR = "运行中断，这次调用没有结果"
 
 
 def settle_tool_return(
-    part: ToolReturnPart | RetryPromptPart,
+    part: ToolReturnPart,
 ) -> tuple[Literal["done", "error"], object, object, str | None]:
     """一次工具返回收尾成工具卡的 (state, output, metadata, error)；两条投影都经这里，文案才一致。
 
-    RetryPromptPart 与非成功结果以返回原文作错误；框架补的 interrupted 返回等同没有返回，
+    非成功结果（含要求重调的 retried）以返回原文作错误；框架补的 interrupted 返回等同没有返回，
     output 与 metadata 留空，错误写 ORPHAN_TOOL_ERROR。
     """
 
-    if isinstance(part, RetryPromptPart):
-        return "error", None, None, str(part.content)
     if part.outcome == "interrupted":
         return "error", None, None, ORPHAN_TOOL_ERROR
     state = TOOL_STATE_BY_OUTCOME.get(part.outcome, "error")

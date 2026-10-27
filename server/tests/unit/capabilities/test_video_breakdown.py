@@ -12,10 +12,10 @@ from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -32,6 +32,7 @@ from iclip.capabilities.video_breakdown.ports import BreakdownFailureReason, Fai
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
+from iclip.harness.background import BackgroundTools, is_receipt, parse_outcome
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import GenericDisplay
 from tests.helpers.file_store import FakeFileStore
@@ -165,20 +166,26 @@ async def run_agent_that_keeps_calling(capability: VideoBreakdown[object]) -> li
 
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         last = messages[-1].parts[-1]
-        if len(messages) == 1 or isinstance(last, RetryPromptPart):
-            return ModelResponse(
-                parts=[
-                    ToolCallPart(
-                        "breakdown_video", {"video_url": VIDEO}, tool_call_id=f"c{len(messages)}"
-                    )
-                ]
-            )
+        if len(messages) == 1 or (isinstance(last, ToolReturnPart) and last.outcome == "retried"):
+            return call_breakdown(messages)
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
     result = await Agent(FunctionModel(script), capabilities=[capability]).run(
         "拆解参考视频。", deps=make_deps()
     )
     return result.all_messages()
+
+
+def call_breakdown(messages: list[ModelMessage]) -> ModelResponse:
+    return ModelResponse(
+        parts=[
+            ToolCallPart("breakdown_video", {"video_url": VIDEO}, tool_call_id=f"c{len(messages)}")
+        ]
+    )
+
+
+def tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
 
 
 async def test_failed_model_calls_are_tried_four_times_and_the_run_survives(
@@ -191,10 +198,42 @@ async def test_failed_model_calls_are_tried_four_times_and_the_run_survives(
     messages = await run_agent_that_keeps_calling(capability_for(files, breakdowns))
 
     assert len(breakdowns.calls) == 1 + BREAKDOWN_RETRIES
-    retries = [p for m in messages for p in m.parts if isinstance(p, RetryPromptPart)]
+    returned = tool_returns(messages)
+    retries = [part for part in returned if part.outcome == "retried"]
     assert len(retries) == BREAKDOWN_RETRIES
-    (final,) = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
+    (final,) = [part for part in returned if part.outcome != "retried"]
     assert TRY_LATER in final.model_response_str()
+
+
+async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
+    files: FakeFileStore,
+) -> None:
+    """挂上 BackgroundTools 后，重试次数照样由登记处的上限管：用完给终局失败，运行正常结束。"""
+
+    breakdowns = FakeBreakdowns(FailedBreakdown(reason="model_call_failed"))
+    outcomes: list[tuple[str, str]] = []
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        last = messages[-1].parts[-1]
+        if len(messages) == 1:
+            return call_breakdown(messages)
+        if isinstance(last, UserPromptPart) and (outcome := parse_outcome(last)) is not None:
+            outcomes.append((outcome.state, outcome.text))
+            if outcome.text == CALL_AGAIN:
+                return call_breakdown(messages)
+        # 拿到回执就先结束这一步，harness 等到结果后让模型再答一次。
+        return ModelResponse(parts=[TextPart("本轮结束。")])
+
+    result = await Agent(
+        FunctionModel(script),
+        capabilities=[capability_for(files, breakdowns), BackgroundTools()],
+    ).run("拆解参考视频。", deps=make_deps())
+
+    assert len(breakdowns.calls) == 1 + BREAKDOWN_RETRIES
+    assert all(is_receipt(part) for part in tool_returns(result.all_messages()))
+    # 模型最后收到的是终局失败：前几次让它再调，最后一次让用户稍后再试。
+    assert outcomes == [("error", CALL_AGAIN)] * BREAKDOWN_RETRIES + [("error", TRY_LATER)]
+    assert result.output == "本轮结束。"
 
 
 async def test_a_retry_that_succeeds_delivers_the_document(files: FakeFileStore) -> None:
@@ -202,7 +241,7 @@ async def test_a_retry_that_succeeds_delivers_the_document(files: FakeFileStore)
 
     messages = await run_agent_that_keeps_calling(capability_for(files, breakdowns))
 
-    (final,) = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
+    (final,) = [part for part in tool_returns(messages) if part.outcome != "retried"]
     assert final.model_response_str() == DONE
     assert len(breakdowns.calls) == 2
     stored = await files.read(NAMESPACE, PATH)

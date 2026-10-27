@@ -14,7 +14,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -101,7 +100,9 @@ def test_trailing_message_without_a_run_id_stays_in_the_same_turn() -> None:
             _ask("走"),
             _reply(ToolCallPart(tool_name="Read", args={}, tool_call_id="c1")),
             _returns(
-                RetryPromptPart(tool_name="Read", tool_call_id="c1", content="不行"),
+                ToolReturnPart(
+                    tool_name="Read", tool_call_id="c1", content="不行", outcome="retried"
+                ),
                 run_id=None,
                 minute=5,
             ),
@@ -589,7 +590,13 @@ def test_drop_last_turn_takes_trailing_unstamped_messages_with_it() -> None:
         _ask("第一问", run_id="r1", minute=0),
         _reply(TextPart(content="第一答"), run_id="r1", minute=1),
         _ask("第二问", run_id="r2", minute=2),
-        _returns(RetryPromptPart(content="参数不对", tool_call_id="c1"), run_id=None, minute=3),
+        _returns(
+            ToolReturnPart(
+                tool_name="Read", content="参数不对", tool_call_id="c1", outcome="retried"
+            ),
+            run_id=None,
+            minute=3,
+        ),
     ]
 
     kept, dropped = drop_last_turn(messages, {})

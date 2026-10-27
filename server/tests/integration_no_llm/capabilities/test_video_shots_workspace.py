@@ -11,9 +11,9 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
+    ToolReturnPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -80,7 +80,7 @@ def make_deps(conversation_id: str) -> AgentRunDeps:
 
 async def call_once(
     capability: VideoShots[object], conversation_id: str, args: dict[str, Any]
-) -> list[RetryPromptPart]:
+) -> list[ToolReturnPart]:
     """模型只调一次交付工具，返回它收到的退回单。"""
 
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
@@ -95,7 +95,7 @@ async def call_once(
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
 
 
