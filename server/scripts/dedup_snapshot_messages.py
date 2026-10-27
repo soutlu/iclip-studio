@@ -1,8 +1,7 @@
-"""一次性改写：把 ``agent_runtime.snapshots`` 里仍内联整段历史的快照行改成按消息引用存。
+"""一次性改写：把 ``agent_runtime.snapshots`` 里仍内联整段历史的快照行改成按消息引用存，可重复运行。
 
-改写与 ``PgStepStore.save_snapshot`` 共用 ``store_snapshot_history``：内联行存的就是外置媒体后的
-JSON，消息原样存进 ``snapshot_messages``，行里换成 ``{"message_refs": [...]}``，读出来不变。已是引用
-格式的行跳过，可重复运行；按 seq 分批，每批一个事务。
+该版本若附带手动执行的历史格式迁移 SQL，先执行那条 SQL 再跑本脚本：改写后消息存在
+``snapshot_messages``，那条 SQL 会拒绝执行。
 
 在停机窗口、迁移到 head 之后手动运行，不接进 Alembic 与启动流程：
     docker compose run --rm server python -m scripts.dedup_snapshot_messages [--batch-size 200]

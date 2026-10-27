@@ -1,10 +1,6 @@
 """StepPersistence 的 Postgres 实现，表结构对齐官方 SQLite 后端，DDL 由 Alembic 管理。
 
 messages/metadata 使用 JSON 文本，避免 jsonb 拒绝 \\u0000；读取时由 Python 反序列化。
-
-快照消息的存法对齐官方 PostgresStepStore：``snapshot_messages`` 对应它的 ``{table}_messages``，
-每条消息按 sha256 只存一份；快照行的 ``messages`` 是 ``{"message_refs": [sha256, ...]}``，
-仍是内联 JSON 列表的旧行照常读。被修剪快照引用过的消息不回收，与官方一致。
 """
 
 from __future__ import annotations
@@ -12,7 +8,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Final, Literal, cast, get_args
+from typing import Any, Final, Literal, cast, get_args
 
 import structlog
 from pydantic import TypeAdapter
@@ -51,6 +47,7 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     PrimaryKeyConstraint,
+    Select,
     Table,
     Text,
     any_,
@@ -224,8 +221,6 @@ async def store_snapshot_history(conn: AsyncConnection, messages_json: object) -
 
 
 async def _load_messages(conn: AsyncConnection, messages_texts: Sequence[str]) -> dict[str, str]:
-    """一次查回这些快照行引用的消息，按 sha256 索引；内联历史的行不引用消息。"""
-
     refs = {ref for raw in messages_texts for ref in (message_refs(raw) or ())}
     if not refs:
         return {}
@@ -547,13 +542,7 @@ class PgStepStore:
         stmt = select(snapshots_table).where(snapshots_table.c.run_id == run_id)
         if not include_interrupted:
             stmt = stmt.where(snapshots_table.c.state == "complete")
-        stmt = stmt.order_by(snapshots_table.c.seq.desc()).limit(1)
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).one_or_none()
-            if row is None:
-                return None
-            stored = await _load_messages(conn, [cast("_SnapshotRow", row).messages])
-        return await self._snapshot_from_row(run_id, row, stored)
+        return await self._first_snapshot(stmt.order_by(snapshots_table.c.seq.desc()).limit(1))
 
     async def latest_conversation_snapshot(
         self, *, conversation_id: str, include_interrupted: bool = False
@@ -566,7 +555,9 @@ class PgStepStore:
         stmt = select(snapshots_table).where(snapshots_table.c.conversation_id == conversation_id)
         if not include_interrupted:
             stmt = stmt.where(snapshots_table.c.state == "complete")
-        stmt = stmt.order_by(snapshots_table.c.seq.desc()).limit(1)
+        return await self._first_snapshot(stmt.order_by(snapshots_table.c.seq.desc()).limit(1))
+
+    async def _first_snapshot(self, stmt: Select[Any]) -> ContinuableSnapshot | None:
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one_or_none()
             if row is None:
@@ -592,14 +583,12 @@ class PgStepStore:
             try:
                 snapshots.append(await self._snapshot_from_row(run_id, row, stored))
             except Exception:
-                _logger.warning("跳过解析不了的快照行", run_id=run_id, exc_info=True)
+                _logger.warning("跳过读不出的快照行", run_id=run_id, exc_info=True)
         return snapshots
 
     async def _snapshot_from_row(
         self, run_id: str, row: object, stored: dict[str, str]
     ) -> ContinuableSnapshot:
-        """``stored`` 是 ``_load_messages`` 查回的消息；引用的消息缺失时抛 ValueError。"""
-
         r = cast("_SnapshotRow", row)
         messages_text = r.messages
         refs = message_refs(messages_text)

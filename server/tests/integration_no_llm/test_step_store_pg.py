@@ -32,9 +32,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.step_store_pg import PgMediaStore, PgStepStore, snapshots_table
+from iclip.harness.step_store_pg import PgMediaStore, PgStepStore
 from iclip.platform.db.engine import build_engine
-from tests.helpers.pg import truncate_clean
+from tests.helpers.pg import (
+    insert_inline_snapshot,
+    raw_snapshot_messages,
+    stored_message_count,
+    truncate_clean,
+)
 
 T0 = datetime(2026, 8, 21, 10, 0, 0, tzinfo=UTC)
 
@@ -331,37 +336,6 @@ async def test_snapshot_media_externalization_roundtrip(
     assert _dump(restored.messages) == _dump(messages)
 
 
-async def _raw_messages(engine: AsyncEngine) -> list[str]:
-    async with engine.connect() as conn:
-        rows = await conn.execute(text("SELECT messages FROM agent_runtime.snapshots ORDER BY seq"))
-        return [row[0] for row in rows]
-
-
-async def _stored_message_count(engine: AsyncEngine) -> int:
-    async with engine.connect() as conn:
-        return (
-            await conn.execute(text("SELECT count(*) FROM agent_runtime.snapshot_messages"))
-        ).scalar_one()
-
-
-async def _insert_inline(
-    engine: AsyncEngine, *, run_id: str, step_index: int, messages: list[ModelMessage]
-) -> None:
-    """按改为引用存之前的格式直接写一行：整段历史内联成 JSON 列表。"""
-
-    async with engine.begin() as conn:
-        await conn.execute(
-            snapshots_table.insert().values(
-                run_id=run_id,
-                step_index=step_index,
-                conversation_id="conv-1",
-                timestamp=T0,
-                state="complete",
-                messages=json.dumps(json.loads(_dump(messages))),
-            )
-        )
-
-
 async def test_snapshot_row_references_messages_stored_once(
     store: PgStepStore, engine: AsyncEngine
 ) -> None:
@@ -377,14 +351,33 @@ async def test_snapshot_row_references_messages_stored_once(
         ContinuableSnapshot(run_id="r2", step_index=1, messages=first, state="complete")
     )
 
-    refs = [json.loads(raw)["message_refs"] for raw in await _raw_messages(engine)]
+    refs = [json.loads(raw)["message_refs"] for raw in await raw_snapshot_messages(engine)]
     assert [len(r) for r in refs] == [2, 4, 2]
     assert refs[1][:2] == refs[0] == refs[2]
-    assert await _stored_message_count(engine) == 4
+    assert await stored_message_count(engine) == 4
 
     latest = await store.latest_snapshot(run_id="r1")
     assert latest is not None
     assert _dump(latest.messages) == _dump(longer)
+
+
+async def test_snapshot_prune_keeps_stored_messages(engine: AsyncEngine) -> None:
+    """修剪快照不回收消息，与官方一致：共享的与只被修剪快照用过的消息都留着。"""
+    store = PgStepStore(engine, max_snapshots_per_run=1)
+    shared = _messages("shared")
+    pruned_only = [*shared, *_messages("pruned only")]
+    middle = [*shared, *_messages("middle")]
+    newest = [*middle, *_messages("newest")]
+    for step_index, messages in enumerate([pruned_only, middle, newest], start=1):
+        await store.save_snapshot(
+            ContinuableSnapshot(
+                run_id="r1", step_index=step_index, messages=messages, state="complete"
+            )
+        )
+
+    listed = await store.list_snapshots(run_id="r1")
+    assert [(s.step_index, _dump(s.messages)) for s in listed] == [(3, _dump(newest))]
+    assert await stored_message_count(engine) == 8
 
 
 async def test_snapshot_reads_mix_inline_and_referenced_rows(
@@ -393,7 +386,9 @@ async def test_snapshot_reads_mix_inline_and_referenced_rows(
     inline_first = _messages("inline-1")
     referenced = [*inline_first, *_messages("referenced")]
     inline_last = [*referenced, *_messages("inline-3")]
-    await _insert_inline(engine, run_id="r1", step_index=1, messages=inline_first)
+    await insert_inline_snapshot(
+        engine, run_id="r1", step_index=1, conversation_id="conv-1", messages=inline_first
+    )
     await store.save_snapshot(
         ContinuableSnapshot(
             run_id="r1",
@@ -413,7 +408,9 @@ async def test_snapshot_reads_mix_inline_and_referenced_rows(
     assert latest is not None
     assert (latest.step_index, _dump(latest.messages)) == (2, _dump(referenced))
 
-    await _insert_inline(engine, run_id="r1", step_index=3, messages=inline_last)
+    await insert_inline_snapshot(
+        engine, run_id="r1", step_index=3, conversation_id="conv-1", messages=inline_last
+    )
 
     latest = await store.latest_conversation_snapshot(conversation_id="conv-1")
     assert latest is not None
@@ -442,7 +439,7 @@ async def test_snapshot_missing_referenced_message(store: PgStepStore, engine: A
             state="complete",
         )
     )
-    lost_ref = json.loads((await _raw_messages(engine))[1])["message_refs"][0]
+    lost_ref = json.loads((await raw_snapshot_messages(engine))[1])["message_refs"][0]
     async with engine.begin() as conn:
         await conn.execute(
             text("DELETE FROM agent_runtime.snapshot_messages WHERE sha256 = :ref"),
