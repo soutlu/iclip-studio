@@ -75,7 +75,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 |---|---|
 | `iclip` 业务表 | 各领域模块的 `infra_sql.py` |
 | `iclip` 成片草稿 | `domains/conversations/infra_sql.py`；一段对话一行，保存按版本号带条件写。端点与权限在对话域，引用的生成记录由对话域声明的端口经组合根的 [app/whole_film_drafts.py](../server/src/iclip/app/whole_film_drafts.py) 接到生成仓储核对，媒体生成没开也照样核对 |
-| `agent_runtime` 运行历史与快照 | `harness/step_store_pg.py`，实现官方 StepStore 协议 |
+| `agent_runtime` 运行历史与快照 | `harness/step_store_pg.py`，实现官方 StepStore 协议。快照消息的存法同官方 PostgresStepStore：每条消息按 sha256 在 `snapshot_messages` 只存一份，快照行只记引用；整段历史内联的旧行照常读。被修剪快照用过的消息与外置媒体一样不回收 |
 | `agent_runtime` prompt 队列、运行关联与审批记录 | `harness/jobs.py` |
 | `agent_runtime` 工作区与对话素材台账 | `platform/file_store/pg.py`、`platform/material_ledger/pg.py` |
 | `agent_runtime` 对话用量台账 | `harness/usage_ledger_pg.py`；`harness/usage_ledger.py` 的 capability 挂在每个 Agent 上，模型每答一次按（对话，模型）累加 token |

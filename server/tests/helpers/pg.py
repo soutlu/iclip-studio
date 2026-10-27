@@ -42,6 +42,7 @@ AGENT_RUNTIME_TABLES = (
     "agent_runtime.runs",
     "agent_runtime.events",
     "agent_runtime.snapshots",
+    "agent_runtime.snapshot_messages",
     "agent_runtime.snapshot_idempotency_keys",
     "agent_runtime.tool_effects",
     "agent_runtime.media",
