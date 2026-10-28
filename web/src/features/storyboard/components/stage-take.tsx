@@ -1,4 +1,4 @@
-/** 舞台显示选中的素材片，按这条素材片自己的画幅 contain：出了片就用共享播放器自动播（点卡片即用户手势，带声音；不循环，停在末帧），
+/** 舞台显示选中的素材片，按这条素材片自己的画幅 contain：出了片就用共享播放器显示，停在封面等用户点播放，不循环；
  * 在途是按画幅的骨架加转圈与已用时长，失败是错误图标加完整原因。换一条或切走就卸载，播放随之停止。 */
 
 import type { CSSProperties } from 'react'
@@ -19,7 +19,6 @@ export function StageTake({ take }: { take: Take }) {
     >
       {take.outputUrl !== undefined ? (
         <VideoPlayer
-          autoPlay
           className="absolute inset-0"
           label="生成的视频"
           poster={videoSnapshotUrl(take.outputUrl, POSTER_WIDTH)}
