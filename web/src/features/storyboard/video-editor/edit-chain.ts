@@ -1,12 +1,16 @@
+import {
+  groupConversationVideos,
+  versionNameOf,
+  type ConversationVideoGroup,
+} from '../conversation-videos/video-groups'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 import type { MediaDurations } from '../editing/use-media-durations'
 import {
   byCreation,
-  byFinish,
   isComposite,
   isEditSegment,
-  ORIGINAL_LABEL,
+  versionLabel,
   versionLabelAt,
 } from '../editing/version-lineage'
 import type { ClipVersionGroup } from './clip-versions'
@@ -19,43 +23,53 @@ export type ChainVersion = {
   sourceJobId: string | undefined
 }
 
-export const projectVersions = (
+/**
+ * 原作 root 所在的版本组。这条原作的合成以编辑链 chainJobs 为准（提交后立刻写进、刷新最及时），
+ * 组里其余原作与合成取本对话视频记录 conversationJobs；root 没出片时为 undefined。
+ */
+export const rootVersionGroup = (
   root: GenerationJob,
-  jobs: readonly GenerationJob[],
-): ChainVersion[] => {
-  if (root.outputUrl === null) return []
-  const composites = jobs
-    .filter(
-      (job): job is GenerationJob & { sourceJobId: string; outputUrl: string } =>
-        isComposite(job) && job.status === 'completed' && job.outputUrl !== null,
-    )
-    .sort(byFinish)
-  return [
-    { jobId: root.id, label: ORIGINAL_LABEL, mediaUrl: root.outputUrl, sourceJobId: undefined },
-    ...composites.map((job, at) => ({
-      jobId: job.id,
-      label: versionLabelAt(at),
-      mediaUrl: job.outputUrl,
-      sourceJobId: job.sourceJobId,
-    })),
-  ]
+  chainJobs: readonly GenerationJob[],
+  conversationJobs: readonly GenerationJob[],
+): ConversationVideoGroup | undefined => {
+  const others = conversationJobs.filter((job) => job.id !== root.id && job.rootJobId !== root.id)
+  return groupConversationVideos([root, ...chainJobs, ...others]).find((group) =>
+    group.videos.some((video) => video.id === root.id),
+  )
 }
 
+/** 整条的各版：这条原作与它完成的合成，按完成先后，名字沿用版本组的编号，所以编号可以不连续。 */
+export const projectVersions = (
+  root: GenerationJob,
+  group: ConversationVideoGroup | undefined,
+): ChainVersion[] =>
+  (group?.videos ?? [])
+    .filter((video) => video.id === root.id || video.rootJobId === root.id)
+    .map((video) => ({
+      jobId: video.id,
+      label: versionNameOf(video),
+      mediaUrl: video.outputUrl,
+      sourceJobId: video.sourceJobId ?? undefined,
+    }))
+
+/** 这条原作还没完成的合成，按提交先后预先接在版本组已有版本之后编号。 */
 export const unfinishedComposites = (
-  versions: readonly ChainVersion[],
+  group: ConversationVideoGroup | undefined,
   jobs: readonly GenerationJob[],
 ): { job: GenerationJob; label: string }[] => {
-  const completed = versions.length - 1
+  const completed = group?.videos.length ?? 0
   return jobs
     .filter((job) => isComposite(job) && job.status !== 'completed')
     .sort(byCreation)
-    .map((job, at) => ({ job, label: versionLabelAt(completed + at) }))
+    .map((job, at) => ({ job, label: versionLabel(completed + at + 1) }))
 }
 
+/** 再合成一版时它预计拿到的版本名：排在版本组已有版本与未完成的合成之后。 */
 export const nextCompositeLabel = (
-  versions: readonly ChainVersion[],
+  group: ConversationVideoGroup | undefined,
   jobs: readonly GenerationJob[],
-): string => versionLabelAt(versions.length - 1 + unfinishedComposites(versions, jobs).length)
+): string =>
+  versionLabel((group?.videos.length ?? 0) + unfinishedComposites(group, jobs).length + 1)
 
 export const editLabelAt = (group: ClipVersionGroup, editJobId: string): string | undefined => {
   const at = group.edits.findIndex((edit) => edit.id === editJobId)

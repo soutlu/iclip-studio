@@ -25,7 +25,7 @@ import { useMediaDurations } from '../editing/use-media-durations'
 import { useStableValue } from '../editing/use-stable-value'
 import { isComposite, isEditSegment, ORIGINAL_LABEL } from '../editing/version-lineage'
 import { isRunningStatus } from '../shots'
-import { useVideoModels, type GenerationJob } from '../storyboard.api'
+import { useShotGenerations, useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard, type AiEditCardHandle } from './ai-edit-card'
 import { clipGenerationBlock, referenceImageCountOf } from './clip-generation'
 import {
@@ -59,6 +59,7 @@ import {
   nextCompositeLabel,
   nextEditLabel,
   projectVersions,
+  rootVersionGroup,
   unfinishedComposites,
   type ChainVersion,
 } from './edit-chain'
@@ -144,7 +145,13 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const { mode, chosen } = settings
   const chainJobs = chainQuery.data?.items
   const jobs = useMemo(() => chainJobs ?? [], [chainJobs])
-  const versions = useMemo(() => projectVersions(root, jobs), [root, jobs])
+  // 调用方的 root 就取自这份对话视频记录，编辑器打开时它已读到，版本号随它与编辑链一起现算。
+  const conversationJobs = useShotGenerations(conversationId).data
+  const versionGroup = useMemo(
+    () => rootVersionGroup(root, jobs, conversationJobs ?? []),
+    [root, jobs, conversationJobs],
+  )
+  const versions = useMemo(() => projectVersions(root, versionGroup), [root, versionGroup])
   const previewRef = useRef<EditorPreviewHandle>(null)
   const selectionBoxRef = useRef<HTMLSpanElement>(null)
   const cardRef = useRef<AiEditCardHandle>(null)
@@ -459,7 +466,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       kind: 'compose',
       targetKey: version.jobId,
       since: new Date().toISOString(),
-      label: nextCompositeLabel(versions, jobs),
+      label: nextCompositeLabel(versionGroup, jobs),
     })
     setComposeError(null)
     setNotice(null)
@@ -486,7 +493,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     baseJobId: version.jobId,
     baseMediaUrl: version.mediaUrl,
     versions,
-    unfinishedComposites: unfinishedComposites(versions, jobs),
+    unfinishedComposites: unfinishedComposites(versionGroup, jobs),
     viewedJobId: wholeVersion.jobId,
     group: candidateGroup,
     source,
