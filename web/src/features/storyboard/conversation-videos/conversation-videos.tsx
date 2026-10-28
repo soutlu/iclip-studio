@@ -6,6 +6,7 @@ import { MediaFallback } from '@/shared/ui/media-fallback'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { VideoDownload } from '@/shared/ui/video-download'
 import { VideoPlayer } from '@/shared/ui/video-player'
+import { versionLabel } from '../editing/version-lineage'
 import { useLiveGenerations } from '../use-live-generations'
 import { useConversationVideos } from './conversation-videos.api'
 import type { ConversationVideoGroup } from './video-groups'
@@ -100,29 +101,26 @@ function VideoGroup({ group, onBeforeExpand }: VideoGroupProps) {
           className="flex gap-1 overflow-x-auto py-1"
           role="group"
         >
-          {group.videos.toReversed().map((video, index) => {
-            const version = group.videos.length - index
-            return (
-              <button
-                aria-label={`${group.label} V${version}`}
-                aria-pressed={video.id === selected.id}
-                className={cn(
-                  'h-(--control-height-sm) shrink-0 ui-state cursor-pointer rounded-sm px-3 text-label ui-focus',
-                  video.id === selected.id
-                    ? 'bg-secondary-container font-medium text-on-secondary-container'
-                    : 'text-on-surface-muted',
-                )}
-                key={video.id}
-                onClick={() => {
-                  videoRef.current?.pause()
-                  setSelectedId(video.id)
-                }}
-                type="button"
-              >
-                V{version}
-              </button>
-            )
-          })}
+          {group.videos.toReversed().map((video) => (
+            <button
+              aria-label={`${group.label} ${versionLabel(video.version)}`}
+              aria-pressed={video.id === selected.id}
+              className={cn(
+                'h-(--control-height-sm) shrink-0 ui-state cursor-pointer rounded-sm px-3 text-label ui-focus',
+                video.id === selected.id
+                  ? 'bg-secondary-container font-medium text-on-secondary-container'
+                  : 'text-on-surface-muted',
+              )}
+              key={video.id}
+              onClick={() => {
+                videoRef.current?.pause()
+                setSelectedId(video.id)
+              }}
+              type="button"
+            >
+              {versionLabel(video.version)}
+            </button>
+          ))}
         </div>
       ) : null}
       <GroupPlayer

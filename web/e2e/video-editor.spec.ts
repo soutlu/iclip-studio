@@ -286,7 +286,7 @@ test('整条预览使用时间线选用的版本，历史原片与当前剪辑�
     .poll(() => video.evaluate((element) => (element as HTMLVideoElement).currentTime))
     .toBeCloseTo(2.5, 1)
 
-  await versions(dialog).getByRole('button', { name: '原片', exact: true }).click()
+  await versions(dialog).getByRole('button', { name: 'V1 原片', exact: true }).click()
   await expect(video).toHaveAttribute('src', originalUrl)
   await waitForSegments(dialog, 6)
   await expect(controls(dialog)).toContainText('共 6.0 秒')
@@ -522,12 +522,12 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
 }) => {
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
-  await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toBeVisible()
+  await expect(versions(dialog).getByRole('button', { name: 'V1 原片', exact: true })).toBeVisible()
 
   await segment(dialog, 2).click()
   await controls(dialog).getByRole('button', { name: '删除', exact: true }).click()
   await waitForSegments(dialog, 5)
-  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 原片 短 1.0 秒')
+  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 V1 原片 短 1.0 秒')
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
   // 有改动时下的是这一版本身，看着草稿时灰着。
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeDisabled()
@@ -547,7 +547,7 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
   await segment(dialog, 1).click()
   await page.keyboard.press('Delete')
   await waitForSegments(dialog, 4)
-  await expect(controls(dialog)).toContainText('共 4.0 秒 · 比 原片 短 2.0 秒')
+  await expect(controls(dialog)).toContainText('共 4.0 秒 · 比 V1 原片 短 2.0 秒')
 
   // 拆分：在播放头处把所在的段一分为二，总长不变。
   const split = controls(dialog).getByRole('button', { name: '拆分', exact: true })
@@ -567,7 +567,7 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
   await page.reload()
   const reopened = await openEditor(page)
   await waitForSegments(reopened, 5)
-  await expect(controls(reopened)).toContainText('共 4.0 秒 · 比 原片 短 2.0 秒')
+  await expect(controls(reopened)).toContainText('共 4.0 秒 · 比 V1 原片 短 2.0 秒')
   await expect(versions(reopened).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 })
 
@@ -590,7 +590,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expect(capsule(dialog)).toBeVisible()
   await release()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.4 秒')
-  await expect(controls(dialog)).toContainText('共 5.4 秒 · 比 原片 短 0.6 秒')
+  await expect(controls(dialog)).toContainText('共 5.4 秒 · 比 V1 原片 短 0.6 秒')
   await capsule(dialog).click()
   await expectCard(
     dialog,
@@ -624,7 +624,7 @@ test('多选两段：抓手只在选区两端，拖右抓手收短最后一段�
   await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 1.5 秒 · 缩短 0.5 秒')
   await release()
   await expect(segment(dialog, 3)).toHaveAccessibleName('第 3 段 · 2–2.5 秒')
-  await expect(controls(dialog)).toContainText('共 5.5 秒 · 比 原片 短 0.5 秒')
+  await expect(controls(dialog)).toContainText('共 5.5 秒 · 比 V1 原片 短 0.5 秒')
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
   await expect(segment(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
   await expect(dialog.getByRole('slider', { name: /^裁剪(开头|结尾)$/ })).toHaveCount(2)
@@ -780,7 +780,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–4 秒')
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(1)
-  await expect(controls(dialog)).toContainText('共 7.0 秒 · 比 原片 长 1.0 秒')
+  await expect(controls(dialog)).toContainText('共 7.0 秒 · 比 V1 原片 长 1.0 秒')
 
   // 再编辑预览当前结果，候选仍归属基底区间；可继续裁剪，不要求先合成。
   await segment(dialog, 2).click()
@@ -801,7 +801,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await segment(dialog, 5).click()
   await page.keyboard.press('Delete')
   await waitForSegments(dialog, 4)
-  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 原片 短 1.0 秒')
+  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 V1 原片 短 1.0 秒')
   await expect(timelineOf(dialog).getByTestId('timeline-tail')).toBeVisible()
 
   // 合成：请求体就是草稿。
@@ -824,7 +824,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
 
   // 整条按钮预览当前时间线；明确点击合成版本才查看历史文件。
   await scope(dialog, '整条').click()
-  const composite = versions(dialog).getByRole('button', { name: 'V1', exact: true })
+  const composite = versions(dialog).getByRole('button', { name: 'V2', exact: true })
   await expect(composite).toBeEnabled({ timeout: STEP_TIMEOUT })
   await scope(dialog, '整条').click()
   await waitForSegments(dialog, 4)
@@ -833,7 +833,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await expect(composite).toHaveAttribute('aria-pressed', 'true')
   await waitForSegments(dialog, 6)
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
-  await versions(dialog).getByRole('button', { name: '原片', exact: true }).click()
+  await versions(dialog).getByRole('button', { name: 'V1 原片', exact: true }).click()
   await waitForSegments(dialog, 6)
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
   await scope(dialog, '整条').click()

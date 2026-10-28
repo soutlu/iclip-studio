@@ -1,8 +1,7 @@
-import type { ConversationVideoGroup } from '../conversation-videos/video-groups'
+import { versionNameOf, type ConversationVideoGroup } from '../conversation-videos/video-groups'
 import type { SecondsRange } from '../editing/clip'
 import type { Edge } from '../editing/timeline-drag'
 import { shiftSelect } from '../editing/range-select'
-import { labelLineage } from '../editing/version-lineage'
 import { MIN_CLIP_MS, type Layer0Clip } from './editing/draft'
 import type { MaterialPiece } from './editing/layer0'
 
@@ -17,7 +16,7 @@ export type Material = {
   takeId: string
   /** 「生成 A」「生成 B」……按原作在组里的先后 */
   takeLabel: string
-  /** 「原片」「V1」…… */
+  /** 版本组里的版本名，如「V1 原片」「V3」，与其他页面同一个编号 */
   version: string
 }
 
@@ -170,7 +169,7 @@ const takeLetter = (index: number): string => {
   return result
 }
 
-/** 按镜头组、组里的原作排好这段对话的素材片；一条原作的合成跟着它，按完成先后编版本。 */
+/** 按镜头组、组里的原作排好这段对话的素材片；一条原作的合成跟着它，版本名沿用版本组的编号。 */
 export const materialCatalog = (groups: readonly ConversationVideoGroup[]): MaterialCatalog => {
   const catalog = groups.map((group): MaterialGroup => {
     const byTake = new Map<string, typeof group.videos>()
@@ -182,15 +181,15 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
     }
     const takes = [...byTake].flatMap(([takeId, videos], index): MaterialTake[] => {
       const takeLabel = `生成 ${takeLetter(index)}`
-      const versions = labelLineage(videos).map(({ job, label }) => ({
-        jobId: job.id,
-        url: job.outputUrl,
-        durationMs: job.durationMs,
+      const versions = videos.map((video) => ({
+        jobId: video.id,
+        url: video.outputUrl,
+        durationMs: video.durationMs,
         groupId: group.id,
         groupLabel: group.label,
         takeId,
         takeLabel,
-        version: label,
+        version: versionNameOf(video),
       }))
       const latest = versions.at(-1)
       return latest === undefined ? [] : [{ id: takeId, label: takeLabel, versions, latest }]
