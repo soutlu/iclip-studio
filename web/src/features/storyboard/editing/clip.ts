@@ -2,5 +2,3 @@
 export const roundToMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
 
 export type SecondsRange = { start: number; end: number }
-
-export type Clip = SecondsRange & { sourceJobId: string }

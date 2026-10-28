@@ -174,6 +174,7 @@ const ICONS = {
   redo: Redo2,
   'edit-image': WandSparkles,
   'edit-video': Scissors,
+  'edit-segment': WandSparkles,
   'add-file': FilePlus2,
   agent: Bot,
   appearance: Palette,

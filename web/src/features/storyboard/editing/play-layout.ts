@@ -2,8 +2,11 @@ export type PlaySegment = { mediaUrl: string; start: number; end: number }
 
 export type LaidOutSegment = PlaySegment & { at: number; duration: number }
 
-export const layoutPlay = (segments: readonly PlaySegment[]): LaidOutSegment[] => {
-  const laid: LaidOutSegment[] = []
+/** 首尾相接排好各段，跳过空段；段上的其余字段原样带着。 */
+export const layoutPlay = <T extends PlaySegment>(
+  segments: readonly T[],
+): (T & { at: number; duration: number })[] => {
+  const laid: (T & { at: number; duration: number })[] = []
   let at = 0
   for (const segment of segments) {
     const duration = Math.max(0, segment.end - segment.start)

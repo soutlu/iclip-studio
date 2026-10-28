@@ -239,14 +239,6 @@
   background: var(--color-surface-container-low);
 }
 
-.editor-footnote {
-  min-height: var(--text-caption--line-height);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  text-align: center;
-}
-
 .editor-bar {
   display: flex;
   min-height: 32px;
@@ -381,20 +373,6 @@
   .editor-bar {
     flex-wrap: wrap;
     row-gap: 4px;
-  }
-
-  .editor-bar .editor-tool {
-    width: 30px;
-    padding: 0;
-  }
-
-  .editor-tool-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   .editor-clock {

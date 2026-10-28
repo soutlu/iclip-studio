@@ -6,10 +6,9 @@ import { materialCatalog } from '../whole-film/materials'
 import {
   composingOf,
   editCountsByRoot,
-  nextCompositeLabel,
+  latestCompositeOf,
   projectVersions,
   rootVersionGroup,
-  unfinishedComposites,
 } from './edit-chain'
 
 const at = (time: string) => `2026-09-15T${time}Z`
@@ -53,35 +52,20 @@ const ownVersions = (chain: readonly GenerationJob[]) =>
   projectVersions(root, rootVersionGroup(root, chain, [root]))
 
 describe('projectVersions', () => {
-  it('原片与完成的合成一起按完成时刻编号，原片带「原片」二字，记着基于哪一版', () => {
+  it('原片与完成的合成一起按完成时刻编号，原片带「原片」二字', () => {
     const versions = ownVersions([
       composite('late', 'root', { createdAt: at('10:01:00'), finishedAt: at('10:09:00') }),
       composite('early', 'root', { createdAt: at('10:02:00'), finishedAt: at('10:03:00') }),
-      // 来源可以分叉：基于 V2 再合成一版。
+      // 旧记录里有基于合成再合成的一版，同样列出。
       composite('branch', 'early', { createdAt: at('10:04:00'), finishedAt: at('10:05:00') }),
       edit('e1', 'root', [1, 2], { outputUrl: 'https://oss.example/e1.mp4' }),
     ])
 
     expect(versions).toEqual([
-      {
-        jobId: 'root',
-        label: 'V1 原片',
-        mediaUrl: 'https://oss.example/root.mp4',
-        sourceJobId: undefined,
-      },
-      {
-        jobId: 'early',
-        label: 'V2',
-        mediaUrl: 'https://oss.example/early.mp4',
-        sourceJobId: 'root',
-      },
-      {
-        jobId: 'branch',
-        label: 'V3',
-        mediaUrl: 'https://oss.example/branch.mp4',
-        sourceJobId: 'early',
-      },
-      { jobId: 'late', label: 'V4', mediaUrl: 'https://oss.example/late.mp4', sourceJobId: 'root' },
+      { jobId: 'root', label: 'V1 原片', mediaUrl: 'https://oss.example/root.mp4' },
+      { jobId: 'early', label: 'V2', mediaUrl: 'https://oss.example/early.mp4' },
+      { jobId: 'branch', label: 'V3', mediaUrl: 'https://oss.example/branch.mp4' },
+      { jobId: 'late', label: 'V4', mediaUrl: 'https://oss.example/late.mp4' },
     ])
   })
 
@@ -129,16 +113,6 @@ describe('同一镜头组里有几条原作', () => {
     expect(projectVersions(takeB, group).map((version) => version.label)).toEqual(['V2 原片', 'V4'])
   })
 
-  it('再合成一版预计拿到组里下一个编号；未完成的合成依次占在前面', () => {
-    const running = compositeOf('b3', 'b', '10:04:00', { status: 'submitted', outputUrl: null })
-    const done = rootVersionGroup(takeB, [b2], conversation)
-    const busy = rootVersionGroup(takeB, [b2, running], conversation)
-
-    expect(nextCompositeLabel(done, [b2])).toBe('V5')
-    expect(unfinishedComposites(busy, [b2, running]).map(({ label }) => label)).toEqual(['V5'])
-    expect(nextCompositeLabel(busy, [b2, running])).toBe('V6')
-  })
-
   it('本条原作的合成以编辑链为准：对话记录还没刷到完成也照样编号', () => {
     const stale = conversation.map((item) =>
       item.id === 'b2' ? { ...item, status: 'submitted' as const, outputUrl: null } : item,
@@ -174,9 +148,19 @@ describe('一版名下的编辑段与合成', () => {
     composite('m2', 'root', { createdAt: at('10:06:00'), status: 'submitting', outputUrl: null }),
   ]
 
-  it('在跑的合成取这一版最近提交的那条', () => {
+  it('在跑的合成取基于原片最近提交的那条', () => {
     expect(composingOf(jobs, 'root')?.id).toBe('m2')
     expect(composingOf(jobs, 'm1')).toBeUndefined()
+  })
+
+  it('最近完成的合成只看直接基于原片的，按完成时刻取最后一条', () => {
+    const chain = [
+      ...jobs,
+      composite('m0', 'root', { createdAt: at('10:07:00'), finishedAt: at('10:02:00') }),
+      composite('on-m1', 'm1', { createdAt: at('10:08:00'), finishedAt: at('10:09:00') }),
+      composite('m3', 'root', { status: 'failed', outputUrl: null, finishedAt: at('10:10:00') }),
+    ]
+    expect(latestCompositeOf(chain, 'root')?.id).toBe('m1')
   })
 })
 

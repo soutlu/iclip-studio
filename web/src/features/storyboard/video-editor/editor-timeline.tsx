@@ -1,452 +1,387 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react'
+import { useRef, type CSSProperties, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import type { PeaksState } from '../editing/media-analysis'
-import type { PlaySegment } from '../editing/play-layout'
 import { roundSeconds } from '../editing/time-label'
-import {
-  Frames,
-  TimelinePlayhead,
-  TimelineRuler,
-  TrimBubble,
-  TrimHandle,
-  Wave,
-} from '../editing/timeline'
-import {
-  arrowStep,
-  releasePointer,
-  useClickAfterDrag,
-  useLiftDrag,
-  useRovingFocus,
-  type Edge,
-} from '../editing/timeline-drag'
-import {
-  selectedRange,
-  stepSelect,
-  trimBounds,
-  type Draft,
-  type DraftClip,
-  type Selection,
-} from './draft'
+import { Frames, TimelinePlayhead, TimelineRuler, Wave } from '../editing/timeline'
+import { useRovingFocus } from '../editing/timeline-drag'
+import { shiftSelect } from '../editing/range-select'
+import { selectedUnits, shotUnitId, stepSelect, type Selection, type Unit } from './composition'
+import { spansOverlap, type EditBlock, type Shot } from './edit-blocks'
 import './editor-timeline.css'
 
-export type TimelineEntry = {
-  id: string
-  at: number
-  duration: number
-  parts: readonly PlaySegment[]
-  clip: DraftClip | undefined
-  changed: boolean
-  runningSince: string | undefined
-  versionLabel?: string | undefined
+const secondsText = (value: number) => value.toFixed(1)
+
+type Span = { start: number; end: number }
+
+type FrameProps = { mediaUrl: string; start: number; end: number; peaks: PeaksState }
+
+/** 一块的画面行与原声行。 */
+function Faces({ mediaUrl, start, end, peaks }: FrameProps) {
+  const part = { mediaUrl, start, end }
+  return (
+    <>
+      <span className="video-editor-timeline-frames">
+        <Frames part={part} />
+      </span>
+      <span className="video-editor-timeline-wave">
+        <Wave part={part} state={peaks} />
+      </span>
+    </>
+  )
 }
 
-type EditorTimelineProps = {
-  draft: Draft
-  entries: readonly TimelineEntry[]
+type ShellProps = {
   scale: number
-  total: number
-  currentTime: number
-  selection: Selection
-  editable: boolean
-  peaksOf: (url: string) => PeaksState
-  onSeek: (clock: number) => void
-  onClickSegment: (id: string, extend?: boolean) => void
-  onSelect: (selection: Selection) => void
+  position: number
+  heads: ReactNode
+  /** 编辑轨的行数；整条没有编辑轨时不给。 */
+  editRows?: number | undefined
+  onSeek: (time: number) => void
   onScrub: () => void
-  selectionBoxRef: Ref<HTMLSpanElement>
-  /** 裁选区的一端：开头对应第一段的开头，结尾对应最后一段的结尾 */
-  onTrim: (edge: Edge, value: number) => void
-  onTrimPreview: (clock: number, edge: Edge) => void
-  onMove: (ids: Selection, before: number) => void
-  onDelete: () => void
+  children: ReactNode
 }
 
-const partKey = (part: PlaySegment) => `${part.mediaUrl}@${part.start}-${part.end}`
-
-type Trim = { pointerId: number; edge: Edge; value: number }
-
-/** 抓手挂着的那段：选区第一段管开头，最后一段管结尾 */
-type HandleOwner = { entry: TimelineEntry; clip: DraftClip }
-
-/** 这段素材里的某个时刻在时间线上的位置 */
-const clockOf = ({ entry, clip }: HandleOwner, value: number) => entry.at + (value - clip.start)
-
-export function EditorTimeline({
-  draft,
-  entries,
+/** 时间线外壳：轨头一列、标尺（只有它能定位）、轨道与播放头；刻度按原片时间。 */
+function TimelineShell({
   scale,
-  total,
-  currentTime,
-  selection,
-  editable,
-  peaksOf,
+  position,
+  heads,
+  editRows,
   onSeek,
-  onClickSegment,
-  onSelect,
   onScrub,
-  selectionBoxRef,
-  onTrim,
-  onTrimPreview,
-  onMove,
-  onDelete,
-}: EditorTimelineProps) {
+  children,
+}: ShellProps) {
   const lanesRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [trim, setTrim] = useState<Trim | null>(null)
-
-  const percent = (time: number) => `${(time / scale) * 100}%`
-  const span = (at: number, duration: number) => ({
-    left: percent(at),
-    width: `calc(${percent(duration)} - 2px)`,
-  })
   const clockAt = (clientX: number) => {
     const bounds = lanesRef.current?.getBoundingClientRect()
     if (bounds === undefined || bounds.width === 0) return 0
     return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
   }
-
-  const clickAfterDrag = useClickAfterDrag()
-  const reorder = useLiftDrag<Selection>({ clockAt, onScrub })
-  const lift = reorder.lift
-  const roving = useRovingFocus(
-    entries.flatMap((entry) => (entry.clip === undefined ? [] : [entry.id])),
-    selection[0],
-  )
-
-  const range = selectedRange(draft, selection)
-  const selected = (id: string) => selection.includes(id)
-  const rangeFirst = range === undefined ? undefined : entries[range.from]
-  const rangeLast = range === undefined ? undefined : entries[range.to]
-  // 抓手只挂在选区最外两端：单选时两个落在同一段上。
-  const handleOwners: Record<Edge, HandleOwner> | undefined =
-    editable && lift === null && rangeFirst?.clip !== undefined && rangeLast?.clip !== undefined
-      ? {
-          start: { entry: rangeFirst, clip: rangeFirst.clip },
-          end: { entry: rangeLast, clip: rangeLast.clip },
-        }
-      : undefined
-
-  const click = (entry: TimelineEntry, extend: boolean) => {
-    if (clickAfterDrag.take()) return
-    roving.remember(entry.id)
-    if (editable) onClickSegment(entry.id, extend)
-    else onSeek(entry.at)
-  }
-
-  const keyDown = (event: KeyboardEvent<HTMLButtonElement>, entry: TimelineEntry) => {
-    const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : undefined
-    if (direction !== undefined && event.altKey) {
-      event.preventDefault()
-      if (!editable || range === undefined) return
-      const before = direction < 0 ? range.from - 1 : range.to + 2
-      if (before >= 0 && before <= draft.length) onMove(selection, before)
-      return
-    }
-    if (direction !== undefined) {
-      event.preventDefault()
-      if (!editable) {
-        const next = entries[entries.indexOf(entry) + direction]
-        if (next?.clip !== undefined) roving.focus(next.id)
-        return
-      }
-      const next = stepSelect(draft, selection, entry.id, direction, event.shiftKey)
-      onSelect(next.selection)
-      roving.focus(next.focus)
-      return
-    }
-    if ((event.key === 'Delete' || event.key === 'Backspace') && editable) {
-      event.preventDefault()
-      // 焦点所在的段被删掉后焦点落回对话框，交给后面（没有就前面）留下来的那段。
-      const neighbor =
-        range === undefined
-          ? undefined
-          : (entries
-              .slice(range.to + 1)
-              .concat(entries.slice(0, range.from).reverse())
-              .find((item) => item.clip !== undefined)?.id ?? undefined)
-      onDelete()
-      if (neighbor !== undefined) requestAnimationFrame(() => roving.focus(neighbor))
-    }
-  }
-
-  const pressClip = (event: PointerEvent<HTMLButtonElement>, entry: TimelineEntry) => {
-    clickAfterDrag.reset()
-    if (!editable || event.button !== 0) return
-    const ids = selected(entry.id) && range !== undefined ? selection : [entry.id]
-    const first = entries.find((item) => item.id === ids[0])
-    reorder.press(event, ids, first?.at ?? entry.at)
-  }
-
-  const insertBefore = (clock: number) => {
-    const index = entries.findIndex((entry) => entry.at + entry.duration / 2 > clock)
-    return index < 0 ? entries.length : index
-  }
-
-  const releaseClip = (event: PointerEvent<HTMLButtonElement>) => {
-    const dropped = reorder.release(event)
-    if (dropped === undefined) return
-    clickAfterDrag.swallow()
-    onMove(dropped.payload, insertBefore(dropped.clock))
-  }
-
-  const pressHandle = (event: PointerEvent<HTMLButtonElement>, owner: HandleOwner, edge: Edge) => {
-    event.preventDefault()
-    event.currentTarget.focus()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    onScrub()
-    const value = owner.clip[edge]
-    setTrim({ pointerId: event.pointerId, edge, value })
-    onTrimPreview(clockOf(owner, value), edge)
-  }
-
-  const dragHandle = (event: PointerEvent<HTMLButtonElement>) => {
-    if (trim === null || trim.pointerId !== event.pointerId || handleOwners === undefined) return
-    const owner = handleOwners[trim.edge]
-    const { min, max } = trimBounds(owner.clip, trim.edge)
-    const clock = clockAt(event.clientX)
-    const value = Math.min(max, Math.max(min, owner.clip.start + (clock - owner.entry.at)))
-    setTrim({ ...trim, value })
-    onTrimPreview(clockOf(owner, value), trim.edge)
-  }
-
-  const releaseHandle = (event: PointerEvent<HTMLButtonElement>) => {
-    if (trim === null || trim.pointerId !== event.pointerId) return
-    releasePointer(event)
-    setTrim(null)
-    onTrim(trim.edge, trim.value)
-  }
-
-  const keyHandle = (event: KeyboardEvent<HTMLButtonElement>, owner: HandleOwner, edge: Edge) => {
-    const delta = arrowStep(event)
-    if (delta === undefined) return
-    event.preventDefault()
-    const value = owner.clip[edge] + delta
-    onTrim(edge, value)
-    onTrimPreview(clockOf(owner, value), edge)
-  }
-
-  const boundedTime = Math.max(0, Math.min(total, currentTime))
-
-  // 拖动中的选区：被拖的一端跟着抓手，另一端不动；气泡说的是整个选区裁后多长。
-  const trimmed = (() => {
-    if (trim === null || handleOwners === undefined) return undefined
-    const { start, end } = handleOwners
-    const entry = handleOwners[trim.edge].entry
-    const selectionEnd = end.entry.at + end.entry.duration
-    const from = trim.edge === 'start' ? clockOf(start, trim.value) : start.entry.at
-    const to = trim.edge === 'end' ? clockOf(end, trim.value) : selectionEnd
-    const shorter = selectionEnd - start.entry.at - (to - from)
-    return { entry, from, to, shorter }
-  })()
-  const lifted =
-    lift?.moved === true ? entries.filter((entry) => lift.payload.includes(entry.id)) : undefined
-  const liftedDuration = lifted?.reduce((sum, entry) => sum + entry.duration, 0) ?? 0
-  const liftRange = lifted === undefined ? undefined : selectedRange(draft, lift?.payload ?? [])
-  const insertAt = lift?.moved === true ? insertBefore(lift.clock) : undefined
-  const showInsert =
-    insertAt !== undefined &&
-    liftRange !== undefined &&
-    (insertAt < liftRange.from || insertAt > liftRange.to + 1)
-  const insertClock = insertAt === undefined ? 0 : (entries[insertAt]?.at ?? total)
-
-  const selectionBox =
-    trimmed !== undefined
-      ? { from: trimmed.from, to: trimmed.to }
-      : rangeFirst !== undefined && rangeLast !== undefined && lifted === undefined
-        ? { from: rangeFirst.at, to: rangeLast.at + rangeLast.duration }
-        : undefined
-
+  const bounded = Math.max(0, Math.min(scale, position))
   return (
-    <section aria-label="视频编辑时间线" className="video-editor-timeline">
+    <section
+      aria-label="视频编辑时间线"
+      className={cn('video-editor-timeline', editRows === undefined && 'is-whole')}
+      style={editRows === undefined ? undefined : ({ '--edit-rows': editRows } as CSSProperties)}
+    >
       <div aria-hidden="true" className="video-editor-timeline-heads">
-        <span className="video-editor-timeline-head is-video">
-          <Icon decorative name="video" size="sm" />
-          视频
-        </span>
-        <span className="video-editor-timeline-head is-audio">
-          <Icon decorative name="waveform" size="sm" />
-          原声
-        </span>
+        {heads}
       </div>
+      {editRows === undefined ? null : (
+        <span aria-hidden="true" className="video-editor-timeline-divider" />
+      )}
       <div
         aria-label="时间线轨道，窄屏可横向滚动"
         className="video-editor-timeline-scroll"
         ref={scrollRef}
         role="region"
       >
-        <div
-          className={cn('video-editor-timeline-lanes', !editable && 'is-readonly')}
-          ref={lanesRef}
-        >
+        <div className="video-editor-timeline-lanes" ref={lanesRef}>
           <TimelineRuler
             clockAt={clockAt}
-            currentTime={currentTime}
+            currentTime={bounded}
             onScrub={onScrub}
             onSeek={onSeek}
             scale={scale}
-            total={total}
+            total={scale}
             viewportRef={scrollRef}
           />
-
-          {entries.map((entry, index) => {
-            const isSelected = selected(entry.id)
-            const isLifted = lifted?.some((item) => item.id === entry.id) === true
-            const name = `第 ${index + 1} 段 · ${roundSeconds(entry.at)}–${roundSeconds(entry.at + entry.duration)} 秒`
-            const faces = (
-              <>
-                <span className="video-editor-timeline-face is-video">
-                  {entry.parts.map((part) => (
-                    <Frames key={partKey(part)} part={part} />
-                  ))}
-                  {entry.versionLabel === undefined ? null : (
-                    <span className="video-editor-timeline-version">{entry.versionLabel}</span>
-                  )}
-                </span>
-                <span className="video-editor-timeline-face is-gap">
-                  {entry.changed ? (
-                    <span className="video-editor-timeline-mark" data-testid="timeline-mark" />
-                  ) : null}
-                </span>
-                <span className="video-editor-timeline-face is-audio">
-                  {entry.parts.map((part) => (
-                    <Wave key={partKey(part)} part={part} state={peaksOf(part.mediaUrl)} />
-                  ))}
-                </span>
-              </>
-            )
-            if (entry.clip === undefined)
-              return (
-                <div
-                  aria-label={`${name} · AI 生成中`}
-                  className="video-editor-timeline-item is-pending"
-                  key={entry.id}
-                  role="img"
-                  style={span(entry.at, entry.duration)}
-                >
-                  {faces}
-                </div>
-              )
-            return (
-              <button
-                aria-disabled={editable ? undefined : true}
-                aria-label={name}
-                aria-pressed={isSelected}
-                className={cn(
-                  'video-editor-timeline-item ui-focus',
-                  isSelected && 'is-selected',
-                  isLifted && 'is-slot',
-                )}
-                key={entry.id}
-                onClick={(event) => click(entry, event.shiftKey)}
-                onFocus={() => roving.remember(entry.id)}
-                onKeyDown={(event) => keyDown(event, entry)}
-                onPointerCancel={releaseClip}
-                onPointerDown={(event) => pressClip(event, entry)}
-                onPointerMove={reorder.move}
-                onPointerUp={releaseClip}
-                ref={roving.register(entry.id)}
-                style={span(entry.at, entry.duration)}
-                tabIndex={roving.tabIndexOf(entry.id)}
-                type="button"
-              >
-                {faces}
-              </button>
-            )
-          })}
-
-          {total < scale - 0.01 ? (
-            <span
-              aria-hidden="true"
-              className="video-editor-timeline-tail"
-              data-testid="timeline-tail"
-              style={span(total, scale - total)}
-            />
-          ) : null}
-
-          {trimmed === undefined ? null : (
-            <span
-              aria-hidden="true"
-              className="video-editor-timeline-ghost"
-              style={
-                trim?.edge === 'start'
-                  ? span(trimmed.entry.at, Math.max(0, trimmed.from - trimmed.entry.at))
-                  : span(
-                      trimmed.to,
-                      Math.max(0, trimmed.entry.at + trimmed.entry.duration - trimmed.to),
-                    )
-              }
-            />
-          )}
-
-          {selectionBox === undefined ? null : (
-            <span
-              aria-hidden="true"
-              className="video-editor-timeline-box"
-              ref={selectionBoxRef}
-              style={span(selectionBox.from, selectionBox.to - selectionBox.from)}
-            />
-          )}
-
-          {handleOwners === undefined
-            ? null
-            : (['start', 'end'] as const).map((edge) => {
-                const owner = handleOwners[edge]
-                const value = trim !== null && trim.edge === edge ? trim.value : owner.clip[edge]
-                return (
-                  <TrimHandle
-                    bounds={trimBounds(owner.clip, edge)}
-                    edge={edge}
-                    key={edge}
-                    onKeyDown={(event) => keyHandle(event, owner, edge)}
-                    onPointerCancel={releaseHandle}
-                    onPointerDown={(event) => pressHandle(event, owner, edge)}
-                    onPointerMove={dragHandle}
-                    onPointerUp={releaseHandle}
-                    pressed={trim?.edge === edge}
-                    style={{ left: percent(clockOf(owner, value)) }}
-                    value={value}
-                    valueText={`${roundSeconds(value)} 秒`}
-                  />
-                )
-              })}
-
-          {trimmed === undefined ? null : (
-            <TrimBubble
-              length={trimmed.to - trimmed.from}
-              shorter={trimmed.shorter}
-              style={{ left: percent(trim?.edge === 'start' ? trimmed.from : trimmed.to) }}
-            />
-          )}
-
-          {lifted === undefined || lift === null ? null : (
-            <span
-              aria-hidden="true"
-              className="video-editor-timeline-lifted"
-              style={span(
-                Math.min(Math.max(0, lift.clock - lift.grab), Math.max(0, scale - liftedDuration)),
-                liftedDuration,
-              )}
-            >
-              {lifted
-                .flatMap((entry) => entry.parts)
-                .map((part) => (
-                  <Frames key={partKey(part)} part={part} />
-                ))}
-            </span>
-          )}
-          {showInsert ? (
-            <span
-              aria-hidden="true"
-              className="video-editor-timeline-insert"
-              data-testid="timeline-insert"
-              style={{ left: percent(insertClock) }}
-            />
-          ) : null}
-
-          <TimelinePlayhead style={{ left: percent(boundedTime) }} />
+          {children}
+          <TimelinePlayhead style={{ left: `${(bounded / scale) * 100}%` }} />
         </div>
       </div>
     </section>
+  )
+}
+
+type ClipsTimelineProps = {
+  rootUrl: string
+  /** 原片时长：时间线的刻度，选用不改变它。 */
+  duration: number
+  shots: readonly Shot[]
+  blocks: readonly EditBlock[]
+  /** 原片轨上的选区单位（没被替换的镜头与已选用的编辑片段）。 */
+  units: readonly Unit[]
+  selection: Selection
+  /** 播放头在原片时间轴上的位置。 */
+  anchor: number
+  peaksOf: (url: string) => PeaksState
+  onSeek: (anchor: number) => void
+  onScrub: () => void
+  onSelectUnits: (ids: readonly string[]) => void
+  onClickBlock: (id: string) => void
+  selectionBoxRef: Ref<HTMLSpanElement>
+}
+
+const blockStatus = (block: EditBlock, picked: boolean): { chip: string; name: string } => {
+  switch (block.state.kind) {
+    case 'ready': {
+      const length = `${secondsText(block.state.duration)} 秒`
+      return {
+        chip: `${block.name} · ${length}`,
+        name: `${block.name} · ${length} · ${picked ? '已选用' : '未选用'}`,
+      }
+    }
+    case 'running':
+      return { chip: `${block.name} · 生成中`, name: `${block.name} · 生成中` }
+    case 'measuring':
+      return { chip: `${block.name} · 读取中`, name: `${block.name} · 读取中` }
+    case 'failed':
+      return { chip: `${block.name} · 生成失败`, name: `${block.name} · 生成失败` }
+    case 'unreadable':
+      return { chip: `${block.name} · 无法读取`, name: `${block.name} · 无法读取` }
+  }
+}
+
+/** 片段的时间线：上面原片轨按镜头摆、固定在原片时间；下面编辑轨，每条编辑片段正对它替换的镜头。 */
+export function ClipsTimeline({
+  rootUrl,
+  duration,
+  shots,
+  blocks,
+  units,
+  selection,
+  anchor,
+  peaksOf,
+  onSeek,
+  onScrub,
+  onSelectUnits,
+  onClickBlock,
+  selectionBoxRef,
+}: ClipsTimelineProps) {
+  const percent = (time: number) => `${(time / duration) * 100}%`
+  const span = ({ start, end }: Span): CSSProperties => ({
+    left: `calc(${percent(start)} + 1px)`,
+    width: `calc(${percent(end - start)} - 2px)`,
+  })
+  const order = units.map((unit) => unit.id)
+  const unitOf = (shot: Shot) =>
+    units.find((unit) => unit.start <= shot.start && shot.end <= unit.end)
+  const chosen = selectedUnits(units, selection)
+  const chosenIds = chosen.map((unit) => unit.id)
+  const first = chosen[0]
+  const last = chosen.at(-1)
+  const editIds = new Set(units.flatMap((unit) => (unit.kind === 'edit' ? [unit.id] : [])))
+  const rows = Math.max(1, ...blocks.map((block) => block.row + 1))
+  const roving = useRovingFocus(
+    shots.map(shotUnitId),
+    first === undefined ? undefined : shotIdAt(shots, first.start),
+  )
+
+  const clickShot = (shot: Shot, extend: boolean) => {
+    const unit = unitOf(shot)
+    if (unit === undefined) return
+    roving.remember(shotUnitId(shot))
+    onSelectUnits(extend ? shiftSelect(order, chosenIds, unit.id) : [unit.id])
+  }
+
+  const keyDown = (event: KeyboardEvent<HTMLButtonElement>, shot: Shot) => {
+    const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : undefined
+    const unit = unitOf(shot)
+    if (direction === undefined || unit === undefined) return
+    event.preventDefault()
+    const next = stepSelect(order, chosenIds, unit.id, direction, event.shiftKey)
+    const target = units.find((item) => item.id === next.focus)
+    onSelectUnits(next.selection)
+    if (target !== undefined) roving.focus(shotIdAt(shots, target.start))
+  }
+
+  const ring =
+    selection?.kind === 'edit'
+      ? blocks.find((block) => block.id === selection.id)
+      : first === undefined || last === undefined
+        ? undefined
+        : { start: first.start, end: last.end }
+
+  return (
+    <TimelineShell
+      editRows={rows}
+      heads={
+        <>
+          <span className="video-editor-timeline-head is-film">
+            <Icon decorative name="video" size="sm" />
+            原片
+          </span>
+          <span className="video-editor-timeline-head is-edit">
+            <Icon decorative name="edit-segment" size="sm" />
+            编辑
+          </span>
+        </>
+      }
+      onScrub={onScrub}
+      onSeek={onSeek}
+      position={anchor}
+      scale={duration}
+    >
+      <div aria-label="原片" className="video-editor-timeline-track" role="group">
+        {shots.map((shot) => {
+          const unit = unitOf(shot)
+          const replaced = unit?.kind === 'edit'
+          const id = shotUnitId(shot)
+          return (
+            <button
+              aria-label={`镜头 ${shot.no} · ${roundSeconds(shot.start)}–${roundSeconds(shot.end)} 秒${replaced ? ' · 已换成编辑片段' : ''}`}
+              aria-pressed={unit !== undefined && chosenIds.includes(unit.id)}
+              className={cn('video-editor-timeline-block is-film ui-focus', replaced && 'is-off')}
+              key={id}
+              onClick={(event) => clickShot(shot, event.shiftKey)}
+              onFocus={() => roving.remember(id)}
+              onKeyDown={(event) => keyDown(event, shot)}
+              ref={roving.register(id)}
+              style={span(shot)}
+              tabIndex={roving.tabIndexOf(id)}
+              type="button"
+            >
+              <Faces
+                end={shot.end}
+                mediaUrl={rootUrl}
+                peaks={peaksOf(rootUrl)}
+                start={shot.start}
+              />
+              <span className="video-editor-timeline-chip">镜头 {shot.no}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div aria-label="编辑片段" className="video-editor-timeline-track" role="group">
+        {shots.map((shot) => {
+          const taken =
+            blocks.some(
+              (block) => block.row === 0 && spansOverlap(block, { from: shot.no, to: shot.no }),
+            ) || unitOf(shot)?.kind === 'edit'
+          return taken ? null : (
+            <button
+              aria-label={`生成镜头 ${shot.no}`}
+              className="video-editor-timeline-slot ui-focus"
+              key={`slot-${shot.no}`}
+              onClick={(event) => clickShot(shot, event.shiftKey)}
+              style={span(shot)}
+              tabIndex={-1}
+              type="button"
+            >
+              <Icon decorative name="add" size="xs" />
+              生成
+            </button>
+          )
+        })}
+        {blocks.map((block) => {
+          const picked = editIds.has(block.id)
+          const status = blockStatus(block, picked)
+          const { kind } = block.state
+          return (
+            <button
+              aria-label={status.name}
+              aria-pressed={selection?.kind === 'edit' && selection.id === block.id}
+              className={cn(
+                'video-editor-timeline-block is-edit ui-focus',
+                (kind === 'running' || kind === 'measuring') && 'is-running',
+                (kind === 'failed' || kind === 'unreadable') && 'is-failed',
+                kind === 'ready' && !picked && 'is-off',
+              )}
+              key={block.id}
+              onClick={() => onClickBlock(block.id)}
+              style={{ ...span(block), '--row': block.row } as CSSProperties}
+              type="button"
+            >
+              {block.state.kind === 'ready' && block.job.outputUrl !== null ? (
+                <>
+                  <Faces
+                    end={block.state.duration}
+                    mediaUrl={block.job.outputUrl}
+                    peaks={peaksOf(block.job.outputUrl)}
+                    start={0}
+                  />
+                  <span className="video-editor-timeline-chip">{status.chip}</span>
+                </>
+              ) : (
+                <span className="video-editor-timeline-status">
+                  <Icon
+                    decorative
+                    name={kind === 'failed' || kind === 'unreadable' ? 'alert' : 'sparkles'}
+                    size="xs"
+                  />
+                  {status.chip}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {ring === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'video-editor-timeline-box',
+            selection?.kind === 'edit' ? 'is-edit' : 'is-film',
+          )}
+          ref={selectionBoxRef}
+          style={{ ...span(ring), '--row': 'row' in ring ? ring.row : 0 } as CSSProperties}
+        />
+      )}
+    </TimelineShell>
+  )
+}
+
+/** 某个原片时刻所在镜头的按钮 id。 */
+const shotIdAt = (shots: readonly Shot[], time: number) => {
+  const shot = shots.find((item) => item.start <= time && time < item.end) ?? shots[0]
+  return shot === undefined ? '' : shotUnitId(shot)
+}
+
+type WholeTimelineProps = {
+  /** 轨头写的版本名，如「V2」「V1 原片」。 */
+  label: string
+  mediaUrl: string
+  shots: readonly Shot[]
+  duration: number
+  currentTime: number
+  peaksOf: (url: string) => PeaksState
+  onSeek: (clock: number) => void
+  onScrub: () => void
+}
+
+/** 整条的时间线：只看、只能在标尺上定位，按这一版自己的关键帧分块。 */
+export function WholeTimeline({
+  label,
+  mediaUrl,
+  shots,
+  duration,
+  currentTime,
+  peaksOf,
+  onSeek,
+  onScrub,
+}: WholeTimelineProps) {
+  const percent = (time: number) => `${(time / duration) * 100}%`
+  return (
+    <TimelineShell
+      heads={
+        <span className="video-editor-timeline-head is-film">
+          <Icon decorative name="video" size="sm" />
+          {label}
+        </span>
+      }
+      onScrub={onScrub}
+      onSeek={onSeek}
+      position={currentTime}
+      scale={duration}
+    >
+      {shots.map((shot) => (
+        <span
+          aria-hidden="true"
+          className="video-editor-timeline-block is-film is-static"
+          key={shot.no}
+          style={{
+            left: `calc(${percent(shot.start)} + 1px)`,
+            width: `calc(${percent(shot.end - shot.start)} - 2px)`,
+          }}
+        >
+          <Faces end={shot.end} mediaUrl={mediaUrl} peaks={peaksOf(mediaUrl)} start={shot.start} />
+        </span>
+      ))}
+    </TimelineShell>
   )
 }

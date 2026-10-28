@@ -12,11 +12,6 @@ export const commit = <T>(history: History<T>, next: T): History<T> => ({
   future: [],
 })
 
-export const amend = <T>(history: History<T>, next: T): History<T> => ({
-  ...history,
-  present: next,
-})
-
 export const undo = <T>(history: History<T>): History<T> => {
   const previous = history.past.at(-1)
   return previous === undefined

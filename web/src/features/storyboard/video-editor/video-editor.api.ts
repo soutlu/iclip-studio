@@ -1,6 +1,7 @@
 import { queryOptions, useQueries, useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch, UserFacingError } from '@/shared/api/client'
 import type {
+  ComposeSegmentIn,
   VideoClipModelOut,
   VideoComposeIn,
   VideoEditIn,
@@ -15,7 +16,7 @@ import {
   type GenerationsPage,
 } from '../storyboard.api'
 import { loadCrossOriginImage } from '../cross-origin-image'
-import type { Clip, SecondsRange } from '../editing/clip'
+import type { SecondsRange } from '../editing/clip'
 import type { PlaySegment } from '../editing/play-layout'
 import { clipGenerationBlock } from './clip-generation'
 import type { PixelRect, Size } from './first-frames'
@@ -194,7 +195,7 @@ export const submitClipGeneration = async (
 }
 
 export const submitVideoComposite = async (
-  input: Origin & { baseJobId: string; segments: readonly Clip[] },
+  input: Origin & { baseJobId: string; segments: readonly ComposeSegmentIn[] },
 ): Promise<GenerationJob> => {
   const body: VideoComposeIn = {
     conversationId: input.conversationId,

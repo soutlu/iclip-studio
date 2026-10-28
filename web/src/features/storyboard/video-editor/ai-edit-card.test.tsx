@@ -68,7 +68,7 @@ function Card({
         onModeChange={setMode}
         onUploadsDropped={() => undefined}
         open={open}
-        positions="第 1 段"
+        positions="镜头 1"
         referenceLimit={referenceLimit}
       />
     </div>
