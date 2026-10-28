@@ -1,6 +1,6 @@
 /* 两个编辑器时间线的共用件。各编辑器通过下列自定义属性给出自己的尺寸，不改这里的类：
    --timeline-ruler-height、--timeline-first-tick-shift、--timeline-wave-inset、--timeline-wave-stroke、
-   --timeline-handle-top、--timeline-bubble-height、--timeline-playhead-top、--timeline-playhead-bottom、
+   --timeline-handle-top、--timeline-playhead-top、--timeline-playhead-bottom、
    --timeline-knob-top。 */
 
 .timeline-ruler {
@@ -210,26 +210,6 @@
   border: 1px solid var(--color-outline);
   border-radius: calc(var(--radius-xs) / 2);
   background: var(--color-surface-container-lowest);
-}
-
-.timeline-bubble {
-  position: absolute;
-  top: -8px;
-  z-index: var(--z-local-3);
-  display: flex;
-  height: var(--timeline-bubble-height, 22px);
-  align-items: center;
-  gap: 4px;
-  translate: -50% 0;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  pointer-events: none;
 }
 
 .timeline-playhead {

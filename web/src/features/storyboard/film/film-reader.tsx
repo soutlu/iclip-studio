@@ -530,8 +530,8 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
           conversationId={conversationId}
           loading={generations.isPending}
           onClose={() => go({ video: undefined })}
-          root={videoEditRoot}
           shotIndex={videoEditRoot?.shotIndex ?? undefined}
+          video={videoEditRoot}
         />
       )}
       {search.wholeFilm === true && !readOnly ? (

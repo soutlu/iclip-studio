@@ -26,13 +26,10 @@ it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟�
       onPlaybackChange={playback}
       externalAudio={{ blocked: undefined }}
       overlay={null}
-      viewControl={null}
       versions={null}
-      tools={null}
       readout={null}
       timeline={null}
       barEnd={null}
-      footnote={null}
       ref={null}
     />,
   )
@@ -96,13 +93,10 @@ it('切段先停在准确的整条切点，下一段实际开播后才恢复混�
       onPlaybackChange={playback}
       externalAudio={{ blocked: undefined }}
       overlay={null}
-      viewControl={null}
       versions={null}
-      tools={null}
       readout={null}
       timeline={null}
       barEnd={null}
-      footnote={null}
       ref={null}
     />,
   )
@@ -143,13 +137,10 @@ it('外部切换播放：从播放头播到结尾停下，停在结尾再播从�
     onTime: time,
     onPlay: started,
     overlay: null,
-    viewControl: null,
     versions: null,
-    tools: null,
     readout: null,
     timeline: null,
     barEnd: null,
-    footnote: null,
     ref: handle,
   }
   const current = () => layoutPlay([{ mediaUrl: 'https://example.com/clip.mp4', start: 5, end: 9 }])

@@ -719,10 +719,14 @@ describe('StoryboardReader', () => {
           return HttpResponse.json({ items })
         }),
       )
-    const versionLabels = async () =>
-      within(await screen.findByRole('group', { name: '视频版本' }))
+    /** 从出片打开时先在「片段」，版本条在「整条」里。 */
+    const versionLabels = async () => {
+      const view = await screen.findByRole('group', { name: '查看方式' })
+      await userEvent.click(within(view).getByRole('button', { name: '整条' }))
+      return within(await screen.findByRole('group', { name: '视频版本' }))
         .getAllByRole('button')
         .map((entry) => entry.getAttribute('aria-label'))
+    }
     /** 舞台选中某条素材片（按提交时刻认），再点舞台上的「编辑视频」。 */
     const editFromStage = async (job: GenerationJob) => {
       const page = await screen.findByRole('region', { name: '镜头组 1' })

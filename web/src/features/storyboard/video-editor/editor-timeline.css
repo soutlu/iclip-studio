@@ -1,21 +1,31 @@
+/* 两条轨：原片轨（画面一行、原声一行）在上，编辑轨在下按行叠放；行数由 --edit-rows 给出。整条只有一条轨。 */
 .video-editor-timeline {
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
-  --timeline-handle-top: calc(var(--timeline-track-top) + 23px);
   --timeline-playhead-top: calc(var(--timeline-track-top) - 4px);
   --timeline-playhead-bottom: 0;
+  --film-height: 40px;
+  --edit-top: calc(var(--timeline-track-top) + var(--film-height) + 8px);
+  --edit-row: 36px;
+  --edit-block: 30px;
+  --timeline-height: calc(var(--edit-top) + var(--edit-rows, 1) * var(--edit-row) + 2px);
 
+  position: relative;
   display: flex;
   min-width: 0;
   margin-top: 6px;
   color: var(--color-on-surface);
 }
 
+.video-editor-timeline.is-whole {
+  --timeline-height: calc(var(--timeline-track-top) + var(--film-height) + 4px);
+}
+
 .video-editor-timeline-heads {
   position: relative;
   flex: none;
   width: 76px;
-  height: calc(var(--timeline-track-top) + 84px);
+  height: var(--timeline-height);
 }
 
 .video-editor-timeline-head {
@@ -27,16 +37,28 @@
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
+  white-space: nowrap;
 }
 
-.video-editor-timeline-head.is-video {
+.video-editor-timeline-head.is-film {
   top: var(--timeline-track-top);
-  height: 46px;
+  height: var(--film-height);
 }
 
-.video-editor-timeline-head.is-audio {
-  top: calc(var(--timeline-track-top) + 54px);
-  height: 30px;
+.video-editor-timeline-head.is-edit {
+  top: var(--edit-top);
+  height: calc(var(--edit-rows, 1) * var(--edit-row) + 2px);
+}
+
+/* 两条轨之间的分割线，从轨头贯通到右边。 */
+.video-editor-timeline-divider {
+  position: absolute;
+  top: calc(var(--edit-top) - 4px);
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+  pointer-events: none;
 }
 
 .video-editor-timeline-scroll {
@@ -49,51 +71,110 @@
   scrollbar-width: thin;
 }
 
-/* 不让选文字：Shift 点段会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
+/* 不让选文字：Shift 点镜头会把文本选区扩进来。 */
 .video-editor-timeline-lanes {
   position: relative;
   min-width: 520px;
-  height: calc(var(--timeline-track-top) + 84px);
+  height: var(--timeline-height);
   isolation: isolate;
   user-select: none;
 }
 
-.video-editor-timeline-item {
+.video-editor-timeline-track {
   position: absolute;
-  top: var(--timeline-track-top);
+  inset: 0;
+  pointer-events: none;
+}
+
+.video-editor-timeline-track > * {
+  pointer-events: auto;
+}
+
+.video-editor-timeline-block {
+  position: absolute;
   display: flex;
-  height: 84px;
   flex-direction: column;
+  overflow: hidden;
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--color-surface-container-high);
   cursor: pointer;
+  transition: opacity var(--dur-m) var(--ease);
 }
 
-.video-editor-timeline-item.is-pending,
-.video-editor-timeline-lanes.is-readonly .video-editor-timeline-item {
+.video-editor-timeline-block.is-film {
+  top: var(--timeline-track-top);
+  height: var(--film-height);
+}
+
+.video-editor-timeline-block.is-static {
   cursor: default;
 }
 
-.video-editor-timeline-face {
+.video-editor-timeline-block.is-edit {
+  top: calc(var(--edit-top) + 4px + var(--row, 0) * var(--edit-row));
+  height: var(--edit-block);
+  border-radius: var(--radius-xs);
+}
+
+.video-editor-timeline-frames {
   display: flex;
-  width: 100%;
-  min-width: 0;
+  height: 24px;
+  flex: none;
   overflow: hidden;
 }
 
-.video-editor-timeline-face.is-video {
-  position: relative;
-  height: 46px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
+.video-editor-timeline-block.is-edit .video-editor-timeline-frames {
+  height: 18px;
 }
 
-.video-editor-timeline-version {
+.video-editor-timeline-wave {
+  --timeline-wave-inset: 2px;
+
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  background: var(--color-surface-container);
+}
+
+/* 编辑片段只有 30px 高，原声行放不下「无声」这类说明，空着即可。 */
+.video-editor-timeline-block.is-edit .timeline-wave-note {
+  display: none;
+}
+
+/* 被替换的镜头与没选用的编辑片段调淡。 */
+.video-editor-timeline-block.is-off {
+  opacity: var(--state-disabled-content);
+}
+
+.video-editor-timeline-block.is-off:hover {
+  opacity: 0.62;
+}
+
+.video-editor-timeline-block.is-running {
+  background: linear-gradient(
+      100deg,
+      var(--color-surface-container-high) 30%,
+      var(--color-surface-container-low) 50%,
+      var(--color-surface-container-high) 70%
+    )
+    0 0 / 200% 100%;
+  animation: video-editor-shimmer 1.6s linear infinite;
+}
+
+@keyframes video-editor-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.video-editor-timeline-chip {
   position: absolute;
   top: 3px;
   left: 3px;
+  max-width: calc(100% - 6px);
+  overflow: hidden;
   padding: 0 4px;
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--color-inverse-surface) 82%, transparent);
@@ -101,116 +182,84 @@
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
 }
 
-.video-editor-timeline-face.is-gap {
-  position: relative;
-  height: 8px;
-  overflow: visible;
+.video-editor-timeline-block.is-edit .video-editor-timeline-chip {
+  top: 1px;
+  left: 2px;
 }
 
-.video-editor-timeline-face.is-audio {
-  height: 30px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+.video-editor-timeline-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  margin: 7px 4px 0;
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
 }
 
-.video-editor-timeline-item.is-slot .video-editor-timeline-face.is-video,
-.video-editor-timeline-item.is-slot .video-editor-timeline-face.is-audio {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--color-hairline);
+.video-editor-timeline-block.is-failed .video-editor-timeline-status {
+  color: var(--color-error);
 }
 
-.video-editor-timeline-item.is-slot .video-editor-timeline-face > * {
-  visibility: hidden;
-}
-
-.video-editor-timeline-mark {
+/* 编辑轨第一行空着的镜头位置：浅色占位，悬停写出「生成」，点了选中这个镜头。 */
+.video-editor-timeline-slot {
   position: absolute;
-  top: 2px;
-  right: 0;
-  left: 0;
-  height: 3px;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface-muted);
+  top: calc(var(--edit-top) + 4px);
+  display: flex;
+  height: var(--edit-block);
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-on-surface) 4%, transparent);
+  color: transparent;
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease);
 }
 
-.video-editor-timeline-tail {
-  position: absolute;
-  top: var(--timeline-track-top);
-  height: 46px;
-  border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px var(--color-hairline);
-  pointer-events: none;
+.video-editor-timeline-slot:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+  color: var(--color-on-surface-variant);
 }
 
-.video-editor-timeline-ghost {
-  position: absolute;
-  top: var(--timeline-track-top);
-  z-index: var(--z-local-1);
-  height: 84px;
-  background: color-mix(in srgb, var(--color-surface-container-low) 72%, transparent);
-  pointer-events: none;
-}
-
-/* 选区外框，也是 AI 输入卡的定位锚点；多选时没有裁剪抓手，只靠它看出选了哪几段。 */
+/* 选区外框，也是弹出卡的定位锚点。 */
 .video-editor-timeline-box {
   position: absolute;
-  top: var(--timeline-track-top);
   z-index: var(--z-local-2);
-  height: 46px;
   border-radius: var(--radius-sm);
   box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
   pointer-events: none;
 }
 
-.video-editor-timeline-lifted {
-  position: absolute;
-  top: calc(var(--timeline-track-top) - 10px);
-  z-index: var(--z-local-3);
-  display: flex;
-  height: 46px;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-  outline: 2px solid var(--color-on-surface);
-  outline-offset: 1px;
-  background: var(--color-surface-container-high);
-  box-shadow: var(--shadow-3);
-  pointer-events: none;
-}
-
-.video-editor-timeline-insert {
-  position: absolute;
+.video-editor-timeline-box.is-film {
   top: var(--timeline-track-top);
-  z-index: var(--z-local-3);
-  width: 2px;
-  height: 84px;
-  translate: -2px 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  pointer-events: none;
+  height: var(--film-height);
 }
 
-.video-editor-timeline-insert::before,
-.video-editor-timeline-insert::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  translate: -50% 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
+.video-editor-timeline-box.is-edit {
+  top: calc(var(--edit-top) + 4px + var(--row, 0) * var(--edit-row));
+  height: var(--edit-block);
+  border-radius: var(--radius-xs);
 }
 
-.video-editor-timeline-insert::before {
-  top: -4px;
-}
-
-.video-editor-timeline-insert::after {
-  bottom: -4px;
+@media (prefers-reduced-motion: reduce) {
+  .video-editor-timeline-block.is-running {
+    animation: none;
+  }
 }
 
 @media (max-width: 599px) {
