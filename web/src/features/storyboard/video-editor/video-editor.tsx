@@ -1,7 +1,7 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PercentCrop } from 'react-image-crop'
-import { errorMessageOf, UserFacingError } from '@/shared/api/client'
+import { errorMessageOf } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -76,7 +76,7 @@ import {
 import { editorFootnote, secondsText, lengthDifference } from './editor-footnote'
 import { EditorNotices } from './editor-notices'
 import { EditorTimeline } from './editor-timeline'
-import { planFrames, type Size } from './first-frames'
+import { planFrames } from './first-frames'
 import { ShotPrompts } from './shot-prompts'
 import { draftTimelineEntries, versionTimelineEntries } from './timeline-entries'
 import { useEditDraft } from './use-edit-draft'
@@ -96,6 +96,7 @@ import {
   submitVideoComposite,
   useImageSizes,
   useVideoEditChain,
+  videoSizeQuery,
 } from './video-editor.api'
 
 const LOADING_PEAKS: PeaksState = { kind: 'loading' }
@@ -179,7 +180,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const [request, setRequest] = useState(NO_REQUEST)
   // 首帧、尾帧拖过的裁切框，按图片地址记，与输入卡的草稿一样活到编辑器关闭。
   const [frameCrops, setFrameCrops] = useState(NO_CROPS)
-  const [videoSize, setVideoSize] = useState<Size>()
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
   // 正在舞台上查看失败原因的那条任务；不改草稿与选用版本。
@@ -294,6 +294,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const frameUrls =
     mode === 'image' ? compileReferencePrompt(draftPartsOf(request)).referenceImageUrls : []
   const imageSizes = useImageSizes(frameUrls)
+  const videoSize = useQuery({
+    ...videoSizeQuery(version.mediaUrl),
+    enabled: mode === 'image',
+  }).data
   const framePlans = planFrames({
     urls: frameUrls,
     sizeOf: (url) => imageSizes.get(url),
@@ -315,19 +319,17 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
             },
     }
   }
-  /** 提交前定下首帧、尾帧要裁的框：原图尺寸还没读完就等它读完，原片尺寸还没读出就不提交。 */
+  /** 提交前定下首帧、尾帧要裁的框：原图与原片的尺寸还没读完就等它读完。 */
   const readFrameCrops = async (urls: readonly string[]) => {
     if (urls.length === 0 || urls.length > MAX_FIRST_FRAMES) return undefined
-    if (videoSize === undefined) throw new UserFacingError('原片尺寸尚未读出，请稍后重试')
-    const sizes = new Map(
-      await Promise.all(
-        urls.map(async (url) => [url, await queryClient.fetchQuery(imageSizeQuery(url))] as const),
-      ),
-    )
+    const [video, ...images] = await Promise.all([
+      queryClient.fetchQuery(videoSizeQuery(version.mediaUrl)),
+      ...urls.map((url) => queryClient.fetchQuery(imageSizeQuery(url))),
+    ])
     const plans = planFrames({
       urls,
-      sizeOf: (url) => sizes.get(url),
-      video: videoSize,
+      sizeOf: (url) => images[urls.indexOf(url)],
+      video,
       crops: frameCrops,
     })
     return new Map(
@@ -898,10 +900,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               setFailedJobId(undefined)
             }}
             onTime={setCurrentTime}
-            onVideoSize={(url, size) => {
-              // 只认原片与合成出的整条版本（合成按原片画幅），不认画幅可能不同的 AI 片段。
-              if (url === version.mediaUrl || url === wholeVersion.mediaUrl) setVideoSize(size)
-            }}
             viewControl={
               <div aria-label="视频预览范围" className="video-editor-compare" role="group">
                 <button

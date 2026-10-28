@@ -292,17 +292,21 @@ describe('AI 改段的弹出卡', () => {
       },
     )
   })
-  afterEach(() => vi.unstubAllGlobals())
-
-  /** jsdom 不读视频元数据：给正在播的原片补上像素尺寸并发 loadedmetadata，图生按它判断首帧要不要裁。 */
-  const loadVideoSize = (width = 720, height = 1280) => {
-    const video = screen.getByLabelText('视频播放器')
-    Object.defineProperties(video, {
-      videoWidth: { configurable: true, value: width },
-      videoHeight: { configurable: true, value: height },
+  // jsdom 不读视频元数据：图生另起一个不挂进页面的 <video> 读原片尺寸，给它补 720×1280 并发 loadedmetadata；
+  // 页面上播放用的 <video> 不受影响。
+  beforeEach(() => {
+    const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
+    vi.spyOn(HTMLMediaElement.prototype, 'src', 'set').mockImplementation(function (
+      this: HTMLMediaElement,
+      url: string,
+    ) {
+      src?.set?.call(this, url)
+      if (!this.isConnected) queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
     })
-    fireEvent.loadedMetadata(video)
-  }
+    vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
+    vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
+  })
+  afterEach(() => vi.unstubAllGlobals())
 
   it('点段弹卡：卡头写要改哪几段、区间与做法；不抢焦点，方向键照常改选中，卡跟着换', async () => {
     serveChain([])
@@ -500,7 +504,6 @@ describe('AI 改段的弹出卡', () => {
     const user = userEvent.setup()
     await renderEditor()
     await user.click(segmentOf(await timeline(), 2))
-    loadVideoSize()
     expect(within(openCard()).queryByRole('slider', { name: '生成时长（秒）' })).toBeNull()
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
     pasteTextIntoComposer(requestBox(), '人物转身')
@@ -571,7 +574,6 @@ describe('AI 改段的弹出卡', () => {
     await renderEditor(makeGenerationJob({ ...root, outputUrl: sourceUrl }))
     const track = await timeline()
     await user.click(segmentOf(track, 2))
-    loadVideoSize()
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
     const image = (name: string) => new File(['png'], name, { type: 'image/png' })
     pasteFilesIntoComposer(requestBox(), [image('保留.png')])
@@ -647,7 +649,6 @@ describe('AI 改段的弹出卡', () => {
     const user = userEvent.setup()
     await renderEditor()
     await user.click(segmentOf(await timeline(), 2))
-    loadVideoSize(720, 1280)
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
     pasteTextIntoComposer(requestBox(), '人物转身')
     pasteFilesIntoComposer(requestBox(), [new File(['png'], '首帧.png', { type: 'image/png' })])
@@ -820,7 +821,6 @@ describe('AI 改段的弹出卡', () => {
     await user.keyboard('{Shift>}')
     await user.click(segmentOf(track, 3))
     await user.keyboard('{/Shift}')
-    loadVideoSize()
     await waitFor(() =>
       expect(within(openCard()).getByRole('button', { name: '编辑模型' })).toHaveTextContent(
         'wan3.0-video',

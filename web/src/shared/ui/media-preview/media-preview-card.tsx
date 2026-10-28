@@ -3,7 +3,14 @@
  * 卡用 fixed 定位，位置在视口坐标里算；挂载点可以注入：锚点在模态弹窗里时挂进弹窗，弹窗外的指针事件与焦点都被禁用。
  * 弹窗带 translate 时 fixed 以弹窗为参照，所以落位前减去包含块原点。 */
 
-import { type SyntheticEvent, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type RefObject,
+  type SyntheticEvent,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -44,6 +51,8 @@ type MediaPreviewCardProps = {
   details?: string | undefined
   /** 图片要裁时给：预览区换成裁切框。 */
   crop?: MediaPreviewCrop | undefined
+  /** 拿到卡片元素，供锚点判断点击落在不在卡里。 */
+  cardRef?: RefObject<HTMLDivElement | null> | undefined
   onEnter: () => void
   onLeave: () => void
   onEnlarge: () => void
@@ -55,6 +64,7 @@ export function MediaPreviewCard({
   media,
   details: givenDetails,
   crop,
+  cardRef,
   onEnter,
   onLeave,
   onEnlarge,
@@ -80,6 +90,7 @@ export function MediaPreviewCard({
   const originRef = useRef<{ x: number; y: number } | null>(null)
   const tipRef = (el: HTMLDivElement | null) => {
     tipElRef.current = el
+    if (cardRef !== undefined) cardRef.current = el
     measure(el)
   }
 

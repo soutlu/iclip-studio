@@ -701,6 +701,29 @@ describe('Composer 的附件预览补充', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
+  it('自己打开的卡在别处按下时收起，在卡里按下（如开始拖框）不收', async () => {
+    await renderWithPreview(true)
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    const tip = await screen.findByRole('tooltip')
+
+    fireEvent.pointerDown(within(tip).getByRole('group', { name: '拖动选择保留的部分' }))
+    fireEvent.pointerUp(document)
+    fireEvent.pointerDown(pillHost('截图.png'))
+    expect(screen.getByRole('tooltip')).toBe(tip)
+
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('自己打开的卡按 Escape 收起', async () => {
+    await renderWithPreview(true)
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await screen.findByRole('tooltip')
+
+    fireEvent.keyDown(editor(), { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
   it('拖裁切框时指针出了卡也不关，松手时在卡外才关', async () => {
     await renderWithPreview(true)
     pasteFilesIntoComposer(editor(), [imageFile()])

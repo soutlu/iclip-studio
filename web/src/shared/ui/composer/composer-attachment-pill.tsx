@@ -75,16 +75,43 @@ export function ComposerAttachmentPill({
   }, [close])
 
   // 放进来（上传完或插入）后才知道要裁的图，自己打开一次预览卡让人看到裁切框；挂载时就要裁的（如恢复草稿）不打开。
+  // 自己打开的卡指针可能从没进来过，等不到移出，所以在芯片与卡之外按下或按 Escape 时收起。
   const needsCrop = preview?.crop !== undefined
   const neededCropRef = useRef(needsCrop)
   const autoOpenedRef = useRef(false)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const dismissArmedRef = useRef(false)
   useEffect(() => {
     const appeared = needsCrop && !neededCropRef.current
     neededCropRef.current = needsCrop
     if (!appeared || autoOpenedRef.current) return
     autoOpenedRef.current = true
+    dismissArmedRef.current = true
     onEnter()
   }, [needsCrop, onEnter])
+  // 只监听自己打开的那一次：卡以任何方式收起或芯片卸载时撤掉，之后的悬停照旧。
+  useEffect(() => {
+    if (!tip.open || !dismissArmedRef.current) return undefined
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && (hostEl.contains(target) || cardRef.current?.contains(target)))
+        return
+      close()
+    }
+    // 先于弹窗等外层的 Escape 处理收起这张卡，这一下不再关别的。
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      close()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      dismissArmedRef.current = false
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [close, hostEl, tip.open])
 
   useEffect(() => {
     hostEl.classList.toggle('attachment-error', failed)
@@ -136,6 +163,7 @@ export function ComposerAttachmentPill({
       {tip.open && !viewing && entry !== undefined && !failed ? (
         <MediaPreviewCard
           anchorEl={hostEl}
+          cardRef={cardRef}
           container={layerContainer}
           crop={preview?.crop}
           details={preview?.details}

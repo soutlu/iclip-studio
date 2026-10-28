@@ -33,6 +33,35 @@ export const imageSizeQuery = (url: string) =>
     staleTime: Infinity,
   })
 
+/** 一条视频的像素尺寸，只读元数据；同一地址只读一次。 */
+export const videoSizeQuery = (url: string) =>
+  queryOptions({
+    queryKey: ['video-size', url] as const,
+    queryFn: () =>
+      new Promise<Size>((resolve, reject) => {
+        const video = document.createElement('video')
+        const release = () => {
+          video.onloadedmetadata = null
+          video.onerror = null
+          video.removeAttribute('src')
+          video.load()
+        }
+        video.preload = 'metadata'
+        video.crossOrigin = 'anonymous'
+        video.onloadedmetadata = () => {
+          const size = { width: video.videoWidth, height: video.videoHeight }
+          release()
+          resolve(size)
+        }
+        video.onerror = () => {
+          release()
+          reject(new UserFacingError('原片尺寸读取失败，请重试'))
+        }
+        video.src = url
+      }),
+    staleTime: Infinity,
+  })
+
 /** 各图的原图尺寸，按地址查；还没读到或读不到的不在里面。 */
 export const useImageSizes = (urls: readonly string[]): ReadonlyMap<string, Size> =>
   useQueries({
