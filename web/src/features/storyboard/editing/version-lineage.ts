@@ -1,5 +1,4 @@
 import type { GenerationJob } from '../storyboard.api'
-import type { SecondsRange } from './clip'
 
 export type EditSegment = GenerationJob & {
   sourceJobId: string
@@ -26,22 +25,6 @@ export const finishedAt = (job: GenerationJob): number =>
 export const byFinish = (left: GenerationJob, right: GenerationJob): number =>
   finishedAt(left) - finishedAt(right) || left.id.localeCompare(right.id)
 
-export const rangeKey = (baseJobId: string, range: SecondsRange): string =>
-  `${baseJobId}@${Math.round(range.start * 1000)}-${Math.round(range.end * 1000)}`
-
 export const ORIGINAL_LABEL = '原片'
 
 export const versionLabel = (ordinal: number): string => `V${ordinal}`
-
-export const versionLabelAt = (index: number): string => versionLabel(index + 1)
-
-/** 一条原作的各版按完成先后排好后起名：出片是「原片」，合成依次是 V1、V2…… */
-export const labelLineage = <T extends GenerationJob>(
-  jobs: readonly T[],
-): { job: T; label: string }[] => {
-  let composites = 0
-  return jobs.map((job) => ({
-    job,
-    label: isComposite(job) ? versionLabelAt(composites++) : ORIGINAL_LABEL,
-  }))
-}

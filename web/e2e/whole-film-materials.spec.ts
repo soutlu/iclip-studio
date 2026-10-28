@@ -505,11 +505,12 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   const materials = dialog.getByRole('region', { name: '视频素材区' })
 
   const picker = materials.getByRole('button', { name: /^生成 A的版本：/ })
-  await expect(picker).toHaveAccessibleName('生成 A的版本：V1')
+  // 版本号按镜头组统一编：原片是 V1，合成接着是 V2。
+  await expect(picker).toHaveAccessibleName('生成 A的版本：V2')
   await shotOf(materials, 1, 'A', 2).click()
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(2)
   await picker.click()
-  await page.getByRole('menuitemradio', { name: '原片' }).click()
-  await expect(picker).toHaveAccessibleName('生成 A的版本：原片')
+  await page.getByRole('menuitemradio', { name: 'V1 原片' }).click()
+  await expect(picker).toHaveAccessibleName('生成 A的版本：V1 原片')
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })

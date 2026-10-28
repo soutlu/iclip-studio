@@ -152,7 +152,7 @@ for (const width of [1335, 390]) {
 }
 
 for (const width of [1335, 390]) {
-  test(`素材片播放 ${width}px：点卡片在舞台上用共享播放器播、不开灯箱，点文案回到帧，素材片区和当前分镜不动`, async ({
+  test(`素材片播放 ${width}px：点卡片放上舞台的共享播放器、不自动播、不开灯箱，点文案回到帧，素材片区和当前分镜不动`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 934 })
@@ -180,11 +180,17 @@ for (const width of [1335, 390]) {
     // mock 的出片是一条 MP4 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
     // dev 下地址没有 hash、带 ?no-inline 查询串，构建产物里有 hash、没查询串。
     await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.mp4(\?.*)?$/)
-    // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的；点卡片即开始播，不循环。
+    // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的；点卡片只放上舞台、停在封面，
+    // 不自动播、不循环，点播放键才开始播。
     expect(await video.evaluate((el: HTMLVideoElement) => el.controls)).toBe(false)
     await expect(player.getByRole('slider', { name: '播放进度' })).toBeVisible()
-    await expect(video).toHaveAttribute('autoplay', '')
+    await expect(video).not.toHaveAttribute('autoplay')
     await expect(video).not.toHaveAttribute('loop')
+    await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.paused)).toBe(true)
+    await player.getByRole('button', { name: '播放', exact: true }).click()
+    await expect
+      .poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime))
+      .toBeGreaterThan(0)
     await expect(takes.locator('video')).toHaveCount(0)
     // 操作叠在舞台右上、完整可见，不在播放器里，与播放器底部的控件胶囊互不遮挡。
     for (const name of ['下载视频', '编辑视频', '回填提示词'])

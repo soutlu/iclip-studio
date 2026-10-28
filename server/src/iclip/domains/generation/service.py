@@ -11,7 +11,7 @@ import structlog
 
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
-from iclip.domains.generation.clip_models import clip_model
+from iclip.domains.generation.clip_models import UpstreamMode, clip_model
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -67,6 +67,10 @@ from iclip.platform.paging import check_limit
 _logger = structlog.stdlib.get_logger(__name__)
 
 ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
+
+# 网关调度：不带参考音视频时 1 张图作首帧、2 张依次作首尾帧，更多才作参考图（multiflow docs/api.md）。
+_MAX_FIRST_FRAMES = 2
+_CONCRETE_RATIO = re.compile(r"\d+(\.\d+)?:\d+(\.\d+)?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +165,7 @@ class GenerationService:
         if clip_spec is None:
             raise ValidationFailed(f"{request.model} 尚未接入片段生成")
         spec = clip_spec.spec
-        upstream = clip_spec.mode(editing=bool(request.reference_video_urls))
+        upstream = clip_spec.edit_mode if request.reference_video_urls else UpstreamMode()
         _require_user_name(request.user_name)
         if len(request.reference_image_urls) > spec.max_reference_images:
             raise ValidationFailed(
@@ -183,6 +187,14 @@ class GenerationService:
         options = upstream.options(request.provider_options)
         base = await self._check_source(principal, request.source_job_id, request.conversation_id)
         _require_base(base)
+        aspect_ratio = None
+        if (
+            not request.reference_video_urls
+            and len(request.reference_image_urls) > _MAX_FIRST_FRAMES
+        ):
+            aspect_ratio = await self._original_aspect_ratio(
+                principal, base, request.conversation_id
+            )
         clip = None
         if request.reference_video_urls:
             (clip_url,) = request.reference_video_urls
@@ -212,6 +224,7 @@ class GenerationService:
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
             reference_video_urls=request.reference_video_urls,
+            aspect_ratio=aspect_ratio,
             seconds=request.seconds,
             provider_options=options,
         )
@@ -283,6 +296,26 @@ class GenerationService:
         if source is None:
             raise ValidationFailed("来源不是这段对话自己的或继承来的一条记录")
         return source
+
+    async def _original_aspect_ratio(
+        self, principal: Principal, base: GenerationJob, conversation_id: uuid.UUID | None
+    ) -> str:
+        """原作出片请求里的画幅：参考图生成不给比例时网关按素材自适应，要与原片同画幅只能明说。
+        原作没记具体比例就拒，不让画幅悄悄跟着素材走。"""
+
+        original = (
+            base
+            if base.root_job_id is None
+            else await self._check_source(principal, base.root_job_id, conversation_id)
+        )
+        request = original.request
+        ratio = request.aspect_ratio if isinstance(request, VideoGenerationIn) else None
+        if ratio is None or _CONCRETE_RATIO.fullmatch(ratio) is None:
+            raise ValidationFailed(
+                f"原片没有记录画幅，无法用 {_MAX_FIRST_FRAMES + 1} 张及以上图片生成；"
+                f"请改用 {_MAX_FIRST_FRAMES} 张以内的图片"
+            )
+        return ratio
 
     async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
         if url is None:

@@ -1,12 +1,7 @@
-.video-editor-prompts {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: var(--z-local-3);
-}
-
 .video-editor-prompts > button {
+  padding: 0 16px;
   border-radius: var(--radius-sm);
+  font-size: var(--text-label);
   background: var(--color-top-layer);
   box-shadow: 0 0 0 0.5px var(--color-hairline);
 }

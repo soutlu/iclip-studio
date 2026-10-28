@@ -276,7 +276,7 @@ async def test_a_reference_with_a_different_duration_is_submitted_without_rewrit
     assert stored_request(edit).model_dump()["reference_video_urls"] == [clip_url]
 
 
-async def test_an_image_clip_goes_through_the_same_queue_with_reference_image_semantics() -> None:
+async def test_an_image_clip_goes_through_the_same_queue_as_a_first_frame_request() -> None:
     repo = InMemoryGenerationRepository()
     take = make_job(
         video_request(),
@@ -310,4 +310,5 @@ async def test_an_image_clip_goes_through_the_same_queue_with_reference_image_se
     assert body["reference_video_urls"] == []
     assert body["reference_image_urls"] == ["https://cdn.test/outfit.png"]
     assert body["seconds"] == 5
-    assert body["provider_options"] == {"omni_reference_task_type": "reference"}
+    assert "provider_options" not in body, "单图交给网关按首帧调度，不指定子任务"
+    assert "aspect_ratio" not in body

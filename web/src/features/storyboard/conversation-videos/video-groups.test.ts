@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
-import { groupConversationVideos } from './video-groups'
+import { groupConversationVideos, versionNameOf } from './video-groups'
 
 const job = (id: string, overrides: Partial<GenerationJob> = {}): GenerationJob =>
   makeGenerationJob({
@@ -66,5 +66,19 @@ describe('groupConversationVideos', () => {
 
     expect(groups.map((group) => group.label)).toEqual(['视频 1', '视频 2'])
     expect(ids(groups)).toEqual([['a', 'a2'], ['b']])
+  })
+
+  it('组内出片与合成一起按完成先后编版本号，各组从 V1 起；出片的版本名带「原片」', () => {
+    const groups = groupConversationVideos([
+      job('a', { finishedAt: '2026-09-01T10:00:00Z' }),
+      job('b', { finishedAt: '2026-09-01T10:01:00Z' }),
+      composite('a2', 'a', { finishedAt: '2026-09-01T10:02:00Z' }),
+      job('solo', { shotIndex: null }),
+    ])
+
+    expect(groups.map((group) => group.videos.map(versionNameOf))).toEqual([
+      ['V1 原片', 'V2 原片', 'V3'],
+      ['V1 原片'],
+    ])
   })
 })

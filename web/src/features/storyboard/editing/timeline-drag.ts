@@ -34,52 +34,6 @@ export const useClickAfterDrag = () => {
   }
 }
 
-export type Lift<T> = {
-  pointerId: number
-  payload: T
-  originX: number
-  grab: number
-  clock: number
-  moved: boolean
-}
-
-export const useLiftDrag = <T>({
-  clockAt,
-  onScrub,
-}: {
-  clockAt: (clientX: number) => number
-  onScrub: () => void
-}) => {
-  const [lift, setLift] = useState<Lift<T> | null>(null)
-  return {
-    lift,
-    press: (event: PointerEvent<HTMLElement>, payload: T, start: number) => {
-      event.currentTarget.setPointerCapture(event.pointerId)
-      const clock = clockAt(event.clientX)
-      setLift({
-        pointerId: event.pointerId,
-        payload,
-        originX: event.clientX,
-        grab: clock - start,
-        clock,
-        moved: false,
-      })
-    },
-    move: (event: PointerEvent<HTMLElement>) => {
-      if (lift === null || lift.pointerId !== event.pointerId) return
-      const moved = lift.moved || Math.abs(event.clientX - lift.originX) > DRAG_THRESHOLD
-      if (moved && !lift.moved) onScrub()
-      setLift({ ...lift, clock: clockAt(event.clientX), moved })
-    },
-    release: (event: PointerEvent<HTMLElement>): Lift<T> | undefined => {
-      if (lift === null || lift.pointerId !== event.pointerId) return undefined
-      releasePointer(event)
-      setLift(null)
-      return lift.moved ? lift : undefined
-    },
-  }
-}
-
 export const useRovingFocus = (ids: readonly string[], preferred: string | undefined) => {
   const [focusId, setFocusId] = useState<string>()
   const elementsRef = useRef(new Map<string, HTMLElement>())

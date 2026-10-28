@@ -5,7 +5,6 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
-  type ReactNode,
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -293,30 +292,5 @@ export function TrimHandle({
       title="拖动可裁剪，按方向键可微调，按住 Shift 每次调整 1 秒"
       type="button"
     />
-  )
-}
-
-export function TimelineBubble({ style, children }: { style: CSSProperties; children: ReactNode }) {
-  return (
-    <span className="timeline-bubble" role="status" style={style}>
-      {children}
-    </span>
-  )
-}
-
-export function TrimBubble({
-  length,
-  shorter,
-  style,
-}: {
-  length: number
-  shorter: number
-  style: CSSProperties
-}) {
-  return (
-    <TimelineBubble style={style}>
-      裁剪后 {length.toFixed(1)} 秒 ·{' '}
-      {shorter >= 0 ? `缩短 ${shorter.toFixed(1)} 秒` : `延长 ${(-shorter).toFixed(1)} 秒`}
-    </TimelineBubble>
   )
 }

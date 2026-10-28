@@ -28,7 +28,6 @@ export function ShotPrompts({ root, shotIndex, canAppend, onAppend }: ShotPrompt
           align="end"
           aria-label="镜头提示词"
           className="video-editor-prompts-panel"
-          collisionBoundary={host?.parentElement ?? null}
           collisionPadding={12}
           container={host}
           onInteractOutside={(event) => event.preventDefault()}

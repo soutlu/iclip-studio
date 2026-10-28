@@ -68,7 +68,7 @@ function Card({
         onModeChange={setMode}
         onUploadsDropped={() => undefined}
         open={open}
-        positions="第 1 段"
+        positions="镜头 1"
         referenceLimit={referenceLimit}
       />
     </div>
@@ -134,6 +134,10 @@ describe('视频编辑卡的生成方式与图片引用', () => {
     const view = await renderWithProviders(<Card initialMode="image" onGenerate={onGenerate} />)
     act(() => editor().focus())
     await user.keyboard('@选区首帧{Enter}')
+    // 首帧不写进正文，只有它时没有可提交的描述。
+    expect(generate()).toBeDisabled()
+    pasteTextIntoComposer(editor(), '人物转身')
+    expect(generate()).toBeEnabled()
 
     view.rerender(<Card firstFrame={NEXT_FRAME} initialMode="image" onGenerate={onGenerate} />)
     await user.click(generate())

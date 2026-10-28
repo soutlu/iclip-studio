@@ -655,3 +655,102 @@ describe('Composer', () => {
     await waitFor(() => expect(editor()).toHaveFocus())
   })
 })
+
+describe('Composer 的附件预览补充', () => {
+  beforeEach(() => {
+    vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const crop = {
+    aspect: 3 / 4,
+    value: { unit: '%' as const, x: 25, y: 0, width: 50, height: 100 },
+    onChange: () => {},
+  }
+
+  /** 传完的附件要不要裁由 `cropped` 定；上传中的不补。 */
+  const renderWithPreview = (cropped: boolean) =>
+    renderWithProviders(
+      <Composer
+        attachmentPreview={(attachment) =>
+          attachment.status !== 'ready'
+            ? undefined
+            : cropped
+              ? { crop, details: '首帧 · 已裁成 3:4' }
+              : { details: '参考图 · 600 × 800' }
+        }
+        attachmentsEnabled
+        onSubmit={vi.fn()}
+      />,
+    )
+
+  it('要裁的图传完后自己打开一次预览卡：芯片带裁切标记，卡里是裁切框与给的说明', async () => {
+    await renderWithPreview(true)
+
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    const tip = await screen.findByRole('tooltip')
+    expect(within(tip).getByRole('group', { name: '拖动选择保留的部分' })).toBeInTheDocument()
+    expect(within(tip).getByText('首帧 · 已裁成 3:4')).toBeInTheDocument()
+    expect(within(tip).queryByText('14 B')).not.toBeInTheDocument()
+    expect(within(pillHost('截图.png')).getByRole('img', { name: '已裁切' })).toBeInTheDocument()
+
+    fireEvent.mouseEnter(tip)
+    fireEvent.mouseLeave(tip)
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+    pasteTextIntoComposer(editor(), '人物转身')
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('自己打开的卡在别处按下时收起，在卡里按下（如开始拖框）不收', async () => {
+    await renderWithPreview(true)
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    const tip = await screen.findByRole('tooltip')
+
+    fireEvent.pointerDown(within(tip).getByRole('group', { name: '拖动选择保留的部分' }))
+    fireEvent.pointerUp(document)
+    fireEvent.pointerDown(pillHost('截图.png'))
+    expect(screen.getByRole('tooltip')).toBe(tip)
+
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('自己打开的卡按 Escape 收起', async () => {
+    await renderWithPreview(true)
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await screen.findByRole('tooltip')
+
+    fireEvent.keyDown(editor(), { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('拖裁切框时指针出了卡也不关，松手时在卡外才关', async () => {
+    await renderWithPreview(true)
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    const tip = await screen.findByRole('tooltip')
+    fireEvent.mouseEnter(tip)
+
+    fireEvent.pointerDown(within(tip).getByRole('group', { name: '拖动选择保留的部分' }))
+    fireEvent.pointerMove(document)
+    fireEvent.mouseLeave(tip)
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(screen.getByRole('tooltip')).toBe(tip)
+
+    fireEvent.pointerUp(document)
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+  })
+
+  it('不裁的图没有裁切标记，也不自己打开预览卡；悬停时卡上是给的说明', async () => {
+    await renderWithPreview(false)
+
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(within(pillHost('截图.png')).queryByRole('img', { name: '已裁切' })).toBeNull()
+
+    fireEvent.mouseEnter(pillHost('截图.png'))
+    const tip = await screen.findByRole('tooltip')
+    expect(within(tip).getByText('参考图 · 600 × 800')).toBeInTheDocument()
+    expect(within(tip).queryByRole('group', { name: '拖动选择保留的部分' })).toBeNull()
+  })
+})

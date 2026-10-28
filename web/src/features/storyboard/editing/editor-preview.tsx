@@ -82,12 +82,9 @@ type Props = {
   picture?: ReactNode
   overlay: ReactNode
   versions: ReactNode
-  viewControl: ReactNode
-  tools: ReactNode
   readout: ReactNode
   timeline: ReactNode
   barEnd: ReactNode
-  footnote: ReactNode
   ref: Ref<EditorPreviewHandle>
 }
 
@@ -105,12 +102,9 @@ export function EditorPreview({
   picture,
   overlay,
   versions,
-  viewControl,
-  tools,
   readout,
   timeline,
   barEnd,
-  footnote,
   ref,
 }: Props) {
   const elementsRef = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null])
@@ -434,7 +428,6 @@ export function EditorPreview({
       <div className="editor-stage-area">
         <section aria-label="预览舞台" className="editor-stage">
           <StageBackdrop url={backdrop} />
-          {viewControl}
           <div className="editor-hero-wrap" ref={placeInline} />
           {overlay}
         </section>
@@ -493,7 +486,6 @@ export function EditorPreview({
             <div className="editor-bar-group">
               {playButton}
               {clock}
-              {tools}
             </div>
             <div className="editor-bar-group">
               {readout}
@@ -511,7 +503,6 @@ export function EditorPreview({
           </div>
           {timeline}
         </div>
-        {footnote}
       </div>
     </>
   )

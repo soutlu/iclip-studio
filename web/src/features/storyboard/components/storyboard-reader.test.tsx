@@ -687,7 +687,8 @@ describe('StoryboardReader', () => {
   })
 
   describe('视频编辑器的版本历史', () => {
-    // editableJob 合成过一次：V1 是挂在它名下的合成记录，原作单独标为原片。
+    // editableJob 合成过一次。版本号按镜头组统一编：同组更早完成的 jobs[0] 是 V1，editableJob 是 V2 原片，
+    // 它的合成是 V3。
     const composite = makeGenerationJob({
       id: '9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d',
       operation: 'compose',
@@ -718,10 +719,14 @@ describe('StoryboardReader', () => {
           return HttpResponse.json({ items })
         }),
       )
-    const versionLabels = async () =>
-      within(await screen.findByRole('group', { name: '视频版本' }))
+    /** 从出片打开时先在「片段」，版本条在「整条」里。 */
+    const versionLabels = async () => {
+      const view = await screen.findByRole('group', { name: '查看方式' })
+      await userEvent.click(within(view).getByRole('button', { name: '整条' }))
+      return within(await screen.findByRole('group', { name: '视频版本' }))
         .getAllByRole('button')
         .map((entry) => entry.getAttribute('aria-label'))
+    }
     /** 舞台选中某条素材片（按提交时刻认），再点舞台上的「编辑视频」。 */
     const editFromStage = async (job: GenerationJob) => {
       const page = await screen.findByRole('region', { name: '镜头组 1' })
@@ -732,12 +737,12 @@ describe('StoryboardReader', () => {
       await userEvent.click(within(page).getByRole('button', { name: '编辑视频' }))
     }
 
-    it('刷新后、导航去掉 ?video= 后，从舞台重选素材片点编辑视频，打开的还是原来那条根，版本条有 V1、原片', async () => {
+    it('刷新后、导航去掉 ?video= 后，从舞台重选素材片点编辑视频，打开的还是原来那条根，版本条有 V3、V2 原片', async () => {
       provide()
       serveRecords()
       const first = await renderReader(`/?shot=1&content=scene:1&video=${editableJob.id}`)
       await screen.findByRole('dialog', { name: /^编辑视频/ })
-      await waitFor(async () => expect(await versionLabels()).toEqual(['V1', '原片']))
+      await waitFor(async () => expect(await versionLabels()).toEqual(['V3', 'V2 原片']))
 
       // 刷新并且地址里没了 video：舞台选中重置，素材片区只列出片、不列合成。
       first.unmount()
@@ -748,13 +753,13 @@ describe('StoryboardReader', () => {
       await waitFor(() =>
         expect(router.state.location.search).toMatchObject({ video: editableJob.id }),
       )
-      await waitFor(async () => expect(await versionLabels()).toEqual(['V1', '原片']))
+      await waitFor(async () => expect(await versionLabels()).toEqual(['V3', 'V2 原片']))
 
       // 不刷新、从路由离开（去掉 video）再回来，同样重新从舞台打开。
       await act(() => router.navigate({ href: '/?shot=1&content=scene:1' }))
       await waitFor(() => expect(screen.queryByRole('dialog', { name: /^编辑视频/ })).toBeNull())
       await editFromStage(editableJob)
-      await waitFor(async () => expect(await versionLabels()).toEqual(['V1', '原片']))
+      await waitFor(async () => expect(await versionLabels()).toEqual(['V3', 'V2 原片']))
     })
   })
 

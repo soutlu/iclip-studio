@@ -1,18 +1,25 @@
-.video-editor-compare {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: var(--z-local-2);
+/* 成片编辑器也用 editor.css 的标题栏，这里只改视频编辑器自己的。 */
+.video-editor-dialog .editor-header {
+  min-height: 52px;
+}
+
+.video-editor-dialog .editor-header > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.video-editor-view-switch {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-glass-base) 88%, transparent);
+  background: var(--color-top-layer);
   box-shadow: 0 0 0 0.5px var(--color-hairline);
-  backdrop-filter: blur(14px);
 }
 
-.video-editor-compare button {
+.video-editor-view-switch button {
   height: 28px;
   padding: 0 12px;
   border-radius: var(--radius-full);
@@ -21,19 +28,86 @@
   line-height: var(--text-label--line-height);
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    color var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
 }
 
-.video-editor-compare button:hover {
+.video-editor-view-switch button:hover {
   color: var(--color-on-surface);
 }
 
-.video-editor-compare button:disabled {
+.video-editor-view-switch button:disabled {
   opacity: var(--state-disabled-content);
   cursor: default;
 }
 
-.video-editor-compare button[aria-pressed='true'] {
+.video-editor-view-switch button[aria-pressed='true'] {
   background: var(--color-state-active);
   color: var(--color-on-surface);
   font-weight: 500;
+}
+
+/* 整条版本条的格子窄，「V1 原片」在空格处折成两行。 */
+.video-editor-dialog .editor-versions .version-thumb-label {
+  white-space: normal;
+  word-break: keep-all;
+}
+
+/* 工具条右端的「合成新版本」：绿色胶囊，不可用时置灰。 */
+.editor-bar .video-editor-compose {
+  width: auto;
+  height: 30px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.editor-bar .video-editor-compose:disabled {
+  background-color: var(--color-disabled-container);
+  box-shadow: none;
+  color: color-mix(
+    in srgb,
+    var(--color-on-surface) calc(var(--state-disabled-content) * 100%),
+    transparent
+  );
+  scale: 1;
+}
+
+.video-editor-block-card {
+  width: min(440px, calc(100% - 24px));
+}
+
+.video-editor-block-card .video-editor-card-head {
+  padding-bottom: 12px;
+}
+
+.video-editor-block-card-icon {
+  display: grid;
+  width: 30px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-faint);
+}
+
+.video-editor-block-card-icon.is-failed,
+.video-editor-block-card .video-editor-card-title > p.is-failed {
+  color: var(--color-error);
+}
+
+.video-editor-block-card .video-editor-card-title > p.is-failed {
+  white-space: normal;
+}
+
+.video-editor-block-card-original {
+  height: 34px;
+  flex: none;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-label);
 }
