@@ -79,6 +79,8 @@ type Props = {
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
+  /** 正在播的那条视频读出像素尺寸时回报，带它的地址。 */
+  onVideoSize?: ((mediaUrl: string, size: { width: number; height: number }) => void) | undefined
   picture?: ReactNode
   overlay: ReactNode
   versions: ReactNode
@@ -102,6 +104,7 @@ export function EditorPreview({
   onPlaybackChange,
   externalAudio,
   aspectRatio,
+  onVideoSize,
   picture,
   overlay,
   versions,
@@ -390,6 +393,9 @@ export function EditorPreview({
             const media = event.currentTarget
             if (slot === active && media.videoWidth > 0 && media.videoHeight > 0) {
               setAspect(media.videoWidth / media.videoHeight)
+              const mediaUrl = media.dataset['src']
+              if (mediaUrl !== undefined)
+                onVideoSize?.(mediaUrl, { width: media.videoWidth, height: media.videoHeight })
             }
             const target = pendingSeekRef.current[slot]
             if (target === null) return

@@ -2,19 +2,32 @@
  * 所以节点内容照常读得到外面的 React context。带外壳的 Composer 与不带外壳的使用方都渲染它。 */
 
 import { createPortal } from 'react-dom'
-import { ComposerAttachmentPill } from './composer-attachment-pill'
-import type { ComposerAttachments } from './use-composer-attachments'
+import { ComposerAttachmentPill, type ComposerAttachmentPreview } from './composer-attachment-pill'
+import type { ComposerAttachment, ComposerAttachments } from './use-composer-attachments'
 import type { ComposerEditor } from './use-composer-editor'
+
+/** 按附件给预览卡补内容，见 ComposerAttachmentPreview；返回 undefined 就是默认预览。 */
+export type ComposerAttachmentPreviewOf = (
+  attachment: ComposerAttachment,
+) => ComposerAttachmentPreview | undefined
 
 type ComposerNodeViewsProps = {
   editor: ComposerEditor
   attachments: ComposerAttachments
   /** 失败卡片与悬停预览卡的挂载点：编辑器在弹窗里时给弹窗内的元素（弹窗外点不到），否则给 null 挂到 body。 */
   layerContainer: HTMLElement | null
+  attachmentPreview?: ComposerAttachmentPreviewOf | undefined
 }
 
-export function ComposerNodeViews({ attachments, editor, layerContainer }: ComposerNodeViewsProps) {
+export function ComposerNodeViews({
+  attachmentPreview,
+  attachments,
+  editor,
+  layerContainer,
+}: ComposerNodeViewsProps) {
   const { failureCard, hosts, setFailureCard, specOf } = editor.nodeViews
+  const previewOf = (entry: ComposerAttachment | undefined) =>
+    entry === undefined ? undefined : attachmentPreview?.(entry)
   return hosts.map((host) =>
     host.type === 'attachment'
       ? createPortal(
@@ -38,6 +51,7 @@ export function ComposerNodeViews({ attachments, editor, layerContainer }: Compo
               setFailureCard(null)
               attachments.retry(host.attId)
             }}
+            preview={previewOf(attachments.entries.get(host.attId))}
           />,
           host.el,
           host.key,

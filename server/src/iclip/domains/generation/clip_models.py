@@ -39,11 +39,8 @@ class UpstreamMode:
 @dataclass(frozen=True, slots=True)
 class ClipModel:
     spec: VideoClipModelOut
-    image_mode: UpstreamMode = UpstreamMode()
     edit_mode: UpstreamMode = UpstreamMode()
-
-    def mode(self, *, editing: bool) -> UpstreamMode:
-        return self.edit_mode if editing else self.image_mode
+    """视频编辑时补的上游语义；图生沿用网关按图片张数的原生调度，不补。"""
 
 
 _MODELS = (
@@ -62,8 +59,7 @@ _MODELS = (
             image=ClipImageDurationOut(min_seconds=4, max_seconds=30, default_seconds=5),
             edit=ClipEditDurationOut(min_seconds=4, max_seconds=30),
         ),
-        # Seedance 2.5 只有显式指定原生子任务才按参考图或视频编辑执行。
-        image_mode=UpstreamMode(provider_options={"omni_reference_task_type": "reference"}),
+        # Seedance 2.5 只有显式指定原生子任务才按视频编辑执行。
         edit_mode=UpstreamMode(provider_options={"omni_reference_task_type": "edit"}),
     ),
     ClipModel(

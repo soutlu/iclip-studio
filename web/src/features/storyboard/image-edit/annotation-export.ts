@@ -1,4 +1,5 @@
 import { UserFacingError } from '@/shared/api/client'
+import { loadCrossOriginImage } from '../cross-origin-image'
 import { annotationVisual } from './annotation-geometry'
 import type { ImageAnnotation } from './image-edit-types'
 
@@ -7,14 +8,7 @@ export async function exportAnnotatedImage(
   url: string,
   annotations: ImageAnnotation[],
 ): Promise<File> {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const element = new Image()
-    element.crossOrigin = 'anonymous'
-    element.onload = () => resolve(element)
-    element.onerror = () =>
-      reject(new UserFacingError('原图读取失败，请检查图片地址是否支持跨域访问'))
-    element.src = url
-  })
+  const image = await loadCrossOriginImage(url)
   if (!image.naturalWidth || !image.naturalHeight) throw new UserFacingError('原图尺寸无效')
   const scale = Math.min(1, 6000 / image.naturalWidth, 6000 / image.naturalHeight)
   const canvas = document.createElement('canvas')

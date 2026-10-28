@@ -1,18 +1,28 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { errorMessageOf } from '@/shared/api/client'
+import type { PercentCrop } from 'react-image-crop'
+import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button, IconButton } from '@/shared/ui/button'
-import type { ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
+import type {
+  ComposerAttachmentPreviewOf,
+  ComposerPart,
+  ComposerSubmission,
+} from '@/shared/ui/composer'
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
 import { GenerationPicker } from '../components/generation-picker'
 import { StageFailure } from '../components/stage-failure'
 import { useUnseenResults } from '../components/use-unseen-results'
-import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
+import {
+  compileImageClipPrompt,
+  compileReferencePrompt,
+  draftPartsOf,
+  MAX_FIRST_FRAMES,
+} from '../edit-prompt'
 import { useStorageFailureNotice } from '../editing/browser-storage'
 import type { Clip } from '../editing/clip'
 import { EditorPreview, type EditorPreviewHandle } from '../editing/editor-preview'
@@ -66,6 +76,7 @@ import {
 import { editorFootnote, secondsText, lengthDifference } from './editor-footnote'
 import { EditorNotices } from './editor-notices'
 import { EditorTimeline } from './editor-timeline'
+import { planFrames, type Size } from './first-frames'
 import { ShotPrompts } from './shot-prompts'
 import { draftTimelineEntries, versionTimelineEntries } from './timeline-entries'
 import { useEditDraft } from './use-edit-draft'
@@ -79,14 +90,17 @@ import {
   type Submission,
 } from './version-strip'
 import {
+  imageSizeQuery,
   seedVideoEditJob,
   submitClipGeneration,
   submitVideoComposite,
+  useImageSizes,
   useVideoEditChain,
 } from './video-editor.api'
 
 const LOADING_PEAKS: PeaksState = { kind: 'loading' }
 const NO_REQUEST: readonly ComposerPart[] = []
+const NO_CROPS: ReadonlyMap<string, PercentCrop> = new Map()
 const STORAGE_FAILURE = '当前浏览器无法保存剪辑选择，关闭编辑器后剪辑内容将丢失'
 const LAST_FRAME_LEAD = 0.1
 const CARD_FRAME_WIDTH = 60
@@ -163,6 +177,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (seekRequest !== undefined) previewRef.current?.previewAt(seekRequest.clock)
   }, [seekRequest])
   const [request, setRequest] = useState(NO_REQUEST)
+  // 首帧、尾帧拖过的裁切框，按图片地址记，与输入卡的草稿一样活到编辑器关闭。
+  const [frameCrops, setFrameCrops] = useState(NO_CROPS)
+  const [videoSize, setVideoSize] = useState<Size>()
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
   // 正在舞台上查看失败原因的那条任务；不改草稿与选用版本。
@@ -272,6 +289,53 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           referenceImageCount,
         })
   const requestBlock = generationBlockOf(referenceImageCountOf(request))
+
+  // 图生时每张图的用途与裁切，按去重后真正发送的图算。
+  const frameUrls =
+    mode === 'image' ? compileReferencePrompt(draftPartsOf(request)).referenceImageUrls : []
+  const imageSizes = useImageSizes(frameUrls)
+  const framePlans = planFrames({
+    urls: frameUrls,
+    sizeOf: (url) => imageSizes.get(url),
+    video: videoSize,
+    crops: frameCrops,
+  })
+  const attachmentPreview: ComposerAttachmentPreviewOf = ({ url }) => {
+    const plan = url === undefined ? undefined : framePlans.get(url)
+    if (url === undefined || plan === undefined) return undefined
+    return {
+      details: plan.details,
+      crop:
+        plan.crop === undefined || videoSize === undefined
+          ? undefined
+          : {
+              aspect: videoSize.width / videoSize.height,
+              value: plan.crop.value,
+              onChange: (crop) => setFrameCrops((previous) => new Map(previous).set(url, crop)),
+            },
+    }
+  }
+  /** 提交前定下首帧、尾帧要裁的框：原图尺寸还没读完就等它读完，原片尺寸还没读出就不提交。 */
+  const readFrameCrops = async (urls: readonly string[]) => {
+    if (urls.length === 0 || urls.length > MAX_FIRST_FRAMES) return undefined
+    if (videoSize === undefined) throw new UserFacingError('原片尺寸尚未读出，请稍后重试')
+    const sizes = new Map(
+      await Promise.all(
+        urls.map(async (url) => [url, await queryClient.fetchQuery(imageSizeQuery(url))] as const),
+      ),
+    )
+    const plans = planFrames({
+      urls,
+      sizeOf: (url) => sizes.get(url),
+      video: videoSize,
+      crops: frameCrops,
+    })
+    return new Map(
+      [...plans].flatMap(([url, plan]) =>
+        plan.crop === undefined ? [] : [[url, plan.crop.rect] as const],
+      ),
+    )
+  }
   const blockReason =
     selection.length === 0
       ? undefined
@@ -422,7 +486,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       chosen === undefined
     )
       return
-    const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(input.parts))
+    const parts = draftPartsOf(input.parts)
+    const { text, referenceImageUrls } =
+      mode === 'image' ? compileImageClipPrompt(parts) : compileReferencePrompt(parts)
     setSubmission({
       kind: 'edit',
       targetKey: candidateGroup.key,
@@ -433,6 +499,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     setGenerateError(null)
     setNotice(null)
     try {
+      const rects = mode === 'image' ? await readFrameCrops(referenceImageUrls) : undefined
       const job = await submitClipGeneration({
         conversationId,
         taskId: root.taskId,
@@ -443,6 +510,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         model: chosen.model,
         prompt: text.trim(),
         referenceImageUrls,
+        frameCrops: rects,
       })
       seedJob(job)
       editor.submitted()
@@ -680,6 +748,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           </>
         }
         anchorRef={selectionBoxRef}
+        attachmentPreview={attachmentPreview}
         canGenerate={canGenerate && !busy}
         detail={cardDetail}
         draft={request}
@@ -829,6 +898,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               setFailedJobId(undefined)
             }}
             onTime={setCurrentTime}
+            onVideoSize={(url, size) => {
+              // 只认原片与合成出的整条版本（合成按原片画幅），不认画幅可能不同的 AI 片段。
+              if (url === version.mediaUrl || url === wholeVersion.mediaUrl) setVideoSize(size)
+            }}
             viewControl={
               <div aria-label="视频预览范围" className="video-editor-compare" role="group">
                 <button
