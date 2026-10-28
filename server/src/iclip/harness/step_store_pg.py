@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Final, Literal, cast, get_args
+from typing import Any, Final, Literal, cast, get_args
 
 import structlog
+from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai_harness.media import (
     MediaContext,
@@ -29,6 +30,14 @@ from pydantic_ai_harness.step_persistence import (
     ToolEffectRecord,
     ToolEffectStatus,
 )
+
+# 私有模块：为让存出来的格式与官方逐字节一致而直接用它；改名会在升级试跑时暴露。
+from pydantic_ai_harness.step_persistence._messages import (
+    MessageRefs,
+    keyed_messages,
+    message_refs,
+    referenced_history_json,
+)
 from sqlalchemy import (
     BigInteger,
     Column,
@@ -38,17 +47,20 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     PrimaryKeyConstraint,
+    Select,
     Table,
     Text,
+    any_,
     delete,
+    literal,
     select,
     text,
     tuple_,
     union,
 )
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -62,6 +74,11 @@ _TOOL_STATUSES: Final[frozenset[ToolEffectStatus]] = frozenset(get_args(ToolEffe
 _SNAPSHOT_STATES: Final[frozenset[SnapshotState]] = frozenset(get_args(SnapshotState))
 
 _EMPTY_CONTEXT: Final = MediaContext()
+
+# 每条消息 INSERT 的行数，与官方相同，远低于 Postgres 单条语句的绑定参数上限。
+_MESSAGES_PER_INSERT: Final = 1000
+
+_OBJECT_LIST_ADAPTER: Final = TypeAdapter(list[object])
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
@@ -120,6 +137,14 @@ snapshots_table = Table(
     Column("messages", Text, nullable=False),
     Column("idempotency_key", Text),
     Index("idx_snapshots_run", "run_id", "seq"),
+    Index("idx_snapshots_conv", "conversation_id", "seq"),
+)
+
+snapshot_messages_table = Table(
+    "snapshot_messages",
+    metadata_obj,
+    Column("sha256", Text, primary_key=True),
+    Column("message", Text, nullable=False),
 )
 
 # 快照幂等键独立保存，修剪快照后仍需阻止重复保存。
@@ -173,6 +198,37 @@ def _literal[T: str](raw: object, allowed: frozenset[T], what: str) -> T:
     if isinstance(raw, str) and raw in allowed:
         return cast(T, raw)
     raise ValueError(f"unknown {what} {raw!r}")
+
+
+async def store_snapshot_history(conn: AsyncConnection, messages_json: object) -> str:
+    """把一段已外置媒体的历史逐条存进 ``snapshot_messages``，返回快照行 ``messages`` 列该存的引用 JSON。
+
+    ``messages_json`` 是 ``ModelMessagesTypeAdapter`` 导出再经 ``externalize_media`` 的 JSON 列表；
+    已存在的消息跳过。在调用方的事务里写，快照行须在同一事务落库，否则引用会指向没提交的消息。
+    """
+
+    keyed = keyed_messages(_OBJECT_LIST_ADAPTER.validate_python(messages_json))
+    # 按键排序插入：两次共享消息的保存按同一次序等对方的行，不会互相死锁。
+    rows = sorted(dict(keyed).items())
+    for start in range(0, len(rows), _MESSAGES_PER_INSERT):
+        chunk = rows[start : start + _MESSAGES_PER_INSERT]
+        await conn.execute(
+            pg_insert(snapshot_messages_table)
+            .values([{"sha256": sha256, "message": message} for sha256, message in chunk])
+            .on_conflict_do_nothing(index_elements=["sha256"])
+        )
+    return json.dumps(MessageRefs(message_refs=[sha256 for sha256, _ in keyed]))
+
+
+async def _load_messages(conn: AsyncConnection, messages_texts: Sequence[str]) -> dict[str, str]:
+    refs = {ref for raw in messages_texts for ref in (message_refs(raw) or ())}
+    if not refs:
+        return {}
+    stmt = select(snapshot_messages_table.c.sha256, snapshot_messages_table.c.message).where(
+        snapshot_messages_table.c.sha256 == any_(literal(sorted(refs), ARRAY(Text)))
+    )
+    rows = (await conn.execute(stmt)).all()
+    return {cast("str", row[0]): cast("str", row[1]) for row in rows}
 
 
 class PgMediaStore:
@@ -427,17 +483,6 @@ class PgStepStore:
                 media_store=self._media_store,
                 threshold_bytes=self._media_threshold_bytes,
             )
-        insert_stmt = snapshots_table.insert().values(
-            run_id=snapshot.run_id,
-            step_index=snapshot.step_index,
-            conversation_id=snapshot.conversation_id,
-            parent_run_id=snapshot.parent_run_id,
-            agent_name=snapshot.agent_name,
-            timestamp=snapshot.timestamp,
-            state=snapshot.state,
-            messages=json.dumps(messages_json),
-            idempotency_key=snapshot.idempotency_key,
-        )
         async with self._engine.begin() as conn:
             if snapshot.idempotency_key is not None:
                 # 幂等键与快照须同事务写入，避免崩溃后仅保留键而丢失快照。
@@ -454,7 +499,20 @@ class PgStepStore:
                 ).first()
                 if claimed is None:
                     return
-            await conn.execute(insert_stmt)
+            refs_json = await store_snapshot_history(conn, messages_json)
+            await conn.execute(
+                snapshots_table.insert().values(
+                    run_id=snapshot.run_id,
+                    step_index=snapshot.step_index,
+                    conversation_id=snapshot.conversation_id,
+                    parent_run_id=snapshot.parent_run_id,
+                    agent_name=snapshot.agent_name,
+                    timestamp=snapshot.timestamp,
+                    state=snapshot.state,
+                    messages=refs_json,
+                    idempotency_key=snapshot.idempotency_key,
+                )
+            )
             if self._max_snapshots_per_run is not None:
                 newest_keep = (
                     select(snapshots_table.c.seq)
@@ -484,12 +542,7 @@ class PgStepStore:
         stmt = select(snapshots_table).where(snapshots_table.c.run_id == run_id)
         if not include_interrupted:
             stmt = stmt.where(snapshots_table.c.state == "complete")
-        stmt = stmt.order_by(snapshots_table.c.seq.desc()).limit(1)
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).one_or_none()
-        if row is None:
-            return None
-        return await self._snapshot_from_row(run_id, row)
+        return await self._first_snapshot(stmt.order_by(snapshots_table.c.seq.desc()).limit(1))
 
     async def latest_conversation_snapshot(
         self, *, conversation_id: str, include_interrupted: bool = False
@@ -502,34 +555,46 @@ class PgStepStore:
         stmt = select(snapshots_table).where(snapshots_table.c.conversation_id == conversation_id)
         if not include_interrupted:
             stmt = stmt.where(snapshots_table.c.state == "complete")
-        stmt = stmt.order_by(snapshots_table.c.seq.desc()).limit(1)
+        return await self._first_snapshot(stmt.order_by(snapshots_table.c.seq.desc()).limit(1))
+
+    async def _first_snapshot(self, stmt: Select[Any]) -> ContinuableSnapshot | None:
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one_or_none()
-        if row is None:
-            return None
-        return await self._snapshot_from_row(cast("_SnapshotRow", row).run_id, row)
+            if row is None:
+                return None
+            stored = await _load_messages(conn, [cast("_SnapshotRow", row).messages])
+        return await self._snapshot_from_row(cast("_SnapshotRow", row).run_id, row, stored)
 
     async def list_snapshots(
         self, *, run_id: str, include_interrupted: bool = False
     ) -> list[ContinuableSnapshot]:
-        """按写入顺序读取快照；反序列化失败时记录日志并跳过，与官方实现一致。"""
+        """按写入顺序读取快照；反序列化失败或引用的消息缺失时记录日志并跳过，与官方实现一致。"""
         stmt = select(snapshots_table).where(snapshots_table.c.run_id == run_id)
         if not include_interrupted:
             stmt = stmt.where(snapshots_table.c.state == "complete")
         stmt = stmt.order_by(snapshots_table.c.seq.asc())
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
+            stored = await _load_messages(
+                conn, [cast("_SnapshotRow", row).messages for row in rows]
+            )
         snapshots: list[ContinuableSnapshot] = []
         for row in rows:
             try:
-                snapshots.append(await self._snapshot_from_row(run_id, row))
+                snapshots.append(await self._snapshot_from_row(run_id, row, stored))
             except Exception:
-                _logger.warning("跳过解析不了的快照行", run_id=run_id, exc_info=True)
+                _logger.warning("跳过读不出的快照行", run_id=run_id, exc_info=True)
         return snapshots
 
-    async def _snapshot_from_row(self, run_id: str, row: object) -> ContinuableSnapshot:
+    async def _snapshot_from_row(
+        self, run_id: str, row: object, stored: dict[str, str]
+    ) -> ContinuableSnapshot:
         r = cast("_SnapshotRow", row)
-        messages_json: object = json.loads(r.messages)
+        messages_text = r.messages
+        refs = message_refs(messages_text)
+        if refs is not None:
+            messages_text = referenced_history_json(refs, stored)
+        messages_json: object = json.loads(messages_text)
         if self._media_store is not None:
             messages_json = await restore_media(messages_json, media_store=self._media_store)
         messages: list[ModelMessage] = ModelMessagesTypeAdapter.validate_python(messages_json)

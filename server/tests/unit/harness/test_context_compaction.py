@@ -3,41 +3,56 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic_ai import Agent
+from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.messages import (
     CompactionPart,
+    InstructionDeltaPart,
+    LoadCapabilityCallPart,
+    LoadCapabilityReturnPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    SystemPromptPart,
     TextPart,
+    ToolCallPart,
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai_harness.compaction import SummarizingCompaction
+from pydantic_ai_harness.compaction._capability_loads import (  # 契约：harness 补记加载的私有标记
+    RECORDED_LOAD_METADATA_KEY,
+)
+from pydantic_ai_harness.compaction._summary import (  # 契约：harness 认摘要的私有规则
+    SUMMARY_METADATA_KEY,
+    SUMMARY_TIME_METADATA_KEY,
+    is_summary_part,
+)
 from pydantic_ai_harness.step_persistence import InMemoryStepStore, StepPersistence
 
 from iclip.harness.context_compaction import (
-    SUMMARY_FRAMING,
     ContextCompaction,
     compaction_boundary,
-    model_window,
-    summarizer_input,
+    compaction_window,
+    recorded_loads,
 )
-from iclip.harness.transcript.from_messages import turns_from_messages
+from iclip.harness.skills import build_skill_capabilities
+from iclip.harness.transcript.from_messages import drop_last_turn, turns_from_messages
 from iclip.harness.transcript.projector import step_responses
+from iclip.platform.transcript.ops import TextContent
 
 pytestmark = pytest.mark.unit
 
 SUMMARY = "## Intent\n把 README 翻成英文"
 
-ANCHORED = f"Summary of previous conversation:\n\n{SUMMARY}"
-"""摘要前缀用于识别上一份摘要，须原样保留在边界中以支持增量压缩。"""
-
-WINDOW_HEAD = f"{SUMMARY}\n\n{SUMMARY_FRAMING}"
-"""模型窗口首条 user 消息，包含摘要及提示。"""
+MARKED: dict[str, Any] = {
+    SUMMARY_METADATA_KEY: True,
+    SUMMARY_TIME_METADATA_KEY: "2026-09-03T10:09:00+00:00",
+}
+"""摘要器写在摘要 part 上的 metadata；边界原样带着，窗口头部的摘要靠它被认作上一份摘要。"""
 
 
 def _at(minute: int) -> datetime:
@@ -52,18 +67,20 @@ def _reply(text: str, *, run_id: str = "run-a", minute: int = 1) -> ModelRespons
     return ModelResponse(parts=[TextPart(content=text)], run_id=run_id, timestamp=_at(minute))
 
 
-def _only_part(message: ModelMessage) -> tuple[type[object], object]:
-    """提取首个 part 的类型与正文，忽略每次创建时不同的时间戳。"""
+def _summary_head(message: ModelMessage) -> CompactionPart:
+    """窗口头部只含一个请求侧摘要：不带 provider，harness 认得出它是摘要器写的那份。"""
 
     assert isinstance(message, ModelRequest)
-    assert len(message.parts) == 1
-    part = message.parts[0]
-    return type(part), getattr(part, "content", None)
+    (part,) = message.parts
+    assert isinstance(part, CompactionPart)
+    assert part.provider_name is None
+    assert is_summary_part(part)
+    return part
 
 
 def _boundary(summary: str = SUMMARY, *, run_id: str = "run-a", minute: int = 9) -> ModelResponse:
     return ModelResponse(
-        parts=[CompactionPart(content=summary, provider_name="function")],
+        parts=[CompactionPart(content=summary, provider_name="function", metadata=MARKED)],
         run_id=run_id,
         timestamp=_at(minute),
     )
@@ -72,39 +89,27 @@ def _boundary(summary: str = SUMMARY, *, run_id: str = "run-a", minute: int = 9)
 def test_没有边界时窗口就是整份历史() -> None:
     messages: list[ModelMessage] = [_ask("一"), _reply("二"), _ask("三")]
 
-    assert model_window(messages) == messages
+    assert compaction_window(messages) == messages
 
 
 def test_有边界时窗口是摘要加边界之后那几条() -> None:
     tail = _ask("三")
-    window = model_window([_ask("一"), _reply("二"), _boundary(), tail])
+    window = compaction_window([_ask("一"), _reply("二"), _boundary(), tail])
 
-    # 对话摘要使用 user part，避免 chat 适配器将其排在 instructions 之前。
-    assert _only_part(window[0]) == (UserPromptPart, WINDOW_HEAD)
+    # 请求侧摘要由框架包装成用户身份的摘要文字，排在 instructions 之后。
+    head = _summary_head(window[0])
+    assert (head.content, head.metadata) == (SUMMARY, MARKED)
     assert window[1:] == [tail]
 
 
 def test_两条边界只认最后一条() -> None:
     tail = _ask("四")
-    window = model_window(
+    window = compaction_window(
         [_ask("一"), _boundary("旧摘要", minute=5), _reply("二"), _boundary("新摘要"), tail]
     )
 
-    head = window[0]
-    assert isinstance(head, ModelRequest)
-    assert isinstance(head.parts[0], UserPromptPart)
-    assert head.parts[0].content == f"新摘要\n\n{SUMMARY_FRAMING}"
+    assert _summary_head(window[0]).content == "新摘要"
     assert window[1:] == [tail]
-
-
-def test_喂给摘要器的那份摘要作system_part() -> None:
-    """摘要器通过 system part 识别已有摘要；user part 会导致重复摘要。"""
-
-    tail = _ask("三")
-    fed = summarizer_input([_reply("二"), _boundary(), tail])
-
-    assert _only_part(fed[0]) == (SystemPromptPart, SUMMARY)
-    assert fed[1:] == [tail]
 
 
 def test_边界和旁边那次响应并成一条时照样认得出() -> None:
@@ -112,13 +117,16 @@ def test_边界和旁边那次响应并成一条时照样认得出() -> None:
 
     tail = _ask("四")
     merged = ModelResponse(
-        parts=[CompactionPart(content=SUMMARY, provider_name="function"), TextPart(content="答三")],
+        parts=[
+            CompactionPart(content=SUMMARY, provider_name="function", metadata=MARKED),
+            TextPart(content="答三"),
+        ],
         run_id="run-a",
         timestamp=_at(9),
     )
-    window = model_window([_ask("一"), _reply("二"), merged, tail])
+    window = compaction_window([_ask("一"), _reply("二"), merged, tail])
 
-    assert _only_part(window[0]) == (UserPromptPart, WINDOW_HEAD)
+    assert _summary_head(window[0]).content == SUMMARY
     kept = window[1]
     assert isinstance(kept, ModelResponse)
     assert kept.parts == [TextPart(content="答三")]
@@ -166,7 +174,7 @@ def _agent(*, max_tokens: int, keep_messages: int, store: InMemoryStepStore) -> 
                     max_messages=1, keep_messages=keep_messages, preserve_first_user_message=False
                 ),
                 max_tokens=max_tokens,
-                on_compaction=lambda _summary: None,
+                on_compaction=lambda _summary, _records: None,
             ),
             StepPersistence(store=store),
         ],
@@ -214,7 +222,7 @@ async def _run(
                     max_messages=1, keep_messages=keep_messages, preserve_first_user_message=False
                 ),
                 max_tokens=max_tokens,
-                on_compaction=summaries.append,
+                on_compaction=lambda summary, _records: summaries.append(summary),
             ),
             StepPersistence(store=store),
         ],
@@ -249,20 +257,28 @@ async def test_过线就在切点插一条边界() -> None:
     assert len(boundaries) == 1
     part = compaction_boundary(boundaries[0])
     assert part is not None
-    assert (part.content, part.provider_name) == (ANCHORED, "function")
+    assert (part.content, part.provider_name) == (SUMMARY, "function")
+    assert boundaries[0].provider_name == "function"
+    # 摘要器写的标记与写成时间原样留在边界上。
+    assert part.metadata is not None
+    assert part.metadata[SUMMARY_METADATA_KEY] is True
+    assert datetime.fromisoformat(part.metadata[SUMMARY_TIME_METADATA_KEY]).tzinfo is not None
     # 边界继承切点消息的 run_id，避免合并后将历史响应归入本轮。
     assert boundaries[0].run_id == prior[-1].run_id
     assert history[history.index(boundaries[0]) + 1] == prior[-1]
-    assert summaries == [ANCHORED]
+    assert summaries == [SUMMARY]
 
 
 async def test_模型只收到窗口那几条() -> None:
     _, seen, history, _ = await _run(max_tokens=1, keep_messages=2, history=_history(4))
 
     sent = seen[-1]
-    assert _only_part(sent[0]) == (UserPromptPart, f"{ANCHORED}\n\n{SUMMARY_FRAMING}")
     boundary = _boundaries(history)[0]
-    assert len(sent) == 1 + (len(history) - history.index(boundary) - 1 - 1)
+    head = _summary_head(sent[0])
+    part = compaction_boundary(boundary)
+    assert part is not None
+    assert (head.content, head.metadata) == (part.content, part.metadata)
+    assert sent[1:] == history[history.index(boundary) + 1 : -1]
 
 
 async def test_没到线时模型也只收到上次边界之后那几条() -> None:
@@ -273,9 +289,9 @@ async def test_没到线时模型也只收到上次边界之后那几条() -> No
 
     assert len(seen) == 1
     sent = seen[0]
-    assert _only_part(sent[0]) == (UserPromptPart, f"{ANCHORED}\n\n{SUMMARY_FRAMING}")
+    assert _summary_head(sent[0]).content == SUMMARY
     # 末条是本次模型的回复，不在发出的请求里；边界已与相邻响应合并，按窗口函数比对。
-    assert sent[1:] == model_window(history[:-1])[1:]
+    assert sent[1:] == compaction_window(history[:-1])[1:]
     assert first[0] in history
 
 
@@ -307,8 +323,9 @@ async def test_第二次压缩带着上一份摘要做增量() -> None:
         for part in getattr(message, "parts", ())
         if isinstance(part, UserPromptPart)
     )
-    assert "<previous-summary>" in prompt
-    assert SUMMARY in prompt
+    # 摘要器认出窗口头部的上一份摘要，把它作为增量的锚点放进 <previous-summary>。
+    anchor = prompt.partition("<previous-summary>")[2].partition("</previous-summary>")[0]
+    assert SUMMARY in anchor
 
 
 async def test_切不动就不压也不回调() -> None:
@@ -359,3 +376,224 @@ async def test_压过之后老轮子的步一步不少() -> None:
     assert _turn_shape(second)[: len(before)] == before
     assert sum(1 for message in second if compaction_boundary(message) is not None) == 1
     assert _notice_ids(second) == _notice_ids(first)
+
+
+# --- 按需加载的技能跨压缩 -------------------------------------------------------
+
+SKILL = "demo"
+SKILL_BODY = "按演示流程拆三组镜头"
+LOAD_PROMPT = "先加载技能"
+
+
+def _skill_library(root: Path) -> Path:
+    (root / SKILL).mkdir()
+    (root / SKILL / "SKILL.md").write_text(
+        f"---\nname: {SKILL}\ndescription: 演示技能\n---\n\n{SKILL_BODY}\n", encoding="utf-8"
+    )
+    return root
+
+
+def _skill_delivered(messages: list[ModelMessage]) -> bool:
+    """框架把已加载技能的正文作为 capability 上下文放进用户侧 part 送达。"""
+
+    return any(
+        isinstance(part, UserPromptPart)
+        and f'context id="capability:{SKILL}"' in str(part.content)
+        and SKILL_BODY in str(part.content)
+        for message in messages
+        for part in message.parts
+    )
+
+
+def _skill_model(seen: list[tuple[str, list[ModelMessage]]]) -> FunctionModel:
+    """首轮调 load_capability，其余一律回一句；摘要请求回固定摘要。"""
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if _is_summary_call(messages):
+            return ModelResponse(parts=[TextPart(SUMMARY)])
+        asked = next(
+            (
+                str(part.content)
+                for part in messages[-1].parts
+                if isinstance(part, UserPromptPart) and str(part.content) in _PROMPTS
+            ),
+            "",
+        )
+        seen.append((asked, messages))
+        if asked == LOAD_PROMPT:
+            return ModelResponse(
+                parts=[ToolCallPart("load_capability", {"id": SKILL}, tool_call_id="load-1")]
+            )
+        return ModelResponse(parts=[TextPart("好了")])
+
+    return FunctionModel(script)
+
+
+_SETUP = (LOAD_PROMPT, "第二轮", "第三轮")
+_COMPACTING = ("压缩一", "压缩二")
+_AFTER = "之后"
+_PROMPTS = (*_SETUP, *_COMPACTING, _AFTER)
+
+
+async def _skill_turn(
+    library: Path,
+    seen: list[tuple[str, list[ModelMessage]]],
+    prompt: str,
+    history: list[ModelMessage],
+    keep: int,
+) -> list[ModelMessage]:
+    agent = Agent(
+        _skill_model(seen),
+        capabilities=[
+            *build_skill_capabilities(library, (SKILL,)),
+            ContextCompaction(
+                strategy=SummarizingCompaction(
+                    max_messages=1, keep_messages=keep, preserve_first_user_message=False
+                ),
+                max_tokens=1 if prompt in _COMPACTING else 1_000_000,
+                on_compaction=lambda _summary, _records: None,
+            ),
+        ],
+    )
+    return (await agent.run(prompt, message_history=history)).all_messages()
+
+
+async def _skill_conversation(
+    library: Path, keep: int
+) -> tuple[list[ModelMessage], list[ModelMessage], list[tuple[str, list[ModelMessage]]]]:
+    """先加载技能再聊两轮，接着两轮各压一次，最后不压再聊一轮。
+
+    返回最终历史、第一次压缩那轮结束时的历史（下一轮开头框架合并相邻消息之前），以及模型每次收到的消息。
+    """
+
+    seen: list[tuple[str, list[ModelMessage]]] = []
+    history: list[ModelMessage] = []
+    first_compacted: list[ModelMessage] = []
+    for prompt in _PROMPTS:
+        history = await _skill_turn(library, seen, prompt, history, keep)
+        if prompt == _COMPACTING[0]:
+            first_compacted = list(history)
+    return history, first_compacted, seen
+
+
+CUT_SHAPES = pytest.mark.parametrize(
+    ("keep", "cut_before"),
+    [(1, ModelRequest), (2, ModelResponse), (3, ModelRequest)],
+    ids=["cut-before-last-request", "cut-before-response", "cut-before-earlier-request"],
+)
+
+
+@CUT_SHAPES
+async def test_压缩后已加载的技能保持加载(
+    tmp_path: Path, keep: int, cut_before: type[ModelMessage]
+) -> None:
+    history, first_compacted, seen = await _skill_conversation(_skill_library(tmp_path), keep)
+
+    # 补记紧跟边界：调用一条响应、返回一条请求，返回带 harness 的补记标记，之后才是保留的首条消息。
+    at = next(i for i, m in enumerate(first_compacted) if compaction_boundary(m) is not None)
+    call, returned, kept = first_compacted[at + 1 : at + 4]
+    (call_part,) = call.parts
+    assert isinstance(call_part, LoadCapabilityCallPart)
+    assert call_part.args == {"id": SKILL}
+    assert set(recorded_loads([returned])) == {call_part.tool_call_id}
+    assert isinstance(kept, cut_before)
+
+    # 加载之后的每次请求（含两次压缩那两轮与之后不压的一轮）模型都收到技能正文。
+    asked = [prompt for prompt, _ in seen]
+    assert asked == [LOAD_PROMPT, "", *_PROMPTS[1:]]
+    assert [_skill_delivered(messages) for _, messages in seen] == [False] + [True] * len(_PROMPTS)
+    assert SKILL in parse_loaded_capabilities(first_compacted)
+    assert SKILL in parse_loaded_capabilities(history)
+    assert len(_boundaries(history)) == 2
+
+
+@CUT_SHAPES
+async def test_补记不改轮次与步骤也不反复补发技能正文(
+    tmp_path: Path, keep: int, cut_before: type[ModelMessage]
+) -> None:
+    del cut_before
+    history, _, _ = await _skill_conversation(_skill_library(tmp_path), keep)
+
+    assert _turn_shape(history) == [
+        (f"t{n}", [f"t{n}.1", f"t{n}.2"] if prompt == LOAD_PROMPT else [f"t{n}.1"])
+        for n, prompt in enumerate(_PROMPTS, start=1)
+    ]
+    assert [
+        "".join(item.text for item in turn.content if isinstance(item, TextContent))
+        for turn in turns_from_messages(history)
+    ] == list(_PROMPTS)
+    # 加载排在重新送达正文的指令之后；排反了框架每次请求都会先撤下再补发一遍正文。
+    assert not [
+        part
+        for message in history
+        for part in message.parts
+        if isinstance(part, InstructionDeltaPart) and part.content is None
+    ]
+
+
+async def test_重新生成压缩那轮再压一次_技能仍保持加载(tmp_path: Path) -> None:
+    library = _skill_library(tmp_path)
+    seen: list[tuple[str, list[ModelMessage]]] = []
+    history: list[ModelMessage] = []
+    for prompt in (LOAD_PROMPT, "第二轮", _COMPACTING[0]):
+        history = await _skill_turn(library, seen, prompt, history, keep=3)
+    history, _ = drop_last_turn(history, {})
+    assert len(_boundaries(history)) == 1
+
+    history = await _skill_turn(library, seen, _COMPACTING[0], history, keep=3)
+    assert SKILL in parse_loaded_capabilities(history)
+    history = await _skill_turn(library, seen, _AFTER, history, keep=3)
+
+    assert [len(message.parts) for message in _boundaries(history)] == [1, 1]
+    assert SKILL in parse_loaded_capabilities(history)
+    assert [(prompt, _skill_delivered(messages)) for prompt, messages in seen[-2:]] == [
+        (_COMPACTING[0], True),
+        (_AFTER, True),
+    ]
+
+
+async def test_两次压缩之间保留条数变多_技能仍保持加载(tmp_path: Path) -> None:
+    library = _skill_library(tmp_path)
+    seen: list[tuple[str, list[ModelMessage]]] = []
+    history: list[ModelMessage] = []
+    for prompt in _SETUP:
+        history = await _skill_turn(library, seen, prompt, history, keep=1)
+    history = await _skill_turn(library, seen, _COMPACTING[0], history, keep=1)
+    history = await _skill_turn(library, seen, _COMPACTING[1], history, keep=3)
+    assert SKILL in parse_loaded_capabilities(history)
+    history = await _skill_turn(library, seen, _AFTER, history, keep=3)
+
+    assert [len(message.parts) for message in _boundaries(history)] == [1, 1]
+    assert SKILL in parse_loaded_capabilities(history)
+    assert [(prompt, _skill_delivered(messages)) for prompt, messages in seen[-2:]] == [
+        (_COMPACTING[1], True),
+        (_AFTER, True),
+    ]
+
+
+def test_补记的加载交换不算模型步骤() -> None:
+    """补记调用与边界合并后仍不计步，即使 run_id 正是这次运行。"""
+
+    recorded = LoadCapabilityReturnPart(
+        content={"message": "loaded"},
+        tool_call_id="rec-1",
+        metadata={RECORDED_LOAD_METADATA_KEY: True},
+    )
+    messages: list[ModelMessage] = [
+        ModelResponse(
+            parts=[
+                CompactionPart(content=SUMMARY, provider_name="function", metadata=MARKED),
+                LoadCapabilityCallPart(args={"id": SKILL}, tool_call_id="rec-1"),
+            ],
+            run_id="run-b",
+            timestamp=_at(9),
+        ),
+        ModelRequest(parts=[recorded], run_id="run-b", timestamp=_at(9)),
+        _ask("接着做", run_id="run-b", minute=10),
+        _reply("这一轮的话", run_id="run-b", minute=11),
+    ]
+
+    assert step_responses(messages, "run-b") == [messages[-1]]
+    assert [step.step_id for turn in turns_from_messages(messages) for step in turn.steps] == [
+        "t1.1"
+    ]

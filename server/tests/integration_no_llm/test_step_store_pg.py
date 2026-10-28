@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
@@ -33,7 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.harness.step_store_pg import PgMediaStore, PgStepStore
 from iclip.platform.db.engine import build_engine
-from tests.helpers.pg import truncate_clean
+from tests.helpers.pg import (
+    insert_inline_snapshot,
+    raw_snapshot_messages,
+    stored_message_count,
+    truncate_clean,
+)
 
 T0 = datetime(2026, 8, 21, 10, 0, 0, tzinfo=UTC)
 
@@ -48,6 +54,7 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
                 "agent_runtime.runs",
                 "agent_runtime.events",
                 "agent_runtime.snapshots",
+                "agent_runtime.snapshot_messages",
                 "agent_runtime.snapshot_idempotency_keys",
                 "agent_runtime.tool_effects",
                 "agent_runtime.media",
@@ -311,19 +318,139 @@ async def test_snapshot_media_externalization_roundtrip(
     )
 
     async with engine.connect() as conn:
-        raw = (
-            await conn.execute(text("SELECT messages FROM agent_runtime.snapshots"))
-        ).scalar_one()
+        stored = (
+            await conn.execute(text("SELECT sha256, message FROM agent_runtime.snapshot_messages"))
+        ).all()
         media_rows = (
             await conn.execute(text("SELECT count(*) FROM agent_runtime.media"))
         ).scalar_one()
-    assert "media+sha256://" in raw
-    assert len(raw) < len(blob)
+    assert len(stored) == 2
+    for sha256, message in stored:
+        assert sha256 == hashlib.sha256(message.encode()).hexdigest()
+    assert any("media+sha256://" in message for _, message in stored)
+    assert sum(len(message) for _, message in stored) < len(blob)
     assert media_rows == 1
 
     restored = await store.latest_snapshot(run_id="r1")
     assert restored is not None
     assert _dump(restored.messages) == _dump(messages)
+
+
+async def test_snapshot_row_references_messages_stored_once(
+    store: PgStepStore, engine: AsyncEngine
+) -> None:
+    first = _messages("one")
+    longer = [*first, *_messages("two")]
+    await store.save_snapshot(
+        ContinuableSnapshot(run_id="r1", step_index=1, messages=first, state="complete")
+    )
+    await store.save_snapshot(
+        ContinuableSnapshot(run_id="r1", step_index=2, messages=longer, state="complete")
+    )
+    await store.save_snapshot(
+        ContinuableSnapshot(run_id="r2", step_index=1, messages=first, state="complete")
+    )
+
+    refs = [json.loads(raw)["message_refs"] for raw in await raw_snapshot_messages(engine)]
+    assert [len(r) for r in refs] == [2, 4, 2]
+    assert refs[1][:2] == refs[0] == refs[2]
+    assert await stored_message_count(engine) == 4
+
+    latest = await store.latest_snapshot(run_id="r1")
+    assert latest is not None
+    assert _dump(latest.messages) == _dump(longer)
+
+
+async def test_snapshot_prune_keeps_stored_messages(engine: AsyncEngine) -> None:
+    """修剪快照不回收消息，与官方一致：共享的与只被修剪快照用过的消息都留着。"""
+    store = PgStepStore(engine, max_snapshots_per_run=1)
+    shared = _messages("shared")
+    pruned_only = [*shared, *_messages("pruned only")]
+    middle = [*shared, *_messages("middle")]
+    newest = [*middle, *_messages("newest")]
+    for step_index, messages in enumerate([pruned_only, middle, newest], start=1):
+        await store.save_snapshot(
+            ContinuableSnapshot(
+                run_id="r1", step_index=step_index, messages=messages, state="complete"
+            )
+        )
+
+    listed = await store.list_snapshots(run_id="r1")
+    assert [(s.step_index, _dump(s.messages)) for s in listed] == [(3, _dump(newest))]
+    assert await stored_message_count(engine) == 8
+
+
+async def test_snapshot_reads_mix_inline_and_referenced_rows(
+    store: PgStepStore, engine: AsyncEngine
+) -> None:
+    inline_first = _messages("inline-1")
+    referenced = [*inline_first, *_messages("referenced")]
+    inline_last = [*referenced, *_messages("inline-3")]
+    await insert_inline_snapshot(
+        engine, run_id="r1", step_index=1, conversation_id="conv-1", messages=inline_first
+    )
+    await store.save_snapshot(
+        ContinuableSnapshot(
+            run_id="r1",
+            step_index=2,
+            conversation_id="conv-1",
+            messages=referenced,
+            state="complete",
+        )
+    )
+
+    listed = await store.list_snapshots(run_id="r1")
+    assert [(s.step_index, _dump(s.messages)) for s in listed] == [
+        (1, _dump(inline_first)),
+        (2, _dump(referenced)),
+    ]
+    latest = await store.latest_conversation_snapshot(conversation_id="conv-1")
+    assert latest is not None
+    assert (latest.step_index, _dump(latest.messages)) == (2, _dump(referenced))
+
+    await insert_inline_snapshot(
+        engine, run_id="r1", step_index=3, conversation_id="conv-1", messages=inline_last
+    )
+
+    latest = await store.latest_conversation_snapshot(conversation_id="conv-1")
+    assert latest is not None
+    assert (latest.step_index, _dump(latest.messages)) == (3, _dump(inline_last))
+    assert [s.step_index for s in await store.list_snapshots(run_id="r1")] == [1, 2, 3]
+
+
+async def test_snapshot_missing_referenced_message(store: PgStepStore, engine: AsyncEngine) -> None:
+    """单条读取时抛错；按运行列出时与官方一致，记日志跳过那一行。"""
+
+    await store.save_snapshot(
+        ContinuableSnapshot(
+            run_id="r1",
+            step_index=1,
+            conversation_id="conv-1",
+            messages=_messages("kept"),
+            state="complete",
+        )
+    )
+    await store.save_snapshot(
+        ContinuableSnapshot(
+            run_id="r1",
+            step_index=2,
+            conversation_id="conv-1",
+            messages=_messages("lost"),
+            state="complete",
+        )
+    )
+    lost_ref = json.loads((await raw_snapshot_messages(engine))[1])["message_refs"][0]
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("DELETE FROM agent_runtime.snapshot_messages WHERE sha256 = :ref"),
+            {"ref": lost_ref},
+        )
+
+    with pytest.raises(ValueError, match="missing"):
+        await store.latest_snapshot(run_id="r1")
+    with pytest.raises(ValueError, match="missing"):
+        await store.latest_conversation_snapshot(conversation_id="conv-1")
+    assert [s.step_index for s in await store.list_snapshots(run_id="r1")] == [1]
 
 
 async def test_agent_run_end_to_end_with_official_capability(store: PgStepStore) -> None:

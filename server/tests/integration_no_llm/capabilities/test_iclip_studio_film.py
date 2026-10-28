@@ -11,7 +11,6 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -65,7 +64,7 @@ def make_deps(conversation_id: str) -> AgentRunDeps:
 
 async def call_once(
     capability: IclipStudio[object], conversation_id: str, tool_name: str, args: dict[str, Any]
-) -> tuple[list[RetryPromptPart], list[str]]:
+) -> tuple[list[ToolReturnPart], list[str]]:
     """模型只调一次工具，返回它收到的退回单和工具结果。"""
 
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
@@ -76,10 +75,15 @@ async def call_once(
     result = await Agent(FunctionModel(script), capabilities=[capability]).run(
         "写工程文件。", deps=make_deps(conversation_id)
     )
-    parts = [part for message in result.all_messages() for part in message.parts]
+    returns = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
     return (
-        [part for part in parts if isinstance(part, RetryPromptPart)],
-        [str(part.content) for part in parts if isinstance(part, ToolReturnPart)],
+        [part for part in returns if part.outcome == "retried"],
+        [str(part.content) for part in returns if part.outcome != "retried"],
     )
 
 

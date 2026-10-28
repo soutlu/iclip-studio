@@ -10,7 +10,6 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -109,16 +108,18 @@ async def invoke(
     return result.all_messages()
 
 
-def refusals(messages: list[ModelMessage]) -> list[RetryPromptPart]:
-    return [
-        part for message in messages for part in message.parts if isinstance(part, RetryPromptPart)
-    ]
-
-
-def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+def _tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
     return [
         part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)
     ]
+
+
+def refusals(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in _tool_returns(messages) if part.outcome == "retried"]
+
+
+def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in _tool_returns(messages) if part.outcome != "retried"]
 
 
 async def test_only_video_tools_reach_the_model(capability: Video[object]) -> None:
@@ -185,7 +186,7 @@ async def test_parse_rejects_invalid_material_before_understanding(
 
     rejected = refusals(messages)
     assert len(rejected) == 1
-    assert url not in rejected[0].model_response()
+    assert url not in rejected[0].model_response_str()
     assert understanding.calls == []
     assert await files.entries(NAMESPACE) == []
     assert await files.entries(OTHER_NAMESPACE) == []
@@ -203,7 +204,7 @@ async def test_parse_rejects_non_http_addresses_before_understanding(
     rejected = refusals(messages)
     assert len(rejected) == 1
     # 这些地址也没登记，台账同样会退；退回须来自 http 规则。
-    assert "http" in rejected[0].model_response()
+    assert "http" in rejected[0].model_response_str()
     assert understanding.calls == []
     assert await files.entries(NAMESPACE) == []
 

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic_ai import Agent, Tool
+from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
@@ -56,6 +57,7 @@ from iclip.harness.background import (
     parse_outcome,
 )
 from iclip.harness.jobs import JobQueue, JobRow
+from iclip.harness.skills import build_skill_capabilities, skill_display_table
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
 from iclip.harness.transcript.history import TranscriptHistory
@@ -123,6 +125,7 @@ DISPLAYS = ToolDisplayRegistry.merged(
         "breakdown_video": lambda _args: GenericDisplay(summary="拆解视频", detail="ref.mp4"),
     },
     delegate_display_table(),
+    skill_display_table(),
 )
 """非空注册表，避免两条路同时缺 display 也能相等。"""
 
@@ -523,6 +526,157 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
     ]
     assert again.prompt_id != first
     assert frames_of(live, "t1", "t1.1")[0].text == "第二次"
+
+
+# --- 压缩 -----------------------------------------------------------------------
+
+SKILL = "storyboard"
+SKILL_BODY = "分镜按三组写，每组三个镜头。"
+LOAD_CALL = "call_load"
+
+
+def loads_skill_then_says(delivered: list[bool]) -> FunctionModel:
+    """首轮先加载技能再答，之后每次直接答；每次对话请求记下技能正文是否送达。摘要请求回一段摘要。"""
+
+    def summarize(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(content="## Intent\n给视频做分镜")])
+
+    async def stream(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        delivered.append(
+            any(
+                isinstance(part, UserPromptPart)
+                and f'context id="capability:{SKILL}"' in str(part.content)
+                and SKILL_BODY in str(part.content)
+                for message in messages
+                for part in message.parts
+            )
+        )
+        if len(delivered) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="load_capability", json_args=f'{{"id": "{SKILL}"}}', tool_call_id=LOAD_CALL
+                )
+            }
+        else:
+            yield "好的。"
+
+    return FunctionModel(summarize, stream_function=stream)
+
+
+async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recorded_load(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """窗口小到每次请求都压：压掉的技能加载补记一次，刷新前后同一步各显示一张加载卡。"""
+
+    (tmp_path / SKILL).mkdir()
+    (tmp_path / SKILL / "SKILL.md").write_text(
+        f"---\nname: {SKILL}\ndescription: 写分镜\n---\n\n{SKILL_BODY}\n", encoding="utf-8"
+    )
+    delivered: list[bool] = []
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        loads_skill_then_says(delivered),
+        store=store,
+        display=DISPLAYS,
+        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        context_limits={AGENT_ID: 1},
+        compaction_keep_messages=2,
+    )
+    conversation_id = new_conversation_id()
+
+    for prompt in ("加载技能写分镜", "改第二组", "再改第三组"):
+        await submit_text(runner, queue, conversation_id, prompt)
+        await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    # 加载之后每次请求都带着技能正文，两次压掉加载也一样。
+    assert delivered == [False, True, True, True]
+    assert [[step.step_id for step in turn.steps] for turn in live.items] == [
+        ["t1.1", "t1.2"],
+        ["t2.1"],
+        ["t3.1"],
+    ]
+    # 第一轮压缩时加载还在保留的尾部里，不补记；后两轮压掉了加载，各补记一次，卡挂在压缩提示后面。
+    steps = {step.step_id: step for turn in live.items for step in turn.steps}
+    assert [
+        step_id
+        for step_id, step in steps.items()
+        if any(frame.kind == "notice" for frame in step.frames)
+    ] == ["t1.2", "t2.1", "t3.1"]
+    assert [frame.kind for frame in steps["t2.1"].frames] == ["notice", "tool", "text"]
+    assert [frame.kind for frame in steps["t3.1"].frames] == ["notice", "tool", "text"]
+    cards = [
+        (step_id, frame)
+        for step_id, step in steps.items()
+        for frame in step.frames
+        if isinstance(frame, ToolFrame) and frame.name == "load_capability"
+    ]
+    assert [step_id for step_id, _ in cards] == ["t1.1", "t2.1", "t3.1"]
+    assert cards[0][1].tool_call_id == LOAD_CALL
+    assert len({card.tool_call_id for _, card in cards}) == 3
+    assert {(card.state, card.display) for _, card in cards} == {
+        ("done", GenericDisplay(summary="加载技能", detail=SKILL))
+    }
+
+
+async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    (tmp_path / SKILL).mkdir()
+    (tmp_path / SKILL / "SKILL.md").write_text(
+        f"---\nname: {SKILL}\ndescription: 写分镜\n---\n\n{SKILL_BODY}\n", encoding="utf-8"
+    )
+    delivered: list[bool] = []
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        loads_skill_then_says(delivered),
+        store=store,
+        display=DISPLAYS,
+        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        context_limits={AGENT_ID: 1},
+        compaction_keep_messages=3,
+    )
+    service = TranscriptService(
+        store=store,
+        history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
+        queue=queue,
+        runner=runner,
+        context_limits={AGENT_ID: 1},
+        record_materials=records_nothing,
+    )
+    conversation_id = new_conversation_id()
+
+    for prompt in ("加载技能写分镜", "改第二组", "再改第三组"):
+        await submit_text(runner, queue, conversation_id, prompt)
+        await drained(queue, conversation_id)
+    await service.regenerate(conversation_id=conversation_id, turn_id="t3")
+    await drained(queue, conversation_id)
+    await submit_text(runner, queue, conversation_id, "再改第四组")
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    snapshot = await step_store.latest_conversation_snapshot(
+        conversation_id=conversation_id, include_interrupted=True
+    )
+    assert snapshot is not None
+    assert SKILL in parse_loaded_capabilities(snapshot.messages)
+    assert delivered[0] is False
+    assert all(delivered[1:])
+    cards = [
+        frame
+        for turn in live.items
+        for step in turn.steps
+        for frame in step.frames
+        if isinstance(frame, ToolFrame) and frame.name == "load_capability"
+    ]
+    assert cards
+    assert {card.state for card in cards} == {"done"}
 
 
 # --- 后台工具 -------------------------------------------------------------------

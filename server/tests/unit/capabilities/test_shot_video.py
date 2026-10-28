@@ -14,9 +14,9 @@ from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
+    ToolReturnPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -269,10 +269,10 @@ async def test_an_out_of_scope_address_is_refused_on_the_agent_path(
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
     assert len(refusals) == 1
-    assert "不是这段对话里的素材" in refusals[0].model_response()
+    assert "不是这段对话里的素材" in refusals[0].model_response_str()
     assert await files.entries(NAMESPACE) == []
 
 
@@ -817,7 +817,9 @@ async def test_stringified_frames_are_parsed_on_the_agent_path(
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, RetryPromptPart) and part.tool_name == "generate_shot_frames"
+        if isinstance(part, ToolReturnPart)
+        and part.outcome == "retried"
+        and part.tool_name == "generate_shot_frames"
     ]
     assert refusals == []
     parsed = [log for log in logs if log["event"] == "工具参数以字符串传入，已解析"]

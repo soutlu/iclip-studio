@@ -14,7 +14,6 @@ from pydantic_ai.capabilities import AgentCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -49,8 +48,8 @@ def make_skill(library: Path, name: str, *, references: dict[str, str] | None = 
 
 async def read_reference(
     library: Path, names: tuple[str, ...], *, skill: str, name: str
-) -> ToolReturnPart | RetryPromptPart:
-    """通过 Agent 调用 get_skill_reference，以 ToolReturnPart 和 RetryPromptPart 区分成功与可重试拒绝。"""
+) -> ToolReturnPart:
+    """通过 Agent 调用 get_skill_reference，以返回的 outcome（success / retried）区分成功与可重试拒绝。"""
 
     async def call_once(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
@@ -66,7 +65,7 @@ async def read_reference(
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, ToolReturnPart | RetryPromptPart) and part.tool_name == TOOL
+        if isinstance(part, ToolReturnPart) and part.tool_name == TOOL
     ]
     assert len(parts) == 1  # 单次调用必须仅有一个结果，以检测工具重复注册。
     return parts[0]
@@ -135,7 +134,7 @@ async def test_granted_skill_reference_is_readable(tmp_path: Path) -> None:
 
     part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="规范.md")
 
-    assert isinstance(part, ToolReturnPart)
+    assert part.outcome == "success"
     assert part.content == "规范正文"
 
 
@@ -146,8 +145,8 @@ async def test_ungranted_skill_references_are_refused(tmp_path: Path) -> None:
 
     part = await read_reference(tmp_path, (SKILL,), skill=OTHER, name="规范.md")
 
-    assert isinstance(part, RetryPromptPart)
-    assert "没有挂载 skill" in part.model_response()
+    assert part.outcome == "retried"
+    assert "没有挂载 skill" in part.model_response_str()
 
 
 @pytest.mark.parametrize(
@@ -161,7 +160,7 @@ async def test_reference_paths_outside_the_skill_are_refused(tmp_path: Path, nam
 
     part = await read_reference(tmp_path, (SKILL, OTHER), skill=SKILL, name=name)
 
-    assert isinstance(part, RetryPromptPart)
+    assert part.outcome == "retried"
 
 
 async def test_refusal_lists_the_available_references(tmp_path: Path) -> None:
@@ -175,9 +174,9 @@ async def test_refusal_lists_the_available_references(tmp_path: Path) -> None:
 
     part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="规范表.md")
 
-    assert isinstance(part, RetryPromptPart)
+    assert part.outcome == "retried"
     # 顺序按码位排，稳定即可
-    assert "它有: 深处/细则.md, 补充.md, 规范.md" in part.model_response()
+    assert "它有: 深处/细则.md, 补充.md, 规范.md" in part.model_response_str()
 
 
 async def test_nested_reference_is_readable(tmp_path: Path) -> None:
@@ -185,7 +184,7 @@ async def test_nested_reference_is_readable(tmp_path: Path) -> None:
 
     part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="深处/细则.md")
 
-    assert isinstance(part, ToolReturnPart)
+    assert part.outcome == "success"
     assert part.content == "细则正文"
 
 
@@ -195,7 +194,7 @@ async def test_overlong_reference_is_truncated_loudly(tmp_path: Path) -> None:
 
     part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="长文.md")
 
-    assert isinstance(part, ToolReturnPart)
+    assert part.outcome == "success"
     text = part.content
     assert isinstance(text, str)
     assert text.endswith(TRUNCATION_MARKER)
