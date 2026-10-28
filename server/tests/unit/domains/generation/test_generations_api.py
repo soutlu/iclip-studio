@@ -2235,10 +2235,7 @@ async def test_image_clip_duration_is_explicit_and_model_specific(
         assert payload["reference_video_urls"] == []
         assert payload["reference_image_urls"] == EDIT_BODY["reference_image_urls"]
         assert payload["prompt"] == EDIT_BODY["prompt"], "图生不带编辑指令"
-        if "seedance-2-5" in model:
-            assert payload["provider_options"] == {"omni_reference_task_type": "reference"}
-        elif "wan3" in model:
-            assert payload["provider_options"] is None, "Wan 图生沿用网关原生映射，不加模式开关"
+        assert payload["provider_options"] is None, "图生沿用网关按张数的原生调度，不加模式开关"
     else:
         assert list(repo.jobs) == [take.id]
 
@@ -2249,12 +2246,10 @@ async def test_image_clip_duration_is_explicit_and_model_specific(
         {"reference_image_urls": []},
         {"seconds": None},
         {"seconds": 0},
-        {"provider_options": {"omni_reference_task_type": "edit"}},
-        {"provider_options": {"omni_reference_task_type": "extend"}},
         {"range_end_ms": 7000},
     ],
 )
-async def test_image_clip_rejects_missing_images_invalid_duration_mode_or_range(
+async def test_image_clip_rejects_missing_images_invalid_duration_or_range(
     flaw: dict[str, object],
 ) -> None:
     repo = InMemoryGenerationRepository()
@@ -2274,6 +2269,115 @@ async def test_image_clip_rejects_missing_images_invalid_duration_mode_or_range(
         )
     assert response.status_code == 422, response.text
     assert list(repo.jobs) == [take.id]
+
+
+def seed_portrait_base(repo: InMemoryGenerationRepository, base_role: str) -> GenerationJob:
+    """原作是一条 9:16 的出片；``base_role`` 为 composite 时基底是在它上面合成的一版。"""
+
+    owner = uuid.uuid4()
+    take = replace(
+        seed_take(repo, owner=owner), request=video_request(aspect_ratio="9:16"), duration_ms=6000
+    )
+    repo.jobs[take.id] = take
+    if base_role == "take":
+        return take
+    composite = make_composite(
+        seed_edit(repo, take),
+        status=STATUS_COMPLETED,
+        owner_user_id=owner,
+        output_url=BASE_URL,
+        duration_ms=6000,
+    )
+    repo.jobs[composite.id] = composite
+    return composite
+
+
+async def post_image_clip(
+    repo: InMemoryGenerationRepository, base: GenerationJob, **fields: object
+) -> httpx.Response:
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=base.owner_user_id))
+    async with client(app) as http:
+        return await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(base.id),
+                "reference_video_urls": [],
+                "seconds": 5,
+                **fields,
+            },
+        )
+
+
+@pytest.mark.parametrize("base_role", ["take", "composite"])
+async def test_three_or_more_images_are_references_in_the_originals_aspect_ratio(
+    base_role: str,
+) -> None:
+    """3 张及以上图片网关按参考图生成，不给比例就随素材；补上原作出片的画幅，基底是合成也取原作的。"""
+
+    repo = InMemoryGenerationRepository()
+    base = seed_portrait_base(repo, base_role)
+    seeded = set(repo.jobs)
+    urls = [f"https://cdn.test/reference-{index}.png" for index in range(3)]
+
+    response = await post_image_clip(repo, base, reference_image_urls=urls)
+
+    assert response.status_code == 202, response.text
+    payload = stored_request(only_new(repo, seeded)).model_dump()
+    assert (payload["aspect_ratio"], payload["reference_image_urls"]) == ("9:16", urls)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"reference_image_urls": ["https://cdn.test/first.png"]},
+        {"reference_image_urls": ["https://cdn.test/first.png", "https://cdn.test/last.png"]},
+        {
+            "reference_image_urls": [
+                f"https://cdn.test/reference-{index}.png" for index in range(3)
+            ],
+            "reference_video_urls": [CLIP_URL],
+            "seconds": -1,
+        },
+    ],
+    ids=["首帧", "首尾帧", "视频编辑"],
+)
+async def test_first_frames_and_edits_leave_the_aspect_ratio_to_the_gateway(
+    fields: dict[str, object],
+) -> None:
+    """1–2 张图片网关按首帧、首尾帧生成，画幅跟随首帧；视频编辑跟随参考视频。都不传比例。"""
+
+    repo = InMemoryGenerationRepository()
+    base = seed_portrait_base(repo, "take")
+    seed_clip(repo, owner=base.owner_user_id)
+    seeded = set(repo.jobs)
+
+    response = await post_image_clip(repo, base, **fields)
+
+    assert response.status_code == 202, response.text
+    assert stored_request(only_new(repo, seeded)).model_dump()["aspect_ratio"] is None
+
+
+@pytest.mark.parametrize("ratio", [None, "adaptive"])
+async def test_reference_images_are_rejected_when_the_original_has_no_concrete_ratio(
+    ratio: str | None,
+) -> None:
+    repo = InMemoryGenerationRepository()
+    base = seed_portrait_base(repo, "composite")
+    assert base.root_job_id is not None
+    original = repo.jobs[base.root_job_id]
+    repo.jobs[original.id] = replace(original, request=video_request(aspect_ratio=ratio))
+    seeded = set(repo.jobs)
+
+    response = await post_image_clip(
+        repo,
+        base,
+        reference_image_urls=[f"https://cdn.test/reference-{index}.png" for index in range(3)],
+    )
+
+    assert response.status_code == 422, response.text
+    assert "画幅" in response.json()["detail"]
+    assert set(repo.jobs) == seeded
 
 
 @pytest.mark.parametrize(

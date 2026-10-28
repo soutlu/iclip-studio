@@ -14,7 +14,7 @@ import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { useFileDropTarget, useWindowFileDrop } from '@/shared/ui/file-drop'
 import type { ComposerNode, ComposerNodeSpec, ErasedNodeSpec } from './composer-node'
-import { ComposerNodeViews } from './composer-node-views'
+import { ComposerNodeViews, type ComposerAttachmentPreviewOf } from './composer-node-views'
 import { ComposerNotice } from './composer-notice'
 import { readComposerSegments, readComposerText } from './editor-schema'
 import { selectMention, useMention, type CaretAnchor } from './mention'
@@ -120,6 +120,8 @@ type ComposerProps<N extends ComposerNode, Item> = {
   mention?: ComposerMention<Item, N> | undefined
   /** 文档变化、附件状态或地址变化时触发（上传进度不算）；整篇恢复不触发。 */
   onChange?: ((parts: readonly ComposerPart<N>[]) => void) | undefined
+  /** 给附件的悬停预览卡补说明与裁切框，见 ComposerAttachmentPreview。 */
+  attachmentPreview?: ComposerAttachmentPreviewOf | undefined
   ref?: Ref<ComposerHandle<N>>
   className?: string
 }
@@ -165,6 +167,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   addControl,
   ariaLabel = '输入消息',
   attachmentLimit,
+  attachmentPreview,
   attachmentsEnabled = false,
   busy = false,
   className,
@@ -428,7 +431,12 @@ export function Composer<N extends ComposerNode = never, Item = never>({
             type="file"
           />
         ) : null}
-        <ComposerNodeViews attachments={attachments} editor={editor} layerContainer={rootEl} />
+        <ComposerNodeViews
+          attachmentPreview={attachmentPreview}
+          attachments={attachments}
+          editor={editor}
+          layerContainer={rootEl}
+        />
         {mention !== undefined && mentionMenu !== undefined
           ? mention.render({
               active: mentionMenu.active,

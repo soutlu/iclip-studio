@@ -1,7 +1,7 @@
 export { Composer } from './composer'
 export type { ComposerHandle, ComposerMention, ComposerMentionMenu } from './composer'
 export type { ComposerNodeSpec } from './composer-node'
-export { ComposerNodeViews } from './composer-node-views'
+export { ComposerNodeViews, type ComposerAttachmentPreviewOf } from './composer-node-views'
 export { ComposerNotice } from './composer-notice'
 export { createComposerSchema } from './editor-schema'
 export { composerParts } from './prompt-parts'

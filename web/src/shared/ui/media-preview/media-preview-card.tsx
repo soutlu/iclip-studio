@@ -3,7 +3,14 @@
  * 卡用 fixed 定位，位置在视口坐标里算；挂载点可以注入：锚点在模态弹窗里时挂进弹窗，弹窗外的指针事件与焦点都被禁用。
  * 弹窗带 translate 时 fixed 以弹窗为参照，所以落位前减去包含块原点。 */
 
-import { type SyntheticEvent, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type RefObject,
+  type SyntheticEvent,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -14,6 +21,7 @@ import {
   formatDimensions,
   formatDuration,
 } from './attachment-format'
+import { MediaCropper, type MediaPreviewCrop } from './media-cropper'
 import { MEDIA_KIND_ICON, type MediaDescriptor, mediaDisplayName } from './media-descriptor'
 import { UploadRing } from './upload-ring'
 
@@ -39,6 +47,12 @@ type MediaPreviewCardProps = {
   /** 挂载点，默认 body。 */
   container?: HTMLElement | null
   media: MediaDescriptor
+  /** 代替默认第二行（尺寸、时长、大小）的说明。 */
+  details?: string | undefined
+  /** 图片要裁时给：预览区换成裁切框。 */
+  crop?: MediaPreviewCrop | undefined
+  /** 拿到卡片元素，供锚点判断点击落在不在卡里。 */
+  cardRef?: RefObject<HTMLDivElement | null> | undefined
   onEnter: () => void
   onLeave: () => void
   onEnlarge: () => void
@@ -48,16 +62,35 @@ export function MediaPreviewCard({
   anchorEl,
   container = null,
   media,
+  details: givenDetails,
+  crop,
+  cardRef,
   onEnter,
   onLeave,
   onEnlarge,
 }: MediaPreviewCardProps) {
+  // 拖裁切框时指针可能出卡，拖完前不关；拖完时指针已在卡外就补一次离开。
+  const draggingRef = useRef(false)
+  const hoveringRef = useRef(false)
+  const enterTip = () => {
+    hoveringRef.current = true
+    onEnter()
+  }
+  const leaveTip = () => {
+    hoveringRef.current = false
+    if (!draggingRef.current) onLeave()
+  }
+  const endDrag = () => {
+    draggingRef.current = false
+    if (!hoveringRef.current) onLeave()
+  }
   // 隐藏状态下测量后定位；挂载与媒体加载回调负责重新测量。
   const [placement, setPlacement] = useState<TipPlacement | null>(null)
   const tipElRef = useRef<HTMLDivElement | null>(null)
   const originRef = useRef<{ x: number; y: number } | null>(null)
   const tipRef = (el: HTMLDivElement | null) => {
     tipElRef.current = el
+    if (cardRef !== undefined) cardRef.current = el
     measure(el)
   }
 
@@ -120,14 +153,16 @@ export function MediaPreviewCard({
   const isMedia = media.kind !== 'file'
   const { previewUrl, upload } = media
   const canEnlarge = isMedia && previewUrl !== undefined
-  const details = [
-    intrinsic === null ? null : formatDimensions(intrinsic.width, intrinsic.height),
-    intrinsic?.duration === undefined ? null : formatDuration(intrinsic.duration),
-    // 视频第二行只报尺寸与时长。
-    media.size === undefined || media.kind === 'video' ? null : formatAttachmentSize(media.size),
-  ]
-    .filter((part) => part !== null)
-    .join(' · ')
+  const details =
+    givenDetails ??
+    [
+      intrinsic === null ? null : formatDimensions(intrinsic.width, intrinsic.height),
+      intrinsic?.duration === undefined ? null : formatDuration(intrinsic.duration),
+      // 视频第二行只报尺寸与时长。
+      media.size === undefined || media.kind === 'video' ? null : formatAttachmentSize(media.size),
+    ]
+      .filter((part) => part !== null)
+      .join(' · ')
   // 只有竖屏放宽封顶高度；读到像素尺寸前按方形与横屏的 220 渲染。
   const mediaSizeClass = cn(
     'block max-w-[300px] rounded-sm object-contain',
@@ -179,8 +214,8 @@ export function MediaPreviewCard({
         isMedia && 'media-tip-media-card rounded-md',
         placement === null ? 'pointer-events-none opacity-0' : 'opacity-100',
       )}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
+      onMouseEnter={enterTip}
+      onMouseLeave={leaveTip}
       ref={tipRef}
       role="tooltip"
       style={
@@ -195,6 +230,18 @@ export function MediaPreviewCard({
                 <Icon decorative name={MEDIA_KIND_ICON[media.kind]} size="lg" />
                 <span>预览不可用</span>
               </div>
+            ) : media.kind === 'image' && crop !== undefined ? (
+              <MediaCropper
+                alt={name}
+                className={mediaSizeClass}
+                crop={crop}
+                onDragEnd={endDrag}
+                onDragStart={() => {
+                  draggingRef.current = true
+                }}
+                onImageLoad={onImageLoad}
+                src={previewUrl}
+              />
             ) : media.kind === 'image' ? (
               <img alt={name} className={mediaSizeClass} onLoad={onImageLoad} src={previewUrl} />
             ) : (

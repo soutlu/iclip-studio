@@ -129,7 +129,9 @@ const holdReferenceUpload = async (page: Page) => {
   return () => page.evaluate(() => window.dispatchEvent(new Event('release-reference-upload')))
 }
 
-test('图生和编辑按模型分别校验时长，仅上传图片也能生成同一选区的新版本', async ({ page }) => {
+test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时补上描述生成同一选区的新版本', async ({
+  page,
+}) => {
   const dialog = await openEditor(page, false, 2, false)
   await waitForSegments(dialog)
   await segment(dialog, 2).click()
@@ -156,6 +158,10 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
     buffer: await canvasPng(page, { fill: '#556b88', label: 'Reference' }),
   })
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
+  // 首帧不写进正文，只有它时没有描述可交。
+  await expect(generateButton(dialog)).toBeDisabled()
+  await requestBox(dialog).press('End')
+  await page.keyboard.type('人物转身')
   await expect(generateButton(dialog)).toBeEnabled()
 
   const duration = card(dialog).getByRole('slider', { name: '生成时长（秒）', exact: true })
@@ -233,7 +239,7 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   const body = sent.postDataJSON() as Record<string, unknown>
   expect(body).toMatchObject({
     model: 'vendor-a-seedance-2-0',
-    prompt: '@Image1',
+    prompt: '人物转身',
     range_start_ms: 1000,
     range_end_ms: 2000,
     seconds: 15,

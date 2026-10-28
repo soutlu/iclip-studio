@@ -17,12 +17,14 @@ import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import {
   Composer,
   readyAttachment,
+  type ComposerAttachmentPreviewOf,
   type ComposerHandle,
   type ComposerMention,
   type ComposerPart,
   type ComposerSubmission,
 } from '@/shared/ui/composer'
 import { InlineAlert } from '@/shared/ui/inline-alert'
+import { MAX_FIRST_FRAMES } from '../edit-prompt'
 import { editMentionItems, type EditMentionItem } from '../image-edit/edit-mention-items'
 import { EditMentionMenu } from '../image-edit/edit-mention-menu'
 import { placeCard } from '../editing/card-placement'
@@ -72,6 +74,7 @@ type CardComposerProps = {
   firstFrameReferenceUrl: string | undefined
   referenceLimit: number | undefined
   generationBlockOf: GenerationBlockOf
+  attachmentPreview?: ComposerAttachmentPreviewOf | undefined
 }
 
 const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =>
@@ -99,6 +102,7 @@ function CardComposer({
   firstFrameReferenceUrl,
   referenceLimit,
   generationBlockOf,
+  attachmentPreview,
 }: CardComposerProps) {
   const { data: user } = useUser()
   const composerRef = useRef<ComposerHandle>(null)
@@ -193,6 +197,7 @@ function CardComposer({
       <Composer<never, EditMentionItem>
         accept="image"
         ariaLabel="修改要求"
+        attachmentPreview={attachmentPreview}
         attachmentLimit={
           referenceLimit === undefined
             ? undefined
@@ -239,17 +244,18 @@ function CardComposer({
         onSubmit={onSubmit}
         placeholder={
           mode === 'image'
-            ? '描述画面与动作，输入 @ 引用首帧，也可粘贴或拖入参考图'
+            ? '描述画面与动作，输入 @ 引用首帧，也可粘贴或拖入图片'
             : '描述该段的修改要求，输入 @ 引用图片，也可粘贴或拖入参考图'
         }
         ref={composerRef}
         sending={sending}
         submitAction={{
+          // 首帧、尾帧不写进正文，只有它们时正文是空的，交不上去。
           disabled:
             submitDisabled ||
             exceedsReferenceLimit ||
             block !== undefined ||
-            (mode === 'edit' && !hasText),
+            ((mode === 'edit' || referenceCount <= MAX_FIRST_FRAMES) && !hasText),
           emphasis: 'primary',
           icon: 'video',
           label: '生成视频',
@@ -267,8 +273,6 @@ function CardComposer({
         <InlineAlert
           message={`当前模型最多支持 ${referenceLimit} 张参考图，已引用 ${referenceCount} 张，无法生成视频；请删除多出的图片`}
         />
-      ) : block?.cause === 'references' ? (
-        <InlineAlert message={block.message} />
       ) : null}
     </>
   )
@@ -298,6 +302,7 @@ type AiEditCardProps = {
   firstFrameReferenceUrl: string | undefined
   referenceLimit: number | undefined
   generationBlockOf: GenerationBlockOf
+  attachmentPreview?: ComposerAttachmentPreviewOf | undefined
   alerts: ReactNode
 }
 
@@ -323,6 +328,7 @@ export function AiEditCard({
   firstFrameReferenceUrl,
   referenceLimit,
   generationBlockOf,
+  attachmentPreview,
   alerts,
 }: AiEditCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -451,6 +457,7 @@ export function AiEditCard({
           </div>
           <CardComposer
             appending={appending}
+            attachmentPreview={attachmentPreview}
             draft={draft}
             durationControl={durationControl}
             firstFrameReferenceUrl={firstFrameReferenceUrl}

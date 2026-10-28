@@ -54,3 +54,21 @@ export const compileReferencePrompt = (
     .join('')
   return { referenceImageUrls, text }
 }
+
+/** 网关调度：不带参考视频时 1 张图作首帧、2 张依次作首帧与尾帧，更多才作参考图（multiflow docs/api.md）。 */
+export const MAX_FIRST_FRAMES = 2
+
+/** 图生的描述：图片不超过 MAX_FIRST_FRAMES 张时网关按先后把它们当首帧、尾帧，正文里不写引用，去掉芯片后
+ * 多出来的空白并成一个、行首行尾的去掉；更多张时同 compileReferencePrompt。 */
+export const compileImageClipPrompt = (
+  parts: readonly EditDraftPart[],
+): { text: string; referenceImageUrls: string[] } => {
+  const compiled = compileReferencePrompt(parts)
+  if (compiled.referenceImageUrls.length > MAX_FIRST_FRAMES) return compiled
+  const text = parts
+    .map((part) => (part.kind === 'text' ? part.text : ''))
+    .join('')
+    .replace(/[^\S\n]{2,}/g, ' ')
+    .replace(/^[^\S\n]+|[^\S\n]+$/gm, '')
+  return { referenceImageUrls: compiled.referenceImageUrls, text }
+}

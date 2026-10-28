@@ -1,4 +1,4 @@
-import { useQuery, type QueryClient } from '@tanstack/react-query'
+import { queryOptions, useQueries, useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch, UserFacingError } from '@/shared/api/client'
 import type {
   VideoClipModelOut,
@@ -14,9 +14,82 @@ import {
   type GenerationJob,
   type GenerationsPage,
 } from '../storyboard.api'
+import { loadCrossOriginImage } from '../cross-origin-image'
 import type { Clip, SecondsRange } from '../editing/clip'
 import type { PlaySegment } from '../editing/play-layout'
 import { clipGenerationBlock } from './clip-generation'
+import type { PixelRect, Size } from './first-frames'
+
+const CROPPED_JPEG_QUALITY = 0.92
+
+/** 一张图的原图尺寸；同一地址只读一次。 */
+export const imageSizeQuery = (url: string) =>
+  queryOptions({
+    queryKey: ['image-size', url] as const,
+    queryFn: async (): Promise<Size> => {
+      const image = await loadCrossOriginImage(url)
+      return { width: image.naturalWidth, height: image.naturalHeight }
+    },
+    staleTime: Infinity,
+  })
+
+/** 一条视频的像素尺寸，只读元数据；同一地址只读一次。 */
+export const videoSizeQuery = (url: string) =>
+  queryOptions({
+    queryKey: ['video-size', url] as const,
+    queryFn: () =>
+      new Promise<Size>((resolve, reject) => {
+        const video = document.createElement('video')
+        const release = () => {
+          video.onloadedmetadata = null
+          video.onerror = null
+          video.removeAttribute('src')
+          video.load()
+        }
+        video.preload = 'metadata'
+        video.crossOrigin = 'anonymous'
+        video.onloadedmetadata = () => {
+          const size = { width: video.videoWidth, height: video.videoHeight }
+          release()
+          resolve(size)
+        }
+        video.onerror = () => {
+          release()
+          reject(new UserFacingError('原片尺寸读取失败，请重试'))
+        }
+        video.src = url
+      }),
+    staleTime: Infinity,
+  })
+
+/** 各图的原图尺寸，按地址查；还没读到或读不到的不在里面。 */
+export const useImageSizes = (urls: readonly string[]): ReadonlyMap<string, Size> =>
+  useQueries({
+    queries: urls.map(imageSizeQuery),
+    combine: (results) =>
+      new Map(
+        urls.flatMap((url, index) => {
+          const size = results[index]?.data
+          return size === undefined ? [] : [[url, size] as const]
+        }),
+      ),
+  })
+
+/** 从原图上裁下 `rect`，导成 JPEG。 */
+const cropImage = async (url: string, rect: PixelRect): Promise<File> => {
+  const image = await loadCrossOriginImage(url)
+  const canvas = document.createElement('canvas')
+  canvas.width = rect.width
+  canvas.height = rect.height
+  const context = canvas.getContext('2d')
+  if (context === null) throw new UserFacingError('当前浏览器不支持裁切图片')
+  context.drawImage(image, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height)
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', CROPPED_JPEG_QUALITY),
+  )
+  if (blob === null) throw new UserFacingError('图片裁切失败，请重试')
+  return new File([blob], 'frame.jpg', { type: 'image/jpeg' })
+}
 
 export const videoEditConversationKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'video-edits'] as const
@@ -71,6 +144,8 @@ export const submitClipGeneration = async (
     model: VideoClipModelOut
     prompt: string
     referenceImageUrls: readonly string[]
+    /** 要先裁的图：原地址到原图上的像素框。裁好上传，新地址代替原地址发送。 */
+    frameCrops?: ReadonlyMap<string, PixelRect> | undefined
     generation: ClipGeneration
   },
 ): Promise<GenerationJob> => {
@@ -91,6 +166,13 @@ export const submitClipGeneration = async (
     const { url } = await uploadMediaFile(file, 'video')
     referenceVideoUrls = [url]
   }
+  const referenceImageUrls = await Promise.all(
+    input.referenceImageUrls.map(async (url) => {
+      const rect = input.frameCrops?.get(url)
+      if (rect === undefined) return url
+      return (await uploadMediaFile(await cropImage(url, rect), 'image')).url
+    }),
+  )
   const body: VideoEditIn = {
     conversation_id: input.conversationId,
     task_id: input.taskId,
@@ -100,7 +182,7 @@ export const submitClipGeneration = async (
     reference_video_urls: referenceVideoUrls,
     model: model.id,
     prompt: input.prompt,
-    reference_image_urls: [...input.referenceImageUrls],
+    reference_image_urls: referenceImageUrls,
     seconds: generation.mode === 'image' ? generation.seconds : -1,
   }
   const result = await apiFetch('/generations/video-edits', zGenerationEnvelope, {

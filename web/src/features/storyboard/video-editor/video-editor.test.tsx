@@ -272,10 +272,39 @@ describe('VideoEditor', () => {
 })
 
 describe('AI 改段的弹出卡', () => {
+  // 图生读原图尺寸用的 Image 桩：读到的都是 imageSize。
+  let imageSize = { width: 720, height: 1280 }
   // jsdom 不解码图片，上传前的尺寸校验读这个桩。
   beforeEach(() => {
     loginAs(mockAuthUser)
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
+    imageSize = { width: 720, height: 1280 }
+    vi.stubGlobal(
+      'Image',
+      class {
+        crossOrigin = ''
+        naturalWidth = imageSize.width
+        naturalHeight = imageSize.height
+        onload: (() => void) | null = null
+        set src(_url: string) {
+          queueMicrotask(() => this.onload?.())
+        }
+      },
+    )
+  })
+  // jsdom 不读视频元数据：图生另起一个不挂进页面的 <video> 读原片尺寸，给它补 720×1280 并发 loadedmetadata；
+  // 页面上播放用的 <video> 不受影响。
+  beforeEach(() => {
+    const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
+    vi.spyOn(HTMLMediaElement.prototype, 'src', 'set').mockImplementation(function (
+      this: HTMLMediaElement,
+      url: string,
+    ) {
+      src?.set?.call(this, url)
+      if (!this.isConnected) queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
+    })
+    vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
+    vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -527,7 +556,7 @@ describe('AI 改段的弹出卡', () => {
     )
   })
 
-  it('图生仅有图片也能提交：粘贴自动上传并引用，删除的图不发送，插入首帧后保持原地址', async () => {
+  it('图生 1 张图作首帧：粘贴自动上传，正文不写引用，删除的图不发送，插入首帧后保持原地址', async () => {
     const sourceUrl = 'https://test.oss-cn-hangzhou.aliyuncs.com/source.mp4'
     files.set(sourceUrl, { keyframes: [0, 1, 2, 3, 4], duration: 5 })
     serveChain([])
@@ -548,9 +577,11 @@ describe('AI 改段的弹出卡', () => {
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
     const image = (name: string) => new File(['png'], name, { type: 'image/png' })
     pasteFilesIntoComposer(requestBox(), [image('保留.png')])
+    await waitFor(() => expect(within(requestBox()).queryByRole('progressbar')).toBeNull())
     expect(generateButton()).toBeDisabled()
     fireEvent.keyDown(requestBox(), { key: 'Enter' })
     expect(submitted).toHaveLength(0)
+    pasteTextIntoComposer(requestBox(), '人物转身 ')
     await waitFor(() => expect(generateButton()).toBeEnabled())
     pasteFilesIntoComposer(requestBox(), [image('删除.png')])
     await waitFor(() => expect(generateButton()).toBeEnabled())
@@ -561,7 +592,7 @@ describe('AI 改段的弹出卡', () => {
     await user.click(generateButton())
     await waitFor(() => expect(submitted).toHaveLength(1))
     expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
-    expect(submitted[0]?.['prompt']).toBe('@Image1')
+    expect(submitted[0]?.['prompt']).toBe('人物转身')
     expect(submitted[0]?.['reference_video_urls']).toEqual([])
     expect(referenceSamples).toEqual([])
     await waitFor(() => expect(generateButton()).toBeEnabled())
@@ -572,14 +603,80 @@ describe('AI 改段的弹出卡', () => {
     expect(requestBox().textContent).toBe('')
     await user.keyboard('@选区首帧{Enter}')
     expect(within(requestBox()).getByText('选区首帧')).toBeVisible()
+    pasteTextIntoComposer(requestBox(), '人物走开')
     await user.click(segmentOf(track, 4))
     await user.click(generateButton())
     await waitFor(() => expect(submitted).toHaveLength(2))
     expect(submitted[1]?.['reference_image_urls']).toEqual([
       `${sourceUrl}?x-oss-process=video/snapshot,t_2000,f_jpg,w_1280,h_0`,
     ])
-    expect(submitted[1]?.['prompt']).toBe('@Image1')
+    expect(submitted[1]?.['prompt']).toBe('人物走开')
     expect(submitted[1]?.['reference_video_urls']).toEqual([])
+  })
+
+  it.each([
+    {
+      name: '画幅与原片不同，按默认框裁好另传',
+      image: { width: 1280, height: 720 },
+      cropped: true,
+    },
+    { name: '画幅与原片相同，原样发送', image: { width: 720, height: 1280 }, cropped: false },
+  ])('图生 1 张图作首帧：$name', async ({ image, cropped }) => {
+    imageSize = image
+    const drawn: number[][] = []
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: (_image: CanvasImageSource, ...rect: number[]) => drawn.push(rect),
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) =>
+      callback(new Blob(['jpg-bytes'], { type: 'image/jpeg' })),
+    )
+    const uploads: { contentType: string; url: string }[] = []
+    server.events.on('response:mocked', async ({ request, response }) => {
+      if (!/\/api\/uploads\/[^/]+\/confirm$/.test(request.url)) return
+      uploads.push((await response.clone().json()) as { contentType: string; url: string })
+    })
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 2))
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    pasteTextIntoComposer(requestBox(), '人物转身')
+    pasteFilesIntoComposer(requestBox(), [new File(['png'], '首帧.png', { type: 'image/png' })])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+
+    if (cropped) {
+      // 要裁的图放进来后自己打开预览卡，卡里是裁切框。
+      const tip = await screen.findByRole('tooltip')
+      expect(within(tip).getByText('首帧 · 已裁成 9:16 · 图片偏小')).toBeVisible()
+      expect(within(tip).getByRole('group', { name: '拖动选择保留的部分' })).toBeVisible()
+      expect(within(requestBox()).getByRole('img', { name: '已裁切' })).toBeVisible()
+    } else {
+      expect(within(requestBox()).queryByRole('img', { name: '已裁切' })).toBeNull()
+    }
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toHaveLength(1))
+
+    const [original, croppedUpload] = uploads
+    if (cropped) {
+      expect(drawn).toEqual([[438, 0, 405, 720, 0, 0, 405, 720]])
+      expect(croppedUpload?.contentType).toBe('image/jpeg')
+      expect(submitted[0]?.['reference_image_urls']).toEqual([croppedUpload?.url])
+    } else {
+      expect(drawn).toEqual([])
+      expect(uploads).toHaveLength(1)
+      expect(submitted[0]?.['reference_image_urls']).toEqual([original?.url])
+    }
+    expect(submitted[0]?.['prompt']).toBe('人物转身')
   })
 
   it('参考图上限取模型返回的张数：Seedance 2.5 图生可引用 11 张并全部提交', async () => {
@@ -644,7 +741,7 @@ describe('AI 改段的弹出卡', () => {
     expect(generateButton()).toBeDisabled()
   })
 
-  it('图生只有图片可用，切回编辑必须补充修改文字，按钮与 Enter 都遵循同一条件', async () => {
+  it('图生 1–2 张图与编辑都必须写文字，3 张及以上的图生只有图片也能提交，按钮与 Enter 遵循同一条件', async () => {
     serveChain([])
     const submitted: Record<string, unknown>[] = []
     server.use(
@@ -660,7 +757,11 @@ describe('AI 改段的弹出卡', () => {
     await renderEditor()
     await user.click(segmentOf(await timeline(), 2))
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
-    pasteFilesIntoComposer(requestBox(), [new File(['png'], '参考.png', { type: 'image/png' })])
+    const image = (name: string) => new File(['png'], name, { type: 'image/png' })
+    pasteFilesIntoComposer(requestBox(), [image('参考1.png')])
+    await waitFor(() => expect(within(requestBox()).queryByRole('progressbar')).toBeNull())
+    expect(generateButton()).toBeDisabled()
+    pasteFilesIntoComposer(requestBox(), [image('参考2.png'), image('参考3.png')])
     await waitFor(() => expect(generateButton()).toBeEnabled())
 
     await user.click(within(openCard()).getByRole('radio', { name: '编辑' }))
@@ -674,8 +775,9 @@ describe('AI 改段的弹出卡', () => {
     expect(generateButton()).toBeEnabled()
     fireEvent.keyDown(requestBox(), { key: 'Enter' })
     await waitFor(() => expect(submitted).toHaveLength(1))
-    expect(submitted[0]?.['prompt']).toMatch(/^@Image1\s+调整灯光$/)
-    expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+    expect(submitted[0]?.['prompt']).toMatch(/^@Image1@Image2@Image3\s+调整灯光$/)
+    const uploaded = expect.stringMatching(/\/mock-oss\//) as unknown
+    expect(submitted[0]?.['reference_image_urls']).toEqual([uploaded, uploaded, uploaded])
     expect(submitted[0]?.['reference_video_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
   })
 
@@ -725,6 +827,11 @@ describe('AI 改段的弹出卡', () => {
       ),
     )
     await user.click(within(openCard()).getByRole('radio', { name: mode }))
+    // 图生 2 张图依次作首帧、尾帧，正文不写引用；编辑时都是参考图。
+    const prompt = (text: string) =>
+      mode === '图生'
+        ? text
+        : text.replace('光线参考', '光线参考@Image1').replace('构图参考', '构图参考@Image2')
 
     const image = (name: string) => new File(['png-bytes'], `${name}.png`, { type: 'image/png' })
     pasteTextIntoComposer(requestBox(), '光线参考')
@@ -742,7 +849,7 @@ describe('AI 改段的弹出卡', () => {
       range_start_ms: 1000,
       range_end_ms: 3000,
       model: 'wan3.0-video',
-      prompt: '光线参考@Image1，构图参考@Image2',
+      prompt: prompt('光线参考，构图参考'),
     })
     await waitFor(() => expect(confirmedImages).toHaveLength(2))
     expect(submitted[0]?.['reference_image_urls']).toEqual(confirmedImages)
@@ -780,7 +887,7 @@ describe('AI 改段的弹出卡', () => {
     await user.click(generateButton())
     await waitFor(() => expect(submitted).toHaveLength(2))
     expect(submitted[1]).toMatchObject({
-      prompt: '光线参考@Image1，构图参考@Image2，镜头缓慢推进',
+      prompt: prompt('光线参考，构图参考，镜头缓慢推进'),
       reference_image_urls: confirmedImages,
     })
     expect(await within(versionStrip()).findByRole('button', { name: /V2 · 生成中/ })).toBeVisible()
