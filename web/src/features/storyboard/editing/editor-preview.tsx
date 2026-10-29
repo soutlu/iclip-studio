@@ -16,6 +16,7 @@ import { IconButton } from '@/shared/ui/button'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
+import { framePosition } from './frame-seek'
 import { locateClock, totalDuration, type LaidOutSegment } from './play-layout'
 import { timeLabel } from './time-label'
 
@@ -38,9 +39,6 @@ const SLOTS: readonly { id: string; slot: Slot }[] = [
 
 // requestAnimationFrame 约 16ms 一帧，提前两帧切到预载好的下一段。
 const SWITCH_AHEAD = 0.03
-const END_PREVIEW_OFFSET = 0.001
-// 媒体正好定在帧边界（镜头分界上的关键帧）时浏览器显示的是前一帧：定位到某一刻时媒体往后多走这么一点，显示这一刻所在的那一帧。
-const START_PREVIEW_OFFSET = 0.001
 
 const sameSegments = (
   left: readonly LaidOutSegment[] | undefined,
@@ -206,7 +204,7 @@ export function EditorPreview({
     if (segments === undefined) return
     const boundedClock = Math.min(duration, Math.max(0, clock))
     const mediaClock =
-      boundary === 'end' ? Math.max(0, boundedClock - END_PREVIEW_OFFSET) : boundedClock
+      boundary === 'end' ? framePosition(boundedClock, 'end', 0, duration) : boundedClock
     const located = locateClock(segments, mediaClock)
     const segment = located === undefined ? undefined : segments[located.index]
     if (located === undefined || segment === undefined) return
@@ -216,7 +214,7 @@ export function EditorPreview({
       segment,
       boundary === 'end'
         ? located.offset
-        : Math.min(segment.duration, located.offset + START_PREVIEW_OFFSET),
+        : framePosition(located.offset, 'start', 0, segment.duration),
     )
     onTime(boundedClock)
   }
