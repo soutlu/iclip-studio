@@ -81,6 +81,15 @@ if (!('scrollIntoView' in Element.prototype)) {
   })
 }
 
+// jsdom 不排版，没有 elementFromPoint；按坐标找元素一律找不到。需要指针下有元素的用例自己 spy。
+if (!('elementFromPoint' in Document.prototype)) {
+  Object.defineProperty(Document.prototype, 'elementFromPoint', {
+    configurable: true,
+    value: () => null,
+    writable: true,
+  })
+}
+
 // jsdom 没有 Web Animations；变形动画直接算作播完，元素停在终态。
 if (!('animate' in Element.prototype)) {
   Object.defineProperty(Element.prototype, 'animate', {

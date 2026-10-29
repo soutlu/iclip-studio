@@ -10,6 +10,7 @@ import {
   keepPlace,
   outputOf,
   pickPart,
+  previewPick,
   putShot,
   restoreDraft,
   runTrimSpecOf,
@@ -123,6 +124,37 @@ describe('镜头的开关', () => {
     expect(shotOn(source, none, 4)).toBe(true)
     const closed = putShot(source, pickPart(source, EMPTY_DRAFT, A.id, 1), 5, false)
     expect(shotOn(source, unpickPart(closed, A.id, 1), 5)).toBe(false)
+  })
+})
+
+describe('拖到草稿上预演选用', () => {
+  const preview = (draft: Draft, target: ReadyEdit, seg: number) => {
+    const items = previewPick(source, draft, target.id, seg)
+    if (items === undefined) throw new Error('这一段不能预演')
+    return items.map((item) =>
+      item.kind === 'shot' ? `${item.no}` : `${item.edit.id.toUpperCase()}${item.seg}`,
+    )
+  }
+
+  it('按排序插进去，开着的镜头和修剪都留着；松手选用后覆盖的镜头才关', () => {
+    const shot4 = draftItemsOf(source, EMPTY_DRAFT).find((item) => item.id === 'shot-4')
+    if (shot4 === undefined) throw new Error('草稿里没有镜头 4')
+    const cut = trimItem(EMPTY_DRAFT, shot4, { t0: 3.2, t1: 4 })
+    expect(preview(cut, A, 1)).toEqual(['1', '2', '3', '4', 'A1', '5', '6'])
+    const items = previewPick(source, cut, A.id, 1) ?? []
+    expect(items.find((item) => item.id === 'shot-4')?.t0).toBe(3.2)
+    expect(items.find((item) => item.id === 'a#1')).toMatchObject({ at: 3.8, d: 1.2 })
+    expect(names(pickPart(source, cut, A.id, 1))).toEqual(['1', '2', '3', 'A1', '6'])
+  })
+
+  it('同一位置上重新打开过的镜头、已选用的段照排序让位', () => {
+    const withA1 = pickPart(source, EMPTY_DRAFT, A.id, 1)
+    const reopened = putShot(source, withA1, 4, true)
+    expect(preview(reopened, B, 1)).toEqual(['1', '2', '3', 'A1', '4', 'B1', '6'])
+  })
+
+  it('已在草稿里的段没有预演', () => {
+    expect(previewPick(source, pickPart(source, EMPTY_DRAFT, C.id, 1), C.id, 1)).toBeUndefined()
   })
 })
 

@@ -199,7 +199,7 @@ export function Frames({ part }: { part: PlaySegment }) {
     return url === undefined ? [] : [url]
   })
   return (
-    <span className="timeline-frames" style={{ flexGrow: length }}>
+    <span className="timeline-frames">
       {shots.length === 0 ? (
         <Icon decorative name="video" size="sm" />
       ) : (
@@ -219,7 +219,6 @@ function Frame({ src }: { src: string }) {
 }
 
 export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
-  const length = part.end - part.start
   const body = (() => {
     switch (state.kind) {
       case 'loading':
@@ -245,11 +244,7 @@ export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) 
       }
     }
   })()
-  return (
-    <span className="timeline-wave" style={{ flexGrow: length }}>
-      {body}
-    </span>
-  )
+  return <span className="timeline-wave">{body}</span>
 }
 
 type TrimHandleProps = {

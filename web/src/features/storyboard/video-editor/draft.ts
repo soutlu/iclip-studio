@@ -249,6 +249,28 @@ export const draftItemsOf = (source: DraftSource, draft: Draft): DraftItem[] => 
   })
 }
 
+/**
+ * 把编辑段拖到草稿上、还没松手时的草稿：这一段按排序插进去，此刻开着的镜头和它们的修剪都留着（松手选用后
+ * 它覆盖的镜头才按默认关掉），别的块只是给它让位。这一段已在草稿里、或不能选用时为 undefined。
+ */
+export const previewPick = (
+  source: DraftSource,
+  draft: Draft,
+  editId: string,
+  seg: number,
+): DraftItem[] | undefined => {
+  const picked = pickPart(source, draft, editId, seg)
+  if (picked === draft) return undefined
+  const kept = draftItemsOf(source, draft).flatMap((item): ShotToggle[] =>
+    item.kind === 'shot' ? [{ no: item.no, on: true, seq: item.seq }] : [],
+  )
+  const toggles = [
+    ...picked.toggles.filter((toggle) => !kept.some((item) => item.no === toggle.no)),
+    ...kept,
+  ]
+  return draftItemsOf(source, { ...picked, toggles, cuts: draft.cuts })
+}
+
 export const totalOf = (items: readonly { d: number }[]) =>
   roundToMs(items.reduce((sum, item) => sum + item.d, 0))
 
