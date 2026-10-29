@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { StageBackdrop } from '../components/stage-backdrop'
+import { framePosition } from '../editing/frame-seek'
 import { StageLabel } from '../editing/stage-label'
 import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
@@ -57,8 +58,16 @@ export function MaterialPreview({
     const video = videoRef.current
     if (video === null) return
     const { range, show } = view
+    const start = range.startMs / 1000
+    const end = range.endMs / 1000
     let cancelled = false
     let frame = 0
+    // 停在出点时媒体在出点之前一点，按媒体时刻判断不出已到出点，单独记着。
+    let atEnd = false
+    const seekTo = (edge: Edge) => {
+      atEnd = edge === 'end'
+      video.currentTime = framePosition(edge === 'end' ? end : start, edge, start, end)
+    }
     const pause = () => {
       cancelAnimationFrame(frame)
       video.pause()
@@ -68,7 +77,7 @@ export function MaterialPreview({
       const now = Math.round(video.currentTime * 1000)
       if (now >= range.endMs) {
         pause()
-        video.currentTime = range.endMs / 1000
+        seekTo('end')
         report(range.endMs)
         return
       }
@@ -78,11 +87,12 @@ export function MaterialPreview({
     const play = () => {
       // 暂停后续播；已到出点（包括修剪停在末端）则重播选区。
       if (
+        atEnd ||
         video.ended ||
         video.currentTime * 1000 >= range.endMs ||
         video.currentTime * 1000 < range.startMs
       ) {
-        video.currentTime = range.startMs / 1000
+        seekTo('start')
       }
       video.play().then(
         () => {
@@ -98,9 +108,8 @@ export function MaterialPreview({
       )
     }
     controlRef.current = { toggle: () => (video.paused ? play() : pause()) }
-    const at = show === 'end' ? range.endMs : range.startMs
-    video.currentTime = at / 1000
-    report(at)
+    seekTo(show)
+    report(show === 'end' ? range.endMs : range.startMs)
     pause()
     return () => {
       cancelled = true
