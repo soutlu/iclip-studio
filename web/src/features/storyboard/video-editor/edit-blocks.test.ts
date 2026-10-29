@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
-import { blockStateOf, failedEditsOf, laneEditsOf, shotsOf, spanName } from './edit-blocks'
+import {
+  editBlocksOf,
+  editStateOf,
+  failedEditsOf,
+  laneEditsOf,
+  lanePartsOf,
+  shotsOf,
+  spanName,
+  type KeyframeRead,
+} from './edit-blocks'
 
 const shots = shotsOf({ keyframes: [0, 1, 2, 3, 4, 5], duration: 6 })
 
@@ -39,17 +48,13 @@ describe('spanName', () => {
 })
 
 describe('laneEditsOf', () => {
-  it.each<[string, [number, number], { from: number; to: number } | undefined]>([
-    ['正好对齐', [1, 3], { from: 2, to: 3 }],
-    ['两端各差 0.05 秒以内', [1.049, 2.951], { from: 2, to: 3 }],
-    ['开头差 0.06 秒', [1.06, 3], undefined],
-    ['结尾差 0.06 秒', [1, 2.94], undefined],
-    ['落在一个镜头中间', [1.5, 2.5], undefined],
-  ])('%s', (_, range, expected) => {
-    const lane = laneEditsOf('root', [edit(range)], shots)
-    expect(lane[0] === undefined ? undefined : { from: lane[0].from, to: lane[0].to }).toEqual(
-      expected,
-    )
+  it.each<[string, [number, number], { from: number; to: number }]>([
+    ['正好是镜头边界', [1, 3], { from: 2, to: 3 }],
+    ['盖到一部分也算', [1.5, 3.2], { from: 2, to: 4 }],
+    ['落在一个镜头中间', [1.5, 1.8], { from: 2, to: 2 }],
+  ])('区间对不对得上镜头都在轨上，覆盖到的镜头是区间碰到的：%s', (_, range, expected) => {
+    const [lane] = laneEditsOf('root', [edit(range)], shots)
+    expect(lane).toMatchObject({ ...expected, start: range[0], end: range[1] })
   })
 
   it('在合成上做的编辑段、别的原片的、合成本身都不在轨上', () => {
@@ -112,14 +117,49 @@ describe('failedEditsOf', () => {
   })
 })
 
-describe('blockStateOf', () => {
-  const url = 'https://oss.example/edit.mp4'
-  it.each<[string, Partial<GenerationJob>, Record<string, number | null>, unknown]>([
-    ['在跑', { status: 'submitted' }, {}, { kind: 'running' }],
-    ['时长还在读', { outputUrl: url }, {}, { kind: 'measuring' }],
-    ['时长读不出', { outputUrl: url }, { [url]: null }, { kind: 'unreadable' }],
-    ['可以选用', { outputUrl: url }, { [url]: 4 }, { kind: 'ready', duration: 4 }],
-  ])('%s', (_, spec, durations, expected) => {
-    expect(blockStateOf(edit([1, 2], spec), durations)).toEqual(expected)
+describe('editStateOf', () => {
+  const index = { keyframes: [0, 1, 2], duration: 3 }
+  it.each<[string, Partial<GenerationJob>, KeyframeRead | undefined, unknown]>([
+    ['在跑', { status: 'submitted' }, undefined, { kind: 'running' }],
+    ['关键帧读取中', {}, { data: undefined, isError: false }, { kind: 'measuring' }],
+    ['关键帧读不出', {}, { data: undefined, isError: true }, { kind: 'unreadable' }],
+    [
+      '按自己的关键帧切段，读到的时长就是它的时长',
+      {},
+      { data: index, isError: false },
+      {
+        kind: 'ready',
+        duration: 3,
+        parts: [
+          { seg: 1, b0: 0, b1: 1 },
+          { seg: 2, b0: 1, b1: 2 },
+          { seg: 3, b0: 2, b1: 3 },
+        ],
+      },
+    ],
+    [
+      '没有关键帧就是一整段',
+      {},
+      { data: { keyframes: [], duration: 2 }, isError: false },
+      { kind: 'ready', duration: 2, parts: [{ seg: 1, b0: 0, b1: 2 }] },
+    ],
+  ])('%s', (_, spec, read, expected) => {
+    expect(editStateOf(edit([1, 2], spec), read)).toEqual(expected)
+  })
+})
+
+describe('lanePartsOf', () => {
+  it('完成的每段占它那条宽度里按时长比例的一份；在跑的整条一块', () => {
+    const done = edit([1, 3])
+    const running = edit([4, 6], { status: 'submitted', outputUrl: null })
+    const blocks = editBlocksOf(laneEditsOf('root', [done, running], shots), () => ({
+      data: { keyframes: [0, 1], duration: 4 },
+      isError: false,
+    }))
+    expect(lanePartsOf(blocks).map(({ id, at, len }) => [id, at, len])).toEqual([
+      [`${done.id}#1`, 1, 0.5],
+      [`${done.id}#2`, 1.5, 1.5],
+      [running.id, 4, 2],
+    ])
   })
 })

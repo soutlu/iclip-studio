@@ -115,15 +115,16 @@
   flex: none;
 }
 
-.video-editor-block-card {
+/* 选中草稿里一块、或在跑的编辑片段时的小卡：只有卡头一行。 */
+.video-editor-small-card {
   width: min(440px, calc(100% - 24px));
 }
 
-.video-editor-block-card .video-editor-card-head {
+.video-editor-small-card .video-editor-card-head {
   padding-bottom: 12px;
 }
 
-.video-editor-block-card-icon {
+.video-editor-small-card-icon {
   display: grid;
   width: 30px;
   height: 40px;
@@ -132,21 +133,4 @@
   border-radius: var(--radius-xs);
   background: var(--color-surface-container-high);
   color: var(--color-on-surface-faint);
-}
-
-.video-editor-block-card-icon.is-failed,
-.video-editor-block-card .video-editor-card-title > p.is-failed {
-  color: var(--color-error);
-}
-
-.video-editor-block-card .video-editor-card-title > p.is-failed {
-  white-space: normal;
-}
-
-.video-editor-block-card-original {
-  height: 34px;
-  flex: none;
-  padding: 0 12px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-label);
 }

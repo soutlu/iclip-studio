@@ -1,12 +1,23 @@
 import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { renderWithTooltip } from '@/testing/render'
 import type { GenerationJob } from '../storyboard.api'
-import { pickedBlocksOf, unitsOf, type Selection } from './composition'
-import { editBlocksOf, laneEditsOf, shotsOf } from './edit-blocks'
-import { ClipsTimeline, VersionsTimeline, type VersionRow } from './editor-timeline'
+import {
+  draftItemsOf,
+  EMPTY_DRAFT,
+  isPicked,
+  pickPart,
+  putShot,
+  readyEditsOf,
+  shotOn,
+  trimItem,
+  type Draft,
+  type DraftSource,
+} from './draft'
+import { editBlocksOf, laneEditsOf, shotsOf, type KeyframeRead } from './edit-blocks'
+import { ClipsTimeline, VersionsTimeline, type Selection, type VersionRow } from './editor-timeline'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -26,124 +37,268 @@ const edit = ([start, end]: [number, number], spec: Partial<GenerationJob> = {})
   })
 }
 
-const picked = edit([3, 5])
-const other = edit([3, 5])
+// first、second 都从镜头 4–5 生成：first 2 秒、两段，second 1.5 秒、一段；running 在跑；failed 不上轨。
+const first = edit([3, 5])
+const second = edit([3, 5])
 const running = edit([5, 6], { status: 'submitted', outputUrl: null })
 const failed = edit([0, 1], { status: 'failed', errorMessage: '模型超时' })
-const blocks = editBlocksOf(laneEditsOf('root', [picked, other, running, failed], shots), {
-  [picked.outputUrl ?? '']: 4,
-  [other.outputUrl ?? '']: 2,
-})
-const units = unitsOf(shots, pickedBlocksOf(blocks, [picked.id]))
+const reads: Record<string, KeyframeRead> = {
+  [first.outputUrl ?? '']: { data: { keyframes: [0, 1], duration: 2 }, isError: false },
+  [second.outputUrl ?? '']: { data: { keyframes: [0], duration: 1.5 }, isError: false },
+}
+const blocks = editBlocksOf(
+  laneEditsOf('root', [first, second, running, failed], shots),
+  (url) => reads[url],
+)
+const source: DraftSource = {
+  rootId: 'root',
+  rootUrl: 'https://oss.example/root.mp4',
+  duration: 6,
+  shots,
+  edits: readyEditsOf(blocks),
+}
+const pickedFirst = pickPart(source, pickPart(source, EMPTY_DRAFT, first.id, 1), first.id, 2)
 
-const renderTimeline = (selection: Selection = undefined) => {
-  const onSelectUnits = vi.fn()
-  const onClickBlock = vi.fn()
-  const onSeek = vi.fn()
-  renderWithTooltip(
-    <ClipsTimeline
-      anchor={0}
-      blocks={blocks}
-      duration={6}
-      onClickBlock={onClickBlock}
-      onScrub={() => {}}
-      onSeek={onSeek}
-      onSelectUnits={onSelectUnits}
-      peaksOf={() => ({ kind: 'silent' })}
-      rootUrl="https://oss.example/root.mp4"
-      selection={selection}
-      selectionBoxRef={null}
-      shots={shots}
-      units={units}
-    />,
-  )
-  return { onSelectUnits, onClickBlock, onSeek }
+const handlers = () => ({
+  onSeek: vi.fn(),
+  onSelectShots: vi.fn(),
+  onSelectDraft: vi.fn(),
+  onSelectRunning: vi.fn(),
+  onToggleShot: vi.fn(),
+  onClickPart: vi.fn(),
+  onTogglePart: vi.fn(),
+  onTrim: vi.fn(),
+})
+
+const timeline = (draft: Draft, selection: Selection, on: ReturnType<typeof handlers>) => (
+  <ClipsTimeline
+    blocks={blocks}
+    clock={0}
+    duration={6}
+    isPicked={(editId, seg) => isPicked(draft, editId, seg)}
+    items={draftItemsOf(source, draft)}
+    onScrub={() => {}}
+    peaksOf={() => ({ kind: 'silent' })}
+    rootUrl={source.rootUrl}
+    selection={selection}
+    selectionBoxRef={null}
+    shotOn={(no) => shotOn(source, draft, no)}
+    shots={shots}
+    {...on}
+  />
+)
+
+const renderTimeline = (draft: Draft = EMPTY_DRAFT, selection: Selection = undefined) => {
+  const on = handlers()
+  const view = renderWithTooltip(timeline(draft, selection, on))
+  return {
+    on,
+    rerender: (next: Draft, nextSelection: Selection = selection) =>
+      view.rerender(timeline(next, nextSelection, on)),
+  }
 }
 
+const draftTrack = () => screen.getByRole('group', { name: '草稿' })
 const original = () => screen.getByRole('group', { name: '原片' })
 const lane = () => screen.getByRole('group', { name: '编辑片段' })
 const shot = (no: number) =>
   within(original()).getByRole('button', { name: new RegExp(`^镜头 ${no} ·`) })
+const names = (group: HTMLElement) =>
+  within(group)
+    .getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label'))
 
-describe('原片轨', () => {
-  it('每个镜头一块，被选用替换的镜头标出来', () => {
-    renderTimeline()
-    expect(within(original()).getAllByRole('button')).toHaveLength(6)
-    expect(shot(4)).toHaveAccessibleName('镜头 4 · 3–4 秒 · 已换成编辑片段')
-    expect(shot(3)).toHaveAccessibleName('镜头 3 · 2–3 秒')
-  })
-
-  it('点镜头只选它；Shift 按单位扩选，被替换的镜头算整条编辑片段', async () => {
-    const user = userEvent.setup()
-    const { onSelectUnits } = renderTimeline({ kind: 'units', ids: ['shot-3'] })
-    await user.click(shot(2))
-    expect(onSelectUnits).toHaveBeenLastCalledWith(['shot-2'])
-    await user.keyboard('{Shift>}')
-    await user.click(shot(4))
-    expect(onSelectUnits).toHaveBeenLastCalledWith(['shot-3', picked.id])
-    await user.click(shot(6))
-    expect(onSelectUnits).toHaveBeenLastCalledWith(['shot-6'])
-    await user.keyboard('{/Shift}')
-    await user.click(shot(5))
-    expect(onSelectUnits).toHaveBeenLastCalledWith([picked.id])
-  })
-
-  it('选着的单位按下标出；方向键挪到相邻单位，Shift 扩选', () => {
-    const { onSelectUnits } = renderTimeline({ kind: 'units', ids: ['shot-3', picked.id] })
-    expect(shot(3)).toHaveAttribute('aria-pressed', 'true')
-    expect(shot(5)).toHaveAttribute('aria-pressed', 'true')
-    expect(shot(2)).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.keyDown(shot(4), { key: 'ArrowRight', shiftKey: true })
-    expect(onSelectUnits).toHaveBeenLastCalledWith(['shot-3', picked.id, 'shot-6'])
-    fireEvent.keyDown(shot(3), { key: 'ArrowLeft' })
-    expect(onSelectUnits).toHaveBeenLastCalledWith(['shot-2'])
-  })
+beforeEach(() => {
+  // jsdom 不排版：轨道区按 600px 宽算，6 秒的原片每秒 100px。
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+    DOMRect.fromRect({ x: 100, y: 0, width: 600, height: 200 }),
+  )
 })
 
-describe('编辑轨', () => {
-  it('同样镜头的几次各占一行，名字带第几次与实际时长；在跑的说状态，失败的不在轨上', () => {
-    renderTimeline()
-    const names = within(lane())
-      .getAllByRole('button')
-      .map((button) => button.getAttribute('aria-label'))
-    expect(names).toEqual([
-      // 第一行空着的镜头 1–3 是占位，镜头 1 生成失败的那次不占位置
+describe('三条轨', () => {
+  it('草稿按排序首尾相接，块名写来源与时长；原片轨是全部镜头，每块带开关', () => {
+    renderTimeline(pickedFirst)
+    expect(names(draftTrack())).toEqual([
+      '镜头 1 · 1.0 秒 · 原片',
+      '镜头 2 · 1.0 秒 · 原片',
+      '镜头 3 · 1.0 秒 · 原片',
+      '镜头 4–5 第 1 次生成的编辑片段 · 第 1 段 · 1.0 秒 · 已选用',
+      '镜头 4–5 第 1 次生成的编辑片段 · 第 2 段 · 1.0 秒 · 已选用',
+      '镜头 6 · 1.0 秒 · 原片',
+    ])
+    expect(within(original()).getAllByRole('button', { name: /^镜头 \d ·/ })).toHaveLength(6)
+    // 选用的编辑段覆盖的镜头默认关
+    const off = within(original()).getByRole('button', { name: '开启镜头 4' })
+    expect(off).toHaveAttribute('aria-pressed', 'false')
+    expect(within(original()).getByRole('button', { name: '关闭镜头 3' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('编辑轨：完成的按段，每段一只眼睛；在跑的整条一块；失败的不在轨上；空着的镜头位置是占位', () => {
+    renderTimeline(pickedFirst)
+    expect(names(lane())).toEqual([
       '生成镜头 1',
       '生成镜头 2',
       '生成镜头 3',
-      '镜头 4–5 · 第 1 次 · 4.0 秒 · 已选用',
-      '镜头 4–5 · 第 2 次 · 2.0 秒 · 未选用',
+      '镜头 4–5 第 1 次生成的编辑片段 · 第 1 段 · 1.0 秒',
+      '取消选用这一段',
+      '镜头 4–5 第 1 次生成的编辑片段 · 第 2 段 · 1.0 秒',
+      '取消选用这一段',
+      '镜头 4–5 第 2 次生成的编辑片段 · 1.5 秒',
+      '选用这一段',
       '镜头 6 · 生成中',
     ])
+    expect(
+      within(
+        screen.getByRole('group', { name: '镜头 4–5 第 2 次生成的编辑片段 · 1.5 秒' }),
+      ).getByRole('button', { name: '选用这一段' }),
+    ).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('点占位与点那个镜头一样选中它；点编辑片段交给编辑器', async () => {
+  it('两种眼睛只开关、不改选中；点完成的段交给编辑器，点在跑的选中它', async () => {
     const user = userEvent.setup()
-    const { onSelectUnits, onClickBlock } = renderTimeline()
-    await user.click(within(lane()).getByRole('button', { name: '生成镜头 3' }))
-    expect(onSelectUnits).toHaveBeenLastCalledWith(['shot-3'])
-    await user.click(within(lane()).getByRole('button', { name: /第 2 次/ }))
-    expect(onClickBlock).toHaveBeenLastCalledWith(other.id)
+    const { on } = renderTimeline(pickedFirst)
+    await user.click(within(original()).getByRole('button', { name: '开启镜头 4' }))
+    expect(on.onToggleShot).toHaveBeenLastCalledWith(4)
+    await user.click(
+      within(screen.getByRole('group', { name: /第 2 次/ })).getByRole('button', {
+        name: '选用这一段',
+      }),
+    )
+    expect(on.onTogglePart).toHaveBeenLastCalledWith(second.id, 1)
+    expect(on.onSelectShots).not.toHaveBeenCalled()
+    expect(on.onSelectDraft).not.toHaveBeenCalled()
+    await user.click(within(lane()).getByRole('button', { name: /第 1 次.*第 2 段/ }))
+    expect(on.onClickPart).toHaveBeenLastCalledWith(first.id, 2)
     await user.click(within(lane()).getByRole('button', { name: '镜头 6 · 生成中' }))
-    expect(onClickBlock).toHaveBeenLastCalledWith(running.id)
+    expect(on.onSelectRunning).toHaveBeenLastCalledWith(running.id)
+  })
+
+  it('原片轨和编辑轨在开关、选用、修剪前后位置都不变', () => {
+    const { rerender } = renderTimeline()
+    const placements = () =>
+      [original(), lane()].flatMap((group) =>
+        [...group.children].map((child) => child.getAttribute('style')),
+      )
+    const before = placements()
+    const changed = putShot(source, pickedFirst, 2, false)
+    const item = draftItemsOf(source, changed).find((candidate) => candidate.id === `${first.id}#1`)
+    if (item === undefined) throw new Error('草稿里没有这一段')
+    rerender(trimItem(changed, item, { t0: 0.2, t1: 1 }))
+    // jsdom 不排版，只能比较每块的摆放参数前后一致
+    expect(placements()).toEqual(before)
   })
 })
 
-it('标尺拖动只定位播放头，不改选区', () => {
-  const { onSeek, onSelectUnits } = renderTimeline({ kind: 'units', ids: ['shot-2'] })
+describe('原片轨的选区', () => {
+  it('点镜头只选它；Shift 扩选、点两端去掉；点占位同点镜头', async () => {
+    const user = userEvent.setup()
+    const { on } = renderTimeline(EMPTY_DRAFT, { kind: 'shots', nos: [3] })
+    await user.click(shot(2))
+    expect(on.onSelectShots).toHaveBeenLastCalledWith([2])
+    await user.keyboard('{Shift>}')
+    await user.click(shot(4))
+    expect(on.onSelectShots).toHaveBeenLastCalledWith([3, 4])
+    await user.click(shot(3))
+    expect(on.onSelectShots).toHaveBeenLastCalledWith([])
+    await user.keyboard('{/Shift}')
+    await user.click(within(lane()).getByRole('button', { name: '生成镜头 3' }))
+    expect(on.onSelectShots).toHaveBeenLastCalledWith([3])
+  })
+
+  it('选着的镜头按下标出；方向键挪到相邻镜头，Shift 扩选', () => {
+    const { on } = renderTimeline(EMPTY_DRAFT, { kind: 'shots', nos: [3, 4] })
+    expect(shot(3)).toHaveAttribute('aria-pressed', 'true')
+    expect(shot(2)).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.keyDown(shot(4), { key: 'ArrowRight', shiftKey: true })
+    expect(on.onSelectShots).toHaveBeenLastCalledWith([3, 4, 5])
+    fireEvent.keyDown(shot(3), { key: 'ArrowLeft' })
+    expect(on.onSelectShots).toHaveBeenLastCalledWith([2])
+  })
+})
+
+describe('修剪', () => {
+  const selected: Selection = { kind: 'draft', id: `${first.id}#2` }
+  const handle = (name: '裁剪开头' | '裁剪结尾') => screen.getByRole('slider', { name })
+
+  it('选中草稿块才出两端的把手；方向键每次 0.1 秒、Shift 每次 1 秒，停在最短 0.5 秒', () => {
+    const { on, rerender } = renderTimeline(pickedFirst)
+    expect(screen.queryByRole('slider', { name: '裁剪结尾' })).toBeNull()
+    rerender(pickedFirst, selected)
+    fireEvent.keyDown(handle('裁剪结尾'), { key: 'ArrowLeft' })
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'end', t0: 1, t1: 1.9 })
+    fireEvent.keyDown(handle('裁剪结尾'), { key: 'ArrowLeft', shiftKey: true })
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'end', t0: 1, t1: 1.5 })
+    fireEvent.keyDown(handle('裁剪开头'), { key: 'ArrowLeft' })
+    // 开头已在这一段的关键帧边界上，不能再往前
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'start', t0: 1, t1: 2 })
+  })
+
+  it('拖动把手按指针换算时间，离边界 8px 以内吸上去', () => {
+    const { on } = renderTimeline(pickedFirst, selected)
+    const end = Object.assign(handle('裁剪结尾'), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 500 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 450 })
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'end', t0: 1, t1: 1.5 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 495 })
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'end', t0: 1, t1: 2 })
+    fireEvent.pointerUp(end, { pointerId: 1 })
+  })
+})
+
+describe('关联描边', () => {
+  const linkedDraft = () =>
+    within(draftTrack())
+      .getAllByRole('button')
+      .filter((button) => button.parentElement?.hasAttribute('data-linked') === true)
+      .map((button) => button.getAttribute('aria-label'))
+
+  it('悬停草稿块描出来源；悬停编辑轨的段描出草稿里那块；悬停原片镜头描出它在草稿里那块', () => {
+    renderTimeline(pickedFirst)
+    expect(screen.queryAllByTestId('timeline-link')).toHaveLength(0)
+    const draftBlock = within(draftTrack()).getByRole('button', { name: /第 2 段/ })
+    fireEvent.pointerEnter(draftBlock.parentElement ?? draftBlock)
+    expect(screen.getAllByTestId('timeline-link')).toHaveLength(1)
+    fireEvent.pointerLeave(draftBlock.parentElement ?? draftBlock)
+
+    const part = within(lane()).getByRole('button', { name: /第 1 次.*第 1 段/ })
+    fireEvent.pointerEnter(part.parentElement ?? part)
+    expect(linkedDraft()).toEqual(['镜头 4–5 第 1 次生成的编辑片段 · 第 1 段 · 1.0 秒 · 已选用'])
+    // 另描出原片轨上这条编辑片段的生成区间
+    expect(screen.getAllByTestId('timeline-link')).toHaveLength(1)
+    fireEvent.pointerLeave(part.parentElement ?? part)
+
+    fireEvent.pointerEnter(shot(2).parentElement ?? shot(2))
+    expect(linkedDraft()).toEqual(['镜头 2 · 1.0 秒 · 原片'])
+  })
+
+  it('选中草稿块常驻描出来源；原片轨有选区时常驻描出这些镜头在草稿里的块', () => {
+    const { rerender } = renderTimeline(pickedFirst, { kind: 'draft', id: 'shot-2' })
+    expect(screen.getAllByTestId('timeline-link')).toHaveLength(1)
+    rerender(pickedFirst, { kind: 'shots', nos: [2, 3] })
+    expect(screen.queryAllByTestId('timeline-link')).toHaveLength(0)
+    expect(linkedDraft()).toEqual(['镜头 2 · 1.0 秒 · 原片', '镜头 3 · 1.0 秒 · 原片'])
+  })
+})
+
+it('标尺按合成时间定位，不改选区', () => {
+  const { on } = renderTimeline(EMPTY_DRAFT, { kind: 'shots', nos: [2] })
   const ruler = Object.assign(screen.getByRole('slider', { name: '时间线播放位置' }), {
     setPointerCapture: () => undefined,
     hasPointerCapture: () => false,
     releasePointerCapture: () => undefined,
   })
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
-    DOMRect.fromRect({ x: 100, y: 0, width: 600, height: 200 }),
-  )
   fireEvent.pointerDown(ruler, { pointerId: 1, button: 0, clientX: 400 })
-  expect(onSeek).toHaveBeenLastCalledWith(3)
+  expect(on.onSeek).toHaveBeenLastCalledWith(3)
   fireEvent.change(ruler, { target: { value: '4.5' } })
-  expect(onSeek).toHaveBeenLastCalledWith(4.5)
-  expect(onSelectUnits).not.toHaveBeenCalled()
+  expect(on.onSeek).toHaveBeenLastCalledWith(4.5)
+  expect(on.onSelectShots).not.toHaveBeenCalled()
 })
 
 describe('版本视图', () => {

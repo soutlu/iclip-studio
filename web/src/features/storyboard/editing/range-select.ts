@@ -36,3 +36,32 @@ export const shiftSelect = <T>(
   if (index === to) return selected.slice(0, -1)
   return [clicked]
 }
+
+/**
+ * 键盘挪选区：不按 Shift 选中相邻的那个；按 Shift 时焦点在选区一端，往外扩、往里收，另一端不动。
+ * 返回新的焦点与选区；到头了原样返回。
+ */
+export const stepSelect = <T>(
+  order: readonly T[],
+  selected: readonly T[],
+  focusId: T,
+  direction: -1 | 1,
+  extend: boolean,
+): { focus: T; selection: readonly T[] } => {
+  const focus = order.indexOf(focusId)
+  const target = order[focus + direction]
+  if (focus < 0 || target === undefined) return { focus: focusId, selection: selected }
+  if (!extend) return { focus: target, selection: [target] }
+  const range = contiguousRange(order, selected)
+  const anchor =
+    range === undefined || (focus !== range.from && focus !== range.to)
+      ? focus
+      : focus === range.from
+        ? range.to
+        : range.from
+  const next = focus + direction
+  return {
+    focus: target,
+    selection: order.slice(Math.min(anchor, next), Math.max(anchor, next) + 1),
+  }
+}
