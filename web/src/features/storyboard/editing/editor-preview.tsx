@@ -79,11 +79,16 @@ type Props = {
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
-  picture?: ReactNode
   overlay: ReactNode
-  versions: ReactNode
   readout: ReactNode
   timeline: ReactNode
+  /** 工具条左端，播放按钮之前，中间隔一条分隔线。 */
+  barStart: ReactNode
+  /** 时间之后的提醒；为 null 时连同它前面的分隔线都不显示。 */
+  barNotice: ReactNode
+  /** 右组里静音之前的工具。 */
+  barTools: ReactNode
+  /** 工具条右端，前面隔一条分隔线。 */
   barEnd: ReactNode
   ref: Ref<EditorPreviewHandle>
 }
@@ -99,11 +104,12 @@ export function EditorPreview({
   onPlaybackChange,
   externalAudio,
   aspectRatio,
-  picture,
   overlay,
-  versions,
   readout,
   timeline,
+  barStart,
+  barNotice,
+  barTools,
   barEnd,
   ref,
 }: Props) {
@@ -405,7 +411,6 @@ export function EditorPreview({
           key={switches}
         />
       )}
-      {failed ? null : picture}
       {segments === undefined ? <PreviewMessage>正在读取视频信息…</PreviewMessage> : null}
       {failed ? (
         <div className="editor-preview-message" role="alert">
@@ -431,7 +436,6 @@ export function EditorPreview({
           <div className="editor-hero-wrap" ref={placeInline} />
           {overlay}
         </section>
-        {versions}
       </div>
       {createPortal(stage, stageHost)}
       <DialogRoot open={enlarged} onOpenChange={setEnlarged}>
@@ -483,13 +487,22 @@ export function EditorPreview({
       <div className="editor-timeline-area">
         <div className="editor-timeline-panel">
           <div aria-label="播放控件" className="editor-bar" role="group">
-            <div className="editor-bar-group">
+            <div className="editor-bar-group is-start">
+              {barStart}
+              <span aria-hidden="true" className="editor-bar-divider" />
               {playButton}
               {clock}
+              {barNotice === null ? null : (
+                <>
+                  <span aria-hidden="true" className="editor-bar-divider" />
+                  {barNotice}
+                </>
+              )}
             </div>
-            <div className="editor-bar-group">
+            <div className="editor-bar-group is-end">
               {readout}
               <span aria-hidden="true" className="editor-bar-divider" />
+              {barTools}
               {muteButton}
               <IconButton
                 label="放大"
@@ -498,6 +511,7 @@ export function EditorPreview({
                 ref={enlargeRef}
                 size="sm"
               />
+              <span aria-hidden="true" className="editor-bar-divider" />
               {barEnd}
             </div>
           </div>

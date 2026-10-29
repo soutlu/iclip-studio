@@ -35,14 +35,21 @@ type ShellProps = {
   scale: number
   position: number
   heads: ReactNode
-  /** 编辑轨的行数；整条没有编辑轨时不给。 */
-  editRows?: number | undefined
+  /** 编辑轨的行数。 */
+  editRows: number
   onSeek: (time: number) => void
   onScrub: () => void
   children: ReactNode
 }
 
-/** 时间线外壳：轨头一列、标尺（只有它能定位）、轨道与播放头；刻度按原片时间。 */
+/** 按元素的横向范围把指针位置换成时间线上的时刻。 */
+const clockIn = (lanes: HTMLElement | null, scale: number, clientX: number) => {
+  const bounds = lanes?.getBoundingClientRect()
+  if (bounds === undefined || bounds.width === 0) return 0
+  return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
+}
+
+/** 剪辑视图的时间线外壳：轨头一列、标尺（只有它能定位）、轨道与播放头；刻度按原片时间。 */
 function TimelineShell({
   scale,
   position,
@@ -54,24 +61,17 @@ function TimelineShell({
 }: ShellProps) {
   const lanesRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const clockAt = (clientX: number) => {
-    const bounds = lanesRef.current?.getBoundingClientRect()
-    if (bounds === undefined || bounds.width === 0) return 0
-    return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
-  }
   const bounded = Math.max(0, Math.min(scale, position))
   return (
     <section
       aria-label="视频编辑时间线"
-      className={cn('video-editor-timeline', editRows === undefined && 'is-whole')}
-      style={editRows === undefined ? undefined : ({ '--edit-rows': editRows } as CSSProperties)}
+      className="video-editor-timeline"
+      style={{ '--edit-rows': editRows } as CSSProperties}
     >
       <div aria-hidden="true" className="video-editor-timeline-heads">
         {heads}
       </div>
-      {editRows === undefined ? null : (
-        <span aria-hidden="true" className="video-editor-timeline-divider" />
-      )}
+      <span aria-hidden="true" className="video-editor-timeline-divider" />
       <div
         aria-label="时间线轨道，窄屏可横向滚动"
         className="video-editor-timeline-scroll"
@@ -80,7 +80,7 @@ function TimelineShell({
       >
         <div className="video-editor-timeline-lanes" ref={lanesRef}>
           <TimelineRuler
-            clockAt={clockAt}
+            clockAt={(clientX) => clockIn(lanesRef.current, scale, clientX)}
             currentTime={bounded}
             onScrub={onScrub}
             onSeek={onSeek}
@@ -128,8 +128,6 @@ const blockStatus = (block: EditBlock, picked: boolean): { chip: string; name: s
       return { chip: `${block.name} · 生成中`, name: `${block.name} · 生成中` }
     case 'measuring':
       return { chip: `${block.name} · 读取中`, name: `${block.name} · 读取中` }
-    case 'failed':
-      return { chip: `${block.name} · 生成失败`, name: `${block.name} · 生成失败` }
     case 'unreadable':
       return { chip: `${block.name} · 无法读取`, name: `${block.name} · 无法读取` }
   }
@@ -278,7 +276,7 @@ export function ClipsTimeline({
               className={cn(
                 'video-editor-timeline-block is-edit ui-focus',
                 (kind === 'running' || kind === 'measuring') && 'is-running',
-                (kind === 'failed' || kind === 'unreadable') && 'is-failed',
+                kind === 'unreadable' && 'is-failed',
                 kind === 'ready' && !picked && 'is-off',
               )}
               key={block.id}
@@ -298,11 +296,7 @@ export function ClipsTimeline({
                 </>
               ) : (
                 <span className="video-editor-timeline-status">
-                  <Icon
-                    decorative
-                    name={kind === 'failed' || kind === 'unreadable' ? 'alert' : 'sparkles'}
-                    size="xs"
-                  />
+                  <Icon decorative name={kind === 'unreadable' ? 'alert' : 'sparkles'} size="xs" />
                   {status.chip}
                 </span>
               )}
@@ -332,56 +326,163 @@ const shotIdAt = (shots: readonly Shot[], time: number) => {
   return shot === undefined ? '' : shotUnitId(shot)
 }
 
-type WholeTimelineProps = {
+/** 版本视图里的一版：画面按它自己的关键帧分块。 */
+export type VersionRow = {
+  jobId: string
   /** 轨头写的版本名，如「V2」「V1 原片」。 */
   label: string
+  original: boolean
   mediaUrl: string
-  shots: readonly Shot[]
-  duration: number
+  /** 关键帧还没读到（或读不出）时为 undefined，这一行先空着。 */
+  shots: readonly Shot[] | undefined
+  duration: number | undefined
+}
+
+type VersionsTimelineProps = {
+  /** 按完成先后排；画出来最新的在最上。 */
+  versions: readonly VersionRow[]
+  /** 正在合成的那一版：请求里各段的总长（秒），算不出时为 undefined；没在合成时不给。 */
+  composing: { duration: number | undefined } | undefined
+  viewedId: string
+  /** 正在看的那一版的播放头。 */
   currentTime: number
   peaksOf: (url: string) => PeaksState
+  onSelect: (jobId: string) => void
   onSeek: (clock: number) => void
   onScrub: () => void
 }
 
-/** 整条的时间线：只看、只能在标尺上定位，按这一版自己的关键帧分块。 */
-export function WholeTimeline({
-  label,
-  mediaUrl,
-  shots,
-  duration,
+/**
+ * 版本视图的时间线：每个版本一行，各行共用最长那一版的比例；点一行看那一版，只能在标尺上定位。
+ * 行多了在下面纵向滚动，标尺与播放头留在顶上。
+ */
+export function VersionsTimeline({
+  versions,
+  composing,
+  viewedId,
   currentTime,
   peaksOf,
+  onSelect,
   onSeek,
   onScrub,
-}: WholeTimelineProps) {
-  const percent = (time: number) => `${(time / duration) * 100}%`
+}: VersionsTimelineProps) {
+  const rulerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const rows = versions.toReversed()
+  const ids = rows.map((row) => row.jobId)
+  const roving = useRovingFocus(ids, viewedId)
+  const scale = Math.max(0, ...versions.map((row) => row.duration ?? 0), composing?.duration ?? 0)
+  const total = versions.find((row) => row.jobId === viewedId)?.duration
+  const bounded = Math.max(0, Math.min(total ?? 0, currentTime))
+  // 比例读到时长才有：一版都没读到时各行空着、不画标尺；看的那一版没读到时标尺不能拖。
+  const percent = (time: number) => `${(time / scale) * 100}%`
+  const span = (start: number, end: number): CSSProperties => ({
+    left: `calc(${percent(start)} + 1px)`,
+    width: `calc(${percent(end - start)} - 2px)`,
+  })
+
+  const keyDown = (event: KeyboardEvent<HTMLButtonElement>, jobId: string) => {
+    // 空格在编辑器里是播放；在行上是选中这一版，拦下来不让它再去播放。
+    if (event.key === ' ') {
+      event.preventDefault()
+      onSelect(jobId)
+      return
+    }
+    const direction = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : undefined
+    if (direction === undefined) return
+    event.preventDefault()
+    const next = ids[ids.indexOf(jobId) + direction]
+    if (next !== undefined) roving.focus(next)
+  }
+
   return (
-    <TimelineShell
-      heads={
-        <span className="video-editor-timeline-head is-film">
-          <Icon decorative name="video" size="sm" />
-          {label}
-        </span>
-      }
-      onScrub={onScrub}
-      onSeek={onSeek}
-      position={currentTime}
-      scale={duration}
+    <section
+      aria-label="视频编辑时间线"
+      className="video-editor-timeline is-versions"
+      style={{ '--version-rows': rows.length + (composing === undefined ? 0 : 1) } as CSSProperties}
     >
-      {shots.map((shot) => (
-        <span
-          aria-hidden="true"
-          className="video-editor-timeline-block is-film is-static"
-          key={shot.no}
-          style={{
-            left: `calc(${percent(shot.start)} + 1px)`,
-            width: `calc(${percent(shot.end - shot.start)} - 2px)`,
-          }}
-        >
-          <Faces end={shot.end} mediaUrl={mediaUrl} peaks={peaksOf(mediaUrl)} start={shot.start} />
-        </span>
-      ))}
-    </TimelineShell>
+      <div className="video-editor-versions-scroll" ref={scrollRef}>
+        <div className="video-editor-versions-header">
+          <div className="video-editor-versions-ruler" ref={rulerRef}>
+            {scale === 0 ? null : (
+              <>
+                <TimelineRuler
+                  clockAt={(clientX) => clockIn(rulerRef.current, scale, clientX)}
+                  currentTime={bounded}
+                  disabled={total === undefined}
+                  onScrub={onScrub}
+                  onSeek={onSeek}
+                  scale={scale}
+                  total={total ?? 0}
+                  viewportRef={scrollRef}
+                />
+                <TimelinePlayhead style={{ left: percent(bounded) }} />
+              </>
+            )}
+          </div>
+        </div>
+        <div aria-label="视频版本" className="video-editor-versions-rows" role="group">
+          {composing === undefined ? null : (
+            <button aria-label="合成中" className="video-editor-version-row" disabled type="button">
+              <span className="video-editor-version-head">
+                <Icon decorative name="composite" size="sm" />
+                合成中
+              </span>
+              <span className="video-editor-version-lane">
+                <span
+                  className="video-editor-timeline-block is-running"
+                  style={
+                    composing.duration === undefined || scale === 0
+                      ? { left: '1px', width: 'calc(100% - 2px)' }
+                      : span(0, composing.duration)
+                  }
+                />
+              </span>
+            </button>
+          )}
+          {rows.map((row) => (
+            <button
+              aria-label={row.label}
+              aria-pressed={row.jobId === viewedId}
+              className="video-editor-version-row ui-focus"
+              key={row.jobId}
+              onClick={() => {
+                roving.remember(row.jobId)
+                onSelect(row.jobId)
+              }}
+              onFocus={() => roving.remember(row.jobId)}
+              onKeyDown={(event) => keyDown(event, row.jobId)}
+              ref={roving.register(row.jobId)}
+              tabIndex={roving.tabIndexOf(row.jobId)}
+              type="button"
+            >
+              <span className="video-editor-version-head">
+                <Icon decorative name={row.original ? 'video' : 'composite'} size="sm" />
+                {row.label}
+              </span>
+              <span className="video-editor-version-lane">
+                {row.shots?.map((shot) => (
+                  <span
+                    className="video-editor-timeline-block"
+                    key={shot.no}
+                    style={span(shot.start, shot.end)}
+                  >
+                    <Faces
+                      end={shot.end}
+                      mediaUrl={row.mediaUrl}
+                      peaks={peaksOf(row.mediaUrl)}
+                      start={shot.start}
+                    />
+                  </span>
+                ))}
+                {row.jobId === viewedId && row.duration !== undefined ? (
+                  <span className="video-editor-timeline-box" style={span(0, row.duration)} />
+                ) : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }

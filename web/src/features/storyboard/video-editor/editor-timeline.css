@@ -1,4 +1,5 @@
-/* 两条轨：原片轨（画面一行、原声一行）在上，编辑轨在下按行叠放；行数由 --edit-rows 给出。整条只有一条轨。 */
+/* 剪辑视图两条轨：原片轨（画面一行、原声一行）在上，编辑轨在下按行叠放；行数由 --edit-rows 给出。
+   版本视图每个版本一行，见 .is-versions。 */
 .video-editor-timeline {
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
@@ -15,10 +16,6 @@
   min-width: 0;
   margin-top: 6px;
   color: var(--color-on-surface);
-}
-
-.video-editor-timeline.is-whole {
-  --timeline-height: calc(var(--timeline-track-top) + var(--film-height) + 4px);
 }
 
 .video-editor-timeline-heads {
@@ -256,6 +253,98 @@
   border-radius: var(--radius-xs);
 }
 
+/* 版本视图：每行画面 32、原声 16，行间 8；超过 4 行时行区纵向滚动。标尺与播放头在滚动区顶上吸住，
+   播放头和悬停引导线往下伸到看得见的最后一行底边；和各行在同一个滚动区里，出现滚动条时宽度一起变。 */
+.video-editor-timeline.is-versions {
+  --version-row: 48px;
+  --version-gap: 8px;
+  --version-visible: calc(
+    min(var(--version-rows), 4) * (var(--version-row) + var(--version-gap)) - var(--version-gap)
+  );
+  --timeline-playhead-bottom: calc(-1 * var(--version-visible));
+
+  display: block;
+}
+
+.video-editor-versions-scroll {
+  max-height: calc(
+    var(--timeline-track-top) + 4 * (var(--version-row) + var(--version-gap)) - var(--version-gap) +
+      4px
+  );
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.video-editor-versions-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-local-3);
+  height: var(--timeline-track-top);
+  padding-left: var(--version-head-width, 76px);
+  background: var(--color-surface-container-low);
+}
+
+.video-editor-versions-ruler {
+  position: relative;
+  height: 100%;
+}
+
+.video-editor-versions-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--version-gap);
+  padding-bottom: 4px;
+}
+
+.video-editor-version-row {
+  display: flex;
+  width: 100%;
+  height: var(--version-row);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-editor-version-row:disabled {
+  cursor: default;
+}
+
+.video-editor-version-head {
+  display: flex;
+  width: var(--version-head-width, 76px);
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+
+.video-editor-version-lane {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+}
+
+.video-editor-version-lane > .video-editor-timeline-block,
+.video-editor-version-lane > .video-editor-timeline-box {
+  top: 0;
+  height: 100%;
+}
+
+.video-editor-version-lane .video-editor-timeline-frames {
+  height: 32px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .video-editor-timeline-block.is-running {
     animation: none;
@@ -267,7 +356,12 @@
     width: 52px;
   }
 
-  .video-editor-timeline-head > svg {
+  .video-editor-timeline.is-versions {
+    --version-head-width: 52px;
+  }
+
+  .video-editor-timeline-head > svg,
+  .video-editor-version-head > svg {
     display: none;
   }
 }

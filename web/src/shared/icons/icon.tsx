@@ -265,6 +265,8 @@ const ICONS = {
   user: User,
   video: Video,
   'video-type': Clapperboard,
+  /** 合成出来的视频版本 */
+  composite: Clapperboard,
   warning: TriangleAlert,
   waveform: AudioLines,
   zoom: ZoomIn,

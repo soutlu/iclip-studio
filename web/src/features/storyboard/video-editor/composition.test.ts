@@ -11,6 +11,7 @@ import {
   pickEdit,
   pickedBlocksOf,
   picksFromComposite,
+  segmentsLength,
   segmentsOf,
   unitsOf,
   type Segment,
@@ -174,6 +175,20 @@ describe('最近一次合成', () => {
   ])('请求%s时什么都不选', (_, segments) => {
     expect(parse(segments)).toBeUndefined()
     expect(picksFromComposite(parse(segments), 'root', shots, blocks)).toEqual([])
+  })
+})
+
+describe('segmentsLength', () => {
+  const segments: Segment[] = [
+    { sourceJobId: 'root', start: 0, end: 2 },
+    { sourceJobId: 'a', start: 0, end: null },
+    { sourceJobId: 'root', start: 4, end: null },
+  ]
+  it('用到出处结尾的段按出处全长算', () => {
+    expect(segmentsLength(segments, (id) => (id === 'root' ? 6 : 3))).toBe(7)
+  })
+  it('有一段的出处不知道多长就算不出', () => {
+    expect(segmentsLength(segments, (id) => (id === 'root' ? 6 : undefined))).toBeUndefined()
   })
 })
 

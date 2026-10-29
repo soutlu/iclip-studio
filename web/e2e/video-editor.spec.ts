@@ -53,8 +53,9 @@ const shot = (dialog: Locator, no: number) =>
 const lane = (dialog: Locator) =>
   timelineOf(dialog).getByRole('group', { name: '编辑片段', exact: true })
 const controls = (dialog: Locator) => dialog.getByRole('group', { name: '播放控件' })
+/** 版本视图里时间线上一版一行。 */
 const versions = (dialog: Locator) => dialog.getByRole('group', { name: '视频版本' })
-const view = (dialog: Locator, name: '整条' | '片段') =>
+const view = (dialog: Locator, name: '版本' | '剪辑') =>
   dialog.getByRole('group', { name: '查看方式' }).getByRole('button', { name, exact: true })
 /** 选中镜头时盖在舞台上的生成卡；点编辑片段时是小卡。 */
 const card = (dialog: Locator) => dialog.getByRole('region', { name: 'AI 改段' })
@@ -146,7 +147,7 @@ const expectCard = async (dialog: Locator, title: string, detail: string) => {
   await expect(card(dialog).getByText(detail, { exact: true })).toBeVisible()
 }
 
-test('编辑一段：选镜头生成，结果落在编辑轨；点了选用、改用原片，再选用后合成，整条自动切到新版本', async ({
+test('编辑一段：选镜头生成，结果落在编辑轨；点了选用、改用原片，再选用后合成，完成后自动切到版本视图看新版本', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -157,7 +158,7 @@ test('编辑一段：选镜头生成，结果落在编辑轨；点了选用、�
   await expect(timelineOf(dialog).getByTestId('timeline-wave').first()).toBeVisible({
     timeout: STEP_TIMEOUT,
   })
-  await expect(view(dialog, '片段')).toHaveAttribute('aria-pressed', 'true')
+  await expect(view(dialog, '剪辑')).toHaveAttribute('aria-pressed', 'true')
   await expect(composeButton(dialog)).toBeDisabled()
 
   await shot(dialog, 2).click()
@@ -232,16 +233,17 @@ test('编辑一段：选镜头生成，结果落在编辑轨；点了选用、�
     ],
   })
 
-  // 合成完成：整条自动切到新的一版，只能下载、不能合成。
-  await expect(view(dialog, '整条')).toHaveAttribute('aria-pressed', 'true', {
+  // 合成完成：自动切到版本视图看新的一版，它在最上面一行；只能下载、不能合成。
+  await expect(view(dialog, '版本')).toHaveAttribute('aria-pressed', 'true', {
     timeout: STEP_TIMEOUT,
   })
   const viewed = versions(dialog).getByRole('button', { pressed: true })
   await expect(viewed).toHaveAccessibleName(/^V\d+$/)
+  await expect(versions(dialog).getByRole('button').first()).toHaveAttribute('aria-pressed', 'true')
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
   await expect(composeButton(dialog)).toHaveCount(0)
-  // 回到片段，内容就是刚合成的这版，不能再合成一样的。
-  await view(dialog, '片段').click()
+  // 回到剪辑，内容就是刚合成的这版，不能再合成一样的。
+  await view(dialog, '剪辑').click()
   await expect(composeButton(dialog)).toBeDisabled()
 })
 
@@ -376,7 +378,7 @@ test('提交未受理时保护关闭与站内离开，受理后编辑轨显示�
   const release = await holdReferenceUpload(page)
   await generateButton(dialog).click()
   await expect(card(dialog).getByRole('button', { name: '正在提交', exact: true })).toBeDisabled()
-  await expect(view(dialog, '整条')).toBeDisabled()
+  await expect(view(dialog, '版本')).toBeDisabled()
   const editingUrl = page.url()
   await page.evaluate(() => window.history.back())
   await expect(page.getByText('正在提交，请等待提交完成后再离开', { exact: true })).toBeVisible()
@@ -703,7 +705,7 @@ test('只有成功的出片才能进编辑；关掉编辑器回到素材片区�
   await expect(edit).toHaveCount(0)
 })
 
-test('镜头提示词：在标题栏里，可连续追加到修改要求，浮窗保持打开且不改变预览尺寸', async ({
+test('镜头提示词：在工具条里往上弹，生成卡让到它左边；可连续追加到修改要求，浮窗保持打开且不改变预览尺寸', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1536, height: 1024 })
@@ -712,9 +714,29 @@ test('镜头提示词：在标题栏里，可连续追加到修改要求，浮�
   await shot(dialog, 2).click()
   const preview = dialog.getByRole('region', { name: '预览舞台' })
   const before = await preview.boundingBox()
-  await dialog.getByRole('button', { name: '镜头提示词', exact: true }).click()
+  const trigger = controls(dialog).getByRole('button', { name: '镜头提示词', exact: true })
+  await trigger.click()
   const prompts = page.getByRole('dialog', { name: '镜头提示词', exact: true })
   await expect(prompts).toBeVisible()
+  await prompts.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  )
+  const panelBox = await prompts.boundingBox()
+  const triggerBox = await trigger.boundingBox()
+  const dialogBox = await dialog.boundingBox()
+  if (panelBox === null || triggerBox === null || dialogBox === null)
+    throw new Error('镜头提示词浮窗尚未布局')
+  // 从按钮往上弹、右端对齐按钮，顶上不超出编辑器。
+  expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(triggerBox.y)
+  expect(Math.abs(panelBox.x + panelBox.width - (triggerBox.x + triggerBox.width))).toBeLessThan(1)
+  expect(panelBox.y).toBeGreaterThanOrEqual(dialogBox.y)
+  // 生成卡停在浮窗左边，「生成视频」不被挡住。
+  await expect
+    .poll(async () => {
+      const generate = await generateButton(dialog).boundingBox()
+      return generate === null ? Infinity : generate.x + generate.width
+    })
+    .toBeLessThanOrEqual(panelBox.x)
   await expect(requestBox(dialog)).toHaveText('')
   const text = await prompts.getByRole('listitem').first().getByRole('paragraph').innerText()
   await requestBox(dialog).fill('保留手动要求')

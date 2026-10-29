@@ -3,7 +3,8 @@
   bottom: 16px;
   left: 12px;
   z-index: var(--z-local-3);
-  width: min(560px, calc(100% - 24px));
+  /* 让开镜头提示词面板时由摆放逻辑给出 --card-width。 */
+  width: var(--card-width, min(560px, calc(100% - 24px)));
   border-radius: var(--radius-xl);
   background: var(--color-top-layer);
   box-shadow:
@@ -88,6 +89,10 @@
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
   font-variant-numeric: tabular-nums;
+}
+
+.video-editor-card-title > p.is-failed {
+  color: var(--color-error);
 }
 
 .video-editor-card .video-editor-card-composer {

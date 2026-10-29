@@ -27,7 +27,7 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MAX_FIRST_FRAMES } from '../edit-prompt'
 import { editMentionItems, type EditMentionItem } from '../image-edit/edit-mention-items'
 import { EditMentionMenu } from '../image-edit/edit-mention-menu'
-import { placeCard } from '../editing/card-placement'
+import { narrowedCardWidth, placeCard } from '../editing/card-placement'
 import {
   referenceImageCountOf,
   type ClipGenerationBlock,
@@ -286,8 +286,12 @@ type AiEditCardProps = {
   onExpand: () => void
   onCollapse: () => void
   anchorRef: RefObject<HTMLElement | null>
+  /** 有浮层要让开时给出它左边在视口里的横坐标：卡停在它左边，放不下就收窄。 */
+  avoidLeft?: (() => number) | undefined
   positions: string
   detail: string
+  /** 第二行写的是上次生成失败的原因，用红字。 */
+  detailFailed: boolean
   frames: { first: string | undefined; last: string | undefined }
   draft: readonly ComposerPart[]
   onDraftChange: DraftChange
@@ -312,8 +316,10 @@ export function AiEditCard({
   onExpand,
   onCollapse,
   anchorRef,
+  avoidLeft,
   positions,
   detail,
+  detailFailed,
   frames,
   draft,
   onDraftChange,
@@ -360,8 +366,16 @@ export function AiEditCard({
     if (anchor !== null) {
       const stageBounds = stage.getBoundingClientRect()
       const anchorBounds = anchor.getBoundingClientRect()
+      const room =
+        avoidLeft === undefined
+          ? stage.clientWidth
+          : Math.min(stage.clientWidth, avoidLeft() - stageBounds.left)
+      card.style.removeProperty('--card-width')
+      const narrowed =
+        avoidLeft === undefined ? undefined : narrowedCardWidth(room, card.offsetWidth)
+      if (narrowed !== undefined) card.style.setProperty('--card-width', `${narrowed}px`)
       const { left, notch } = placeCard(
-        stage.clientWidth,
+        room,
         anchorBounds.left + anchorBounds.width / 2 - stageBounds.left,
         card.offsetWidth,
       )
@@ -451,7 +465,7 @@ export function AiEditCard({
             </span>
             <div className="video-editor-card-title">
               <p>{title}</p>
-              <p>{detail}</p>
+              <p className={cn(detailFailed && 'is-failed')}>{detail}</p>
             </div>
             <IconButton label="收起" name="close" onClick={onCollapse} size="sm" />
           </div>

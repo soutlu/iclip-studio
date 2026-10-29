@@ -34,8 +34,6 @@ const summaryOf = (block: EditBlock, picked: boolean) => {
         line: '正在读取结果时长，读取完成后点击即可选用',
         failed: false,
       }
-    case 'failed':
-      return { title: `${spanName(block)} · 生成失败`, line: block.state.message, failed: true }
     case 'unreadable':
       return {
         title: `${spanName(block)} · 无法读取`,
@@ -45,7 +43,7 @@ const summaryOf = (block: EditBlock, picked: boolean) => {
   }
 }
 
-/** 点编辑轨上的一条编辑片段弹出的小卡：可用的写时长与选用，附「改用原片」；在跑、失败的只说状态。 */
+/** 点编辑轨上的一条编辑片段弹出的小卡：可用的写时长与选用，附「改用原片」；在跑、读不出的只说状态。 */
 export function EditBlockCard({
   block,
   picked,

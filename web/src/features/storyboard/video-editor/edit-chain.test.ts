@@ -47,7 +47,7 @@ const composite = (id: string, base: string, spec: Partial<GenerationJob> = {}):
 
 const root = job({ id: 'root', outputUrl: 'https://oss.example/root.mp4', shotIndex: 2 })
 
-/** 只有这条原作时，整条的各版 */
+/** 只有这条原作时，版本视图的各版 */
 const ownVersions = (chain: readonly GenerationJob[]) =>
   projectVersions(root, rootVersionGroup(root, chain, [root]))
 
@@ -107,7 +107,7 @@ describe('同一镜头组里有几条原作', () => {
     job({ id: 'other-shot', outputUrl: 'x', shotIndex: 3 }),
   ]
 
-  it('整条只列本条原作的版本，编号沿用版本组，可以不连续', () => {
+  it('版本视图只列本条原作的版本，编号沿用版本组，可以不连续', () => {
     const group = rootVersionGroup(takeB, [b2], conversation)
 
     expect(projectVersions(takeB, group).map((version) => version.label)).toEqual(['V2 原片', 'V4'])

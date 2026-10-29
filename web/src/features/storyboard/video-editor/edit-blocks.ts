@@ -1,7 +1,12 @@
 import { roundToMs } from '../editing/clip'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import type { MediaDurations } from '../editing/use-media-durations'
-import { byCreation, isEditSegment, type EditSegment } from '../editing/version-lineage'
+import {
+  byCreation,
+  isEditSegment,
+  isFailedJob,
+  type EditSegment,
+} from '../editing/version-lineage'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 
@@ -27,12 +32,15 @@ export const spanName = ({ from, to }: ShotSpan): string =>
 export const spansOverlap = (left: ShotSpan, right: ShotSpan): boolean =>
   left.from <= right.to && right.from <= left.to
 
-/** 编辑轨上的一条编辑片段：替换原片上对齐的那几个镜头，起止是镜头边界（原片时间）。 */
-export type LaneEdit = ShotSpan & {
+const sameSpan = (left: ShotSpan, right: ShotSpan) =>
+  left.from === right.from && left.to === right.to
+
+/** 对齐到镜头边界的一条编辑段：替换原片上的几个镜头，起止是镜头边界（原片时间）。 */
+export type AlignedEdit = ShotSpan & { job: EditSegment; start: number; end: number }
+
+/** 编辑轨上的一条编辑片段。 */
+export type LaneEdit = AlignedEdit & {
   id: string
-  job: EditSegment
-  start: number
-  end: number
   /** 编辑轨上的第几行，从 0 起；按生成先后定下，不随选用变。 */
   row: number
   /** 「镜头 3–6」，同样几个镜头生成过不止一次时再加「· 第 N 次」。 */
@@ -41,17 +49,13 @@ export type LaneEdit = ShotSpan & {
 
 const near = (left: number, right: number) => Math.abs(left - right) <= ALIGN_TOLERANCE
 
-/**
- * 编辑轨：直接基于原片 `rootJobId`、起止都对得上镜头边界的编辑段，按生成先后。对不上的、
- * 基于合成做的都不在轨上。每条放进第一个跟已放的不重叠的行；同样几个镜头按生成先后编第几次，
- * 在跑的和失败的也算。
- */
-export const laneEditsOf = (
+/** 直接基于原片 `rootJobId`、起止都对得上镜头边界的编辑段，按生成先后；对不上的、基于合成做的都不算。 */
+const alignedEditsOf = (
   rootJobId: string,
   jobs: readonly GenerationJob[],
   shots: readonly Shot[],
-): LaneEdit[] => {
-  const aligned = jobs
+): AlignedEdit[] =>
+  jobs
     .filter(isEditSegment)
     .filter((job) => job.sourceJobId === rootJobId)
     .sort(byCreation)
@@ -61,22 +65,48 @@ export const laneEditsOf = (
       if (first === undefined || last === undefined || first.no > last.no) return []
       return [{ job, from: first.no, to: last.no, start: first.start, end: last.end }]
     })
+
+/**
+ * 编辑轨：对齐镜头的编辑段里没失败的，按生成先后。每条放进第一个跟已放的不重叠的行；
+ * 同样几个镜头按生成先后编第几次，在跑的也算，失败的不算。
+ */
+export const laneEditsOf = (
+  rootJobId: string,
+  jobs: readonly GenerationJob[],
+  shots: readonly Shot[],
+): LaneEdit[] => {
+  const aligned = alignedEditsOf(rootJobId, jobs, shots).filter((edit) => !isFailedJob(edit.job))
   const rows: ShotSpan[][] = []
   return aligned.map((edit) => {
     let row = 0
     while (rows[row]?.some((other) => spansOverlap(other, edit)) === true) row += 1
     ;(rows[row] ??= []).push(edit)
-    const same = aligned.filter((other) => other.from === edit.from && other.to === edit.to)
+    const same = aligned.filter((other) => sameSpan(other, edit))
     const attempt = same.length > 1 ? ` · 第 ${same.indexOf(edit) + 1} 次` : ''
     return { ...edit, id: edit.job.id, row, name: `${spanName(edit)}${attempt}` }
   })
 }
 
-/** 编辑片段此刻的样子：在跑、读时长中、失败、读不出时长，或可以选用（带实测时长，秒）。 */
+/** 失败的编辑段，只取对这几个镜头最近的一次：之后对同样几个镜头又提交过生成，前面的失败就不算了。 */
+export const failedEditsOf = (
+  rootJobId: string,
+  jobs: readonly GenerationJob[],
+  shots: readonly Shot[],
+): AlignedEdit[] => {
+  const aligned = alignedEditsOf(rootJobId, jobs, shots)
+  return aligned.filter(
+    (edit) => isFailedJob(edit.job) && aligned.findLast((other) => sameSpan(other, edit)) === edit,
+  )
+}
+
+/** 编辑段失败的原因；任务没给就说没出结果。 */
+export const failureMessageOf = (job: GenerationJob): string =>
+  job.errorMessage?.trim() || '未返回生成结果'
+
+/** 编辑轨上的编辑片段此刻的样子：在跑、读时长中、读不出时长，或可以选用（带实测时长，秒）。 */
 export type BlockState =
   | { kind: 'running' }
   | { kind: 'measuring' }
-  | { kind: 'failed'; message: string }
   | { kind: 'unreadable' }
   | { kind: 'ready'; duration: number }
 
@@ -84,9 +114,8 @@ export type EditBlock = LaneEdit & { state: BlockState }
 
 export const blockStateOf = (job: GenerationJob, durations: MediaDurations): BlockState => {
   if (isRunningStatus(job.status)) return { kind: 'running' }
-  const message = job.errorMessage ?? '未返回生成结果'
-  if (job.status !== 'completed' || job.outputUrl === null) return { kind: 'failed', message }
-  const duration = durations[job.outputUrl]
+  // 失败的不在编辑轨上（见 laneEditsOf），走到这里的都有结果地址。
+  const duration = job.outputUrl === null ? null : durations[job.outputUrl]
   if (duration === null) return { kind: 'unreadable' }
   return duration === undefined ? { kind: 'measuring' } : { kind: 'ready', duration }
 }

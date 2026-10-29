@@ -51,6 +51,7 @@ function Card({
         anchorRef={anchorRef}
         canGenerate
         detail="00:00.00–00:05.00 · 5 秒"
+        detailFailed={false}
         draft={draft}
         durationControl={null}
         firstFrameReferenceUrl={firstFrame}
