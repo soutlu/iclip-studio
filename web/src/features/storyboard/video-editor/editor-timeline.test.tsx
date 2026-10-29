@@ -6,7 +6,7 @@ import { renderWithTooltip } from '@/testing/render'
 import type { GenerationJob } from '../storyboard.api'
 import { pickedBlocksOf, unitsOf, type Selection } from './composition'
 import { editBlocksOf, laneEditsOf, shotsOf } from './edit-blocks'
-import { ClipsTimeline } from './editor-timeline'
+import { ClipsTimeline, VersionsTimeline, type VersionRow } from './editor-timeline'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -101,19 +101,19 @@ describe('原片轨', () => {
 })
 
 describe('编辑轨', () => {
-  it('同样镜头的几次各占一行，名字带第几次与实际时长；在跑、失败的说状态', () => {
+  it('同样镜头的几次各占一行，名字带第几次与实际时长；在跑的说状态，失败的不在轨上', () => {
     renderTimeline()
     const names = within(lane())
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label'))
     expect(names).toEqual([
-      // 第一行空着的镜头 2、3 是占位
+      // 第一行空着的镜头 1–3 是占位，镜头 1 生成失败的那次不占位置
+      '生成镜头 1',
       '生成镜头 2',
       '生成镜头 3',
       '镜头 4–5 · 第 1 次 · 4.0 秒 · 已选用',
       '镜头 4–5 · 第 2 次 · 2.0 秒 · 未选用',
       '镜头 6 · 生成中',
-      '镜头 1 · 生成失败',
     ])
   })
 
@@ -144,4 +144,76 @@ it('标尺拖动只定位播放头，不改选区', () => {
   fireEvent.change(ruler, { target: { value: '4.5' } })
   expect(onSeek).toHaveBeenLastCalledWith(4.5)
   expect(onSelectUnits).not.toHaveBeenCalled()
+})
+
+describe('版本视图', () => {
+  const version = (jobId: string, label: string, duration: number): VersionRow => ({
+    jobId,
+    label,
+    original: jobId === 'root',
+    mediaUrl: `https://oss.example/${jobId}.mp4`,
+    shots: shotsOf({ keyframes: [0, 2], duration }),
+    duration,
+  })
+  const versions = [version('root', 'V1 原片', 6), version('v2', 'V2', 9), version('v3', 'V3', 7)]
+
+  const renderVersions = (composing?: { duration: number | undefined }) => {
+    const onSelect = vi.fn()
+    const onSeek = vi.fn()
+    renderWithTooltip(
+      <VersionsTimeline
+        composing={composing}
+        currentTime={2}
+        onScrub={() => {}}
+        onSeek={onSeek}
+        onSelect={onSelect}
+        peaksOf={() => ({ kind: 'silent' })}
+        versions={versions}
+        viewedId="v2"
+      />,
+    )
+    return { onSelect, onSeek }
+  }
+  const rows = () =>
+    within(screen.getByRole('group', { name: '视频版本' }))
+      .getAllByRole('button')
+      .map((row) => row.getAttribute('aria-label'))
+
+  it('每个版本一行，最新的在最上；正在合成的一行在最上面、不能点；看的那一版按下', () => {
+    renderVersions({ duration: undefined })
+    expect(rows()).toEqual(['合成中', 'V3', 'V2', 'V1 原片'])
+    expect(screen.getByRole('button', { name: '合成中' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'V2' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'V3' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('点一行选它；标尺按最长那一版的比例，只能定位到正在看的这一版的结尾', async () => {
+    const user = userEvent.setup()
+    const { onSelect, onSeek } = renderVersions()
+    await user.click(screen.getByRole('button', { name: 'V1 原片' }))
+    expect(onSelect).toHaveBeenLastCalledWith('root')
+    const ruler = screen.getByRole('slider', { name: '时间线播放位置' })
+    expect(ruler).toHaveAttribute('max', '9')
+    fireEvent.change(ruler, { target: { value: '8' } })
+    expect(onSeek).toHaveBeenLastCalledWith(8)
+  })
+
+  it('Tab 进到正在看的那一行，上下方向键换行，Enter 或空格选中', async () => {
+    const user = userEvent.setup()
+    const { onSelect } = renderVersions({ duration: 5 })
+    await user.tab()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'V2' })).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('button', { name: 'V3' })).toHaveFocus()
+    // 在跑的那一行不能选，方向键跳过它。
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('button', { name: 'V3' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenLastCalledWith('v3')
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(screen.getByRole('button', { name: 'V1 原片' })).toHaveFocus()
+    await user.keyboard(' ')
+    expect(onSelect).toHaveBeenLastCalledWith('root')
+  })
 })

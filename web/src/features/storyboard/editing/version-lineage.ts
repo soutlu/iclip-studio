@@ -1,3 +1,4 @@
+import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 
 export type EditSegment = GenerationJob & {
@@ -15,6 +16,10 @@ export const isEditSegment = (job: GenerationJob): job is EditSegment =>
 
 export const isComposite = (job: GenerationJob): job is GenerationJob & { sourceJobId: string } =>
   job.kind === 'video' && job.operation === 'compose' && job.sourceJobId != null
+
+/** 落定了却没有结果：不在跑，也没有完成出地址。 */
+export const isFailedJob = (job: GenerationJob): boolean =>
+  !isRunningStatus(job.status) && (job.status !== 'completed' || job.outputUrl === null)
 
 export const byCreation = (left: GenerationJob, right: GenerationJob): number =>
   Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id)

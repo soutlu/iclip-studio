@@ -719,10 +719,10 @@ describe('StoryboardReader', () => {
           return HttpResponse.json({ items })
         }),
       )
-    /** 从出片打开时先在「片段」，版本条在「整条」里。 */
+    /** 从出片打开时先在「剪辑」，各版本在「版本」视图里一版一行。 */
     const versionLabels = async () => {
       const view = await screen.findByRole('group', { name: '查看方式' })
-      await userEvent.click(within(view).getByRole('button', { name: '整条' }))
+      await userEvent.click(within(view).getByRole('button', { name: '版本' }))
       return within(await screen.findByRole('group', { name: '视频版本' }))
         .getAllByRole('button')
         .map((entry) => entry.getAttribute('aria-label'))

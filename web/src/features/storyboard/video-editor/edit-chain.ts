@@ -5,7 +5,13 @@ import {
 } from '../conversation-videos/video-groups'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
-import { byCreation, byFinish, isComposite, isEditSegment } from '../editing/version-lineage'
+import {
+  byCreation,
+  byFinish,
+  isComposite,
+  isEditSegment,
+  isFailedJob,
+} from '../editing/version-lineage'
 
 export type ChainVersion = {
   jobId: string
@@ -28,7 +34,7 @@ export const rootVersionGroup = (
   )
 }
 
-/** 整条的各版：这条原作与它完成的合成，按完成先后，名字沿用版本组的编号，所以编号可以不连续。 */
+/** 版本视图的各版：这条原作与它完成的合成，按完成先后，名字沿用版本组的编号，所以编号可以不连续。 */
 export const projectVersions = (
   root: GenerationJob,
   group: ConversationVideoGroup | undefined,
@@ -64,6 +70,15 @@ export const composingOf = (
     .filter((job) => isRunningStatus(job.status))
     .sort(byCreation)
     .at(-1)
+
+/** 基于原片最近提交的那次合成失败了时就是它；之后又提交过合成，前面的失败就不算了。 */
+export const failedCompositeOf = (
+  jobs: readonly GenerationJob[],
+  rootJobId: string,
+): GenerationJob | undefined => {
+  const last = rootComposites(jobs, rootJobId).sort(byCreation).at(-1)
+  return last !== undefined && isFailedJob(last) ? last : undefined
+}
 
 export const editCountsByRoot = (jobs: readonly GenerationJob[]): ReadonlyMap<string, number> => {
   const counts = new Map<string, number>()

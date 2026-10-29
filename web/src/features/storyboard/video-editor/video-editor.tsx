@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { PercentCrop } from 'react-image-crop'
 import { errorMessageOf } from '@/shared/api/client'
@@ -15,7 +15,6 @@ import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
 import { GenerationPicker } from '../components/generation-picker'
-import { StageFailure } from '../components/stage-failure'
 import {
   compileImageClipPrompt,
   compileReferencePrompt,
@@ -23,8 +22,12 @@ import {
   MAX_FIRST_FRAMES,
 } from '../edit-prompt'
 import { EditorPreview, type EditorPreviewHandle } from '../editing/editor-preview'
-import { EditorVersionStrip } from '../editing/editor-version-strip'
-import { useAudioPeaks, useKeyframes, type PeaksState } from '../editing/media-analysis'
+import {
+  keyframeQuery,
+  useAudioPeaks,
+  useKeyframes,
+  type PeaksState,
+} from '../editing/media-analysis'
 import { layoutPlay, type PlaySegment } from '../editing/play-layout'
 import { isShortcutTarget } from '../editing/shortcut-target'
 import { useMediaDurations } from '../editing/use-media-durations'
@@ -41,6 +44,7 @@ import {
   compositionOf,
   pickedBlocksOf,
   picksFromComposite,
+  segmentsLength,
   segmentsOf,
   selectedUnits,
   shotUnitId,
@@ -49,22 +53,36 @@ import {
   type Unit,
 } from './composition'
 import { EditBlockCard } from './edit-block-card'
-import { editBlocksOf, isSettling, laneEditsOf, shotsOf, spanName } from './edit-blocks'
+import {
+  editBlocksOf,
+  failedEditsOf,
+  failureMessageOf,
+  isSettling,
+  laneEditsOf,
+  shotsOf,
+  spanName,
+} from './edit-blocks'
 import {
   composingOf,
+  failedCompositeOf,
   latestCompositeOf,
   projectVersions,
   rootVersionGroup,
   type ChainVersion,
 } from './edit-chain'
 import { DurationSlider } from './duration-slider'
-import { ClipsTimeline, WholeTimeline } from './editor-timeline'
+import { ClipsTimeline, VersionsTimeline, type VersionRow } from './editor-timeline'
+import { FailureNotice } from './failure-notice'
+import {
+  failureNoticesOf,
+  useDismissedFailures,
+  type FailureNotice as Notice,
+} from './failure-notices'
 import { planFrames } from './first-frames'
 import { ShotPrompts } from './shot-prompts'
 import { useGenerationSettings } from './use-generation-settings'
 import { usePicks } from './use-picks'
 import { useSubmissionGuard } from './use-submission-guard'
-import { posterOf, wholeStripEntries } from './version-strip'
 import {
   imageSizeQuery,
   seedVideoEditJob,
@@ -86,8 +104,17 @@ const REFERENCE_FRAME_WIDTH = 1280
 const LENGTH_NOTE_THRESHOLD = 0.05
 
 const secondsText = (value: number) => value.toFixed(1)
+const posterOf = (url: string) => videoSnapshotUrl(url, 320)
 
-type View = 'whole' | 'clips'
+/**
+ * 镜头提示词面板左边在视口里的横坐标。面板挂在按钮所在的宿主里、右端对齐按钮；刚挂上时还没定位、
+ * 又在缩放进场，所以不量面板自己的位置，按宿主右端减面板的布局宽度算。
+ */
+const promptsPanelLeft = (panel: HTMLElement): number =>
+  (panel.closest('.video-editor-prompts') ?? panel).getBoundingClientRect().right -
+  panel.offsetWidth
+
+type View = 'versions' | 'clips'
 
 type Props = {
   conversationId: string
@@ -100,7 +127,7 @@ type Props = {
 
 export function VideoEditor({ conversationId, video, loading, shotIndex, onClose }: Props) {
   const conversationJobs = useShotGenerations(conversationId).data
-  // 从一次合成打开时，编辑的仍是它的原片；整条先看打开的那一版。
+  // 从一次合成打开时，编辑的仍是它的原片；版本视图先看打开的那一版。
   const opened = video !== undefined && isComposite(video) ? video : undefined
   const root =
     opened === undefined ? video : conversationJobs?.find((job) => job.id === opened.rootJobId)
@@ -183,11 +210,11 @@ function Editor({
   const previewRef = useRef<EditorPreviewHandle>(null)
   const selectionBoxRef = useRef<HTMLSpanElement>(null)
   const cardRef = useRef<AiEditCardHandle>(null)
-  const [view, setView] = useState<View>(openedCompositeId === undefined ? 'clips' : 'whole')
-  // 整条看的那一版；没选就是最近完成的一版。
+  const [view, setView] = useState<View>(openedCompositeId === undefined ? 'clips' : 'versions')
+  // 版本视图看的那一版；没选就是最近完成的一版。
   const [viewedId, setViewedId] = useState(openedCompositeId)
-  // 整条版本条上点开看原因的失败合成。
-  const [failedCompositeId, setFailedCompositeId] = useState<string>()
+  // 打开着的镜头提示词面板：生成卡要让开它。
+  const [promptsPanel, setPromptsPanel] = useState<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<Selection>()
   const [currentTime, setCurrentTime] = useState(0)
   // 选中后播放头要停的原片位置。选用一变预览先在自己的 effect 里回到原处，子组件的 effect 先跑，在这里跳才不会被覆盖。
@@ -211,6 +238,10 @@ function Editor({
   const duration = keyframes.data?.duration ?? 0
   const lane = useMemo(
     () => (shots === undefined ? [] : laneEditsOf(root.id, jobs, shots)),
+    [root.id, jobs, shots],
+  )
+  const failedEdits = useMemo(
+    () => (shots === undefined ? [] : failedEditsOf(root.id, jobs, shots)),
     [root.id, jobs, shots],
   )
   const resultUrls = useStableValue(
@@ -263,14 +294,13 @@ function Editor({
       busy,
     })
 
-  // 最近完成的合成一换（不论从哪里提交），整条切到它，从头、停着。
+  // 最近完成的合成一换（不论从哪里提交），切到版本视图看它，从头、停着。
   const latestId = latest?.id ?? null
   const [seenLatestId, setSeenLatestId] = useState<string | null>()
   if (chainJobs !== undefined && seenLatestId !== latestId) {
     if (seenLatestId !== undefined && latestId !== null) {
-      setView('whole')
+      setView('versions')
       setViewedId(latestId)
-      setFailedCompositeId(undefined)
       setSelection(undefined)
     }
     setSeenLatestId(latestId)
@@ -284,7 +314,7 @@ function Editor({
     if (seekRequest !== undefined) seekToAnchor(seekRequest.anchor)
   }, [seekRequest])
 
-  // 片段的选区
+  // 剪辑视图的选区
   const clipsView = view === 'clips'
   const chosenUnits = clipsView ? selectedUnits(units, selection) : []
   const firstUnit = chosenUnits[0]
@@ -331,10 +361,8 @@ function Editor({
   const frameUrls =
     mode === 'image' ? compileReferencePrompt(draftPartsOf(request)).referenceImageUrls : []
   const imageSizes = useImageSizes(frameUrls)
-  const videoSize = useQuery({
-    ...videoSizeQuery(mediaUrl),
-    enabled: mode === 'image',
-  }).data
+  // 舞台按原片画幅摆，图生的首帧也按它裁；读到之前舞台按播放器读到的画面比例。
+  const videoSize = useQuery(videoSizeQuery(mediaUrl)).data
   const framePlans = planFrames({
     urls: frameUrls,
     sizeOf: (url) => imageSizes.get(url),
@@ -381,6 +409,11 @@ function Editor({
       (block) =>
         block.from === shotSpan.from && block.to === shotSpan.to && isSettling(block.state),
     )
+  // 这几个镜头最近一次生成失败了：卡上写出原因，重新提交后就不再是最近一次。
+  const lastFailure =
+    shotSpan === undefined
+      ? undefined
+      : failedEdits.find((edit) => edit.from === shotSpan.from && edit.to === shotSpan.to)
   const blockReason =
     range === undefined
       ? undefined
@@ -429,8 +462,23 @@ function Editor({
     if (next === view) return
     setView(next)
     setSelection(undefined)
-    setFailedCompositeId(undefined)
-    if (next === 'whole') setViewedId(undefined)
+    if (next === 'versions') setViewedId(undefined)
+  }
+
+  const { dismissed, dismiss } = useDismissedFailures(conversationId, root.id)
+  const notices = failureNoticesOf(failedEdits, failedCompositeOf(jobs, root.id), dismissed)
+
+  /** 点失败提醒：回到剪辑视图；编辑段的失败另在原片轨上选中那几个镜头、弹出生成卡。 */
+  const openFailure = ({ edit }: Notice) => {
+    if (busy) return
+    chooseView('clips')
+    if (edit === undefined) {
+      setSelection(undefined)
+      return
+    }
+    selectUnits(
+      units.filter((unit) => unit.start < edit.end && edit.start < unit.end).map((unit) => unit.id),
+    )
   }
 
   const collapseCard = () => setCardOpen(false)
@@ -476,7 +524,7 @@ function Editor({
         segments,
       })
       seedJob(job)
-      toast.success('已提交合成，完成后整条将切换到新版本')
+      toast.success('已提交合成，完成后切到版本视图查看')
     } catch (error) {
       toast.error(errorMessageOf(error, '合成任务提交失败'))
     } finally {
@@ -484,19 +532,33 @@ function Editor({
     }
   }
 
-  // 整条看的那一版
+  // 版本视图：每一版读自己的关键帧，看的那一版放在舞台上
   const rootVersion: ChainVersion = { jobId: root.id, label: ORIGINAL_LABEL, mediaUrl }
+  const listed = versions.length === 0 ? [rootVersion] : versions
   const viewed =
-    versions.find((version) => version.jobId === viewedId) ?? versions.at(-1) ?? rootVersion
-  const viewedKeyframes = useKeyframes(view === 'whole' ? viewed.mediaUrl : undefined)
-  const viewedShots = useMemo(
-    () => (viewedKeyframes.data === undefined ? undefined : shotsOf(viewedKeyframes.data)),
-    [viewedKeyframes.data],
-  )
-  const viewedDuration = viewedKeyframes.data?.duration
-  const strip = wholeStripEntries(root, versions, jobs)
-  const failedComposite =
-    view === 'whole' ? jobs.find((job) => job.id === failedCompositeId) : undefined
+    listed.find((version) => version.jobId === viewedId) ?? listed.at(-1) ?? rootVersion
+  const versionKeyframes = useQueries({
+    queries: (clipsView ? [] : listed).map((version) => keyframeQuery(version.mediaUrl)),
+  })
+  const versionRows = listed.map((version, at): VersionRow => {
+    const index = versionKeyframes[at]?.data
+    return {
+      ...version,
+      original: version.jobId === root.id,
+      shots: index === undefined ? undefined : shotsOf(index),
+      duration: index?.duration,
+    }
+  })
+  const viewedKeyframes = versionKeyframes[listed.indexOf(viewed)]
+  const viewedDuration = viewedKeyframes?.data?.duration
+  const composingSegments =
+    composing === undefined ? undefined : compositeSegmentsOf(composing, root.id, durationOf)
+  const composingLength =
+    composingSegments === undefined
+      ? undefined
+      : segmentsLength(composingSegments, (jobId) =>
+          jobId === root.id ? keyframes.data?.duration : durationOf(jobId),
+        )
 
   const wholePlay =
     viewedDuration === undefined
@@ -516,7 +578,7 @@ function Editor({
               : [],
           ),
         ]
-      : [viewed.mediaUrl],
+      : listed.map((version) => version.mediaUrl),
   )
   const peaks = useAudioPeaks(audioUrls)
   useFailureToasts(
@@ -550,73 +612,72 @@ function Editor({
   )
 
   const barEnd = clipsView ? (
-    <>
-      <span aria-hidden="true" className="editor-bar-divider" />
-      <Button
-        className="video-editor-compose"
-        disabled={!composable}
-        leadingIcon="video"
-        loading={submission === 'compose'}
-        onClick={() => void compose()}
-        size="md"
-      >
-        {composing === undefined ? '合成新版本' : '正在合成'}
-      </Button>
-    </>
+    <Button
+      className="video-editor-compose"
+      disabled={!composable}
+      leadingIcon="video"
+      loading={submission === 'compose'}
+      onClick={() => void compose()}
+      size="md"
+    >
+      {composing === undefined ? '合成新版本' : '正在合成'}
+    </Button>
   ) : (
     <Button
-      className="editor-bar-button"
+      className="video-editor-compose"
       leadingIcon="download"
       loading={downloading}
       onClick={() => void download(viewed.mediaUrl, '生成的视频')}
       size="md"
-      variant="ghost"
+      variant="inverted"
     >
       下载
     </Button>
   )
 
+  // 版本视图只在看的那一版读不出关键帧时报错；别的版本读不出只是那一行空着。
   const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
   const peaksOf = (url: string) => peaks.get(url) ?? LOADING_PEAKS
-  const timeline = timelineKeyframes.isError ? (
-    <p className="editor-timeline-loading" role="alert">
-      {errorMessageOf(timelineKeyframes.error, '该视频的关键帧读取失败')}
-      <Button onClick={() => void timelineKeyframes.refetch()} size="md" variant="ghost">
-        重试
-      </Button>
-    </p>
-  ) : clipsView && shots !== undefined ? (
-    <ClipsTimeline
-      anchor={anchorOfClock(pieces, currentTime)}
-      blocks={blocks}
-      duration={duration}
-      onClickBlock={clickBlock}
-      onScrub={collapseCard}
-      onSeek={(anchor) => previewRef.current?.previewAt(clockOfAnchor(pieces, anchor))}
-      onSelectUnits={selectUnits}
-      peaksOf={peaksOf}
-      rootUrl={mediaUrl}
-      selection={selection}
-      selectionBoxRef={selectionBoxRef}
-      shots={shots}
-      units={units}
-    />
-  ) : !clipsView && viewedShots !== undefined && viewedDuration !== undefined ? (
-    <WholeTimeline
-      currentTime={currentTime}
-      duration={viewedDuration}
-      label={viewed.label}
-      mediaUrl={viewed.mediaUrl}
-      onScrub={() => {}}
-      onSeek={(clock) => previewRef.current?.previewAt(clock)}
-      peaksOf={peaksOf}
-      shots={viewedShots}
-    />
-  ) : (
-    <p className="editor-timeline-loading" role="status">
-      正在读取分段…
-    </p>
-  )
+  const timeline =
+    timelineKeyframes?.isError === true ? (
+      <p className="editor-timeline-loading" role="alert">
+        {errorMessageOf(timelineKeyframes.error, '该视频的关键帧读取失败')}
+        <Button onClick={() => void timelineKeyframes.refetch()} size="md" variant="ghost">
+          重试
+        </Button>
+      </p>
+    ) : clipsView && shots !== undefined ? (
+      <ClipsTimeline
+        anchor={anchorOfClock(pieces, currentTime)}
+        blocks={blocks}
+        duration={duration}
+        onClickBlock={clickBlock}
+        onScrub={collapseCard}
+        onSeek={(anchor) => previewRef.current?.previewAt(clockOfAnchor(pieces, anchor))}
+        onSelectUnits={selectUnits}
+        peaksOf={peaksOf}
+        rootUrl={mediaUrl}
+        selection={selection}
+        selectionBoxRef={selectionBoxRef}
+        shots={shots}
+        units={units}
+      />
+    ) : !clipsView ? (
+      <VersionsTimeline
+        composing={composing === undefined ? undefined : { duration: composingLength }}
+        currentTime={currentTime}
+        onScrub={() => {}}
+        onSeek={(clock) => previewRef.current?.previewAt(clock)}
+        onSelect={setViewedId}
+        peaksOf={peaksOf}
+        versions={versionRows}
+        viewedId={viewed.jobId}
+      />
+    ) : (
+      <p className="editor-timeline-loading" role="status">
+        正在读取分段…
+      </p>
+    )
 
   const frameOf = (unit: Unit | undefined, edge: 'start' | 'end', width = CARD_FRAME_WIDTH) => {
     if (unit === undefined) return undefined
@@ -646,11 +707,15 @@ function Editor({
         }
         anchorRef={selectionBoxRef}
         attachmentPreview={attachmentPreview}
+        avoidLeft={promptsPanel === null ? undefined : () => promptsPanelLeft(promptsPanel)}
         canGenerate={canGenerate && !busy}
         detail={
           blockReason ??
-          `原片 ${secondsText(range.start)} – ${secondsText(range.end)} 秒 · ${mode === 'image' ? '根据引用图片生成新版本' : '视频和原声一起重做'}`
+          (lastFailure === undefined
+            ? `原片 ${secondsText(range.start)} – ${secondsText(range.end)} 秒 · ${mode === 'image' ? '根据引用图片生成新版本' : '视频和原声一起重做'}`
+            : `上次生成失败：${failureMessageOf(lastFailure.job)}`)
         }
+        detailFailed={blockReason === undefined && lastFailure !== undefined}
         draft={request}
         durationControl={
           mode === 'image' && chosen !== undefined ? (
@@ -715,23 +780,6 @@ function Editor({
       />
     )
 
-  const stageFailure =
-    failedComposite !== undefined ? (
-      <StageFailure
-        key={failedComposite.id}
-        message={failedComposite.errorMessage?.trim()}
-        title="合成失败"
-      />
-    ) : selectedBlock?.state.kind === 'failed' ? (
-      <StageFailure
-        key={selectedBlock.id}
-        message={selectedBlock.state.message.trim()}
-        title="生成失败"
-      />
-    ) : selectedBlock?.state.kind === 'unreadable' ? (
-      <StageFailure key={selectedBlock.id} message="结果时长读取失败" title="生成失败" />
-    ) : undefined
-
   return (
     <DialogRoot
       open
@@ -769,14 +817,6 @@ function Editor({
         }}
       >
         <DialogHeader
-          actions={
-            <ShotPrompts
-              canAppend={unitsCard !== null && !busy}
-              onAppend={(text) => cardRef.current?.appendText(text)}
-              root={root}
-              shotIndex={shotIndex}
-            />
-          }
           className="editor-header border-0"
           closeLabel="关闭视频编辑"
           title={
@@ -789,53 +829,55 @@ function Editor({
               )}
             </span>
           }
-        >
-          <div aria-label="查看方式" className="video-editor-view-switch" role="group">
-            {(['whole', 'clips'] as const).map((option) => (
-              <button
-                aria-pressed={view === option}
-                disabled={busy}
-                key={option}
-                onClick={() => chooseView(option)}
-                type="button"
-              >
-                {option === 'whole' ? '整条' : '片段'}
-              </button>
-            ))}
-          </div>
-        </DialogHeader>
+        />
         <div aria-label="视频编辑器" className="editor-workspace">
           <EditorPreview
+            aspectRatio={videoSize === undefined ? undefined : videoSize.width / videoSize.height}
             backdrop={posterOf(mediaUrl)}
             barEnd={barEnd}
-            contentKey={clipsView ? 'clips' : `whole:${viewed.jobId}`}
+            barNotice={
+              notices.length === 0 ? null : (
+                <FailureNotice
+                  notices={notices}
+                  onDismiss={(notice) => dismiss(notice.id)}
+                  onOpen={openFailure}
+                />
+              )
+            }
+            barStart={
+              <div aria-label="查看方式" className="video-editor-view-switch" role="group">
+                {(['versions', 'clips'] as const).map((option) => (
+                  <button
+                    aria-pressed={view === option}
+                    disabled={busy}
+                    key={option}
+                    onClick={() => chooseView(option)}
+                    type="button"
+                  >
+                    {option === 'versions' ? '版本' : '剪辑'}
+                  </button>
+                ))}
+              </div>
+            }
+            barTools={
+              <ShotPrompts
+                canAppend={unitsCard !== null && !busy}
+                onAppend={(text) => cardRef.current?.appendText(text)}
+                panelRef={setPromptsPanel}
+                root={root}
+                shotIndex={shotIndex}
+              />
+            }
+            contentKey={clipsView ? 'clips' : `version:${viewed.jobId}`}
             current={current}
             currentTime={currentTime}
             onPlay={collapseCard}
             onTime={setCurrentTime}
             overlay={clipsView ? (unitsCard ?? blockCard) : null}
-            picture={stageFailure}
             poster={posterOf(current?.[0]?.mediaUrl ?? mediaUrl)}
             readout={readout}
             ref={previewRef}
             timeline={timeline}
-            versions={
-              clipsView ? null : (
-                <EditorVersionStrip
-                  entries={strip}
-                  onSelect={(key) => {
-                    if (jobs.some((job) => job.id === key && job.status !== 'completed')) {
-                      setFailedCompositeId(key)
-                      return
-                    }
-                    setFailedCompositeId(undefined)
-                    setViewedId(key)
-                  }}
-                  selectedKey={failedComposite?.id ?? viewed.jobId}
-                  title="整条"
-                />
-              )
-            }
           />
         </div>
       </DialogSurface>

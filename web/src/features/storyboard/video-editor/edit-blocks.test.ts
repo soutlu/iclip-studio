@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
-import { blockStateOf, laneEditsOf, shotsOf, spanName } from './edit-blocks'
+import { blockStateOf, failedEditsOf, laneEditsOf, shotsOf, spanName } from './edit-blocks'
 
 const shots = shotsOf({ keyframes: [0, 1, 2, 3, 4, 5], duration: 6 })
 
@@ -14,10 +14,12 @@ const edit = ([start, end]: [number, number], spec: Partial<GenerationJob> = {})
     sourceJobId: 'root',
     rangeStartMs: Math.round(start * 1000),
     rangeEndMs: Math.round(end * 1000),
+    outputUrl: `https://oss.example/edit-${minute}.mp4`,
     createdAt: `2026-10-28T10:${String(minute).padStart(2, '0')}:00Z`,
     ...spec,
   })
 }
+const failed = { status: 'failed', outputUrl: null } as const
 
 describe('shotsOf', () => {
   it('关键帧之间一段一个镜头，从 1 编号，时间取到毫秒', () => {
@@ -74,23 +76,39 @@ describe('laneEditsOf', () => {
     ])
   })
 
-  it('同样几个镜头生成过不止一次才编第几次，在跑与失败的也算', () => {
+  it('失败的不占行也不算次数：同样几个镜头在轨上不止一条才编第几次，在跑的也算', () => {
     const lane = laneEditsOf(
       'root',
       [
-        edit([1, 3], { status: 'failed' }),
+        edit([1, 3], failed),
         edit([1, 3]),
-        edit([1, 3], { status: 'submitted' }),
+        edit([1, 3], { status: 'submitted', outputUrl: null }),
+        edit([1, 3], { outputUrl: null }),
+        edit([4, 5], failed),
         edit([4, 5]),
       ],
       shots,
     )
-    expect(lane.map((item) => item.name)).toEqual([
-      '镜头 2–3 · 第 1 次',
-      '镜头 2–3 · 第 2 次',
-      '镜头 2–3 · 第 3 次',
-      '镜头 5',
+    expect(lane.map(({ name, row }) => [name, row])).toEqual([
+      ['镜头 2–3 · 第 1 次', 0],
+      ['镜头 2–3 · 第 2 次', 1],
+      ['镜头 5', 0],
     ])
+  })
+})
+
+describe('failedEditsOf', () => {
+  it('每串镜头只看最近的一次：它失败了才算，之后又提交过（在跑、完成、再失败）前面的就不算', () => {
+    const superseded = edit([1, 3], failed)
+    const rerun = edit([1, 3], { status: 'submitted', outputUrl: null })
+    const replaced = edit([0, 1], failed)
+    const again = edit([0, 1], failed)
+    const pending = edit([4, 5], failed)
+    expect(
+      failedEditsOf('root', [superseded, rerun, replaced, again, pending, edit([3, 4])], shots).map(
+        (item) => item.job.id,
+      ),
+    ).toEqual([again.id, pending.id])
   })
 })
 
@@ -98,13 +116,6 @@ describe('blockStateOf', () => {
   const url = 'https://oss.example/edit.mp4'
   it.each<[string, Partial<GenerationJob>, Record<string, number | null>, unknown]>([
     ['在跑', { status: 'submitted' }, {}, { kind: 'running' }],
-    [
-      '失败带原因',
-      { status: 'failed', errorMessage: '模型超时' },
-      {},
-      { kind: 'failed', message: '模型超时' },
-    ],
-    ['完成却没有地址', { outputUrl: null }, {}, { kind: 'failed', message: '未返回生成结果' }],
     ['时长还在读', { outputUrl: url }, {}, { kind: 'measuring' }],
     ['时长读不出', { outputUrl: url }, { [url]: null }, { kind: 'unreadable' }],
     ['可以选用', { outputUrl: url }, { [url]: 4 }, { kind: 'ready', duration: 4 }],

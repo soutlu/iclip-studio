@@ -238,6 +238,20 @@ export const compositeSegmentsOf = (
   return segments
 }
 
+/** 一组合成片段首尾相接有多长（秒）；有一段用到出处结尾、出处又不知道多长时为 undefined。 */
+export const segmentsLength = (
+  segments: readonly Segment[],
+  lengthOf: (jobId: string) => number | undefined,
+): number | undefined => {
+  let total = 0
+  for (const { sourceJobId, start, end } of segments) {
+    const until = end ?? lengthOf(sourceJobId)
+    if (until === undefined) return undefined
+    total += until - start
+  }
+  return total
+}
+
 const sameTime = (left: number | null, right: number | null) =>
   left === null || right === null ? left === right : Math.abs(left - right) < EPSILON
 

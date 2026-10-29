@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeCard } from './card-placement'
+import { narrowedCardWidth, placeCard } from './card-placement'
 
 describe('placeCard', () => {
   it.each([
@@ -26,5 +26,15 @@ describe('placeCard', () => {
 
   it('舞台比卡窄（窄屏卡宽是舞台宽减两边留白）：卡贴左边 12px，尖角仍对准选区', () => {
     expect(placeCard(366, 200, 342)).toEqual({ left: 12, notch: 188 })
+  })
+})
+
+describe('narrowedCardWidth', () => {
+  it.each([
+    { name: '两边留白后放得下就不收', room: 584, expected: undefined },
+    { name: '放不下就收到两边各留 12px', room: 500, expected: 476 },
+    { name: '最窄 360', room: 300, expected: 360 },
+  ])('$name', ({ room, expected }) => {
+    expect(narrowedCardWidth(room, 560)).toBe(expected)
   })
 })

@@ -116,6 +116,7 @@ const ROOT_URL = 'https://example.com/root.mp4'
 const EDITED_URL = 'https://example.com/edited.mp4'
 const OTHER_URL = 'https://example.com/other.mp4'
 const COMPOSITE_URL = 'https://example.com/composite.mp4'
+const EDIT_RESULT_URLS: ReadonlySet<string> = new Set([EDITED_URL, OTHER_URL])
 const ROOT_ID = '0f6a2c9e-8d4b-4c1e-9a7f-3b5d6e8f1a2b'
 const EDIT_ID = '1a2b3c4d-1111-4111-8111-111111111111'
 const SECOND_EDIT_ID = '2b3c4d5e-2222-4222-8222-222222222222'
@@ -200,13 +201,22 @@ const openCard = () => screen.getByRole('region', { name: 'AI 改段' })
 const blockCard = () => screen.getByRole('region', { name: '编辑片段' })
 const requestBox = () => within(openCard()).getByLabelText('修改要求')
 const generateButton = () => within(openCard()).getByRole('button', { name: '生成视频' })
-const viewButton = (name: '整条' | '片段') =>
+const viewButton = (name: '版本' | '剪辑') =>
   within(screen.getByRole('group', { name: '查看方式' })).getByRole('button', { name })
-const versionStrip = () => screen.getByRole('group', { name: '视频版本' })
-const versionButton = (label: string) => within(versionStrip()).getByRole('button', { name: label })
+const versionRows = () => screen.getByRole('group', { name: '视频版本' })
+const versionButton = (label: string) => within(versionRows()).getByRole('button', { name: label })
+/** 等版本行读好关键帧画出来，再找其中一行。 */
+const findVersion = async (label: string) =>
+  within(await screen.findByRole('group', { name: '视频版本' })).findByRole('button', {
+    name: label,
+  })
 const controls = () => screen.getByRole('group', { name: '播放控件' })
+const failureNotice = () => within(controls()).queryByRole('button', { name: /失败：/ })
+const buttonNames = (container: HTMLElement) =>
+  within(container)
+    .getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label') ?? button.textContent)
 const composeButton = () => within(controls()).getByRole('button', { name: /合成新版本|正在合成/ })
-const stage = () => screen.getByLabelText('视频预览')
 const playhead = () => screen.getByRole('slider', { name: '时间线播放位置' })
 const playButton = () => screen.getByRole('button', { name: '播放' })
 const readyToPlay = () => waitFor(() => expect(playButton()).not.toHaveAttribute('aria-disabled'))
@@ -224,6 +234,19 @@ beforeEach(() => {
   window.localStorage.clear()
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  // jsdom 不读视频元数据：编辑器另起一个不挂进页面的 <video> 读原片尺寸，给它补 720×1280 并发 loadedmetadata；
+  // 页面上播放用的 <video> 不受影响，探编辑结果时长的仍由各用例用 stubMediaDurations 给。
+  const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
+  vi.spyOn(HTMLMediaElement.prototype, 'src', 'set').mockImplementation(function (
+    this: HTMLMediaElement,
+    url: string,
+  ) {
+    src?.set?.call(this, url)
+    if (!this.isConnected && !EDIT_RESULT_URLS.has(url))
+      queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
+  })
+  vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
+  vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
 })
 
 afterEach(() => {
@@ -292,11 +315,11 @@ describe('VideoEditor', () => {
     await waitFor(() => expect(requests).toBe(2))
   })
 
-  it('从原片打开是片段：原片轨按关键帧分镜头，没有音轨写「无声」；编辑轨第一行都是占位；没选时没有卡', async () => {
+  it('从原片打开是剪辑：原片轨按关键帧分镜头，没有音轨写「无声」；编辑轨第一行都是占位；没选时没有卡', async () => {
     serveChain([])
     await renderEditor()
 
-    expect(viewButton('片段')).toHaveAttribute('aria-pressed', 'true')
+    expect(viewButton('剪辑')).toHaveAttribute('aria-pressed', 'true')
     expect(within(await originalTrack()).getAllByRole('button')).toHaveLength(8)
     expect(within(await timeline()).getAllByText('无声').length).toBeGreaterThan(0)
     expect(within(editTrack()).getAllByRole('button', { name: /^生成镜头 \d$/ })).toHaveLength(8)
@@ -306,6 +329,30 @@ describe('VideoEditor', () => {
     expect(composeButton()).toHaveTextContent('合成新版本')
     expect(composeButton()).toBeDisabled()
     expect(within(controls()).queryByRole('button', { name: '下载' })).toBeNull()
+  })
+
+  it('标题栏只有标题与关闭；工具条左边是查看方式、播放与时间，右边是总长、镜头提示词、静音、放大，最右是合成或下载', async () => {
+    const opened = composite({ id: COMPOSITE_ID })
+    serveChain([root, opened])
+    const user = userEvent.setup()
+    await renderEditor(opened)
+
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    const header = screen.getByRole('heading', { name: /编辑视频/ }).closest('header')
+    if (header === null) throw new Error('没有标题栏')
+    expect(buttonNames(header)).toEqual(['关闭视频编辑'])
+    expect(header).toHaveTextContent('镜头组 1')
+    expect(buttonNames(controls())).toEqual([
+      '版本',
+      '剪辑',
+      '播放',
+      '镜头提示词',
+      '开启声音',
+      '放大',
+      '下载',
+    ])
+    await user.click(viewButton('剪辑'))
+    expect(buttonNames(controls()).at(-1)).toBe('合成新版本')
   })
 
   it('在合成上做的、没对齐镜头的编辑段不在编辑轨上', async () => {
@@ -339,20 +386,6 @@ describe('AI 改段的弹出卡', () => {
         }
       },
     )
-  })
-  // jsdom 不读视频元数据：图生另起一个不挂进页面的 <video> 读原片尺寸，给它补 720×1280 并发 loadedmetadata；
-  // 页面上播放用的 <video> 不受影响。
-  beforeEach(() => {
-    const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
-    vi.spyOn(HTMLMediaElement.prototype, 'src', 'set').mockImplementation(function (
-      this: HTMLMediaElement,
-      url: string,
-    ) {
-      src?.set?.call(this, url)
-      if (!this.isConnected) queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
-    })
-    vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
-    vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -1179,31 +1212,6 @@ describe('编辑轨与选用', () => {
     expect(within(openCard()).getByText('镜头 3–5 · 视频生成')).toBeVisible()
   })
 
-  it('生成失败的编辑片段不能选用：小卡写原因，舞台上看失败', async () => {
-    serveChain([
-      editSegment({
-        status: 'failed',
-        outputUrl: null,
-        durationMs: null,
-        errorMessage: '上游失败',
-      }),
-    ])
-    const user = userEvent.setup()
-    await renderEditor()
-    await originalTrack()
-    await user.click(block('镜头 3–4 · 生成失败'))
-
-    expect(within(blockCard()).getByText('镜头 3–4 · 生成失败')).toBeVisible()
-    expect(within(blockCard()).getByRole('alert')).toHaveTextContent('上游失败')
-    expect(within(blockCard()).queryByRole('button', { name: '改用原片' })).toBeNull()
-    expect(within(stage()).getByText('生成失败')).toBeVisible()
-    expect(controls()).toHaveTextContent('共 8.0 秒')
-    expect(await shot(3)).toHaveAccessibleName('镜头 3 · 2–3 秒')
-
-    await user.click(within(blockCard()).getByRole('button', { name: '关闭' }))
-    expect(within(stage()).queryByText('生成失败')).toBeNull()
-  })
-
   it('时长还在读的编辑片段写「读取中」，不能选用', async () => {
     serveChain([editSegment({ durationMs: null })])
     const user = userEvent.setup()
@@ -1273,8 +1281,155 @@ describe('编辑轨与选用', () => {
   })
 })
 
-describe('合成与整条', () => {
-  it('合成：原片相连部分并成一段、编辑片段整段；完成后整条切到新版本，只能下载、不能合成', async () => {
+describe('失败提醒', () => {
+  const failedEdit = (overrides: Partial<GenerationJob>) =>
+    editSegment({ status: 'failed', outputUrl: null, durationMs: null, ...overrides })
+
+  it('失败的编辑段不占编辑轨；工具条上写最近的一条，编辑段与合成按失败先后混排，后面写另有几条', async () => {
+    serveChain([
+      failedEdit({ id: EDIT_ID, errorMessage: '上游失败', finishedAt: '2026-09-16T10:03:00Z' }),
+      failedEdit({
+        id: SECOND_EDIT_ID,
+        rangeStartMs: 5000,
+        rangeEndMs: 6000,
+        errorMessage: '模型超时',
+        createdAt: '2026-09-16T10:04:00Z',
+        finishedAt: '2026-09-16T10:07:00Z',
+      }),
+      composite({
+        id: COMPOSITE_ID,
+        status: 'failed',
+        outputUrl: null,
+        errorMessage: '拼接失败',
+        finishedAt: '2026-09-16T10:06:00Z',
+      }),
+    ])
+    await renderEditor()
+    await originalTrack()
+
+    await waitFor(() => expect(failureNotice()).toHaveTextContent('镜头 6 生成失败：模型超时'))
+    expect(controls()).toHaveTextContent('另有 2 条')
+    expect(within(editTrack()).queryByRole('button', { name: /^镜头/ })).toBeNull()
+    expect(within(editTrack()).getByRole('button', { name: '生成镜头 3' })).toBeVisible()
+    expect(controls()).toHaveTextContent('共 8.0 秒')
+  })
+
+  it('点 ✕ 关掉最近的一条，下一条顶上；关掉的记在浏览器里，重新打开编辑器也不再出现', async () => {
+    serveChain([
+      failedEdit({ id: EDIT_ID, errorMessage: '上游失败', finishedAt: '2026-09-16T10:03:00Z' }),
+      composite({
+        id: COMPOSITE_ID,
+        status: 'failed',
+        outputUrl: null,
+        errorMessage: '拼接失败',
+        finishedAt: '2026-09-16T10:06:00Z',
+      }),
+    ])
+    const user = userEvent.setup()
+    const first = await renderEditor()
+    await waitFor(() => expect(failureNotice()).toHaveTextContent('合成失败：拼接失败'))
+    await user.click(within(controls()).getByRole('button', { name: '关闭提醒' }))
+
+    expect(failureNotice()).toHaveTextContent('镜头 3–4 生成失败：上游失败')
+    expect(controls()).not.toHaveTextContent('另有')
+    first.unmount()
+
+    await renderEditor()
+    await waitFor(() => expect(failureNotice()).toHaveTextContent('镜头 3–4 生成失败：上游失败'))
+    await user.click(within(controls()).getByRole('button', { name: '关闭提醒' }))
+    expect(failureNotice()).toBeNull()
+  })
+
+  it('点编辑段的失败：回到剪辑，选中那几个镜头，生成卡写上次失败的原因；重新提交后提醒与红字都不再出现', async () => {
+    loginAs(mockAuthUser)
+    const chain: GenerationJob[] = [failedEdit({ id: EDIT_ID, errorMessage: '上游失败' })]
+    serveJobs(() => chain)
+    server.use(
+      http.post('*/api/generations/video-edits', () => {
+        const created = editSegment({
+          id: SECOND_EDIT_ID,
+          status: 'submitted',
+          outputUrl: null,
+          createdAt: '2026-09-16T10:09:00Z',
+        })
+        chain.push(created)
+        return HttpResponse.json({ generation: created }, { status: 202 })
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await user.click(viewButton('版本'))
+    const notice = await waitFor(() => {
+      const found = failureNotice()
+      if (found === null) throw new Error('还没有失败提醒')
+      return found
+    })
+    await user.click(notice)
+
+    expect(viewButton('剪辑')).toHaveAttribute('aria-pressed', 'true')
+    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
+    expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
+    expect(await shot(5)).toHaveAttribute('aria-pressed', 'false')
+    expect(within(openCard()).getByText('镜头 3–4 · 视频生成')).toBeVisible()
+    expect(within(openCard()).getByText('上次生成失败：上游失败')).toBeVisible()
+
+    pasteTextIntoComposer(requestBox(), '换成黄昏')
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    await user.click(generateButton())
+
+    expect(
+      await within(editTrack()).findByRole('button', { name: '镜头 3–4 · 生成中' }),
+    ).toBeVisible()
+    expect(failureNotice()).toBeNull()
+    expect(within(openCard()).queryByText(/上次生成失败/)).toBeNull()
+  })
+
+  it('点合成的失败回到剪辑视图，不选中东西；之后又提交过合成就不再提醒', async () => {
+    const chain: GenerationJob[] = [
+      editSegment({ id: EDIT_ID }),
+      composite({
+        id: COMPOSITE_ID,
+        status: 'failed',
+        outputUrl: null,
+        errorMessage: '拼接失败',
+        request: { segments: [] },
+      }),
+    ]
+    serveJobs(() => chain)
+    server.use(
+      http.post('*/api/generations/video-composites', () => {
+        const created = composite({
+          id: '4d5e6f70-4444-4444-8444-444444444444',
+          status: 'submitted',
+          outputUrl: null,
+          createdAt: '2026-09-16T10:09:00Z',
+          finishedAt: null,
+        })
+        chain.push(created)
+        return HttpResponse.json({ generation: created }, { status: 202 })
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await user.click(block(/^镜头 3–4/))
+    await user.click(viewButton('版本'))
+    await waitFor(() => expect(failureNotice()).toHaveTextContent('合成失败：拼接失败'))
+    const notice = failureNotice()
+    if (notice === null) throw new Error('没有失败提醒')
+    await user.click(notice)
+
+    expect(viewButton('剪辑')).toHaveAttribute('aria-pressed', 'true')
+    expect(card()).toBeNull()
+    expect(screen.queryByRole('region', { name: '编辑片段' })).toBeNull()
+    await user.click(composeButton())
+    await waitFor(() => expect(failureNotice()).toBeNull())
+  })
+})
+
+describe('合成与版本视图', () => {
+  it('合成：原片相连部分并成一段、编辑片段整段；完成后自动切到版本视图看新版本，只能下载、不能合成', async () => {
     let chain: GenerationJob[] = [editSegment({ id: EDIT_ID })]
     const composed: Record<string, unknown>[] = []
     serveJobs(() => chain)
@@ -1314,10 +1469,10 @@ describe('合成与整条', () => {
       ],
     })
     expect(await within(controls()).findByRole('button', { name: '正在合成' })).toBeDisabled()
-    await user.click(viewButton('整条'))
-    expect(within(versionStrip()).getByRole('button', { name: '合成中' })).toBeDisabled()
+    await user.click(viewButton('版本'))
+    expect(await findVersion('合成中')).toBeDisabled()
     expect(versionButton('V1 原片')).toHaveAttribute('aria-pressed', 'true')
-    await user.click(viewButton('片段'))
+    await user.click(viewButton('剪辑'))
 
     chain = chain.map((job) =>
       job.id === COMPOSITE_ID
@@ -1330,13 +1485,13 @@ describe('合成与整条', () => {
         : job,
     )
     await act(() => view.queryClient.invalidateQueries())
-    await waitFor(() => expect(viewButton('整条')).toHaveAttribute('aria-pressed', 'true'))
-    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(viewButton('版本')).toHaveAttribute('aria-pressed', 'true'))
+    expect(await findVersion('V2')).toHaveAttribute('aria-pressed', 'true')
     expect(within(controls()).getByRole('button', { name: '下载' })).toBeEnabled()
     expect(within(controls()).queryByRole('button', { name: /合成/ })).toBeNull()
     expect(await screen.findByLabelText('视频播放器')).toHaveAttribute('src', COMPOSITE_URL)
 
-    await user.click(viewButton('片段'))
+    await user.click(viewButton('剪辑'))
     expect(composeButton()).toBeDisabled()
   })
 
@@ -1356,39 +1511,42 @@ describe('合成与整条', () => {
     expect(composeButton()).toBeEnabled()
   })
 
-  it('从一次合成打开：整条看那一版；版本条列原片与合成，点原片换看原片', async () => {
+  it('从一次合成打开：版本视图看那一版；每个版本一行、最新的在最上，点原片那行舞台换成原片、从头停着', async () => {
     const opened = composite({ id: COMPOSITE_ID })
     serveChain([root, opened])
     const user = userEvent.setup()
     await renderEditor(opened)
 
-    await waitFor(() => expect(viewButton('整条')).toHaveAttribute('aria-pressed', 'true'))
-    await waitFor(() => expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true'))
-    expect(await within(await timeline()).findByText('V2')).toBeVisible()
+    await waitFor(() => expect(viewButton('版本')).toHaveAttribute('aria-pressed', 'true'))
+    expect(await findVersion('V2')).toHaveAttribute('aria-pressed', 'true')
+    expect(buttonNames(versionRows())).toEqual(['V2', 'V1 原片'])
     expect(within(controls()).getByRole('button', { name: '下载' })).toBeEnabled()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    // 两行共用最长那一版的比例。
+    expect(playhead()).toHaveAttribute('max', '9')
+    fireEvent.change(playhead(), { target: { value: '4' } })
+    expect(controls()).toHaveTextContent('00:04.00')
 
     await user.click(versionButton('V1 原片'))
     expect(versionButton('V1 原片')).toHaveAttribute('aria-pressed', 'true')
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'false')
     await waitFor(() => expect(controls()).toHaveTextContent('共 8.0 秒'))
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
+    expect(playhead()).toHaveValue('0')
+    expect(playButton()).toBeVisible()
   })
 
-  it('整条版本条上失败的合成不编号，点了在舞台上看原因', async () => {
+  it('失败的合成不占版本行', async () => {
     serveChain([
       composite({ id: COMPOSITE_ID, status: 'failed', outputUrl: null, errorMessage: '拼接失败' }),
     ])
     const user = userEvent.setup()
     await renderEditor()
     await originalTrack()
-    await user.click(viewButton('整条'))
-    await user.click(versionButton('合成失败'))
+    await user.click(viewButton('版本'))
 
-    expect(within(stage()).getByRole('alert')).toHaveTextContent('合成失败')
-    await user.click(within(stage()).getByRole('button', { name: '查看原因' }))
-    expect(within(stage()).getByText('拼接失败')).toBeVisible()
-    await user.click(versionButton('V1 原片'))
-    expect(within(stage()).queryByRole('alert')).toBeNull()
+    expect(await findVersion('V1 原片')).toHaveAttribute('aria-pressed', 'true')
+    expect(within(versionRows()).getAllByRole('button')).toHaveLength(1)
   })
 
   it('提交未受理时不能切换查看方式、不能关闭或离开；受理后都恢复', async () => {
@@ -1419,7 +1577,7 @@ describe('合成与整条', () => {
     await user.click(generateButton())
     try {
       expect(within(openCard()).getByRole('button', { name: '正在提交' })).toBeDisabled()
-      expect(viewButton('整条')).toBeDisabled()
+      expect(viewButton('版本')).toBeDisabled()
       await user.click(screen.getByRole('button', { name: '关闭视频编辑' }))
       expect(onClose).not.toHaveBeenCalled()
       await act(async () => {
@@ -1432,7 +1590,7 @@ describe('合成与整条', () => {
     expect(
       await within(editTrack()).findByRole('button', { name: '镜头 2 · 生成中' }),
     ).toBeVisible()
-    expect(viewButton('整条')).toBeEnabled()
+    expect(viewButton('版本')).toBeEnabled()
     await user.click(screen.getByRole('button', { name: '关闭视频编辑' }))
     expect(onClose).toHaveBeenCalledOnce()
   })

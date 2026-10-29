@@ -10,19 +10,6 @@
   outline: none;
 }
 
-.wf-dialog .editor-header {
-  min-height: 48px;
-}
-
-.wf-dialog .editor-header h2 {
-  overflow: hidden;
-  font-size: var(--text-body);
-  font-weight: 500;
-  line-height: var(--text-body--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .wf-dialog .editor-compose {
   height: 32px;
   font-size: var(--text-body-sm);
