@@ -1687,7 +1687,7 @@
   opacity: 1;
 }
 
-.is-adding-overlay-row .wf-lane.is-overlay .wf-insertion-surface {
+.is-adding-overlay-row .wf-lane.is-overlay .timeline-insertion-surface {
   background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface-container-lowest));
 }
 
@@ -1807,152 +1807,10 @@
   pointer-events: none;
 }
 
-/* 三种插入共用的缩影、完整时长占位与落点提示；位置由同一动效驱动接管。 */
-.wf-insertion-ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: var(--z-popup);
-  display: flex;
-  width: 158px;
-  height: 52px;
-  align-items: center;
-  gap: 9px;
-  overflow: hidden;
-  padding: 7px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-lowest);
-  box-shadow: var(--shadow-2);
-  pointer-events: none;
-  will-change: transform;
-}
-
-.wf-insertion-ghost.is-blocked {
-  filter: grayscale(0.6);
-}
-
-.wf-insertion-thumb {
-  display: flex;
-  width: 54px;
-  height: 36px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-muted);
-}
-
-.wf-insertion-thumb > *,
-.wf-insertion-thumb img {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  object-fit: cover;
-}
-
-.wf-insertion-thumb .wf-component-thumb {
+/* 组件缩略图放进插入缩影与占位时，跟着缩略框的圆角，不再叠阴影。 */
+.timeline-insertion-thumb .wf-component-thumb {
   border-radius: inherit;
   box-shadow: none;
-}
-
-.wf-insertion-details {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-}
-
-.wf-insertion-details > span,
-.wf-insertion-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wf-insertion-details small {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-.wf-insertion-preview {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: var(--z-local-3);
-  color: var(--color-primary);
-  pointer-events: none;
-  will-change: transform;
-}
-
-.wf-insertion-preview[hidden] {
-  display: none;
-}
-
-.wf-insertion-surface {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  padding: 0 8px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface-container-lowest));
-}
-
-.wf-insertion-surface::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 2px;
-  background: currentColor;
-}
-
-.wf-insertion-preview .wf-insertion-thumb {
-  width: 38px;
-  height: 70%;
-  opacity: 0.42;
-}
-
-.wf-insertion-name {
-  font-size: var(--text-caption);
-  font-weight: 500;
-}
-
-.wf-insertion-preview.is-blocked {
-  color: var(--color-on-surface-muted);
-}
-
-.wf-insertion-preview.is-blocked .wf-insertion-surface {
-  background: var(--color-surface-container-high);
-}
-
-.wf-insertion-tip {
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: 8px;
-  display: block;
-  padding: 2px 9px;
-  border-radius: var(--radius-xs);
-  background: var(--color-inverse-surface);
-  box-shadow: var(--shadow-1);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.wf-insertion-tip.is-end {
-  right: 0;
-  left: auto;
 }
 
 /* ---- 视频素材区 ---- */

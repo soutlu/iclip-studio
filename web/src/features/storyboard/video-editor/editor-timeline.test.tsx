@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
@@ -9,6 +9,7 @@ import {
   EMPTY_DRAFT,
   isPicked,
   pickPart,
+  previewPick,
   putShot,
   readyEditsOf,
   shotOn,
@@ -81,6 +82,7 @@ const timeline = (draft: Draft, selection: Selection, on: ReturnType<typeof hand
     items={draftItemsOf(source, draft)}
     onScrub={() => {}}
     peaksOf={() => ({ kind: 'silent' })}
+    previewPick={(editId, seg) => previewPick(source, draft, editId, seg)}
     rootUrl={source.rootUrl}
     selection={selection}
     selectionBoxRef={null}
@@ -307,30 +309,48 @@ describe('修剪', () => {
   })
 })
 
-describe('关联描边', () => {
-  const linkedDraft = () =>
-    within(draftTrack())
-      .getAllByRole('button')
-      .filter((button) => button.parentElement?.hasAttribute('data-linked') === true)
-      .map((button) => button.getAttribute('aria-label'))
+const linkedDraft = () =>
+  within(draftTrack())
+    .getAllByRole('button')
+    .filter((button) => button.parentElement?.hasAttribute('data-linked') === true)
+    .map((button) => button.getAttribute('aria-label'))
+const section = () => screen.getByRole('region', { name: '视频编辑时间线' })
+const draftBlock = (name: RegExp) => within(draftTrack()).getByRole('button', { name })
+const groupOf = (button: HTMLElement) => {
+  const group = button.parentElement
+  if (group === null) throw new Error('块没有外层')
+  return group
+}
 
+describe('关联描边', () => {
   it('悬停草稿块描出来源；悬停编辑轨的段描出草稿里那块；悬停原片镜头描出它在草稿里那块', () => {
     renderTimeline(pickedFirst)
     expect(screen.queryAllByTestId('timeline-link')).toHaveLength(0)
-    const draftBlock = within(draftTrack()).getByRole('button', { name: /第 2 段/ })
-    fireEvent.pointerEnter(draftBlock.parentElement ?? draftBlock)
+    fireEvent.pointerMove(draftBlock(/第 2 段/))
     expect(screen.getAllByTestId('timeline-link')).toHaveLength(1)
-    fireEvent.pointerLeave(draftBlock.parentElement ?? draftBlock)
+    fireEvent.pointerLeave(section())
+    expect(screen.queryAllByTestId('timeline-link')).toHaveLength(0)
 
-    const part = within(lane()).getByRole('button', { name: /第 1 次.*第 1 段/ })
-    fireEvent.pointerEnter(part.parentElement ?? part)
+    fireEvent.pointerMove(within(lane()).getByRole('button', { name: /第 1 次.*第 1 段/ }))
     expect(linkedDraft()).toEqual(['镜头 4–5 第 1 次生成的编辑片段 · 第 1 段 · 1.0 秒 · 已选用'])
-    // 另描出原片轨上这条编辑片段的生成区间
-    expect(screen.getAllByTestId('timeline-link')).toHaveLength(1)
-    fireEvent.pointerLeave(part.parentElement ?? part)
+    // 另描出原片轨上这条编辑片段的生成区间，以及这一段自己（连线的另一端）
+    expect(screen.getAllByTestId('timeline-link')).toHaveLength(2)
 
-    fireEvent.pointerEnter(shot(2).parentElement ?? shot(2))
+    fireEvent.pointerMove(shot(2))
     expect(linkedDraft()).toEqual(['镜头 2 · 1.0 秒 · 原片'])
+  })
+
+  it('块重画、横向滚动之后按指针下的元素重算悬停，不等指针再动', () => {
+    const { rerender } = renderTimeline(pickedFirst)
+    fireEvent.pointerMove(shot(2))
+    expect(linkedDraft()).toEqual(['镜头 2 · 1.0 秒 · 原片'])
+    // 开关之后指针下换成了镜头 3
+    const atPointer = vi.spyOn(document, 'elementFromPoint').mockReturnValue(shot(3))
+    rerender(putShot(source, pickedFirst, 1, false))
+    expect(linkedDraft()).toEqual(['镜头 3 · 1.0 秒 · 原片'])
+    atPointer.mockReturnValue(shot(6))
+    fireEvent.scroll(screen.getByRole('region', { name: '时间线轨道，可横向滚动' }))
+    expect(linkedDraft()).toEqual(['镜头 6 · 1.0 秒 · 原片'])
   })
 
   it('选中草稿块常驻描出来源；原片轨有选区时常驻描出这些镜头在草稿里的块', () => {
@@ -339,6 +359,275 @@ describe('关联描边', () => {
     rerender(pickedFirst, { kind: 'run', start: 1.5, end: 3 })
     expect(screen.queryAllByTestId('timeline-link')).toHaveLength(0)
     expect(linkedDraft()).toEqual(['镜头 2 · 1.0 秒 · 原片', '镜头 3 · 1.0 秒 · 原片'])
+  })
+})
+
+/**
+ * jsdom 不排版：轨道区按它铺的秒数每秒 100px、从 x=100 起；块按摆放参数（--at、--len 秒）横排，编辑轨的块
+ * （带 --row）在 y=156 起按行往下，其余在草稿那一条（y=28，高 64）；别的元素铺满 600×200。
+ */
+const layOut = () =>
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const content = Number.parseFloat(this.style.getPropertyValue('--content'))
+    if (!Number.isNaN(content))
+      return DOMRect.fromRect({ x: 100, y: 0, width: content * 100, height: 200 })
+    const at = Number.parseFloat(this.style.getPropertyValue('--at'))
+    if (Number.isNaN(at)) return DOMRect.fromRect({ x: 100, y: 0, width: 600, height: 200 })
+    const len = Number.parseFloat(this.style.getPropertyValue('--len'))
+    const row = this.style.getPropertyValue('--row')
+    return DOMRect.fromRect({
+      x: 100 + at * 100 + 1,
+      y: row === '' ? 28 : 156 + Number(row) * 42,
+      width: len * 100 - 2,
+      height: row === '' ? 64 : 36,
+    })
+  })
+
+/** 记下每一次 Web Animations 调用：动画的元素与关键帧；动画立即算作播完。 */
+const recordAnimations = () => {
+  const calls: { node: Element; keyframes: Keyframe[] }[] = []
+  vi.spyOn(Element.prototype, 'animate').mockImplementation(function (
+    this: Element,
+    keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+  ) {
+    calls.push({ node: this, keyframes: keyframes as Keyframe[] })
+    return {
+      cancel: () => {},
+      pause: () => {},
+      play: () => {},
+      finished: Promise.resolve(),
+    } as unknown as Animation
+  })
+  return calls
+}
+
+const reduceMotion = () =>
+  vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+    matches: query.includes('reduce'),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }))
+
+describe('开关后的重排', () => {
+  const framesOf = (calls: ReturnType<typeof recordAnimations>, node: Element) =>
+    calls.filter((call) => call.node === node).map((call) => call.keyframes)
+
+  it('后面的块从原来的位置平移到新位置，拿掉的块在原地收起；原片轨、编辑轨不动', () => {
+    layOut()
+    const calls = recordAnimations()
+    const { rerender } = renderTimeline()
+    rerender(putShot(source, EMPTY_DRAFT, 2, false))
+    // 镜头 3 从 2 秒处（左 1 秒 = 100px）滑到 1 秒处
+    expect(framesOf(calls, groupOf(draftBlock(/^镜头 3 ·/)))).toEqual([
+      [
+        { transform: 'translateX(100px)', width: '98px' },
+        { transform: 'none', width: '98px' },
+      ],
+    ])
+    expect(framesOf(calls, groupOf(draftBlock(/^镜头 1 ·/)))).toEqual([])
+    // 镜头 2 已不在草稿里（不能点），只剩一块在原地从 98px 收到 0
+    expect(within(draftTrack()).queryByRole('button', { name: /^镜头 2 ·/ })).toBeNull()
+    expect(calls.map((call) => call.keyframes)).toContainEqual([
+      { width: '98px' },
+      { width: '0px' },
+    ])
+    expect(calls.every((call) => draftTrack().contains(call.node))).toBe(true)
+  })
+
+  it('新加入的块从宽 0 展开到实际宽度，覆盖的镜头收起', () => {
+    layOut()
+    const calls = recordAnimations()
+    const { rerender } = renderTimeline()
+    rerender(pickPart(source, EMPTY_DRAFT, second.id, 1))
+    expect(framesOf(calls, groupOf(draftBlock(/第 2 次/)))).toEqual([
+      [{ width: '0px' }, { width: '148px' }],
+    ])
+    expect(
+      calls.filter((call) => JSON.stringify(call.keyframes.at(-1)) === '{"width":"0px"}'),
+    ).toHaveLength(2)
+  })
+
+  it('系统要求减少动态效果时不做动画，直接是结果', () => {
+    layOut()
+    reduceMotion()
+    const calls = recordAnimations()
+    const { rerender } = renderTimeline()
+    rerender(putShot(source, EMPTY_DRAFT, 2, false))
+    expect(calls).toEqual([])
+    // 没有留着收起的块
+    expect(draftTrack().children).toHaveLength(5)
+  })
+
+  it('拖修剪把手的过程中草稿怎么变都没有动画', () => {
+    layOut()
+    const calls = recordAnimations()
+    const selected: Selection = { kind: 'draft', id: `${first.id}#2` }
+    const { rerender } = renderTimeline(pickedFirst, selected)
+    const end = screen.getByRole('slider', { name: '裁剪结尾' })
+    fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 500 })
+    const item = draftItemsOf(source, pickedFirst).find((candidate) => candidate.id === selected.id)
+    if (item === undefined) throw new Error('草稿里没有这一段')
+    rerender(trimItem(pickedFirst, item, { t0: 1, t1: 1.5 }))
+    rerender(putShot(source, trimItem(pickedFirst, item, { t0: 1, t1: 1.5 }), 2, false))
+    fireEvent.pointerUp(end, { pointerId: 1 })
+    expect(calls).toEqual([])
+  })
+})
+
+describe('连线', () => {
+  const connector = () => screen.queryByTestId('timeline-connector')
+  const ends = () => {
+    const circles = connector()?.querySelectorAll('circle') ?? []
+    return [...circles].map((circle) => [
+      Number(circle.getAttribute('cx')),
+      Number(circle.getAttribute('cy')),
+    ])
+  }
+  const partGroup = (name: RegExp) => groupOf(within(lane()).getByRole('button', { name }))
+
+  it('悬停草稿里的编辑段或编辑轨上它那一段时出现，从草稿块底边中点连到那一段顶边中点', () => {
+    layOut()
+    renderTimeline(pickedFirst)
+    fireEvent.pointerMove(draftBlock(/第 2 段/))
+    // 轨道区从 (100, 0) 起
+    const from = groupOf(draftBlock(/第 2 段/)).getBoundingClientRect()
+    const to = partGroup(/第 1 次.*第 2 段/).getBoundingClientRect()
+    expect(ends()).toEqual([
+      [from.left + from.width / 2 - 100, from.bottom],
+      [to.left + to.width / 2 - 100, to.top],
+    ])
+    fireEvent.pointerLeave(section())
+    expect(connector()).toBeNull()
+    fireEvent.pointerMove(within(lane()).getByRole('button', { name: /第 1 次.*第 1 段/ }))
+    expect(connector()).not.toBeNull()
+  })
+
+  it('原片镜头、没在草稿里的段悬停不出；选中不常驻', () => {
+    const { rerender } = renderTimeline(pickedFirst)
+    fireEvent.pointerMove(draftBlock(/^镜头 2 ·/))
+    expect(connector()).toBeNull()
+    fireEvent.pointerMove(within(lane()).getByRole('button', { name: /第 2 次/ }))
+    expect(connector()).toBeNull()
+    fireEvent.pointerLeave(section())
+    rerender(pickedFirst, { kind: 'draft', id: `${first.id}#2` })
+    expect(connector()).toBeNull()
+  })
+
+  it('开关之后自动出现，停约 1 秒后淡出消失；悬停在它的一端时一直留着', async () => {
+    vi.useFakeTimers()
+    try {
+      recordAnimations()
+      const { rerender } = renderTimeline()
+      rerender(pickPart(source, EMPTY_DRAFT, second.id, 1))
+      expect(connector()).not.toBeNull()
+      await act(() => vi.advanceTimersByTimeAsync(900))
+      expect(connector()).not.toBeNull()
+      await act(() => vi.advanceTimersByTimeAsync(400))
+      expect(connector()).toBeNull()
+
+      // 再切换一次，指针停在草稿里那一块上
+      rerender(EMPTY_DRAFT)
+      rerender(pickPart(source, EMPTY_DRAFT, second.id, 1))
+      fireEvent.pointerMove(draftBlock(/第 2 次/))
+      await act(() => vi.advanceTimersByTimeAsync(3000))
+      expect(connector()).not.toBeNull()
+      fireEvent.pointerLeave(section())
+      expect(connector()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('拿掉一段时连到它收起的位置，随收起一起淡出', async () => {
+    const { rerender } = renderTimeline(pickPart(source, EMPTY_DRAFT, second.id, 1))
+    rerender(EMPTY_DRAFT)
+    expect(connector()).toHaveClass('is-out')
+    await act(() => Promise.resolve())
+    expect(connector()).toBeNull()
+  })
+})
+
+describe('拖放', () => {
+  const press = (target: HTMLElement, clientX: number, clientY: number) =>
+    fireEvent.pointerDown(target, { pointerId: 1, button: 0, clientX, clientY })
+  const move = (target: HTMLElement, clientX: number, clientY: number) =>
+    fireEvent.pointerMove(target, { pointerId: 1, clientX, clientY })
+  const release = (target: HTMLElement, clientX: number, clientY: number) =>
+    fireEvent.pointerUp(target, { pointerId: 1, clientX, clientY })
+  // 草稿那一条铺满 y 0–200（见 beforeEach）：y=300 在草稿外
+  const secondPart = () => within(lane()).getByRole('button', { name: /第 2 次/ })
+
+  it('编辑段拖到草稿上：按排序会放进去的位置出落点占位，松手等于选用，不算点击', () => {
+    const { on } = renderTimeline()
+    press(secondPart(), 450, 160)
+    move(secondPart(), 300, 60)
+    // 镜头 4–5 生成的第 1 段排在镜头 4 后面：4.0 秒处，1.5 秒长
+    expect(screen.getByRole('status')).toHaveTextContent('插入 4.0 秒 · 1.5 秒')
+    // 松手前不改草稿
+    expect(names(draftTrack())).toHaveLength(6)
+    release(secondPart(), 300, 60)
+    fireEvent.click(secondPart())
+    expect(on.onTogglePart).toHaveBeenCalledExactlyOnceWith(second.id, 1)
+    expect(on.onClickPart).not.toHaveBeenCalled()
+    expect(on.onSelectDraft).not.toHaveBeenCalled()
+  })
+
+  it('拖到草稿以外松手取消；没超过拖动阈值算点击', () => {
+    const { on } = renderTimeline()
+    press(secondPart(), 450, 160)
+    move(secondPart(), 300, 60)
+    move(secondPart(), 300, 300)
+    expect(screen.queryByRole('status')).toBeNull()
+    release(secondPart(), 300, 300)
+    fireEvent.click(secondPart())
+    expect(on.onTogglePart).not.toHaveBeenCalled()
+    expect(on.onClickPart).not.toHaveBeenCalled()
+
+    press(secondPart(), 450, 160)
+    move(secondPart(), 453, 160)
+    release(secondPart(), 453, 160)
+    fireEvent.click(secondPart())
+    expect(on.onClickPart).toHaveBeenCalledExactlyOnceWith(second.id, 1)
+    expect(on.onTogglePart).not.toHaveBeenCalled()
+  })
+
+  it('已在草稿里的段拖上来只描出它那块，不出落点占位；松手什么都不改', () => {
+    const { on } = renderTimeline(pickedFirst)
+    const part = within(lane()).getByRole('button', { name: /第 1 次.*第 2 段/ })
+    press(part, 450, 160)
+    move(part, 300, 60)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(linkedDraft()).toEqual(['镜头 4–5 第 1 次生成的编辑片段 · 第 2 段 · 1.0 秒 · 已选用'])
+    release(part, 300, 60)
+    expect(on.onTogglePart).not.toHaveBeenCalled()
+  })
+
+  it('草稿块拖出草稿等于拿掉（关掉它的眼睛），还在草稿上松手取消', () => {
+    const { on } = renderTimeline(pickedFirst)
+    const shotBlock = draftBlock(/^镜头 2 ·/)
+    press(shotBlock, 250, 60)
+    move(shotBlock, 400, 60)
+    release(shotBlock, 400, 60)
+    expect(on.onToggleShot).not.toHaveBeenCalled()
+    press(shotBlock, 250, 60)
+    move(shotBlock, 250, 300)
+    release(shotBlock, 250, 300)
+    expect(on.onToggleShot).toHaveBeenCalledExactlyOnceWith(2)
+
+    const partBlock = draftBlock(/第 2 段/)
+    press(partBlock, 550, 60)
+    move(partBlock, 550, 300)
+    release(partBlock, 550, 300)
+    expect(on.onTogglePart).toHaveBeenCalledExactlyOnceWith(first.id, 2)
+    fireEvent.click(partBlock)
+    expect(on.onSelectDraft).not.toHaveBeenCalled()
   })
 })
 

@@ -283,6 +283,52 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(composeButton(dialog)).toBeDisabled()
 })
 
+test('拖放：编辑段拖到草稿上出落点占位、松手选用；草稿里的块拖出草稿松手拿掉', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1335, height: 880 })
+  const dialog = await openEditor(page)
+  await waitForShots(dialog)
+  await shot(dialog, 2).click()
+  await shot(dialog, 3).click({ modifiers: ['Shift'] })
+  await requestBox(dialog).fill('换成黄昏的暖光')
+  await expect(generateButton(dialog)).toBeEnabled()
+  await submitEdit(page, dialog)
+  const partName = '镜头 2–3 的编辑片段 · 第 1 段 · 1.0 秒'
+  const part = lane(dialog).getByRole('button', { name: partName, exact: true })
+  await expect(part).toBeVisible({ timeout: STEP_TIMEOUT })
+  // 按 Escape 收起生成卡，免得挡住时间线
+  await page.keyboard.press('Escape')
+
+  // 按住编辑段拖到草稿轨上：落点占位写出按排序放进去的位置（镜头 2 后面），松手前草稿不变
+  const from = await centerOf(part)
+  const target = await centerOf(draft(dialog).getByRole('button', { name: /^镜头 5 ·/ }))
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(target.x, target.y, { steps: 8 })
+  await expect(dialog.getByRole('status').filter({ hasText: '插入 2.0 秒 · 1.0 秒' })).toBeVisible()
+  await expect(draft(dialog).getByRole('button')).toHaveCount(6)
+  await page.mouse.up()
+  const inDraft = draft(dialog).getByRole('button', { name: `${partName} · 已选用` })
+  await expect(inDraft).toBeVisible()
+  // 等于点它的眼睛：覆盖的镜头默认关，不改选中
+  await expect(shotEye(dialog, 2)).toHaveAccessibleName('开启镜头 2')
+  await expect(partEye(dialog, partName)).toHaveAccessibleName('取消选用这一段')
+  await expect(inDraft).toHaveAttribute('aria-pressed', 'false')
+  await expect(controls(dialog)).toContainText('共 5.0 秒')
+
+  // 把草稿里的这一块拖出草稿轨（拖到原片轨上）松手：拿掉它，镜头回来
+  const start = await centerOf(inDraft)
+  const away = await centerOf(shot(dialog, 1))
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(away.x, away.y, { steps: 8 })
+  await page.mouse.up()
+  await expect(inDraft).toHaveCount(0)
+  await expect(shotEye(dialog, 2)).toHaveAccessibleName('关闭镜头 2')
+  await expect(partEye(dialog, partName)).toHaveAccessibleName('选用这一段')
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
+})
+
 test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时补上描述生成', async ({ page }) => {
   const dialog = await openEditor(page, false, 2, false)
   await waitForShots(dialog)

@@ -22,6 +22,16 @@ import {
   releasePointer,
   useClickAfterDrag,
 } from '../editing/timeline-drag'
+import {
+  InsertionGhost,
+  InsertionPreview,
+  type InsertionBox,
+  type InsertionFace,
+  type InsertionGhostHandle,
+  type InsertionPreviewHandle,
+  type InsertionMotion,
+} from '../editing/timeline-insertion'
+import { useInsertionMotion, type MotionSnapshot } from '../editing/use-insertion-motion'
 import { captionKey } from './canvas-targets'
 import type { TrackLane } from './component-placement'
 import type { PlacedCaption } from './composition/captions'
@@ -55,16 +65,6 @@ import {
   snapTargets,
   type TimelineScale,
 } from './timeline-scale'
-import {
-  InsertionGhost,
-  InsertionPreview,
-  type InsertionBox,
-  type InsertionFace,
-  type InsertionGhostHandle,
-  type InsertionPreviewHandle,
-  type InsertionMotion,
-} from './timeline-insertion'
-import { useInsertionMotion, type MotionSnapshot } from './use-insertion-motion'
 import { usePreviewGesture, type GestureStep } from './use-preview-gesture'
 
 export type MusicView = { url: string; title: string; peaks: PeaksState }

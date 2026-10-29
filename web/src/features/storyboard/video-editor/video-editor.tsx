@@ -47,6 +47,7 @@ import {
   keepPlace,
   outputOf,
   pickPart,
+  previewPick,
   putShot,
   readyEditsOf,
   shotOn,
@@ -775,6 +776,7 @@ function Editor({
         onTrim={trim}
         onTrimRun={trimRun}
         peaksOf={peaksOf}
+        previewPick={(editId, seg) => previewPick(source, draft, editId, seg)}
         rootUrl={mediaUrl}
         selection={selection}
         selectionBoxRef={selectionBoxRef}

@@ -194,9 +194,21 @@
   background: var(--color-surface-container);
 }
 
+/* 剪辑视图的原声行按自己的宽决定放不放得下说明（见下）。 */
+.video-editor-timeline-lanes .video-editor-timeline-wave {
+  container: video-editor-wave / inline-size;
+}
+
 /* 编辑片段只有 36px 高，原声行放不下「无声」这类说明，空着即可。 */
 .video-editor-timeline-block.is-edit .timeline-wave-note {
   display: none;
+}
+
+/* 原声行左端是镜头号（或 wand 图标）、原片轨右端是开关，居中的「无声」在窄块上会压到它们：放不下就不写。 */
+@container video-editor-wave (width < 80px) {
+  .timeline-wave-note {
+    display: none;
+  }
 }
 
 /* 镜头号（编辑段是 wand 图标）放在原声行最左边，不压在画面上。 */
@@ -395,6 +407,64 @@
   top: calc(var(--edit-top) + 4px + var(--row, 0) * var(--edit-row));
   height: var(--edit-block);
   border-radius: var(--radius-xs);
+}
+
+/* 连线：草稿里的编辑段（底边中点）↔ 编辑轨上的那一段（顶边中点），可以越过原片轨；端点各一个 4px 圆点。
+   路径与端点由脚本按两端此刻的位置画（重排动画中每帧重画）。 */
+.video-editor-timeline-connector {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-2);
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: var(--color-outline);
+  pointer-events: none;
+}
+
+.video-editor-timeline-connector path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.video-editor-timeline-connector circle {
+  fill: currentColor;
+}
+
+/* 开关后自动出现的那一对：停留之后淡出；拿掉的那一块随收起一起淡出。 */
+.video-editor-timeline-connector.is-fading,
+.video-editor-timeline-link.is-fading,
+.video-editor-timeline-block:is([data-linked='fading'], [data-linked='out'])::after {
+  animation: video-editor-fade-out var(--dur-s) var(--ease) forwards;
+}
+
+.video-editor-timeline-connector.is-out,
+.video-editor-timeline-link.is-out,
+.video-editor-timeline-block[data-linked='out']::after {
+  animation-duration: var(--dur-m);
+}
+
+@keyframes video-editor-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* 拿掉的块在原地收起，收起中不能点、不算悬停。 */
+.video-editor-timeline-block.is-leaving {
+  pointer-events: none;
+}
+
+/* 草稿那一条：拖放时量指针在不在草稿上，编辑段的落点占位也摆在这里面。 */
+.video-editor-timeline-drop {
+  position: absolute;
+  top: var(--timeline-track-top);
+  right: 0;
+  left: 0;
+  z-index: var(--z-local-3);
+  height: var(--draft-height);
+  pointer-events: none;
 }
 
 /* 草稿里选中那块、原片轨上选区两端的修剪把手，竖直居中在所在轨的画面行（草稿 48，原片 32）。 */

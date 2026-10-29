@@ -290,7 +290,7 @@ test('组件按自己的时长放：拖着时缩影写的、落下的段都是�
   // 示例品牌 片尾 3 秒
   await dialog.getByRole('tab', { name: '品牌' }).click()
   await liftCard(page, dialog.getByRole('button', { name: /^示例品牌 片尾，/ }))
-  await expect(page.locator('.wf-insertion-ghost')).toContainText('3.0 秒')
+  await expect(page.locator('.timeline-insertion-ghost')).toContainText('3.0 秒')
   const lane = await boxOf(film)
   await page.mouse.move(lane.x + lane.width - 20, lane.y + lane.height / 2, { steps: 8 })
   await expect(page.getByRole('status').filter({ hasText: /^插入.*3\.0\s*秒$/ })).toBeVisible()
