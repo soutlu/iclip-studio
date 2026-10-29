@@ -41,9 +41,15 @@ from iclip.domains.tagging.public import (
 
 _COMPOSE: Final = "compose"
 
-_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
-      AND ((g.operation = 'generate' AND g.source_job_id IS NULL) OR g.operation = 'compose')
+_INDEXED_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
+      AND ((g.operation = 'generate' AND g.source_job_id IS NULL) OR g.operation = 'compose')"""
+"""与 ``ix_generation_jobs_masters`` 的部分索引条件同式：只用它的查询才能走仅索引扫描。"""
+
+_MASTER: Final = (
+    _INDEXED_MASTER
+    + """
       AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
+)
 
 _OUTPUT_COLUMNS: Final = """(g.output ->> 'url') AS output_url,
            (g.output ->> 'watermark_url') AS watermark_output_url,
@@ -52,71 +58,151 @@ _OUTPUT_COLUMNS: Final = """(g.output ->> 'url') AS output_url,
 _JOB_COLUMNS: Final = f"""g.id, g.operation, g.shot_index, g.root_job_id, {_OUTPUT_COLUMNS},
            g.finished_at, g.owner_user_id"""
 
-_OWN_MASTERS: Final = f"""
-own_masters AS (
-    SELECT g.id, g.operation, {_OUTPUT_COLUMNS},
-           g.finished_at, g.owner_user_id, c.id AS card_conversation,
-           COALESCE(c.id, g.root_job_id, g.id) AS card_id,
-           COALESCE(g.root_job_id, g.id) AS take_id
+_FACE_COLUMNS: Final = f"""g.id, g.operation, {_OUTPUT_COLUMNS}, g.finished_at, g.owner_user_id,
+           COALESCE(g.root_job_id, g.id) AS take_id"""
+
+
+def _unattached_masters_of(card: str) -> str:
+    return f"""(g.root_job_id = {card} OR (g.id = {card} AND g.root_job_id IS NULL))
+      AND {_MASTER}
+      AND NOT EXISTS (SELECT 1 FROM iclip.conversations c WHERE c.id = g.conversation_id)"""
+
+
+_DANGLING: Final = f"""
+master_conversations AS (
+    (SELECT g.conversation_id AS id
+     FROM iclip.generation_jobs g
+     WHERE g.conversation_id IS NOT NULL AND {_INDEXED_MASTER}
+     ORDER BY g.conversation_id
+     LIMIT 1)
+    UNION ALL
+    SELECT (SELECT g.conversation_id
+            FROM iclip.generation_jobs g
+            WHERE g.conversation_id > m.id AND {_INDEXED_MASTER}
+            ORDER BY g.conversation_id
+            LIMIT 1)
+    FROM master_conversations m
+    WHERE m.id IS NOT NULL
+),
+dangling AS (
+    SELECT m.id
+    FROM master_conversations m
+    WHERE m.id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM iclip.conversations c WHERE c.id = m.id)
+)"""
+
+_ALL_UNATTACHED_MASTERS: Final = f"""
+    SELECT {_FACE_COLUMNS}
     FROM iclip.generation_jobs g
-    LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
-    WHERE {_MASTER}
-)"""
+    WHERE g.conversation_id IS NULL AND {_MASTER}
+    UNION ALL
+    SELECT {_FACE_COLUMNS}
+    FROM dangling d
+    JOIN iclip.generation_jobs g ON g.conversation_id = d.id
+    WHERE {_MASTER}"""
 
-_FACES: Final = """
+_UNATTACHED_MASTERS_OF_CARD: Final = f"""
+    SELECT {_FACE_COLUMNS}
+    FROM iclip.generation_jobs g
+    WHERE {_unattached_masters_of("CAST(:card_id AS uuid)")}"""
+
+
+def _faces(conversation_scope: str, unattached_masters: str) -> str:
+    return f"""
 faces AS (
-    SELECT DISTINCT ON (m.card_id) m.*
-    FROM own_masters m
-    ORDER BY m.card_id, m.finished_at DESC, m.id DESC
+    SELECT cv.id AS card_id, cv.id AS conversation_id, cv.title, cv.agent_id, cv.task_id,
+           cv.owner_user_id AS conversation_owner,
+           cv.deleted_at IS NOT NULL AS conversation_deleted,
+           au.username AS user_name, f.*
+    FROM iclip.conversations cv
+    JOIN iclip.users au ON au.id = cv.owner_user_id
+    CROSS JOIN LATERAL (
+        SELECT {_FACE_COLUMNS}
+        FROM iclip.generation_jobs g
+        WHERE g.conversation_id = cv.id AND {_MASTER}
+        ORDER BY g.finished_at DESC, g.id DESC
+        LIMIT 1
+    ) f{conversation_scope}
+    UNION ALL
+    SELECT o.take_id, CAST(NULL AS uuid), CAST(NULL AS text), CAST(NULL AS text),
+           CAST(NULL AS uuid), CAST(NULL AS uuid), false, au.username, o.*
+    FROM (
+        SELECT DISTINCT ON (m.take_id) m.*
+        FROM ({unattached_masters}
+        ) m
+        ORDER BY m.take_id, m.finished_at DESC, m.id DESC
+    ) o
+    JOIN iclip.generation_jobs t ON t.id = o.take_id
+    JOIN iclip.users au ON au.id = t.owner_user_id
 )"""
 
-_CARDS: Final = r"""
-cards AS (
-    SELECT f.card_id AS id, f.card_conversation AS conversation_id,
-           f.id AS face_id, f.operation AS face_operation, f.output_url AS face_output_url,
-           f.watermark_output_url AS face_watermark_output_url,
-           f.duration_ms AS face_duration_ms, f.finished_at AS face_finished_at,
-           fu.username AS face_user_name,
-           t.id AS take_id, t.request AS take_request,
-           c.title, c.agent_id, c.task_id, c.owner_user_id AS conversation_owner,
-           c.deleted_at IS NOT NULL AS conversation_deleted,
-           au.username AS user_name,
-           CASE WHEN t.request->>'aspect_ratio' ~ '^[0-9]+(\.[0-9]+)?:[0-9]+(\.[0-9]+)?$' THEN
+
+_ALL_FACES: Final = (_DANGLING, _faces("", _ALL_UNATTACHED_MASTERS))
+
+_FACES_OF_CARD: Final = _faces(
+    "\n    WHERE cv.id = CAST(:card_id AS uuid)", _UNATTACHED_MASTERS_OF_CARD
+)
+
+_ORIENTATION: Final = r"""CASE WHEN t.request->>'aspect_ratio' ~ '^[0-9]+(\.[0-9]+)?:[0-9]+(\.[0-9]+)?$' THEN
                CASE sign(split_part(t.request->>'aspect_ratio', ':', 1)::numeric
                          - split_part(t.request->>'aspect_ratio', ':', 2)::numeric)
                    WHEN 1 THEN 'landscape' WHEN -1 THEN 'portrait' ELSE 'square' END
-           END AS orientation
-    FROM faces f
-    JOIN iclip.generation_jobs t ON t.id = f.take_id
-    JOIN iclip.users fu ON fu.id = f.owner_user_id
-    LEFT JOIN iclip.conversations c ON c.id = f.card_conversation
-    JOIN iclip.users au ON au.id = COALESCE(c.owner_user_id, t.owner_user_id)
-)"""
+           END"""
 
-_FILTER: Final = r"""
-WHERE (CAST(:user_name AS text) IS NULL OR c.user_name = CAST(:user_name AS text))
-  AND (CAST(:since AS timestamptz) IS NULL OR c.face_finished_at >= CAST(:since AS timestamptz))
-  AND (CAST(:until AS timestamptz) IS NULL OR c.face_finished_at < CAST(:until AS timestamptz))
-  AND (CAST(:orientation AS text) IS NULL OR c.orientation = CAST(:orientation AS text))
+_FACE_FILTER: Final = """
+WHERE (CAST(:user_name AS text) IS NULL OR f.user_name = CAST(:user_name AS text))
+  AND (CAST(:since AS timestamptz) IS NULL OR f.finished_at >= CAST(:since AS timestamptz))
+  AND (CAST(:until AS timestamptz) IS NULL OR f.finished_at < CAST(:until AS timestamptz))"""
+
+_CANDIDATES: Final = "\nFROM faces f" + _FACE_FILTER
+
+_NARROWED_CANDIDATES: Final = (
+    """
+FROM faces f
+JOIN iclip.generation_jobs t ON t.id = f.take_id"""
+    + _FACE_FILTER
+    + rf"""
+  AND (CAST(:orientation AS text) IS NULL OR ({_ORIENTATION}) = CAST(:orientation AS text))
   AND (CAST(:pattern AS text) IS NULL
-       OR c.take_request->>'prompt' ILIKE CAST(:pattern AS text) ESCAPE '\'
-       OR c.title ILIKE CAST(:pattern AS text) ESCAPE '\')"""
+       OR t.request->>'prompt' ILIKE CAST(:pattern AS text) ESCAPE '\'
+       OR f.title ILIKE CAST(:pattern AS text) ESCAPE '\')"""
+)
 
-_PAGE: Final = f"""
+
+def _page(candidates: str) -> str:
+    return f"""
 page AS (
-    SELECT c.* FROM cards c{_FILTER}
+    SELECT f.*{candidates}
       AND (CAST(:after_at AS timestamptz) IS NULL
-           OR (c.face_finished_at, c.id)
+           OR (f.finished_at, f.card_id)
               < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
-    ORDER BY c.face_finished_at DESC, c.id DESC
+    ORDER BY f.finished_at DESC, f.card_id DESC
     LIMIT :limit
 )"""
 
+
+def _cards(source: str) -> str:
+    return f"""
+cards AS (
+    SELECT s.card_id AS id, s.conversation_id,
+           s.id AS face_id, s.operation AS face_operation, s.output_url AS face_output_url,
+           s.watermark_output_url AS face_watermark_output_url,
+           s.duration_ms AS face_duration_ms, s.finished_at AS face_finished_at,
+           fu.username AS face_user_name,
+           t.id AS take_id, t.request AS take_request,
+           s.title, s.agent_id, s.task_id, s.conversation_owner, s.conversation_deleted,
+           s.user_name
+    FROM {source} s
+    JOIN iclip.generation_jobs t ON t.id = s.take_id
+    JOIN iclip.users fu ON fu.id = s.owner_user_id
+)"""
+
+
 _SEEDS_OF_PAGE: Final = """
-seeds AS (SELECT p.id FROM page p)"""
+seeds AS (SELECT p.card_id AS id FROM page p)"""
 
 _SEEDS_OF_CARD: Final = """
-seeds AS (SELECT c.id FROM cards c WHERE c.id = CAST(:card_id AS uuid))"""
+seeds AS (SELECT f.card_id AS id FROM faces f)"""
 
 _LINEAGE: Final = """
 lineage AS (
@@ -130,19 +216,22 @@ lineage AS (
     JOIN iclip.conversations p ON p.id = l.forked_from
 )"""
 
+# OFFSET 0 不让规划器把子查询拉平：递归 CTE 的行数按十倍估，拉平后会改用哈希连接扫全部素材片。
 _VISIBLE: Final = f"""
 visible AS (
-    SELECT l.card_id, {_JOB_COLUMNS}
+    SELECT l.card_id, o.*
     FROM lineage l
-    JOIN iclip.generation_jobs g ON g.conversation_id = l.conversation_id
-    WHERE {_MASTER}
-      AND (l.boundary IS NULL OR (g.status = 'completed' AND g.finished_at <= l.boundary))
+    CROSS JOIN LATERAL (
+        SELECT {_JOB_COLUMNS}
+        FROM iclip.generation_jobs g
+        WHERE g.conversation_id = l.conversation_id AND {_MASTER}
+          AND (l.boundary IS NULL OR (g.status = 'completed' AND g.finished_at <= l.boundary))
+        OFFSET 0
+    ) o
     UNION ALL
-    SELECT COALESCE(g.root_job_id, g.id), {_JOB_COLUMNS}
-    FROM iclip.generation_jobs g
-    LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
-    WHERE {_MASTER} AND c.id IS NULL
-      AND COALESCE(g.root_job_id, g.id) IN (SELECT s.id FROM seeds s)
+    SELECT s.id, {_JOB_COLUMNS}
+    FROM seeds s
+    JOIN iclip.generation_jobs g ON {_unattached_masters_of("s.id")}
 )"""
 
 _FILL: Final = """
@@ -159,29 +248,41 @@ def _statement(ctes: Sequence[str], body: str) -> TextClause:
     return text("WITH RECURSIVE" + ",".join(ctes) + "\n" + body)
 
 
-_CARD_CTES: Final = (_OWN_MASTERS, _FACES, _CARDS)
 _LINEAGE_CTES: Final = (_LINEAGE, _VISIBLE)
 
-_VIDEOS: Final = _statement(
-    (*_CARD_CTES, _PAGE, _SEEDS_OF_PAGE, *_LINEAGE_CTES, _FILL),
-    """SELECT p.*, f.group_count, f.version_count
-FROM page p
-JOIN fill f ON f.card_id = p.id
-ORDER BY p.face_finished_at DESC, p.id DESC""",
-)
 
-_COUNT: Final = _statement(_CARD_CTES, "SELECT count(*) AS n FROM cards c" + _FILTER)
-
-_CARD_OF: Final = _statement(
-    (*_CARD_CTES, _SEEDS_OF_CARD, *_LINEAGE_CTES, _FILL),
-    """SELECT c.*, f.group_count, f.version_count
+def _videos_statement(candidates: str) -> TextClause:
+    return _statement(
+        (
+            *_ALL_FACES,
+            _page(candidates),
+            _cards("page"),
+            _SEEDS_OF_PAGE,
+            *_LINEAGE_CTES,
+            _FILL,
+        ),
+        """SELECT c.*, f.group_count, f.version_count
 FROM cards c
 JOIN fill f ON f.card_id = c.id
-WHERE c.id = CAST(:card_id AS uuid)""",
+ORDER BY c.face_finished_at DESC, c.id DESC""",
+    )
+
+
+_VIDEOS: Final = _videos_statement(_CANDIDATES)
+_NARROWED_VIDEOS: Final = _videos_statement(_NARROWED_CANDIDATES)
+
+_COUNT: Final = _statement(_ALL_FACES, "SELECT count(*) AS n" + _CANDIDATES)
+_NARROWED_COUNT: Final = _statement(_ALL_FACES, "SELECT count(*) AS n" + _NARROWED_CANDIDATES)
+
+_CARD_OF: Final = _statement(
+    (_FACES_OF_CARD, _cards("faces"), _SEEDS_OF_CARD, *_LINEAGE_CTES, _FILL),
+    """SELECT c.*, f.group_count, f.version_count
+FROM cards c
+JOIN fill f ON f.card_id = c.id""",
 )
 
 _VERSIONS: Final = _statement(
-    (*_CARD_CTES, _SEEDS_OF_CARD, *_LINEAGE_CTES),
+    (_FACES_OF_CARD, _SEEDS_OF_CARD, *_LINEAGE_CTES),
     """SELECT v.id, v.operation, v.shot_index, v.output_url, v.watermark_output_url,
        v.duration_ms, v.finished_at, u.username AS user_name,
        t.id AS take_id, t.request AS take_request
@@ -192,11 +293,11 @@ ORDER BY v.finished_at, v.id""",
 )
 
 _AUTHORS: Final = _statement(
-    _CARD_CTES,
-    """SELECT c.user_name, count(*) AS n FROM cards c
-WHERE c.user_name IS NOT NULL
-GROUP BY c.user_name
-ORDER BY n DESC, c.user_name""",
+    _ALL_FACES,
+    """SELECT f.user_name, count(*) AS n FROM faces f
+WHERE f.user_name IS NOT NULL
+GROUP BY f.user_name
+ORDER BY n DESC, f.user_name""",
 )
 
 _WHOLE_FILM: Final = """g.kind = 'whole_film' AND g.status = 'completed'
@@ -276,7 +377,7 @@ JOIN iclip.generation_jobs t ON t.id = COALESCE(g.root_job_id, g.id)
 JOIN iclip.users u ON u.id = g.owner_user_id
 LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
 WHERE le.id IS NOT NULL AND {_MASTER}"""
-"""在库的爆款素材：有条目、仍是素材片；卡 id 的算法同 ``own_masters``。"""
+"""在库的爆款素材：有条目、仍是素材片；卡 id 的算法同素材卡。"""
 
 _HIT_CASES_FILTER: Final = """
   AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
@@ -467,6 +568,10 @@ def _scope_params(scope: Scope) -> dict[str, Any]:
     }
 
 
+def _narrowed(scope: Scope) -> bool:
+    return scope.orientation is not None or scope.q is not None
+
+
 def _film_scope_params(scope: WholeFilmScope) -> dict[str, Any]:
     return {
         "user_name": scope.user_name,
@@ -585,13 +690,15 @@ class PgLibraryReports:
             "after_id": after.video_id if after else None,
             "limit": limit,
         }
+        statement = _NARROWED_VIDEOS if _narrowed(scope) else _VIDEOS
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(_VIDEOS, params)).mappings().all()
+            rows = (await conn.execute(statement, params)).mappings().all()
         return [_card_of(row) for row in rows]
 
     async def count(self, scope: Scope) -> int:
+        statement = _NARROWED_COUNT if _narrowed(scope) else _COUNT
         async with self._engine.connect() as conn:
-            return int((await conn.execute(_COUNT, _scope_params(scope))).scalar_one())
+            return int((await conn.execute(statement, _scope_params(scope))).scalar_one())
 
     async def card_of(self, card_id: uuid.UUID) -> CardRow | None:
         async with self._engine.connect() as conn:

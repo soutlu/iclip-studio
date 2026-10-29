@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -906,6 +907,166 @@ async def test_whole_films_are_not_cards_or_versions(
     assert await reports.card_of(alone) is None
     assert await reports.card_of(seed.c5) is None
     assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def test_a_trial_is_never_a_face(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    """c2 里比 E 晚完成的试生成不顶替卡面、不算一版；只有试生成的对话没有卡。"""
+
+    before = await ids(reports, Scope())
+    only_trials = uuid.uuid4()
+    async with engine.begin() as conn:
+        await _conversation(conn, only_trials, owner=seed.nora, title="只试生成过", created=150)
+        for conversation, owner, name in (
+            (seed.c2, seed.lena, LENA),
+            (only_trials, seed.nora, NORA),
+        ):
+            await _video(
+                conn,
+                uuid.uuid4(),
+                conversation,
+                owner=owner,
+                user_name=name,
+                shot=1,
+                created=190,
+                finished=200,
+                metadata={"referenceId": str(uuid.uuid4())},
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert await reports.count(Scope()) == len(before)
+    card = await reports.card_of(seed.c2)
+    assert card is not None and card.video.face.job_id == seed.e
+    assert (card.video.group_count, card.video.version_count) == (1, 1)
+    assert await reports.card_of(only_trials) is None
+    assert await reports.groups_of(only_trials) == []
+    assert [(author.user_name, author.count) for author in await reports.authors()] == [
+        (LENA, 3),
+        (NORA, 2),
+    ]
+
+
+async def test_unattached_masters_make_one_card_per_take(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    """不挂对话与挂在不存在的对话上的素材片一起按原作成卡：不挂对话的 T 与它上面挂在不存在的对话上的
+    合成 TC 是一张卡；都挂在不存在的对话上的 U 与 UC 是一张卡；在 c1 的 A 上合成、不挂对话的 AC 自成
+    一张卡，卡 id 是 A、作者是 A 的属主，c1 的卡不变。"""
+
+    t, tc, u, uc, ac, ghost = (uuid.uuid4() for _ in range(6))
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    nora: dict[str, Any] = {"owner": seed.nora, "user_name": NORA}
+    async with engine.begin() as conn:
+        await _video(
+            conn, t, None, owner=seed.lena, user_name=LENA, shot=None, created=200, finished=210
+        )
+        await _composite(conn, tc, ghost, **nora, base=t, created=230, finished=240)
+        await _video(conn, u, ghost, **nora, shot=3, created=200, finished=205)
+        await _composite(conn, uc, ghost, **nora, base=u, created=220, finished=221)
+        await _composite(
+            conn, ac, None, owner=seed.lena, user_name=LENA, base=seed.a, created=250, finished=251
+        )
+
+    rows = await reports.videos(Scope(), limit=20, after=None)
+
+    assert [
+        (row.video.id, row.video.conversation_id, row.video.face.job_id, row.video.user_name)
+        for row in rows[:3]
+    ] == [(seed.a, None, ac, NORA), (t, None, tc, LENA), (u, None, uc, NORA)]
+    assert [row.video.version_count for row in rows[:3]] == [1, 2, 2]
+    assert [row.video.id for row in rows[3:]] == [seed.c2, seed.c4, seed.c1, seed.h, seed.k]
+    assert shape(await reports.groups_of(t)) == [(None, [t, tc])]
+    assert shape(await reports.groups_of(u)) == [(3, [u, uc])]
+    assert shape(await reports.groups_of(seed.a)) == [(1, [ac])]
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+    card = await reports.card_of(seed.a)
+    assert card is not None and card.video.take.id == seed.a
+    assert card.conversation_owner is None and not card.conversation_deleted
+    for outside in (tc, uc, ac, ghost):
+        assert await reports.card_of(outside) is None
+        assert await reports.groups_of(outside) == []
+    assert await ids(reports, Scope(user_name=LENA)) == [t, seed.c2, seed.c4, seed.k]
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        Scope(),
+        Scope(user_name=LENA),
+        Scope(user_name=NORA),
+        Scope(since=at(15), until=at(125)),
+        Scope(orientation="portrait"),
+        Scope(orientation="landscape", user_name=NORA),
+        Scope(q="凉鞋"),
+        Scope(q="凉鞋", since=at(100)),
+    ],
+    ids=[
+        "all",
+        "lena",
+        "nora",
+        "time",
+        "portrait",
+        "landscape-nora",
+        "keyword",
+        "keyword-time",
+    ],
+)
+async def test_one_card_pages_walk_the_whole_list_and_match_the_count(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, scope: Scope
+) -> None:
+    """一页一张地翻，与一次取全的列表逐张相同、不重不漏；计数与列表同一套候选。另加一张挂在不存在的
+    对话上的卡。"""
+
+    async with engine.begin() as conn:
+        await _video(
+            conn,
+            uuid.uuid4(),
+            uuid.uuid4(),
+            owner=seed.lena,
+            user_name=LENA,
+            shot=None,
+            created=135,
+            finished=140,
+        )
+    listed = await ids(reports, scope)
+
+    walked: list[uuid.UUID] = []
+    after: VideoCursor | None = None
+    while rows := await reports.videos(scope, limit=1, after=after):
+        video = rows[0].video
+        walked.append(video.id)
+        after = VideoCursor(at=video.face.finished_at, video_id=video.id)
+
+    assert listed
+    assert walked == listed
+    assert await reports.count(scope) == len(listed)
+
+
+async def test_authors_match_the_authors_on_the_list(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    """作者按卡计数：对话卡记对话属主，不挂对话（含对话不存在）的卡记原作出片的属主。"""
+
+    async with engine.begin() as conn:
+        await _video(
+            conn,
+            uuid.uuid4(),
+            uuid.uuid4(),
+            owner=seed.nora,
+            user_name=LENA,
+            shot=None,
+            created=135,
+            finished=140,
+        )
+    listed = Counter(
+        row.video.user_name for row in await reports.videos(Scope(), limit=50, after=None)
+    )
+
+    authors = [(author.user_name, author.count) for author in await reports.authors()]
+
+    assert authors == [(LENA, 3), (NORA, 3)]
+    assert dict(authors) == listed
 
 
 class Films:
