@@ -1270,16 +1270,6 @@
   border-radius: var(--radius-xs);
 }
 
-.wf-caption-toggle:hover {
-  color: var(--color-on-surface);
-}
-
-/* 字幕开着是按下态（同下拉按钮展开时的浅墨底）；关着无底、灰色 */
-.wf-caption-toggle[aria-pressed='true'] {
-  background: var(--color-state-active);
-  color: var(--color-on-surface);
-}
-
 .wf-caption-style {
   display: flex;
   min-width: 0;
@@ -1303,8 +1293,7 @@
   background: var(--color-state-active);
 }
 
-/* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸。 */
-.wf-caption-toggle:focus-visible,
+/* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸；字幕开关的状态见共用的 .timeline-toggle。 */
 .wf-caption-style:focus-visible,
 .wf-caption-recognize:focus-visible {
   outline: none;

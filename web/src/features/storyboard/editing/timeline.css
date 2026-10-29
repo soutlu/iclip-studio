@@ -159,6 +159,22 @@
   background: var(--color-surface-container-lowest);
 }
 
+/* 轨道上的开关（成片的字幕开关、编辑视频的小眼睛）：开着是按下态，浅墨底、深色图标；关着无底、灰色；
+   悬停图标变深。键盘焦点也用浅墨底表示，不加外框，保持紧凑轨道的尺寸。 */
+.timeline-toggle {
+  color: var(--color-on-surface-muted);
+}
+
+.timeline-toggle:hover {
+  color: var(--color-on-surface);
+}
+
+.timeline-toggle:is([aria-pressed='true'], :focus-visible) {
+  outline: none;
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+}
+
 .timeline-time-preview {
   position: fixed;
   z-index: var(--z-popup);

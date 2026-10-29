@@ -5,13 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '@/shared/ui/toast'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { stubMediaDurations } from '@/testing/media'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { VIDEO_MODELS } from '@/testing/video-models'
 import type { GenerationJob } from '../storyboard.api'
-import { picksStorageKey } from './use-picks'
+import { draftStorageKey } from './use-draft'
 import { VideoEditor } from './video-editor'
 
 // jsdom 读不了真文件：mediabunny 换成按地址给关键帧表与时长的替身。
@@ -116,7 +115,6 @@ const ROOT_URL = 'https://example.com/root.mp4'
 const EDITED_URL = 'https://example.com/edited.mp4'
 const OTHER_URL = 'https://example.com/other.mp4'
 const COMPOSITE_URL = 'https://example.com/composite.mp4'
-const EDIT_RESULT_URLS: ReadonlySet<string> = new Set([EDITED_URL, OTHER_URL])
 const ROOT_ID = '0f6a2c9e-8d4b-4c1e-9a7f-3b5d6e8f1a2b'
 const EDIT_ID = '1a2b3c4d-1111-4111-8111-111111111111'
 const SECOND_EDIT_ID = '2b3c4d5e-2222-4222-8222-222222222222'
@@ -150,7 +148,7 @@ const renderEditor = (video = root, onClose = () => {}) =>
     { initialPath: '/c/test' },
   )
 
-/** 编辑段：默认换镜头 3–4（原片 2–4 秒），已完成、出 3 秒。 */
+/** 编辑段：默认从镜头 3–4（原片 2–4 秒）生成，已完成、出 3 秒，关键帧在 0/1/2 秒，切成 3 段。 */
 const editSegment = (overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({
     rootJobId: ROOT_ID,
@@ -195,10 +193,42 @@ const shot = async (no: number) =>
   within(await originalTrack()).getByRole('button', { name: new RegExp(`^镜头 ${no} ·`) })
 const editTrack = () => screen.getByRole('group', { name: '编辑片段' })
 const block = (name: RegExp | string) => within(editTrack()).getByRole('button', { name })
+/** 编辑轨上一段的小眼睛。 */
+const partEye = (name: RegExp | string) =>
+  within(within(editTrack()).getByRole('group', { name })).getByRole('button', {
+    name: /选用这一段$/,
+  })
+/** 原片轨上镜头 no 的小眼睛。 */
+const shotEye = (no: number) =>
+  within(screen.getByRole('group', { name: '原片' })).getByRole('button', {
+    name: new RegExp(`^(关闭|开启)镜头 ${no}$`),
+  })
+/** 浏览器里存一份草稿：EDIT_ID 的三段都选用。 */
+const storeWholeEdit = () =>
+  window.localStorage.setItem(
+    draftStorageKey(CONVERSATION, ROOT_ID),
+    JSON.stringify({
+      picks: [0, 1, 2].map((at) => ({
+        editId: EDIT_ID,
+        seg: at + 1,
+        t0: at,
+        t1: at + 1,
+        seq: at + 1,
+      })),
+      toggles: [],
+      cuts: [],
+      seq: 3,
+    }),
+  )
+const draftTrack = () => screen.getByRole('group', { name: '草稿' })
+const draftNames = () =>
+  within(draftTrack())
+    .getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label'))
 
 const card = () => screen.queryByRole('region', { name: 'AI 改段' })
 const openCard = () => screen.getByRole('region', { name: 'AI 改段' })
-const blockCard = () => screen.getByRole('region', { name: '编辑片段' })
+const smallCard = (name: RegExp | string) => screen.getByRole('region', { name })
 const requestBox = () => within(openCard()).getByLabelText('修改要求')
 const generateButton = () => within(openCard()).getByRole('button', { name: '生成视频' })
 const viewButton = (name: '版本' | '剪辑') =>
@@ -221,8 +251,6 @@ const playhead = () => screen.getByRole('slider', { name: '时间线播放位置
 const playButton = () => screen.getByRole('button', { name: '播放' })
 const readyToPlay = () => waitFor(() => expect(playButton()).not.toHaveAttribute('aria-disabled'))
 
-let restoreMedia = () => {}
-
 beforeEach(() => {
   server.use(
     http.get('*/api/generations/video-models', () =>
@@ -231,27 +259,26 @@ beforeEach(() => {
   )
   files.set(ROOT_URL, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
   files.set(COMPOSITE_URL, { keyframes: [0, 2, 5], duration: 9 })
+  files.set(EDITED_URL, { keyframes: [0, 1, 2], duration: 3 })
+  files.set(OTHER_URL, { keyframes: [0], duration: 1.5 })
   window.localStorage.clear()
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   // jsdom 不读视频元数据：编辑器另起一个不挂进页面的 <video> 读原片尺寸，给它补 720×1280 并发 loadedmetadata；
-  // 页面上播放用的 <video> 不受影响，探编辑结果时长的仍由各用例用 stubMediaDurations 给。
+  // 页面上播放用的 <video> 不受影响。
   const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
   vi.spyOn(HTMLMediaElement.prototype, 'src', 'set').mockImplementation(function (
     this: HTMLMediaElement,
     url: string,
   ) {
     src?.set?.call(this, url)
-    if (!this.isConnected && !EDIT_RESULT_URLS.has(url))
-      queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
+    if (!this.isConnected) queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
   })
   vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
   vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
 })
 
 afterEach(() => {
-  restoreMedia()
-  restoreMedia = () => {}
   vi.restoreAllMocks()
   files.clear()
   referenceSamples.length = 0
@@ -320,7 +347,10 @@ describe('VideoEditor', () => {
     await renderEditor()
 
     expect(viewButton('剪辑')).toHaveAttribute('aria-pressed', 'true')
-    expect(within(await originalTrack()).getAllByRole('button')).toHaveLength(8)
+    expect(
+      within(await originalTrack()).getAllByRole('button', { name: /^镜头 \d ·/ }),
+    ).toHaveLength(8)
+    expect(draftNames()).toHaveLength(8)
     expect(within(await timeline()).getAllByText('无声').length).toBeGreaterThan(0)
     expect(within(editTrack()).getAllByRole('button', { name: /^生成镜头 \d$/ })).toHaveLength(8)
     expect(card()).toBeNull()
@@ -355,14 +385,17 @@ describe('VideoEditor', () => {
     expect(buttonNames(controls()).at(-1)).toBe('合成新版本')
   })
 
-  it('在合成上做的、没对齐镜头的编辑段不在编辑轨上', async () => {
+  it('在合成上做的编辑段不在编辑轨上；区间对不上镜头的也在，名字按碰到的镜头叫', async () => {
     serveChain([
       editSegment({ sourceJobId: COMPOSITE_ID }),
-      editSegment({ rangeStartMs: 1500, rangeEndMs: 2500 }),
+      editSegment({ rangeStartMs: 1500, rangeEndMs: 2500, outputUrl: OTHER_URL }),
     ])
     await renderEditor()
     await originalTrack()
-    expect(within(editTrack()).queryByRole('button', { name: /^镜头/ })).toBeNull()
+    expect(
+      await within(editTrack()).findByRole('button', { name: '镜头 2–3 的编辑片段 · 1.5 秒' }),
+    ).toBeVisible()
+    expect(within(editTrack()).getAllByRole('button', { name: /的编辑片段/ })).toHaveLength(1)
   })
 })
 
@@ -955,16 +988,17 @@ describe('AI 改段的弹出卡', () => {
       expect(
         await within(editTrack()).findByRole('button', { name: '镜头 2–3 · 第 2 次 · 生成中' }),
       ).toBeVisible()
-      expect(block('镜头 2–3 · 第 1 次 · 2.0 秒 · 未选用')).toBeVisible()
+      expect(partEye('镜头 2–3 第 1 次生成的编辑片段 · 第 1 段 · 1.0 秒')).toHaveAccessibleName(
+        '选用这一段',
+      )
 
       await user.click(await shot(1))
       expect(requestBox()).toHaveTextContent('光线参考光线.png，构图参考构图.png，镜头缓慢推进')
     },
   )
 
-  it('选中里有已选用的编辑片段时，编辑参考用它的结果，替换区间仍按原片时间', async () => {
-    files.set(EDITED_URL, { keyframes: [0, 1, 2], duration: 3 })
-    window.localStorage.setItem(picksStorageKey(CONVERSATION, ROOT_ID), JSON.stringify([EDIT_ID]))
+  it('草稿里选用了编辑段时，参考片段仍只从原片上取选区那一段', async () => {
+    storeWholeEdit()
     serveChain([editSegment({ id: EDIT_ID })])
     const submitted: Record<string, unknown>[] = []
     server.use(
@@ -978,9 +1012,10 @@ describe('AI 改段的弹出卡', () => {
     )
     const user = userEvent.setup()
     await renderEditor()
-    await waitFor(async () => expect(await shot(3)).toHaveAccessibleName(/已换成编辑片段$/))
+    await waitFor(() => expect(shotEye(3)).toHaveAccessibleName('开启镜头 3'))
     await user.click(await shot(2))
     await user.keyboard('{Shift>}')
+    await user.click(await shot(3))
     await user.click(await shot(4))
     await user.keyboard('{/Shift}')
     expect(within(openCard()).getByText('镜头 2–4 · 视频生成')).toBeVisible()
@@ -990,10 +1025,7 @@ describe('AI 改段的弹出卡', () => {
 
     await waitFor(() => expect(submitted).toHaveLength(1))
     expect(submitted[0]).toMatchObject({ range_start_ms: 1000, range_end_ms: 4000 })
-    expect(referenceSamples).toEqual([
-      { url: ROOT_URL, start: 1, end: 2 },
-      { url: EDITED_URL, start: 0, end: 3 },
-    ])
+    expect(referenceSamples).toEqual([{ url: ROOT_URL, start: 1, end: 4 }])
   })
 
   it('打开镜头提示词显示完整列表，选区变化不筛选也不自动填入', async () => {
@@ -1133,109 +1165,116 @@ describe('选中只把播放头放到选区开头，空格播放', () => {
     expect(playButton()).toBeVisible()
   })
 
-  it('选用编辑片段后，播放头停在它替换的那段开头；标尺按原片时间定位', async () => {
+  it('选中不在草稿里的镜头：播放头放到按排序它会放进去的位置', async () => {
+    storeWholeEdit()
     serveChain([editSegment({ id: EDIT_ID })])
     const user = userEvent.setup()
     await renderEditor()
-    await originalTrack()
-    await user.click(block(/^镜头 3–4 · 3\.0 秒/))
-    await waitFor(() => expect(playhead()).toHaveValue('2'))
-    // 原片 5 秒在合成里是第 6 秒：编辑片段比它替换的长 1 秒。
-    fireEvent.change(playhead(), { target: { value: '5' } })
-    expect(controls()).toHaveTextContent('00:06.00')
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    // 镜头 4 关着，它会排在编辑段的三段后面：2 秒原片 + 3 秒编辑段
+    await user.click(await shot(4))
+    expect(playhead()).toHaveValue('5')
   })
 })
 
-describe('编辑轨与选用', () => {
-  it('点可用的编辑片段立即选用：替换的镜头调淡，总长按选用算；再选同样镜头的另一次，前一条取消', async () => {
-    serveChain([
-      editSegment({ id: EDIT_ID }),
-      editSegment({
-        id: SECOND_EDIT_ID,
-        outputUrl: OTHER_URL,
-        durationMs: 1500,
-        createdAt: '2026-09-16T10:03:00Z',
-      }),
-    ])
+describe('草稿与编辑轨', () => {
+  const PART_1 = '镜头 3–4 的编辑片段 · 第 1 段 · 1.0 秒'
+  const shotsOnly = (nos: readonly number[]) => nos.map((no) => `镜头 ${no} · 1.0 秒 · 原片`)
+  const parts = (segs: readonly number[]) =>
+    segs.map((seg) => `镜头 3–4 的编辑片段 · 第 ${seg} 段 · 1.0 秒 · 已选用`)
+  const smallCardOf = (title: string) => screen.queryByRole('region', { name: title })
+
+  it('点编辑轨上完成的一段：选用并选中它在草稿里那块，覆盖的镜头默认关；再点取消', async () => {
+    serveChain([editSegment({ id: EDIT_ID })])
     const user = userEvent.setup()
     await renderEditor()
     await originalTrack()
+    await user.click(await within(editTrack()).findByRole('button', { name: PART_1 }))
 
-    await user.click(block(/^镜头 3–4 · 第 1 次/))
-    expect(block(/^镜头 3–4 · 第 1 次/)).toHaveAccessibleName(
-      '镜头 3–4 · 第 1 次 · 3.0 秒 · 已选用',
+    expect(draftNames()).toEqual([...shotsOnly([1, 2]), ...parts([1]), ...shotsOnly([5, 6, 7, 8])])
+    expect(shotEye(3)).toHaveAccessibleName('开启镜头 3')
+    expect(shotEye(4)).toHaveAttribute('aria-pressed', 'false')
+    expect(partEye(PART_1)).toHaveAccessibleName('取消选用这一段')
+    expect(within(draftTrack()).getByRole('button', { name: /第 1 段/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     )
-    expect(block(/^镜头 3–4 · 第 1 次/)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(3)).toHaveAccessibleName('镜头 3 · 2–3 秒 · 已换成编辑片段')
-    expect(within(blockCard()).getByText('3.0 秒 · 已选用')).toBeVisible()
-    expect(controls()).toHaveTextContent('共 9.0 秒 · 比原片长 1.0 秒')
-    expect(card()).toBeNull()
     expect(
-      JSON.parse(window.localStorage.getItem(picksStorageKey(CONVERSATION, ROOT_ID)) ?? ''),
-    ).toEqual([EDIT_ID])
+      within(smallCard('镜头 3–4 的编辑片段')).getByText('第 1 段 · 1.0 秒 · 已选用'),
+    ).toBeVisible()
+    expect(playhead()).toHaveValue('2')
+    expect(controls()).toHaveTextContent('共 7.0 秒 · 比原片短 1.0 秒')
+    expect(screen.getByRole('slider', { name: '裁剪结尾' })).toBeVisible()
+    const stored = JSON.parse(
+      window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID)) ?? '{}',
+    ) as { picks: unknown[] }
+    expect(stored.picks).toHaveLength(1)
 
-    await user.click(block(/^镜头 3–4 · 第 2 次/))
-    expect(block(/^镜头 3–4 · 第 2 次/)).toHaveAccessibleName(/已选用$/)
-    expect(block(/^镜头 3–4 · 第 1 次/)).toHaveAccessibleName(/未选用$/)
+    await user.click(block(PART_1))
+    expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
+    expect(smallCardOf('镜头 3–4 的编辑片段')).toBeNull()
+    expect(shotEye(3)).toHaveAccessibleName('关闭镜头 3')
+  })
+
+  it('小眼睛只开关、不改选中；重新打开的镜头排在同一位置已有的编辑段后面', async () => {
+    serveChain([editSegment({ id: EDIT_ID })])
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await within(editTrack()).findByRole('button', { name: PART_1 })
+    for (const seg of [1, 2, 3]) await user.click(partEye(new RegExp(`第 ${seg} 段`)))
+    expect(draftNames()).toEqual([
+      ...shotsOnly([1, 2]),
+      ...parts([1, 2, 3]),
+      ...shotsOnly([5, 6, 7, 8]),
+    ])
+    expect(controls()).toHaveTextContent('共 9.0 秒 · 比原片长 1.0 秒')
+    expect(smallCardOf('镜头 3–4 的编辑片段')).toBeNull()
+
+    await user.click(shotEye(4))
+    expect(draftNames()).toEqual([
+      ...shotsOnly([1, 2]),
+      ...parts([1, 2, 3]),
+      ...shotsOnly([4, 5, 6, 7, 8]),
+    ])
+    expect(card()).toBeNull()
+  })
+
+  it('选中草稿里一块出把手与小卡；键盘修剪后后面的块跟着移、播放头跟到结尾；Delete 拿掉它，再打开是整个镜头', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await user.click(within(draftTrack()).getByRole('button', { name: '镜头 2 · 1.0 秒 · 原片' }))
+    expect(within(smallCard('镜头 2')).getByText('1.0 秒 · 原片')).toBeVisible()
+    expect(playhead()).toHaveValue('1')
+
+    act(() => screen.getByRole('slider', { name: '裁剪结尾' }).focus())
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    expect(within(smallCard('镜头 2')).getByText('0.5 秒（这个镜头 1.0 秒）· 原片')).toBeVisible()
+    expect(screen.getByRole('slider', { name: '裁剪结尾' })).toHaveFocus()
     expect(controls()).toHaveTextContent('共 7.5 秒 · 比原片短 0.5 秒')
+    await waitFor(() => expect(playhead()).toHaveValue('1.5'))
+
+    await user.keyboard('{Delete}')
+    expect(shotEye(2)).toHaveAccessibleName('开启镜头 2')
+    expect(smallCardOf('镜头 2')).toBeNull()
+    expect(controls()).toHaveTextContent('共 7.0 秒')
+
+    await user.click(shotEye(2))
+    expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
   })
 
-  it('「改用原片」取消选用，并选中换回来的镜头', async () => {
+  it('关键帧读不出的编辑段写「无法读取」，不能选用', async () => {
+    files.delete(EDITED_URL)
     serveChain([editSegment({ id: EDIT_ID })])
-    const user = userEvent.setup()
     await renderEditor()
     await originalTrack()
-    await user.click(block(/^镜头 3–4/))
-    await user.click(within(blockCard()).getByRole('button', { name: '改用原片' }))
-
-    expect(block(/^镜头 3–4/)).toHaveAccessibleName(/未选用$/)
-    expect(within(openCard()).getByText('镜头 3–4 · 视频生成')).toBeVisible()
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
+    expect(await within(editTrack()).findByText('镜头 3–4 · 无法读取')).toBeVisible()
     expect(controls()).toHaveTextContent('共 8.0 秒')
   })
 
-  it('点被替换的镜头选中整条编辑片段；Shift 按单位扩选', async () => {
-    window.localStorage.setItem(picksStorageKey(CONVERSATION, ROOT_ID), JSON.stringify([EDIT_ID]))
-    serveChain([editSegment({ id: EDIT_ID })])
-    const user = userEvent.setup()
-    await renderEditor()
-    await waitFor(async () => expect(await shot(4)).toHaveAccessibleName(/已换成编辑片段$/))
-
-    await user.click(await shot(4))
-    expect(within(openCard()).getByText('镜头 3–4 · 视频生成')).toBeVisible()
-    expect(within(openCard()).getByText('原片 2.0 – 4.0 秒 · 视频和原声一起重做')).toBeVisible()
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    await user.keyboard('{Shift>}')
-    await user.click(await shot(5))
-    await user.keyboard('{/Shift}')
-    expect(within(openCard()).getByText('镜头 3–5 · 视频生成')).toBeVisible()
-  })
-
-  it('时长还在读的编辑片段写「读取中」，不能选用', async () => {
-    serveChain([editSegment({ durationMs: null })])
-    const user = userEvent.setup()
-    await renderEditor()
-    await originalTrack()
-    await user.click(block('镜头 3–4 · 读取中'))
-    expect(within(blockCard()).getByText('镜头 3–4 · 读取中')).toBeVisible()
-    expect(controls()).toHaveTextContent('共 8.0 秒')
-  })
-
-  it('时长读不出的编辑片段写「无法读取」，不能选用', async () => {
-    restoreMedia = stubMediaDurations({ [EDITED_URL]: null })
-    serveChain([editSegment({ durationMs: null })])
-    const user = userEvent.setup()
-    await renderEditor()
-    await originalTrack()
-    await user.click(
-      await within(editTrack()).findByRole('button', { name: '镜头 3–4 · 无法读取' }),
-    )
-    expect(within(blockCard()).getByText('镜头 3–4 · 无法读取')).toBeVisible()
-    expect(controls()).toHaveTextContent('共 8.0 秒')
-  })
-
-  it('选着一条在跑的编辑片段，它完成后不再选着，也不自动选用', async () => {
+  it('选着一条在跑的编辑片段，小卡写进度；它完成后不再选着，也不自动选用', async () => {
     let chain = [
       editSegment({ id: EDIT_ID, status: 'submitted', outputUrl: null, durationMs: null }),
     ]
@@ -1243,24 +1282,38 @@ describe('编辑轨与选用', () => {
     const user = userEvent.setup()
     const view = await renderEditor()
     await originalTrack()
-    await user.click(block('镜头 3–4 · 生成中'))
-    expect(within(blockCard()).getByText('镜头 3–4 · 生成中')).toBeVisible()
+    await user.click(await within(editTrack()).findByRole('button', { name: '镜头 3–4 · 生成中' }))
+    expect(within(smallCard('镜头 3–4 · 正在生成')).getByText('完成后显示在编辑轨')).toBeVisible()
 
     chain = [editSegment({ id: EDIT_ID })]
     await act(() => view.queryClient.invalidateQueries())
-    await waitFor(() => expect(screen.queryByRole('region', { name: '编辑片段' })).toBeNull())
-    expect(block(/^镜头 3–4/)).toHaveAccessibleName(/未选用$/)
+    await waitFor(() => expect(smallCardOf('镜头 3–4 · 正在生成')).toBeNull())
+    expect(await within(editTrack()).findByRole('button', { name: PART_1 })).toBeVisible()
+    expect(partEye(PART_1)).toHaveAccessibleName('选用这一段')
   })
 
-  it('存着的选用可用就照它恢复', async () => {
-    window.localStorage.setItem(picksStorageKey(CONVERSATION, ROOT_ID), JSON.stringify([EDIT_ID]))
+  it('存着的草稿对得上就照它恢复', async () => {
+    storeWholeEdit()
     serveChain([editSegment({ id: EDIT_ID })])
     await renderEditor()
-    await waitFor(() => expect(block(/^镜头 3–4/)).toHaveAccessibleName(/已选用$/))
-    expect(controls()).toHaveTextContent('共 9.0 秒')
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    expect(draftNames()).toEqual([
+      ...shotsOnly([1, 2]),
+      ...parts([1, 2, 3]),
+      ...shotsOnly([5, 6, 7, 8]),
+    ])
   })
 
-  it('没存过选用时照最近一次合成推出来', async () => {
+  it('存着的草稿对不上时从最近一次合成还原；和它一样就不能再合成', async () => {
+    window.localStorage.setItem(
+      draftStorageKey(CONVERSATION, ROOT_ID),
+      JSON.stringify({
+        picks: [{ editId: 'gone', seg: 1, t0: 0, t1: 1, seq: 1 }],
+        toggles: [],
+        cuts: [],
+        seq: 1,
+      }),
+    )
     serveChain([
       editSegment({ id: EDIT_ID }),
       composite({
@@ -1268,16 +1321,36 @@ describe('编辑轨与选用', () => {
         request: {
           segments: [
             { sourceJobId: ROOT_ID, start: 0, end: 2, url: ROOT_URL },
-            { sourceJobId: EDIT_ID, start: 0, end: 3, url: EDITED_URL },
+            { sourceJobId: EDIT_ID, start: 0, end: null, url: EDITED_URL },
             { sourceJobId: ROOT_ID, start: 4, end: 8, url: ROOT_URL },
           ],
         },
       }),
     ])
     await renderEditor()
-    await waitFor(() => expect(block(/^镜头 3–4/)).toHaveAccessibleName(/已选用$/))
-    // 和最近一次合成一样，不能再合成。
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    expect(draftNames()).toEqual([
+      ...shotsOnly([1, 2]),
+      ...parts([1, 2, 3]),
+      ...shotsOnly([5, 6, 7, 8]),
+    ])
     expect(composeButton()).toBeDisabled()
+  })
+
+  it('存不进浏览器时提示一次，改动照常生效', async () => {
+    serveChain([])
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await user.click(shotEye(2))
+    await user.click(shotEye(3))
+    expect(shotEye(3)).toHaveAccessibleName('开启镜头 3')
+    expect(
+      await screen.findAllByText('当前浏览器无法保存草稿，关闭编辑器后草稿将丢失'),
+    ).toHaveLength(1)
   })
 })
 
@@ -1413,7 +1486,7 @@ describe('失败提醒', () => {
     const user = userEvent.setup()
     await renderEditor()
     await originalTrack()
-    await user.click(block(/^镜头 3–4/))
+    await user.click(await within(editTrack()).findByRole('button', { name: /第 1 段/ }))
     await user.click(viewButton('版本'))
     await waitFor(() => expect(failureNotice()).toHaveTextContent('合成失败：拼接失败'))
     const notice = failureNotice()
@@ -1422,14 +1495,14 @@ describe('失败提醒', () => {
 
     expect(viewButton('剪辑')).toHaveAttribute('aria-pressed', 'true')
     expect(card()).toBeNull()
-    expect(screen.queryByRole('region', { name: '编辑片段' })).toBeNull()
+    expect(screen.queryByRole('region', { name: /的编辑片段$/ })).toBeNull()
     await user.click(composeButton())
     await waitFor(() => expect(failureNotice()).toBeNull())
   })
 })
 
 describe('合成与版本视图', () => {
-  it('合成：原片相连部分并成一段、编辑片段整段；完成后自动切到版本视图看新版本，只能下载、不能合成', async () => {
+  it('合成：草稿按顺序拼，同一来源相接的并成一段、编辑段写明起止；完成后自动切到版本视图看新版本，只能下载、不能合成', async () => {
     let chain: GenerationJob[] = [editSegment({ id: EDIT_ID })]
     const composed: Record<string, unknown>[] = []
     serveJobs(() => chain)
@@ -1453,7 +1526,8 @@ describe('合成与版本视图', () => {
     const view = await renderEditor()
     await originalTrack()
     expect(composeButton()).toBeDisabled()
-    await user.click(block(/^镜头 3–4/))
+    await within(editTrack()).findByRole('button', { name: /第 1 段/ })
+    for (const seg of [1, 2, 3]) await user.click(partEye(new RegExp(`第 ${seg} 段`)))
     expect(composeButton()).toBeEnabled()
     await user.click(composeButton())
 
@@ -1464,7 +1538,7 @@ describe('合成与版本视图', () => {
       baseJobId: ROOT_ID,
       segments: [
         { sourceJobId: ROOT_ID, start: 0, end: 2 },
-        { sourceJobId: EDIT_ID, start: 0, end: null },
+        { sourceJobId: EDIT_ID, start: 0, end: 3 },
         { sourceJobId: ROOT_ID, start: 4, end: 8 },
       ],
     })
@@ -1505,7 +1579,7 @@ describe('合成与版本视图', () => {
     const user = userEvent.setup()
     await renderEditor()
     await originalTrack()
-    await user.click(block(/^镜头 3–4/))
+    await user.click(await within(editTrack()).findByRole('button', { name: /第 1 段/ }))
     await user.click(composeButton())
     expect(await screen.findByText(/合成服务不可用/)).toBeVisible()
     expect(composeButton()).toBeEnabled()

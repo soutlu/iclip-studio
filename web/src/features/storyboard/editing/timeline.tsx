@@ -20,7 +20,10 @@ import './timeline.css'
 const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
 
 type TimelineRulerProps = {
+  /** 标尺铺满的秒数：刻度一直标到这里。 */
   scale: number
+  /** 刻度间隔按这么多秒定；不给就按 `scale`。 */
+  tickScale?: number | undefined
   total: number
   currentTime: number
   viewportRef: RefObject<HTMLDivElement | null>
@@ -32,6 +35,7 @@ type TimelineRulerProps = {
 
 export function TimelineRuler({
   scale,
+  tickScale = scale,
   total,
   currentTime,
   viewportRef,
@@ -80,7 +84,8 @@ export function TimelineRuler({
     })
     return time
   }
-  const tickStep = TICK_STEPS.find((step) => step >= scale / 8) ?? Math.ceil(scale / 8 / 60) * 60
+  const tickStep =
+    TICK_STEPS.find((step) => step >= tickScale / 8) ?? Math.ceil(tickScale / 8 / 60) * 60
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
