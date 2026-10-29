@@ -39,6 +39,8 @@ const SLOTS: readonly { id: string; slot: Slot }[] = [
 // requestAnimationFrame 约 16ms 一帧，提前两帧切到预载好的下一段。
 const SWITCH_AHEAD = 0.03
 const END_PREVIEW_OFFSET = 0.001
+// 媒体正好定在帧边界（镜头分界上的关键帧）时浏览器显示的是前一帧：定位到某一刻时媒体往后多走这么一点，显示这一刻所在的那一帧。
+const START_PREVIEW_OFFSET = 0.001
 
 const sameSegments = (
   left: readonly LaidOutSegment[] | undefined,
@@ -209,7 +211,13 @@ export function EditorPreview({
     const segment = located === undefined ? undefined : segments[located.index]
     if (located === undefined || segment === undefined) return
     if (located.index !== index) setIndex(located.index)
-    load(active, segment, located.offset)
+    load(
+      active,
+      segment,
+      boundary === 'end'
+        ? located.offset
+        : Math.min(segment.duration, located.offset + START_PREVIEW_OFFSET),
+    )
     onTime(boundedClock)
   }
   const seekFromEffect = useEffectEvent(seek)

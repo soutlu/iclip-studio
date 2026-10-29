@@ -34,7 +34,7 @@ export const clipGenerationBlock = (
     )
   if (milliseconds < limits.minSeconds * 1000)
     return selection(
-      `该模型编辑至少需要 ${limits.minSeconds} 秒，无法生成视频；请按住 Shift 选择相邻片段`,
+      `该模型编辑至少需要 ${limits.minSeconds} 秒，无法生成视频；请拖长选区或按住 Shift 选择相邻镜头`,
     )
   if (milliseconds > limits.maxSeconds * 1000)
     return selection(`该模型编辑最多支持 ${limits.maxSeconds} 秒，无法生成视频；请缩小选区`)

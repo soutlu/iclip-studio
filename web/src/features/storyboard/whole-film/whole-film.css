@@ -2138,30 +2138,6 @@
   object-fit: contain;
 }
 
-/* 舞台左上角注明放的是哪条素材的哪个镜头 */
-.wf-stage-label {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: var(--z-local-2);
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-top-layer);
-  box-shadow: 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  white-space: nowrap;
-}
-
-.wf-stage-label > span {
-  color: var(--color-on-surface-muted);
-  font-variant-numeric: tabular-nums;
-}
-
 .wf-range.is-lifting {
   background: color-mix(in srgb, var(--color-surface) 60%, transparent);
   cursor: grabbing;

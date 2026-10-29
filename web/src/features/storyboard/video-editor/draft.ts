@@ -177,7 +177,7 @@ type ItemFields = {
 /** 草稿里的一块：`t0`–`t1` 是它用到的起止、`b0`–`b1` 是它能用的边界（都按来源自己的时间），`at`、`d` 是它在合成里的位置。 */
 export type DraftItem = ItemFields & { at: number; d: number }
 
-/** 排序时比较的一块：草稿里的块，或还没放进去、按「现在放进去」算的镜头与编辑段。 */
+/** 排序时比较的一块：原片镜头或编辑段，带放进草稿的序号。 */
 type Probe =
   | { kind: 'shot'; no: number; seq: number }
   | { kind: 'edit'; edit: ReadyEdit; seg: number; seq: number }
@@ -251,23 +251,6 @@ export const draftItemsOf = (source: DraftSource, draft: Draft): DraftItem[] => 
 
 export const totalOf = (items: readonly { d: number }[]) =>
   roundToMs(items.reduce((sum, item) => sum + item.d, 0))
-
-/** 原片镜头 `no` 在草稿里的开头；它不在草稿里时，是按排序它会放进去的位置。 */
-export const shotClock = (
-  source: DraftSource,
-  draft: Draft,
-  items: readonly DraftItem[],
-  no: number,
-): number => {
-  const toggle = draft.toggles.find((item) => item.no === no)
-  const seq = !shotOn(source, draft, no)
-    ? Number.POSITIVE_INFINITY
-    : toggle?.on === true
-      ? toggle.seq
-      : 0
-  const probe: Probe = { kind: 'shot', no, seq }
-  return totalOf(items.filter((item) => compareRank(item, probe) < 0))
-}
 
 /** 合成里的一段：出自原片或一条编辑片段的 `start`–`end`（按它自己的时间）。 */
 export type Piece = { sourceJobId: string; mediaUrl: string; start: number; end: number }
@@ -344,6 +327,26 @@ export const trimSpecOf = (item: DraftItem): TrimSpec => ({
   // 这一段本身不到最短长度时，只能整段用。
   min: Math.min(MIN_USE, item.b1 - item.b0),
   snaps: [item.b0, item.b1],
+})
+
+/** 原片轨上的选区（生成用）至少这么长（秒）。 */
+const MIN_RUN = 1
+
+/**
+ * 原片轨上选区 `run` 的修剪范围：整条原片之内，可以停在镜头中间、越过镜头分界，吸附每个镜头分界与片尾。
+ * 选区本身不到最短长度时（点了一个很短的镜头）只能拉长。
+ */
+export const runTrimSpecOf = (
+  run: { start: number; end: number },
+  shots: readonly { start: number }[],
+  duration: number,
+): TrimSpec => ({
+  t0: run.start,
+  t1: run.end,
+  lo: 0,
+  hi: duration,
+  min: Math.min(MIN_RUN, run.end - run.start),
+  snaps: [...shots.map((shot) => shot.start), duration],
 })
 
 const clamp = (value: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, value))

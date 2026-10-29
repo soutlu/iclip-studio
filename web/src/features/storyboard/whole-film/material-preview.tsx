@@ -6,9 +6,9 @@ import {
   type CSSProperties,
   type RefObject,
 } from 'react'
-import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { StageBackdrop } from '../components/stage-backdrop'
+import { StageLabel } from '../editing/stage-label'
 import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
 
@@ -35,8 +35,6 @@ type MaterialPreviewProps = {
   onPlaying: (playing: boolean) => void
   onNotice: (message: string) => void
 }
-
-const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
 /** 盖在成片预览上的素材画面；回到成片时由编辑器卸掉。 */
 export function MaterialPreview({
@@ -135,13 +133,11 @@ export function MaterialPreview({
           }
         />
       </div>
-      <p className="wf-stage-label">
-        <Icon decorative name="video" size="xs" />
-        {label}
-        <span>
-          {seconds(timeMs)} 秒 · 选区 {seconds(view.range.startMs)}–{seconds(view.range.endMs)}
-        </span>
-      </p>
+      <StageLabel
+        label={label}
+        range={{ start: view.range.startMs / 1000, end: view.range.endMs / 1000 }}
+        time={timeMs / 1000}
+      />
     </div>
   )
 }

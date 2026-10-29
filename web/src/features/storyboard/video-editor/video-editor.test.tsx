@@ -448,6 +448,54 @@ describe('AI 改段的弹出卡', () => {
     expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('拖长、缩短选区：卡头的镜头、原片起止、首尾帧跟着变，卡不重新弹出、要求还在；提交的区间就是选区', async () => {
+    const ossRoot = 'https://bucket.oss-cn-hangzhou.aliyuncs.com/root.mp4'
+    files.set(ossRoot, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
+    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px，方向键一步不会吸到镜头分界上。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
+    )
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted', outputUrl: null }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor(makeGenerationJob({ ...root, outputUrl: ossRoot }))
+    await user.click(await shot(2))
+    const opened = openCard()
+    pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
+
+    act(() => screen.getByRole('slider', { name: '裁剪结尾' }).focus())
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}')
+    act(() => screen.getByRole('slider', { name: '裁剪开头' }).focus())
+    await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}')
+
+    expect(openCard()).toBe(opened)
+    expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
+    expect(within(openCard()).getByText('镜头 1–3 · 视频生成')).toBeVisible()
+    expect(within(openCard()).getByText('原片 0.7 – 2.5 秒 · 视频和原声一起重做')).toBeVisible()
+    const [first, last] = within(openCard()).getAllByRole('presentation')
+    expect(first).toHaveAttribute('src', expect.stringContaining('t_700,'))
+    // 尾帧取结尾前 0.1 秒
+    expect(last).toHaveAttribute('src', expect.stringContaining('t_2400,'))
+    expect(await shot(1)).toHaveAttribute('aria-pressed', 'true')
+    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
+    expect(await shot(4)).toHaveAttribute('aria-pressed', 'false')
+
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toHaveLength(1))
+    expect(submitted[0]).toMatchObject({ range_start_ms: 700, range_end_ms: 2500 })
+    expect(referenceSamples).toEqual([{ url: ossRoot, start: 0.7, end: 2.5 }])
+  })
+
   it('Escape 把卡收成胶囊，未提交的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
     serveChain([])
     const user = userEvent.setup()
@@ -529,7 +577,7 @@ describe('AI 改段的弹出卡', () => {
 
     expect(
       within(openCard()).getByText(
-        '该模型编辑至少需要 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
+        '该模型编辑至少需要 1 秒，无法生成视频；请拖长选区或按住 Shift 选择相邻镜头',
       ),
     ).toBeVisible()
     pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
@@ -1164,16 +1212,95 @@ describe('选中只把播放头放到选区开头，空格播放', () => {
     await user.keyboard(' ')
     expect(playButton()).toBeVisible()
   })
+})
 
-  it('选中不在草稿里的镜头：播放头放到按排序它会放进去的位置', async () => {
+describe('原片预览', () => {
+  const stageVideo = () => screen.getByLabelText('视频播放器')
+  const stageLabel = () => screen.queryByText(/^原片 · 镜头/)
+  const draftBlock = (name: RegExp) => within(draftTrack()).getByRole('button', { name })
+
+  it('选中已关掉的镜头：舞台放原片、停在选区开头，时间按原片，左上角注明镜头与选区', async () => {
     storeWholeEdit()
     serveChain([editSegment({ id: EDIT_ID })])
     const user = userEvent.setup()
     await renderEditor()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
-    // 镜头 4 关着，它会排在编辑段的三段后面：2 秒原片 + 3 秒编辑段
+    // 草稿预览：第 1 段在合成 2 秒处，放的是编辑片段
+    await user.click(draftBlock(/第 1 段/))
+    expect(stageVideo()).toHaveAttribute('src', EDITED_URL)
+    expect(stageLabel()).toBeNull()
+
+    // 镜头 4 被编辑段代替、关着：选中它，舞台换成原片
     await user.click(await shot(4))
-    expect(playhead()).toHaveValue('5')
+    expect(stageVideo()).toHaveAttribute('src', ROOT_URL)
+    expect(playhead()).toHaveValue('3')
+    expect(controls()).toHaveTextContent('00:03.00 / 00:08.00')
+    // 「共 X 秒」仍然说草稿
+    expect(controls()).toHaveTextContent('共 9.0 秒 · 比原片长 1.0 秒')
+    expect(stageLabel()).toBeVisible()
+    expect(screen.getByText('3.0 秒 · 选区 3.0–4.0')).toBeVisible()
+  })
+
+  it('点卡片 ✕、点标尺、选草稿块都回到草稿预览，标签消失；✕ 时播放头回到原来的合成时间', async () => {
+    storeWholeEdit()
+    serveChain([editSegment({ id: EDIT_ID })])
+    const user = userEvent.setup()
+    await renderEditor()
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    await user.click(draftBlock(/第 1 段/))
+    await user.click(await shot(4))
+    expect(stageLabel()).toBeVisible()
+
+    await user.click(within(openCard()).getByRole('button', { name: '收起' }))
+    expect(stageLabel()).toBeNull()
+    expect(stageVideo()).toHaveAttribute('src', EDITED_URL)
+    expect(playhead()).toHaveValue('2')
+    expect(controls()).toHaveTextContent('00:02.00 / 00:09.00')
+    // 选区与收成胶囊的卡都留着
+    expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '展开镜头 4 · 视频生成' })).toBeVisible()
+
+    // 标尺始终属于草稿：按合成时间定位
+    await user.click(await shot(4))
+    expect(stageLabel()).toBeVisible()
+    fireEvent.change(playhead(), { target: { value: '4.5' } })
+    expect(stageLabel()).toBeNull()
+    expect(stageVideo()).toHaveAttribute('src', EDITED_URL)
+    expect(controls()).toHaveTextContent('00:04.50 / 00:09.00')
+    expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(await shot(4))
+    expect(stageLabel()).toBeVisible()
+    await user.click(draftBlock(/第 2 段/))
+    expect(stageLabel()).toBeNull()
+    expect(playhead()).toHaveValue('3')
+    expect(controls()).toHaveTextContent('00:03.00 / 00:09.00')
+
+    // 点编辑轨上的段取消选用也回到草稿预览，播放头留在原来那一块
+    await user.click(await shot(4))
+    expect(stageLabel()).toBeVisible()
+    await user.click(block('镜头 3–4 的编辑片段 · 第 3 段 · 1.0 秒'))
+    expect(stageLabel()).toBeNull()
+    expect(controls()).toHaveTextContent('00:03.00 / 00:08.00')
+  })
+
+  it('两种预览切换时正在播放的停下', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(await shot(2))
+    await readyToPlay()
+    await user.click(playButton())
+    expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
+    await user.click(within(draftTrack()).getByRole('button', { name: '镜头 5 · 1.0 秒 · 原片' }))
+    expect(stageLabel()).toBeNull()
+    expect(playButton()).toBeVisible()
+
+    await user.click(playButton())
+    expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
+    await user.click(await shot(3))
+    expect(stageLabel()).toBeVisible()
+    expect(playButton()).toBeVisible()
   })
 })
 
@@ -1456,6 +1583,35 @@ describe('失败提醒', () => {
     ).toBeVisible()
     expect(failureNotice()).toBeNull()
     expect(within(openCard()).queryByText(/上次生成失败/)).toBeNull()
+  })
+
+  it('失败按实际区间算：碰到同样镜头、区间不同的生成不顶掉它；点提醒选区恢复成那次生成的起止', async () => {
+    serveChain([
+      failedEdit({ id: EDIT_ID, rangeStartMs: 2500, rangeEndMs: 4000, errorMessage: '上游失败' }),
+      editSegment({
+        id: SECOND_EDIT_ID,
+        status: 'submitted',
+        outputUrl: null,
+        createdAt: '2026-09-16T10:09:00Z',
+      }),
+    ])
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await waitFor(() => expect(failureNotice()).toHaveTextContent('镜头 3–4 生成失败：上游失败'))
+
+    // 整个镜头 3–4（2–4 秒）不是那次失败的区间：卡上不写上次失败
+    await user.click(await shot(3))
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+    expect(within(openCard()).getByText('镜头 3–4 · 视频生成')).toBeVisible()
+    expect(within(openCard()).queryByText(/上次生成失败/)).toBeNull()
+
+    const notice = failureNotice()
+    if (notice === null) throw new Error('没有失败提醒')
+    await user.click(notice)
+    expect(screen.getByText('2.5 秒 · 选区 2.5–4.0')).toBeVisible()
+    expect(screen.getByRole('slider', { name: '裁剪开头' })).toHaveAttribute('aria-valuenow', '2.5')
+    expect(within(openCard()).getByText('上次生成失败：上游失败')).toBeVisible()
   })
 
   it('点合成的失败回到剪辑视图，不选中东西；之后又提交过合成就不再提醒', async () => {

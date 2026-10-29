@@ -42,7 +42,7 @@ describe('clipGenerationBlock', () => {
       { mode: 'edit', seconds: 3.999, referenceImageCount: 0 },
       {
         cause: 'selection',
-        message: '该模型编辑至少需要 4 秒，无法生成视频；请按住 Shift 选择相邻片段',
+        message: '该模型编辑至少需要 4 秒，无法生成视频；请拖长选区或按住 Shift 选择相邻镜头',
       },
     ],
     [

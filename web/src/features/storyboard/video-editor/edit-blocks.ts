@@ -100,7 +100,12 @@ export const laneEditsOf = (
   })
 }
 
-/** 失败的编辑段，只取对这几个镜头最近的一次：之后对同样几个镜头又提交过生成，前面的失败就不算了。 */
+/** 编辑段的生成区间正是原片上的 `range`（秒）：按提交时取整到的毫秒比较。 */
+export const isRangeOf = (job: EditSegment, range: Span): boolean =>
+  job.rangeStartMs === Math.round(range.start * 1000) &&
+  job.rangeEndMs === Math.round(range.end * 1000)
+
+/** 失败的编辑段，只取对这个区间最近的一次：之后对完全相同的区间又提交过生成，前面的失败就不算了。 */
 export const failedEditsOf = (
   rootJobId: string,
   jobs: readonly GenerationJob[],
@@ -108,7 +113,8 @@ export const failedEditsOf = (
 ): CoveredEdit[] => {
   const edits = coveredEditsOf(rootJobId, jobs, shots)
   return edits.filter(
-    (edit) => isFailedJob(edit.job) && edits.findLast((other) => sameSpan(other, edit)) === edit,
+    (edit) =>
+      isFailedJob(edit.job) && edits.findLast((other) => isRangeOf(other.job, edit)) === edit,
   )
 }
 
