@@ -12,14 +12,12 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
-    TypeAdapter,
     ValidationInfo,
     field_validator,
     model_validator,
 )
 from pydantic.alias_generators import to_camel
 
-from iclip.common.errors import ValidationFailed
 from iclip.common.generation_vocab import (
     GenerationKind,
     GenerationOperation,
@@ -80,11 +78,13 @@ MAX_METADATA_CHARS: Final = 2000
 MAX_URL_CHARS: Final = 2000
 MAX_COMPOSE_SEGMENTS: Final = 100
 
-ORIGIN_FIELDS: Final = frozenset(
-    {"conversation_id", "task_id", "metadata", "shot_index", "source_url"}
-)
+COLUMN_FIELDS: Final = frozenset({"conversation_id", "task_id", "metadata", "shot_index"})
+"""请求里落成记录列的字段：不进请求快照。"""
 
-NOT_FORWARDED_FIELDS: Final = ORIGIN_FIELDS | frozenset({"shot"})
+RECORD_ONLY_FIELDS: Final = frozenset({"source_url", "range_start_ms", "range_end_ms"})
+"""进请求快照、但只记账的字段：不转发给上游，对外的 ``request`` 里不给，另有顶层字段。"""
+
+NOT_FORWARDED_FIELDS: Final = COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot"})
 
 READ_BACK_CONTEXT: Final = "read_back"
 
@@ -263,6 +263,13 @@ class VideoGenerationIn(SnakeModel):
         return self
 
 
+class VideoEditRequest(VideoGenerationIn):
+    """编辑段的请求快照：转发给上游的那条视频请求，外加只记账的替换区间（基底媒体时间，毫秒）。"""
+
+    range_start_ms: Annotated[int, Field(ge=0)]
+    range_end_ms: int
+
+
 class ImageGenerationIn(CamelModel):
     """一次图像生成的输入。参考图为空即文生图，否则走图像编辑。"""
 
@@ -292,7 +299,7 @@ class VideoEditIn(SnakeModel):
     片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。
     ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
     记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
-    ``VideoGenerationIn``，来源、原作与区间落列。"""
+    ``VideoEditRequest``：来源与原作落列，区间记在请求快照里。"""
 
     source_job_id: uuid.UUID
     range_start_ms: Annotated[int, Field(ge=0)]
@@ -416,26 +423,6 @@ class SubtitleSentence(CamelModel):
         return self
 
 
-def sentences_to_payload(
-    sentences: tuple[SubtitleSentence, ...] | None,
-) -> list[dict[str, Any]] | None:
-    if sentences is None:
-        return None
-    return [sentence.model_dump(mode="json") for sentence in sentences]
-
-
-_SENTENCES: Final = TypeAdapter(tuple[SubtitleSentence, ...])
-
-
-def sentences_from_payload(payload: Any) -> tuple[SubtitleSentence, ...] | None:
-    if payload is None:
-        return None
-    try:
-        return _SENTENCES.validate_python(payload)
-    except ValueError as exc:
-        raise ValidationFailed(f"字幕结果的形状不合法: {exc}") from exc
-
-
 MAX_MUSIC_PROMPT_CHARS: Final = 3000
 
 MusicPrompt = Annotated[str, Field(min_length=1, max_length=MAX_MUSIC_PROMPT_CHARS)]
@@ -536,9 +523,22 @@ def request_to_payload(request: GenerationRequest) -> dict[str, Any]: ...
 @overload
 def request_to_payload(request: None) -> None: ...
 def request_to_payload(request: GenerationRequest | None) -> dict[str, Any] | None:
+    """请求快照落库的形状：落成列的字段不存，外部底图只在有的时候存。"""
+
     if request is None:
         return None
-    return request.model_dump(mode="json", by_alias=True, exclude=set(ORIGIN_FIELDS))
+    exclude = set(COLUMN_FIELDS)
+    if isinstance(request, ImageGenerationIn) and request.source_url is None:
+        exclude.add("source_url")
+    return request.model_dump(mode="json", by_alias=True, exclude=exclude)
+
+
+def _request_out(request: GenerationRequest | None) -> dict[str, Any] | None:
+    if request is None:
+        return None
+    return request.model_dump(
+        mode="json", by_alias=True, exclude=set(COLUMN_FIELDS | RECORD_ONLY_FIELDS)
+    )
 
 
 class GenerationOut(CamelModel):
@@ -572,26 +572,27 @@ class GenerationOut(CamelModel):
 
 
 def generation_out(job: GenerationJob, *, source_address: str | None) -> GenerationOut:
+    edit = job.request if isinstance(job.request, VideoEditRequest) else None
     return GenerationOut(
         id=job.id,
         kind=job.kind,
         operation=job.operation,
         status=job.status,
-        request=request_to_payload(job.request),
+        request=_request_out(job.request),
         metadata=job.metadata,
         task_id=job.task_id,
         shot_index=job.shot_index,
         root_job_id=job.root_job_id,
         source_job_id=job.source_job_id,
         source_url=source_address,
-        range_start_ms=job.range_start_ms,
-        range_end_ms=job.range_end_ms,
-        output_url=job.output_url,
-        watermark_output_url=job.watermark_output_url,
+        range_start_ms=None if edit is None else edit.range_start_ms,
+        range_end_ms=None if edit is None else edit.range_end_ms,
+        output_url=job.output.url,
+        watermark_output_url=job.output.watermark_url,
         error_message=job.error_message,
-        duration_ms=job.duration_ms,
+        duration_ms=job.output.duration_ms,
         clip_stage=_clip_stage(job),
-        sentences=None if job.sentences is None else list(job.sentences),
+        sentences=None if job.output.sentences is None else list(job.output.sentences),
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -646,10 +647,10 @@ def video_task_out(job: GenerationJob) -> VideoTaskOut:
     result = None
     error = None
     if status == "succeeded":
-        if job.output_url is None or job.watermark_output_url is None:
+        if job.output.url is None or job.output.watermark_url is None:
             raise RuntimeError(f"视频记录 {job.id} 已完成却缺结果地址")
         result = VideoTaskResult(
-            output_url=job.output_url, watermark_output_url=job.watermark_output_url
+            output_url=job.output.url, watermark_output_url=job.output.watermark_url
         )
     if status == "failed":
         if job.error_code is None or job.error_message is None:
@@ -738,6 +739,7 @@ __all__ = [
     "CLIP_FETCHING",
     "CLIP_PROCESSING",
     "CLIP_UPLOADING",
+    "COLUMN_FIELDS",
     "IMAGE_MAX_REFERENCES",
     "KIND_AUDIO",
     "KIND_IMAGE",
@@ -759,8 +761,8 @@ __all__ = [
     "OPERATION_GENERATE",
     "OPERATION_RENDER",
     "OPERATION_UPLOAD",
-    "ORIGIN_FIELDS",
     "READ_BACK_CONTEXT",
+    "RECORD_ONLY_FIELDS",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",
@@ -785,6 +787,7 @@ __all__ = [
     "Metadata",
     "MusicIn",
     "MusicRequest",
+    "SnakeModel",
     "SubtitleIn",
     "SubtitleRequest",
     "SubtitleSentence",
@@ -794,6 +797,7 @@ __all__ = [
     "VideoComposeIn",
     "VideoComposeRequest",
     "VideoEditIn",
+    "VideoEditRequest",
     "VideoEnhanceIn",
     "VideoEnhanceRequest",
     "VideoEnhanceResolution",
@@ -815,7 +819,5 @@ __all__ = [
     "generation_out",
     "nonblank",
     "request_to_payload",
-    "sentences_from_payload",
-    "sentences_to_payload",
     "video_task_out",
 ]

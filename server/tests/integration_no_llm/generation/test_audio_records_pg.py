@@ -7,7 +7,11 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_SUBMITTING
+from iclip.domains.generation.models import (
+    STATUS_COMPLETED,
+    STATUS_SUBMITTING,
+    GenerationOutput,
+)
 from iclip.domains.generation.schemas import MusicRequest
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import MUSIC_PROMPT, make_job, make_music, video_request
@@ -28,15 +32,14 @@ async def test_generated_music_round_trips_its_request_address_and_duration(
     await repo.mark_submitting(created.id)
     done = await repo.mark_completed(
         created.id,
-        output_url=MUSIC_URL,
+        output=GenerationOutput(url=MUSIC_URL, duration_ms=31_500),
         provider_status="succeeded",
         provider_task_id="req-7",
-        duration_ms=31_500,
         only_if_status=STATUS_SUBMITTING,
     )
 
     assert done is not None
-    assert (done.status, done.output_url, done.duration_ms) == (
+    assert (done.status, done.output.url, done.output.duration_ms) == (
         STATUS_COMPLETED,
         MUSIC_URL,
         31_500,
@@ -59,8 +62,7 @@ async def test_audio_records_do_not_count_as_videos_in_flight_or_masters(
     take = await repo.create(make_job(video_request(), owner_user_id=owner, conversation_id=quiet))
     await repo.mark_completed(
         take.id,
-        output_url=TAKE_URL,
-        watermark_output_url="https://cdn.example.test/take-wm.mp4",
+        output=GenerationOutput(url=TAKE_URL, watermark_url="https://cdn.example.test/take-wm.mp4"),
         provider_status="succeeded",
     )
     await repo.create(make_music(owner_user_id=owner, conversation_id=quiet))
@@ -69,7 +71,9 @@ async def test_audio_records_do_not_count_as_videos_in_flight_or_masters(
     finished = await repo.create(make_music(owner_user_id=owner, conversation_id=quiet))
     await repo.mark_submitting(finished.id)
     await repo.mark_completed(
-        finished.id, output_url=MUSIC_URL, provider_status="succeeded", duration_ms=1000
+        finished.id,
+        output=GenerationOutput(url=MUSIC_URL, duration_ms=1000),
+        provider_status="succeeded",
     )
 
     assert await repo.in_flight_by_conversation([quiet, busy_music], kind="video") == {}

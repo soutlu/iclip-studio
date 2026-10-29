@@ -58,7 +58,7 @@ from iclip.domains.audit.schemas import (
 _VIDEOS: Final = """
 videos AS (
     SELECT g.id, g.conversation_id, g.status, g.created_at, g.submitted_at, g.finished_at,
-           g.duration_ms,
+           (g.output ->> 'duration_ms')::int AS duration_ms,
            -- 完成的出片：出成了且有完成时刻；各口径只引用这一列。
            (g.status = 'completed' AND g.finished_at IS NOT NULL) AS delivered,
            -- 有人下载过它，或以它为原作的合成：下载的那条沿原作折回出片，原作可以在祖先对话里，

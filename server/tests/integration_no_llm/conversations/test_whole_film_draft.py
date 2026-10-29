@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_AUDIO
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
@@ -75,9 +75,8 @@ async def test_the_owner_saves_by_revision_and_reads_the_draft_back(
     music = await generations.create(make_music(owner_user_id=owner, conversation_id=mine))
     await generations.mark_completed(
         music.id,
-        output_url="https://example.test/music.m4a",
+        output=GenerationOutput(url="https://example.test/music.m4a", duration_ms=30_000),
         provider_status="succeeded",
-        duration_ms=30_000,
     )
     first = draft_document(
         layer0=[
@@ -238,9 +237,8 @@ async def _completed_music(scene: Scene, conversation_id: uuid.UUID) -> uuid.UUI
     )
     await scene.repo.mark_completed(
         music.id,
-        output_url=f"https://example.test/{music.id}.m4a",
+        output=GenerationOutput(url=f"https://example.test/{music.id}.m4a", duration_ms=30_000),
         provider_status="succeeded",
-        duration_ms=30_000,
     )
     return music.id
 

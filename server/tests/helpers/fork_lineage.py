@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.models import Conversation
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.stored_requests import GenerationRequest
 from tests.helpers.generation import edit_request, make_job, video_request
 
@@ -46,7 +46,9 @@ async def complete(repo: SqlGenerationRepository, job: GenerationJob, url: str) 
 
     await repo.mark_submitting(job.id)
     await repo.mark_submitted(job.id, provider_task_id=str(job.id), provider_status="queued")
-    completed = await repo.mark_completed(job.id, output_url=url, provider_status="succeeded")
+    completed = await repo.mark_completed(
+        job.id, output=GenerationOutput(url=url), provider_status="succeeded"
+    )
     assert completed is not None
     return completed
 
@@ -149,8 +151,6 @@ async def three_level_fork(engine: AsyncEngine) -> ForkChain:
         edit_request(),
         source_job_id=from_parent.id,
         root_job_id=from_parent.id,
-        range_start_ms=1000,
-        range_end_ms=4000,
     )
     failed = await repo.create(
         make_job(video_request(), owner_user_id=author, conversation_id=parent.id)

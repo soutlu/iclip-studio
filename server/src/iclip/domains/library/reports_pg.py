@@ -41,16 +41,20 @@ from iclip.domains.tagging.public import (
 
 _COMPOSE: Final = "compose"
 
-_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND g.output_url IS NOT NULL
+_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
       AND ((g.operation = 'generate' AND g.source_job_id IS NULL) OR g.operation = 'compose')
       AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
 
-_JOB_COLUMNS: Final = """g.id, g.operation, g.shot_index, g.root_job_id, g.output_url,
-           g.watermark_output_url, g.duration_ms, g.finished_at, g.owner_user_id"""
+_OUTPUT_COLUMNS: Final = """(g.output ->> 'url') AS output_url,
+           (g.output ->> 'watermark_url') AS watermark_output_url,
+           (g.output ->> 'duration_ms')::int AS duration_ms"""
+
+_JOB_COLUMNS: Final = f"""g.id, g.operation, g.shot_index, g.root_job_id, {_OUTPUT_COLUMNS},
+           g.finished_at, g.owner_user_id"""
 
 _OWN_MASTERS: Final = f"""
 own_masters AS (
-    SELECT g.id, g.operation, g.output_url, g.watermark_output_url, g.duration_ms,
+    SELECT g.id, g.operation, {_OUTPUT_COLUMNS},
            g.finished_at, g.owner_user_id, c.id AS card_conversation,
            COALESCE(c.id, g.root_job_id, g.id) AS card_id,
            COALESCE(g.root_job_id, g.id) AS take_id
@@ -196,7 +200,7 @@ ORDER BY n DESC, c.user_name""",
 )
 
 _WHOLE_FILM: Final = """g.kind = 'whole_film' AND g.status = 'completed'
-      AND g.output_url IS NOT NULL"""
+      AND (g.output ->> 'url') IS NOT NULL"""
 
 _FILM_CARDS: Final = f"""
 WITH film_cards AS (
@@ -228,7 +232,7 @@ page AS (
     LIMIT :limit
 )
 SELECT p.id AS conversation_id, p.title, p.conversation_owner, p.conversation_deleted,
-       p.user_name, g.id AS job_id, g.output_url, g.finished_at,
+       p.user_name, g.id AS job_id, (g.output ->> 'url') AS output_url, g.finished_at,
        vu.username AS version_user_name, g.request->'videos' AS sources
 FROM page p
 JOIN iclip.generation_jobs g ON g.conversation_id = p.id
@@ -288,7 +292,7 @@ ORDER BY n DESC, u.username""")
 
 def _hit_cases_statement(scope_filter: str) -> TextClause:
     return text(f"""
-SELECT g.id, g.operation, g.output_url, g.watermark_output_url, g.duration_ms, g.finished_at,
+SELECT g.id, g.operation, {_OUTPUT_COLUMNS}, g.finished_at,
        u.username AS user_name, COALESCE(c.id, g.root_job_id, g.id) AS card_id, c.title,
        t.id AS take_id, t.request AS take_request, le.created_at AS added_at,
        {entry_columns_sql()}{_HIT_CASES_FROM}{scope_filter}

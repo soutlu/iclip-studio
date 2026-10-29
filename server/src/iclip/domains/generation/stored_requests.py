@@ -23,6 +23,7 @@ from iclip.domains.generation.schemas import (
     MusicRequest,
     SubtitleRequest,
     VideoComposeRequest,
+    VideoEditRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
     WholeFilmRequest,
@@ -30,6 +31,7 @@ from iclip.domains.generation.schemas import (
 
 GenerationRequest = (
     VideoGenerationIn
+    | VideoEditRequest
     | ImageGenerationIn
     | VideoComposeRequest
     | SubtitleRequest
@@ -48,6 +50,8 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_ENHANCE): TypeAdapter(VideoEnhanceRequest),
 }
 
+_EDIT: Final[TypeAdapter[Any]] = TypeAdapter(VideoEditRequest)
+
 _WITHOUT_REQUEST: Final = frozenset(
     {
         (KIND_IMAGE, OPERATION_CUT),
@@ -59,13 +63,18 @@ _WITHOUT_REQUEST: Final = frozenset(
 
 
 def request_from_payload(
-    kind: str, operation: str, payload: dict[str, Any] | None
+    kind: str, operation: str, payload: dict[str, Any] | None, *, has_source: bool
 ) -> GenerationRequest | None:
+    """按种类、操作与有没有来源读回请求快照：有来源的视频 generate 是编辑段，其余只看前两者。"""
+
     if (kind, operation) in _WITHOUT_REQUEST:
         if payload is not None:
             raise ValidationFailed(f"{kind} / {operation} 不该带请求")
         return None
-    adapter = _ADAPTERS.get((kind, operation))
+    if (kind, operation) == (KIND_VIDEO, OPERATION_GENERATE) and has_source:
+        adapter = _EDIT
+    else:
+        adapter = _ADAPTERS.get((kind, operation))
     if adapter is None:
         raise ValidationFailed(f"未知的生成类型: {kind} / {operation}")
     if payload is None:

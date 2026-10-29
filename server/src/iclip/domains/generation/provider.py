@@ -81,7 +81,7 @@ class ProviderSubmission:
     output_url: str | None = None
     """同步接口一次调用就出结果，直接带回来；异步接口这里是 ``None``。"""
     duration_ms: int | None = None
-    """产物量出来的时长（毫秒）；只有本地加工知道，完成时落进记录的时长列。"""
+    """产物量出来的时长（毫秒）；只有本地加工知道，完成时落进记录产出的时长。"""
     sentences: tuple[SubtitleSentence, ...] | None = None
 
 

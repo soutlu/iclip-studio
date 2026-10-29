@@ -21,6 +21,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTING,
     GenerationJob,
     GenerationKind,
+    GenerationOutput,
     GenerationStatus,
 )
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
@@ -29,6 +30,7 @@ from iclip.domains.generation.schemas import (
     MAX_COMPOSE_SEGMENTS,
     MAX_METADATA_CHARS,
     VideoComposeRequest,
+    request_to_payload,
 )
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import GenerationService
@@ -44,6 +46,8 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     build_queue,
+    edit_range,
+    external_base,
     image_request,
     make_composite,
     make_cut,
@@ -700,7 +704,7 @@ def fork_of_someone_elses_take(
         conversation_id=source,
         created_at=forked_at - timedelta(minutes=2),
         finished_at=forked_at - timedelta(minutes=1),
-        output_url="https://example.com/source.mp4",
+        output=GenerationOutput(url="https://example.com/source.mp4"),
     )
     own = make_job(video_request(), owner_user_id=forker, conversation_id=fork)
     return (
@@ -800,7 +804,7 @@ def a_composite(**fields: object) -> GenerationJob:
 async def test_the_duration_comes_from_its_column() -> None:
     """合成是本系统自己拼的，量过的时长记在列上交出来；别的记录没有。"""
 
-    composite = a_composite(status=STATUS_COMPLETED, duration_ms=7040)
+    composite = a_composite(status=STATUS_COMPLETED, output=GenerationOutput(duration_ms=7040))
     take = make_job(video_request())
     unmeasured = a_composite(status=STATUS_COMPLETED)
 
@@ -832,6 +836,32 @@ async def test_a_record_reads_back_with_its_operation_source_range_and_finish() 
     assert datetime.fromisoformat(str(body["finishedAt"])) == finished_at
     plain = await read_back(make_job(video_request()))
     assert (plain["sourceJobId"], plain["rangeStartMs"], plain["finishedAt"]) == (None, None, None)
+
+
+async def test_the_range_and_the_external_base_are_top_level_fields_not_part_of_request() -> None:
+    """区间与外部底图记在请求快照里，对外的 ``request`` 不带它们，只在顶层给。"""
+
+    take = make_job(video_request(), status=STATUS_COMPLETED)
+    edit = make_edit(take, status=STATUS_COMPLETED, range_start_ms=800, range_end_ms=4000)
+    external = "https://elsewhere.test/base.png"
+    frame_edit = make_job(image_request(source_url=external), status=STATUS_COMPLETED)
+
+    edit_body = await read_back(edit)
+    frame_body = await read_back(frame_edit)
+
+    snapshot = request_to_payload(stored_request(edit))
+    assert edit_body["request"] == {
+        key: value
+        for key, value in snapshot.items()
+        if key not in {"range_start_ms", "range_end_ms"}
+    }
+    assert (edit_body["rangeStartMs"], edit_body["rangeEndMs"]) == (800, 4000)
+    assert frame_body["request"] == {
+        key: value
+        for key, value in request_to_payload(stored_request(frame_edit)).items()
+        if key != "sourceUrl"
+    }
+    assert (frame_body["sourceJobId"], frame_body["sourceUrl"]) == (None, external)
 
 
 async def test_in_flight_local_processing_reports_the_stage_it_is_on() -> None:
@@ -910,8 +940,9 @@ async def test_video_task_carries_both_urls_when_done_and_the_error_when_failed(
     done = make_job(
         video_request(),
         status=STATUS_COMPLETED,
-        output_url="https://cdn.test/v.mp4",
-        watermark_output_url="https://cdn.test/v-wm.mp4",
+        output=GenerationOutput(
+            url="https://cdn.test/v.mp4", watermark_url="https://cdn.test/v-wm.mp4"
+        ),
     )
     failed = make_job(
         video_request(),
@@ -947,7 +978,9 @@ async def test_video_task_endpoint_answers_only_for_upstream_video_records(role:
         if role == "图片"
         else make_upload(kind="video")
         if role == "视频上传"
-        else a_composite(status=STATUS_COMPLETED, output_url="https://cdn.test/master.mp4")
+        else a_composite(
+            status=STATUS_COMPLETED, output=GenerationOutput(url="https://cdn.test/master.mp4")
+        )
     )
     edit = make_edit(make_job(video_request()), owner_user_id=job.owner_user_id)
     repo = InMemoryGenerationRepository([job, edit])
@@ -1092,8 +1125,7 @@ def seed_take(
         owner_user_id=owner,
         conversation_id=conversation,
         shot_index=shot_index,
-        output_url=BASE_URL,
-        watermark_output_url="https://example.com/base-wm.mp4",
+        output=GenerationOutput(url=BASE_URL, watermark_url="https://example.com/base-wm.mp4"),
         finished_at=datetime.now(UTC) - timedelta(minutes=10),
     )
     repo.jobs[take.id] = take
@@ -1116,7 +1148,7 @@ def seed_edit(
         conversation_id=base.conversation_id,
         range_start_ms=range_start_ms,
         range_end_ms=4000,
-        output_url=EDITED_URL if status == STATUS_COMPLETED else None,
+        output=GenerationOutput(url=EDITED_URL if status == STATUS_COMPLETED else None),
         finished_at=datetime.now(UTC) - timedelta(minutes=5)
         if status == STATUS_COMPLETED
         else None,
@@ -1134,7 +1166,7 @@ def seed_clip(
 ) -> GenerationJob:
     """放一条 ``owner`` 的上传进去，产物就是 ``url``：编辑段的参考片段默认就是它。"""
 
-    upload = make_upload(kind=kind, owner_user_id=owner, output_url=url)
+    upload = make_upload(kind=kind, owner_user_id=owner, output=GenerationOutput(url=url))
     repo.jobs[upload.id] = upload
     return upload
 
@@ -1151,19 +1183,16 @@ def splice_body(edit: GenerationJob, **fields: object) -> dict[str, object]:
     整条、基底后段取到结尾。"""
 
     assert edit.source_job_id is not None
-    assert edit.range_start_ms is not None and edit.range_end_ms is not None
+    start_ms, end_ms = edit_range(edit)
+    assert start_ms is not None and end_ms is not None
     base = str(edit.source_job_id)
-    head = (
-        [{"sourceJobId": base, "start": 0, "end": edit.range_start_ms / 1000}]
-        if edit.range_start_ms > 0
-        else []
-    )
+    head = [{"sourceJobId": base, "start": 0, "end": start_ms / 1000}] if start_ms > 0 else []
     return {
         "baseJobId": base,
         "segments": [
             *head,
             {"sourceJobId": str(edit.id), "start": 0},
-            {"sourceJobId": base, "start": edit.range_end_ms / 1000},
+            {"sourceJobId": base, "start": end_ms / 1000},
         ],
         **fields,
     }
@@ -1198,7 +1227,7 @@ async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and
         STATUS_PENDING,
     )
     assert (stored.source_job_id, stored.root_job_id) == (take.id, take.id)
-    assert (stored.range_start_ms, stored.range_end_ms) == (1000, 4000)
+    assert edit_range(stored) == (1000, 4000)
     assert (stored.conversation_id, stored.task_id, stored.metadata) == (
         conversation,
         task,
@@ -1226,7 +1255,10 @@ async def test_an_edit_on_a_composite_keeps_the_original_take_as_its_root() -> N
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
     composite = make_composite(
-        seed_edit(repo, take), status=STATUS_COMPLETED, owner_user_id=owner, output_url=BASE_URL
+        seed_edit(repo, take),
+        status=STATUS_COMPLETED,
+        owner_user_id=owner,
+        output=GenerationOutput(url=BASE_URL),
     )
     repo.jobs[composite.id] = composite
     seed_clip(repo, owner=owner)
@@ -1250,7 +1282,7 @@ async def test_edits_and_composites_take_the_shot_index_of_their_original() -> N
     take = seed_take(repo, owner=owner, shot_index=4)
     edit = seed_edit(repo, take)
     composite = make_composite(
-        edit, status=STATUS_COMPLETED, owner_user_id=owner, output_url=BASE_URL
+        edit, status=STATUS_COMPLETED, owner_user_id=owner, output=GenerationOutput(url=BASE_URL)
     )
     repo.jobs[composite.id] = composite
     seed_clip(repo, owner=owner)
@@ -1337,7 +1369,7 @@ async def test_an_edit_needs_a_finished_take_as_its_base(role: str) -> None:
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
     if role == "还在跑的出片":
-        base = replace(take, status=STATUS_SUBMITTED, output_url=None)
+        base = replace(take, status=STATUS_SUBMITTED, output=GenerationOutput())
     elif role == "编辑段":
         base = seed_edit(repo, take)
     elif role == "视频上传":
@@ -1414,7 +1446,10 @@ async def test_the_clip_must_be_the_callers_own_video_upload(flaw: str) -> None:
     take = seed_take(repo, owner=owner)
     if flaw == "不是上传":
         replica = make_job(
-            video_request(), status=STATUS_COMPLETED, owner_user_id=owner, output_url=CLIP_URL
+            video_request(),
+            status=STATUS_COMPLETED,
+            owner_user_id=owner,
+            output=GenerationOutput(url=CLIP_URL),
         )
         repo.jobs[replica.id] = replica
     elif flaw == "别人的上传":
@@ -1461,7 +1496,7 @@ async def test_seedance_edit_checks_actual_clip_duration_independent_of_the_repl
     assert response.status_code == (202 if accepted else 422), response.text
     if accepted:
         stored = only_new(repo, seeded)
-        assert (stored.range_start_ms, stored.range_end_ms) == (1000, 4000), "区间原样记"
+        assert edit_range(stored) == (1000, 4000), "区间原样记"
         assert (stored.source_job_id, stored.root_job_id) == (take.id, take.id)
         assert stored_request(stored).model_dump()["reference_video_urls"] == [CLIP_URL]
     else:
@@ -1485,7 +1520,7 @@ async def test_the_range_stays_within_the_base(
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
     if measured:
-        take = replace(take, duration_ms=6000)
+        take = replace(take, output=take.output.model_copy(update={"duration_ms": 6000}))
         repo.jobs[take.id] = take
     seed_clip(repo, owner=owner)
     seeded = set(repo.jobs)
@@ -1570,7 +1605,7 @@ async def test_a_composite_splices_an_edit_back_into_its_base() -> None:
         task,
         {"frame": 1},
     )
-    assert (stored.range_start_ms, stored.range_end_ms) == (None, None)
+    assert edit_range(stored) == (None, None)
     assert isinstance(stored.request, VideoComposeRequest)
     assert stored_request(stored).model_dump(mode="json", by_alias=True)["segments"] == [
         {"sourceJobId": str(take.id), "url": BASE_URL, "start": 0, "end": 1},
@@ -1621,7 +1656,7 @@ async def test_a_composite_on_a_composite_keeps_the_original_take_as_its_root() 
         seed_edit(repo, take),
         status=STATUS_COMPLETED,
         owner_user_id=owner,
-        output_url="https://example.com/v2.mp4",
+        output=GenerationOutput(url="https://example.com/v2.mp4"),
     )
     repo.jobs[previous.id] = previous
     seeded = set(repo.jobs)
@@ -1652,7 +1687,7 @@ async def test_a_composite_needs_a_finished_master_as_its_base(role: str) -> Non
     if role == "编辑段":
         base = seed_edit(repo, take)
     elif role == "还在跑的出片":
-        base = replace(take, status=STATUS_SUBMITTED, output_url=None)
+        base = replace(take, status=STATUS_SUBMITTED, output=GenerationOutput())
         repo.jobs[base.id] = base
     else:
         base = make_job(image_request(), status=STATUS_COMPLETED, owner_user_id=owner)
@@ -1751,7 +1786,8 @@ async def test_a_segment_end_stays_within_its_sources_duration(
 
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
-    take = replace(seed_take(repo, owner=owner), duration_ms=duration_ms)
+    seeded = seed_take(repo, owner=owner)
+    take = replace(seeded, output=seeded.output.model_copy(update={"duration_ms": duration_ms}))
     repo.jobs[take.id] = take
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
@@ -1888,14 +1924,18 @@ class BaseWorld:
             "ancestor", owner=self.someone, conversation=self.source, finished_at=done
         )
         self.foreign = self._image("foreign", owner=self.me, conversation=self.elsewhere)
-        self.my_upload = make_upload(owner_user_id=self.me, output_url=url_of("my-upload"))
-        self.their_upload = make_upload(owner_user_id=self.someone, output_url=url_of("theirs"))
+        self.my_upload = make_upload(
+            owner_user_id=self.me, output=GenerationOutput(url=url_of("my-upload"))
+        )
+        self.their_upload = make_upload(
+            owner_user_id=self.someone, output=GenerationOutput(url=url_of("theirs"))
+        )
         self.take = make_job(
             video_request(),
             status=STATUS_COMPLETED,
             owner_user_id=self.me,
             conversation_id=self.conversation,
-            output_url=url_of("take", ext="mp4"),
+            output=GenerationOutput(url=url_of("take", ext="mp4")),
             finished_at=done,
         )
         self.repo = InMemoryGenerationRepository(
@@ -1931,7 +1971,7 @@ class BaseWorld:
             owner_user_id=owner,
             conversation_id=conversation,
             source_job_id=source,
-            output_url=url_of(name),
+            output=GenerationOutput(url=url_of(name)),
             created_at=at - timedelta(minutes=1),
             finished_at=at,
         )
@@ -1994,7 +2034,7 @@ async def test_a_frame_edit_records_exactly_one_source_for_its_base(
     assert response.status_code == 202, response.text
     job = only_new(world.repo, seeded)
     source = None if expected is None else getattr(world, expected).id
-    assert (job.source_job_id, job.source_url) == (
+    assert (job.source_job_id, external_base(job)) == (
         (source, None) if source is not None else (None, url)
     )
     generation = response.json()["generation"]
@@ -2017,13 +2057,13 @@ async def test_a_plain_image_has_no_source() -> None:
         )
 
     job = only_new(world.repo, seeded)
-    assert (job.source_job_id, job.source_url) == (None, None)
+    assert (job.source_job_id, external_base(job)) == (None, None)
     assert response.json()["generation"]["sourceUrl"] is None
 
 
 async def test_the_conversations_own_image_wins_over_an_upload_at_the_same_address() -> None:
     world = BaseWorld()
-    world.repo.jobs[world.my_upload.id] = replace(world.my_upload, output_url=world.mine.output_url)
+    world.repo.jobs[world.my_upload.id] = replace(world.my_upload, output=world.mine.output)
     seeded = set(world.repo.jobs)
     app = build_test_app(
         world.repo,
@@ -2036,7 +2076,7 @@ async def test_the_conversations_own_image_wins_over_an_upload_at_the_same_addre
             json={
                 **IMAGE_BODY,
                 "conversationId": str(world.conversation),
-                "sourceUrl": world.mine.output_url,
+                "sourceUrl": world.mine.output.url,
             },
         )
 
@@ -2067,7 +2107,7 @@ async def test_a_base_address_written_into_metadata_is_the_callers_label_not_a_s
 
     world = BaseWorld()
     seeded = set(world.repo.jobs)
-    tag = {"shot": 1, "frame": 2, "sourceUrl": world.mine.output_url}
+    tag = {"shot": 1, "frame": 2, "sourceUrl": world.mine.output.url}
     app = build_test_app(
         world.repo,
         granted=principal("generation:submit", user_id=world.me),
@@ -2080,7 +2120,7 @@ async def test_a_base_address_written_into_metadata_is_the_callers_label_not_a_s
         )
 
     job = only_new(world.repo, seeded)
-    assert (job.source_job_id, job.source_url, job.metadata) == (None, None, tag)
+    assert (job.source_job_id, external_base(job), job.metadata) == (None, None, tag)
     generation = response.json()["generation"]
     assert (generation["sourceUrl"], generation["metadata"]) == (None, tag)
 
@@ -2099,14 +2139,13 @@ async def test_every_sourced_record_reads_back_with_its_sources_address() -> Non
         status=STATUS_COMPLETED,
         owner_user_id=owner,
         conversation_id=conversation,
-        output_url=url_of("grid"),
+        output=GenerationOutput(url=url_of("grid")),
     )
     cell = make_cut(grid)
     frame_edit = make_job(
-        image_request(),
+        image_request(source_url=url_of("old-cell")),
         owner_user_id=owner,
         conversation_id=conversation,
-        source_url=url_of("old-cell"),
     )
     for job in (composite, grid, cell, frame_edit):
         repo.jobs[job.id] = job
@@ -2144,7 +2183,7 @@ async def test_an_inherited_edit_carries_its_bases_address_even_when_the_base_is
         owner_user_id=world.someone,
         conversation_id=world.source,
         source_job_id=theirs.id,
-        output_url=url_of("inherited-edit"),
+        output=GenerationOutput(url=url_of("inherited-edit")),
         finished_at=done,
     )
     world.repo.jobs[theirs.id] = theirs
@@ -2159,7 +2198,7 @@ async def test_an_inherited_edit_carries_its_bases_address_even_when_the_base_is
         base = await http.get(f"/generations/{theirs.id}")
 
     by_id = {item["id"]: item for item in listed.json()["items"]}
-    assert by_id[str(inherited_edit.id)]["sourceUrl"] == theirs.output_url
+    assert by_id[str(inherited_edit.id)]["sourceUrl"] == theirs.output.url
     assert base.status_code == 404
 
 
@@ -2209,7 +2248,7 @@ async def test_image_clip_duration_is_explicit_and_model_specific(
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner, shot_index=3)
-    take = replace(take, duration_ms=6000)
+    take = replace(take, output=take.output.model_copy(update={"duration_ms": 6000}))
     repo.jobs[take.id] = take
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
@@ -2229,7 +2268,7 @@ async def test_image_clip_duration_is_explicit_and_model_specific(
     if accepted:
         job = only_new(repo, {take.id})
         assert (job.source_job_id, job.root_job_id, job.shot_index) == (take.id, take.id, 3)
-        assert (job.range_start_ms, job.range_end_ms) == (1000, 2000)
+        assert edit_range(job) == (1000, 2000)
         payload = stored_request(job).model_dump()
         assert payload["seconds"] == seconds
         assert payload["reference_video_urls"] == []
@@ -2275,8 +2314,11 @@ def seed_portrait_base(repo: InMemoryGenerationRepository, base_role: str) -> Ge
     """原作是一条 9:16 的出片；``base_role`` 为 composite 时基底是在它上面合成的一版。"""
 
     owner = uuid.uuid4()
+    seeded = seed_take(repo, owner=owner)
     take = replace(
-        seed_take(repo, owner=owner), request=video_request(aspect_ratio="9:16"), duration_ms=6000
+        seeded,
+        request=video_request(aspect_ratio="9:16"),
+        output=seeded.output.model_copy(update={"duration_ms": 6000}),
     )
     repo.jobs[take.id] = take
     if base_role == "take":
@@ -2285,8 +2327,7 @@ def seed_portrait_base(repo: InMemoryGenerationRepository, base_role: str) -> Ge
         seed_edit(repo, take),
         status=STATUS_COMPLETED,
         owner_user_id=owner,
-        output_url=BASE_URL,
-        duration_ms=6000,
+        output=GenerationOutput(url=BASE_URL, duration_ms=6000),
     )
     repo.jobs[composite.id] = composite
     return composite

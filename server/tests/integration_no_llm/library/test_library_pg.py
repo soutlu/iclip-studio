@@ -312,10 +312,10 @@ async def _video(
     await conn.execute(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-            " operation, provider, request, status, shot_index, output_url,"
-            " watermark_output_url, created_at, finished_at, metadata)"
+            " operation, provider, request, status, shot_index, output, created_at,"
+            " finished_at, metadata)"
             " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
-            " CAST(:request AS jsonb), :status, :shot, :output_url, :watermark_url, :created_at,"
+            " CAST(:request AS jsonb), :status, :shot, CAST(:output AS jsonb), :created_at,"
             " :finished_at, CAST(:metadata AS jsonb))"
         ),
         {
@@ -328,8 +328,9 @@ async def _video(
             "metadata": None if metadata is None else json.dumps(metadata),
             "status": status,
             "shot": shot,
-            "output_url": url(name) if status == STATUS_COMPLETED else None,
-            "watermark_url": url(f"{name}-wm") if status == STATUS_COMPLETED else None,
+            "output": json.dumps({"url": url(name), "watermark_url": url(f"{name}-wm")})
+            if status == STATUS_COMPLETED
+            else None,
             "created_at": at(created),
             "finished_at": None if finished is None else at(finished),
         },
@@ -352,10 +353,10 @@ async def _edit(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
             " operation, provider, request, status, shot_index, source_job_id, root_job_id,"
-            " range_start_ms, range_end_ms, output_url, created_at, finished_at)"
+            " output, created_at, finished_at)"
             " SELECT :id, :owner, CAST(:conversation_id AS uuid), :kind, :operation, 'test',"
             " CAST(:request AS jsonb), :status, shot_index, id, COALESCE(root_job_id, id),"
-            " 1000, 4000, :output_url, :created_at, :finished_at"
+            " CAST(:output AS jsonb), :created_at, :finished_at"
             " FROM iclip.generation_jobs WHERE id = :base"
         ),
         {
@@ -364,10 +365,17 @@ async def _edit(
             "conversation_id": conversation_id,
             "kind": KIND_VIDEO,
             "operation": OPERATION_GENERATE,
-            "request": json.dumps({"model": "vendor-b-seedance-2-5", "prompt": "改一段。"}),
+            "request": json.dumps(
+                {
+                    "model": "vendor-b-seedance-2-5",
+                    "prompt": "改一段。",
+                    "range_start_ms": 1000,
+                    "range_end_ms": 4000,
+                }
+            ),
             "status": STATUS_COMPLETED,
             "base": base,
-            "output_url": url(f"{edit_id}-edit"),
+            "output": json.dumps({"url": url(f"{edit_id}-edit")}),
             "created_at": at(created),
             "finished_at": at(finished),
         },
@@ -404,10 +412,10 @@ async def _composite(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
             " operation, provider, request, status, shot_index, source_job_id, root_job_id,"
-            " output_url, duration_ms, created_at, finished_at)"
+            " output, created_at, finished_at)"
             " SELECT :id, :owner, CAST(:conversation_id AS uuid), :kind, :operation, 'local',"
             " CAST(:request AS jsonb), :status, shot_index, id, COALESCE(root_job_id, id),"
-            " :output_url, :duration_ms, :created_at, :finished_at"
+            " CAST(:output AS jsonb), :created_at, :finished_at"
             " FROM iclip.generation_jobs WHERE id = :base"
         ),
         {
@@ -431,8 +439,10 @@ async def _composite(
             ),
             "status": STATUS_COMPLETED,
             "base": base,
-            "output_url": url(url_name or str(composite_id)),
-            "duration_ms": duration_ms,
+            "output": json.dumps(
+                {"url": url(url_name or str(composite_id))}
+                | ({} if duration_ms is None else {"duration_ms": duration_ms})
+            ),
             "created_at": at(created),
             "finished_at": at(finished),
         },
@@ -730,9 +740,10 @@ async def test_a_video_upload_is_not_a_card_or_a_version(
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation, provider,"
-                " status, output_url, created_at, finished_at)"
-                " VALUES (:id, :owner, :kind, :operation, 'upload', :status, :url, :at, :at)"
+                "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation,"
+                " status, output, created_at, finished_at)"
+                " VALUES (:id, :owner, :kind, :operation, :status, CAST(:output AS jsonb),"
+                " :at, :at)"
             ),
             {
                 "id": upload,
@@ -740,7 +751,7 @@ async def test_a_video_upload_is_not_a_card_or_a_version(
                 "kind": KIND_VIDEO,
                 "operation": OPERATION_UPLOAD,
                 "status": STATUS_COMPLETED,
-                "url": url("uploaded"),
+                "output": json.dumps({"url": url("uploaded")}),
                 "at": at(300),
             },
         )
@@ -760,12 +771,12 @@ async def test_subtitle_records_are_not_cards_or_versions(
     subtitles = [uuid.uuid4(), uuid.uuid4()]
     async with engine.begin() as conn:
         for subtitle, status, sentences in zip(
-            subtitles, (STATUS_COMPLETED, STATUS_FAILED), ("[]", None), strict=True
+            subtitles, (STATUS_COMPLETED, STATUS_FAILED), ('{"sentences": []}', None), strict=True
         ):
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                    " operation, provider, request, status, source_job_id, sentences,"
+                    " operation, provider, request, status, source_job_id, output,"
                     " created_at, finished_at)"
                     " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_asr',"
                     " CAST(:request AS jsonb), :status, :source, CAST(:sentences AS jsonb),"
@@ -812,10 +823,10 @@ async def test_audio_records_are_not_cards_or_versions(
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                    " operation, provider, request, status, output_url, duration_ms,"
+                    " operation, provider, request, status, output,"
                     " created_at, finished_at)"
                     " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_music',"
-                    " CAST(:request AS jsonb), :status, :output_url, :duration_ms, :at, :at)"
+                    " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :at, :at)"
                 ),
                 {
                     "id": record,
@@ -825,8 +836,10 @@ async def test_audio_records_are_not_cards_or_versions(
                     "operation": operation,
                     "request": request,
                     "status": STATUS_COMPLETED,
-                    "output_url": f"https://example.test/{record}.m4a",
-                    "duration_ms": duration_ms,
+                    "output": json.dumps(
+                        {"url": f"https://example.test/{record}.m4a"}
+                        | ({} if duration_ms is None else {"duration_ms": duration_ms})
+                    ),
                     "at": at(500),
                 },
             )
@@ -854,9 +867,9 @@ async def _whole_film(
     await conn.execute(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-            " operation, provider, request, status, output_url, created_at, finished_at)"
+            " operation, provider, request, status, output, created_at, finished_at)"
             " VALUES (:id, :owner, :conversation, :kind, :operation, :provider,"
-            " CAST(:request AS jsonb), :status, :output_url, :created_at, :at)"
+            " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :created_at, :at)"
         ),
         {
             "id": film_id,
@@ -867,7 +880,7 @@ async def _whole_film(
             "provider": RENDER_PROVIDER,
             "request": json.dumps(request_to_payload(whole_film_request(*sources))),
             "status": status,
-            "output_url": url(f"film-{film_id}") if completed else None,
+            "output": json.dumps({"url": url(f"film-{film_id}")}) if completed else None,
             "created_at": at((finished or 600) - 1),
             "at": None if finished is None else at(finished),
         },
@@ -1026,10 +1039,10 @@ async def test_high_definition_versions_are_neither_takes_nor_exports(
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                    " operation, provider, request, status, output_url, watermark_output_url,"
+                    " operation, provider, request, status, output,"
                     " source_job_id, created_at, finished_at)"
                     " VALUES (:id, :owner, NULL, :kind, :operation, 'video_api',"
-                    " CAST(:request AS jsonb), :status, :output_url, :watermark, :source,"
+                    " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :source,"
                     " :created_at, :at)"
                 ),
                 {
@@ -1039,8 +1052,9 @@ async def test_high_definition_versions_are_neither_takes_nor_exports(
                     "operation": OPERATION_ENHANCE,
                     "request": json.dumps(request_to_payload(request)),
                     "status": STATUS_COMPLETED,
-                    "output_url": url(f"hd-{source}"),
-                    "watermark": url(f"hd-wm-{source}"),
+                    "output": json.dumps(
+                        {"url": url(f"hd-{source}"), "watermark_url": url(f"hd-wm-{source}")}
+                    ),
                     "source": source,
                     "created_at": at(899),
                     "at": at(900),

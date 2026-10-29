@@ -22,6 +22,7 @@ from iclip.domains.generation.models import (
     STATUS_PENDING,
     STATUS_SUBMITTED,
     GenerationJob,
+    GenerationOutput,
 )
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.provider import (
@@ -179,8 +180,7 @@ def submitted_take(**fields: Any) -> GenerationJob:
 
 
 def completed_take(**fields: Any) -> GenerationJob:
-    fields.setdefault("output_url", TAKE_URL)
-    fields.setdefault("watermark_output_url", TAKE_WATERMARK_URL)
+    fields.setdefault("output", GenerationOutput(url=TAKE_URL, watermark_url=TAKE_WATERMARK_URL))
     fields.setdefault("finished_at", datetime.now(UTC))
     return make_job(video_request(), status=STATUS_COMPLETED, **fields)
 
@@ -219,7 +219,7 @@ async def test_a_completed_take_queues_one_subtitle_record_that_keeps_its_attrib
         subtitle.conversation_id,
         subtitle.task_id,
     ) == (take.owner_user_id, take.api_key_id, take.conversation_id, take.task_id)
-    assert (subtitle.shot_index, subtitle.root_job_id, subtitle.output_url) == (None, None, None)
+    assert (subtitle.shot_index, subtitle.root_job_id, subtitle.output.url) == (None, None, None)
     assert subtitle.request == SubtitleRequest(model=MODEL, video_url=TAKE_URL), "原片，不是水印版"
     assert [row["args"]["job_id"] for row in world.submits_to(FAKE_SUBTITLE_PROVIDER)] == [
         str(subtitle.id)
@@ -352,7 +352,7 @@ async def test_a_recognized_subtitle_record_completes_with_its_sentences_and_no_
     await world.queue.run_submit(str(subtitle.id))
 
     stored = world.repo.jobs[subtitle.id]
-    assert (stored.status, stored.sentences, stored.output_url) == (
+    assert (stored.status, stored.output.sentences, stored.output.url) == (
         STATUS_COMPLETED,
         SENTENCES,
         None,
@@ -374,7 +374,8 @@ async def test_no_voice_over_completes_with_an_empty_sentence_list() -> None:
 
     await world.queue.run_submit(str(subtitle.id))
 
-    assert (world.repo.jobs[subtitle.id].status, world.repo.jobs[subtitle.id].sentences) == (
+    stored = world.repo.jobs[subtitle.id]
+    assert (stored.status, stored.output.sentences) == (
         STATUS_COMPLETED,
         (),
     )
@@ -535,13 +536,20 @@ async def test_a_readable_record_that_is_not_a_master_is_rejected(kind: str) -> 
     me = uuid.uuid4()
     take = completed_take(owner_user_id=me)
     target = {
-        "编辑段": replace(make_edit(take), status=STATUS_COMPLETED, output_url=TAKE_URL),
+        "编辑段": replace(
+            make_edit(take), status=STATUS_COMPLETED, output=GenerationOutput(url=TAKE_URL)
+        ),
         "图片": make_job(
-            image_request(), owner_user_id=me, status=STATUS_COMPLETED, output_url="https://a/b.png"
+            image_request(),
+            owner_user_id=me,
+            status=STATUS_COMPLETED,
+            output=GenerationOutput(url="https://a/b.png"),
         ),
         "没完成的出片": make_job(video_request(), owner_user_id=me, status=STATUS_SUBMITTED),
         "失败的出片": make_job(video_request(), owner_user_id=me, status=STATUS_FAILED),
-        "字幕记录": make_subtitle(take, status=STATUS_COMPLETED, sentences=SENTENCES),
+        "字幕记录": make_subtitle(
+            take, status=STATUS_COMPLETED, output=GenerationOutput(sentences=SENTENCES)
+        ),
     }[kind]
     target = replace(target, owner_user_id=me, conversation_id=None)
     world = build_world([take, target])
@@ -607,7 +615,10 @@ async def test_a_finished_subtitle_record_reads_back_its_sentences_by_kind_sourc
     me, conversation = uuid.uuid4(), uuid.uuid4()
     take = completed_take(owner_user_id=me, conversation_id=conversation)
     subtitle = make_subtitle(
-        take, status=STATUS_COMPLETED, sentences=sentences, finished_at=datetime.now(UTC)
+        take,
+        status=STATUS_COMPLETED,
+        output=GenerationOutput(sentences=sentences),
+        finished_at=datetime.now(UTC),
     )
     world = build_world([take, subtitle])
     async with client(build_app(world, principal("generation:read", user_id=me))) as http:

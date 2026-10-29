@@ -95,10 +95,10 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
                     " operation, provider, request, status, source_job_id, root_job_id,"
-                    " range_start_ms, range_end_ms, output_url, created_at, finished_at)"
+                    " output, created_at, finished_at)"
                     " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
-                    " CAST(:request AS jsonb), :status, :source, :root, :range_start_ms,"
-                    " :range_end_ms, :output_url, now(), :finished_at)"
+                    " CAST(:request AS jsonb), :status, :source, :root,"
+                    " CAST(:output AS jsonb), now(), :finished_at)"
                 ),
                 {
                     "id": ids[label],
@@ -106,14 +106,18 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                     "conversation_id": None if upload or enhancement else conversation_id,
                     "kind": kind,
                     "operation": operation,
-                    "request": None if request is None else json.dumps(request),
+                    "request": None
+                    if request is None
+                    else json.dumps(
+                        request | ({"range_start_ms": 1000, "range_end_ms": 4000} if edit else {})
+                    ),
                     "finished_at": datetime.now(UTC) if upload else None,
                     "status": status,
                     "source": None if source is None else ids[source],
                     "root": None if source is None or enhancement else ids["video"],
-                    "range_start_ms": 1000 if edit else None,
-                    "range_end_ms": 4000 if edit else None,
-                    "output_url": f"https://oss.example.test/{label}.mp4" if has_url else None,
+                    "output": json.dumps({"url": f"https://oss.example.test/{label}.mp4"})
+                    if has_url
+                    else None,
                 },
             )
     return ids

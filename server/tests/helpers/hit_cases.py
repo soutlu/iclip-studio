@@ -56,10 +56,11 @@ async def plant_job(
         await conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                " operation, provider, request, status, shot_index, output_url, created_at,"
+                " operation, provider, request, status, shot_index, output, created_at,"
                 " finished_at)"
                 " VALUES (:id, :owner, :conversation_id, :kind, 'generate', 'test',"
-                " CAST(:request AS jsonb), :status, 1, 'https://oss.example.test/v.mp4', now(),"
+                " CAST(:request AS jsonb), :status, 1,"
+                " jsonb_build_object('url', 'https://oss.example.test/v.mp4'), now(),"
                 " now() - make_interval(secs => CAST(:ago AS float8) * 60))"
             ),
             {

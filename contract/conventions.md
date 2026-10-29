@@ -508,7 +508,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 时间窗 `since` / `until` 左闭右开，三个端点都必填 `since`，`until` 不给或晚于此刻按此刻算，`since` 不早于 `until` 是 `422`。指标的时间窗作用在各指标自己的锚点上：出片、视频生成时长与片长看完成时刻，镜数、生成次数、一次通过与有效镜看该镜第一条成功生成的完成时刻，运行次数与活跃人数看发起时刻，agent 运行时长看开始时刻，交付周期与单任务时长看最后出片时刻，模型用量整段对话按最后记账时刻归期。任务执行另按对话建立时刻圈定，见下文。
 - 每一格指标都是同一个 `metrics` 形状：`deliveries`（出片件数 = `deliveredTasks` + `deliveredOrphanConversations`）、`completedVideos`、`producers`、`shots`（至少成功生成过一条的镜）/ `attempts`（这些镜的成功生成次数，失败与还没出结果的不计）/ `oneTakeShots`（一次通过：只用一次成功生成就达标的镜）与派生的 `attemptsPerShot`、`oneTakeRate`、`effectiveShots`（有效镜）与派生的 `effectiveRate`（有效镜 ÷ 镜数）、`runs`（agent 运行次数，按消息数，归发起人）、`activeUsers`（发起过运行的人数）、`deliveredConversations`、四组秒数分布、`lengthVideos` / `lengthSeconds` / `discardedLengthSeconds`（片长）、`usage`（五个 token 计数、`totalTokens`、`cacheHitRate`）与 `tokensPerDelivery`。分母为零的比率是 `null`。
 - 四组秒数分布各带 `avg`、`median`、`p90` 与样本数 `count`，没有样本为 `null`：`cycleSeconds`（交付周期，墙钟，含空档）；`activeCycleSeconds`（单任务时长：每段有出片的对话一个样本，把这段对话有终态的顶层运行「开始到终态」与每条出片（含失败的）「受理到完成，没完成的只是受理那一刻」裁进交付周期，按开始排序合并，下一段开始距已合并段的结束不超过 30 分钟就并进来、空档照算，超过就断开、空档不计，样本值是各合并段长度之和）；`agentRunSeconds`（一次顶层运行从 `run_started` 到第一条 `run_completed` / `run_failed`，子代理的内部运行不单算，没有终态的不计，审批批完续跑是另一次运行）；`upstreamSeconds`（视频生成时长：单条出片提交上游到完成）。
-- 片长读出片记录的产物时长（生成记录的 `duration_ms` 列），为空的不计，不拿请求里的时长顶替。`lengthVideos` 是有片长的出片条数，`lengthSeconds` 是它们的合计，`discardedLengthSeconds` 是其中废片的合计：废片是同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后一条以外的出片，按时间窗或按人切开看也照全时段判定，所以各格可加、不随筛选变。
+- 片长读出片记录的产物时长（生成记录产出里的 `duration_ms`），为空的不计，不拿请求里的时长顶替。`lengthVideos` 是有片长的出片条数，`lengthSeconds` 是它们的合计，`discardedLengthSeconds` 是其中废片的合计：废片是同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后一条以外的出片，按时间窗或按人切开看也照全时段判定，所以各格可加、不随筛选变。
 
 ### 总览
 

@@ -21,6 +21,7 @@ from iclip.domains.generation.schemas import (
     ComposeSegment,
     VideoComposeRequest,
     VideoEditIn,
+    VideoEditRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
     request_to_payload,
@@ -31,6 +32,7 @@ from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     compose_request,
+    edit_request,
     image_request,
     video_request,
     video_shot,
@@ -45,9 +47,51 @@ def test_payload_round_trip_video() -> None:
         provider_options={"output_format": "mov"},
     )
     assert (
-        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, request_to_payload(original))
+        request_from_payload(
+            KIND_VIDEO, OPERATION_GENERATE, request_to_payload(original), has_source=False
+        )
         == original
     )
+
+
+def test_an_edit_round_trips_with_its_range_in_the_snapshot() -> None:
+    """编辑段的区间进请求快照（snake_case，与转发的字段同名风格），有来源时读回成编辑段。"""
+
+    original = edit_request(range_start_ms=500, range_end_ms=2500)
+    payload = request_to_payload(original)
+
+    assert (payload["range_start_ms"], payload["range_end_ms"]) == (500, 2500)
+    restored = request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=True)
+    assert isinstance(restored, VideoEditRequest)
+    assert restored == original
+
+
+def test_an_edit_snapshot_without_its_range_fails_loudly() -> None:
+    payload = request_to_payload(edit_request())
+    del payload["range_end_ms"]
+
+    with pytest.raises(ValidationFailed, match="形状不合法"):
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=True)
+
+
+def test_a_take_snapshot_with_a_range_fails_loudly() -> None:
+    """没有来源的视频 generate 是出片，请求里不该有区间。"""
+
+    payload = request_to_payload(edit_request())
+
+    with pytest.raises(ValidationFailed, match="形状不合法"):
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False)
+
+
+def test_an_image_snapshot_keeps_the_external_base_only_when_there_is_one() -> None:
+    external = image_request(source_url="https://elsewhere.test/base.png")
+
+    assert request_to_payload(external)["sourceUrl"] == "https://elsewhere.test/base.png"
+    assert "sourceUrl" not in request_to_payload(image_request())
+    restored = request_from_payload(
+        KIND_IMAGE, OPERATION_GENERATE, request_to_payload(external), has_source=False
+    )
+    assert restored == external
 
 
 @pytest.mark.parametrize("generate_audio", [True, False, None])
@@ -57,7 +101,9 @@ def test_video_audio_choice_survives_payload_round_trip(generate_audio: bool | N
     payload = request_to_payload(original)
 
     assert payload["generate_audio"] is generate_audio
-    assert request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload) == original
+    assert (
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False) == original
+    )
 
 
 def test_payload_round_trip_image() -> None:
@@ -68,7 +114,9 @@ def test_payload_round_trip_image() -> None:
         channel="pro",
     )
     assert (
-        request_from_payload(KIND_IMAGE, OPERATION_GENERATE, request_to_payload(original))
+        request_from_payload(
+            KIND_IMAGE, OPERATION_GENERATE, request_to_payload(original), has_source=False
+        )
         == original
     )
 
@@ -123,7 +171,7 @@ def test_a_composite_round_trips_and_keeps_open_ends_open() -> None:
         "end": None,
     }
     assert payload["userName"] == "logan"
-    assert request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, payload) == original
+    assert request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, payload, has_source=True) == original
 
 
 def test_a_composite_stored_before_user_names_reads_back_without_one() -> None:
@@ -142,26 +190,29 @@ def test_a_composite_stored_before_user_names_reads_back_without_one() -> None:
         ]
     }
 
-    restored = request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, stored)
+    restored = request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, stored, has_source=True)
 
     assert isinstance(restored, VideoComposeRequest)
     assert [segment.source_job_id for segment in restored.segments] == [base, edit]
     assert restored.user_name is None
 
 
-def test_the_stored_shape_is_chosen_by_kind_and_operation() -> None:
-    """同是 video，调模型的读成上游请求，本地拼接的读成合成；对不上的组合直接拒。"""
+def test_the_stored_shape_is_chosen_by_kind_operation_and_source() -> None:
+    """同是 video，调模型的读成上游请求（有来源的是编辑段），本地拼接的读成合成；对不上的组合直接拒。"""
 
     video = request_to_payload(video_request())
-    assert isinstance(
-        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, video), VideoGenerationIn
-    )
+    restored = request_from_payload(KIND_VIDEO, OPERATION_GENERATE, video, has_source=False)
+    assert type(restored) is VideoGenerationIn
     with pytest.raises(ValidationFailed, match="形状不合法"):
-        request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, video)
+        request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, video, has_source=True)
     with pytest.raises(ValidationFailed, match="未知的生成类型"):
-        request_from_payload(KIND_IMAGE, OPERATION_COMPOSE, request_to_payload(image_request()))
+        request_from_payload(
+            KIND_IMAGE, OPERATION_COMPOSE, request_to_payload(image_request()), has_source=True
+        )
     with pytest.raises(ValidationFailed, match="未知的生成类型"):
-        request_from_payload("clip", OPERATION_COMPOSE, request_to_payload(compose_request()))
+        request_from_payload(
+            "clip", OPERATION_COMPOSE, request_to_payload(compose_request()), has_source=True
+        )
 
 
 def test_an_enhancement_is_a_video_stored_as_sent() -> None:
@@ -183,10 +234,10 @@ def test_an_enhancement_is_a_video_stored_as_sent() -> None:
         "video_url": "https://cdn.test/take.mp4",
         "user_name": "logan",
     }
-    assert request_from_payload(KIND_VIDEO, OPERATION_ENHANCE, payload) == original
+    assert request_from_payload(KIND_VIDEO, OPERATION_ENHANCE, payload, has_source=True) == original
     for kind in (KIND_WHOLE_FILM, KIND_IMAGE):
         with pytest.raises(ValidationFailed, match="未知的生成类型"):
-            request_from_payload(kind, OPERATION_ENHANCE, payload)
+            request_from_payload(kind, OPERATION_ENHANCE, payload, has_source=True)
 
 
 _SOURCE = str(uuid.uuid4())
@@ -263,14 +314,14 @@ def test_cuts_and_uploads_have_no_request(kind: str, operation: str) -> None:
     """切图与上传创建即完成，没有发给执行方的输入：读回 None，存着一份请求就是持久化坏了。"""
 
     assert request_to_payload(None) is None
-    assert request_from_payload(kind, operation, None) is None
+    assert request_from_payload(kind, operation, None, has_source=False) is None
     with pytest.raises(ValidationFailed):
-        request_from_payload(kind, operation, {"prompt": "x"})
+        request_from_payload(kind, operation, {"prompt": "x"}, has_source=False)
 
 
 def test_a_video_cut_is_not_a_record_we_know() -> None:
     with pytest.raises(ValidationFailed, match="未知的生成类型"):
-        request_from_payload(KIND_VIDEO, OPERATION_CUT, None)
+        request_from_payload(KIND_VIDEO, OPERATION_CUT, None, has_source=True)
 
 
 @pytest.mark.parametrize(
@@ -283,7 +334,7 @@ def test_a_video_cut_is_not_a_record_we_know() -> None:
 )
 def test_records_that_call_an_executor_must_have_a_request(kind: str, operation: str) -> None:
     with pytest.raises(ValidationFailed):
-        request_from_payload(kind, operation, None)
+        request_from_payload(kind, operation, None, has_source=False)
 
 
 # --- 结构化镜头组 shot ------------------------------------------------------------
@@ -296,9 +347,9 @@ def test_shot_is_assembled_into_the_prompt_and_both_are_stored() -> None:
     payload = request_to_payload(original)
     assert payload["prompt"] == SHOT_PROMPT
     assert payload["shot"]["timeline"][0]["image_indexes"] == [1, 2]
-    assert request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload) == original, (
-        "读回时两者都在且一致"
-    )
+    assert (
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False) == original
+    ), "读回时两者都在且一致"
 
 
 def test_a_stored_prompt_assembled_by_an_older_rule_reads_back_as_stored() -> None:
@@ -309,7 +360,7 @@ def test_a_stored_prompt_assembled_by_an_older_rule_reads_back_as_stored() -> No
     )
     payload["prompt"] = LEGACY_SHOT_PROMPT
 
-    restored = request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload)
+    restored = request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False)
 
     assert isinstance(restored, VideoGenerationIn)
     assert restored.prompt == LEGACY_SHOT_PROMPT
@@ -324,7 +375,7 @@ def test_a_stored_shot_without_its_prompt_fails_loudly() -> None:
     payload["prompt"] = None
 
     with pytest.raises(ValidationFailed, match="没有 prompt"):
-        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload)
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False)
 
 
 def test_a_new_request_must_send_the_prompt_the_current_rule_assembles() -> None:
@@ -538,7 +589,7 @@ def test_non_http_reference_url_is_rejected(url: str) -> None:
 def test_damaged_persisted_shape_fails_loudly(damaged: dict[str, object]) -> None:
 
     with pytest.raises(ValidationFailed, match="形状不合法"):
-        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, damaged)
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, damaged, has_source=False)
 
 
 def test_bad_channel_is_rejected() -> None:

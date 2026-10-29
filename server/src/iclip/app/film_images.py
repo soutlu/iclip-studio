@@ -66,7 +66,7 @@ def _node_job(job: GenerationJob) -> NodeImageJob:
     return NodeImageJob(
         job_id=job.id,
         status=job.status,
-        output_url=job.output_url,
+        output_url=job.output.url,
         error_message=job.error_message,
     )
 

@@ -139,7 +139,7 @@ async def image_uploads(pg_url: str) -> list[tuple[uuid.UUID, str]]:
     async with connected(pg_url) as conn:
         rows = await conn.execute(
             text(
-                "SELECT owner_user_id, output_url FROM iclip.generation_jobs "
+                "SELECT owner_user_id, output ->> 'url' FROM iclip.generation_jobs "
                 "WHERE operation = 'upload' AND kind = 'image'"
             )
         )

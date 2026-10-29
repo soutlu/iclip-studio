@@ -170,7 +170,7 @@ def _job_view(job: GenerationJob) -> ImageJob:
         job_id=job.id,
         status=job.status,
         channel=request.channel,
-        output_url=job.output_url,
+        output_url=job.output.url,
         error_code=job.error_code,
         error_message=job.error_message,
     )

@@ -35,7 +35,7 @@ from iclip.capabilities.workspace.capability import Workspace
 from iclip.capabilities.workspace.ports import ImageInfo, MediaProbeFailed
 from iclip.common.errors import ValidationFailed
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
-from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
@@ -557,7 +557,7 @@ async def test_cut_cells_are_recorded_against_their_grid_under_the_run_principal
         owner_user_id=owner,
         conversation_id=uuid.uuid4(),
         task_id=uuid.uuid4(),
-        output_url="https://cdn.test/grid.png",
+        output=GenerationOutput(url="https://cdn.test/grid.png"),
     )
     repo = InMemoryGenerationRepository([grid])
     adapter = GenerationsAdapter(cast("GenerationService", object()), SettledRecords(repo))
@@ -566,7 +566,7 @@ async def test_cut_cells_are_recorded_against_their_grid_under_the_run_principal
     await adapter.record_cuts(cutter(owner), grid.id, urls)
 
     cells = [job for job in repo.jobs.values() if job.operation == "cut"]
-    assert [job.output_url for job in cells] == urls
+    assert [job.output.url for job in cells] == urls
     assert {
         (
             job.kind,
@@ -590,7 +590,9 @@ async def test_cutting_from_anything_but_a_finished_image_is_a_bug(grid_state: s
         make_job(image_request(), owner_user_id=owner)
         if grid_state == "还没完成"
         else make_job(
-            status=STATUS_COMPLETED, owner_user_id=owner, output_url="https://cdn.test/take.mp4"
+            status=STATUS_COMPLETED,
+            owner_user_id=owner,
+            output=GenerationOutput(url="https://cdn.test/take.mp4"),
         )
     )
     repo = InMemoryGenerationRepository([grid])
