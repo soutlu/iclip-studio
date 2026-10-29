@@ -491,6 +491,39 @@ test('选中：普通点击只选当前镜头，Shift 点击扩选；键盘左�
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
 })
 
+test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟着变；提交的区间就是选区', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1335, height: 880 })
+  const dialog = await openEditor(page)
+  await waitForShots(dialog)
+  await shot(dialog, 2).click()
+  await expectCard(dialog, '镜头 2 · 视频生成', '原片 1.0 – 2.0 秒 · 视频和原声一起重做')
+  await requestBox(dialog).fill('换成黄昏的暖光')
+  const label = dialog.getByText(/^原片 · 镜头/)
+  await expect(label).toContainText('1.0 秒 · 选区 1.0–2.0')
+
+  // 拖到 3.5 秒：离镜头分界都远，不吸附；覆盖到镜头 2–4，舞台停在结尾那一帧
+  const end = timelineOf(dialog).getByRole('slider', { name: '裁剪结尾', exact: true })
+  const release = await holdDrag(page, dialog, end, 3.5)
+  await expectCard(dialog, '镜头 2–4 · 视频生成', '原片 1.0 – 3.5 秒 · 视频和原声一起重做')
+  await expect(label).toContainText('选区 1.0–3.5')
+  await expect(label).toHaveText(/^原片 · 镜头 2–4/)
+  await release()
+  await expect(requestBox(dialog)).toHaveText('换成黄昏的暖光')
+  await expect(shot(dialog, 4)).toHaveAttribute('aria-pressed', 'true')
+  await expect(shot(dialog, 5)).toHaveAttribute('aria-pressed', 'false')
+
+  const selectedEnd = Number(await end.getAttribute('aria-valuenow'))
+  expect(selectedEnd).toBeCloseTo(3.5, 1)
+  const { body } = await submitEdit(page, dialog)
+  expect(body['range_start_ms']).toBe(1000)
+  // 把手的读数取到 0.01 秒
+  expect(Math.abs(Number(body['range_end_ms']) - selectedEnd * 1000)).toBeLessThanOrEqual(5)
+  // 编辑轨上按这个区间摆，名字按碰到的镜头叫
+  await expect(lane(dialog).getByRole('button', { name: '镜头 2–4 · 生成中' })).toBeVisible()
+})
+
 test('点镜头只选中不播放、播放头在选区开头；空格从播放头播、再按暂停，焦点在镜头上也不改选中', async ({
   page,
 }) => {

@@ -397,14 +397,24 @@
   border-radius: var(--radius-xs);
 }
 
-/* 草稿里选中那块两端的修剪把手，竖直居中在画面行。 */
+/* 草稿里选中那块、原片轨上选区两端的修剪把手，竖直居中在所在轨的画面行（草稿 48，原片 32）。 */
 .video-editor-timeline-trim {
+  position: absolute;
+  pointer-events: none;
+}
+
+.video-editor-timeline-trim.is-draft {
   --timeline-handle-top: 24px;
 
-  position: absolute;
   top: var(--timeline-track-top);
   height: var(--draft-height);
-  pointer-events: none;
+}
+
+.video-editor-timeline-trim.is-film {
+  --timeline-handle-top: 16px;
+
+  top: var(--film-top);
+  height: var(--film-height);
 }
 
 .video-editor-timeline-trim > .timeline-handle {

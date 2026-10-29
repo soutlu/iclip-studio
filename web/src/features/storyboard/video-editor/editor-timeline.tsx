@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import type { SecondsRange } from '../editing/clip'
 import type { PeaksState } from '../editing/media-analysis'
 import { shiftSelect, stepSelect } from '../editing/range-select'
 import { roundSeconds } from '../editing/time-label'
@@ -16,6 +17,7 @@ import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../ed
 import { arrowStep, releasePointer, useRovingFocus, type Edge } from '../editing/timeline-drag'
 import {
   draftLineOf,
+  runTrimSpecOf,
   shotItemId,
   snapAhead,
   snapNear,
@@ -25,7 +27,15 @@ import {
   type DraftItem,
   type TrimSpec,
 } from './draft'
-import { editTitleOf, lanePartsOf, type EditBlock, type LanePart, type Shot } from './edit-blocks'
+import {
+  coveredSpan,
+  editTitleOf,
+  lanePartsOf,
+  spanName,
+  type EditBlock,
+  type LanePart,
+  type Shot,
+} from './edit-blocks'
 import './editor-timeline.css'
 
 const secondsText = (value: number) => value.toFixed(1)
@@ -54,15 +64,21 @@ const clockIn = (lanes: HTMLElement | null, scale: number, clientX: number) => {
   return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
 }
 
-/** 剪辑视图里全页唯一的选中：原片轨上的几个镜头、草稿里的一块，或编辑轨上在跑的那条。 */
+/**
+ * 剪辑视图里全页唯一的选中：原片轨上的选区（原片时间，生成用；点镜头时按整镜头，拖两端把手可以停在镜头中间）、
+ * 草稿里的一块，或编辑轨上在跑的那条。
+ */
 export type Selection =
-  | { kind: 'shots'; nos: readonly number[] }
+  | ({ kind: 'run' } & SecondsRange)
   | { kind: 'draft'; id: string }
   | { kind: 'running'; id: string }
   | undefined
 
 /** 修剪把手落到的新起止（按这一块来源自己的时间）。 */
 export type TrimChange = { id: string; edge: Edge; t0: number; t1: number }
+
+/** 原片选区的把手落到的新起止（原片时间）。 */
+export type RunChange = SecondsRange & { edge: Edge }
 
 type ClipsTimelineProps = {
   rootUrl: string
@@ -75,12 +91,17 @@ type ClipsTimelineProps = {
   shotOn: (no: number) => boolean
   isPicked: (editId: string, seg: number) => boolean
   selection: Selection
-  /** 播放头的合成时间。 */
+  /** 播放头的时刻：草稿预览时是合成时间，原片预览时是原片时间（见 `clockOn`）。 */
   clock: number
+  /** 播放头按哪种时间放：两种都用同一个每秒像素。标尺始终按合成时间定位。 */
+  clockOn: 'draft' | 'source'
   peaksOf: (url: string) => PeaksState
+  /** 在标尺上按合成时间定位。 */
   onSeek: (clock: number) => void
   onScrub: () => void
-  onSelectShots: (nos: readonly number[]) => void
+  /** 点镜头、Shift 点、方向键：按整镜头选中这一串，为 undefined 时清掉选区。 */
+  onSelectRun: (run: SecondsRange | undefined) => void
+  onTrimRun: (change: RunChange) => void
   onSelectDraft: (id: string) => void
   onSelectRunning: (id: string) => void
   onToggleShot: (no: number) => void
@@ -93,17 +114,24 @@ type ClipsTimelineProps = {
 
 type Hover = { track: 'draft' | 'film' | 'edit'; id: string }
 
+/** 修剪把手落到新起止时交给谁：草稿里的一块，或原片选区。 */
+type TrimEmit = (edge: Edge, range: { t0: number; t1: number }) => void
+
 type Drag = {
-  id: string
+  /** 拖的是哪一对把手：草稿块的 id，或原片选区的 {@link RUN_HANDLES}。 */
+  key: string
   edge: Edge
   pointerId: number
   x0: number
   from: number
   pps: number
   spec: TrimSpec
+  emit: TrimEmit
   /** 按下时轨道区铺了多少秒：拖动中不比它窄，免得滚到最右时内容变短、整条时间线在指针下跳。 */
   hold: number
 }
+
+const RUN_HANDLES = 'run'
 
 /** 横向位置：`at` 起、长 `len` 秒，换算成像素交给 CSS（每秒像素 `--pps` 只由原片时长与可视宽定）。 */
 const placed = (at: number, len: number, row?: number): CSSProperties =>
@@ -120,7 +148,8 @@ const partPrefix = (part: LanePart) =>
 
 /**
  * 剪辑视图的时间线，三条轨自上而下：草稿（要合成的内容，按合成时间首尾相接）、原片（全部镜头，按原片时间）、
- * 编辑（编辑片段对准它的生成区间，完成的按关键帧切段）。标尺与播放头属于草稿；原片轨、编辑轨的位置只随原片变。
+ * 编辑（编辑片段对准它的生成区间，完成的按关键帧切段）。标尺属于草稿；只有一根播放头，草稿预览时按合成时间、
+ * 原片预览时按原片时间放。原片轨、编辑轨的位置只随原片变。
  */
 export function ClipsTimeline({
   rootUrl,
@@ -132,10 +161,12 @@ export function ClipsTimeline({
   isPicked,
   selection,
   clock,
+  clockOn,
   peaksOf,
   onSeek,
   onScrub,
-  onSelectShots,
+  onSelectRun,
+  onTrimRun,
   onSelectDraft,
   onSelectRunning,
   onToggleShot,
@@ -151,7 +182,7 @@ export function ClipsTimeline({
   const [drag, setDrag] = useState<Drag>()
   const total = totalOf(items)
   const content = Math.max(duration, total, drag?.hold ?? 0)
-  const bounded = Math.max(0, Math.min(total, clock))
+  const bounded = Math.max(0, Math.min(clockOn === 'source' ? duration : total, clock))
   const parts = lanePartsOf(blocks)
   const rows = Math.max(1, ...blocks.map((block) => block.row + 1))
   const blockOf = (id: string) => blocks.find((block) => block.id === id)
@@ -164,23 +195,34 @@ export function ClipsTimeline({
     return width > 0 ? width / content : 1
   }
 
-  // ---- 原片轨的选区：整镜头，Shift 扩选，方向键挪 ----
+  // ---- 原片轨的选区：点镜头、Shift 扩选、方向键都按整镜头算，覆盖到的镜头碰到一部分也算 ----
   const order = shots.map((shot) => shot.no)
-  const chosen = selection?.kind === 'shots' ? selection.nos : []
+  const run = selection?.kind === 'run' ? selection : undefined
+  const covered = run === undefined ? undefined : coveredSpan(shots, run)
+  const chosen =
+    covered === undefined ? [] : order.filter((no) => covered.from <= no && no <= covered.to)
+  /** 按整镜头选中 `nos` 这一串连续的镜头。 */
+  const runOf = (nos: readonly number[]): SecondsRange | undefined => {
+    const first = shotOf(nos[0] ?? 0)
+    const last = shotOf(nos.at(-1) ?? 0)
+    return first === undefined || last === undefined
+      ? undefined
+      : { start: first.start, end: last.end }
+  }
   const roving = useRovingFocus(
     shots.map((shot) => shotItemId(shot.no)),
     chosen[0] === undefined ? undefined : shotItemId(chosen[0]),
   )
   const clickShot = (no: number, extend: boolean) => {
     roving.remember(shotItemId(no))
-    onSelectShots(extend ? shiftSelect(order, chosen, no) : [no])
+    onSelectRun(runOf(extend ? shiftSelect(order, chosen, no) : [no]))
   }
   const shotKeyDown = (event: KeyboardEvent<HTMLButtonElement>, no: number) => {
     const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : undefined
     if (direction === undefined) return
     event.preventDefault()
     const next = stepSelect(order, chosen, no, direction, event.shiftKey)
-    onSelectShots(next.selection)
+    onSelectRun(runOf(next.selection))
     roving.focus(shotItemId(next.focus))
   }
 
@@ -220,12 +262,10 @@ export function ClipsTimeline({
   })
 
   // ---- 选中描边：也是弹出卡的定位锚点 ----
-  const firstShot = shotOf(chosen[0] ?? 0)
-  const lastShot = shotOf(chosen.at(-1) ?? 0)
   const runningPart = selection?.kind === 'running' ? partOf(selection.id) : undefined
   const ring =
-    firstShot !== undefined && lastShot !== undefined
-      ? { track: 'is-film', style: placed(firstShot.start, lastShot.end - firstShot.start) }
+    run !== undefined
+      ? { track: 'is-film', style: placed(run.start, run.end - run.start) }
       : selectedItem !== undefined
         ? { track: 'is-draft', style: placed(selectedItem.at, selectedItem.d) }
         : runningPart !== undefined
@@ -235,45 +275,61 @@ export function ClipsTimeline({
             }
           : undefined
 
-  // ---- 草稿里选中那块的修剪把手 ----
-  const pressTrim = (event: PointerEvent<HTMLButtonElement>, item: DraftItem, edge: Edge) => {
+  // ---- 修剪把手：草稿里选中的那块，与原片轨上的选区，同一套拖动与方向键 ----
+  const pressTrim = (
+    event: PointerEvent<HTMLButtonElement>,
+    key: string,
+    spec: TrimSpec,
+    edge: Edge,
+    emit: TrimEmit,
+  ) => {
     if (event.button !== 0) return
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const spec = trimSpecOf(item)
     setDrag({
-      id: item.id,
+      key,
       edge,
       pointerId: event.pointerId,
       x0: event.clientX,
       from: edge === 'end' ? spec.t1 : spec.t0,
       pps: ppsNow(),
       spec,
+      emit,
       hold: content,
     })
     // 按下就把舞台换到这一端的画面
-    onTrim({ id: item.id, edge, t0: spec.t0, t1: spec.t1 })
+    emit(edge, { t0: spec.t0, t1: spec.t1 })
   }
   const moveTrim = (event: PointerEvent<HTMLButtonElement>) => {
     if (drag === undefined || drag.pointerId !== event.pointerId) return
     const time = drag.from + (event.clientX - drag.x0) / drag.pps
-    const range = trimTo(drag.spec, drag.edge, time, snapNear(drag.spec.snaps, drag.pps))
-    onTrim({ id: drag.id, edge: drag.edge, ...range })
+    drag.emit(drag.edge, trimTo(drag.spec, drag.edge, time, snapNear(drag.spec.snaps, drag.pps)))
   }
   const endTrim = (event: PointerEvent<HTMLButtonElement>) => {
     if (drag === undefined || drag.pointerId !== event.pointerId) return
     releasePointer(event)
     setDrag(undefined)
   }
-  const keyTrim = (event: KeyboardEvent<HTMLButtonElement>, item: DraftItem, edge: Edge) => {
+  const keyTrim = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    spec: TrimSpec,
+    edge: Edge,
+    emit: TrimEmit,
+  ) => {
     const step = arrowStep(event)
     if (step === undefined) return
     event.preventDefault()
-    const spec = trimSpecOf(item)
     const current = edge === 'end' ? spec.t1 : spec.t0
     const snap = snapAhead(spec.snaps, current, step > 0 ? 1 : -1, ppsNow())
-    onTrim({ id: item.id, edge, ...trimTo(spec, edge, current + step, snap) })
+    emit(edge, trimTo(spec, edge, current + step, snap))
   }
+  const pressedEdge = (key: string) => (drag?.key === key ? drag.edge : undefined)
+  const draftSpec = selectedItem === undefined ? undefined : trimSpecOf(selectedItem)
+  const emitDraft: TrimEmit = (edge, range) => {
+    if (selectedItem !== undefined) onTrim({ id: selectedItem.id, edge, ...range })
+  }
+  const runSpec = run === undefined ? undefined : runTrimSpecOf(run, shots, duration)
+  const emitRun: TrimEmit = (edge, { t0, t1 }) => onTrimRun({ edge, start: t0, end: t1 })
 
   const draftName = (item: DraftItem) => {
     if (item.kind === 'shot') return `镜头 ${item.no} · ${draftLineOf(item)}`
@@ -464,35 +520,43 @@ export function ClipsTimeline({
             />
           )}
 
-          {selectedItem === undefined ? null : (
+          {selectedItem === undefined || draftSpec === undefined ? null : (
             <span
-              className="video-editor-timeline-trim"
+              className="video-editor-timeline-trim is-draft"
               key={selectedItem.id}
               style={placed(selectedItem.at, selectedItem.d)}
             >
-              {(['start', 'end'] as const).map((edge) => {
-                const spec = trimSpecOf(selectedItem)
-                return (
-                  <TrimHandle
-                    bounds={
-                      edge === 'start'
-                        ? { min: spec.lo, max: spec.t1 - spec.min }
-                        : { min: spec.t0 + spec.min, max: spec.hi }
-                    }
-                    edge={edge}
-                    key={edge}
-                    onKeyDown={(event) => keyTrim(event, selectedItem, edge)}
-                    onPointerCancel={endTrim}
-                    onPointerDown={(event) => pressTrim(event, selectedItem, edge)}
-                    onPointerMove={moveTrim}
-                    onPointerUp={endTrim}
-                    pressed={drag?.id === selectedItem.id && drag.edge === edge}
-                    style={edge === 'start' ? { left: 0 } : { left: '100%' }}
-                    value={edge === 'start' ? spec.t0 : spec.t1}
-                    valueText={draftLineOf(selectedItem)}
-                  />
-                )
-              })}
+              <TrimPair
+                onKeyDown={(event, edge) => keyTrim(event, draftSpec, edge, emitDraft)}
+                onPointerDown={(event, edge) =>
+                  pressTrim(event, selectedItem.id, draftSpec, edge, emitDraft)
+                }
+                onPointerEnd={endTrim}
+                onPointerMove={moveTrim}
+                pressed={pressedEdge(selectedItem.id)}
+                spec={draftSpec}
+                valueText={draftLineOf(selectedItem)}
+              />
+            </span>
+          )}
+
+          {run === undefined || covered === undefined || runSpec === undefined ? null : (
+            <span
+              className="video-editor-timeline-trim is-film"
+              key={RUN_HANDLES}
+              style={placed(run.start, run.end - run.start)}
+            >
+              <TrimPair
+                onKeyDown={(event, edge) => keyTrim(event, runSpec, edge, emitRun)}
+                onPointerDown={(event, edge) =>
+                  pressTrim(event, RUN_HANDLES, runSpec, edge, emitRun)
+                }
+                onPointerEnd={endTrim}
+                onPointerMove={moveTrim}
+                pressed={pressedEdge(RUN_HANDLES)}
+                spec={runSpec}
+                valueText={`${spanName(covered)} · 原片 ${secondsText(run.start)} – ${secondsText(run.end)} 秒`}
+              />
             </span>
           )}
 
@@ -501,6 +565,49 @@ export function ClipsTimeline({
       </div>
     </section>
   )
+}
+
+type TrimPairProps = {
+  spec: TrimSpec
+  valueText: string
+  /** 正按着的那一端。 */
+  pressed: Edge | undefined
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, edge: Edge) => void
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>, edge: Edge) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnd: (event: PointerEvent<HTMLButtonElement>) => void
+}
+
+/** 一对修剪把手，放在按起止摆好的容器两端：草稿里选中的那块与原片选区共用。 */
+function TrimPair({
+  spec,
+  valueText,
+  pressed,
+  onKeyDown,
+  onPointerDown,
+  onPointerMove,
+  onPointerEnd,
+}: TrimPairProps) {
+  return (['start', 'end'] as const).map((edge) => (
+    <TrimHandle
+      bounds={
+        edge === 'start'
+          ? { min: spec.lo, max: spec.t1 - spec.min }
+          : { min: spec.t0 + spec.min, max: spec.hi }
+      }
+      edge={edge}
+      key={edge}
+      onKeyDown={(event) => onKeyDown(event, edge)}
+      onPointerCancel={onPointerEnd}
+      onPointerDown={(event) => onPointerDown(event, edge)}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      pressed={pressed === edge}
+      style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+      value={edge === 'start' ? spec.t0 : spec.t1}
+      valueText={valueText}
+    />
+  ))
 }
 
 type EyeProps = { label: string; on: boolean; onToggle: () => void }

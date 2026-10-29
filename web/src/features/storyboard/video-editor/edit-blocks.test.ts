@@ -103,7 +103,7 @@ describe('laneEditsOf', () => {
 })
 
 describe('failedEditsOf', () => {
-  it('每串镜头只看最近的一次：它失败了才算，之后又提交过（在跑、完成、再失败）前面的就不算', () => {
+  it('每个区间只看最近的一次：它失败了才算，之后对完全相同的区间又提交过（在跑、完成、再失败）前面的就不算', () => {
     const superseded = edit([1, 3], failed)
     const rerun = edit([1, 3], { status: 'submitted', outputUrl: null })
     const replaced = edit([0, 1], failed)
@@ -114,6 +114,14 @@ describe('failedEditsOf', () => {
         (item) => item.job.id,
       ),
     ).toEqual([again.id, pending.id])
+  })
+
+  it('碰到的镜头相同、区间不同的生成不算重新提交', () => {
+    const midShot = edit([1.5, 2.6], failed)
+    const wholeShots = edit([1, 3], { status: 'submitted', outputUrl: null })
+    expect(failedEditsOf('root', [midShot, wholeShots], shots).map((item) => item.job.id)).toEqual([
+      midShot.id,
+    ])
   })
 })
 

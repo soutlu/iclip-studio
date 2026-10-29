@@ -12,7 +12,7 @@ import {
   pickPart,
   putShot,
   restoreDraft,
-  shotClock,
+  runTrimSpecOf,
   shotOn,
   snapAhead,
   snapNear,
@@ -101,14 +101,6 @@ describe('排序', () => {
       [5.5, 1],
     ])
   })
-
-  it('不在草稿里的镜头按排序它会放进去的位置', () => {
-    const draft = pickAll(EMPTY_DRAFT, A)
-    const items = draftItemsOf(source, draft)
-    expect(shotClock(source, draft, items, 2)).toBe(1)
-    // 镜头 5 关着：排在 A2 之后
-    expect(shotClock(source, draft, items, 5)).toBe(5.5)
-  })
 })
 
 describe('镜头的开关', () => {
@@ -181,6 +173,23 @@ describe('修剪', () => {
     expect(snapAhead([1, 2], 1.95, 1, 100)(2.05)).toBe(2)
     // 刚离开 1 往右：不吸回 1
     expect(snapAhead([1, 2], 1, 1, 100)(1.1)).toBe(1.1)
+  })
+
+  it('原片选区在整条原片之内，可以停在镜头中间、越过镜头分界，最短 1 秒，吸附镜头分界与片尾', () => {
+    const spec = runTrimSpecOf({ start: 1, end: 3 }, source.shots, source.duration)
+    expect(spec.snaps).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(trimTo(spec, 'end', 2.5, none)).toEqual({ t0: 1, t1: 2.5 })
+    expect(trimTo(spec, 'end', 4.6, none)).toEqual({ t0: 1, t1: 4.6 })
+    expect(trimTo(spec, 'end', 1.3, none)).toEqual({ t0: 1, t1: 2 })
+    expect(trimTo(spec, 'end', 9, none)).toEqual({ t0: 1, t1: 6 })
+    expect(trimTo(spec, 'start', -1, none)).toEqual({ t0: 0, t1: 3 })
+    expect(trimTo(spec, 'end', 3.96, snapNear(spec.snaps, 100))).toEqual({ t0: 1, t1: 4 })
+  })
+
+  it('原片选区本身不到 1 秒时只能拉长', () => {
+    const spec = runTrimSpecOf({ start: 0, end: 0.5 }, source.shots, source.duration)
+    expect(trimTo(spec, 'end', 0.2, none)).toEqual({ t0: 0, t1: 0.5 })
+    expect(trimTo(spec, 'end', 1.4, none)).toEqual({ t0: 0, t1: 1.4 })
   })
 })
 

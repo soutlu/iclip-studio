@@ -162,7 +162,8 @@ it('外部切换播放：从播放头播到结尾停下，停在结尾再播从�
   expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
   expect(started).toHaveBeenCalledTimes(1)
   await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
-  expect(active.currentTime).toBe(6.5)
+  // 定位到某一刻时媒体往后多走 0.001 秒，停在帧边界上也显示这一刻的帧
+  expect(active.currentTime).toBeCloseTo(6.501, 6)
   active.currentTime = 9
   act(() => frames.at(-1)?.(100))
   expect(time).toHaveBeenLastCalledWith(4)
@@ -172,9 +173,43 @@ it('外部切换播放：从播放头播到结尾停下，停在结尾再播从�
   rerender(<EditorPreview {...props} current={current()} currentTime={4} />)
   act(() => handle.current?.toggle())
   expect(time).toHaveBeenLastCalledWith(0)
-  expect(active.currentTime).toBe(5)
+  expect(active.currentTime).toBeCloseTo(5.001, 6)
   expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
   act(() => handle.current?.toggle())
   expect(screen.getByRole('button', { name: '播放' })).toBeVisible()
   expect(started).toHaveBeenCalledTimes(2)
+})
+
+it('定位：媒体定到这一刻往后 0.001 秒，停在结尾一端时往前 0.001 秒；对外报的时间不变', () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
+  const time = vi.fn()
+  const handle = createRef<EditorPreviewHandle>()
+  renderWithTooltip(
+    <EditorPreview
+      current={layoutPlay([{ mediaUrl: 'https://example.com/clip.mp4', start: 5, end: 9 }])}
+      currentTime={0}
+      contentKey="current"
+      poster={undefined}
+      backdrop={undefined}
+      onTime={time}
+      onPlay={() => {}}
+      overlay={null}
+      readout={null}
+      timeline={null}
+      barStart={null}
+      barNotice={null}
+      barTools={null}
+      barEnd={null}
+      ref={handle}
+    />,
+  )
+  const active = screen.getByLabelText<HTMLVideoElement>('视频播放器')
+  fireEvent.loadedMetadata(active)
+  act(() => handle.current?.previewAt(2))
+  expect(active.currentTime).toBeCloseTo(7.001, 6)
+  expect(time).toHaveBeenLastCalledWith(2)
+  act(() => handle.current?.previewAt(3, 'end'))
+  expect(active.currentTime).toBeCloseTo(7.999, 6)
+  expect(time).toHaveBeenLastCalledWith(3)
 })
