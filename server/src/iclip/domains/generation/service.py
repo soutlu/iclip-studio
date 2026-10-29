@@ -19,6 +19,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationOutput,
     InFlightPhase,
     Inheritance,
     is_base_master,
@@ -51,6 +52,7 @@ from iclip.domains.generation.schemas import (
     VideoComposeIn,
     VideoComposeRequest,
     VideoEditIn,
+    VideoEditRequest,
     VideoEnhanceIn,
     VideoEnhanceRequest,
     VideoEnhanceResolution,
@@ -207,18 +209,18 @@ class GenerationService:
             )
             if clip is None:
                 raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
-        base_ms = base.duration_ms
+        base_ms = base.output.duration_ms
         if base_ms is None:
-            base_ms = await self._probe_duration(base.output_url, what="基底", job_id=base.id)
+            base_ms = await self._probe_duration(base.output.url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
         if clip is not None and spec.edit is not None:
-            clip_ms = await self._probe_duration(clip.output_url, what="参考片段", job_id=clip.id)
+            clip_ms = await self._probe_duration(clip.output.url, what="参考片段", job_id=clip.id)
             if not spec.edit.min_seconds * 1000 <= clip_ms <= spec.edit.max_seconds * 1000:
                 raise ValidationFailed(
                     f"{request.model} 编辑参考时长必须为 "
                     f"{spec.edit.min_seconds}–{spec.edit.max_seconds} 秒"
                 )
-        forwarded = VideoGenerationIn(
+        edit = VideoEditRequest(
             model=request.model,
             prompt=upstream.prompt(request.prompt),
             user_name=request.user_name,
@@ -227,10 +229,12 @@ class GenerationService:
             aspect_ratio=aspect_ratio,
             seconds=request.seconds,
             provider_options=options,
+            range_start_ms=request.range_start_ms,
+            range_end_ms=request.range_end_ms,
         )
         return await self._accept(
             principal,
-            forwarded,
+            edit,
             provider=self._video_provider_name,
             conversation_id=request.conversation_id,
             task_id=request.task_id,
@@ -238,8 +242,6 @@ class GenerationService:
             shot_index=base.shot_index,
             root_job_id=base.root_job_id or base.id,
             source_job_id=base.id,
-            range_start_ms=request.range_start_ms,
-            range_end_ms=request.range_end_ms,
         )
 
     async def submit_video_compose(
@@ -259,14 +261,14 @@ class GenerationService:
         segments: list[ComposeSegment] = []
         for position, segment in enumerate(request.segments, start=1):
             source = sources[segment.source_job_id]
-            if source.output_url is None:
+            if source.output.url is None:
                 raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
             if segment.end is not None:
-                check_segment_end(position, round(segment.end * 1000), source.duration_ms)
+                check_segment_end(position, round(segment.end * 1000), source.output.duration_ms)
             segments.append(
                 ComposeSegment(
                     source_job_id=source.id,
-                    url=source.output_url,
+                    url=source.output.url,
                     start=segment.start,
                     end=segment.end,
                 )
@@ -338,14 +340,13 @@ class GenerationService:
         )
         return await self._accept(
             principal,
-            settled,
+            settled.model_copy(update={"source_url": external}),
             provider=model,
             conversation_id=request.conversation_id,
             task_id=request.task_id,
             metadata=request.metadata,
             shot_index=None,
             source_job_id=base_id,
-            source_url=external,
         )
 
     async def find_conversation_image(
@@ -397,9 +398,6 @@ class GenerationService:
         shot_index: int | None,
         root_job_id: uuid.UUID | None = None,
         source_job_id: uuid.UUID | None = None,
-        source_url: str | None = None,
-        range_start_ms: int | None = None,
-        range_end_ms: int | None = None,
     ) -> GenerationJob:
         created = await self._queue_new(
             _pending_job(
@@ -413,9 +411,6 @@ class GenerationService:
                 shot_index=shot_index,
                 root_job_id=root_job_id,
                 source_job_id=source_job_id,
-                source_url=source_url,
-                range_start_ms=range_start_ms,
-                range_end_ms=range_end_ms,
             )
         )
         await self._note_conversation_active(created)
@@ -445,11 +440,11 @@ class GenerationService:
         )
         if video is None:
             raise NotFound(f"没有这次生成: {request.source_job_id}")
-        if not is_base_master(video) or video.output_url is None:
+        if not is_base_master(video) or video.output.url is None:
             raise ValidationFailed("只能识别素材片：已完成的出片或合成")
         return await self._queue_new(
             _pending_job(
-                SubtitleRequest(model=subtitles.model, video_url=video.output_url),
+                SubtitleRequest(model=subtitles.model, video_url=video.output.url),
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
                 provider=subtitles.provider,
@@ -462,11 +457,11 @@ class GenerationService:
         )
 
     async def transcribe_completed(self, job: GenerationJob) -> None:
-        if self._subtitles is None or not is_base_master(job) or job.output_url is None:
+        if self._subtitles is None or not is_base_master(job) or job.output.url is None:
             return
         await self._queue_new(
             _pending_job(
-                SubtitleRequest(model=self._subtitles.model, video_url=job.output_url),
+                SubtitleRequest(model=self._subtitles.model, video_url=job.output.url),
                 owner_user_id=job.owner_user_id,
                 api_key_id=job.api_key_id,
                 provider=self._subtitles.provider,
@@ -568,7 +563,7 @@ class GenerationService:
 
         enhance = self._require_enhance()
         source = await self._repo.get(request.source_job_id, owner=None)
-        if not _enhanceable(source) or source.output_url is None:
+        if not _enhanceable(source) or source.output.url is None:
             raise ValidationFailed("只有素材片（已完成的出片或合成）与导出完成的成片能做高清版")
         tiers = await self._enhance_tiers(enhance, source)
         if request.resolution not in tiers:
@@ -588,7 +583,7 @@ class GenerationService:
                     model=enhance.model,
                     resolution=request.resolution,
                     fps=enhance.fps,
-                    video_url=source.output_url,
+                    video_url=source.output.url,
                     user_name=request.user_name,
                 ),
                 owner_user_id=principal.user_id,
@@ -729,8 +724,8 @@ class GenerationService:
         )
         addresses: dict[uuid.UUID, str] = {}
         for job in jobs:
-            if job.source_url is not None:
-                addresses[job.id] = job.source_url
+            if isinstance(job.request, ImageGenerationIn) and job.request.source_url is not None:
+                addresses[job.id] = job.request.source_url
             elif job.source_job_id is not None and job.source_job_id in outputs:
                 addresses[job.id] = outputs[job.source_job_id]
         return addresses
@@ -797,7 +792,7 @@ def _enhanceable(job: GenerationJob) -> bool:
         job.kind == KIND_WHOLE_FILM
         and job.operation == OPERATION_RENDER
         and job.status == STATUS_COMPLETED
-        and job.output_url is not None
+        and job.output.url is not None
     )
 
 
@@ -850,9 +845,6 @@ def _pending_job(
     shot_index: int | None,
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
-    source_url: str | None = None,
-    range_start_ms: int | None = None,
-    range_end_ms: int | None = None,
 ) -> GenerationJob:
     """一条刚受理、还在排队的记录，种类与操作随请求类型定。"""
 
@@ -867,9 +859,6 @@ def _pending_job(
         shot_index=shot_index,
         root_job_id=root_job_id,
         source_job_id=source_job_id,
-        source_url=source_url,
-        range_start_ms=range_start_ms,
-        range_end_ms=range_end_ms,
         kind=request.kind,
         operation=request.operation,
         provider=provider,
@@ -877,7 +866,7 @@ def _pending_job(
         status=STATUS_PENDING,
         provider_task_id=None,
         provider_status=None,
-        output_url=None,
+        output=GenerationOutput(),
         error_code=None,
         error_message=None,
         created_at=now,
@@ -945,9 +934,9 @@ class SettledRecords:
         if job.operation != OPERATION_UPLOAD:
             raise RuntimeError(f"上传 {job.id} 撞上了一条 {job.kind} / {job.operation} 记录")
         url = _settled_url(job)
-        if job.content_md5 is None:
+        if job.output.content_md5 is None:
             return UploadRecord(url=url, object_upload_id=job.id)
-        first = await self._repo.find_video_upload_by_md5(job.content_md5)
+        first = await self._repo.find_video_upload_by_md5(job.output.content_md5)
         if first is None:
             raise RuntimeError(f"上传 {job.id} 按自己的 MD5 找不到视频上传记录")
         return UploadRecord(url=url, object_upload_id=first.id)
@@ -960,7 +949,7 @@ class SettledRecords:
             grid.kind == KIND_IMAGE
             and grid.operation == OPERATION_GENERATE
             and grid.status == STATUS_COMPLETED
-            and grid.output_url is not None
+            and grid.output.url is not None
         ):
             raise RuntimeError(f"生成记录 {grid_job_id} 不是一张已完成的宫格，不能从它切图")
         return await self._repo.create_settled(
@@ -1002,25 +991,24 @@ def _settled_job(
         source_job_id=source_job_id,
         kind=kind,
         operation=operation,
-        provider=operation,
+        provider=None,
         request=None,
         status=STATUS_COMPLETED,
         provider_task_id=None,
         provider_status=None,
-        output_url=url,
+        output=GenerationOutput(url=url, content_md5=content_md5),
         error_code=None,
         error_message=None,
         created_at=now,
         submitted_at=None,
         finished_at=now,
-        content_md5=content_md5,
     )
 
 
 def _settled_url(job: GenerationJob) -> str:
-    if job.output_url is None:
+    if job.output.url is None:
         raise RuntimeError(f"记录 {job.id} 创建即完成却没有产物地址")
-    return job.output_url
+    return job.output.url
 
 
 __all__ = [

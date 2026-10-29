@@ -14,7 +14,7 @@ from iclip.app.capability_table import build_capability_table
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
-from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
 from iclip.domains.identity.models import Principal
 from tests.helpers.fetch_url import as_is
@@ -71,7 +71,7 @@ def image_row(
         owner_user_id=OWNER,
         conversation_id=conversation,
         metadata=None if node is None else {FILM_NODE_KEY: node},
-        output_url=url,
+        output=GenerationOutput(url=url),
         created_at=moment,
         finished_at=moment,
     )
@@ -113,7 +113,7 @@ async def test_an_address_belongs_when_the_conversation_has_a_finished_image_at_
         operation=OPERATION_UPLOAD,
         status=STATUS_COMPLETED,
         owner_user_id=OWNER,
-        output_url="https://cdn.test/upload.png",
+        output=GenerationOutput(url="https://cdn.test/upload.png"),
     )
     adapter = FilmImagesAdapter(
         film_image_service(InMemoryGenerationRepository([edited, elsewhere, uploaded]))
@@ -140,7 +140,7 @@ async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
         owner_user_id=someone_else,
         conversation_id=CONVERSATION,
         metadata={FILM_NODE_KEY: "短发女生参考图"},
-        output_url="https://cdn.test/before-fork.png",
+        output=GenerationOutput(url="https://cdn.test/before-fork.png"),
         created_at=START,
         finished_at=START + timedelta(minutes=1),
     )
@@ -150,7 +150,7 @@ async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
         owner_user_id=someone_else,
         conversation_id=CONVERSATION,
         metadata={FILM_NODE_KEY: "短发女生参考图"},
-        output_url="https://cdn.test/after-fork.png",
+        output=GenerationOutput(url="https://cdn.test/after-fork.png"),
         created_at=START + timedelta(minutes=20),
         finished_at=START + timedelta(minutes=21),
     )

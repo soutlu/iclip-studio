@@ -20,11 +20,15 @@ from iclip.domains.generation.schemas import (
     GenerationKind,
     GenerationOperation,
     GenerationStatus,
+    SnakeModel,
     SubtitleSentence,
 )
 from iclip.domains.generation.stored_requests import GenerationRequest
 
 TERMINAL_STATUSES: Final = frozenset({STATUS_COMPLETED, STATUS_FAILED})
+
+REFERENCE_TRIAL_KEY: Final = "referenceId"
+"""参考视频试生成在 ``metadata`` 里记参考视频 id 的键；数据库按它建了索引。"""
 
 InFlightPhase = Literal["queued", "running"]
 """一批还没跑完的任务给人看的阶段：全在本系统排队是 queued，有一条已交给上游就是 running。"""
@@ -32,6 +36,19 @@ InFlightPhase = Literal["queued", "running"]
 Inheritance = Sequence[tuple[uuid.UUID, datetime]]
 """一段对话经分叉继承的边界对：沿分叉来源往上的每个祖先，配上这条链上它的下一级对话的
 建立时刻。祖先名下已完成、完成时刻不晚于边界的记录归这段对话继承。"""
+
+
+class GenerationOutput(SnakeModel):
+    """一条记录的产出，各项按种类有或没有；还没产出时是空对象。落库就是这个形状（snake_case 键），
+    值为空的顶层键不存，全空存 NULL。"""
+
+    url: str | None = None
+    watermark_url: str | None = None
+    """视频成功时上游发布的水印版地址；图片没有这一份。"""
+    duration_ms: int | None = None
+    content_md5: str | None = None
+    """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址。"""
+    sentences: tuple[SubtitleSentence, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,14 +62,15 @@ class GenerationJob:
     kind: GenerationKind
     operation: GenerationOperation
     """怎么执行：调模型、本地拼接、本地切图或用户上传。与 kind、有没有来源一起决定这一行是哪种记录。"""
-    provider: str
+    provider: str | None
+    """交给哪家执行方；切图与上传不交给执行方，为空。"""
     request: GenerationRequest | None
-    """发给执行方的输入；切图与上传没有，为空。"""
+    """受理时的请求快照；切图与上传没有，为空。"""
     status: GenerationStatus
     provider_task_id: str | None
     provider_status: str | None
     """Provider 原始状态，不映射为内部枚举。"""
-    output_url: str | None
+    output: GenerationOutput
     error_code: str | None
     error_message: str | None
     created_at: datetime
@@ -71,17 +89,6 @@ class GenerationJob:
 
     原作用于血缘与没有镜号时的分组。在分叉副本里剪继承来的出片，原作照样指源对话里那条。"""
     source_job_id: uuid.UUID | None = None
-    source_url: str | None = None
-    """帧图编辑的外部底图地址，与 ``source_job_id`` 恰好一个；其余行为空。"""
-    range_start_ms: int | None = None
-    range_end_ms: int | None = None
-    """编辑段在基底上改的那一段，毫秒；只有编辑段有。就是受理时请求给的区间，之后不改。"""
-    watermark_output_url: str | None = None
-    """视频成功时上游发布的水印版地址；图片没有这一份。"""
-    duration_ms: int | None = None
-    content_md5: str | None = None
-    """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址。"""
-    sentences: tuple[SubtitleSentence, ...] | None = None
 
 
 def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:
@@ -102,7 +109,7 @@ def is_base_master(job: GenerationJob) -> bool:
     return (
         job.kind == KIND_VIDEO
         and job.status == STATUS_COMPLETED
-        and job.output_url is not None
+        and job.output.url is not None
         and (
             job.operation == OPERATION_COMPOSE
             or (job.operation == OPERATION_GENERATE and job.source_job_id is None)
@@ -116,11 +123,12 @@ def is_finished_edit(job: GenerationJob) -> bool:
         and job.operation == OPERATION_GENERATE
         and job.source_job_id is not None
         and job.status == STATUS_COMPLETED
-        and job.output_url is not None
+        and job.output.url is not None
     )
 
 
 __all__ = [
+    "REFERENCE_TRIAL_KEY",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",
@@ -130,6 +138,7 @@ __all__ = [
     "GenerationJob",
     "GenerationKind",
     "GenerationOperation",
+    "GenerationOutput",
     "GenerationStatus",
     "InFlightPhase",
     "Inheritance",

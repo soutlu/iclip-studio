@@ -12,12 +12,10 @@ from typing import Final
 from pydantic import ValidationError
 
 from iclip.common.errors import ValidationFailed
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import REFERENCE_TRIAL_KEY, GenerationJob
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
-    KIND_VIDEO,
     MAX_PROMPT_CHARS,
-    OPERATION_GENERATE,
     STATUS_COMPLETED,
     STATUS_FAILED,
     VideoGenerationIn,
@@ -36,8 +34,6 @@ from iclip.platform.http import validation_error_detail
 
 TEST_VIDEO_MODEL: Final = "wan3.0-video-prime"
 TEST_VIDEO_RESOLUTION: Final = "480p"
-REFERENCE_KEY: Final = "referenceId"
-"""试生成记录的 ``metadata`` 里记参考视频 id 的键；资料库的成片素材按它把试生成排除在外。"""
 
 
 class GenerationTestVideos:
@@ -48,19 +44,12 @@ class GenerationTestVideos:
         self._generation = generation
 
     async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None:
-        found = await self._repo.list_for_owner(
-            owner=owner,
-            kind=KIND_VIDEO,
-            operation=OPERATION_GENERATE,
-            metadata={REFERENCE_KEY: str(reference_id)},
-            limit=1,
-        )
-        if not found:
+        job = await self._repo.latest_reference_trial(reference_id, owner=owner)
+        if job is None:
             return None
-        job = found[0]
         return TestVideoJob(
             status=_status(job),
-            url=job.output_url,
+            url=job.output.url,
             error_message=job.error_message,
             prompt=job.request.prompt if isinstance(job.request, VideoGenerationIn) else None,
             created_at=job.created_at,
@@ -89,7 +78,7 @@ class GenerationTestVideos:
                 aspect_ratio=aspect_ratio,
                 generate_audio=True,
                 user_name=user_name,
-                metadata={REFERENCE_KEY: str(reference_id)},
+                metadata={REFERENCE_TRIAL_KEY: str(reference_id)},
             )
         except ValidationError as exc:
             raise ValidationFailed(validation_error_detail(exc.errors())) from exc
@@ -107,7 +96,6 @@ def _status(job: GenerationJob) -> TestVideoStatus:
 
 
 __all__ = [
-    "REFERENCE_KEY",
     "TEST_VIDEO_MODEL",
     "TEST_VIDEO_RESOLUTION",
     "GenerationTestVideos",

@@ -56,7 +56,7 @@ class GenerationDraftReferences:
                 music is None
                 or music.kind != KIND_AUDIO
                 or music.status != STATUS_COMPLETED
-                or music.output_url is None
+                or music.output.url is None
             ):
                 raise ValidationFailed(
                     f"音乐 {document.music.job_id} 不是这段对话里一条已完成的音频记录"

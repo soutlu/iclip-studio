@@ -8,7 +8,11 @@ from typing import Any
 
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.domains.agents.transcript_api import LiveConnections
-from iclip.domains.generation.models import STATUS_SUBMITTED, STATUS_SUBMITTING
+from iclip.domains.generation.models import (
+    STATUS_SUBMITTED,
+    STATUS_SUBMITTING,
+    GenerationOutput,
+)
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
     image_request,
@@ -64,9 +68,10 @@ async def test_every_status_transition_of_a_video_job_is_announced_to_its_owner(
     await repo.record_progress(job.id, provider_status="running")
     await repo.mark_completed(
         job.id,
-        output_url="https://cdn.test/take.mp4",
+        output=GenerationOutput(
+            url="https://cdn.test/take.mp4", watermark_url="https://cdn.test/take-wm.mp4"
+        ),
         provider_status="succeeded",
-        watermark_output_url="https://cdn.test/take-wm.mp4",
     )
 
     assert [one[5:] for one in live.announced] == [

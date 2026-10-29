@@ -12,6 +12,7 @@ from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
     GenerationOperation,
+    GenerationOutput,
     GenerationStatus,
     InFlightPhase,
     Inheritance,
@@ -29,7 +30,7 @@ class GenerationRepository(Protocol):
         ...
 
     async def create_settled(self, jobs: Sequence[GenerationJob]) -> tuple[GenerationJob, ...]:
-        """一个事务里插入几行创建即完成的记录（切图、上传），产物地址照 job 写，建立与完成时刻都取
+        """一个事务里插入几行创建即完成的记录（切图、上传），产出照 job 写，建立与完成时刻都取
         数据库时钟。同 id 已存在就跳过、不覆盖，返回值里没有它；返回真正插进去的，与输入同序。"""
         ...
 
@@ -44,6 +45,7 @@ class GenerationRepository(Protocol):
         operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         """产物地址就是 ``output_url`` 的一条已完成的 ``kind`` 记录；给了 ``operation`` 就只找那一种。
+        水印版地址不算。
 
         范围与按对话列记录相同：按属主收敛、在 ``conversation_id`` 那段对话里的（为空就是没有对话的），
         并上经 ``inherited`` 继承来的。对上多条取最早建立的那条；一条都没有给 ``None``。"""
@@ -51,6 +53,13 @@ class GenerationRepository(Protocol):
 
     async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
         """记着这个 MD5 的视频上传里最早建立的那条（按建立时刻、id）；不按属主过滤，没有给 ``None``。"""
+        ...
+
+    async def latest_reference_trial(
+        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
+    ) -> GenerationJob | None:
+        """这个参考视频最近一条试生成（``metadata`` 里记着它的视频出片，按建立时刻、id 取最晚）；
+        按属主收敛，没有给 ``None``。"""
         ...
 
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
@@ -110,15 +119,12 @@ class GenerationRepository(Protocol):
         self,
         job_id: uuid.UUID,
         *,
-        output_url: str,
+        output: GenerationOutput,
         provider_status: str,
         provider_task_id: str | None = None,
-        watermark_output_url: str | None = None,
-        duration_ms: int | None = None,
         only_if_status: GenerationStatus | None = None,
     ) -> GenerationJob | None:
-        """记录成功终态。同步生成在此保存回执 id，并补齐尚未写入的 submitted_at；给了 ``duration_ms``
-        就记下产物时长。
+        """记录成功终态与产出。同步生成在此保存回执 id，并补齐尚未写入的 submitted_at。
 
         指定 only_if_status 时原子校验状态，不匹配返回 None，避免覆盖并发写入的结果。"""
         ...
@@ -151,10 +157,12 @@ class GenerationRepository(Protocol):
         *,
         provider_status: str,
         only_if_status: GenerationStatus | None = None,
+        skip_unchanged: bool = False,
     ) -> GenerationJob | None:
         """保存本次 Provider 状态；后续查询时间由队列管理。
 
-        指定 only_if_status 时原子校验状态，不匹配返回 None，表示这条已经不在预期状态上。"""
+        指定 only_if_status 时原子校验状态，不匹配返回 None，表示这条已经不在预期状态上。
+        ``skip_unchanged`` 为真时状态没变就不写，也返回 None。"""
         ...
 
     async def in_flight_by_conversation(

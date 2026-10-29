@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
+from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, GenerationOutput
 from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_ENHANCE
 from tests.helpers.fork_lineage import complete, finished, make_user
@@ -46,8 +46,7 @@ async def test_enhancements_of_a_take_and_of_a_film_round_trip_as_videos(
         await repo.mark_submitted(created.id, provider_task_id="e-1", provider_status="queued")
         await repo.mark_completed(
             created.id,
-            output_url=HD_URL,
-            watermark_output_url=HD_WATERMARK_URL,
+            output=GenerationOutput(url=HD_URL, watermark_url=HD_WATERMARK_URL),
             provider_status="succeeded",
         )
         read = await repo.get(created.id, owner=owner)
@@ -60,7 +59,7 @@ async def test_enhancements_of_a_take_and_of_a_film_round_trip_as_videos(
             None,
         )
         assert read.shot_index == source.shot_index
-        assert (read.status, read.output_url, read.watermark_output_url) == (
+        assert (read.status, read.output.url, read.output.watermark_url) == (
             STATUS_COMPLETED,
             HD_URL,
             HD_WATERMARK_URL,
@@ -119,5 +118,5 @@ async def test_enhancements_do_not_count_as_videos_in_flight_or_masters(
 
     assert await repo.in_flight_by_conversation([conversation], kind="video") == {}
     assert await repo.latest_master_by_conversation([conversation]) == {
-        conversation: take.output_url
+        conversation: take.output.url
     }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -11,7 +12,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import NotFound
+from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
@@ -23,7 +24,9 @@ from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
     GenerationOperation,
+    GenerationOutput,
 )
+from iclip.domains.generation.schemas import SubtitleSentence
 from iclip.domains.generation.stored_requests import GenerationRequest
 from tests.helpers.fork_lineage import (
     complete,
@@ -34,12 +37,14 @@ from tests.helpers.fork_lineage import (
 )
 from tests.helpers.generation import (
     compose_request,
+    edit_range,
     edit_request,
     image_request,
     make_composite,
     make_cut,
     make_edit,
     make_job,
+    make_subtitle,
     make_upload,
     video_request,
 )
@@ -88,13 +93,14 @@ async def test_state_transitions_round_trip_through_the_table(engine: AsyncEngin
 
     completed = await repo.mark_completed(
         job.id,
-        output_url="https://cdn.test/v.mp4",
-        watermark_output_url="https://cdn.test/v-wm.mp4",
+        output=GenerationOutput(
+            url="https://cdn.test/v.mp4", watermark_url="https://cdn.test/v-wm.mp4"
+        ),
         provider_status="succeeded",
     )
     assert completed is not None
     assert completed.finished_at is not None
-    assert completed.watermark_output_url == "https://cdn.test/v-wm.mp4"
+    assert completed.output.watermark_url == "https://cdn.test/v-wm.mp4"
     assert completed.submitted_at == submitted.submitted_at, "别把发出去的时刻改成拿到结果的时刻"
     assert completed.request == request, "请求体读回来必须还是原来那个"
 
@@ -108,7 +114,7 @@ async def test_sync_result_backfills_the_submitted_moment(engine: AsyncEngine) -
     await repo.mark_submitting(job.id)
     completed = await repo.mark_completed(
         job.id,
-        output_url="https://cdn.test/out.png",
+        output=GenerationOutput(url="https://cdn.test/out.png"),
         provider_status="succeeded",
         provider_task_id="img-1",
     )
@@ -126,7 +132,7 @@ async def test_status_guard_never_overwrites_a_real_result(engine: AsyncEngine) 
 
     await repo.mark_submitting(job.id)
     await repo.mark_completed(
-        job.id, output_url="https://cdn.test/out.png", provider_status="succeeded"
+        job.id, output=GenerationOutput(url="https://cdn.test/out.png"), provider_status="succeeded"
     )
 
     missed = await repo.mark_failed(
@@ -139,7 +145,7 @@ async def test_status_guard_never_overwrites_a_real_result(engine: AsyncEngine) 
 
     stored = await repo.get(job.id, owner=owner)
     assert stored.status == STATUS_COMPLETED
-    assert stored.output_url == "https://cdn.test/out.png"
+    assert stored.output.url == "https://cdn.test/out.png"
     assert stored.error_code is None
 
 
@@ -159,7 +165,7 @@ async def test_a_late_result_cannot_revive_a_job_that_was_already_failed(
 
     missed = await repo.mark_completed(
         job.id,
-        output_url="https://cdn.test/late.png",
+        output=GenerationOutput(url="https://cdn.test/late.png"),
         provider_status="succeeded",
         only_if_status=STATUS_SUBMITTING,
     )
@@ -167,7 +173,7 @@ async def test_a_late_result_cannot_revive_a_job_that_was_already_failed(
 
     stored = await repo.get(job.id, owner=owner)
     assert stored.status == STATUS_FAILED
-    assert stored.output_url is None
+    assert stored.output == GenerationOutput()
 
 
 async def test_stage_reports_stop_at_a_conclusion(engine: AsyncEngine) -> None:
@@ -185,7 +191,7 @@ async def test_stage_reports_stop_at_a_conclusion(engine: AsyncEngine) -> None:
     assert reported.provider_status == "processing"
 
     await repo.mark_completed(
-        job.id, output_url="https://cdn.test/out.mp4", provider_status="completed"
+        job.id, output=GenerationOutput(url="https://cdn.test/out.mp4"), provider_status="completed"
     )
     late = await repo.record_progress(
         job.id, provider_status="uploading", only_if_status=STATUS_SUBMITTING
@@ -194,6 +200,27 @@ async def test_stage_reports_stop_at_a_conclusion(engine: AsyncEngine) -> None:
 
     stored = await repo.get(job.id, owner=owner)
     assert stored.provider_status == "completed"
+
+
+async def test_polling_skips_an_unchanged_upstream_status_and_writes_a_changed_one(
+    engine: AsyncEngine,
+) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    job = await insert_job(repo, owner, video_request())
+    await repo.mark_submitting(job.id)
+    await repo.mark_submitted(job.id, provider_task_id="t-1", provider_status="queued")
+
+    unchanged = await repo.record_progress(
+        job.id, provider_status="queued", only_if_status=STATUS_SUBMITTED, skip_unchanged=True
+    )
+    changed = await repo.record_progress(
+        job.id, provider_status="running", only_if_status=STATUS_SUBMITTED, skip_unchanged=True
+    )
+
+    assert unchanged is None, "状态没变就不写"
+    assert changed is not None and changed.provider_status == "running"
+    assert (await repo.get(job.id, owner=owner)).provider_status == "running"
 
 
 async def test_status_guard_lets_the_write_through_when_it_matches(engine: AsyncEngine) -> None:
@@ -339,7 +366,9 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
         make_job(video_request(), owner_user_id=owner, conversation_id=settled)
     )
     await repo.mark_completed(
-        finished.id, output_url="https://cdn.example.test/a.mp4", provider_status="succeeded"
+        finished.id,
+        output=GenerationOutput(url="https://cdn.example.test/a.mp4"),
+        provider_status="succeeded",
     )
     await repo.create(make_job(image_request(), owner_user_id=owner, conversation_id=images_only))
     edit = await repo.create(make_edit(finished, owner_user_id=owner, conversation_id=editing))
@@ -393,7 +422,10 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     no_address = await finished(repo, owner, newest, "no-address")
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE iclip.generation_jobs SET output_url = NULL WHERE id = :id"),
+            text(
+                "UPDATE iclip.generation_jobs SET output = NULLIF(output - 'url', '{}'::jsonb)"
+                " WHERE id = :id"
+            ),
             {"id": no_address.id},
         )
 
@@ -429,9 +461,9 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     )
 
     assert latest == {
-        newest: started_first.output_url,
-        composed: composite.output_url,
-        tied: tie_winner.output_url,
+        newest: started_first.output.url,
+        composed: composite.output.url,
+        tied: tie_winner.output.url,
     }
     assert await repo.latest_master_by_conversation([]) == {}
 
@@ -460,14 +492,15 @@ async def test_latest_master_by_conversation_leaves_inherited_masters_out(
     )
 
     assert latest == {
-        chain.grand.id: chain.grand_after_parent.output_url,
-        chain.parent.id: chain.parent_after_child.output_url,
-        chain.child.id: chain.own.output_url,
+        chain.grand.id: chain.grand_after_parent.output.url,
+        chain.parent.id: chain.parent_after_child.output.url,
+        chain.child.id: chain.own.output.url,
     }
 
 
 async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEngine) -> None:
-    """编辑段与合成的来源、原作、区间落列读回；列表按 operation、source_job_id 筛，与别的筛选叠加收窄。"""
+    """编辑段与合成的来源、原作落列，区间记在请求里，都读得回；列表按 operation、source_job_id 筛，
+    与别的筛选叠加收窄。"""
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
@@ -483,8 +516,7 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
         read_back.operation,
         read_back.source_job_id,
         read_back.root_job_id,
-        read_back.range_start_ms,
-        read_back.range_end_ms,
+        *edit_range(read_back),
     ) == ("generate", take.id, take.id, 0, 2500)
     assert read_back.request == edit.request
     stored = await repo.get(composite.id, owner=owner)
@@ -550,7 +582,7 @@ async def test_shot_index_round_trips_and_filters_alongside_the_coordinates(
 
 
 async def test_duration_is_written_only_when_completion_brings_one(engine: AsyncEngine) -> None:
-    """时长落列；完成时没给时长就不动这一列。"""
+    """时长记进产出；完成时没给时长，产出里就没有。"""
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
@@ -562,19 +594,20 @@ async def test_duration_is_written_only_when_completion_brings_one(engine: Async
     await repo.mark_submitting(composite.id)
     measured = await repo.mark_completed(
         composite.id,
-        output_url="https://cdn.test/master.mp4",
+        output=GenerationOutput(url="https://cdn.test/master.mp4", duration_ms=7040),
         provider_status="completed",
-        duration_ms=7040,
         only_if_status=STATUS_SUBMITTING,
     )
     await repo.mark_completed(
-        image.id, output_url="https://cdn.test/out.png", provider_status="succeeded"
+        image.id,
+        output=GenerationOutput(url="https://cdn.test/out.png"),
+        provider_status="succeeded",
     )
 
-    assert measured is not None and measured.duration_ms == 7040
+    assert measured is not None and measured.output.duration_ms == 7040
     stored = await repo.get(composite.id, owner=owner)
-    assert stored.duration_ms == 7040
-    assert (await repo.get(image.id, owner=owner)).duration_ms is None
+    assert stored.output.duration_ms == 7040
+    assert (await repo.get(image.id, owner=owner)).output.duration_ms is None
 
 
 async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
@@ -592,17 +625,18 @@ async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
 
     landed = await repo.create_settled([upload, *cells])
     again = await repo.create_settled(
-        [replace(upload, output_url="https://example.test/replaced.png")]
+        [replace(upload, output=GenerationOutput(url="https://example.test/replaced.png"))]
     )
 
     assert [job.id for job in landed] == [upload.id, *(cell.id for cell in cells)]
     assert again == ()
     stored = await repo.get(upload.id, owner=None)
-    assert (stored.operation, stored.request, stored.output_url) == (
+    assert (stored.operation, stored.request, stored.output.url) == (
         "upload",
         None,
-        upload.output_url,
+        upload.output.url,
     )
+    assert {job.provider for job in landed} == {None}, "上传与切图不交给执行方"
     assert stored.created_at == stored.finished_at
     assert stored.created_at > stale + timedelta(days=1), "应用传进来的时刻被数据库改写了"
     async with engine.connect() as conn:
@@ -628,18 +662,122 @@ async def test_a_video_upload_is_found_by_its_md5_earliest_first_across_owners(
     repo = SqlGenerationRepository(engine)
     sara, logan = await make_user(engine), await make_user(engine)
     other = "f" * 32
-    first = make_upload(kind="video", owner_user_id=sara, content_md5=_MD5)
-    later = make_upload(kind="video", owner_user_id=logan, content_md5=_MD5)
+    first = _video_upload(sara, _MD5)
+    later = _video_upload(logan, _MD5)
     await repo.create_settled([make_upload(kind="video", owner_user_id=logan)])
-    await repo.create_settled([make_upload(kind="video", owner_user_id=logan, content_md5=other)])
+    await repo.create_settled([_video_upload(logan, other)])
     await repo.create_settled([first])
     await repo.create_settled([later])
 
     found = await repo.find_video_upload_by_md5(_MD5)
 
     assert found is not None
-    assert (found.id, found.owner_user_id, found.content_md5) == (first.id, sara, _MD5)
+    assert (found.id, found.owner_user_id, found.output.content_md5) == (first.id, sara, _MD5)
     assert await repo.find_video_upload_by_md5("e" * 32) is None
+
+
+async def test_an_output_round_trips_and_stores_only_its_present_top_level_keys(
+    engine: AsyncEngine,
+) -> None:
+    """产出存成 snake_case 的对象：顶层空项不存，句子里的 ``speaker: null`` 照存，读回一致；
+    没有产出存 SQL NULL，读回是空对象。"""
+
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    take = await finished(repo, owner, uuid.uuid4(), "take")
+    subtitle = await repo.create(make_subtitle(take))
+    sentences = (
+        SubtitleSentence(start_ms=0, end_ms=900, text="好。", speaker=None),
+        SubtitleSentence(start_ms=900, end_ms=1500, text="走。", speaker=1),
+    )
+    await repo.mark_submitting(subtitle.id)
+    done = await repo.mark_transcribed(
+        subtitle.id, sentences=sentences, provider_status="succeeded", provider_task_id="r"
+    )
+    video = await repo.create(make_job(video_request(), owner_user_id=owner))
+    full = GenerationOutput(
+        url="https://cdn.test/v.mp4", watermark_url="https://cdn.test/v-wm.mp4", duration_ms=5040
+    )
+    await repo.mark_completed(video.id, output=full, provider_status="succeeded")
+    pending = await repo.create(make_job(video_request(), owner_user_id=owner))
+
+    async with engine.connect() as conn:
+        found = await conn.execute(
+            text(
+                "SELECT id, output FROM iclip.generation_jobs WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"ids": [subtitle.id, video.id, pending.id]},
+        )
+        rows: dict[uuid.UUID, Any] = {row.id: row.output for row in found}
+
+    assert rows[subtitle.id] == {
+        "sentences": [
+            {"start_ms": 0, "end_ms": 900, "text": "好。", "speaker": None, "words": []},
+            {"start_ms": 900, "end_ms": 1500, "text": "走。", "speaker": 1, "words": []},
+        ]
+    }
+    assert rows[video.id] == {
+        "url": "https://cdn.test/v.mp4",
+        "watermark_url": "https://cdn.test/v-wm.mp4",
+        "duration_ms": 5040,
+    }
+    assert rows[pending.id] is None
+    assert done is not None and done.output == GenerationOutput(sentences=sentences)
+    assert (await repo.get(subtitle.id, owner=owner)).output.sentences == sentences
+    assert (await repo.get(video.id, owner=owner)).output == full
+    assert (await repo.get(pending.id, owner=owner)).output == GenerationOutput()
+
+
+async def test_an_output_with_an_unknown_key_fails_to_read(engine: AsyncEngine) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    take = await finished(repo, owner, uuid.uuid4(), "take")
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                'UPDATE iclip.generation_jobs SET output = output || \'{"output_url": "x"}\''
+                " WHERE id = :id"
+            ),
+            {"id": take.id},
+        )
+
+    with pytest.raises(ValidationFailed, match="生成产出的形状不合法"):
+        await repo.get(take.id, owner=owner)
+
+
+async def test_the_latest_reference_trial_is_the_owners_newest_video_take_for_it(
+    engine: AsyncEngine,
+) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner, other = await make_user(engine), await make_user(engine)
+    reference, unrelated = uuid.uuid4(), uuid.uuid4()
+    tag = {"referenceId": str(reference)}
+    older = await repo.create(make_job(video_request(), owner_user_id=owner, metadata=tag))
+    newer = await repo.create(make_job(video_request(), owner_user_id=owner, metadata=tag))
+    await repo.create(make_job(video_request(), owner_user_id=other, metadata=tag))
+    await repo.create(make_job(image_request(), owner_user_id=owner, metadata=tag))
+    await repo.create(
+        make_job(video_request(), owner_user_id=owner, metadata={"referenceId": str(unrelated)})
+    )
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.generation_jobs SET created_at = :at WHERE id = :id"),
+            {"at": datetime.now(UTC) - timedelta(hours=1), "id": older.id},
+        )
+
+    found = await repo.latest_reference_trial(reference, owner=owner)
+
+    assert found is not None and found.id == newer.id
+    assert await repo.latest_reference_trial(reference, owner=None) is not None
+    assert await repo.latest_reference_trial(uuid.uuid4(), owner=owner) is None
+
+
+def _video_upload(owner: uuid.UUID, md5: str) -> GenerationJob:
+    return make_upload(
+        kind="video",
+        owner_user_id=owner,
+        output=GenerationOutput(url=f"https://example.test/{uuid.uuid4()}.mp4", content_md5=md5),
+    )
 
 
 async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
@@ -665,27 +803,45 @@ async def test_a_record_is_found_by_its_address_within_the_conversation_and_what
         "https://example.test/loose.png",
     )
     (upload,) = await repo.create_settled(
-        [make_upload(owner_user_id=forker, output_url="https://example.test/upload.png")]
+        [
+            make_upload(
+                owner_user_id=forker, output=GenerationOutput(url="https://example.test/upload.png")
+            )
+        ]
     )
     (clip,) = await repo.create_settled(
         [
             make_upload(
-                kind="video", owner_user_id=forker, output_url="https://example.test/clip.mp4"
+                kind="video",
+                owner_user_id=forker,
+                output=GenerationOutput(url="https://example.test/clip.mp4"),
             )
         ]
     )
+    watermarked = await finished(repo, forker, copy.id, "watermarked", image_request())
     broken = await repo.create(
         make_job(image_request(), owner_user_id=forker, conversation_id=copy.id)
     )
     await repo.mark_failed(broken.id, error_code="UPSTREAM_FAILED", error_message="上游拒了")
+    set_output = text(
+        "UPDATE iclip.generation_jobs SET output = CAST(:output AS jsonb) WHERE id = :id"
+    )
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE iclip.generation_jobs SET output_url = :url WHERE id = :id"),
-            {"url": "https://example.test/broken.png", "id": broken.id},
+            set_output,
+            {"output": json.dumps({"url": "https://example.test/broken.png"}), "id": broken.id},
         )
         await conn.execute(
-            text("UPDATE iclip.generation_jobs SET output_url = :url WHERE id = :id"),
-            {"url": own.output_url, "id": twin.id},
+            set_output, {"output": json.dumps({"url": own.output.url}), "id": twin.id}
+        )
+        await conn.execute(
+            set_output,
+            {
+                "output": json.dumps(
+                    {"url": watermarked.output.url, "watermark_url": "https://example.test/wm.png"}
+                ),
+                "id": watermarked.id,
+            },
         )
     inheritance = await conversations.ancestry(copy.id)
 
@@ -708,20 +864,22 @@ async def test_a_record_is_found_by_its_address_within_the_conversation_and_what
         )
         return None if found is None else found.id
 
-    assert await find(own.output_url) == own.id, "同一地址两条，取最早建立的"
-    assert await find(early.output_url) == early.id, "边界之内继承来的"
-    assert await find(late.output_url) is None, "分叉之后才完成的不继承"
-    assert await find(elsewhere.output_url) is None
-    assert await find(take.output_url) is None, "视频不是图片"
+    assert await find(own.output.url) == own.id, "同一地址两条，取最早建立的"
+    assert await find(early.output.url) == early.id, "边界之内继承来的"
+    assert await find(late.output.url) is None, "分叉之后才完成的不继承"
+    assert await find(elsewhere.output.url) is None
+    assert await find(take.output.url) is None, "视频不是图片"
     assert await find("https://example.test/broken.png") is None, "没完成的不算"
-    assert await find(own.output_url, owner=stranger) is None, "别人的按属主筛掉"
-    assert await find(own.output_url, owner=None) == own.id, "不限属主就读得到"
-    assert await find(loose.output_url) is None, "没有对话的行不在这段对话里"
-    assert await find(loose.output_url, conversation_id=None) == loose.id
-    assert await find(upload.output_url, conversation_id=None, operation="upload") == upload.id
-    assert await find(loose.output_url, conversation_id=None, operation="upload") is None
-    assert await find(take.output_url, kind="video") == take.id, "按种类找，视频也找得到"
-    clip_url = clip.output_url
+    assert await find("https://example.test/wm.png") is None, "水印版地址不算产物地址"
+    assert await find(watermarked.output.url) == watermarked.id
+    assert await find(own.output.url, owner=stranger) is None, "别人的按属主筛掉"
+    assert await find(own.output.url, owner=None) == own.id, "不限属主就读得到"
+    assert await find(loose.output.url) is None, "没有对话的行不在这段对话里"
+    assert await find(loose.output.url, conversation_id=None) == loose.id
+    assert await find(upload.output.url, conversation_id=None, operation="upload") == upload.id
+    assert await find(loose.output.url, conversation_id=None, operation="upload") is None
+    assert await find(take.output.url, kind="video") == take.id, "按种类找，视频也找得到"
+    clip_url = clip.output.url
     assert await find(clip_url, conversation_id=None, operation="upload", kind="video") == clip.id
     assert await find(clip_url, conversation_id=None, operation="upload") is None, "图片里没有它"
     assert (
@@ -737,7 +895,7 @@ async def test_output_urls_answer_only_for_rows_that_have_one(engine: AsyncEngin
     pending = await insert_job(repo, owner, image_request())
 
     assert await repo.output_urls([]) == {}
-    assert await repo.output_urls([done.id, pending.id, uuid.uuid4()]) == {done.id: done.output_url}
+    assert await repo.output_urls([done.id, pending.id, uuid.uuid4()]) == {done.id: done.output.url}
 
 
 # --- 分叉继承 -------------------------------------------------------------------
@@ -809,8 +967,6 @@ async def test_inherited_records_keep_their_facts_and_obey_the_other_filters(
         edit_request(),
         source_job_id=root.id,
         root_job_id=root.id,
-        range_start_ms=1000,
-        range_end_ms=4000,
     )
     master = await finished(
         repo,

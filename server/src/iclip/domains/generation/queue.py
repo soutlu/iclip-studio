@@ -27,6 +27,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationOutput,
     GenerationStatus,
 )
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
@@ -44,6 +45,12 @@ def submit_queue(provider: str) -> str:
     """这家 provider 的提交队列名。"""
 
     return f"generation-submit-{provider}"
+
+
+def _provider_of(job: GenerationJob) -> str:
+    if job.provider is None:
+        raise RuntimeError(f"生成记录 {job.id} 不交给执行方，不该进生成队列")
+    return job.provider
 
 
 def queue_dsn(database_url: str) -> str:
@@ -180,7 +187,7 @@ class GenerationQueue:
         """将任务加入对应提交队列；入库与排队分属不同事务，排队失败由服务层标记失败。"""
 
         await self._submit.configure(
-            queue=submit_queue(job.provider),
+            queue=submit_queue(_provider_of(job)),
             task_kwargs={"job_id": str(job.id)},
         ).defer_async()
 
@@ -203,7 +210,7 @@ class GenerationQueue:
             return
         # 查表在落 submitting 之前：装配里没有这家时，这一行还没占住「提交中」，
         # 可以直接判失败并写明真实原因，而不是过一会儿被当成进程中断。
-        lane = self._lanes.get(job.provider)
+        lane = self._lanes.get(_provider_of(job))
         if lane is None:
             await self._not_configured(job, only_if_status=STATUS_PENDING)
             return
@@ -254,10 +261,11 @@ class GenerationQueue:
                 job,
                 await self._repo.mark_completed(
                     job.id,
-                    output_url=submission.output_url,
+                    output=GenerationOutput(
+                        url=submission.output_url, duration_ms=submission.duration_ms
+                    ),
                     provider_status=submission.provider_status,
                     provider_task_id=submission.provider_task_id,
-                    duration_ms=submission.duration_ms,
                     only_if_status=STATUS_SUBMITTING,
                 ),
             )
@@ -285,7 +293,7 @@ class GenerationQueue:
         if job.status != STATUS_SUBMITTED:
             _logger.info("生成任务已有结论，不再轮询", job_id=job.id, status=job.status)
             return
-        lane = self._lanes.get(job.provider)
+        lane = self._lanes.get(_provider_of(job))
         timeout_seconds = self._timeout_seconds(lane)
         if self._timed_out(job, timeout_seconds):
             self._settled(
@@ -324,10 +332,12 @@ class GenerationQueue:
                 job,
                 await self._repo.mark_completed(
                     job.id,
-                    output_url=progress.output_url,
-                    watermark_output_url=progress.watermark_output_url,
+                    output=GenerationOutput(
+                        url=progress.output_url,
+                        watermark_url=progress.watermark_output_url,
+                        duration_ms=progress.duration_ms,
+                    ),
                     provider_status=progress.provider_status,
-                    duration_ms=progress.duration_ms,
                     only_if_status=STATUS_SUBMITTED,
                 ),
             )
@@ -346,7 +356,10 @@ class GenerationQueue:
             return
 
         await self._repo.record_progress(
-            job.id, provider_status=progress.provider_status, only_if_status=STATUS_SUBMITTED
+            job.id,
+            provider_status=progress.provider_status,
+            only_if_status=STATUS_SUBMITTED,
+            skip_unchanged=True,
         )
         raise StillRunning(f"{job.id} 还在跑（{progress.provider_status}）")
 

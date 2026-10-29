@@ -11,6 +11,7 @@ from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
     GenerationOperation,
+    GenerationOutput,
     GenerationStatus,
     InFlightPhase,
     Inheritance,
@@ -58,6 +59,11 @@ class AnnouncingGenerationRepository:
 
     async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
         return await self._inner.find_video_upload_by_md5(content_md5)
+
+    async def latest_reference_trial(
+        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
+    ) -> GenerationJob | None:
+        return await self._inner.latest_reference_trial(reference_id, owner=owner)
 
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         return await self._inner.output_urls(ids)
@@ -119,20 +125,16 @@ class AnnouncingGenerationRepository:
         self,
         job_id: uuid.UUID,
         *,
-        output_url: str,
+        output: GenerationOutput,
         provider_status: str,
         provider_task_id: str | None = None,
-        watermark_output_url: str | None = None,
-        duration_ms: int | None = None,
         only_if_status: GenerationStatus | None = None,
     ) -> GenerationJob | None:
         job = await self._inner.mark_completed(
             job_id,
-            output_url=output_url,
+            output=output,
             provider_status=provider_status,
             provider_task_id=provider_task_id,
-            watermark_output_url=watermark_output_url,
-            duration_ms=duration_ms,
             only_if_status=only_if_status,
         )
         return None if job is None else self._announce(job)
@@ -179,9 +181,13 @@ class AnnouncingGenerationRepository:
         *,
         provider_status: str,
         only_if_status: GenerationStatus | None = None,
+        skip_unchanged: bool = False,
     ) -> GenerationJob | None:
         return await self._inner.record_progress(
-            job_id, provider_status=provider_status, only_if_status=only_if_status
+            job_id,
+            provider_status=provider_status,
+            only_if_status=only_if_status,
+            skip_unchanged=skip_unchanged,
         )
 
     async def in_flight_by_conversation(

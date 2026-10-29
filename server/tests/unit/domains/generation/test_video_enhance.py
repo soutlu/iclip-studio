@@ -21,6 +21,7 @@ from iclip.domains.generation.models import (
     STATUS_PENDING,
     STATUS_SUBMITTED,
     GenerationJob,
+    GenerationOutput,
 )
 from iclip.domains.generation.queue import submit_queue
 from iclip.domains.generation.schemas import VideoEnhanceRequest
@@ -136,17 +137,26 @@ def take(resolution: str | None = "720p", **fields: Any) -> GenerationJob:
     fields.setdefault("finished_at", NOW)
     fields.setdefault("conversation_id", uuid.uuid4())
     fields.setdefault("shot_index", 3)
-    fields.setdefault("output_url", f"https://cdn.test/take-{uuid.uuid4()}.mp4")
-    fields.setdefault("watermark_output_url", "https://cdn.test/take-wm.mp4")
+    fields.setdefault(
+        "output",
+        GenerationOutput(
+            url=f"https://cdn.test/take-{uuid.uuid4()}.mp4",
+            watermark_url="https://cdn.test/take-wm.mp4",
+        ),
+    )
     return make_job(video_request(resolution=resolution), **fields)
 
 
 def composite_of(original: GenerationJob) -> GenerationJob:
     return make_composite(
-        make_edit(original, status=STATUS_COMPLETED, output_url="https://cdn.test/edit.mp4"),
+        make_edit(
+            original,
+            status=STATUS_COMPLETED,
+            output=GenerationOutput(url="https://cdn.test/edit.mp4"),
+        ),
         status=STATUS_COMPLETED,
         finished_at=NOW,
-        output_url=f"https://cdn.test/composite-{uuid.uuid4()}.mp4",
+        output=GenerationOutput(url=f"https://cdn.test/composite-{uuid.uuid4()}.mp4"),
     )
 
 
@@ -154,7 +164,7 @@ def film(*sources: GenerationJob, **fields: Any) -> GenerationJob:
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", NOW)
     fields.setdefault("conversation_id", uuid.uuid4())
-    fields.setdefault("output_url", f"https://cdn.test/film-{uuid.uuid4()}.mp4")
+    fields.setdefault("output", GenerationOutput(url=f"https://cdn.test/film-{uuid.uuid4()}.mp4"))
     return make_job(whole_film_request(*(source.id for source in sources)), **fields)
 
 
@@ -185,7 +195,7 @@ async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
         model="video-enhance",
         resolution="1080p",
         fps=30,
-        video_url=str(source.output_url),
+        video_url=str(source.output.url),
         user_name="tester",
     )
     assert [row["queue_name"] for row in submits(app)] == [submit_queue(FAKE_VIDEO_PROVIDER)]
@@ -198,13 +208,13 @@ async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
     )
     assert (generation["sourceJobId"], generation["sourceUrl"]) == (
         str(source.id),
-        source.output_url,
+        source.output.url,
     )
     assert generation["request"] == {
         "model": "video-enhance",
         "resolution": "1080p",
         "fps": 30,
-        "video_url": source.output_url,
+        "video_url": source.output.url,
         "user_name": "tester",
     }
 
@@ -225,7 +235,7 @@ async def test_a_whole_film_gets_a_video_enhancement() -> None:
     assert (job.kind, job.operation, job.source_job_id) == ("video", "enhance", exported.id)
     assert (job.conversation_id, job.shot_index) == (None, None)
     assert isinstance(job.request, VideoEnhanceRequest)
-    assert job.request.video_url == exported.output_url
+    assert job.request.video_url == exported.output.url
 
 
 async def test_enhance_not_switched_on_is_refused_without_storing() -> None:
@@ -256,19 +266,26 @@ def _ineligible() -> list[tuple[str, Callable[[GenerationJob], GenerationJob]]]:
     return [
         (
             "edit",
-            lambda base: make_edit(base, status=STATUS_COMPLETED, output_url="https://x/e.mp4"),
+            lambda base: make_edit(
+                base, status=STATUS_COMPLETED, output=GenerationOutput(url="https://x/e.mp4")
+            ),
         ),
-        ("unfinished_take", lambda _: take(status=STATUS_SUBMITTED, output_url=None)),
-        ("failed_take", lambda _: take(status=STATUS_FAILED, output_url=None)),
+        ("unfinished_take", lambda _: take(status=STATUS_SUBMITTED, output=GenerationOutput())),
+        ("failed_take", lambda _: take(status=STATUS_FAILED, output=GenerationOutput())),
         ("video_upload", lambda _: make_upload(kind="video")),
         (
             "image",
             lambda _: make_job(
-                image_request(), status=STATUS_COMPLETED, output_url="https://x/i.png"
+                image_request(),
+                status=STATUS_COMPLETED,
+                output=GenerationOutput(url="https://x/i.png"),
             ),
         ),
         ("subtitle", lambda base: make_subtitle(base, status=STATUS_COMPLETED)),
-        ("unfinished_film", lambda base: film(base, status=STATUS_SUBMITTED, output_url=None)),
+        (
+            "unfinished_film",
+            lambda base: film(base, status=STATUS_SUBMITTED, output=GenerationOutput()),
+        ),
         ("enhancement", lambda base: make_enhancement(base, status=STATUS_COMPLETED)),
     ]
 
@@ -486,7 +503,7 @@ async def test_each_tier_carries_its_most_recent_enhancement_by_anyone() -> None
         ("1080p", str(newer.id)),
         ("720p", None),
     ]
-    assert body["tiers"][0]["job"]["sourceUrl"] == source.output_url
+    assert body["tiers"][0]["job"]["sourceUrl"] == source.output.url
 
 
 async def test_each_tier_says_whether_its_record_is_the_readers() -> None:
@@ -526,7 +543,9 @@ async def test_downloads_count_against_the_take_or_the_films_videos() -> None:
 
 async def test_a_source_that_cannot_be_enhanced_has_nothing_to_offer() -> None:
     base = take("480p")
-    edit = make_edit(base, status=STATUS_COMPLETED, output_url="https://cdn.test/e.mp4")
+    edit = make_edit(
+        base, status=STATUS_COMPLETED, output=GenerationOutput(url="https://cdn.test/e.mp4")
+    )
     repo = InMemoryGenerationRepository([base, edit])
 
     response = await read(repo, edit.id)

@@ -30,7 +30,7 @@ from iclip.domains.conversations.infra_sql import (
 )
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
@@ -529,9 +529,8 @@ async def complete(repo: SqlGenerationRepository, job: GenerationJob, name: str)
     await repo.mark_submitting(job.id)
     done = await repo.mark_completed(
         job.id,
-        output_url=f"https://example.test/{name}.mp4",
+        output=GenerationOutput(url=f"https://example.test/{name}.mp4", duration_ms=4000),
         provider_status="succeeded",
-        duration_ms=4000,
     )
     assert done is not None
     return done
@@ -570,7 +569,11 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
             owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
             clip_url = media.url("clip.mp4")
             await repo.create_settled(
-                [make_upload(kind=KIND_VIDEO, owner_user_id=owner, output_url=clip_url)]
+                [
+                    make_upload(
+                        kind=KIND_VIDEO, owner_user_id=owner, output=GenerationOutput(url=clip_url)
+                    )
+                ]
             )
             source = await open_conversation(client)
             await seed_turns(pg_url, source, ["第一句"])
@@ -671,6 +674,6 @@ async def test_audit_list_carries_only_each_conversations_own_latest_master(
             assert listed.status_code == 200, listed.text
             latest = {item["id"]: item["latestMasterUrl"] for item in listed.json()["items"]}
 
-        assert latest == {source: take.output_url, copy: None}
+        assert latest == {source: take.output.url, copy: None}
     finally:
         await engine.dispose()

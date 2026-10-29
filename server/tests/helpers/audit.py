@@ -162,10 +162,10 @@ class Plant:
         await self._conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                " operation, provider, request, status, shot_index, duration_ms, created_at,"
+                " operation, provider, request, status, shot_index, output, created_at,"
                 " submitted_at, finished_at)"
                 " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
-                " CAST(:request AS jsonb), :status, :shot, :duration_ms, :created_at,"
+                " CAST(:request AS jsonb), :status, :shot, CAST(:output AS jsonb), :created_at,"
                 " :submitted_at, :finished_at)"
             ),
             {
@@ -179,7 +179,7 @@ class Plant:
                 ),
                 "status": status,
                 "shot": shot,
-                "duration_ms": duration_ms,
+                "output": None if duration_ms is None else json.dumps({"duration_ms": duration_ms}),
                 "created_at": created_at,
                 "submitted_at": submitted_at,
                 "finished_at": finished_at,

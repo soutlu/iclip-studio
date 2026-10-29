@@ -27,6 +27,7 @@ from iclip.domains.generation.models import (
     STATUS_FAILED,
     STATUS_SUBMITTED,
     GenerationJob,
+    GenerationOutput,
 )
 from iclip.domains.generation.queue import GenerationQueue, StillRunning
 from iclip.domains.generation.render import PROVIDER_NAME
@@ -212,7 +213,9 @@ async def _transcribed(repo: SqlGenerationRepository, take: GenerationJob) -> Ge
 async def _music(repo: SqlGenerationRepository, owner: uuid.UUID, conversation: uuid.UUID) -> str:
     music = await repo.create(make_music(owner_user_id=owner, conversation_id=conversation))
     await repo.mark_completed(
-        music.id, output_url=MUSIC_URL, provider_status="succeeded", duration_ms=30_000
+        music.id,
+        output=GenerationOutput(url=MUSIC_URL, duration_ms=30_000),
+        provider_status="succeeded",
     )
     return str(music.id)
 
@@ -324,7 +327,7 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
     await queue.run_poll(export_id)
 
     done = await record(generations, export_id)
-    assert (done.status, done.output_url) == (STATUS_COMPLETED, f"{PUBLIC}/{key}")
+    assert (done.status, done.output.url) == (STATUS_COMPLETED, f"{PUBLIC}/{key}")
     assert await latest(client, mine) == {
         "id": export_id,
         "status": "done",

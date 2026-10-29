@@ -69,11 +69,11 @@ async def plant_video(
         await conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                " operation, provider, request, status, shot_index, output_url, created_at,"
+                " operation, provider, request, status, shot_index, output, created_at,"
                 " finished_at)"
                 " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
-                " CAST(:request AS jsonb), :status, 1, 'https://oss.example.test/v.mp4', now(),"
-                " now())"
+                " CAST(:request AS jsonb), :status, 1,"
+                " jsonb_build_object('url', 'https://oss.example.test/v.mp4'), now(), now())"
             ),
             {
                 "id": video_id,
@@ -130,9 +130,10 @@ async def plant_whole_film(
         await conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                " operation, provider, request, status, output_url, created_at, finished_at)"
+                " operation, provider, request, status, output, created_at, finished_at)"
                 " VALUES (:id, :owner, :conversation_id, :kind, :operation, :provider,"
-                " CAST(:request AS jsonb), :status, :output_url, now(), now())"
+                " CAST(:request AS jsonb), :status,"
+                " jsonb_build_object('url', CAST(:output_url AS text)), now(), now())"
             ),
             {
                 "id": film,

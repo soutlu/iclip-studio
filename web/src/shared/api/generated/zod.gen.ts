@@ -2430,7 +2430,7 @@ export const zOpsCatchup = z.object({
  * 片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。
  * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
  * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
- * ``VideoGenerationIn``，来源、原作与区间落列。
+ * ``VideoEditRequest``：来源与原作落列，区间记在请求快照里。
  */
 export const zVideoEditIn = z.object({
   conversation_id: z.uuid().nullish(),
