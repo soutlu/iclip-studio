@@ -83,6 +83,27 @@ depends_on = [
     "agent_runtime.plugins",
 ]
 
+# 运行时服务的配置：YAML 与环境变量。
+[[modules]]
+path = "agent_runtime.settings"
+depends_on = []
+
+# 运行时服务的 HTTP 入口：组合根建出三块配置的服务，挂上管理接口；插件登记表由调用方交进来。
+[[modules]]
+path = "agent_runtime.http"
+depends_on = [
+    "agent_runtime.settings",
+    "agent_runtime.config.skills",
+    "agent_runtime.config.model_providers",
+    "agent_runtime.config.agent_config",
+    "agent_runtime.assembly",
+    "agent_runtime.plugins",
+]
+
+[[modules]]
+path = "agent_runtime.main"
+depends_on = ["agent_runtime.http"]
+
 # 装配把三块配置接到引擎：按对话固定的版本装出 Agent、建供应商模型、实现 agent 配置的查询端口。
 [[modules]]
 path = "agent_runtime.assembly"

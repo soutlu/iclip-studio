@@ -52,12 +52,14 @@ check: lint format-check typecheck tach test contract-check docs-check
 docs-check:
 	python3 scripts/check-docs.py
 
-# 导出后运行 web 的 pnpm contract:generate，更新前端类型与 zod schema。
+# 导出后端与运行时服务的 OpenAPI；后端的导出后运行 web 的 pnpm contract:generate，更新前端类型与 zod schema。
 contract:
 	cd server && uv run python scripts/dump_openapi.py
+	cd runtime && uv run python scripts/dump_openapi.py
 
 contract-check:
 	cd server && uv run python scripts/dump_openapi.py --check
+	cd runtime && uv run python scripts/dump_openapi.py --check
 
 db-upgrade:
 	cd server && uv run --env-file ../.env alembic upgrade head

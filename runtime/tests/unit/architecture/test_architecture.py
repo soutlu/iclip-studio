@@ -17,9 +17,12 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("pydantic_ai",): ("harness/", "plugins/"),
     ("pydantic_ai_harness",): ("harness/",),
     ("openai",): ("harness/models.py",),
-    # HTTP 入口在宿主，运行时不带 Web 框架。
-    ("fastapi", "starlette"): (),
+    # Web 框架只在运行时服务的 HTTP 入口里出现，引擎、配置与插件都不碰它。
+    ("fastapi", "starlette"): ("http/",),
+    ("uvicorn",): ("main.py",),
     ("sqlalchemy",): (
+        # 运行时服务的组合根建 engine。
+        "http/app.py",
         "file_store/pg.py",
         "material_ledger/pg.py",
         # StepPersistence 协议后端归属使用该协议的 harness。

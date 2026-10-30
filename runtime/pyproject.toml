@@ -13,12 +13,17 @@ dependencies = [
     "pyyaml>=6",  # 供应商声明、技能 frontmatter 与 agent 导出包
     "cryptography>=50.0.1",  # 密钥字段的 MultiFernet 加密
     "packaging>=26",  # 导出包的格式版本比较
+    # 运行时服务（agent_runtime.http 与 main.py）：版本与后端 uv.lock 一致。
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
+    "pydantic-settings>=2.15.0",
+    "python-multipart>=0.0.32",  # 导入技能与 agent 的表单上传
+    "asyncpg>=0.31.0",
 ]
 
 [dependency-groups]
 dev = [
-    # 运行器关停单测要建一个 asyncpg engine（不连库）。
-    "asyncpg>=0.31.0",
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-timeout>=2.4.0",
@@ -37,19 +42,20 @@ packages = ["src/agent_runtime"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "TID251"]
 # RUF001/002/003：中文全角标点是本仓文案约定，不是笔误。
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
-# 日志统一由宿主服务配置。
+# 日志统一由运行它的服务配置：运行时服务在 http/logging.py，嵌在后端里时由后端配置。
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "logging.getLogger".msg = "日志走 structlog：_logger = structlog.stdlib.get_logger(__name__)"
 "structlog.get_logger".msg = "用带类型的 structlog.stdlib.get_logger(__name__)"
 
 [tool.ruff.lint.per-file-ignores]
+"src/agent_runtime/http/logging.py" = ["TID251"]
 "tests/**" = ["TID251"]
 
 [tool.pyright]
@@ -57,13 +63,15 @@ typeCheckingMode = "strict"
 pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
-include = ["src", "tests"]
+include = ["src", "tests", "scripts"]
 # 第三方库（sqlalchemy）无完整类型导出产生的 Unknown 噪音；结构性 strict 检查全部保留。
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportUnknownParameterType = false
 reportMissingTypeStubs = false
+# FastAPI 路由处理器是装饰器注册的闭包，无法被静态分析识别为已使用。
+reportUnusedFunction = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

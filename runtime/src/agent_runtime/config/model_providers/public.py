@@ -9,26 +9,66 @@ from agent_runtime.config.model_providers.catalog import (
     ProviderDeclaration,
     load_declarations,
 )
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
 from agent_runtime.config.model_providers.models import (
+    ModelType,
     ProbeResult,
     ProviderModel,
     ResolvedProvider,
     RuntimeModel,
 )
 from agent_runtime.config.model_providers.repository import CredentialProbe, ModelUsages
+from agent_runtime.config.model_providers.schemas import (
+    CredentialCreateIn,
+    CredentialOut,
+    CredentialTestIn,
+    CredentialUpdateIn,
+    CustomModelCreateIn,
+    DeclarationsOut,
+    DefaultModelIn,
+    DefaultModelOut,
+    DefaultModelsOut,
+    ModelProviderCreateIn,
+    ModelProviderOut,
+    ModelProvidersOut,
+    ModelProviderUpdateIn,
+    ModelUpdateIn,
+    ProbeOut,
+    ProviderModelOut,
+)
 from agent_runtime.config.model_providers.service import ModelProviderService
 
 __all__ = [
     "API_KEY_FIELD",
     "BASE_URL_FIELD",
+    "CredentialCipher",
+    "CredentialCreateIn",
+    "CredentialOut",
     "CredentialProbe",
+    "CredentialTestIn",
+    "CredentialUpdateIn",
+    "CustomModelCreateIn",
     "Declarations",
+    "DeclarationsOut",
+    "DefaultModelIn",
+    "DefaultModelOut",
+    "DefaultModelsOut",
+    "ModelProviderCreateIn",
+    "ModelProviderOut",
     "ModelProviderService",
+    "ModelProviderUpdateIn",
+    "ModelProvidersOut",
+    "ModelType",
+    "ModelUpdateIn",
     "ModelUsages",
+    "ProbeOut",
     "ProbeResult",
     "ProviderDeclaration",
     "ProviderModel",
+    "ProviderModelOut",
     "ResolvedProvider",
     "RuntimeModel",
+    "SqlModelProviderStore",
     "load_declarations",
 ]
