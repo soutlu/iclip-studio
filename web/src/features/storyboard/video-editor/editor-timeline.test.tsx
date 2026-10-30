@@ -745,6 +745,44 @@ describe('拖草稿块的修剪把手', () => {
     expect(leftOf(/^镜头 2 ·/)).toBe(spanAt(0.8, 1).left)
   })
 
+  it.each([
+    ['原片镜头拉过它的结尾', 'shot-1', 'end', 80, '已到这段的结尾'],
+    ['编辑段拉过它的开头', `${first.id}#2`, 'start', -80, '已到这段的开头'],
+    ['剪得比最短还短', 'shot-2', 'start', 80, '最短 0.5 秒'],
+  ] as const)('%s：把手停住，把手旁出说明；退回能到的地方说明消失', (_, id, edge, dx, text) => {
+    layOut()
+    // 镜头 1 结尾剪到 0.5 秒，第 2 段开头剪到 1.5 秒：都还能往外拉 0.5 秒
+    const shotCut = trimItem(cut, itemOf(cut, 'shot-1'), { t0: 0, t1: 0.5 })
+    const { on } = renderEditing(shotCut, { kind: 'draft', id })
+    const handle = edge === 'start' ? pressStart() : pressEnd()
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 400 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 400 + dx / 4 })
+    expect(screen.queryByRole('status')).toBeNull()
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 400 + dx })
+    expect(screen.getByRole('status')).toHaveTextContent(text)
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 400 + dx / 4 })
+    expect(screen.queryByRole('status')).toBeNull()
+    fireEvent.pointerUp(handle, { pointerId: 1 })
+    expect(on.onTrim).toHaveBeenCalledTimes(1)
+  })
+
+  it('按吸附之前的指针判断：指针还没到边界、把手吸上去不出说明；指针已过边界就出', () => {
+    layOut()
+    const shotCut = trimItem(cut, itemOf(cut, 'shot-1'), { t0: 0, t1: 0.5 })
+    renderEditing(shotCut, { kind: 'draft', id: 'shot-1' })
+    const end = pressEnd()
+    fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 400 })
+    // 往右 46px：指针在 0.96 秒，把手吸到镜头 1 的结尾 1 秒
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 446 })
+    expect(end).toHaveAttribute('aria-valuenow', '1')
+    expect(screen.queryByRole('status')).toBeNull()
+    // 往右 54px：指针在 1.04 秒，过了结尾
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 454 })
+    expect(end).toHaveAttribute('aria-valuenow', '1')
+    expect(screen.getByRole('status')).toHaveTextContent('已到这段的结尾')
+    fireEvent.pointerUp(end, { pointerId: 1 })
+  })
+
   it('把手丢了指针捕获后在别处松手：拖动结束并提交，整块回到首尾相接的样子，之后指针再动也不跟', () => {
     layOut()
     const { on } = renderEditing(cut, selected)

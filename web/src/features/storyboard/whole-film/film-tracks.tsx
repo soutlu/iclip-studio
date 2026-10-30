@@ -14,9 +14,18 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
+import { bubbleAlign } from '../editing/bubble-align'
+import { useEdgeScroll } from '../editing/edge-scroll'
 import type { PeaksState } from '../editing/media-analysis'
 import { trimSpans, usePreviewGesture, type GesturePreview } from '../editing/preview-gesture'
-import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
+import {
+  Frames,
+  LimitBubble,
+  TimelinePlayhead,
+  TimelineRuler,
+  TrimHandle,
+  Wave,
+} from '../editing/timeline'
 import {
   arrowStep,
   DRAG_THRESHOLD,
@@ -32,6 +41,7 @@ import {
   type InsertionPreviewHandle,
   type InsertionMotion,
 } from '../editing/timeline-insertion'
+import { TRIM_LIMIT_TEXT } from '../editing/trim-limit'
 import { useInsertionMotion, type MotionSnapshot } from '../editing/use-insertion-motion'
 import { captionKey } from './canvas-targets'
 import type { TrackLane } from './component-placement'
@@ -39,6 +49,7 @@ import type { PlacedCaption } from './composition/captions'
 import type { EditContext, MusicBeat } from './editing/context'
 import {
   MAX_FILM_MS,
+  MIN_CLIP_MS,
   type Layer0Clip,
   type OverlayClip,
   type VideoClip,
@@ -167,9 +178,6 @@ const NEW_ROW_BELOW_PX = 10
 const DROP_SLOP_PX = 16
 /** 相邻轨之间的空隙里，离哪条轨这么近就算那条轨 */
 const LANE_SLOP_PX = 4
-/** 带着东西靠近时间区左右边缘这么近就自动横向滚动，每秒滚这么多像素 */
-const SCROLL_EDGE_PX = 40
-const SCROLL_SPEED = 420
 /** 拍点在切点前后这么近就算卡在拍上 */
 const ON_BEAT_MS = 10
 
@@ -177,6 +185,28 @@ type Edge = 'start' | 'end'
 
 /** 画面轨上连着的几段一共多长 */
 const spanMs = (clips: readonly Layer0Clip[]) => clips.reduce((sum, clip) => sum + clip.duration, 0)
+
+/**
+ * 修剪画面轨的一段 `clip` 时把手有没有被挡住：按吸附之前的指针位移 `deltaMs` 修剪，修剪后的长度不是想要的长度
+ * 就是被挡住了。拉不长是到了成片总长上限，或这段素材（组件）本身的开头、结尾；剪不短是到了最短。没被挡住时为
+ * undefined。
+ */
+const layer0TrimNote = (
+  draft: WholeFilmDraft,
+  clip: Layer0Clip,
+  edge: Edge,
+  deltaMs: number,
+  context: EditContext,
+) => {
+  const result = trimClip(draft, { clipId: clip.id, edge, deltaMs }, context)
+  const after = result.ok ? result.draft.layer0.find((c) => c.id === clip.id) : undefined
+  if (!result.ok || after === undefined) return undefined
+  const wanted = clip.duration + (edge === 'end' ? deltaMs : -deltaMs)
+  if (after.duration === wanted) return undefined
+  if (wanted < after.duration) return TRIM_LIMIT_TEXT.shortest(MIN_CLIP_MS / 1000)
+  if (layer0End(result.draft) >= MAX_FILM_MS) return FILM_LIMIT_TEXT
+  return TRIM_LIMIT_TEXT[edge]
+}
 
 /** 拖到某处时算出的一步：编辑结果，以及拖动中要画的吸附线、停住的原因、特效块要去的行 */
 type GestureStep = {
@@ -421,6 +451,7 @@ export function FilmTracks({
   const clicks = useClickAfterDrag()
   const gesture = usePreviewGesture<GestureStep>({
     containerRef: contentRef,
+    viewportRef: scrollRef,
     clicks,
     accepts: (step) => step.result.ok,
     onCommit: (last) => apply(last.result),
@@ -466,7 +497,6 @@ export function FilmTracks({
   } | null>(null)
   // 拖动中指针最后在哪；靠近边缘时自动滚动用
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
-  const refreshRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const element = scrollRef.current
@@ -755,7 +785,23 @@ export function FilmTracks({
         )
       },
     }
-    refreshRef.current = () => {
+    return () => {
+      tracksRef.current = null
+    }
+  })
+
+  // 带着东西靠近时间区左右边缘：自动横向滚动，落点跟着重算。东西是从时间区外（素材区、组件栏）拖来的，指针在
+  // 时间区里（上方留一点余量）才滚
+  useEdgeScroll({
+    viewportRef: scrollRef,
+    active: (carry !== null && !carry.returning) || (lift?.moved === true && !lift.returning),
+    pointer: () => pointerRef.current,
+    reach: (pointer, box) =>
+      pointer.clientY >= box.top - DROP_SLOP_PX &&
+      pointer.clientY <= box.bottom &&
+      pointer.clientX >= box.left &&
+      pointer.clientX <= box.right,
+    onScroll: () => {
       setCarry((current) =>
         current === null || current.returning
           ? current
@@ -774,48 +820,8 @@ export function FilmTracks({
               pointerRef.current?.clientY ?? current.clientY,
             ),
       )
-    }
-    return () => {
-      tracksRef.current = null
-    }
+    },
   })
-
-  // 带着东西靠近时间区左右边缘：自动横向滚动，落点跟着重算
-  const dragging = (carry !== null && !carry.returning) || (lift?.moved === true && !lift.returning)
-  useEffect(() => {
-    if (!dragging) return
-    let frame = 0
-    let last: number | undefined
-    const tick = (now: number) => {
-      const elapsed = last === undefined ? 16 : Math.min(32, now - last)
-      last = now
-      const pointer = pointerRef.current
-      const viewport = scrollRef.current
-      if (pointer !== null && viewport !== null) {
-        const box = viewport.getBoundingClientRect()
-        const inside =
-          pointer.clientY >= box.top - DROP_SLOP_PX &&
-          pointer.clientY <= box.bottom &&
-          pointer.clientX >= box.left &&
-          pointer.clientX <= box.right
-        const direction = !inside
-          ? 0
-          : pointer.clientX < box.left + SCROLL_EDGE_PX
-            ? -1
-            : pointer.clientX > box.right - SCROLL_EDGE_PX
-              ? 1
-              : 0
-        if (direction !== 0) {
-          const before = viewport.scrollLeft
-          viewport.scrollLeft += (direction * SCROLL_SPEED * elapsed) / 1000
-          if (viewport.scrollLeft !== before) refreshRef.current()
-        }
-      }
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [dragging])
 
   const selectedOverlay = selection?.kind === 'overlay' ? selection.id : undefined
   const selectedClips = clipIdsOf(selection)
@@ -851,19 +857,20 @@ export function FilmTracks({
     // 拖动中别的段按已提交的草稿画，把手停在已提交布局里的这一刻（左边钉在 0 时停在 0）：吸附线、提示都画在把手处
     const trim = { clipId: clip.id, edge }
     gesture.startTrim(event, { slide: `clip:${clip.id}`, edge }, (deltaPx): GestureStep => {
-      const snapped = snapMs(edgeMs + pxToMs(deltaPx, pps), targets, pps, snap)
+      const pointerMs = pxToMs(deltaPx, pps)
+      const snapped = snapMs(edgeMs + pointerMs, targets, pps, snap)
       const deltaMs = snapped.ms - edgeMs
       const result = trimClip(draft, { clipId: clip.id, edge, deltaMs }, context)
       const after = result.ok ? result.draft.layer0.find((c) => c.id === clip.id) : undefined
       if (!result.ok || after === undefined) return { result, trim }
       const wanted = clip.duration + (edge === 'end' ? deltaMs : -deltaMs)
-      const stopped = wanted > after.duration && layer0End(result.draft) >= MAX_FILM_MS
       const { kept } = trimSpans(edge, { at: clip.start, len: clip.duration }, after.duration)
       return {
         result,
         trim,
         guideMs: after.duration === wanted ? snapped.guideMs : null,
-        note: stopped ? FILM_LIMIT_TEXT : undefined,
+        // 停住的原因按吸附之前的指针算：吸到边界上不算被挡住
+        note: layer0TrimNote(draft, clip, edge, pointerMs, context),
         noteAtMs: edge === 'end' ? kept.at + kept.len : kept.at,
       }
     })
@@ -1248,8 +1255,7 @@ export function FilmTracks({
   const guideMs = preview?.guideMs ?? hover?.point?.guideMs ?? null
   const markerLeft =
     marker === undefined ? 0 : msToPx(filmDrop?.start ?? insertClock(marker.index), pps)
-  const bubbleAlign = (left: number) =>
-    left < 120 ? 'is-start' : left > contentWidth - 120 ? 'is-end' : undefined
+  const alignAt = (left: number) => bubbleAlign(left, contentWidth)
   const tailLeft = msToPx(layer0End(shown), pps) + 8
   const showTail = marker === undefined && contentWidth - tailLeft > 300
   const cuts = cutsOf(shown)
@@ -1462,7 +1468,7 @@ export function FilmTracks({
                           : lift?.moved === true && !lift.returning
                             ? marker.text
                             : `插入 ${seconds(filmDrop?.start ?? insertClock(marker.index))} 秒 · ${seconds(insertionFace.durationMs)} 秒`,
-                        alignEnd: bubbleAlign(markerLeft) === 'is-end',
+                        alignEnd: alignAt(markerLeft) === 'is-end',
                       }
                 }
               />
@@ -1557,7 +1563,7 @@ export function FilmTracks({
                         text:
                           overlayDrop.reason ??
                           `${newRow === undefined ? '特效' : '新增特效轨'} · ${seconds(overlayDrop.start)}–${seconds(overlayDrop.start + overlayDrop.duration)} 秒${newRow === undefined ? '' : ' · 松开添加'}`,
-                        alignEnd: bubbleAlign(msToPx(overlayDrop.start, pps)) === 'is-end',
+                        alignEnd: alignAt(msToPx(overlayDrop.start, pps)) === 'is-end',
                       }
                 }
               />
@@ -1572,7 +1578,7 @@ export function FilmTracks({
                       <span
                         className={cn(
                           'wf-time-bubble',
-                          bubbleAlign(msToPx(overlay.start, pps)) === 'is-end' && 'is-end',
+                          alignAt(msToPx(overlay.start, pps)) === 'is-end' && 'is-end',
                         )}
                         role="status"
                         style={{
@@ -1675,16 +1681,6 @@ export function FilmTracks({
               ) : null}
             </div>
           </div>
-          {preview?.note !== undefined && preview.noteAtMs !== undefined ? (
-            <span
-              className={cn('wf-drop-bubble', bubbleAlign(msToPx(preview.noteAtMs, pps)))}
-              role="status"
-              style={{ left: `${msToPx(preview.noteAtMs, pps)}px` }}
-            >
-              <Icon decorative name="blocked" size="xs" />
-              {preview.note}
-            </span>
-          ) : null}
           {guideMs === null ? null : (
             <span
               aria-hidden="true"
@@ -1693,6 +1689,14 @@ export function FilmTracks({
             />
           )}
           <TimelinePlayhead style={{ left: `${msToPx(Math.min(playheadMs, total), pps)}px` }} />
+          {/* 停住的原因画在播放头之后：同一层级时盖住播放头，字不被挡 */}
+          {preview?.note !== undefined && preview.noteAtMs !== undefined ? (
+            <LimitBubble
+              left={`${msToPx(preview.noteAtMs, pps)}px`}
+              text={preview.note}
+              viewportRef={scrollRef}
+            />
+          ) : null}
         </div>
       </div>
       {insertionFace === undefined || (carry === null && lift?.moved !== true) ? null : (

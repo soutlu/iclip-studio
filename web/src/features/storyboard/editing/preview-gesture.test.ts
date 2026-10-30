@@ -95,7 +95,30 @@ const timeline = () => {
   }
 }
 
-const setup = (view = timeline()) => {
+/**
+ * 时间线的横向滚动区：jsdom 不排版也不滚，可视范围按上面的假尺寸是 0–600px，内容宽 `content`。scrollLeft 同浏览器
+ * 停在两端之间，变了就发 scroll。
+ */
+const scroller = (content = 1200) => {
+  const viewport = document.createElement('div')
+  let left = 0
+  Object.defineProperties(viewport, {
+    clientWidth: { value: 600 },
+    scrollWidth: { value: content },
+    scrollLeft: {
+      get: () => left,
+      set: (value: number) => {
+        const next = Math.max(0, Math.min(content - 600, value))
+        if (next === left) return
+        left = next
+        viewport.dispatchEvent(new Event('scroll'))
+      },
+    },
+  })
+  return viewport
+}
+
+const setup = (view = timeline(), viewport = scroller()) => {
   const onCommit = vi.fn<(step: Step) => void>(view.commit)
   const onPreview = vi.fn()
   const onEnd = vi.fn()
@@ -104,6 +127,7 @@ const setup = (view = timeline()) => {
     const clicks = useClickAfterDrag()
     const gesture = usePreviewGesture<Step>({
       containerRef: { current: view.container },
+      viewportRef: { current: viewport },
       clicks,
       accepts: (step) => step.fits,
       onCommit,
@@ -119,6 +143,7 @@ const setup = (view = timeline()) => {
     onEnd,
     gesture,
     handle,
+    viewport,
     calls: view.calls,
     press: (compute = stretchB) => act(() => gesture().start(pointer(handle, 0), compute)),
     pressTrim: (target: TrimTarget, compute: (dx: number) => Step) =>
@@ -292,6 +317,137 @@ describe('拖动一定会结束', () => {
     move(-50)
     release()
     expect(types(removed)).toEqual(ending)
+  })
+})
+
+describe('修剪拖动到时间线可视范围边缘时自动滚动', () => {
+  /** 接管 requestAnimationFrame：`frame(now)` 跑一帧。 */
+  const frames = () => {
+    let pending: FrameRequestCallback | undefined
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      pending = callback
+      return 1
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {
+      pending = undefined
+    })
+    return (now: number) =>
+      act(() => {
+        const callback = pending
+        pending = undefined
+        callback?.(now)
+      })
+  }
+
+  it('指针停在右边缘内 40px：每帧往右滚，指针不动也重算，compute 收到的位移算上滚过的距离', () => {
+    const frame = frames()
+    const compute = vi.fn(stretchB)
+    const { pressTrim, move, viewport, gesture } = setup()
+    pressTrim({ slide: 'b', edge: 'end' }, compute)
+    move(590)
+    expect(compute).toHaveBeenLastCalledWith(590, 0)
+    frame(1000)
+    expect(viewport.scrollLeft).toBeGreaterThan(0)
+    expect(compute).toHaveBeenLastCalledWith(590 + viewport.scrollLeft, 0)
+    frame(1016)
+    const scrolled = viewport.scrollLeft
+    expect(compute).toHaveBeenLastCalledWith(590 + scrolled, 0)
+    expect(gesture().preview?.last.dx).toBe(590 + scrolled)
+  })
+
+  it('指针离开靠边那一截就停，位移仍算上已经滚过的距离', () => {
+    const frame = frames()
+    const compute = vi.fn(stretchB)
+    const { pressTrim, move, viewport } = setup()
+    pressTrim({ slide: 'b', edge: 'end' }, compute)
+    move(590)
+    frame(1000)
+    frame(1016)
+    const scrolled = viewport.scrollLeft
+    move(300)
+    const calls = compute.mock.calls.length
+    frame(1032)
+    frame(1048)
+    expect(viewport.scrollLeft).toBe(scrolled)
+    expect(compute).toHaveBeenCalledTimes(calls)
+    expect(compute).toHaveBeenLastCalledWith(300 + scrolled, 0)
+  })
+
+  it('滚到内容两端停住，之后不再重算', () => {
+    const frame = frames()
+    const compute = vi.fn(stretchB)
+    // 内容只比可视范围宽 10px
+    const { pressTrim, move, viewport } = setup(timeline(), scroller(610))
+    pressTrim({ slide: 'b', edge: 'end' }, compute)
+    move(590)
+    frame(1000)
+    frame(1016)
+    expect(viewport.scrollLeft).toBe(10)
+    const calls = compute.mock.calls.length
+    frame(1032)
+    expect(viewport.scrollLeft).toBe(10)
+    expect(compute).toHaveBeenCalledTimes(calls)
+    expect(compute).toHaveBeenLastCalledWith(600, 0)
+
+    // 往左拖出可视范围：滚回 0 停住
+    move(-20)
+    frame(1048)
+    frame(1064)
+    expect(viewport.scrollLeft).toBe(0)
+    expect(compute).toHaveBeenLastCalledWith(-20, 0)
+  })
+
+  it('指针拖出可视范围也接着滚；还没超过拖动阈值、挪块都不滚', () => {
+    const frame = frames()
+    const trimming = setup()
+    act(() => {
+      trimming.viewport.scrollLeft = 100
+    })
+    trimming.pressTrim({ slide: 'b', edge: 'start' }, stretchB)
+    trimming.move(-20)
+    frame(1000)
+    expect(trimming.viewport.scrollLeft).toBeLessThan(100)
+    trimming.release()
+
+    const pressed = setup()
+    act(() => {
+      pressed.viewport.scrollLeft = 100
+    })
+    pressed.pressTrim({ slide: 'b', edge: 'start' }, stretchB)
+    pressed.move(2)
+    frame(1000)
+    expect(pressed.viewport.scrollLeft).toBe(100)
+    pressed.release()
+
+    const carrying = setup()
+    act(() => {
+      carrying.viewport.scrollLeft = 100
+    })
+    carrying.press()
+    carrying.move(-20)
+    frame(1000)
+    expect(carrying.viewport.scrollLeft).toBe(100)
+  })
+
+  it('修剪拖动中滚动区被别的方式滚了（滚轮）：指针不动也按滚过的距离重算；挪块不算', () => {
+    const compute = vi.fn(stretchB)
+    const trimming = setup()
+    trimming.pressTrim({ slide: 'b', edge: 'end' }, compute)
+    trimming.move(300)
+    act(() => {
+      trimming.viewport.scrollLeft = 50
+    })
+    expect(compute).toHaveBeenLastCalledWith(350, 0)
+
+    const carry = vi.fn(stretchB)
+    const carrying = setup()
+    carrying.press(carry)
+    carrying.move(300)
+    act(() => {
+      carrying.viewport.scrollLeft = 50
+    })
+    expect(carry).toHaveBeenCalledTimes(1)
+    expect(carry).toHaveBeenLastCalledWith(300, 0)
   })
 })
 

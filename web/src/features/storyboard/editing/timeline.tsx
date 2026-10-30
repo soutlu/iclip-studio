@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -11,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
+import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
 import type { PlaySegment } from './play-layout'
 import { roundSeconds, timeLabel } from './time-label'
@@ -189,6 +191,41 @@ export function TimelineRuler({
 
 export function TimelinePlayhead({ style }: { style: CSSProperties }) {
   return <span aria-hidden="true" className="timeline-playhead" style={style} />
+}
+
+type LimitBubbleProps = {
+  text: string
+  /** 把手离内容层左边多远（CSS 长度）。 */
+  left: string
+  /** 时间线的横向滚动区：把手离它可视范围两端太近时气泡靠向里面。 */
+  viewportRef: RefObject<HTMLElement | null>
+}
+
+/**
+ * 拖到边界停住时把手旁的说明（为什么拖不过去），两个编辑器共用。气泡以把手为中心，把手贴近时间线可视范围两端时
+ * 收回来、靠向里面；每次画完按把手此刻在可视范围里的位置定（拖动中自动滚动的每一步都会重画）。
+ */
+export function LimitBubble({ text, left, viewportRef }: LimitBubbleProps) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const bubble = ref.current
+    const viewport = viewportRef.current
+    const parent = bubble?.offsetParent
+    if (bubble === null || viewport === null || parent === null || parent === undefined) return
+    const view = viewport.getBoundingClientRect()
+    const align = bubbleAlign(
+      parent.getBoundingClientRect().left + bubble.offsetLeft - view.left,
+      view.width,
+    )
+    bubble.classList.toggle('is-start', align === 'is-start')
+    bubble.classList.toggle('is-end', align === 'is-end')
+  })
+  return (
+    <span className="timeline-limit-bubble" ref={ref} role="status" style={{ left }}>
+      <Icon decorative name="blocked" size="xs" />
+      {text}
+    </span>
+  )
 }
 
 /** 画面行最多画几格。 */
