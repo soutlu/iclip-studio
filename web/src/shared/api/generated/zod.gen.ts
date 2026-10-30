@@ -118,6 +118,13 @@ export const zBodyAuthCookieLoginAuthLoginPost = z.object({
 })
 
 /**
+ * Body_import_skill_skills_import_post
+ */
+export const zBodyImportSkillSkillsImportPost = z.object({
+  file: z.string(),
+})
+
+/**
  * BrandFontConfirmIn
  */
 export const zBrandFontConfirmIn = z.object({
@@ -505,6 +512,35 @@ export const zDepartmentOut = z.object({
   source: z.string(),
   type: z.string(),
   uid: z.string(),
+})
+
+/**
+ * DraftFileInfoOut
+ */
+export const zDraftFileInfoOut = z.object({
+  hash: z.string(),
+  path: z.string(),
+  size: z.int(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * DraftFileOut
+ */
+export const zDraftFileOut = z.object({
+  content: z.string(),
+  hash: z.string(),
+  path: z.string(),
+  size: z.int(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * DraftFileWriteIn
+ */
+export const zDraftFileWriteIn = z.object({
+  baseHash: z.string().nullable(),
+  content: z.string(),
 })
 
 /**
@@ -1102,6 +1138,7 @@ export const zPermission = z.enum([
   'api_keys:issue',
   'agent:read',
   'agent:run',
+  'agent:manage',
 ])
 
 /**
@@ -1238,6 +1275,141 @@ export const zSidebarOut = z.object({
   collections: z.array(zSidebarCollectionOut),
   ungrouped: zConversationPageOut,
   ungroupedCount: z.int(),
+})
+
+/**
+ * SkillCreateIn
+ *
+ * 新建一个技能，同时生成一份带 frontmatter 的 ``SKILL.md`` 草稿。
+ */
+export const zSkillCreateIn = z.object({
+  description: z.string(),
+  displayName: z.string(),
+  name: z.string(),
+})
+
+/**
+ * SkillDetailOut
+ */
+export const zSkillDetailOut = z.object({
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  description: z.string(),
+  displayName: z.string(),
+  draftFiles: z.array(zDraftFileInfoOut),
+  hasUnpublishedChanges: z.boolean(),
+  id: z.uuid(),
+  latestVersion: z.int().nullable(),
+  latestVersionId: z.uuid().nullable(),
+  name: z.string(),
+  status: z.enum(['active', 'archived']),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * SkillFileOut
+ *
+ * 清单里的一个文件。
+ */
+export const zSkillFileOut = z.object({
+  hash: z.string(),
+  path: z.string(),
+  size: z.int(),
+})
+
+/**
+ * SkillImportOut
+ *
+ * 导入检查或导入的结果。只建或覆盖草稿，不发布。
+ */
+export const zSkillImportOut = z.object({
+  action: z.enum(['create', 'overwrite']).nullable(),
+  description: z.string().nullable(),
+  displayName: z.string().nullable(),
+  files: z.array(zSkillFileOut),
+  name: z.string().nullable(),
+  problems: z.array(z.string()),
+  skillId: z.uuid().nullable(),
+})
+
+/**
+ * SkillOut
+ */
+export const zSkillOut = z.object({
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  description: z.string(),
+  displayName: z.string(),
+  hasUnpublishedChanges: z.boolean(),
+  id: z.uuid(),
+  latestVersion: z.int().nullable(),
+  latestVersionId: z.uuid().nullable(),
+  name: z.string(),
+  status: z.enum(['active', 'archived']),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * SkillPublishIn
+ */
+export const zSkillPublishIn = z.object({
+  note: z.string().nullish(),
+})
+
+/**
+ * SkillUpdateIn
+ */
+export const zSkillUpdateIn = z.object({
+  displayName: z.string(),
+})
+
+/**
+ * SkillVersionDetailOut
+ */
+export const zSkillVersionDetailOut = z.object({
+  contentHash: z.string(),
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  files: z.array(zSkillFileOut),
+  id: z.uuid(),
+  note: z.string().nullable(),
+  version: z.int(),
+})
+
+/**
+ * SkillVersionFileOut
+ */
+export const zSkillVersionFileOut = z.object({
+  content: z.string(),
+  hash: z.string(),
+  path: z.string(),
+  size: z.int(),
+})
+
+/**
+ * SkillVersionOut
+ */
+export const zSkillVersionOut = z.object({
+  contentHash: z.string(),
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  id: z.uuid(),
+  note: z.string().nullable(),
+  version: z.int(),
+})
+
+/**
+ * SkillVersionsOut
+ */
+export const zSkillVersionsOut = z.object({
+  items: z.array(zSkillVersionOut),
+})
+
+/**
+ * SkillsOut
+ */
+export const zSkillsOut = z.object({
+  items: z.array(zSkillOut),
 })
 
 /**
@@ -3849,6 +4021,168 @@ export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostPat
  */
 export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
   zReferenceVideoOut
+
+/**
+ * Successful Response
+ */
+export const zListSkillsSkillsGetResponse = zSkillsOut
+
+export const zCreateSkillSkillsPostBody = zSkillCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateSkillSkillsPostResponse = zSkillDetailOut
+
+export const zImportSkillSkillsImportPostBody = zBodyImportSkillSkillsImportPost
+
+export const zImportSkillSkillsImportPostQuery = z.object({
+  dryRun: z.boolean().optional().default(false),
+})
+
+/**
+ * Successful Response
+ */
+export const zImportSkillSkillsImportPostResponse = zSkillImportOut
+
+export const zSkillDetailSkillsSkillIdGetPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSkillDetailSkillsSkillIdGetResponse = zSkillDetailOut
+
+export const zUpdateSkillSkillsSkillIdPatchBody = zSkillUpdateIn
+
+export const zUpdateSkillSkillsSkillIdPatchPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateSkillSkillsSkillIdPatchResponse = zSkillDetailOut
+
+export const zArchiveSkillSkillsSkillIdArchivePostPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zArchiveSkillSkillsSkillIdArchivePostResponse = zSkillDetailOut
+
+export const zDeleteDraftFileSkillsSkillIdDraftFilesPathDeletePath = z.object({
+  skill_id: z.uuid(),
+  path: z.string(),
+})
+
+export const zDeleteDraftFileSkillsSkillIdDraftFilesPathDeleteQuery = z.object({
+  baseHash: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponse = z.void()
+
+export const zReadDraftFileSkillsSkillIdDraftFilesPathGetPath = z.object({
+  skill_id: z.uuid(),
+  path: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadDraftFileSkillsSkillIdDraftFilesPathGetResponse = zDraftFileOut
+
+export const zWriteDraftFileSkillsSkillIdDraftFilesPathPutBody = zDraftFileWriteIn
+
+export const zWriteDraftFileSkillsSkillIdDraftFilesPathPutPath = z.object({
+  skill_id: z.uuid(),
+  path: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zWriteDraftFileSkillsSkillIdDraftFilesPathPutResponse = zDraftFileOut
+
+export const zExportSkillSkillsSkillIdExportGetPath = z.object({
+  skill_id: z.uuid(),
+})
+
+export const zExportSkillSkillsSkillIdExportGetQuery = z.object({
+  versionId: z.uuid().nullish(),
+})
+
+/**
+ * 技能的 zip 压缩包
+ */
+export const zExportSkillSkillsSkillIdExportGetResponse = z.string()
+
+export const zUnarchiveSkillSkillsSkillIdUnarchivePostPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUnarchiveSkillSkillsSkillIdUnarchivePostResponse = zSkillDetailOut
+
+export const zSkillVersionsSkillsSkillIdVersionsGetPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSkillVersionsSkillsSkillIdVersionsGetResponse = zSkillVersionsOut
+
+export const zPublishSkillSkillsSkillIdVersionsPostBody = zSkillPublishIn
+
+export const zPublishSkillSkillsSkillIdVersionsPostPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zPublishSkillSkillsSkillIdVersionsPostResponse = zSkillVersionOut
+
+export const zSkillVersionSkillsSkillIdVersionsVersionIdGetPath = z.object({
+  skill_id: z.uuid(),
+  version_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSkillVersionSkillsSkillIdVersionsVersionIdGetResponse = zSkillVersionDetailOut
+
+export const zSkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetPath = z.object({
+  skill_id: z.uuid(),
+  version_id: z.uuid(),
+  path: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponse =
+  zSkillVersionFileOut
+
+export const zRestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostPath = z.object({
+  skill_id: z.uuid(),
+  version_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponse = zSkillDetailOut
 
 export const zListTasksTasksGetQuery = z.object({
   status: z.enum(['draft', 'published', 'confirmed', 'withdrawn']).nullish(),

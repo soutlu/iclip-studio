@@ -623,6 +623,21 @@
         "title": "Body_auth_cookie_login_auth_login_post",
         "type": "object"
       },
+      "Body_import_skill_skills_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "技能的 zip 压缩包",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_skill_skills_import_post",
+        "type": "object"
+      },
       "BrandFontConfirmIn": {
         "additionalProperties": false,
         "properties": {
@@ -1927,6 +1942,97 @@
           "order"
         ],
         "title": "DepartmentOut",
+        "type": "object"
+      },
+      "DraftFileInfoOut": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "hash",
+          "updatedAt"
+        ],
+        "title": "DraftFileInfoOut",
+        "type": "object"
+      },
+      "DraftFileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "size",
+          "hash",
+          "updatedAt"
+        ],
+        "title": "DraftFileOut",
+        "type": "object"
+      },
+      "DraftFileWriteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "baseHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basehash"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "baseHash"
+        ],
+        "title": "DraftFileWriteIn",
         "type": "object"
       },
       "ErrorModel": {
@@ -5203,7 +5309,8 @@
           "users:act_as",
           "api_keys:issue",
           "agent:read",
-          "agent:run"
+          "agent:run",
+          "agent:manage"
         ],
         "type": "string"
       },
@@ -6060,6 +6167,530 @@
           "ungrouped"
         ],
         "title": "SidebarOut",
+        "type": "object"
+      },
+      "SkillCreateIn": {
+        "additionalProperties": false,
+        "description": "新建一个技能，同时生成一份带 frontmatter 的 ``SKILL.md`` 草稿。",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "displayName",
+          "description"
+        ],
+        "title": "SkillCreateIn",
+        "type": "object"
+      },
+      "SkillDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "draftFiles": {
+            "items": {
+              "$ref": "#/components/schemas/DraftFileInfoOut"
+            },
+            "title": "Draftfiles",
+            "type": "array"
+          },
+          "hasUnpublishedChanges": {
+            "title": "Hasunpublishedchanges",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latestVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversion"
+          },
+          "latestVersionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversionid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "displayName",
+          "description",
+          "status",
+          "latestVersionId",
+          "latestVersion",
+          "hasUnpublishedChanges",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "draftFiles"
+        ],
+        "title": "SkillDetailOut",
+        "type": "object"
+      },
+      "SkillFileOut": {
+        "additionalProperties": false,
+        "description": "清单里的一个文件。",
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "hash"
+        ],
+        "title": "SkillFileOut",
+        "type": "object"
+      },
+      "SkillImportOut": {
+        "additionalProperties": false,
+        "description": "导入检查或导入的结果。只建或覆盖草稿，不发布。",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "create",
+                  "overwrite"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "skillId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skillid"
+          }
+        },
+        "required": [
+          "action",
+          "skillId",
+          "name",
+          "displayName",
+          "description",
+          "files",
+          "problems"
+        ],
+        "title": "SkillImportOut",
+        "type": "object"
+      },
+      "SkillOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "hasUnpublishedChanges": {
+            "title": "Hasunpublishedchanges",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latestVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversion"
+          },
+          "latestVersionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversionid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "displayName",
+          "description",
+          "status",
+          "latestVersionId",
+          "latestVersion",
+          "hasUnpublishedChanges",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "SkillOut",
+        "type": "object"
+      },
+      "SkillPublishIn": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "SkillPublishIn",
+        "type": "object"
+      },
+      "SkillUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName"
+        ],
+        "title": "SkillUpdateIn",
+        "type": "object"
+      },
+      "SkillVersionDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "contentHash": {
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "note",
+          "contentHash",
+          "createdBy",
+          "createdAt",
+          "files"
+        ],
+        "title": "SkillVersionDetailOut",
+        "type": "object"
+      },
+      "SkillVersionFileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "hash",
+          "content"
+        ],
+        "title": "SkillVersionFileOut",
+        "type": "object"
+      },
+      "SkillVersionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "contentHash": {
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "note",
+          "contentHash",
+          "createdBy",
+          "createdAt"
+        ],
+        "title": "SkillVersionOut",
+        "type": "object"
+      },
+      "SkillVersionsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillVersionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillVersionsOut",
+        "type": "object"
+      },
+      "SkillsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillsOut",
         "type": "object"
       },
       "SpreadOut": {
@@ -17425,6 +18056,985 @@
         "summary": "Start Reference Test Video",
         "tags": [
           "references"
+        ]
+      }
+    },
+    "/skills": {
+      "get": {
+        "description": "全部技能，含已归档的，每个带有没有未发布的修改。",
+        "operationId": "list_skills_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "List Skills",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "新建一个技能，草稿里生成一份带 frontmatter 的 ``SKILL.md``；标识已被占用是 409。",
+        "operationId": "create_skill_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Create Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/import": {
+      "post": {
+        "description": "导入一个技能压缩包：``dryRun=true`` 只检查不写；否则新建技能或覆盖同名技能的草稿，都不\n发布，有问题是 422。",
+        "operationId": "import_skill_skills_import_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dryrun",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_skill_skills_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Import Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}": {
+      "get": {
+        "description": "一个技能连同草稿的文件清单。",
+        "operationId": "skill_detail_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Detail",
+        "tags": [
+          "skills"
+        ]
+      },
+      "patch": {
+        "description": "改显示名；标识不能改。",
+        "operationId": "update_skill_skills__skill_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Update Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/archive": {
+      "post": {
+        "operationId": "archive_skill_skills__skill_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Archive Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/draft/files/{path}": {
+      "delete": {
+        "description": "删草稿里的一个文件，``baseHash`` 与库里对不上是 409；``SKILL.md`` 不能删。",
+        "operationId": "delete_draft_file_skills__skill_id__draft_files__path__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "baseHash",
+            "required": true,
+            "schema": {
+              "title": "Basehash",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Draft File",
+        "tags": [
+          "skills"
+        ]
+      },
+      "get": {
+        "description": "草稿里的一个文件，带内容与 ``hash``。",
+        "operationId": "read_draft_file_skills__skill_id__draft_files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Read Draft File",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "写草稿里的一个文件：新建给 ``baseHash: null``，改给读到的 ``hash``，对不上是 409。",
+        "operationId": "write_draft_file_skills__skill_id__draft_files__path__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftFileWriteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Write Draft File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/export": {
+      "get": {
+        "description": "把一个版本（不给就是最新版）打成 zip，顶层目录是技能标识；没发布过是 404。",
+        "operationId": "export_skill_skills__skill_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "versionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Versionid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "技能的 zip 压缩包"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Export Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_skill_skills__skill_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Unarchive Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions": {
+      "get": {
+        "operationId": "skill_versions_skills__skill_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Versions",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "把草稿发布成新版本；草稿不合格或与最新版相同是 422。",
+        "operationId": "publish_skill_skills__skill_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPublishIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Publish Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions/{version_id}": {
+      "get": {
+        "description": "一个版本连同它的文件清单。",
+        "operationId": "skill_version_skills__skill_id__versions__version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Version",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions/{version_id}/files/{path}": {
+      "get": {
+        "operationId": "skill_version_file_skills__skill_id__versions__version_id__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Version File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "把这个版本的文件整份抄回草稿，替换草稿里的全部文件；不发布。",
+        "operationId": "restore_skill_version_skills__skill_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Restore Skill Version",
+        "tags": [
+          "skills"
         ]
       }
     },

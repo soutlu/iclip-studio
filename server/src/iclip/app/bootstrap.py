@@ -106,6 +106,8 @@ from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.domains.references.module import BreakdownSetup, build_references_module
 from iclip.domains.references.repository import VideoBreakdowns
+from iclip.domains.skills.infra_sql import SqlSkillStore
+from iclip.domains.skills.module import build_skills_module
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
 from iclip.domains.tagging.repository import Tagger
@@ -659,6 +661,7 @@ def build_app(
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
+    skills = build_skills_module(SqlSkillStore(active_engine))
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
     library = build_library_module(
@@ -861,6 +864,8 @@ def build_app(
         for router in brand_templates.routers:
             app.include_router(router)
     for router in tracking.routers:
+        app.include_router(router)
+    for router in skills.routers:
         app.include_router(router)
     app.include_router(
         create_transcript_router(
