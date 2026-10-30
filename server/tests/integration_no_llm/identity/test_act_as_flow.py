@@ -9,10 +9,26 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from iclip.platform.db.engine import build_engine
+from tests.helpers.agents import CONVERSABLE_SEEDS, SEEDER, AgentSeed, seed_agents
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 from tests.helpers.tasks import INPUTS
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    """钥匙替人开对话、发消息，要有能开对话的 agent。"""
+
+    return CONVERSABLE_SEEDS
+
+
+def people(listing: dict[str, Any]) -> list[str]:
+    """用户列表里的用户名，不含种 agent 时建的作者账号。"""
+
+    return [user["username"] for user in listing["items"] if user["username"] != SEEDER]
+
 
 ACT_AS_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write", "users:act_as"]
 PLAIN_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write"]
@@ -92,7 +108,7 @@ async def test_key_without_act_as_keeps_records_under_the_key_owner(
             assert opened.status_code == 201, opened.text
 
         assert len((await root.get("/conversations/search")).json()["items"]) == 1
-        assert (await root.get("/users")).json()["total"] == 1
+        assert people((await root.get("/users")).json()) == ["logan"]
 
 
 @pytest.mark.parametrize("registered", [False, True], ids=["placeholder", "registered"])
@@ -133,7 +149,9 @@ async def test_act_as_key_can_prompt_the_conversation_it_opened_for_someone(
         )
         if person_id is not None:
             assert owner == person_id
-        assert listing["total"] == 2, "钥匙属主加 Sara.Hong 一个账号，不多建占位"
+        assert sorted(people(listing)) == ["Sara.Hong", "logan"], (
+            "钥匙属主加 Sara.Hong 一个账号，不多建占位"
+        )
 
 
 async def job_owner(pg_url: str, conversation_id: str) -> str:
@@ -193,6 +211,11 @@ class TestSsoAdoptsThePlaceholder:
     async def test_login_adopts_placeholder_and_its_records(
         self, sso_app: FastAPI, migrated_pg: str
     ) -> None:
+        engine = build_engine(migrated_pg)
+        try:
+            await seed_agents(sso_app.state.agent_services, engine, CONVERSABLE_SEEDS)
+        finally:
+            await engine.dispose()
         async with make_client(sso_app) as root:
             _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
             async with machine(sso_app, token) as gateway:
@@ -218,7 +241,7 @@ class TestSsoAdoptsThePlaceholder:
                 "/auth/login", data={"username": "logan", "password": "password-123"}
             )
             assert login.status_code == 204, login.text
-            assert (await root.get("/users")).json()["total"] == 2
+            assert sorted(people((await root.get("/users")).json())) == ["Sara.Hong", "logan"]
 
 
 class TestSsoLeavesASameNameRealAccountAlone:

@@ -20,25 +20,17 @@ from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.schemas import MetricsOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
-from iclip.harness.agents import (
-    AgentDefinition,
-    SubAgentDefinition,
-    build_agent_registry,
-    subagent_profiles,
-)
 from iclip.harness.jobs import JobQueue
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.transcript.subagents import SubAgentMirror
-from tests.helpers.agents import spec_path
 from tests.helpers.audit import Plant
 from tests.helpers.runtime import (
     AGENT_ID,
     build_runner,
     calls_tool,
     delegates,
-    discarding_usage_ledger,
+    delegating_agent,
     drained,
     first_run_messages,
     make_runner,
@@ -78,33 +70,19 @@ def service(reports: PgAuditReports) -> AuditService:
 WRITER = "shot-writer"
 
 
-def delegating_runner(
-    engine: AsyncEngine, root: Path
-) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """按真实装配路径建一个会派活给子代理的主 agent，再按生产接法装 runner。"""
+def delegating_runner(engine: AsyncEngine) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
+    """按运行时的装配接法建一个会派活给子代理的主 agent，再按生产接法装 runner。"""
 
     step_store = PgStepStore(engine)
     store = TranscriptStore()
-    models = {AGENT_ID: delegates((WRITER, "写三个镜头")), WRITER: says("写好了")}
-    definitions = (
-        AgentDefinition(
-            agent_id=AGENT_ID,
-            spec=spec_path(root, AGENT_ID),
-            model=AGENT_ID,
-            subagents=(
-                SubAgentDefinition(name=WRITER, spec=spec_path(root, WRITER), model=WRITER),
-            ),
-        ),
-    )
-    registry = build_agent_registry(
-        definitions,
+    agent = delegating_agent(
+        parent=delegates((WRITER, "写三个镜头")),
+        children={WRITER: says("写好了")},
         step_store=step_store,
-        usage_ledger=discarding_usage_ledger(),
-        models=models,
-        subagent_mirror=SubAgentMirror(live=store, profiles=subagent_profiles(definitions, models)),
+        live=store,
     )
     return make_runner(
-        engine, agents=registry.agents, step_store=step_store, store=store, context_limits={}
+        engine, agents={AGENT_ID: agent}, step_store=step_store, store=store, context_limits={}
     )
 
 
@@ -125,7 +103,7 @@ async def test_run_seconds_count_top_level_runs_that_reached_an_end(
             await plant.conversation(owner, at=datetime.now(UTC)) for _ in range(3)
         ]
 
-    runner, step_store, queue = delegating_runner(engine, tmp_path)
+    runner, step_store, queue = delegating_runner(engine)
     await submit_text(runner, queue, str(delegated), "给这条视频做分镜")
     await drained(queue, str(delegated))
     await runner.shutdown()

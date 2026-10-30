@@ -143,6 +143,8 @@ def build(
 ) -> ConversationService:
     return ConversationService(
         cast("ConversationRepository", repo),
+        open_session=_untouched,
+        fork_session=_untouched,
         list_collections=collections,
         claim_task=_untouched,
         list_derived_files=_untouched,

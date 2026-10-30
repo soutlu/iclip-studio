@@ -1,4 +1,4 @@
-"""插件按名字解析，名字没登记即装配期报错。"""
+"""插件登记表：按配置登记哪些插件、每个插件按 spec 造出的实例与它的依赖、各适配器。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any, cast
 import httpx
 import pytest
 from pydantic_ai import Agent, AgentSpec
-from pydantic_ai.capabilities import Capability
+from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -23,7 +23,6 @@ from iclip.app.plugin_registry import (
     PluginRegistry,
     build_display_registry,
     build_plugin_registry,
-    resolve_plugins,
 )
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.common.errors import ValidationFailed
@@ -112,20 +111,14 @@ def assert_kinds(capabilities: Sequence[object], expected: Sequence[type]) -> No
         assert isinstance(capability, kind), f"{type(capability).__name__} 不是 {kind.__name__}"
 
 
-def test_unknown_name_fails_loudly(registry: PluginRegistry) -> None:
+def mount(names: Sequence[str], registry: PluginRegistry) -> tuple[AbstractCapability[Any], ...]:
+    """按名字各用 ``from_spec`` 造一份，与 ``Agent.from_spec`` 按 spec 造实例走同一个入口。"""
 
-    with pytest.raises(RuntimeError, match="引用了未登记的插件 'shots'"):
-        resolve_plugins(("shots",), registry=registry, declared_by="agent storyboard")
+    return tuple(registry[name].from_spec() for name in names)
 
 
 def test_registered_name_resolves(dummy: Capability[object], registry: PluginRegistry) -> None:
-    assert resolve_plugins(("dummy",), registry=registry, declared_by="agent storyboard") == (
-        dummy,
-    )
-
-
-def test_nothing_declared_mounts_nothing(registry: PluginRegistry) -> None:
-    assert resolve_plugins((), registry=registry, declared_by="agent storyboard") == ()
+    assert mount(("dummy",), registry) == (dummy,)
 
 
 def test_shot_video_is_not_registered_unless_the_composition_root_passes_it() -> None:
@@ -137,8 +130,6 @@ def test_shot_video_is_not_registered_unless_the_composition_root_passes_it() ->
         fetch_url=as_is,
     )
     assert set(built) == {"workspace", "iclip_studio", "video_shots"}
-    with pytest.raises(RuntimeError, match="引用了未登记的插件 'shot_video'"):
-        resolve_plugins(("shot_video",), registry=built, declared_by="agent storyboard")
 
 
 def test_plugins_without_their_own_config_are_always_registered() -> None:
@@ -151,15 +142,12 @@ def test_plugins_without_their_own_config_are_always_registered() -> None:
         fetch_url=as_is,
     )
 
-    resolved = resolve_plugins(
-        ("workspace", "iclip_studio", "video_shots"), registry=built, declared_by="agent director"
-    )
+    resolved = mount(("workspace", "iclip_studio", "video_shots"), built)
     assert_kinds(resolved, [Workspace, IclipStudio, VideoShots])
     shots = resolved[2]
     assert isinstance(shots, VideoShots)
     assert set(shots.get_toolset().tools) == {"write_video_shots"}
-    with pytest.raises(RuntimeError, match="没挂 'workspace'"):
-        resolve_plugins(("video_shots",), registry=built, declared_by="agent replica")
+    assert built["video_shots"].required_plugins() == ("workspace",)
 
 
 STUDIO = ResolvedIclipStudio(
@@ -201,11 +189,7 @@ async def test_video_breakdown_breaks_videos_down_through_the_reference_service(
         reference_service=cast("ReferenceService", references),
     )
 
-    workspace, plugin, studio = resolve_plugins(
-        ("workspace", "video_breakdown", "iclip_studio"),
-        registry=built,
-        declared_by="agent replica",
-    )
+    workspace, plugin, studio = mount(("workspace", "video_breakdown", "iclip_studio"), built)
     assert isinstance(workspace, Workspace)
     assert isinstance(plugin, VideoBreakdownPlugin)
     capability, background = plugin.capabilities
@@ -215,8 +199,7 @@ async def test_video_breakdown_breaks_videos_down_through_the_reference_service(
     assert isinstance(capability.breakdowns, ReferenceBreakdownsAdapter)
     assert await capability.breakdowns.ensure(STUDIO_PRINCIPAL, STUDIO_VIDEO) == "# 出场元素"
     assert references.asked == [(STUDIO_PRINCIPAL, STUDIO_VIDEO)]
-    with pytest.raises(RuntimeError, match="没挂 'workspace'"):
-        resolve_plugins(("video_breakdown",), registry=built, declared_by="agent replica")
+    assert built["video_breakdown"].required_plugins() == ("workspace",)
 
 
 def test_video_breakdown_without_the_reference_service_is_an_assembly_error() -> None:
@@ -262,16 +245,15 @@ def test_shot_video_is_registered_when_backed(
         image_models=frozenset({IMAGE_MODEL}),
         media_codec=SOFTWARE,
     )
-    resolved = resolve_plugins(
-        ("workspace", "video", "shot_video"), registry=built, declared_by="agent storyboard"
-    )
+    resolved = mount(("workspace", "video", "shot_video"), built)
     assert_kinds(resolved, [Workspace, Video, ShotVideo])
 
 
-def test_shot_video_without_workspace_and_video_fails_at_assembly(
+def test_shot_video_requires_workspace_and_video(
     video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
 ) -> None:
-    """取帧读 video 写的拆解文档、产物靠工作区工具读取，少挂任一个都在装配时拒绝。"""
+    """取帧读 video 写的拆解文档、产物靠工作区工具读取：两者都写在插件的依赖里，发布与运行前的编译按它
+    拦，pydantic-ai 装配时也查（见最后一个用例）。"""
 
     built = build_plugin_registry(
         workspace_store=FakeFileStore(),
@@ -286,10 +268,7 @@ def test_shot_video_without_workspace_and_video_fails_at_assembly(
         image_models=frozenset({IMAGE_MODEL}),
         media_codec=SOFTWARE,
     )
-    with pytest.raises(RuntimeError, match=r"没挂 'workspace', 'video'.*agents\.yaml"):
-        resolve_plugins(("shot_video",), registry=built, declared_by="agent storyboard")
-    with pytest.raises(RuntimeError, match=r"没挂 'video'.*agents\.yaml"):
-        resolve_plugins(("workspace", "shot_video"), registry=built, declared_by="agent storyboard")
+    assert set(built["shot_video"].required_plugins()) == {"workspace", "video"}
 
 
 def test_the_display_registry_merges_every_display_source(
@@ -648,7 +627,7 @@ def test_video_mounts_without_generation_or_object_store(video_settings: Resolve
         fetch_url=as_is,
         video=video_settings,
     )
-    resolved = resolve_plugins(("workspace", "video"), registry=built, declared_by="agent video")
+    resolved = mount(("workspace", "video"), built)
     assert_kinds(resolved, [Workspace, Video])
     assert "shot_video" not in built
     video = resolved[1]
@@ -657,8 +636,7 @@ def test_video_mounts_without_generation_or_object_store(video_settings: Resolve
     display = build_display_registry(built)
     assert "video_parser" in display.entries
     assert "generate_shot_frames" not in display.entries
-    with pytest.raises(RuntimeError, match=r"没挂 'workspace'"):
-        resolve_plugins(("video",), registry=built, declared_by="agent video")
+    assert built["video"].required_plugins() == ("workspace",)
 
 
 def test_video_is_unavailable_without_understanding() -> None:
@@ -668,8 +646,7 @@ def test_video_is_unavailable_without_understanding() -> None:
         http_client=idle_client(),
         fetch_url=as_is,
     )
-    with pytest.raises(RuntimeError, match="未登记的插件 'video'"):
-        resolve_plugins(("workspace", "video"), registry=built, declared_by="agent video")
+    assert "video" not in built
 
 
 def everything_registered(
@@ -740,7 +717,7 @@ async def tools_seen(agent: Agent[AgentRunDeps, str]) -> list[str]:
     return seen
 
 
-async def test_an_agent_from_the_native_spec_gets_the_same_tools_as_the_yaml_path(
+async def test_an_agent_from_the_native_spec_gets_the_same_tools_as_the_plugin_instances(
     video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
 ) -> None:
     built = everything_registered(video_settings, shot_video_settings)
@@ -752,14 +729,12 @@ async def test_an_agent_from_the_native_spec_gets_the_same_tools_as_the_yaml_pat
         deps_type=AgentRunDeps,
         model=TestModel(),
     )
-    from_yaml = Agent(
-        TestModel(),
-        deps_type=AgentRunDeps,
-        capabilities=list(resolve_plugins(names, registry=built, declared_by="agent replica")),
+    from_instances = Agent(
+        TestModel(), deps_type=AgentRunDeps, capabilities=list(mount(names, built))
     )
 
     seen = await tools_seen(from_spec)
-    assert seen == await tools_seen(from_yaml)
+    assert seen == await tools_seen(from_instances)
     assert {"breakdown_video", "read_file", "plan_shot_frames", "video_parser"} <= set(seen)
 
 

@@ -13,8 +13,6 @@ from iclip.app.logging import configure_logging
 def main() -> None:
     parser = argparse.ArgumentParser(description="iclip-studio server")
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--agents", default="agents/agents.yaml")
-    parser.add_argument("--skills", default="skills")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=7788)
     parser.add_argument("--reload", action="store_true")
@@ -27,8 +25,6 @@ def main() -> None:
         parser.error("--reload 与多 worker 互斥")
 
     os.environ["CONFIG_FILE"] = args.config
-    os.environ["AGENTS_FILE"] = args.agents
-    os.environ["SKILLS_DIR"] = args.skills
     # 这里先配一遍给监督进程（reload / 多 worker 时 uvicorn 的启动行由它打）；
     # 每个 worker 进程装配 app 时再按 config.yaml 的级别与格式配自己那一份。
     configure_logging("INFO", "console")

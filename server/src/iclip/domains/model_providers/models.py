@@ -9,9 +9,13 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 from iclip.common.model_vocab import ModelApi, ThinkingEffort
+
+if TYPE_CHECKING:
+    # catalog 读本模块的模型形状，运行时 import 回去会成环；这里只用作注解。
+    from iclip.domains.model_providers.catalog import ProviderDeclaration
 
 ModelType = Literal["llm", "embedding", "rerank"]
 
@@ -137,6 +141,21 @@ class ResolvedProvider:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeModel:
+    """运行时建一个对话模型要的全部：供应商的声明、那一行、合并后的模型、用的那把密钥与它的明文字段。
+
+    ``provider.updated_at``、``credential_updated_at`` 与 ``model`` 本身一起回答「建出来的模型还是不是
+    这一份」，运行时按它们决定要不要重建。``fields`` 是解密后的明文，只交给建模型的那一步。"""
+
+    declaration: ProviderDeclaration
+    provider: ProviderRecord
+    model: ProviderModel
+    credential_id: uuid.UUID
+    credential_updated_at: datetime
+    fields: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
 class ProbeResult:
     """一次试连的结果。``reason`` 只在失败时有，不带密钥，也不带完整请求。"""
 
@@ -168,5 +187,6 @@ __all__ = [
     "ProviderRecord",
     "ProviderState",
     "ResolvedProvider",
+    "RuntimeModel",
     "mask_secret",
 ]

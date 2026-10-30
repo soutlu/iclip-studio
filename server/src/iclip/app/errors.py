@@ -22,10 +22,10 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(DomainError)
     async def _domain_error_handler(_request: Request, exc: DomainError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status_code_for(exc),
-            content={"detail": str(exc) or type(exc).__name__},
-        )
+        content: dict[str, str] = {"detail": str(exc) or type(exc).__name__}
+        if exc.code is not None:
+            content["code"] = exc.code
+        return JSONResponse(status_code=status_code_for(exc), content=content)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error_handler(

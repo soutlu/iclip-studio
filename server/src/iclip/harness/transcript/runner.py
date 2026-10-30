@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 import structlog
 from pydantic_ai import Agent, CancellationToken, ToolFailed
@@ -33,7 +33,7 @@ from pydantic_ai.tools import DeferredToolResults, RunContext
 from pydantic_ai_harness.compaction import ReportContextUsage, SummarizingCompaction
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 
-from iclip.common.errors import Conflict, NotFound
+from iclip.common.errors import AgentUnavailable, Conflict, NotFound
 from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.background import interrupt_stale_receipts
 from iclip.harness.context_compaction import ContextCompaction
@@ -73,6 +73,23 @@ from iclip.platform.transcript.ops import (
 )
 
 _logger = structlog.stdlib.get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class RunAgent:
+    """这段对话这次运行用的 Agent，与它所用模型的上下文窗口（没有就不压缩、不报用量）。"""
+
+    agent: Agent[Any, Any]
+    context_window: int | None
+
+
+class RunAgents(Protocol):
+    """按对话取这次运行用的 Agent，由组合根按对话固定的版本装配。"""
+
+    async def for_conversation(self, conversation_id: str, agent_id: str) -> RunAgent:
+        """``agent_id`` 是对话绑定的 agent。装不起来抛 ``AgentUnavailable``，消息是给人看的原因。"""
+        ...
+
 
 DepsFor = Callable[[JobRow], Awaitable[Any]]
 """为消息构造运行依赖；身份固定为消息入队时的属主，由组合根提供具体依赖。"""
@@ -202,13 +219,12 @@ class ConversationRunner:
     def __init__(
         self,
         *,
-        agents: Mapping[str, Agent[Any, Any]],
+        agents: RunAgents,
         store: TranscriptStore,
         queue: JobQueue,
         snapshots: ConversationSnapshots,
         history: TranscriptHistory,
         deps_for: DepsFor,
-        context_limits: Mapping[str, int],
         heartbeat_seconds: int,
         lease_seconds: int,
         sweep_seconds: int,
@@ -225,7 +241,6 @@ class ConversationRunner:
         self._snapshots = snapshots
         self._history = history
         self._deps_for = deps_for
-        self._context_limits = context_limits
         self._heartbeat_seconds = heartbeat_seconds
         self._lease_seconds = lease_seconds
         self._sweep_seconds = sweep_seconds
@@ -246,6 +261,12 @@ class ConversationRunner:
         self._side_tasks: set[asyncio.Task[None]] = set()
         # 后台循环独立保存，关停时先于活跃运行停止。
         self._loops: tuple[asyncio.Task[None], ...] = ()
+
+    @property
+    def agents(self) -> RunAgents:
+        """装配入口；受理消息的一方也用它先装一次，确认这段对话装得起来。"""
+
+        return self._agents
 
     # --- 收下与排程 ---------------------------------------------------------
 
@@ -527,8 +548,19 @@ class ConversationRunner:
 
         self._store.pin(row.conversation_id)
         status: JobStatus | None = "failed"
+        reason: str | None = None
         try:
             status = await self._run_once(row)
+        except AgentUnavailable as exc:
+            # 受理时装得起来、开跑时装不起来（期间模型被停用等）：原因记在消息行上，这一轮记失败。
+            reason = f"{exc.code}: {exc}"
+            _logger.warning(
+                "对话的 agent 装配不起来，这次运行记为失败",
+                prompt_id=row.prompt_id,
+                conversation_id=row.conversation_id,
+                code=exc.code,
+                reason=str(exc),
+            )
         except Exception:
             _logger.exception("这次运行没跑完", prompt_id=row.prompt_id)
         finally:
@@ -553,6 +585,7 @@ class ConversationRunner:
                     now=_now(),
                     locked_by=self.locked_by,
                     attempt=row.attempt,
+                    reason=reason,
                 )
                 settled = await self._queue.get(row.prompt_id)
                 if settled is not None:
@@ -625,11 +658,10 @@ class ConversationRunner:
         审批续跑提供覆盖全部前沿调用的决定。两种续跑均不追加用户消息。
         """
 
-        agent = self._agents.get(row.agent_id)
-        if agent is None:
-            raise NotFound(f"未注册的 agent: {row.agent_id}")
-        # 注册表可能在运行期整体换掉，agent 与它的窗口要在同一刻取，别跨版本。
-        context_window = self._context_limits.get(row.agent_id)
+        # 按对话固定的版本装配（多半命中缓存）；agent 与它的窗口出自同一次装配。
+        resolved = await self._agents.for_conversation(row.conversation_id, row.agent_id)
+        agent = resolved.agent
+        context_window = resolved.context_window
 
         awaiting = row.status == "awaiting"
         # 持久历史里没有活着的后台任务，没等到结果的回执一律换成 interrupted 返回再交给模型。
@@ -855,4 +887,12 @@ class ConversationRunner:
         )
 
 
-__all__ = ["ConversationRunner", "ConversationSnapshots", "DepsFor", "RunStarted", "TurnStarted"]
+__all__ = [
+    "ConversationRunner",
+    "ConversationSnapshots",
+    "DepsFor",
+    "RunAgent",
+    "RunAgents",
+    "RunStarted",
+    "TurnStarted",
+]

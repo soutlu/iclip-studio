@@ -39,7 +39,7 @@ from iclip.harness.context_compaction import (
     compaction_window,
     recorded_loads,
 )
-from iclip.harness.skills import build_skill_capabilities
+from iclip.harness.skills import CachedSkill, build_skill_capabilities
 from iclip.harness.transcript.from_messages import drop_last_turn, turns_from_messages
 from iclip.harness.transcript.projector import step_responses
 from iclip.platform.transcript.ops import TextContent
@@ -445,7 +445,7 @@ async def _skill_turn(
     agent = Agent(
         _skill_model(seen),
         capabilities=[
-            *build_skill_capabilities(library, (SKILL,)),
+            *build_skill_capabilities(library, [CachedSkill(name=SKILL, library=".")]),
             ContextCompaction(
                 strategy=SummarizingCompaction(
                     max_messages=1, keep_messages=keep, preserve_first_user_message=False

@@ -9,7 +9,6 @@ import asyncio
 import json
 import logging
 import uuid
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,8 +17,7 @@ from sqlalchemy import text
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from iclip.config import ResolvedAgent
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed
 from tests.helpers.pg import connected
 from tests.helpers.ws import (
     AGENT_ID,
@@ -34,8 +32,8 @@ from tests.helpers.ws import (
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    return (declared_agent(tmp_path, AGENT_ID),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
 
 
 def test_subscribe_then_receive_ops(ws_agent_app: FastAPI, pg_url: str) -> None:

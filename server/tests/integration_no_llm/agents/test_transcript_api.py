@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 
-from iclip.config import ResolvedAgent
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed
 from tests.helpers.app import make_client, new_conversation, settled
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
@@ -20,8 +18,8 @@ AGENT_ID = "storyboard"
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    return (declared_agent(tmp_path, AGENT_ID),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
 
 
 async def _materials(pg_url: str, namespace: str) -> list[tuple[str, str]]:

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import structlog
 
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
+from iclip.common.errors import AgentUnavailable, Conflict, NotFound, ValidationFailed
 from iclip.common.urls import is_http_url, is_oss_processable
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.transcript.history import TranscriptHistory
@@ -52,7 +52,7 @@ class TranscriptService:
     history: TranscriptHistory
     queue: JobQueue
     runner: ConversationRunner
-    context_limits: Mapping[str, int]
+    """受理前用它的装配入口（``runner.agents``）先装一次，装不起来就不入队。"""
 
     record_materials: Callable[[uuid.UUID, str, Sequence[PromptContent]], Awaitable[None]]
     """由组合根注入的附件登记回调，负责素材命名空间。"""
@@ -69,9 +69,12 @@ class TranscriptService:
         user_name: str,
         content: tuple[PromptContent, ...],
     ) -> Prompt:
-        """提交消息，运行或排队状态由持久化队列决定。``user_name`` 已由入口按主体定好。"""
+        """提交消息，运行或排队状态由持久化队列决定。``user_name`` 已由入口按主体定好。
+
+        对话的 agent 版本装不起来抛 ``AgentUnavailable``，什么都不写。"""
 
         _check_content(content)
+        await self.runner.agents.for_conversation(conversation_id, agent_id)
         # 入队前登记附件，确保排队期间也可被工具引用。
         await self.record_materials(owner_user_id, conversation_id, content)
         submission = await self.queue.submit(
@@ -132,6 +135,7 @@ class TranscriptService:
         replay = row.content if content is None else content
         # 不写库就能判定的校验先做完，再登记素材（台账幂等）；到这里为止历史一点没动。
         _check_content(replay)
+        await self.runner.agents.for_conversation(conversation_id, row.agent_id)
         await self.record_materials(row.owner_user_id, conversation_id, replay)
         submission = await self.queue.submit(
             prompt_id=f"prm_regen_{uuid.uuid4().hex[:16]}" if prompt_id is None else prompt_id,
@@ -243,6 +247,16 @@ class TranscriptService:
         activity = (await self.queue.activities([conversation_id]))[conversation_id]
         return RunStatusOut(status=activity.last_turn_reason or "idle")
 
+    async def _context_window(self, conversation_id: str, agent_id: str) -> int | None:
+        """读页时给用量仪表的窗口。agent 版本装不起来是这段对话此刻的事实，读历史照常，只是不画仪表；
+        发消息时会按同一原因被拒。"""
+
+        try:
+            resolved = await self.runner.agents.for_conversation(conversation_id, agent_id)
+        except AgentUnavailable:
+            return None
+        return resolved.context_window
+
     async def page(
         self,
         conversation_id: str,
@@ -269,7 +283,7 @@ class TranscriptService:
         interactions = _interactions(history.interactions, view.snapshot.interactions)
         tasks = _tasks(history.tasks, view.snapshot.tasks)
         meta = view.snapshot.meta
-        max_context_tokens = self.context_limits.get(runtime_agent_id)
+        max_context_tokens = await self._context_window(conversation_id, runtime_agent_id)
         if (
             meta.agent is None
             and history.context_tokens is not None

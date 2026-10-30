@@ -158,7 +158,6 @@ def _service(
         history=history,
         queue=queue,
         runner=runner,
-        context_limits={},
         record_materials=records_nothing,
     )
 

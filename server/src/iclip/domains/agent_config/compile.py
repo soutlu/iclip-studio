@@ -39,14 +39,19 @@ async def compile_agent(
     plugins: PluginDirectory,
     skills: Sequence[SkillFacts],
     agents: Sequence[AgentRefs],
+    runtime: bool = False,
 ) -> CompiledAgent | tuple[Problem, ...]:
-    """``skills`` 是技能库的全部技能，``agents`` 是全部 agent 的引用（含 ``agent_id`` 自己）。"""
+    """``skills`` 是技能库的全部技能，``agents`` 是全部 agent 的引用（含 ``agent_id`` 自己）。
+
+    ``runtime`` 为真是运行前装配一个已定下的配置（对话固定的版本，或草稿）：子 agent 只有一层的规则只看
+    各 agent 的当前版本，不看草稿，也不查「自己正被别人当作子 agent」——别人草稿里的改动不该让已经定下的
+    版本跑不起来。其余规则与发布一样。"""
 
     problems: list[Problem] = []
     model = await _compile_model(config.model, models, problems)
     capabilities = _compile_tools(config.tools, plugins, problems)
     compiled_skills = _compile_skills(skill_ids, skills, problems)
-    subagents = _compile_subagents(agent_id, config.subagents, agents, problems)
+    subagents = _compile_subagents(agent_id, config.subagents, agents, problems, runtime=runtime)
     if problems or model is None:
         return tuple(problems)
     return CompiledAgent(
@@ -186,9 +191,12 @@ def _compile_subagents(
     subagents: Sequence[SubagentConfig],
     agents: Sequence[AgentRefs],
     problems: list[Problem],
+    *,
+    runtime: bool,
 ) -> tuple[CompiledSubagent, ...]:
     by_id = {one.agent_id: one for one in agents}
-    if subagents:
+    subagents_of = _active_subagents_of if runtime else _subagents_of
+    if subagents and not runtime:
         referrers = sorted(
             one.agent_id
             for one in agents
@@ -214,7 +222,7 @@ def _compile_subagents(
             problems.append(Problem(path, f"{target.name} 已归档"))
         elif target.active_version_id is None:
             problems.append(Problem(path, f"{target.name} 还没有发布过版本"))
-        elif _subagents_of(target):
+        elif subagents_of(target):
             problems.append(Problem(path, f"{target.name} 自己有子 agent，子 agent 只能有一层"))
         else:
             compiled.append(
@@ -235,6 +243,12 @@ def _subagents_of(refs: AgentRefs) -> frozenset[str]:
 
     active = refs.active.subagents if refs.active is not None else ()
     return frozenset((*refs.draft.subagents, *active))
+
+
+def _active_subagents_of(refs: AgentRefs) -> frozenset[str]:
+    """只看当前版本里写的子 agent：运行时装配的是当前版本。"""
+
+    return frozenset(refs.active.subagents if refs.active is not None else ())
 
 
 __all__ = ["compile_agent"]

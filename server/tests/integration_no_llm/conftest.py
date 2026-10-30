@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator, Mapping
 from pathlib import Path
 
 import httpx
@@ -17,21 +17,24 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
 from pydantic_ai import models as pydantic_ai_models
+from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
 from iclip.app.bootstrap import build_app
-from iclip.config import ResolvedAgent
+from iclip.config import RuntimeConfig
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
 from iclip.platform.db.engine import build_engine
+from tests.helpers.agents import AgentSeed, model_builder, seed_agents
 from tests.helpers.app import (
     TEST_CREDENTIAL_KEY,
     TEST_MODEL_NAME,
     make_client,
     make_runtime_config,
 )
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
@@ -113,34 +116,42 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 
 @pytest.fixture
-def agent_declarations() -> tuple[ResolvedAgent, ...]:
-    """测试可覆写：非空即注册对应 agent（默认无 agent，/agents/* 全部 404）。"""
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    """测试可覆写：非空即在 app 装好后往库里种这些 agent 并发布 v1（默认不种，库里没有 agent）。"""
 
     return ()
 
 
 @pytest.fixture
-def models() -> dict[str, TestModel]:
-    """官方 test 替身；agent 声明引用 TEST_MODEL_NAME。"""
+def models() -> Mapping[str, Model]:
+    """模型名 → 替身；种下的 agent 默认用 TEST_MODEL_NAME。"""
 
     return {TEST_MODEL_NAME: TestModel()}
+
+
+def _build_app(config: RuntimeConfig, engine: AsyncEngine, models: Mapping[str, Model]) -> FastAPI:
+    return build_app(
+        config,
+        engine=engine,
+        build_model=model_builder(models),
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
+    )
 
 
 @pytest.fixture
 async def app(
     base_env: None,
-    migrated_pg: str,
-    agent_declarations: tuple[ResolvedAgent, ...],
-    models: dict[str, TestModel],
-) -> AsyncGenerator[FastAPI]:
-    await _reset(migrated_pg)
-    engine = build_engine(migrated_pg)
-    try:
-        yield build_app(
-            make_runtime_config(), agents=agent_declarations, engine=engine, models=models
-        )
-    finally:
-        await engine.dispose()
+    engine: AsyncEngine,
+    agent_seeds: tuple[AgentSeed, ...],
+    models: Mapping[str, Model],
+    tmp_path: Path,
+) -> FastAPI:
+    """经 ``engine`` 夹具清表：同一个用例里也要 ``engine`` 的，清表一定发生在种 agent 之前。"""
+
+    built = _build_app(make_runtime_config(skill_cache_dir=tmp_path / "skills"), engine, models)
+    if agent_seeds:
+        await seed_agents(built.state.agent_services, engine, agent_seeds)
+    return built
 
 
 @pytest.fixture
@@ -154,23 +165,28 @@ def cors_allow_origins() -> tuple[str, ...]:
 def ws_agent_app(
     base_env: None,
     migrated_pg: str,
-    agent_declarations: tuple[ResolvedAgent, ...],
-    models: dict[str, TestModel],
+    agent_seeds: tuple[AgentSeed, ...],
+    models: Mapping[str, Model],
     cors_allow_origins: tuple[str, ...],
+    tmp_path: Path,
 ) -> Generator[FastAPI]:
-    """在 TestClient 事件循环中装配带 agent 的 WS app。
+    """在 TestClient 事件循环中装配带 agent 的 WS app；种 agent 在另一个事件循环里做完。
 
     使用 NullPool 避免 asyncpg 连接跨事件循环复用。
     """
 
     asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
-    yield build_app(
-        make_runtime_config(cors_allow_origins=cors_allow_origins),
-        agents=agent_declarations,
-        engine=engine,
-        models=models,
+    built = _build_app(
+        make_runtime_config(
+            cors_allow_origins=cors_allow_origins, skill_cache_dir=tmp_path / "skills"
+        ),
+        engine,
+        models,
     )
+    if agent_seeds:
+        asyncio.run(seed_agents(built.state.agent_services, engine, agent_seeds))
+    yield built
     asyncio.run(engine.dispose())
 
 
@@ -223,7 +239,13 @@ async def sso_app(
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(make_runtime_config(), engine=engine, sso_verifier=verifier, pms_client=pms)
+        yield build_app(
+            make_runtime_config(),
+            engine=engine,
+            sso_verifier=verifier,
+            pms_client=pms,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
+        )
     finally:
         await engine.dispose()
 

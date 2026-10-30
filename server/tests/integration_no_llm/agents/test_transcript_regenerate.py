@@ -7,7 +7,6 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from pathlib import Path
 
 import httpx
 import pytest
@@ -19,7 +18,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import Conflict, ValidationFailed
-from iclip.config import ResolvedAgent
 from iclip.harness.jobs import JobQueue, JobQueueView, Submission
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.activity import ActivityState
@@ -36,12 +34,11 @@ from iclip.platform.transcript.ops import (
     TextContent,
     TextFrame,
 )
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed
 from tests.helpers.app import TEST_MODEL_NAME, make_client, new_conversation, settled
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 from tests.helpers.runtime import (
-    MAX_CONTEXT_TOKENS,
     OWNER,
     build_runner,
     drained,
@@ -56,8 +53,8 @@ AGENT_ID = "storyboard"
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    return (declared_agent(tmp_path, AGENT_ID),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
 
 
 def _last_user_text(messages: list[ModelMessage]) -> str:
@@ -308,7 +305,6 @@ class _Answered:
             history=history or TranscriptHistory(self.step_store, self.queue),
             queue=queue or self.queue,
             runner=self.runner,
-            context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
             record_materials=record_materials,
         )
 

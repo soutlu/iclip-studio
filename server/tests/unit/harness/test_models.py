@@ -12,7 +12,6 @@ from iclip.harness.models import (
     ModelSpec,
     ThinkingEffort,
     build_model,
-    build_models,
     thinking_effort_of,
 )
 
@@ -95,12 +94,6 @@ def test_provider_owning_model_class_is_not_flattened() -> None:
 def test_unknown_provider_fails() -> None:
     with pytest.raises(Exception, match="no-such-vendor"):
         build_model(spec(provider="no-such-vendor"))
-
-
-def test_build_models_keys_by_name() -> None:
-    built = build_models([spec(), spec(name="ds", provider="deepseek", model="deepseek-chat")])
-
-    assert sorted(built) == ["ds", "qwen"]
 
 
 def test_thinking_lands_in_model_settings_on_both_apis() -> None:

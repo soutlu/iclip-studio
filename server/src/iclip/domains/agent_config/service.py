@@ -253,9 +253,15 @@ class AgentConfigService:
         return await self.detail(agent_id)
 
     async def compile(
-        self, agent_id: str, config: AgentConfig, skill_ids: Sequence[uuid.UUID]
+        self,
+        agent_id: str,
+        config: AgentConfig,
+        skill_ids: Sequence[uuid.UUID],
+        *,
+        runtime: bool = False,
     ) -> CompiledAgent | tuple[Problem, ...]:
-        """按当下的模型供应商、插件登记表、技能库与全部 agent 编译一份配置。"""
+        """按当下的模型供应商、插件登记表、技能库与全部 agent 编译一份配置；``runtime`` 见
+        ``compile_agent``。"""
 
         return await compile_agent(
             agent_id,
@@ -265,7 +271,46 @@ class AgentConfigService:
             plugins=self._plugins,
             skills=await self._skills.skills(),
             agents=await self._store.references(),
+            runtime=runtime,
         )
+
+    # --- 运行时读 -------------------------------------------------------------
+
+    async def listed(self) -> tuple[AgentState, ...]:
+        """首页能选的 agent：上菜单、在用、发布过，按 ``sort_order``。"""
+
+        return tuple(
+            state
+            for state in await self._store.list()
+            if state.agent.listed
+            and state.agent.status == STATUS_ACTIVE
+            and state.active is not None
+        )
+
+    async def version_for_new_session(self, agent_id: str) -> uuid.UUID:
+        """新对话要固定的版本：这个 agent 的当前版本。没有这个 agent 或它不上菜单是 ``ValidationFailed``，
+        已归档或还没发布过是 ``Conflict``。"""
+
+        state = await self._store.get(agent_id)
+        if state is None:
+            raise ValidationFailed(f"没有标识为 {agent_id} 的 agent")
+        if state.agent.status == STATUS_ARCHIVED:
+            raise Conflict(f"{state.agent.name} 已归档，不能再开新对话")
+        if state.active is None:
+            raise Conflict(f"{state.agent.name} 还没有发布过版本，不能开对话")
+        if not state.agent.listed:
+            raise ValidationFailed(f"{state.agent.name} 不在首页菜单上，不能直接开对话")
+        return state.active.id
+
+    async def runtime_version(self, agent_id: str, version_id: uuid.UUID) -> AgentVersion | None:
+        """这个 agent 的这个版本；不属于它给 ``None``。"""
+
+        return await self._store.version(agent_id, version_id)
+
+    async def runtime_state(self, agent_id: str) -> AgentState | None:
+        """一个 agent 此刻的全部，含草稿与描述；没有给 ``None``。"""
+
+        return await self._store.get(agent_id)
 
     async def publish(
         self, agent_id: str, body: AgentPublishIn, *, by: uuid.UUID

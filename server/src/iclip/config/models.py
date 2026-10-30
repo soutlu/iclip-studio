@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Final, Literal
@@ -23,7 +24,6 @@ from pydantic_settings import (
 )
 
 from iclip.common.generation_vocab import VideoEnhanceResolution
-from iclip.common.model_vocab import ModelApi, ThinkingEffort
 
 _MIN_SECRET_LENGTH = 32
 
@@ -50,6 +50,9 @@ PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
 
 CREDENTIAL_ENCRYPTION_KEYS_ENV: Final = "CREDENTIAL_ENCRYPTION_KEYS"
+
+DEFAULT_SKILL_CACHE_DIRNAME: Final = "iclip-skills"
+"""``agent_runs.skill_cache_dir`` 不写时，技能缓存放在系统临时目录下的这个子目录。"""
 
 
 class ConfigSection(BaseModel):
@@ -193,16 +196,6 @@ class SsoSection(ConfigSection):
     app_name: str
 
 
-class ModelSection(ConfigSection):
-    provider: str
-    api: ModelApi = "chat"
-    api_key_env: str
-    base_url: str | None = None
-    model: str | None = None
-    thinking: ThinkingEffort | None = None
-    context_window: int | None = Field(default=None, gt=0)
-
-
 # 方舟收到别的取值会静默改用默认档。
 ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
 
@@ -312,7 +305,6 @@ class CompactionSection(ConfigSection):
 
 
 class ConversationsSection(ConfigSection):
-    title_model: str | None = None
     compaction: CompactionSection = CompactionSection()
 
 
@@ -322,6 +314,8 @@ class AgentRunsSection(ConfigSection):
     sweep_seconds: int = Field(default=15, gt=0)
     max_attempts: int = Field(default=2, ge=1)
     max_snapshots_per_run: int = Field(default=3, ge=1)
+    assembly_cache_size: int = Field(default=64, ge=1)
+    skill_cache_dir: Path | None = None
 
     @model_validator(mode="after")
     def _lease_outlasts_a_heartbeat(self) -> AgentRunsSection:
@@ -346,7 +340,6 @@ class RuntimeConfig(BaseSettings):
     video: VideoSection | None = None
     shot_video: ShotVideoSection | None = None
     iclip_studio: IclipStudioSection | None = None
-    models: dict[str, ModelSection] = Field(default_factory=dict[str, ModelSection])
     conversations: ConversationsSection = ConversationsSection()
     agent_runs: AgentRunsSection = AgentRunsSection()
     ops: OpsSection = OpsSection()
@@ -481,24 +474,16 @@ class ResolvedAgentRuns:
     sweep_seconds: int
     max_attempts: int
     max_snapshots_per_run: int
+    assembly_cache_size: int
+    """装配好的 agent 在每个进程里最多缓存几份。"""
+    skill_cache_dir: Path
+    """技能版本按内容 hash 写进的本机目录；不写时放在系统临时目录下。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedCompaction:
     max_fraction: float
     keep_messages: int
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedModel:
-    name: str
-    provider: str
-    model: str
-    api: ModelApi
-    api_key: str
-    base_url: str | None
-    thinking: ThinkingEffort | None
-    context_window: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -518,8 +503,6 @@ class ResolvedSettings:
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
     """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
-    models: tuple[ResolvedModel, ...]
-    title_model: str | None
     compaction: ResolvedCompaction
     agent_runs: ResolvedAgentRuns
     log_level: str
@@ -741,20 +724,6 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
-        models=tuple(
-            ResolvedModel(
-                name=name,
-                provider=model.provider,
-                model=model.model or name,
-                api=model.api,
-                api_key=_require_model_key(name, model.api_key_env),
-                base_url=model.base_url,
-                thinking=model.thinking,
-                context_window=model.context_window,
-            )
-            for name, model in config.models.items()
-        ),
-        title_model=config.conversations.title_model,
         compaction=ResolvedCompaction(
             max_fraction=config.conversations.compaction.max_fraction,
             keep_messages=config.conversations.compaction.keep_messages,
@@ -765,14 +734,10 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             sweep_seconds=config.agent_runs.sweep_seconds,
             max_attempts=config.agent_runs.max_attempts,
             max_snapshots_per_run=config.agent_runs.max_snapshots_per_run,
+            assembly_cache_size=config.agent_runs.assembly_cache_size,
+            skill_cache_dir=config.agent_runs.skill_cache_dir
+            or Path(tempfile.gettempdir()) / DEFAULT_SKILL_CACHE_DIRNAME,
         ),
         log_level=config.ops.log_level,
         log_format=config.ops.log_format,
     )
-
-
-def _require_model_key(name: str, env_name: str) -> str:
-    value = os.environ.get(env_name, "").strip()
-    if not value:
-        raise RuntimeError(f"缺少运行必需的环境变量 {env_name}（模型 {name} 的 API Key）")
-    return value

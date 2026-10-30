@@ -6,15 +6,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from iclip.config import ResolvedAgent
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed
 from tests.helpers.ws import (
     AGENT_ID,
     open_conversation,
@@ -27,8 +25,8 @@ from tests.helpers.ws import (
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    return (declared_agent(tmp_path, AGENT_ID),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
 
 
 def _send(tc: TestClient, conversation_id: str, prompt_id: str, **kwargs: Any) -> None:

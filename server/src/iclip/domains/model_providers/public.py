@@ -9,7 +9,12 @@ from iclip.domains.model_providers.catalog import (
     ProviderDeclaration,
     load_declarations,
 )
-from iclip.domains.model_providers.models import ProbeResult, ProviderModel, ResolvedProvider
+from iclip.domains.model_providers.models import (
+    ProbeResult,
+    ProviderModel,
+    ResolvedProvider,
+    RuntimeModel,
+)
 from iclip.domains.model_providers.repository import CredentialProbe, ModelUsages
 from iclip.domains.model_providers.service import ModelProviderService
 
@@ -24,5 +29,6 @@ __all__ = [
     "ProviderDeclaration",
     "ProviderModel",
     "ResolvedProvider",
+    "RuntimeModel",
     "load_declarations",
 ]

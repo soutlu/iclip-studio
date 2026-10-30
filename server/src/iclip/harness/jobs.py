@@ -447,15 +447,25 @@ class JobQueue:
         return True
 
     async def finish(
-        self, prompt_id: str, *, status: JobStatus, now: datetime, locked_by: str, attempt: int
+        self,
+        prompt_id: str,
+        *,
+        status: JobStatus,
+        now: datetime,
+        locked_by: str,
+        attempt: int,
+        reason: str | None = None,
     ) -> None:
-        """仅结束仍由当前租约持有的消息。"""
+        """仅结束仍由当前租约持有的消息；``reason`` 给了就记进 ``interrupt_reason``（如开跑前装配失败）。"""
 
+        values: dict[str, object] = {"status": status, "finished_at": now}
+        if reason is not None:
+            values["interrupt_reason"] = reason
         stmt = (
             update(agent_jobs_table)
             .where(_owned(prompt_id, locked_by, attempt))
             .where(agent_jobs_table.c.status.in_(_LIVE))
-            .values(status=status, finished_at=now)
+            .values(values)
             .returning(agent_jobs_table)
         )
         row = await self._one(stmt)

@@ -117,9 +117,9 @@ def create_conversations_router(
     async def list_agents(
         _: Annotated[Principal, require_permission("agent:run")],
     ) -> ConversationAgentsOut:
-        """读取当前装配的顶层 Agent 名册，按声明顺序返回；热重载后下次请求即见新目录。"""
+        """首页能选的顶层 Agent：上菜单、在用、发布过，按配置里的先后；第一个是默认项。"""
 
-        directory = agents()
+        directory = await agents()
         return ConversationAgentsOut(
             items=[ConversationAgentOut(id=entry.id, name=entry.name) for entry in directory.items],
             default=directory.default,
@@ -135,6 +135,9 @@ def create_conversations_router(
 
         带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的
         资料库卡是 404，源没有工程文件或分镜文件是 422。
+
+        新对话固定在 agent 此刻的当前版本上：没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过
+        是 409。
         """
 
         principal = await act_as(principal, body.user_name)
@@ -160,7 +163,8 @@ def create_conversations_router(
     ) -> ConversationEnvelope:
         """从看得见的某段对话的第 ``turn`` 轮分叉出一段自己的对话，源对话不变。
 
-        源看不见是 404，正在跑是 409，轮号越界是 422。副本的 id 由服务端铸。
+        源看不见是 404，正在跑是 409，轮号越界是 422。副本的 id 由服务端铸。副本沿用源对话固定的
+        agent 版本；换了 ``agentId`` 时按开新对话的规矩固定那个 agent 的当前版本。
         """
 
         events = service.watermark()

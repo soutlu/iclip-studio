@@ -25,7 +25,6 @@ PLACEHOLDER_ENV = {
     ).decode(),
     "DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
     "IMAGE_API_BASE": "https://placeholder.invalid/image",
-    "MODEL_API_KEY": "openapi-dump-placeholder",
     "OSS_ACCESS_KEY_ID": "placeholder",
     "OSS_ACCESS_KEY_SECRET": "placeholder",
     "OSS_BUCKET": "placeholder",
@@ -54,7 +53,6 @@ def build_document() -> dict[str, object]:
     for name, value in PLACEHOLDER_ENV.items():
         os.environ.setdefault(name, value)
     os.environ.setdefault("CONFIG_FILE", str(PLACEHOLDER_CONFIG_DIR / "config.yaml"))
-    os.environ.setdefault("AGENTS_FILE", str(PLACEHOLDER_CONFIG_DIR / "agents.yaml"))
 
     from iclip.asgi import app
 

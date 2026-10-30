@@ -73,6 +73,13 @@ class RacingRepo:
         self.row = conversation
         return conversation, True
 
+    async def get(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID | None, include_deleted: bool = False
+    ) -> Conversation:
+        if conversation_id != self.row.id:
+            raise NotFound("没有这段对话")
+        return self.row
+
     async def rename(
         self, conversation_id: uuid.UUID, *, owner: uuid.UUID, title: str
     ) -> Conversation:
@@ -179,6 +186,10 @@ def _untouched(*_: object, **__: object) -> NoReturn:
     raise AssertionError("这里用不到这个端口")
 
 
+async def _opens_session(conversation_id: uuid.UUID, agent_id: str) -> None:
+    """运行时开会话的替身：这里只看整行广播，agent 都当作能开对话。"""
+
+
 async def _idle(ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, ConversationActivity]:
     return {}
 
@@ -211,6 +222,8 @@ def build(
 ) -> ConversationService:
     return ConversationService(
         cast("ConversationRepository", repo),
+        open_session=_opens_session,
+        fork_session=_untouched,
         list_collections=_untouched,
         claim_task=claim_task,
         list_derived_files=_untouched,

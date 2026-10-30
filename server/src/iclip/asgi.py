@@ -1,16 +1,9 @@
 """ASGI 导出入口：``iclip.asgi:app``。
 
-配置路径来自 ``CONFIG_FILE``，agent 装配声明来自 ``AGENTS_FILE``
-（缺省 ``agents/agents.yaml``；文件不存在即启动失败，空注册表由 ``agent: {}`` 表达），
-skill 库来自 ``SKILLS_DIR``（缺省 ``skills``；只有声明了 skill 的 agent 才要求它存在）。
-
-装配在 import 期完成且不建立任何连接，连接与后台循环都留给 lifespan。合同导出靠
-的就是这一点：``scripts/dump_openapi.py`` 只 import 本模块取 OpenAPI，从不启动应用。
-配置里有要用 ffmpeg 的功能时，装配会同步跑一次本地视频编解码探测（几条秒内结束的
-ffmpeg 子进程）；没有硬件的机器上它落到软件，照样装配完成。
-
-两个声明文件所在目录与 skill 库（启动时存在才算）被监听，文件一变就从同样的路径重读，
-热换模型表与 agent 层（见 app/agent_layer.py）；SIGHUP 触发同一次重读。
+配置路径来自 ``CONFIG_FILE``。import 本模块只建插件登记表与各个服务，不连库、不装配 agent：连接与后台
+循环都留给 lifespan，agent 每次运行按对话固定的版本从库里装配。合同导出靠的就是这一点：
+``scripts/dump_openapi.py`` 只 import 本模块取 OpenAPI，从不启动应用。配置里有要用 ffmpeg 的功能时，
+import 会同步跑一次本地视频编解码探测（几条秒内结束的 ffmpeg 子进程）；没有硬件的机器上它落到软件。
 """
 
 from __future__ import annotations
@@ -18,25 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from iclip.app.agent_layer import watch_dirs
 from iclip.app.bootstrap import build_app
-from iclip.config import ResolvedAgent, RuntimeConfig, load_agent_declarations, load_runtime_config
+from iclip.config import load_runtime_config
 
-_config_path = Path(os.environ.get("CONFIG_FILE", "configs/config.yaml"))
-_agents_path = Path(os.environ.get("AGENTS_FILE", "agents/agents.yaml"))
-_skills_dir = Path(os.environ.get("SKILLS_DIR", "skills"))
-
-
-def _load() -> tuple[RuntimeConfig, tuple[ResolvedAgent, ...]]:
-    return load_runtime_config(_config_path), load_agent_declarations(
-        _agents_path, skills_dir=_skills_dir
-    )
-
-
-_config, _agents = _load()
-app = build_app(
-    _config,
-    agents=_agents,
-    reload_source=_load,
-    watch_paths=watch_dirs(_config_path, _agents_path, _skills_dir),
-)
+app = build_app(load_runtime_config(Path(os.environ.get("CONFIG_FILE", "configs/config.yaml"))))

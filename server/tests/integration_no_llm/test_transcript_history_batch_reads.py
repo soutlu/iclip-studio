@@ -253,7 +253,6 @@ async def test_child_page_does_not_rebuild_the_main_stream(engine: AsyncEngine) 
         history=history,
         queue=JobQueue(engine),
         runner=no_runner,
-        context_limits={},
         record_materials=noop,
     )
 

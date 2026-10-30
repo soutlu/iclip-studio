@@ -14,16 +14,19 @@ import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
+from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media, make_music
-from tests.helpers.pg import connected, reset_database
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
+from tests.helpers.pg import connected
 
 OSS_ENVS = {
     "OSS_BUCKET": "iclip-test",
@@ -42,21 +45,22 @@ def bucket() -> MemoryObjectStore:
 @pytest.fixture
 async def uploads_app(
     base_env: None,
-    migrated_pg: str,
+    engine: AsyncEngine,
     monkeypatch: pytest.MonkeyPatch,
     bucket: MemoryObjectStore,
-) -> AsyncGenerator[FastAPI]:
-    """真实数据库配合 bucket 替身，隔离 OSS 凭证。"""
+) -> FastAPI:
+    """真实数据库配合 bucket 替身，隔离 OSS 凭证；种好能开对话的 agent（清表由 ``engine`` 夹具先做）。"""
 
     for name, value in OSS_ENVS.items():
         monkeypatch.setenv(name, value)
-    engine = build_engine(migrated_pg)
-    async with engine.begin() as conn:
-        await reset_database(conn)
-    try:
-        yield build_app(make_runtime_config(), engine=engine, object_store=bucket)
-    finally:
-        await engine.dispose()
+    built = build_app(
+        make_runtime_config(),
+        engine=engine,
+        object_store=bucket,
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
+    )
+    await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+    return built
 
 
 @pytest.fixture
@@ -324,25 +328,22 @@ async def test_the_same_image_or_music_uploaded_twice_keeps_two_addresses(
 
 @pytest.fixture
 async def media_app(
-    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
-) -> AsyncGenerator[FastAPI]:
-    """开了媒体生成的 app：队列连接器用替身，生成记录的接口挂得上。"""
+    base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
+) -> FastAPI:
+    """开了媒体生成的 app：队列连接器用替身，生成记录的接口挂得上；种好能开对话的 agent。"""
 
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
-    engine = build_engine(migrated_pg)
-    async with engine.begin() as conn:
-        await reset_database(conn)
-    try:
-        yield build_app(
-            config_with_media(),
-            engine=engine,
-            object_store=bucket,
-            queue_connector=InMemoryConnector(),
-            media_codec=SOFTWARE,
-        )
-    finally:
-        await engine.dispose()
+    built = build_app(
+        config_with_media(),
+        engine=engine,
+        object_store=bucket,
+        queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
+    )
+    await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+    return built
 
 
 @pytest.mark.parametrize(

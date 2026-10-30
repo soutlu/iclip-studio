@@ -17,6 +17,7 @@ from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.db.engine import build_engine
 from iclip.platform.transcript.ops import TextContent
+from tests.helpers.runtime import FixedAgents
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +30,14 @@ class _InstantQueue(JobQueue):
         self.finished: list[str] = []
 
     async def finish(
-        self, prompt_id: str, *, status: JobStatus, now: datetime, locked_by: str, attempt: int
+        self,
+        prompt_id: str,
+        *,
+        status: JobStatus,
+        now: datetime,
+        locked_by: str,
+        attempt: int,
+        reason: str | None = None,
     ) -> None:
         self.finished.append(prompt_id)
 
@@ -71,14 +79,13 @@ async def test_shutdown_returns_when_a_finished_run_is_still_on_the_books() -> N
     queue = _InstantQueue(engine)
     step_store = PgStepStore(engine)
     runner = ConversationRunner(
-        # 没注册 agent：运行一开始就失败，收尾全落在不挂起的替身上。
-        agents={},
+        # 没登记 agent：运行一开始就装不起来，收尾全落在不挂起的替身上。
+        agents=FixedAgents({}, {}),
         store=TranscriptStore(),
         queue=queue,
         snapshots=step_store,
         history=TranscriptHistory(step_store, queue),
         deps_for=_no_deps,
-        context_limits={},
         heartbeat_seconds=10,
         lease_seconds=30,
         sweep_seconds=15,

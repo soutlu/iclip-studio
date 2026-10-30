@@ -70,6 +70,7 @@ AGENT_RUNTIME_TABLES = (
     "agent_runtime.conversation_usage",
     "agent_runtime.materials",
     "agent_runtime.workspace_files",
+    "agent_runtime.sessions",
 )
 
 LOCK_TIMEOUT = "10s"

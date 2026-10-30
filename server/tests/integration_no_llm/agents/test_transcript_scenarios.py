@@ -39,14 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.public import Principal
-from iclip.harness.agents import (
-    DELEGATE_TOOL,
-    AgentDefinition,
-    SubAgentDefinition,
-    build_agent_registry,
-    delegate_display_table,
-    subagent_profiles,
-)
+from iclip.harness.agents import DELEGATE_TOOL, delegate_display_table
 from iclip.harness.background import (
     BackgroundOutcome,
     BackgroundTools,
@@ -54,14 +47,13 @@ from iclip.harness.background import (
     parse_outcome,
 )
 from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.skills import build_skill_capabilities, skill_display_table
+from iclip.harness.skills import CachedSkill, build_skill_capabilities, skill_display_table
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.service import TranscriptService
 from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.transcript.subagents import SubAgentMirror
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import (
     FileIoDisplay,
@@ -90,7 +82,7 @@ from tests.helpers.runtime import (
     build_runner,
     calls_then_says,
     delegates,
-    discarding_usage_ledger,
+    delegating_agent,
     drained,
     first_run_messages,
     make_runner,
@@ -501,7 +493,6 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
         history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        context_limits={},
         record_materials=records_nothing,
     )
 
@@ -581,7 +572,7 @@ async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recor
         loads_skill_then_says(delivered),
         store=store,
         display=DISPLAYS,
-        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        capabilities=build_skill_capabilities(tmp_path, [CachedSkill(name=SKILL, library=".")]),
         context_limits={AGENT_ID: 1},
         compaction_keep_messages=2,
     )
@@ -637,7 +628,7 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
         loads_skill_then_says(delivered),
         store=store,
         display=DISPLAYS,
-        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        capabilities=build_skill_capabilities(tmp_path, [CachedSkill(name=SKILL, library=".")]),
         context_limits={AGENT_ID: 1},
         compaction_keep_messages=3,
     )
@@ -646,7 +637,6 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
         history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        context_limits={AGENT_ID: 1},
         record_materials=records_nothing,
     )
     conversation_id = new_conversation_id()
@@ -1216,11 +1206,11 @@ COPY = "copy-writer"
 TASK = "写第 3 组的三个镜头"
 
 
-async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine, tmp_path: Path) -> None:
+async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine) -> None:
     store = TranscriptStore()
     writer = says("S3-1 特写；S3-2 中景；S3-3 全景")
     runner, step_store, queue = subagent_runner(
-        engine, tmp_path, store=store, parent=delegates((WRITER, TASK)), children={WRITER: writer}
+        engine, store=store, parent=delegates((WRITER, TASK)), children={WRITER: writer}
     )
     conversation_id = new_conversation_id()
 
@@ -1258,13 +1248,10 @@ async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine, tmp_path
     check_golden("delegate-turn", {"rest": comparable(cold), "child_rest": comparable(child_cold)})
 
 
-async def test_two_delegations_in_one_response_do_not_cross(
-    engine: AsyncEngine, tmp_path: Path
-) -> None:
+async def test_two_delegations_in_one_response_do_not_cross(engine: AsyncEngine) -> None:
     store = TranscriptStore()
     runner, step_store, queue = subagent_runner(
         engine,
-        tmp_path,
         store=store,
         parent=delegates((WRITER, TASK), (COPY, "写一句文案")),
         children={WRITER: says("镜头一、镜头二"), COPY: says("一句文案")},
@@ -1294,12 +1281,11 @@ async def test_two_delegations_in_one_response_do_not_cross(
     assert len({card.agent_refs[0].agent_id for card in cards if card.agent_refs}) == 2
 
 
-async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine, tmp_path: Path) -> None:
+async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine) -> None:
     entered = asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = subagent_runner(
         engine,
-        tmp_path,
         store=store,
         parent=delegates((WRITER, TASK)),
         children={WRITER: hangs(entered)},
@@ -1331,17 +1317,8 @@ async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine, tmp_path
     )
 
 
-def _spec(root: Path, name: str) -> Path:
-    folder = root / name
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / "agent.yaml"
-    path.write_text("model: test\n", encoding="utf-8")
-    return path
-
-
 def subagent_runner(
     engine: AsyncEngine,
-    root: Path,
     *,
     store: TranscriptStore,
     parent: FunctionModel,
@@ -1350,30 +1327,12 @@ def subagent_runner(
     """按真实装配路径建一个带子代理的主 agent，再按生产接法装 runner。"""
 
     step_store = PgStepStore(engine)
-    models: dict[str, Any] = {AGENT_ID: parent, **children}
-    definitions = (
-        AgentDefinition(
-            agent_id=AGENT_ID,
-            spec=_spec(root, AGENT_ID),
-            model=AGENT_ID,
-            subagents=tuple(
-                SubAgentDefinition(name=name, spec=_spec(root, name), model=name)
-                for name in children
-            ),
-        ),
-    )
-    registry = build_agent_registry(
-        definitions,
-        step_store=step_store,
-        usage_ledger=discarding_usage_ledger(),
-        models=models,
-        subagent_mirror=SubAgentMirror(
-            live=store, display=DISPLAYS, profiles=subagent_profiles(definitions, models)
-        ),
+    agent = delegating_agent(
+        parent=parent, children=children, step_store=step_store, live=store, display=DISPLAYS
     )
     return make_runner(
         engine,
-        agents=registry.agents,
+        agents={AGENT_ID: agent},
         step_store=step_store,
         store=store,
         display=DISPLAYS,

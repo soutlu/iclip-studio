@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-import signal
 import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Literal
 
 import httpx
@@ -20,16 +18,11 @@ from iclip.app.agent_config import (
     ProviderDirectory,
     RegistryPluginDirectory,
 )
-from iclip.app.agent_layer import (
-    CurrentAgentLayer,
-    LayerDeps,
-    ReloadSource,
-    build_agent_layer,
-    live_agent_directory,
-    live_agents,
-    live_context_limits,
-    live_title_generator,
-    watch_and_reload,
+from iclip.app.agent_runtime import (
+    AgentRuntime,
+    AssemblySettings,
+    ModelBuilder,
+    build_runtime_model,
 )
 from iclip.app.brand_templates import template_font_prober
 from iclip.app.conversation_film import ConversationFilmAdapter
@@ -60,7 +53,6 @@ from iclip.common.errors import NotFound
 from iclip.config import (
     QWEN_API_KEY_ENV,
     ObjectStoreEnv,
-    ResolvedAgent,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
     ResolvedQwenService,
@@ -69,7 +61,7 @@ from iclip.config import (
 )
 from iclip.domains.agent_config.infra_sql import SqlAgentStore
 from iclip.domains.agent_config.module import build_agent_config_module
-from iclip.domains.agent_config.public import AgentReferences
+from iclip.domains.agent_config.public import AgentConfigService, AgentReferences
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
@@ -115,6 +107,7 @@ from iclip.domains.model_providers.catalog import load_declarations
 from iclip.domains.model_providers.cipher import CredentialCipher
 from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
 from iclip.domains.model_providers.module import build_model_providers_module
+from iclip.domains.model_providers.public import ModelProviderService
 from iclip.domains.model_providers.repository import CredentialProbe
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
@@ -122,6 +115,7 @@ from iclip.domains.references.module import BreakdownSetup, build_references_mod
 from iclip.domains.references.repository import VideoBreakdowns
 from iclip.domains.skills.infra_sql import SqlSkillStore
 from iclip.domains.skills.module import build_skills_module
+from iclip.domains.skills.public import SkillsService
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
 from iclip.domains.tagging.repository import Tagger
@@ -133,7 +127,7 @@ from iclip.domains.uploads.module import UploadsModule, build_uploads_module
 from iclip.domains.uploads.service import FetchBytes
 from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.models import BuiltModels
+from iclip.harness.sessions import PgSessionStore
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.activity import ActivityState
 from iclip.harness.transcript.history import TranscriptHistory
@@ -248,14 +242,16 @@ def _conversation_of(deps: object) -> str | None:
     return deps.conversation_id if isinstance(deps, AgentRunDeps) else None
 
 
-def _install_hup_reload(agent_layer: CurrentAgentLayer) -> bool:
-    # 非主线程与 Windows 的事件循环不支持 add_signal_handler。
-    try:
-        asyncio.get_running_loop().add_signal_handler(signal.SIGHUP, agent_layer.reload)
-    except (AttributeError, NotImplementedError, RuntimeError, ValueError) as exc:
-        _logger.warning("装不上 SIGHUP 处理器，配置热重载不可用", reason=str(exc))
-        return False
-    return True
+@dataclass(frozen=True, slots=True)
+class AgentServices:
+    """挂在 ``app.state.agent_services`` 上的 agent 配置相关服务，供切换命令
+    （``scripts/import_agent_config.py``）复用：它们只能由 ``build_app`` 连同真实的插件登记表一起建出来。"""
+
+    skills: SkillsService
+    model_providers: ModelProviderService
+    agent_config: AgentConfigService
+    sessions: PgSessionStore
+    runtime: AgentRuntime
 
 
 def _require_ffmpeg(required: bool) -> None:
@@ -368,9 +364,8 @@ def _generation_module(
 def build_app(
     config: RuntimeConfig,
     *,
-    agents: Sequence[ResolvedAgent] = (),
     engine: AsyncEngine | None = None,
-    models: BuiltModels | None = None,
+    build_model: ModelBuilder = build_runtime_model,
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
@@ -383,9 +378,10 @@ def build_app(
     credential_probe: CredentialProbe | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
-    reload_source: ReloadSource | None = None,
-    watch_paths: Sequence[Path] = (),
 ) -> FastAPI:
+    """按运行配置装出整个应用；只建对象、不连库，连接与后台循环都留给 lifespan。agent 不在这里装配，
+    每次运行按对话固定的版本从库里装。``build_model`` 是测试换模型替身的口子。"""
+
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
@@ -659,18 +655,6 @@ def build_app(
     )
     tool_displays = build_display_registry(plugins)
     transcript_store = TranscriptStore()
-    layer_deps = LayerDeps(
-        plugins=plugins,
-        step_store=step_store,
-        usage_ledger=usage_ledger,
-        live=transcript_store,
-        display=tool_displays,
-    )
-    agent_layer = CurrentAgentLayer(
-        build_agent_layer(settings, agents, layer_deps, models=models),
-        deps=layer_deps,
-        source=reload_source if reload_source is not None else (lambda: (config, agents)),
-    )
 
     transcript_history = TranscriptHistory(step_store, job_queue, tool_displays, DELEGATE_TOOL)
 
@@ -696,6 +680,23 @@ def build_app(
         plugins=RegistryPluginDirectory(plugins),
         skills=LibrarySkillDirectory(skills.service),
     )
+    sessions = PgSessionStore(active_engine)
+    agent_runtime = AgentRuntime(
+        agent_config=agent_config.service,
+        skills=skills.service,
+        model_providers=model_providers.service,
+        sessions=sessions,
+        settings=AssemblySettings(
+            plugins=plugins,
+            step_store=step_store,
+            usage_ledger=usage_ledger,
+            live=transcript_store,
+            display=tool_displays,
+            skill_cache_dir=settings.agent_runs.skill_cache_dir,
+            cache_size=settings.agent_runs.assembly_cache_size,
+            build_model=build_model,
+        ),
+    )
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
     library = build_library_module(
@@ -707,7 +708,9 @@ def build_app(
     conversations = build_conversations_module(
         conversation_repo,
         act_as=identity.act_as,
-        list_agents=live_agent_directory(agent_layer),
+        list_agents=agent_runtime.directory,
+        open_session=agent_runtime.open_session,
+        fork_session=agent_runtime.fork_session,
         list_collections=list_owner_collections,
         claim_task=tasks.service.claim,
         list_derived_files=conversation_workspace.list_files,
@@ -733,7 +736,7 @@ def build_app(
         else WholeFilmExportAdapter(
             generation=generation.service, generations=generation_repo, render=render_client
         ),
-        generate_title=live_title_generator(agent_layer),
+        generate_title=agent_runtime.generate_title,
         announce_title=live_connections.announce_title,
         event_watermark=live_connections.clock.snapshot,
         announce_row=live_connections.announce_session_row,
@@ -760,7 +763,6 @@ def build_app(
             fetch=image_fetcher,
             conversation_writable=conversations.service.workspace_writable,
         )
-    context_limits = live_context_limits(agent_layer)
 
     async def name_conversation(row: JobRow) -> None:
         try:
@@ -795,16 +797,14 @@ def build_app(
         store=transcript_store,
         history=transcript_history,
         queue=job_queue,
-        context_limits=context_limits,
         record_materials=conversation_workspace.record_materials,
         runner=ConversationRunner(
-            agents=live_agents(agent_layer),
+            agents=agent_runtime,
             store=transcript_store,
             queue=job_queue,
             snapshots=step_store,
             history=transcript_history,
             deps_for=deps_for_prompt,
-            context_limits=context_limits,
             heartbeat_seconds=settings.agent_runs.heartbeat_seconds,
             lease_seconds=settings.agent_runs.lease_seconds,
             sweep_seconds=settings.agent_runs.sweep_seconds,
@@ -819,15 +819,6 @@ def build_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-        hup_installed = _install_hup_reload(agent_layer)
-        stop_watching = asyncio.Event()
-        watcher = (
-            asyncio.create_task(
-                watch_and_reload(watch_paths, agent_layer.reload, stop=stop_watching)
-            )
-            if watch_paths
-            else None
-        )
         await transcripts.runner.start()
         if connector is not None:
             await connector.open_async()
@@ -854,11 +845,6 @@ def build_app(
                 await render_client.aclose()
             if owned_fetcher is not None:
                 await owned_fetcher.aclose()
-            if hup_installed:
-                asyncio.get_running_loop().remove_signal_handler(signal.SIGHUP)
-            if watcher is not None:
-                stop_watching.set()
-                await watcher
             if owns_catalog_engine and catalog_engine is not None:
                 await catalog_engine.dispose()
             if owns_engine:
@@ -870,7 +856,7 @@ def build_app(
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
-        return {"status": "ok", "config": agent_layer.status()}
+        return {"status": "ok"}
 
     for router in identity.routers:
         app.include_router(router)
@@ -931,10 +917,16 @@ def build_app(
             allow_headers=["*"],
         )
 
-    app.state.agent_layer = agent_layer
+    app.state.agent_services = AgentServices(
+        skills=skills.service,
+        model_providers=model_providers.service,
+        agent_config=agent_config.service,
+        sessions=sessions,
+        runtime=agent_runtime,
+    )
     # 集成测试经它直接调生成队列的任务协程，不起 worker。
     app.state.generation = generation
     return app
 
 
-__all__ = ["build_app"]
+__all__ = ["AgentServices", "build_app"]

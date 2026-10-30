@@ -1,28 +1,21 @@
-"""按声明装配 Agent 映射，注入模型、能力与 StepPersistence；一次装配的结果不可变，替换整体换。"""
+"""用 pydantic-ai 原生的 spec 机制装配一个 Agent：插件写成 AgentSpec 的 capabilities 条目，模型、提示词与
+StepPersistence、用量台账、技能、子代理这些运行时挂件由调用方递进来。一次装配的结果不可变。"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Final, NotRequired, TypedDict, cast
+from typing import Any, Final, NotRequired, TypedDict
 
-import yaml
 from pydantic_ai import Agent, AgentSpec
-from pydantic_ai.capabilities import AgentCapability
+from pydantic_ai.capabilities import AbstractCapability, AgentCapability
 from pydantic_ai.models import Model
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_harness.step_persistence import StepPersistence, StepStore
 from pydantic_ai_harness.subagents import SubAgent, SubAgents
 
-from iclip.harness.models import BuiltModels, thinking_effort_of
+from iclip.harness.models import thinking_effort_of
 from iclip.platform.transcript.display import AgentCallDisplay, DisplayFn, ToolDisplay
-
-AgentCapabilities = tuple[AgentCapability[Any], ...]
-"""由组合根解析的能力集合。"""
-
-AgentMap = Mapping[str, Agent[Any, Any]]
-"""agent id → 装配好的 Agent。"""
 
 DELEGATE_TOOL = "delegate_task"
 """显式指定 SubAgents 工具名，与 display 注册保持一致。"""
@@ -35,32 +28,6 @@ TOOL_RETRIES: Final = 3
 失败多次只记一次。output 预算保持默认。"""
 
 
-@dataclass(frozen=True, slots=True)
-class SubAgentDefinition:
-    """子代理身份、声明与调用资源限额。"""
-
-    name: str
-    spec: Path
-    model: str
-    instructions: Path | None = None
-    capabilities: AgentCapabilities = ()
-    timeout_seconds: float | None = None
-    max_calls: int | None = None
-    on_failure: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class AgentDefinition:
-    """Agent 装配输入；agent_id 同时作为 Agent.name。"""
-
-    agent_id: str
-    spec: Path
-    model: str
-    instructions: Path | None = None
-    capabilities: AgentCapabilities = ()
-    subagents: tuple[SubAgentDefinition, ...] = ()
-
-
 class SubAgentProfile(TypedDict):
     """子代理档案：原样写进子运行的 metadata（str→str），实时任务卡与历史都按这几个键读。"""
 
@@ -71,116 +38,95 @@ class SubAgentProfile(TypedDict):
     """配了思考档位才有。"""
 
 
-def _read_spec(path: Path) -> AgentSpec:
-    """读 spec；空文件视为没有额外声明。"""
+def subagent_profile(agent_name: str, model: Model) -> SubAgentProfile:
+    """一个子代理的档案：名字、模型 id、思考档位。同一份既写进子运行的落库 metadata，也交给镜像标在
+    任务上，实时与历史读到的字符串才相同。"""
 
-    return AgentSpec.from_dict(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
-
-
-def _read_instructions(path: Path | None) -> str | None:
-    """读取非空提示词，空文件不注入指令。"""
-
-    if path is None:
-        return None
-    return path.read_text(encoding="utf-8").strip() or None
+    profile: SubAgentProfile = {"agent_name": agent_name, "model": model.model_name}
+    effort = thinking_effort_of(model)
+    if effort is not None:
+        profile["thinking_effort"] = effort
+    return profile
 
 
-def _pick_model(models: BuiltModels, model: str, *, declared_by: str) -> Model:
-    """按名字取模型；名字未声明即报错。"""
+def profile_metadata(profile: SubAgentProfile) -> dict[str, str]:
+    """档案写成子运行的落库 metadata（str→str）。"""
 
-    picked = models.get(model)
-    if picked is None:
-        known = ", ".join(models) or "（config.yaml 的 models 段是空的）"
-        raise RuntimeError(f"{declared_by} 引用了未声明的模型 {model!r}；已声明的有: {known}")
-    return picked
+    metadata = {"agent_name": profile["agent_name"], "model": profile["model"]}
+    if "thinking_effort" in profile:
+        metadata["thinking_effort"] = profile["thinking_effort"]
+    return metadata
 
 
-def _load_agent(
-    spec: Path,
-    instructions: Path | None,
+def build_agent(
     *,
     name: str,
     model: Model,
+    instructions: str,
+    plugins: Sequence[Mapping[str, Mapping[str, Any]]],
+    plugin_types: Sequence[type[AbstractCapability[Any]]],
     step_store: StepStore,
     usage_ledger: AgentCapability[Any],
+    run_metadata: Mapping[str, str],
     accepts_deferred: bool,
     extra: Sequence[AgentCapability[Any]] = (),
-    persistence_metadata: Mapping[str, str] | None = None,
 ) -> Agent[Any, Any]:
-    """装配 Agent。
+    """装配一个 Agent。
+
+    ``plugins`` 是原生 AgentSpec 的 capabilities 条目（``{插件名: 参数}``），``plugin_types`` 是插件登记表
+    里绑好服务的类，交给 ``custom_capability_types``；插件名不认识、参数不对或少挂了依赖由 pydantic-ai
+    在这里抛出。``run_metadata`` 原样写进每次运行的落库记录。
 
     顶层与子代理都不设 agent_name，落库 run id 与消息 run_id 一致；子代理的名字放 metadata。
-    审批工具仅挂顶层 Agent，并通过 accepts_deferred 启用 DeferredToolRequests。
+    审批工具仅挂顶层 Agent，并通过 ``accepts_deferred`` 启用 DeferredToolRequests。
     StepPersistence.run_id 保持为空，由 for_run 按运行计算，以支持并发复用能力实例。
-    用量台账每个 Agent 都挂，同一个实例共用。
+    用量台账每个 Agent 都挂，同一个实例共用。提示词为空就不注入指令。
     """
 
     return Agent.from_spec(
-        _read_spec(spec),
+        AgentSpec.from_dict({"capabilities": [dict(entry) for entry in plugins]}),
+        custom_capability_types=list(plugin_types),
         model=model,
         name=name,
-        instructions=_read_instructions(instructions),
+        instructions=instructions.strip() or None,
         output_type=[str, DeferredToolRequests] if accepts_deferred else str,
         retries={"tools": TOOL_RETRIES},
         capabilities=[
-            StepPersistence(store=step_store, metadata=dict(persistence_metadata or {})),
+            StepPersistence(store=step_store, metadata=dict(run_metadata)),
             usage_ledger,
             *extra,
         ],
     )
 
 
-def subagent_profiles(
-    definitions: Sequence[AgentDefinition], models: BuiltModels
-) -> Mapping[str, SubAgentProfile]:
-    """每个子代理一份档案：名字、模型 id、思考档位。
+@dataclass(frozen=True, slots=True)
+class SubAgentSlot:
+    """一个子代理：派活工具里的名字、给主 agent 看的描述、装配好的 Agent 与三个控制项。"""
 
-    同一份既写进子运行的落库 metadata，也交给镜像标在任务上，实时与历史读到的字符串才相同。
-    """
-
-    profiles: dict[str, SubAgentProfile] = {}
-    for definition in definitions:
-        for sub in definition.subagents:
-            model = _pick_model(models, sub.model, declared_by=f"子 agent {sub.name}")
-            profile: SubAgentProfile = {"agent_name": sub.name, "model": model.model_name}
-            effort = thinking_effort_of(model)
-            if effort is not None:
-                profile["thinking_effort"] = effort
-            # 档案按子代理名查，同名不同配置会让一份盖掉另一份，启动时就拦住。
-            if profiles.get(sub.name, profile) != profile:
-                raise RuntimeError(f"子 agent {sub.name} 在多个 agent 下声明了不同的模型配置")
-            profiles[sub.name] = profile
-    return profiles
+    name: str
+    description: str
+    agent: Agent[Any, Any]
+    timeout_seconds: float | None = None
+    max_calls: int | None = None
+    on_failure: str | None = None
 
 
-def _build_subagents(
-    definitions: Sequence[SubAgentDefinition],
-    step_store: StepStore,
-    usage_ledger: AgentCapability[Any],
-    models: BuiltModels,
-    mirror: AgentCapability[Any],
-    profiles: Mapping[str, SubAgentProfile],
+def build_subagents(
+    slots: Sequence[SubAgentSlot], *, mirror: AgentCapability[Any]
 ) -> SubAgents[Any]:
+    """把子代理挂成一件 ``delegate_task``；``mirror`` 是共享给每个子运行的 transcript 镜像。"""
+
     return SubAgents(
         agents=[
             SubAgent(
-                _load_agent(
-                    sub.spec,
-                    sub.instructions,
-                    name=sub.name,
-                    model=_pick_model(models, sub.model, declared_by=f"子 agent {sub.name}"),
-                    step_store=step_store,
-                    usage_ledger=usage_ledger,
-                    accepts_deferred=False,
-                    extra=sub.capabilities,
-                    # 档案的值全是字符串，按 str→str 落库。
-                    persistence_metadata=cast("Mapping[str, str]", profiles[sub.name]),
-                ),
-                timeout_seconds=sub.timeout_seconds,
-                max_calls=sub.max_calls,
-                on_failure=sub.on_failure,
+                slot.agent,
+                name=slot.name,
+                description=slot.description or None,
+                timeout_seconds=slot.timeout_seconds,
+                max_calls=slot.max_calls,
+                on_failure=slot.on_failure,
             )
-            for sub in definitions
+            for slot in slots
         ],
         tool_name=DELEGATE_TOOL,
         # 禁用磁盘扫描，避免个人 .agents/.claude 目录中的 Agent 定义进入运行环境。
@@ -206,71 +152,14 @@ def _delegate_display(args: Any) -> ToolDisplay | None:
     return AgentCallDisplay(agent_name=name, prompt=task)
 
 
-@dataclass(frozen=True, slots=True)
-class AgentRegistry:
-    """一次装配得到的 id → Agent 映射，装配后不可变。"""
-
-    agents: AgentMap
-
-    @property
-    def ids(self) -> tuple[str, ...]:
-        return tuple(self.agents)
-
-
-def build_agent_registry(
-    definitions: Sequence[AgentDefinition],
-    *,
-    step_store: StepStore,
-    usage_ledger: AgentCapability[Any],
-    models: BuiltModels,
-    subagent_mirror: AgentCapability[Any],
-) -> AgentRegistry:
-    """根据声明与注入依赖装配 Agent。
-
-    subagent_mirror 挂到每个子代理运行上，usage_ledger 挂到每个 Agent 上，两者都由组合根构造。
-    """
-
-    profiles = subagent_profiles(definitions, models)
-    agents: dict[str, Agent[Any, Any]] = {}
-    for definition in definitions:
-        agents[definition.agent_id] = _load_agent(
-            definition.spec,
-            definition.instructions,
-            name=definition.agent_id,
-            model=_pick_model(models, definition.model, declared_by=f"agent {definition.agent_id}"),
-            step_store=step_store,
-            usage_ledger=usage_ledger,
-            accepts_deferred=True,
-            extra=(
-                *definition.capabilities,
-                *(
-                    [
-                        _build_subagents(
-                            definition.subagents,
-                            step_store,
-                            usage_ledger,
-                            models,
-                            subagent_mirror,
-                            profiles,
-                        )
-                    ]
-                    if definition.subagents
-                    else ()
-                ),
-            ),
-        )
-    return AgentRegistry(agents=agents)
-
-
 __all__ = [
     "DELEGATE_TOOL",
-    "AgentCapabilities",
-    "AgentDefinition",
-    "AgentMap",
-    "AgentRegistry",
-    "SubAgentDefinition",
+    "TOOL_RETRIES",
     "SubAgentProfile",
-    "build_agent_registry",
+    "SubAgentSlot",
+    "build_agent",
+    "build_subagents",
     "delegate_display_table",
-    "subagent_profiles",
+    "profile_metadata",
+    "subagent_profile",
 ]
