@@ -15,7 +15,7 @@
 | `make web-check` | 前端 `ci:check`；CI 已包含这些检查，本地不必跑 |
 | `make test` | 运行时、视频插件与后端的单元测试和无真实 LLM 的集成测试 |
 | `make test-external` | 使用外部服务凭证的测试；环境与跳过规则见 [测试规范](docs/test-design.md) |
-| `make contract` | 从后端导出 OpenAPI |
+| `make contract` | 从后端与运行时服务导出 OpenAPI |
 | `make docs-check` | 核对 Markdown 相对链接与 make 目标 |
 | `make hooks` | 安装本地 pre-commit / pre-push hooks |
 

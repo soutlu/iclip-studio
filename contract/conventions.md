@@ -1,6 +1,6 @@
 # 跨端合同约定 (API Conventions)
 
-> HTTP 端点、端点权限与数据形状以 [`openapi.json`](openapi.json) 为准，生成流程见 [开发约定](../AGENTS.md)。本文补充跨端消费语义、认证、动态错误与 WebSocket 约定；领域术语和不变量见 [CONTEXT.md](../docs/CONTEXT.md)。
+> HTTP 端点、端点权限与数据形状以 [`openapi.json`](openapi.json) 为准，生成流程见 [开发约定](../AGENTS.md)。本文补充跨端消费语义、认证、动态错误与 WebSocket 约定；领域术语和不变量见 [CONTEXT.md](../docs/CONTEXT.md)。运行时服务的接口只供后端调用，以 [`runtime-openapi.json`](runtime-openapi.json) 为准，鉴权见[后端架构](../docs/architecture.md#1-模块职责)，错误信封同 §4。
 
 ## 1. 部署与路由路径
 

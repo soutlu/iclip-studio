@@ -1,0 +1,10 @@
+# 运行时服务以仓库根为构建上下文，只发送 runtime/ 的项目文件与源码；后端、插件、前端与 .git 都不发送。
+**
+!runtime/pyproject.toml
+!runtime/uv.lock
+!runtime/src/
+!runtime/src/**
+# 本机缓存与字节码不进镜像。
+**/__pycache__/
+**/*.py[cod]
+**/.env*

@@ -1,7 +1,7 @@
 """领域错误分类学。
 
-各域 service 只抛这些类型；HTTP 状态码映射见 platform/http.py，
-FastAPI 异常处理器见 app/errors.py。
+各域 service 只抛这些类型；HTTP 状态码映射与异常处理器在运行时服务的 http/errors.py，
+后端的 platform/http.py 与 app/errors.py 与它逐条一致。
 """
 
 from __future__ import annotations
