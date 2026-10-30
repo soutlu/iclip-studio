@@ -26,6 +26,10 @@ RevisionOperation = Literal["create", "publish", "restore", "import", "archive",
 AGENT_ID_PATTERN: Final = re.compile(r"[a-z][a-z0-9-]{0,39}")
 """Agent 标识：小写字母开头，后面是小写字母、数字或连字符，最多 40 个字符，创建后不能改。"""
 
+RESERVED_AGENT_IDS: Final = frozenset({"plugins", "order", "import"})
+"""不能用作新 agent 标识的词：它们是 ``/agents/`` 下的固定路径，用作标识会和 ``/agents/{id}`` 撞名。
+``/agents/`` 下每加一个固定路径，就在这里补上那一段。"""
+
 MAX_NAME_CHARS: Final = 50
 MAX_DESCRIPTION_CHARS: Final = 1024
 """``description`` 在这个 agent 被当作子 agent 时给主 agent 看。"""
@@ -222,6 +226,7 @@ __all__ = [
     "AGENT_ID_PATTERN",
     "MAX_DESCRIPTION_CHARS",
     "MAX_NAME_CHARS",
+    "RESERVED_AGENT_IDS",
     "STATUS_ACTIVE",
     "STATUS_ARCHIVED",
     "Agent",

@@ -419,7 +419,7 @@ class AgentConfigService:
 
         problems: list[Problem] = []
         warnings: list[Problem] = []
-        if (issue := agent_id_problem(agent_id)) is not None:
+        if (issue := agent_id_problem(agent_id, new=not exists)) is not None:
             problems.append(Problem("", issue))
         name = description = None
         try:

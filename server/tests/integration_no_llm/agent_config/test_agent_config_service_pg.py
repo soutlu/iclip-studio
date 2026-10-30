@@ -233,6 +233,29 @@ async def test_new_agent_has_an_empty_draft_and_a_create_record(
         await world.agents.create(AgentCreateIn(id="Director", name="x"), by=world.author)
 
 
+async def test_a_reserved_word_cannot_name_a_new_agent(world: World, engine: AsyncEngine) -> None:
+    """``/agents/`` 下固定路径的那几段不能当标识：新建与导入新 agent 都拦下，什么都不写。"""
+
+    with pytest.raises(ValidationFailed, match="plugins 是保留词"):
+        await world.agents.create(AgentCreateIn(id="plugins", name="插件"), by=world.author)
+    assert await operations(engine, "plugins") == []
+
+    package = {
+        "format_version": "1.0.0",
+        "entry": "order",
+        "agents": {"order": {"name": "排序", "config": {"schema_version": 1}}},
+    }
+    data = yaml.safe_dump(package, allow_unicode=True).encode()
+    report = await world.agents.import_package(data, dry_run=True, by=world.author)
+    (item,) = report.agents
+    assert (item.agent_id, item.action) == ("order", "create")
+    assert [(one.path, one.message) for one in item.problems] == [
+        ("", "order 是保留词，不能用作标识")
+    ]
+    with pytest.raises(ValidationFailed, match="order 是保留词"):
+        await world.agents.import_package(data, dry_run=False, by=world.author)
+
+
 async def test_publish_versions_increase_and_clear_unpublished_changes(
     world: World, engine: AsyncEngine
 ) -> None:
