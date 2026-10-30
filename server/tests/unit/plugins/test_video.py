@@ -24,12 +24,14 @@ from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
-from iclip.plugins.video.capability import Video, VideoPlugin, VideoToolset
+from iclip.plugins.video.capability import Video, VideoToolset
 from iclip.plugins.video_document import video_doc_path
 from iclip.plugins.video_understanding import VideoUnderstandingError
+from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.plugins import required_tools, with_requirements
 from tests.helpers.shot_video import FakeUnderstanding
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -62,22 +64,13 @@ def understanding() -> FakeUnderstanding:
 def capability(
     files: FakeFileStore, materials: FakeMaterialLedger, understanding: FakeUnderstanding
 ) -> Video[object]:
-    return Video[object](
+    """与组合根同一条路：服务绑进类，再按 spec 造实例。"""
+
+    return Video.bind(
         space=FileSpace(store=files, namespace=workspace_namespace),
         ledger=materials,
         understanding=understanding,
-    )
-
-
-@pytest.fixture
-def plugin(
-    files: FakeFileStore, materials: FakeMaterialLedger, understanding: FakeUnderstanding
-) -> VideoPlugin:
-    return VideoPlugin(
-        space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=materials,
-        understanding=understanding,
-    )
+    ).from_spec()
 
 
 @pytest.fixture
@@ -113,9 +106,9 @@ async def invoke(
             return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="video-call")])
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
-    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "处理参考素材。", deps=make_deps()
-    )
+    result = await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("处理参考素材。", deps=make_deps())
     return result.all_messages()
 
 
@@ -133,25 +126,30 @@ def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
     return [part for part in _tool_returns(messages) if part.outcome != "retried"]
 
 
-async def test_only_video_tools_reach_the_model(
-    capability: Video[object], plugin: VideoPlugin
-) -> None:
+async def test_only_video_tools_reach_the_model(capability: Video[object]) -> None:
     seen: list[str] = []
 
     def script(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         seen.extend(sorted(tool.name for tool in info.function_tools))
         return ModelResponse(parts=[TextPart("好")])
 
-    await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "查看工具。", deps=make_deps()
-    )
+    await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("查看工具。", deps=make_deps())
 
-    assert seen == ["video_parser"]
-    assert set(plugin.display_table()) == set(seen)
+    own = [name for name in seen if name not in required_tools(capability)]
+    assert own == ["video_parser"]
+    assert set(Video.display_table()) == set(own)
 
 
-def test_every_tool_has_a_display_without_a_renderer(plugin: VideoPlugin) -> None:
-    registry = ToolDisplayRegistry.merged(plugin.display_table())
+def test_video_requires_workspace(capability: Video[object]) -> None:
+    ordering = capability.get_ordering()
+    assert tuple(ordering.requires) == (Workspace,)
+    assert Video.get_serialization_name() == "video"
+
+
+def test_every_tool_has_a_display_without_a_renderer() -> None:
+    registry = ToolDisplayRegistry.merged(Video.display_table())
     drawn = registry.entries
     parsed = drawn["video_parser"].draw({"video_url": VIDEO})
     assert isinstance(parsed, GenericDisplay)

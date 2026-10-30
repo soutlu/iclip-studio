@@ -34,10 +34,12 @@ from iclip.plugins.shot_document import (
     VideoShotRequest,
     validate_shots_document,
 )
-from iclip.plugins.video_shots.capability import VideoShots, VideoShotsPlugin, VideoShotsToolset
+from iclip.plugins.video_shots.capability import VideoShots, VideoShotsToolset
+from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.plugins import required_tools, with_requirements
 from tests.helpers.shot_document import FRAME_URL, OTHER_FRAME_URL, one_shot, shots_document
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -60,17 +62,17 @@ def materials() -> FakeMaterialLedger:
 
 
 @pytest.fixture
-def capability(files: FakeFileStore, materials: FakeMaterialLedger) -> VideoShots[object]:
-    return VideoShots[object](
+def plugin(files: FakeFileStore, materials: FakeMaterialLedger) -> type[VideoShots[object]]:
+    """与组合根同一条路：服务绑进类。"""
+
+    return VideoShots[object].bind(
         space=FileSpace(store=files, namespace=workspace_namespace), ledger=materials
     )
 
 
 @pytest.fixture
-def plugin(files: FakeFileStore, materials: FakeMaterialLedger) -> VideoShotsPlugin:
-    return VideoShotsPlugin(
-        space=FileSpace(store=files, namespace=workspace_namespace), ledger=materials
-    )
+def capability(plugin: type[VideoShots[object]]) -> VideoShots[object]:
+    return plugin.from_spec()
 
 
 @pytest.fixture
@@ -130,9 +132,9 @@ async def invoke(
             return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="shots-call")])
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
-    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "提交镜头组。", deps=make_deps()
-    )
+    result = await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("提交镜头组。", deps=make_deps())
     return result.all_messages()
 
 
@@ -177,7 +179,7 @@ async def deliver(
 
 
 async def test_only_the_delivery_tool_reaches_the_model(
-    capability: VideoShots[object], plugin: VideoShotsPlugin
+    capability: VideoShots[object], plugin: type[VideoShots[object]]
 ) -> None:
     seen: list[str] = []
 
@@ -185,12 +187,20 @@ async def test_only_the_delivery_tool_reaches_the_model(
         seen.extend(sorted(tool.name for tool in info.function_tools))
         return ModelResponse(parts=[TextPart("好")])
 
-    await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "查看工具。", deps=make_deps()
-    )
+    await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("查看工具。", deps=make_deps())
 
-    assert seen == ["write_video_shots"]
-    assert set(plugin.display_table()) == set(seen)
+    own = [name for name in seen if name not in required_tools(capability)]
+    assert own == ["write_video_shots"]
+    assert set(plugin.display_table()) == set(own)
+
+
+def test_video_shots_requires_workspace(
+    plugin: type[VideoShots[object]], capability: VideoShots[object]
+) -> None:
+    assert plugin.get_serialization_name() == "video_shots"
+    assert tuple(capability.get_ordering().requires) == (Workspace,)
 
 
 async def test_structured_shot_input_schema_reaches_the_model(
@@ -203,7 +213,9 @@ async def test_structured_shot_input_schema_reaches_the_model(
         seen["schema"] = tool.parameters_json_schema
         return ModelResponse(parts=[TextPart("好")])
 
-    await Agent(FunctionModel(script), capabilities=[capability]).run("看看参数", deps=make_deps())
+    await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("看看参数", deps=make_deps())
 
     schema = seen["schema"]
     assert set(schema["properties"]) == {"aspect_ratio", "shots"}
@@ -233,7 +245,7 @@ async def test_structured_shot_input_schema_reaches_the_model(
     assert timestamps["items"]["minimum"] == 0
 
 
-def test_the_delivery_has_a_display_without_a_renderer(plugin: VideoShotsPlugin) -> None:
+def test_the_delivery_has_a_display_without_a_renderer(plugin: type[VideoShots[object]]) -> None:
     registry = ToolDisplayRegistry.merged(plugin.display_table())
     shots = registry.entries["write_video_shots"].draw({})
     assert shots == FileIoDisplay(operation="write", path=SHOTS_PATH)
@@ -243,7 +255,7 @@ def test_the_delivery_has_a_display_without_a_renderer(plugin: VideoShotsPlugin)
 @pytest.mark.parametrize("stringified", [None, "shots", "prompt"])
 async def test_shots_card_shows_exactly_what_the_delivery_writes(
     capability: VideoShots[object],
-    plugin: VideoShotsPlugin,
+    plugin: type[VideoShots[object]],
     files: FakeFileStore,
     stringified: str | None,
 ) -> None:
@@ -269,7 +281,7 @@ async def test_shots_card_shows_exactly_what_the_delivery_writes(
 
 
 async def test_shots_card_from_json_text_args_matches_the_written_file(
-    capability: VideoShots[object], plugin: VideoShotsPlugin, files: FakeFileStore
+    capability: VideoShots[object], plugin: type[VideoShots[object]], files: FakeFileStore
 ) -> None:
     """模型多以 JSON 文本给参数：投影经注册表画卡，与工具按 JSON 校验后写下的原文一致。"""
 
@@ -298,7 +310,7 @@ async def test_shots_card_from_json_text_args_matches_the_written_file(
     ids=["bad-index", "bad-aspect", "not-json", "no-aspect", "not-a-mapping"],
 )
 def test_shots_card_without_content_when_the_delivery_would_be_refused(
-    plugin: VideoShotsPlugin, args: object
+    plugin: type[VideoShots[object]], args: object
 ) -> None:
     """工具会退回的入参没有要写的原文：照样是写入 video_shot.json 那一行，只是不带内容。"""
 
@@ -545,9 +557,9 @@ async def run_delivery_once(
         return ModelResponse(parts=[TextPart("好")])
 
     with capture_logs() as logs:
-        result = await Agent(FunctionModel(call_once), capabilities=[capability]).run(
-            "提交镜头组", deps=make_deps()
-        )
+        result = await Agent(
+            FunctionModel(call_once), capabilities=with_requirements(capability, capability.space)
+        ).run("提交镜头组", deps=make_deps())
     rejected = [
         part for part in refusals(result.all_messages()) if part.tool_name == "write_video_shots"
     ]

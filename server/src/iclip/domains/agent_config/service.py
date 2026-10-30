@@ -62,6 +62,8 @@ from iclip.domains.agent_config.schemas import (
     AgentImportOut,
     AgentOrderIn,
     AgentOut,
+    AgentPluginOut,
+    AgentPluginsOut,
     AgentProblemOut,
     AgentPublishIn,
     AgentRestoreIn,
@@ -165,6 +167,22 @@ class AgentConfigService:
 
     async def list(self) -> AgentsOut:
         return AgentsOut(items=[_agent_out(state) for state in await self._store.list()])
+
+    def plugins(self) -> AgentPluginsOut:
+        """本部署插件登记表里的全部插件，配置页列出来供选择。"""
+
+        return AgentPluginsOut(
+            items=[
+                AgentPluginOut(
+                    name=plugin.name,
+                    label=plugin.label,
+                    description=plugin.description,
+                    requires=list(plugin.requires),
+                    parameters=dict(plugin.parameters_schema),
+                )
+                for plugin in self._plugins.catalog()
+            ]
+        )
 
     async def detail(self, agent_id: str) -> AgentDetailOut:
         """一个 agent 连同草稿、技能绑定与谁把它当作子 agent；没有是 ``NotFound``。"""
@@ -401,7 +419,7 @@ class AgentConfigService:
 
         problems: list[Problem] = []
         warnings: list[Problem] = []
-        if (issue := agent_id_problem(agent_id)) is not None:
+        if (issue := agent_id_problem(agent_id, new=not exists)) is not None:
             problems.append(Problem("", issue))
         name = description = None
         try:

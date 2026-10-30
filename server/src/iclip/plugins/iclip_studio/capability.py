@@ -1,4 +1,4 @@
-"""iClip Studio 能力：登记工程文件检查与生图两件工具。"""
+"""iClip Studio 插件：登记工程文件检查与生图两件工具。"""
 
 from __future__ import annotations
 
@@ -6,17 +6,16 @@ import asyncio
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Self
 
 from pydantic_ai import ModelRetry
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.common.shot_prompt import format_shot_prompt
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.harness.agents import AgentCapabilities
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material, MaterialLedger
 from iclip.platform.transcript.display import (
@@ -27,7 +26,7 @@ from iclip.platform.transcript.display import (
     media_grid,
     tool_note,
 )
-from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.plugins.iclip_studio.film.load import ConversationImages, load_film
 from iclip.plugins.iclip_studio.film.markup import Node
@@ -39,6 +38,7 @@ from iclip.plugins.iclip_studio.ports import (
     NodeImageRequest,
     NodeImages,
 )
+from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "iclip_studio"
 
@@ -54,8 +54,11 @@ IMAGE_WAIT_SECONDS: Final = 900.0
 
 
 @dataclass
-class IclipStudio(AbstractCapability[AgentDepsT]):
-    """导演流程用的工具集。"""
+class IclipStudio(CapPlugin[AgentDepsT]):
+    """导演工程插件。"""
+
+    label = "导演工程"
+    summary = "检查 AI 导演的工程文件和运行文件是否符合规范。"
 
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
@@ -75,31 +78,28 @@ class IclipStudio(AbstractCapability[AgentDepsT]):
         return IclipStudioToolset(self)
 
     @classmethod
-    def get_serialization_name(cls) -> str | None:
-        return None
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
 
+    @classmethod
+    def bind(
+        cls, *, space: FileSpace, ledger: MaterialLedger, images: NodeImages | None
+    ) -> type[Self]:
+        """把运行服务绑进类，交给登记表。"""
 
-class IclipStudioPlugin(CapPlugin[PluginParameters]):
-    """导演工程插件。"""
+        return cls._bound(space=space, ledger=ledger, images=images)
 
-    name = "iclip_studio"
-    label = "导演工程"
-    description = "检查 AI 导演的工程文件和运行文件是否符合规范。"
-    requires = ("workspace",)
-    """检查的两个文件由 workspace 的文件工具读写。"""
-
-    def __init__(
-        self, *, space: FileSpace, ledger: MaterialLedger, images: NodeImages | None
-    ) -> None:
-        self._space = space
-        self._ledger = ledger
-        self._images = images
-
-    def build(self, parameters: PluginParameters) -> AgentCapabilities:
+    @classmethod
+    def from_spec(cls) -> Self:
         # 现阶段生图由人自己做：生图工具保留，不登记给 agent（can_generate 用默认的 False）。
-        return (IclipStudio[Any](space=self._space, ledger=self._ledger, images=self._images),)
+        return cls(**cls._bound_services())
 
-    def display_table(self) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
+    def get_ordering(self) -> CapabilityOrdering:
+        # 检查的两个文件由 workspace 的文件工具读写。
+        return CapabilityOrdering(requires=(Workspace,))
+
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
         """工具卡声明。"""
 
         return {
@@ -330,6 +330,5 @@ __all__ = [
     "MAX_IMAGES_PER_CALL",
     "MAX_LISTED_PROBLEMS",
     "IclipStudio",
-    "IclipStudioPlugin",
     "IclipStudioToolset",
 ]

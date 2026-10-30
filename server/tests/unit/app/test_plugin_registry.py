@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import httpx
 import pytest
+from pydantic_ai import Agent, AgentSpec
 from pydantic_ai.capabilities import Capability
+from pydantic_ai.exceptions import UserError
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.test import TestModel
 
 from iclip.app.plugin_registry import (
     GenerationsAdapter,
@@ -22,6 +28,7 @@ from iclip.app.plugin_registry import (
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.common.errors import ValidationFailed
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
+from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
@@ -40,7 +47,7 @@ from iclip.plugins.shot_video.ports import (
     ObjectWriteFailed,
 )
 from iclip.plugins.video.capability import Video
-from iclip.plugins.video_breakdown.capability import VideoBreakdown
+from iclip.plugins.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
 from iclip.plugins.video_shots.capability import VideoShots
 from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
@@ -94,7 +101,15 @@ def dummy() -> Capability[object]:
 
 @pytest.fixture
 def registry(dummy: Capability[object]) -> PluginRegistry:
-    return {"dummy": FixedPlugin((dummy,))}
+    return {"dummy": FixedPlugin.bind(name="dummy", capabilities=(dummy,))}
+
+
+def assert_kinds(capabilities: Sequence[object], expected: Sequence[type]) -> None:
+    """逐项是这些插件类的实例；登记表里的类是绑了服务的子类，所以按 isinstance 比。"""
+
+    assert len(capabilities) == len(expected)
+    for capability, kind in zip(capabilities, expected, strict=True):
+        assert isinstance(capability, kind), f"{type(capability).__name__} 不是 {kind.__name__}"
 
 
 def test_unknown_name_fails_loudly(registry: PluginRegistry) -> None:
@@ -139,7 +154,7 @@ def test_plugins_without_their_own_config_are_always_registered() -> None:
     resolved = resolve_plugins(
         ("workspace", "iclip_studio", "video_shots"), registry=built, declared_by="agent director"
     )
-    assert [type(capability) for capability in resolved] == [Workspace, IclipStudio, VideoShots]
+    assert_kinds(resolved, [Workspace, IclipStudio, VideoShots])
     shots = resolved[2]
     assert isinstance(shots, VideoShots)
     assert set(shots.get_toolset().tools) == {"write_video_shots"}
@@ -186,12 +201,14 @@ async def test_video_breakdown_breaks_videos_down_through_the_reference_service(
         reference_service=cast("ReferenceService", references),
     )
 
-    workspace, capability, background, studio = resolve_plugins(
+    workspace, plugin, studio = resolve_plugins(
         ("workspace", "video_breakdown", "iclip_studio"),
         registry=built,
         declared_by="agent replica",
     )
     assert isinstance(workspace, Workspace)
+    assert isinstance(plugin, VideoBreakdownPlugin)
+    capability, background = plugin.capabilities
     assert isinstance(capability, VideoBreakdown)
     assert isinstance(background, BackgroundTools), "breakdown_video 要挂着后台工具才在后台跑"
     assert isinstance(studio, IclipStudio), "后台工具只跟着 video_breakdown 挂"
@@ -248,7 +265,7 @@ def test_shot_video_is_registered_when_backed(
     resolved = resolve_plugins(
         ("workspace", "video", "shot_video"), registry=built, declared_by="agent storyboard"
     )
-    assert [type(capability) for capability in resolved] == [Workspace, Video, ShotVideo]
+    assert_kinds(resolved, [Workspace, Video, ShotVideo])
 
 
 def test_shot_video_without_workspace_and_video_fails_at_assembly(
@@ -632,7 +649,7 @@ def test_video_mounts_without_generation_or_object_store(video_settings: Resolve
         video=video_settings,
     )
     resolved = resolve_plugins(("workspace", "video"), registry=built, declared_by="agent video")
-    assert [type(capability) for capability in resolved] == [Workspace, Video]
+    assert_kinds(resolved, [Workspace, Video])
     assert "shot_video" not in built
     video = resolved[1]
     assert isinstance(video, Video)
@@ -653,3 +670,109 @@ def test_video_is_unavailable_without_understanding() -> None:
     )
     with pytest.raises(RuntimeError, match="未登记的插件 'video'"):
         resolve_plugins(("workspace", "video"), registry=built, declared_by="agent video")
+
+
+def everything_registered(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> PluginRegistry:
+    return build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        generation_service=cast("GenerationService", object()),
+        settled_records=cast("SettledRecords", object()),
+        object_store=MemoryObjectStore(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+        video=video_settings,
+        shot_video=shot_video_settings,
+        iclip_studio=STUDIO,
+        reference_service=cast("ReferenceService", RecordingReferences()),
+        image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
+    )
+
+
+def test_each_plugin_class_is_registered_under_its_serialization_name(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    built = everything_registered(video_settings, shot_video_settings)
+
+    assert list(built) == [
+        "workspace",
+        "iclip_studio",
+        "video_shots",
+        "video",
+        "video_breakdown",
+        "shot_video",
+    ]
+    for name, plugin in built.items():
+        assert plugin.get_serialization_name() == name
+
+
+def test_the_spec_schema_lists_every_plugin_without_its_services(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    """pydantic-ai 按 from_spec 的签名生成 spec schema；绑进类的服务不能出现成参数。"""
+
+    built = everything_registered(video_settings, shot_video_settings)
+
+    schema = AgentSpec.model_json_schema_with_capabilities(list(built.values()))
+
+    entries = schema["properties"]["capabilities"]["items"]["anyOf"]
+    for name in built:
+        assert {"const": name, "type": "string"} in entries
+    for service in ("space", "ledger", "probe", "breakdowns", "extractor", "understanding"):
+        assert f'"{service}"' not in json.dumps(schema)
+
+
+def run_deps() -> AgentRunDeps:
+    return AgentRunDeps(principal=STUDIO_PRINCIPAL, conversation_id="thread-1", user_name="logan")
+
+
+async def tools_seen(agent: Agent[AgentRunDeps, str]) -> list[str]:
+    seen: list[str] = []
+
+    def script(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.extend(sorted(tool.name for tool in info.function_tools))
+        return ModelResponse(parts=[TextPart("好")])
+
+    await agent.run("看看你有什么", deps=run_deps(), model=FunctionModel(script))
+    return seen
+
+
+async def test_an_agent_from_the_native_spec_gets_the_same_tools_as_the_yaml_path(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    built = everything_registered(video_settings, shot_video_settings)
+    names = ("video_breakdown", "workspace", "shot_video", "video")
+
+    from_spec = Agent.from_spec(
+        AgentSpec.from_dict({"capabilities": [{name: {}} for name in names]}),
+        custom_capability_types=list(built.values()),
+        deps_type=AgentRunDeps,
+        model=TestModel(),
+    )
+    from_yaml = Agent(
+        TestModel(),
+        deps_type=AgentRunDeps,
+        capabilities=list(resolve_plugins(names, registry=built, declared_by="agent replica")),
+    )
+
+    seen = await tools_seen(from_spec)
+    assert seen == await tools_seen(from_yaml)
+    assert {"breakdown_video", "read_file", "plan_shot_frames", "video_parser"} <= set(seen)
+
+
+def test_pydantic_ai_rejects_a_leaf_plugin_without_its_requirements(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    """叶子插件的 get_ordering().requires 由 pydantic-ai 自己在装配时查。"""
+
+    built = everything_registered(video_settings, shot_video_settings)
+
+    with pytest.raises(UserError, match="requires `Video`"):
+        Agent.from_spec(
+            AgentSpec.from_dict({"capabilities": [{"workspace": {}}, {"shot_video": {}}]}),
+            custom_capability_types=list(built.values()),
+            model=TestModel(),
+        )

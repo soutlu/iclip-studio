@@ -14,8 +14,7 @@ from iclip.domains.identity.public import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.media.codec import MediaCodec
-from iclip.plugins.base import PluginParameters
-from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo, ShotVideoPlugin
+from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip.plugins.shot_video.ports import (
     ImageChannel,
     ImageGenerations,
@@ -146,9 +145,10 @@ def mount_shot_video(
     policy: GenerationPolicy,
     codec: MediaCodec,
 ) -> ShotVideo[object]:
-    """经 ``ShotVideoPlugin`` 装配并 build 一份取帧与出图 capability，和组合根挂给 agent 的同一条路。"""
+    """经 ``ShotVideo.bind`` 绑好服务、再 ``from_spec`` 造一份取帧与出图 capability，和组合根挂给
+    agent 的同一条路。"""
 
-    (capability,) = ShotVideoPlugin(
+    return ShotVideo.bind(
         space=space,
         ledger=ledger,
         generations=generations,
@@ -159,9 +159,7 @@ def mount_shot_video(
         image_models=image_models,
         policy=policy,
         codec=codec,
-    ).build(PluginParameters())
-    assert isinstance(capability, ShotVideo)
-    return capability
+    ).from_spec()
 
 
 __all__ = ["FakeGenerations", "FakeObjects", "FakeUnderstanding", "Outcome", "mount_shot_video"]

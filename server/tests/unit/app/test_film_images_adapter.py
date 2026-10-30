@@ -15,7 +15,6 @@ from iclip.app.plugin_registry import build_plugin_registry
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
 from iclip.domains.identity.models import Principal
-from iclip.plugins.base import PluginParameters
 from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from tests.helpers.fetch_url import as_is
@@ -186,7 +185,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
     )
 
-    (capability,) = built["iclip_studio"].build(PluginParameters())
+    capability = built["iclip_studio"].from_spec()
     assert isinstance(capability, IclipStudio)
     tools = capability.get_toolset().tools
     assert "generate_images" not in tools

@@ -1,4 +1,4 @@
-"""视频拆解能力：登记 breakdown_video，把参考视频的拆解文档写进工作区。"""
+"""视频拆解插件：登记 breakdown_video，把参考视频的拆解文档写进工作区。"""
 
 from __future__ import annotations
 
@@ -6,26 +6,26 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Self
 
 from pydantic_ai import ModelRetry, ToolFailed
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, CombinedCapability
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.common.urls import is_http_url
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.harness.agents import AgentCapabilities
 from iclip.harness.background import BackgroundTools
 from iclip.harness.files import write_or_retry
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import DisplayFn, GenericDisplay, url_filename
-from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.video_breakdown.ports import (
     BreakdownFailureReason,
     FailedBreakdown,
     ReferenceBreakdowns,
 )
+from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "video_breakdown"
 
@@ -62,33 +62,50 @@ class VideoBreakdown(AbstractCapability[AgentDepsT]):
 
     @classmethod
     def get_serialization_name(cls) -> str | None:
+        # 单独挂没有意义：插件是下面的 VideoBreakdownPlugin，连同后台工具一起挂。
         return None
 
 
-class VideoBreakdownPlugin(CapPlugin[PluginParameters]):
-    """视频拆解插件，连同让 breakdown_video 在后台跑的 BackgroundTools 一起挂。"""
+@dataclass
+class VideoBreakdownPlugin(CapPlugin[AgentDepsT], CombinedCapability[AgentDepsT]):
+    """视频拆解插件：``VideoBreakdown`` 连同让 breakdown_video 在后台跑的 ``BackgroundTools``。
 
-    name = "video_breakdown"
+    挂到 Agent 上时 pydantic-ai 会把组合拆平成两项，所以这里的 ``get_ordering`` 只供登记表与
+    装配期检查读，pydantic-ai 自己的依赖检查看不到它。
+    """
+
     label = "视频拆解"
-    description = (
+    summary = (
         "拆解一条视频的出场元素、逐镜时间线和整片分析；和资料库共用同一份拆解，"
         "拆过的直接用，没拆过的在后台拆。"
     )
-    requires = ("workspace",)
-    """写下的文件经 workspace 的文件工具读取。"""
 
-    def __init__(self, *, space: FileSpace, breakdowns: ReferenceBreakdowns) -> None:
-        self._space = space
-        self._breakdowns = breakdowns
+    @classmethod
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
 
-    def build(self, parameters: PluginParameters) -> AgentCapabilities:
-        return (
-            VideoBreakdown[Any](space=self._space, breakdowns=self._breakdowns),
-            # 让标了 background 的 breakdown_video 在后台跑，结果晚些作为消息送达。
-            BackgroundTools[Any](),
+    @classmethod
+    def bind(cls, *, space: FileSpace, breakdowns: ReferenceBreakdowns) -> type[Self]:
+        """把运行服务绑进类，交给登记表。"""
+
+        return cls._bound(space=space, breakdowns=breakdowns)
+
+    @classmethod
+    def from_spec(cls) -> Self:
+        return cls(
+            capabilities=[
+                VideoBreakdown[Any](**cls._bound_services()),
+                # 让标了 background 的 breakdown_video 在后台跑，结果晚些作为消息送达。
+                BackgroundTools[Any](),
+            ]
         )
 
-    def display_table(self) -> Mapping[str, DisplayFn]:
+    def get_ordering(self) -> CapabilityOrdering:
+        # 写下的文件经 workspace 的文件工具读取。
+        return CapabilityOrdering(requires=(Workspace,))
+
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn]:
         """工具卡声明。"""
 
         return {

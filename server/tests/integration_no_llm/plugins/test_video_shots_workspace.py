@@ -29,6 +29,7 @@ from iclip.plugins.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.plugins.video_shots.capability import VideoShots
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.pg import truncate_clean
+from tests.helpers.plugins import with_requirements
 
 USER = uuid.UUID("44444444-4444-4444-4444-444444444444")
 FRAME = "https://cdn.test/frames/s1-1.jpg"
@@ -88,9 +89,9 @@ async def call_once(
             return ModelResponse(parts=[ToolCallPart("write_video_shots", args, tool_call_id="c1")])
         return ModelResponse(parts=[TextPart("好")])
 
-    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "提交镜头组。", deps=make_deps(conversation_id)
-    )
+    result = await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("提交镜头组。", deps=make_deps(conversation_id))
     return [
         part
         for message in result.all_messages()

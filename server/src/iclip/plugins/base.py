@@ -1,60 +1,128 @@
-"""插件约定：我们自己定义、写在代码里的工具集，按名字挂到 agent 上。
+"""插件约定：我们自己定义、写在代码里的工具集，每个插件是一个 pydantic-ai 原生 capability 类。
 
-一个插件类说明自己叫什么、给人看的名字与说明、要求同一 agent 一起挂哪些插件、收什么参数，
-并由组合根在构造时注入运行依赖（连接池、领域服务的适配器等）。挂载时组合根按 agent 逐个调用
-``build``，把产出的 capability 实例交给 Agent。
+插件类按 pydantic-ai 的 spec 机制声明自己：
+
+- ``get_serialization_name()`` 给稳定的插件名，agent 配置与 agents.yaml 按它引用；
+- ``from_spec(**参数)`` 用可序列化的参数造实例，参数的类型与默认值就写在它的签名上；
+- ``get_ordering()`` 用 ``CapabilityOrdering(requires=...)`` 写要求同一 agent 一起挂的插件类。
+
+运行用的服务（FileSpace、台账、各适配器等）不进 spec：组合根启动时调插件类的 ``bind``，得到一个把服务放在
+类属性上的子类，插件名不变；``from_spec`` 从类上取服务。登记表收的就是这些绑好服务的类。
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+import inspect
+from abc import abstractmethod
 from collections.abc import Mapping
-from typing import ClassVar
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any, ClassVar, Self, cast, get_type_hints
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, create_model
+from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.tools import AgentDepsT
 
-from iclip.harness.agents import AgentCapabilities
 from iclip.platform.transcript.display import DisplayFn, ToolDisplayEntry
 
 
-class PluginParameters(BaseModel):
-    """插件参数的基类，不可变、不收未声明的字段；没有参数的插件直接用它。"""
+class CapPlugin(AbstractCapability[AgentDepsT]):
+    """插件类的共同基类：配置页与工具卡用的界面元数据，以及把服务绑进类的写法。
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class CapPlugin[P: PluginParameters](ABC):
-    """插件基类。子类以 ``CapPlugin[自己的参数类型]`` 继承，``build`` 只收这一种参数。
-
-    子类在 ``__init__`` 里以 keyword-only 参数接收自己的运行依赖，由组合根注入；构造期发现的装配
-    错误（缺依赖、配置没接上）直接抛出，不留到挂载时。
-
-    约定：``build`` 每个 agent 调一次，返回的实例要么是运行模板、由 ``for_run`` 按运行克隆出带状态
-    的那份，要么本身没有状态；因此同一个插件给多个 agent、多次重载各 build 一份都是安全的。
+    子类是 ``@dataclass``，覆写 ``get_serialization_name`` 与 ``from_spec``，有依赖时覆写
+    ``get_ordering``；再写一个带类型的类方法 ``bind(*, 服务...)``，内部调 ``_bound``。
     """
-
-    name: ClassVar[str]
-    """登记名，agents.yaml 按它引用。"""
 
     label: ClassVar[str]
     """配置页上给人看的名字。"""
 
-    description: ClassVar[str]
-    """配置页上给人看的一句说明。"""
+    summary: ClassVar[str]
+    """配置页上给人看的一句说明。不用 ``description``：那是 pydantic-ai 自己的实例字段，延迟加载时
+    给模型看。"""
 
-    requires: ClassVar[tuple[str, ...]] = ()
-    """要求同一 agent 一起挂的插件名；少挂了在装配期报错。"""
+    _services: ClassVar[Mapping[str, Any] | None] = None
+    """``bind`` 绑进来的服务；没绑的类是 None。"""
 
-    Parameters: ClassVar[type[PluginParameters]] = PluginParameters
-    """参数模型，须与类型参数 ``P`` 是同一个类；挂载时用它校验并构造这次的参数。"""
-
+    @classmethod
     @abstractmethod
-    def build(self, parameters: P) -> AgentCapabilities:
-        """用构造时拿到的依赖加上这份参数，产出要挂到 Agent 上的 capability 实例。"""
+    def get_serialization_name(cls) -> str:
+        """稳定的插件名，agent 配置与 agents.yaml 按它引用；插件不退出 spec 机制，所以不会是 None。"""
 
+    @classmethod
     @abstractmethod
-    def display_table(self) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
+    def display_table(cls) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
         """本插件各件工具的工具卡声明，与参数无关，组合根合并后供实时与历史投影共用。"""
 
+    @classmethod
+    def _bound(cls, **services: Any) -> type[Self]:
+        """返回本类的一个子类，``services`` 放在它的类属性上；插件名、字段与方法都不变。"""
 
-__all__ = ["CapPlugin", "PluginParameters"]
+        namespace: dict[str, Any] = {
+            "__module__": cls.__module__,
+            "__qualname__": cls.__qualname__,
+            "_services": MappingProxyType(dict(services)),
+            # pydantic-ai 只在类自己的 __dict__ 里找 from_spec 来生成参数 schema，找不到就改读
+            # dataclass 的 __init__，会把服务当成参数；所以把 from_spec 放进子类自己的命名空间。
+            "from_spec": inspect.getattr_static(cls, "from_spec"),
+        }
+        # pydantic-ai 登记自定义 capability 时要求类自己带 @dataclass，继承来的不算。
+        return cast("type[Self]", dataclass(type(cls.__name__, (cls,), namespace)))
+
+    @classmethod
+    def required_plugins(cls) -> tuple[str, ...]:
+        """要求同一 agent 一起挂的插件名：照 ``from_spec()`` 造出的实例的 ``get_ordering().requires``。"""
+
+        return required_plugins(cls.from_spec())
+
+    @classmethod
+    def parameters_model(cls) -> type[BaseModel]:
+        """``from_spec`` 签名上的参数写成的模型，校验参数、给配置页出 JSON Schema 都用它。
+
+        与 pydantic-ai 由 spec 生成 schema 同一做法：签名上的每个参数是一个字段，有默认值的可以不写，
+        不收签名上没有的键。
+        """
+
+        hints = get_type_hints(cls.from_spec)
+        fields: dict[str, Any] = {}
+        for parameter in inspect.signature(cls.from_spec).parameters.values():
+            if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
+                continue
+            default = ... if parameter.default is parameter.empty else parameter.default
+            fields[parameter.name] = (hints.get(parameter.name, Any), default)
+        return create_model(
+            cls.get_serialization_name(),
+            __config__=ConfigDict(extra="forbid"),
+            **fields,
+        )
+
+    @classmethod
+    def _bound_services(cls) -> Mapping[str, Any]:
+        """``bind`` 绑进来的服务。
+
+        Raises:
+            RuntimeError: 这个类还没绑服务——组合根应当把 ``bind`` 返回的类交给登记表。
+        """
+
+        if cls._services is None:
+            raise RuntimeError(
+                f"插件 {cls.get_serialization_name()} 还没绑服务：组合根要用 bind 返回的类"
+            )
+        return cls._services
+
+
+def required_plugins(capability: AbstractCapability[Any]) -> tuple[str, ...]:
+    """这个实例 ``get_ordering().requires`` 里各个插件类的插件名。"""
+
+    ordering = capability.get_ordering()
+    if ordering is None:
+        return ()
+    names: list[str] = []
+    for required in ordering.requires:
+        name = required.get_serialization_name()
+        if name is None:
+            raise RuntimeError(f"{type(capability).__name__} 要求的 {required.__name__} 不是插件")
+        names.append(name)
+    return tuple(names)
+
+
+__all__ = ["CapPlugin", "required_plugins"]

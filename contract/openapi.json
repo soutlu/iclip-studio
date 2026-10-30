@@ -602,6 +602,61 @@
         "title": "AgentOut",
         "type": "object"
       },
+      "AgentPluginOut": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "requires": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requires",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "description",
+          "requires",
+          "parameters"
+        ],
+        "title": "AgentPluginOut",
+        "type": "object"
+      },
+      "AgentPluginsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentPluginOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AgentPluginsOut",
+        "type": "object"
+      },
       "AgentProblemOut": {
         "additionalProperties": false,
         "properties": {
@@ -13450,6 +13505,40 @@
           }
         ],
         "summary": "Reorder Agents",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/plugins": {
+      "get": {
+        "description": "本部署能挂的全部插件：插件名、名字、说明、要求一起启用的插件与参数的 JSON Schema。",
+        "operationId": "list_agent_plugins_agents_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPluginsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "List Agent Plugins",
         "tags": [
           "agents"
         ]

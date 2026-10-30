@@ -35,6 +35,7 @@ from iclip.plugins.video_breakdown.capability import (
     breakdown_doc_path,
 )
 from iclip.plugins.video_breakdown.ports import BreakdownFailureReason, FailedBreakdown
+from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 
@@ -94,6 +95,16 @@ def make_ctx(*, retry: int = 0) -> RunContext[object]:
 
 def capability_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBreakdown[object]:
     return VideoBreakdown[object](
+        space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=breakdowns
+    )
+
+
+def plugin_for(
+    files: FakeFileStore, breakdowns: FakeBreakdowns
+) -> type[VideoBreakdownPlugin[object]]:
+    """与组合根同一条路：服务绑进插件类。"""
+
+    return VideoBreakdownPlugin[object].bind(
         space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=breakdowns
     )
 
@@ -209,7 +220,8 @@ async def test_failed_model_calls_are_tried_four_times_and_the_run_survives(
 async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
     files: FakeFileStore,
 ) -> None:
-    """挂上 BackgroundTools 后，重试次数照样由登记处的上限管：用完给终局失败，运行正常结束。"""
+    """按插件挂上（连同 BackgroundTools）后，重试次数照样由登记处的上限管：用完给终局失败，运行正常
+    结束。"""
 
     breakdowns = FakeBreakdowns(FailedBreakdown(reason="model_call_failed"))
     outcomes: list[tuple[str, str]] = []
@@ -226,8 +238,7 @@ async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
     result = await Agent(
-        FunctionModel(script),
-        capabilities=[capability_for(files, breakdowns), BackgroundTools()],
+        FunctionModel(script), capabilities=[plugin_for(files, breakdowns).from_spec()]
     ).run("拆解参考视频。", deps=make_deps())
 
     assert len(breakdowns.calls) == 1 + BREAKDOWN_RETRIES
@@ -269,10 +280,22 @@ def test_documents_of_two_videos_with_the_same_name_do_not_collide() -> None:
     assert PATH.endswith(".md")
 
 
-def test_the_tool_card_names_the_video(files: FakeFileStore) -> None:
-    draw = VideoBreakdownPlugin(
-        space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=FakeBreakdowns()
-    ).display_table()["breakdown_video"]
+def test_the_plugin_is_the_breakdown_with_background_tools(files: FakeFileStore) -> None:
+    """只写 video_breakdown 一个名字，挂上的就是拆解连同后台工具，要求同挂 workspace。"""
+
+    plugin = plugin_for(files, FakeBreakdowns())
+    built = plugin.from_spec()
+
+    assert plugin.get_serialization_name() == "video_breakdown"
+    breakdown, background = built.capabilities
+    assert isinstance(breakdown, VideoBreakdown)
+    assert isinstance(background, BackgroundTools)
+    assert tuple(built.get_ordering().requires) == (Workspace,)
+    assert set(breakdown.get_toolset().tools) == set(plugin.display_table())
+
+
+def test_the_tool_card_names_the_video() -> None:
+    draw = VideoBreakdownPlugin.display_table()["breakdown_video"]
     assert callable(draw)
 
     assert draw({"video_url": VIDEO}) == GenericDisplay(summary="拆解视频", detail="ref.mp4")

@@ -1,6 +1,6 @@
 """Agent 配置的三个查询端口接到模型供应商、插件登记表与技能库。
 
-插件只从组合根的登记表读：哪些名字可用、要求同挂哪些、参数按插件自己的参数模型校验；这里不另列插件。"""
+插件只从组合根的登记表读：哪些名字可用、要求同挂哪些、参数按插件类 ``from_spec`` 的签名校验；这里不另列插件。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from iclip.app.plugin_registry import PluginRegistry
 from iclip.domains.agent_config.public import (
     ModelFacts,
+    PluginFacts,
     Problem,
     ProviderFacts,
     SkillFacts,
@@ -48,23 +49,41 @@ class ProviderDirectory:
 
 
 class RegistryPluginDirectory:
-    """``PluginDirectory`` 的实现：读组合根的插件登记表。"""
+    """``PluginDirectory`` 的实现：读组合根的插件登记表。
+
+    可挂的名字是登记的插件类的 serialization name；要求同挂的插件取自 ``get_ordering().requires``，
+    参数按插件类 ``from_spec`` 的签名校验。这些都在构造时（启动期）读一遍。
+    """
 
     def __init__(self, registry: PluginRegistry) -> None:
         self._registry = registry
+        self._requires = {name: plugin.required_plugins() for name, plugin in registry.items()}
+        self._parameters = {name: plugin.parameters_model() for name, plugin in registry.items()}
 
     def available(self) -> frozenset[str]:
         return frozenset(self._registry)
 
     def requires(self, name: str) -> tuple[str, ...]:
-        return self._registry[name].requires
+        return self._requires[name]
 
     def parameter_problems(self, name: str, parameters: Mapping[str, Any]) -> tuple[Problem, ...]:
         try:
-            self._registry[name].Parameters.model_validate(parameters)
+            self._parameters[name].model_validate(parameters)
         except ValidationError as exc:
             return problems_from_errors(exc.errors())
         return ()
+
+    def catalog(self) -> tuple[PluginFacts, ...]:
+        return tuple(
+            PluginFacts(
+                name=name,
+                label=plugin.label,
+                description=plugin.summary,
+                requires=self._requires[name],
+                parameters_schema=self._parameters[name].model_json_schema(),
+            )
+            for name, plugin in self._registry.items()
+        )
 
 
 class LibrarySkillDirectory:

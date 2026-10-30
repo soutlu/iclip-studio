@@ -1,4 +1,8 @@
-"""插件登记表：插件名到插件实例。agents.yaml 仅声明名称，组合根注入连接池与领域服务等运行对象。"""
+"""插件登记表：插件名到绑好服务的插件类。
+
+插件类只在 ``build_plugin_registry`` 一处列出；组合根启动时把连接池与领域服务等运行对象 ``bind`` 进类，
+登记表的值既是交给 pydantic-ai ``custom_capability_types`` 的类，也带着配置页与工具卡用的界面元数据。
+agents.yaml 仅声明名称。"""
 
 from __future__ import annotations
 
@@ -28,25 +32,25 @@ from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
 from iclip.platform.transcript.display import ToolDisplayRegistry
-from iclip.plugins.base import CapPlugin
-from iclip.plugins.iclip_studio.capability import IclipStudioPlugin
-from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideoPlugin
+from iclip.plugins.base import CapPlugin, required_plugins
+from iclip.plugins.iclip_studio.capability import IclipStudio
+from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip.plugins.shot_video.ports import (
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
     ObjectWriteFailed,
 )
-from iclip.plugins.video.capability import VideoPlugin
+from iclip.plugins.video.capability import Video
 from iclip.plugins.video_breakdown.capability import VideoBreakdownPlugin
-from iclip.plugins.video_shots.capability import VideoShotsPlugin
+from iclip.plugins.video_shots.capability import VideoShots
 from iclip.plugins.video_understanding import ArkVideoUnderstanding
-from iclip.plugins.workspace.capability import WorkspacePlugin
+from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from iclip.plugins.workspace.scope import workspace_namespace
 
-PluginRegistry = Mapping[str, CapPlugin[Any]]
-"""插件名对应已注入运行依赖的插件实例；挂载时每个 agent 各 build 一份。"""
+PluginRegistry = Mapping[str, type[CapPlugin[Any]]]
+"""插件名对应绑好服务的插件类；挂载时每个 agent 各用 ``from_spec`` 造一份实例。"""
 
 
 class GenerationsAdapter:
@@ -185,7 +189,7 @@ def build_plugin_registry(
     image_models: frozenset[str] = frozenset(),
     media_codec: MediaCodec | None = None,
 ) -> PluginRegistry:
-    """按组合根递进来的运行值登记插件，没给的不登记。
+    """按组合根递进来的运行值把插件类绑好服务登记进来，没给的不登记。
 
     ``fetch_url`` 是本服务下载本桶对象前的地址换算，交给查图片信息与取帧、出图的下载。
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
@@ -196,24 +200,24 @@ def build_plugin_registry(
 
     # 文件生产与读取共用 FileSpace，避免命名空间不一致。
     space = FileSpace(store=workspace_store, namespace=workspace_namespace)
-    plugins: list[CapPlugin[Any]] = [
-        WorkspacePlugin(
+    plugins: list[type[CapPlugin[Any]]] = [
+        Workspace.bind(
             space=space,
             probe=OssMediaProbe(http_client, fetch_url=fetch_url),
             ledger=material_ledger,
         ),
-        IclipStudioPlugin(
+        IclipStudio.bind(
             space=space,
             ledger=material_ledger,
             images=(
                 FilmImagesAdapter(generation_service) if generation_service is not None else None
             ),
         ),
-        VideoShotsPlugin(space=space, ledger=material_ledger),
+        VideoShots.bind(space=space, ledger=material_ledger),
     ]
     if video is not None:
         plugins.append(
-            VideoPlugin(
+            Video.bind(
                 space=space,
                 ledger=material_ledger,
                 understanding=ArkVideoUnderstanding(
@@ -233,7 +237,7 @@ def build_plugin_registry(
                 "组合根应在配了 iclip_studio 时传入"
             )
         plugins.append(
-            VideoBreakdownPlugin(
+            VideoBreakdownPlugin.bind(
                 space=space, breakdowns=ReferenceBreakdownsAdapter(reference_service)
             )
         )
@@ -249,7 +253,7 @@ def build_plugin_registry(
                 "组合根应按 shot_tools_enabled 决定是否传入"
             )
         plugins.append(
-            ShotVideoPlugin(
+            ShotVideo.bind(
                 space=space,
                 ledger=material_ledger,
                 generations=GenerationsAdapter(generation_service, settled_records),
@@ -269,7 +273,7 @@ def build_plugin_registry(
                 codec=media_codec,
             )
         )
-    return {plugin.name: plugin for plugin in plugins}
+    return {plugin.get_serialization_name(): plugin for plugin in plugins}
 
 
 def build_display_registry(registry: PluginRegistry) -> ToolDisplayRegistry:
@@ -285,7 +289,8 @@ def build_display_registry(registry: PluginRegistry) -> ToolDisplayRegistry:
 def resolve_plugins(
     names: Sequence[str], *, registry: PluginRegistry, declared_by: str
 ) -> AgentCapabilities:
-    """按名字取插件、各 build 一份；名字没登记、或少挂了它要求同挂的插件，即报错（装配期 fail fast）。"""
+    """按名字取插件类、各用 ``from_spec`` 造一份；名字没登记、或少挂了它 ``get_ordering().requires``
+    要求同挂的插件，即报错（装配期 fail fast）。"""
 
     resolved: AgentCapabilities = ()
     for name in names:
@@ -293,13 +298,14 @@ def resolve_plugins(
         if plugin is None:
             known = ", ".join(registry) or "（还没有登记任何插件）"
             raise RuntimeError(f"{declared_by} 引用了未登记的插件 {name!r}；已登记的有: {known}")
-        missing = [requirement for requirement in plugin.requires if requirement not in names]
+        capability = plugin.from_spec()
+        missing = [required for required in required_plugins(capability) if required not in names]
         if missing:
             raise RuntimeError(
                 f"{declared_by} 挂了插件 {name!r} 却没挂 {', '.join(map(repr, missing))}——"
                 f"{name} 写的文件要靠它们让模型看见；在 agents.yaml 里一起挂上。"
             )
-        resolved = (*resolved, *plugin.build(plugin.Parameters()))
+        resolved = (*resolved, capability)
     return resolved
 
 

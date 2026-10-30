@@ -45,7 +45,6 @@ from iclip.plugins.workspace.capability import (
     MAX_READ_CHARS,
     CropRegion,
     Workspace,
-    WorkspacePlugin,
     WorkspaceToolset,
 )
 from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
@@ -152,12 +151,22 @@ def capability(store: FakeFileStore) -> Workspace[object]:
 
 
 @pytest.fixture
-def plugin(store: FakeFileStore) -> WorkspacePlugin:
-    return WorkspacePlugin(
+def plugin(store: FakeFileStore) -> type[Workspace[object]]:
+    return Workspace[object].bind(
         space=FileSpace(store=store, namespace=workspace_namespace),
         probe=FakeProbe(),
         ledger=FakeMaterialLedger(),
     )
+
+
+def test_workspace_is_built_from_its_spec_and_requires_nothing(
+    plugin: type[Workspace[object]],
+) -> None:
+    built = plugin.from_spec()
+    assert plugin.get_serialization_name() == "workspace"
+    assert isinstance(built, Workspace)
+    assert built.get_ordering() is None
+    assert set(WorkspaceToolset(built).tools) == set(plugin.display_table())
 
 
 @pytest.fixture
@@ -801,7 +810,9 @@ async def test_read_media_file_only_takes_http_urls(url: str) -> None:
         await check_args(read_tools(FakeProbe()), make_context(make_deps()), url=url)
 
 
-def test_every_tool_has_a_display(plugin: WorkspacePlugin, tools: WorkspaceToolset[object]) -> None:
+def test_every_tool_has_a_display(
+    plugin: type[Workspace[object]], tools: WorkspaceToolset[object]
+) -> None:
 
     drawn = ToolDisplayRegistry.merged(plugin.display_table()).entries
     assert set(drawn) == set(tools.tools)
@@ -846,7 +857,7 @@ def test_every_tool_has_a_display(plugin: WorkspacePlugin, tools: WorkspaceTools
         assert drawn[tool_name].draw({}) is None
 
 
-def test_only_the_three_readable_results_pick_a_renderer(plugin: WorkspacePlugin) -> None:
+def test_only_the_three_readable_results_pick_a_renderer(plugin: type[Workspace[object]]) -> None:
 
     views = ToolDisplayRegistry.merged(plugin.display_table())
     assert views.view_of("read_file") == "file_content"

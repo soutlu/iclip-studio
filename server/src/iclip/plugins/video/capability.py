@@ -1,32 +1,35 @@
-"""视频能力：拆解参考视频，拆解内容写进工作区。"""
+"""视频理解插件：拆解参考视频，拆解内容写进工作区。"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Self
 
 from pydantic_ai import ModelRetry
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.harness.agents import AgentCapabilities
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_materials
 from iclip.platform.file_store.store import FileSpace, FileStore
 from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.transcript.display import DisplayFn, GenericDisplay, url_filename
-from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.video_document import video_doc_path
 from iclip.plugins.video_understanding import VideoUnderstanding, VideoUnderstandingError
+from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "video"
 
 
 @dataclass
-class Video(AbstractCapability[AgentDepsT]):
-    """拆解参考视频。"""
+class Video(CapPlugin[AgentDepsT]):
+    """视频理解插件。"""
+
+    label = "视频理解"
+    summary = "把参考视频交给视频理解模型拆解，拆解内容写进工作区，当场返回。"
 
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
@@ -42,32 +45,27 @@ class Video(AbstractCapability[AgentDepsT]):
         return VideoToolset(self)
 
     @classmethod
-    def get_serialization_name(cls) -> str | None:
-        return None
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
 
+    @classmethod
+    def bind(
+        cls, *, space: FileSpace, ledger: MaterialLedger, understanding: VideoUnderstanding
+    ) -> type[Self]:
+        """把运行服务绑进类，交给登记表。"""
 
-class VideoPlugin(CapPlugin[PluginParameters]):
-    """视频理解插件。"""
+        return cls._bound(space=space, ledger=ledger, understanding=understanding)
 
-    name = "video"
-    label = "视频理解"
-    description = "把参考视频交给视频理解模型拆解，拆解内容写进工作区，当场返回。"
-    requires = ("workspace",)
-    """写下的文件经 workspace 的文件工具读取。"""
+    @classmethod
+    def from_spec(cls) -> Self:
+        return cls(**cls._bound_services())
 
-    def __init__(
-        self, *, space: FileSpace, ledger: MaterialLedger, understanding: VideoUnderstanding
-    ) -> None:
-        self._space = space
-        self._ledger = ledger
-        self._understanding = understanding
+    def get_ordering(self) -> CapabilityOrdering:
+        # 写下的文件经 workspace 的文件工具读取。
+        return CapabilityOrdering(requires=(Workspace,))
 
-    def build(self, parameters: PluginParameters) -> AgentCapabilities:
-        return (
-            Video[Any](space=self._space, ledger=self._ledger, understanding=self._understanding),
-        )
-
-    def display_table(self) -> Mapping[str, DisplayFn]:
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn]:
         """工具卡声明。"""
 
         return {
@@ -131,4 +129,4 @@ def _video_name(args: Any) -> str | None:
     return url_filename(url) if isinstance(url, str) else None
 
 
-__all__ = ["CAPABILITY_ID", "Video", "VideoPlugin", "VideoToolset"]
+__all__ = ["CAPABILITY_ID", "Video", "VideoToolset"]

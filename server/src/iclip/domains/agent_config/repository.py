@@ -14,6 +14,7 @@ from iclip.domains.agent_config.models import (
     AgentState,
     AgentStatus,
     AgentVersion,
+    PluginFacts,
     Problem,
     ProviderFacts,
     RevisionOperation,
@@ -163,6 +164,10 @@ class PluginDirectory(Protocol):
     def parameter_problems(self, name: str, parameters: Mapping[str, Any]) -> tuple[Problem, ...]:
         """按插件自己的参数校验 ``parameters``；``path`` 相对参数本身（报在整体上为空串）。只对
         ``available`` 里的名字调用。"""
+        ...
+
+    def catalog(self) -> tuple[PluginFacts, ...]:
+        """全部可挂的插件，配置页列出来供选择；按登记表的先后。"""
         ...
 
 

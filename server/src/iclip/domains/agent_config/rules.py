@@ -10,15 +10,19 @@ from iclip.domains.agent_config.models import (
     AGENT_ID_PATTERN,
     MAX_DESCRIPTION_CHARS,
     MAX_NAME_CHARS,
+    RESERVED_AGENT_IDS,
     Problem,
 )
 
 
-def agent_id_problem(agent_id: str) -> str | None:
-    """标识不合规矩的原因；合格给 ``None``。"""
+def agent_id_problem(agent_id: str, *, new: bool = True) -> str | None:
+    """标识不合规矩的原因；合格给 ``None``。``new`` 为真时（新建一个 agent）保留词也不收；已有的
+    agent 只查格式。"""
 
     if AGENT_ID_PATTERN.fullmatch(agent_id) is None:
         return "标识只能用小写字母、数字和连字符，以小写字母开头，最多 40 个字符"
+    if new and agent_id in RESERVED_AGENT_IDS:
+        return f"{agent_id} 是保留词，不能用作标识"
     return None
 
 

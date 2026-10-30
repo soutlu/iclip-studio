@@ -1,18 +1,17 @@
-"""取帧与出图能力装配，与工作区能力共用 FileSpace。"""
+"""取帧与出图插件装配，与工作区插件共用 FileSpace。"""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Self
 
 import httpx
 from pydantic_ai.agent.abstract import AgentInstructions
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT
 from pydantic_ai.toolsets import AgentToolset
 
-from iclip.harness.agents import AgentCapabilities
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.media.codec import MediaCodec
@@ -24,7 +23,7 @@ from iclip.platform.transcript.display import (
     ToolDisplayEntry,
     url_filename,
 )
-from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.shot_video.extraction import FrameExtractor
 from iclip.plugins.shot_video.generation import IMAGE_MODEL, FrameGenerator, GenerationPolicy
 from iclip.plugins.shot_video.ports import (
@@ -33,13 +32,18 @@ from iclip.plugins.shot_video.ports import (
     ShotVideoPaths,
 )
 from iclip.plugins.shot_video.toolset import ShotVideoToolset
+from iclip.plugins.video.capability import Video
+from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "shot_video"
 
 
 @dataclass
-class ShotVideo(AbstractCapability[AgentDepsT]):
-    """取帧与出图工具集。"""
+class ShotVideo(CapPlugin[AgentDepsT]):
+    """取帧与出图插件。"""
+
+    label = "取帧与出图"
+    summary = "从参考视频抽帧拼成图片，按描述生成镜头帧和设定图。"
 
     space: FileSpace
     """产物存储与命名空间，必须由组合根提供与工作区能力相同的 FileSpace。"""
@@ -64,22 +68,12 @@ class ShotVideo(AbstractCapability[AgentDepsT]):
         return None
 
     @classmethod
-    def get_serialization_name(cls) -> str | None:
-        # 依赖都是运行期对象（服务、连接池），从 YAML spec 里造不出来。
-        return None
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
 
-
-class ShotVideoPlugin(CapPlugin[PluginParameters]):
-    """取帧与出图插件。"""
-
-    name = "shot_video"
-    label = "取帧与出图"
-    description = "从参考视频抽帧拼成图片，按描述生成镜头帧和设定图。"
-    requires = ("workspace", "video")
-    """取帧读 video 写下的拆解文档，产物经 workspace 的文件工具读取。"""
-
-    def __init__(
-        self,
+    @classmethod
+    def bind(
+        cls,
         *,
         space: FileSpace,
         ledger: MaterialLedger,
@@ -91,8 +85,9 @@ class ShotVideoPlugin(CapPlugin[PluginParameters]):
         image_models: frozenset[str],
         policy: GenerationPolicy,
         codec: MediaCodec,
-    ) -> None:
-        """装配取帧与出图服务，取帧解码用 ``codec``；下载参考视频与整图前用 ``fetch_url`` 换算地址。
+    ) -> type[Self]:
+        """装配取帧与出图服务并绑进类，取帧解码用 ``codec``；下载参考视频与整图前用 ``fetch_url``
+        换算地址。
 
         Raises:
             RuntimeError: ``image_models`` 里没有出图要用的模型。
@@ -104,32 +99,32 @@ class ShotVideoPlugin(CapPlugin[PluginParameters]):
                 f"出图工具要 {IMAGE_MODEL}，但 media_generation.image.models 里没有它；"
                 f"已接入的是 {'、'.join(sorted(image_models)) or '（空）'}"
             )
-        self._space = space
-        self._ledger = ledger
-        self._paths = paths
-        self._extractor = FrameExtractor(
-            client=client, fetch_url=fetch_url, paths=paths, objects=objects, codec=codec
-        )
-        self._generator = FrameGenerator(
-            generations=generations,
-            objects=objects,
-            client=client,
-            fetch_url=fetch_url,
-            policy=policy,
-        )
-
-    def build(self, parameters: PluginParameters) -> AgentCapabilities:
-        return (
-            ShotVideo[Any](
-                space=self._space,
-                ledger=self._ledger,
-                paths=self._paths,
-                extractor=self._extractor,
-                generator=self._generator,
+        return cls._bound(
+            space=space,
+            ledger=ledger,
+            paths=paths,
+            extractor=FrameExtractor(
+                client=client, fetch_url=fetch_url, paths=paths, objects=objects, codec=codec
+            ),
+            generator=FrameGenerator(
+                generations=generations,
+                objects=objects,
+                client=client,
+                fetch_url=fetch_url,
+                policy=policy,
             ),
         )
 
-    def display_table(self) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
+    @classmethod
+    def from_spec(cls) -> Self:
+        return cls(**cls._bound_services())
+
+    def get_ordering(self) -> CapabilityOrdering:
+        # 取帧读 video 写下的拆解文档，产物经 workspace 的文件工具读取。
+        return CapabilityOrdering(requires=(Workspace, Video))
+
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
         """工具卡与结果渲染声明。"""
 
         # 标题写法见 docs/tool-design.md §4：书面动宾短语，数字进 metadata 角标。
@@ -168,5 +163,4 @@ __all__ = [
     "CAPABILITY_ID",
     "GenerationPolicy",
     "ShotVideo",
-    "ShotVideoPlugin",
 ]
