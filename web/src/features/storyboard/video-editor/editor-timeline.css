@@ -130,7 +130,9 @@
     .video-editor-timeline-slot,
     .video-editor-timeline-box,
     .video-editor-timeline-link,
-    .video-editor-timeline-trim
+    .video-editor-timeline-trim,
+    .video-editor-timeline-cut,
+    .video-editor-timeline-extend
   ) {
   left: calc(var(--at) * var(--pps) + 1px);
   width: calc(var(--len) * var(--pps) - 2px);
@@ -141,9 +143,14 @@
   height: var(--draft-height);
 }
 
-/* 选中的草稿块在上层：拖左把手往左拉长时盖住前一块（连同前一块的关联描边）。 */
-.video-editor-timeline-block.is-draft.is-selected {
+/* 拖草稿块修剪把手时要剪掉的那段、拉长出来的那段（样子见 timeline.css）：在草稿块上层，选中描边与把手之下。 */
+.video-editor-timeline-cut,
+.video-editor-timeline-extend {
+  position: absolute;
+  top: var(--timeline-track-top);
   z-index: var(--z-local-2);
+  height: var(--draft-height);
+  border-radius: var(--radius-sm);
 }
 
 .video-editor-timeline-block.is-film {
@@ -234,14 +241,13 @@
   pointer-events: none;
 }
 
-/* 关着的原片镜头、没选用的编辑段：盖一层面板色，等于把块调淡；开关在这层之上，不跟着调淡。 */
+/* 关着的原片镜头、没选用的编辑段：整块盖一层调暗层（颜色见 timeline.css 的 .timeline-dimmed）；开关在这层之上，
+   不跟着调淡。 */
 .video-editor-timeline-block.is-off::before {
   content: '';
   position: absolute;
   inset: 0;
   z-index: var(--z-local-1);
-  background: color-mix(in srgb, var(--color-surface-container-low) 62%, transparent);
-  pointer-events: none;
   transition: background-color var(--dur-m) var(--ease);
 }
 

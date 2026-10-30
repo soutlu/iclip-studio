@@ -1431,7 +1431,7 @@ describe('草稿与编辑轨', () => {
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
   })
 
-  it('拖草稿块的左把手：拖动中草稿不存、总长不变，工具条时间与播放头都在把手处；松手后存一次、总长更新', async () => {
+  it('拖草稿块的左、右把手：拖动中草稿不存、总长不变，工具条时间与播放头都在把手处；松手后存一次、总长更新', async () => {
     // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
@@ -1466,6 +1466,24 @@ describe('草稿与编辑轨', () => {
     expect(controls()).toHaveTextContent('共 7.6 秒 · 比原片短 0.4 秒')
     expect(draftWrites()).toHaveLength(1)
     expect(within(smallCard('镜头 2')).getByText('0.6 秒（这个镜头 1.0 秒）· 原片')).toBeVisible()
+
+    // 右把手同样：结尾往里裁 0.1 秒（到最短 0.5 秒），拖动中工具条时间与播放头在把手处（1.5 秒），草稿不存、
+    // 总长不变
+    const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(end, { pointerId: 2, button: 0, clientX: 160 })
+    fireEvent.pointerMove(end, { pointerId: 2, clientX: 150 })
+    await waitFor(() => expect(controls()).toHaveTextContent('00:01.50 / 00:07.60'))
+    expect(playhead()).toHaveValue('1.5')
+    expect(controls()).toHaveTextContent('共 7.6 秒')
+    expect(draftWrites()).toHaveLength(1)
+
+    fireEvent.pointerUp(end, { pointerId: 2 })
+    await waitFor(() => expect(controls()).toHaveTextContent('共 7.5 秒'))
+    expect(draftWrites()).toHaveLength(2)
   })
 
   it('往右拉长草稿块：舞台按拖动中的草稿停在这块的结尾，不是后面那一块', async () => {
