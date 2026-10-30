@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from agent_runtime.config.skills.repository import SkillStore, SkillUsages
+from agent_runtime.config.skills.service import SkillsService
+
 from iclip.domains.skills.api import create_skills_router
-from iclip.domains.skills.repository import SkillStore, SkillUsages
-from iclip.domains.skills.service import SkillsService
 
 
 @dataclass(frozen=True)

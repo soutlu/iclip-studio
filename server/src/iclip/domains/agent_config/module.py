@@ -5,14 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from iclip.domains.agent_config.api import create_agent_config_router
-from iclip.domains.agent_config.repository import (
+from agent_runtime.config.agent_config.repository import (
     AgentStore,
     ModelDirectory,
     PluginDirectory,
     SkillDirectory,
 )
-from iclip.domains.agent_config.service import AgentConfigService
+from agent_runtime.config.agent_config.service import AgentConfigService
+
+from iclip.domains.agent_config.api import create_agent_config_router
 
 
 @dataclass(frozen=True)

@@ -11,18 +11,18 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
+from agent_runtime.config.agent_config.public import AgentReferences
+from agent_runtime.config.model_providers.catalog import Declarations, load_declarations
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
+from agent_runtime.config.model_providers.schemas import CustomModelCreateIn, ModelProviderCreateIn
+from agent_runtime.config.model_providers.service import ModelProviderService
 from agent_runtime.errors import ValidationFailed
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.agent_config.infra_sql import SqlAgentStore
-from iclip.domains.agent_config.public import AgentReferences
-from iclip.domains.model_providers.catalog import Declarations, load_declarations
-from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
-from iclip.domains.model_providers.schemas import CustomModelCreateIn, ModelProviderCreateIn
-from iclip.domains.model_providers.service import ModelProviderService
 from tests.helpers.app import TEST_CREDENTIAL_KEY, make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.model_providers import (

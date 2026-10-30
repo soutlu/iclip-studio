@@ -25,6 +25,10 @@ import sys
 import uuid
 from datetime import UTC, datetime
 
+from agent_runtime.config.model_providers.catalog import load_declarations
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
+from agent_runtime.config.model_providers.service import rotate_credential_keys
 from agent_runtime.errors import ValidationFailed
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -40,10 +44,6 @@ from iclip.domains.identity.service import (
     hash_api_key_token,
     validate_api_key_token,
 )
-from iclip.domains.model_providers.catalog import load_declarations
-from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
-from iclip.domains.model_providers.service import rotate_credential_keys
 from iclip.platform.db.engine import build_engine
 
 _TOKEN_ENV = "API_KEY_TOKEN"

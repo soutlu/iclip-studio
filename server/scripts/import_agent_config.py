@@ -41,6 +41,24 @@ from pathlib import Path
 from typing import Any, cast, get_args
 
 import yaml
+from agent_runtime.config.agent_config.config import AgentConfig
+from agent_runtime.config.agent_config.models import AGENT_ID_PATTERN, RESERVED_AGENT_IDS
+from agent_runtime.config.agent_config.schemas import (
+    AgentCreateIn,
+    AgentDraftIn,
+    AgentOrderIn,
+    AgentPublishIn,
+    AgentUpdateIn,
+)
+from agent_runtime.config.model_providers.catalog import Declarations, ProviderDeclaration
+from agent_runtime.config.model_providers.public import CredentialProbe, load_declarations
+from agent_runtime.config.model_providers.schemas import (
+    CredentialCreateIn,
+    CustomModelCreateIn,
+    DefaultModelIn,
+    ModelProviderCreateIn,
+)
+from agent_runtime.config.skills.schemas import SkillPublishIn
 from agent_runtime.errors import DomainError
 from agent_runtime.model_vocab import ThinkingEffort
 from sqlalchemy import text
@@ -48,24 +66,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.app.bootstrap import AgentServices, build_app
 from iclip.config import RuntimeConfig, load_runtime_config, resolve_settings
-from iclip.domains.agent_config.config import AgentConfig
-from iclip.domains.agent_config.models import AGENT_ID_PATTERN, RESERVED_AGENT_IDS
-from iclip.domains.agent_config.schemas import (
-    AgentCreateIn,
-    AgentDraftIn,
-    AgentOrderIn,
-    AgentPublishIn,
-    AgentUpdateIn,
-)
-from iclip.domains.model_providers.catalog import Declarations, ProviderDeclaration
-from iclip.domains.model_providers.public import CredentialProbe, load_declarations
-from iclip.domains.model_providers.schemas import (
-    CredentialCreateIn,
-    CustomModelCreateIn,
-    DefaultModelIn,
-    ModelProviderCreateIn,
-)
-from iclip.domains.skills.schemas import SkillPublishIn
 from iclip.platform.db.engine import build_engine
 
 NOTE = "从文件配置切换"

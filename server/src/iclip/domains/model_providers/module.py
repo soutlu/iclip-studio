@@ -5,18 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from iclip.domains.model_providers.api import (
-    create_default_models_router,
-    create_model_providers_router,
-)
-from iclip.domains.model_providers.catalog import Declarations
-from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.repository import (
+from agent_runtime.config.model_providers.catalog import Declarations
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.repository import (
     CredentialProbe,
     ModelProviderStore,
     ModelUsages,
 )
-from iclip.domains.model_providers.service import ModelProviderService
+from agent_runtime.config.model_providers.service import ModelProviderService
+
+from iclip.domains.model_providers.api import (
+    create_default_models_router,
+    create_model_providers_router,
+)
 
 
 @dataclass(frozen=True)

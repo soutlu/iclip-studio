@@ -26,7 +26,6 @@ dependencies = [
     "pillow>=10.1",
     "fonttools>=4.67.0",
     "cryptography>=50.0.1",  # MultiFernet：模型供应商密钥里机密字段的加密与换钥
-    "packaging>=26",  # agent 导出包的格式版本比较
     "agent-runtime",
 ]
 

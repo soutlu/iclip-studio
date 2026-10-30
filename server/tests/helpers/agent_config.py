@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from agent_runtime.config.agent_config.public import PluginFacts, Problem, problems_from_errors
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from iclip.domains.agent_config.public import PluginFacts, Problem, problems_from_errors
 
 NOTES = "notes"
 """没有依赖的测试插件，参数 ``limit`` 是正整数。"""

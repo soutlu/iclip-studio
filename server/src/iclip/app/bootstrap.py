@@ -9,6 +9,27 @@ from typing import Literal
 import httpx
 import procrastinate
 import structlog
+from agent_runtime.assembly.agents import (
+    AgentRuntime,
+    AssemblySettings,
+    ModelBuilder,
+    build_runtime_model,
+)
+from agent_runtime.assembly.directories import (
+    LibrarySkillDirectory,
+    ProviderDirectory,
+    RegistryPluginDirectory,
+)
+from agent_runtime.assembly.models import PydanticAiCredentialProbe, require_known_providers
+from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
+from agent_runtime.config.agent_config.public import AgentConfigService, AgentReferences
+from agent_runtime.config.model_providers.catalog import load_declarations
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
+from agent_runtime.config.model_providers.public import ModelProviderService
+from agent_runtime.config.model_providers.repository import CredentialProbe
+from agent_runtime.config.skills.infra_sql import SqlSkillStore
+from agent_runtime.config.skills.public import SkillsService
 from agent_runtime.errors import NotFound
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.file_store.store import (
@@ -35,17 +56,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from iclip.app.agent_config import (
-    LibrarySkillDirectory,
-    ProviderDirectory,
-    RegistryPluginDirectory,
-)
-from iclip.app.agent_runtime import (
-    AgentRuntime,
-    AssemblySettings,
-    ModelBuilder,
-    build_runtime_model,
-)
 from iclip.app.brand_templates import template_font_prober
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
@@ -64,7 +74,6 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
-from iclip.app.model_providers import PydanticAiCredentialProbe, require_known_providers
 from iclip.app.plugin_registry import build_display_registry, build_plugin_registry
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
@@ -80,9 +89,7 @@ from iclip.config import (
     RuntimeConfig,
     resolve_settings,
 )
-from iclip.domains.agent_config.infra_sql import SqlAgentStore
 from iclip.domains.agent_config.module import build_agent_config_module
-from iclip.domains.agent_config.public import AgentConfigService, AgentReferences
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
@@ -95,7 +102,12 @@ from iclip.domains.conversations.infra_sql import (
     SqlWholeFilmDraftStore,
 )
 from iclip.domains.conversations.module import build_conversations_module
-from iclip.domains.conversations.service import CollectionInfo, ConversationActivity
+from iclip.domains.conversations.service import (
+    AgentDirectory,
+    AgentEntry,
+    CollectionInfo,
+    ConversationActivity,
+)
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.module import (
     GenerationModule,
@@ -123,19 +135,12 @@ from iclip.domains.inspirations.module import build_inspirations_module
 from iclip.domains.inspirations.service import NoStyleDirectory
 from iclip.domains.library.module import build_library_module
 from iclip.domains.library.reports_pg import PgLibraryReports
-from iclip.domains.model_providers.catalog import load_declarations
-from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
 from iclip.domains.model_providers.module import build_model_providers_module
-from iclip.domains.model_providers.public import ModelProviderService
-from iclip.domains.model_providers.repository import CredentialProbe
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.domains.references.module import BreakdownSetup, build_references_module
 from iclip.domains.references.repository import VideoBreakdowns
-from iclip.domains.skills.infra_sql import SqlSkillStore
 from iclip.domains.skills.module import build_skills_module
-from iclip.domains.skills.public import SkillsService
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
 from iclip.domains.tagging.repository import Tagger
@@ -703,6 +708,14 @@ def build_app(
             build_model=build_model,
         ),
     )
+
+    async def list_agents() -> AgentDirectory:
+        found = await agent_runtime.directory()
+        return AgentDirectory(
+            items=tuple(AgentEntry(id=item.id, name=item.name) for item in found.items),
+            default=found.default,
+        )
+
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
     library = build_library_module(
@@ -714,7 +727,7 @@ def build_app(
     conversations = build_conversations_module(
         conversation_repo,
         act_as=identity.act_as,
-        list_agents=agent_runtime.directory,
+        list_agents=list_agents,
         open_session=agent_runtime.open_session,
         fork_session=agent_runtime.fork_session,
         list_collections=list_owner_collections,

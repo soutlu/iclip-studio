@@ -12,6 +12,14 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.config.agent_config.schemas import AgentCreateIn, AgentDraftIn, AgentUpdateIn
+from agent_runtime.config.model_providers.schemas import (
+    CredentialUpdateIn,
+    CustomModelCreateIn,
+    DefaultModelIn,
+    ModelUpdateIn,
+)
+from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillPublishIn
 from agent_runtime.errors import AgentUnavailable
 from agent_runtime.harness.step_store_pg import PgStepStore
 from agent_runtime.harness.transcript.store import TranscriptStore
@@ -25,15 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app import bootstrap
 from iclip.app.bootstrap import AgentServices
-from iclip.domains.agent_config.schemas import AgentCreateIn, AgentDraftIn, AgentUpdateIn
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
-from iclip.domains.model_providers.schemas import (
-    CredentialUpdateIn,
-    CustomModelCreateIn,
-    DefaultModelIn,
-    ModelUpdateIn,
-)
-from iclip.domains.skills.schemas import DraftFileWriteIn, SkillPublishIn
 from tests.helpers.agents import (
     AgentSeed,
     Seeded,

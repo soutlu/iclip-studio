@@ -5,11 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, Response, UploadFile
-
-from iclip.domains.identity.public import Principal, require_permission
-from iclip.domains.skills.models import MAX_ARCHIVE_BYTES
-from iclip.domains.skills.schemas import (
+from agent_runtime.config.skills.models import MAX_ARCHIVE_BYTES
+from agent_runtime.config.skills.schemas import (
     DraftFileOut,
     DraftFileWriteIn,
     SkillCreateIn,
@@ -23,7 +20,10 @@ from iclip.domains.skills.schemas import (
     SkillVersionOut,
     SkillVersionsOut,
 )
-from iclip.domains.skills.service import SkillsService
+from agent_runtime.config.skills.service import SkillsService
+from fastapi import APIRouter, File, Query, Response, UploadFile
+
+from iclip.domains.identity.public import Principal, require_permission
 
 _MANAGE = "agent:manage"
 
