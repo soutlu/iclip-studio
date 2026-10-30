@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
 
 MAX_LIST_LIMIT: Final = 100
 DEFAULT_LIST_LIMIT: Final = 20

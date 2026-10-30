@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.schemas import (
     IMAGE_MAX_REFERENCES,
     KIND_IMAGE,

@@ -6,9 +6,9 @@ import uuid
 from typing import cast
 
 import pytest
+from agent_runtime.errors import NotFound
 
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
-from iclip.common.errors import NotFound
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService

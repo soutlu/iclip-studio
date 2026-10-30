@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import Material, MaterialLedger
 from pydantic_ai import ModelRetry
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.messages import ToolReturn
@@ -16,8 +18,6 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.common.shot_prompt import format_shot_prompt
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import Material, MaterialLedger
 from iclip.platform.transcript.display import (
     MEDIA_GRID_VIEW,
     DisplayFn,

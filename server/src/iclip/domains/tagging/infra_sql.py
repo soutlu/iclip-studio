@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator, Collection, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
+from agent_runtime.errors import ValidationFailed
 from sqlalchemy import (
     Column,
     DateTime,
@@ -28,7 +29,6 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.models import (
     AUTO_FILL_AI,
     BUSY_STATUSES,

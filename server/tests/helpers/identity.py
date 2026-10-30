@@ -6,7 +6,8 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from iclip.common.errors import NotFound
+from agent_runtime.errors import NotFound
+
 from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
 
 

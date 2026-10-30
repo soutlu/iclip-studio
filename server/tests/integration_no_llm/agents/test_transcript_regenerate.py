@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
+from agent_runtime.errors import Conflict, ValidationFailed
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -17,7 +18,6 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import Conflict, ValidationFailed
 from iclip.harness.jobs import JobQueue, JobQueueView, Submission
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.activity import ActivityState

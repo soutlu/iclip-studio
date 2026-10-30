@@ -14,11 +14,11 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.errors import ValidationFailed
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.models import AI_VALUE_LIMIT
 from iclip.domains.tagging.schemas import LibraryTagCreateIn

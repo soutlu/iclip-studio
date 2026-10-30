@@ -3,32 +3,40 @@
 .PHONY: setup dev up lint format format-check typecheck tach test check contract contract-check docs-check db-upgrade test-external web-check hooks
 
 setup:
+	cd runtime && uv sync
 	cd server && uv sync
 	cd web && pnpm install && pnpm hf:registry
 	cd render && pnpm install
 
+# 后端以可编辑方式依赖 runtime/，两边的源码改动都触发重载。
 dev:
-	cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload
+	cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir . --reload-dir ../runtime/src
 
 up:
 	bash scripts/dev-up.sh
 
 lint:
+	cd runtime && uv run ruff check .
 	cd server && uv run ruff check .
 
 format:
+	cd runtime && uv run ruff format .
 	cd server && uv run ruff format .
 
 format-check:
+	cd runtime && uv run ruff format --check .
 	cd server && uv run ruff format --check .
 
 typecheck:
+	cd runtime && uv run pyright
 	cd server && uv run pyright
 
 tach:
+	cd runtime && uv run tach check
 	cd server && uv run tach check
 
 test:
+	cd runtime && uv run pytest -m "unit or integration_no_llm"
 	cd server && uv run pytest -m "unit or integration_no_llm"
 
 check: lint format-check typecheck tach test contract-check docs-check

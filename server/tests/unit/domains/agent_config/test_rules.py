@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.agent_config.models import RESERVED_AGENT_IDS
 from iclip.domains.agent_config.rules import agent_id_problem, check_agent_id
 

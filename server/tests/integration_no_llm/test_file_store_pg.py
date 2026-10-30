@@ -7,16 +7,16 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from iclip.platform.db.engine import build_engine
-from iclip.platform.file_store.pg import PgFileStore
-from iclip.platform.file_store.store import (
+from agent_runtime.file_store.pg import PgFileStore
+from agent_runtime.file_store.store import (
     InvalidContent,
     InvalidPath,
     QuotaExceeded,
     VersionConflict,
 )
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.platform.db.engine import build_engine
 from tests.helpers.pg import truncate_clean
 
 

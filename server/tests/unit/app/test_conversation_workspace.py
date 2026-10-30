@@ -5,9 +5,9 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
 from iclip.app.conversation_workspace import validate_film, validate_film_run
-from iclip.common.errors import ValidationFailed
 from tests.helpers.film import FILM, RUN
 
 USER = uuid.UUID("55555555-5555-5555-5555-555555555555")

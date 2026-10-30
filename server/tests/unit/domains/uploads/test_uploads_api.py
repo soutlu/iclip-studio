@@ -9,11 +9,11 @@ from typing import NoReturn
 
 import httpx
 import pytest
+from agent_runtime.errors import ValidationFailed
 from fastapi import FastAPI
 from PIL import Image
 from structlog.testing import capture_logs
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION

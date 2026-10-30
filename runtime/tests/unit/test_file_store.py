@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from iclip.platform.file_store.store import FileSpace, InvalidPath
+from agent_runtime.file_store.store import FileSpace, InvalidPath
 from tests.helpers.file_store import FakeFileStore
 
 

@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 from typing import get_args
 
 import httpx
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import MaterialLedger
 
 from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.media.codec import MediaCodec
 from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip.plugins.shot_video.ports import (

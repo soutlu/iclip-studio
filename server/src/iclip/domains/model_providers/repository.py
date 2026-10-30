@@ -7,7 +7,8 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
-from iclip.common.agent_usage import ModelReference
+from agent_runtime.agent_usage import ModelReference
+
 from iclip.domains.model_providers.catalog import ProviderDeclaration
 from iclip.domains.model_providers.models import (
     CredentialRecord,

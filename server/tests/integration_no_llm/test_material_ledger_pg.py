@@ -6,12 +6,12 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.material_ledger.store import Material
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.platform.db.engine import build_engine
-from iclip.platform.material_ledger.pg import PgMaterialLedger
-from iclip.platform.material_ledger.store import Material
 from tests.helpers.pg import truncate_clean
 
 VIDEO = "https://cdn.test/ref.mp4"

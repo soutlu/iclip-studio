@@ -7,8 +7,8 @@ from collections.abc import Iterator
 
 import pytest
 import structlog
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.acting import (
     ActAs,
     is_placeholder_account,

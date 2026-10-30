@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final, NamedTuple, cast
 
+from agent_runtime.errors import Conflict, NotFound
 from pydantic import TypeAdapter
 from sqlalchemy import (
     Column,
@@ -42,7 +43,6 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import Conflict, NotFound
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.activity import ActivityState, activity_of
 from iclip.harness.transcript.from_messages import SteeredPrompt

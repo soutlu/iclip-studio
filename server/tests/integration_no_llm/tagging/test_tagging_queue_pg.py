@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import httpx
 import pytest
+from agent_runtime.file_store.pg import PgFileStore
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -22,7 +23,6 @@ from iclip.domains.tagging.models import TAGGING_TIMEOUT_SECONDS, EntryKey, TagN
 from iclip.domains.tagging.queue import TaggingQueue
 from iclip.domains.tagging.repository import Tagger
 from iclip.domains.tagging.service import TaggingService
-from iclip.platform.file_store.pg import PgFileStore
 from tests.helpers.hit_cases import (
     TREATMENT,
     hit_case_rows,

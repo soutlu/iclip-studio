@@ -6,6 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Final, Self
 
+from agent_runtime.file_store.store import FileSpace, FileStore
+from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.tool_args import REPLAY_CONTEXT, JsonText
 from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import ModelRetry
 from pydantic_ai.capabilities import CapabilityOrdering
@@ -13,11 +16,8 @@ from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.common.tool_args import REPLAY_CONTEXT, JsonText
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_materials
-from iclip.platform.file_store.store import FileSpace, FileStore
-from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.transcript.display import DisplayFn, FileIoDisplay, tool_note
 from iclip.plugins.base import CapPlugin
 from iclip.plugins.shot_document import (

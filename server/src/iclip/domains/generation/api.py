@@ -4,10 +4,10 @@ import json
 import uuid
 from typing import Annotated, Any
 
+from agent_runtime.errors import ValidationFailed
 from fastapi import APIRouter, Query
 from pydantic import TypeAdapter, ValidationError
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
     GenerationEnvelope,

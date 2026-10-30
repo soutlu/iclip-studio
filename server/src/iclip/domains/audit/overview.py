@@ -12,7 +12,8 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Final, Literal
 from zoneinfo import ZoneInfo
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.audit.models import OverviewBucket
 from iclip.domains.audit.schemas import (
     MetricsOut,

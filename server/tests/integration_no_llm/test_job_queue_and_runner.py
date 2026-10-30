@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from pydantic_ai import Agent, AgentRunResult, Tool
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
@@ -33,7 +34,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from structlog.testing import capture_logs
 
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.harness.background import BackgroundTools
 from iclip.harness.jobs import JobQueue, JobRow

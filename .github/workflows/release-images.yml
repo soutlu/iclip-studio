@@ -92,7 +92,7 @@ jobs:
       matrix:
         include:
           - service: server
-            context: server
+            context: .
             dockerfile: server/Dockerfile
           - service: web
             context: .

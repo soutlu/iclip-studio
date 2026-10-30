@@ -9,7 +9,8 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from iclip.common.errors import NotFound, ValidationFailed
+from agent_runtime.errors import NotFound, ValidationFailed
+
 from iclip.domains.tagging.models import (
     AI_VALUE_LIMIT,
     AUTO_FILL_AI,

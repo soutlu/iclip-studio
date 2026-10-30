@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import structlog
+from agent_runtime.errors import AgentUnavailable, Conflict, NotFound
 from pydantic_ai import Agent, CancellationToken, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability, on_event
 from pydantic_ai.exceptions import UserError
@@ -33,7 +34,6 @@ from pydantic_ai.tools import DeferredToolResults, RunContext
 from pydantic_ai_harness.compaction import ReportContextUsage, SummarizingCompaction
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 
-from iclip.common.errors import AgentUnavailable, Conflict, NotFound
 from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.background import interrupt_stale_receipts
 from iclip.harness.context_compaction import ContextCompaction

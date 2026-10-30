@@ -6,10 +6,10 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
+from agent_runtime.agent_usage import AgentUsageOut
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from iclip.common.agent_usage import AgentUsageOut
 from iclip.domains.skills.models import SkillStatus
 
 

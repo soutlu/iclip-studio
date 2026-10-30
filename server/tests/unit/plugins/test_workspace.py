@@ -8,6 +8,13 @@ import json
 import uuid
 
 import pytest
+from agent_runtime.file_store.store import (
+    FileSpace,
+    InvalidPath,
+    StoredFile,
+    normalize_path,
+)
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import (
     ImageUrl,
@@ -26,13 +33,6 @@ from pydantic_ai_harness.subagents import SubAgent, SubAgents
 from structlog.testing import capture_logs
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.file_store.store import (
-    FileSpace,
-    InvalidPath,
-    StoredFile,
-    normalize_path,
-)
-from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import (
     FileIoDisplay,
     GenericDisplay,

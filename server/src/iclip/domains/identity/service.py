@@ -11,12 +11,13 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from iclip.common.errors import (
+from agent_runtime.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,
     ValidationFailed,
 )
+
 from iclip.domains.identity.commands import CreateApiKey, UpdateUser
 from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
 from iclip.domains.identity.rbac import MANAGE_PERMISSION, effective_permissions, is_known_role

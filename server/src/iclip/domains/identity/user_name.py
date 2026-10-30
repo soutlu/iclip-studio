@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.identity.models import Principal
 
 

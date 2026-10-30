@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from agent_runtime.errors import ValidationFailed
+from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 from pydantic import ValidationError
 
-from iclip.common.errors import ValidationFailed
-from iclip.common.model_vocab import ModelApi, ThinkingEffort
 from iclip.domains.model_providers.catalog import ModelDeclaration, ProviderDeclaration
 from iclip.domains.model_providers.cipher import CredentialCipher
 from iclip.domains.model_providers.models import (

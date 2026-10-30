@@ -11,9 +11,9 @@
 | `make setup` | 安装后端与前端依赖 |
 | `make dev` | 启动后端；环境准备见[本地启动](docs/deploy.md#本地启动) |
 | `make db-upgrade` | 执行 Alembic 迁移；服务启动不自动建表 |
-| `make check` | 后端 lint、格式、类型、依赖边界、常规测试，以及合同与文档对账；CI 已包含这些检查，本地不必跑 |
+| `make check` | 运行时（`runtime/`）与后端的 lint、格式、类型、依赖边界、常规测试，以及合同与文档对账；CI 已包含这些检查，本地不必跑 |
 | `make web-check` | 前端 `ci:check`；CI 已包含这些检查，本地不必跑 |
-| `make test` | 后端单元与无真实 LLM 的集成测试 |
+| `make test` | 运行时与后端的单元测试和无真实 LLM 的集成测试 |
 | `make test-external` | 使用外部服务凭证的测试；环境与跳过规则见 [测试规范](docs/test-design.md) |
 | `make contract` | 从后端导出 OpenAPI |
 | `make docs-check` | 核对 Markdown 相对链接与 make 目标 |
@@ -23,7 +23,7 @@
 
 本地只跑与改动相关的检查，通过后再推送；生产构建与全量 e2e 交给 CI，不在本地重复。
 
-- 后端变更提交前执行 `make lint`、`make format-check` 与 `make typecheck`，并运行与改动直接相关的 pytest；改了端点再跑 `make contract`，改了模块依赖关系再跑 `make tach`。完整测试由 CI 运行，本地不重复跑 `make check`。前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
+- 后端或运行时变更提交前执行 `make lint`、`make format-check` 与 `make typecheck`（两个项目都查），并运行与改动直接相关的 pytest；改了端点再跑 `make contract`，改了模块依赖关系再跑 `make tach`。完整测试由 CI 运行，本地不重复跑 `make check`。前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
 - 成片渲染服务（`render/`，以及它编进去的前端成片合成代码、组件目录与生成的合同）变更在 `render/` 执行 `pnpm lint`、`pnpm typecheck` 与 `pnpm test`；本机找不到 chrome-headless-shell 时真实渲染的集成测试跳过并写明原因。
 - 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
@@ -35,7 +35,7 @@
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档与 Git 历史中的密钥；目标为 `develop` 时按改动路径选择后端、前端、渲染服务检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时全部都查；结果汇总为 `ci` |
+| [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档与 Git 历史中的密钥；目标为 `develop` 时按改动路径选择运行时、后端、前端、渲染服务检查（后端依赖运行时，改了运行时两边都查），前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时全部都查；结果汇总为 `ci` |
 | [cache-warm](.github/workflows/cache-warm.yml) | 推送 `develop`、`main`（含 PR 合入）；手动运行 | 只安装依赖、不跑检查，把依赖缓存存到该分支，供指向它的 PR 恢复 |
 | [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见[镜像发布](docs/release.md) |
 

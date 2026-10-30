@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Final, Literal
 
-from iclip.common.model_vocab import ModelApi, ThinkingEffort
+from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 
 if TYPE_CHECKING:
     # catalog 读本模块的模型形状，运行时 import 回去会成环；这里只用作注解。

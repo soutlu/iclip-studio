@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.models import Principal, PrincipalKind
 from iclip.domains.identity.user_name import require_own_user_name, resolve_user_name
 

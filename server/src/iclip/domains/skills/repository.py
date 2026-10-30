@@ -7,7 +7,8 @@ from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
-from iclip.common.agent_usage import AgentUsage
+from agent_runtime.agent_usage import AgentUsage
+
 from iclip.domains.skills.models import (
     DraftFile,
     DraftFileInfo,

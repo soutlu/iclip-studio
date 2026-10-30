@@ -10,12 +10,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from agent_runtime.model_vocab import ThinkingEffort
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.agent_runtime import ModelBuilder
 from iclip.app.bootstrap import AgentServices
-from iclip.common.model_vocab import ThinkingEffort
 from iclip.domains.agent_config.config import AgentConfig
 from iclip.domains.agent_config.schemas import (
     AgentCreateIn,

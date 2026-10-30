@@ -10,6 +10,8 @@ from typing import Any, get_args
 
 import httpx
 import pytest
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
@@ -26,8 +28,6 @@ from structlog.testing import capture_logs
 
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.generation.module import IMAGE_MODEL_SPECS
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import Material
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry

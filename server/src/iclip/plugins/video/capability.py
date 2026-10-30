@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
+from agent_runtime.file_store.store import FileSpace, FileStore
+from agent_runtime.material_ledger.store import MaterialLedger
 from pydantic_ai import ModelRetry
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
@@ -13,8 +15,6 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_materials
-from iclip.platform.file_store.store import FileSpace, FileStore
-from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.transcript.display import DisplayFn, GenericDisplay, url_filename
 from iclip.plugins.base import CapPlugin
 from iclip.plugins.video_document import video_doc_path

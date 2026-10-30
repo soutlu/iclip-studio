@@ -6,6 +6,8 @@ import uuid
 from typing import Any
 
 import pytest
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -20,8 +22,6 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
 from iclip.plugins.video.capability import Video, VideoToolset
 from iclip.plugins.video_document import video_doc_path

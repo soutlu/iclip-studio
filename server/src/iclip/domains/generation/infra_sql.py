@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Final
 
+from agent_runtime.errors import NotFound, ValidationFailed
 from sqlalchemy import (
     Column,
     ColumnElement,
@@ -33,7 +34,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.sql.base import ReadOnlyColumnCollection
 from sqlalchemy.sql.elements import KeyedColumnElement
 
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.generation.models import (
     REFERENCE_TRIAL_KEY,
     STATUS_COMPLETED,

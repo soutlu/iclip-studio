@@ -3,7 +3,8 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.generation.schemas import (
     MAX_PROMPT_CHARS,
     ClipEditDurationOut,

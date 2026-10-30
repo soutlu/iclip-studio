@@ -7,7 +7,8 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Protocol
 
-from iclip.common.errors import NotFound
+from agent_runtime.errors import NotFound
+
 from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,

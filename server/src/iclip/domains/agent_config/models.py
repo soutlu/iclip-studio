@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Literal
 
-from iclip.common.model_vocab import ThinkingEffort
+from agent_runtime.model_vocab import ThinkingEffort
 
 AgentStatus = Literal["active", "archived"]
 """``active`` 在用；``archived`` 已归档，不能再被引用。"""

@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from agent_runtime.errors import AgentUnavailable
 from pydantic_ai import Agent, Tool
 from pydantic_ai.capabilities import AgentCapability
 from pydantic_ai.messages import (
@@ -34,7 +35,6 @@ from pydantic_ai_harness.step_persistence import (
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import AgentUnavailable
 from iclip.harness.agents import (
     DELEGATE_TOOL,
     SubAgentSlot,

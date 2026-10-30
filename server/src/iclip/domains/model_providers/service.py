@@ -8,15 +8,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 import structlog
-
-from iclip.common.agent_usage import (
+from agent_runtime.agent_usage import (
     AgentUsage,
     ModelReference,
     in_use_message,
     merge_usages,
     usages_out,
 )
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+
 from iclip.domains.model_providers.catalog import Declarations, ProviderDeclaration
 from iclip.domains.model_providers.cipher import CredentialCipher
 from iclip.domains.model_providers.models import (

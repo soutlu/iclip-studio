@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, Literal, get_args, overload
 
+from agent_runtime.urls import is_http_url
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -31,7 +32,6 @@ from iclip.common.shot_rules import (
     image_indexes_of,
     timeline_fault,
 )
-from iclip.common.urls import is_http_url
 
 if TYPE_CHECKING:
     from iclip.domains.generation.models import GenerationJob

@@ -1,0 +1,34 @@
+source_roots = ["src"]
+
+[[modules]]
+path = "agent_runtime.errors"
+depends_on = []
+utility = true
+
+[[modules]]
+path = "agent_runtime.urls"
+depends_on = []
+utility = true
+
+[[modules]]
+path = "agent_runtime.model_vocab"
+depends_on = []
+utility = true
+
+[[modules]]
+path = "agent_runtime.agent_usage"
+depends_on = []
+utility = true
+
+[[modules]]
+path = "agent_runtime.tool_args"
+depends_on = []
+utility = true
+
+[[modules]]
+path = "agent_runtime.file_store"
+depends_on = []
+
+[[modules]]
+path = "agent_runtime.material_ledger"
+depends_on = []

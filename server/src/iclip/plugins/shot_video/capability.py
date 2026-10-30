@@ -7,13 +7,13 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
 import httpx
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import MaterialLedger
 from pydantic_ai.agent.abstract import AgentInstructions
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT
 from pydantic_ai.toolsets import AgentToolset
 
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.transcript.display import (
     MEDIA_GRID_VIEW,

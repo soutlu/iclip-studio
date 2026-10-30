@@ -7,8 +7,8 @@ from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.audit.overview import (
     Cell,
     OverviewWindow,

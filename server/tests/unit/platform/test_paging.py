@@ -6,8 +6,8 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.platform.paging import (
     MAX_LIST_LIMIT,
     check_limit,

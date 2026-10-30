@@ -1,5 +1,11 @@
 name: setup-server
-description: 安装 uv 并按锁文件同步 server 依赖。
+description: 安装 uv 并按锁文件同步一个 Python 项目（server 或 runtime）的依赖。
+
+inputs:
+  working-directory:
+    description: 要同步的项目目录
+    required: false
+    default: server
 
 runs:
   using: composite
@@ -8,4 +14,4 @@ runs:
     - uses: astral-sh/setup-uv@v10.0.1
     - run: uv sync --locked
       shell: bash
-      working-directory: server
+      working-directory: ${{ inputs.working-directory }}

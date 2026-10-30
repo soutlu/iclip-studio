@@ -10,7 +10,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from iclip.common.errors import Conflict, PermissionDenied, ValidationFailed
+from agent_runtime.errors import Conflict, PermissionDenied, ValidationFailed
+
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal
 from iclip.domains.tasks.models import (
     ACTIVE_STATUSES,

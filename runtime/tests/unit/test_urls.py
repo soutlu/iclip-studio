@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from iclip.common.urls import is_http_url, is_oss_processable
+from agent_runtime.urls import is_http_url, is_oss_processable
 
 
 @pytest.mark.parametrize(

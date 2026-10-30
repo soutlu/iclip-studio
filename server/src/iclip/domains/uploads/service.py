@@ -5,8 +5,8 @@ import uuid
 from typing import Final, Protocol
 
 import structlog
+from agent_runtime.errors import Conflict, ValidationFailed
 
-from iclip.common.errors import Conflict, ValidationFailed
 from iclip.domains.identity.public import Principal
 from iclip.domains.uploads.models import (
     MAX_BYTES,

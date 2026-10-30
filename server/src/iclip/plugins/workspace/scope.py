@@ -8,10 +8,10 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from agent_runtime.file_store.store import normalize_path
 from pydantic_ai.tools import RunContext
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.file_store.store import normalize_path
 
 
 def namespace_for(owner: uuid.UUID, conversation_id: str) -> str:

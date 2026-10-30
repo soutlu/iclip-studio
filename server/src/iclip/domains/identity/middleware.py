@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from urllib.parse import urlsplit
 
 import structlog
+from agent_runtime.errors import DomainError
 from fastapi import Depends, HTTPException, Request, Security, WebSocket
 from fastapi.security import (
     APIKeyCookie,
@@ -25,7 +26,6 @@ from fastapi.security import (
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from iclip.common.errors import DomainError
 from iclip.domains.identity.models import Principal, UserAccount
 from iclip.domains.identity.rbac import PERMISSIONS
 from iclip.domains.identity.service import IdentityService

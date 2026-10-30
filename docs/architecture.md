@@ -6,6 +6,8 @@
 
 后端是 FastAPI 模块化单体，Agent 引擎使用 PydanticAI 与 Pydantic AI Harness。`app/` 是唯一组合根：读取配置、创建连接池、装配模块、连接模块间的协议并管理生命周期。
 
+Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproject.toml)（包 `agent_runtime`，现有领域错误分类、工具入参的 JSON 文本归一化、地址形状判定、模型接口与思考档位的词表、agent 配置引用的「谁在用」形状、工作区文件存储与素材台账）；后端依赖它，它不依赖后端。
+
 以下路径均相对 `server/src/iclip/`。
 
 | 位置 | 职责 |
@@ -13,8 +15,8 @@
 | `domains/` | 业务用例、领域模型、HTTP 入口及存储适配；不依赖 Agent 引擎 |
 | `harness/` | 通用 Agent 装配、运行驱动、消息持久化、上下文压缩与 transcript 投影；不解释业务身份和业务规则 |
 | `plugins/` | 插件：面向模型的类型化工具集，连接 Agent 引擎与业务能力 |
-| `platform/` | 共用技术协议及适配器：数据库与行归属、对象存储、工作区文件存储、素材台账、ffmpeg 媒体处理（子进程、下载、探测、视频裁剪拼接、抽口播音频与音乐规整、字体文件解析，不含业务规则）与图片文件头、出网下载（只连公网，见 [platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)）、HTTP 错误映射、翻页、transcript 类型 |
-| `common/` | 跨层共用的纯规则：领域错误分类、工具入参的 JSON 文本归一化、地址形状判定、镜头组规则（时间线连续、`@ImageN` 引用、参考图上限）、出片正文的拼装与反拆，生成记录的种类、状态词表，模型接口与思考档位的词表，以及 agent 配置引用的「谁在用」形状 |
+| `platform/` | 共用技术协议及适配器：数据库与行归属、对象存储、ffmpeg 媒体处理（子进程、下载、探测、视频裁剪拼接、抽口播音频与音乐规整、字体文件解析，不含业务规则）与图片文件头、出网下载（只连公网，见 [platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)）、HTTP 错误映射、翻页、transcript 类型 |
+| `common/` | 跨层共用的纯规则：镜头组规则（时间线连续、`@ImageN` 引用、参考图上限）、出片正文的拼装与反拆，生成记录的种类、状态词表 |
 | `config/` | 配置声明、环境变量定义与启动期解析 |
 | `app/` | 组合根及跨模块适配 |
 | `main.py` / `asgi.py` | CLI / ASGI 入口 |
@@ -65,7 +67,7 @@
 
 [shot_document.py](../server/src/iclip/plugins/shot_document.py) 持有镜头组表的结构与校验措辞，供 `video_shots` 的交付工具、制作页拼出片请求与对话域的文件写回共用；工程文件与运行文件的写回校验用 `iclip_studio/film/` 的同一套检查，只看被写的那一个文件；[video_understanding.py](../server/src/iclip/plugins/video_understanding.py) 持有视频拆解协议与方舟适配器；[video_document.py](../server/src/iclip/plugins/video_document.py) 回答拆解文档在工作区的路径与镜头时间码的写法，`shot_video` 靠它定位 `video` 写下的文档，拆解提示词与取帧解析器的报错引同一个写法。划分标准：模型看得见的东西（工具名、docstring、参数 schema、验证器措辞、display 表、指令）留在各自包内，换 agent 就可以不同；模型看不见、换 agent 也不允许有差异的机制下沉到 `harness/`、`common/` 或这类共用模块，不在包之间复制：素材台账校验在 [harness/materials.py](../server/src/iclip/harness/materials.py)，工作区写入与配额、版本错误的翻译在 [harness/files.py](../server/src/iclip/harness/files.py)，镜头组的时间线连续、`@ImageN` 引用与参考图上限在 [common/shot_rules.py](../server/src/iclip/common/shot_rules.py)，与生成域的出片请求共用。
 
-模型适配集中在 [harness/models.py](../server/src/iclip/harness/models.py)，模型实例随装好的 Agent 一起缓存。provider 选择交给官方 `infer_model`；`api: responses` 使用官方 `OpenAIResponsesModel`。模型参数转换不进入业务模块或工具。模型接口与思考档位的词表在 [common/model_vocab.py](../server/src/iclip/common/model_vocab.py)，引擎、agent 配置与模型声明共用。
+模型适配集中在 [harness/models.py](../server/src/iclip/harness/models.py)，模型实例随装好的 Agent 一起缓存。provider 选择交给官方 `infer_model`；`api: responses` 使用官方 `OpenAIResponsesModel`。模型参数转换不进入业务模块或工具。模型接口与思考档位的词表在 [agent_runtime/model_vocab.py](../runtime/src/agent_runtime/model_vocab.py)，引擎、agent 配置与模型声明共用。
 
 模型供应商在 `domains/model_providers/`：供应商声明、接入的供应商、密钥、模型设置与默认模型，术语见 [CONTEXT.md](CONTEXT.md)「供应商」等词条。声明是 [declarations/](../server/src/iclip/domains/model_providers/declarations/) 下的 YAML，组合根启动时读一次，形状不对、声明的 `pydantic_ai_provider` 官方不认都启动失败。改一个供应商的密钥、默认密钥、模型设置与指向它的默认模型都在同一个事务里先锁住供应商那一行再判断，「默认密钥不能删」「默认模型必须已启用」不会被并发修改绕过。试连是领域声明的端口，组合根的 [app/model_providers.py](../server/src/iclip/app/model_providers.py) 实现它：按「声明 + 模型 + 密钥字段 + 思考档位」拼成 `ModelSpec`，经 `build_model` 建出模型，再由 [harness/probe.py](../server/src/iclip/harness/probe.py) 发一个最小的请求（输出上限 16 个 token、15 秒、不重试，档位能设 `none` 就设），失败按错误类别给一句话，只取上游错误体里的说明并抹掉机密字段的值。机密字段用 MultiFernet 加密：`CREDENTIAL_ENCRYPTION_KEYS` 是逗号分隔的 Fernet key，第一个加密、全部用来解密，缺失或格式不对启动失败；换钥用 `scripts/admin.py rotate-credential-keys`，步骤见[部署](deploy.md#换密钥加密钥匙)。运行时经服务的 `runtime_model` 与 `default_llm` 取建模型要的供应商、模型与解密后的密钥字段。
 
@@ -96,7 +98,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 | `agent_runtime` 运行历史与快照 | `harness/step_store_pg.py`，实现官方 StepStore 协议。快照消息的存法同官方 PostgresStepStore：每条消息按 sha256 在 `snapshot_messages` 只存一份，快照行只记引用；整段历史内联的旧行照常读。被修剪快照用过的消息与外置媒体一样不回收 |
 | `agent_runtime` prompt 队列、运行关联与审批记录 | `harness/jobs.py` |
 | `agent_runtime` 运行时会话 | `harness/sessions.py`；一段对话一行，id 等于对话 id，`agent_version_id` 是它固定的 agent 版本（外键指向 `iclip.agent_versions`，可空）；不加指向对话表与用户表的外键 |
-| `agent_runtime` 工作区与对话素材台账 | `platform/file_store/pg.py`、`platform/material_ledger/pg.py` |
+| `agent_runtime` 工作区与对话素材台账 | `runtime/src/agent_runtime/` 下的 `file_store/pg.py`、`material_ledger/pg.py` |
 | `agent_runtime` 对话用量台账 | `harness/usage_ledger_pg.py`；`harness/usage_ledger.py` 的 capability 挂在每个 Agent 上，模型每答一次按（对话，模型）累加 token |
 | `public` 生成任务调度表 | procrastinate；DDL 随 Alembic 迁移维护；版本在 pyproject 精确 pin，升级时把它新增的迁移脚本抄成一个新 revision |
 | `iclip` 爆款视频 | `domains/inspirations/infra_sql.py`；数据由部署方自行导入，运行时只读不刷新 |

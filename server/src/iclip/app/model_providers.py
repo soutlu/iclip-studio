@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from iclip.common.model_vocab import ThinkingEffort
+from agent_runtime.model_vocab import ThinkingEffort
+
 from iclip.domains.model_providers.public import (
     API_KEY_FIELD,
     BASE_URL_FIELD,

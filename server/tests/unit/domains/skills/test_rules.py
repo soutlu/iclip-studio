@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.skills.models import (
     MAX_DESCRIPTION_CHARS,
     MAX_FILE_BYTES,

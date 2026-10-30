@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 import httpx
+from agent_runtime.file_store.store import FileStore
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
 from iclip.config import ResolvedIclipStudio
@@ -26,7 +27,6 @@ from iclip.domains.tagging.models import (
     TaggingFailed,
     TagNode,
 )
-from iclip.platform.file_store.store import FileStore
 from iclip.plugins.video_breakdown.model import ArkBreakdownModel
 from iclip.plugins.video_breakdown.ports import BreakdownError
 from iclip.plugins.workspace.scope import namespace_for

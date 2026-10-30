@@ -7,8 +7,8 @@ from tempfile import TemporaryDirectory
 from typing import Any, Final
 
 import httpx
+from agent_runtime.urls import is_http_url
 
-from iclip.common.urls import is_http_url
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,

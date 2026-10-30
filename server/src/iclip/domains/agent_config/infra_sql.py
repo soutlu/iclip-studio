@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
+from agent_runtime.errors import Conflict, NotFound
 from sqlalchemy import (
     Boolean,
     Column,
@@ -30,7 +31,6 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.common.errors import Conflict, NotFound
 from iclip.domains.agent_config.config import config_refs
 from iclip.domains.agent_config.models import (
     STATUS_ACTIVE,

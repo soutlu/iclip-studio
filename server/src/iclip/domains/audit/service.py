@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 from typing import Final, overload
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.audit.executions import (
     RETRY_AT_LEAST,
     SPEND_TIMES,

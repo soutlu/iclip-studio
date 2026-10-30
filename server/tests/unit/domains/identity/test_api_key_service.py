@@ -7,13 +7,13 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
-from iclip.common.errors import (
+from agent_runtime.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,
     ValidationFailed,
 )
+
 from iclip.domains.identity.commands import CreateApiKey
 from iclip.domains.identity.models import ApiKeyRecord
 from iclip.domains.identity.service import (

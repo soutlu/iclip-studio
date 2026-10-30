@@ -6,8 +6,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from agent_runtime.errors import NotFound, ValidationFailed
 
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.tagging.models import (
     AI_VALUE_LIMIT,
     MAX_TAG_GUIDE_CHARS,

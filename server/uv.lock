@@ -7,6 +7,33 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "agent-runtime"
+version = "0.1.0"
+source = { editable = "../runtime" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
+    { name = "structlog", specifier = ">=26.1.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.411" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "ruff", specifier = ">=0.16.6" },
+    { name = "tach", specifier = ">=0.35.0" },
+]
+
+[[package]]
 name = "alembic"
 version = "1.19.1"
 source = { registry = "https://pypi.org/simple" }
@@ -916,6 +943,7 @@ name = "iclip"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "agent-runtime" },
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "cryptography" },
@@ -953,6 +981,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-runtime", editable = "../runtime" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "cryptography", specifier = ">=50.0.1" },

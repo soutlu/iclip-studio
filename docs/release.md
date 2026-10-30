@@ -54,10 +54,10 @@ Actions variables：`ACR_REGISTRY`、`ACR_NAMESPACE`；secrets：`ACR_USERNAME`�
 
 ## 本地构建
 
-在仓库根目录执行。前端构建需要 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](../web/Dockerfile.dockerignore) 限定为前端和合同文件；渲染服务要编进前端的合成代码与生成的合同类型，构建上下文由 [render/Dockerfile.dockerignore](../render/Dockerfile.dockerignore) 限定。Apple Silicon 上渲染镜像按 amd64 在模拟下构建和运行，只能用软件渲染。
+在仓库根目录执行。后端依赖仓库里的 `runtime/`，构建上下文由 [server/Dockerfile.dockerignore](../server/Dockerfile.dockerignore) 限定为这两个项目；前端构建需要 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](../web/Dockerfile.dockerignore) 限定为前端和合同文件；渲染服务要编进前端的合成代码与生成的合同类型，构建上下文由 [render/Dockerfile.dockerignore](../render/Dockerfile.dockerignore) 限定。Apple Silicon 上渲染镜像按 amd64 在模拟下构建和运行，只能用软件渲染。
 
 ```bash
-docker build -t iclip-server:local server
+docker build -f server/Dockerfile -t iclip-server:local .
 docker build -f web/Dockerfile -t iclip-web:local .
 docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render:local .
 ```

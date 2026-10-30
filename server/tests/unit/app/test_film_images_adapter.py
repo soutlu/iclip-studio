@@ -9,10 +9,10 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from agent_runtime.errors import NotFound
 
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter, RunFilmImagesAdapter
 from iclip.app.plugin_registry import build_plugin_registry
-from iclip.common.errors import NotFound
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD, ImageGenerationIn
 from iclip.domains.generation.service import GenerationService

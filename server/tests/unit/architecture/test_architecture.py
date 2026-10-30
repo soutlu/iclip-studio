@@ -36,8 +36,6 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ),
     ("sqlalchemy",): (
         "platform/db/",
-        "platform/file_store/",
-        "platform/material_ledger/",
         "app/",
         # StepPersistence 协议后端归属使用该协议的 harness。
         "harness/step_store_pg.py",
@@ -146,7 +144,8 @@ def test_models_and_commands_are_pure() -> None:
     for name in ("models.py", "commands.py"):
         for path in (SRC / "domains").rglob(name):
             for top in _imported_top_levels(path):
-                if top not in stdlib and top != "iclip":
+                # agent_runtime 是本仓的运行时包，纯规则（错误分类、模型词汇）在那里。
+                if top not in stdlib and top not in ("iclip", "agent_runtime"):
                     violations.append(f"{_rel(path)}: 第三方 {top}")
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):

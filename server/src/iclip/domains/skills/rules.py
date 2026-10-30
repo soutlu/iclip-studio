@@ -12,8 +12,8 @@ from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
 import yaml
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.skills.models import (
     MAX_DESCRIPTION_CHARS,
     MAX_DISPLAY_NAME_CHARS,

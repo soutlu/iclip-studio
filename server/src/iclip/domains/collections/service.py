@@ -6,7 +6,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from iclip.common.errors import PermissionDenied
+from agent_runtime.errors import PermissionDenied
+
 from iclip.domains.collections.models import Collection
 from iclip.domains.collections.repository import CollectionRepository
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, visible_owner

@@ -6,10 +6,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Self
 
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import MaterialLedger
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.transcript.display import DisplayFn, ToolDisplayEntry
 from iclip.plugins.base import CapPlugin
 from iclip.plugins.video.capability import Video

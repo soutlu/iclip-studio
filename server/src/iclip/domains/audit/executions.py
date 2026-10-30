@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, get_args
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.audit.models import ExecutionSort, SortOrder
 from iclip.platform.paging import BAD_CURSOR
 

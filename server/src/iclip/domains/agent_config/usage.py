@@ -1,6 +1,6 @@
 """「谁在用」：按每个 agent 的草稿与当前版本里写的引用，回答某个技能、模型、密钥或 agent 被谁用着。
 
-规则见 ``iclip.common.agent_usage``：草稿或当前版本还在引用就算在用，只被旧版本用到的不算。技能库与模型供应商
+规则见 ``agent_runtime.agent_usage``：草稿或当前版本还在引用就算在用，只被旧版本用到的不算。技能库与模型供应商
 经它们自己声明的端口问这里，由组合根把 ``AgentReferences`` 接过去。"""
 
 from __future__ import annotations
@@ -8,7 +8,8 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from iclip.common.agent_usage import AgentUsage, ModelReference
+from agent_runtime.agent_usage import AgentUsage, ModelReference
+
 from iclip.domains.agent_config.models import AgentRefs, ConfigRefs
 from iclip.domains.agent_config.repository import AgentStore
 

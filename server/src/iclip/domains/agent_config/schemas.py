@@ -7,10 +7,10 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
+from agent_runtime.agent_usage import AgentUsageOut
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from iclip.common.agent_usage import AgentUsageOut
 from iclip.domains.agent_config.config import AgentConfig
 from iclip.domains.agent_config.models import AgentStatus
 

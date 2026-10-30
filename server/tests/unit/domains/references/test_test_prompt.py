@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.common.shot_prompt import parse_shot_prompt
 from iclip.domains.references.test_prompt import build_test_prompt
 
