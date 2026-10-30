@@ -34,10 +34,10 @@ from agent_runtime.transcript.wire import (
     Subscribe,
     SubscribePayload,
     TranscriptOps,
-    TranscriptPage,
     TranscriptReset,
     Unsubscribe,
 )
+from agent_runtime.transcript.wire import TranscriptPage as SessionTranscriptPage
 from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
@@ -90,6 +90,26 @@ MAX_EVENT_BUFFER = 2048
 """多对话共享的连接出站缓冲上限；溢出时断开并要求重连补批，避免阻塞运行。"""
 
 _CLIENT_FRAME = TypeAdapter[Any](ClientFrame)
+
+
+# 运行时那一页加上对话行的几项信封字段。文档字符串是合同里这个 schema 的说明，改它就改了合同。
+class TranscriptPage(SessionTranscriptPage):
+    """``GET /transcript`` 的一页。
+
+    ``agents`` 与 ``pending_interactions`` 是协议要求的字段：前者是主 agent 加各子代理，后者从
+    待回应的交互里取。
+    """
+
+    title: str = ""
+    """标题位于信封顶层，避免被协议 meta schema 丢弃；后续更新通过 session.meta.updated 发送。"""
+    owner_user_id: str | None = None
+    """属主：会话页据此判断这是不是自己的对话。"""
+    deleted_at: str | None = None
+    """属主删掉这段对话的 ISO 时刻；只有治理者复盘墓碑时非空。"""
+    forked_from: str | None = None
+    """这段对话分叉自哪一段；会话页据此画血缘提示，不是分叉来的为空。"""
+    fork_turn: int | None = None
+    """分叉自源对话的第几轮，与 ``forked_from`` 同时有值。"""
 
 
 class SubscribedFrames(Protocol):
@@ -152,7 +172,7 @@ class Transcripts(Protocol):
         before_turn: str | None = None,
         after_turn: str | None = None,
         page_size: int = 20,
-    ) -> TranscriptPage: ...
+    ) -> SessionTranscriptPage: ...
 
     def catchup(
         self,
@@ -615,14 +635,13 @@ def create_transcript_router(
             after_turn=after_turn,
             page_size=page_size,
         )
-        return page.model_copy(
-            update={
-                "title": header.title,
-                "owner_user_id": str(header.owner_user_id),
-                "deleted_at": None if header.deleted_at is None else header.deleted_at.isoformat(),
-                "forked_from": None if header.forked_from is None else str(header.forked_from),
-                "fork_turn": header.fork_turn,
-            }
+        return TranscriptPage(
+            **dict(page),
+            title=header.title,
+            owner_user_id=str(header.owner_user_id),
+            deleted_at=None if header.deleted_at is None else header.deleted_at.isoformat(),
+            forked_from=None if header.forked_from is None else str(header.forked_from),
+            fork_turn=header.fork_turn,
         )
 
     @router.get("/transcript/ops", response_model=OpsCatchup)
@@ -1039,6 +1058,7 @@ __all__ = [
     "Conversations",
     "ImportAttachments",
     "LiveConnections",
+    "TranscriptPage",
     "Transcripts",
     "create_transcript_router",
 ]

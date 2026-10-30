@@ -8,8 +8,8 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileStore
-from agent_runtime.plugins.workspace.scope import namespace_for
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip_video.shot_document import SHOTS_PATH
 

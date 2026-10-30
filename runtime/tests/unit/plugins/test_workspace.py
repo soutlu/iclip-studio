@@ -25,6 +25,7 @@ from pydantic_ai.usage import RunUsage
 from pydantic_ai_harness.subagents import SubAgent, SubAgents
 from structlog.testing import capture_logs
 
+from agent_runtime.file_store.namespace import namespace_for, parse_namespace
 from agent_runtime.file_store.store import (
     FileSpace,
     InvalidPath,
@@ -40,11 +41,7 @@ from agent_runtime.plugins.workspace.capability import (
     WorkspaceToolset,
 )
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
-from agent_runtime.plugins.workspace.scope import (
-    namespace_for,
-    parse_namespace,
-    workspace_namespace,
-)
+from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import (
     FileIoDisplay,

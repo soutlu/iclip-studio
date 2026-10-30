@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from agent_runtime.assembly.displays import build_display_registry
 from agent_runtime.errors import NotFound, ValidationFailed
 from agent_runtime.harness.background import BackgroundTools
 from agent_runtime.plugins.base import PluginRegistry
@@ -32,7 +33,6 @@ from pydantic_ai.models.test import TestModel
 from iclip.app.plugin_registry import (
     GenerationsAdapter,
     OssMediaProbe,
-    build_display_registry,
     build_plugin_registry,
 )
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter

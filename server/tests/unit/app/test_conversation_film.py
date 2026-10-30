@@ -8,9 +8,9 @@ from dataclasses import dataclass
 
 import pytest
 from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileEntry, VersionConflict
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.scope import namespace_for
 from iclip_video.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 

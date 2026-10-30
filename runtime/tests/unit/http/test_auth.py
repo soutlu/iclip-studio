@@ -141,6 +141,27 @@ async def test_a_write_needs_an_end_user_uuid(
     assert response.json()["detail"].startswith("X-End-User: ")
 
 
+OWNER_SCOPED = {
+    ("post", "/v1/sessions/{session_id}:fork"),
+    ("post", "/v1/sessions/{session_id}/files:copy"),
+    ("post", "/v1/sessions/{session_id}/prompts"),
+    ("get", "/v1/sessions/{session_id}/files"),
+    ("get", "/v1/sessions/{session_id}/files/{path}"),
+    ("put", "/v1/sessions/{session_id}/files/{path}"),
+    ("post", "/v1/sessions/{session_id}/materials"),
+    ("get", "/v1/sessions/{session_id}/materials"),
+}
+"""会话接口里要会话属主的那几个：算命名空间、记新消息的属主，或给分叉与拷文件的目标定属主。"""
+
+
+def _end_user_headers(operation: Mapping[str, Any]) -> list[bool]:
+    return [
+        one["required"]
+        for one in operation.get("parameters", [])
+        if one["in"] == "header" and one["name"] == "X-End-User"
+    ]
+
+
 def test_every_v1_operation_declares_the_app_key_and_every_admin_write_the_end_user(
     app: FastAPI,
 ) -> None:
@@ -153,15 +174,17 @@ def test_every_v1_operation_declares_the_app_key_and_every_admin_write_the_end_u
         if path.startswith("/v1/")
         for method, operation in item.items()
     ]
-    assert len(operations) >= 40
+    assert len(operations) >= 60
+    owner_scoped: set[tuple[str, str]] = set()
     for method, path, operation in operations:
         assert operation["security"] == [{"AppKey": []}], (method, path)
-        end_user = [
-            one
-            for one in operation.get("parameters", [])
-            if one["in"] == "header" and one["name"] == "X-End-User"
-        ]
-        if method == "get":
+        end_user = _end_user_headers(operation)
+        if not path.startswith("/v1/admin/"):
+            assert end_user in ([], [True]), (method, path)
+            if end_user:
+                owner_scoped.add((method, path))
+        elif method == "get":
             assert end_user == [], (method, path)
         else:
-            assert [one["required"] for one in end_user] == [True], (method, path)
+            assert end_user == [True], (method, path)
+    assert owner_scoped == OWNER_SCOPED

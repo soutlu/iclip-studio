@@ -25,6 +25,7 @@ from pydantic_ai_harness.step_persistence import (
 )
 
 from tests.helpers.golden import CONTRACT_DIR, check_golden_file
+from tests.helpers.material_ledger import FakeMaterialLedger
 
 GOLDEN_DIR = CONTRACT_DIR / "transcript"
 
@@ -150,15 +151,12 @@ def comparable(page: TranscriptPage) -> dict[str, Any]:
 def _service(
     store: TranscriptStore, history: TranscriptHistory, queue: Any, runner: Any
 ) -> TranscriptService:
-    async def records_nothing(*_args: Any) -> None:
-        return None
-
     return TranscriptService(
         store=store,
         history=history,
         queue=queue,
         runner=runner,
-        record_materials=records_nothing,
+        ledger=FakeMaterialLedger(),
     )
 
 

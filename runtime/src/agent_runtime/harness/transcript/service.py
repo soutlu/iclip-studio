@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import structlog
 
 from agent_runtime.errors import AgentUnavailable, Conflict, NotFound, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.harness.jobs import JobQueue, JobRow
 from agent_runtime.harness.transcript.history import TranscriptHistory
 from agent_runtime.harness.transcript.runner import ConversationRunner
 from agent_runtime.harness.transcript.store import Listener, TranscriptStore
 from agent_runtime.harness.transcript.subscription import SubscribeFrames, subscribe_frames
+from agent_runtime.material_ledger.store import Material, MaterialLedger
 from agent_runtime.transcript.ops import (
     MAIN_AGENT_ID,
     ImageContent,
@@ -54,8 +56,8 @@ class TranscriptService:
     runner: ConversationRunner
     """受理前用它的装配入口（``runner.agents``）先装一次，装不起来就不入队。"""
 
-    record_materials: Callable[[uuid.UUID, str, Sequence[PromptContent]], Awaitable[None]]
-    """由组合根注入的附件登记回调，负责素材命名空间。"""
+    ledger: MaterialLedger
+    """消息里的图片与视频附件受理前登记在这里（命名空间是「属主/对话 id」），工具按素材来源规则认得它们。"""
 
     # --- 写 -----------------------------------------------------------------
 
@@ -76,7 +78,7 @@ class TranscriptService:
         _check_content(content)
         await self.runner.agents.for_conversation(conversation_id, agent_id)
         # 入队前登记附件，确保排队期间也可被工具引用。
-        await self.record_materials(owner_user_id, conversation_id, content)
+        await self._record_materials(owner_user_id, conversation_id, content)
         submission = await self.queue.submit(
             prompt_id=prompt_id,
             conversation_id=conversation_id,
@@ -136,7 +138,7 @@ class TranscriptService:
         # 不写库就能判定的校验先做完，再登记素材（台账幂等）；到这里为止历史一点没动。
         _check_content(replay)
         await self.runner.agents.for_conversation(conversation_id, row.agent_id)
-        await self.record_materials(row.owner_user_id, conversation_id, replay)
+        await self._record_materials(row.owner_user_id, conversation_id, replay)
         submission = await self.queue.submit(
             prompt_id=f"prm_regen_{uuid.uuid4().hex[:16]}" if prompt_id is None else prompt_id,
             conversation_id=conversation_id,
@@ -178,6 +180,21 @@ class TranscriptService:
         self.store.append(conversation_id, MAIN_AGENT_ID, (ItemsRemoveOp(ids=(turn_id,)),))
         await self.runner.submit(regenerated)
         return regenerated.as_entity()
+
+    async def _record_materials(
+        self, owner: uuid.UUID, conversation_id: str, content: Sequence[PromptContent]
+    ) -> None:
+        """把消息里带地址的图片与视频附件登记进这段对话的素材台账；台账重复登记保留首条。"""
+
+        materials = [
+            Material(
+                url=part.source.url,
+                kind="image" if isinstance(part, ImageContent) else "video",
+            )
+            for part in content
+            if isinstance(part, ImageContent | VideoContent) and part.source.url is not None
+        ]
+        await self.ledger.record(namespace_for(owner, conversation_id), materials)
 
     async def _withdraw(self, row: JobRow) -> None:
         """撤回占了执行位却没开跑的那条重新生成。

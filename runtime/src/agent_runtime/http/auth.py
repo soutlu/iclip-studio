@@ -5,6 +5,8 @@
 - ``/v1/admin`` 另要求这个应用有管理权限，没有是 403。
 - 代办用户放在 ``X-End-User`` 请求头里，是用户 id（UUID）：管理接口的写操作（POST、PUT、PATCH、DELETE）
   一律必填，缺了或不是 UUID 是 422；读操作不用。
+- 会话接口里同一个头是会话的属主（``SessionOwner``），不是看的人：发消息、读写工作区与素材台账要它算
+  命名空间，分叉与拷文件时它是目标会话的属主；用得到它的路由必填。
 """
 
 from __future__ import annotations
@@ -35,6 +37,15 @@ EndUser = Annotated[
     Header(alias=END_USER_HEADER, description="代哪个用户操作：用户 id。管理接口的写操作必填。"),
 ]
 """写操作的代办用户；交给服务当操作人（``by``）。"""
+
+SessionOwner = Annotated[
+    uuid.UUID,
+    Header(
+        alias=END_USER_HEADER,
+        description="会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+    ),
+]
+"""会话接口的属主：工作区与素材台账的命名空间按它算，新消息记在它名下。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,4 +93,11 @@ def build_app_auth(apps: Sequence[ResolvedApp]) -> AppAuth:
     return AppAuth(calling_app=calling_app, admin_app=admin_app)
 
 
-__all__ = ["END_USER_HEADER", "AppAuth", "CallingApp", "EndUser", "build_app_auth"]
+__all__ = [
+    "END_USER_HEADER",
+    "AppAuth",
+    "CallingApp",
+    "EndUser",
+    "SessionOwner",
+    "build_app_auth",
+]

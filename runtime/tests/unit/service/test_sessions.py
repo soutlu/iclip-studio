@@ -11,11 +11,11 @@ from datetime import UTC, datetime
 import pytest
 
 from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileEntry, StoredFile
 from agent_runtime.harness.job_status import JobStatus
 from agent_runtime.harness.jobs import JobQueueView, JobRow
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.scope import namespace_for
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.transcript.ops import TextContent
 from tests.helpers.file_store import FakeFileStore

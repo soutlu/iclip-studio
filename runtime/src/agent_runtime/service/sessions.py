@@ -14,10 +14,10 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
 from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileStore
 from agent_runtime.harness.jobs import JobQueueView
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.scope import namespace_for
 
 
 class SessionStore(Protocol):

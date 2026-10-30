@@ -90,14 +90,6 @@ def new_conversation_id() -> str:
     return f"c-{uuid.uuid4().hex[:8]}"
 
 
-async def records_nothing(
-    owner: uuid.UUID, conversation_id: str, content: Sequence[PromptContent]
-) -> None:
-    """只读场景使用空素材登记实现。"""
-
-    _ = (owner, conversation_id, content)
-
-
 # --- 假模型 -----------------------------------------------------------------
 
 
@@ -566,7 +558,6 @@ __all__ = [
     "new_conversation_id",
     "plant_interrupted",
     "prompt_text",
-    "records_nothing",
     "replay",
     "replay_journal",
     "says",

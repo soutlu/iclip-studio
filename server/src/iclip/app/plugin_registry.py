@@ -13,15 +13,12 @@ from typing import Any
 import httpx
 from agent_runtime.errors import ValidationFailed
 from agent_runtime.file_store.store import FileSpace, FileStore
-from agent_runtime.harness.agents import delegate_display_table
 from agent_runtime.harness.media import image_info_url
-from agent_runtime.harness.skills import skill_display_table
 from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.transcript.display import ToolDisplayRegistry
 from iclip_video.iclip_studio.capability import IclipStudio
 from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.shot_video.ports import ImageJob, ImageRequest, InvalidImageRequest
@@ -262,19 +259,8 @@ def build_plugin_registry(
     return {plugin.get_serialization_name(): plugin for plugin in plugins}
 
 
-def build_display_registry(registry: PluginRegistry) -> ToolDisplayRegistry:
-    """合并插件、技能与委派工具的显示表，重复工具名在装配期报错。实时与历史共用结果实例。"""
-
-    return ToolDisplayRegistry.merged(
-        *(plugin.display_table() for plugin in registry.values()),
-        skill_display_table(),
-        delegate_display_table(),
-    )
-
-
 __all__ = [
     "GenerationsAdapter",
     "OssMediaProbe",
-    "build_display_registry",
     "build_plugin_registry",
 ]

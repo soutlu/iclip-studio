@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import yaml
 
-from tests.helpers.model_providers import GOOD_KEY
+from tests.helpers.runtime_service import connect_provider
 
 
 def package_upload(data: bytes) -> dict[str, tuple[str, bytes, str]]:
@@ -28,18 +28,6 @@ def config(*tools: dict[str, Any]) -> dict[str, Any]:
 
 def plugin(name: str, **parameters: Any) -> dict[str, Any]:
     return {"type": "cap", "toolset": name, "enabled": True, "parameters": parameters}
-
-
-async def connect_provider(admin: httpx.AsyncClient) -> None:
-    provider = await admin.post(
-        "/model-providers", json={"name": "bailian-main", "provider": "bailian", "label": "百炼"}
-    )
-    assert provider.status_code == 201, provider.text
-    credential = await admin.post(
-        f"/model-providers/{provider.json()['id']}/credentials",
-        json={"name": "主账号", "fields": {"api_key": GOOD_KEY}},
-    )
-    assert credential.status_code == 201, credential.text
 
 
 async def save_draft(

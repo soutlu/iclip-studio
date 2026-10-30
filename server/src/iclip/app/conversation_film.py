@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import (
     FileStore,
     InvalidContent,
@@ -17,7 +18,6 @@ from agent_runtime.file_store.store import (
     VersionConflict,
 )
 from agent_runtime.material_ledger.store import Material, MaterialLedger
-from agent_runtime.plugins.workspace.scope import namespace_for
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip_video.iclip_studio.film.load import ConversationImages, load_film

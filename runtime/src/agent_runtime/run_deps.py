@@ -20,4 +20,11 @@ class AgentRunDeps:
     user_name: str
 
 
-__all__ = ["AgentRunDeps"]
+def conversation_of(deps: object) -> str | None:
+    """用量台账的 ``conversation_of``：按运行依赖认出这次模型调用属于哪段对话，deps 不是
+    ``AgentRunDeps`` 时为 None（台账记一条 warning、不记账）。"""
+
+    return deps.conversation_id if isinstance(deps, AgentRunDeps) else None
+
+
+__all__ = ["AgentRunDeps", "conversation_of"]
