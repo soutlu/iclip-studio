@@ -21,6 +21,9 @@ class FakeMaterialLedger:
     async def lookup(self, namespace: str, url: str) -> Material | None:
         return self.rows.get((namespace, url))
 
+    async def list_all(self, namespace: str) -> tuple[Material, ...]:
+        return tuple(material for (space, _), material in self.rows.items() if space == namespace)
+
     def urls(self, namespace: str) -> set[str]:
 
         return {url for space, url in self.rows if space == namespace}

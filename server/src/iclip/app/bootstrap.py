@@ -52,6 +52,7 @@ from agent_runtime.harness.usage_ledger_pg import PgConversationUsage
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.plugins.workspace.scope import parse_namespace
 from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.service.sessions import SessionService
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
@@ -60,8 +61,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from iclip.app.brand_templates import template_font_prober
 from iclip.app.conversation_film import ConversationFilmAdapter
-from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
-from iclip.app.conversation_same_style import LibrarySameStyleSource, SameStyleCopier
+from iclip.app.conversation_fork import ForkLineageAdapter
+from iclip.app.conversation_same_style import (
+    SAME_STYLE,
+    LibrarySameStyleSource,
+    ProductionFilesProbe,
+)
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
     validate_film,
@@ -716,11 +721,20 @@ def build_app(
             default=found.default,
         )
 
+    # 拷进新对话的文件不走发帧的那一层：新对话的行还没落库，这一刻没人订阅得了它。
+    session_service = SessionService(
+        sessions=sessions,
+        version_for_new_session=agent_config.service.version_for_new_session,
+        queue=job_queue,
+        history=transcript_history,
+        files=workspace_store,
+        ledger=material_ledger,
+    )
+
     audit = build_audit_module(PgAuditReports(active_engine))
-    same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
     library = build_library_module(
         library_reports,
-        has_production_files=same_style.has_production_files,
+        has_production_files=ProductionFilesProbe(workspace_store).has_production_files,
         tagging=tagging.service,
         has_treatment=hit_case_treatments.exists,
     )
@@ -728,8 +742,7 @@ def build_app(
         conversation_repo,
         act_as=identity.act_as,
         list_agents=list_agents,
-        open_session=agent_runtime.open_session,
-        fork_session=agent_runtime.fork_session,
+        runtime=session_service,
         list_collections=list_owner_collections,
         claim_task=tasks.service.claim,
         list_derived_files=conversation_workspace.list_files,
@@ -763,9 +776,7 @@ def build_app(
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
         latest_master_urls=latest_master_urls,
-        fork_transcript=ForkTranscriptAdapter(queue=job_queue, history=transcript_history),
-        copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
-        copy_same_style=same_style,
+        same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
     )
     uploads: UploadsModule | None = None

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -24,6 +24,7 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord,
 from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
+from iclip.app.conversation_same_style import SAME_STYLE
 from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
     SqlConversationRepository,
@@ -211,30 +212,38 @@ def _untouched(*_: object, **__: object) -> NoReturn:
 
 
 class StartMovedUnderUs:
-    """起点端口的替身：源闲着、有一轮，可写种子快照时报源变了。"""
+    """运行时会话的替身：分叉写到种子快照时报源变了；开会话与拷文件用不到。"""
 
     def __init__(self) -> None:
         self.targets: list[uuid.UUID] = []
 
-    async def idle(self, conversation_id: uuid.UUID) -> bool:
-        return True
+    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        _untouched()
 
-    async def turn_count(self, conversation_id: uuid.UUID) -> int:
-        return 1
-
-    async def seed(self, *, source_id: uuid.UUID, target_id: uuid.UUID, turn: int) -> bool:
+    async def fork(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        turn: int,
+        agent_id: str | None,
+    ) -> None:
         self.targets.append(target_id)
-        return False
+        raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
 
-
-async def copy_no_workspace(
-    *, source_owner: uuid.UUID, source_id: uuid.UUID, target_owner: uuid.UUID, target_id: uuid.UUID
-) -> None:
-    return None
-
-
-async def forks_no_session(source_id: uuid.UUID, target_id: uuid.UUID) -> None:
-    return None
+    async def copy_files(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        files: Sequence[tuple[str, str]],
+        require_any: frozenset[str],
+    ) -> bool:
+        _untouched()
 
 
 async def test_fork_carries_history_and_workspace_and_leaves_the_source_alone(
@@ -400,10 +409,11 @@ async def test_source_with_an_unfinished_prompt_is_409(
 async def test_start_moving_between_counting_and_seeding_voids_the_fork(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """数完轮数到写种子快照之间源变了，起点端口回 False：这次分叉作废，对话行不落库。
+    """数完轮数到写种子快照之间源变了，运行时的分叉报冲突：这次分叉作废，对话行不落库。
 
-    HTTP 层造不出这个间隙，直接装配用例：仓储用真的，起点端口用一个报「源变了」的替身，
-    分叉用不到的端口一碰就报错。中途失败只留下寻址不到的副本数据，见 architecture.md §4 对话分叉。
+    HTTP 层造不出这个间隙，直接装配用例：仓储用真的，运行时会话用一个报「源变了」的替身，
+    分叉用不到的端口一碰就报错。冲突本身由运行时判，见运行时会话服务的单元测试；中途失败只留下
+    寻址不到的副本数据，见 architecture.md §4 对话分叉。
     """
 
     owner = await login_as(client, pg_url, username="logan")
@@ -414,8 +424,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
         repo = SqlConversationRepository(engine)
         service = ConversationService(
             repo,
-            open_session=_untouched,
-            fork_session=forks_no_session,
+            runtime=start,
             list_collections=_untouched,
             claim_task=_untouched,
             list_derived_files=_untouched,
@@ -431,9 +440,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             activities_of=_untouched,
             busy_conversation_ids=_untouched,
             latest_master_urls=_untouched,
-            fork_transcript=start,
-            copy_workspace=copy_no_workspace,
-            copy_same_style=_untouched,
+            same_style_files=SAME_STYLE,
             same_style_source=_untouched,
             event_watermark=SessionEventClock().snapshot,
             announce_row=_untouched,
