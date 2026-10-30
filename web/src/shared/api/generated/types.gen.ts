@@ -1023,6 +1023,256 @@ export type ConversationsPageOut = {
 }
 
 /**
+ * CredentialCreateIn
+ */
+export type CredentialCreateIn = {
+  /**
+   * Fields
+   */
+  fields: {
+    [key: string]: string
+  }
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * CredentialFieldOut
+ *
+ * 密钥表单的一个字段。``secret`` 的值只会以打码形式返回。
+ */
+export type CredentialFieldOut = {
+  /**
+   * Default
+   */
+  default: string | null
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Required
+   */
+  required: boolean
+  /**
+   * Type
+   */
+  type: 'secret' | 'text'
+}
+
+/**
+ * CredentialOut
+ */
+export type CredentialOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Fields
+   */
+  fields: {
+    [key: string]: string
+  }
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * CredentialTestIn
+ *
+ * ``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给
+ * ``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试
+ * （规则同修改）。
+ */
+export type CredentialTestIn = {
+  /**
+   * Credentialid
+   */
+  credentialId?: string | null
+  /**
+   * Fields
+   */
+  fields?: {
+    [key: string]: string
+  } | null
+}
+
+/**
+ * CredentialUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export type CredentialUpdateIn = {
+  /**
+   * Fields
+   */
+  fields?: {
+    [key: string]: string
+  } | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * CustomModelCreateIn
+ */
+export type CustomModelCreateIn = {
+  /**
+   * Api
+   */
+  api?: 'chat' | 'responses' | null
+  /**
+   * Contextsize
+   */
+  contextSize?: number | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Thinking
+   */
+  thinking?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+}
+
+/**
+ * DeclarationOut
+ *
+ * 一家可以接入的供应商。
+ */
+export type DeclarationOut = {
+  /**
+   * Credentialfields
+   */
+  credentialFields: Array<CredentialFieldOut>
+  /**
+   * Custommodels
+   */
+  customModels: boolean
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Models
+   */
+  models: Array<DeclaredModelOut>
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * DeclarationsOut
+ */
+export type DeclarationsOut = {
+  /**
+   * Declarations
+   */
+  declarations: Array<DeclarationOut>
+}
+
+/**
+ * DeclaredModelOut
+ */
+export type DeclaredModelOut = {
+  /**
+   * Api
+   */
+  api: 'chat' | 'responses' | null
+  /**
+   * Contextsize
+   */
+  contextSize: number | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Thinking
+   */
+  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+}
+
+/**
+ * DefaultModelIn
+ */
+export type DefaultModelIn = {
+  /**
+   * Modelname
+   */
+  modelName: string
+  /**
+   * Providerid
+   */
+  providerId: string
+}
+
+/**
+ * DefaultModelOut
+ */
+export type DefaultModelOut = {
+  /**
+   * Modelname
+   */
+  modelName: string
+  /**
+   * Providerid
+   */
+  providerId: string
+  /**
+   * Providername
+   */
+  providerName: string
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * DefaultModelsOut
+ */
+export type DefaultModelsOut = {
+  /**
+   * Defaults
+   */
+  defaults: Array<DefaultModelOut>
+}
+
+/**
  * DepartmentOut
  */
 export type DepartmentOut = {
@@ -2543,6 +2793,125 @@ export type MetricsOut = {
 }
 
 /**
+ * ModelProviderCreateIn
+ */
+export type ModelProviderCreateIn = {
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Provider
+   */
+  provider: string
+}
+
+/**
+ * ModelProviderOut
+ */
+export type ModelProviderOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Credentials
+   */
+  credentials: Array<CredentialOut>
+  /**
+   * Defaultcredentialid
+   */
+  defaultCredentialId: string | null
+  /**
+   * Enabled
+   */
+  enabled: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Models
+   */
+  models: Array<ProviderModelOut>
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Provider
+   */
+  provider: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * ModelProviderUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export type ModelProviderUpdateIn = {
+  /**
+   * Defaultcredentialid
+   */
+  defaultCredentialId?: string | null
+  /**
+   * Enabled
+   */
+  enabled?: boolean | null
+  /**
+   * Label
+   */
+  label?: string | null
+}
+
+/**
+ * ModelProvidersOut
+ */
+export type ModelProvidersOut = {
+  /**
+   * Providers
+   */
+  providers: Array<ModelProviderOut>
+}
+
+/**
+ * ModelUpdateIn
+ *
+ * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
+ * ``contextSize`` 给 ``null`` 即清掉。
+ */
+export type ModelUpdateIn = {
+  /**
+   * Api
+   */
+  api?: 'chat' | 'responses' | null
+  /**
+   * Contextsize
+   */
+  contextSize?: number | null
+  /**
+   * Enabled
+   */
+  enabled?: boolean | null
+  /**
+   * Thinking
+   */
+  thinking?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'> | null
+}
+
+/**
  * ModelUsageOut
  */
 export type ModelUsageOut = {
@@ -2831,6 +3200,7 @@ export type Permission =
   | 'agent:read'
   | 'agent:run'
   | 'agent:manage'
+  | 'model:manage'
 
 /**
  * PersonOut
@@ -2847,6 +3217,24 @@ export type PersonOut = {
    * Username
    */
   userName: string
+}
+
+/**
+ * ProbeOut
+ */
+export type ProbeOut = {
+  /**
+   * Elapsedms
+   */
+  elapsedMs: number
+  /**
+   * Ok
+   */
+  ok: boolean
+  /**
+   * Reason
+   */
+  reason: string | null
 }
 
 /**
@@ -2933,6 +3321,42 @@ export type PromptUpsertOp = {
    */
   op?: 'prompt.upsert'
   prompt: Prompt
+}
+
+/**
+ * ProviderModelOut
+ *
+ * 供应商的一个模型：声明里的叠加停用设置，或自己加的。
+ */
+export type ProviderModelOut = {
+  /**
+   * Api
+   */
+  api: 'chat' | 'responses' | null
+  /**
+   * Contextsize
+   */
+  contextSize: number | null
+  /**
+   * Enabled
+   */
+  enabled: boolean
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Source
+   */
+  source: 'declared' | 'custom'
+  /**
+   * Thinking
+   */
+  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
 }
 
 /**
@@ -8055,6 +8479,55 @@ export type ForkConversationConversationsConversationIdForkPostResponses = {
 export type ForkConversationConversationsConversationIdForkPostResponse =
   ForkConversationConversationsConversationIdForkPostResponses[keyof ForkConversationConversationsConversationIdForkPostResponses]
 
+export type DefaultModelsDefaultModelsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/default-models'
+}
+
+export type DefaultModelsDefaultModelsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: DefaultModelsOut
+}
+
+export type DefaultModelsDefaultModelsGetResponse =
+  DefaultModelsDefaultModelsGetResponses[keyof DefaultModelsDefaultModelsGetResponses]
+
+export type SetDefaultModelDefaultModelsModelTypePutData = {
+  body: DefaultModelIn
+  path: {
+    /**
+     * Model Type
+     */
+    model_type: 'llm' | 'embedding' | 'rerank'
+  }
+  query?: never
+  url: '/default-models/{model_type}'
+}
+
+export type SetDefaultModelDefaultModelsModelTypePutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SetDefaultModelDefaultModelsModelTypePutError =
+  SetDefaultModelDefaultModelsModelTypePutErrors[keyof SetDefaultModelDefaultModelsModelTypePutErrors]
+
+export type SetDefaultModelDefaultModelsModelTypePutResponses = {
+  /**
+   * Successful Response
+   */
+  200: DefaultModelOut
+}
+
+export type SetDefaultModelDefaultModelsModelTypePutResponse =
+  SetDefaultModelDefaultModelsModelTypePutResponses[keyof SetDefaultModelDefaultModelsModelTypePutResponses]
+
 export type ListGenerationsGenerationsGetData = {
   body?: never
   path?: never
@@ -9007,6 +9480,349 @@ export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
 
 export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
   WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
+
+export type ModelProvidersModelProvidersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/model-providers'
+}
+
+export type ModelProvidersModelProvidersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelProvidersOut
+}
+
+export type ModelProvidersModelProvidersGetResponse =
+  ModelProvidersModelProvidersGetResponses[keyof ModelProvidersModelProvidersGetResponses]
+
+export type CreateModelProviderModelProvidersPostData = {
+  body: ModelProviderCreateIn
+  path?: never
+  query?: never
+  url: '/model-providers'
+}
+
+export type CreateModelProviderModelProvidersPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateModelProviderModelProvidersPostError =
+  CreateModelProviderModelProvidersPostErrors[keyof CreateModelProviderModelProvidersPostErrors]
+
+export type CreateModelProviderModelProvidersPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ModelProviderOut
+}
+
+export type CreateModelProviderModelProvidersPostResponse =
+  CreateModelProviderModelProvidersPostResponses[keyof CreateModelProviderModelProvidersPostResponses]
+
+export type ModelProviderDeclarationsModelProvidersDeclarationsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/model-providers/declarations'
+}
+
+export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: DeclarationsOut
+}
+
+export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponse =
+  ModelProviderDeclarationsModelProvidersDeclarationsGetResponses[keyof ModelProviderDeclarationsModelProvidersDeclarationsGetResponses]
+
+export type UpdateModelProviderModelProvidersProviderIdPatchData = {
+  body: ModelProviderUpdateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}'
+}
+
+export type UpdateModelProviderModelProvidersProviderIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateModelProviderModelProvidersProviderIdPatchError =
+  UpdateModelProviderModelProvidersProviderIdPatchErrors[keyof UpdateModelProviderModelProvidersProviderIdPatchErrors]
+
+export type UpdateModelProviderModelProvidersProviderIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelProviderOut
+}
+
+export type UpdateModelProviderModelProvidersProviderIdPatchResponse =
+  UpdateModelProviderModelProvidersProviderIdPatchResponses[keyof UpdateModelProviderModelProvidersProviderIdPatchResponses]
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostData = {
+  body: CredentialCreateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials'
+}
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostError =
+  CreateProviderCredentialModelProvidersProviderIdCredentialsPostErrors[keyof CreateProviderCredentialModelProvidersProviderIdCredentialsPostErrors]
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: CredentialOut
+}
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponse =
+  CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponses[keyof CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponses]
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostData = {
+  body: CredentialTestIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials/test'
+}
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostError =
+  TestProviderCredentialModelProvidersProviderIdCredentialsTestPostErrors[keyof TestProviderCredentialModelProvidersProviderIdCredentialsTestPostErrors]
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ProbeOut
+}
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponse =
+  TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponses[keyof TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponses]
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Credential Id
+     */
+    credential_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials/{credential_id}'
+}
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteError =
+  DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteErrors[keyof DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteErrors]
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponses =
+  {
+    /**
+     * Successful Response
+     */
+    204: void
+  }
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponse =
+  DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponses[keyof DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponses]
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchData = {
+  body: CredentialUpdateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Credential Id
+     */
+    credential_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials/{credential_id}'
+}
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchError =
+  UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchErrors[keyof UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchErrors]
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponses =
+  {
+    /**
+     * Successful Response
+     */
+    200: CredentialOut
+  }
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponse =
+  UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponses[keyof UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponses]
+
+export type AddProviderModelModelProvidersProviderIdModelsPostData = {
+  body: CustomModelCreateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models'
+}
+
+export type AddProviderModelModelProvidersProviderIdModelsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AddProviderModelModelProvidersProviderIdModelsPostError =
+  AddProviderModelModelProvidersProviderIdModelsPostErrors[keyof AddProviderModelModelProvidersProviderIdModelsPostErrors]
+
+export type AddProviderModelModelProvidersProviderIdModelsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ProviderModelOut
+}
+
+export type AddProviderModelModelProvidersProviderIdModelsPostResponse =
+  AddProviderModelModelProvidersProviderIdModelsPostResponses[keyof AddProviderModelModelProvidersProviderIdModelsPostResponses]
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Model Type
+     */
+    model_type: 'llm' | 'embedding' | 'rerank'
+    /**
+     * Model Name
+     */
+    model_name: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models/{model_type}/{model_name}'
+}
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteError =
+  DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteErrors[keyof DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteErrors]
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponse =
+  DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponses[keyof DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponses]
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchData = {
+  body: ModelUpdateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Model Type
+     */
+    model_type: 'llm' | 'embedding' | 'rerank'
+    /**
+     * Model Name
+     */
+    model_name: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models/{model_type}/{model_name}'
+}
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchError =
+  UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchErrors[keyof UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchErrors]
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ProviderModelOut
+}
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
+  UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses[keyof UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses]
 
 export type ListReferencesReferencesGetData = {
   body?: never

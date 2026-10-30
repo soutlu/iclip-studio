@@ -44,6 +44,7 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
+from iclip.app.model_providers import PydanticAiCredentialProbe, require_known_providers
 from iclip.app.plugin_registry import build_display_registry, build_plugin_registry
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
@@ -102,6 +103,11 @@ from iclip.domains.inspirations.module import build_inspirations_module
 from iclip.domains.inspirations.service import NoStyleDirectory
 from iclip.domains.library.module import build_library_module
 from iclip.domains.library.reports_pg import PgLibraryReports
+from iclip.domains.model_providers.catalog import load_declarations
+from iclip.domains.model_providers.cipher import CredentialCipher
+from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
+from iclip.domains.model_providers.module import build_model_providers_module
+from iclip.domains.model_providers.repository import CredentialProbe
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.domains.references.module import BreakdownSetup, build_references_module
@@ -366,6 +372,7 @@ def build_app(
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
     library_tagger: Tagger | None = None,
+    credential_probe: CredentialProbe | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     reload_source: ReloadSource | None = None,
@@ -662,6 +669,14 @@ def build_app(
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     skills = build_skills_module(SqlSkillStore(active_engine))
+    provider_declarations = load_declarations()
+    require_known_providers(provider_declarations)
+    model_providers = build_model_providers_module(
+        SqlModelProviderStore(active_engine),
+        declarations=provider_declarations,
+        cipher=CredentialCipher(settings.credential_encryption_keys),
+        probe=credential_probe if credential_probe is not None else PydanticAiCredentialProbe(),
+    )
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
     library = build_library_module(
@@ -866,6 +881,8 @@ def build_app(
     for router in tracking.routers:
         app.include_router(router)
     for router in skills.routers:
+        app.include_router(router)
+    for router in model_providers.routers:
         app.include_router(router)
     app.include_router(
         create_transcript_router(

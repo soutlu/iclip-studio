@@ -43,6 +43,10 @@ APP_TABLES = (
     "iclip.skill_draft_files",
     "iclip.skill_versions",
     "iclip.skill_version_files",
+    "iclip.model_providers",
+    "iclip.provider_credentials",
+    "iclip.provider_models",
+    "iclip.default_models",
 )
 """iclip 里每个用例自己造数据的表。``library_tags`` 不在里面：预置的标签树由迁移写入，用例共用；自己
 加的标签由用例自己删掉。"""

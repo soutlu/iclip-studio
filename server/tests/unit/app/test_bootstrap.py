@@ -34,6 +34,7 @@ from iclip.domains.agents.transcript_api import LiveConnections
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.agents import declared_agent
+from tests.helpers.app import TEST_CREDENTIAL_KEY
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import MemoryObjectStore
 
@@ -52,6 +53,7 @@ def minimal_config() -> RuntimeConfig:
 def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.setenv("OSS_BUCKET", "iclip")
     monkeypatch.setenv("OSS_ENDPOINT", "https://oss.test")

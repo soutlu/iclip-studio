@@ -499,6 +499,131 @@ export const zConversationsPageOut = z.object({
 })
 
 /**
+ * CredentialCreateIn
+ */
+export const zCredentialCreateIn = z.object({
+  fields: z.record(z.string(), z.string()),
+  name: z.string(),
+})
+
+/**
+ * CredentialFieldOut
+ *
+ * 密钥表单的一个字段。``secret`` 的值只会以打码形式返回。
+ */
+export const zCredentialFieldOut = z.object({
+  default: z.string().nullable(),
+  label: z.string(),
+  name: z.string(),
+  required: z.boolean(),
+  type: z.enum(['secret', 'text']),
+})
+
+/**
+ * CredentialOut
+ */
+export const zCredentialOut = z.object({
+  createdAt: z.iso.datetime(),
+  fields: z.record(z.string(), z.string()),
+  id: z.uuid(),
+  name: z.string(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * CredentialTestIn
+ *
+ * ``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给
+ * ``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试
+ * （规则同修改）。
+ */
+export const zCredentialTestIn = z.object({
+  credentialId: z.uuid().nullish(),
+  fields: z.record(z.string(), z.string()).nullish(),
+})
+
+/**
+ * CredentialUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export const zCredentialUpdateIn = z.object({
+  fields: z.record(z.string(), z.string()).nullish(),
+  name: z.string().nullish(),
+})
+
+/**
+ * CustomModelCreateIn
+ */
+export const zCustomModelCreateIn = z.object({
+  api: z.enum(['chat', 'responses']).nullish(),
+  contextSize: z.int().nullish(),
+  name: z.string(),
+  thinking: z
+    .array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+    .optional()
+    .default([]),
+  type: z.enum(['llm', 'embedding', 'rerank']),
+})
+
+/**
+ * DeclaredModelOut
+ */
+export const zDeclaredModelOut = z.object({
+  api: z.enum(['chat', 'responses']).nullable(),
+  contextSize: z.int().nullable(),
+  name: z.string(),
+  thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
+  type: z.enum(['llm', 'embedding', 'rerank']),
+})
+
+/**
+ * DeclarationOut
+ *
+ * 一家可以接入的供应商。
+ */
+export const zDeclarationOut = z.object({
+  credentialFields: z.array(zCredentialFieldOut),
+  customModels: z.boolean(),
+  label: z.string(),
+  models: z.array(zDeclaredModelOut),
+  name: z.string(),
+})
+
+/**
+ * DeclarationsOut
+ */
+export const zDeclarationsOut = z.object({
+  declarations: z.array(zDeclarationOut),
+})
+
+/**
+ * DefaultModelIn
+ */
+export const zDefaultModelIn = z.object({
+  modelName: z.string(),
+  providerId: z.uuid(),
+})
+
+/**
+ * DefaultModelOut
+ */
+export const zDefaultModelOut = z.object({
+  modelName: z.string(),
+  providerId: z.uuid(),
+  providerName: z.string(),
+  type: z.enum(['llm', 'embedding', 'rerank']),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * DefaultModelsOut
+ */
+export const zDefaultModelsOut = z.object({
+  defaults: z.array(zDefaultModelOut),
+})
+
+/**
  * DepartmentOut
  */
 export const zDepartmentOut = z.object({
@@ -1028,6 +1153,39 @@ export const zMetricFiltersIn = z.object({
 })
 
 /**
+ * ModelProviderCreateIn
+ */
+export const zModelProviderCreateIn = z.object({
+  label: z.string(),
+  name: z.string(),
+  provider: z.string(),
+})
+
+/**
+ * ModelProviderUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export const zModelProviderUpdateIn = z.object({
+  defaultCredentialId: z.uuid().nullish(),
+  enabled: z.boolean().nullish(),
+  label: z.string().nullish(),
+})
+
+/**
+ * ModelUpdateIn
+ *
+ * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
+ * ``contextSize`` 给 ``null`` 即清掉。
+ */
+export const zModelUpdateIn = z.object({
+  api: z.enum(['chat', 'responses']).nullish(),
+  contextSize: z.int().nullish(),
+  enabled: z.boolean().nullish(),
+  thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).nullish(),
+})
+
+/**
  * MovingAverageOut
  *
  * 一条均线在某一期的值与它实际覆盖的时间窗；窗往前补过时 ``since`` 比名义起点早。
@@ -1139,6 +1297,7 @@ export const zPermission = z.enum([
   'agent:read',
   'agent:run',
   'agent:manage',
+  'model:manage',
 ])
 
 /**
@@ -1148,6 +1307,53 @@ export const zApiKeyCreateIn = z.object({
   expiresAt: z.iso.datetime().nullish(),
   name: z.string(),
   permissions: z.array(zPermission),
+})
+
+/**
+ * ProbeOut
+ */
+export const zProbeOut = z.object({
+  elapsedMs: z.int(),
+  ok: z.boolean(),
+  reason: z.string().nullable(),
+})
+
+/**
+ * ProviderModelOut
+ *
+ * 供应商的一个模型：声明里的叠加停用设置，或自己加的。
+ */
+export const zProviderModelOut = z.object({
+  api: z.enum(['chat', 'responses']).nullable(),
+  contextSize: z.int().nullable(),
+  enabled: z.boolean(),
+  name: z.string(),
+  source: z.enum(['declared', 'custom']),
+  thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
+  type: z.enum(['llm', 'embedding', 'rerank']),
+})
+
+/**
+ * ModelProviderOut
+ */
+export const zModelProviderOut = z.object({
+  createdAt: z.iso.datetime(),
+  credentials: z.array(zCredentialOut),
+  defaultCredentialId: z.uuid().nullable(),
+  enabled: z.boolean(),
+  id: z.uuid(),
+  label: z.string(),
+  models: z.array(zProviderModelOut),
+  name: z.string(),
+  provider: z.string(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * ModelProvidersOut
+ */
+export const zModelProvidersOut = z.object({
+  providers: z.array(zModelProviderOut),
 })
 
 /**
@@ -3659,6 +3865,22 @@ export const zForkConversationConversationsConversationIdForkPostPath = z.object
  */
 export const zForkConversationConversationsConversationIdForkPostResponse = zConversationEnvelope
 
+/**
+ * Successful Response
+ */
+export const zDefaultModelsDefaultModelsGetResponse = zDefaultModelsOut
+
+export const zSetDefaultModelDefaultModelsModelTypePutBody = zDefaultModelIn
+
+export const zSetDefaultModelDefaultModelsModelTypePutPath = z.object({
+  model_type: z.enum(['llm', 'embedding', 'rerank']),
+})
+
+/**
+ * Successful Response
+ */
+export const zSetDefaultModelDefaultModelsModelTypePutResponse = zDefaultModelOut
+
 export const zListGenerationsGenerationsGetQuery = z.object({
   limit: z.int().gte(1).lte(100).optional().default(20),
   conversationId: z.uuid().nullish(),
@@ -3924,6 +4146,126 @@ export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
  * Successful Response
  */
 export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
+
+/**
+ * Successful Response
+ */
+export const zModelProvidersModelProvidersGetResponse = zModelProvidersOut
+
+export const zCreateModelProviderModelProvidersPostBody = zModelProviderCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateModelProviderModelProvidersPostResponse = zModelProviderOut
+
+/**
+ * Successful Response
+ */
+export const zModelProviderDeclarationsModelProvidersDeclarationsGetResponse = zDeclarationsOut
+
+export const zUpdateModelProviderModelProvidersProviderIdPatchBody = zModelProviderUpdateIn
+
+export const zUpdateModelProviderModelProvidersProviderIdPatchPath = z.object({
+  provider_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateModelProviderModelProvidersProviderIdPatchResponse = zModelProviderOut
+
+export const zCreateProviderCredentialModelProvidersProviderIdCredentialsPostBody =
+  zCredentialCreateIn
+
+export const zCreateProviderCredentialModelProvidersProviderIdCredentialsPostPath = z.object({
+  provider_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zCreateProviderCredentialModelProvidersProviderIdCredentialsPostResponse =
+  zCredentialOut
+
+export const zTestProviderCredentialModelProvidersProviderIdCredentialsTestPostBody =
+  zCredentialTestIn
+
+export const zTestProviderCredentialModelProvidersProviderIdCredentialsTestPostPath = z.object({
+  provider_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zTestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponse = zProbeOut
+
+export const zDeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeletePath =
+  z.object({
+    provider_id: z.uuid(),
+    credential_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zDeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponse =
+  z.void()
+
+export const zUpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchBody =
+  zCredentialUpdateIn
+
+export const zUpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchPath =
+  z.object({
+    provider_id: z.uuid(),
+    credential_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zUpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponse =
+  zCredentialOut
+
+export const zAddProviderModelModelProvidersProviderIdModelsPostBody = zCustomModelCreateIn
+
+export const zAddProviderModelModelProvidersProviderIdModelsPostPath = z.object({
+  provider_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAddProviderModelModelProvidersProviderIdModelsPostResponse = zProviderModelOut
+
+export const zDeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeletePath =
+  z.object({
+    provider_id: z.uuid(),
+    model_type: z.enum(['llm', 'embedding', 'rerank']),
+    model_name: z.string(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zDeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponse =
+  z.void()
+
+export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchBody =
+  zModelUpdateIn
+
+export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchPath =
+  z.object({
+    provider_id: z.uuid(),
+    model_type: z.enum(['llm', 'embedding', 'rerank']),
+    model_name: z.string(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
+  zProviderModelOut
 
 export const zListReferencesReferencesGetQuery = z.object({
   tags: z.array(z.uuid()).nullish(),

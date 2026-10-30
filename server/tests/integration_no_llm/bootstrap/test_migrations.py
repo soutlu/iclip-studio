@@ -20,6 +20,7 @@ from iclip.domains.generation.infra_sql import generation_jobs_table
 from iclip.domains.generation.infra_sql import metadata_obj as generation_metadata
 from iclip.domains.identity.infra_sql import DB_SCHEMA, Base
 from iclip.domains.inspirations.infra_sql import metadata_obj as inspirations_metadata
+from iclip.domains.model_providers.infra_sql import metadata_obj as model_providers_metadata
 from iclip.domains.references.infra_sql import metadata_obj as references_metadata
 from iclip.domains.skills.infra_sql import metadata_obj as skills_metadata
 from iclip.domains.tagging.infra_sql import metadata_obj as tagging_metadata
@@ -39,6 +40,7 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     tagging_metadata,
     brand_templates_metadata,
     skills_metadata,
+    model_providers_metadata,
 )
 
 

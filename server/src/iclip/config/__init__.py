@@ -9,12 +9,14 @@ from iclip.config.agents import (
     load_agent_declarations,
 )
 from iclip.config.models import (
+    CREDENTIAL_ENCRYPTION_KEYS_ENV,
     OSS_BUCKET_ENV,
     QWEN_API_KEY_ENV,
     VIDEO_ENHANCE_SUBMIT_URL_ENV,
     VIDEO_SUBMIT_URL_ENV,
     AgentRunsSection,
     AppSection,
+    CredentialKeysEnv,
     DbSection,
     ImageGenerationSection,
     ImageModelSection,
@@ -49,6 +51,7 @@ from iclip.config.models import (
 )
 
 __all__ = [
+    "CREDENTIAL_ENCRYPTION_KEYS_ENV",
     "OSS_BUCKET_ENV",
     "QWEN_API_KEY_ENV",
     "VIDEO_ENHANCE_SUBMIT_URL_ENV",
@@ -58,6 +61,7 @@ __all__ = [
     "AgentsDeclaration",
     "AppSection",
     "CapabilitySection",
+    "CredentialKeysEnv",
     "DbSection",
     "ImageGenerationSection",
     "ImageModelSection",

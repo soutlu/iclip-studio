@@ -28,6 +28,7 @@ def test_editor_lacks_exactly_root_only_permissions() -> None:
         "api_keys:issue",
         "library_tags:manage",
         "agent:manage",
+        "model:manage",
     }
 
 

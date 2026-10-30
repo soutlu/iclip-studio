@@ -1864,6 +1864,453 @@
         "title": "ConversationsPageOut",
         "type": "object"
       },
+      "CredentialCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "CredentialCreateIn",
+        "type": "object"
+      },
+      "CredentialFieldOut": {
+        "additionalProperties": false,
+        "description": "密钥表单的一个字段。``secret`` 的值只会以打码形式返回。",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "secret",
+              "text"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "type",
+          "required",
+          "default"
+        ],
+        "title": "CredentialFieldOut",
+        "type": "object"
+      },
+      "CredentialOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "fields",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "CredentialOut",
+        "type": "object"
+      },
+      "CredentialTestIn": {
+        "additionalProperties": false,
+        "description": "``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给\n``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试\n（规则同修改）。",
+        "properties": {
+          "credentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentialid"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          }
+        },
+        "title": "CredentialTestIn",
+        "type": "object"
+      },
+      "CredentialUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动。",
+        "properties": {
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "CredentialUpdateIn",
+        "type": "object"
+      },
+      "CustomModelCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thinking": {
+            "default": [],
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "CustomModelCreateIn",
+        "type": "object"
+      },
+      "DeclarationOut": {
+        "additionalProperties": false,
+        "description": "一家可以接入的供应商。",
+        "properties": {
+          "credentialFields": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialFieldOut"
+            },
+            "title": "Credentialfields",
+            "type": "array"
+          },
+          "customModels": {
+            "title": "Custommodels",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/DeclaredModelOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "credentialFields",
+          "customModels",
+          "models"
+        ],
+        "title": "DeclarationOut",
+        "type": "object"
+      },
+      "DeclarationsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "declarations": {
+            "items": {
+              "$ref": "#/components/schemas/DeclarationOut"
+            },
+            "title": "Declarations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "declarations"
+        ],
+        "title": "DeclarationsOut",
+        "type": "object"
+      },
+      "DeclaredModelOut": {
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thinking": {
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "api",
+          "contextSize",
+          "thinking"
+        ],
+        "title": "DeclaredModelOut",
+        "type": "object"
+      },
+      "DefaultModelIn": {
+        "additionalProperties": false,
+        "properties": {
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "providerId": {
+            "format": "uuid",
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId",
+          "modelName"
+        ],
+        "title": "DefaultModelIn",
+        "type": "object"
+      },
+      "DefaultModelOut": {
+        "additionalProperties": false,
+        "properties": {
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "providerId": {
+            "format": "uuid",
+            "title": "Providerid",
+            "type": "string"
+          },
+          "providerName": {
+            "title": "Providername",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "providerId",
+          "providerName",
+          "modelName",
+          "updatedAt"
+        ],
+        "title": "DefaultModelOut",
+        "type": "object"
+      },
+      "DefaultModelsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "items": {
+              "$ref": "#/components/schemas/DefaultModelOut"
+            },
+            "title": "Defaults",
+            "type": "array"
+          }
+        },
+        "required": [
+          "defaults"
+        ],
+        "title": "DefaultModelsOut",
+        "type": "object"
+      },
       "DepartmentOut": {
         "additionalProperties": false,
         "properties": {
@@ -4773,6 +5220,233 @@
         "title": "MetricsOut",
         "type": "object"
       },
+      "ModelProviderCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "label"
+        ],
+        "title": "ModelProviderCreateIn",
+        "type": "object"
+      },
+      "ModelProviderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialOut"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "defaultCredentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaultcredentialid"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderModelOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "label",
+          "enabled",
+          "defaultCredentialId",
+          "credentials",
+          "models",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ModelProviderOut",
+        "type": "object"
+      },
+      "ModelProviderUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动。",
+        "properties": {
+          "defaultCredentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaultcredentialid"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "ModelProviderUpdateIn",
+        "type": "object"
+      },
+      "ModelProvidersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ModelProviderOut"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "ModelProvidersOut",
+        "type": "object"
+      },
+      "ModelUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，\n``contextSize`` 给 ``null`` 即清掉。",
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking"
+          }
+        },
+        "title": "ModelUpdateIn",
+        "type": "object"
+      },
       "ModelUsageOut": {
         "additionalProperties": false,
         "properties": {
@@ -5310,7 +5984,8 @@
           "api_keys:issue",
           "agent:read",
           "agent:run",
-          "agent:manage"
+          "agent:manage",
+          "model:manage"
         ],
         "type": "string"
       },
@@ -5339,6 +6014,37 @@
           "trend"
         ],
         "title": "PersonOut",
+        "type": "object"
+      },
+      "ProbeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "elapsedMs": {
+            "title": "Elapsedms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "ok",
+          "elapsedMs",
+          "reason"
+        ],
+        "title": "ProbeOut",
         "type": "object"
       },
       "Prompt": {
@@ -5541,6 +6247,90 @@
           "prompt"
         ],
         "title": "PromptUpsertOp",
+        "type": "object"
+      },
+      "ProviderModelOut": {
+        "additionalProperties": false,
+        "description": "供应商的一个模型：声明里的叠加停用设置，或自己加的。",
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "declared",
+              "custom"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "thinking": {
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "api",
+          "contextSize",
+          "thinking",
+          "source",
+          "enabled"
+        ],
+        "title": "ProviderModelOut",
         "type": "object"
       },
       "ReferenceCreateIn": {
@@ -15418,6 +16208,110 @@
         ]
       }
     },
+    "/default-models": {
+      "get": {
+        "description": "各类型的默认模型。",
+        "operationId": "default_models_default_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Default Models",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/default-models/{model_type}": {
+      "put": {
+        "description": "把这个类型的默认模型设成某供应商一个已启用的模型。",
+        "operationId": "set_default_model_default_models__model_type__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "llm",
+                "embedding",
+                "rerank"
+              ],
+              "title": "Model Type",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultModelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Set Default Model",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
     "/generations": {
       "get": {
         "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。\n素材片的字幕记录是种类 ``subtitle``、来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。\n一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传\n都在里面；没挂对话的上传按属主列。",
@@ -17391,6 +18285,682 @@
         "summary": "Whole Film Authors",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/model-providers": {
+      "get": {
+        "description": "接入的全部供应商，带打码的密钥、默认密钥与合并后的模型列表。",
+        "operationId": "model_providers_model_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProvidersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Model Providers",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "post": {
+        "description": "按一份声明接入一个供应商，启用、还没有密钥。",
+        "operationId": "create_model_provider_model_providers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Create Model Provider",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/declarations": {
+      "get": {
+        "description": "可以接入的供应商声明：显示名、密钥表单字段、能不能自己加模型、内置的模型。",
+        "operationId": "model_provider_declarations_model_providers_declarations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Model Provider Declarations",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}": {
+      "patch": {
+        "description": "改显示名、启停或默认密钥。",
+        "operationId": "update_model_provider_model_providers__provider_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Update Model Provider",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/credentials": {
+      "post": {
+        "description": "新建一把密钥：先试连，通过才保存；供应商的第一把成为默认密钥。",
+        "operationId": "create_provider_credential_model_providers__provider_id__credentials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Create Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/credentials/test": {
+      "post": {
+        "description": "试连，不保存；结果在答复里，没通过也是 200。",
+        "operationId": "test_provider_credential_model_providers__provider_id__credentials_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Test Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/credentials/{credential_id}": {
+      "delete": {
+        "description": "删一把密钥；默认密钥不能删。",
+        "operationId": "delete_provider_credential_model_providers__provider_id__credentials__credential_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "patch": {
+        "description": "改名或改字段；字段有变化时先试连，通过才保存。",
+        "operationId": "update_provider_credential_model_providers__provider_id__credentials__credential_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Update Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/models": {
+      "post": {
+        "description": "自己加一个模型；声明允许自己加模型时才能加。",
+        "operationId": "add_provider_model_model_providers__provider_id__models_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomModelCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Add Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/models/{model_type}/{model_name}": {
+      "delete": {
+        "description": "删一个自己加的模型；声明里的模型只能停用。",
+        "operationId": "delete_provider_model_model_providers__provider_id__models__model_type___model_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "llm",
+                "embedding",
+                "rerank"
+              ],
+              "title": "Model Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_name",
+            "required": true,
+            "schema": {
+              "title": "Model Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "patch": {
+        "description": "启停一个模型，或改自己加的模型的属性。模型名放在路径最后，可以带斜杠。",
+        "operationId": "update_provider_model_model_providers__provider_id__models__model_type___model_name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "llm",
+                "embedding",
+                "rerank"
+              ],
+              "title": "Model Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_name",
+            "required": true,
+            "schema": {
+              "title": "Model Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Update Provider Model",
+        "tags": [
+          "model-providers"
         ]
       }
     },

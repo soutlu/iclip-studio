@@ -1,0 +1,11 @@
+name: bailian
+label: 阿里云百炼
+pydantic_ai_provider: alibaba
+credential_fields:
+  - {name: api_key, label: API Key, type: secret, required: true}
+  - {name: base_url, label: 接口地址, type: text, required: true, default: "https://dashscope.aliyuncs.com/compatible-mode/v1"}
+custom_models: true
+models:
+  - {name: qwen3.8-flash, type: llm, api: responses, context_size: 1048576, thinking: [none, low, medium, high]}
+  # 百炼的 Responses 接口不支持这个模型，走 chat。
+  - {name: ZHIPU/GLM-5.3-Flash, type: llm, api: chat, context_size: 1048576, thinking: [none, low, medium, high]}

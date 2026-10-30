@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -18,6 +19,10 @@ from pathlib import Path
 # 占位值须符合 Pydantic 的 URL 格式和密钥长度约束。
 PLACEHOLDER_ENV = {
     "AUTH_SECRET": "openapi-dump-placeholder-secret-0123456789",
+    # 合法的 Fernet key 形状（32 字节 urlsafe base64），由可读的占位串编码而来。
+    "CREDENTIAL_ENCRYPTION_KEYS": base64.urlsafe_b64encode(
+        b"openapi-dump-placeholder-key-001"
+    ).decode(),
     "DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
     "IMAGE_API_BASE": "https://placeholder.invalid/image",
     "MODEL_API_KEY": "openapi-dump-placeholder",

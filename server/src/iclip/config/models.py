@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated, Final, Literal
 from urllib.parse import urlsplit
 
+from cryptography.fernet import Fernet
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -22,6 +23,7 @@ from pydantic_settings import (
 )
 
 from iclip.common.generation_vocab import VideoEnhanceResolution
+from iclip.common.model_vocab import ModelApi, ThinkingEffort
 
 _MIN_SECRET_LENGTH = 32
 
@@ -46,6 +48,8 @@ VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
+
+CREDENTIAL_ENCRYPTION_KEYS_ENV: Final = "CREDENTIAL_ENCRYPTION_KEYS"
 
 
 class ConfigSection(BaseModel):
@@ -73,6 +77,33 @@ class CoreEnv(EnvSettings):
         if len(value) < _MIN_SECRET_LENGTH:
             raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
         return value
+
+
+class CredentialKeysEnv(EnvSettings):
+    """模型供应商密钥里机密字段的加密钥匙：逗号分隔的 Fernet key，第一个加密，全部用来解密。"""
+
+    keys: RequiredEnv = Field(validation_alias=CREDENTIAL_ENCRYPTION_KEYS_ENV)
+
+    @field_validator("keys")
+    @classmethod
+    def _fernet_keys(cls, value: str) -> str:
+        parts = [part.strip() for part in value.split(",")]
+        for position, part in enumerate(parts, start=1):
+            if not part:
+                raise ValueError(f"第 {position} 个 key 是空的")
+            try:
+                Fernet(part)
+            except ValueError:
+                # 报错不带 key 本身：它是机密。
+                raise ValueError(
+                    f"第 {position} 个 key 不是合法的 Fernet key（32 字节的 urlsafe base64），"
+                    "用 Fernet.generate_key() 生成"
+                ) from None
+        return ",".join(parts)
+
+    @property
+    def key_list(self) -> tuple[str, ...]:
+        return tuple(self.keys.split(","))
 
 
 class SsoEnv(EnvSettings):
@@ -164,15 +195,13 @@ class SsoSection(ConfigSection):
 
 class ModelSection(ConfigSection):
     provider: str
-    api: Literal["chat", "responses"] = "chat"
+    api: ModelApi = "chat"
     api_key_env: str
     base_url: str | None = None
     model: str | None = None
     thinking: ThinkingEffort | None = None
     context_window: int | None = Field(default=None, gt=0)
 
-
-ThinkingEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 # 方舟收到别的取值会静默改用默认档。
 ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
@@ -465,7 +494,7 @@ class ResolvedModel:
     name: str
     provider: str
     model: str
-    api: Literal["chat", "responses"]
+    api: ModelApi
     api_key: str
     base_url: str | None
     thinking: ThinkingEffort | None
@@ -478,6 +507,8 @@ class ResolvedSettings:
     database_url: str
     db_schema: str
     security: ResolvedSecurity
+    credential_encryption_keys: tuple[str, ...]
+    """模型供应商密钥的加密钥匙，第一个加密，全部用来解密。"""
     sso: ResolvedSso | None
     object_store: ObjectStoreEnv | None
     media_generation: ResolvedMediaGeneration | None
@@ -698,6 +729,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             cookie_secure=config.security.cookie_secure,
             cors_allow_origins=config.security.cors_allow_origins,
         ),
+        credential_encryption_keys=_from_env(CredentialKeysEnv).key_list,
         sso=sso,
         object_store=object_store,
         media_generation=media_generation,
