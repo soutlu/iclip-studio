@@ -1,6 +1,7 @@
-/** 素材片区的规则：从本对话的视频记录里挑出这一组的出片、按提交时间排好、读出卡上画的几样，以及卡片尺寸。 */
+/** 素材片区的规则：从本对话的视频记录里挑出这一组的出片、按提交时间排好，每张卡显示这条出片最新的一版，读出卡上画的几样，以及卡片尺寸。 */
 
 import { aspectOf } from '@/shared/lib/aspect-ratio'
+import { byFinish, isComposite } from './editing/version-lineage'
 import type { Shot } from './shot-document'
 import { isShotVideo, phaseOfStatus } from './shots'
 import { historyShotOf, type GenerationJob } from './storyboard.api'
@@ -10,13 +11,16 @@ import { editCountsByRoot } from './video-editor/edit-chain'
 export type TakeState = 'running' | 'completed' | 'failed'
 
 export type Take = {
+  /** 这张卡的出片：卡的身份、排序、状态与请求里的几样都读它，编辑视频也以它打开。 */
   job: GenerationJob
+  /** 卡显示的这一版：这条出片最新完成的合成，没有就是出片本身；封面、播放、片长与下载都用它。 */
+  shown: GenerationJob
   state: TakeState
   /** 卡片画幅：这次出片请求的画幅，请求里没有就用分镜的。 */
   aspect: { w: number; h: number }
   /** 请求里的分辨率档位原样；没记就是 undefined，不显示。 */
   resolution: string | undefined
-  /** 上游实测的片长；没回来就是 undefined，不拿请求秒数去猜。 */
+  /** 显示的这一版实测的片长（出片是上游给的，合成是渲染后量的）；没记就是 undefined，不拿请求秒数去猜。 */
   durationSeconds: number | undefined
   /** 这条出片被成功编辑过几次。 */
   editCount: number
@@ -24,7 +28,7 @@ export type Take = {
   model: string | undefined
   /** 可回填到当前组的结构化镜头组；接口调用方只写了正文的记录没有。 */
   history: Shot['prompt'] | undefined
-  /** 可播放的产物地址：只有成功且地址不空才有，编辑也只在它上面切。 */
+  /** 显示的这一版的地址：只有出片成功且地址不空才有。 */
   outputUrl: string | undefined
   /** 失败时服务端的原话。 */
   error: string | undefined
@@ -42,23 +46,39 @@ const stateOf = (job: GenerationJob): TakeState => {
   return phase === 'queued' || phase === 'running' ? 'running' : phase
 }
 
-/** 这一组的出片（编辑段、合成、图片与别的组都不算），按提交时间从新到旧；
- * `aspectRatio` 是分镜的画幅，请求里没记画幅的卡按它画。 */
+/** 各出片最新完成的合成，按原作 id 查：合成可以基于更早的合成，所以认原作不认来源；
+ * 在跑、失败与没给地址的不算，与视频编辑页版本列表的最后一版同一口径。 */
+const latestCompositesByRoot = (
+  jobs: readonly GenerationJob[],
+): ReadonlyMap<string, GenerationJob> => {
+  const finished = jobs
+    .filter((job) => isComposite(job) && job.status === 'completed' && job.outputUrl?.trim())
+    .toSorted(byFinish)
+  const latest = new Map<string, GenerationJob>()
+  // 按完成先后写进去，同一原作后完成的盖掉先完成的。
+  for (const job of finished) if (job.rootJobId !== null) latest.set(job.rootJobId, job)
+  return latest
+}
+
+/** 这一组的出片（编辑段、合成、图片与别的组都不成卡），按提交时间从新到旧；每张卡显示这条出片最新完成的合成，
+ * 没有就显示出片本身。`aspectRatio` 是分镜的画幅，请求里没记画幅的卡按它画。 */
 export const takesOfShot = (
   jobs: readonly GenerationJob[],
   shotIndex: number,
   aspectRatio: string,
 ): Take[] => {
   const editCounts = editCountsByRoot(jobs)
+  const latestComposites = latestCompositesByRoot(jobs)
   return jobs
     .filter((job) => isShotVideo(job, shotIndex))
     .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .map((job) => {
       const state = stateOf(job)
-      const outputUrl = job.outputUrl?.trim()
+      const shown = latestComposites.get(job.id) ?? job
+      const outputUrl = shown.outputUrl?.trim()
       return {
         aspect: aspectOf(requestText(job, 'aspect_ratio') ?? aspectRatio),
-        durationSeconds: job.durationMs === null ? undefined : job.durationMs / 1000,
+        durationSeconds: shown.durationMs === null ? undefined : shown.durationMs / 1000,
         editCount: editCounts.get(job.id) ?? 0,
         error: state === 'failed' ? (job.errorMessage ?? undefined) : undefined,
         history: historyShotOf(job),
@@ -66,6 +86,7 @@ export const takesOfShot = (
         model: requestText(job, 'model'),
         outputUrl: state === 'completed' && outputUrl ? outputUrl : undefined,
         resolution: requestText(job, 'resolution'),
+        shown,
         state,
       }
     })

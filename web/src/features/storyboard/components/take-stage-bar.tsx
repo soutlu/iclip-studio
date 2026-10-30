@@ -30,11 +30,11 @@ export function TakeStageBar({ actions, onEditVideo, onRefill, take }: TakeStage
           {download.kind === 'enabled' && take.outputUrl !== undefined ? (
             <VideoDownload
               className={stageActionClass}
-              downloadedJobIds={[take.job.id]}
-              durationMs={take.job.durationMs}
-              enhanceSourceId={take.job.id}
+              downloadedJobIds={[take.shown.id]}
+              durationMs={take.shown.durationMs}
+              enhanceSourceId={take.shown.id}
               url={take.outputUrl}
-              watermarkUrl={take.job.watermarkOutputUrl}
+              watermarkUrl={take.shown.watermarkOutputUrl}
             />
           ) : download.kind === 'blocked' ? (
             <StageAction blocker={download.reason} icon="download" label="下载视频" />
