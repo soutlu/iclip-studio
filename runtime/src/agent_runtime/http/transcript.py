@@ -13,23 +13,19 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
-from pydantic import Field
 
+from agent_runtime.app_wire import MAX_AGENT_ID_CHARS, SessionPromptIn
 from agent_runtime.harness.transcript.service import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     TranscriptService,
 )
 from agent_runtime.http.auth import CallingApp, SessionOwner
-from agent_runtime.http.sessions import MAX_AGENT_ID_CHARS, AgentIdField
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt
 from agent_runtime.transcript.wire import (
     ApprovalRequest,
-    Envelope,
     OpsCatchup,
-    PromptId,
-    PromptParts,
     PromptQueueOut,
     RegenerateBody,
     RunStatusOut,
@@ -51,19 +47,6 @@ StreamAgent = Annotated[
         description="读哪条流：main 是主 agent，子代理给它的 id。",
     ),
 ]
-
-
-class SessionPromptIn(Envelope):
-    """发一条消息：协议请求体（``PromptSubmission``）的 ``prompt_id`` 与 ``content``，加上这段会话用哪个
-    agent 与这条消息替谁发。
-
-    属主是 ``X-End-User``；``user_name`` 由应用按它的规则定好，这里必填。
-    """
-
-    prompt_id: PromptId
-    content: PromptParts
-    user_name: Annotated[str, Field(min_length=1)]
-    agent_id: AgentIdField
 
 
 def create_transcript_router(
@@ -213,4 +196,4 @@ def create_transcript_router(
     return combined
 
 
-__all__ = ["SessionPromptIn", "create_transcript_router"]
+__all__ = ["create_transcript_router"]

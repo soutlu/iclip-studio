@@ -4,31 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from agent_runtime.app_wire import AgentDirectoryOut, AgentEntryOut, TitleIn, TitleOut
 from agent_runtime.assembly.agents import AgentRuntime
-from agent_runtime.transcript.wire import Envelope
-
-
-class AgentEntryOut(Envelope):
-    id: str
-    name: str
-    """给人看的名字。"""
-
-
-class AgentDirectoryOut(Envelope):
-    """上菜单、在用、发布过的 agent，按配置里的先后；``default`` 是第一个，名册空着为空。"""
-
-    items: tuple[AgentEntryOut, ...]
-    default: str | None
-
-
-class TitleIn(Envelope):
-    text: str
-    """这一轮的用户消息。"""
-
-
-class TitleOut(Envelope):
-    title: str | None
-    """没设默认对话模型、建不出模型或模型没给出标题时为空，应用照旧用默认名。"""
 
 
 def create_agents_router(runtime: AgentRuntime) -> APIRouter:
@@ -49,10 +26,4 @@ def create_agents_router(runtime: AgentRuntime) -> APIRouter:
     return router
 
 
-__all__ = [
-    "AgentDirectoryOut",
-    "AgentEntryOut",
-    "TitleIn",
-    "TitleOut",
-    "create_agents_router",
-]
+__all__ = ["create_agents_router"]

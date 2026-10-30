@@ -20,6 +20,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     # Web 框架只在运行时服务的 HTTP 入口里出现，引擎、配置与插件都不碰它。
     ("fastapi", "starlette"): ("http/",),
     ("uvicorn",): ("main.py",),
+    # WebSocket 客户端只在给应用的客户端库里。
+    ("httpx_ws", "wsproto"): ("client/",),
     ("sqlalchemy",): (
         # 运行时服务的组合根建 engine。
         "http/app.py",
@@ -52,6 +54,34 @@ LEAF_MODULES = frozenset(
         "agent_runtime.agent_usage",
         "agent_runtime.tool_args",
     }
+)
+
+
+CLIENT = SRC / "client"
+CLIENT_PACKAGE = "agent_runtime.client"
+
+# 客户端库只认接口与帧的形状：这几个模块只依赖 pydantic 与标准库。
+CLIENT_RUNTIME_IMPORTS = frozenset(
+    {
+        "agent_runtime.errors",
+        "agent_runtime.app_wire",
+        "agent_runtime.transcript.wire",
+        "agent_runtime.transcript.ops",
+        "agent_runtime.live.frames",
+        "agent_runtime.file_store.store",
+        "agent_runtime.material_ledger.store",
+    }
+)
+CLIENT_THIRD_PARTY = frozenset({"httpx", "httpx_ws", "wsproto", "pydantic"})
+
+# 应用进程只装客户端库时不该被带进来的服务端框架与引擎。
+SERVER_SIDE_PACKAGES = (
+    "fastapi",
+    "starlette",
+    "sqlalchemy",
+    "pydantic_ai",
+    "pydantic_ai_harness",
+    "pydantic_settings",
 )
 
 
@@ -89,6 +119,51 @@ def test_framework_fences() -> None:
             if hit and not any(rel == prefix or rel.startswith(prefix) for prefix in allowed):
                 violations.append(f"{rel}: 越界 import {sorted(hit)}")
     assert not violations, "框架围栏违规:\n" + "\n".join(violations)
+
+
+def test_client_imports_only_wire_shapes() -> None:
+    import sys
+
+    stdlib = set(sys.stdlib_module_names)
+    violations: list[str] = []
+    for path in _python_files(CLIENT):
+        rel = path.relative_to(SRC).as_posix()
+        for top in _imported_top_levels(path) - stdlib - CLIENT_THIRD_PARTY - {"agent_runtime"}:
+            violations.append(f"{rel}: 第三方 {top}")
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                modules = [node.module]
+            elif isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            for module in modules:
+                if (
+                    module.startswith("agent_runtime")
+                    and module not in CLIENT_RUNTIME_IMPORTS
+                    and module != CLIENT_PACKAGE
+                    and not module.startswith(f"{CLIENT_PACKAGE}.")
+                ):
+                    violations.append(f"{rel}: {module}")
+    assert not violations, "客户端库越界:\n" + "\n".join(violations)
+
+
+def test_importing_the_client_loads_no_server_side_package() -> None:
+    """按真实的 import 链核：上面放行的模块哪天间接带进了框架或引擎，这里会发现。"""
+
+    import subprocess
+    import sys
+
+    probe = (
+        "import sys, agent_runtime.client; "
+        f"print(','.join(name for name in {SERVER_SIDE_PACKAGES!r} if name in sys.modules))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "", (
+        f"import agent_runtime.client 带进了 {result.stdout.strip()}"
+    )
 
 
 def _config_domains() -> list[str]:

@@ -14,65 +14,20 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import Field
 
+from agent_runtime.app_wire import (
+    ActivitiesIn,
+    ActivitiesOut,
+    BusyOut,
+    FilesCopyIn,
+    FilesCopyOut,
+    SessionForkIn,
+    SessionOpenIn,
+)
 from agent_runtime.harness.jobs import JobQueue
 from agent_runtime.http.auth import CallingApp, SessionOwner
 from agent_runtime.service.sessions import SessionService
-from agent_runtime.transcript.wire import Envelope, SessionActivityOut
-
-MAX_AGENT_ID_CHARS = 128
-"""agent 标识的长度上限，与后端建对话的请求体一致。"""
-
-AgentIdField = Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
-
-
-class SessionOpenIn(Envelope):
-    """开一个会话：固定这个 agent 此刻的当前版本。"""
-
-    id: uuid.UUID
-    agent_id: AgentIdField
-
-
-class SessionForkIn(Envelope):
-    """从路径上的源会话第 ``turn`` 轮分叉出 ``target_id``；目标的属主是 ``X-End-User``。"""
-
-    target_id: uuid.UUID
-    source_user: uuid.UUID
-    """源会话的属主。"""
-    turn: Annotated[int, Field(ge=1)]
-    """从第几轮分叉，从 1 数，这一轮包含在副本里。"""
-    agent_id: AgentIdField | None = None
-    """不给照抄源会话固定的版本；给了按开会话的规矩固定那个 agent 的当前版本。"""
-
-
-class FilesCopyIn(Envelope):
-    """按清单把源会话的几份文件拷进 ``target_id``，连同整份素材台账；目标的属主是 ``X-End-User``。"""
-
-    target_id: uuid.UUID
-    source_user: uuid.UUID
-    """源会话的属主。"""
-    files: tuple[tuple[str, str], ...]
-    """（源路径，目标路径）；源里没有的跳过。"""
-    require_any: tuple[str, ...] = ()
-    """这些源路径一个都不在时什么都不写，答 ``copied: false``。"""
-
-
-class FilesCopyOut(Envelope):
-    copied: bool
-
-
-class ActivitiesIn(Envelope):
-    ids: tuple[uuid.UUID, ...]
-
-
-class ActivitiesOut(Envelope):
-    items: dict[uuid.UUID, SessionActivityOut]
-    """按会话 id；只有调用方应用自己的会话，不存在的与别的应用的都不在，没跑过的是空闲。"""
-
-
-class BusyOut(Envelope):
-    ids: tuple[uuid.UUID, ...]
+from agent_runtime.transcript.wire import SessionActivityOut
 
 
 def create_sessions_router(
@@ -161,15 +116,4 @@ def create_sessions_router(
     return router
 
 
-__all__ = [
-    "MAX_AGENT_ID_CHARS",
-    "ActivitiesIn",
-    "ActivitiesOut",
-    "AgentIdField",
-    "BusyOut",
-    "FilesCopyIn",
-    "FilesCopyOut",
-    "SessionForkIn",
-    "SessionOpenIn",
-    "create_sessions_router",
-]
+__all__ = ["create_sessions_router"]
