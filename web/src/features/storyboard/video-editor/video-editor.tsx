@@ -1069,6 +1069,8 @@ function Editor({
             current={current}
             currentTime={currentTime}
             shownTime={trimPreview?.shown}
+            // 拖草稿块的把手时舞台放的是拖动中的草稿，总长仍按草稿本身写，同「共 X 秒」
+            shownDuration={trimPreview?.kind === 'draft' ? total : undefined}
             onPlay={collapseCard}
             onTime={setCurrentTime}
             overlay={

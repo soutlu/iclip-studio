@@ -76,6 +76,8 @@ type Props = {
   currentTime: number
   /** 工具条上写的时刻，不给时是 `currentTime`：拖修剪把手时是把手所在的标尺位置，与播放头一致。 */
   shownTime?: number | undefined
+  /** 工具条上写的总长，不给时是舞台所放内容的长度：拖修剪把手时按松手前的样子写，同「共 X 秒」。 */
+  shownDuration?: number | undefined
   onTime: (clock: number) => void
   onPlay: () => void
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
@@ -102,6 +104,7 @@ export function EditorPreview({
   backdrop,
   currentTime,
   shownTime = currentTime,
+  shownDuration,
   onTime,
   onPlay,
   onPlaybackChange,
@@ -337,7 +340,7 @@ export function EditorPreview({
   const clock = (
     <span className="editor-clock">
       {timeLabel(shownTime)}
-      <span> / {timeLabel(duration)}</span>
+      <span> / {timeLabel(shownDuration ?? duration)}</span>
     </span>
   )
   const muteButton = (

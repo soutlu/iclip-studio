@@ -1453,15 +1453,15 @@ describe('草稿与编辑轨', () => {
     })
     fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 100 })
     fireEvent.pointerMove(start, { pointerId: 1, clientX: 140 })
-    // 这块的右边沿停在 2 秒、左边沿跟到 1.4 秒：工具条时间与播放头都写 1.4 秒
-    await waitFor(() => expect(controls()).toHaveTextContent('00:01.40 /'))
+    // 这块的右边沿停在 2 秒、左边沿跟到 1.4 秒：工具条时间与播放头都写 1.4 秒；总长与「共 X 秒」按松手前的草稿
+    await waitFor(() => expect(controls()).toHaveTextContent('00:01.40 / 00:08.00'))
     expect(playhead()).toHaveValue('1.4')
     expect(controls()).toHaveTextContent('共 8.0 秒')
     expect(draftWrites()).toEqual([])
 
     fireEvent.pointerUp(start, { pointerId: 1 })
-    // 首尾接上：这块从合成 1 秒开始
-    await waitFor(() => expect(controls()).toHaveTextContent('00:01.00 /'))
+    // 首尾接上：这块从合成 1 秒开始，总长与「共 X 秒」一起变
+    await waitFor(() => expect(controls()).toHaveTextContent('00:01.00 / 00:07.60'))
     expect(playhead()).toHaveValue('1')
     expect(controls()).toHaveTextContent('共 7.6 秒 · 比原片短 0.4 秒')
     expect(draftWrites()).toHaveLength(1)
@@ -1491,8 +1491,8 @@ describe('草稿与编辑轨', () => {
     })
     fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 450 })
     fireEvent.pointerMove(end, { pointerId: 1, clientX: 490 })
-    // 拉长到 4.9 秒：按提交的草稿那里已是镜头 5（原片），舞台放的是拖动中的这一段
-    await waitFor(() => expect(controls()).toHaveTextContent('00:04.90 / 00:08.90'))
+    // 拉长到 4.9 秒：按提交的草稿那里已是镜头 5（原片），舞台放的是拖动中的这一段；总长仍同「共 8.5 秒」
+    await waitFor(() => expect(controls()).toHaveTextContent('00:04.90 / 00:08.50'))
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', EDITED_URL)
     expect(playhead()).toHaveValue('4.9')
     expect(controls()).toHaveTextContent('共 8.5 秒')
