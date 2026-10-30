@@ -1,7 +1,7 @@
 """应用密钥鉴权与代办用户。
 
 - ``/v1`` 下每个路由都要 ``Authorization: Bearer <应用密钥>``，按配置认出是哪个应用；缺了或不认得是
-  401，信封与领域错误相同。
+  401，信封与领域错误相同。两条 WebSocket 带同一个头，认不出在握手前以 1008 关闭。
 - ``/v1/admin`` 另要求这个应用有管理权限，没有是 403。
 - 代办用户放在 ``X-End-User`` 请求头里，是用户 id（UUID）：管理接口的写操作（POST、PUT、PATCH、DELETE）
   一律必填，缺了或不是 UUID 是 422；读操作不用。
@@ -58,10 +58,14 @@ class CallingApp:
 
 @dataclass(frozen=True, slots=True)
 class AppAuth:
-    """两个依赖：``calling_app`` 认应用，``admin_app`` 在它之上再要求管理权限。"""
+    """两个依赖：``calling_app`` 认应用，``admin_app`` 在它之上再要求管理权限。
+
+    ``identify`` 给 WebSocket 用（HTTP 的 Bearer 依赖不在 WebSocket 上跑）：收 ``Authorization`` 头的原值，
+    认不出是 ``None``。"""
 
     calling_app: Callable[..., Awaitable[CallingApp]]
     admin_app: Callable[..., Awaitable[CallingApp]]
+    identify: Callable[[str | None], CallingApp | None]
 
 
 def build_app_auth(apps: Sequence[ResolvedApp]) -> AppAuth:
@@ -69,20 +73,29 @@ def build_app_auth(apps: Sequence[ResolvedApp]) -> AppAuth:
 
     known = tuple((app.key.encode(), CallingApp(id=app.id, admin=app.admin)) for app in apps)
 
+    def match(presented: str) -> CallingApp | None:
+        found: CallingApp | None = None
+        # 每把都比一遍、用定长比较：认出与否、认出的是第几个，耗时都一样。
+        for key, app in known:
+            if hmac.compare_digest(key, presented.encode()):
+                found = app
+        return found
+
     async def calling_app(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     ) -> CallingApp:
         if credentials is None:
             raise AuthenticationFailed("缺少应用密钥")
-        presented = credentials.credentials.encode()
-        found: CallingApp | None = None
-        # 每把都比一遍、用定长比较：认出与否、认出的是第几个，耗时都一样。
-        for key, app in known:
-            if hmac.compare_digest(key, presented):
-                found = app
+        found = match(credentials.credentials)
         if found is None:
             raise AuthenticationFailed("应用密钥无效")
         return found
+
+    def identify(authorization: str | None) -> CallingApp | None:
+        scheme, _, presented = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not presented:
+            return None
+        return match(presented.strip())
 
     # Depends 写在默认值里：注解是字符串，按模块全局解析，认不出这个闭包里的 calling_app。
     async def admin_app(app: CallingApp = Depends(calling_app)) -> CallingApp:  # noqa: B008
@@ -90,7 +103,7 @@ def build_app_auth(apps: Sequence[ResolvedApp]) -> AppAuth:
             raise PermissionDenied("这个应用没有管理权限")
         return app
 
-    return AppAuth(calling_app=calling_app, admin_app=admin_app)
+    return AppAuth(calling_app=calling_app, admin_app=admin_app, identify=identify)
 
 
 __all__ = [

@@ -216,6 +216,14 @@ class TranscriptStore:
         if conversation is not None and conversation.pins > 0:
             conversation.pins -= 1
 
+    def holds(self, conversation_id: str) -> bool:
+        """这段会话还有没有固定引用或监听；订阅方全撤、运行收尾后应为假。"""
+
+        conversation = self._conversations.get(conversation_id)
+        pinned = conversation is not None and conversation.pins > 0
+        listened = any(key[0] == conversation_id for key in self._listeners)
+        return pinned or listened
+
     # --- 内部 ---------------------------------------------------------------
 
     def _conversation(self, conversation_id: str) -> _Conversation:

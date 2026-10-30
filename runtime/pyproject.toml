@@ -19,11 +19,11 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",  # 导入技能与 agent 的表单上传
     "asyncpg>=0.31.0",
+    "httpx>=0.28.1",  # 回调应用（开跑检查、运行与轮次开始）
 ]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-timeout>=2.4.0",
