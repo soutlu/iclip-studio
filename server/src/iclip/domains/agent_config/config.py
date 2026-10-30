@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Final, Literal
 
+from agent_runtime.model_vocab import ThinkingEffort
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -19,7 +20,6 @@ from pydantic import (
 )
 from pydantic_core import ErrorDetails
 
-from iclip.common.model_vocab import ThinkingEffort
 from iclip.domains.agent_config.models import ConfigRefs, Problem
 
 SCHEMA_VERSION: Final = 1

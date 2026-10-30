@@ -7,18 +7,18 @@ repos:
         args: [--config=.gitleaks.toml, --ignore-gitleaks-allow]
   - repo: local
     hooks:
-      - id: server-ruff-check
-        name: server ruff check --fix
-        entry: bash -c 'cd server && uv run ruff check --fix .'
+      - id: python-ruff-check
+        name: server + runtime ruff check --fix
+        entry: bash -c 'cd server && uv run ruff check --fix . && cd ../runtime && uv run ruff check --fix .'
         language: system
         pass_filenames: false
-        files: ^server/
-      - id: server-ruff-format
-        name: server ruff format
-        entry: bash -c 'cd server && uv run ruff format .'
+        files: ^(server|runtime)/
+      - id: python-ruff-format
+        name: server + runtime ruff format
+        entry: bash -c 'cd server && uv run ruff format . && cd ../runtime && uv run ruff format .'
         language: system
         pass_filenames: false
-        files: ^server/
+        files: ^(server|runtime)/
       - id: web-lint-staged
         name: web lint-staged
         entry: bash -c 'cd web && pnpm lint-staged'
@@ -31,6 +31,12 @@ repos:
       - id: server-typecheck-push
         name: server pyright (pre-push)
         entry: bash -c 'cd server && uv run pyright'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: runtime-typecheck-push
+        name: runtime pyright (pre-push)
+        entry: bash -c 'cd runtime && uv run pyright'
         language: system
         pass_filenames: false
         stages: [pre-push]

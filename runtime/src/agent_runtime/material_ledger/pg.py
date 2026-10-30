@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.platform.material_ledger.store import Material, MaterialKind
+from agent_runtime.material_ledger.store import Material, MaterialKind
 
 DB_SCHEMA: Final = "agent_runtime"
 

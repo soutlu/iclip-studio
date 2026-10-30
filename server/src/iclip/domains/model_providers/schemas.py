@@ -5,11 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from agent_runtime.agent_usage import AgentUsageOut
+from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from iclip.common.agent_usage import AgentUsageOut
-from iclip.common.model_vocab import ModelApi, ThinkingEffort
 from iclip.domains.model_providers.models import CredentialFieldType, ModelSource, ModelType
 
 

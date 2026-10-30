@@ -10,11 +10,11 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import pytest
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.agent_config.infra_sql import SqlAgentStore
 from iclip.domains.agent_config.public import AgentReferences
 from iclip.domains.skills.infra_sql import SqlSkillStore

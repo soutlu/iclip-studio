@@ -7,6 +7,10 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
+from agent_runtime.file_store.pg import PgFileStore
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -20,10 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.platform.db.engine import build_engine
-from iclip.platform.file_store.pg import PgFileStore
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.pg import PgMaterialLedger
-from iclip.platform.material_ledger.store import Material
 from iclip.plugins.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.plugins.video_shots.capability import VideoShots
 from iclip.plugins.workspace.scope import workspace_namespace

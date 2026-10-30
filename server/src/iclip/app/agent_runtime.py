@@ -21,11 +21,11 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from agent_runtime.errors import AgentUnavailable
+from agent_runtime.model_vocab import ThinkingEffort
 
 from iclip.app.model_providers import build_provider_model
 from iclip.app.plugin_registry import PluginRegistry
-from iclip.common.errors import AgentUnavailable
-from iclip.common.model_vocab import ThinkingEffort
 from iclip.domains.agent_config.public import (
     AgentConfig,
     AgentConfigService,

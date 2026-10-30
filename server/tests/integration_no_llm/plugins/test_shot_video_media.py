@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.file_store.store import FileSpace
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
@@ -33,7 +34,6 @@ from iclip.harness.media import media_tag
 from iclip.harness.transcript.from_messages import turns_from_messages
 from iclip.harness.transcript.projector import TranscriptEventStream
 from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.file_store.store import FileSpace
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.process import ffmpeg_available

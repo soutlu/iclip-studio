@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
+from agent_runtime.errors import NotFound
 from sqlalchemy import (
     Column,
     ColumnElement,
@@ -23,7 +24,6 @@ from sqlalchemy import (
 from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import NotFound
 from iclip.domains.collections.models import Collection
 from iclip.platform.db.ownership import owner_conditions
 

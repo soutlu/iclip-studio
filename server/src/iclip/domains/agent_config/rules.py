@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.agent_config.models import (
     AGENT_ID_PATTERN,
     MAX_DESCRIPTION_CHARS,

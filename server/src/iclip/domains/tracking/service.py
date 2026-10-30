@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from iclip.common.errors import NotFound, ValidationFailed
+from agent_runtime.errors import NotFound, ValidationFailed
+
 from iclip.domains.identity.public import Principal
 from iclip.domains.tracking.models import TrackingEvent
 from iclip.domains.tracking.repository import TrackingRepository

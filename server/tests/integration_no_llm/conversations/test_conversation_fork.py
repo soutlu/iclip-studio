@@ -15,6 +15,7 @@ from typing import NoReturn
 
 import httpx
 import pytest
+from agent_runtime.errors import Conflict, NotFound
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -22,7 +23,6 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord,
 from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
-from iclip.common.errors import Conflict, NotFound
 from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
     SqlConversationRepository,

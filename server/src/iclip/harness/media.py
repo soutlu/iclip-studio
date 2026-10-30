@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Final, Literal
 from urllib.parse import urlsplit
 
-from iclip.common.urls import is_http_url, is_oss_processable
+from agent_runtime.urls import is_http_url, is_oss_processable
 
 MediaKind = Literal["image", "video", "audio", "file"]
 

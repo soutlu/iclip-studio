@@ -8,9 +8,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from agent_runtime.errors import ValidationFailed
 from pydantic_ai.messages import ImageUrl, UserContent
 
-from iclip.common.errors import ValidationFailed
 from iclip.harness.media import (
     IMAGE_CONTEXT_MAX_EDGE,
     MediaKind,

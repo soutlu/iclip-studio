@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Final, cast
 
+from agent_runtime.errors import NotFound, ValidationFailed
 from sqlalchemy import (
     Boolean,
     Column,
@@ -33,7 +34,6 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.model_providers.models import (
     CredentialRecord,
     DefaultModel,

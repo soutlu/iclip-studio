@@ -7,12 +7,12 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated
 
+from agent_runtime.errors import NotFound
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi_users import FastAPIUsers
 from fastapi_users.exceptions import UserNotExists
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
-from iclip.common.errors import NotFound
 from iclip.domains.identity.accounts import (
     CookieAuthSettings,
     UserCreate,

@@ -7,9 +7,9 @@ import uuid
 from dataclasses import dataclass, field
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
 from iclip.app.prompt_attachments import UPLOAD_ID_NAMESPACE, PromptAttachmentImporter
-from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.models import Principal
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from iclip.platform.transcript.ops import (

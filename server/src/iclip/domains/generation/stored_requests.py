@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
+from agent_runtime.errors import ValidationFailed
 from pydantic import TypeAdapter
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,

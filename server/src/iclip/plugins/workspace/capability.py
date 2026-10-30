@@ -11,6 +11,14 @@ from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Final, Literal, Self
 
 import structlog
+from agent_runtime.file_store.store import (
+    FileEntry,
+    FileSpace,
+    InvalidPath,
+    normalize_path,
+)
+from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.tool_args import JsonText
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.abstract import AgentInstructions
@@ -18,7 +26,6 @@ from pydantic_ai.messages import ImageUrl, ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import AgentToolset, FunctionToolset
 
-from iclip.common.tool_args import JsonText
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_http, require_material
 from iclip.harness.media import (
@@ -28,13 +35,6 @@ from iclip.harness.media import (
     media_tag_open,
     resized_image_url,
 )
-from iclip.platform.file_store.store import (
-    FileEntry,
-    FileSpace,
-    InvalidPath,
-    normalize_path,
-)
-from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.transcript.display import (
     FILE_CONTENT_VIEW,
     MEDIA_GRID_VIEW,

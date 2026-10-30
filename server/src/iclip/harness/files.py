@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from pydantic_ai import ModelRetry
-
-from iclip.platform.file_store.store import (
+from agent_runtime.file_store.store import (
     FileEntry,
     FileStore,
     InvalidContent,
     QuotaExceeded,
     VersionConflict,
 )
+from pydantic_ai import ModelRetry
 
 
 async def write_or_retry(

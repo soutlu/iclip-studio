@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 from structlog.testing import capture_logs
 
-from iclip.common.tool_args import REPLAY_CONTEXT, JsonText
+from agent_runtime.tool_args import REPLAY_CONTEXT, JsonText
 
 
 class Region(BaseModel):

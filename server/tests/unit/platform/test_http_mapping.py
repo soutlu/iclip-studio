@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from iclip.common.errors import (
+from agent_runtime.errors import (
     AuthenticationFailed,
     Conflict,
     DomainError,
@@ -10,6 +10,7 @@ from iclip.common.errors import (
     PermissionDenied,
     ValidationFailed,
 )
+
 from iclip.platform.http import status_code_for, validation_error_detail
 
 

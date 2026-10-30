@@ -27,7 +27,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.platform.file_store.store import (
+from agent_runtime.file_store.store import (
     DEFAULT_MAX_FILE_BYTES,
     DEFAULT_MAX_NAMESPACE_BYTES,
     MAX_SEARCH_FILES,

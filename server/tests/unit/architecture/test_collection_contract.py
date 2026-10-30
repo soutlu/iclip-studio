@@ -27,7 +27,11 @@ def test_no_private_imports_from_src() -> None:
     for path in TESTS.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("iclip"):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith(("iclip", "agent_runtime"))
+            ):
                 for alias in node.names:
                     if alias.name.startswith("_"):
                         violations.add(f"{path.relative_to(TESTS)}:{alias.name}")

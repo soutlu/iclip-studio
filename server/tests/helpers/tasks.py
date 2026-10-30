@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from agent_runtime.errors import NotFound
 
-from iclip.common.errors import NotFound
 from iclip.domains.tasks.models import (
     ACTIVE_STATUSES,
     STATUS_CONFIRMED,

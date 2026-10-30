@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from iclip.platform.material_ledger.store import MaterialLedger
+from agent_runtime.material_ledger.store import MaterialLedger
+
 from iclip.plugins.iclip_studio.film.checks import check
 from iclip.plugins.iclip_studio.film.film import Film
 

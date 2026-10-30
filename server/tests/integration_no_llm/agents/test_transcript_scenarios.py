@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from agent_runtime.file_store.store import FileSpace
 from pydantic_ai import Agent, Tool
 from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.exceptions import ModelRetry
@@ -54,7 +55,6 @@ from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.service import TranscriptService
 from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import (
     FileIoDisplay,
     GenericDisplay,

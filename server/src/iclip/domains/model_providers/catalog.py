@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Final, Literal
 
 import yaml
+from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -19,7 +20,6 @@ from pydantic import (
     model_validator,
 )
 
-from iclip.common.model_vocab import ModelApi, ThinkingEffort
 from iclip.domains.model_providers.models import (
     FIELD_SECRET,
     MAX_LABEL_CHARS,

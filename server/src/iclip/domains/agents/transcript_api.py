@@ -13,10 +13,10 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, Protocol
 
 import structlog
+from agent_runtime.errors import DomainError
 from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
-from iclip.common.errors import DomainError
 from iclip.common.generation_vocab import GenerationKind, GenerationOperation, GenerationStatus
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,

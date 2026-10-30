@@ -8,23 +8,23 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pydantic import ValidationError
-
-from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
-from iclip.common.film_view import FilmImagePrompt, FilmTextEdit, FilmView
-from iclip.domains.generation.schemas import VideoGenerationIn
-from iclip.domains.generation.service import GenerationService
-from iclip.domains.identity.public import Principal, resolve_user_name
-from iclip.platform.file_store.store import (
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.file_store.store import (
     FileStore,
     InvalidContent,
     QuotaExceeded,
     StoredFile,
     VersionConflict,
 )
+from agent_runtime.material_ledger.store import Material, MaterialLedger
+from pydantic import ValidationError
+
+from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
+from iclip.common.film_view import FilmImagePrompt, FilmTextEdit, FilmView
+from iclip.domains.generation.schemas import VideoGenerationIn
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.identity.public import Principal, resolve_user_name
 from iclip.platform.http import validation_error_detail
-from iclip.platform.material_ledger.store import Material, MaterialLedger
 from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.plugins.iclip_studio.film.load import ConversationImages, load_film
 from iclip.plugins.iclip_studio.film.prompts import video_row

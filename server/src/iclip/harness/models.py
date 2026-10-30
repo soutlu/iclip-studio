@@ -7,12 +7,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 from openai import AsyncOpenAI
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.models.openai import OpenAIChatModelSettings, OpenAIResponsesModel
 from pydantic_ai.providers import Provider, infer_provider_class
-
-from iclip.common.model_vocab import ModelApi, ThinkingEffort
 
 BuiltModel = Model
 """装配出的一个模型实例；组合根经它引用模型类型，不直接 import 引擎。"""

@@ -9,10 +9,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from agent_runtime.errors import NotFound, ValidationFailed
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (

@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.models import PrincipalKind
 from iclip.domains.identity.public import ACT_AS_PERMISSION, MANAGE_PERMISSION, Principal
 from iclip.domains.library.models import (

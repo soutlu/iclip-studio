@@ -11,11 +11,11 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.errors import ValidationFailed
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.agent_config.infra_sql import SqlAgentStore
 from iclip.domains.agent_config.public import AgentReferences
 from iclip.domains.model_providers.catalog import Declarations, load_declarations

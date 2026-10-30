@@ -16,6 +16,8 @@ def main() -> None:
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=7788)
     parser.add_argument("--reload", action="store_true")
+    # 可重复；给了就只看这些目录（uvicorn 不再默认看当前目录），不给照 uvicorn 默认。
+    parser.add_argument("--reload-dir", action="append", dest="reload_dirs")
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
 
@@ -33,6 +35,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        reload_dirs=args.reload_dirs,
         workers=args.workers if not args.reload else 1,
         # 不让 uvicorn 自带一套 handler，它的日志与其他来源同一格式
         log_config=None,

@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Sequence
 
 import pytest
+from agent_runtime.file_store.store import FileSpace
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
@@ -24,7 +25,6 @@ from pydantic_ai.usage import RunUsage
 
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.harness.background import BackgroundTools, is_receipt, parse_outcome
-from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import GenericDisplay
 from iclip.plugins.video_breakdown.capability import (
     BREAKDOWN_RETRIES,

@@ -8,12 +8,12 @@ import uuid
 
 import httpx
 import pytest
+from agent_runtime.errors import NotFound
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
 
-from iclip.common.errors import NotFound
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.repository import AuditFilter
 from iclip.domains.conversations.schemas import DEFAULT_TITLE

@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import uuid
 
-from iclip.common.errors import NotFound, ValidationFailed
+from agent_runtime.errors import NotFound, ValidationFailed
+
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument, WholeFilmVideoClip
 from iclip.domains.generation.models import STATUS_COMPLETED, Inheritance, is_base_master

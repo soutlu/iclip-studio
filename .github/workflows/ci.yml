@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      runtime: ${{ steps.scope.outputs.runtime }}
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
       web_format: ${{ steps.scope.outputs.web_format }}
@@ -52,6 +53,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          runtime=true
           server=true
           web=true
           web_format=false
@@ -59,6 +61,7 @@ jobs:
           # 只有 develop PR 按路径缩小范围；main 和其他目标分支都完整检查。
           if [ "$BASE_REF" = develop ]; then
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
+              runtime=false
               server=false
               web=false
               render=false
@@ -67,6 +70,8 @@ jobs:
                 # web/ 下的 Markdown 不是运行时输入，只查 prettier 格式。
                 case "$path" in
                   server/*) scope=server ;;
+                  runtime/*.md) scope=docs ;;
+                  runtime/*) scope=runtime ;;
                   render/*.md) scope=docs ;;
                   render/*) scope=render ;;
                   web/*.md) scope=format ;;
@@ -75,11 +80,13 @@ jobs:
                   *) scope=all ;;
                 esac
                 case "$scope" in
+                  # 后端依赖 runtime，runtime 变了两边都查。
+                  runtime) runtime=true; server=true ;;
                   server) server=true ;;
                   web) web=true ;;
                   render) render=true ;;
                   format) web_format=true ;;
-                  all) server=true; web=true; render=true ;;
+                  all) runtime=true; server=true; web=true; render=true ;;
                 esac
                 # 渲染服务打包 web 的成片合成构建与后端合同的 zod 生成物，测试用 web 组装的测试组件库，
                 # 它们变了也要查渲染服务。
@@ -97,13 +104,54 @@ jobs:
           if [ "$web" = true ]; then
             web_format=false
           fi
-          echo "base=$BASE_REF server=$server web=$web web_format=$web_format render=$render"
+          echo "base=$BASE_REF runtime=$runtime server=$server web=$web web_format=$web_format render=$render"
           {
+            echo "runtime=$runtime"
             echo "server=$server"
             echo "web=$web"
             echo "web_format=$web_format"
             echo "render=$render"
           } >> "$GITHUB_OUTPUT"
+
+  runtime_static:
+    name: runtime-static
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: runtime
+      - name: Lint Python
+        run: uv run ruff check .
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+      - name: Check Python types
+        run: uv run pyright
+      - name: Check dependency boundaries
+        run: uv run tach check
+
+  runtime_unit:
+    name: runtime-unit
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: runtime
+      - name: Run unit tests
+        run: uv run pytest tests/unit
 
   server_static:
     name: server-static
@@ -335,6 +383,8 @@ jobs:
     needs:
       - scope
       - secrets
+      - runtime_static
+      - runtime_unit
       - server_static
       - server_unit
       - server_integration
@@ -361,6 +411,9 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           SCOPE_RESULT: ${{ needs.scope.result }}
           SECRETS_RESULT: ${{ needs.secrets.result }}
+          RUNTIME_REQUIRED: ${{ needs.scope.outputs.runtime }}
+          RUNTIME_STATIC_RESULT: ${{ needs.runtime_static.result }}
+          RUNTIME_UNIT_RESULT: ${{ needs.runtime_unit.result }}
           SERVER_REQUIRED: ${{ needs.scope.outputs.server }}
           SERVER_STATIC_RESULT: ${{ needs.server_static.result }}
           SERVER_UNIT_RESULT: ${{ needs.server_unit.result }}
@@ -383,11 +436,13 @@ jobs:
             if [ "$BASE_REF" = develop ]; then
               printf '检查模式：按变更范围。「需执行」为 false 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
             else
-              printf '检查模式：完整检查 server、web 和 render。\n\n'
+              printf '检查模式：完整检查 runtime、server、web 和 render。\n\n'
             fi
             printf '| Job | 需执行 | 结果 |\n| --- | --- | --- |\n'
             printf '| scope | true | %s |\n' "$SCOPE_RESULT"
             printf '| secrets | true | %s |\n' "$SECRETS_RESULT"
+            printf '| runtime-static | %s | %s |\n' "$RUNTIME_REQUIRED" "$RUNTIME_STATIC_RESULT"
+            printf '| runtime-unit | %s | %s |\n' "$RUNTIME_REQUIRED" "$RUNTIME_UNIT_RESULT"
             printf '| server-static | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT"
             printf '| server-unit | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT"
             printf '| server-integration（2 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
@@ -414,6 +469,8 @@ jobs:
             failed=1
           fi
           require_result secrets true "$SECRETS_RESULT" || failed=1
+          require_result runtime-static "$RUNTIME_REQUIRED" "$RUNTIME_STATIC_RESULT" || failed=1
+          require_result runtime-unit "$RUNTIME_REQUIRED" "$RUNTIME_UNIT_RESULT" || failed=1
           require_result server-static "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT" || failed=1
           require_result server-unit "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT" || failed=1
           require_result server-integration "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT" || failed=1

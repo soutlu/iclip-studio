@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from iclip.common.errors import (
+from agent_runtime.errors import (
     AuthenticationFailed,
     Conflict,
     DomainError,

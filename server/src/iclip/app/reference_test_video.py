@@ -9,9 +9,9 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
+from agent_runtime.errors import ValidationFailed
 from pydantic import ValidationError
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.models import REFERENCE_TRIAL_KEY, GenerationJob
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (

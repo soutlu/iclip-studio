@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from iclip.platform.material_ledger.store import Material
+from agent_runtime.material_ledger.store import Material
 
 
 class FakeMaterialLedger:

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 from pydantic_ai.messages import ImageUrl
 
-from iclip.common.errors import ValidationFailed
 from iclip.harness.transcript.prompt_media import model_prompt
 from iclip.platform.transcript.ops import AttachmentSource, ImageContent, TextContent
 

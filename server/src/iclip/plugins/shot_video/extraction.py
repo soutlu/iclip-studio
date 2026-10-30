@@ -11,11 +11,11 @@ from typing import Annotated, Final
 
 import httpx
 import structlog
+from agent_runtime.file_store.store import FileStore
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 from pydantic_ai import ModelRetry
 
-from iclip.platform.file_store.store import FileStore
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched

@@ -25,12 +25,12 @@ import sys
 import uuid
 from datetime import UTC, datetime
 
+from agent_runtime.errors import ValidationFailed
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from iclip.common.errors import ValidationFailed
 from iclip.config import CREDENTIAL_ENCRYPTION_KEYS_ENV, CredentialKeysEnv
 from iclip.domains.identity.infra_sql import ApiKeyRow, User
 from iclip.domains.identity.rbac import PERMISSIONS, ROLES

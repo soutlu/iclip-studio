@@ -6,6 +6,7 @@ import json
 from collections.abc import Sequence
 from typing import Annotated, Final
 
+from agent_runtime.tool_args import JsonText
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from iclip.common.shot_rules import (
@@ -14,7 +15,6 @@ from iclip.common.shot_rules import (
     image_indexes_of,
     timeline_fault,
 )
-from iclip.common.tool_args import JsonText
 
 SHOTS_PATH: Final = "video_shot.json"
 

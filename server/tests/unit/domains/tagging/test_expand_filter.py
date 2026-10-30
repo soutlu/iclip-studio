@@ -6,8 +6,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from agent_runtime.errors import ValidationFailed
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.models import TagNode
 from iclip.domains.tagging.service import expand_filter
 

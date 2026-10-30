@@ -11,9 +11,9 @@ import uuid
 from typing import Final, Protocol
 
 import structlog
+from agent_runtime.errors import ValidationFailed
+from agent_runtime.urls import is_http_url, is_oss_processable
 
-from iclip.common.errors import ValidationFailed
-from iclip.common.urls import is_http_url, is_oss_processable
 from iclip.domains.identity.public import Principal
 from iclip.platform.transcript.ops import ImageContent, PromptContent
 

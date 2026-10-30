@@ -8,6 +8,8 @@ import uuid
 from typing import Any
 
 import pytest
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import (
     ModelMessage,
@@ -24,8 +26,6 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import FileIoDisplay, ToolDisplayRegistry
 from iclip.plugins.shot_document import (
     MAX_REFERENCE_IMAGES,

@@ -8,11 +8,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from agent_runtime.errors import DomainError
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from iclip.common.errors import DomainError
 from iclip.platform.http import status_code_for, validation_error_detail
 
 

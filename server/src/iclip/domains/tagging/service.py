@@ -8,8 +8,8 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 
 import structlog
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.tagging.models import EntryKey, TagCounts, TagNode
 from iclip.domains.tagging.repository import TaggingQueuePort, TagStore
 from iclip.domains.tagging.rules import check_change, check_new, clean_guide, clean_name, reorder

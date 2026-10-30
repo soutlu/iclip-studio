@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
+from agent_runtime.errors import NotFound, ValidationFailed
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -36,7 +37,6 @@ from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.conversations.models import Conversation, WholeFilmDraft
 from iclip.domains.conversations.repository import (
     AuditFilter,

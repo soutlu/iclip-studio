@@ -10,9 +10,9 @@ from collections.abc import Mapping
 from typing import Any
 
 import pytest
+from agent_runtime.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ROLE_PERMISSIONS
 from iclip.domains.references.infra_sql import SqlReferenceStore

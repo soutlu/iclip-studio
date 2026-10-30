@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Final
 
+from agent_runtime.errors import NotFound
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -32,7 +33,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.common.errors import NotFound
 from iclip.domains.tasks.models import (
     ACTIVE_STATUSES,
     STATUS_CONFIRMED,

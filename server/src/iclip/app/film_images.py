@@ -5,9 +5,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 
+from agent_runtime.errors import ValidationFailed
 from pydantic import ValidationError
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService

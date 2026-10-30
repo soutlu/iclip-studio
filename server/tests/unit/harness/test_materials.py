@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import ModelRetry
 
 from iclip.harness.materials import require_http, require_material, require_materials
-from iclip.platform.material_ledger.store import Material
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 NAMESPACE = "owner/thread-1"

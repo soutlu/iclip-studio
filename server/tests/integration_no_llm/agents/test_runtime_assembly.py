@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.errors import AgentUnavailable
 from fastapi import FastAPI
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
@@ -22,7 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app import bootstrap
 from iclip.app.bootstrap import AgentServices
-from iclip.common.errors import AgentUnavailable
 from iclip.domains.agent_config.schemas import AgentCreateIn, AgentDraftIn, AgentUpdateIn
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from iclip.domains.model_providers.schemas import (

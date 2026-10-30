@@ -5,6 +5,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.material_ledger.store import Material
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.models.test import TestModel
@@ -13,8 +15,6 @@ from pydantic_ai.usage import RunUsage
 
 from iclip.common.shot_prompt import OUTPUT_CONSTRAINT, format_shot_prompt
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayEntry
 from iclip.plugins.iclip_studio import capability as studio
 from iclip.plugins.iclip_studio.capability import (

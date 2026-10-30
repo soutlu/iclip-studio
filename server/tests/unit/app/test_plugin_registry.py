@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from agent_runtime.errors import NotFound, ValidationFailed
 from pydantic_ai import Agent, AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.exceptions import UserError
@@ -25,7 +26,6 @@ from iclip.app.plugin_registry import (
     build_plugin_registry,
 )
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
