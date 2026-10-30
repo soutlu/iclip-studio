@@ -7,19 +7,18 @@ agent 配置只按插件名引用。"""
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 from agent_runtime.errors import ValidationFailed
 from agent_runtime.file_store.store import FileSpace, FileStore
-from agent_runtime.harness.media import image_info_url
 from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from iclip_video.iclip_studio.capability import IclipStudio
+from iclip_video.oss_media import OssMediaProbe
 from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.shot_video.ports import ImageJob, ImageRequest, InvalidImageRequest
 from iclip_video.video.capability import Video
@@ -80,49 +79,6 @@ class GenerationsAdapter:
     async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
         principal = await self._resolve_principal(user_id)
         return _job_view(await self._service.get(principal, job_id))
-
-
-_IMAGE_MEDIA_TYPES: Mapping[str, str] = {
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-    "webp": "image/webp",
-    "gif": "image/gif",
-}
-
-
-class OssMediaProbe:
-    """通过 OSS image/info 查询尺寸、大小与格式，无需下载像素。
-
-    查询地址由 ``agent_runtime.harness.media`` 构造，先经 ``fetch_url`` 换算（本桶对象走内网）再挂参数；对外
-    错误使用固定文案，避免回显带参数的地址。"""
-
-    def __init__(self, client: httpx.AsyncClient, *, fetch_url: Callable[[str], str]) -> None:
-        self._client = client
-        self._fetch_url = fetch_url
-
-    async def image_info(self, url: str) -> ImageInfo:
-        try:
-            info_url = image_info_url(self._fetch_url(url))
-        except ValueError as exc:
-            raise MediaProbeFailed("不是能挂 OSS 处理参数的地址") from exc
-        try:
-            response = await self._client.get(info_url)
-        except httpx.HTTPError as exc:
-            raise MediaProbeFailed("地址访问不到") from exc
-        if response.status_code >= 400:
-            raise MediaProbeFailed(f"对方返回 {response.status_code}")
-        try:
-            info = response.json()
-            image_format = str(info["Format"]["value"]).lower()
-            return ImageInfo(
-                media_type=_IMAGE_MEDIA_TYPES.get(image_format, f"image/{image_format}"),
-                size_bytes=int(info["FileSize"]["value"]),
-                width=int(info["ImageWidth"]["value"]),
-                height=int(info["ImageHeight"]["value"]),
-            )
-        except (ValueError, TypeError, KeyError, IndexError) as exc:
-            raise MediaProbeFailed("对方给的不是图片信息") from exc
 
 
 def _job_view(job: GenerationJob) -> ImageJob:
@@ -259,6 +215,5 @@ def build_plugin_registry(
 
 __all__ = [
     "GenerationsAdapter",
-    "OssMediaProbe",
     "build_plugin_registry",
 ]

@@ -764,3 +764,4 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 - 生图、取帧拼板与切格只在后端登记了 `shot_video` 时挂，拆解只在登记了 `video_breakdown` 时挂；没挂的答 `404`。生图模型名始终挂。
 - 切格时每格存到哪个对象 key 由后端定，插件只给帧号或序号。
+- 调用方是视频插件包的 HTTP 客户端（[internal_api.py](../plugins/video/src/iclip_video/internal_api.py)）：上表的 `422` 还原成端口声明的同一个错误、`detail` 原话不变（取帧拼板与切格按 `code` 认，没带 `code` 的 `422` 是请求结构不对，不算端口的失败），其余状态码、连不上与超时都当作调用失败，不让模型改参数重试。

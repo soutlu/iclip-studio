@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -132,6 +135,55 @@ NO_HOOKS = "    hooks: {gate: null, run_started: null, turn_started: null}\n"
 def test_malformed_yaml_fails_validation(tmp_path: Path, text: str) -> None:
     with pytest.raises(ValidationError):
         load_config(write_config(tmp_path, text))
+
+
+def plugin_factory(config: Mapping[str, Any]) -> AbstractAsyncContextManager[None]:
+    """``plugins.factory`` 指向的入口替身；读配置不调它。"""
+
+    raise AssertionError(f"读配置时不该调插件包入口：{config}")
+
+
+def test_the_plugins_section_imports_the_factory_and_keeps_its_config_as_is(
+    tmp_path: Path,
+) -> None:
+    config = load_config(
+        write_config(
+            tmp_path,
+            f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}"
+            "plugins:\n"
+            "  factory: tests.unit.test_settings:plugin_factory\n"
+            "  config:\n    internal_api: {base_url: 'http://server.test', token_env: T}\n"
+            "    shot_video: {}\n",
+        )
+    )
+
+    assert config.plugins is not None
+    assert config.plugins.factory is plugin_factory
+    assert config.plugins.config == {
+        "internal_api": {"base_url": "http://server.test", "token_env": "T"},
+        "shot_video": {},
+    }
+
+
+def test_without_a_plugins_section_there_is_no_plugin_package(tmp_path: Path) -> None:
+    config = load_config(write_config(tmp_path, f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}"))
+
+    assert config.plugins is None
+
+
+@pytest.mark.parametrize(
+    "plugins",
+    [
+        "plugins: {config: {}}\n",
+        "plugins: {factory: 'no_such_module:build'}\n",
+        "plugins: {factory: 'tests.unit.test_settings:no_such_factory'}\n",
+        "plugins: {factory: 'tests.unit.test_settings:plugin_factory', extra: 1}\n",
+    ],
+    ids=["no-factory", "unknown-module", "unknown-callable", "unknown-key"],
+)
+def test_a_malformed_plugins_section_fails_validation(tmp_path: Path, plugins: str) -> None:
+    with pytest.raises(ValidationError):
+        load_config(write_config(tmp_path, f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}{plugins}"))
 
 
 def test_missing_or_empty_config_file_fails(tmp_path: Path) -> None:

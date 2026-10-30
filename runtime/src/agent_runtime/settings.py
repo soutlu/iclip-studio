@@ -1,4 +1,4 @@
-"""运行时服务的配置：YAML 文件给运行参数与接入的应用名单，环境变量给连接串与机密。
+"""运行时服务的配置：YAML 文件给运行参数、接入的应用名单与插件包，环境变量给连接串与机密。
 
 照后端的做法分两步：``load_config`` 只读 YAML（不看环境变量），``resolve_settings`` 再读环境变量、
 连同各应用的密钥一起校验，交回服务装配用的 ``RuntimeSettings``。缺了或格式不对都在启动时报错，
@@ -10,9 +10,10 @@ from __future__ import annotations
 import hmac
 import os
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
 from cryptography.fernet import Fernet
 from pydantic import (
@@ -20,6 +21,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    ImportString,
     StringConstraints,
     field_validator,
     model_validator,
@@ -118,12 +120,25 @@ class OpsSection(ConfigSection):
     log_format: Literal["console", "json"] = "console"
 
 
+class PluginsSection(ConfigSection):
+    """接哪个插件包。"""
+
+    factory: ImportString[Callable[..., Any]]
+    """插件包的入口 ``模块:可调用对象``，形状见 ``agent_runtime.plugins.base.PluginFactory``；读配置时
+    就 import，写错了启动失败。"""
+
+    config: dict[str, Any] = Field(default_factory=dict[str, Any])
+    """原样交给入口，运行时不解读；机密只写放它的环境变量名。"""
+
+
 class ServiceConfig(BaseSettings):
     """YAML 配置文件的形状；只从文件读，不看环境变量。"""
 
     model_config = SettingsConfigDict(frozen=True, extra="forbid")
 
     apps: dict[AppId, AppSection] = Field(min_length=1)
+    plugins: PluginsSection | None = None
+    """不写就没有插件：插件登记表是空的。"""
     agent_runs: AgentRunsSection = AgentRunsSection()
     compaction: CompactionSection = CompactionSection()
     ops: OpsSection = OpsSection()
@@ -306,6 +321,7 @@ __all__ = [
     "CompactionSection",
     "HooksSection",
     "OpsSection",
+    "PluginsSection",
     "ResolvedApp",
     "ResolvedHooks",
     "RuntimeSettings",

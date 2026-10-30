@@ -159,9 +159,9 @@ def live(
     settings = _settings(migrated_pg, tmp_path, reader_hooks=reader_hooks)
     app = create_app(
         settings,
-        plugins=lambda files: {
+        plugins=lambda host: {
             "approving": ApprovingPlugin,
-            "jotting": JottingPlugin.bind(files=files),
+            "jotting": JottingPlugin.bind(files=host.files),
         },
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
         engine=engine,
