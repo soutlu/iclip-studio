@@ -21,7 +21,7 @@
 
 ## 3. 数据载荷与格式 (Payload Formatting)
 
-- **命名**：业务 HTTP API 的请求体、查询参数和响应使用 camelCase。既有例外是 SSO `authorization_url`、注册接口的用户状态字段、§5 的 Transcript 协议字段，以及 §11 里视频提交与视频任务查询这一对端点（它们是上游视频异步接口的原样镜像）；消费者按生成合同取名，新业务端点不沿用这些例外。
+- **命名**：业务 HTTP API 的请求体、查询参数和响应使用 camelCase。既有例外是 SSO `authorization_url`、注册接口的用户状态字段、§5 的 Transcript 协议字段，§11 里视频提交与视频任务查询这一对端点（它们是上游视频异步接口的原样镜像），以及 §19 里 agent 的 `config`（配置文档本身，与导出包同一份格式）；消费者按生成合同取名，新业务端点不沿用这些例外。
 - **时间**：时间戳使用 ISO 8601 UTC。
 - **排序**：列表一律按建立时间（`createdAt`）倒序，同一时刻按资源 ID 倒序兜底；游标分页续的就是这个排序键。列表位置因此只随新建改变，后续操作不会让条目换位。
 - **标识**：资源 ID、游标与协议 ID 按各自合同使用，不从 URL、显示名称或序号推导资源身份。客户端 `prompt_id` 是消息幂等键；对话和需求单 ID 可由调用方提供，运行 ID 由服务端发放，轮 ID 则是 Transcript 内的顺序标识；幂等语义见 [CONTEXT.md 不变量 8](../docs/CONTEXT.md#不变量)。
@@ -38,7 +38,7 @@
 | **Conflict** | `409`：请求与资源**当前状态**冲突——乐观锁并发冲突、不合法的状态机转换、当前状态下不许改的字段 |
 | **ValidationFailed** | `422` |
 
-上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；取消成片导出时渲染服务不可用返回 `502`（§6「成片导出」）。
+上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；取消成片导出时渲染服务不可用返回 `502`（§6「成片导出」）；发布 agent 被编译检查拦下的 `422` 在信封里另带 `problems`（§19「发布」）。
 
 请求结构校验失败（`422`）用同一个字符串信封：`detail` 是一句 `<字段路径>: <原因>`，字段路径形如 `shot.timeline[0].image_indexes`，报在请求体自身的只有原因。一次请求只给第一条，后面几条通常是同一处问题的连带结果。生成任务的业务失败通过任务状态与 `errorCode` / `errorMessage` 表达，HTTP 受理成功不代表生成成功。
 
@@ -623,6 +623,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **未发布的修改**：`hasUnpublishedChanges` 比较草稿清单的 hash 与最新版的 `contentHash`，没发布过恒为 `true`。`description` 取最新版 `SKILL.md` 的 frontmatter，没发布过时跟着草稿里的走（frontmatter 不合格时不变）。
 - **发布**：`POST /skills/{id}/versions` 体是 `{ note? }`，`201` 答复新版本。草稿不合格是 `422`，`detail` 列出全部问题：除上面的文件规则，`SKILL.md` 的 frontmatter 要有 `name`（等于技能的标识）和非空、不超过 1024 个字符的 `description`。内容（`contentHash`）与最新版相同是 `422`「没有可发布的改动」。版本号在每个技能内从 1 起递增，版本发布后不再改。
 - **恢复**：`POST /skills/{id}/versions/{versionId}/restore` 把这一版的文件整份抄回草稿，替换草稿里的全部文件，不发布，答复技能详情。
+- **谁在用**：技能详情的 `usedBy` 列出草稿或当前版本绑定了这个技能的 agent，形状与引用规则见 §19「被引用时拦住」。`POST /skills/{id}/archive` 在 `usedBy` 不为空时是 `409`。
 - **导入**分两步，都是 `POST /skills/import`、multipart 字段 `file`，提交同一个 zip：
   - `dryRun=true` 只检查不写，答复 `{ action, skillId, name, displayName, description, files, problems }`。`action` 是 `create`（会新建技能）或 `overwrite`（会覆盖同名技能的草稿，`skillId` 是那个技能），读不出合格的 `name` 时 `action`、`name` 为 `null`；`displayName` 取 `SKILL.md` 第一个 `# ` 标题，没有就用 `name`；`files` 是读出来的合格文件 `[{ path, size, hash }]`，按路径排；`problems` 是字符串数组，每条写明哪个文件、为什么不行，空数组即可以导入。
   - 不带 `dryRun`（或 `dryRun=false`）是正式导入，答复同一形状；`problems` 不为空就是 `422`，`detail` 列出全部问题，什么都不写。正式导入只写草稿、不发布：新建一个技能，或整份替换同名技能的草稿，覆盖时不改显示名。
@@ -639,3 +640,43 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **默认密钥**：供应商的第一把密钥自动成为 `defaultCredentialId`；删默认密钥是 `409`，先用 `PATCH /model-providers/{id}` 的 `defaultCredentialId` 换成本供应商的另一把（别的供应商的或不存在的是 `422`）。
 - **模型**：模型在供应商里按（名字，类型）认，路径是 `…/models/{type}/{name}`，名字放在最后，可以带斜杠（如 `…/models/llm/ZHIPU/GLM-5.3-Flash`）。`source` 为 `declared` 的只能改 `enabled`，改属性或删除是 `422`；`custom` 的能改 `api`、`contextSize`、`thinking`（给 `null` 即清掉）、`enabled` 与删除，属性按声明里模型的同一套规则校验：`llm` 必须有 `api`，别的类型不能有 `api` 与 `thinking`，`thinking` 不能重复。声明不允许自己加模型（`customModels` 为假）、和已有模型同名同类型都是 `422`。
 - **默认模型**：`PUT /default-models/{type}` 体是 `{ providerId, modelName }`，供应商不存在、没有这个类型的这个模型、模型已停用都是 `422`；停用或删除当前的默认模型是 `409`，先把默认换掉。
+- **谁在用**：供应商列表里每个模型与每把密钥带 `usedBy`，形状与引用规则见 §19「被引用时拦住」。模型的 `usedBy` 是写着这个模型的 agent，只有 `llm` 会有；密钥的是在 `model.credential_id` 里显式写着这把的 agent（没写的用默认密钥，默认密钥本来就不能删）。在用时停用或删除模型、删除密钥都是 `409`；`PATCH /model-providers/{id}` 把供应商停用时，只要有 agent 写着这个供应商也是 `409`。
+
+## 19. Agent 配置 (Agents)
+
+agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Agent 标识」等词条](../docs/CONTEXT.md#术语)。端点都在 `/agents` 下，权限看 `openapi.json`。没有这个 agent 或版本是 `404`。首页的 `GET /conversations/agents` 仍读运行配置，与这里无关。
+
+- **配置文档**：草稿、版本与导出包里的 `config` 是同一份格式，字段照文档本身写（snake_case，是 §3 的例外）：`schema_version`（现在是 `1`）、`instructions`、`model { provider, name, credential_id?, settings { thinking? } }`（草稿里可以是 `null`）、`tools`、`subagents [{ agent, timeout_seconds?, max_calls?, on_failure? }]`。`tools` 的每一项按 `type` 区分，现在只有 `cap`：`{ type: "cap", toolset, enabled, parameters }`，`toolset` 是插件名，`parameters` 按那个插件自己的参数校验；以后加来源只加 `type`。同一个 `toolset`、同一个子 agent 只能写一次。技能不写在 `config` 里，是旁边的 `skillIds`，按先后排。不认识的字段都是 `422`。
+- **列表**：`GET /agents` 含已归档的，按 `sortOrder` 从小到大、同序按 `createdAt` 倒序，是 §3 的例外。每项带 `activeVersion`（`{ id, version, publishedAt }`，没发布过为 `null`）与 `hasUnpublishedChanges`（草稿的 `config` 或 `skillIds` 与当前版本不同；没发布过恒为 `true`）。`PUT /agents/order` 体是 `{ ids }`，要正好是全部 agent 的标识、各一次，否则 `422`；新建的排在最后。
+- **元信息**：`POST /agents` 体是 `{ id, name, description? }`，标识不合规矩是 `422`、已被占用是 `409`，草稿是没有模型的空配置，`listed` 为 `false`。`PATCH /agents/{id}` 改 `name`、`description`、`listed`，不给的不动；`description` 不进版本，改了立即生效。
+- **lockVersion**：详情的 `draft.lockVersion` 是草稿的乐观锁。`PUT /agents/{id}/draft`（体 `{ config, skillIds, lockVersion }`，整份覆盖）、`POST /agents/{id}/versions`（发布）、`POST …/versions/{versionId}/restore`（体 `{ lockVersion }`）都要带上读到的值，对不上是 `409`，客户端重新读详情后再操作。保存草稿、恢复与覆盖导入让它加一，发布不改它。保存只查结构：`config` 不合格、`skillIds` 重复或有不存在的技能是 `422`；引用的供应商、模型、插件、技能能不能用、子 agent 合不合规矩都留到发布时查，草稿允许暂时不完整。
+- **发布**：`POST /agents/{id}/versions` 体是 `{ note?, lockVersion }`，`201` 答复新版本，版本号在每个 agent 内从 1 起递增，发布后不再改；草稿的 `baseVersionId` 随之指到新版本。编译检查不过是 `422`，信封是 `{ detail, problems }`：`problems` 是 `[{ path, message }]`，一次列全，`detail` 是把它们拼成的一句话。`path` 指到草稿里的字段，写法是 `model`、`model.provider`、`model.name`、`model.credential_id`、`model.settings.thinking`、`tools[2]`、`tools[0].parameters.limit`、`skills[1]`（`skillIds` 的第 2 个）、`subagents[0].agent`、`subagents`（整组）；客户端按它跳到对应字段。检查的规则见 [CONTEXT.md「发布」](../docs/CONTEXT.md#术语)。检查通过、但 `config` 与 `skillIds` 都和当前版本相同是 `422`「没有可发布的改动」，这时没有 `problems`。
+- **版本与恢复**：`GET /agents/{id}/versions` 版本号从大到小；单个版本带 `config` 与 `skillIds`。恢复把这一版的 `config` 与 `skillIds` 抄回草稿（`baseVersionId` 指到这一版），不发布，答复详情。
+- **归档**：`POST /agents/{id}/archive` 与 `…/unarchive`，答复详情；已在那个状态的原样不动。归档的 agent 不能再被选作子 agent，发布时引用它是问题；别的 agent 的草稿或当前版本还把它当作子 agent 时归档是 `409`。详情的 `usedBy` 就是这些引用方。
+- **导出**：`GET /agents/{id}/export` 给 `application/yaml`，下载文件名是 `<id>-v<N>.yaml`。包里是这个 agent 与它当前版本里写的子 agent，各取自己的当前版本，入口在最前；它没发布过是 `404`。包的格式：
+
+  ```yaml
+  format_version: "1.0.0"
+  entry: director
+  agents:
+    director: {name, description, listed, config: {…}, skills: [技能标识, …]}
+    breakdown-helper: {…}
+  ```
+
+  `config` 里去掉 `model.credential_id`（密钥只属于本环境），技能按标识写。
+- **导入**分两步，都是 `POST /agents/import`、multipart 字段 `file`，提交同一个 YAML，最大 1 MB：
+  - `dryRun=true` 只检查不写，答复 `{ entry, agents, problems, warnings }`。`agents` 按包里的先后，每项 `{ agentId, name, action, problems, warnings }`：`action` 是 `create`（会新建）或 `overwrite`（会覆盖同标识 agent 的草稿）；这里的 `problems` 与 `warnings` 都是 `[{ path, message }]`，`path` 相对包里这个 agent（如 `config.model.name`、`skills[1]`、`name`）。顶层的 `problems`（`path` 相对整个包，如 `format_version`、`entry`）与 `warnings`（字符串）说的是整个包。
+  - 问题：读不出 YAML、超过大小、外层结构或 `config` 格式不对、格式版本不收、入口不在包里、标识不合规矩、引用的技能在本环境不存在、引用的供应商不存在或它没有这个对话模型、子 agent 既不在包里也不在本环境。提醒（不拦导入、发布前要处理）：技能已归档或没发布过、供应商或模型已停用，以及格式版本的次版本比本系统旧。
+  - 不带 `dryRun` 是正式导入，答复同一形状；任何一处有问题就是 `422`，`detail` 列出全部问题，什么都不写。否则在一个事务里写完：已有的 agent 只覆盖草稿（`config`、`skillIds`，`lockVersion` 加一，`baseVersionId` 置空），名称、描述与 `listed` 不动；没有的新建（只有草稿，名称、描述、`listed` 取包里的）；都不发布。
+  - 格式版本按语义版本比较，本系统现在是 `1.0.0`：包比本系统新、或主版本比本系统旧都是问题，不保留旧格式的兼容；只是次版本旧的照收，带一条提醒。
+- **被引用时拦住**：技能、模型、密钥、供应商与 agent 被某个 agent 的草稿或当前版本引用时，下面的操作是 `409`，`detail` 列出在用的 agent（名称、标识，以及在草稿还是当前版本里）；只被旧版本用到的不拦。已归档 agent 的草稿与当前版本也算。
+
+  | 操作 | 怎样算引用 |
+  |---|---|
+  | `POST /skills/{id}/archive` | 绑定了这个技能 |
+  | 停用或删除模型 | `model.provider` 与 `model.name` 是它 |
+  | 删除密钥 | `model.credential_id` 是它 |
+  | 把供应商停用 | `model.provider` 是它 |
+  | `POST /agents/{id}/archive` | `subagents` 里有它 |
+
+  同一份引用也在读的时候给出：技能详情、供应商列表里的模型与密钥、agent 详情都带 `usedBy`，每项 `{ agentId, agentName, inDraft, inActiveVersion }`，同一个 agent 只有一项，按标识排。

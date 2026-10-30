@@ -141,6 +141,11 @@ depends_on = ["iclip.common", "iclip.domains.identity"]
 path = "iclip.domains.skills"
 depends_on = ["iclip.common", "iclip.domains.identity"]
 
+# Agent 配置：模型供应商、插件登记表与技能库都经端口查，由组合根接上；那两边问「谁在用」也经它们自己的端口。
+[[modules]]
+path = "iclip.domains.agent_config"
+depends_on = ["iclip.common", "iclip.domains.identity"]
+
 [[modules]]
 path = "iclip.domains.products"
 depends_on = ["iclip.common"]
@@ -205,6 +210,7 @@ depends_on = [
     "iclip.domains.tracking",
     "iclip.domains.skills",
     "iclip.domains.model_providers",
+    "iclip.domains.agent_config",
     "iclip.harness",
     "iclip.plugins",
 ]

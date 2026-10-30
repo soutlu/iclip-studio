@@ -128,6 +128,15 @@ class ProviderState:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedProvider:
+    """给别的模块看的一个供应商：那一行、全部密钥的 id 与合并后的模型列表。"""
+
+    provider: ProviderRecord
+    credential_ids: tuple[uuid.UUID, ...]
+    models: tuple[ProviderModel, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ProbeResult:
     """一次试连的结果。``reason`` 只在失败时有，不带密钥，也不带完整请求。"""
 
@@ -158,5 +167,6 @@ __all__ = [
     "ProviderModel",
     "ProviderRecord",
     "ProviderState",
+    "ResolvedProvider",
     "mask_secret",
 ]

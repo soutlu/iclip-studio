@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from iclip.common.agent_usage import AgentUsageOut
 from iclip.common.model_vocab import ModelApi, ThinkingEffort
 from iclip.domains.model_providers.models import CredentialFieldType, ModelSource, ModelType
 
@@ -60,6 +61,8 @@ class ProviderModelOut(DeclaredModelOut):
 
     source: ModelSource
     enabled: bool
+    used_by: list[AgentUsageOut]
+    """草稿或当前版本写着这个模型的 agent，按 agent 标识排；它们还在用时不能停用或删除。只有 llm 会有。"""
 
 
 class CredentialOut(CamelModel):
@@ -67,6 +70,8 @@ class CredentialOut(CamelModel):
     name: str
     fields: dict[str, str]
     """按声明的字段名给值；机密字段是打码后的样子（``••••`` 加末 4 位，原值不足 8 位只有 ``••••``）。"""
+    used_by: list[AgentUsageOut]
+    """草稿或当前版本显式写着这把密钥的 agent，按 agent 标识排；它们还在用时不能删。"""
     created_at: datetime
     updated_at: datetime
 

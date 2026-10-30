@@ -4,11 +4,18 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 import structlog
 
+from iclip.common.agent_usage import (
+    AgentUsage,
+    ModelReference,
+    in_use_message,
+    merge_usages,
+    usages_out,
+)
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.model_providers.catalog import Declarations, ProviderDeclaration
 from iclip.domains.model_providers.cipher import CredentialCipher
@@ -23,10 +30,12 @@ from iclip.domains.model_providers.models import (
     ProviderModel,
     ProviderRecord,
     ProviderState,
+    ResolvedProvider,
 )
 from iclip.domains.model_providers.repository import (
     CredentialProbe,
     ModelProviderStore,
+    ModelUsages,
     ProviderEditor,
 )
 from iclip.domains.model_providers.rules import (
@@ -98,7 +107,7 @@ def _declaration_out(declaration: ProviderDeclaration) -> DeclarationOut:
     )
 
 
-def _model_out(model: ProviderModel) -> ProviderModelOut:
+def _model_out(model: ProviderModel, users: Sequence[AgentUsage]) -> ProviderModelOut:
     return ProviderModelOut(
         name=model.name,
         type=model.type,
@@ -107,6 +116,39 @@ def _model_out(model: ProviderModel) -> ProviderModelOut:
         thinking=list(model.properties.thinking),
         source=model.source,
         enabled=model.enabled,
+        used_by=usages_out(users),
+    )
+
+
+def _provider_users(
+    references: Sequence[ModelReference], provider: ProviderRecord
+) -> tuple[AgentUsage, ...]:
+    """写了这个供应商的 agent。"""
+
+    return merge_usages(one.usage for one in references if one.provider == provider.name)
+
+
+def _model_users(
+    references: Sequence[ModelReference], provider: ProviderRecord, model: ProviderModel
+) -> tuple[AgentUsage, ...]:
+    """写了这个模型的 agent；agent 只用 llm 模型，别的类型没人用。"""
+
+    if model.type != "llm":
+        return ()
+    return merge_usages(
+        one.usage for one in references if one.provider == provider.name and one.model == model.name
+    )
+
+
+def _credential_users(
+    references: Sequence[ModelReference], provider: ProviderRecord, credential_id: uuid.UUID
+) -> tuple[AgentUsage, ...]:
+    """显式写了这把密钥的 agent；没写密钥的用默认密钥，默认密钥本来就不能删。"""
+
+    return merge_usages(
+        one.usage
+        for one in references
+        if one.provider == provider.name and one.credential_id == credential_id
     )
 
 
@@ -163,7 +205,8 @@ def _require_not_default(editor: ProviderEditor, model: ProviderModel) -> None:
 
 
 class ModelProviderService:
-    """``probe`` 由组合根接上，每次调用都是一次真实的上游请求。"""
+    """``probe`` 由组合根接上，每次调用都是一次真实的上游请求；``usages`` 由组合根接到 agent 配置域，
+    回答哪些 agent 在用哪个供应商、模型与密钥。"""
 
     def __init__(
         self,
@@ -172,11 +215,13 @@ class ModelProviderService:
         declarations: Declarations,
         cipher: CredentialCipher,
         probe: CredentialProbe,
+        usages: ModelUsages,
     ) -> None:
         self._store = store
         self._declarations = declarations
         self._cipher = cipher
         self._probe = probe
+        self._usages = usages
 
     def declarations(self) -> DeclarationsOut:
         """可以接入的供应商声明，按声明名排。"""
@@ -188,10 +233,25 @@ class ModelProviderService:
         )
 
     async def providers(self) -> ModelProvidersOut:
-        """接入的全部供应商，带打码的密钥与合并后的模型列表。"""
+        """接入的全部供应商，带打码的密钥与合并后的模型列表，每个模型与每把密钥带在用它的 agent。"""
 
+        references = await self._usages.model_references()
         return ModelProvidersOut(
-            providers=[self._provider_out(state) for state in await self._store.states()]
+            providers=[
+                self._provider_out(state, references) for state in await self._store.states()
+            ]
+        )
+
+    async def resolved(self, name: str) -> ResolvedProvider | None:
+        """按引用名找接入的供应商，带密钥 id 与合并后的模型列表；没有给 ``None``。供别的模块查引用。"""
+
+        state = next((one for one in await self._store.states() if one.provider.name == name), None)
+        if state is None:
+            return None
+        return ResolvedProvider(
+            provider=state.provider,
+            credential_ids=tuple(one.id for one in state.credentials),
+            models=merge_models(self._declaration_of(state.provider), state.settings),
         )
 
     async def create(self, body: ModelProviderCreateIn) -> ModelProviderOut:
@@ -208,10 +268,15 @@ class ModelProviderService:
         return await self._provider_out_by_id(provider_id)
 
     async def update(self, provider_id: uuid.UUID, body: ModelProviderUpdateIn) -> ModelProviderOut:
-        """改显示名、启停或默认密钥；默认密钥必须是这个供应商的密钥。"""
+        """改显示名、启停或默认密钥；默认密钥必须是这个供应商的密钥。某个 agent 的草稿或当前版本还写着
+        这个供应商时停用是 ``Conflict``。"""
 
         async with self._store.edit(provider_id) as editor:
             provider = editor.state.provider
+            if provider.enabled and body.enabled is False:
+                users = _provider_users(await self._usages.model_references(), provider)
+                if users:
+                    raise Conflict(in_use_message(f"供应商 {provider.name} ", users))
             default_credential_id = provider.default_credential_id
             if body.default_credential_id is not None:
                 _ = self._credential_in(editor.state, body.default_credential_id)
@@ -267,12 +332,19 @@ class ModelProviderService:
         return await self._credential_out_by_id(provider_id, credential_id)
 
     async def delete_credential(self, provider_id: uuid.UUID, credential_id: uuid.UUID) -> None:
-        """删一把密钥；默认密钥不能删，先换默认（``Conflict``）。"""
+        """删一把密钥；默认密钥不能删，先换默认（``Conflict``）。某个 agent 的草稿或当前版本显式写着这把
+        密钥也是 ``Conflict``。"""
 
         async with self._store.edit(provider_id) as editor:
-            _ = _credential(editor.state, credential_id)
-            if editor.state.provider.default_credential_id == credential_id:
+            credential = _credential(editor.state, credential_id)
+            provider = editor.state.provider
+            if provider.default_credential_id == credential_id:
                 raise Conflict("这是默认密钥，先把默认密钥换成别的再删")
+            users = _credential_users(
+                await self._usages.model_references(), provider, credential_id
+            )
+            if users:
+                raise Conflict(in_use_message(f"密钥 {credential.name} ", users))
             await editor.delete_credential(credential_id)
 
     async def test_credential(self, provider_id: uuid.UUID, body: CredentialTestIn) -> ProbeOut:
@@ -319,13 +391,14 @@ class ModelProviderService:
                 enabled=True,
             )
             await editor.put_model(self._setting(added))
-        return _model_out(added)
+            provider = editor.state.provider
+        return await self._model_out_with_users(provider, added)
 
     async def update_model(
         self, provider_id: uuid.UUID, model_type: ModelType, name: str, body: ModelUpdateIn
     ) -> ProviderModelOut:
         """启停一个模型，或改自己加的模型的属性。声明里的模型改属性是 ``ValidationFailed``；停用默认
-        模型是 ``Conflict``。"""
+        模型、或停用某个 agent 的草稿或当前版本还写着的模型是 ``Conflict``。"""
 
         given = body.model_fields_set
         async with self._store.edit(provider_id) as editor:
@@ -350,17 +423,20 @@ class ModelProviderService:
                     thinking=(body.thinking or ()) if "thinking" in given else current.thinking,
                 )
                 updated = replace(model, properties=spec.properties(), enabled=enabled)
+            provider = editor.state.provider
             if model.enabled and not enabled:
                 _require_not_default(editor, model)
+                await self._require_unused_model(provider, model)
             if updated.source == SOURCE_DECLARED and updated.enabled:
                 # 声明里的模型默认启用，重新启用就是去掉那条停用记录。
                 await editor.delete_model(updated.name, updated.type)
             else:
                 await editor.put_model(self._setting(updated))
-        return _model_out(updated)
+        return await self._model_out_with_users(provider, updated)
 
     async def delete_model(self, provider_id: uuid.UUID, model_type: ModelType, name: str) -> None:
-        """删一个自己加的模型。声明里的模型只能停用（``ValidationFailed``）；默认模型不能删（``Conflict``）。"""
+        """删一个自己加的模型。声明里的模型只能停用（``ValidationFailed``）；默认模型、某个 agent 的草稿或
+        当前版本还写着的模型不能删（``Conflict``）。"""
 
         async with self._store.edit(provider_id) as editor:
             declaration = self._declaration_of(editor.state.provider)
@@ -370,6 +446,7 @@ class ModelProviderService:
             if model.source == SOURCE_DECLARED:
                 raise ValidationFailed("声明里的模型不能删，只能停用")
             _require_not_default(editor, model)
+            await self._require_unused_model(editor.state.provider, model)
             await editor.delete_model(model.name, model.type)
 
     async def default_models(self) -> DefaultModelsOut:
@@ -444,18 +521,25 @@ class ModelProviderService:
         )
 
     def _credential_out(
-        self, declaration: ProviderDeclaration, credential: CredentialRecord
+        self,
+        declaration: ProviderDeclaration,
+        provider: ProviderRecord,
+        credential: CredentialRecord,
+        references: Sequence[ModelReference],
     ) -> CredentialOut:
         plain = decrypt_fields(declaration, credential.fields, self._cipher)
         return CredentialOut(
             id=credential.id,
             name=credential.name,
             fields=masked_fields(declaration, plain),
+            used_by=usages_out(_credential_users(references, provider, credential.id)),
             created_at=credential.created_at,
             updated_at=credential.updated_at,
         )
 
-    def _provider_out(self, state: ProviderState) -> ModelProviderOut:
+    def _provider_out(
+        self, state: ProviderState, references: Sequence[ModelReference]
+    ) -> ModelProviderOut:
         declaration = self._declaration_of(state.provider)
         provider = state.provider
         return ModelProviderOut(
@@ -465,22 +549,47 @@ class ModelProviderService:
             label=provider.label,
             enabled=provider.enabled,
             default_credential_id=provider.default_credential_id,
-            credentials=[self._credential_out(declaration, one) for one in state.credentials],
-            models=[_model_out(one) for one in merge_models(declaration, state.settings)],
+            credentials=[
+                self._credential_out(declaration, provider, one, references)
+                for one in state.credentials
+            ],
+            models=[
+                _model_out(one, _model_users(references, provider, one))
+                for one in merge_models(declaration, state.settings)
+            ],
             created_at=provider.created_at,
             updated_at=provider.updated_at,
         )
 
     async def _provider_out_by_id(self, provider_id: uuid.UUID) -> ModelProviderOut:
-        return self._provider_out(await self._state(provider_id))
+        return self._provider_out(
+            await self._state(provider_id), await self._usages.model_references()
+        )
 
     async def _credential_out_by_id(
         self, provider_id: uuid.UUID, credential_id: uuid.UUID
     ) -> CredentialOut:
         state = await self._state(provider_id)
         return self._credential_out(
-            self._declaration_of(state.provider), _credential(state, credential_id)
+            self._declaration_of(state.provider),
+            state.provider,
+            _credential(state, credential_id),
+            await self._usages.model_references(),
         )
+
+    async def _model_out_with_users(
+        self, provider: ProviderRecord, model: ProviderModel
+    ) -> ProviderModelOut:
+        return _model_out(
+            model, _model_users(await self._usages.model_references(), provider, model)
+        )
+
+    async def _require_unused_model(self, provider: ProviderRecord, model: ProviderModel) -> None:
+        """某个 agent 的草稿或当前版本还写着这个模型就是 ``Conflict``；只被旧版本用到的不拦。"""
+
+        users = _model_users(await self._usages.model_references(), provider, model)
+        if users:
+            raise Conflict(in_use_message(f"模型 {model.name} ", users))
 
 
 __all__ = ["ModelProviderService", "rotate_credential_keys"]

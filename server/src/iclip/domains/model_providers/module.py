@@ -11,7 +11,11 @@ from iclip.domains.model_providers.api import (
 )
 from iclip.domains.model_providers.catalog import Declarations
 from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.repository import CredentialProbe, ModelProviderStore
+from iclip.domains.model_providers.repository import (
+    CredentialProbe,
+    ModelProviderStore,
+    ModelUsages,
+)
 from iclip.domains.model_providers.service import ModelProviderService
 
 
@@ -29,10 +33,14 @@ def build_model_providers_module(
     declarations: Declarations,
     cipher: CredentialCipher,
     probe: CredentialProbe,
+    usages: ModelUsages,
 ) -> ModelProvidersModule:
-    """``declarations`` 由组合根在启动时读好（见 ``catalog.load_declarations``）。"""
+    """``declarations`` 由组合根在启动时读好（见 ``catalog.load_declarations``）；``usages`` 由组合根接到
+    agent 配置域。"""
 
-    service = ModelProviderService(store, declarations=declarations, cipher=cipher, probe=probe)
+    service = ModelProviderService(
+        store, declarations=declarations, cipher=cipher, probe=probe, usages=usages
+    )
     return ModelProvidersModule(
         routers=(create_model_providers_router(service), create_default_models_router(service)),
         service=service,

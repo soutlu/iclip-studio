@@ -15,6 +15,8 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
+from iclip.domains.agent_config.infra_sql import SqlAgentStore
+from iclip.domains.agent_config.public import AgentReferences
 from iclip.domains.skills.infra_sql import SqlSkillStore
 from iclip.domains.skills.schemas import (
     DraftFileWriteIn,
@@ -30,7 +32,7 @@ TABLES = ("skills", "skill_draft_files", "skill_versions", "skill_version_files"
 
 @pytest.fixture
 def service(engine: AsyncEngine) -> SkillsService:
-    return SkillsService(SqlSkillStore(engine))
+    return SkillsService(SqlSkillStore(engine), usages=AgentReferences(SqlAgentStore(engine)))
 
 
 @pytest.fixture

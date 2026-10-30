@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from iclip.common.agent_usage import AgentUsageOut
 from iclip.domains.skills.models import SkillStatus
 
 
@@ -59,6 +60,8 @@ class SkillsOut(CamelModel):
 class SkillDetailOut(SkillOut):
     draft_files: list[DraftFileInfoOut]
     """草稿的全部文件，按 ``path`` 排。"""
+    used_by: list[AgentUsageOut]
+    """草稿或当前版本绑定了这个技能的 agent，按 agent 标识排；它们还在用时不能归档。"""
 
 
 class SkillCreateIn(CamelModel):

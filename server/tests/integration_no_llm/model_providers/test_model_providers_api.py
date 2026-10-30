@@ -16,6 +16,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import ValidationFailed
+from iclip.domains.agent_config.infra_sql import SqlAgentStore
+from iclip.domains.agent_config.public import AgentReferences
 from iclip.domains.model_providers.catalog import Declarations, load_declarations
 from iclip.domains.model_providers.cipher import CredentialCipher
 from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
@@ -378,6 +380,7 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
         "thinking": ["none", "high"],
         "source": "custom",
         "enabled": True,
+        "usedBy": [],
     }
 
     for body in (
@@ -487,6 +490,7 @@ async def test_declaration_without_custom_models_refuses_them(engine: AsyncEngin
         declarations=Declarations({"closed": closed}),
         cipher=CredentialCipher([TEST_CREDENTIAL_KEY]),
         probe=KeyCheckingProbe({GOOD_KEY}),
+        usages=AgentReferences(SqlAgentStore(engine)),
     )
     provider = await service.create(
         ModelProviderCreateIn(name="closed", provider="closed", label="封闭")
