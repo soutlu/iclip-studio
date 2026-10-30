@@ -2350,6 +2350,63 @@ describe('StoryboardReader', () => {
       expect(fetched).toEqual([editableJob.outputUrl])
     })
 
+    it('编辑页合成过的出片：舞台播最新合成的那一版，下载取它的字节并以它的记录 id 上报', async () => {
+      provide()
+      // 出片有水印版、合成没有：下载按合成走，点了直接下原片，不开菜单。
+      const take = { ...editableJob, watermarkOutputUrl: 'https://example.com/history-wm.mp4' }
+      const composite = makeGenerationJob({
+        createdAt: '2026-09-01T10:20:00Z',
+        durationMs: 7000,
+        finishedAt: '2026-09-01T10:21:00Z',
+        id: '3c2b1a09-8f7e-4d6c-9b5a-4e3d2c1b0a98',
+        operation: 'compose',
+        outputUrl: 'https://example.com/composite.mp4',
+        rootJobId: editableJob.id,
+        shotIndex: 1,
+        sourceJobId: editableJob.id,
+      })
+      serveTakes([take, composite])
+      const events: unknown[] = []
+      const fetched: string[] = []
+      server.use(
+        http.post('*/api/tracking/events', async ({ request }) => {
+          events.push(await request.json())
+          return new HttpResponse(null, { status: 204 })
+        }),
+        http.get(composite.outputUrl ?? '', ({ request }) => {
+          fetched.push(request.url)
+          return new HttpResponse(new Uint8Array([1, 2, 3]), {
+            headers: { 'Content-Type': 'video/mp4' },
+          })
+        }),
+      )
+      vi.stubGlobal(
+        'URL',
+        class extends URL {
+          static override createObjectURL = () => 'blob:http://localhost/video'
+          static override revokeObjectURL() {}
+        },
+      )
+      const saved = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      await renderReader()
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      // 合成不单独成卡。
+      expect(takeTimes(await findTakes())).toEqual([take.createdAt])
+      await userEvent.click((await cardOf(take)).card)
+
+      expect(within(page).getByLabelText('生成的视频', { selector: 'video' })).toHaveAttribute(
+        'src',
+        composite.outputUrl,
+      )
+      await userEvent.click(within(page).getByRole('button', { name: '下载视频' }))
+
+      await waitFor(() =>
+        expect(events).toEqual([{ jobId: composite.id, name: 'video.downloaded' }]),
+      )
+      await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+      expect(fetched).toEqual([composite.outputUrl])
+    })
+
     it('编辑视频打开这条素材片的视频编辑器', async () => {
       provide()
       serveTakes([editableJob])
