@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 import pytest
+from agent_runtime.harness.transcript.store import TranscriptStore
 from fastapi import FastAPI
 from sqlalchemy import text
 from starlette.testclient import TestClient
@@ -107,6 +108,32 @@ def test_one_connection_serves_two_conversations(ws_agent_app: FastAPI, pg_url: 
                 until(ws, "transcript.reset")["session_id"],
             }
             assert landed == {first, second}
+
+
+def test_closing_the_connection_releases_every_pin_and_listener(
+    ws_agent_app: FastAPI, pg_url: str
+) -> None:
+    """TestClient 退出时先发断开再取消连接任务，走的是连接被取消的那条收尾路径。"""
+
+    store: TranscriptStore = ws_agent_app.state.transcript_store
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        first = open_conversation(tc)
+        second = open_conversation(tc)
+        assert not store.holds(first)
+        assert not store.holds(second)
+
+        with tc.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+            subscribe(ws, first, frame_id="s1")
+            subscribe(ws, second, frame_id="s2", grade="turn")
+            until(ws, "transcript.reset")
+            until(ws, "transcript.reset")
+            assert store.holds(first)
+            assert store.holds(second)
+
+        assert not store.holds(first)
+        assert not store.holds(second)
 
 
 def test_turn_grade_carries_the_turn_but_no_deltas(ws_agent_app: FastAPI, pg_url: str) -> None:

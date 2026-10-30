@@ -745,11 +745,13 @@ class _Connection:
         except (WebSocketDisconnect, ConnectionError):
             _logger.debug("订阅连接断开", conversations=len(self._listeners))
         finally:
+            # 先同步放开占着的东西再 await：连接任务被取消时（服务关停、对端断开后宿主取消任务），
+            # finally 里的 await 会被再次取消，排在它后面的清理就不跑了。
+            for conversation_id in {key[0] for key in self._listeners}:
+                self._unlisten(conversation_id)
             for helper in helpers:
                 helper.cancel()
             await asyncio.gather(*helpers, return_exceptions=True)
-            for conversation_id in {key[0] for key in self._listeners}:
-                self._unlisten(conversation_id)
 
     async def _read(self) -> None:
         while True:

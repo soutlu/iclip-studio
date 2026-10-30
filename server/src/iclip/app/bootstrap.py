@@ -934,6 +934,8 @@ def build_app(
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     install_error_handlers(app)
+    # 测试核对连接断开后实时状态有没有放开。
+    app.state.transcript_store = transcript_store
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
