@@ -17,12 +17,14 @@ import structlog
 from iclip_video.shot_document import AspectError, parse_aspect
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
+    AnchorSheets,
     BoardsNotStored,
     BoardsResult,
     BoardsUnreadable,
     ExtractionLedger,
     GridCutFailed,
     LedgerBoard,
+    ShotCells,
     ShotsOutOfRange,
 )
 from iclip_video.shot_video.prompt import GRID_CELLS, GRID_COLS, GRID_ROWS
@@ -206,9 +208,17 @@ class CutRecordsAdapter:
         await self._records.record_cuts(principal, grid_job_id, urls)
 
 
+def cut_object_keys(job_id: uuid.UUID, cells: ShotCells | AnchorSheets) -> list[str]:
+    """切下来的每一格存到哪个对象 key，与 ``cells`` 同序：出图一格按帧号，设定图一格按序号。"""
+
+    if isinstance(cells, ShotCells):
+        return [MEDIA_PATHS.shot_cell(job_id=job_id, cell_id=cell) for cell in cells.cell_ids]
+    return [MEDIA_PATHS.anchor_sheet(job_id=job_id, index=index) for index in cells.indexes]
+
+
 class GridCutsAdapter:
-    """``GridCuts`` 的实现：下载整图、按 ``GRID_ROWS`` × ``GRID_COLS`` 切格、并行转存后记切图。
-    ``fetch_url`` 在下载整图前换算地址（本桶对象走内网）。"""
+    """``GridCuts`` 的实现：下载整图、按 ``GRID_ROWS`` × ``GRID_COLS`` 切格、按 ``cut_object_keys`` 定
+    每格的 key 并行转存后记切图。``fetch_url`` 在下载整图前换算地址（本桶对象走内网）。"""
 
     def __init__(
         self,
@@ -229,18 +239,19 @@ class GridCutsAdapter:
         job_id: uuid.UUID,
         *,
         grid_url: str,
-        object_keys: Sequence[str],
+        cells: ShotCells | AnchorSheets,
         aspect: str | None,
     ) -> tuple[str, ...]:
+        object_keys = cut_object_keys(job_id, cells)
         try:
-            cells = await self._slice(grid_url, aspect=aspect, job_id=job_id)
+            pieces = await self._slice(grid_url, aspect=aspect, job_id=job_id)
         except (MediaError, GridError, AspectError) as exc:
             raise GridCutFailed(str(exc)) from exc
-        if len(cells) != GRID_CELLS:
+        if len(pieces) != GRID_CELLS:
             raise GridCutFailed("整图切格数量异常")
         try:
             urls = await self._put_all(
-                list(zip(object_keys, cells[: len(object_keys)], strict=True))
+                list(zip(object_keys, pieces[: len(object_keys)], strict=True))
             )
         except ObjectStoreUnavailable as exc:
             raise GridCutFailed(str(exc)) from exc
@@ -293,5 +304,6 @@ __all__ = [
     "FrameBoardsAdapter",
     "GridCutsAdapter",
     "PublicObjects",
+    "cut_object_keys",
     "reusable",
 ]

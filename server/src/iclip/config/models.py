@@ -51,6 +51,8 @@ WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
 
 CREDENTIAL_ENCRYPTION_KEYS_ENV: Final = "CREDENTIAL_ENCRYPTION_KEYS"
 
+RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
+
 DEFAULT_SKILL_CACHE_DIRNAME: Final = "iclip-skills"
 """``agent_runs.skill_cache_dir`` 不写时，技能缓存放在系统临时目录下的这个子目录。"""
 
@@ -161,6 +163,20 @@ class WholeFilmRenderEnv(EnvSettings):
         if parts.scheme not in {"http", "https"} or not parts.netloc:
             raise ValueError(f"{WHOLE_FILM_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
         return value.rstrip("/")
+
+
+class RuntimeInternalEnv(EnvSettings):
+    """运行时服务调后端内部接口（回调与插件服务）时带的令牌；与运行时给应用 ``video`` 配的
+    ``hooks.token_env`` 是同一个值。"""
+
+    token: RequiredEnv = Field(validation_alias=RUNTIME_INTERNAL_TOKEN_ENV)
+
+    @field_validator("token")
+    @classmethod
+    def _long_enough(cls, value: str) -> str:
+        if len(value) < _MIN_SECRET_LENGTH:
+            raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
+        return value
 
 
 class AppSection(ConfigSection):
@@ -504,6 +520,8 @@ class ResolvedSettings:
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
     """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
+    runtime_internal_token: str | None
+    """运行时服务调内部接口带的令牌；为 None 时内部接口不挂。"""
     compaction: ResolvedCompaction
     agent_runs: ResolvedAgentRuns
     log_level: str
@@ -724,6 +742,11 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         whole_film_render=_resolve_whole_film_render(
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
+        ),
+        runtime_internal_token=(
+            _from_env(RuntimeInternalEnv).token
+            if _switched_on(RUNTIME_INTERNAL_TOKEN_ENV)
+            else None
         ),
         compaction=ResolvedCompaction(
             max_fraction=config.conversations.compaction.max_fraction,

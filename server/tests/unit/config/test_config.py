@@ -41,6 +41,7 @@ MANIFEST = (
     "QWEN_API_KEY",
     "T_QWEN_KEY",
     "WHOLE_FILM_RENDER_URL",
+    "RUNTIME_INTERNAL_TOKEN",
 )
 
 
@@ -198,6 +199,31 @@ def test_blank_value_counts_as_missing(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("AUTH_SECRET", "   ")
     with pytest.raises(ValidationError, match="AUTH_SECRET"):
         resolve_settings(config)
+
+
+def test_the_runtime_internal_token_is_optional(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    assert resolve_settings(config).runtime_internal_token is None
+
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", " " + "t" * 32 + " ")
+    assert resolve_settings(config).runtime_internal_token == "t" * 32
+
+
+def test_a_short_runtime_internal_token_fails_startup_without_echoing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", "too-short-internal")
+
+    with pytest.raises(ValidationError, match="RUNTIME_INTERNAL_TOKEN") as caught:
+        resolve_settings(config)
+
+    assert "32" in str(caught.value)
+    assert "too-short-internal" not in str(caught.value)
 
 
 def test_sso_off_when_env_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

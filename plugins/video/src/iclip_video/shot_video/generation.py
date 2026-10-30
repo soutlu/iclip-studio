@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Final, NoReturn
 
@@ -12,6 +11,7 @@ import structlog
 from pydantic_ai import ModelRetry, ToolFailed
 
 from iclip_video.shot_video.ports import (
+    AnchorSheets,
     GridCutFailed,
     GridCuts,
     ImageChannel,
@@ -19,6 +19,7 @@ from iclip_video.shot_video.ports import (
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
+    ShotCells,
 )
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -106,13 +107,13 @@ class FrameGenerator:
         user_id: uuid.UUID,
         job: ImageJob,
         *,
-        object_keys: Sequence[str],
+        cells: ShotCells | AnchorSheets,
         aspect: str | None,
         failure_message: str,
     ) -> CellCut:
-        """经 ``GridCuts`` 切格转存，逐格地址与 ``object_keys`` 同序；转存成功的每一格各记一条切图。
+        """经 ``GridCuts`` 切格转存，逐格地址与 ``cells`` 同序；转存成功的每一格各记一条切图。
 
-        整图恒为 GRID_CELLS 格，``object_keys`` 只给实际请求的那几格，多出来的是补位格，
+        整图恒为 GRID_CELLS 格，``cells`` 只给实际请求的那几格，多出来的是补位格，
         不转存也不记。切格、下载、转存失败时向模型报告简短错误，诊断信息留日志；记录落不下是
         数据库的事，原样抛出，不让模型重出一张付费宫格。"""
 
@@ -121,7 +122,7 @@ class FrameGenerator:
             job_failure(job, message=failure_message, reason="生成记录未携带结果 URL")
         try:
             urls = await self._cuts.cut(
-                user_id, job.job_id, grid_url=grid_url, object_keys=object_keys, aspect=aspect
+                user_id, job.job_id, grid_url=grid_url, cells=cells, aspect=aspect
             )
         except GridCutFailed as exc:
             job_failure(job, message=failure_message, reason=str(exc))

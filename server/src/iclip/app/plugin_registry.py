@@ -39,7 +39,6 @@ from iclip.domains.identity.public import Principal
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.http import validation_error_detail
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import PublicBucket
 
 
@@ -244,7 +243,6 @@ def build_plugin_registry(
                     objects=object_store,
                     records=CutRecordsAdapter(settled_records, resolve_principal),
                 ),
-                paths=MEDIA_PATHS,
                 image_models=image_models,
                 policy=GenerationPolicy(
                     poll_interval_seconds=shot_video.poll_interval_seconds,

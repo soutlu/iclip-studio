@@ -539,3 +539,42 @@ async def test_starting_a_run_announces_the_new_run_and_the_cleared_mark() -> No
     assert row["completedAt"] is None
     assert row["lastSeq"] == 1
     assert clock.current(existing.id) == 2
+
+
+async def test_a_reported_run_start_broadcasts_the_reported_activity_without_reading_it() -> None:
+    """运行时回调带来的活动直接进行里，不经 ``ActivitiesOf`` 再读（替身一读就炸）。"""
+
+    clock = SessionEventClock()
+    existing = _row(completed_at=NOW)
+    repo = RacingRepo(clock=clock, row=existing)
+    announced = Announced()
+    reported = ConversationActivity(
+        busy=True, pending_interaction="approval", video_generation="queued"
+    )
+
+    await build(repo, clock, announced, activities_of=_untouched).begin_reported_run(
+        existing.id, run_id="run-1", activity=reported
+    )
+
+    [(kind, owner, conversation_id, row)] = announced.rows
+    assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
+    assert (row["lastRunId"], row["completedAt"]) == ("run-1", None)
+    assert row["activity"] == {
+        "busy": True,
+        "pendingInteraction": "approval",
+        "lastTurnReason": None,
+        "videoGeneration": "queued",
+    }
+
+
+async def test_a_reported_run_start_on_a_missing_conversation_is_not_found() -> None:
+    clock = SessionEventClock()
+    repo = RacingRepo(clock=clock, row=_row())
+    announced = Announced()
+
+    with pytest.raises(NotFound):
+        await build(repo, clock, announced).begin_reported_run(
+            uuid.uuid4(), run_id="run-1", activity=ConversationActivity()
+        )
+
+    assert announced.rows == []

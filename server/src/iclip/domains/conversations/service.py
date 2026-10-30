@@ -507,12 +507,16 @@ class ConversationService:
         kind: Literal["created", "updated"],
         conversation: Conversation,
         before: EventWatermark,
+        *,
+        activity: ConversationActivity | None = None,
     ) -> None:
         """把写入之后的整行广播出去。``before`` 必须在写入之前取，填作行内 ``lastSeq``：行里的
         字段读于写入事务，包含了序号不大于它的每一个事件，客户端按它合并 ``activity``。帧本身由
-        广播方在提交之后发新号，客户端按那个号记行内事实字段的水位。"""
+        广播方在提交之后发新号，客户端按那个号记行内事实字段的水位。调用方已有活动就传
+        ``activity``，不再去读。"""
 
-        activity = (await self.activities([conversation.id]))[conversation.id]
+        if activity is None:
+            activity = (await self.activities([conversation.id]))[conversation.id]
         row = conversation_out(conversation, activity, before).model_dump(
             mode="json", by_alias=True
         )
@@ -1187,12 +1191,18 @@ class ConversationService:
         self._announce_deleted(principal.user_id, conversation_id)
 
     async def begin_run(
-        self, *, owner: uuid.UUID, agent_id: str, conversation_id: str, run_id: str
+        self,
+        *,
+        owner: uuid.UUID,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+        activity: ConversationActivity | None = None,
     ) -> None:
         """解析对话 id、核对属主与 Agent 后记录运行，再广播 ``updated``（照 Kimi 会话元数据一变就发）。
 
         这一帧带出新的 ``lastRunId`` 与被抹掉的收尾标记：开跑帧之后、这次写入之前读出的行晚到，
-        盖不掉它。"""
+        盖不掉它。给了 ``activity`` 就用它作行里的活动，不再经 ``ActivitiesOf`` 去读。"""
 
         parsed = _as_conversation_id(conversation_id)
         async with self._row_lock(parsed):
@@ -1200,7 +1210,23 @@ class ConversationService:
             conversation = await self._repo.touch_run(
                 parsed, owner=owner, agent_id=agent_id, run_id=run_id
             )
-            await self._broadcast_row("updated", conversation, before)
+            await self._broadcast_row("updated", conversation, before, activity=activity)
+
+    async def begin_reported_run(
+        self, conversation_id: uuid.UUID, *, run_id: str, activity: ConversationActivity
+    ) -> None:
+        """运行时回调报来的开跑：照 ``begin_run`` 记录运行并广播，行里的活动用回调带来的那份。
+
+        回调只带对话 id，属主与 Agent 取这一行自己的；对话不存在或已删抛 ``NotFound``。"""
+
+        conversation = await self._repo.get(conversation_id, owner=None)
+        await self.begin_run(
+            owner=conversation.owner_user_id,
+            agent_id=conversation.agent_id,
+            conversation_id=str(conversation_id),
+            run_id=run_id,
+            activity=activity,
+        )
 
     async def agent_of(self, principal: Principal, conversation_id: str, *, writing: bool) -> str:
         """从可见对话中读取 Agent，拒绝由调用方指定 Agent 绕过对话绑定。
