@@ -157,9 +157,10 @@ def test_malformed_credential_keys_fail_startup_without_echoing_them(
     with pytest.raises(ValidationError) as caught:
         resolve_settings(config)
 
-    message = str(caught.value.errors()[0]["msg"])
-    assert reason in message
-    assert "not-a-fernet-key" not in message and "short" not in message
+    assert reason in str(caught.value.errors()[0]["msg"])
+    printed = str(caught.value)
+    for key in filter(None, value.split(",")):
+        assert key not in printed
 
 
 def test_credential_keys_keep_their_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,12 +172,15 @@ def test_credential_keys_keep_their_order(tmp_path: Path, monkeypatch: pytest.Mo
     assert resolve_settings(config).credential_encryption_keys == (first, second)
 
 
-def test_resolve_rejects_non_asyncpg_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_rejects_non_asyncpg_url_without_echoing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
-    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:hunter2@db.test/iclip")
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
-    with pytest.raises(ValidationError, match="asyncpg"):
+    with pytest.raises(ValidationError, match="asyncpg") as caught:
         resolve_settings(config)
+    assert "hunter2" not in str(caught.value)
 
 
 def test_resolve_rejects_short_secret(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
