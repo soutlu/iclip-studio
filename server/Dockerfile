@@ -21,16 +21,20 @@ WORKDIR /app
 
 # 先建运行用户、以它的身份装依赖和拷源码，文件生来就归它所有。不要在最后 chown -R /app：
 # 那会把整个虚拟环境复制成一个新层，每次改代码都要重新上传这个大层。
-# runtime 项目放在 /runtime，server 的路径依赖 ../runtime 从 /app 解析到它。
+# runtime 项目放在 /runtime、视频插件项目放在 /plugins/video，server 的路径依赖 ../runtime 与
+# ../plugins/video 从 /app 解析到它们。
 RUN useradd --system --uid 1000 --home /app iclip \
     && chown iclip:iclip /app \
-    && mkdir /runtime && chown iclip:iclip /runtime
+    && mkdir /runtime && chown iclip:iclip /runtime \
+    && mkdir -p /plugins/video && chown -R iclip:iclip /plugins
 USER iclip
 
-# 先装依赖再拷 server 源码，改 server 代码不重装依赖。runtime 是可编辑安装的路径依赖，
-# 装依赖时就要构建它，所以它的项目文件与源码先拷进来。
+# 先装依赖再拷 server 源码，改 server 代码不重装依赖。runtime 与视频插件是可编辑安装的路径依赖，
+# 装依赖时就要构建它们，所以它们的项目文件与源码先拷进来。
 COPY --chown=iclip:iclip runtime/pyproject.toml /runtime/
 COPY --chown=iclip:iclip runtime/src /runtime/src
+COPY --chown=iclip:iclip plugins/video/pyproject.toml /plugins/video/
+COPY --chown=iclip:iclip plugins/video/src /plugins/video/src
 COPY --chown=iclip:iclip server/pyproject.toml server/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 

@@ -16,6 +16,8 @@ from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
+from iclip_video.video.capability import Video
+from iclip_video.video_document import video_doc_path
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
@@ -47,8 +49,6 @@ from iclip.plugins.shot_video.generation import (
 from iclip.plugins.shot_video.ports import ImageChannel, ImageJob
 from iclip.plugins.shot_video.shots import parse_shot_rows
 from iclip.plugins.shot_video.toolset import ShotVideoToolset
-from iclip.plugins.video.capability import Video
-from iclip.plugins.video_document import video_doc_path
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger

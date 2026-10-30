@@ -6,6 +6,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from agent_runtime.errors import ValidationFailed
+from iclip_video.iclip_studio.ports import (
+    InvalidNodeImageRequest,
+    NodeImageJob,
+    NodeImageRequest,
+)
 from pydantic import ValidationError
 
 from iclip.domains.generation.models import GenerationJob
@@ -13,11 +18,6 @@ from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
 from iclip.platform.http import validation_error_detail
-from iclip.plugins.iclip_studio.ports import (
-    InvalidNodeImageRequest,
-    NodeImageJob,
-    NodeImageRequest,
-)
 
 FILM_NODE_KEY = "film_node"
 """生图节点的生成记录在 ``metadata`` 里用这个键记节点名，制作页按它列这个节点的版本。"""

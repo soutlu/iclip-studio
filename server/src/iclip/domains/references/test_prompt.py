@@ -12,8 +12,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from agent_runtime.errors import ValidationFailed
-
-from iclip.common.shot_prompt import ShotCut, ShotScript, format_shot_prompt
+from iclip_video.shot_prompt import ShotCut, ShotScript, format_shot_prompt
 
 _ELEMENTS: Final = "出场元素"
 _TIMELINE: Final = "时间线"

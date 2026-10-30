@@ -19,6 +19,7 @@ from agent_runtime.transcript.display import (
     ToolDisplayEntry,
     url_filename,
 )
+from iclip_video.video.capability import Video
 from pydantic_ai.agent.abstract import AgentInstructions
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT
@@ -33,7 +34,6 @@ from iclip.plugins.shot_video.ports import (
     ShotVideoPaths,
 )
 from iclip.plugins.shot_video.toolset import ShotVideoToolset
-from iclip.plugins.video.capability import Video
 
 CAPABILITY_ID: Final = "shot_video"
 

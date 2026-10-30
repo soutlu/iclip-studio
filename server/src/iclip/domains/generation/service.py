@@ -9,8 +9,8 @@ from typing import Any
 
 import structlog
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from iclip_video.shot_prompt import format_seconds
 
-from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.clip_models import UpstreamMode, clip_model
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,

@@ -7,9 +7,9 @@ import json
 import uuid
 
 import httpx
+from iclip_video.shot_prompt import format_shot_prompt
 from sqlalchemy import text
 
-from iclip.common.shot_prompt import format_shot_prompt
 from iclip.domains.generation.models import STATUS_COMPLETED
 from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER
 from iclip.domains.generation.schemas import (

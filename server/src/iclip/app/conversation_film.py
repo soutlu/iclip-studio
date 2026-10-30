@@ -1,6 +1,6 @@
 """制作页的组合根适配：AI 导演的工程文件在工作区，图片地址在素材台账与生成记录里。
 
-读、检查与写回的规则都在 ``plugins/iclip_studio/film``；这里只管拿文件、认地址和写文件。"""
+读、检查与写回的规则都在 ``iclip_video.iclip_studio.film``；这里只管拿文件、认地址和写文件。"""
 
 from __future__ import annotations
 
@@ -18,18 +18,11 @@ from agent_runtime.file_store.store import (
 )
 from agent_runtime.material_ledger.store import Material, MaterialLedger
 from agent_runtime.plugins.workspace.scope import namespace_for
-from pydantic import ValidationError
-
-from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
-from iclip.common.film_view import FilmImagePrompt, FilmTextEdit, FilmView
-from iclip.domains.generation.schemas import VideoGenerationIn
-from iclip.domains.generation.service import GenerationService
-from iclip.domains.identity.public import Principal, resolve_user_name
-from iclip.platform.http import validation_error_detail
-from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
-from iclip.plugins.iclip_studio.film.load import ConversationImages, load_film
-from iclip.plugins.iclip_studio.film.prompts import video_row
-from iclip.plugins.iclip_studio.film.studio import (
+from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
+from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
+from iclip_video.iclip_studio.film.load import ConversationImages, load_film
+from iclip_video.iclip_studio.film.prompts import video_row
+from iclip_video.iclip_studio.film.studio import (
     FilmEditRejected,
     choose_image,
     edit_text,
@@ -39,7 +32,14 @@ from iclip.plugins.iclip_studio.film.studio import (
     music_description,
     set_aspect_ratio,
 )
-from iclip.plugins.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
+from iclip_video.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
+from pydantic import ValidationError
+
+from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
+from iclip.domains.generation.schemas import VideoGenerationIn
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.identity.public import Principal, resolve_user_name
+from iclip.platform.http import validation_error_detail
 
 _STALE = "分镜刚被改过，刷新后再改"
 _BROKEN = "分镜现在有问题，等 AI 导演改好再改"

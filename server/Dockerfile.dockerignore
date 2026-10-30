@@ -1,9 +1,11 @@
-# 后端以仓库根为构建上下文，只发送后端与它依赖的 runtime/ 源码；前端、渲染服务与 .git 都不发送。
+# 后端以仓库根为构建上下文，只发送后端与它依赖的 runtime/、plugins/video/ 源码；前端、渲染服务与 .git 都不发送。
 **
 !server/
 !server/**
 !runtime/
 !runtime/**
+!plugins/video/
+!plugins/video/**
 # 本机 venv 是 macOS 的，进了镜像既不能用又撑大上下文。
 **/.venv/
 **/node_modules/

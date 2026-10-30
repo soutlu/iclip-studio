@@ -1,6 +1,6 @@
 """镜头组规则：出片请求（generation）与分镜文件（shot_document）对同一组样本给出同一个结论。
 
-两边都调 common/shot_rules、各写各的文案；每个样本同时对照期望值，任一边绕开或接错规则都会红。"""
+两边都调 iclip_video.shot_rules、各写各的文案；每个样本同时对照期望值，任一边绕开或接错规则都会红。"""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from iclip_video.shot_document import ShotDocumentError, validate_shots_document
+from iclip_video.shot_rules import MAX_REFERENCE_IMAGES, image_indexes_of
 from pydantic import ValidationError
 
-from iclip.common.shot_rules import MAX_REFERENCE_IMAGES, image_indexes_of
 from iclip.domains.generation.schemas import VideoGenerationIn
-from iclip.plugins.shot_document import ShotDocumentError, validate_shots_document
 
 SETTINGS = "人物与门厅保持一致。"
 WITH_IMAGE = "全景，她走进门厅 @Image1。"

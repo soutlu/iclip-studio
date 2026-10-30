@@ -10,6 +10,8 @@ from typing import Any, cast
 import httpx
 import pytest
 from agent_runtime.errors import NotFound
+from iclip_video.iclip_studio.capability import IclipStudio
+from iclip_video.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter, RunFilmImagesAdapter
 from iclip.app.plugin_registry import build_plugin_registry
@@ -17,8 +19,6 @@ from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, Gen
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD, ImageGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.models import Principal
-from iclip.plugins.iclip_studio.capability import IclipStudio
-from iclip.plugins.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (

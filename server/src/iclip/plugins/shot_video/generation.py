@@ -10,11 +10,11 @@ from typing import Final, NoReturn
 
 import httpx
 import structlog
+from iclip_video.shot_document import AspectError, parse_aspect
 from pydantic_ai import ModelRetry, ToolFailed
 
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MAX_IMAGE_BYTES, fetched
-from iclip.plugins.shot_document import AspectError, parse_aspect
 from iclip.plugins.shot_video.ffmpeg import crop_cells, decode_gray
 from iclip.plugins.shot_video.grid import (
     GridError,
