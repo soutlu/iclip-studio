@@ -28,6 +28,16 @@ depends_on = ["iclip.common"]
 path = "iclip.platform.outbound"
 depends_on = []
 
+# 取帧拼板与宫格切格的像素处理，取帧台账、存储与切图记录在组合根的适配器里。
+[[modules]]
+path = "iclip.platform.shot_media"
+depends_on = ["iclip.platform.media"]
+
+# 视频拆解：抽帧取音轨与方舟模型适配器，供参考视频的拆解与资料库打标使用。
+[[modules]]
+path = "iclip.platform.video_breakdown"
+depends_on = ["iclip.platform.media"]
+
 [[modules]]
 path = "iclip.config"
 depends_on = ["iclip.common"]
@@ -104,12 +114,12 @@ depends_on = [
     "iclip.domains.identity",
 ]
 
-# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与插件包上；条数按表名读参考视频的移除标记。
+# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与视频拆解的模型适配器上；条数按表名读参考视频的移除标记。
 [[modules]]
 path = "iclip.domains.tagging"
 depends_on = ["iclip.common", "iclip.domains.identity"]
 
-# 参考视频的拆解、上传记录都是端口，由组合根接到插件包与生成域上；标签经 tagging。
+# 参考视频的拆解、上传记录都是端口，由组合根接到视频拆解与生成域上；标签经 tagging。
 [[modules]]
 path = "iclip.domains.references"
 depends_on = [
@@ -150,13 +160,6 @@ path = "iclip.platform.live"
 depends_on = ["iclip.common"]
 
 [[modules]]
-path = "iclip.plugins"
-depends_on = [
-    "iclip.common",
-    "iclip.platform.media",
-]
-
-[[modules]]
 path = "iclip.app"
 depends_on = [
     "iclip.common",
@@ -165,6 +168,8 @@ depends_on = [
     "iclip.platform.object_store",
     "iclip.platform.media",
     "iclip.platform.outbound",
+    "iclip.platform.shot_media",
+    "iclip.platform.video_breakdown",
     "iclip.config",
     "iclip.domains.identity",
     "iclip.domains.agents",
@@ -184,5 +189,4 @@ depends_on = [
     "iclip.domains.skills",
     "iclip.domains.model_providers",
     "iclip.domains.agent_config",
-    "iclip.plugins",
 ]

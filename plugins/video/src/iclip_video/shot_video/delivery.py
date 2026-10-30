@@ -11,8 +11,8 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry
 
-from iclip.plugins.shot_video.prompt import GRID_CELLS
-from iclip.plugins.shot_video.shots import CELL_ID_SHAPE, ShotParseError, parse_cell_id
+from iclip_video.shot_video.prompt import GRID_CELLS
+from iclip_video.shot_video.shots import CELL_ID_SHAPE, ShotParseError, parse_cell_id
 
 
 class FrameRequest(BaseModel):

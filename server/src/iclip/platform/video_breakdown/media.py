@@ -14,7 +14,7 @@ from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
 from iclip.platform.media.probe import has_audio_stream, probe_remote_duration_ms
 from iclip.platform.media.process import ENCODE_TIMEOUT_SECONDS, run
-from iclip.plugins.video_breakdown.ports import SampledVideo
+from iclip.platform.video_breakdown.ports import SampledVideo
 
 FRAME_FPS: Final = 10
 """每秒抽几帧。时间戳带一位小数，正好一帧一个。"""

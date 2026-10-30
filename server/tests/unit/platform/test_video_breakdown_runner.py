@@ -9,10 +9,10 @@ import httpx
 import pytest
 
 from iclip.platform.media.errors import MediaError
-from iclip.plugins.video_breakdown.model import ArkBreakdownModel
-from iclip.plugins.video_breakdown.ports import BreakdownError, SampledVideo
-from iclip.plugins.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
-from iclip.plugins.video_breakdown.service import BreakdownRunner
+from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import BreakdownError, SampledVideo
+from iclip.platform.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
+from iclip.platform.video_breakdown.service import BreakdownRunner
 
 VIDEO = "https://cdn.test/ref.mp4"
 DOCUMENT = "# 出场元素\n……\n# 时间线\n……\n# 整片分析\n……"

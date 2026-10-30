@@ -14,32 +14,32 @@ from agent_runtime.material_ledger.store import Material
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.tool_args import JsonText
 from agent_runtime.transcript.display import media_grid
-from iclip_video.video_document import video_doc_path
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.plugins.shot_video.delivery import (
+from iclip_video.shot_video.delivery import (
     FrameRequest,
     resolve_cells,
     resolve_requests,
 )
-from iclip.plugins.shot_video.extraction import EXTRACTION_PATH
-from iclip.plugins.shot_video.generation import (
+from iclip_video.shot_video.extraction import EXTRACTION_PATH
+from iclip_video.shot_video.generation import (
     ANCHOR_ASPECT,
     GRID_RESOLUTION,
     IMAGE_MODEL,
     job_failure,
 )
-from iclip.plugins.shot_video.ports import ImageRequest
-from iclip.plugins.shot_video.prompt import assemble_anchor_prompt, assemble_grid_prompt
-from iclip.plugins.shot_video.shots import CELL_ID_SHAPE
+from iclip_video.shot_video.ports import ImageRequest
+from iclip_video.shot_video.prompt import assemble_anchor_prompt, assemble_grid_prompt
+from iclip_video.shot_video.shots import CELL_ID_SHAPE
+from iclip_video.video_document import video_doc_path
 
 _logger = structlog.stdlib.get_logger(__name__)
 
 if TYPE_CHECKING:
-    from iclip.plugins.shot_video.capability import ShotVideo
+    from iclip_video.shot_video.capability import ShotVideo
 
 
 class ShotVideoToolset(FunctionToolset[AgentDepsT]):
@@ -161,7 +161,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         files, namespace = self._workspace(ctx)
         owner = _owner(ctx)
         # 出图不用台账内容，只要求先取过帧。
-        if await self._cap.extractor.load(files, namespace, expected_key=None) is None:
+        if await self._cap.extractor.load(files, namespace) is None:
             raise ModelRetry("取帧账本不存在或版本不兼容，先调用 plan_shot_frames。")
         cell_ids, prompts = resolve_requests(frames)
         references = tuple(reference_images)

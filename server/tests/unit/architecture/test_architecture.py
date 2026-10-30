@@ -9,8 +9,8 @@ SRC = Path(__file__).resolve().parents[3] / "src" / "iclip"
 
 # 框架及允许直接导入它的路径前缀（相对 src/iclip）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("pydantic_ai",): ("plugins/",),
-    # Agent 引擎在 agent_runtime，后端不直接引用 harness 与模型 SDK。
+    # Agent 引擎在 agent_runtime，插件在 iclip_video；后端不直接引用 pydantic-ai、harness 与模型 SDK。
+    ("pydantic_ai",): (),
     ("pydantic_ai_harness",): (),
     ("fastapi", "starlette"): (
         "app/",
@@ -48,7 +48,7 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("openai",): (),
     # 端口协议在 store.py，消费方不经 SDK 适配器就能依赖它。
     ("oss2",): ("platform/object_store/oss.py",),
-    ("PIL",): ("plugins/shot_video/board.py", "platform/media/image.py"),
+    ("PIL",): ("platform/shot_media/board.py", "platform/media/image.py"),
     # 队列实现、连接器类型与组合根需要直接引用 procrastinate。
     ("procrastinate",): (
         "domains/generation/queue.py",
@@ -62,7 +62,7 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
 }
 # 模块自有 SQL 按 infra_sql.py 文件名匹配。
 _SQLALCHEMY_MODULE_FILE = "infra_sql.py"
-_SQLALCHEMY_MODULE_PREFIXES = ("domains/", "plugins/")
+_SQLALCHEMY_MODULE_PREFIXES = ("domains/",)
 
 
 def _python_files() -> list[Path]:
@@ -108,23 +108,18 @@ def test_cross_module_imports_only_public() -> None:
 
     violations: list[str] = []
     domains = [p.name for p in (SRC / "domains").iterdir() if p.is_dir()]
-    for root_name, has_own in (("domains", True), ("plugins", False)):
-        for path in (SRC / root_name).rglob("*.py"):
-            rel = _rel(path)
-            own = rel.split("/")[1] if has_own else None
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ImportFrom) or not node.module:
-                    continue
-                parts = node.module.split(".")
-                if parts[:2] == ["iclip", "domains"] and len(parts) >= 3:
-                    target = parts[2]
-                    if (
-                        target in domains
-                        and target != own
-                        and (len(parts) < 4 or parts[3] != "public")
-                    ):
-                        violations.append(f"{rel}: 绕过 public 引 {node.module}")
+    for path in (SRC / "domains").rglob("*.py"):
+        rel = _rel(path)
+        own = rel.split("/")[1]
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            parts = node.module.split(".")
+            if parts[:2] == ["iclip", "domains"] and len(parts) >= 3:
+                target = parts[2]
+                if target in domains and target != own and (len(parts) < 4 or parts[3] != "public"):
+                    violations.append(f"{rel}: 绕过 public 引 {node.module}")
     assert not violations, "\n".join(violations)
 
 

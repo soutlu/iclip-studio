@@ -23,9 +23,9 @@ from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import TestVideoJob
 from iclip.domains.references.test_prompt import TestPrompt
 from iclip.platform.media.errors import MediaError
-from iclip.plugins.video_breakdown.model import ArkBreakdownModel
-from iclip.plugins.video_breakdown.ports import SampledVideo
-from iclip.plugins.video_breakdown.service import BreakdownRunner
+from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import SampledVideo
+from iclip.platform.video_breakdown.service import BreakdownRunner
 from tests.helpers.app import make_runtime_config
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 

@@ -1,13 +1,14 @@
 [project]
 name = "iclip-video-plugins"
 version = "0.1.0"
-description = "视频业务的 agent 插件（导演工程、视频理解、镜头组表）与共用的视频格式代码，只依赖 Agent 运行时"
+description = "视频业务的 agent 插件（导演工程、视频理解、镜头组表、视频拆解、取帧与出图）与共用的视频格式代码，只依赖 Agent 运行时"
 requires-python = ">=3.13"
 dependencies = [
     "agent-runtime",
     "pydantic>=2.13.5",
     "pydantic-ai-slim>=2.62.0",
     "httpx>=0.28.1",  # 视频理解的方舟适配器
+    "structlog>=26.1.0",
 ]
 
 [tool.uv.sources]
@@ -15,7 +16,6 @@ agent-runtime = { path = "../../runtime", editable = true }
 
 [dependency-groups]
 dev = [
-    "structlog>=26.1.0",  # 测试用 structlog.testing 抓日志
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-timeout>=2.4.0",

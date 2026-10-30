@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
-import httpx
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin
@@ -19,21 +18,21 @@ from agent_runtime.transcript.display import (
     ToolDisplayEntry,
     url_filename,
 )
-from iclip_video.video.capability import Video
 from pydantic_ai.agent.abstract import AgentInstructions
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT
 from pydantic_ai.toolsets import AgentToolset
 
-from iclip.platform.media.codec import MediaCodec
-from iclip.plugins.shot_video.extraction import FrameExtractor
-from iclip.plugins.shot_video.generation import IMAGE_MODEL, FrameGenerator, GenerationPolicy
-from iclip.plugins.shot_video.ports import (
+from iclip_video.shot_video.extraction import FrameExtractor
+from iclip_video.shot_video.generation import IMAGE_MODEL, FrameGenerator, GenerationPolicy
+from iclip_video.shot_video.ports import (
+    FrameBoards,
+    GridCuts,
     ImageGenerations,
-    PublicObjectWriter,
     ShotVideoPaths,
 )
-from iclip.plugins.shot_video.toolset import ShotVideoToolset
+from iclip_video.shot_video.toolset import ShotVideoToolset
+from iclip_video.video.capability import Video
 
 CAPABILITY_ID: Final = "shot_video"
 
@@ -78,16 +77,14 @@ class ShotVideo(CapPlugin[AgentDepsT]):
         space: FileSpace,
         ledger: MaterialLedger,
         generations: ImageGenerations,
-        objects: PublicObjectWriter,
+        boards: FrameBoards,
+        cuts: GridCuts,
         paths: ShotVideoPaths,
-        client: httpx.AsyncClient,
-        fetch_url: Callable[[str], str],
         image_models: frozenset[str],
         policy: GenerationPolicy,
-        codec: MediaCodec,
     ) -> type[Self]:
-        """装配取帧与出图服务并绑进类，取帧解码用 ``codec``；下载参考视频与整图前用 ``fetch_url``
-        换算地址。
+        """装配取帧与出图服务并绑进类：抽帧拼板经 ``boards``，宫格切格转存经 ``cuts``，每一格的
+        对象路径按 ``paths`` 定。
 
         Raises:
             RuntimeError: ``image_models`` 里没有出图要用的模型。
@@ -103,16 +100,8 @@ class ShotVideo(CapPlugin[AgentDepsT]):
             space=space,
             ledger=ledger,
             paths=paths,
-            extractor=FrameExtractor(
-                client=client, fetch_url=fetch_url, paths=paths, objects=objects, codec=codec
-            ),
-            generator=FrameGenerator(
-                generations=generations,
-                objects=objects,
-                client=client,
-                fetch_url=fetch_url,
-                policy=policy,
-            ),
+            extractor=FrameExtractor(boards=boards),
+            generator=FrameGenerator(generations=generations, cuts=cuts, policy=policy),
         )
 
     @classmethod

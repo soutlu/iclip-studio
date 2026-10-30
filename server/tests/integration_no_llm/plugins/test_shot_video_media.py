@@ -1,8 +1,12 @@
-"""使用 ffmpeg 合成媒体，通过 MockTransport 验证下载、取帧、拼板和非等分切格的像素结果。"""
+"""使用 ffmpeg 合成媒体，通过 MockTransport 验证下载、取帧、拼板和非等分切格的像素结果。
+
+插件接的是后端真实的取帧拼板与切格适配器，走的是组合根装配的同一条路；适配器自己的端口错误也在这里
+逐个核对。"""
 
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import uuid
 from collections.abc import AsyncIterator
@@ -21,6 +25,17 @@ from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
+from iclip_video.shot_video.capability import GenerationPolicy
+from iclip_video.shot_video.delivery import FrameRequest
+from iclip_video.shot_video.extraction import EXTRACTION_PATH
+from iclip_video.shot_video.ports import (
+    BoardsNotStored,
+    BoardsUnreadable,
+    GridCutFailed,
+    ShotsOutOfRange,
+)
+from iclip_video.shot_video.shots import parse_shot_rows
+from iclip_video.shot_video.toolset import ShotVideoToolset
 from iclip_video.video_document import video_doc_path
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.exceptions import ToolFailed
@@ -37,24 +52,24 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 from structlog.testing import capture_logs
 
+from iclip.app.shot_media import FrameBoardsAdapter, GridCutsAdapter
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.layout import MEDIA_PATHS
-from iclip.plugins.shot_video.capability import GenerationPolicy
-from iclip.plugins.shot_video.delivery import FrameRequest
-from iclip.plugins.shot_video.extraction import EXTRACTION_PATH
-from iclip.plugins.shot_video.ffmpeg import extract_frames
-from iclip.plugins.shot_video.generation import IMAGE_MODEL
-from iclip.plugins.shot_video.ports import ObjectWriteFailed
-from iclip.plugins.shot_video.toolset import (
-    ShotVideoToolset,
-)
+from iclip.platform.object_store.store import ObjectStoreUnavailable
+from iclip.platform.shot_media.ffmpeg import extract_frames
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.media import BROKEN_DECODE, CODECS, local_codec
-from tests.helpers.shot_video import FakeGenerations, FakeObjects, Outcome, mount_shot_video
+from tests.helpers.shot_video import (
+    FakeCutRecords,
+    FakeGenerations,
+    FakeObjects,
+    Outcome,
+    mount_shot_video,
+)
 
 pytestmark = pytest.mark.skipif(not ffmpeg_available(), reason="本机 PATH 上没有 ffmpeg/ffprobe")
 
@@ -82,7 +97,7 @@ FAST = GenerationPolicy(
 )
 
 STORE_DOWN = "OSS 写入失败（试了 3 次）: Read timed out"
-"""对象存储重试耗尽后，由组合根映射的错误消息。"""
+"""对象存储重试耗尽后抛出的错误消息。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,16 +223,16 @@ def make_tools(
     *,
     generations: FakeGenerations | None = None,
     ledger: FakeMaterialLedger | None = None,
+    records: FakeCutRecords | None = None,
 ) -> ShotVideoToolset[object]:
     toolset = mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
         ledger=ledger or FakeMaterialLedger(),
         generations=generations or FakeGenerations(),
         objects=objects,
-        paths=MEDIA_PATHS,
+        records=records or FakeCutRecords(),
         client=client,
         fetch_url=as_is,
-        image_models=frozenset({IMAGE_MODEL}),
         policy=FAST,
         codec=SOFTWARE,
     ).get_toolset()
@@ -459,7 +474,7 @@ async def test_plan_asks_for_a_retry_when_a_board_cannot_be_stored(
 ) -> None:
     """预览板存储失败需返回可重试错误且不落账本，避免下次复用不存在的地址。"""
 
-    objects = FakeObjects(error=ObjectWriteFailed(STORE_DOWN))
+    objects = FakeObjects(error=ObjectStoreUnavailable(STORE_DOWN))
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     client = make_client(media)
@@ -479,9 +494,12 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
     materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
+    records = FakeCutRecords()
     client = make_client(media)
     try:
-        tools = make_tools(client, objects, files, generations=generations, ledger=materials)
+        tools = make_tools(
+            client, objects, files, generations=generations, ledger=materials, records=records
+        )
         await tools.plan_shot_frames(make_context(), VIDEO_URL)
         boards_written = len(objects.written)
         result = await tools.generate_shot_frames(
@@ -508,7 +526,7 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
     }
 
     assert {frame["url"] for frame in payload["frames"]} | {GRID_URL} <= materials.urls(NAMESPACE)
-    assert generations.cuts == [
+    assert records.cuts == [
         (generations.job_ids[0], tuple(frame["url"] for frame in payload["frames"]))
     ], "请求的两格各记一条切图，来源是这张宫格；补位格不转存也不记"
 
@@ -521,12 +539,13 @@ async def test_generate_fails_loudly_when_the_cut_cells_cannot_be_recorded(
     files = FakeFileStore()
     materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
-    generations = FakeGenerations(
-        outcomes=[Outcome(output_url=GRID_URL)], cut_error=ConnectionError("数据库断了")
-    )
+    generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
+    records = FakeCutRecords(error=ConnectionError("数据库断了"))
     client = make_client(media)
     try:
-        tools = make_tools(client, FakeObjects(), files, generations=generations, ledger=materials)
+        tools = make_tools(
+            client, FakeObjects(), files, generations=generations, ledger=materials, records=records
+        )
         await tools.plan_shot_frames(make_context(), VIDEO_URL)
         boards = set(materials.urls(NAMESPACE))
         with pytest.raises(ConnectionError, match="数据库断了"):
@@ -570,11 +589,12 @@ async def test_generate_fails_when_cut_frames_cannot_be_stored(
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
+    records = FakeCutRecords()
     client = make_client(media)
     try:
-        tools = make_tools(client, objects, files, generations=generations)
+        tools = make_tools(client, objects, files, generations=generations, records=records)
         await tools.plan_shot_frames(make_context(), VIDEO_URL)
-        objects.error = ObjectWriteFailed(STORE_DOWN)
+        objects.error = ObjectStoreUnavailable(STORE_DOWN)
         with pytest.raises(ToolFailed) as raised:
             await tools.generate_shot_frames(
                 make_context(), [FrameRequest(no="S1-1", prompt="猫")], [], "全局", "9:16"
@@ -584,11 +604,11 @@ async def test_generate_fails_when_cut_frames_cannot_be_stored(
 
     assert "Read timed out" not in str(raised.value)
     assert len(generations.job_ids) == 1
-    assert generations.cuts == [], "没转存成的格子不记切图"
+    assert records.cuts == [], "没转存成的格子不记切图"
 
 
 async def test_anchor_sheet_reports_unstored_cells_the_same_way(media: dict[str, bytes]) -> None:
-    objects = FakeObjects(error=ObjectWriteFailed(STORE_DOWN))
+    objects = FakeObjects(error=ObjectStoreUnavailable(STORE_DOWN))
     files = FakeFileStore()
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
     client = make_client(media)
@@ -612,9 +632,12 @@ async def test_anchor_sheet_cuts_the_sheet_and_records_each_entity(
     files = FakeFileStore()
     materials = FakeMaterialLedger()
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
+    records = FakeCutRecords()
     client = make_client(media)
     try:
-        tools = make_tools(client, objects, files, generations=generations, ledger=materials)
+        tools = make_tools(
+            client, objects, files, generations=generations, ledger=materials, records=records
+        )
         result = await tools.generate_anchor_sheet(
             make_context(), ["全身正面平视的女性", "空景全景平视的门厅"]
         )
@@ -637,7 +660,7 @@ async def test_anchor_sheet_cuts_the_sheet_and_records_each_entity(
     written = list(objects.written.values())
     assert written[0] != written[1]
     assert {image["url"] for image in payload["images"]} | {GRID_URL} <= materials.urls(NAMESPACE)
-    assert generations.cuts == [
+    assert records.cuts == [
         (generations.job_ids[0], tuple(image["url"] for image in payload["images"]))
     ]
 
@@ -648,7 +671,7 @@ async def test_processing_failure_is_an_error_in_real_agent_live_and_history(
     """真实工具失败经官方框架返回 failed，Agent 仍能回复；两条投影都显示错误。"""
 
     secret_detail = "private-storage-response-with-signature"
-    objects = FakeObjects(error=ObjectWriteFailed(secret_detail))
+    objects = FakeObjects(error=ObjectStoreUnavailable(secret_detail))
     files = FakeFileStore()
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
     received: list[ToolReturnPart] = []
@@ -721,6 +744,137 @@ async def test_processing_failure_is_an_error_in_real_agent_live_and_history(
         assert cards[0].output == told
         assert secret_detail not in turns[0].model_dump_json()
         assert str(generations.job_ids[0]) not in turns[0].model_dump_json()
+
+
+def boards_adapter(client: httpx.AsyncClient, objects: FakeObjects) -> FrameBoardsAdapter:
+    return FrameBoardsAdapter(client, fetch_url=as_is, objects=objects, codec=SOFTWARE)
+
+
+def cuts_adapter(
+    client: httpx.AsyncClient, objects: FakeObjects, records: FakeCutRecords
+) -> GridCutsAdapter:
+    return GridCutsAdapter(client, fetch_url=as_is, objects=objects, records=records)
+
+
+async def test_the_boards_adapter_builds_a_ledger_then_hands_it_back_unchanged(
+    media: dict[str, bytes],
+) -> None:
+    """首次按 key 发布板并交回新台账；再拿这份台账来问，原样交回且不重传。"""
+
+    objects = FakeObjects()
+    rows = parse_shot_rows(DOCUMENT)
+    async with make_client(media) as client:
+        built = await boards_adapter(client, objects).boards(
+            video_url=VIDEO_URL, rows=rows, previous=None
+        )
+        written = dict(objects.written)
+        again = await boards_adapter(client, objects).boards(
+            video_url=VIDEO_URL, rows=rows, previous=built.ledger
+        )
+
+    assert not built.reused
+    key = built.ledger.extraction_key
+    board_key = MEDIA_PATHS.shot_board(extraction_key=key, index=1)
+    assert [(board.board, board.url) for board in built.ledger.boards] == [
+        (1, objects.public_url(board_key))
+    ]
+    assert list(written) == [board_key]
+    assert again.reused
+    assert again.ledger is built.ledger
+    assert objects.written == written
+
+
+async def test_the_boards_adapter_reports_timecodes_beyond_the_clip_in_the_model_facing_words(
+    media: dict[str, bytes],
+) -> None:
+    objects = FakeObjects()
+    async with make_client(media) as client:
+        with pytest.raises(ShotsOutOfRange) as raised:
+            await boards_adapter(client, objects).boards(
+                video_url=VIDEO_URL,
+                rows=parse_shot_rows("**[00:00.000-00:09.000]** 中景"),
+                previous=None,
+            )
+
+    assert re.fullmatch(
+        r"镜头时间戳越界（视频时长 \d+ms）：镜头 1。对着拆解文档核一遍，用 edit_file 就地改正后重新调用。",
+        str(raised.value),
+    )
+    assert objects.written == {}
+
+
+async def test_the_boards_adapter_reports_an_unstored_board_in_the_model_facing_words(
+    media: dict[str, bytes],
+) -> None:
+    async with make_client(media) as client:
+        with pytest.raises(BoardsNotStored) as raised:
+            await boards_adapter(
+                client, FakeObjects(error=ObjectStoreUnavailable(STORE_DOWN))
+            ).boards(video_url=VIDEO_URL, rows=parse_shot_rows(DOCUMENT), previous=None)
+
+    assert str(raised.value) == (
+        f"图片没存进对象存储：{STORE_DOWN}。重新调用一次；已经存下的会直接复用，不重传。"
+    )
+
+
+async def test_the_boards_adapter_passes_the_decoder_failure_through_as_unreadable(
+    media: dict[str, bytes],
+) -> None:
+    """抽帧解码失败的原文就是给模型的话。"""
+
+    async with make_client(media) as client:
+        adapter = FrameBoardsAdapter(
+            client, fetch_url=as_is, objects=FakeObjects(), codec=BROKEN_DECODE
+        )
+        with pytest.raises(BoardsUnreadable) as raised:
+            await adapter.boards(video_url=VIDEO_URL, rows=parse_shot_rows(DOCUMENT), previous=None)
+
+    assert isinstance(raised.value.__cause__, MediaError)
+    assert str(raised.value) == str(raised.value.__cause__)
+    assert "no-such-accel" in str(raised.value)
+
+
+async def test_the_cuts_adapter_stores_the_requested_cells_in_order_and_records_them(
+    media: dict[str, bytes],
+) -> None:
+    objects = FakeObjects()
+    records = FakeCutRecords()
+    job_id = uuid.uuid4()
+    async with make_client(media) as client:
+        urls = await cuts_adapter(client, objects, records).cut(
+            USER, job_id, grid_url=GRID_URL, object_keys=["cells/a.jpg", "cells/b.jpg"], aspect=None
+        )
+
+    assert urls == (objects.public_url("cells/a.jpg"), objects.public_url("cells/b.jpg"))
+    assert list(objects.written) == ["cells/a.jpg", "cells/b.jpg"]
+    # 按阅读顺序取前两格：左上、右上；补位的下排两格不转存。
+    assert [probe_size(cell) for cell in objects.written.values()] == [
+        (SMALL.left, SMALL.top),
+        (SMALL.right, SMALL.top),
+    ]
+    assert records.cuts == [(job_id, urls)]
+
+
+@pytest.mark.parametrize(
+    ("aspect", "store_error", "reason"),
+    [
+        ("9-16", None, "画幅要写成 宽:高，比如 9:16；收到的是 '9-16'"),
+        (None, ObjectStoreUnavailable(STORE_DOWN), STORE_DOWN),
+    ],
+    ids=["bad-aspect", "store-down"],
+)
+async def test_the_cuts_adapter_carries_the_failure_reason(
+    media: dict[str, bytes], aspect: str | None, store_error: Exception | None, reason: str
+) -> None:
+    records = FakeCutRecords()
+    async with make_client(media) as client:
+        with pytest.raises(GridCutFailed) as raised:
+            await cuts_adapter(client, FakeObjects(error=store_error), records).cut(
+                USER, uuid.uuid4(), grid_url=GRID_URL, object_keys=["cells/a.jpg"], aspect=aspect
+            )
+
+    assert str(raised.value) == reason
+    assert records.cuts == []
 
 
 def probe_size(data: bytes) -> tuple[int, int]:

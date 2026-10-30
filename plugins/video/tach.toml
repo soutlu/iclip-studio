@@ -37,6 +37,19 @@ path = "iclip_video.video_shots"
 depends_on = ["iclip_video.shot_document"]
 
 [[modules]]
+path = "iclip_video.video_breakdown"
+depends_on = []
+
+# 引用 video 只为在 get_ordering().requires 里写依赖（docs/architecture.md 的唯一例外）。
+[[modules]]
+path = "iclip_video.shot_video"
+depends_on = [
+    "iclip_video.shot_document",
+    "iclip_video.video_document",
+    "iclip_video.video",
+]
+
+[[modules]]
 path = "iclip_video.iclip_studio"
 depends_on = [
     "iclip_video.shot_rules",

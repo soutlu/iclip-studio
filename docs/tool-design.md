@@ -30,7 +30,7 @@
 
 ## 3. 登记与范围校验
 
-工具登记时声明输入范围、审批条件和展示信息。当前工具使用 `Tool(..., args_validator=...)` 注册到 toolset 或 capability；参考 [workspace](../runtime/src/agent_runtime/plugins/workspace/capability.py)、[shot_video](../server/src/iclip/plugins/shot_video/toolset.py) 与 [skill references](../runtime/src/agent_runtime/harness/skills.py)。
+工具登记时声明输入范围、审批条件和展示信息。当前工具使用 `Tool(..., args_validator=...)` 注册到 toolset 或 capability；参考 [workspace](../runtime/src/agent_runtime/plugins/workspace/capability.py)、[shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py) 与 [skill references](../runtime/src/agent_runtime/harness/skills.py)。
 
 - 素材来源、素材类型、已挂载 skill 等单工具范围规则放 `args_validator`，不散入工具执行逻辑。共用素材校验使用 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py) 的 `require_http`、`require_material`。
 - `ModelRetry` 表示参数可以修正；`ToolFailed` 报告本次失败，不消耗工具重试次数；是否再次调用由业务策略决定；`ApprovalRequired(metadata=...)` 表示需要审批，metadata 提供原因。

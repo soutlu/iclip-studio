@@ -509,6 +509,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
+    { name = "structlog" },
 ]
 
 [package.dev-dependencies]
@@ -518,7 +519,6 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
     { name = "ruff" },
-    { name = "structlog" },
     { name = "tach" },
 ]
 
@@ -528,6 +528,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-ai-slim", specifier = ">=2.62.0" },
+    { name = "structlog", specifier = ">=26.1.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -537,7 +538,6 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "ruff", specifier = ">=0.16.6" },
-    { name = "structlog", specifier = ">=26.1.0" },
     { name = "tach", specifier = ">=0.35.0" },
 ]
 

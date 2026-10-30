@@ -48,6 +48,8 @@ from agent_runtime.transcript.ops import (
     utf16_len,
 )
 from agent_runtime.transcript.wire import TranscriptPage
+from iclip_video.video_breakdown.capability import VideoBreakdown
+from iclip_video.video_breakdown.ports import FailedBreakdown
 from pydantic_ai import Agent, Tool
 from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.exceptions import ModelRetry
@@ -72,8 +74,6 @@ from pydantic_ai.models.function import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.plugins.video_breakdown.capability import VideoBreakdown
-from iclip.plugins.video_breakdown.ports import FailedBreakdown
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.runtime import (
     AGENT_ID,

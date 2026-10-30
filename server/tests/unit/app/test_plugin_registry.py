@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import httpx
@@ -16,7 +16,11 @@ from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.run_deps import AgentRunDeps
 from iclip_video.iclip_studio.capability import IclipStudio
+from iclip_video.shot_video.capability import ShotVideo
+from iclip_video.shot_video.generation import IMAGE_MODEL
+from iclip_video.shot_video.ports import ImageRequest, InvalidImageRequest
 from iclip_video.video.capability import Video
+from iclip_video.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
 from iclip_video.video_shots.capability import VideoShots
 from pydantic_ai import Agent, AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
@@ -27,37 +31,22 @@ from pydantic_ai.models.test import TestModel
 
 from iclip.app.plugin_registry import (
     GenerationsAdapter,
-    ObjectWriterAdapter,
     OssMediaProbe,
     build_display_registry,
     build_plugin_registry,
 )
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
-from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
+from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.object_store.store import ObjectStoreUnavailable
-from iclip.plugins.shot_video.capability import ShotVideo
-from iclip.plugins.shot_video.generation import IMAGE_MODEL
-from iclip.plugins.shot_video.ports import (
-    ImageRequest,
-    InvalidImageRequest,
-    ObjectWriteFailed,
-)
-from iclip.plugins.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.generation import (
-    InMemoryGenerationRepository,
-    MemoryObjectStore,
-    image_request,
-    make_job,
-)
+from tests.helpers.generation import MemoryObjectStore, make_job
 from tests.helpers.identity import FakePrincipals
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import FixedPlugin
@@ -326,9 +315,7 @@ async def test_generations_adapter_translates_and_reports_bad_parameters() -> No
     """生成域定义请求约束，适配器负责映射参数与错误。"""
 
     adapter = GenerationsAdapter(
-        cast("GenerationService", object()),
-        cast("SettledRecords", object()),
-        FakePrincipals(STUDIO_PRINCIPAL),
+        cast("GenerationService", object()), FakePrincipals(STUDIO_PRINCIPAL)
     )
     with pytest.raises(InvalidImageRequest, match="aspect_ratio"):
         await adapter.submit(
@@ -358,9 +345,7 @@ async def test_generations_adapter_carries_the_conversation_onto_the_job() -> No
 
     conversation_id = uuid.uuid4()
     adapter = GenerationsAdapter(
-        cast("GenerationService", _Recording()),
-        cast("SettledRecords", object()),
-        FakePrincipals(STUDIO_PRINCIPAL),
+        cast("GenerationService", _Recording()), FakePrincipals(STUDIO_PRINCIPAL)
     )
     await adapter.submit(
         STUDIO_PRINCIPAL.user_id,
@@ -376,19 +361,6 @@ async def test_generations_adapter_carries_the_conversation_onto_the_job() -> No
     )
     assert seen[0].conversation_id == conversation_id
     assert seen[0].user_name == "designer-zhang", "运行替谁跑，图就记在谁头上"
-
-
-class _StoreDown(MemoryObjectStore):
-    async def put_public_object(
-        self,
-        *,
-        object_key: str,
-        content: bytes,
-        content_type: str,
-        metadata: Mapping[str, str] | None = None,
-    ) -> str:
-        _ = (object_key, content, content_type, metadata)
-        raise ObjectStoreUnavailable("OSS 写入失败（试了 3 次）: Read timed out")
 
 
 def oss(
@@ -506,21 +478,6 @@ async def test_a_network_failure_is_a_probe_failure() -> None:
         await oss(handler).image_info(IMAGE_URL)
 
 
-async def test_object_writer_adapter_translates_the_failure_and_passes_urls_through() -> None:
-    """适配器须转换平台异常为插件包异常，避免可处理的工具错误中断整个运行。"""
-
-    with pytest.raises(ObjectWriteFailed, match="Read timed out"):
-        await ObjectWriterAdapter(_StoreDown()).put_public_object(
-            object_key="k", content=b"x", content_type="image/jpeg"
-        )
-
-    adapter = ObjectWriterAdapter(MemoryObjectStore())
-    url = await adapter.put_public_object(object_key="k", content=b"x", content_type="image/jpeg")
-    assert url == "https://cdn.example.test/k"
-    # 复用取帧台账时按 key 重算板地址，须与写入时交回的逐字相同。
-    assert adapter.public_url("k") == url
-
-
 async def test_generations_adapter_turns_intake_rejection_into_a_fixable_error() -> None:
     """受理层按所选模型的能力拒绝时，工具要能让模型改参数，而不是把异常裸抛出去。"""
 
@@ -532,9 +489,7 @@ async def test_generations_adapter_turns_intake_rejection_into_a_fixable_error()
             raise ValidationFailed("nano_banana_pro 不支持分辨率 8k")
 
     adapter = GenerationsAdapter(
-        cast("GenerationService", _Rejecting()),
-        cast("SettledRecords", object()),
-        FakePrincipals(STUDIO_PRINCIPAL),
+        cast("GenerationService", _Rejecting()), FakePrincipals(STUDIO_PRINCIPAL)
     )
     with pytest.raises(InvalidImageRequest, match="不支持分辨率 8k"):
         await adapter.submit(
@@ -561,7 +516,7 @@ CAT = ImageRequest(
 
 
 class _RecordingGenerations:
-    """生成域与切图记录的替身：记下每次收到的主体，查询按受理时的那一行答。"""
+    """生成域的替身：记下每次收到的主体，查询按受理时的那一行答。"""
 
     def __init__(self) -> None:
         self.principals: list[Principal] = []
@@ -577,20 +532,12 @@ class _RecordingGenerations:
         self.principals.append(principal)
         return self._jobs[job_id]
 
-    async def record_cuts(
-        self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
-    ) -> None:
-        _ = grid_job_id, urls
-        self.principals.append(principal)
-
 
 def recording_generations(
     principals: FakePrincipals,
 ) -> tuple[GenerationsAdapter, _RecordingGenerations]:
     service = _RecordingGenerations()
-    adapter = GenerationsAdapter(
-        cast("GenerationService", service), cast("SettledRecords", service), principals
-    )
+    adapter = GenerationsAdapter(cast("GenerationService", service), principals)
     return adapter, service
 
 
@@ -603,10 +550,9 @@ async def test_generations_adapter_rebuilds_the_owner_principal_on_every_call() 
 
     job = await adapter.submit(owner, CAT)
     await adapter.get(owner, job.job_id)
-    await adapter.record_cuts(owner, job.job_id, ["https://cdn.test/cells/S1-1.jpg"])
 
-    assert principals.asked == [owner, owner, owner]
-    assert service.principals == [STUDIO_PRINCIPAL] * 3
+    assert principals.asked == [owner, owner]
+    assert service.principals == [STUDIO_PRINCIPAL] * 2
 
 
 async def test_generations_adapter_lets_a_resolver_failure_through() -> None:
@@ -619,78 +565,7 @@ async def test_generations_adapter_lets_a_resolver_failure_through() -> None:
         await adapter.submit(owner, CAT)
     with pytest.raises(NotFound, match="用户不存在"):
         await adapter.get(owner, uuid.uuid4())
-    with pytest.raises(NotFound, match="用户不存在"):
-        await adapter.record_cuts(owner, uuid.uuid4(), ["https://cdn.test/cells/S1-1.jpg"])
     assert service.principals == []
-
-
-def cutter(user_id: uuid.UUID) -> Principal:
-    return Principal(
-        kind="user",
-        user_id=user_id,
-        permissions=frozenset({"agent:run"}),
-        audit_label="logan",
-    )
-
-
-async def test_cut_cells_are_recorded_against_their_grid_under_the_run_owner() -> None:
-    """切出来的每一格各落一条切图：来源是宫格，对话与需求单抄宫格，属主是运行属主，与地址同序。"""
-
-    owner = uuid.uuid4()
-    grid = make_job(
-        image_request(),
-        status=STATUS_COMPLETED,
-        owner_user_id=owner,
-        conversation_id=uuid.uuid4(),
-        task_id=uuid.uuid4(),
-        output=GenerationOutput(url="https://cdn.test/grid.png"),
-    )
-    repo = InMemoryGenerationRepository([grid])
-    adapter = GenerationsAdapter(
-        cast("GenerationService", object()), SettledRecords(repo), FakePrincipals(cutter(owner))
-    )
-    urls = ["https://cdn.test/cells/S1-1.jpg", "https://cdn.test/cells/S2-1.jpg"]
-
-    await adapter.record_cuts(owner, grid.id, urls)
-
-    cells = [job for job in repo.jobs.values() if job.operation == "cut"]
-    assert [job.output.url for job in cells] == urls
-    assert {
-        (
-            job.kind,
-            job.source_job_id,
-            job.conversation_id,
-            job.task_id,
-            job.owner_user_id,
-            job.status,
-            job.request,
-        )
-        for job in cells
-    } == {("image", grid.id, grid.conversation_id, grid.task_id, owner, STATUS_COMPLETED, None)}
-
-
-@pytest.mark.parametrize("grid_state", ["还没完成", "是视频"])
-async def test_cutting_from_anything_but_a_finished_image_is_a_bug(grid_state: str) -> None:
-    """工具刚等到宫格完成才切；对不上是装配或状态坏了，不当成模型能改的输入。"""
-
-    owner = uuid.uuid4()
-    grid = (
-        make_job(image_request(), owner_user_id=owner)
-        if grid_state == "还没完成"
-        else make_job(
-            status=STATUS_COMPLETED,
-            owner_user_id=owner,
-            output=GenerationOutput(url="https://cdn.test/take.mp4"),
-        )
-    )
-    repo = InMemoryGenerationRepository([grid])
-    adapter = GenerationsAdapter(
-        cast("GenerationService", object()), SettledRecords(repo), FakePrincipals(cutter(owner))
-    )
-
-    with pytest.raises(RuntimeError, match="宫格"):
-        await adapter.record_cuts(owner, grid.id, ["https://cdn.test/cells/S1-1.jpg"])
-    assert list(repo.jobs) == [grid.id]
 
 
 def test_shot_video_refuses_to_mount_when_its_image_model_is_not_wired(
