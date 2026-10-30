@@ -140,6 +140,11 @@
   height: var(--draft-height);
 }
 
+/* 选中的草稿块在上层：拖左把手往左拉长时盖住前一块（连同前一块的关联描边）。 */
+.video-editor-timeline-block.is-draft.is-selected {
+  z-index: var(--z-local-2);
+}
+
 .video-editor-timeline-block.is-film {
   top: var(--film-top);
   height: var(--film-height);
@@ -468,8 +473,10 @@
 }
 
 /* 草稿里选中那块、原片轨上选区两端的修剪把手，竖直居中在所在轨的画面行（草稿 48，原片 32）。 */
+/* 自己就在把手那一层：松手滑动时它成了层叠上下文，把手也不会落到选中块下面。 */
 .video-editor-timeline-trim {
   position: absolute;
+  z-index: var(--z-local-3);
   pointer-events: none;
 }
 

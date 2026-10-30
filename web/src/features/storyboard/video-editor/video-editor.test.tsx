@@ -496,6 +496,45 @@ describe('AI 改段的弹出卡', () => {
     expect(referenceSamples).toEqual([{ url: ossRoot, start: 0.7, end: 2.5 }])
   })
 
+  it('拖选区把手期间卡上的首帧、尾帧停在按下时那一帧，松手后换成新的起止', async () => {
+    const ossRoot = 'https://bucket.oss-cn-hangzhou.aliyuncs.com/root.mp4'
+    files.set(ossRoot, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
+    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
+    )
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor(makeGenerationJob({ ...root, outputUrl: ossRoot }))
+    await user.click(await shot(2))
+    const frames = () =>
+      within(openCard())
+        .getAllByRole('presentation')
+        .map((img) => img.getAttribute('src'))
+    const pressed = frames()
+    expect(pressed).toEqual([
+      expect.stringContaining('t_1000,'),
+      expect.stringContaining('t_1900,'),
+    ])
+
+    const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 200 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 230 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 250 })
+    expect(within(openCard()).getByText('原片 1.0 – 2.5 秒 · 视频和原声一起重做')).toBeVisible()
+    expect(frames()).toEqual(pressed)
+
+    fireEvent.pointerUp(end, { pointerId: 1 })
+    expect(frames()).toEqual([
+      expect.stringContaining('t_1000,'),
+      expect.stringContaining('t_2400,'),
+    ])
+  })
+
   it('Escape 把卡收成胶囊，未提交的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
     serveChain([])
     const user = userEvent.setup()

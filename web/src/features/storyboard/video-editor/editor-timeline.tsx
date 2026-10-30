@@ -12,7 +12,8 @@ import {
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
-import type { SecondsRange } from '../editing/clip'
+import { roundToMs, type SecondsRange } from '../editing/clip'
+import { holdLeftTrim, useReleaseSlide, type LeftTrimHold } from '../editing/left-trim'
 import type { PeaksState } from '../editing/media-analysis'
 import { shiftSelect, stepSelect } from '../editing/range-select'
 import { roundSeconds } from '../editing/time-label'
@@ -130,6 +131,8 @@ type ClipsTimelineProps = {
   /** 开关编辑轨上的一段：它的眼睛、把它拖进草稿、把草稿里的它拖出去都走这里。 */
   onTogglePart: (editId: string, seg: number) => void
   onTrim: (change: TrimChange) => void
+  /** 按下（true）、松开（false）修剪把手：拖动中卡片上的首帧、尾帧停在按下时那一帧，松手再换。 */
+  onTrimDrag: (dragging: boolean) => void
   /** 把这一段拖到草稿上、还没松手时草稿的样子（见 `previewPick`）；它已在草稿里时为 undefined。 */
   previewPick: (editId: string, seg: number) => readonly DraftItem[] | undefined
   selectionBoxRef: Ref<HTMLSpanElement>
@@ -210,6 +213,8 @@ type Drag = {
   emit: TrimEmit
   /** 按下时轨道区铺了多少秒：拖动中不比它窄，免得滚到最右时内容变短、整条时间线在指针下跳。 */
   hold: number
+  /** 拖的是草稿块的左把手：这块的右边沿与后面的块停在按下时的位置（见 holdLeftTrim）。 */
+  pin: LeftTrimHold | undefined
 }
 
 const RUN_HANDLES = 'run'
@@ -255,6 +260,7 @@ export function ClipsTimeline({
   onClickPart,
   onTogglePart,
   onTrim,
+  onTrimDrag,
   previewPick,
   selectionBoxRef,
 }: ClipsTimelineProps) {
@@ -290,10 +296,19 @@ export function ClipsTimeline({
       ? previewPick(carryPart.block.id, carryPart.part.seg)
       : undefined
   const landing = projection?.find((item) => item.id === carryPart?.id)
-  const shown =
+  // 拖草稿块的左把手：只挪显示，草稿本身照常首尾相接（见 holdLeftTrim）
+  const held = holdLeftTrim(
     projection === undefined || landing === undefined
       ? items
-      : projection.filter((item) => item.id !== landing.id)
+      : projection.filter((item) => item.id !== landing.id),
+    drag?.pin,
+    {
+      startOf: (item) => item.at,
+      lengthOf: (item) => item.d,
+      moved: (item, at) => ({ ...item, at: roundToMs(at) }),
+    },
+  )
+  const shown = held.items
   const itemOf = (id: string) => shown.find((item) => item.id === id)
 
   const showHover = (next: Hover | undefined) =>
@@ -353,6 +368,8 @@ export function ClipsTimeline({
     frozen: drag !== undefined,
     onFrame: drawConnector,
   })
+  // 松开左把手：这块与后面的块（连同选中描边、修剪把手）从按下时的位置滑到首尾相接后的位置
+  useReleaseSlide(lanesRef, drag?.pin !== undefined)
   const content = Math.max(base, reflow.hold ?? 0)
   const pair: Flash | undefined = busy
     ? undefined
@@ -461,6 +478,7 @@ export function ClipsTimeline({
     spec: TrimSpec,
     edge: Edge,
     emit: TrimEmit,
+    pin?: LeftTrimHold,
   ) => {
     if (event.button !== 0) return
     event.stopPropagation()
@@ -477,7 +495,9 @@ export function ClipsTimeline({
       spec,
       emit,
       hold: content,
+      pin: edge === 'start' ? pin : undefined,
     })
+    onTrimDrag(true)
     // 按下就把舞台换到这一端的画面
     emit(edge, { t0: spec.t0, t1: spec.t1 })
   }
@@ -490,6 +510,7 @@ export function ClipsTimeline({
     if (drag === undefined || drag.pointerId !== event.pointerId) return
     releasePointer(event)
     setDrag(undefined)
+    onTrimDrag(false)
   }
   const keyTrim = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -712,17 +733,22 @@ export function ClipsTimeline({
           <div aria-label="草稿" className="video-editor-timeline-track" role="group">
             {shown.map((item) => (
               <div
-                className="video-editor-timeline-block is-draft"
+                // 选中的块在上层：拖左把手往左拉长时盖住前一块
+                className={cn(
+                  'video-editor-timeline-block is-draft',
+                  selectedItem?.id === item.id && 'is-selected',
+                )}
                 data-draft-id={item.id}
                 data-hover-id={item.id}
                 data-hover-track="draft"
                 data-linked={linked.get(item.id)}
+                data-slide={`draft:${item.id}`}
                 key={item.id}
                 style={placed(item.at, item.d)}
               >
                 <button
                   aria-label={draftName(item)}
-                  aria-pressed={selection?.kind === 'draft' && selection.id === item.id}
+                  aria-pressed={selectedItem?.id === item.id}
                   className="video-editor-timeline-face ui-focus ui-focus-inline"
                   onClick={() => {
                     if (!clicks.take()) onSelectDraft(item.id)
@@ -885,6 +911,7 @@ export function ClipsTimeline({
               aria-hidden="true"
               className={cn('video-editor-timeline-box', ring.track)}
               data-follows={ring.track === 'is-draft' ? selectedItem?.id : undefined}
+              data-slide={ring.track === 'is-draft' ? 'ring' : undefined}
               ref={selectionBoxRef}
               style={ring.style}
             />
@@ -894,13 +921,17 @@ export function ClipsTimeline({
             <span
               className="video-editor-timeline-trim is-draft"
               data-follows={selectedItem.id}
+              data-slide="trim"
               key={selectedItem.id}
               style={placed(selectedItem.at, selectedItem.d)}
             >
               <TrimPair
                 onKeyDown={(event, edge) => keyTrim(event, draftSpec, edge, emitDraft)}
                 onPointerDown={(event, edge) =>
-                  pressTrim(event, selectedItem.id, draftSpec, edge, emitDraft)
+                  pressTrim(event, selectedItem.id, draftSpec, edge, emitDraft, {
+                    id: selectedItem.id,
+                    end: selectedItem.at + selectedItem.d,
+                  })
                 }
                 onPointerEnd={endTrim}
                 onPointerMove={moveTrim}
@@ -931,7 +962,12 @@ export function ClipsTimeline({
             </span>
           )}
 
-          <TimelinePlayhead style={{ left: `${(bounded / content) * 100}%` }} />
+          {/* 拖左把手期间播放头按显示位置放：停在被拖的那一端 */}
+          <TimelinePlayhead
+            style={{
+              left: `${((clockOn === 'draft' ? held.shiftAt(bounded) : bounded) / content) * 100}%`,
+            }}
+          />
         </div>
       </div>
       {carry?.moved === true ? (
