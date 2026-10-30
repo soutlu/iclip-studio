@@ -37,6 +37,9 @@ from tests.helpers.references import plant_user
 TEST_PROVIDER = "test-provider"
 """种下的供应商引用名（按百炼声明接入）。"""
 
+SEEDER = "agent-seeder"
+"""种 agent 时建的作者账号的用户名；数用户的用例把它除外。"""
+
 
 @dataclass(frozen=True)
 class SkillSeed:
@@ -106,7 +109,7 @@ async def seed_provider(
 ) -> Seeded:
     """建作者、接入测试供应商、加一把默认密钥，并把 ``models`` 加成自己加的 llm 模型（走 chat）。"""
 
-    author = await plant_user(engine, "agent-seeder")
+    author = await plant_user(engine, SEEDER)
     providers = services.model_providers
     provider = await providers.create(
         ModelProviderCreateIn(name=TEST_PROVIDER, provider="bailian", label="测试供应商")
@@ -250,6 +253,7 @@ async def seed_agents(
 
 __all__ = [
     "CONVERSABLE_SEEDS",
+    "SEEDER",
     "TEST_PROVIDER",
     "AgentSeed",
     "Seeded",

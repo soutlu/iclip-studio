@@ -41,6 +41,7 @@ from iclip.harness.agents import (
     SubAgentSlot,
     build_agent,
     build_subagents,
+    profile_metadata,
     subagent_profile,
 )
 from iclip.harness.models import BuiltModel
@@ -319,7 +320,7 @@ class AgentRuntime:
             ]
             top = role == "top"
             # 子运行沿用原有的三个键，实时任务卡与历史按它们读；顶层记下这次用的配置。
-            run_metadata = _run_metadata(prepared, profile) if top else _profile_metadata(profile)
+            run_metadata = _run_metadata(prepared, profile) if top else profile_metadata(profile)
             agent = build_agent(
                 name=prepared.agent_id,
                 model=model,
@@ -416,15 +417,6 @@ def _hash_of(skill: Skill) -> str:
     if skill.latest_content_hash is None:
         raise AgentUnavailable(f"技能 {skill.name} 没有发布过的版本")
     return skill.latest_content_hash
-
-
-def _profile_metadata(profile: SubAgentProfile) -> dict[str, str]:
-    """子运行的落库 metadata（str→str），就是它的档案。"""
-
-    metadata = {"agent_name": profile["agent_name"], "model": profile["model"]}
-    if "thinking_effort" in profile:
-        metadata["thinking_effort"] = profile["thinking_effort"]
-    return metadata
 
 
 def _run_metadata(prepared: _Prepared, profile: SubAgentProfile) -> dict[str, str]:

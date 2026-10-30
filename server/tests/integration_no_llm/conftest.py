@@ -141,20 +141,17 @@ def _build_app(config: RuntimeConfig, engine: AsyncEngine, models: Mapping[str, 
 @pytest.fixture
 async def app(
     base_env: None,
-    migrated_pg: str,
+    engine: AsyncEngine,
     agent_seeds: tuple[AgentSeed, ...],
     models: Mapping[str, Model],
     tmp_path: Path,
-) -> AsyncGenerator[FastAPI]:
-    await _reset(migrated_pg)
-    engine = build_engine(migrated_pg)
-    try:
-        built = _build_app(make_runtime_config(skill_cache_dir=tmp_path / "skills"), engine, models)
-        if agent_seeds:
-            await seed_agents(built.state.agent_services, engine, agent_seeds)
-        yield built
-    finally:
-        await engine.dispose()
+) -> FastAPI:
+    """经 ``engine`` 夹具清表：同一个用例里也要 ``engine`` 的，清表一定发生在种 agent 之前。"""
+
+    built = _build_app(make_runtime_config(skill_cache_dir=tmp_path / "skills"), engine, models)
+    if agent_seeds:
+        await seed_agents(built.state.agent_services, engine, agent_seeds)
+    return built
 
 
 @pytest.fixture
@@ -242,7 +239,13 @@ async def sso_app(
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(make_runtime_config(), engine=engine, sso_verifier=verifier, pms_client=pms)
+        yield build_app(
+            make_runtime_config(),
+            engine=engine,
+            sso_verifier=verifier,
+            pms_client=pms,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
+        )
     finally:
         await engine.dispose()
 

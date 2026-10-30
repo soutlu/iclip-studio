@@ -218,73 +218,33 @@ def test_sso_on_requires_redirect(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert resolved.sso.app_name == "iclip", "应用名来自 YAML，不是环境变量"
 
 
-MODELS = """
-models:
-  qwen3.8-max:
-    provider: alibaba
-    api: responses
-    api_key_env: T_QWEN_KEY
-    base_url: https://dashscope.test/v1
-    context_window: 131072
-"""
-
-
 def resolve_with_base(config: RuntimeConfig, monkeypatch: pytest.MonkeyPatch) -> ResolvedSettings:
     _core(monkeypatch)
     return resolve_settings(config)
 
 
-def test_no_models_section_means_no_models(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert resolve_with_base(load_runtime_config(write(tmp_path, VALID)), monkeypatch).models == ()
+@pytest.mark.parametrize(
+    "legacy",
+    [
+        "models:\n  qwen:\n    provider: alibaba\n    api_key_env: T_QWEN_KEY\n",
+        "conversations:\n  title_model: qwen\n",
+    ],
+    ids=["models 段", "title_model"],
+)
+def test_the_model_settings_moved_to_the_database_are_refused(tmp_path: Path, legacy: str) -> None:
+    """模型与标题模型改在库里配：旧 config.yaml 还留着这两处就启动失败，切换步骤先删掉它们。"""
 
-
-def test_model_key_requires_its_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    config = load_runtime_config(write(tmp_path, VALID + MODELS))
-    with pytest.raises(RuntimeError, match="T_QWEN_KEY"):
-        resolve_with_base(config, monkeypatch)
-
-
-def test_model_key_name_is_the_model_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    monkeypatch.setenv("T_QWEN_KEY", "sk-test")
-    (model,) = resolve_with_base(
-        load_runtime_config(write(tmp_path, VALID + MODELS)), monkeypatch
-    ).models
-
-    assert (model.name, model.model) == ("qwen3.8-max", "qwen3.8-max")
-    assert (model.provider, model.api) == ("alibaba", "responses")
-    assert (model.api_key, model.base_url) == ("sk-test", "https://dashscope.test/v1")
-    assert model.context_window == 131072
-
-
-def test_explicit_model_overrides_key_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    monkeypatch.setenv("T_QWEN_KEY", "sk-test")
-    yaml_text = VALID + MODELS.replace("  qwen3.8-max:", "  qwen-intl:").replace(
-        "    provider: alibaba", "    model: qwen3.8-max\n    provider: alibaba"
-    )
-    (model,) = resolve_with_base(
-        load_runtime_config(write(tmp_path, yaml_text)), monkeypatch
-    ).models
-
-    assert (model.name, model.model) == ("qwen-intl", "qwen3.8-max")
-
-
-def test_api_defaults_to_chat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("T_QWEN_KEY", "sk-test")
-    yaml_text = VALID + MODELS.replace("    api: responses\n", "")
-    (model,) = resolve_with_base(
-        load_runtime_config(write(tmp_path, yaml_text)), monkeypatch
-    ).models
-
-    assert model.api == "chat"
-
-
-def test_unknown_api_value_rejected(tmp_path: Path) -> None:
-    bad = VALID + MODELS.replace("api: responses", "api: grpc")
     with pytest.raises(ValidationError):
-        load_runtime_config(write(tmp_path, bad))
+        load_runtime_config(write(tmp_path, VALID + legacy))
+
+
+def test_the_skill_cache_defaults_under_the_system_temp_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resolved = resolve_with_base(load_runtime_config(write(tmp_path, VALID)), monkeypatch)
+
+    assert resolved.agent_runs.skill_cache_dir.name == "iclip-skills"
+    assert resolved.agent_runs.assembly_cache_size == 64
 
 
 MEDIA = """

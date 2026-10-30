@@ -52,6 +52,15 @@ def subagent_profile(agent_name: str, model: Model) -> SubAgentProfile:
     return profile
 
 
+def profile_metadata(profile: SubAgentProfile) -> dict[str, str]:
+    """档案写成子运行的落库 metadata（str→str）。"""
+
+    metadata = {"agent_name": profile["agent_name"], "model": profile["model"]}
+    if "thinking_effort" in profile:
+        metadata["thinking_effort"] = profile["thinking_effort"]
+    return metadata
+
+
 def build_agent(
     *,
     name: str,
@@ -155,5 +164,6 @@ __all__ = [
     "build_agent",
     "build_subagents",
     "delegate_display_table",
+    "profile_metadata",
     "subagent_profile",
 ]

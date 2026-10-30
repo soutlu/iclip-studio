@@ -41,7 +41,6 @@ from iclip.domains.generation.schemas import (
     WholeFilmRequest,
 )
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
-from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
 from tests.helpers.app import make_client
@@ -56,7 +55,6 @@ from tests.helpers.generation import (
     make_subtitle,
 )
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
-from tests.helpers.pg import connected, reset_database
 from tests.helpers.render import StubRender
 from tests.helpers.whole_film import component_clip, draft_document, video_clip
 
@@ -81,41 +79,36 @@ def render() -> StubRender:
 
 async def _app(
     monkeypatch: pytest.MonkeyPatch,
-    migrated_pg: str,
+    engine: AsyncEngine,
     render: StubRender,
     *,
     render_url: str | None,
-) -> AsyncGenerator[FastAPI]:
+) -> FastAPI:
+    """经 ``engine`` 夹具清表，种 agent 一定在清表之后。"""
+
     for name, value in RENDER_ENVS.items():
         monkeypatch.setenv(name, value)
     if render_url is None:
         monkeypatch.delenv("WHOLE_FILM_RENDER_URL", raising=False)
     else:
         monkeypatch.setenv("WHOLE_FILM_RENDER_URL", render_url)
-    async with connected(migrated_pg) as conn:
-        await reset_database(conn)
-    engine = build_engine(migrated_pg)
-    try:
-        built = build_app(
-            config_with_media(),
-            engine=engine,
-            queue_connector=InMemoryConnector(),
-            media_codec=SOFTWARE,
-            whole_film_render_transport=render.transport(),
-            credential_probe=KeyCheckingProbe({GOOD_KEY}),
-        )
-        await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
-        yield built
-    finally:
-        await engine.dispose()
+    built = build_app(
+        config_with_media(),
+        engine=engine,
+        queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
+        whole_film_render_transport=render.transport(),
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
+    )
+    await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+    return built
 
 
 @pytest.fixture
 async def export_app(
-    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, render: StubRender
-) -> AsyncGenerator[FastAPI]:
-    async for app in _app(monkeypatch, migrated_pg, render, render_url="http://render:8080"):
-        yield app
+    base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, render: StubRender
+) -> FastAPI:
+    return await _app(monkeypatch, engine, render, render_url="http://render:8080")
 
 
 @pytest.fixture
@@ -639,10 +632,9 @@ async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
 
 @pytest.fixture
 async def unrendered_app(
-    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, render: StubRender
-) -> AsyncGenerator[FastAPI]:
-    async for app in _app(monkeypatch, migrated_pg, render, render_url=None):
-        yield app
+    base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, render: StubRender
+) -> FastAPI:
+    return await _app(monkeypatch, engine, render, render_url=None)
 
 
 async def test_exports_are_unavailable_without_a_render_service(

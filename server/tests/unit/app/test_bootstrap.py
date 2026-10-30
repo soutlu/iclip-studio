@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 from typing import Literal
 
 import httpx
 import pytest
-from iclip.app.agent_layer import CurrentAgentLayer
-from pydantic_ai.models.test import TestModel
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
-from iclip.app.bootstrap import AnnouncingFileStore, build_app
+from iclip.app.bootstrap import AgentServices, AnnouncingFileStore, build_app
 from iclip.config import (
     AppSection,
     DbSection,
@@ -33,7 +30,6 @@ from iclip.config.models import IclipStudioSection
 from iclip.domains.agents.transcript_api import LiveConnections
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
-from tests.helpers.agents import declared_agent
 from tests.helpers.app import TEST_CREDENTIAL_KEY
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import MemoryObjectStore
@@ -72,7 +68,7 @@ def engine():
 
 async def test_transcript_endpoints_are_always_mounted(base_env: None) -> None:
 
-    app = build_app(minimal_config(), engine=engine(), models={})
+    app = build_app(minimal_config(), engine=engine())
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -112,7 +108,7 @@ def config_with_media() -> RuntimeConfig:
 
 async def test_without_media_generation_the_routes_are_absent(base_env: None) -> None:
 
-    app = build_app(minimal_config(), engine=engine(), models={})
+    app = build_app(minimal_config(), engine=engine())
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         assert (await client.post("/generations", json={})).status_code == 404
@@ -128,7 +124,7 @@ def test_media_generation_without_ffmpeg_fails_at_startup(
     monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="ffmpeg"):
-        build_app(config_with_media(), engine=engine(), models={}, object_store=MemoryObjectStore())
+        build_app(config_with_media(), engine=engine(), object_store=MemoryObjectStore())
 
 
 STUDIO_ENVS = {
@@ -178,7 +174,6 @@ def build_local_media(
         build_app(
             config,
             engine=engine(),
-            models={},
             object_store=MemoryObjectStore(),
             media_codec=media_codec,
         )
@@ -229,7 +224,6 @@ async def test_startup_says_when_subtitles_are_off_and_the_route_is_mounted_eith
         app = build_app(
             config,
             engine=engine(),
-            models={},
             object_store=MemoryObjectStore(),
             media_codec=SOFTWARE,
         )
@@ -264,7 +258,6 @@ async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_wa
         app = build_app(
             config,
             engine=engine(),
-            models={},
             object_store=MemoryObjectStore(),
             media_codec=SOFTWARE,
         )
@@ -303,7 +296,7 @@ def test_nothing_is_probed_when_no_feature_needs_ffmpeg(
 
     monkeypatch.setattr("iclip.app.bootstrap.detect_codec", probe)
 
-    build_app(minimal_config(), engine=engine(), models={})
+    build_app(minimal_config(), engine=engine())
 
 
 class _RecordingConnections(LiveConnections):
@@ -353,8 +346,8 @@ async def test_a_namespace_without_a_conversation_id_announces_nothing() -> None
     assert live.announced == []
 
 
-def test_video_agent_builds_without_generation_oss_or_ffmpeg(
-    base_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_the_video_plugin_registers_without_generation_oss_or_ffmpeg(
+    base_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("OSS_BUCKET", "")
     monkeypatch.setenv("VIDEO_SUBMIT_URL", "")
@@ -364,9 +357,7 @@ def test_video_agent_builds_without_generation_oss_or_ffmpeg(
     config = minimal_config().model_copy(
         update={"video": VideoSection(understanding_model="vision")}
     )
-    declaration = declared_agent(
-        tmp_path, "video-only", model="m", capabilities=("workspace", "video")
-    )
-    app = build_app(config, agents=(declaration,), engine=engine(), models={"m": TestModel()})
-    layer: CurrentAgentLayer = app.state.agent_layer
-    assert layer.current.registry.ids == ("video-only",)
+    app = build_app(config, engine=engine())
+    services: AgentServices = app.state.agent_services
+    plugins = {plugin.name for plugin in services.agent_config.plugins().items}
+    assert {"workspace", "video"} <= plugins

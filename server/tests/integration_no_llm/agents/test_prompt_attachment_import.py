@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
@@ -13,17 +13,17 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from PIL import Image
-from pydantic_ai.models.test import TestModel
+from pydantic_ai.models import Model
 from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
-from iclip.config import ResolvedAgent
 from iclip.platform.db.engine import build_engine
 from iclip.platform.outbound.guard import FetchFailed
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed, model_builder, seed_agents
 from tests.helpers.app import make_client, make_runtime_config, new_conversation, settled
 from tests.helpers.auth import login_as_editor
 from tests.helpers.generation import MemoryObjectStore
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 
 AGENT_ID = "storyboard"
@@ -61,8 +61,8 @@ class CountingFetch:
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    return (declared_agent(tmp_path, AGENT_ID),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
 
 
 @pytest.fixture
@@ -80,10 +80,11 @@ async def oss_app(
     base_env: None,
     migrated_pg: str,
     monkeypatch: pytest.MonkeyPatch,
-    agent_declarations: tuple[ResolvedAgent, ...],
-    models: dict[str, TestModel],
+    agent_seeds: tuple[AgentSeed, ...],
+    models: Mapping[str, Model],
     bucket: MemoryObjectStore,
     fetch: CountingFetch,
+    tmp_path: Path,
 ) -> AsyncGenerator[FastAPI]:
     """配了对象存储的 app：桶与出网下载都是替身。"""
 
@@ -93,14 +94,16 @@ async def oss_app(
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
-        yield build_app(
-            make_runtime_config(),
-            agents=agent_declarations,
+        built = build_app(
+            make_runtime_config(skill_cache_dir=tmp_path / "skills"),
             engine=engine,
-            models=models,
+            build_model=model_builder(models),
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
             object_store=bucket,
             image_fetcher=fetch,
         )
+        await seed_agents(built.state.agent_services, engine, agent_seeds)
+        yield built
     finally:
         await engine.dispose()
 

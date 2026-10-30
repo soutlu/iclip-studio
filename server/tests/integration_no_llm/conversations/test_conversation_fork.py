@@ -23,7 +23,7 @@ from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
 from iclip.common.errors import Conflict, NotFound
-from iclip.config import ResolvedAgent, VideoGenerationSection
+from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
     SqlConversationRepository,
     SqlWholeFilmDraftStore,
@@ -38,7 +38,7 @@ from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.transcript.session_events import SessionEventClock
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed, seed_agents
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.film import UnusedFilmPage
@@ -52,6 +52,7 @@ from tests.helpers.generation import (
 )
 from tests.helpers.media import synthesize_video
 from tests.helpers.media_server import serving
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 
 URL = "/conversations"
@@ -62,10 +63,10 @@ INHERITED_DETAIL = "分叉带过来的历史不能重新生成或编辑，只能
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    """装上源对话用的 agent，要真跑出消息行的用例才跑得起来。"""
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    """源对话用的 agent，与换 agent 分叉时换上的那一个。"""
 
-    return (declared_agent(tmp_path, AGENT_ID),)
+    return (AgentSeed(AGENT_ID), AgentSeed("assistant"))
 
 
 async def login_as(
@@ -229,6 +230,10 @@ class StartMovedUnderUs:
 async def copy_no_workspace(
     *, source_owner: uuid.UUID, source_id: uuid.UUID, target_owner: uuid.UUID, target_id: uuid.UUID
 ) -> None:
+    return None
+
+
+async def forks_no_session(source_id: uuid.UUID, target_id: uuid.UUID) -> None:
     return None
 
 
@@ -409,6 +414,8 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
         repo = SqlConversationRepository(engine)
         service = ConversationService(
             repo,
+            open_session=_untouched,
+            fork_session=forks_no_session,
             list_collections=_untouched,
             claim_task=_untouched,
             list_derived_files=_untouched,
@@ -514,13 +521,16 @@ async def media_app(
     )
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(
+        built = build_app(
             config,
             engine=engine,
             object_store=MemoryObjectStore(),
             queue_connector=InMemoryConnector(),
             media_codec=SOFTWARE,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
         )
+        await seed_agents(built.state.agent_services, engine, (AgentSeed(AGENT_ID),))
+        yield built
     finally:
         await engine.dispose()
 

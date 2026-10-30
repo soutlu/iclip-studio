@@ -33,6 +33,7 @@ from iclip.harness.agents import (
     build_agent,
     build_subagents,
     delegate_display_table,
+    profile_metadata,
     subagent_profile,
 )
 from iclip.harness.transcript.store import TranscriptStore
@@ -103,7 +104,7 @@ def producer_with_writer(
         step_store=stored,
         ledger=ledger,
         accepts_deferred=False,
-        run_metadata=dict(profile),
+        run_metadata=profile_metadata(profile),
     )
     delegate = build_subagents(
         [

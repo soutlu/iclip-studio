@@ -9,8 +9,6 @@ import asyncio
 import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator
-from dataclasses import replace
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,8 +18,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from starlette.testclient import TestClient
 
-from iclip.config import ResolvedAgent, ResolvedSubAgent
-from tests.helpers.agents import declared_agent, spec_path
+from tests.helpers.agents import AgentSeed, SubagentSeed
 from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.runtime import delegates
 from tests.helpers.ws import AGENT_ID, drain_turn, open_conversation, sign_in, subscribe, until
@@ -59,19 +56,11 @@ def _open_gate() -> Iterator[None]:
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    writer = ResolvedSubAgent(
-        name=WRITER,
-        spec=spec_path(tmp_path, WRITER),
-        instructions=None,
-        model=WRITER_MODEL,
-        skills=None,
-        capabilities=(),
-        timeout_seconds=None,
-        max_calls=None,
-        on_failure=None,
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (
+        AgentSeed(WRITER, model=WRITER_MODEL, listed=False),
+        AgentSeed(AGENT_ID, subagents=(SubagentSeed(WRITER),)),
     )
-    return (replace(declared_agent(tmp_path, AGENT_ID), subagents=(writer,)),)
 
 
 @pytest.fixture

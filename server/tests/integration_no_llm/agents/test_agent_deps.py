@@ -5,17 +5,14 @@ Agent 注册表为共享对象，deps 必须逐次运行传入，不能在装配
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 
-from iclip.config import ResolvedAgent
 from iclip.domains.agents.public import AgentRunDeps
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed
 from tests.helpers.app import make_client, new_conversation, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.plugins import FixedPlugin
@@ -47,8 +44,8 @@ def identity_capability() -> tuple[Capability[AgentRunDeps], ...]:
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    return (declared_agent(tmp_path, AGENT_ID, capabilities=("identity",)),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID, plugins=("identity",)),)
 
 
 @pytest.fixture(autouse=True)

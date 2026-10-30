@@ -56,7 +56,6 @@ async def app(
     yield build_app(
         make_runtime_config(),
         engine=business_engine,
-        models={},
         product_catalog_engine=catalog_engine,
     )
 
@@ -67,4 +66,4 @@ async def app_without_catalog(
 ) -> AsyncGenerator[FastAPI]:
     """未配置产品资料库的 app：接口照常挂载，但降级整级失效。"""
 
-    yield build_app(make_runtime_config(), engine=business_engine, models={})
+    yield build_app(make_runtime_config(), engine=business_engine)

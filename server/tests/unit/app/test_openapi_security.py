@@ -8,7 +8,7 @@ import pytest
 from scripts.dump_openapi import PLACEHOLDER_CONFIG_DIR, PLACEHOLDER_ENV
 
 from iclip.app.bootstrap import build_app
-from iclip.config import load_agent_declarations, load_runtime_config
+from iclip.config import load_runtime_config
 from iclip.domains.identity.public import PERMISSIONS
 from iclip.platform.media.codec import SOFTWARE
 
@@ -37,12 +37,7 @@ def document() -> dict[str, Any]:
         # unit 门禁的机器不装 ffmpeg；这里只取文档，不处理媒体，也不跑编解码探测。
         patch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
         app = build_app(
-            load_runtime_config(PLACEHOLDER_CONFIG_DIR / "config.yaml"),
-            # 占位注册表是空的，没人声明 skill，skill 库目录不会被查。
-            agents=load_agent_declarations(
-                PLACEHOLDER_CONFIG_DIR / "agents.yaml", skills_dir=PLACEHOLDER_CONFIG_DIR / "skills"
-            ),
-            media_codec=SOFTWARE,
+            load_runtime_config(PLACEHOLDER_CONFIG_DIR / "config.yaml"), media_codec=SOFTWARE
         )
         return app.openapi()
 

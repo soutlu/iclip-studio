@@ -40,6 +40,7 @@ from iclip.harness.agents import (
     SubAgentSlot,
     build_agent,
     build_subagents,
+    profile_metadata,
     subagent_profile,
 )
 from iclip.harness.jobs import JobQueue, JobRow
@@ -242,7 +243,7 @@ def delegating_agent(
                 plugin_types=(),
                 step_store=step_store,
                 usage_ledger=ledger,
-                run_metadata=dict(profiles[name]),
+                run_metadata=profile_metadata(profiles[name]),
                 accepts_deferred=False,
             ),
         )
