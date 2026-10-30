@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from iclip.domains.skills.api import create_skills_router
-from iclip.domains.skills.repository import SkillStore
+from iclip.domains.skills.repository import SkillStore, SkillUsages
 from iclip.domains.skills.service import SkillsService
 
 
@@ -18,8 +18,10 @@ class SkillsModule:
     service: SkillsService
 
 
-def build_skills_module(store: SkillStore) -> SkillsModule:
-    service = SkillsService(store)
+def build_skills_module(store: SkillStore, *, usages: SkillUsages) -> SkillsModule:
+    """``usages`` 由组合根接到 agent 配置域。"""
+
+    service = SkillsService(store, usages=usages)
     return SkillsModule(routers=(create_skills_router(service),), service=service)
 
 

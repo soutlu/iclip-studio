@@ -5,6 +5,69 @@ export type ClientOptions = {
 }
 
 /**
+ * ActiveVersionOut
+ *
+ * 当前版本的摘要。
+ */
+export type ActiveVersionOut = {
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Publishedat
+   */
+  publishedAt: string
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * AgentConfig
+ *
+ * 一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。
+ */
+export type AgentConfig = {
+  /**
+   * Instructions
+   */
+  instructions?: string
+  model?: AgentModelRef | null
+  /**
+   * Schema Version
+   */
+  schema_version: 1
+  /**
+   * Subagents
+   */
+  subagents?: Array<SubagentConfig>
+  /**
+   * Tools
+   */
+  tools?: Array<CapToolConfig>
+}
+
+/**
+ * AgentCreateIn
+ */
+export type AgentCreateIn = {
+  /**
+   * Description
+   */
+  description?: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
  * AgentDescriptor
  */
 export type AgentDescriptor = {
@@ -35,6 +98,282 @@ export type AgentDescriptor = {
 }
 
 /**
+ * AgentDetailOut
+ */
+export type AgentDetailOut = {
+  activeVersion: ActiveVersionOut | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Description
+   */
+  description: string
+  draft: AgentDraftOut
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Listed
+   */
+  listed: boolean
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Sortorder
+   */
+  sortOrder: number
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * AgentDraftIn
+ */
+export type AgentDraftIn = {
+  config: AgentConfig
+  /**
+   * Lockversion
+   */
+  lockVersion: number
+  /**
+   * Skillids
+   */
+  skillIds: Array<string>
+}
+
+/**
+ * AgentDraftOut
+ */
+export type AgentDraftOut = {
+  /**
+   * Baseversionid
+   */
+  baseVersionId: string | null
+  config: AgentConfig
+  /**
+   * Lockversion
+   */
+  lockVersion: number
+  /**
+   * Skillids
+   */
+  skillIds: Array<string>
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Updatedby
+   */
+  updatedBy: string
+}
+
+/**
+ * AgentImportItemOut
+ */
+export type AgentImportItemOut = {
+  /**
+   * Action
+   */
+  action: 'create' | 'overwrite'
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Problems
+   */
+  problems: Array<AgentProblemOut>
+  /**
+   * Warnings
+   */
+  warnings: Array<AgentProblemOut>
+}
+
+/**
+ * AgentImportOut
+ *
+ * 导入检查或导入的结果。只建或覆盖草稿，不发布。
+ */
+export type AgentImportOut = {
+  /**
+   * Agents
+   */
+  agents: Array<AgentImportItemOut>
+  /**
+   * Entry
+   */
+  entry: string | null
+  /**
+   * Problems
+   */
+  problems: Array<AgentProblemOut>
+  /**
+   * Warnings
+   */
+  warnings: Array<string>
+}
+
+/**
+ * AgentModelRef
+ *
+ * 用哪个模型：``provider`` 是供应商的引用名，``name`` 是它的 llm 模型名。
+ */
+export type AgentModelRef = {
+  /**
+   * Credential Id
+   */
+  credential_id?: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Provider
+   */
+  provider: string
+  settings?: AgentModelSettings
+}
+
+/**
+ * AgentModelSettings
+ */
+export type AgentModelSettings = {
+  /**
+   * Thinking
+   */
+  thinking?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+}
+
+/**
+ * AgentOrderIn
+ */
+export type AgentOrderIn = {
+  /**
+   * Ids
+   */
+  ids: Array<string>
+}
+
+/**
+ * AgentOut
+ */
+export type AgentOut = {
+  activeVersion: ActiveVersionOut | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Listed
+   */
+  listed: boolean
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Sortorder
+   */
+  sortOrder: number
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * AgentProblemOut
+ */
+export type AgentProblemOut = {
+  /**
+   * Message
+   */
+  message: string
+  /**
+   * Path
+   */
+  path: string
+}
+
+/**
+ * AgentPublishIn
+ */
+export type AgentPublishIn = {
+  /**
+   * Lockversion
+   */
+  lockVersion: number
+  /**
+   * Note
+   */
+  note?: string | null
+}
+
+/**
+ * AgentPublishProblemsOut
+ *
+ * 发布被拦下的 422：``detail`` 是一句话，``problems`` 列出全部问题。
+ */
+export type AgentPublishProblemsOut = {
+  /**
+   * Detail
+   */
+  detail: string
+  /**
+   * Problems
+   */
+  problems: Array<AgentProblemOut>
+}
+
+/**
  * AgentRef
  */
 export type AgentRef = {
@@ -46,6 +385,16 @@ export type AgentRef = {
    * Role
    */
   role?: 'child' | 'member' | null
+}
+
+/**
+ * AgentRestoreIn
+ */
+export type AgentRestoreIn = {
+  /**
+   * Lockversion
+   */
+  lockVersion: number
 }
 
 /**
@@ -64,6 +413,127 @@ export type AgentStatusMeta = {
    * Maxcontexttokens
    */
   maxContextTokens?: number | null
+}
+
+/**
+ * AgentUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export type AgentUpdateIn = {
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Listed
+   */
+  listed?: boolean | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * AgentUsageOut
+ *
+ * 接口里 ``usedBy`` 的一项：一个在用的 agent，草稿或当前版本里引用了。
+ */
+export type AgentUsageOut = {
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Agentname
+   */
+  agentName: string
+  /**
+   * Inactiveversion
+   */
+  inActiveVersion: boolean
+  /**
+   * Indraft
+   */
+  inDraft: boolean
+}
+
+/**
+ * AgentVersionDetailOut
+ */
+export type AgentVersionDetailOut = {
+  config: AgentConfig
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Skillids
+   */
+  skillIds: Array<string>
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * AgentVersionOut
+ */
+export type AgentVersionOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * AgentVersionsOut
+ */
+export type AgentVersionsOut = {
+  /**
+   * Items
+   */
+  items: Array<AgentVersionOut>
+}
+
+/**
+ * AgentsOut
+ */
+export type AgentsOut = {
+  /**
+   * Items
+   */
+  items: Array<AgentOut>
 }
 
 /**
@@ -316,6 +786,18 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
+ * Body_import_agents_agents_import_post
+ */
+export type BodyImportAgentsAgentsImportPost = {
+  /**
+   * File
+   *
+   * agent 的导出包（YAML）
+   */
+  file: Blob | File
+}
+
+/**
  * Body_import_skill_skills_import_post
  */
 export type BodyImportSkillSkillsImportPost = {
@@ -449,6 +931,32 @@ export type BrandTemplatesOut = {
    * Items
    */
   items: Array<BrandTemplateOut>
+}
+
+/**
+ * CapToolConfig
+ *
+ * 挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。
+ */
+export type CapToolConfig = {
+  /**
+   * Enabled
+   */
+  enabled?: boolean
+  /**
+   * Parameters
+   */
+  parameters?: {
+    [key: string]: unknown
+  }
+  /**
+   * Toolset
+   */
+  toolset: string
+  /**
+   * Type
+   */
+  type: 'cap'
 }
 
 /**
@@ -1092,6 +1600,10 @@ export type CredentialOut = {
    * Updatedat
    */
   updatedAt: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
 }
 
 /**
@@ -3357,6 +3869,10 @@ export type ProviderModelOut = {
    * Type
    */
   type: 'llm' | 'embedding' | 'rerank'
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
 }
 
 /**
@@ -3754,6 +4270,10 @@ export type SkillDetailOut = {
    * Updatedat
    */
   updatedAt: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
 }
 
 /**
@@ -4130,6 +4650,30 @@ export type StyleMatchOut = {
    * Styleno
    */
   styleNo: string
+}
+
+/**
+ * SubagentConfig
+ *
+ * 派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。
+ */
+export type SubagentConfig = {
+  /**
+   * Agent
+   */
+  agent: string
+  /**
+   * Max Calls
+   */
+  max_calls?: number | null
+  /**
+   * On Failure
+   */
+  on_failure?: string | null
+  /**
+   * Timeout Seconds
+   */
+  timeout_seconds?: number | null
 }
 
 /**
@@ -6470,6 +7014,434 @@ export type WholeFilmVideoClip = {
    */
   volume: number
 }
+
+export type ListAgentsAgentsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/agents'
+}
+
+export type ListAgentsAgentsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentsOut
+}
+
+export type ListAgentsAgentsGetResponse =
+  ListAgentsAgentsGetResponses[keyof ListAgentsAgentsGetResponses]
+
+export type CreateAgentAgentsPostData = {
+  body: AgentCreateIn
+  path?: never
+  query?: never
+  url: '/agents'
+}
+
+export type CreateAgentAgentsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateAgentAgentsPostError =
+  CreateAgentAgentsPostErrors[keyof CreateAgentAgentsPostErrors]
+
+export type CreateAgentAgentsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: AgentDetailOut
+}
+
+export type CreateAgentAgentsPostResponse =
+  CreateAgentAgentsPostResponses[keyof CreateAgentAgentsPostResponses]
+
+export type ImportAgentsAgentsImportPostData = {
+  body: BodyImportAgentsAgentsImportPost
+  path?: never
+  query?: {
+    /**
+     * Dryrun
+     */
+    dryRun?: boolean
+  }
+  url: '/agents/import'
+}
+
+export type ImportAgentsAgentsImportPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ImportAgentsAgentsImportPostError =
+  ImportAgentsAgentsImportPostErrors[keyof ImportAgentsAgentsImportPostErrors]
+
+export type ImportAgentsAgentsImportPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentImportOut
+}
+
+export type ImportAgentsAgentsImportPostResponse =
+  ImportAgentsAgentsImportPostResponses[keyof ImportAgentsAgentsImportPostResponses]
+
+export type ReorderAgentsAgentsOrderPutData = {
+  body: AgentOrderIn
+  path?: never
+  query?: never
+  url: '/agents/order'
+}
+
+export type ReorderAgentsAgentsOrderPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReorderAgentsAgentsOrderPutError =
+  ReorderAgentsAgentsOrderPutErrors[keyof ReorderAgentsAgentsOrderPutErrors]
+
+export type ReorderAgentsAgentsOrderPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentsOut
+}
+
+export type ReorderAgentsAgentsOrderPutResponse =
+  ReorderAgentsAgentsOrderPutResponses[keyof ReorderAgentsAgentsOrderPutResponses]
+
+export type AgentDetailAgentsAgentIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}'
+}
+
+export type AgentDetailAgentsAgentIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AgentDetailAgentsAgentIdGetError =
+  AgentDetailAgentsAgentIdGetErrors[keyof AgentDetailAgentsAgentIdGetErrors]
+
+export type AgentDetailAgentsAgentIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type AgentDetailAgentsAgentIdGetResponse =
+  AgentDetailAgentsAgentIdGetResponses[keyof AgentDetailAgentsAgentIdGetResponses]
+
+export type UpdateAgentAgentsAgentIdPatchData = {
+  body: AgentUpdateIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}'
+}
+
+export type UpdateAgentAgentsAgentIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateAgentAgentsAgentIdPatchError =
+  UpdateAgentAgentsAgentIdPatchErrors[keyof UpdateAgentAgentsAgentIdPatchErrors]
+
+export type UpdateAgentAgentsAgentIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type UpdateAgentAgentsAgentIdPatchResponse =
+  UpdateAgentAgentsAgentIdPatchResponses[keyof UpdateAgentAgentsAgentIdPatchResponses]
+
+export type ArchiveAgentAgentsAgentIdArchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/archive'
+}
+
+export type ArchiveAgentAgentsAgentIdArchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ArchiveAgentAgentsAgentIdArchivePostError =
+  ArchiveAgentAgentsAgentIdArchivePostErrors[keyof ArchiveAgentAgentsAgentIdArchivePostErrors]
+
+export type ArchiveAgentAgentsAgentIdArchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type ArchiveAgentAgentsAgentIdArchivePostResponse =
+  ArchiveAgentAgentsAgentIdArchivePostResponses[keyof ArchiveAgentAgentsAgentIdArchivePostResponses]
+
+export type SaveAgentDraftAgentsAgentIdDraftPutData = {
+  body: AgentDraftIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/draft'
+}
+
+export type SaveAgentDraftAgentsAgentIdDraftPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SaveAgentDraftAgentsAgentIdDraftPutError =
+  SaveAgentDraftAgentsAgentIdDraftPutErrors[keyof SaveAgentDraftAgentsAgentIdDraftPutErrors]
+
+export type SaveAgentDraftAgentsAgentIdDraftPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type SaveAgentDraftAgentsAgentIdDraftPutResponse =
+  SaveAgentDraftAgentsAgentIdDraftPutResponses[keyof SaveAgentDraftAgentsAgentIdDraftPutResponses]
+
+export type ExportAgentAgentsAgentIdExportGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/export'
+}
+
+export type ExportAgentAgentsAgentIdExportGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ExportAgentAgentsAgentIdExportGetError =
+  ExportAgentAgentsAgentIdExportGetErrors[keyof ExportAgentAgentsAgentIdExportGetErrors]
+
+export type ExportAgentAgentsAgentIdExportGetResponses = {
+  /**
+   * agent 的导出包
+   */
+  200: unknown
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/unarchive'
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostError =
+  UnarchiveAgentAgentsAgentIdUnarchivePostErrors[keyof UnarchiveAgentAgentsAgentIdUnarchivePostErrors]
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostResponse =
+  UnarchiveAgentAgentsAgentIdUnarchivePostResponses[keyof UnarchiveAgentAgentsAgentIdUnarchivePostResponses]
+
+export type AgentVersionsAgentsAgentIdVersionsGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions'
+}
+
+export type AgentVersionsAgentsAgentIdVersionsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AgentVersionsAgentsAgentIdVersionsGetError =
+  AgentVersionsAgentsAgentIdVersionsGetErrors[keyof AgentVersionsAgentsAgentIdVersionsGetErrors]
+
+export type AgentVersionsAgentsAgentIdVersionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentVersionsOut
+}
+
+export type AgentVersionsAgentsAgentIdVersionsGetResponse =
+  AgentVersionsAgentsAgentIdVersionsGetResponses[keyof AgentVersionsAgentsAgentIdVersionsGetResponses]
+
+export type PublishAgentAgentsAgentIdVersionsPostData = {
+  body: AgentPublishIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions'
+}
+
+export type PublishAgentAgentsAgentIdVersionsPostErrors = {
+  /**
+   * 发布被拦下
+   */
+  422: AgentPublishProblemsOut
+}
+
+export type PublishAgentAgentsAgentIdVersionsPostError =
+  PublishAgentAgentsAgentIdVersionsPostErrors[keyof PublishAgentAgentsAgentIdVersionsPostErrors]
+
+export type PublishAgentAgentsAgentIdVersionsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: AgentVersionOut
+}
+
+export type PublishAgentAgentsAgentIdVersionsPostResponse =
+  PublishAgentAgentsAgentIdVersionsPostResponses[keyof PublishAgentAgentsAgentIdVersionsPostResponses]
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions/{version_id}'
+}
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetError =
+  AgentVersionAgentsAgentIdVersionsVersionIdGetErrors[keyof AgentVersionAgentsAgentIdVersionsVersionIdGetErrors]
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentVersionDetailOut
+}
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetResponse =
+  AgentVersionAgentsAgentIdVersionsVersionIdGetResponses[keyof AgentVersionAgentsAgentIdVersionsVersionIdGetResponses]
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostData = {
+  body: AgentRestoreIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions/{version_id}/restore'
+}
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostError =
+  RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostErrors[keyof RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostErrors]
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponse =
+  RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponses[keyof RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponses]
 
 export type ListKeysApiKeysGetData = {
   body?: never

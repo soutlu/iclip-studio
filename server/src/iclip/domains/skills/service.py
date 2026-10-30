@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from iclip.common.agent_usage import AgentUsage, in_use_message, usages_out
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.skills.archive import read_archive, write_archive
 from iclip.domains.skills.models import (
@@ -20,7 +21,7 @@ from iclip.domains.skills.models import (
     SkillStatus,
     SkillVersion,
 )
-from iclip.domains.skills.repository import SkillStore, SkillWriter
+from iclip.domains.skills.repository import SkillStore, SkillUsages, SkillWriter
 from iclip.domains.skills.rules import (
     check_name,
     check_publish,
@@ -87,7 +88,9 @@ def _skill_out(skill: Skill, draft_hash: str) -> SkillOut:
     )
 
 
-def _detail_out(skill: Skill, draft: Sequence[DraftFileInfo]) -> SkillDetailOut:
+def _detail_out(
+    skill: Skill, draft: Sequence[DraftFileInfo], users: Sequence[AgentUsage]
+) -> SkillDetailOut:
     entries = [FileEntry(path=info.path, size=info.size, hash=info.hash) for info in draft]
     summary = _skill_out(skill, content_hash(entries))
     return SkillDetailOut(
@@ -98,6 +101,7 @@ def _detail_out(skill: Skill, draft: Sequence[DraftFileInfo]) -> SkillDetailOut:
             )
             for info in draft
         ],
+        used_by=usages_out(users),
     )
 
 
@@ -132,8 +136,11 @@ async def _sync_unpublished_description(writer: SkillWriter, skill_md: str) -> N
 
 
 class SkillsService:
-    def __init__(self, store: SkillStore) -> None:
+    """``usages`` 由组合根接到 agent 配置域，回答哪些 agent 在用一个技能。"""
+
+    def __init__(self, store: SkillStore, *, usages: SkillUsages) -> None:
         self._store = store
+        self._usages = usages
 
     async def list(self) -> SkillsOut:
         """全部技能，带有没有未发布的修改。"""
@@ -144,10 +151,17 @@ class SkillsService:
         )
 
     async def detail(self, skill_id: uuid.UUID) -> SkillDetailOut:
-        """一个技能连同草稿的文件清单；没有这个技能是 ``NotFound``。"""
+        """一个技能连同草稿的文件清单与在用它的 agent；没有这个技能是 ``NotFound``。"""
 
         skill = await self._require(skill_id)
-        return _detail_out(skill, await self._store.draft(skill_id))
+        return _detail_out(
+            skill, await self._store.draft(skill_id), await self._usages.skill_users(skill_id)
+        )
+
+    async def catalog(self) -> tuple[Skill, ...]:
+        """全部技能，含已归档的，供别的模块查标识、状态与最新版。"""
+
+        return tuple(summary.skill for summary in await self._store.list())
 
     async def create(self, body: SkillCreateIn, *, by: uuid.UUID) -> SkillDetailOut:
         """建一个技能，草稿里只有按标识、显示名与描述生成的 ``SKILL.md``。标识不合规矩、显示名或描述
@@ -297,9 +311,16 @@ class SkillsService:
         return await self.detail(skill_id)
 
     async def archive(self, skill_id: uuid.UUID) -> SkillDetailOut:
-        """归档；已归档的原样不动。"""
+        """归档；已归档的原样不动。某个 agent 的草稿或当前版本还绑定着它是 ``Conflict``，列出那些 agent；
+        只被旧版本用到的不拦。"""
 
-        return await self._set_status(skill_id, STATUS_ARCHIVED)
+        async with self._store.edit(skill_id) as writer:
+            if writer.skill.status != STATUS_ARCHIVED:
+                users = await self._usages.skill_users(skill_id)
+                if users:
+                    raise Conflict(in_use_message(f"技能 {writer.skill.name} ", users))
+                await writer.update(status=STATUS_ARCHIVED)
+        return await self.detail(skill_id)
 
     async def unarchive(self, skill_id: uuid.UUID) -> SkillDetailOut:
         """取消归档；在用的原样不动。"""

@@ -15,6 +15,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from iclip.app.agent_config import (
+    LibrarySkillDirectory,
+    ProviderDirectory,
+    RegistryPluginDirectory,
+)
 from iclip.app.agent_layer import (
     CurrentAgentLayer,
     LayerDeps,
@@ -62,6 +67,9 @@ from iclip.config import (
     RuntimeConfig,
     resolve_settings,
 )
+from iclip.domains.agent_config.infra_sql import SqlAgentStore
+from iclip.domains.agent_config.module import build_agent_config_module
+from iclip.domains.agent_config.public import AgentReferences
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
@@ -668,7 +676,11 @@ def build_app(
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
-    skills = build_skills_module(SqlSkillStore(active_engine))
+    # agent 配置与技能库、模型供应商互相要用：那两边经端口问 agent 表「谁在用」，agent 配置经端口查它们。
+    # 先建 agent 的仓储交给那两边，再用它们的服务装 agent 配置。
+    agent_store = SqlAgentStore(active_engine)
+    agent_references = AgentReferences(agent_store)
+    skills = build_skills_module(SqlSkillStore(active_engine), usages=agent_references)
     provider_declarations = load_declarations()
     require_known_providers(provider_declarations)
     model_providers = build_model_providers_module(
@@ -676,6 +688,13 @@ def build_app(
         declarations=provider_declarations,
         cipher=CredentialCipher(settings.credential_encryption_keys),
         probe=credential_probe if credential_probe is not None else PydanticAiCredentialProbe(),
+        usages=agent_references,
+    )
+    agent_config = build_agent_config_module(
+        agent_store,
+        models=ProviderDirectory(model_providers.service),
+        plugins=RegistryPluginDirectory(plugins),
+        skills=LibrarySkillDirectory(skills.service),
     )
     audit = build_audit_module(PgAuditReports(active_engine))
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
@@ -883,6 +902,8 @@ def build_app(
     for router in skills.routers:
         app.include_router(router)
     for router in model_providers.routers:
+        app.include_router(router)
+    for router in agent_config.routers:
         app.include_router(router)
     app.include_router(
         create_transcript_router(

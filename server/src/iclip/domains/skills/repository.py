@@ -1,4 +1,4 @@
-"""技能库的端口：自有四张表的仓储。"""
+"""技能库的端口：自有四张表的仓储，以及由组合根接上的「谁在用」。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
+from iclip.common.agent_usage import AgentUsage
 from iclip.domains.skills.models import (
     DraftFile,
     DraftFileInfo,
@@ -120,4 +121,10 @@ class SkillStore(Protocol):
         ...
 
 
-__all__ = ["SkillStore", "SkillWriter"]
+class SkillUsages(Protocol):
+    """哪些 agent 在用一个技能，由组合根接到 agent 配置域：草稿或当前版本绑定了它才算。"""
+
+    async def skill_users(self, skill_id: uuid.UUID) -> tuple[AgentUsage, ...]: ...
+
+
+__all__ = ["SkillStore", "SkillUsages", "SkillWriter"]

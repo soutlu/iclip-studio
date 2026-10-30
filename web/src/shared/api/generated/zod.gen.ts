@@ -3,6 +3,26 @@
 import * as z from 'zod'
 
 /**
+ * ActiveVersionOut
+ *
+ * 当前版本的摘要。
+ */
+export const zActiveVersionOut = z.object({
+  id: z.uuid(),
+  publishedAt: z.iso.datetime(),
+  version: z.int(),
+})
+
+/**
+ * AgentCreateIn
+ */
+export const zAgentCreateIn = z.object({
+  description: z.string().optional().default(''),
+  id: z.string(),
+  name: z.string(),
+})
+
+/**
  * AgentDescriptor
  */
 export const zAgentDescriptor = z.object({
@@ -15,11 +35,110 @@ export const zAgentDescriptor = z.object({
 })
 
 /**
+ * AgentModelSettings
+ */
+export const zAgentModelSettings = z.object({
+  thinking: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullish(),
+})
+
+/**
+ * AgentModelRef
+ *
+ * 用哪个模型：``provider`` 是供应商的引用名，``name`` 是它的 llm 模型名。
+ */
+export const zAgentModelRef = z.object({
+  credential_id: z.uuid().nullish(),
+  name: z.string().min(1).max(200),
+  provider: z.string().min(1).max(200),
+  settings: zAgentModelSettings.optional().default({}),
+})
+
+/**
+ * AgentOrderIn
+ */
+export const zAgentOrderIn = z.object({
+  ids: z.array(z.string()),
+})
+
+/**
+ * AgentOut
+ */
+export const zAgentOut = z.object({
+  activeVersion: zActiveVersionOut.nullable(),
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  description: z.string(),
+  hasUnpublishedChanges: z.boolean(),
+  id: z.string(),
+  listed: z.boolean(),
+  name: z.string(),
+  sortOrder: z.int(),
+  status: z.enum(['active', 'archived']),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * AgentProblemOut
+ */
+export const zAgentProblemOut = z.object({
+  message: z.string(),
+  path: z.string(),
+})
+
+/**
+ * AgentImportItemOut
+ */
+export const zAgentImportItemOut = z.object({
+  action: z.enum(['create', 'overwrite']),
+  agentId: z.string(),
+  name: z.string(),
+  problems: z.array(zAgentProblemOut),
+  warnings: z.array(zAgentProblemOut),
+})
+
+/**
+ * AgentImportOut
+ *
+ * 导入检查或导入的结果。只建或覆盖草稿，不发布。
+ */
+export const zAgentImportOut = z.object({
+  agents: z.array(zAgentImportItemOut),
+  entry: z.string().nullable(),
+  problems: z.array(zAgentProblemOut),
+  warnings: z.array(z.string()),
+})
+
+/**
+ * AgentPublishIn
+ */
+export const zAgentPublishIn = z.object({
+  lockVersion: z.int(),
+  note: z.string().nullish(),
+})
+
+/**
+ * AgentPublishProblemsOut
+ *
+ * 发布被拦下的 422：``detail`` 是一句话，``problems`` 列出全部问题。
+ */
+export const zAgentPublishProblemsOut = z.object({
+  detail: z.string(),
+  problems: z.array(zAgentProblemOut),
+})
+
+/**
  * AgentRef
  */
 export const zAgentRef = z.object({
   agentId: z.string(),
   role: z.enum(['child', 'member']).nullish(),
+})
+
+/**
+ * AgentRestoreIn
+ */
+export const zAgentRestoreIn = z.object({
+  lockVersion: z.int(),
 })
 
 /**
@@ -29,6 +148,54 @@ export const zAgentStatusMeta = z.object({
   contextTokens: z.int().gte(0).nullish(),
   contextUsage: z.number().gte(0).lte(1).nullish(),
   maxContextTokens: z.int().gt(0).nullish(),
+})
+
+/**
+ * AgentUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export const zAgentUpdateIn = z.object({
+  description: z.string().nullish(),
+  listed: z.boolean().nullish(),
+  name: z.string().nullish(),
+})
+
+/**
+ * AgentUsageOut
+ *
+ * 接口里 ``usedBy`` 的一项：一个在用的 agent，草稿或当前版本里引用了。
+ */
+export const zAgentUsageOut = z.object({
+  agentId: z.string(),
+  agentName: z.string(),
+  inActiveVersion: z.boolean(),
+  inDraft: z.boolean(),
+})
+
+/**
+ * AgentVersionOut
+ */
+export const zAgentVersionOut = z.object({
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  id: z.uuid(),
+  note: z.string().nullable(),
+  version: z.int(),
+})
+
+/**
+ * AgentVersionsOut
+ */
+export const zAgentVersionsOut = z.object({
+  items: z.array(zAgentVersionOut),
+})
+
+/**
+ * AgentsOut
+ */
+export const zAgentsOut = z.object({
+  items: z.array(zAgentOut),
 })
 
 /**
@@ -118,6 +285,13 @@ export const zBodyAuthCookieLoginAuthLoginPost = z.object({
 })
 
 /**
+ * Body_import_agents_agents_import_post
+ */
+export const zBodyImportAgentsAgentsImportPost = z.object({
+  file: z.string(),
+})
+
+/**
  * Body_import_skill_skills_import_post
  */
 export const zBodyImportSkillSkillsImportPost = z.object({
@@ -186,6 +360,18 @@ export const zBrandTemplateUpdateIn = z.object({
  */
 export const zBrandTemplatesOut = z.object({
   items: z.array(zBrandTemplateOut),
+})
+
+/**
+ * CapToolConfig
+ *
+ * 挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。
+ */
+export const zCapToolConfig = z.object({
+  enabled: z.boolean().optional().default(true),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  toolset: z.string().min(1).max(200),
+  type: z.literal('cap'),
 })
 
 /**
@@ -528,6 +714,7 @@ export const zCredentialOut = z.object({
   id: z.uuid(),
   name: z.string(),
   updatedAt: z.iso.datetime(),
+  usedBy: z.array(zAgentUsageOut),
 })
 
 /**
@@ -1331,6 +1518,7 @@ export const zProviderModelOut = z.object({
   source: z.enum(['declared', 'custom']),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
   type: z.enum(['llm', 'embedding', 'rerank']),
+  usedBy: z.array(zAgentUsageOut),
 })
 
 /**
@@ -1510,6 +1698,7 @@ export const zSkillDetailOut = z.object({
   name: z.string(),
   status: z.enum(['active', 'archived']),
   updatedAt: z.iso.datetime(),
+  usedBy: z.array(zAgentUsageOut),
 })
 
 /**
@@ -1688,6 +1877,84 @@ export const zStepUpsertOp = z.object({
 export const zStyleMatchOut = z.object({
   matchLevel: z.enum(['exact', 'sameBrandCategory', 'sameCategory', 'none']),
   styleNo: z.string(),
+})
+
+/**
+ * SubagentConfig
+ *
+ * 派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。
+ */
+export const zSubagentConfig = z.object({
+  agent: z.string().min(1).max(200),
+  max_calls: z.int().gte(1).nullish(),
+  on_failure: z.string().nullish(),
+  timeout_seconds: z.number().gt(0).nullish(),
+})
+
+/**
+ * AgentConfig
+ *
+ * 一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。
+ */
+export const zAgentConfig = z.object({
+  instructions: z.string().optional().default(''),
+  model: zAgentModelRef.nullish(),
+  schema_version: z.literal(1),
+  subagents: z.array(zSubagentConfig).optional().default([]),
+  tools: z.array(zCapToolConfig).optional().default([]),
+})
+
+/**
+ * AgentDraftIn
+ */
+export const zAgentDraftIn = z.object({
+  config: zAgentConfig,
+  lockVersion: z.int(),
+  skillIds: z.array(z.uuid()),
+})
+
+/**
+ * AgentDraftOut
+ */
+export const zAgentDraftOut = z.object({
+  baseVersionId: z.uuid().nullable(),
+  config: zAgentConfig,
+  lockVersion: z.int(),
+  skillIds: z.array(z.uuid()),
+  updatedAt: z.iso.datetime(),
+  updatedBy: z.uuid(),
+})
+
+/**
+ * AgentDetailOut
+ */
+export const zAgentDetailOut = z.object({
+  activeVersion: zActiveVersionOut.nullable(),
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  description: z.string(),
+  draft: zAgentDraftOut,
+  hasUnpublishedChanges: z.boolean(),
+  id: z.string(),
+  listed: z.boolean(),
+  name: z.string(),
+  sortOrder: z.int(),
+  status: z.enum(['active', 'archived']),
+  updatedAt: z.iso.datetime(),
+  usedBy: z.array(zAgentUsageOut),
+})
+
+/**
+ * AgentVersionDetailOut
+ */
+export const zAgentVersionDetailOut = z.object({
+  config: zAgentConfig,
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  id: z.uuid(),
+  note: z.string().nullable(),
+  skillIds: z.array(z.uuid()),
+  version: z.int(),
 })
 
 /**
@@ -3232,6 +3499,131 @@ export const zWholeFilmDraftOut = z.object({
   revision: z.int(),
   updatedAt: z.iso.datetime().nullable(),
 })
+
+/**
+ * Successful Response
+ */
+export const zListAgentsAgentsGetResponse = zAgentsOut
+
+export const zCreateAgentAgentsPostBody = zAgentCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateAgentAgentsPostResponse = zAgentDetailOut
+
+export const zImportAgentsAgentsImportPostBody = zBodyImportAgentsAgentsImportPost
+
+export const zImportAgentsAgentsImportPostQuery = z.object({
+  dryRun: z.boolean().optional().default(false),
+})
+
+/**
+ * Successful Response
+ */
+export const zImportAgentsAgentsImportPostResponse = zAgentImportOut
+
+export const zReorderAgentsAgentsOrderPutBody = zAgentOrderIn
+
+/**
+ * Successful Response
+ */
+export const zReorderAgentsAgentsOrderPutResponse = zAgentsOut
+
+export const zAgentDetailAgentsAgentIdGetPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAgentDetailAgentsAgentIdGetResponse = zAgentDetailOut
+
+export const zUpdateAgentAgentsAgentIdPatchBody = zAgentUpdateIn
+
+export const zUpdateAgentAgentsAgentIdPatchPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateAgentAgentsAgentIdPatchResponse = zAgentDetailOut
+
+export const zArchiveAgentAgentsAgentIdArchivePostPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zArchiveAgentAgentsAgentIdArchivePostResponse = zAgentDetailOut
+
+export const zSaveAgentDraftAgentsAgentIdDraftPutBody = zAgentDraftIn
+
+export const zSaveAgentDraftAgentsAgentIdDraftPutPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSaveAgentDraftAgentsAgentIdDraftPutResponse = zAgentDetailOut
+
+export const zExportAgentAgentsAgentIdExportGetPath = z.object({
+  agent_id: z.string(),
+})
+
+export const zUnarchiveAgentAgentsAgentIdUnarchivePostPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUnarchiveAgentAgentsAgentIdUnarchivePostResponse = zAgentDetailOut
+
+export const zAgentVersionsAgentsAgentIdVersionsGetPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAgentVersionsAgentsAgentIdVersionsGetResponse = zAgentVersionsOut
+
+export const zPublishAgentAgentsAgentIdVersionsPostBody = zAgentPublishIn
+
+export const zPublishAgentAgentsAgentIdVersionsPostPath = z.object({
+  agent_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zPublishAgentAgentsAgentIdVersionsPostResponse = zAgentVersionOut
+
+export const zAgentVersionAgentsAgentIdVersionsVersionIdGetPath = z.object({
+  agent_id: z.string(),
+  version_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAgentVersionAgentsAgentIdVersionsVersionIdGetResponse = zAgentVersionDetailOut
+
+export const zRestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostBody = zAgentRestoreIn
+
+export const zRestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostPath = z.object({
+  agent_id: z.string(),
+  version_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponse = zAgentDetailOut
 
 /**
  * Successful Response

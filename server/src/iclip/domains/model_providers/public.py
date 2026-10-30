@@ -9,16 +9,20 @@ from iclip.domains.model_providers.catalog import (
     ProviderDeclaration,
     load_declarations,
 )
-from iclip.domains.model_providers.models import ProbeResult, ProviderModel
-from iclip.domains.model_providers.repository import CredentialProbe
+from iclip.domains.model_providers.models import ProbeResult, ProviderModel, ResolvedProvider
+from iclip.domains.model_providers.repository import CredentialProbe, ModelUsages
+from iclip.domains.model_providers.service import ModelProviderService
 
 __all__ = [
     "API_KEY_FIELD",
     "BASE_URL_FIELD",
     "CredentialProbe",
     "Declarations",
+    "ModelProviderService",
+    "ModelUsages",
     "ProbeResult",
     "ProviderDeclaration",
     "ProviderModel",
+    "ResolvedProvider",
     "load_declarations",
 ]

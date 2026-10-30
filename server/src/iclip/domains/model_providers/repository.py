@@ -1,4 +1,4 @@
-"""模型供应商的端口：自有四张表的仓储，以及由组合根接上的试连。"""
+"""模型供应商的端口：自有四张表的仓储，以及由组合根接上的试连与「谁在用」。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
+from iclip.common.agent_usage import ModelReference
 from iclip.domains.model_providers.catalog import ProviderDeclaration
 from iclip.domains.model_providers.models import (
     CredentialRecord,
@@ -112,4 +113,12 @@ class CredentialProbe(Protocol):
         ...
 
 
-__all__ = ["CredentialProbe", "ModelProviderStore", "ProviderEditor"]
+class ModelUsages(Protocol):
+    """哪些 agent 在用哪个模型，由组合根接到 agent 配置域：草稿或当前版本里写的才算。"""
+
+    async def model_references(self) -> tuple[ModelReference, ...]:
+        """每个 agent 的草稿与当前版本里写的模型，各一条。"""
+        ...
+
+
+__all__ = ["CredentialProbe", "ModelProviderStore", "ModelUsages", "ProviderEditor"]
