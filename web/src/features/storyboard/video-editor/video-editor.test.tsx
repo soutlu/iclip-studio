@@ -496,6 +496,45 @@ describe('AI 改段的弹出卡', () => {
     expect(referenceSamples).toEqual([{ url: ossRoot, start: 0.7, end: 2.5 }])
   })
 
+  it('拖选区把手期间卡上的首帧、尾帧停在按下时那一帧，松手后换成新的起止', async () => {
+    const ossRoot = 'https://bucket.oss-cn-hangzhou.aliyuncs.com/root.mp4'
+    files.set(ossRoot, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
+    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
+    )
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor(makeGenerationJob({ ...root, outputUrl: ossRoot }))
+    await user.click(await shot(2))
+    const frames = () =>
+      within(openCard())
+        .getAllByRole('presentation')
+        .map((img) => img.getAttribute('src'))
+    const pressed = frames()
+    expect(pressed).toEqual([
+      expect.stringContaining('t_1000,'),
+      expect.stringContaining('t_1900,'),
+    ])
+
+    const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 200 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 230 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 250 })
+    expect(within(openCard()).getByText('原片 1.0 – 2.5 秒 · 视频和原声一起重做')).toBeVisible()
+    expect(frames()).toEqual(pressed)
+
+    fireEvent.pointerUp(end, { pointerId: 1 })
+    expect(frames()).toEqual([
+      expect.stringContaining('t_1000,'),
+      expect.stringContaining('t_2400,'),
+    ])
+  })
+
   it('Escape 把卡收成胶囊，未提交的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
     serveChain([])
     const user = userEvent.setup()
@@ -1429,6 +1468,40 @@ describe('草稿与编辑轨', () => {
       ...parts([1, 2, 3]),
       ...shotsOnly([5, 6, 7, 8]),
     ])
+  })
+
+  it('编辑记录还没读回来时草稿不能改：时间线不出现、不能合成，存着的草稿不被覆盖；读回来后照它恢复', async () => {
+    storeWholeEdit()
+    const key = draftStorageKey(CONVERSATION, ROOT_ID)
+    const stored = window.localStorage.getItem(key)
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('*/api/generations', async ({ request }) => {
+        // 只拦这条原作的编辑链；原片的关键帧照常读
+        if (new URL(request.url).searchParams.get('rootJobId') !== null) await held
+        return HttpResponse.json({ items: [editSegment({ id: EDIT_ID })] })
+      }),
+    )
+    await renderEditor()
+    expect(await screen.findByText('正在读取分段…')).toBeVisible()
+    // 等原片关键帧读完：之前这时时间线已经能点「关闭镜头」、修剪、Delete
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+    expect(screen.queryByRole('region', { name: '视频编辑时间线' })).toBeNull()
+    expect(composeButton()).toBeDisabled()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Delete' })
+    expect(window.localStorage.getItem(key)).toBe(stored)
+
+    act(() => release())
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    expect(draftNames()).toEqual([
+      ...shotsOnly([1, 2]),
+      ...parts([1, 2, 3]),
+      ...shotsOnly([5, 6, 7, 8]),
+    ])
+    expect(window.localStorage.getItem(key)).toBe(stored)
   })
 
   it('存着的草稿对不上时从最近一次合成还原；和它一样就不能再合成', async () => {

@@ -191,30 +191,60 @@ export function TimelinePlayhead({ style }: { style: CSSProperties }) {
   return <span aria-hidden="true" className="timeline-playhead" style={style} />
 }
 
+/** 画面行最多画几格。 */
+const MAX_FRAMES = 24
+/** 格宽从这么多秒起，格子太多时翻倍。 */
+const FRAME_STEP = 0.5
+
+/** 格宽：0.5 秒 × 2^k 里放得下 `length` 秒、格子不超过上限的最小值（两端各可能多出被裁掉的一格）。 */
+const frameStepOf = (length: number) => {
+  let step = FRAME_STEP
+  while (Math.ceil(length / step) + 1 > MAX_FRAMES) step *= 2
+  return step
+}
+
+/**
+ * 一段素材的画面行。格子按素材自己的时间铺：从 0 秒起、每格 `step` 秒、取格子中点那一帧，只画与这一段有重叠
+ * 的格子，两端的格子被边裁掉。起止变了只在两端增减格子，中间的图不换地址、不重新请求；同一素材的不同段命中
+ * 同一批地址。格宽只看长度，跨过阈值才换一次。
+ */
 export function Frames({ part }: { part: PlaySegment }) {
-  const length = part.end - part.start
-  const count = Math.max(1, Math.min(24, Math.round(length * 2)))
-  const shots = Array.from({ length: count }).flatMap((_, at) => {
-    const url = videoSnapshotUrl(part.mediaUrl, 96, part.start + ((at + 0.5) * length) / count)
-    return url === undefined ? [] : [url]
+  const length = Math.max(0, part.end - part.start)
+  const step = frameStepOf(length)
+  const first = Math.floor(part.start / step)
+  const last = Math.max(first, Math.ceil(part.end / step) - 1)
+  const cells = Array.from({ length: last - first + 1 }).flatMap((_, at) => {
+    const from = (first + at) * step
+    const src = videoSnapshotUrl(part.mediaUrl, 96, from + step / 2)
+    return src === undefined ? [] : [{ from, src }]
   })
+  const percent = (seconds: number) => `${length > 0 ? (seconds / length) * 100 : 0}%`
   return (
     <span className="timeline-frames">
-      {shots.length === 0 ? (
+      {cells.length === 0 ? (
         <Icon decorative name="video" size="sm" />
       ) : (
-        shots.map((src) => <Frame key={src} src={src} />)
+        cells.map(({ from, src }) => (
+          <Frame
+            key={src}
+            src={src}
+            style={{
+              left: percent(from - part.start),
+              width: length > 0 ? percent(step) : '100%',
+            }}
+          />
+        ))
       )}
     </span>
   )
 }
 
-function Frame({ src }: { src: string }) {
+function Frame({ src, style }: { src: string; style: CSSProperties }) {
   const [failed, setFailed] = useState(false)
   return failed ? (
-    <span className="timeline-frame-empty" />
+    <span className="timeline-frame-empty" style={style} />
   ) : (
-    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} />
+    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} style={style} />
   )
 }
 

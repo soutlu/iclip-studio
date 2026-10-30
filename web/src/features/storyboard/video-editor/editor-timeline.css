@@ -1,16 +1,17 @@
-/* 剪辑视图三条轨自上而下：草稿（画面 48 + 原声 16）、原片（画面 32 + 原声 16）、编辑（行高 42，块高 36 =
-   画面 20 + 原声 16，按行叠放，行数由 --edit-rows 给出），轨间 8。版本视图每个版本一行，见 .is-versions。 */
+/* 剪辑视图三条轨自上而下：草稿（画面 28 + 原声 16）、原片（画面 24 + 原声 16）、编辑（行高 36，块高 30 =
+   画面 14 + 原声 16，按行叠放，行数由 --edit-rows 给出），轨间 8。画面上不放文字，镜头号、开关都在原声行。
+   版本视图每个版本一行，见 .is-versions。 */
 .video-editor-timeline {
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
   --timeline-playhead-top: calc(var(--timeline-track-top) - 4px);
   --timeline-playhead-bottom: 0;
-  --draft-height: 64px;
+  --draft-height: 44px;
   --film-top: calc(var(--timeline-track-top) + var(--draft-height) + 8px);
-  --film-height: 48px;
+  --film-height: 40px;
   --edit-top: calc(var(--film-top) + var(--film-height) + 8px);
-  --edit-row: 42px;
-  --edit-block: 36px;
+  --edit-row: 36px;
+  --edit-block: 30px;
   --timeline-height: calc(var(--edit-top) + var(--edit-rows, 1) * var(--edit-row) + 2px);
 
   position: relative;
@@ -140,6 +141,11 @@
   height: var(--draft-height);
 }
 
+/* 选中的草稿块在上层：拖左把手往左拉长时盖住前一块（连同前一块的关联描边）。 */
+.video-editor-timeline-block.is-draft.is-selected {
+  z-index: var(--z-local-2);
+}
+
 .video-editor-timeline-block.is-film {
   top: var(--film-top);
   height: var(--film-height);
@@ -174,15 +180,15 @@
 }
 
 .video-editor-timeline-block.is-draft .video-editor-timeline-frames {
-  height: 48px;
+  height: 28px;
 }
 
 .video-editor-timeline-block.is-film .video-editor-timeline-frames {
-  height: 32px;
+  height: 24px;
 }
 
 .video-editor-timeline-block.is-edit .video-editor-timeline-frames {
-  height: 20px;
+  height: 14px;
 }
 
 .video-editor-timeline-wave {
@@ -199,7 +205,7 @@
   container: video-editor-wave / inline-size;
 }
 
-/* 编辑片段只有 36px 高，原声行放不下「无声」这类说明，空着即可。 */
+/* 编辑片段只有 30px 高，原声行放不下「无声」这类说明，空着即可。 */
 .video-editor-timeline-block.is-edit .timeline-wave-note {
   display: none;
 }
@@ -313,7 +319,7 @@
   min-width: 0;
   align-items: center;
   gap: 4px;
-  margin: 10px 4px 0;
+  margin: 7px 4px 0;
   overflow: hidden;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
@@ -467,21 +473,23 @@
   pointer-events: none;
 }
 
-/* 草稿里选中那块、原片轨上选区两端的修剪把手，竖直居中在所在轨的画面行（草稿 48，原片 32）。 */
+/* 草稿里选中那块、原片轨上选区两端的修剪把手，竖直居中在所在轨的画面行（草稿 28，原片 24）。 */
+/* 自己就在把手那一层：松手滑动时它成了层叠上下文，把手也不会落到选中块下面。 */
 .video-editor-timeline-trim {
   position: absolute;
+  z-index: var(--z-local-3);
   pointer-events: none;
 }
 
 .video-editor-timeline-trim.is-draft {
-  --timeline-handle-top: 24px;
+  --timeline-handle-top: 14px;
 
   top: var(--timeline-track-top);
   height: var(--draft-height);
 }
 
 .video-editor-timeline-trim.is-film {
-  --timeline-handle-top: 16px;
+  --timeline-handle-top: 12px;
 
   top: var(--film-top);
   height: var(--film-height);

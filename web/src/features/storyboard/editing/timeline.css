@@ -45,22 +45,24 @@
   cursor: default;
 }
 
-/* 画面行、原声行各铺满所在的那一行。 */
+/* 画面行、原声行各铺满所在的那一行。画面格按素材时间摆（left、width 是百分比，见 Frames），两端被裁掉。 */
 .timeline-frames {
+  position: relative;
   display: flex;
   min-width: 0;
   height: 100%;
   flex: 1 1 0;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   color: var(--color-on-surface-faint);
 }
 
 .timeline-frames img,
 .timeline-frame-empty {
-  min-width: 0;
+  position: absolute;
+  top: 0;
   height: 100%;
-  flex: 1 1 0;
   object-fit: cover;
 }
 

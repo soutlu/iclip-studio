@@ -29,6 +29,7 @@ type Args = {
 /**
  * 这条原片的草稿。打开时定一次：存着的每一处都对得上就用它，否则从最近一次合成还原，再不行就是默认草稿；
  * 之后只随用户的改动变，每次改动后整份存进浏览器。存不进去时提示一次，改动照常生效。
+ * 定下之前 `draft` 为 undefined，`change` 不写入：还没读完时的改动会盖掉存着的草稿。
  */
 export function useDraft({ conversationId, rootJobId, source, latest, ready }: Args) {
   const key = draftStorageKey(conversationId, rootJobId)
@@ -43,8 +44,9 @@ export function useDraft({ conversationId, rootJobId, source, latest, ready }: A
     )
   }
   return {
-    draft: draft ?? EMPTY_DRAFT,
+    draft,
     change: (next: Draft) => {
+      if (draft === undefined) return
       setDraft(next)
       if (!writeStored(key, next)) noticeFailure()
     },

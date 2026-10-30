@@ -70,6 +70,7 @@ const handlers = () => ({
   onClickPart: vi.fn(),
   onTogglePart: vi.fn(),
   onTrim: vi.fn(),
+  onTrimDrag: vi.fn(),
 })
 
 const timeline = (draft: Draft, selection: Selection, on: ReturnType<typeof handlers>) => (
@@ -364,7 +365,7 @@ describe('关联描边', () => {
 
 /**
  * jsdom 不排版：轨道区按它铺的秒数每秒 100px、从 x=100 起；块按摆放参数（--at、--len 秒）横排，编辑轨的块
- * （带 --row）在 y=156 起按行往下，其余在草稿那一条（y=28，高 64）；别的元素铺满 600×200。
+ * （带 --row）在 y=132 起按行往下（行高 36、块高 30），其余在草稿那一条（y=28，高 44）；别的元素铺满 600×200。
  */
 const layOut = () =>
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
@@ -379,9 +380,9 @@ const layOut = () =>
     const row = this.style.getPropertyValue('--row')
     return DOMRect.fromRect({
       x: 100 + at * 100 + 1,
-      y: row === '' ? 28 : 156 + Number(row) * 42,
+      y: row === '' ? 28 : 132 + Number(row) * 36,
       width: len * 100 - 2,
-      height: row === '' ? 64 : 36,
+      height: row === '' ? 44 : 30,
     })
   })
 
@@ -478,6 +479,87 @@ describe('开关后的重排', () => {
     rerender(putShot(source, trimItem(pickedFirst, item, { t0: 1, t1: 1.5 }), 2, false))
     fireEvent.pointerUp(end, { pointerId: 1 })
     expect(calls).toEqual([])
+  })
+})
+
+describe('拖草稿块的左把手', () => {
+  // 第 2 段开头剪到 1.5 秒：它在 4–4.5 秒，镜头 6 接在 4.5 秒
+  const selected: Selection = { kind: 'draft', id: `${first.id}#2` }
+  const partOf = (draft: Draft) => {
+    const item = draftItemsOf(source, draft).find((candidate) => candidate.id === selected.id)
+    if (item === undefined) throw new Error('草稿里没有这一段')
+    return item
+  }
+  const cut = trimItem(pickedFirst, partOf(pickedFirst), { t0: 1.5, t1: 2 })
+  const leftOf = (name: RegExp) => groupOf(draftBlock(name)).getBoundingClientRect().left
+  const pressStart = () =>
+    Object.assign(screen.getByRole('slider', { name: '裁剪开头' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+
+  it('拖动中左边沿跟着指针，这块的右边沿与后面的块不动，往左拉长时盖到前一块上；松手后首尾接上并滑过去', () => {
+    layOut()
+    const calls = recordAnimations()
+    const { on, rerender } = renderTimeline(cut, selected)
+    const right = () => groupOf(draftBlock(/第 2 段/)).getBoundingClientRect().right
+    const rightBefore = right()
+    const shot6 = leftOf(/^镜头 6 ·/)
+    const start = pressStart()
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 500 })
+    expect(on.onTrimDrag).toHaveBeenLastCalledWith(true)
+    // 每秒 100px：往左 50px 是开头早 0.5 秒
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 450 })
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'start', t0: 1, t1: 2 })
+    rerender(trimItem(cut, partOf(cut), { t0: 1, t1: 2 }))
+    // 左边沿到 3.5 秒，盖住第 1 段末尾半秒；右边沿与镜头 6 停在按下时的位置
+    expect(leftOf(/第 2 段/)).toBe(100 + 350 + 1)
+    expect(leftOf(/第 2 段/)).toBeLessThan(
+      groupOf(draftBlock(/第 1 段/)).getBoundingClientRect().right,
+    )
+    expect(right()).toBe(rightBefore)
+    expect(leftOf(/^镜头 6 ·/)).toBe(shot6)
+    expect(calls).toEqual([])
+
+    fireEvent.pointerUp(start, { pointerId: 1 })
+    expect(on.onTrimDrag).toHaveBeenLastCalledWith(false)
+    // 首尾接上：第 2 段回到 4 秒、镜头 6 到 5 秒，都从拖动中的位置滑过来
+    expect(leftOf(/第 2 段/)).toBe(100 + 400 + 1)
+    expect(leftOf(/^镜头 6 ·/)).toBe(100 + 500 + 1)
+    const slides = (name: RegExp) =>
+      calls.filter((call) => call.node === groupOf(draftBlock(name))).map((call) => call.keyframes)
+    expect(slides(/第 2 段/)).toEqual([[{ translate: '-50px 0' }, { translate: '0 0' }]])
+    expect(slides(/^镜头 6 ·/)).toEqual([[{ translate: '-50px 0' }, { translate: '0 0' }]])
+    expect(slides(/第 1 段/)).toEqual([])
+  })
+
+  it('往里裁时同样只动左边沿；右把手照旧是右边沿动、后面的块跟着移', () => {
+    layOut()
+    const { on, rerender } = renderTimeline(pickedFirst, selected)
+    const shot6 = leftOf(/^镜头 6 ·/)
+    const start = pressStart()
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 500 })
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 530 })
+    expect(on.onTrim).toHaveBeenLastCalledWith({ id: selected.id, edge: 'start', t0: 1.3, t1: 2 })
+    rerender(trimItem(pickedFirst, partOf(pickedFirst), { t0: 1.3, t1: 2 }))
+    expect(leftOf(/第 2 段/)).toBe(100 + 430 + 1)
+    expect(leftOf(/^镜头 6 ·/)).toBe(shot6)
+    fireEvent.pointerUp(start, { pointerId: 1 })
+    expect(leftOf(/^镜头 6 ·/)).toBe(100 + 470 + 1)
+
+    const trimmed = trimItem(pickedFirst, partOf(pickedFirst), { t0: 1.3, t1: 2 })
+    const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(end, { pointerId: 2, button: 0, clientX: 500 })
+    fireEvent.pointerMove(end, { pointerId: 2, clientX: 480 })
+    rerender(trimItem(trimmed, partOf(trimmed), { t0: 1.3, t1: 1.8 }))
+    expect(leftOf(/第 2 段/)).toBe(100 + 400 + 1)
+    expect(leftOf(/^镜头 6 ·/)).toBe(100 + 450 + 1)
+    fireEvent.pointerUp(end, { pointerId: 2 })
   })
 })
 

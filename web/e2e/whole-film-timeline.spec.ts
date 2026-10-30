@@ -492,6 +492,49 @@ test.describe('成片编辑器 · 时间线', () => {
     await expect(film.getByRole('group')).toHaveCount(6)
   })
 
+  test('拖画面轨一段的左把手：左边沿跟手，右边沿与后面的段不动，往左拉长盖在前一段上；松手后首尾接上', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    // 第 3 段是 v2：入点 1.5 秒，开头还能往前拉
+    await film.getByRole('button', { name: /^选中：第 3 段/ }).click()
+    const segment = (n: number) => film.getByRole('group', { name: new RegExp(`^第 ${n} 段`) })
+    const boxes = async () => ({
+      second: await boxOf(segment(2)),
+      third: await boxOf(segment(3)),
+      fourth: await boxOf(segment(4)),
+    })
+    const before = await boxes()
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    const { pps } = await pixelsPerSecond(dialog)
+    const pull = Math.round(pps * 0.4)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pull, handle.cy, { steps: 6 })
+    const during = await boxes()
+    expect(Math.abs(during.third.x - (before.third.x - pull))).toBeLessThanOrEqual(2)
+    expect(
+      Math.abs(during.third.x + during.third.width - (before.third.x + before.third.width)),
+    ).toBeLessThanOrEqual(1)
+    expect(Math.abs(during.fourth.x - before.fourth.x)).toBeLessThanOrEqual(1)
+    expect(during.third.x).toBeLessThan(during.second.x + during.second.width)
+    await page.mouse.up()
+
+    // 松手：第 3 段接在第 2 段后面，第 4 段跟着往后
+    await expect
+      .poll(async () => {
+        const after = await boxes()
+        return [
+          after.third.x - (after.second.x + after.second.width),
+          after.fourth.x - before.fourth.x - pull,
+        ].map((gap) => Math.abs(gap) <= 3)
+      })
+      .toEqual([true, true])
+    await expect
+      .poll(async () => (await readDraft(page))?.layer0[2]?.playbackStart)
+      .toBeLessThan(1_500)
+  })
+
   test('特效轨：拖动和微调；上下新增预演展开一行，松手才提交，取消恢复原排列', async ({ page }) => {
     const { dialog } = await openWith(page, {
       layer0: BASE,

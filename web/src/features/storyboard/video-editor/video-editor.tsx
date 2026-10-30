@@ -189,6 +189,13 @@ type EditorProps = {
 
 type Submission = 'edit' | 'compose'
 
+/** `holding` 期间一直是它变真之前的那个值，其余时候就是 `value`。只用于基本类型（按值比较）。 */
+const useHeldWhile = <T extends number | string | undefined>(value: T, holding: boolean): T => {
+  const [kept, setKept] = useState(value)
+  if (!holding && kept !== value) setKept(value)
+  return holding ? kept : value
+}
+
 /** 失败提示：同一件事（按 key）一直失败只提示一次，恢复后再失败才再提示。 */
 const useFailureToasts = (failures: readonly { key: string; message: string }[]) => {
   const reportedRef = useRef(new Set<string>())
@@ -246,6 +253,8 @@ function Editor({
   const [frameCrops, setFrameCrops] = useState(NO_CROPS)
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
+  // 正按着修剪把手拖：卡片上的首帧、尾帧停在按下时那一帧，松手再换，免得每一步都重新取帧。
+  const [trimDragging, setTrimDragging] = useState(false)
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const { downloading, download } = useMediaDownload()
@@ -310,11 +319,13 @@ function Editor({
       shots !== undefined &&
       blocks.every((block) => block.state.kind !== 'measuring'),
   })
-  const items = source === undefined ? [] : draftItemsOf(source, draft)
+  // 草稿定下之前没有块：时间线不画、合成不可点、Delete 拿不到选中的块
+  const items = source === undefined || draft === undefined ? [] : draftItemsOf(source, draft)
   const pieces = outputOf(items)
   const composing = composingOf(jobs, root.id)
   const composable =
     source !== undefined &&
+    draft !== undefined &&
     canCompose({
       source,
       pieces,
@@ -516,12 +527,13 @@ function Editor({
   }
 
   const toggleShot = (no: number) => {
-    if (source !== undefined) changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
+    if (source !== undefined && draft !== undefined)
+      changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
   }
 
   /** 选用或取消一段；取消时那块正选中就清掉选中。 */
   const togglePart = (editId: string, seg: number) => {
-    if (source === undefined) return undefined
+    if (source === undefined || draft === undefined) return undefined
     if (isPicked(draft, editId, seg)) {
       if (selection?.kind === 'draft' && selection.id === partItemId(editId, seg))
         setSelection(undefined)
@@ -535,6 +547,7 @@ function Editor({
    * 留在原来那一块的同一位置（见 keepPlace）。
    */
   const clickPart = (editId: string, seg: number) => {
+    if (draft === undefined) return
     const picking = !isPicked(draft, editId, seg)
     const after = togglePart(editId, seg)
     if (after === undefined) return
@@ -545,7 +558,7 @@ function Editor({
   /** 修剪草稿里的一块：后面的块跟着移，舞台与播放头跟到被拖的那一端。 */
   const trim = ({ id, edge, t0, t1 }: TrimChange) => {
     const item = items.find((candidate) => candidate.id === id)
-    if (busy || source === undefined || item === undefined) return
+    if (busy || source === undefined || draft === undefined || item === undefined) return
     const next = trimItem(draft, item, { t0, t1 })
     change(next)
     const now = draftItemsOf(source, next).find((candidate) => candidate.id === id)
@@ -757,7 +770,7 @@ function Editor({
           重试
         </Button>
       </p>
-    ) : clipsView && source !== undefined ? (
+    ) : clipsView && source !== undefined && draft !== undefined ? (
       <ClipsTimeline
         blocks={blocks}
         clock={currentTime}
@@ -774,6 +787,7 @@ function Editor({
         onToggleShot={toggleShot}
         onTogglePart={(editId, seg) => void togglePart(editId, seg)}
         onTrim={trim}
+        onTrimDrag={setTrimDragging}
         onTrimRun={trimRun}
         peaksOf={peaksOf}
         previewPick={(editId, seg) => previewPick(source, draft, editId, seg)}
@@ -800,14 +814,17 @@ function Editor({
       </p>
     )
 
-  // 生成卡的首帧、尾帧取原片选区的起止。
+  // 生成卡的首帧、尾帧取原片选区的起止，小卡取草稿块用到的开头；拖把手期间停在按下时那一帧。
+  const frameStart = useHeldWhile(range?.start, trimDragging)
+  const frameEnd = useHeldWhile(range?.end, trimDragging)
+  const itemStart = useHeldWhile(selectedItem?.t0, trimDragging)
   const frameOf = (edge: 'start' | 'end', width = CARD_FRAME_WIDTH) =>
-    range === undefined
+    frameStart === undefined || frameEnd === undefined
       ? undefined
       : videoSnapshotUrl(
           mediaUrl,
           width,
-          edge === 'start' ? range.start : Math.max(range.start, range.end - LAST_FRAME_LEAD),
+          edge === 'start' ? frameStart : Math.max(frameStart, frameEnd - LAST_FRAME_LEAD),
         )
   const generationCard =
     range === undefined || shotSpan === undefined ? null : (
@@ -904,7 +921,11 @@ function Editor({
     selectedItem !== undefined ? (
       <SelectionCard
         anchorRef={selectionBoxRef}
-        frame={videoSnapshotUrl(selectedItem.mediaUrl, CARD_FRAME_WIDTH, selectedItem.t0)}
+        frame={videoSnapshotUrl(
+          selectedItem.mediaUrl,
+          CARD_FRAME_WIDTH,
+          itemStart ?? selectedItem.t0,
+        )}
         key={selectedItem.id}
         line={draftLineOf(selectedItem)}
         onClose={() => setSelection(undefined)}

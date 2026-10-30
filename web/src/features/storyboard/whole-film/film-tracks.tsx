@@ -14,6 +14,7 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
+import { holdLeftTrim, useReleaseSlide } from '../editing/left-trim'
 import type { PeaksState } from '../editing/media-analysis'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
 import {
@@ -228,6 +229,8 @@ type BlockProps = {
   /** 点开的浮层（组件块才有） */
   popover?: ReactNode
   clipId?: string
+  /** 松开左把手后要滑到新位置的块（见 useReleaseSlide） */
+  slide?: string
   shortcuts?: string
   motion?:
     | {
@@ -256,6 +259,7 @@ function Block({
   handles,
   popover,
   clipId,
+  slide,
   shortcuts,
   motion,
   children,
@@ -309,6 +313,7 @@ function Block({
     <div
       aria-label={name}
       className={cn(className, selected && 'is-selected')}
+      data-slide={slide}
       ref={elementRef}
       role="group"
       style={motion === undefined ? style : { ...style, left: 0, width: undefined }}
@@ -381,13 +386,23 @@ export function FilmTracks({
   musicAction,
 }: FilmTracksProps) {
   const gesture = usePreviewGesture(apply)
-  const shown = gesture.preview?.draft ?? draft
-  const total = filmDuration(shown)
+  const previewed = gesture.preview?.draft ?? draft
+  // 拖画面轨一段的左把手：只挪显示，草稿照常首尾相接（见 holdLeftTrim）
+  const held = holdLeftTrim(previewed.layer0, gesture.preview?.pin, {
+    startOf: (clip) => clip.start,
+    lengthOf: (clip) => clip.duration,
+    moved: (clip, start) => ({ ...clip, start }),
+  })
+  const shown =
+    held.items === previewed.layer0 ? previewed : { ...previewed, layer0: [...held.items] }
+  const total = filmDuration(previewed)
   const { pps, contentWidth } = scale
   const beatsMs = beats.map((beat) => beat.timeMs)
   const gridStep = rulerTickStep(contentWidth / Math.max(pps, 1))
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  // 松开左把手：这段与后面的段（连同选区外框）从按下时的位置滑到首尾相接后的位置
+  useReleaseSlide(contentRef, gesture.preview?.pin !== undefined)
   const filmLaneRef = useRef<HTMLDivElement>(null)
   const overlayLaneRef = useRef<HTMLDivElement>(null)
   const musicLaneRef = useRef<HTMLDivElement>(null)
@@ -794,6 +809,8 @@ export function FilmTracks({
       playheadMs,
       beatsMs,
     }).filter((target) => Math.round(target.time * 1000) !== edgeMs)
+    // 左把手：这段的右边沿与后面的段停在按下时的位置，左边沿跟手；吸附线与提示因此都按按下时的时间画
+    const pin = edge === 'start' ? { id: clip.id, end: clip.start + clip.duration } : undefined
     gesture.start(event, (deltaPx): GestureStep => {
       const snapped = snapMs(edgeMs + pxToMs(deltaPx, pps), targets, pps, snap)
       const deltaMs = snapped.ms - edgeMs
@@ -807,6 +824,7 @@ export function FilmTracks({
         guideMs: after.duration === wanted ? snapped.guideMs : null,
         note: stopped ? FILM_LIMIT_TEXT : undefined,
         noteAtMs: edge === 'end' ? after.start + after.duration : after.start,
+        pin,
       }
     })
   }
@@ -1012,7 +1030,7 @@ export function FilmTracks({
   })
 
   const musicMedia = draft.music === null ? undefined : context.music[draft.music.jobId]
-  const shortfall = musicMedia === undefined ? 0 : musicShortfallMs(shown, context)
+  const shortfall = musicMedia === undefined ? 0 : musicShortfallMs(previewed, context)
 
   /** 组件段、特效块的浮层：锚在块上，向上弹 */
   const popoverOf = (id: string, label: string) => (
@@ -1187,7 +1205,7 @@ export function FilmTracks({
     marker === undefined ? 0 : msToPx(filmDrop?.start ?? insertClock(marker.index), pps)
   const bubbleAlign = (left: number) =>
     left < 120 ? 'is-start' : left > contentWidth - 120 ? 'is-end' : undefined
-  const tailLeft = msToPx(layer0End(shown), pps) + 8
+  const tailLeft = msToPx(held.shiftAt(layer0End(previewed)), pps) + 8
   const showTail = marker === undefined && contentWidth - tailLeft > 300
   const cuts = cutsOf(shown)
   const insertionActive = hover !== null || (lift?.moved === true && !lift.returning)
@@ -1289,6 +1307,7 @@ export function FilmTracks({
                     )}
                     key={clip.id}
                     name={name}
+                    slide={`clip:${clip.id}`}
                     motion={{
                       driver: motion,
                       x: msToPx((projectedById.get(clip.id) ?? clip).start, pps),
@@ -1321,6 +1340,7 @@ export function FilmTracks({
                 <span
                   aria-hidden="true"
                   className="wf-selection-box"
+                  data-slide={`selection:${first.id}`}
                   key={first.id}
                   style={place(first.start, last.start + last.duration - first.start)}
                 />
@@ -1559,9 +1579,12 @@ export function FilmTracks({
           </div>
           {gesture.preview?.note !== undefined && gesture.preview.noteAtMs !== undefined ? (
             <span
-              className={cn('wf-drop-bubble', bubbleAlign(msToPx(gesture.preview.noteAtMs, pps)))}
+              className={cn(
+                'wf-drop-bubble',
+                bubbleAlign(msToPx(held.shiftAt(gesture.preview.noteAtMs), pps)),
+              )}
               role="status"
-              style={{ left: `${msToPx(gesture.preview.noteAtMs, pps)}px` }}
+              style={{ left: `${msToPx(held.shiftAt(gesture.preview.noteAtMs), pps)}px` }}
             >
               <Icon decorative name="blocked" size="xs" />
               {gesture.preview.note}
