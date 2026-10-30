@@ -8,13 +8,17 @@
 
 运行用的服务（FileSpace、台账、各适配器等）不进 spec：组合根启动时调插件类的 ``bind``，得到一个把服务放在
 类属性上的子类，插件名不变；``from_spec`` 从类上取服务。登记表收的就是这些绑好服务的类。
+
+运行时服务从配置接插件包：插件包给一个 ``PluginFactory``，服务启动时按配置打开它拿到 ``PluginBinder``，
+再用服务自己的工作区存储与素材台账（``PluginHost``）绑出登记表；关停时退出工厂，插件包借此关掉自己的连接。
 """
 
 from __future__ import annotations
 
 import inspect
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, ClassVar, Self, cast, get_type_hints
@@ -23,6 +27,8 @@ from pydantic import BaseModel, ConfigDict, create_model
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
 
+from agent_runtime.file_store.store import FileStore
+from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 
 
@@ -114,6 +120,25 @@ PluginRegistry = Mapping[str, type[CapPlugin[Any]]]
 """插件名对应绑好服务的插件类；装配时整张表交给 ``Agent.from_spec``，由它按 spec 各造一份实例。"""
 
 
+@dataclass(frozen=True, slots=True)
+class PluginHost:
+    """组合根交给插件绑定函数的服务。"""
+
+    files: FileStore
+    """工作区存储：写完就发 ``fs.changed`` 的那一份。"""
+
+    ledger: MaterialLedger
+    """对话素材台账。"""
+
+
+PluginBinder = Callable[[PluginHost], PluginRegistry]
+"""拿组合根的服务绑好插件，交回登记表。"""
+
+PluginFactory = Callable[[Mapping[str, Any]], AbstractAsyncContextManager[PluginBinder]]
+"""插件包的入口：收运行时配置里原样转来的 ``plugins.config``，进入时校验配置、建好自己的连接并做启动
+检查，交回绑定函数；退出时关掉这些连接。配置不对或检查不过就在进入或绑定时抛，服务起不来。"""
+
+
 def required_plugins(capability: AbstractCapability[Any]) -> tuple[str, ...]:
     """这个实例 ``get_ordering().requires`` 里各个插件类的插件名。"""
 
@@ -129,4 +154,11 @@ def required_plugins(capability: AbstractCapability[Any]) -> tuple[str, ...]:
     return tuple(names)
 
 
-__all__ = ["CapPlugin", "PluginRegistry", "required_plugins"]
+__all__ = [
+    "CapPlugin",
+    "PluginBinder",
+    "PluginFactory",
+    "PluginHost",
+    "PluginRegistry",
+    "required_plugins",
+]

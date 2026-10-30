@@ -57,3 +57,27 @@ depends_on = [
     "iclip_video.film_view",
     "iclip_video.shot_document",
 ]
+
+# 工作区插件查图片信息用的 OSS 实现。
+[[modules]]
+path = "iclip_video.oss_media"
+depends_on = []
+
+# 要后端服务的端口经内部接口的 HTTP 实现，请求与答复用各插件包的 wire 模型。
+[[modules]]
+path = "iclip_video.internal_api"
+depends_on = ["iclip_video.shot_video", "iclip_video.video_breakdown"]
+
+# 运行时服务的入口：按配置把各插件包绑进插件登记表，可以引用每个插件包。
+[[modules]]
+path = "iclip_video.registry"
+depends_on = [
+    "iclip_video.iclip_studio",
+    "iclip_video.internal_api",
+    "iclip_video.oss_media",
+    "iclip_video.shot_video",
+    "iclip_video.video",
+    "iclip_video.video_breakdown",
+    "iclip_video.video_shots",
+    "iclip_video.video_understanding",
+]

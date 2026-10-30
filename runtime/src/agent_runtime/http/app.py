@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 
 import httpx
@@ -38,7 +38,6 @@ from agent_runtime.config.model_providers.public import (
 from agent_runtime.config.skills.public import SkillsService, SqlSkillStore
 from agent_runtime.file_store.announcing import AnnouncingFileStore, FileChange
 from agent_runtime.file_store.pg import PgFileStore
-from agent_runtime.file_store.store import FileStore
 from agent_runtime.harness.agents import DELEGATE_TOOL
 from agent_runtime.harness.jobs import JobQueue, JobRow
 from agent_runtime.harness.sessions import PgSessionStore, SessionApps
@@ -68,17 +67,13 @@ from agent_runtime.http.workspace import create_workspace_router
 from agent_runtime.live.frames import FsChanged, FsChangeEntry, SessionActivity
 from agent_runtime.live.hub import AppEventHub
 from agent_runtime.material_ledger.pg import PgMaterialLedger
-from agent_runtime.plugins.base import PluginRegistry
+from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.settings import RuntimeSettings
 from agent_runtime.transcript.wire import SessionActivityOut
 
 TITLE = "agent-runtime"
-
-
-PluginBinder = Callable[[FileStore], PluginRegistry]
-"""拿本服务的工作区存储（写完就发 ``fs.changed`` 的那一份）绑好插件，交回登记表。"""
 
 
 def create_app(
@@ -96,10 +91,10 @@ def create_app(
     起停，lifespan 结束时关掉回调用的 HTTP 客户端与自己建的 engine。合同导出因此只 import、建 app、不启动。
 
     ``plugins`` 是交给本服务的插件登记表：agent 装配按它造插件，管理接口校验 agent 配置（插件名、要求
-    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区的插件给 ``PluginBinder``，用本服务
-    的工作区存储绑定，写入才会发到应用事件流。``credential_probe`` 不给就用真实的试连；``engine`` 不给就按
-    ``settings.database_url`` 自己建，给了由调用方负责关；``build_model`` 是测试换模型替身的口子，
-    ``hook_transport`` 是测试接住回调请求的口子。
+    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区或素材台账的插件给
+    ``PluginBinder``，用本服务的工作区存储与素材台账绑定，写入才会发到应用事件流。``credential_probe``
+    不给就用真实的试连；``engine`` 不给就按 ``settings.database_url`` 自己建，给了由调用方负责关；
+    ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子。
     """
 
     configure_logging(settings.log_level, settings.log_format)
@@ -155,7 +150,12 @@ def create_app(
     file_store = PgFileStore(active_engine)
     # 分叉与按清单拷文件用底下这份，副本不算变更；插件与应用经接口写文件用会通知的那份。
     announcing_files = AnnouncingFileStore(file_store, on_file_change)
-    registry = plugins if isinstance(plugins, Mapping) else plugins(announcing_files)
+    material_ledger = PgMaterialLedger(active_engine)
+    registry = (
+        plugins
+        if isinstance(plugins, Mapping)
+        else plugins(PluginHost(files=announcing_files, ledger=material_ledger))
+    )
 
     agent_config = AgentConfigService(
         agent_store,
@@ -191,7 +191,6 @@ def create_app(
             build_model=build_model,
         ),
     )
-    material_ledger = PgMaterialLedger(active_engine)
     sessions = SessionService(
         sessions=session_store,
         version_for_new_session=agent_config.version_for_new_session,
@@ -318,4 +317,4 @@ def _activity_out(state: ActivityState) -> SessionActivityOut:
     )
 
 
-__all__ = ["TITLE", "PluginBinder", "create_app"]
+__all__ = ["TITLE", "create_app"]

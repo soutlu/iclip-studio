@@ -1,0 +1,20 @@
+# 运行时服务的视频部署包：运行时加视频插件，由 runtime/Dockerfile 安装进运行时镜像。
+# 运行时项目（runtime/）本身不依赖任何插件包，接哪个插件包由运行时配置的 plugins.factory 决定。
+# 第三方依赖的版本钉在后端 server/uv.lock 的同一版：任一边改了依赖，在本目录 `uv lock` 后按后端的锁
+# 用 `uv lock -P <包>==<版本>` 对齐不一致的那几个。
+[project]
+name = "agent-runtime-video"
+version = "0.1.0"
+description = "运行时服务的视频部署包：Agent 运行时与视频插件"
+requires-python = ">=3.13"
+dependencies = [
+    "agent-runtime",
+    "iclip-video-plugins",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+agent-runtime = { path = "../../runtime", editable = true }
+iclip-video-plugins = { path = "../../plugins/video", editable = true }

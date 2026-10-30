@@ -9,7 +9,7 @@ import httpx
 from iclip_video.video_document import SHOT_TIMECODE_SHAPE
 
 TIMEOUT_SECONDS: Final = 600.0
-"""付费视频拆解的总超时；超时无法确认上游执行结果，不自动重试。"""
+"""付费视频拆解的默认总超时；超时无法确认上游执行结果，不自动重试。"""
 
 _USER_TEXT: Final = "请对随附视频做参考片拆解。"
 
@@ -103,7 +103,7 @@ SYSTEM_PROMPT: Final = (
 
 
 class ArkVideoUnderstanding:
-    """方舟视频拆解适配器，HTTP 客户端由组合根注入。"""
+    """方舟视频拆解适配器，HTTP 客户端由组合根注入；``timeout_seconds`` 是一次拆解请求的总超时。"""
 
     def __init__(
         self,
@@ -114,6 +114,7 @@ class ArkVideoUnderstanding:
         model: str,
         thinking: str | None = None,
         fps: float | None = None,
+        timeout_seconds: float = TIMEOUT_SECONDS,
     ) -> None:
         self._client = client
         self._url = url
@@ -121,6 +122,7 @@ class ArkVideoUnderstanding:
         self._model = model
         self._thinking = thinking
         self._fps = fps
+        self._timeout_seconds = timeout_seconds
 
     async def parse(self, video_url: str) -> str:
 
@@ -144,7 +146,7 @@ class ArkVideoUnderstanding:
                 self._url,
                 json=payload,
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=TIMEOUT_SECONDS,
+                timeout=self._timeout_seconds,
             )
             response.raise_for_status()
             body = response.json()

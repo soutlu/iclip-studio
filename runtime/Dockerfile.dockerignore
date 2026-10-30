@@ -1,9 +1,14 @@
-# 运行时服务以仓库根为构建上下文，只发送 runtime/ 的项目文件与源码；后端、插件、前端与 .git 都不发送。
+# 运行时服务以仓库根为构建上下文，只发送部署包 deploy/runtime-video 与它装的 runtime/、plugins/video/ 的
+# 项目文件与源码；后端、前端、测试与 .git 都不发送。
 **
 !runtime/pyproject.toml
-!runtime/uv.lock
 !runtime/src/
 !runtime/src/**
+!plugins/video/pyproject.toml
+!plugins/video/src/
+!plugins/video/src/**
+!deploy/runtime-video/pyproject.toml
+!deploy/runtime-video/uv.lock
 # 本机缓存与字节码不进镜像。
 **/__pycache__/
 **/*.py[cod]
