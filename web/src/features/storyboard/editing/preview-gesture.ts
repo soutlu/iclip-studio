@@ -1,12 +1,13 @@
 import {
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
   type PointerEvent,
   type RefObject,
 } from 'react'
-import { DRAG_THRESHOLD, releasePointer, type Edge, type useClickAfterDrag } from './timeline-drag'
+import { DRAG_THRESHOLD, type Edge, type useClickAfterDrag } from './timeline-drag'
 
 /**
  * 时间线上的拖动（修剪把手、挪块）：两个编辑器共用。拖动中只预览，松手才提交一次。
@@ -51,6 +52,8 @@ export type GesturePreview<S> = { last: S; step: S }
 
 type Gesture<S> = {
   pointerId: number
+  /** 捕获指针的元素（按下的把手或块）。 */
+  element: HTMLElement
   originX: number
   originY: number
   /** 横向的累计位移，与指针现在的纵坐标（换行的拖动按它算落在哪一行） */
@@ -59,6 +62,9 @@ type Gesture<S> = {
   moved: boolean
   last: S | undefined
 }
+
+/** 正按着的一次拖动（每次按下一个新对象）：拖动期间在 window 上听它的松手、取消与丢失捕获。 */
+type Held = object
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -141,12 +147,18 @@ type Options<S> = {
   onCommit: (last: S) => void
   /** 预览变了（拖动中每一步）；松手、取消时给 null（按下没拖动就松手也给）。 */
   onPreview?: (preview: GesturePreview<S> | null) => void
+  /** 这次拖动结束了：松手、取消、丢了指针捕获都算，一次拖动只调一次。 */
+  onEnd?: () => void
 }
 
 /**
  * 一次拖动是一步编辑：按下时记住当时的数据（由 `compute` 闭包带着），超过拖动阈值才算拖，之后按累计位移算出
  * 预览，放不下的位置不去、停在上一个放得下的地方；松手只提交那一次结果，并吞掉随后的 click。没超过阈值算点按，
  * 不提交。指针被系统取消（pointercancel）或调用方 `cancel` 时什么都不提交，回到按下前的样子。
+ *
+ * 拖动一定会结束：除了按下的元素上的事件，拖动期间还在 window 上听这个指针的 pointerup、pointercancel 与
+ * lostpointercapture（元素被移出文档时这个事件发到 document）。哪个先到就按哪个结束，只结束一次：pointerup 与
+ * 丢失捕获按松手，pointercancel 按取消。
  *
  * 修剪一串首尾相接的块用 `startTrim`：拖动中调用方按已提交的布局画（见 {@link trimSpans}），松手后滑到首尾
  * 相接的位置。
@@ -157,11 +169,13 @@ export function usePreviewGesture<S>({
   accepts = () => true,
   onCommit,
   onPreview,
+  onEnd,
 }: Options<S>) {
   const [state, setState] = useState<{
     preview: GesturePreview<S>
     trim: TrimTarget | undefined
   } | null>(null)
+  const [held, setHeld] = useState<Held | null>(null)
   const gestureRef = useRef<Gesture<S> | null>(null)
   useReleaseSlide(containerRef, state?.trim)
 
@@ -170,6 +184,45 @@ export function usePreviewGesture<S>({
     onPreview?.(preview)
   }
 
+  /** 结束这次拖动；已经结束过（或已换成另一次）时什么都不做。返回这一下算不算拖动。 */
+  const finish = (gesture: Gesture<S>, commit: boolean): boolean => {
+    if (gestureRef.current !== gesture) return false
+    gestureRef.current = null
+    if (gesture.element.hasPointerCapture(gesture.pointerId))
+      gesture.element.releasePointerCapture(gesture.pointerId)
+    setHeld(null)
+    show(null)
+    if (gesture.moved) clicks.swallow()
+    if (commit && gesture.moved && gesture.last !== undefined) onCommit(gesture.last)
+    onEnd?.()
+    return gesture.moved
+  }
+
+  const ended = useEffectEvent(
+    (pointerId: number, commit: boolean, target?: EventTarget | null) => {
+      const gesture = gestureRef.current
+      if (gesture === null || gesture.pointerId !== pointerId) return
+      // 丢失捕获只认按下的元素，或它已被移出文档（这时事件发到 document）
+      if (target !== undefined && target !== gesture.element && gesture.element.isConnected) return
+      finish(gesture, commit)
+    },
+  )
+
+  useEffect(() => {
+    if (held === null) return
+    const up = (event: globalThis.PointerEvent) => ended(event.pointerId, true)
+    const cancelled = (event: globalThis.PointerEvent) => ended(event.pointerId, false)
+    const lost = (event: globalThis.PointerEvent) => ended(event.pointerId, true, event.target)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancelled)
+    window.addEventListener('lostpointercapture', lost)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancelled)
+      window.removeEventListener('lostpointercapture', lost)
+    }
+  }, [held])
+
   const begin = (
     event: PointerEvent<HTMLElement>,
     compute: Gesture<S>['compute'],
@@ -177,9 +230,11 @@ export function usePreviewGesture<S>({
   ) => {
     if (event.button !== 0) return
     clicks.reset()
-    event.currentTarget.setPointerCapture(event.pointerId)
+    const element = event.currentTarget
+    element.setPointerCapture(event.pointerId)
     gestureRef.current = {
       pointerId: event.pointerId,
+      element,
       originX: event.clientX,
       originY: event.clientY,
       compute,
@@ -187,6 +242,7 @@ export function usePreviewGesture<S>({
       moved: false,
       last: undefined,
     }
+    setHeld({})
   }
 
   /** 按下一处开始拖（挪块）。 */
@@ -220,21 +276,13 @@ export function usePreviewGesture<S>({
   const end = (event: PointerEvent<HTMLElement>): boolean => {
     const gesture = gestureRef.current
     if (gesture === null || gesture.pointerId !== event.pointerId) return false
-    releasePointer(event)
-    gestureRef.current = null
-    show(null)
-    if (gesture.moved) clicks.swallow()
-    if (gesture.moved && gesture.last !== undefined) onCommit(gesture.last)
-    return gesture.moved
+    return finish(gesture, true)
   }
 
   /** 放弃这次拖动：什么都不提交，回到按下前的样子。 */
   const cancel = () => {
     const gesture = gestureRef.current
-    if (gesture === null) return
-    gestureRef.current = null
-    if (gesture.moved) clicks.swallow()
-    show(null)
+    if (gesture !== null) finish(gesture, false)
   }
 
   return { preview: state?.preview ?? null, start, startTrim, move, end, cancel }
