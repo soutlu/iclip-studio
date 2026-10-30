@@ -1,9 +1,9 @@
-"""按配置装配命名模型。"""
+"""按模型声明建出 pydantic-ai 模型。"""
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -17,13 +17,10 @@ from iclip.common.model_vocab import ModelApi, ThinkingEffort
 BuiltModel = Model
 """装配出的一个模型实例；组合根经它引用模型类型，不直接 import 引擎。"""
 
-BuiltModels = Mapping[str, Model]
-"""模型名称到实例的映射。"""
-
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
-    """命名模型配置；省略 thinking 时使用供应方默认值。"""
+    """建一个模型要的配置；``name`` 只用于报错；省略 thinking 时使用供应方默认值。"""
 
     name: str
     provider: str
@@ -101,30 +98,12 @@ def build_model(spec: ModelSpec) -> Model:
     return OpenAIResponsesModel(spec.model, provider=provider, settings=settings)
 
 
-def build_models(specs: Sequence[ModelSpec]) -> BuiltModels:
-    """按名称装配模型，每个名称共享一个实例。"""
-
-    return {spec.name: build_model(spec) for spec in specs}
-
-
-def rebuild_models(
-    specs: Sequence[ModelSpec], previous_specs: Sequence[ModelSpec], previous: BuiltModels
-) -> BuiltModels:
-    """重载时只重建声明变了的模型；声明一字未改的沿用旧实例，客户端连接池不动。"""
-
-    kept = {spec: previous[spec.name] for spec in previous_specs}
-    return {spec.name: kept.get(spec) or build_model(spec) for spec in specs}
-
-
 __all__ = [
     "BuiltModel",
-    "BuiltModels",
     "ModelApi",
     "ModelSpec",
     "ThinkingEffort",
     "build_model",
-    "build_models",
     "provider_known",
-    "rebuild_models",
     "thinking_effort_of",
 ]

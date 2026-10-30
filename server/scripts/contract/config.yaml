@@ -87,15 +87,7 @@ shot_video:
   backoff_factor: 3
   job_timeout_seconds: 1800 # 单次出图工具调用的总时限
 
-models:
-  # 合同导出用的占位模型：只为让装配通过，不代表任何真实端点。
-  placeholder:
-    provider: openai
-    api_key_env: MODEL_API_KEY
-    base_url: https://placeholder.invalid/v1
-
 conversations:
-  title_model: placeholder
   compaction:
     # 压缩阈值为 context_window × max_fraction；未配置窗口时禁用压缩。
     max_fraction: 0.85 # 历史估算占窗口的触发比例
@@ -108,6 +100,8 @@ agent_runs:
   sweep_seconds: 15 # 中断清扫与队列唤醒间隔
   max_attempts: 2 # 单条消息的最大认领次数；1 表示中断后不续跑
   max_snapshots_per_run: 3 # 每个 run 保留的全量历史快照数
+  assembly_cache_size: 64 # 每个进程最多缓存几份装配好的 agent
+  # skill_cache_dir: /var/cache/iclip-skills # 技能版本的本机缓存目录；不写时放在系统临时目录下
 
 ops:
   log_level: INFO

@@ -22,6 +22,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_harness.step_persistence import (
@@ -33,17 +34,26 @@ from pydantic_ai_harness.step_persistence import (
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.agents import DELEGATE_TOOL
+from iclip.common.errors import AgentUnavailable
+from iclip.harness.agents import (
+    DELEGATE_TOOL,
+    SubAgentSlot,
+    build_agent,
+    build_subagents,
+    subagent_profile,
+)
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import (
     ConversationRunner,
     DepsFor,
+    RunAgent,
     RunStarted,
     TurnStarted,
 )
 from iclip.harness.transcript.store import TranscriptStore
+from iclip.harness.transcript.subagents import SubAgentMirror
 from iclip.harness.usage_ledger import UsageLedger
 from iclip.platform.transcript.display import ToolDisplayRegistry
 from iclip.platform.transcript.ops import (
@@ -191,6 +201,71 @@ def texts(messages: list[ModelMessage]) -> list[str]:
 # --- 装配 -------------------------------------------------------------------
 
 
+class FixedAgents:
+    """``RunAgents`` 的替身：按 agent id 给装好的 Agent 与窗口，不看是哪段对话；没登记的 id 装不起来。"""
+
+    def __init__(
+        self, agents: Mapping[str, Agent[Any, Any]], context_limits: Mapping[str, int]
+    ) -> None:
+        self._agents = dict(agents)
+        self._limits = dict(context_limits)
+
+    async def for_conversation(self, conversation_id: str, agent_id: str) -> RunAgent:
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            raise AgentUnavailable(f"没有登记 agent {agent_id}")
+        return RunAgent(agent=agent, context_window=self._limits.get(agent_id))
+
+
+def delegating_agent(
+    *,
+    parent: Model,
+    children: Mapping[str, Model],
+    step_store: PgStepStore,
+    live: TranscriptStore,
+    display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
+) -> Agent[Any, Any]:
+    """与运行时装配同一套接法：主 agent ``AGENT_ID`` 挂上 ``children`` 里的子代理（名字 → 模型），子运行的
+    落库 metadata 是它的档案，镜像拿同一份档案标任务卡。"""
+
+    ledger = discarding_usage_ledger()
+    profiles = {name: subagent_profile(name, model) for name, model in children.items()}
+    slots = [
+        SubAgentSlot(
+            name=name,
+            description="",
+            agent=build_agent(
+                name=name,
+                model=model,
+                instructions="",
+                plugins=(),
+                plugin_types=(),
+                step_store=step_store,
+                usage_ledger=ledger,
+                run_metadata=dict(profiles[name]),
+                accepts_deferred=False,
+            ),
+        )
+        for name, model in children.items()
+    ]
+    return build_agent(
+        name=AGENT_ID,
+        model=parent,
+        instructions="",
+        plugins=(),
+        plugin_types=(),
+        step_store=step_store,
+        usage_ledger=ledger,
+        run_metadata={},
+        accepts_deferred=True,
+        extra=[
+            build_subagents(
+                slots, mirror=SubAgentMirror(live=live, display=display, profiles=profiles)
+            )
+        ],
+    )
+
+
 def make_runner(
     engine: AsyncEngine,
     *,
@@ -221,15 +296,15 @@ def make_runner(
         else {"compaction_keep_messages": compaction_keep_messages}
     )
     runner = ConversationRunner(
-        agents=dict(agents),
+        agents=FixedAgents(
+            agents,
+            {AGENT_ID: MAX_CONTEXT_TOKENS} if context_limits is None else context_limits,
+        ),
         store=store,
         queue=queue,
         snapshots=step_store,
         history=TranscriptHistory(step_store, queue, display, DELEGATE_TOOL),
         deps_for=no_deps if deps_for is None else deps_for,
-        context_limits=(
-            {AGENT_ID: MAX_CONTEXT_TOKENS} if context_limits is None else dict(context_limits)
-        ),
         heartbeat_seconds=10,
         lease_seconds=30,
         sweep_seconds=15,
@@ -476,11 +551,13 @@ __all__ = [
     "LOCKED_BY",
     "MAX_CONTEXT_TOKENS",
     "OWNER",
+    "FixedAgents",
     "approval_runner",
     "awaits",
     "build_runner",
     "calls_then_says",
     "calls_tool",
+    "delegating_agent",
     "drained",
     "expire_lease",
     "first_run_messages",

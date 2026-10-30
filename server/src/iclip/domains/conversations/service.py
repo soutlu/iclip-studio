@@ -60,14 +60,28 @@ class AgentEntry:
 
 @dataclass(frozen=True, slots=True)
 class AgentDirectory:
-    """当前装配的顶层 Agent 名册，按声明顺序；``default`` 为空即目录是空的。"""
+    """首页能选的顶层 Agent 名册，按配置里的先后；``default`` 为空即目录是空的。"""
 
     items: tuple[AgentEntry, ...]
     default: str | None
 
 
-ListAgents = Callable[[], AgentDirectory]
-"""读当前名册；热重载后再调就是新的一份。"""
+ListAgents = Callable[[], Awaitable[AgentDirectory]]
+"""读当前名册，由组合根接到 agent 配置；每次调都是库里此刻的一份。"""
+
+
+class OpenSession(Protocol):
+    """在运行时那一侧给新对话开会话，固定这个 agent 此刻的当前版本；由组合根接上。
+
+    没有这个 agent、或它不上首页菜单是 ``ValidationFailed``；已归档、还没发布过是 ``Conflict``。"""
+
+    async def __call__(self, conversation_id: uuid.UUID, agent_id: str) -> None: ...
+
+
+class ForkSession(Protocol):
+    """分叉出来的对话开会话，照抄源对话会话的版本；由组合根接上。"""
+
+    async def __call__(self, source_id: uuid.UUID, target_id: uuid.UUID) -> None: ...
 
 
 ActivitiesOf = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, ConversationActivity]]]
@@ -444,6 +458,8 @@ class ConversationService:
         self,
         repo: ConversationRepository,
         *,
+        open_session: OpenSession,
+        fork_session: ForkSession,
         list_collections: ListCollections,
         claim_task: ClaimTask,
         list_derived_files: ListDerivedFiles,
@@ -468,6 +484,8 @@ class ConversationService:
         announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
+        self._open_session = open_session
+        self._fork_session = fork_session
         self._drafts = drafts
         self._draft_references = draft_references
         self._exports = exports
@@ -829,16 +847,19 @@ class ConversationService:
         给了 ``same_as`` 就是做同款：先把那张资料库卡挂着的对话的制作文件与素材台账拷进来，再落
         对话行。调用者没有 ``generation:read``、或 ``same_as`` 不是挂着对话的资料库卡抛
         ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
-        这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。"""
+        这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。
+
+        新建时先在运行时开会话、固定 agent 此刻的当前版本，agent 不能开对话时按 ``OpenSession`` 抛错、
+        不落行；这个 id 已有对话行（重发）时不再开。"""
 
         now = datetime.now(UTC)
         new_id = conversation_id or uuid.uuid4()
         # 调用方铸的 id 在答复之前就可能被拿去改这段对话，created 帧与其他整行帧同样要按提交顺序发号。
         async with self._row_lock(new_id):
-            if same_as is not None and not (
-                conversation_id is not None and await self._id_taken(conversation_id)
-            ):
-                await self._copy_same_as(principal, source_id=same_as, target_id=new_id)
+            if not (conversation_id is not None and await self._id_taken(conversation_id)):
+                await self._open_session(new_id, agent_id)
+                if same_as is not None:
+                    await self._copy_same_as(principal, source_id=same_as, target_id=new_id)
             before = self._event_watermark()
             conversation, created = await self._repo.create_if_absent(
                 Conversation(
@@ -911,8 +932,11 @@ class ConversationService:
 
         副本不挂源的需求单：挂上就是认领，那会动到别人的单子。出片记录不拷，副本按血缘继承。
 
-        写四处（工作区、素材、种子快照、对话行），各自独立提交，对话行最后写。
+        写五处（运行时会话、工作区、素材、种子快照、对话行），各自独立提交，对话行最后写。
         中途失败的副本进不了任何对话列表，也读不出 transcript。
+
+        副本的会话照抄源会话的 agent 版本；换了 ``agent_id`` 就按新对话的规矩固定那个 agent 此刻的
+        当前版本，不能开对话时按 ``OpenSession`` 抛错。
         """
 
         source = await self._readable(principal, source_id)
@@ -925,6 +949,10 @@ class ConversationService:
             raise ValidationFailed(f"这段对话只有 {turns} 轮，分不出第 {turn} 轮")
         target_id = uuid.uuid4()
         now = datetime.now(UTC)
+        if agent_id is None or agent_id == source.agent_id:
+            await self._fork_session(source_id, target_id)
+        else:
+            await self._open_session(target_id, agent_id)
         await self._copy_workspace(
             source_owner=source.owner_user_id,
             source_id=source_id,
@@ -1250,11 +1278,13 @@ __all__ = [
     "DerivedFile",
     "DerivedFileContent",
     "EventWatermarkOf",
+    "ForkSession",
     "LatestMasterUrls",
     "ListAgents",
     "ListCollections",
     "ListDerivedFiles",
     "ListState",
+    "OpenSession",
     "ReadDerivedFile",
     "Sidebar",
     "SidebarGroup",

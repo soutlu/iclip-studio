@@ -254,7 +254,6 @@ async def test_usage_is_filled_in_when_the_run_finishes(engine: AsyncEngine) -> 
         history=TranscriptHistory(step_store, queue),
         queue=queue,
         runner=runner,
-        context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
         record_materials=records_nothing,
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert restored.meta.agent == live_status
@@ -926,7 +925,6 @@ async def test_repeated_prompt_receipts_do_not_run_the_model_twice(
             history=TranscriptHistory(step_store, queue),
             queue=queue,
             runner=runner,
-            context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
             record_materials=records_nothing,
         )
 
@@ -2026,7 +2024,6 @@ async def test_a_tool_needing_approval_ends_the_run_and_parks_the_prompt(
         history=TranscriptHistory(step_store, queue),
         queue=queue,
         runner=runner,
-        context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
         record_materials=records_nothing,
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert [turn.state for turn in page.items] == ["running"]

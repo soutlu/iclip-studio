@@ -8,11 +8,11 @@ from typing import Literal
 
 import httpx
 import pytest
+from iclip.app.agent_layer import CurrentAgentLayer
 from pydantic_ai.models.test import TestModel
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
-from iclip.app.agent_layer import CurrentAgentLayer
 from iclip.app.bootstrap import AnnouncingFileStore, build_app
 from iclip.config import (
     AppSection,

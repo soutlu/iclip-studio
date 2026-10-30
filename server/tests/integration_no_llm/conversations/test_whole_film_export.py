@@ -43,6 +43,7 @@ from iclip.domains.generation.schemas import (
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
+from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.fork_lineage import complete, finished, make_user, open_conversation
@@ -54,6 +55,7 @@ from tests.helpers.generation import (
     make_music,
     make_subtitle,
 )
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 from tests.helpers.render import StubRender
 from tests.helpers.whole_film import component_clip, draft_document, video_clip
@@ -94,13 +96,16 @@ async def _app(
         await reset_database(conn)
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(
+        built = build_app(
             config_with_media(),
             engine=engine,
             queue_connector=InMemoryConnector(),
             media_codec=SOFTWARE,
             whole_film_render_transport=render.transport(),
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
         )
+        await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+        yield built
     finally:
         await engine.dispose()
 

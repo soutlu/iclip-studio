@@ -20,9 +20,11 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
+from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media, make_music
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 
 OSS_ENVS = {
@@ -326,7 +328,7 @@ async def test_the_same_image_or_music_uploaded_twice_keeps_two_addresses(
 async def media_app(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
 ) -> AsyncGenerator[FastAPI]:
-    """开了媒体生成的 app：队列连接器用替身，生成记录的接口挂得上。"""
+    """开了媒体生成的 app：队列连接器用替身，生成记录的接口挂得上；种好能开对话的 agent。"""
 
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
@@ -334,13 +336,16 @@ async def media_app(
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
-        yield build_app(
+        built = build_app(
             config_with_media(),
             engine=engine,
             object_store=bucket,
             queue_connector=InMemoryConnector(),
             media_codec=SOFTWARE,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
         )
+        await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+        yield built
     finally:
         await engine.dispose()
 

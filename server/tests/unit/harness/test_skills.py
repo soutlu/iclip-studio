@@ -1,4 +1,4 @@
-"""验证 skill 装配与 references 访问边界。
+"""验证技能的本机缓存、skill 装配与 references 访问边界。
 
 通过真实 Agent 调用工具，覆盖工具名称与校验器挂载；中文 skill 名覆盖目录命名规则。
 """
@@ -23,7 +23,10 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from iclip.harness.skills import (
     MAX_REFERENCE_CHARS,
     TRUNCATION_MARKER,
+    CachedSkill,
     build_skill_capabilities,
+    cached_skill,
+    materialize_skill,
     skill_display_table,
 )
 from iclip.platform.transcript.display import GenericDisplay, SkillCallDisplay
@@ -33,21 +36,25 @@ OTHER = "镜头表"
 TOOL = "get_skill_reference"
 
 
-def make_skill(library: Path, name: str, *, references: dict[str, str] | None = None) -> None:
-    folder = library / name
-    folder.mkdir(parents=True)
-    (folder / "SKILL.md").write_text(
-        f"---\nname: {name}\ndescription: 测试用 skill\n---\n\n照着 {name} 做。\n",
-        encoding="utf-8",
+def skill_files(name: str, references: dict[str, str] | None = None) -> dict[str, str]:
+    files = {"SKILL.md": f"---\nname: {name}\ndescription: 测试用 skill\n---\n\n照着 {name} 做。\n"}
+    files.update({f"references/{path}": body for path, body in (references or {}).items()})
+    return files
+
+
+def make_skill(root: Path, name: str, *, references: dict[str, str] | None = None) -> CachedSkill:
+    """按内容 hash 写进缓存；测试里 hash 只要每个技能各不相同。"""
+
+    return materialize_skill(
+        root,
+        name=name,
+        content_hash=f"hash-{len(name)}-{name}",
+        files=skill_files(name, references),
     )
-    for filename, body in (references or {}).items():
-        target = folder / "references" / filename
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body, encoding="utf-8")
 
 
 async def read_reference(
-    library: Path, names: tuple[str, ...], *, skill: str, name: str
+    root: Path, skills: list[CachedSkill], *, skill: str, name: str
 ) -> ToolReturnPart:
     """通过 Agent 调用 get_skill_reference，以返回的 outcome（success / retried）区分成功与可重试拒绝。"""
 
@@ -57,8 +64,7 @@ async def read_reference(
         return ModelResponse(parts=[TextPart("读完了")])
 
     agent = Agent(
-        FunctionModel(call_once),
-        capabilities=list(build_skill_capabilities(library, names)),
+        FunctionModel(call_once), capabilities=list(build_skill_capabilities(root, skills))
     )
     result = await agent.run("读一份 reference")
     parts = [
@@ -84,32 +90,76 @@ async def tool_names(capabilities: list[AgentCapability[Any]]) -> tuple[str, ...
     return seen
 
 
-async def test_reference_tool_comes_only_with_a_skill_library(tmp_path: Path) -> None:
+def test_a_skill_version_is_written_once_under_its_content_hash(tmp_path: Path) -> None:
+    """同一个 hash 已经在缓存里就不再写：第二次给的文件被忽略，内容仍是第一次那份。"""
 
-    make_skill(tmp_path, SKILL)
+    assert cached_skill(tmp_path, name=SKILL, content_hash="h1") is None
+
+    first = materialize_skill(tmp_path, name=SKILL, content_hash="h1", files=skill_files(SKILL))
+    again = materialize_skill(
+        tmp_path, name=SKILL, content_hash="h1", files={"SKILL.md": "不该写进去"}
+    )
+
+    assert first == again == CachedSkill(name=SKILL, library="h1")
+    assert cached_skill(tmp_path, name=SKILL, content_hash="h1") == first
+    assert "照着" in (tmp_path / "h1" / SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert [path.name for path in tmp_path.iterdir()] == ["h1"], "临时目录不留在缓存里"
+
+
+def test_a_new_version_lands_next_to_the_old_one(tmp_path: Path) -> None:
+    materialize_skill(tmp_path, name=SKILL, content_hash="h1", files=skill_files(SKILL))
+    materialize_skill(
+        tmp_path, name=SKILL, content_hash="h2", files=skill_files(SKILL, {"新.md": "新"})
+    )
+
+    assert (tmp_path / "h1" / SKILL / "SKILL.md").is_file()
+    assert (tmp_path / "h2" / SKILL / "references" / "新.md").read_text(encoding="utf-8") == "新"
+
+
+@pytest.mark.parametrize("path", ["../逃出去.md", "/etc/passwd", "references/../../x.md"])
+def test_files_outside_the_skill_directory_are_refused(tmp_path: Path, path: str) -> None:
+    with pytest.raises(ValueError, match="越界"):
+        materialize_skill(
+            tmp_path, name=SKILL, content_hash="h1", files={**skill_files(SKILL), path: "x"}
+        )
+    assert cached_skill(tmp_path, name=SKILL, content_hash="h1") is None
+
+
+async def test_reference_tool_comes_only_with_skills(tmp_path: Path) -> None:
+
+    cached = make_skill(tmp_path, SKILL)
 
     assert await tool_names([]) == ()
-    assert await tool_names(list(build_skill_capabilities(tmp_path, (SKILL,)))) == (
+    assert await tool_names(list(build_skill_capabilities(tmp_path, [cached]))) == (
         "load_capability",
         TOOL,
     )
 
 
-def test_unknown_skill_name_fails_at_assembly(tmp_path: Path) -> None:
+async def test_skills_from_different_versions_load_together(tmp_path: Path) -> None:
+    """几个技能各在自己的 hash 目录下，一起挂上时模型都看得到。"""
 
-    make_skill(tmp_path, SKILL)
-    with pytest.raises(ValueError, match="没这个"):
-        build_skill_capabilities(tmp_path, ("没这个",))
+    seen: list[str] = []
+
+    async def peek(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(info.instructions or "")
+        return ModelResponse(parts=[TextPart("看完了")])
+
+    skills = [make_skill(tmp_path, SKILL), make_skill(tmp_path, OTHER)]
+    await Agent(
+        FunctionModel(peek), capabilities=list(build_skill_capabilities(tmp_path, skills))
+    ).run("有哪些技能")
+
+    assert SKILL in seen[0] and OTHER in seen[0]
 
 
 def test_mounting_zero_skills_is_a_caller_error(tmp_path: Path) -> None:
 
-    make_skill(tmp_path, SKILL)
     with pytest.raises(ValueError, match="至少要挑一个 skill"):
-        build_skill_capabilities(tmp_path, ())
+        build_skill_capabilities(tmp_path, [])
 
 
-def test_the_reference_tool_has_a_display(tmp_path: Path) -> None:
+def test_the_reference_tool_has_a_display() -> None:
 
     drawn = skill_display_table()[TOOL]
 
@@ -130,9 +180,9 @@ def test_loading_a_skill_body_has_a_display_too() -> None:
 
 
 async def test_granted_skill_reference_is_readable(tmp_path: Path) -> None:
-    make_skill(tmp_path, SKILL, references={"规范.md": "规范正文"})
+    cached = make_skill(tmp_path, SKILL, references={"规范.md": "规范正文"})
 
-    part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="规范.md")
+    part = await read_reference(tmp_path, [cached], skill=SKILL, name="规范.md")
 
     assert part.outcome == "success"
     assert part.content == "规范正文"
@@ -140,10 +190,10 @@ async def test_granted_skill_reference_is_readable(tmp_path: Path) -> None:
 
 async def test_ungranted_skill_references_are_refused(tmp_path: Path) -> None:
 
-    make_skill(tmp_path, SKILL)
+    cached = make_skill(tmp_path, SKILL)
     make_skill(tmp_path, OTHER, references={"规范.md": "别人的正文"})
 
-    part = await read_reference(tmp_path, (SKILL,), skill=OTHER, name="规范.md")
+    part = await read_reference(tmp_path, [cached], skill=OTHER, name="规范.md")
 
     assert part.outcome == "retried"
     assert "没有挂载 skill" in part.model_response_str()
@@ -155,10 +205,12 @@ async def test_ungranted_skill_references_are_refused(tmp_path: Path) -> None:
 )
 async def test_reference_paths_outside_the_skill_are_refused(tmp_path: Path, name: str) -> None:
 
-    make_skill(tmp_path, SKILL, references={"规范.md": "正文"})
-    make_skill(tmp_path, OTHER, references={"规范.md": "别人的正文"})
+    skills = [
+        make_skill(tmp_path, SKILL, references={"规范.md": "正文"}),
+        make_skill(tmp_path, OTHER, references={"规范.md": "别人的正文"}),
+    ]
 
-    part = await read_reference(tmp_path, (SKILL, OTHER), skill=SKILL, name=name)
+    part = await read_reference(tmp_path, skills, skill=SKILL, name=name)
 
     assert part.outcome == "retried"
 
@@ -166,13 +218,13 @@ async def test_reference_paths_outside_the_skill_are_refused(tmp_path: Path, nam
 async def test_refusal_lists_the_available_references(tmp_path: Path) -> None:
     """拒绝时列出可访问文件，包含子目录，以便模型修正路径。"""
 
-    make_skill(
+    cached = make_skill(
         tmp_path,
         SKILL,
         references={"规范.md": "正文", "补充.md": "正文", "深处/细则.md": "正文"},
     )
 
-    part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="规范表.md")
+    part = await read_reference(tmp_path, [cached], skill=SKILL, name="规范表.md")
 
     assert part.outcome == "retried"
     # 顺序按码位排，稳定即可
@@ -180,9 +232,9 @@ async def test_refusal_lists_the_available_references(tmp_path: Path) -> None:
 
 
 async def test_nested_reference_is_readable(tmp_path: Path) -> None:
-    make_skill(tmp_path, SKILL, references={"深处/细则.md": "细则正文"})
+    cached = make_skill(tmp_path, SKILL, references={"深处/细则.md": "细则正文"})
 
-    part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="深处/细则.md")
+    part = await read_reference(tmp_path, [cached], skill=SKILL, name="深处/细则.md")
 
     assert part.outcome == "success"
     assert part.content == "细则正文"
@@ -190,9 +242,9 @@ async def test_nested_reference_is_readable(tmp_path: Path) -> None:
 
 async def test_overlong_reference_is_truncated_loudly(tmp_path: Path) -> None:
 
-    make_skill(tmp_path, SKILL, references={"长文.md": "甲" * (MAX_REFERENCE_CHARS + 10)})
+    cached = make_skill(tmp_path, SKILL, references={"长文.md": "甲" * (MAX_REFERENCE_CHARS + 10)})
 
-    part = await read_reference(tmp_path, (SKILL,), skill=SKILL, name="长文.md")
+    part = await read_reference(tmp_path, [cached], skill=SKILL, name="长文.md")
 
     assert part.outcome == "success"
     text = part.content
@@ -204,9 +256,10 @@ async def test_overlong_reference_is_truncated_loudly(tmp_path: Path) -> None:
 async def test_broken_encoding_aborts_instead_of_retrying(tmp_path: Path) -> None:
     """引用文件编码损坏属于部署资产故障，模型重试无法修复。"""
 
-    make_skill(tmp_path, SKILL)
-    (tmp_path / SKILL / "references").mkdir()
-    (tmp_path / SKILL / "references" / "坏.md").write_bytes(b"\xff\xfe\x00\x01")
+    cached = make_skill(tmp_path, SKILL)
+    references = tmp_path / cached.library / SKILL / "references"
+    references.mkdir()
+    (references / "坏.md").write_bytes(b"\xff\xfe\x00\x01")
 
     with pytest.raises(UnicodeDecodeError):
-        await read_reference(tmp_path, (SKILL,), skill=SKILL, name="坏.md")
+        await read_reference(tmp_path, [cached], skill=SKILL, name="坏.md")

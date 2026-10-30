@@ -9,10 +9,19 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from tests.helpers.agents import CONVERSABLE_SEEDS, AgentSeed
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 from tests.helpers.tasks import INPUTS
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    """钥匙替人开对话、发消息，要有能开对话的 agent。"""
+
+    return CONVERSABLE_SEEDS
+
 
 ACT_AS_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write", "users:act_as"]
 PLAIN_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write"]

@@ -2,7 +2,7 @@
 
 插件类只在 ``build_plugin_registry`` 一处列出；组合根启动时把连接池与领域服务等运行对象 ``bind`` 进类，
 登记表的值既是交给 pydantic-ai ``custom_capability_types`` 的类，也带着配置页与工具卡用的界面元数据。
-agents.yaml 仅声明名称。"""
+agent 配置只按插件名引用。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.service import ReferenceService
-from iclip.harness.agents import AgentCapabilities, delegate_display_table
+from iclip.harness.agents import delegate_display_table
 from iclip.harness.media import image_info_url
 from iclip.harness.skills import skill_display_table
 from iclip.platform.file_store.store import FileSpace, FileStore
@@ -32,7 +32,7 @@ from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
 from iclip.platform.transcript.display import ToolDisplayRegistry
-from iclip.plugins.base import CapPlugin, required_plugins
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip.plugins.shot_video.ports import (
@@ -50,7 +50,7 @@ from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from iclip.plugins.workspace.scope import workspace_namespace
 
 PluginRegistry = Mapping[str, type[CapPlugin[Any]]]
-"""插件名对应绑好服务的插件类；挂载时每个 agent 各用 ``from_spec`` 造一份实例。"""
+"""插件名对应绑好服务的插件类；装配时整张表交给 ``Agent.from_spec``，由它按 spec 各造一份实例。"""
 
 
 class GenerationsAdapter:
@@ -286,29 +286,6 @@ def build_display_registry(registry: PluginRegistry) -> ToolDisplayRegistry:
     )
 
 
-def resolve_plugins(
-    names: Sequence[str], *, registry: PluginRegistry, declared_by: str
-) -> AgentCapabilities:
-    """按名字取插件类、各用 ``from_spec`` 造一份；名字没登记、或少挂了它 ``get_ordering().requires``
-    要求同挂的插件，即报错（装配期 fail fast）。"""
-
-    resolved: AgentCapabilities = ()
-    for name in names:
-        plugin = registry.get(name)
-        if plugin is None:
-            known = ", ".join(registry) or "（还没有登记任何插件）"
-            raise RuntimeError(f"{declared_by} 引用了未登记的插件 {name!r}；已登记的有: {known}")
-        capability = plugin.from_spec()
-        missing = [required for required in required_plugins(capability) if required not in names]
-        if missing:
-            raise RuntimeError(
-                f"{declared_by} 挂了插件 {name!r} 却没挂 {', '.join(map(repr, missing))}——"
-                f"{name} 写的文件要靠它们让模型看见；在 agents.yaml 里一起挂上。"
-            )
-        resolved = (*resolved, capability)
-    return resolved
-
-
 __all__ = [
     "GenerationsAdapter",
     "ObjectWriterAdapter",
@@ -316,5 +293,4 @@ __all__ = [
     "PluginRegistry",
     "build_display_registry",
     "build_plugin_registry",
-    "resolve_plugins",
 ]

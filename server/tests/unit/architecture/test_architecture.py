@@ -45,6 +45,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "harness/usage_ledger_pg.py",
         # prompt 队列归属运行驱动，使用 agent_runtime schema。
         "harness/jobs.py",
+        # 运行时会话（对话固定的 agent 版本），同样在 agent_runtime schema。
+        "harness/sessions.py",
         # 外部只读表使用独立适配器；infra_sql.py 仅表示模块自有表。
         "domains/products/catalog_pg.py",
         # 审计报表与资料库跨模块只读聚合，同样不是模块自有表。

@@ -31,6 +31,7 @@ from iclip.domains.model_providers.models import (
     ProviderRecord,
     ProviderState,
     ResolvedProvider,
+    RuntimeModel,
 )
 from iclip.domains.model_providers.repository import (
     CredentialProbe,
@@ -252,6 +253,57 @@ class ModelProviderService:
             provider=state.provider,
             credential_ids=tuple(one.id for one in state.credentials),
             models=merge_models(self._declaration_of(state.provider), state.settings),
+        )
+
+    async def runtime_model(
+        self, provider_name: str, model_name: str, credential_id: uuid.UUID
+    ) -> RuntimeModel | None:
+        """运行时建对话模型要的东西：按引用名找供应商、它的这个 llm 模型与这把密钥，密钥字段解密成明文。
+        三者有一样不在给 ``None``；启没启用不在这里判（agent 编译时已查）。"""
+
+        state = next(
+            (one for one in await self._store.states() if one.provider.name == provider_name),
+            None,
+        )
+        if state is None:
+            return None
+        return self._runtime_model(state, model_name, credential_id)
+
+    async def default_llm(self) -> RuntimeModel | None:
+        """默认的对话模型连同供应商的默认密钥，用来起对话标题；没设默认、供应商停用、模型停用或没有默认
+        密钥都给 ``None``。"""
+
+        default = next(
+            (one for one in await self._store.default_models() if one.type == "llm"), None
+        )
+        if default is None:
+            return None
+        state = await self._store.state(default.provider_id)
+        if state is None or not state.provider.enabled:
+            return None
+        credential_id = state.provider.default_credential_id
+        if credential_id is None:
+            return None
+        found = self._runtime_model(state, default.model_name, credential_id)
+        if found is None or not found.model.enabled:
+            return None
+        return found
+
+    def _runtime_model(
+        self, state: ProviderState, model_name: str, credential_id: uuid.UUID
+    ) -> RuntimeModel | None:
+        declaration = self._declaration_of(state.provider)
+        model = find_model(merge_models(declaration, state.settings), model_name, "llm")
+        credential = next((one for one in state.credentials if one.id == credential_id), None)
+        if model is None or credential is None:
+            return None
+        return RuntimeModel(
+            declaration=declaration,
+            provider=state.provider,
+            model=model,
+            credential_id=credential.id,
+            credential_updated_at=credential.updated_at,
+            fields=decrypt_fields(declaration, credential.fields, self._cipher),
         )
 
     async def create(self, body: ModelProviderCreateIn) -> ModelProviderOut:

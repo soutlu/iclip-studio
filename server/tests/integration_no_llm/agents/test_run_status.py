@@ -55,7 +55,6 @@ def _service(
         history=TranscriptHistory(step_store, queue, ToolDisplayRegistry.EMPTY, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        context_limits={},
         record_materials=records_nothing,
     )
 

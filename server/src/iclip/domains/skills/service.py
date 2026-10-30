@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from iclip.common.agent_usage import AgentUsage, in_use_message, usages_out
@@ -162,6 +162,11 @@ class SkillsService:
         """全部技能，含已归档的，供别的模块查标识、状态与最新版。"""
 
         return tuple(summary.skill for summary in await self._store.list())
+
+    async def version_files(self, version_id: uuid.UUID) -> Mapping[str, str]:
+        """一个已发布版本的全部文件（路径 → 内容），供运行时写进本机缓存；版本发布后不再变。"""
+
+        return await self._store.version_files(version_id)
 
     async def create(self, body: SkillCreateIn, *, by: uuid.UUID) -> SkillDetailOut:
         """建一个技能，草稿里只有按标识、显示名与描述生成的 ``SKILL.md``。标识不合规矩、显示名或描述

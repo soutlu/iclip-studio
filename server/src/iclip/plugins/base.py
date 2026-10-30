@@ -2,7 +2,7 @@
 
 插件类按 pydantic-ai 的 spec 机制声明自己：
 
-- ``get_serialization_name()`` 给稳定的插件名，agent 配置与 agents.yaml 按它引用；
+- ``get_serialization_name()`` 给稳定的插件名，agent 配置按它引用；
 - ``from_spec(**参数)`` 用可序列化的参数造实例，参数的类型与默认值就写在它的签名上；
 - ``get_ordering()`` 用 ``CapabilityOrdering(requires=...)`` 写要求同一 agent 一起挂的插件类。
 
@@ -46,7 +46,7 @@ class CapPlugin(AbstractCapability[AgentDepsT]):
     @classmethod
     @abstractmethod
     def get_serialization_name(cls) -> str:
-        """稳定的插件名，agent 配置与 agents.yaml 按它引用；插件不退出 spec 机制，所以不会是 None。"""
+        """稳定的插件名，agent 配置按它引用；插件不退出 spec 机制，所以不会是 None。"""
 
     @classmethod
     @abstractmethod
