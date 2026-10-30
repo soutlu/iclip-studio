@@ -29,9 +29,11 @@ from iclip_video.shot_video.capability import GenerationPolicy
 from iclip_video.shot_video.delivery import FrameRequest
 from iclip_video.shot_video.extraction import EXTRACTION_PATH
 from iclip_video.shot_video.ports import (
+    AnchorSheets,
     BoardsNotStored,
     BoardsUnreadable,
     GridCutFailed,
+    ShotCells,
     ShotsOutOfRange,
 )
 from iclip_video.shot_video.shots import parse_shot_rows
@@ -521,6 +523,12 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
     assert set(payload) == {"frames"}
     assert [frame["no"] for frame in payload["frames"]] == ["S1-1", "S2-1"]
     assert len(objects.written) == boards_written + 2
+    [job_id] = generations.job_ids
+    cell_keys = [f"iclip/agent/shot-frames/{job_id}/out/{no}.jpg" for no in ("S1-1", "S2-1")]
+    assert list(objects.written)[-2:] == cell_keys
+    assert [frame["url"] for frame in payload["frames"]] == [
+        objects.public_url(key) for key in cell_keys
+    ]
     assert result.metadata == {
         "items": [{"url": frame["url"], "caption": frame["no"]} for frame in payload["frames"]]
     }
@@ -842,11 +850,15 @@ async def test_the_cuts_adapter_stores_the_requested_cells_in_order_and_records_
     job_id = uuid.uuid4()
     async with make_client(media) as client:
         urls = await cuts_adapter(client, objects, records).cut(
-            USER, job_id, grid_url=GRID_URL, object_keys=["cells/a.jpg", "cells/b.jpg"], aspect=None
+            USER, job_id, grid_url=GRID_URL, cells=AnchorSheets(indexes=(1, 2)), aspect=None
         )
 
-    assert urls == (objects.public_url("cells/a.jpg"), objects.public_url("cells/b.jpg"))
-    assert list(objects.written) == ["cells/a.jpg", "cells/b.jpg"]
+    keys = [
+        f"iclip/agent/anchor-sheets/{job_id}/1.jpg",
+        f"iclip/agent/anchor-sheets/{job_id}/2.jpg",
+    ]
+    assert urls == tuple(objects.public_url(key) for key in keys)
+    assert list(objects.written) == keys
     # 按阅读顺序取前两格：左上、右上；补位的下排两格不转存。
     assert [probe_size(cell) for cell in objects.written.values()] == [
         (SMALL.left, SMALL.top),
@@ -870,7 +882,11 @@ async def test_the_cuts_adapter_carries_the_failure_reason(
     async with make_client(media) as client:
         with pytest.raises(GridCutFailed) as raised:
             await cuts_adapter(client, FakeObjects(error=store_error), records).cut(
-                USER, uuid.uuid4(), grid_url=GRID_URL, object_keys=["cells/a.jpg"], aspect=aspect
+                USER,
+                uuid.uuid4(),
+                grid_url=GRID_URL,
+                cells=ShotCells(cell_ids=("S1-1",)),
+                aspect=aspect,
             )
 
     assert str(raised.value) == reason

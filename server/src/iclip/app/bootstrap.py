@@ -82,14 +82,20 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
-from iclip.app.plugin_registry import build_plugin_registry
+from iclip.app.plugin_registry import GenerationsAdapter, build_plugin_registry
 from iclip.app.prompt_attachments import PromptAttachmentImporter
-from iclip.app.reference_breakdown import build_reference_breakdown
+from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
+from iclip.app.runtime_internal import (
+    RuntimePluginServices,
+    create_runtime_internal_router,
+)
+from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
 from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
 from iclip.config import (
     QWEN_API_KEY_ENV,
+    RUNTIME_INTERNAL_TOKEN_ENV,
     ObjectStoreEnv,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
@@ -117,6 +123,7 @@ from iclip.domains.conversations.service import (
     ConversationActivity,
 )
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import InFlightPhase
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
@@ -671,15 +678,23 @@ def build_app(
 
     job_queue = JobQueue(active_engine, on_activity=on_activity)
 
+    async def video_generations(
+        conversation_ids: Sequence[uuid.UUID],
+    ) -> Mapping[uuid.UUID, InFlightPhase]:
+        if generation is None:
+            return {}
+        return await generation.service.in_flight_by_conversation(conversation_ids, kind=KIND_VIDEO)
+
+    async def video_generation_of(
+        conversation_id: uuid.UUID,
+    ) -> Literal["none", "queued", "running"]:
+        return (await video_generations([conversation_id])).get(conversation_id, "none")
+
     async def activities_of(
         conversation_ids: Sequence[uuid.UUID],
     ) -> Mapping[uuid.UUID, ConversationActivity]:
         states = await job_queue.activities([str(one) for one in conversation_ids])
-        videos = (
-            await generation.service.in_flight_by_conversation(conversation_ids, kind=KIND_VIDEO)
-            if generation is not None
-            else {}
-        )
+        videos = await video_generations(conversation_ids)
         return {
             one: ConversationActivity(
                 busy=state.busy,
@@ -988,6 +1003,50 @@ def build_app(
             ),
         )
     )
+    if settings.runtime_internal_token is None:
+        _logger.info("运行时内部接口未挂上", requires=RUNTIME_INTERNAL_TOKEN_ENV)
+    else:
+        # 插件服务与进程内绑进插件类的是同一套适配器，挂不挂的条件也同 build_plugin_registry。
+        image_port: GenerationsAdapter | None = None
+        boards_port: FrameBoardsAdapter | None = None
+        cuts_port: GridCutsAdapter | None = None
+        if (
+            settings.shot_tools_enabled
+            and generation is not None
+            and public_objects is not None
+            and codec is not None
+        ):
+            image_port = GenerationsAdapter(generation.service, user_principal)
+            boards_port = FrameBoardsAdapter(
+                http_client, fetch_url=fetch_url, objects=public_objects, codec=codec
+            )
+            cuts_port = GridCutsAdapter(
+                http_client,
+                fetch_url=fetch_url,
+                objects=public_objects,
+                records=CutRecordsAdapter(settled_records, user_principal),
+            )
+        app.include_router(
+            create_runtime_internal_router(
+                token=settings.runtime_internal_token,
+                user_principal=user_principal,
+                conversations=conversations.service,
+                video_generation_of=video_generation_of,
+                plugins=RuntimePluginServices(
+                    generations=image_port,
+                    boards=boards_port,
+                    cuts=cuts_port,
+                    breakdowns=(
+                        ReferenceBreakdownsAdapter(references.service, user_principal)
+                        if settings.iclip_studio is not None and references.queue is not None
+                        else None
+                    ),
+                    image_models=(
+                        generation.image_models if generation is not None else frozenset()
+                    ),
+                ),
+            )
+        )
 
     # Starlette 里后加的中间件在外层；CORS 要在最外层，preflight 不带凭证也得被它应答。
     app.add_middleware(PrincipalMiddleware, resolver=identity.resolver)

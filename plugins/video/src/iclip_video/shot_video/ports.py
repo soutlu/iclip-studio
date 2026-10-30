@@ -143,6 +143,28 @@ class GridCutFailed(Exception):
     """宫格没切成或没存下。``str()`` 是诊断原因，只进日志，不给模型。"""
 
 
+class ShotCells(BaseModel):
+    """出图整图要留下的几格，按帧号认，顺序即整图的阅读顺序。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["shot_cells"] = "shot_cells"
+    cell_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class AnchorSheets(BaseModel):
+    """设定图要留下的几格，按从 1 起的序号认，顺序即整图的阅读顺序。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["anchor_sheets"] = "anchor_sheets"
+    indexes: tuple[Annotated[int, Field(strict=True, ge=1)], ...] = Field(min_length=1)
+
+
+CutCells = Annotated[ShotCells | AnchorSheets, Field(discriminator="kind")]
+"""一次切格留下哪几格、它们是什么产物。存到哪个对象 key 由宿主按它定，插件不管存储布局。"""
+
+
 class GridCuts(Protocol):
     """把一张生成好的宫格切成单格并转存。"""
 
@@ -152,12 +174,12 @@ class GridCuts(Protocol):
         job_id: uuid.UUID,
         *,
         grid_url: str,
-        object_keys: Sequence[str],
+        cells: ShotCells | AnchorSheets,
         aspect: str | None,
     ) -> tuple[str, ...]:
         """下载 ``grid_url``，按检测到的分隔带切成整版的格数（给了 ``aspect`` 就把每格居中收缩到这个
-        画幅），把前 ``len(object_keys)`` 格按序存到这些 key，并以任务 ``job_id`` 为来源各记一条切图；
-        交回与 ``object_keys`` 同序的地址。``user_id`` 是运行属主。
+        画幅），把前几格按 ``cells`` 的顺序转存，并以任务 ``job_id`` 为来源各记一条切图；交回与
+        ``cells`` 同序的地址。``user_id`` 是运行属主。
 
         Raises:
             GridCutFailed: 下载、切格、画幅或转存失败。切图记录落不下是数据库的事，原样抛出。
@@ -165,23 +187,13 @@ class GridCuts(Protocol):
         ...
 
 
-class ShotVideoPaths(Protocol):
-    """出图产物的公开对象路径，布局由宿主定义并经组合根注入。"""
-
-    def shot_cell(self, *, job_id: uuid.UUID, cell_id: str) -> str:
-        """出图整图切出来的一格。"""
-        ...
-
-    def anchor_sheet(self, *, job_id: uuid.UUID, index: int) -> str:
-        """补拍设定图切出来的一格。"""
-        ...
-
-
 __all__ = [
     "EXTRACTION_VERSION",
+    "AnchorSheets",
     "BoardsNotStored",
     "BoardsResult",
     "BoardsUnreadable",
+    "CutCells",
     "ExtractionLedger",
     "FrameBoards",
     "FrameBoardsFailed",
@@ -194,6 +206,6 @@ __all__ = [
     "InvalidImageRequest",
     "JobStatus",
     "LedgerBoard",
-    "ShotVideoPaths",
+    "ShotCells",
     "ShotsOutOfRange",
 ]

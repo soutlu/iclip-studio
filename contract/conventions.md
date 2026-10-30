@@ -40,7 +40,7 @@
 
 上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；取消成片导出时渲染服务不可用返回 `502`（§6「成片导出」）；发布 agent 被编译检查拦下的 `422` 在信封里另带 `problems`（§19「发布」）。
 
-有的错误在信封里另带一个稳定的 `code`，调用方按它分支，`detail` 仍是给人看的一句话：现在只有 `agent_unavailable`（`409`），这段对话固定的 agent 版本此刻装配不起来（§5「发消息」）。
+有的错误在信封里另带一个稳定的 `code`，调用方按它分支，`detail` 仍是给人看的一句话：对外端点现在只有 `agent_unavailable`（`409`），这段对话固定的 agent 版本此刻装配不起来（§5「发消息」）；给运行时的内部接口另有几个，见 §21「插件服务」。
 
 请求结构校验失败（`422`）用同一个字符串信封：`detail` 是一句 `<字段路径>: <原因>`，字段路径形如 `shot.timeline[0].image_indexes`，报在请求体自身的只有原因。一次请求只给第一条，后面几条通常是同一处问题的连带结果。生成任务的业务失败通过任务状态与 `errorCode` / `errorMessage` 表达，HTTP 受理成功不代表生成成功。
 
@@ -732,3 +732,35 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 - 顺序：运行开始与轮次开始都发在开跑检查之前，检查不放行时这两个也已经调过。
 - `gate` 与 `run_started` 卡着运行，处理器要快答。
 - 起标题由应用收到 `turn_started` 后自己调 `POST /v1/titles`。
+
+## 21. 后端给运行时的内部接口
+
+运行时服务调后端：§20 的三个回调，以及视频插件经 HTTP 用的后端服务。后端只在配了环境变量 `RUNTIME_INTERNAL_TOKEN`（不少于 32 个字符）时挂这组路由，没配就一条都不挂；它们不进 [`openapi.json`](openapi.json)。
+
+- 每条都要 `Authorization: Bearer <RUNTIME_INTERNAL_TOKEN>`，与运行时给应用 `video` 配的 `hooks.token_env` 里是同一个值；缺了或不对是 `401`，`detail` 为 `运行时内部接口的令牌不对`。
+- 报错用 §4 的信封。按运行属主重建主体的（开跑检查与插件服务）：属主不存在 `404`（`用户不存在`），已停用 `403`（`账号已停用`）；这组路由上的 `401` 只表示令牌不对。
+- 字段名 snake_case 原样。回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)；插件服务的请求与答复在 [shot_video/wire.py](../plugins/video/src/iclip_video/shot_video/wire.py) 与 [video_breakdown/wire.py](../plugins/video/src/iclip_video/video_breakdown/wire.py)，里面装的端口模型（[shot_video/ports.py](../plugins/video/src/iclip_video/shot_video/ports.py)）照它们自己的形状，取帧台账的字段按它的 camelCase 别名。
+
+### 回调
+
+| 路径 | 请求体 | 成功 | 失败 |
+|---|---|---|---|
+| `POST /internal/runtime/hooks/gate` | `GatePayload` | `204` | 属主不存在 `404`，已停用 `403` |
+| `POST /internal/runtime/hooks/run-started` | `RunStartedPayload` | `204`：对话行记下 `lastRunId`、刷新 `updatedAt`、抹掉收尾标记，再广播 `event.session.updated`（§5「全局帧」）；行里的 `activity` 用请求体那份，`videoGeneration` 由后端补上 | 对话不存在或已删 `404` |
+| `POST /internal/runtime/hooks/turn-started` | `TurnStartedPayload` | `204`：对话还是默认标题就按 `text` 起一个，起完才答；对话已删照样 `204` | — |
+
+- 运行开始的请求体只有会话 id，属主与 agent 取对话行自己的。
+
+### 插件服务
+
+| 路径 | 请求 | 答复 | 失败 |
+|---|---|---|---|
+| `POST /internal/runtime/plugins/generations` | `ImageSubmission`：`{user_id, request}` | `ImageJob` | 请求不合法 `422`，`detail` 与进程内交给工具的那句相同 |
+| `GET /internal/runtime/plugins/generations/{job_id}?user_id=` | — | `ImageJob` | 不是这个人的任务 `404` |
+| `POST /internal/runtime/plugins/frame-boards` | `FrameBoardsCall`：`{video_url, rows, previous}` | `BoardsResult`：`{ledger, reused}` | `422`，`{detail, code}`：`code` 为 `shots_out_of_range` / `boards_unreadable` / `boards_not_stored`，`detail` 是给模型的原话 |
+| `POST /internal/runtime/plugins/grid-cuts` | `GridCutCall`：`{user_id, job_id, grid_url, cells, aspect}`；`cells` 是 `{kind: "shot_cells", cell_ids}` 或 `{kind: "anchor_sheets", indexes}` | `{urls}`，与 `cells` 同序 | 没切成或没存下 `422`，`{detail, code: "grid_cut_failed"}`，`detail` 是诊断原因；切图记录落不下 `500` |
+| `POST /internal/runtime/plugins/reference-breakdowns` | `ReferenceBreakdownCall`：`{user_id, video_url}` | 拆成了 `{document}`，没拆成 `{failed: {reason}}`；要排拆解时等到出结果才答 | — |
+| `GET /internal/runtime/plugins/image-models` | — | `{models}`：接入的图片模型名，按名字排序；没开媒体生成时为空 | — |
+
+- 生图、取帧拼板与切格只在后端登记了 `shot_video` 时挂，拆解只在登记了 `video_breakdown` 时挂；没挂的答 `404`。生图模型名始终挂。
+- 切格时每格存到哪个对象 key 由后端定，插件只给帧号或序号。

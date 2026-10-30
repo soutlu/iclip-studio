@@ -31,7 +31,7 @@ from iclip_video.shot_video.generation import (
     IMAGE_MODEL,
     job_failure,
 )
-from iclip_video.shot_video.ports import ImageRequest
+from iclip_video.shot_video.ports import AnchorSheets, ImageRequest, ShotCells
 from iclip_video.shot_video.prompt import assemble_anchor_prompt, assemble_grid_prompt
 from iclip_video.shot_video.shots import CELL_ID_SHAPE
 from iclip_video.video_document import video_doc_path
@@ -192,10 +192,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         cut = await self._cap.generator.cut(
             owner,
             job,
-            object_keys=[
-                self._cap.paths.shot_cell(job_id=job.job_id, cell_id=cell_id)
-                for cell_id in cell_ids
-            ],
+            cells=ShotCells(cell_ids=tuple(cell_ids)),
             aspect=target_aspect,
             failure_message="镜头帧处理失败。",
         )
@@ -239,10 +236,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         cut = await self._cap.generator.cut(
             owner,
             job,
-            object_keys=[
-                self._cap.paths.anchor_sheet(job_id=job.job_id, index=index)
-                for index in range(1, len(descriptions) + 1)
-            ],
+            cells=AnchorSheets(indexes=tuple(range(1, len(descriptions) + 1))),
             # 设定图不收缩到目标画幅，避免裁掉主体。
             aspect=None,
             failure_message="设定图处理失败。",

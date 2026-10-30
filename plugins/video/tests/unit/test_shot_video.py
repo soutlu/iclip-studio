@@ -42,10 +42,12 @@ from iclip_video.shot_video.generation import (
     GRID_RESOLUTION,
 )
 from iclip_video.shot_video.ports import (
+    AnchorSheets,
     BoardsNotStored,
     BoardsUnreadable,
     FrameBoardsFailed,
     GridCutFailed,
+    ShotCells,
     ShotsOutOfRange,
 )
 from iclip_video.shot_video.shots import parse_shot_rows
@@ -59,9 +61,9 @@ from tests.helpers.shot_video import (
     FakeBoards,
     FakeCuts,
     FakeGenerations,
-    FakePaths,
     Outcome,
     board_url,
+    cut_url,
     mount_shot_video,
 )
 from tests.helpers.video_understanding import FakeUnderstanding
@@ -894,7 +896,7 @@ async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
     generations: FakeGenerations,
     cuts: FakeCuts,
 ) -> None:
-    """每格的对象路径按帧号定，收缩到目标画幅；交回的地址与整图一起登记进素材台账。"""
+    """按帧号要那几格（存到哪由宿主定），收缩到目标画幅；交回的地址与整图一起登记进素材台账。"""
 
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
 
@@ -907,15 +909,10 @@ async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
     )
 
     [job_id] = generations.job_ids
-    keys = (
-        FakePaths().shot_cell(job_id=job_id, cell_id="S1-1"),
-        FakePaths().shot_cell(job_id=job_id, cell_id="S2-1"),
-    )
     assert [
-        (call.user_id, call.job_id, call.grid_url, call.object_keys, call.aspect)
-        for call in cuts.calls
-    ] == [(USER, job_id, GRID, keys, "9:16")]
-    urls = [f"https://cdn.test/{key}" for key in keys]
+        (call.user_id, call.job_id, call.grid_url, call.cells, call.aspect) for call in cuts.calls
+    ] == [(USER, job_id, GRID, ShotCells(cell_ids=("S1-1", "S2-1")), "9:16")]
+    urls = [cut_url(job_id, "S1-1"), cut_url(job_id, "S2-1")]
     assert result.return_value == {
         "frames": [{"no": "S1-1", "url": urls[0]}, {"no": "S2-1", "url": urls[1]}]
     }
@@ -932,16 +929,10 @@ async def test_anchor_sheet_cuts_one_cell_per_entity_without_shrinking(
 
     [job_id] = generations.job_ids
     [call] = cuts.calls
-    assert call.object_keys == (
-        FakePaths().anchor_sheet(job_id=job_id, index=1),
-        FakePaths().anchor_sheet(job_id=job_id, index=2),
-    )
+    assert call.cells == AnchorSheets(indexes=(1, 2))
     assert call.aspect is None
     assert result.return_value == {
-        "images": [
-            {"index": index, "url": f"https://cdn.test/{key}"}
-            for index, key in enumerate(call.object_keys, start=1)
-        ]
+        "images": [{"index": index, "url": cut_url(job_id, index)} for index in (1, 2)]
     }
 
 

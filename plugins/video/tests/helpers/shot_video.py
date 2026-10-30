@@ -1,4 +1,4 @@
-"""取帧与出图插件的内存替身（生成、取帧拼板、切格与对象路径），以及经插件装配的入口。"""
+"""取帧与出图插件的内存替身（生成、取帧拼板与切格），以及经插件装配的入口。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.shot_video.generation import IMAGE_MODEL
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
+    AnchorSheets,
     BoardsResult,
     ExtractionLedger,
     ImageChannel,
@@ -20,6 +21,7 @@ from iclip_video.shot_video.ports import (
     ImageRequest,
     InvalidImageRequest,
     LedgerBoard,
+    ShotCells,
 )
 from iclip_video.shot_video.shots import ShotSpan
 
@@ -137,13 +139,19 @@ class CutCall:
     user_id: uuid.UUID
     job_id: uuid.UUID
     grid_url: str
-    object_keys: tuple[str, ...]
+    cells: ShotCells | AnchorSheets
     aspect: str | None
+
+
+def cut_url(job_id: uuid.UUID, cell: str | int) -> str:
+    """替身为这张宫格的这一格（帧号或设定图序号）交回的地址。"""
+
+    return f"https://cdn.test/cuts/{job_id}/{cell}.jpg"
 
 
 @dataclass
 class FakeCuts:
-    """切格转存的替身：每个 key 交回 ``https://cdn.test/<key>``；设了 ``error`` 就抛它。"""
+    """切格转存的替身：每一格交回 ``cut_url(job_id, 帧号或序号)``；设了 ``error`` 就抛它。"""
 
     calls: list[CutCall] = field(default_factory=list[CutCall])
     error: Exception | None = None
@@ -154,31 +162,16 @@ class FakeCuts:
         job_id: uuid.UUID,
         *,
         grid_url: str,
-        object_keys: Sequence[str],
+        cells: ShotCells | AnchorSheets,
         aspect: str | None,
     ) -> tuple[str, ...]:
         self.calls.append(
-            CutCall(
-                user_id=user_id,
-                job_id=job_id,
-                grid_url=grid_url,
-                object_keys=tuple(object_keys),
-                aspect=aspect,
-            )
+            CutCall(user_id=user_id, job_id=job_id, grid_url=grid_url, cells=cells, aspect=aspect)
         )
         if self.error is not None:
             raise self.error
-        return tuple(f"https://cdn.test/{key}" for key in object_keys)
-
-
-class FakePaths:
-    """出图产物的对象路径替身。"""
-
-    def shot_cell(self, *, job_id: uuid.UUID, cell_id: str) -> str:
-        return f"cells/{job_id}/{cell_id}.jpg"
-
-    def anchor_sheet(self, *, job_id: uuid.UUID, index: int) -> str:
-        return f"anchors/{job_id}/{index}.jpg"
+        names = cells.cell_ids if isinstance(cells, ShotCells) else cells.indexes
+        return tuple(cut_url(job_id, name) for name in names)
 
 
 def mount_shot_video(
@@ -199,7 +192,6 @@ def mount_shot_video(
         generations=generations,
         boards=boards,
         cuts=cuts,
-        paths=FakePaths(),
         image_models=frozenset({IMAGE_MODEL}),
         policy=policy,
     ).from_spec()
@@ -211,8 +203,8 @@ __all__ = [
     "FakeBoards",
     "FakeCuts",
     "FakeGenerations",
-    "FakePaths",
     "Outcome",
     "board_url",
+    "cut_url",
     "mount_shot_video",
 ]

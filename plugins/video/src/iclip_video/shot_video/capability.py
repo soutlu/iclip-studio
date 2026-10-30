@@ -25,12 +25,7 @@ from pydantic_ai.toolsets import AgentToolset
 
 from iclip_video.shot_video.extraction import FrameExtractor
 from iclip_video.shot_video.generation import IMAGE_MODEL, FrameGenerator, GenerationPolicy
-from iclip_video.shot_video.ports import (
-    FrameBoards,
-    GridCuts,
-    ImageGenerations,
-    ShotVideoPaths,
-)
+from iclip_video.shot_video.ports import FrameBoards, GridCuts, ImageGenerations
 from iclip_video.shot_video.toolset import ShotVideoToolset
 from iclip_video.video.capability import Video
 
@@ -49,9 +44,6 @@ class ShotVideo(CapPlugin[AgentDepsT]):
 
     ledger: MaterialLedger
     """素材来源台账，记录产物地址并供工具输入验证使用。"""
-
-    paths: ShotVideoPaths
-    """产物对象路径布局；出图工具按它给每一格定键。"""
 
     extractor: FrameExtractor
 
@@ -79,12 +71,11 @@ class ShotVideo(CapPlugin[AgentDepsT]):
         generations: ImageGenerations,
         boards: FrameBoards,
         cuts: GridCuts,
-        paths: ShotVideoPaths,
         image_models: frozenset[str],
         policy: GenerationPolicy,
     ) -> type[Self]:
-        """装配取帧与出图服务并绑进类：抽帧拼板经 ``boards``，宫格切格转存经 ``cuts``，每一格的
-        对象路径按 ``paths`` 定。
+        """装配取帧与出图服务并绑进类：抽帧拼板经 ``boards``，宫格切格转存经 ``cuts``，每一格存到
+        哪个对象 key 由 ``cuts`` 的宿主实现定。
 
         Raises:
             RuntimeError: ``image_models`` 里没有出图要用的模型。
@@ -99,7 +90,6 @@ class ShotVideo(CapPlugin[AgentDepsT]):
         return cls._bound(
             space=space,
             ledger=ledger,
-            paths=paths,
             extractor=FrameExtractor(boards=boards),
             generator=FrameGenerator(generations=generations, cuts=cuts, policy=policy),
         )

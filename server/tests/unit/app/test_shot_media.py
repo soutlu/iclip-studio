@@ -11,10 +11,12 @@ import pytest
 from agent_runtime.errors import NotFound
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
+    AnchorSheets,
     BoardsUnreadable,
     ExtractionLedger,
     GridCutFailed,
     LedgerBoard,
+    ShotCells,
 )
 from iclip_video.shot_video.shots import parse_shot_rows
 from structlog.testing import capture_logs
@@ -23,6 +25,7 @@ from iclip.app.shot_media import (
     CutRecordsAdapter,
     FrameBoardsAdapter,
     GridCutsAdapter,
+    cut_object_keys,
     reusable,
 )
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationOutput
@@ -139,6 +142,21 @@ async def test_frame_boards_download_the_reference_video_from_the_rewritten_addr
     assert str(raised.value) == str(raised.value.__cause__)
 
 
+def test_cut_cells_keep_the_object_keys_the_plugin_used_to_compute() -> None:
+    """每格的对象 key 由后端按帧号与序号算；桶里已有的产物都是这个布局，逐字钉住。"""
+
+    job_id = uuid.UUID("55555555-5555-5555-5555-555555555555")
+
+    assert cut_object_keys(job_id, ShotCells(cell_ids=("S1-1", "S12-3"))) == [
+        "iclip/agent/shot-frames/55555555-5555-5555-5555-555555555555/out/S1-1.jpg",
+        "iclip/agent/shot-frames/55555555-5555-5555-5555-555555555555/out/S12-3.jpg",
+    ]
+    assert cut_object_keys(job_id, AnchorSheets(indexes=(1, 2))) == [
+        "iclip/agent/anchor-sheets/55555555-5555-5555-5555-555555555555/1.jpg",
+        "iclip/agent/anchor-sheets/55555555-5555-5555-5555-555555555555/2.jpg",
+    ]
+
+
 async def test_cutting_a_grid_downloads_it_from_the_rewritten_address() -> None:
     asked: list[str] = []
     records = FakeCutRecords()
@@ -154,7 +172,7 @@ async def test_cutting_a_grid_downloads_it_from_the_rewritten_address() -> None:
             uuid.uuid4(),
             uuid.uuid4(),
             grid_url="https://cdn.test/iclip/agent/generated-images/grid.png",
-            object_keys=["k"],
+            cells=ShotCells(cell_ids=("S1-1",)),
             aspect=None,
         )
 
