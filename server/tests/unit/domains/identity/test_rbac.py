@@ -27,6 +27,7 @@ def test_editor_lacks_exactly_root_only_permissions() -> None:
         "users:act_as",
         "api_keys:issue",
         "library_tags:manage",
+        "agent:manage",
     }
 
 

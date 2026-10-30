@@ -86,6 +86,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 | 审计报表（跨 `iclip` 与 `agent_runtime` 九张表的只读聚合，含运行事件 `events` 与运行关联 `agent_job_runs`） | `domains/audit/reports_pg.py`；不建表、不写入，列、状态词或运行事件名被改动时由它的集成测试先红；总览与按人的时间窗、粒度、分期与均线补窗是 `domains/audit/overview.py` 里的纯函数，任务执行的异常门槛与翻页游标在 `domains/audit/executions.py` |
 | `iclip` 参考视频 | `domains/references/infra_sql.py`；一条视频一行，拆解与状态都在行上，状态跳转都是带条件的更新；标签与打标状态按表名读资料库标签的条目，筛选条件由标签域拼 |
 | `iclip` 资料库标签 | `domains/tagging/infra_sql.py`；标签树一张表（`parent_id` 为空是维度），每一库的一条是一个条目（`kind` 加指向那一库的外键，各一个部分唯一索引），条目的标签一张关联表；删标签由外键级联删掉下级与条目上的标签。改树的事务先拿一把事务级 advisory 锁再读树校验：跨层重名与 AI 取值上限要看整棵树，唯一约束只管同一上级。种类、`auto_fill` 与状态的取值只在 Python 里，不加 CHECK。条数按表名读参考视频的移除标记 |
+| `iclip` 技能库 | `domains/skills/infra_sql.py`；四张表：技能一行（`name` 唯一）；草稿一个文件一行，记 UTF-8 字节数与 sha256；版本一行，同一技能内版本号唯一，`manifest` 是按路径排好的文件清单，`content_hash` 建普通索引；版本的文件发布后不再改。同一技能的草稿修改、发布、恢复与覆盖导入都先锁住技能行，版本号在锁下取最大号加一，版本行、版本文件与最新版指针在同一个事务里写。`latest_version_id` 不加外键，状态与文件规则只在 Python 里，不加 CHECK。文件、frontmatter、清单与内容 hash 的规则在同模块的 `rules.py`，zip 的读写与安全检查在 `archive.py` |
 | `iclip` 品牌资源 | `domains/brand_templates/infra_sql.py`；资源一行一个，种类为开放文本（现只有字体），品牌未指定时为空，不从名称推断；只停用不删。字体直接签名上传对象存储、确认后建资源，读取实际字族、字重、样式与字形覆盖，不创建生成记录；字体解析经组合根的 [app/brand_templates.py](../server/src/iclip/app/brand_templates.py)。`brand_profiles` 表（每个品牌的标语、强调色）留在库里，目前没有读写。生成域不引用品牌资源域；生成记录对它们没有外键 |
 | 资料库（跨生成记录、对话、用户三张表的只读聚合） | `domains/library/reports_pg.py`；同上，每次请求现算卡面与副本的血缘装填，数据到十万级再换成随出片完成更新的读表。爆款素材库不建表：条目与标签经标签域写，列表、入选状态与素材片资格按表名读条目与生成记录 |
 

@@ -316,6 +316,18 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
+ * Body_import_skill_skills_import_post
+ */
+export type BodyImportSkillSkillsImportPost = {
+  /**
+   * File
+   *
+   * 技能的 zip 压缩包
+   */
+  file: Blob | File
+}
+
+/**
  * BrandFontConfirmIn
  */
 export type BrandFontConfirmIn = {
@@ -1054,6 +1066,68 @@ export type DepartmentOut = {
    * Uid
    */
   uid: string
+}
+
+/**
+ * DraftFileInfoOut
+ */
+export type DraftFileInfoOut = {
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * DraftFileOut
+ */
+export type DraftFileOut = {
+  /**
+   * Content
+   */
+  content: string
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * DraftFileWriteIn
+ */
+export type DraftFileWriteIn = {
+  /**
+   * Basehash
+   */
+  baseHash: string | null
+  /**
+   * Content
+   */
+  content: string
 }
 
 /**
@@ -2756,6 +2830,7 @@ export type Permission =
   | 'api_keys:issue'
   | 'agent:read'
   | 'agent:run'
+  | 'agent:manage'
 
 /**
  * PersonOut
@@ -3181,6 +3256,312 @@ export type SidebarOut = {
    * Ungroupedcount
    */
   ungroupedCount: number
+}
+
+/**
+ * SkillCreateIn
+ *
+ * 新建一个技能，同时生成一份带 frontmatter 的 ``SKILL.md`` 草稿。
+ */
+export type SkillCreateIn = {
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Displayname
+   */
+  displayName: string
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * SkillDetailOut
+ */
+export type SkillDetailOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Displayname
+   */
+  displayName: string
+  /**
+   * Draftfiles
+   */
+  draftFiles: Array<DraftFileInfoOut>
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Latestversion
+   */
+  latestVersion: number | null
+  /**
+   * Latestversionid
+   */
+  latestVersionId: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * SkillFileOut
+ *
+ * 清单里的一个文件。
+ */
+export type SkillFileOut = {
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+}
+
+/**
+ * SkillImportOut
+ *
+ * 导入检查或导入的结果。只建或覆盖草稿，不发布。
+ */
+export type SkillImportOut = {
+  /**
+   * Action
+   */
+  action: 'create' | 'overwrite' | null
+  /**
+   * Description
+   */
+  description: string | null
+  /**
+   * Displayname
+   */
+  displayName: string | null
+  /**
+   * Files
+   */
+  files: Array<SkillFileOut>
+  /**
+   * Name
+   */
+  name: string | null
+  /**
+   * Problems
+   */
+  problems: Array<string>
+  /**
+   * Skillid
+   */
+  skillId: string | null
+}
+
+/**
+ * SkillOut
+ */
+export type SkillOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Displayname
+   */
+  displayName: string
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Latestversion
+   */
+  latestVersion: number | null
+  /**
+   * Latestversionid
+   */
+  latestVersionId: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * SkillPublishIn
+ */
+export type SkillPublishIn = {
+  /**
+   * Note
+   */
+  note?: string | null
+}
+
+/**
+ * SkillUpdateIn
+ */
+export type SkillUpdateIn = {
+  /**
+   * Displayname
+   */
+  displayName: string
+}
+
+/**
+ * SkillVersionDetailOut
+ */
+export type SkillVersionDetailOut = {
+  /**
+   * Contenthash
+   */
+  contentHash: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Files
+   */
+  files: Array<SkillFileOut>
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * SkillVersionFileOut
+ */
+export type SkillVersionFileOut = {
+  /**
+   * Content
+   */
+  content: string
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+}
+
+/**
+ * SkillVersionOut
+ */
+export type SkillVersionOut = {
+  /**
+   * Contenthash
+   */
+  contentHash: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * SkillVersionsOut
+ */
+export type SkillVersionsOut = {
+  /**
+   * Items
+   */
+  items: Array<SkillVersionOut>
+}
+
+/**
+ * SkillsOut
+ */
+export type SkillsOut = {
+  /**
+   * Items
+   */
+  items: Array<SkillOut>
 }
 
 /**
@@ -8950,6 +9331,536 @@ export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostRespo
 
 export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
   StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses]
+
+export type ListSkillsSkillsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/skills'
+}
+
+export type ListSkillsSkillsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillsOut
+}
+
+export type ListSkillsSkillsGetResponse =
+  ListSkillsSkillsGetResponses[keyof ListSkillsSkillsGetResponses]
+
+export type CreateSkillSkillsPostData = {
+  body: SkillCreateIn
+  path?: never
+  query?: never
+  url: '/skills'
+}
+
+export type CreateSkillSkillsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateSkillSkillsPostError =
+  CreateSkillSkillsPostErrors[keyof CreateSkillSkillsPostErrors]
+
+export type CreateSkillSkillsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: SkillDetailOut
+}
+
+export type CreateSkillSkillsPostResponse =
+  CreateSkillSkillsPostResponses[keyof CreateSkillSkillsPostResponses]
+
+export type ImportSkillSkillsImportPostData = {
+  body: BodyImportSkillSkillsImportPost
+  path?: never
+  query?: {
+    /**
+     * Dryrun
+     */
+    dryRun?: boolean
+  }
+  url: '/skills/import'
+}
+
+export type ImportSkillSkillsImportPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ImportSkillSkillsImportPostError =
+  ImportSkillSkillsImportPostErrors[keyof ImportSkillSkillsImportPostErrors]
+
+export type ImportSkillSkillsImportPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillImportOut
+}
+
+export type ImportSkillSkillsImportPostResponse =
+  ImportSkillSkillsImportPostResponses[keyof ImportSkillSkillsImportPostResponses]
+
+export type SkillDetailSkillsSkillIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}'
+}
+
+export type SkillDetailSkillsSkillIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillDetailSkillsSkillIdGetError =
+  SkillDetailSkillsSkillIdGetErrors[keyof SkillDetailSkillsSkillIdGetErrors]
+
+export type SkillDetailSkillsSkillIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type SkillDetailSkillsSkillIdGetResponse =
+  SkillDetailSkillsSkillIdGetResponses[keyof SkillDetailSkillsSkillIdGetResponses]
+
+export type UpdateSkillSkillsSkillIdPatchData = {
+  body: SkillUpdateIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}'
+}
+
+export type UpdateSkillSkillsSkillIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateSkillSkillsSkillIdPatchError =
+  UpdateSkillSkillsSkillIdPatchErrors[keyof UpdateSkillSkillsSkillIdPatchErrors]
+
+export type UpdateSkillSkillsSkillIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type UpdateSkillSkillsSkillIdPatchResponse =
+  UpdateSkillSkillsSkillIdPatchResponses[keyof UpdateSkillSkillsSkillIdPatchResponses]
+
+export type ArchiveSkillSkillsSkillIdArchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/archive'
+}
+
+export type ArchiveSkillSkillsSkillIdArchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ArchiveSkillSkillsSkillIdArchivePostError =
+  ArchiveSkillSkillsSkillIdArchivePostErrors[keyof ArchiveSkillSkillsSkillIdArchivePostErrors]
+
+export type ArchiveSkillSkillsSkillIdArchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type ArchiveSkillSkillsSkillIdArchivePostResponse =
+  ArchiveSkillSkillsSkillIdArchivePostResponses[keyof ArchiveSkillSkillsSkillIdArchivePostResponses]
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query: {
+    /**
+     * Basehash
+     */
+    baseHash: string
+  }
+  url: '/skills/{skill_id}/draft/files/{path}'
+}
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteError =
+  DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteErrors[keyof DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteErrors]
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponse =
+  DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponses[keyof DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponses]
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/draft/files/{path}'
+}
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetError =
+  ReadDraftFileSkillsSkillIdDraftFilesPathGetErrors[keyof ReadDraftFileSkillsSkillIdDraftFilesPathGetErrors]
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: DraftFileOut
+}
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetResponse =
+  ReadDraftFileSkillsSkillIdDraftFilesPathGetResponses[keyof ReadDraftFileSkillsSkillIdDraftFilesPathGetResponses]
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutData = {
+  body: DraftFileWriteIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/draft/files/{path}'
+}
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutError =
+  WriteDraftFileSkillsSkillIdDraftFilesPathPutErrors[keyof WriteDraftFileSkillsSkillIdDraftFilesPathPutErrors]
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: DraftFileOut
+}
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutResponse =
+  WriteDraftFileSkillsSkillIdDraftFilesPathPutResponses[keyof WriteDraftFileSkillsSkillIdDraftFilesPathPutResponses]
+
+export type ExportSkillSkillsSkillIdExportGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: {
+    /**
+     * Versionid
+     */
+    versionId?: string | null
+  }
+  url: '/skills/{skill_id}/export'
+}
+
+export type ExportSkillSkillsSkillIdExportGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ExportSkillSkillsSkillIdExportGetError =
+  ExportSkillSkillsSkillIdExportGetErrors[keyof ExportSkillSkillsSkillIdExportGetErrors]
+
+export type ExportSkillSkillsSkillIdExportGetResponses = {
+  /**
+   * 技能的 zip 压缩包
+   */
+  200: Blob | File
+}
+
+export type ExportSkillSkillsSkillIdExportGetResponse =
+  ExportSkillSkillsSkillIdExportGetResponses[keyof ExportSkillSkillsSkillIdExportGetResponses]
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/unarchive'
+}
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostError =
+  UnarchiveSkillSkillsSkillIdUnarchivePostErrors[keyof UnarchiveSkillSkillsSkillIdUnarchivePostErrors]
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostResponse =
+  UnarchiveSkillSkillsSkillIdUnarchivePostResponses[keyof UnarchiveSkillSkillsSkillIdUnarchivePostResponses]
+
+export type SkillVersionsSkillsSkillIdVersionsGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions'
+}
+
+export type SkillVersionsSkillsSkillIdVersionsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillVersionsSkillsSkillIdVersionsGetError =
+  SkillVersionsSkillsSkillIdVersionsGetErrors[keyof SkillVersionsSkillsSkillIdVersionsGetErrors]
+
+export type SkillVersionsSkillsSkillIdVersionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillVersionsOut
+}
+
+export type SkillVersionsSkillsSkillIdVersionsGetResponse =
+  SkillVersionsSkillsSkillIdVersionsGetResponses[keyof SkillVersionsSkillsSkillIdVersionsGetResponses]
+
+export type PublishSkillSkillsSkillIdVersionsPostData = {
+  body: SkillPublishIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions'
+}
+
+export type PublishSkillSkillsSkillIdVersionsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type PublishSkillSkillsSkillIdVersionsPostError =
+  PublishSkillSkillsSkillIdVersionsPostErrors[keyof PublishSkillSkillsSkillIdVersionsPostErrors]
+
+export type PublishSkillSkillsSkillIdVersionsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: SkillVersionOut
+}
+
+export type PublishSkillSkillsSkillIdVersionsPostResponse =
+  PublishSkillSkillsSkillIdVersionsPostResponses[keyof PublishSkillSkillsSkillIdVersionsPostResponses]
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions/{version_id}'
+}
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetError =
+  SkillVersionSkillsSkillIdVersionsVersionIdGetErrors[keyof SkillVersionSkillsSkillIdVersionsVersionIdGetErrors]
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillVersionDetailOut
+}
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetResponse =
+  SkillVersionSkillsSkillIdVersionsVersionIdGetResponses[keyof SkillVersionSkillsSkillIdVersionsVersionIdGetResponses]
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions/{version_id}/files/{path}'
+}
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetError =
+  SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetErrors[keyof SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetErrors]
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillVersionFileOut
+}
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponse =
+  SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponses[keyof SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponses]
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions/{version_id}/restore'
+}
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostError =
+  RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostErrors[keyof RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostErrors]
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponse =
+  RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponses[keyof RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponses]
 
 export type ListTasksTasksGetData = {
   body?: never

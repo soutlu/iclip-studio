@@ -133,6 +133,10 @@ path = "iclip.domains.brand_templates"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
 
 [[modules]]
+path = "iclip.domains.skills"
+depends_on = ["iclip.common", "iclip.domains.identity"]
+
+[[modules]]
 path = "iclip.domains.products"
 depends_on = ["iclip.common"]
 
@@ -194,6 +198,7 @@ depends_on = [
     "iclip.domains.tagging",
     "iclip.domains.brand_templates",
     "iclip.domains.tracking",
+    "iclip.domains.skills",
     "iclip.harness",
     "iclip.plugins",
 ]

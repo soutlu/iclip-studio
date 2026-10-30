@@ -24,6 +24,7 @@ type Permission = Literal[
     "api_keys:issue",
     "agent:read",
     "agent:run",
+    "agent:manage",
 ]
 """权限词汇。请求体里授予权限的字段按它校验；响应里的权限集是字符串，词表变动不打坏旧客户端。"""
 
@@ -49,6 +50,7 @@ _EDITOR = frozenset(PERMISSIONS) - {
     ACT_AS_PERMISSION,
     "api_keys:issue",
     "library_tags:manage",
+    "agent:manage",
 }
 _ROOT = frozenset(PERMISSIONS)
 
