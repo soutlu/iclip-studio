@@ -11,18 +11,24 @@ name = "agent-runtime"
 version = "0.1.0"
 source = { editable = "../runtime" }
 dependencies = [
+    { name = "cryptography" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "pydantic-ai-harness" },
     { name = "pydantic-ai-slim", extra = ["openai"] },
+    { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.1" },
+    { name = "packaging", specifier = ">=26" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-ai-harness", specifier = ">=0.62.0" },
     { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.62.0" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
     { name = "structlog", specifier = ">=26.1.0" },
 ]

@@ -10,26 +10,26 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_runtime.model_vocab import ThinkingEffort
-from pydantic_ai.models import Model
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from iclip.app.agent_runtime import ModelBuilder
-from iclip.app.bootstrap import AgentServices
-from iclip.domains.agent_config.config import AgentConfig
-from iclip.domains.agent_config.schemas import (
+from agent_runtime.assembly.agents import ModelBuilder
+from agent_runtime.config.agent_config.config import AgentConfig
+from agent_runtime.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDraftIn,
     AgentPublishIn,
     AgentUpdateIn,
 )
-from iclip.domains.model_providers.public import RuntimeModel
-from iclip.domains.model_providers.schemas import (
+from agent_runtime.config.model_providers.public import RuntimeModel
+from agent_runtime.config.model_providers.schemas import (
     CredentialCreateIn,
     CustomModelCreateIn,
     ModelProviderCreateIn,
 )
-from iclip.domains.skills.schemas import DraftFileWriteIn, SkillCreateIn, SkillPublishIn
+from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillCreateIn, SkillPublishIn
+from agent_runtime.model_vocab import ThinkingEffort
+from pydantic_ai.models import Model
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.app.bootstrap import AgentServices
 from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.model_providers import GOOD_KEY
 from tests.helpers.references import plant_user

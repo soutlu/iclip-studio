@@ -5,11 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Response
-
-from iclip.domains.identity.public import Principal, require_permission
-from iclip.domains.model_providers.models import ModelType
-from iclip.domains.model_providers.schemas import (
+from agent_runtime.config.model_providers.models import ModelType
+from agent_runtime.config.model_providers.schemas import (
     CredentialCreateIn,
     CredentialOut,
     CredentialTestIn,
@@ -27,7 +24,10 @@ from iclip.domains.model_providers.schemas import (
     ProbeOut,
     ProviderModelOut,
 )
-from iclip.domains.model_providers.service import ModelProviderService
+from agent_runtime.config.model_providers.service import ModelProviderService
+from fastapi import APIRouter, Response
+
+from iclip.domains.identity.public import Principal, require_permission
 
 _MANAGE = "model:manage"
 

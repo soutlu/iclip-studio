@@ -124,19 +124,18 @@ depends_on = [
 path = "iclip.domains.brand_templates"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
 
-# 模型供应商：试连是端口，由组合根接到 Agent 引擎上。
+# 技能库、模型供应商与 agent 配置的业务在运行时（agent_runtime.config），这里只留接口路由。
 [[modules]]
 path = "iclip.domains.model_providers"
-depends_on = ["iclip.common", "iclip.domains.identity"]
+depends_on = ["iclip.domains.identity"]
 
 [[modules]]
 path = "iclip.domains.skills"
-depends_on = ["iclip.common", "iclip.domains.identity"]
+depends_on = ["iclip.domains.identity"]
 
-# Agent 配置：模型供应商、插件登记表与技能库都经端口查，由组合根接上；那两边问「谁在用」也经它们自己的端口。
 [[modules]]
 path = "iclip.domains.agent_config"
-depends_on = ["iclip.common", "iclip.domains.identity"]
+depends_on = ["iclip.domains.identity"]
 
 [[modules]]
 path = "iclip.domains.products"

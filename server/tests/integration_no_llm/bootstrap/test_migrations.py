@@ -9,11 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent_runtime.config.agent_config.infra_sql import metadata_obj as agent_config_metadata
+from agent_runtime.config.model_providers.infra_sql import metadata_obj as model_providers_metadata
+from agent_runtime.config.skills.infra_sql import metadata_obj as skills_metadata
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import Column, MetaData, inspect, text
 
-from iclip.domains.agent_config.infra_sql import metadata_obj as agent_config_metadata
 from iclip.domains.brand_templates.infra_sql import metadata_obj as brand_templates_metadata
 from iclip.domains.collections.infra_sql import metadata_obj as collections_metadata
 from iclip.domains.conversations.infra_sql import metadata_obj as conversations_metadata
@@ -21,9 +23,7 @@ from iclip.domains.generation.infra_sql import generation_jobs_table
 from iclip.domains.generation.infra_sql import metadata_obj as generation_metadata
 from iclip.domains.identity.infra_sql import DB_SCHEMA, Base
 from iclip.domains.inspirations.infra_sql import metadata_obj as inspirations_metadata
-from iclip.domains.model_providers.infra_sql import metadata_obj as model_providers_metadata
 from iclip.domains.references.infra_sql import metadata_obj as references_metadata
-from iclip.domains.skills.infra_sql import metadata_obj as skills_metadata
 from iclip.domains.tagging.infra_sql import metadata_obj as tagging_metadata
 from iclip.domains.tasks.infra_sql import metadata_obj as tasks_metadata
 from iclip.domains.tracking.infra_sql import metadata_obj as tracking_metadata

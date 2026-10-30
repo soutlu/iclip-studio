@@ -6,15 +6,15 @@ from collections.abc import AsyncGenerator
 
 import httpx
 import pytest
+from agent_runtime.config.model_providers.catalog import load_declarations
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
+from agent_runtime.config.model_providers.service import rotate_credential_keys
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.model_providers.catalog import load_declarations
-from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
-from iclip.domains.model_providers.service import rotate_credential_keys
 from tests.helpers.app import TEST_CREDENTIAL_KEY, make_client
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.model_providers import GOOD_KEY, OTHER_KEY, add_credential, connect_bailian

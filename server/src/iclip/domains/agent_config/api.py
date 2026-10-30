@@ -5,11 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, Response, UploadFile
-from fastapi.responses import JSONResponse
-
-from iclip.domains.agent_config.package import MAX_PACKAGE_BYTES
-from iclip.domains.agent_config.schemas import (
+from agent_runtime.config.agent_config.package import MAX_PACKAGE_BYTES
+from agent_runtime.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDetailOut,
     AgentDraftIn,
@@ -26,7 +23,10 @@ from iclip.domains.agent_config.schemas import (
     AgentVersionOut,
     AgentVersionsOut,
 )
-from iclip.domains.agent_config.service import AgentConfigService, AgentPublishBlocked
+from agent_runtime.config.agent_config.service import AgentConfigService, AgentPublishBlocked
+from fastapi import APIRouter, File, Query, Response, UploadFile
+from fastapi.responses import JSONResponse
+
 from iclip.domains.identity.public import Principal, require_permission
 
 _MANAGE = "agent:manage"

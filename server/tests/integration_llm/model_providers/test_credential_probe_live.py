@@ -8,10 +8,9 @@ from __future__ import annotations
 import os
 
 import pytest
-
-from iclip.app.model_providers import PydanticAiCredentialProbe
-from iclip.domains.model_providers.catalog import load_declarations
-from iclip.domains.model_providers.models import ProviderModel
+from agent_runtime.assembly.models import PydanticAiCredentialProbe
+from agent_runtime.config.model_providers.catalog import load_declarations
+from agent_runtime.config.model_providers.models import ProviderModel
 
 REQUIRED_ENV = ("MODEL_API_KEY", "MODEL_BASE_URL")
 

@@ -13,16 +13,11 @@ from typing import Any
 
 import pytest
 import yaml
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
-from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from iclip.app.agent_config import LibrarySkillDirectory, ProviderDirectory
-from iclip.domains.agent_config.config import AgentConfig
-from iclip.domains.agent_config.infra_sql import SqlAgentStore
-from iclip.domains.agent_config.public import AgentReferences
-from iclip.domains.agent_config.schemas import (
+from agent_runtime.assembly.directories import LibrarySkillDirectory, ProviderDirectory
+from agent_runtime.config.agent_config.config import AgentConfig
+from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
+from agent_runtime.config.agent_config.public import AgentReferences
+from agent_runtime.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDraftIn,
     AgentOrderIn,
@@ -30,21 +25,26 @@ from iclip.domains.agent_config.schemas import (
     AgentRestoreIn,
     AgentUpdateIn,
 )
-from iclip.domains.agent_config.service import AgentConfigService, AgentPublishBlocked
-from iclip.domains.model_providers.catalog import load_declarations
-from iclip.domains.model_providers.cipher import CredentialCipher
-from iclip.domains.model_providers.infra_sql import SqlModelProviderStore
-from iclip.domains.model_providers.schemas import (
+from agent_runtime.config.agent_config.service import AgentConfigService, AgentPublishBlocked
+from agent_runtime.config.model_providers.catalog import load_declarations
+from agent_runtime.config.model_providers.cipher import CredentialCipher
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
+from agent_runtime.config.model_providers.schemas import (
     CredentialCreateIn,
     CustomModelCreateIn,
     ModelProviderCreateIn,
     ModelProviderUpdateIn,
     ModelUpdateIn,
 )
-from iclip.domains.model_providers.service import ModelProviderService
-from iclip.domains.skills.infra_sql import SqlSkillStore
-from iclip.domains.skills.schemas import SkillCreateIn, SkillPublishIn
-from iclip.domains.skills.service import SkillsService
+from agent_runtime.config.model_providers.service import ModelProviderService
+from agent_runtime.config.skills.infra_sql import SqlSkillStore
+from agent_runtime.config.skills.schemas import SkillCreateIn, SkillPublishIn
+from agent_runtime.config.skills.service import SkillsService
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from tests.helpers.agent_config import NOTES, FakePlugins
 from tests.helpers.app import TEST_CREDENTIAL_KEY
 from tests.helpers.model_providers import GOOD_KEY, OTHER_KEY, KeyCheckingProbe

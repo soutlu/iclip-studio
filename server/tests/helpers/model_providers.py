@@ -6,8 +6,11 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
-
-from iclip.domains.model_providers.public import ProbeResult, ProviderDeclaration, ProviderModel
+from agent_runtime.config.model_providers.public import (
+    ProbeResult,
+    ProviderDeclaration,
+    ProviderModel,
+)
 
 GOOD_KEY = "sk-good-0123456789abcd"
 OTHER_KEY = "sk-other-0000000000wxyz"
