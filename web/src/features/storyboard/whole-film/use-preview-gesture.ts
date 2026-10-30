@@ -1,4 +1,5 @@
 import { useRef, useState, type PointerEvent } from 'react'
+import type { LeftTrimHold } from '../editing/left-trim'
 import { DRAG_THRESHOLD, releasePointer } from '../editing/timeline-drag'
 import type { WholeFilmDraft } from './editing/draft'
 import type { OverlayRow } from './editing/overlays'
@@ -16,6 +17,8 @@ export type GestureStep = {
   row?: OverlayRow | undefined
   /** 正在挪的特效块 */
   overlayId?: string | undefined
+  /** 拖的是画面轨一段的左把手：这段的右边沿与后面的段停在按下时的位置（毫秒，见 holdLeftTrim） */
+  pin?: LeftTrimHold | undefined
 }
 
 /** 拖动中的样子：上一个放得下的结果，与这一刻的提示 */
@@ -26,6 +29,7 @@ export type GesturePreview = {
   noteAtMs: number | undefined
   row: OverlayRow | undefined
   overlayId: string | undefined
+  pin: LeftTrimHold | undefined
 }
 
 type Gesture = {
@@ -81,6 +85,7 @@ export function usePreviewGesture(onCommit: (result: EditResult) => void) {
       noteAtMs: step.noteAtMs ?? shown.noteAtMs,
       row: shown.row,
       overlayId: shown.overlayId,
+      pin: shown.pin,
     })
   }
 
