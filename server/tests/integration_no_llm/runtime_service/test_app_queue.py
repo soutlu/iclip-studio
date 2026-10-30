@@ -77,13 +77,13 @@ async def test_a_queued_prompt_is_aborted_while_the_first_one_runs(
     assert queue["queued"] == []
     assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "running"}
 
-    idle = str(uuid.uuid4())
-    activities = await app_client.post("/sessions:activities", json={"ids": [session, idle]})
+    unknown = str(uuid.uuid4())
+    activities = await app_client.post("/sessions:activities", json={"ids": [session, unknown]})
     assert activities.status_code == 200, activities.text
+    # 不存在的会话不在答复里。
     assert activities.json() == {
         "items": {
             session: {"busy": True, "pending_interaction": "none", "last_turn_reason": None},
-            idle: {"busy": False, "pending_interaction": "none", "last_turn_reason": None},
         }
     }
     everyone = await app_client.get("/sessions:busy")

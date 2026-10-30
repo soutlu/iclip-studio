@@ -282,6 +282,7 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
         engine, "SELECT active_version_id FROM iclip.agents WHERE id = 'director'"
     )
     assert sessions == {director_chat: director_v1, gone_chat: None}
+    assert await rows(engine, "SELECT DISTINCT app_id FROM agent_runtime.sessions") == [("video",)]
 
 
 async def test_the_cutover_refuses_to_run_twice(

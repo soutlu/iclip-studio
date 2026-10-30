@@ -7726,7 +7726,7 @@
     },
     "/v1/sessions": {
       "post": {
-        "description": "开会话。没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过是 409；这个 id 已有会话就按\n这次的版本改写。",
+        "description": "给调用方应用开会话。没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过是 409；这个 id\n已有本应用的会话就按这次的版本改写，已归别的应用是 409。",
         "operationId": "open_session_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -7985,7 +7985,7 @@
     },
     "/v1/sessions/{session_id}/files:copy": {
       "post": {
-        "description": "按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。",
+        "description": "按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用\n的会话（目标先开好），任一不是答 404。",
         "operationId": "copy_files_v1_sessions__session_id__files_copy_post",
         "parameters": [
           {
@@ -8847,7 +8847,7 @@
     },
     "/v1/sessions/{session_id}:fork": {
       "post": {
-        "description": "从源会话分叉：固定版本、拷工作区文件与整份素材台账、写种子快照。\n\n源有没跑完或排着队的消息是 409，源没跑过、轮号越界是 422；数完轮数后源又跑了一轮是 409，那时\n会话、文件与素材已经写了。",
+        "description": "从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件与整份素材台账、写种子快照。\n\n源不是调用方应用的会话是 404，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，\n源没跑过、轮号越界是 422；数完轮数后源又跑了一轮是 409，那时会话、文件与素材已经写了。",
         "operationId": "fork_session_v1_sessions__session_id__fork_post",
         "parameters": [
           {
@@ -8911,7 +8911,7 @@
     },
     "/v1/sessions:activities": {
       "post": {
-        "description": "这几段会话此刻的活动，按持久化队列算。",
+        "description": "这几段会话此刻的活动，按持久化队列算；只答调用方应用自己的会话。",
         "operationId": "activities_v1_sessions_activities_post",
         "requestBody": {
           "content": {
@@ -8958,7 +8958,7 @@
     },
     "/v1/sessions:busy": {
       "get": {
-        "description": "此刻占着执行位（在跑或等审批）的会话。",
+        "description": "调用方应用的会话里，此刻占着执行位（在跑或等审批）的那些。",
         "operationId": "busy_v1_sessions_busy_get",
         "parameters": [
           {

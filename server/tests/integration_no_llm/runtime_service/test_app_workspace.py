@@ -24,15 +24,19 @@ def models() -> dict[str, Model]:
     return {TEST_MODEL_NAME: says("答：第一问")}
 
 
+async def open_session(app_client: httpx.AsyncClient) -> str:
+    session_id = str(uuid.uuid4())
+    opened = await app_client.post("/sessions", json={"id": session_id, "agent_id": AGENT})
+    assert opened.status_code == 204, opened.text
+    return session_id
+
+
 @pytest.fixture
 async def session(admin: httpx.AsyncClient, app_client: httpx.AsyncClient) -> str:
     provider_id = await connect_provider(admin)
     await add_model(admin, provider_id, TEST_MODEL_NAME)
     await publish_agent(admin, AGENT)
-    session_id = str(uuid.uuid4())
-    opened = await app_client.post("/sessions", json={"id": session_id, "agent_id": AGENT})
-    assert opened.status_code == 204, opened.text
-    return session_id
+    return await open_session(app_client)
 
 
 @pytest.fixture
@@ -45,9 +49,8 @@ def as_owner(owner: uuid.UUID) -> dict[str, str]:
 
 
 async def test_files_are_read_and_written_with_versions(
-    app_client: httpx.AsyncClient, other: uuid.UUID
+    app_client: httpx.AsyncClient, session: str, other: uuid.UUID
 ) -> None:
-    session = str(uuid.uuid4())
     base = f"/sessions/{session}/files"
 
     assert (await app_client.get(base)).json() == {"files": []}
@@ -88,9 +91,8 @@ async def test_files_are_read_and_written_with_versions(
 
 
 async def test_materials_are_recorded_and_looked_up(
-    app_client: httpx.AsyncClient, other: uuid.UUID
+    app_client: httpx.AsyncClient, session: str, other: uuid.UUID
 ) -> None:
-    session = str(uuid.uuid4())
     base = f"/sessions/{session}/materials"
 
     recorded = await app_client.post(base, json={"materials": [{"url": IMAGE, "kind": "image"}]})
@@ -157,10 +159,10 @@ async def test_a_fork_copies_files_materials_and_history_to_the_target_owner(
 
 
 async def test_files_copy_needs_one_of_the_required_files(
-    app_client: httpx.AsyncClient, owner: uuid.UUID, other: uuid.UUID
+    app_client: httpx.AsyncClient, session: str, owner: uuid.UUID, other: uuid.UUID
 ) -> None:
-    source = str(uuid.uuid4())
-    target = str(uuid.uuid4())
+    source = session
+    target = await open_session(app_client)
     await app_client.put(f"/sessions/{source}/files/film.icml", json={"content": "工程"})
     await app_client.put(f"/sessions/{source}/files/treatment.md", json={"content": "方案"})
     await app_client.post(
