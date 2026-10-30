@@ -38,7 +38,7 @@ from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import yaml
 from sqlalchemy import text
@@ -199,6 +199,9 @@ def read_legacy_models(path: Path) -> tuple[dict[str, LegacyModel], str | None]:
         if "provider" not in item or "api_key_env" not in item:
             raise ImportRefused(f"models.{key} 要有 provider 与 api_key_env")
         context = item.get("context_window")
+        thinking = item.get("thinking")
+        if thinking is not None and thinking not in get_args(ThinkingEffort):
+            raise ImportRefused(f"models.{key} 的思考档位 {thinking} 不是认得的档位")
         models[key] = LegacyModel(
             key=key,
             provider=str(item["provider"]),
@@ -206,7 +209,7 @@ def read_legacy_models(path: Path) -> tuple[dict[str, LegacyModel], str | None]:
             api_key_env=str(item["api_key_env"]),
             base_url=item.get("base_url"),
             model=str(item.get("model") or key),
-            thinking=item.get("thinking"),
+            thinking=thinking,
             context_window=int(context) if context is not None else None,
         )
     title = _mapping(raw.get("conversations"), "conversations").get("title_model")

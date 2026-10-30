@@ -81,6 +81,7 @@ async def compile_(
     skills: tuple[SkillFacts, ...] = (SKILL,),
     agents: tuple[AgentRefs, ...] = (),
     providers: tuple[ProviderFacts, ...] = (PROVIDER,),
+    runtime: bool = False,
 ) -> CompiledAgent | tuple[Problem, ...]:
     return await compile_agent(
         "main",
@@ -90,6 +91,7 @@ async def compile_(
         plugins=FakePlugins(),
         skills=skills,
         agents=(refs("main"), *agents),
+        runtime=runtime,
     )
 
 
@@ -284,6 +286,41 @@ async def test_agent_used_as_subagent_without_subagents_compiles() -> None:
     result = await compile_(config(), agents=(refs("boss", draft_subagents=("main",)),))
 
     assert isinstance(result, CompiledAgent)
+
+
+async def test_at_runtime_another_agents_draft_does_not_block_a_settled_version() -> None:
+    """别人的草稿把 main 当作子 agent：发布时拦下 main 的子 agent，运行已定下的版本时不拦。"""
+
+    referrer = refs("boss", draft_subagents=("main",))
+    with_subagent = config(subagents=[{"agent": "helper"}])
+
+    published = await compile_(with_subagent, agents=(referrer, refs("helper")))
+    running = await compile_(with_subagent, agents=(referrer, refs("helper")), runtime=True)
+
+    assert not isinstance(published, CompiledAgent)
+    assert {one.path for one in published} == {"subagents"}
+    assert isinstance(running, CompiledAgent)
+
+
+async def test_at_runtime_a_subagents_draft_does_not_count() -> None:
+    """子 agent 的草稿里加了子 agent、当前版本没有：发布时拦下，运行时按它的当前版本装，不拦。"""
+
+    drafting = refs("helper", draft_subagents=("worker",))
+    agents = (drafting, refs("worker"))
+    asks_helper = config(subagents=[{"agent": "helper"}])
+
+    published = await compile_(asks_helper, agents=agents)
+    running = await compile_(asks_helper, agents=agents, runtime=True)
+    nested = await compile_(
+        asks_helper,
+        agents=(refs("helper", active_subagents=("worker",)), refs("worker")),
+        runtime=True,
+    )
+
+    assert not isinstance(published, CompiledAgent)
+    assert {one.path for one in published} == {"subagents[0].agent"}
+    assert isinstance(running, CompiledAgent)
+    assert not isinstance(nested, CompiledAgent), "当前版本里有子 agent 运行时也拦"
 
 
 async def test_all_problems_are_listed_together() -> None:
