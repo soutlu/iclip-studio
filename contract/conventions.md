@@ -40,6 +40,8 @@
 
 上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；取消成片导出时渲染服务不可用返回 `502`（§6「成片导出」）；发布 agent 被编译检查拦下的 `422` 在信封里另带 `problems`（§19「发布」）。
 
+有的错误在信封里另带一个稳定的 `code`，调用方按它分支，`detail` 仍是给人看的一句话：现在只有 `agent_unavailable`（`409`），这段对话固定的 agent 版本此刻装配不起来（§5「发消息」）。
+
 请求结构校验失败（`422`）用同一个字符串信封：`detail` 是一句 `<字段路径>: <原因>`，字段路径形如 `shot.timeline[0].image_indexes`，报在请求体自身的只有原因。一次请求只给第一条，后面几条通常是同一处问题的连带结果。生成任务的业务失败通过任务状态与 `errorCode` / `errorMessage` 表达，HTTP 受理成功不代表生成成功。
 
 ## 5. Agent 对话 (Transcript)
@@ -65,6 +67,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   不参与授权。API key 调用方必填，缺失是 `422`，给什么用什么。浏览器会话可省略，服务端填
   登录用户名；给了就必须等于登录用户名，否则 `422`。重新生成沿用原消息的值。
 - 答复是这条消息的记录：这段对话空着就 `status: "running"`，正忙就 `"queued"`。
+- 运行按这段对话开时固定的 agent 版本装配（§6「开对话」）。那一版此刻装配不起来时，发消息与重新生成都是 `409`，信封带 `code: "agent_unavailable"`，`detail` 写明原因（如它用的模型已停用、插件已从本部署删掉、技能已归档、对话没有固定的版本），什么都不写；读历史照常，只是不给用量仪表。只影响用到那一版的对话，别的对话照常。受理之后、开跑之前才装配不起来的，这条消息记为 `failed`。
 
 ### 读
 
@@ -204,6 +207,8 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - 对话 id 是 UUID，请求体、路径和 §5 的 WebSocket 帧带不带横线都收（`e1e53ab6ec97...` 与 `e1e53ab6-ec97-...` 指向同一段）；服务端一律以带横线的规范写法答复与存储，WS 帧上的 `session_id` 同样只发规范写法。不是 UUID 的写法在 REST 上是 `422`，在 WS 上与看不见的对话同一个待遇（订阅进 `ack` 的 `not_found`，原样带回问的那个串；文件订阅是 `40401`）。
 - `POST /conversations` 的 `id` 可由调用方给，缺省由服务端生成。带 `id` 重发同一个值**不新建第二段对话**，答复已有那一段并把状态码降为 `200`（新建仍 `201`）；这个 id 属于别人的对话时是 `404`，与按 id 读别人的对话一致。对话删除后 ID 仍保留，任何人重用都返回 `404`；新对话必须换一个 ID。
+- **开对话固定 agent 版本**：`agentId` 要是首页能选的 agent（见下一条）。没有这个 agent、或它不上首页菜单是 `422`；已归档、还没发布过是 `409`；`detail` 写明是哪种。新对话固定在这个 agent 此刻的当前版本上，之后发布新版本、恢复旧版本都不影响它，每次运行都按这一版装配（§5「发消息」）；归档 agent 只是不能再开新对话，已有的对话照常可用。带 `id` 重发已有的那一段不再检查 agent，也不改它固定的版本。分叉出来的对话沿用源对话固定的版本；分叉时换了 `agentId` 就按开新对话的规矩固定那个 agent 的当前版本。
+- `GET /conversations/agents` 是首页能选的 agent：上了首页菜单、在用、发布过，按配置页排的先后，`default` 是第一个，一个都没有时为 `null`。答复形状是 `{ items: [{ id, name }], default }`，每次读的都是库里此刻的配置。
 - `GET /conversations` 返回自己的侧栏拓扑：合集及各自第一页对话、未分组合的第一页对话。合集与对话都按 §3 的排序规则，空合集也保留。
 - 侧栏只带最近建立的 100 个合集；更早建的合集连同其中的对话不在这份响应里，也没有截断标记，合集全量走 §7 的 `GET /collections`。
 - **两个数字是真总数**：`ungroupedCount` 与每个合集的 `conversationCount`，与这一页给了几条无关。
@@ -215,7 +220,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /conversations/{id}` 读一段对话的整行，可见范围同其他读路径：属主读自己活着的，替人办事的钥匙读得到活着的，治理者连墓碑也读得到；其余是 `404`。列表在轮次状态变化后用它单独刷新一行。
 - 每行带 `lastSeq` 与 `eventEpoch`：读这一行之前，这段对话已发出的最大会话事件序号与它所属的服务进程；与全局帧信封的 `seq`、`epoch` 同一套，合并规则见 §5「全局帧」。
 - `activity` 的领域语义见 [CONTEXT.md](../docs/CONTEXT.md)，变化通过 §5 的全局帧通知。
-- **标题服务端自动起，只成功写入一次**：配置标题模型时，每轮开始时按这一轮的消息尝试起名，与这一轮并行，
+- **标题服务端自动起，只成功写入一次**：设了 `llm` 的默认模型（§18「默认模型」）时用它起名，没设就不起；每轮开始时按这一轮的消息尝试起名，与这一轮并行，
   不等它跑完；用户自己改过名（`PATCH`，或者开对话时就给了 `title`）的一律不碰。起不出来就还叫默认名，
   下一轮开始时再试，不报错。改名与自动起名都会发一帧 `session.meta.updated`（见 §5 全局帧）。
 - 会话页首屏的标题与属主在 `GET /transcript` 响应的顶层 `title` 与 `owner_user_id` 上——**不在 `meta` 里**（那是协议形状，
@@ -644,7 +649,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 19. Agent 配置 (Agents)
 
-agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Agent 标识」等词条](../docs/CONTEXT.md#术语)。端点都在 `/agents` 下，权限看 `openapi.json`。没有这个 agent 或版本是 `404`。首页的 `GET /conversations/agents` 仍读运行配置，与这里无关。
+agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Agent 标识」等词条](../docs/CONTEXT.md#术语)。端点都在 `/agents` 下，权限看 `openapi.json`。没有这个 agent 或版本是 `404`。首页列哪些 agent、开对话固定哪一版见 §6；运行时按对话固定的版本装配，见 §5「发消息」。
 
 - **配置文档**：草稿、版本与导出包里的 `config` 是同一份格式，字段照文档本身写（snake_case，是 §3 的例外）：`schema_version`（现在是 `1`）、`instructions`、`model { provider, name, credential_id?, settings { thinking? } }`（草稿里可以是 `null`）、`tools`、`subagents [{ agent, timeout_seconds?, max_calls?, on_failure? }]`。`tools` 的每一项按 `type` 区分，现在只有 `cap`：`{ type: "cap", toolset, enabled, parameters }`，`toolset` 是插件名，`parameters` 按那个插件自己的参数校验；以后加来源只加 `type`。同一个 `toolset`、同一个子 agent 只能写一次。技能不写在 `config` 里，是旁边的 `skillIds`，按先后排。不认识的字段都是 `422`。
 - **可挂的插件**：`GET /agents/plugins` 给本部署插件登记表里的全部插件，按登记先后，每项 `{ name, label, description, requires, parameters }`：`name` 就是 `tools[].toolset` 写的插件名，`requires` 是要求同一 agent 一起启用的插件名，`parameters` 是 `tools[].parameters` 的 JSON Schema（没有参数的插件是不收任何键的空对象）。
