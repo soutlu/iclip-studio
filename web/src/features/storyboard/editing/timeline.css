@@ -170,6 +170,34 @@
   pointer-events: none;
 }
 
+/* 拖到边界停住时把手旁的说明（成片总长上限、这段的开头结尾、最短）：两个编辑器共用，压在标尺上、以把手为中心；
+   把手贴近时间线可视范围两端时收回来。横向位置由编辑器给。 */
+.timeline-limit-bubble {
+  position: absolute;
+  top: -2px;
+  z-index: var(--z-local-3);
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-limit-bubble.is-start {
+  translate: 0 0;
+}
+
+.timeline-limit-bubble.is-end {
+  translate: -100% 0;
+}
+
 /* 轨道上的开关（成片的字幕开关、编辑视频的小眼睛）：开着是按下态，浅墨底、深色图标；关着无底、灰色；
    悬停图标变深。键盘焦点也用浅墨底表示，不加外框，保持紧凑轨道的尺寸。 */
 .timeline-toggle {

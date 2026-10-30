@@ -1786,33 +1786,6 @@
   height: 9px;
 }
 
-.wf-drop-bubble {
-  position: absolute;
-  top: -2px;
-  z-index: var(--z-local-3);
-  display: inline-flex;
-  height: 22px;
-  align-items: center;
-  gap: 4px;
-  translate: -50% 0;
-  padding: 0 8px 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-/* 碰到时间区两端时说明框收回来 */
-.wf-drop-bubble.is-start {
-  translate: 0 0;
-}
-
-.wf-drop-bubble.is-end {
-  translate: -100% 0;
-}
-
 /* 吸附时的对齐线 */
 .wf-snap-guide {
   position: absolute;

@@ -647,6 +647,79 @@ test.describe('成片编辑器 · 时间线', () => {
       .toBe(true)
   })
 
+  test('修剪拖到边界：把手旁说明停住的原因（这段的开头、结尾、最短），没到边界时不出', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    const { pps } = await pixelsPerSecond(dialog)
+    const bubble = (text: string) => dialog.getByRole('status').filter({ hasText: text })
+    const drag = async (n: number, name: '裁剪开头' | '裁剪结尾', seconds: number[]) => {
+      await film.getByRole('button', { name: new RegExp(`^选中：第 ${n} 段`) }).click()
+      const handle = await boxOf(film.getByRole('slider', { name }))
+      await page.mouse.move(handle.cx, handle.cy)
+      await page.mouse.down()
+      return async (step: number) => {
+        await page.mouse.move(handle.cx + pps * (seconds[step] ?? 0), handle.cy, { steps: 4 })
+      }
+    }
+
+    // 第 3 段（素材 1.5–3.2 秒）开头往前拉 0.5 秒还没到头；拉 2 秒过了素材开头
+    const third = await drag(3, '裁剪开头', [-0.5, -2])
+    await third(0)
+    await expect(bubble('已到这段的开头')).toHaveCount(0)
+    await third(1)
+    await expect(bubble('已到这段的开头')).toBeVisible()
+    await page.mouse.up()
+    await expect(bubble('已到这段的开头')).toHaveCount(0)
+
+    // 第 6 段（素材 5.1–6 秒）结尾往后拉过素材结尾
+    const sixth = await drag(6, '裁剪结尾', [0.5])
+    await sixth(0)
+    await expect(bubble('已到这段的结尾')).toBeVisible()
+    await page.mouse.up()
+
+    // 第 4 段（0.8 秒）结尾往前剪过头：停在最短
+    const fourth = await drag(4, '裁剪结尾', [-1.2])
+    await fourth(0)
+    await expect(bubble('最短 0.1 秒')).toBeVisible()
+    await page.mouse.up()
+    await expect(dialog.getByRole('status').filter({ hasText: /^最短/ })).toHaveCount(0)
+  })
+
+  test('第一段开头往前拉过素材开头：整块钉在 0，说明在 0 处、靠时间区左边对齐', async ({
+    page,
+  }) => {
+    // 第一段用素材 1–2 秒：开头还能往前拉 1 秒，拉 1.5 秒过了素材开头
+    const { dialog, film } = await openWith(page, { layer0: [video('v0', 1_000, 2_000), ...BASE] })
+    const { pps, left } = await pixelsPerSecond(dialog)
+    await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pps * 1.5, handle.cy, { steps: 6 })
+    const bubble = dialog.getByRole('status').filter({ hasText: '已到这段的开头' })
+    await expect(bubble).toBeVisible()
+    const box = await boxOf(bubble)
+    const viewport = await boxOf(
+      await dialog.getByRole('slider', { name: '时间线播放位置' }).evaluateHandle((element) => {
+        for (let parent = element.parentElement; parent !== null; parent = parent.parentElement)
+          if (/auto|scroll/.test(getComputedStyle(parent).overflowX)) return parent
+        throw new Error('时间线滚动区域不存在')
+      }),
+    )
+    // 说明从 0 处起、向右展开，不出时间区
+    expect(Math.abs(box.x - left)).toBeLessThanOrEqual(2)
+    expect(box.x).toBeGreaterThanOrEqual(viewport.x)
+    await page.mouse.up()
+    await expect
+      .poll(async () => (await readDraft(page))?.layer0[0])
+      .toMatchObject({
+        start: 0,
+        duration: 2_000,
+        playbackStart: 0,
+      })
+  })
+
   test('拖画面轨一段的右把手往里裁：拖动中后面的段不动，剪掉的那段调暗；松手后后面的段接上', async ({
     page,
   }) => {

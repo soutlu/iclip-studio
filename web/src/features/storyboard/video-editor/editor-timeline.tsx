@@ -17,7 +17,14 @@ import type { PeaksState } from '../editing/media-analysis'
 import { trimSpans, usePreviewGesture, type TrimTarget } from '../editing/preview-gesture'
 import { shiftSelect, stepSelect } from '../editing/range-select'
 import { roundSeconds } from '../editing/time-label'
-import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
+import {
+  Frames,
+  LimitBubble,
+  TimelinePlayhead,
+  TimelineRuler,
+  TrimHandle,
+  Wave,
+} from '../editing/timeline'
 import {
   arrowStep,
   DRAG_THRESHOLD,
@@ -34,6 +41,7 @@ import {
   type InsertionGhostHandle,
   type InsertionPreviewHandle,
 } from '../editing/timeline-insertion'
+import { TRIM_LIMIT_TEXT } from '../editing/trim-limit'
 import { useInsertionMotion } from '../editing/use-insertion-motion'
 import {
   draftLineOf,
@@ -217,9 +225,12 @@ const faceOf = (title: string, mediaUrl: string, t0: number, t1: number): Insert
 /** 修剪把手落到的新起止（按草稿块来源自己的时间，或原片时间）。 */
 type Range = { t0: number; t1: number }
 
-/** 拖修剪把手的一步：草稿块带着这样修剪之后草稿的样子。 */
+/**
+ * 拖修剪把手的一步：草稿块带着这样修剪之后草稿的样子，以及把手被这段素材本身的开头、结尾或最短长度挡住时的
+ * 说明（`limit`）。
+ */
 type TrimStep =
-  | { kind: 'draft'; change: TrimChange; items: readonly DraftItem[] }
+  | { kind: 'draft'; change: TrimChange; items: readonly DraftItem[]; limit: string | undefined }
   | { kind: 'run'; change: RunChange }
 
 /** 正按着的修剪把手。 */
@@ -235,6 +246,23 @@ type Pressed = {
 }
 
 const RUN_HANDLES = 'run'
+
+/** 来源时间上差这么点（秒）不算越过边界。 */
+const EDGE_EPSILON = 0.001
+
+/**
+ * 草稿块的把手 `edge` 被拖到 `time`（来源时间，吸附之前）时有没有被挡住：剪得比最短还短，或越过这段素材本身的
+ * 开头、结尾。没被挡住时为 undefined。
+ */
+const trimLimitOf = (spec: TrimSpec, edge: Edge, time: number) => {
+  const shortest =
+    edge === 'start'
+      ? time > spec.t1 - spec.min + EDGE_EPSILON
+      : time < spec.t0 + spec.min - EDGE_EPSILON
+  if (shortest) return TRIM_LIMIT_TEXT.shortest(spec.min)
+  const outside = edge === 'start' ? time < spec.lo - EDGE_EPSILON : time > spec.hi + EDGE_EPSILON
+  return outside ? TRIM_LIMIT_TEXT[edge] : undefined
+}
 
 const seekTo = (edge: Edge, clock: number): Seek =>
   edge === 'end' ? { clock, boundary: 'end' } : { clock }
@@ -365,6 +393,8 @@ export function ClipsTimeline({
   const trimming = trimGesture.preview?.last
   // 拖草稿块的修剪把手：别的块按草稿本身画、不动；被拖的这块画成一整块、盖在相邻的块上，要剪掉的那段调暗
   const draftTrim = trimming?.kind === 'draft' ? draftTrimOf(trimming, items) : undefined
+  const trimStep = trimGesture.preview?.step
+  const trimLimit = trimStep?.kind === 'draft' ? trimStep.limit : undefined
   const total = totalOf(items)
   const bounded = Math.max(0, Math.min(clockOn === 'source' ? duration : total, clock))
   const parts = lanePartsOf(blocks)
@@ -582,7 +612,7 @@ export function ClipsTimeline({
     key: string,
     spec: TrimSpec,
     edge: Edge,
-    stepOf: (range: Range) => TrimStep,
+    stepOf: (range: Range, time: number) => TrimStep,
     target?: TrimTarget,
   ) => {
     if (event.button !== 0) return
@@ -590,15 +620,18 @@ export function ClipsTimeline({
     reflow.cancel()
     const pps = ppsNow()
     const from = edge === 'end' ? spec.t1 : spec.t0
-    const compute = (deltaPx: number) =>
-      stepOf(trimTo(spec, edge, from + deltaPx / pps, snapNear(spec.snaps, pps)))
+    // `stepOf` 另收到把手被拖到的来源时刻（吸附、停在边界之前），按它判断有没有被挡住
+    const compute = (deltaPx: number) => {
+      const time = from + deltaPx / pps
+      return stepOf(trimTo(spec, edge, time, snapNear(spec.snaps, pps)), time)
+    }
     if (target === undefined) {
       event.stopPropagation()
       trimGesture.start(event, compute)
     } else trimGesture.startTrim(event, target, compute)
     setPressed({ key, edge, content })
     // 按下就把舞台换到这一端的画面
-    onTrimPreview(trimPreviewOf(stepOf({ t0: spec.t0, t1: spec.t1 }), items))
+    onTrimPreview(trimPreviewOf(stepOf({ t0: spec.t0, t1: spec.t1 }, from), items))
   }
   /** 方向键：每一步直接提交。 */
   const keyTrim = (
@@ -621,9 +654,20 @@ export function ClipsTimeline({
     selectedItem !== undefined && trimming?.kind === 'draft'
       ? (trimming.items.find((item) => item.id === selectedItem.id) ?? selectedItem)
       : selectedItem
-  const draftStep = (id: string, edge: Edge, range: Range): TrimStep => {
+  const draftStep = (
+    id: string,
+    spec: TrimSpec,
+    edge: Edge,
+    range: Range,
+    time: number,
+  ): TrimStep => {
     const change = { id, edge, ...range }
-    return { kind: 'draft', change, items: previewTrim(change) }
+    return {
+      kind: 'draft',
+      change,
+      items: previewTrim(change),
+      limit: trimLimitOf(spec, edge, time),
+    }
   }
   const runSpec = run === undefined ? undefined : runTrimSpecOf(run, shots, duration)
   const runChange = (edge: Edge, { t0, t1 }: Range): RunChange => ({ edge, start: t0, end: t1 })
@@ -1051,7 +1095,7 @@ export function ClipsTimeline({
                     selectedItem.id,
                     draftSpec,
                     edge,
-                    (range) => draftStep(selectedItem.id, edge, range),
+                    (range, time) => draftStep(selectedItem.id, draftSpec, edge, range, time),
                     { slide: `draft:${selectedItem.id}`, edge },
                   )
                 }
@@ -1091,6 +1135,15 @@ export function ClipsTimeline({
           )}
 
           <TimelinePlayhead style={{ left: `${(playheadAt / content) * 100}%` }} />
+
+          {/* 拖草稿块的修剪把手被挡住：把手旁写明原因（把手在播放头处）；画在播放头之后，字不被挡 */}
+          {trimLimit === undefined ? null : (
+            <LimitBubble
+              left={`calc(${playheadAt} * var(--pps))`}
+              text={trimLimit}
+              viewportRef={scrollRef}
+            />
+          )}
         </div>
       </div>
       {carry?.moved === true ? (
