@@ -20,6 +20,7 @@ from iclip.plugins.base import CapPlugin
 from iclip.plugins.workspace.capability import Workspace
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
+from tests.helpers.identity import FakePrincipals
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 
@@ -50,6 +51,7 @@ def registry() -> PluginRegistry:
         material_ledger=FakeMaterialLedger(),
         http_client=httpx.AsyncClient(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         video=ResolvedVideo(
             understanding_url="https://vision.test/responses",
             understanding_api_key="ark",

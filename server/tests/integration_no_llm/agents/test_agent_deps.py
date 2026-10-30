@@ -10,11 +10,13 @@ import pytest
 from fastapi import FastAPI
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
+from sqlalchemy import text
 
 from iclip.domains.agents.public import AgentRunDeps
 from tests.helpers.agents import AgentSeed
 from tests.helpers.app import make_client, new_conversation, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.pg import connected
 from tests.helpers.plugins import FixedPlugin
 
 AGENT_ID = "storyboard"
@@ -24,9 +26,9 @@ def identity_capability() -> tuple[Capability[AgentRunDeps], ...]:
     """提供返回运行依赖的工具，用于验证 RunContext[AgentRunDeps] 注入。"""
 
     def whoami(ctx: RunContext[AgentRunDeps]) -> str:
-        """报出当前调用方。"""
+        """报出这次运行的属主。"""
 
-        return ctx.deps.principal.audit_label
+        return str(ctx.deps.user_id)
 
     def which_conversation(ctx: RunContext[AgentRunDeps]) -> str:
         """报出这次运行所属的对话。"""
@@ -95,33 +97,104 @@ def said_by(reported: list[str], *, among: set[str]) -> list[str]:
     return [value for value in reported if value in among]
 
 
-async def test_tool_receives_the_caller_principal(client: httpx.AsyncClient, pg_url: str) -> None:
-    await register_and_login(client, username="caller-alpha", email="alpha@example.com")
+async def test_tool_receives_the_caller_as_the_run_owner(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    alpha = await register_and_login(client, username="caller-alpha", email="alpha@example.com")
     await set_roles_in_db(pg_url, "alpha@example.com", ["editor"])
 
     conversation_id = await new_conversation(client, AGENT_ID)
 
     reported = await tools_said(client, "prm-whoami", conversation_id=conversation_id)
-    assert "caller-alpha" in reported
+    assert alpha in reported
     assert conversation_id in reported
 
 
-async def test_each_run_carries_its_own_principal(
+async def test_each_run_carries_its_own_owner(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
 
-    await register_and_login(client, username="caller-alpha", email="alpha@example.com")
+    alpha = await register_and_login(client, username="caller-alpha", email="alpha@example.com")
     await set_roles_in_db(pg_url, "alpha@example.com", ["editor"])
-    names = {"caller-alpha", "caller-beta"}
     mine = await tools_said(client, "prm-mine")
 
     async with make_client(app) as other:
-        await register_and_login(other, username="caller-beta", email="beta@example.com")
+        beta = await register_and_login(other, username="caller-beta", email="beta@example.com")
         await set_roles_in_db(pg_url, "beta@example.com", ["editor"])
         theirs = await tools_said(other, "prm-theirs")
 
-    assert said_by(mine, among=names) == ["caller-alpha"]
-    assert said_by(theirs, among=names) == ["caller-beta"]
+    owners = {alpha, beta}
+    assert said_by(mine, among=owners) == [alpha]
+    assert said_by(theirs, among=owners) == [beta]
+
+
+async def test_a_run_whose_owner_was_deactivated_fails_at_start(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """开跑闸门：属主账号已停用，消息照常受理，运行开跑即失败，工具一个都不跑。
+
+    停用的账号登不进来，所以用替人办事的钥匙替他开对话、发消息；属主不存在的情形有外键挡着，造不出来。
+    """
+
+    await register_and_login(client, username="service-bot", email="bot@example.com")
+    await set_roles_in_db(pg_url, "bot@example.com", ["root"])
+    issued = await client.post(
+        "/api-keys",
+        json={"name": "relay", "permissions": ["agent:run", "agent:read", "users:act_as"]},
+    )
+    assert issued.status_code == 201, issued.text
+
+    async with make_client(app) as machine:
+        machine.headers["Authorization"] = f"Bearer {issued.json()['apiKey']['token']}"
+        opened = await machine.post(
+            "/conversations", json={"agentId": AGENT_ID, "userName": "designer-zhang"}
+        )
+        assert opened.status_code == 201, opened.text
+        conversation_id = str(opened.json()["conversation"]["id"])
+        await deactivate_in_db(pg_url, "designer-zhang")
+
+        sent = await machine.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={
+                "prompt_id": "prm-deactivated",
+                "content": [{"type": "text", "text": "你是谁"}],
+                "user_name": "designer-zhang",
+            },
+        )
+        assert sent.status_code == 200, sent.text
+        await settled(machine, conversation_id)
+        page = (await machine.get(f"/conversations/{conversation_id}/transcript")).json()
+
+    assert await run_status(pg_url, conversation_id) == "failed"
+    assert [
+        frame
+        for turn in page["items"]
+        for step in turn["steps"]
+        for frame in step["frames"]
+        if frame["kind"] == "tool"
+    ] == []
+
+
+async def deactivate_in_db(pg_url: str, username: str) -> None:
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text("UPDATE iclip.users SET is_active = false WHERE username = :username"),
+            {"username": username},
+        )
+
+
+async def run_status(pg_url: str, conversation_id: str) -> str:
+    """这段对话唯一一条消息的终态。"""
+
+    async with connected(pg_url) as conn:
+        row = await conn.execute(
+            text(
+                "SELECT status FROM agent_runtime.agent_jobs"
+                " WHERE conversation_id = :conversation_id"
+            ),
+            {"conversation_id": conversation_id},
+        )
+        return str(row.scalar_one())
 
 
 async def test_browser_run_is_on_behalf_of_the_login_user(

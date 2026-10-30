@@ -145,7 +145,7 @@ class VideoBreakdownToolset(FunctionToolset[AgentDepsT]):
         # 工作区里已有的那份可能被用户指正过，不能拿参考视频里的那份盖掉。
         if await files.read(namespace, path) is not None:
             return done
-        result = await self._cap.breakdowns.ensure(_deps(ctx).principal, video_url)
+        result = await self._cap.breakdowns.ensure(_deps(ctx).user_id, video_url)
         if isinstance(result, FailedBreakdown):
             raise _breakdown_failure(result.reason, last_attempt=ctx.last_attempt)
         # 拆解已存在参考视频那一行上：工作区写入被配额等原因退回时，重试直接取到，不再付费。

@@ -29,7 +29,6 @@ from pydantic_ai.usage import RunUsage
 from structlog.testing import capture_logs
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.harness.media import media_tag
 from iclip.harness.transcript.from_messages import turns_from_messages
 from iclip.harness.transcript.projector import TranscriptEventStream
@@ -193,17 +192,7 @@ _USER_SENT = f"{media_tag('video', VIDEO_URL)}{media_tag('image', OSS_IMAGE_URL)
 def make_context(*, said: str = _USER_SENT) -> RunContext[object]:
     """直接调用工具体，默认素材已登记；注册表上的地址范围校验由单测覆盖。"""
 
-    deps = AgentRunDeps(
-        principal=Principal(
-            kind="user",
-            user_id=USER,
-            permissions=frozenset({"agent:run"}),
-            audit_label="logan",
-            api_key_id=None,
-        ),
-        conversation_id=CONVERSATION,
-        user_name="logan",
-    )
+    deps = AgentRunDeps(user_id=USER, conversation_id=CONVERSATION, user_name="logan")
     return RunContext[object](
         deps=deps,
         model=TestModel(),

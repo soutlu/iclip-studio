@@ -24,7 +24,6 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import FileIoDisplay, ToolDisplayRegistry
@@ -86,17 +85,7 @@ def ctx() -> RunContext[object]:
 
 
 def make_deps() -> AgentRunDeps:
-    return AgentRunDeps(
-        principal=Principal(
-            kind="user",
-            user_id=USER,
-            permissions=frozenset({"agent:run"}),
-            audit_label="logan",
-            api_key_id=None,
-        ),
-        conversation_id="thread-1",
-        user_name="logan",
-    )
+    return AgentRunDeps(user_id=USER, conversation_id="thread-1", user_name="logan")
 
 
 def shot_payload(image_urls: list[str]) -> dict[str, Any]:

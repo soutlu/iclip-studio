@@ -10,7 +10,6 @@ from typing import get_args
 import httpx
 
 from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
-from iclip.domains.identity.public import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.media.codec import MediaCodec
@@ -60,8 +59,8 @@ class FakeGenerations:
     cut_error: Exception | None = None
     """设了就在记切图时抛它，模拟落库失败。"""
 
-    async def submit(self, principal: Principal, request: ImageRequest) -> ImageJob:
-        _ = principal
+    async def submit(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
+        _ = user_id
         if request.aspect_ratio not in _ASPECT_RATIOS:
             raise InvalidImageRequest(f"aspect_ratio: 不是可选的画幅 {request.aspect_ratio!r}")
         if request.resolution not in _RESOLUTIONS:
@@ -74,8 +73,8 @@ class FakeGenerations:
         self.jobs[job_id] = (request.channel, outcome)
         return ImageJob(job_id=job_id, status="pending", channel=request.channel)
 
-    async def get(self, principal: Principal, job_id: uuid.UUID) -> ImageJob:
-        _ = principal
+    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
+        _ = user_id
         self.polls += 1
         channel, outcome = self.jobs[job_id]
         return ImageJob(
@@ -88,9 +87,9 @@ class FakeGenerations:
         )
 
     async def record_cuts(
-        self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
+        self, user_id: uuid.UUID, grid_job_id: uuid.UUID, urls: Sequence[str]
     ) -> None:
-        _ = principal
+        _ = user_id
         if self.cut_error is not None:
             raise self.cut_error
         self.cuts.append((grid_job_id, tuple(urls)))

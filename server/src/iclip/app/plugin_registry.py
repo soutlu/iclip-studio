@@ -7,13 +7,13 @@ agent 配置只按插件名引用。"""
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 import httpx
 from pydantic import ValidationError
 
-from iclip.app.film_images import FilmImagesAdapter
+from iclip.app.film_images import FilmImagesAdapter, RunFilmImagesAdapter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.common.errors import ValidationFailed
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
@@ -55,13 +55,20 @@ PluginRegistry = Mapping[str, type[CapPlugin[Any]]]
 
 class GenerationsAdapter:
     """将能力请求转换为生成域的统一请求模型，并将任务记录收窄为能力协议字段；切出来的格子交给
-    生成域记成切图记录。"""
+    生成域记成切图记录。每次调用都用 ``resolve_principal`` 按运行属主 id 重建主体，它的错误原样抛出。"""
 
-    def __init__(self, service: GenerationService, records: SettledRecords) -> None:
+    def __init__(
+        self,
+        service: GenerationService,
+        records: SettledRecords,
+        resolve_principal: Callable[[uuid.UUID], Awaitable[Principal]],
+    ) -> None:
         self._service = service
         self._records = records
+        self._resolve_principal = resolve_principal
 
-    async def submit(self, principal: Principal, request: ImageRequest) -> ImageJob:
+    async def submit(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
+        principal = await self._resolve_principal(user_id)
         try:
             # 模型输入为自由字符串，由生成域请求模型统一校验枚举。
             payload = ImageGenerationIn.model_validate(
@@ -83,12 +90,14 @@ class GenerationsAdapter:
             # 受理层按所选模型的能力拒绝，收成能力协议错误，工具才能让模型改参数。
             raise InvalidImageRequest(str(exc)) from exc
 
-    async def get(self, principal: Principal, job_id: uuid.UUID) -> ImageJob:
+    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
+        principal = await self._resolve_principal(user_id)
         return _job_view(await self._service.get(principal, job_id))
 
     async def record_cuts(
-        self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
+        self, user_id: uuid.UUID, grid_job_id: uuid.UUID, urls: Sequence[str]
     ) -> None:
+        principal = await self._resolve_principal(user_id)
         await self._records.record_cuts(principal, grid_job_id, urls)
 
 
@@ -179,6 +188,7 @@ def build_plugin_registry(
     material_ledger: MaterialLedger,
     http_client: httpx.AsyncClient,
     fetch_url: Callable[[str], str],
+    resolve_principal: Callable[[uuid.UUID], Awaitable[Principal]],
     generation_service: GenerationService | None = None,
     settled_records: SettledRecords | None = None,
     object_store: PublicBucket | None = None,
@@ -192,6 +202,7 @@ def build_plugin_registry(
     """按组合根递进来的运行值把插件类绑好服务登记进来，没给的不登记。
 
     ``fetch_url`` 是本服务下载本桶对象前的地址换算，交给查图片信息与取帧、出图的下载。
+    ``resolve_principal`` 按用户 id 重建用户主体，交给要调领域服务的端口适配器，每次调用各建一次。
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
     媒体生成、切图记录、对象存储或取帧用的编解码（``media_codec``）是装配错误，直接报。
     ``iclip_studio`` 是拆解的配置段，传了就登记 ``video_breakdown``；传了却缺参考视频服务（拆解
@@ -210,7 +221,9 @@ def build_plugin_registry(
             space=space,
             ledger=material_ledger,
             images=(
-                FilmImagesAdapter(generation_service) if generation_service is not None else None
+                RunFilmImagesAdapter(FilmImagesAdapter(generation_service), resolve_principal)
+                if generation_service is not None
+                else None
             ),
         ),
         VideoShots.bind(space=space, ledger=material_ledger),
@@ -238,7 +251,8 @@ def build_plugin_registry(
             )
         plugins.append(
             VideoBreakdownPlugin.bind(
-                space=space, breakdowns=ReferenceBreakdownsAdapter(reference_service)
+                space=space,
+                breakdowns=ReferenceBreakdownsAdapter(reference_service, resolve_principal),
             )
         )
     if shot_video is not None:
@@ -256,7 +270,9 @@ def build_plugin_registry(
             ShotVideo.bind(
                 space=space,
                 ledger=material_ledger,
-                generations=GenerationsAdapter(generation_service, settled_records),
+                generations=GenerationsAdapter(
+                    generation_service, settled_records, resolve_principal
+                ),
                 objects=ObjectWriterAdapter(object_store),
                 paths=MEDIA_PATHS,
                 client=http_client,

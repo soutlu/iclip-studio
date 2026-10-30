@@ -231,7 +231,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         assert tag.generation is not None
         try:
             job = await images.submit(
-                deps.principal,
+                deps.user_id,
                 NodeImageRequest(
                     node=node.attrs["id"],
                     prompt=picture.text,
@@ -255,7 +255,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                     error_message="等超时了；它可能还在后台跑，告诉用户稍后到制作页上看这张图",
                 )
             await asyncio.sleep(IMAGE_POLL_SECONDS)
-            job = await images.get(deps.principal, job.job_id)
+            job = await images.get(deps.user_id, job.job_id)
         return job
 
     async def _load(self, ctx: RunContext[AgentDepsT]) -> Film | list[str]:

@@ -23,7 +23,6 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.harness.background import BackgroundTools, is_receipt, parse_outcome
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import GenericDisplay
@@ -50,24 +49,16 @@ UNREADABLE = "拆解失败，视频无法打开，不要重试，告诉用户换
 CALL_AGAIN = "拆解失败，再调用一次。"
 TRY_LATER = "拆解失败，不要重试，告诉用户稍后再试。"
 
-PRINCIPAL = Principal(
-    kind="user",
-    user_id=USER,
-    permissions=frozenset({"agent:run"}),
-    audit_label="logan",
-    api_key_id=None,
-)
-
 
 class FakeBreakdowns:
     """参考视频拆解的替身：按顺序交出给定的结果，最后一个一直重复；记下每次是谁要的哪条视频。"""
 
     def __init__(self, *results: str | FailedBreakdown) -> None:
         self._results: Sequence[str | FailedBreakdown] = results or (DOCUMENT,)
-        self.calls: list[tuple[Principal, str]] = []
+        self.calls: list[tuple[uuid.UUID, str]] = []
 
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
-        self.calls.append((principal, video_url))
+    async def ensure(self, user_id: uuid.UUID, video_url: str) -> str | FailedBreakdown:
+        self.calls.append((user_id, video_url))
         return self._results[min(len(self.calls), len(self._results)) - 1]
 
 
@@ -77,7 +68,7 @@ def files() -> FakeFileStore:
 
 
 def make_deps() -> AgentRunDeps:
-    return AgentRunDeps(principal=PRINCIPAL, conversation_id="thread-1", user_name="logan")
+    return AgentRunDeps(user_id=USER, conversation_id="thread-1", user_name="logan")
 
 
 def make_ctx(*, retry: int = 0) -> RunContext[object]:
@@ -127,14 +118,14 @@ async def test_a_document_already_in_the_workspace_is_left_alone(files: FakeFile
     assert breakdowns.calls == []
 
 
-async def test_the_breakdown_is_asked_for_the_run_principal_and_written_as_is(
+async def test_the_breakdown_is_asked_for_the_run_owner_and_written_as_is(
     files: FakeFileStore,
 ) -> None:
     breakdowns = FakeBreakdowns(DOCUMENT)
 
     assert await toolset(files, breakdowns).breakdown_video(make_ctx(), VIDEO) == DONE
 
-    assert breakdowns.calls == [(PRINCIPAL, VIDEO)]
+    assert breakdowns.calls == [(USER, VIDEO)]
     stored = await files.read(NAMESPACE, PATH)
     assert stored is not None
     assert stored.content == DOCUMENT, "拆解原文原样保存"

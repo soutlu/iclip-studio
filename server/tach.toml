@@ -176,7 +176,6 @@ depends_on = [
     "iclip.platform.media",
     "iclip.platform.transcript",
     "iclip.harness",
-    "iclip.domains.identity",
     "iclip.domains.agents",
 ]
 

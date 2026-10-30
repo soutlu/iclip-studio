@@ -25,7 +25,7 @@ from iclip.app.plugin_registry import (
     build_plugin_registry,
 )
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
-from iclip.common.errors import ValidationFailed
+from iclip.common.errors import NotFound, ValidationFailed
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
@@ -58,6 +58,7 @@ from tests.helpers.generation import (
     image_request,
     make_job,
 )
+from tests.helpers.identity import FakePrincipals
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import FixedPlugin
 
@@ -128,6 +129,7 @@ def test_shot_video_is_not_registered_unless_the_composition_root_passes_it() ->
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
     )
     assert set(built) == {"workspace", "iclip_studio", "video_shots"}
 
@@ -140,6 +142,7 @@ def test_plugins_without_their_own_config_are_always_registered() -> None:
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
     )
 
     resolved = mount(("workspace", "iclip_studio", "video_shots"), built)
@@ -185,6 +188,7 @@ async def test_video_breakdown_breaks_videos_down_through_the_reference_service(
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(STUDIO_PRINCIPAL),
         iclip_studio=STUDIO,
         reference_service=cast("ReferenceService", references),
     )
@@ -197,7 +201,8 @@ async def test_video_breakdown_breaks_videos_down_through_the_reference_service(
     assert isinstance(background, BackgroundTools), "breakdown_video 要挂着后台工具才在后台跑"
     assert isinstance(studio, IclipStudio), "后台工具只跟着 video_breakdown 挂"
     assert isinstance(capability.breakdowns, ReferenceBreakdownsAdapter)
-    assert await capability.breakdowns.ensure(STUDIO_PRINCIPAL, STUDIO_VIDEO) == "# 出场元素"
+    owner = STUDIO_PRINCIPAL.user_id
+    assert await capability.breakdowns.ensure(owner, STUDIO_VIDEO) == "# 出场元素"
     assert references.asked == [(STUDIO_PRINCIPAL, STUDIO_VIDEO)]
     assert built["video_breakdown"].required_plugins() == ("workspace",)
 
@@ -209,6 +214,7 @@ def test_video_breakdown_without_the_reference_service_is_an_assembly_error() ->
             material_ledger=FakeMaterialLedger(),
             http_client=idle_client(),
             fetch_url=as_is,
+            resolve_principal=FakePrincipals(),
             object_store=MemoryObjectStore(),
             iclip_studio=STUDIO,
         )
@@ -225,6 +231,7 @@ def test_shot_video_passed_without_its_backing_is_an_assembly_error(
             material_ledger=FakeMaterialLedger(),
             http_client=idle_client(),
             fetch_url=as_is,
+            resolve_principal=FakePrincipals(),
             shot_video=shot_video_settings,
         )
 
@@ -240,6 +247,7 @@ def test_shot_video_is_registered_when_backed(
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
@@ -263,6 +271,7 @@ def test_shot_video_requires_workspace_and_video(
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
@@ -284,6 +293,7 @@ def test_the_display_registry_merges_every_display_source(
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
@@ -316,11 +326,13 @@ async def test_generations_adapter_translates_and_reports_bad_parameters() -> No
     """生成域定义请求约束，适配器负责映射参数与错误。"""
 
     adapter = GenerationsAdapter(
-        cast("GenerationService", object()), cast("SettledRecords", object())
+        cast("GenerationService", object()),
+        cast("SettledRecords", object()),
+        FakePrincipals(STUDIO_PRINCIPAL),
     )
     with pytest.raises(InvalidImageRequest, match="aspect_ratio"):
         await adapter.submit(
-            cast("Principal", object()),
+            STUDIO_PRINCIPAL.user_id,
             ImageRequest(
                 prompt="猫",
                 model="nano_banana_pro",
@@ -346,10 +358,12 @@ async def test_generations_adapter_carries_the_conversation_onto_the_job() -> No
 
     conversation_id = uuid.uuid4()
     adapter = GenerationsAdapter(
-        cast("GenerationService", _Recording()), cast("SettledRecords", object())
+        cast("GenerationService", _Recording()),
+        cast("SettledRecords", object()),
+        FakePrincipals(STUDIO_PRINCIPAL),
     )
     await adapter.submit(
-        cast("Principal", object()),
+        STUDIO_PRINCIPAL.user_id,
         ImageRequest(
             prompt="猫",
             model="nano_banana_pro",
@@ -518,11 +532,13 @@ async def test_generations_adapter_turns_intake_rejection_into_a_fixable_error()
             raise ValidationFailed("nano_banana_pro 不支持分辨率 8k")
 
     adapter = GenerationsAdapter(
-        cast("GenerationService", _Rejecting()), cast("SettledRecords", object())
+        cast("GenerationService", _Rejecting()),
+        cast("SettledRecords", object()),
+        FakePrincipals(STUDIO_PRINCIPAL),
     )
     with pytest.raises(InvalidImageRequest, match="不支持分辨率 8k"):
         await adapter.submit(
-            cast("Principal", object()),
+            STUDIO_PRINCIPAL.user_id,
             ImageRequest(
                 prompt="猫",
                 model="nano_banana_pro",
@@ -534,6 +550,80 @@ async def test_generations_adapter_turns_intake_rejection_into_a_fixable_error()
         )
 
 
+CAT = ImageRequest(
+    prompt="猫",
+    model="nano_banana_pro",
+    aspect_ratio="1:1",
+    resolution="1k",
+    channel="dev",
+    user_name="logan",
+)
+
+
+class _RecordingGenerations:
+    """生成域与切图记录的替身：记下每次收到的主体，查询按受理时的那一行答。"""
+
+    def __init__(self) -> None:
+        self.principals: list[Principal] = []
+        self._jobs: dict[uuid.UUID, GenerationJob] = {}
+
+    async def submit_image(self, principal: Principal, request: ImageGenerationIn) -> GenerationJob:
+        self.principals.append(principal)
+        job = make_job(request)
+        self._jobs[job.id] = job
+        return job
+
+    async def get(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
+        self.principals.append(principal)
+        return self._jobs[job_id]
+
+    async def record_cuts(
+        self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
+    ) -> None:
+        _ = grid_job_id, urls
+        self.principals.append(principal)
+
+
+def recording_generations(
+    principals: FakePrincipals,
+) -> tuple[GenerationsAdapter, _RecordingGenerations]:
+    service = _RecordingGenerations()
+    adapter = GenerationsAdapter(
+        cast("GenerationService", service), cast("SettledRecords", service), principals
+    )
+    return adapter, service
+
+
+async def test_generations_adapter_rebuilds_the_owner_principal_on_every_call() -> None:
+    """端口只收属主 id：每次调用都按它重建一次主体，生成域收到的就是重建出的那一个。"""
+
+    principals = FakePrincipals(STUDIO_PRINCIPAL)
+    adapter, service = recording_generations(principals)
+    owner = STUDIO_PRINCIPAL.user_id
+
+    job = await adapter.submit(owner, CAT)
+    await adapter.get(owner, job.job_id)
+    await adapter.record_cuts(owner, job.job_id, ["https://cdn.test/cells/S1-1.jpg"])
+
+    assert principals.asked == [owner, owner, owner]
+    assert service.principals == [STUDIO_PRINCIPAL] * 3
+
+
+async def test_generations_adapter_lets_a_resolver_failure_through() -> None:
+    """属主账号不在了：重建主体的错误原样抛出，生成域一次都不调。"""
+
+    adapter, service = recording_generations(FakePrincipals())
+    owner = STUDIO_PRINCIPAL.user_id
+
+    with pytest.raises(NotFound, match="用户不存在"):
+        await adapter.submit(owner, CAT)
+    with pytest.raises(NotFound, match="用户不存在"):
+        await adapter.get(owner, uuid.uuid4())
+    with pytest.raises(NotFound, match="用户不存在"):
+        await adapter.record_cuts(owner, uuid.uuid4(), ["https://cdn.test/cells/S1-1.jpg"])
+    assert service.principals == []
+
+
 def cutter(user_id: uuid.UUID) -> Principal:
     return Principal(
         kind="user",
@@ -543,8 +633,8 @@ def cutter(user_id: uuid.UUID) -> Principal:
     )
 
 
-async def test_cut_cells_are_recorded_against_their_grid_under_the_run_principal() -> None:
-    """切出来的每一格各落一条切图：来源是宫格，对话与需求单抄宫格，属主是运行主体，与地址同序。"""
+async def test_cut_cells_are_recorded_against_their_grid_under_the_run_owner() -> None:
+    """切出来的每一格各落一条切图：来源是宫格，对话与需求单抄宫格，属主是运行属主，与地址同序。"""
 
     owner = uuid.uuid4()
     grid = make_job(
@@ -556,10 +646,12 @@ async def test_cut_cells_are_recorded_against_their_grid_under_the_run_principal
         output=GenerationOutput(url="https://cdn.test/grid.png"),
     )
     repo = InMemoryGenerationRepository([grid])
-    adapter = GenerationsAdapter(cast("GenerationService", object()), SettledRecords(repo))
+    adapter = GenerationsAdapter(
+        cast("GenerationService", object()), SettledRecords(repo), FakePrincipals(cutter(owner))
+    )
     urls = ["https://cdn.test/cells/S1-1.jpg", "https://cdn.test/cells/S2-1.jpg"]
 
-    await adapter.record_cuts(cutter(owner), grid.id, urls)
+    await adapter.record_cuts(owner, grid.id, urls)
 
     cells = [job for job in repo.jobs.values() if job.operation == "cut"]
     assert [job.output.url for job in cells] == urls
@@ -592,10 +684,12 @@ async def test_cutting_from_anything_but_a_finished_image_is_a_bug(grid_state: s
         )
     )
     repo = InMemoryGenerationRepository([grid])
-    adapter = GenerationsAdapter(cast("GenerationService", object()), SettledRecords(repo))
+    adapter = GenerationsAdapter(
+        cast("GenerationService", object()), SettledRecords(repo), FakePrincipals(cutter(owner))
+    )
 
     with pytest.raises(RuntimeError, match="宫格"):
-        await adapter.record_cuts(cutter(owner), grid.id, ["https://cdn.test/cells/S1-1.jpg"])
+        await adapter.record_cuts(owner, grid.id, ["https://cdn.test/cells/S1-1.jpg"])
     assert list(repo.jobs) == [grid.id]
 
 
@@ -613,6 +707,7 @@ def test_shot_video_refuses_to_mount_when_its_image_model_is_not_wired(
             object_store=MemoryObjectStore(),
             http_client=idle_client(),
             fetch_url=as_is,
+            resolve_principal=FakePrincipals(),
             shot_video=shot_video_settings,
             image_models=frozenset({"别的一家"}),
             media_codec=SOFTWARE,
@@ -625,6 +720,7 @@ def test_video_mounts_without_generation_or_object_store(video_settings: Resolve
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         video=video_settings,
     )
     resolved = mount(("workspace", "video"), built)
@@ -645,6 +741,7 @@ def test_video_is_unavailable_without_understanding() -> None:
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
     )
     assert "video" not in built
 
@@ -660,6 +757,7 @@ def everything_registered(
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         video=video_settings,
         shot_video=shot_video_settings,
         iclip_studio=STUDIO,
@@ -703,7 +801,9 @@ def test_the_spec_schema_lists_every_plugin_without_its_services(
 
 
 def run_deps() -> AgentRunDeps:
-    return AgentRunDeps(principal=STUDIO_PRINCIPAL, conversation_id="thread-1", user_name="logan")
+    return AgentRunDeps(
+        user_id=STUDIO_PRINCIPAL.user_id, conversation_id="thread-1", user_name="logan"
+    )
 
 
 async def tools_seen(agent: Agent[AgentRunDeps, str]) -> list[str]:

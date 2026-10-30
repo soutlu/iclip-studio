@@ -26,7 +26,6 @@ from structlog.testing import capture_logs
 
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.generation.module import IMAGE_MODEL_SPECS
-from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
 from iclip.platform.media.codec import SOFTWARE
@@ -86,17 +85,7 @@ FAST = GenerationPolicy(
 
 
 def make_deps() -> AgentRunDeps:
-    return AgentRunDeps(
-        principal=Principal(
-            kind="user",
-            user_id=USER,
-            permissions=frozenset({"agent:run"}),
-            audit_label="logan",
-            api_key_id=None,
-        ),
-        conversation_id=CONVERSATION,
-        user_name="logan",
-    )
+    return AgentRunDeps(user_id=USER, conversation_id=CONVERSATION, user_name="logan")
 
 
 def make_context(deps: object) -> RunContext[object]:
@@ -903,7 +892,7 @@ async def test_cutting_a_grid_downloads_it_from_the_rewritten_address(
 
     with pytest.raises(ToolFailed):
         await capability.generator.cut(
-            make_deps().principal,
+            make_deps().user_id,
             job,
             object_keys=["k"],
             aspect=None,

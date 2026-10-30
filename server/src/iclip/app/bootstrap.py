@@ -638,11 +638,17 @@ def build_app(
             return {}
         return await generation.service.latest_master_by_conversation(conversation_ids)
 
+    async def user_principal(user_id: uuid.UUID) -> Principal:
+        """按账号当下的角色重建用户主体；账号不存在抛 NotFound，已停用抛 AuthenticationFailed。"""
+
+        return identity.service.principal_for_user(await identity.service.get_account(user_id))
+
     plugins = build_plugin_registry(
         workspace_store=announcing_workspace_store,
         material_ledger=material_ledger,
         http_client=http_client,
         fetch_url=fetch_url,
+        resolve_principal=user_principal,
         generation_service=generation.service if generation is not None else None,
         settled_records=settled_records,
         image_models=generation.image_models if generation is not None else frozenset(),
@@ -786,9 +792,10 @@ def build_app(
             )
 
     async def deps_for_prompt(row: JobRow) -> AgentRunDeps:
-        account = await identity.service.get_account(row.owner_user_id)
+        # 开跑闸门：属主账号不存在或已停用，这次运行在这里失败。
+        await user_principal(row.owner_user_id)
         return AgentRunDeps(
-            principal=identity.service.principal_for_user(account),
+            user_id=row.owner_user_id,
             conversation_id=row.conversation_id,
             user_name=row.user_name,
         )

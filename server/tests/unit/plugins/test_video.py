@@ -20,7 +20,6 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
@@ -79,17 +78,7 @@ def tools(capability: Video[object]) -> VideoToolset[object]:
 
 
 def make_deps() -> AgentRunDeps:
-    return AgentRunDeps(
-        principal=Principal(
-            kind="user",
-            user_id=USER,
-            permissions=frozenset({"agent:run"}),
-            audit_label="logan",
-            api_key_id=None,
-        ),
-        conversation_id="thread-1",
-        user_name="logan",
-    )
+    return AgentRunDeps(user_id=USER, conversation_id="thread-1", user_name="logan")
 
 
 def make_context(deps: object) -> RunContext[object]:

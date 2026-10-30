@@ -13,7 +13,6 @@ from pydantic_ai.usage import RunUsage
 
 from iclip.common.shot_prompt import OUTPUT_CONSTRAINT, format_shot_prompt
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayEntry
@@ -75,7 +74,7 @@ class FakeNodeImages:
             return NodeImageJob(job_id, "failed", error_message=reason)
         return NodeImageJob(job_id, "completed", output_url=self.url_of(request.node))
 
-    async def submit(self, principal: Principal, request: NodeImageRequest) -> NodeImageJob:
+    async def submit(self, user_id: uuid.UUID, request: NodeImageRequest) -> NodeImageJob:
         if request.node in self.rejecting:
             raise InvalidNodeImageRequest(self.rejecting[request.node])
         self.requests.append(request)
@@ -85,7 +84,7 @@ class FakeNodeImages:
             return NodeImageJob(job_id, "submitted")
         return self._settled(job_id, request)
 
-    async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob:
+    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> NodeImageJob:
         request, left = self._jobs[job_id]
         if left > 1:
             self._jobs[job_id] = (request, left - 1)
@@ -110,17 +109,7 @@ def ledger() -> FakeMaterialLedger:
 
 @pytest.fixture
 def ctx() -> RunContext[object]:
-    deps = AgentRunDeps(
-        principal=Principal(
-            kind="user",
-            user_id=USER,
-            permissions=frozenset({"agent:run"}),
-            audit_label="logan",
-            api_key_id=None,
-        ),
-        conversation_id="thread-1",
-        user_name="logan",
-    )
+    deps = AgentRunDeps(user_id=USER, conversation_id="thread-1", user_name="logan")
     return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
 
 

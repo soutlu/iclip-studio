@@ -19,7 +19,6 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.platform.db.engine import build_engine
 from iclip.platform.file_store.pg import PgFileStore
 from iclip.platform.file_store.store import FileSpace
@@ -50,17 +49,7 @@ def conversation_id() -> str:
 
 
 def make_deps(conversation_id: str) -> AgentRunDeps:
-    return AgentRunDeps(
-        principal=Principal(
-            kind="user",
-            user_id=USER,
-            permissions=frozenset({"agent:run"}),
-            audit_label="logan",
-            api_key_id=None,
-        ),
-        conversation_id=conversation_id,
-        user_name="logan",
-    )
+    return AgentRunDeps(user_id=USER, conversation_id=conversation_id, user_name="logan")
 
 
 async def call_once(

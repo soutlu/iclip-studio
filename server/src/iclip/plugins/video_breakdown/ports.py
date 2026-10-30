@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Literal, Protocol
-
-from iclip.domains.identity.public import Principal
 
 
 class BreakdownError(RuntimeError):
@@ -56,8 +55,9 @@ class FailedBreakdown:
 class ReferenceBreakdowns(Protocol):
     """参考视频的拆解：所有对话与资料库共用一份，按视频地址认。"""
 
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
-        """交回这条视频的拆解文档：已有就直接给；没有或上次没拆成就排一次拆解，等到出结果。"""
+    async def ensure(self, user_id: uuid.UUID, video_url: str) -> str | FailedBreakdown:
+        """交回这条视频的拆解文档：已有就直接给；没有或上次没拆成就排一次拆解，等到出结果。
+        ``user_id`` 是运行属主，实现方每次按它重建主体。"""
         ...
 
 

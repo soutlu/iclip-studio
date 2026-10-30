@@ -6,7 +6,8 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from iclip.domains.identity.models import ApiKeyRecord, UserAccount
+from iclip.common.errors import NotFound
+from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
 
 
 def make_account(
@@ -33,6 +34,22 @@ def make_account(
         created_at=datetime.now(UTC),
         last_login_at=None,
     )
+
+
+class FakePrincipals:
+    """组合根「按用户 id 重建主体」那一步的替身：认得的 id 交回给定主体，其余与真的一样抛
+    ``NotFound``；记下每次问的 id。"""
+
+    def __init__(self, *principals: Principal) -> None:
+        self._principals = {principal.user_id: principal for principal in principals}
+        self.asked: list[uuid.UUID] = []
+
+    async def __call__(self, user_id: uuid.UUID) -> Principal:
+        self.asked.append(user_id)
+        principal = self._principals.get(user_id)
+        if principal is None:
+            raise NotFound("用户不存在")
+        return principal
 
 
 class InMemoryUserRepository:

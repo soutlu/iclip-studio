@@ -79,7 +79,7 @@ lifespan 启动运行驱动、已启用的生成队列、参考视频的拆解�
 
 HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只解析，端点级权限在路由上以 `Security` 声明并随合同导出，行级归属与条件性判断在业务用例执行；WebSocket 入口另行校验 Origin，订阅时校验对话可见性。钥匙替人办事不在中间件里：建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传六个写入口拿到请求体后各调一次 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs`，持 `users:act_as` 的 key 带 `user_name` 时就在这一步把主体换成那个人，下游照常只消费主体。帧的投递范围见 [conventions §5](../contract/conventions.md#5-agent-对话-transcript)。SSO callback 完成验证、账号关联与本地 cookie 签发；配置 PMS 时同步用户资料，失败即终止登录。后续普通请求不再调用 SSO/PMS。
 
-运行通过 `AgentRunDeps` 向工具传递可信主体与对话 ID，业务含义和权限约束见 [CONTEXT.md](CONTEXT.md)。harness 只传递 deps，不解包业务字段；工具所需服务由组合根闭包注入，不放进 deps。客户端 state 不作为运行身份或服务来源。
+运行通过 `AgentRunDeps` 向工具传递属主用户 ID 与对话 ID，业务含义和权限约束见 [CONTEXT.md](CONTEXT.md)。harness 只传递 deps，不解包业务字段；工具所需服务由组合根闭包注入，不放进 deps。插件声明的端口里，要主体才能调的服务只收属主用户 ID；组合根的端口适配器每次调用都按它重建主体，再照常调服务。客户端 state 不作为运行身份或服务来源。
 
 跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的三个端口：两个由组合根接到生成域，一个查这次上传记过没有，一个落一条上传记录并交回最终地址，这一步只要生成仓储，媒体生成没开也照落；第三个判音乐要挂的对话是不是主体自己的，接到对话域。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
 
