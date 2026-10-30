@@ -30,6 +30,8 @@ import {
 
 afterEach(() => vi.restoreAllMocks())
 
+// OSS 地址：画面行按它取截帧（见 videoSnapshotUrl），能读出每块画的是素材的哪一段
+const OSS = 'https://bucket.oss-cn-hangzhou.aliyuncs.com'
 const shots = shotsOf({ keyframes: [0, 1, 2, 3, 4, 5], duration: 6 })
 let minute = 0
 const edit = ([start, end]: [number, number], spec: Partial<GenerationJob> = {}) => {
@@ -40,7 +42,7 @@ const edit = ([start, end]: [number, number], spec: Partial<GenerationJob> = {})
     sourceJobId: 'root',
     rangeStartMs: start * 1000,
     rangeEndMs: end * 1000,
-    outputUrl: `https://oss.example/edit-${minute}.mp4`,
+    outputUrl: `${OSS}/edit-${minute}.mp4`,
     createdAt: `2026-10-28T10:${String(minute).padStart(2, '0')}:00Z`,
     ...spec,
   })
@@ -61,7 +63,7 @@ const blocks = editBlocksOf(
 )
 const source: DraftSource = {
   rootId: 'root',
-  rootUrl: 'https://oss.example/root.mp4',
+  rootUrl: `${OSS}/root.mp4`,
   duration: 6,
   shots,
   edits: readyEditsOf(blocks),
@@ -603,7 +605,19 @@ describe('拖草稿块的修剪把手', () => {
   const handlesBox = () => boxOf(pressStart().parentElement)
   const ringBox = () => boxOf(selectionBox.current)
   const trimCut = () => screen.queryByTestId('trim-cut')
-  const trimExtend = () => screen.queryByTestId('trim-extend')
+  const itemOf = (draft: Draft, id: string) => {
+    const item = draftItemsOf(source, draft).find((candidate) => candidate.id === id)
+    if (item === undefined) throw new Error('草稿里没有这一块')
+    return item
+  }
+  /** 除了名字是 `name` 的那块，草稿里别的块此刻的左边与宽（`layout` 给出时从它里面取）。 */
+  const othersOf = (name: RegExp, layout = draftLayout()) =>
+    layout.filter(([label]) => !name.test(String(label)))
+  /** 一块的画面行里各格截的是素材的哪一刻（秒）。 */
+  const framesOf = (group: HTMLElement) =>
+    [...group.querySelectorAll('img')].map(
+      (image) => Number(/t_(\d+)/.exec(image.getAttribute('src') ?? '')?.[1]) / 1000,
+    )
 
   it('左把手往里裁：拖动中所有块不动，剪掉的那段调暗，选中描边与把手框住保留段，工具条时间在把手处；松手才提交、首尾接上', () => {
     layOut()
@@ -615,7 +629,6 @@ describe('拖草稿块的修剪把手', () => {
     fireEvent.pointerMove(start, { pointerId: 1, clientX: 530 })
     expect(draftLayout()).toEqual(before)
     expect(boxOf(trimCut())).toEqual(spanAt(4, 0.3))
-    expect(trimExtend()).toBeNull()
     expect(handlesBox()).toEqual(spanAt(4.3, 0.7))
     expect(ringBox()).toEqual(spanAt(4.3, 0.7))
     // 舞台停在拖动中草稿里这块的开头（合成 4 秒），工具条时间写把手所在的标尺位置 4.3 秒
@@ -659,7 +672,7 @@ describe('拖草稿块的修剪把手', () => {
     expect(trimCut()).toBeNull()
   })
 
-  it('左把手往外拉长：拖动中所有块不动，拉长出来的那段画一个框、盖在前一块上；松手后首尾接上', () => {
+  it('左把手往外拉长：被拖的块画成一整块（已提交与拉长后合起来），里面是拉回来的画面，盖在前一块上；别的块不动；松手后首尾接上', () => {
     layOut()
     const { on } = renderEditing(cut, selected)
     const before = draftLayout()
@@ -667,14 +680,16 @@ describe('拖草稿块的修剪把手', () => {
     fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 500 })
     // 往左 50px：开头早 0.5 秒，到 3.5 秒
     fireEvent.pointerMove(start, { pointerId: 1, clientX: 450 })
-    expect(draftLayout()).toEqual(before)
-    const extend = boxOf(trimExtend())
-    expect(extend).toEqual(spanAt(3.5, 0.5))
-    // 框在第 1 段（3–4 秒）的范围里
+    expect(othersOf(/第 2 段/)).toEqual(othersOf(/第 2 段/, before))
+    // 一个元素：已提交 4–4.5 秒 ∪ 拉长后 3.5–4.5 秒，画面从拉长后的开头（这一段的 1.0 秒）起
+    const dragged = groupOf(draftBlock(/第 2 段/))
+    expect(boxOf(dragged)).toEqual(spanAt(3.5, 1))
+    expect(framesOf(dragged)).toEqual([1.25, 1.75])
+    // 盖在第 1 段（3–4 秒）后一半上
     const previous = boxOf(groupOf(draftBlock(/第 1 段/)))
-    expect(extend.left).toBeGreaterThan(previous.left)
-    expect(extend.left + extend.width).toBeLessThanOrEqual(previous.left + previous.width)
+    expect(previous).toEqual(spanAt(3, 1))
     expect(trimCut()).toBeNull()
+    expect(handlesBox()).toEqual(spanAt(3.5, 1))
     expect(ringBox()).toEqual(spanAt(3.5, 1))
     expect(on.onTrimPreview).toHaveBeenLastCalledWith(
       expect.objectContaining({ seek: { clock: 4 }, shown: 3.5 }),
@@ -685,7 +700,69 @@ describe('拖草稿块的修剪把手', () => {
     expect(on.onTrim).toHaveBeenCalledWith({ id: selected.id, edge: 'start', t0: 1, t1: 2 })
     expect(boxOf(groupOf(draftBlock(/第 2 段/)))).toEqual(spanAt(4, 1))
     expect(leftOf(/^镜头 6 ·/)).toBe(spanAt(5, 1).left)
-    expect(trimExtend()).toBeNull()
+  })
+
+  it('前一块很短：往回拉的这块整块盖住它，它自己不动', () => {
+    layOut()
+    // 第 1 段开头也剪到 0.5 秒：第 1 段在 3–3.5 秒，第 2 段在 3.5–4 秒
+    const draft = trimItem(cut, itemOf(cut, `${first.id}#1`), { t0: 0.5, t1: 1 })
+    renderEditing(draft, selected)
+    const start = pressStart()
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 500 })
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 450 })
+    const previous = boxOf(groupOf(draftBlock(/第 1 段/)))
+    const dragged = boxOf(groupOf(draftBlock(/第 2 段/)))
+    expect(previous).toEqual(spanAt(3, 0.5))
+    expect(dragged).toEqual(spanAt(3, 1))
+    expect(dragged.left).toBeLessThanOrEqual(previous.left)
+    expect(dragged.left + dragged.width).toBeGreaterThanOrEqual(previous.left + previous.width)
+  })
+
+  it('第一块左把手往回拉：左边钉在 0，拉回来的画面在块的开头、向右变长盖在后一块上，把手停在 0；松手后后面的块往右滑', () => {
+    layOut()
+    // 镜头 1 开头剪到 0.5 秒：它在 0–0.5 秒，镜头 2 接在 0.5 秒
+    const draft = trimItem(EMPTY_DRAFT, itemOf(EMPTY_DRAFT, 'shot-1'), { t0: 0.5, t1: 1 })
+    const { on } = renderEditing(draft, { kind: 'draft', id: 'shot-1' })
+    const before = draftLayout()
+    const start = pressStart()
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 300 })
+    // 往左 30px：开头早 0.3 秒，到原片 0.2 秒
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 270 })
+    const dragged = groupOf(draftBlock(/^镜头 1 ·/))
+    expect(boxOf(dragged)).toEqual(spanAt(0, 0.8))
+    expect(framesOf(dragged)).toEqual([0.25, 0.75])
+    // 盖在镜头 2（0.5–1.5 秒）上，后面的块都不动
+    expect(othersOf(/^镜头 1 ·/)).toEqual(othersOf(/^镜头 1 ·/, before))
+    expect(handlesBox()).toEqual(spanAt(0, 0.8))
+    expect(ringBox()).toEqual(spanAt(0, 0.8))
+    expect(on.onTrimPreview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ seek: { clock: 0 }, shown: 0 }),
+    )
+
+    fireEvent.pointerUp(start, { pointerId: 1 })
+    expect(on.onTrim).toHaveBeenCalledWith({ id: 'shot-1', edge: 'start', t0: 0.2, t1: 1 })
+    expect(boxOf(groupOf(draftBlock(/^镜头 1 ·/)))).toEqual(spanAt(0, 0.8))
+    expect(leftOf(/^镜头 2 ·/)).toBe(spanAt(0.8, 1).left)
+  })
+
+  it('把手丢了指针捕获后在别处松手：拖动结束并提交，整块回到首尾相接的样子，之后指针再动也不跟', () => {
+    layOut()
+    const { on } = renderEditing(cut, selected)
+    const start = pressStart()
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 500 })
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 450 })
+    expect(boxOf(groupOf(draftBlock(/第 2 段/)))).toEqual(spanAt(3.5, 1))
+    // 浏览器窗口外松开：把手先丢了捕获，松手只到 window
+    fireEvent.lostPointerCapture(start, { pointerId: 1 })
+    fireEvent.pointerUp(window, { pointerId: 1 })
+    expect(on.onTrim).toHaveBeenCalledTimes(1)
+    expect(on.onTrim).toHaveBeenCalledWith({ id: selected.id, edge: 'start', t0: 1, t1: 2 })
+    expect(on.onTrimPreview).toHaveBeenLastCalledWith(undefined)
+    expect(boxOf(groupOf(draftBlock(/第 2 段/)))).toEqual(spanAt(4, 1))
+    expect(handlesBox()).toEqual(spanAt(4, 1))
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 420 })
+    expect(boxOf(groupOf(draftBlock(/第 2 段/)))).toEqual(spanAt(4, 1))
+    expect(on.onTrim).toHaveBeenCalledTimes(1)
   })
 })
 

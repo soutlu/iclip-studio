@@ -371,12 +371,21 @@ describe('修剪一串首尾相接的块：松手后滑到首尾相接的位置'
 describe('trimSpans', () => {
   // 这一块在 2–4 秒（长 2 秒）
   it.each([
-    ['左把手往里裁', 'start', 1.5, { at: 2.5, len: 1.5 }, { at: 2, len: 0.5 }, undefined],
-    ['左把手往外拉长', 'start', 2.5, { at: 1.5, len: 2.5 }, undefined, { at: 1.5, len: 0.5 }],
-    ['右把手往里裁', 'end', 1.5, { at: 2, len: 1.5 }, { at: 3.5, len: 0.5 }, undefined],
-    ['右把手往外拉长', 'end', 2.5, { at: 2, len: 2.5 }, undefined, { at: 4, len: 0.5 }],
-    ['长度没变', 'start', 2, { at: 2, len: 2 }, undefined, undefined],
-  ] as const)('%s：保留段、要剪掉的段与拉长出来的段', (_, edge, next, kept, cut, added) => {
-    expect(trimSpans(edge, { at: 2, len: 2 }, next)).toEqual({ kept, cut, added })
+    ['左把手往里裁', 'start', 1.5, { at: 2, len: 2 }, { at: 2.5, len: 1.5 }, { at: 2, len: 0.5 }],
+    ['左把手往外拉长', 'start', 2.5, { at: 1.5, len: 2.5 }, { at: 1.5, len: 2.5 }, undefined],
+    ['右把手往里裁', 'end', 1.5, { at: 2, len: 2 }, { at: 2, len: 1.5 }, { at: 3.5, len: 0.5 }],
+    ['右把手往外拉长', 'end', 2.5, { at: 2, len: 2.5 }, { at: 2, len: 2.5 }, undefined],
+    ['长度没变', 'start', 2, { at: 2, len: 2 }, { at: 2, len: 2 }, undefined],
+  ] as const)('%s：整块、修剪后的范围与要剪掉的段', (_, edge, next, block, kept, cut) => {
+    expect(trimSpans(edge, { at: 2, len: 2 }, next)).toEqual({ block, kept, cut })
+  })
+
+  it('左把手往外拉长越过 0：整块左边钉在 0、向右变长，修剪后的范围从 0 起', () => {
+    // 这一块在 0.25–2.25 秒，开头拉早 0.5 秒
+    expect(trimSpans('start', { at: 0.25, len: 2 }, 2.5)).toEqual({
+      block: { at: 0, len: 2.5 },
+      kept: { at: 0, len: 2.5 },
+      cut: undefined,
+    })
   })
 })

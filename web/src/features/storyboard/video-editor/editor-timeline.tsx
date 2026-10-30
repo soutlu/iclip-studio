@@ -244,7 +244,7 @@ const itemIn = (items: readonly DraftItem[], id: string) => {
 
 /**
  * 拖草稿块的修剪把手时这一块按已提交的布局怎么画（见 `trimSpans`）：`committed` 是草稿本身，`step` 是拖动中的
- * 样子。
+ * 样子。`face` 是画出来的这一整块：从 `block` 起止，里面是已提交与修剪后两段来源时间合起来的画面。
  */
 const draftTrimOf = (
   step: Extract<TrimStep, { kind: 'draft' }>,
@@ -252,7 +252,16 @@ const draftTrimOf = (
 ) => {
   const { id, edge } = step.change
   const item = itemIn(committed, id)
-  return { edge, ...trimSpans(edge, { at: item.at, len: item.d }, itemIn(step.items, id).d) }
+  const trimmed = itemIn(step.items, id)
+  const spans = trimSpans(edge, { at: item.at, len: item.d }, trimmed.d)
+  const face: DraftItem = {
+    ...item,
+    t0: Math.min(item.t0, trimmed.t0),
+    t1: Math.max(item.t1, trimmed.t1),
+    at: spans.block.at,
+    d: spans.block.len,
+  }
+  return { id, edge, face, ...spans }
 }
 
 /** 这一步舞台怎么跟；`committed` 是草稿本身（把手的标尺位置按它的布局算）。 */
@@ -339,9 +348,10 @@ export function ClipsTimeline({
     onCommit: (last) => (last.kind === 'draft' ? onTrim(last.change) : onTrimRun(last.change)),
     onPreview: (preview) =>
       onTrimPreview(preview === null ? undefined : trimPreviewOf(preview.last, items)),
+    onEnd: () => setPressed(undefined),
   })
   const trimming = trimGesture.preview?.last
-  // 拖草稿块的修剪把手：所有块按草稿本身画、不动，只有把手跟手；被拖的这块要剪掉的、拉长出来的那段另外标出
+  // 拖草稿块的修剪把手：别的块按草稿本身画、不动；被拖的这块画成一整块、盖在相邻的块上，要剪掉的那段调暗
   const draftTrim = trimming?.kind === 'draft' ? draftTrimOf(trimming, items) : undefined
   const total = totalOf(items)
   const bounded = Math.max(0, Math.min(clockOn === 'source' ? duration : total, clock))
@@ -533,7 +543,7 @@ export function ClipsTimeline({
 
   // ---- 选中描边：也是弹出卡的定位锚点 ----
   const runningPart = selection?.kind === 'running' ? partOf(selection.id) : undefined
-  // 选中的草稿块此刻框住的那段：拖它的修剪把手时只框保留下来的那部分，把手也摆在它两端
+  // 选中的草稿块此刻框住的那段：拖它的修剪把手时框住修剪后的范围，把手也摆在它两端
   const keptSpan =
     selectedItem === undefined
       ? undefined
@@ -577,14 +587,6 @@ export function ClipsTimeline({
     setPressed({ key, edge, content })
     // 按下就把舞台换到这一端的画面
     onTrimPreview(trimPreviewOf(stepOf({ t0: spec.t0, t1: spec.t1 }), items))
-  }
-  const releaseTrim = (event: PointerEvent<HTMLButtonElement>) => {
-    trimGesture.end(event)
-    setPressed(undefined)
-  }
-  const cancelTrim = () => {
-    trimGesture.cancel()
-    setPressed(undefined)
   }
   /** 方向键：每一步直接提交。 */
   const keyTrim = (
@@ -812,31 +814,38 @@ export function ClipsTimeline({
           />
 
           <div aria-label="草稿" className="video-editor-timeline-track" role="group">
-            {shown.map((item) => (
-              <div
-                className="video-editor-timeline-block is-draft"
-                data-draft-id={item.id}
-                data-hover-id={item.id}
-                data-hover-track="draft"
-                data-linked={linked.get(item.id)}
-                data-slide={`draft:${item.id}`}
-                key={item.id}
-                style={placed(item.at, item.d)}
-              >
-                <button
-                  aria-label={draftName(item)}
-                  aria-pressed={selectedItem?.id === item.id}
-                  className="video-editor-timeline-face ui-focus ui-focus-inline"
-                  onClick={() => {
-                    if (!clicks.take()) onSelectDraft(item.id)
-                  }}
-                  type="button"
-                  {...carryPointer('draft', item.id, () => draftFace(item))}
+            {shown.map((item) => {
+              // 正在拖修剪把手的那块画成一整块：已提交与修剪后合起来的范围与画面
+              const face = draftTrim?.id === item.id ? draftTrim.face : item
+              return (
+                <div
+                  className={cn(
+                    'video-editor-timeline-block is-draft',
+                    face !== item && 'is-trimming',
+                  )}
+                  data-draft-id={item.id}
+                  data-hover-id={item.id}
+                  data-hover-track="draft"
+                  data-linked={linked.get(item.id)}
+                  data-slide={`draft:${item.id}`}
+                  key={item.id}
+                  style={placed(face.at, face.d)}
                 >
-                  <DraftFace item={item} peaksOf={peaksOf} />
-                </button>
-              </div>
-            ))}
+                  <button
+                    aria-label={draftName(item)}
+                    aria-pressed={selectedItem?.id === item.id}
+                    className="video-editor-timeline-face ui-focus ui-focus-inline"
+                    onClick={() => {
+                      if (!clicks.take()) onSelectDraft(item.id)
+                    }}
+                    type="button"
+                    {...carryPointer('draft', item.id, () => draftFace(item))}
+                  >
+                    <DraftFace item={face} peaksOf={peaksOf} />
+                  </button>
+                </div>
+              )
+            })}
             {/* 拿掉的块：在原地收起后消失，不能点 */}
             {reflow.leaving.map((item) => (
               <div
@@ -853,21 +862,13 @@ export function ClipsTimeline({
               </div>
             ))}
           </div>
-          {/* 拖修剪把手：要剪掉的那段调暗，往外拉长多出来的那段画一个框、盖在相邻的块上 */}
+          {/* 拖修剪把手往里裁：要剪掉的那段调暗，盖在被拖的那块上 */}
           {draftTrim?.cut === undefined ? null : (
             <span
               aria-hidden="true"
               className="timeline-trim-cut video-editor-timeline-cut"
               data-testid="trim-cut"
               style={placed(draftTrim.cut.at, draftTrim.cut.len)}
-            />
-          )}
-          {draftTrim?.added === undefined ? null : (
-            <span
-              aria-hidden="true"
-              className="timeline-trim-extend video-editor-timeline-extend"
-              data-testid="trim-extend"
-              style={placed(draftTrim.added.at, draftTrim.added.len)}
             />
           )}
           <div className="video-editor-timeline-drop" ref={dropRef}>
@@ -1031,7 +1032,7 @@ export function ClipsTimeline({
                     onTrim({ id: selectedItem.id, edge, ...range }),
                   )
                 }
-                onPointerCancel={cancelTrim}
+                onPointerCancel={trimGesture.cancel}
                 onPointerDown={(event, edge) =>
                   pressTrim(
                     event,
@@ -1043,7 +1044,7 @@ export function ClipsTimeline({
                   )
                 }
                 onPointerMove={trimGesture.move}
-                onPointerUp={releaseTrim}
+                onPointerUp={trimGesture.end}
                 pressed={pressedEdge(selectedItem.id)}
                 spec={trimSpecOf(handleItem)}
                 valueText={draftLineOf(handleItem)}
@@ -1061,7 +1062,7 @@ export function ClipsTimeline({
                 onKeyDown={(event, edge) =>
                   keyTrim(event, runSpec, edge, (range) => onTrimRun(runChange(edge, range)))
                 }
-                onPointerCancel={cancelTrim}
+                onPointerCancel={trimGesture.cancel}
                 onPointerDown={(event, edge) =>
                   pressTrim(event, RUN_HANDLES, runSpec, edge, (range) => ({
                     kind: 'run',
@@ -1069,7 +1070,7 @@ export function ClipsTimeline({
                   }))
                 }
                 onPointerMove={trimGesture.move}
-                onPointerUp={releaseTrim}
+                onPointerUp={trimGesture.end}
                 pressed={pressedEdge(RUN_HANDLES)}
                 spec={runSpec}
                 valueText={`${spanName(covered)} · 原片 ${secondsText(run.start)} – ${secondsText(run.end)} 秒`}

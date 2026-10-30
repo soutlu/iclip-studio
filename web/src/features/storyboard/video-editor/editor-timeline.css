@@ -131,8 +131,7 @@
     .video-editor-timeline-box,
     .video-editor-timeline-link,
     .video-editor-timeline-trim,
-    .video-editor-timeline-cut,
-    .video-editor-timeline-extend
+    .video-editor-timeline-cut
   ) {
   left: calc(var(--at) * var(--pps) + 1px);
   width: calc(var(--len) * var(--pps) - 2px);
@@ -143,9 +142,13 @@
   height: var(--draft-height);
 }
 
-/* 拖草稿块修剪把手时要剪掉的那段、拉长出来的那段（样子见 timeline.css）：在草稿块上层，选中描边与把手之下。 */
-.video-editor-timeline-cut,
-.video-editor-timeline-extend {
+/* 拖修剪把手时被拖的那块（已提交与修剪后合起来画成一整块）：盖在相邻的块上。 */
+.video-editor-timeline-block.is-trimming {
+  z-index: var(--z-local-2);
+}
+
+/* 拖草稿块修剪把手时要剪掉的那段（样子见 timeline.css）：在被拖的块上层，选中描边与把手之下。 */
+.video-editor-timeline-cut {
   position: absolute;
   top: var(--timeline-track-top);
   z-index: var(--z-local-2);
