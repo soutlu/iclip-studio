@@ -686,3 +686,49 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
   | `POST /agents/{id}/archive` | `subagents` 里有它 |
 
   同一份引用也在读的时候给出：技能详情、供应商列表里的模型与密钥、agent 详情都带 `usedBy`，每项 `{ agentId, agentName, inDraft, inActiveVersion }`，同一个 agent 只有一项，按标识排。
+
+## 20. 运行时服务的实时通道与回调
+
+运行时服务给应用的服务端用，不直达浏览器。HTTP 接口以 [`runtime-openapi.json`](runtime-openapi.json) 为准；本节是它表达不了的两条 WebSocket 与三个回调。帧的模型在 [live/frames.py](../runtime/src/agent_runtime/live/frames.py)，回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)，应用照它们解析。
+
+### 连接
+
+- 两条都在握手时带 `Authorization: Bearer <应用密钥>`，认不出是哪个应用就在握手前以 `1008` 关闭。
+- 服务端每 10 秒发一帧 `ping`（`payload.nonce`），应用回一帧 `pong`；连着 20 秒没收到任何入站帧就以 `1001` 关闭。
+- 出站积压按连接算，超过 2048 帧以 `1013` 关闭，重连后对齐。
+- 信封字段 snake_case，嵌套的 transcript 实体与操作 camelCase（同 §5）；值为空的字段省略。
+
+### 应用事件流 `/v1/events`
+
+一条连接收调用方应用所有会话的事件，别的应用的收不到；连几条收几份。入站帧只用来证明连接活着。
+
+| 帧 | 体 | 什么时候发 |
+|---|---|---|
+| `session.activity` | `{session_id, owner_user_id, activity}`；`activity` 同 `POST /v1/sessions:activities` 每一项 | 会话活动变了 |
+| `fs.changed` | `{session_id, owner_user_id, entries: [{path, change}]}`；`change` 为 `created` / `modified` / `deleted` | 插件写或删会话工作区里的文件、`PUT /v1/sessions/{id}/files/{path}` 写成功；分叉与 `files:copy` 拷进来的不发 |
+
+- 每帧在写入提交之后发出，同一条连接上按提交的先后到达：一条跑完接着起下一条时先 idle 后 busy。
+- 易失：没有连接时不缓存，断线期间的不补；重连后经 `POST /v1/sessions:activities` 与文件列表对齐。
+
+### 对话内容流 `/v1/ws`
+
+订阅规则同 §5「订阅」与「档位」：每段会话一帧 `subscribe_v2`、退订 `unsubscribe_v2`，水位与 `stream_epoch`、档位、补批与 reset、子代理流不属于这段会话时整帧 `ack` `code: 404`（`msg` 是 `agent not in session: <agent>`）、关连接就是全退。不同之处：
+
+- 会话不归调用方应用、不存在、id 不是 UUID，一律在回执 `payload.not_found` 里带上，连接上的其他订阅不动。
+- 没有 `server_hello`，不收 `watch_fs_add` / `watch_fs_remove`：文件变动在事件流上。
+- 帧是 `{type: "transcript.reset" | "transcript.ops", session_id, stream_epoch, payload}`，`payload` 同 §5；信封上没有会话事件的 `epoch` / `seq`，也没有 `timestamp`，应用转给浏览器时自己盖。回执是 `{type: "ack", id, code, msg, payload?: {accepted, not_found}}`。
+- 连接断开时撤掉它的全部订阅；一段会话最后一个订阅撤掉时，运行时放开这段会话的实时状态。
+
+### 回调
+
+每个应用在运行时配置的 `apps.<应用>.hooks` 下写三个地址 `gate`、`run_started`、`turn_started`，三个键都要写，`null` 是不要这个回调；有地址就要给 `token_env`（放回调令牌的环境变量，不少于 32 个字符），`timeout_seconds` 默认 10。运行时按会话归属的应用找地址，`POST` JSON 请求体，带 `Authorization: Bearer <回调令牌>`；超过 `timeout_seconds` 算超时。
+
+| 回调 | 请求体 | 什么时候调 | 失败（非 2xx、超时、连不上） |
+|---|---|---|---|
+| `gate` | `{session_id, owner_user_id, user_name, prompt_id, run_id}`；`run_id` 是这条消息上次挂上的运行，审批或崩溃续跑时有值，首次开跑为 `null` | 每次运行（含续跑）调模型之前，等它答完 | 这次运行失败，消息记 `failed`，运行时记一条带回调名、应用与状态码的日志 |
+| `run_started` | `{session_id, run_id, activity}`；`run_id` 是新运行，`activity` 是会话此刻的活动 | 每次顶层运行挂上租约后，等它答完再往下跑，在这次运行的第一批 transcript 操作之前 | 只记日志 |
+| `turn_started` | `{session_id, text}`；`text` 是这一轮用户消息的文本部分，按换行连接 | 每一轮首次开跑时在后台调一次，审批与崩溃续跑不调；与运行并行，服务关停时没答完的取消 | 只记日志 |
+
+- 顺序：运行开始与轮次开始都发在开跑检查之前，检查不放行时这两个也已经调过。
+- `gate` 与 `run_started` 卡着运行，处理器要快答。
+- 起标题由应用收到 `turn_started` 后自己调 `POST /v1/titles`。

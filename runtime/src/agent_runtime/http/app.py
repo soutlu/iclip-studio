@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import uuid
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import APIRouter, Depends, FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -34,17 +36,21 @@ from agent_runtime.config.model_providers.public import (
     load_declarations,
 )
 from agent_runtime.config.skills.public import SkillsService, SqlSkillStore
+from agent_runtime.file_store.announcing import AnnouncingFileStore, FileChange
 from agent_runtime.file_store.pg import PgFileStore
+from agent_runtime.file_store.store import FileStore
 from agent_runtime.harness.agents import DELEGATE_TOOL
 from agent_runtime.harness.jobs import JobQueue, JobRow
-from agent_runtime.harness.sessions import PgSessionStore
+from agent_runtime.harness.sessions import PgSessionStore, SessionApps
 from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.activity import ActivityState
 from agent_runtime.harness.transcript.history import TranscriptHistory
 from agent_runtime.harness.transcript.runner import ConversationRunner
 from agent_runtime.harness.transcript.service import TranscriptService
 from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.harness.usage_ledger_pg import PgConversationUsage
+from agent_runtime.hooks import AppHooks, GatePayload, RunStartedPayload, TurnStartedPayload
 from agent_runtime.http.admin.agents import create_agent_config_router
 from agent_runtime.http.admin.model_providers import (
     create_default_models_router,
@@ -56,34 +62,44 @@ from agent_runtime.http.auth import build_app_auth
 from agent_runtime.http.errors import install_error_handlers
 from agent_runtime.http.logging import configure_logging
 from agent_runtime.http.sessions import create_sessions_router
+from agent_runtime.http.streams import create_events_router, create_transcript_ws_router
 from agent_runtime.http.transcript import create_transcript_router
 from agent_runtime.http.workspace import create_workspace_router
+from agent_runtime.live.frames import FsChanged, FsChangeEntry, SessionActivity
+from agent_runtime.live.hub import AppEventHub
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.plugins.base import PluginRegistry
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.settings import RuntimeSettings
+from agent_runtime.transcript.wire import SessionActivityOut
 
 TITLE = "agent-runtime"
+
+
+PluginBinder = Callable[[FileStore], PluginRegistry]
+"""拿本服务的工作区存储（写完就发 ``fs.changed`` 的那一份）绑好插件，交回登记表。"""
 
 
 def create_app(
     settings: RuntimeSettings,
     *,
-    plugins: PluginRegistry,
+    plugins: PluginRegistry | PluginBinder,
     credential_probe: CredentialProbe | None = None,
     engine: AsyncEngine | None = None,
     build_model: ModelBuilder = build_runtime_model,
+    hook_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """按设置装出运行时服务。
 
-    只建对象、不连库：engine 建出来时不连接，连接池在第一次请求时才开；运行驱动在 lifespan 里起停，
-    lifespan 结束时关掉自己建的 engine。合同导出因此只 import、建 app、不启动。
+    只建对象、不连库：engine 建出来时不连接，连接池在第一次请求时才开；运行驱动与事件分发在 lifespan 里
+    起停，lifespan 结束时关掉回调用的 HTTP 客户端与自己建的 engine。合同导出因此只 import、建 app、不启动。
 
     ``plugins`` 是交给本服务的插件登记表：agent 装配按它造插件，管理接口校验 agent 配置（插件名、要求
-    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。``credential_probe`` 不给就用真实的试连；
-    ``engine`` 不给就按 ``settings.database_url`` 自己建，给了由调用方负责关；``build_model`` 是测试换
-    模型替身的口子。
+    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区的插件给 ``PluginBinder``，用本服务
+    的工作区存储绑定，写入才会发到应用事件流。``credential_probe`` 不给就用真实的试连；``engine`` 不给就按
+    ``settings.database_url`` 自己建，给了由调用方负责关；``build_model`` 是测试换模型替身的口子，
+    ``hook_transport`` 是测试接住回调请求的口子。
     """
 
     configure_logging(settings.log_level, settings.log_format)
@@ -110,10 +126,41 @@ def create_app(
         probe=credential_probe if credential_probe is not None else PydanticAiCredentialProbe(),
         usages=agent_references,
     )
+
+    # 应用事件流：会话活动与工作区文件变更在写入提交后同步交给集线器，按会话归属的应用分发。
+    session_store = PgSessionStore(active_engine)
+    session_apps = SessionApps(session_store)
+    event_hub = AppEventHub(session_apps.app_of)
+
+    def on_activity(session_id: str, owner: uuid.UUID, state: ActivityState) -> None:
+        event_hub.publish(
+            SessionActivity(
+                session_id=session_id,
+                owner_user_id=str(owner),
+                activity=_activity_out(state),
+            )
+        )
+
+    def on_file_change(
+        owner: uuid.UUID, session_id: uuid.UUID, path: str, change: FileChange
+    ) -> None:
+        event_hub.publish(
+            FsChanged(
+                session_id=str(session_id),
+                owner_user_id=str(owner),
+                entries=(FsChangeEntry(path=path, change=change),),
+            )
+        )
+
+    file_store = PgFileStore(active_engine)
+    # 分叉与按清单拷文件用底下这份，副本不算变更；插件与应用经接口写文件用会通知的那份。
+    announcing_files = AnnouncingFileStore(file_store, on_file_change)
+    registry = plugins if isinstance(plugins, Mapping) else plugins(announcing_files)
+
     agent_config = AgentConfigService(
         agent_store,
         models=ProviderDirectory(model_providers),
-        plugins=RegistryPluginDirectory(plugins),
+        plugins=RegistryPluginDirectory(registry),
         skills=LibrarySkillDirectory(skills),
     )
 
@@ -124,18 +171,17 @@ def create_app(
     usage_ledger = UsageLedger(
         store=PgConversationUsage(active_engine), conversation_of=conversation_of
     )
-    job_queue = JobQueue(active_engine)
-    tool_displays = build_display_registry(plugins)
+    job_queue = JobQueue(active_engine, on_activity=on_activity)
+    tool_displays = build_display_registry(registry)
     transcript_store = TranscriptStore()
     transcript_history = TranscriptHistory(step_store, job_queue, tool_displays, DELEGATE_TOOL)
-    session_store = PgSessionStore(active_engine)
     agent_runtime = AgentRuntime(
         agent_config=agent_config,
         skills=skills,
         model_providers=model_providers,
         sessions=session_store,
         settings=AssemblySettings(
-            plugins=plugins,
+            plugins=registry,
             step_store=step_store,
             usage_ledger=usage_ledger,
             live=transcript_store,
@@ -145,7 +191,6 @@ def create_app(
             build_model=build_model,
         ),
     )
-    file_store = PgFileStore(active_engine)
     material_ledger = PgMaterialLedger(active_engine)
     sessions = SessionService(
         sessions=session_store,
@@ -156,11 +201,44 @@ def create_app(
         ledger=material_ledger,
     )
 
+    # 回调按会话归属的应用找地址；没配回调的应用不在表里。
+    hook_client = httpx.AsyncClient(transport=hook_transport)
+    hooks = AppHooks(
+        hooks={app.id: app.hooks for app in settings.apps if app.hooks is not None},
+        app_of=session_apps.app_of,
+        client=hook_client,
+    )
+
     async def deps_for(row: JobRow) -> AgentRunDeps:
+        # 开跑检查：应用不放行就抛，这次运行记为失败。
+        await hooks.gate(
+            GatePayload(
+                session_id=uuid.UUID(row.conversation_id),
+                owner_user_id=row.owner_user_id,
+                user_name=row.user_name,
+                prompt_id=row.prompt_id,
+                run_id=row.run_id,
+            )
+        )
         return AgentRunDeps(
             user_id=row.owner_user_id,
             conversation_id=row.conversation_id,
             user_name=row.user_name,
+        )
+
+    async def run_started(row: JobRow, run_id: str) -> None:
+        states = await job_queue.activities([row.conversation_id])
+        await hooks.run_started(
+            RunStartedPayload(
+                session_id=uuid.UUID(row.conversation_id),
+                run_id=run_id,
+                activity=_activity_out(states[row.conversation_id]),
+            )
+        )
+
+    async def turn_started(row: JobRow) -> None:
+        await hooks.turn_started(
+            TurnStartedPayload(session_id=uuid.UUID(row.conversation_id), text=row.text)
         )
 
     transcripts = TranscriptService(
@@ -181,22 +259,30 @@ def create_app(
             max_attempts=settings.agent_runs.max_attempts,
             compaction_max_fraction=settings.compaction.max_fraction,
             compaction_keep_messages=settings.compaction.keep_messages,
+            on_turn_started=turn_started,
+            on_run_started=run_started,
             display=tool_displays,
         ),
     )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+        # 分发先起：运行驱动启动时的清扫就可能改活动。
+        await event_hub.start()
         await transcripts.runner.start()
         try:
             yield
         finally:
             await transcripts.runner.shutdown()
+            await event_hub.stop()
+            await hook_client.aclose()
             if owns_engine:
                 await active_engine.dispose()
 
     app = FastAPI(title=TITLE, lifespan=lifespan)
     install_error_handlers(app)
+    # 测试核对连接断开后实时状态有没有放开。
+    app.state.transcript_store = transcript_store
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
@@ -214,11 +300,22 @@ def create_app(
     v1.include_router(create_sessions_router(sessions, job_queue, auth.calling_app))
     v1.include_router(create_transcript_router(transcripts, sessions, auth.calling_app))
     v1.include_router(
-        create_workspace_router(file_store, material_ledger, sessions, auth.calling_app)
+        create_workspace_router(announcing_files, material_ledger, sessions, auth.calling_app)
     )
     v1.include_router(create_agents_router(agent_runtime))
     app.include_router(v1)
+    # WebSocket 不在 v1 的路由组里：组上的 Bearer 依赖只在 HTTP 请求上跑，两条连接自己认应用。
+    app.include_router(create_events_router(auth.identify, event_hub))
+    app.include_router(create_transcript_ws_router(auth.identify, transcripts, sessions))
     return app
 
 
-__all__ = ["TITLE", "create_app"]
+def _activity_out(state: ActivityState) -> SessionActivityOut:
+    return SessionActivityOut(
+        busy=state.busy,
+        pending_interaction=state.pending_interaction,
+        last_turn_reason=state.last_turn_reason,
+    )
+
+
+__all__ = ["TITLE", "PluginBinder", "create_app"]

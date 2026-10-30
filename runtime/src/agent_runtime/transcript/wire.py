@@ -90,6 +90,15 @@ LastTurnReason = Literal["completed", "failed", "aborted"]
 """最近完成轮次的结果。"""
 
 
+class SessionActivityOut(Envelope):
+    """一段会话此刻的活动：三项各自独立，等审批时 ``busy`` 仍为真。"""
+
+    busy: bool
+    pending_interaction: PendingInteraction
+    last_turn_reason: LastTurnReason | None = None
+    """最近完成那一轮的结局；还没有结局为空。"""
+
+
 class SubscribePayload(Envelope):
     """订阅一段对话。``transcript`` 是每个 agent 要哪一档，我们只产出 ``delta``。
 
@@ -242,6 +251,7 @@ __all__ = [
     "RegenerateBody",
     "ResetPayload",
     "RunStatusOut",
+    "SessionActivityOut",
     "SteerRequest",
     "Subscribe",
     "SubscribePayload",

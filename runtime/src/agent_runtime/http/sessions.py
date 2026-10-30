@@ -19,7 +19,7 @@ from pydantic import Field
 from agent_runtime.harness.jobs import JobQueue
 from agent_runtime.http.auth import CallingApp, SessionOwner
 from agent_runtime.service.sessions import SessionService
-from agent_runtime.transcript.wire import Envelope, LastTurnReason, PendingInteraction
+from agent_runtime.transcript.wire import Envelope, SessionActivityOut
 
 MAX_AGENT_ID_CHARS = 128
 """agent 标识的长度上限，与后端建对话的请求体一致。"""
@@ -64,15 +64,6 @@ class FilesCopyOut(Envelope):
 
 class ActivitiesIn(Envelope):
     ids: tuple[uuid.UUID, ...]
-
-
-class SessionActivityOut(Envelope):
-    """一段会话此刻的活动：三项各自独立，等审批时 ``busy`` 仍为真。"""
-
-    busy: bool
-    pending_interaction: PendingInteraction
-    last_turn_reason: LastTurnReason | None = None
-    """最近完成那一轮的结局；还没有结局为空。"""
 
 
 class ActivitiesOut(Envelope):
@@ -178,7 +169,6 @@ __all__ = [
     "BusyOut",
     "FilesCopyIn",
     "FilesCopyOut",
-    "SessionActivityOut",
     "SessionForkIn",
     "SessionOpenIn",
     "create_sessions_router",

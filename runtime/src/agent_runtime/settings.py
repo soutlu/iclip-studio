@@ -10,7 +10,7 @@ from __future__ import annotations
 import hmac
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Final, Literal
 
@@ -19,6 +19,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
     StringConstraints,
     field_validator,
     model_validator,
@@ -38,7 +39,10 @@ DEFAULT_SKILL_CACHE_DIRNAME: Final = "agent-runtime-skills"
 """``agent_runs.skill_cache_dir`` 不写时，技能缓存放在系统临时目录下的这个子目录。"""
 
 MIN_APP_KEY_LENGTH: Final = 32
-"""应用密钥的最短长度，与后端会话密钥同一个下限。"""
+"""应用密钥与回调令牌的最短长度，与后端会话密钥同一个下限。"""
+
+DEFAULT_HOOK_TIMEOUT_SECONDS: Final = 10.0
+"""回调应用时等它答复的上限。"""
 
 RequiredEnv = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -52,11 +56,36 @@ class ConfigSection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class HooksSection(ConfigSection):
+    """运行时回调这个应用的三个地址与回调时带的令牌。
+
+    三个地址的键都必须写，``null`` 表示没有这个回调：接入一个应用时得逐个想清楚要不要。任一地址有值就
+    必须给 ``token_env``，运行时把那个环境变量里的令牌放在 ``Authorization: Bearer`` 里。"""
+
+    token_env: EnvName | None = None
+    gate: HttpUrl | None
+    """开跑检查：每次运行开跑前等它答 2xx，否则这次运行失败。"""
+    run_started: HttpUrl | None
+    """每次顶层运行挂上租约后等它答完再往下跑；失败只记日志。"""
+    turn_started: HttpUrl | None
+    """每一轮开场在后台调一次；失败只记日志。"""
+    timeout_seconds: float = Field(default=DEFAULT_HOOK_TIMEOUT_SECONDS, gt=0)
+
+    @model_validator(mode="after")
+    def _token_when_any_hook(self) -> HooksSection:
+        if self.token_env is None and any(
+            url is not None for url in (self.gate, self.run_started, self.turn_started)
+        ):
+            raise ValueError("配置了回调地址就必须给 token_env")
+        return self
+
+
 class AppSection(ConfigSection):
-    """一个接入的应用：密钥放在哪个环境变量里，能不能用 ``/v1/admin`` 管理接口。"""
+    """一个接入的应用：密钥放在哪个环境变量里，能不能用 ``/v1/admin`` 管理接口，运行时回调它的哪些地址。"""
 
     key_env: EnvName
     admin: bool = False
+    hooks: HooksSection
 
 
 class AgentRunsSection(ConfigSection):
@@ -166,12 +195,24 @@ class CredentialKeysEnv(EnvSettings):
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedHooks:
+    """一个应用的回调：令牌与三个地址，地址为空就是没有这个回调。"""
+
+    token: str = field(repr=False)
+    gate: str | None
+    run_started: str | None
+    turn_started: str | None
+    timeout_seconds: float = DEFAULT_HOOK_TIMEOUT_SECONDS
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedApp:
-    """一个接入的应用：标识、它的密钥与有没有管理权限。"""
+    """一个接入的应用：标识、它的密钥、有没有管理权限与它的回调（三个地址都为空时是 ``None``）。"""
 
     id: str
     key: str
     admin: bool
+    hooks: ResolvedHooks | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,8 +248,38 @@ def _resolve_apps(apps: dict[str, AppSection]) -> tuple[ResolvedApp, ...]:
                 raise RuntimeError(
                     f"应用 {other.id} 与 {app_id} 用了同一把密钥，每个应用要各用各的"
                 )
-        resolved.append(ResolvedApp(id=app_id, key=key, admin=section.admin))
+        resolved.append(
+            ResolvedApp(
+                id=app_id, key=key, admin=section.admin, hooks=_resolve_hooks(app_id, section.hooks)
+            )
+        )
     return tuple(resolved)
+
+
+def _resolve_hooks(app_id: str, section: HooksSection) -> ResolvedHooks | None:
+    """按 ``token_env`` 读出回调令牌；三个地址都为空时没有回调，令牌也不读。"""
+
+    urls = (section.gate, section.run_started, section.turn_started)
+    if all(url is None for url in urls):
+        return None
+    if section.token_env is None:
+        # 配置校验已拦住这种写法；直接建 HooksSection 绕过校验时照样报错。
+        raise RuntimeError(f"应用 {app_id} 配置了回调地址却没有 token_env")
+    token = os.environ.get(section.token_env, "").strip()
+    if not token:
+        raise RuntimeError(f"应用 {app_id} 的回调令牌环境变量 {section.token_env} 没有设置")
+    if len(token) < MIN_APP_KEY_LENGTH:
+        raise RuntimeError(
+            f"应用 {app_id} 的回调令牌（{section.token_env}）长度必须 ≥ {MIN_APP_KEY_LENGTH} 字符"
+        )
+    gate, run_started, turn_started = (None if url is None else str(url) for url in urls)
+    return ResolvedHooks(
+        token=token,
+        gate=gate,
+        run_started=run_started,
+        turn_started=turn_started,
+        timeout_seconds=section.timeout_seconds,
+    )
 
 
 def resolve_settings(config: ServiceConfig) -> RuntimeSettings:
@@ -228,12 +299,15 @@ def resolve_settings(config: ServiceConfig) -> RuntimeSettings:
 __all__ = [
     "CREDENTIAL_ENCRYPTION_KEYS_ENV",
     "DATABASE_URL_ENV",
+    "DEFAULT_HOOK_TIMEOUT_SECONDS",
     "MIN_APP_KEY_LENGTH",
     "AgentRunsSection",
     "AppSection",
     "CompactionSection",
+    "HooksSection",
     "OpsSection",
     "ResolvedApp",
+    "ResolvedHooks",
     "RuntimeSettings",
     "ServiceConfig",
     "load_config",

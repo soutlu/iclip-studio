@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import OrderedDict
 from collections.abc import Collection
 from typing import Final
 
@@ -102,5 +103,56 @@ class PgSessionStore:
                 await conn.execute(select(_ROWS.agent_version_id).where(_ROWS.id == session_id))
             ).scalar_one_or_none()
 
+    async def app_of(self, session_id: uuid.UUID) -> str | None:
+        """会话归哪个应用；没有这个会话给 ``None``。"""
 
-__all__ = ["DB_SCHEMA", "PgSessionStore", "metadata_obj", "sessions_table"]
+        async with self._engine.connect() as conn:
+            return (
+                await conn.execute(select(_ROWS.app_id).where(_ROWS.id == session_id))
+            ).scalar_one_or_none()
+
+
+SESSION_APPS_CACHE_SIZE: Final = 4096
+"""``SessionApps`` 最多记住多少段会话的归属。"""
+
+
+class SessionApps:
+    """按会话 id 查它归哪个应用，记住查到的结果。
+
+    会话的应用开了就不再变，所以查到的可以一直用；没查到的不记，会话随后开了照样查得到。事件推送与回调
+    每次都要按会话找应用，这里省掉每次一查。"""
+
+    def __init__(self, store: PgSessionStore, *, size: int = SESSION_APPS_CACHE_SIZE) -> None:
+        self._store = store
+        self._size = size
+        # 插入顺序当 LRU，命中时移到末尾。
+        self._known: OrderedDict[str, str] = OrderedDict()
+
+    async def app_of(self, session_id: str) -> str | None:
+        """``session_id`` 不是 UUID 或没有这个会话都给 ``None``。"""
+
+        try:
+            parsed = uuid.UUID(session_id)
+        except ValueError:
+            return None
+        key = str(parsed)
+        found = self._known.get(key)
+        if found is not None:
+            self._known.move_to_end(key)
+            return found
+        found = await self._store.app_of(parsed)
+        if found is not None:
+            self._known[key] = found
+            if len(self._known) > self._size:
+                self._known.popitem(last=False)
+        return found
+
+
+__all__ = [
+    "DB_SCHEMA",
+    "SESSION_APPS_CACHE_SIZE",
+    "PgSessionStore",
+    "SessionApps",
+    "metadata_obj",
+    "sessions_table",
+]
