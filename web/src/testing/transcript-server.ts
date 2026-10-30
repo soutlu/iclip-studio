@@ -1,7 +1,7 @@
 /**
  * 照后端订阅语义应答的假服务端，单测用它代替只会记帧的 FakeSocket：REST 页与 WebSocket 共用同一份流状态。
  *
- * 规则与 server/src/iclip/harness/transcript/{store,subscription}.py 一致：
+ * 规则与 runtime/src/agent_runtime/harness/transcript/{store,subscription}.py 一致：
  * - 不带水位、epoch 缺失或对不上、水位超前、要的批次已出日志窗口：只回一帧不带历史轮的 reset；
  * - 否则补发水位之后的批次；之后按档位过滤实时推送，筛空的批次整批不发；
  * - 表里有不属于这段对话的 agent：整帧回 ack code 404；对话不存在：ack 的 not_found 里带上它。

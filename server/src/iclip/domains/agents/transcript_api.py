@@ -14,6 +14,30 @@ from typing import Annotated, Any, Literal, Protocol
 
 import structlog
 from agent_runtime.errors import DomainError
+from agent_runtime.transcript.granularity import (
+    TranscriptGrade,
+    filter_ops_for_grade,
+    grade_for,
+    needs_reset_on_transition,
+)
+from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
+from agent_runtime.transcript.wire import (
+    ApprovalRequest,
+    OpsCatchup,
+    OpsPayload,
+    PromptQueueOut,
+    PromptSubmission,
+    RegenerateBody,
+    ResetPayload,
+    RunStatusOut,
+    SteerRequest,
+    Subscribe,
+    SubscribePayload,
+    TranscriptOps,
+    TranscriptPage,
+    TranscriptReset,
+    Unsubscribe,
+)
 from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
@@ -27,32 +51,16 @@ from iclip.domains.identity.public import (
     websocket_origin_allowed,
     websocket_principal,
 )
-from iclip.platform.transcript.granularity import (
-    TranscriptGrade,
-    filter_ops_for_grade,
-    grade_for,
-    needs_reset_on_transition,
-)
-from iclip.platform.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
-from iclip.platform.transcript.session_events import SessionEventClock
-from iclip.platform.transcript.wire import (
+from iclip.platform.live.frames import (
     Ack,
-    ApprovalRequest,
     ClientFrame,
     FsChanged,
     FsChangeEntry,
     FsChangePayload,
     GenerationChanged,
     GenerationChangedPayload,
-    OpsCatchup,
-    OpsPayload,
     Ping,
     PingPayload,
-    PromptQueueOut,
-    PromptSubmission,
-    RegenerateBody,
-    ResetPayload,
-    RunStatusOut,
     ServerHello,
     ServerHelloPayload,
     SessionCreated,
@@ -63,18 +71,12 @@ from iclip.platform.transcript.wire import (
     SessionUpdated,
     SessionWorkChanged,
     SessionWorkPayload,
-    SteerRequest,
-    Subscribe,
     SubscribeAckPayload,
-    SubscribePayload,
-    TranscriptOps,
-    TranscriptPage,
-    TranscriptReset,
-    Unsubscribe,
     WatchFsAckPayload,
     WatchFsAdd,
     WatchFsRemove,
 )
+from iclip.platform.live.session_events import SessionEventClock
 
 _logger = structlog.stdlib.get_logger(__name__)
 

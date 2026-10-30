@@ -7,9 +7,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from agent_runtime.plugins.base import PluginRegistry
 from pydantic import ValidationError
 
-from iclip.app.plugin_registry import PluginRegistry
 from iclip.domains.agent_config.public import (
     ModelFacts,
     PluginFacts,

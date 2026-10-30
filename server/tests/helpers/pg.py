@@ -13,13 +13,13 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
+from agent_runtime.harness.step_store_pg import PgMediaStore, snapshots_table
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai_harness.media import externalize_media
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.pool import NullPool
 
-from iclip.harness.step_store_pg import PgMediaStore, snapshots_table
 from iclip.platform.db.engine import build_engine
 
 APP_TABLES = (

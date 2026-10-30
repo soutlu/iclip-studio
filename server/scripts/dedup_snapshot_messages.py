@@ -19,10 +19,10 @@ import os
 import sys
 from typing import Final
 
+from agent_runtime.harness.step_store_pg import snapshots_table, store_snapshot_history
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.step_store_pg import snapshots_table, store_snapshot_history
 from iclip.platform.db.engine import build_engine
 
 DEFAULT_BATCH_SIZE: Final = 200

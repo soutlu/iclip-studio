@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from agent_runtime.harness.models import BuiltModel, ModelSpec, build_model, provider_known
+from agent_runtime.harness.probe import probe_model
 from agent_runtime.model_vocab import ThinkingEffort
 
 from iclip.domains.model_providers.public import (
@@ -15,8 +17,6 @@ from iclip.domains.model_providers.public import (
     ProviderDeclaration,
     ProviderModel,
 )
-from iclip.harness.models import BuiltModel, ModelSpec, build_model, provider_known
-from iclip.harness.probe import probe_model
 
 
 def provider_model_spec(

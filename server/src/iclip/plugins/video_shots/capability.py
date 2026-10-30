@@ -7,8 +7,13 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace, FileStore
+from agent_runtime.harness.files import write_or_retry
+from agent_runtime.harness.materials import require_materials
 from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.tool_args import REPLAY_CONTEXT, JsonText
+from agent_runtime.transcript.display import DisplayFn, FileIoDisplay, tool_note
 from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import ModelRetry
 from pydantic_ai.capabilities import CapabilityOrdering
@@ -16,17 +21,12 @@ from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.harness.files import write_or_retry
-from iclip.harness.materials import require_materials
-from iclip.platform.transcript.display import DisplayFn, FileIoDisplay, tool_note
-from iclip.plugins.base import CapPlugin
 from iclip.plugins.shot_document import (
     SHOTS_PATH,
     ShotDocumentError,
     VideoShotRequest,
     build_video_shots_document,
 )
-from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "video_shots"
 

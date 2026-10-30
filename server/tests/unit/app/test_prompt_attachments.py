@@ -8,17 +8,17 @@ from dataclasses import dataclass, field
 
 import pytest
 from agent_runtime.errors import ValidationFailed
-
-from iclip.app.prompt_attachments import UPLOAD_ID_NAMESPACE, PromptAttachmentImporter
-from iclip.domains.identity.models import Principal
-from iclip.platform.object_store.store import ObjectStoreUnavailable
-from iclip.platform.transcript.ops import (
+from agent_runtime.transcript.ops import (
     AttachmentSource,
     ImageContent,
     PromptContent,
     TextContent,
     VideoContent,
 )
+
+from iclip.app.prompt_attachments import UPLOAD_ID_NAMESPACE, PromptAttachmentImporter
+from iclip.domains.identity.models import Principal
+from iclip.platform.object_store.store import ObjectStoreUnavailable
 
 pytestmark = pytest.mark.unit
 

@@ -13,6 +13,8 @@ from typing import Any
 import httpx
 import pytest
 from agent_runtime.errors import AgentUnavailable
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.store import TranscriptStore
 from fastapi import FastAPI
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
@@ -32,8 +34,6 @@ from iclip.domains.model_providers.schemas import (
     ModelUpdateIn,
 )
 from iclip.domains.skills.schemas import DraftFileWriteIn, SkillPublishIn
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.store import TranscriptStore
 from tests.helpers.agents import (
     AgentSeed,
     Seeded,

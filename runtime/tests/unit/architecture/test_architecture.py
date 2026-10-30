@@ -12,9 +12,23 @@ TESTS = PROJECT / "tests"
 # 运行时被宿主依赖，反过来不行：源码与测试都不得引用宿主包。
 HOST_PACKAGES = frozenset({"iclip"})
 
-# 框架及允许直接导入它的路径（相对 src/agent_runtime）。
+# 框架及允许直接导入它的路径前缀（相对 src/agent_runtime）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("sqlalchemy",): ("file_store/pg.py", "material_ledger/pg.py"),
+    ("pydantic_ai",): ("harness/", "plugins/"),
+    ("pydantic_ai_harness",): ("harness/",),
+    ("openai",): ("harness/models.py",),
+    ("sqlalchemy",): (
+        "file_store/pg.py",
+        "material_ledger/pg.py",
+        # StepPersistence 协议后端归属使用该协议的 harness。
+        "harness/step_store_pg.py",
+        # 对话用量台账的 Postgres 实现，同样归属 harness，表在 agent_runtime schema。
+        "harness/usage_ledger_pg.py",
+        # prompt 队列归属运行驱动，使用 agent_runtime schema。
+        "harness/jobs.py",
+        # 运行时会话（对话固定的 agent 版本），同样在 agent_runtime schema。
+        "harness/sessions.py",
+    ),
 }
 
 
@@ -49,7 +63,7 @@ def test_framework_fences() -> None:
         imports = _imported_top_levels(path)
         for frameworks, allowed in FRAMEWORK_FENCES.items():
             hit = imports & set(frameworks)
-            if hit and rel not in allowed:
+            if hit and not any(rel == prefix or rel.startswith(prefix) for prefix in allowed):
                 violations.append(f"{rel}: 越界 import {sorted(hit)}")
     assert not violations, "框架围栏违规:\n" + "\n".join(violations)
 

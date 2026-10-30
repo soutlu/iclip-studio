@@ -8,6 +8,10 @@ from typing import Any
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -21,13 +25,9 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
 from iclip.plugins.video.capability import Video, VideoToolset
 from iclip.plugins.video_document import video_doc_path
 from iclip.plugins.video_understanding import VideoUnderstandingError
-from iclip.plugins.workspace.capability import Workspace
-from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import required_tools, with_requirements

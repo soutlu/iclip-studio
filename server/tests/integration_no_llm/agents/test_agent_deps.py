@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from agent_runtime.run_deps import AgentRunDeps
 from fastapi import FastAPI
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 from sqlalchemy import text
 
-from iclip.domains.agents.public import AgentRunDeps
 from tests.helpers.agents import AgentSeed
 from tests.helpers.app import make_client, new_conversation, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
@@ -54,8 +54,9 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
 def registered_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
     """替换组合根的插件登记表构造函数，使声明可解析测试 identity 插件。"""
 
+    from agent_runtime.plugins.base import PluginRegistry
+
     from iclip.app import bootstrap
-    from iclip.app.plugin_registry import PluginRegistry
 
     def only_identity(**_: object) -> PluginRegistry:
         return {"identity": FixedPlugin.bind(name="identity", capabilities=identity_capability())}

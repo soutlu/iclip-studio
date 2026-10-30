@@ -17,7 +17,20 @@ from agent_runtime.file_store.store import (
     SearchResult,
     StoredFile,
 )
+from agent_runtime.harness.agents import DELEGATE_TOOL
+from agent_runtime.harness.jobs import JobQueue, JobRow
+from agent_runtime.harness.sessions import PgSessionStore
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.activity import ActivityState
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.runner import ConversationRunner
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.harness.usage_ledger import UsageLedger
+from agent_runtime.harness.usage_ledger_pg import PgConversationUsage
 from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.plugins.workspace.scope import parse_namespace
+from agent_runtime.run_deps import AgentRunDeps
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -70,7 +83,6 @@ from iclip.config import (
 from iclip.domains.agent_config.infra_sql import SqlAgentStore
 from iclip.domains.agent_config.module import build_agent_config_module
 from iclip.domains.agent_config.public import AgentConfigService, AgentReferences
-from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
@@ -133,17 +145,6 @@ from iclip.domains.tracking.infra_sql import SqlTrackingRepository
 from iclip.domains.tracking.module import build_tracking_module
 from iclip.domains.uploads.module import UploadsModule, build_uploads_module
 from iclip.domains.uploads.service import FetchBytes
-from iclip.harness.agents import DELEGATE_TOOL
-from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.sessions import PgSessionStore
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.activity import ActivityState
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import ConversationRunner
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.usage_ledger import UsageLedger
-from iclip.harness.usage_ledger_pg import PgConversationUsage
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import MediaCodec, detect_codec
 from iclip.platform.media.fonts import ProbeFont
@@ -163,7 +164,6 @@ from iclip.platform.object_store.store import (
 from iclip.platform.outbound.fetch import PublicFetcher
 from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.plugins.shot_document import SHOTS_PATH
-from iclip.plugins.workspace.scope import parse_namespace
 
 _logger = structlog.stdlib.get_logger(__name__)
 

@@ -9,13 +9,9 @@ from typing import Any, Final, Self
 import httpx
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import MaterialLedger
-from pydantic_ai.agent.abstract import AgentInstructions
-from pydantic_ai.capabilities import CapabilityOrdering
-from pydantic_ai.tools import AgentDepsT
-from pydantic_ai.toolsets import AgentToolset
-
-from iclip.platform.media.codec import MediaCodec
-from iclip.platform.transcript.display import (
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.transcript.display import (
     MEDIA_GRID_VIEW,
     DisplayFn,
     GenericDisplay,
@@ -23,7 +19,12 @@ from iclip.platform.transcript.display import (
     ToolDisplayEntry,
     url_filename,
 )
-from iclip.plugins.base import CapPlugin
+from pydantic_ai.agent.abstract import AgentInstructions
+from pydantic_ai.capabilities import CapabilityOrdering
+from pydantic_ai.tools import AgentDepsT
+from pydantic_ai.toolsets import AgentToolset
+
+from iclip.platform.media.codec import MediaCodec
 from iclip.plugins.shot_video.extraction import FrameExtractor
 from iclip.plugins.shot_video.generation import IMAGE_MODEL, FrameGenerator, GenerationPolicy
 from iclip.plugins.shot_video.ports import (
@@ -33,7 +34,6 @@ from iclip.plugins.shot_video.ports import (
 )
 from iclip.plugins.shot_video.toolset import ShotVideoToolset
 from iclip.plugins.video.capability import Video
-from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "shot_video"
 

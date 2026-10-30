@@ -9,6 +9,11 @@ from collections.abc import Sequence
 
 import pytest
 from agent_runtime.file_store.store import FileSpace
+from agent_runtime.harness.background import BackgroundTools, is_receipt, parse_outcome
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.display import GenericDisplay
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
@@ -23,9 +28,6 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.harness.background import BackgroundTools, is_receipt, parse_outcome
-from iclip.platform.transcript.display import GenericDisplay
 from iclip.plugins.video_breakdown.capability import (
     BREAKDOWN_RETRIES,
     VideoBreakdown,
@@ -34,8 +36,6 @@ from iclip.plugins.video_breakdown.capability import (
     breakdown_doc_path,
 )
 from iclip.plugins.video_breakdown.ports import BreakdownFailureReason, FailedBreakdown
-from iclip.plugins.workspace.capability import Workspace
-from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")

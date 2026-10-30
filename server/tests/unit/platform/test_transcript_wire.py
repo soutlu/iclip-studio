@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from iclip.platform.transcript.wire import GenerationChanged, GenerationChangedPayload
+from iclip.platform.live.frames import GenerationChanged, GenerationChangedPayload
 
 
 def test_a_generation_frame_omits_empty_origin_fields_on_the_wire() -> None:

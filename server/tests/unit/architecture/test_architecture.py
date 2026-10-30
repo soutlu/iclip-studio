@@ -9,8 +9,9 @@ SRC = Path(__file__).resolve().parents[3] / "src" / "iclip"
 
 # 框架及允许直接导入它的路径前缀（相对 src/iclip）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("pydantic_ai",): ("harness/", "plugins/"),
-    ("pydantic_ai_harness",): ("harness/",),
+    ("pydantic_ai",): ("plugins/",),
+    # Agent 引擎在 agent_runtime，后端不直接引用 harness 与模型 SDK。
+    ("pydantic_ai_harness",): (),
     ("fastapi", "starlette"): (
         "app/",
         "domains/identity/api.py",
@@ -37,14 +38,6 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("sqlalchemy",): (
         "platform/db/",
         "app/",
-        # StepPersistence 协议后端归属使用该协议的 harness。
-        "harness/step_store_pg.py",
-        # 对话用量台账的 Postgres 实现，同样归属 harness，表在 agent_runtime schema。
-        "harness/usage_ledger_pg.py",
-        # prompt 队列归属运行驱动，使用 agent_runtime schema。
-        "harness/jobs.py",
-        # 运行时会话（对话固定的 agent 版本），同样在 agent_runtime schema。
-        "harness/sessions.py",
         # 外部只读表使用独立适配器；infra_sql.py 仅表示模块自有表。
         "domains/products/catalog_pg.py",
         # 审计报表与资料库跨模块只读聚合，同样不是模块自有表。
@@ -52,7 +45,7 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "domains/library/reports_pg.py",
     ),
     ("fastapi_users", "fastapi_users_db_sqlalchemy"): ("domains/identity/",),
-    ("openai",): ("harness/models.py",),
+    ("openai",): (),
     # 端口协议在 store.py，消费方不经 SDK 适配器就能依赖它。
     ("oss2",): ("platform/object_store/oss.py",),
     ("PIL",): ("plugins/shot_video/board.py", "platform/media/image.py"),

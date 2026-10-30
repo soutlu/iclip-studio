@@ -8,17 +8,17 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
 from agent_runtime.file_store.store import FileStore
+from agent_runtime.harness.files import write_or_retry
+from agent_runtime.harness.materials import require_materials
 from agent_runtime.material_ledger.store import Material
+from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.tool_args import JsonText
+from agent_runtime.transcript.display import media_grid
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.harness.files import write_or_retry
-from iclip.harness.materials import require_materials
-from iclip.platform.transcript.display import media_grid
 from iclip.plugins.shot_video.delivery import (
     FrameRequest,
     resolve_cells,

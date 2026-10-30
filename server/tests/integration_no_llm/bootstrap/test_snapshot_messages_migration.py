@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from agent_runtime.harness.step_store_pg import DB_SCHEMA, snapshot_messages_table, snapshots_table
 from alembic import command
 from sqlalchemy import inspect
 from sqlalchemy.pool import NullPool
 
-from iclip.harness.step_store_pg import DB_SCHEMA, snapshot_messages_table, snapshots_table
 from iclip.platform.db.engine import build_engine
 from tests.helpers.migrations import alembic_config
 

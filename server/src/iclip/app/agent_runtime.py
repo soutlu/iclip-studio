@@ -22,10 +22,33 @@ from typing import Any
 
 import structlog
 from agent_runtime.errors import AgentUnavailable
+from agent_runtime.harness.agents import (
+    SubAgentProfile,
+    SubAgentSlot,
+    build_agent,
+    build_subagents,
+    profile_metadata,
+    subagent_profile,
+)
+from agent_runtime.harness.models import BuiltModel
+from agent_runtime.harness.sessions import PgSessionStore
+from agent_runtime.harness.skills import (
+    CachedSkill,
+    build_skill_capabilities,
+    cached_skill,
+    materialize_skill,
+)
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.titles import title_generator
+from agent_runtime.harness.transcript.runner import RunAgent
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.harness.transcript.subagents import SubAgentMirror
+from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.model_vocab import ThinkingEffort
+from agent_runtime.plugins.base import PluginRegistry
+from agent_runtime.transcript.display import ToolDisplayRegistry
 
 from iclip.app.model_providers import build_provider_model
-from iclip.app.plugin_registry import PluginRegistry
 from iclip.domains.agent_config.public import (
     AgentConfig,
     AgentConfigService,
@@ -36,29 +59,6 @@ from iclip.domains.agent_config.public import (
 from iclip.domains.conversations.service import AgentDirectory, AgentEntry
 from iclip.domains.model_providers.public import ModelProviderService, RuntimeModel
 from iclip.domains.skills.public import Skill, SkillsService
-from iclip.harness.agents import (
-    SubAgentProfile,
-    SubAgentSlot,
-    build_agent,
-    build_subagents,
-    profile_metadata,
-    subagent_profile,
-)
-from iclip.harness.models import BuiltModel
-from iclip.harness.sessions import PgSessionStore
-from iclip.harness.skills import (
-    CachedSkill,
-    build_skill_capabilities,
-    cached_skill,
-    materialize_skill,
-)
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.titles import title_generator
-from iclip.harness.transcript.runner import RunAgent
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.transcript.subagents import SubAgentMirror
-from iclip.harness.usage_ledger import UsageLedger
-from iclip.platform.transcript.display import ToolDisplayRegistry
 
 _logger = structlog.stdlib.get_logger(__name__)
 

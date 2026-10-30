@@ -11,6 +11,24 @@ from typing import Any
 
 import pytest
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.harness.background import BackgroundTools
+from agent_runtime.harness.jobs import JobQueue, JobRow
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.activity import IDLE, ActivityState
+from agent_runtime.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.transcript.ops import (
+    MAIN_AGENT_ID,
+    AgentStatusMeta,
+    AttachmentSource,
+    ImageContent,
+    PromptUpsertOp,
+    TextContent,
+    TextFrame,
+    TranscriptTurn,
+)
 from pydantic_ai import Agent, AgentRunResult, Tool
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
@@ -35,24 +53,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from structlog.testing import capture_logs
 
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from iclip.harness.background import BackgroundTools
-from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.activity import IDLE, ActivityState
-from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.transcript.ops import (
-    MAIN_AGENT_ID,
-    AgentStatusMeta,
-    AttachmentSource,
-    ImageContent,
-    PromptUpsertOp,
-    TextContent,
-    TextFrame,
-    TranscriptTurn,
-)
 from tests.helpers.pg import connected
 from tests.helpers.runtime import (
     AGENT_ID,

@@ -10,6 +10,10 @@ from typing import Any
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.display import FileIoDisplay, ToolDisplayRegistry
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import (
     ModelMessage,
@@ -25,8 +29,6 @@ from pydantic_ai.usage import RunUsage
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.transcript.display import FileIoDisplay, ToolDisplayRegistry
 from iclip.plugins.shot_document import (
     MAX_REFERENCE_IMAGES,
     SHOTS_PATH,
@@ -34,8 +36,6 @@ from iclip.plugins.shot_document import (
     validate_shots_document,
 )
 from iclip.plugins.video_shots.capability import VideoShots, VideoShotsToolset
-from iclip.plugins.workspace.capability import Workspace
-from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import required_tools, with_requirements

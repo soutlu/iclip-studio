@@ -16,12 +16,12 @@ from agent_runtime.file_store.store import (
     normalize_path,
 )
 from agent_runtime.material_ledger.store import Material, MaterialLedger
+from agent_runtime.plugins.workspace.scope import namespace_for
+from agent_runtime.transcript.ops import ImageContent, PromptContent, VideoContent
 
 from iclip.domains.conversations.service import DerivedFile, DerivedFileContent
-from iclip.platform.transcript.ops import ImageContent, PromptContent, VideoContent
 from iclip.plugins.iclip_studio.film.checks import check_project_content, check_run_content
 from iclip.plugins.shot_document import validate_shots_document
-from iclip.plugins.workspace.scope import namespace_for
 
 
 class ConversationWorkspace:

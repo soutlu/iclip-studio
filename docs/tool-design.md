@@ -26,13 +26,13 @@
 
 不放设计理由，不复述业务背景或计费细节。需要约束重复付费调用时，直接说明禁止重复的条件和失败后的动作。
 
-例如，「镜头组 3 的 seconds 是 42，只收 4-30；重新切分这一组再交付」写清了上限与超限后的动作；解释为什么卡这个区间不属于工具指引。完整工具示例直接阅读 [WorkspaceToolset.read_media_file](../server/src/iclip/plugins/workspace/capability.py)，不在文档复制 docstring。
+例如，「镜头组 3 的 seconds 是 42，只收 4-30；重新切分这一组再交付」写清了上限与超限后的动作；解释为什么卡这个区间不属于工具指引。完整工具示例直接阅读 [WorkspaceToolset.read_media_file](../runtime/src/agent_runtime/plugins/workspace/capability.py)，不在文档复制 docstring。
 
 ## 3. 登记与范围校验
 
-工具登记时声明输入范围、审批条件和展示信息。当前工具使用 `Tool(..., args_validator=...)` 注册到 toolset 或 capability；参考 [workspace](../server/src/iclip/plugins/workspace/capability.py)、[shot_video](../server/src/iclip/plugins/shot_video/toolset.py) 与 [skill references](../server/src/iclip/harness/skills.py)。
+工具登记时声明输入范围、审批条件和展示信息。当前工具使用 `Tool(..., args_validator=...)` 注册到 toolset 或 capability；参考 [workspace](../runtime/src/agent_runtime/plugins/workspace/capability.py)、[shot_video](../server/src/iclip/plugins/shot_video/toolset.py) 与 [skill references](../runtime/src/agent_runtime/harness/skills.py)。
 
-- 素材来源、素材类型、已挂载 skill 等单工具范围规则放 `args_validator`，不散入工具执行逻辑。共用素材校验使用 [harness/materials.py](../server/src/iclip/harness/materials.py) 的 `require_http`、`require_material`。
+- 素材来源、素材类型、已挂载 skill 等单工具范围规则放 `args_validator`，不散入工具执行逻辑。共用素材校验使用 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py) 的 `require_http`、`require_material`。
 - `ModelRetry` 表示参数可以修正；`ToolFailed` 报告本次失败，不消耗工具重试次数；是否再次调用由业务策略决定；`ApprovalRequired(metadata=...)` 表示需要审批，metadata 提供原因。
 - 范围验证与审批不替代授权。属主隔离仍按运行 deps 在工具和存储层执行；文件存在性、存储安全与业务状态校验保留在对应执行边界。
 - Agent 能看见哪些工具由挂载声明决定。不应拥有的工具不挂载；需要按运行条件过滤工具表时使用 `PrepareTools`。
@@ -42,7 +42,7 @@
 
 给模型的单次文本返回不超过 50,000 字符；超出时在源头写入工作区，返回路径与摘要。`video_parser` 使用这一方式。
 
-每件工具的 display 映射由所属插件提供，组合根合并后供实时与历史共同使用。`kind` 只取 [display 协议](../server/src/iclip/platform/transcript/display.py) 已有值，不自行扩展；无法生成专用展示时使用 `generic`。
+每件工具的 display 映射由所属插件提供，组合根合并后供实时与历史共同使用。`kind` 只取 [display 协议](../runtime/src/agent_runtime/transcript/display.py) 已有值，不自行扩展；无法生成专用展示时使用 `generic`。
 
 卡头文案：
 
@@ -51,6 +51,6 @@
 - 数字（行数、张数、字节、命中数、渠道）一律放 metadata 的角标，不进标题。
 - 前端为 `file_io`、`search`、`url_fetch`、`skill_call`、`agent_call` 各配一个同写法的标题，活动组摘要沿用同一套词。
 
-给用户的结构化结果放 `ToolReturn(return_value=给模型的内容, metadata=给用户的内容)`。metadata 随工具结果持久化，不进入模型上下文；形状与构造函数以 [display 模块](../server/src/iclip/platform/transcript/display.py) 为准，不重复维护字段表。
+给用户的结构化结果放 `ToolReturn(return_value=给模型的内容, metadata=给用户的内容)`。metadata 随工具结果持久化，不进入模型上下文；形状与构造函数以 [display 模块](../runtime/src/agent_runtime/transcript/display.py) 为准，不重复维护字段表。
 
 前端按登记的 `view` 选择结果渲染器，不按工具名判断；没有 `view` 的工具只能带 `ToolNote`。角标文字由工具写入 metadata，前端不从 output 或参数推导；正文不在 metadata 重复存储。

@@ -14,6 +14,13 @@ from typing import Any
 import httpx
 import pytest
 from agent_runtime.file_store.store import FileSpace
+from agent_runtime.harness.media import media_tag
+from agent_runtime.harness.transcript.from_messages import turns_from_messages
+from agent_runtime.harness.transcript.projector import TranscriptEventStream
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
@@ -29,16 +36,10 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 from structlog.testing import capture_logs
 
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.harness.media import media_tag
-from iclip.harness.transcript.from_messages import turns_from_messages
-from iclip.harness.transcript.projector import TranscriptEventStream
-from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.layout import MEDIA_PATHS
-from iclip.platform.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
 from iclip.plugins.shot_video.capability import GenerationPolicy
 from iclip.plugins.shot_video.delivery import FrameRequest
 from iclip.plugins.shot_video.extraction import EXTRACTION_PATH
@@ -49,7 +50,6 @@ from iclip.plugins.shot_video.toolset import (
     ShotVideoToolset,
 )
 from iclip.plugins.video_document import video_doc_path
-from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger

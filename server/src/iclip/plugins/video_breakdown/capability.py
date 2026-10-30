@@ -9,23 +9,23 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace
+from agent_runtime.harness.background import BackgroundTools
+from agent_runtime.harness.files import write_or_retry
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
 from agent_runtime.urls import is_http_url
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, CombinedCapability
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.harness.background import BackgroundTools
-from iclip.harness.files import write_or_retry
-from iclip.platform.transcript.display import DisplayFn, GenericDisplay, url_filename
-from iclip.plugins.base import CapPlugin
 from iclip.plugins.video_breakdown.ports import (
     BreakdownFailureReason,
     FailedBreakdown,
     ReferenceBreakdowns,
 )
-from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "video_breakdown"
 

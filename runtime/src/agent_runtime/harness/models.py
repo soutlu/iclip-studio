@@ -1,0 +1,109 @@
+"""按模型声明建出 pydantic-ai 模型。"""
+
+from __future__ import annotations
+
+import inspect
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, cast
+
+from openai import AsyncOpenAI
+from pydantic_ai.models import Model, infer_model
+from pydantic_ai.models.openai import OpenAIChatModelSettings, OpenAIResponsesModel
+from pydantic_ai.providers import Provider, infer_provider_class
+
+from agent_runtime.model_vocab import ModelApi, ThinkingEffort
+
+BuiltModel = Model
+"""装配出的一个模型实例；组合根经它引用模型类型，不直接 import 引擎。"""
+
+
+@dataclass(frozen=True, slots=True)
+class ModelSpec:
+    """建一个模型要的配置；``name`` 只用于报错；省略 thinking 时使用供应方默认值。"""
+
+    name: str
+    provider: str
+    model: str
+    api: ModelApi
+    api_key: str
+    base_url: str | None
+    thinking: ThinkingEffort | None = None
+
+
+def _build_provider(spec: ModelSpec) -> Provider[Any]:
+    """根据配置构造 provider，未知名称抛错。"""
+
+    provider_class = cast("Any", infer_provider_class(spec.provider))
+    if spec.base_url is None:
+        return cast("Provider[Any]", provider_class(api_key=spec.api_key))
+
+    # 各家构造签名不统一：收 base_url 的直接传，只收 api_key 的走 openai_client。
+    parameters = inspect.signature(provider_class.__init__).parameters
+    if "base_url" in parameters:
+        return cast("Provider[Any]", provider_class(api_key=spec.api_key, base_url=spec.base_url))
+    if "openai_client" in parameters:
+        client = AsyncOpenAI(base_url=spec.base_url, api_key=spec.api_key)
+        return cast("Provider[Any]", provider_class(openai_client=client))
+    raise RuntimeError(
+        f"模型 {spec.name}：provider {spec.provider} 不支持自定义 base_url，请去掉该字段"
+    )
+
+
+def provider_known(name: str) -> bool:
+    """官方认不认这个 provider 名。"""
+
+    try:
+        infer_provider_class(name)
+    except ValueError:
+        return False
+    return True
+
+
+def _model_settings(spec: ModelSpec) -> OpenAIChatModelSettings | None:
+    if spec.thinking is None:
+        return None
+    # Qwen profile 未声明 supports_thinking，通用 thinking 会被忽略；使用 reasoning_effort。
+    return OpenAIChatModelSettings(openai_reasoning_effort=spec.thinking)
+
+
+def thinking_effort_of(model: Model) -> str | None:
+    """读回 _model_settings 写进模型的思考档位；没配返回 None。"""
+
+    settings = cast("Mapping[str, object] | None", model.settings)
+    effort = None if settings is None else settings.get("openai_reasoning_effort")
+    return effort if isinstance(effort, str) else None
+
+
+def build_model(spec: ModelSpec) -> Model:
+    """构造 Model，拒绝无效 provider 或配置组合。"""
+
+    provider = _build_provider(spec)
+    settings = _model_settings(spec)
+    if spec.api == "chat":
+        # 模型类由官方按 provider 名决定：Ollama、OpenRouter 等各有专属类。
+        picked = infer_model(f"{spec.provider}:{spec.model}", provider_factory=lambda _: provider)
+        if settings is None:
+            return picked
+        # 官方的分派入口不收 settings，按它选出的类再造一次。
+        return cast(
+            "Model", cast("Any", type(picked))(spec.model, provider=provider, settings=settings)
+        )
+
+    if not isinstance(provider.client, AsyncOpenAI):
+        raise RuntimeError(
+            f"模型 {spec.name}：api: responses 只适用于 OpenAI 兼容的 provider，"
+            f"{spec.provider} 不是"
+        )
+    return OpenAIResponsesModel(spec.model, provider=provider, settings=settings)
+
+
+__all__ = [
+    "BuiltModel",
+    "ModelApi",
+    "ModelSpec",
+    "ThinkingEffort",
+    "build_model",
+    "provider_known",
+    "thinking_effort_of",
+]

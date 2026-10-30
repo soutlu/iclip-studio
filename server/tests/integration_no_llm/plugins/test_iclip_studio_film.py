@@ -11,6 +11,8 @@ from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.material_ledger.store import Material
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -22,11 +24,9 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.agents.public import AgentRunDeps
 from iclip.platform.db.engine import build_engine
 from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_FRONT
 from tests.helpers.pg import truncate_clean
 from tests.helpers.plugins import with_requirements

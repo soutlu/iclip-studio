@@ -7,19 +7,19 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace, FileStore
+from agent_runtime.harness.files import write_or_retry
+from agent_runtime.harness.materials import require_materials
 from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
 from pydantic_ai import ModelRetry
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.harness.files import write_or_retry
-from iclip.harness.materials import require_materials
-from iclip.platform.transcript.display import DisplayFn, GenericDisplay, url_filename
-from iclip.plugins.base import CapPlugin
 from iclip.plugins.video_document import video_doc_path
 from iclip.plugins.video_understanding import VideoUnderstanding, VideoUnderstandingError
-from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "video"
 

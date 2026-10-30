@@ -32,3 +32,29 @@ depends_on = []
 [[modules]]
 path = "agent_runtime.material_ledger"
 depends_on = []
+
+[[modules]]
+path = "agent_runtime.run_deps"
+depends_on = []
+
+[[modules]]
+path = "agent_runtime.transcript"
+depends_on = []
+
+[[modules]]
+path = "agent_runtime.harness"
+depends_on = [
+    "agent_runtime.file_store",
+    "agent_runtime.material_ledger",
+    "agent_runtime.transcript",
+]
+
+[[modules]]
+path = "agent_runtime.plugins"
+depends_on = [
+    "agent_runtime.file_store",
+    "agent_runtime.material_ledger",
+    "agent_runtime.run_deps",
+    "agent_runtime.transcript",
+    "agent_runtime.harness",
+]
