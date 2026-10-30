@@ -15,7 +15,7 @@ import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import type { PeaksState } from '../editing/media-analysis'
-import { usePreviewGesture, type Chain, type GesturePreview } from '../editing/preview-gesture'
+import { trimSpans, usePreviewGesture, type GesturePreview } from '../editing/preview-gesture'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
 import {
   arrowStep,
@@ -178,15 +178,10 @@ type Edge = 'start' | 'end'
 /** 画面轨上连着的几段一共多长 */
 const spanMs = (clips: readonly Layer0Clip[]) => clips.reduce((sum, clip) => sum + clip.duration, 0)
 
-/** 画面轨的段首尾相接（毫秒）：拖左把手时按它挪显示位置 */
-const LAYER0_CHAIN: Chain<Layer0Clip> = {
-  startOf: (clip) => clip.start,
-  lengthOf: (clip) => clip.duration,
-  moved: (clip, start) => ({ ...clip, start }),
-}
-
 /** 拖到某处时算出的一步：编辑结果，以及拖动中要画的吸附线、停住的原因、特效块要去的行 */
 type GestureStep = {
+  /** 修剪的是画面轨的哪一段的哪一端：拖动中画面轨按已提交的草稿画，只有把手跟手 */
+  trim?: { clipId: string; edge: Edge } | undefined
   result: EditResult
   guideMs?: number | null
   /** 拖不过去的原因（如到了成片总长上限），拖动中写在旁边 */
@@ -211,6 +206,7 @@ const filmPreviewOf = (preview: GesturePreview<GestureStep> | null) => {
     noteAtMs: step.noteAtMs ?? last.noteAtMs,
     row: last.row,
     overlayId: last.overlayId,
+    trim: last.trim,
   }
 }
 
@@ -264,7 +260,7 @@ type BlockProps = {
   /** 点开的浮层（组件块才有） */
   popover?: ReactNode
   clipId?: string
-  /** 松开左把手后要滑到新位置的块（见 useReleaseSlide） */
+  /** 松开修剪把手后要滑到新位置的块（见 useReleaseSlide） */
   slide?: string
   shortcuts?: string
   motion?:
@@ -431,11 +427,20 @@ export function FilmTracks({
   })
   const preview = filmPreviewOf(gesture.preview)
   const previewed = preview?.draft ?? draft
-  // 拖画面轨一段的左把手：只挪显示，草稿照常首尾相接；松手后这段与后面的段（连同选区外框）滑过去
-  const held = gesture.hold(previewed.layer0, LAYER0_CHAIN)
-  const shown =
-    held.items === previewed.layer0 ? previewed : { ...previewed, layer0: [...held.items] }
-  const total = filmDuration(previewed)
+  // 修剪画面轨的一段：拖动中整条时间线按已提交的草稿画、不动，只有把手跟手，要剪掉的、拉长出来的那段另外标出；
+  // 松手后后面的段（连同选区外框）滑过去。特效块的修剪与挪动、音乐偏移照常按拖动中的样子画。
+  const shown = preview?.trim === undefined ? previewed : draft
+  const layer0Trim = (() => {
+    const trim = preview?.trim
+    const clip = draft.layer0.find((candidate) => candidate.id === trim?.clipId)
+    const after = previewed.layer0.find((candidate) => candidate.id === trim?.clipId)
+    if (trim === undefined || clip === undefined || after === undefined) return undefined
+    return {
+      clipId: clip.id,
+      ...trimSpans(trim.edge, { at: clip.start, len: clip.duration }, after.duration),
+    }
+  })()
+  const total = filmDuration(shown)
   const { pps, contentWidth } = scale
   const beatsMs = beats.map((beat) => beat.timeMs)
   const gridStep = rulerTickStep(contentWidth / Math.max(pps, 1))
@@ -837,21 +842,25 @@ export function FilmTracks({
       playheadMs,
       beatsMs,
     }).filter((target) => Math.round(target.time * 1000) !== edgeMs)
-    // 左把手：这段的右边沿与后面的段停在按下时的位置，左边沿跟手（见 usePreviewGesture）
-    const target = { id: clip.id, edge, end: clip.start + clip.duration }
-    gesture.startTrim(event, target, (deltaPx): GestureStep => {
+    // 拖动中所有段按已提交的草稿画，把手停在已提交布局里的这一刻：吸附线、提示都画在把手处
+    const trim = { clipId: clip.id, edge }
+    gesture.startTrim(event, { slide: `clip:${clip.id}`, edge }, (deltaPx): GestureStep => {
       const snapped = snapMs(edgeMs + pxToMs(deltaPx, pps), targets, pps, snap)
       const deltaMs = snapped.ms - edgeMs
       const result = trimClip(draft, { clipId: clip.id, edge, deltaMs }, context)
       const after = result.ok ? result.draft.layer0.find((c) => c.id === clip.id) : undefined
-      if (!result.ok || after === undefined) return { result }
+      if (!result.ok || after === undefined) return { result, trim }
       const wanted = clip.duration + (edge === 'end' ? deltaMs : -deltaMs)
       const stopped = wanted > after.duration && layer0End(result.draft) >= MAX_FILM_MS
       return {
         result,
+        trim,
         guideMs: after.duration === wanted ? snapped.guideMs : null,
         note: stopped ? FILM_LIMIT_TEXT : undefined,
-        noteAtMs: edge === 'end' ? after.start + after.duration : after.start,
+        noteAtMs:
+          edge === 'end'
+            ? clip.start + after.duration
+            : clip.start + clip.duration - after.duration,
       }
     })
   }
@@ -931,12 +940,14 @@ export function FilmTracks({
     apply(trim(Math.round(step * 1000)))
   }
 
+  /** `shiftPx`：修剪拖动中两个把手各离块的边沿多远（像素，往右为正），没在拖时都是 0。 */
   const trimHandles = (
     edges: readonly Edge[],
     durationMs: number,
     what: string,
     onPress: (event: PointerEvent<HTMLElement>, edge: Edge) => void,
     trim: (edge: Edge, deltaMs: number) => EditResult,
+    shiftPx = { start: 0, end: 0 },
   ) =>
     edges.map((edge) => (
       <TrimHandle
@@ -949,7 +960,11 @@ export function FilmTracks({
         onPointerMove={gesture.move}
         onPointerUp={gesture.end}
         pressed={false}
-        style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+        style={
+          edge === 'start'
+            ? { left: `${shiftPx.start}px` }
+            : { left: `calc(100% + ${shiftPx.end}px)` }
+        }
         value={durationMs / 1000}
         valueText={`${what} ${seconds(durationMs)} 秒`}
       />
@@ -1053,7 +1068,7 @@ export function FilmTracks({
   })
 
   const musicMedia = draft.music === null ? undefined : context.music[draft.music.jobId]
-  const shortfall = musicMedia === undefined ? 0 : musicShortfallMs(previewed, context)
+  const shortfall = musicMedia === undefined ? 0 : musicShortfallMs(shown, context)
 
   /** 组件段、特效块的浮层：锚在块上，向上弹 */
   const popoverOf = (id: string, label: string) => (
@@ -1228,7 +1243,7 @@ export function FilmTracks({
     marker === undefined ? 0 : msToPx(filmDrop?.start ?? insertClock(marker.index), pps)
   const bubbleAlign = (left: number) =>
     left < 120 ? 'is-start' : left > contentWidth - 120 ? 'is-end' : undefined
-  const tailLeft = msToPx(held.shiftAt(layer0End(previewed)), pps) + 8
+  const tailLeft = msToPx(layer0End(shown), pps) + 8
   const showTail = marker === undefined && contentWidth - tailLeft > 300
   const cuts = cutsOf(shown)
   const insertionActive = hover !== null || (lift?.moved === true && !lift.returning)
@@ -1243,7 +1258,22 @@ export function FilmTracks({
       if (run !== undefined && run.last === shown.layer0[index - 1]) run.last = clip
       else selectionRuns.push({ first: clip, last: clip })
     })
-  const previewWidth = Math.max(contentWidth, msToPx(layer0End(projected), pps))
+  /** 一段此刻框住的起止：修剪拖动中被拖的那段只算保留下来的部分（选区外框、把手按它摆）。 */
+  const keptOf = (clip: Layer0Clip) =>
+    layer0Trim?.clipId === clip.id
+      ? { start: layer0Trim.kept.at, end: layer0Trim.kept.at + layer0Trim.kept.len }
+      : { start: clip.start, end: clip.start + clip.duration }
+  /** 修剪拖动中标出的一段（要剪掉的或拉长出来的，`at` 从所在的容器量）：与段一样左边对齐、右边让 2 像素。 */
+  const trimMark = ({ at, len }: { at: number; len: number }) => ({
+    left: `${msToPx(at, pps)}px`,
+    width: `${Math.max(0, msToPx(len, pps) - 2)}px`,
+  })
+  // 往右拉长最后一段时，拉长出来的那段也放得下
+  const previewWidth = Math.max(
+    contentWidth,
+    msToPx(layer0End(projected), pps),
+    msToPx(layer0End(previewed), pps),
+  )
 
   return (
     <div
@@ -1316,18 +1346,39 @@ export function FilmTracks({
                     ? clipLabel(clip)
                     : `组件 · ${componentFace(clip.component).title}`
                 }，${seconds(clip.duration)} 秒`
+                const kept = keptOf(clip)
                 return (
                   <Block
                     className={cn('wf-clip', clip.type === 'component' && 'is-card')}
                     clipId={clip.id}
-                    handles={trimHandles(
-                      clipEdges(clip, index),
-                      clip.duration,
-                      '该段',
-                      (event, edge) => startTrim(event, clip, edge),
-                      (edge, deltaMs) =>
-                        trimClip(draft, { clipId: clip.id, edge, deltaMs }, context),
-                    )}
+                    handles={
+                      <>
+                        {/* 修剪拖动中要剪掉的那段：调暗，画在这段里、把手之下 */}
+                        {layer0Trim?.clipId !== clip.id || layer0Trim.cut === undefined ? null : (
+                          <span
+                            aria-hidden="true"
+                            className="timeline-trim-cut wf-trim-mark"
+                            data-testid="trim-cut"
+                            style={trimMark({
+                              at: layer0Trim.cut.at - clip.start,
+                              len: layer0Trim.cut.len,
+                            })}
+                          />
+                        )}
+                        {trimHandles(
+                          clipEdges(clip, index),
+                          kept.end - kept.start,
+                          '该段',
+                          (event, edge) => startTrim(event, clip, edge),
+                          (edge, deltaMs) =>
+                            trimClip(draft, { clipId: clip.id, edge, deltaMs }, context),
+                          {
+                            start: msToPx(kept.start - clip.start, pps),
+                            end: msToPx(kept.end - clip.start - clip.duration, pps),
+                          },
+                        )}
+                      </>
+                    }
                     key={clip.id}
                     name={name}
                     slide={`clip:${clip.id}`}
@@ -1359,15 +1410,27 @@ export function FilmTracks({
                   </Block>
                 )
               })}
-              {selectionRuns.map(({ first, last }) => (
+              {/* 修剪拖动中往外拉长多出来的那段：画一个框、盖在相邻的段上 */}
+              {layer0Trim?.added === undefined ? null : (
                 <span
                   aria-hidden="true"
-                  className="wf-selection-box"
-                  data-slide={`selection:${first.id}`}
-                  key={first.id}
-                  style={place(first.start, last.start + last.duration - first.start)}
+                  className="timeline-trim-extend wf-trim-mark"
+                  data-testid="trim-extend"
+                  style={trimMark(layer0Trim.added)}
                 />
-              ))}
+              )}
+              {selectionRuns.map(({ first, last }) => {
+                const start = keptOf(first).start
+                return (
+                  <span
+                    aria-hidden="true"
+                    className="wf-selection-box"
+                    data-slide={`selection:${first.id}`}
+                    key={first.id}
+                    style={place(start, keptOf(last).end - start)}
+                  />
+                )
+              })}
               <InsertionPreview
                 elementRef={filmPreviewRef}
                 face={insertionFace}
@@ -1601,12 +1664,9 @@ export function FilmTracks({
           </div>
           {preview?.note !== undefined && preview.noteAtMs !== undefined ? (
             <span
-              className={cn(
-                'wf-drop-bubble',
-                bubbleAlign(msToPx(held.shiftAt(preview.noteAtMs), pps)),
-              )}
+              className={cn('wf-drop-bubble', bubbleAlign(msToPx(preview.noteAtMs, pps)))}
               role="status"
-              style={{ left: `${msToPx(held.shiftAt(preview.noteAtMs), pps)}px` }}
+              style={{ left: `${msToPx(preview.noteAtMs, pps)}px` }}
             >
               <Icon decorative name="blocked" size="xs" />
               {preview.note}

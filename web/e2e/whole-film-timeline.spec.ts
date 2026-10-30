@@ -492,7 +492,7 @@ test.describe('成片编辑器 · 时间线', () => {
     await expect(film.getByRole('group')).toHaveCount(6)
   })
 
-  test('拖画面轨一段的左把手：左边沿跟手，右边沿与后面的段不动，往左拉长盖在前一段上；松手后首尾接上', async ({
+  test('拖画面轨一段的左把手往外拉长：拖动中各段不动，拉长出来的那段画框盖在前一段上；松手后首尾接上', async ({
     page,
   }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE })
@@ -512,13 +512,31 @@ test.describe('成片编辑器 · 时间线', () => {
     await page.mouse.down()
     await page.mouse.move(handle.cx - pull, handle.cy, { steps: 6 })
     const during = await boxes()
-    expect(Math.abs(during.third.x - (before.third.x - pull))).toBeLessThanOrEqual(2)
-    expect(
-      Math.abs(during.third.x + during.third.width - (before.third.x + before.third.width)),
-    ).toBeLessThanOrEqual(1)
-    expect(Math.abs(during.fourth.x - before.fourth.x)).toBeLessThanOrEqual(1)
-    expect(during.third.x).toBeLessThan(during.second.x + during.second.width)
+    for (const key of ['second', 'third', 'fourth'] as const) {
+      expect(Math.abs(during[key].x - before[key].x)).toBeLessThanOrEqual(1)
+      expect(Math.abs(during[key].width - before[key].width)).toBeLessThanOrEqual(1)
+    }
+    // 拉长出来的框从把手处到这段原来的开头，在前一段的范围里、在它上层
+    const extend = film.getByTestId('trim-extend')
+    const added = await boxOf(extend)
+    expect(Math.abs(added.x - (before.third.x - pull))).toBeLessThanOrEqual(2)
+    expect(added.x + added.width).toBeLessThanOrEqual(before.third.x)
+    expect(added.x).toBeGreaterThan(before.second.x)
+    // 框不接指针：量层叠时临时让它接，看框里离把手远的那一头最上面是不是它（把手的命中区盖着靠近它的地方）
+    const onTop = await extend.evaluate((element: HTMLElement) => {
+      const box = element.getBoundingClientRect()
+      element.style.pointerEvents = 'auto'
+      const top = document.elementFromPoint(box.right - 3, box.y + box.height / 2)
+      element.style.pointerEvents = ''
+      return top === element
+    })
+    expect(onTop).toBe(true)
+    // 把手停在拉长后的开头
+    const moved = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    expect(Math.abs(moved.cx - (handle.cx - pull))).toBeLessThanOrEqual(2)
+    await expect(film.getByTestId('trim-cut')).toHaveCount(0)
     await page.mouse.up()
+    await expect(extend).toHaveCount(0)
 
     // 松手：第 3 段接在第 2 段后面，第 4 段跟着往后
     await expect
@@ -533,6 +551,52 @@ test.describe('成片编辑器 · 时间线', () => {
     await expect
       .poll(async () => (await readDraft(page))?.layer0[2]?.playbackStart)
       .toBeLessThan(1_500)
+  })
+
+  test('拖画面轨一段的右把手往里裁：拖动中后面的段不动，剪掉的那段调暗；松手后后面的段接上', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    // 第 3 段是 v2，长 1.7 秒
+    await film.getByRole('button', { name: /^选中：第 3 段/ }).click()
+    const segment = (n: number) => film.getByRole('group', { name: new RegExp(`^第 ${n} 段`) })
+    const boxes = async () => ({ third: await boxOf(segment(3)), fourth: await boxOf(segment(4)) })
+    const before = await boxes()
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪结尾' }))
+    const { pps } = await pixelsPerSecond(dialog)
+    const pull = Math.round(pps * 0.4)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pull, handle.cy, { steps: 6 })
+    const during = await boxes()
+    for (const key of ['third', 'fourth'] as const) {
+      expect(Math.abs(during[key].x - before[key].x)).toBeLessThanOrEqual(1)
+      expect(Math.abs(during[key].width - before[key].width)).toBeLessThanOrEqual(1)
+    }
+    // 调暗层从把手处到这段原来的结尾，画在这段里
+    const cut = film.getByTestId('trim-cut')
+    const dimmed = await boxOf(cut)
+    expect(Math.abs(dimmed.x - (handle.cx - pull))).toBeLessThanOrEqual(3)
+    expect(
+      Math.abs(dimmed.x + dimmed.width - (before.third.x + before.third.width)),
+    ).toBeLessThanOrEqual(1)
+    const moved = await boxOf(film.getByRole('slider', { name: '裁剪结尾' }))
+    expect(Math.abs(moved.cx - (handle.cx - pull))).toBeLessThanOrEqual(2)
+    await expect(film.getByTestId('trim-extend')).toHaveCount(0)
+    await page.mouse.up()
+    await expect(cut).toHaveCount(0)
+
+    // 松手：第 4 段接到第 3 段后面
+    await expect
+      .poll(async () => {
+        const after = await boxes()
+        return [
+          after.fourth.x - (after.third.x + after.third.width),
+          after.fourth.x - (before.fourth.x - pull),
+        ].map((gap) => Math.abs(gap) <= 3)
+      })
+      .toEqual([true, true])
+    await expect.poll(async () => (await readDraft(page))?.layer0[2]?.duration).toBeLessThan(1_700)
   })
 
   test('特效轨：拖动和微调；上下新增预演展开一行，松手才提交，取消恢复原排列', async ({ page }) => {

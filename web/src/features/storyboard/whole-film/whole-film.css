@@ -1510,6 +1510,21 @@
   pointer-events: none;
 }
 
+/* 修剪画面轨一段时标出的那段（样子见 editing/timeline.css）：拉长出来的框在画面轨里、盖在相邻的段上；要剪掉的
+   那段画在被拖的段里，在把手之下。 */
+.wf-trim-mark {
+  position: absolute;
+  top: 2px;
+  z-index: var(--z-local-1);
+  height: 48px;
+  border-radius: var(--radius-sm);
+}
+
+.wf-clip > .wf-trim-mark {
+  top: 0;
+  height: 100%;
+}
+
 .wf-clip-label {
   position: absolute;
   top: 3px;

@@ -11,37 +11,43 @@ import { DRAG_THRESHOLD, releasePointer, type Edge, type useClickAfterDrag } fro
 /**
  * 时间线上的拖动（修剪把手、挪块）：两个编辑器共用。拖动中只预览，松手才提交一次。
  *
- * 修剪首尾相接的一串块里某一块的左把手时，数据照常首尾相接（这块的开头接在前一块末尾，变的只是长度），显示上
- * 却让左边沿跟着指针、这块的右边沿与后面的块停在按下时的位置，同右把手「拖哪端动哪端」；松手后再从拖动中的
- * 位置滑到首尾相接后的位置。
+ * 修剪首尾相接的一串块里的一块时，拖动中所有块都按已提交的位置画、不动，只有把手跟手；要剪掉的那一段调暗，
+ * 往外拉长多出来的那一段标一个框（见 {@link trimSpans}）。松手后后面的块滑到首尾相接的位置。
  */
 
-/** 按下的是一串首尾相接的块里哪一块的哪个把手：`end` 是按下时这块的右边沿（调用方的时间单位）。 */
-export type TrimTarget = { id: string; edge: Edge; end: number }
+/** 按下的是一串首尾相接的块里哪一块的哪个把手：`slide` 是这一块的 `data-slide` 值。 */
+export type TrimTarget = { slide: string; edge: Edge }
 
-/** 一串首尾相接的块怎么读、怎么挪（调用方的时间单位）。 */
-export type Chain<T> = {
-  startOf: (item: T) => number
-  lengthOf: (item: T) => number
-  /** 这一块挪到 `start` 显示。 */
-  moved: (item: T, start: number) => T
-}
-
-/** 显示用的块，与把此刻的时刻换成显示位置的 `shiftAt`（播放头、提示用）。 */
-export type Held<T> = { items: readonly T[]; shiftAt: (time: number) => number }
+/** 时间线上的一段（调用方的时间单位）。 */
+export type Span = { at: number; len: number }
 
 /**
- * 拖动中的样子：`last` 是上一个放得下的一步（按它画），`step` 是指针此刻这一步（可能放不下，提示取它的）；
- * `hold` 把一串块按这次拖动摆成显示位置（只有修剪左把手时才挪）。
+ * 修剪拖动中一块怎么画：这块已提交时从 `at` 起、长 `len`，修剪后长 `next`。按已提交的布局，被拖的那一端停在
+ * 把手处、另一端不动：`kept` 是保留下来的那段（选中框、把手按它摆），往里裁时 `cut` 是要剪掉的那段，往外拉长时
+ * `added` 是多出来的那段（盖在相邻的块上）。
  */
-export type GesturePreview<S> = {
-  last: S
-  step: S
-  hold: <T extends { id: string }>(items: readonly T[], chain: Chain<T>) => Held<T>
+export const trimSpans = (
+  edge: Edge,
+  { at, len }: Span,
+  next: number,
+): { kept: Span; cut: Span | undefined; added: Span | undefined } => {
+  const kept = { at: edge === 'start' ? at + len - next : at, len: next }
+  const by = Math.abs(len - next)
+  if (by === 0) return { kept, cut: undefined, added: undefined }
+  // 变化的那一段贴着被拖的那一端：左把手在保留段与原来开头之间，右把手在保留段与原来结尾之间
+  const changed = {
+    at: edge === 'start' ? Math.min(at, kept.at) : at + Math.min(len, next),
+    len: by,
+  }
+  return next < len
+    ? { kept, cut: changed, added: undefined }
+    : { kept, cut: undefined, added: changed }
 }
 
-/** 左把手按下时被拖的那一块与它那时的右边沿。 */
-type Pin = { id: string; end: number }
+/**
+ * 拖动中的样子：`last` 是上一个放得下的一步（按它画），`step` 是指针此刻这一步（可能放不下，提示取它的）。
+ */
+export type GesturePreview<S> = { last: S; step: S }
 
 type Gesture<S> = {
   pointerId: number
@@ -49,68 +55,56 @@ type Gesture<S> = {
   originY: number
   /** 横向的累计位移，与指针现在的纵坐标（换行的拖动按它算落在哪一行） */
   compute: (deltaPx: number, clientY: number) => S
-  pin: Pin | undefined
+  trim: TrimTarget | undefined
   moved: boolean
   last: S | undefined
 }
 
-/**
- * 拖左把手期间各块的显示位置：被拖的块与它后面的块一起往回挪「按下时的右边沿 − 此刻的右边沿」，前面的块不动；
- * 往左拉长时被拖的块盖在前一块上（由调用方让它在上层），不夹到前一块末尾。只有在时间 0 之前画不下时才停在 0，
- * 后面的块随之后移。
- */
-const holdLeftTrim = <T extends { id: string }>(
-  items: readonly T[],
-  pin: Pin | undefined,
-  { startOf, lengthOf, moved }: Chain<T>,
-): Held<T> => {
-  const index = pin === undefined ? -1 : items.findIndex((item) => item.id === pin.id)
-  const dragged = items[index]
-  if (pin === undefined || dragged === undefined) return { items, shiftAt: (time) => time }
-  const start = startOf(dragged)
-  const by = Math.max(pin.end - (start + lengthOf(dragged)), -start)
-  if (by === 0) return { items, shiftAt: (time) => time }
-  return {
-    items: items.map((item, at) => (at < index ? item : moved(item, startOf(item) + by))),
-    shiftAt: (time) => (time >= start ? time + by : time),
-  }
-}
-
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** 容器里带 `data-slide` 的元素与它们此刻的左边（像素，从容器左边量）。 */
+/** 容器里带 `data-slide` 的元素与它们此刻的左边、宽（像素，左边从容器左边量）。 */
 const measure = (container: HTMLElement) => {
   const origin = container.getBoundingClientRect().left
   return new Map(
-    [...container.querySelectorAll<HTMLElement>('[data-slide]')].map((node) => [
-      node.dataset['slide'] ?? '',
-      { node, left: node.getBoundingClientRect().left - origin },
-    ]),
+    [...container.querySelectorAll<HTMLElement>('[data-slide]')].map((node) => {
+      const box = node.getBoundingClientRect()
+      return [node.dataset['slide'] ?? '', { node, left: box.left - origin, width: box.width }]
+    }),
   )
 }
 
 /**
- * 拖左把手松手后，容器里带 `data-slide`（值是各自的稳定 key）的元素从拖动中的显示位置平移到首尾相接后的位置，
- * 宽度不变；时长与缓动取设计系统的 `--dur-m`、`--ease`，系统要求减少动态效果时直接显示结果。`holding` 是正在
- * 拖左把手。动画用 CSS 的 `translate` 属性，不碰元素自己的 `transform`（成片画面轨的块由插入动效按 transform 摆）。
+ * 修剪把手松手后，容器里带 `data-slide`（值是各自的稳定 key）的元素从拖动中的位置平移到首尾相接后的位置，
+ * 宽度不变。被拖的块（`trim.slide`）拖的是左把手时，从拖动中保留段所在的地方滑过来（它的右边沿减新宽），与
+ * 选中框、把手一起动。时长与缓动取设计系统的 `--dur-m`、`--ease`，系统要求减少动态效果时直接显示结果。
+ * `trim` 是正在拖的修剪把手。动画用 CSS 的 `translate` 属性，不碰元素自己的 `transform`（成片画面轨的块由
+ * 插入动效按 transform 摆）。
  */
-function useReleaseSlide(containerRef: RefObject<HTMLElement | null>, holding: boolean) {
-  const heldRef = useRef<Map<string, number>>(undefined)
+function useReleaseSlide(
+  containerRef: RefObject<HTMLElement | null>,
+  trim: TrimTarget | undefined,
+) {
+  const heldRef = useRef<{ trim: TrimTarget; spans: Map<string, { left: number; width: number }> }>(
+    undefined,
+  )
   const animationsRef = useRef<Animation[]>([])
   const stop = () => {
     for (const animation of animationsRef.current) animation.cancel()
     animationsRef.current = []
   }
 
-  // 每次画完都要量：拖动中记下最后一次的显示位置，松手那一次画完再量一次、从记下的位置滑过来。
+  // 每次画完都要量：拖动中记下最后一次的位置，松手那一次画完再量一次、从记下的位置滑过来。
   useLayoutEffect(() => {
     const container = containerRef.current
     if (container === null) return
-    if (holding) {
+    if (trim !== undefined) {
       if (heldRef.current === undefined) stop()
-      heldRef.current = new Map(
-        [...measure(container)].map(([key, { left }]) => [key, left] as const),
-      )
+      heldRef.current = {
+        trim,
+        spans: new Map(
+          [...measure(container)].map(([key, { left, width }]) => [key, { left, width }] as const),
+        ),
+      }
       return
     }
     const held = heldRef.current
@@ -121,9 +115,12 @@ function useReleaseSlide(containerRef: RefObject<HTMLElement | null>, holding: b
       duration: Number.parseFloat(style.getPropertyValue('--dur-m')),
       easing: style.getPropertyValue('--ease').trim(),
     }
-    for (const [key, { node, left }] of measure(container)) {
-      const was = held.get(key)
-      if (was === undefined || Math.abs(was - left) < 0.5) continue
+    for (const [key, { node, left, width }] of measure(container)) {
+      const span = held.spans.get(key)
+      if (span === undefined) continue
+      const dragged = key === held.trim.slide && held.trim.edge === 'start'
+      const was = dragged ? span.left + span.width - width : span.left
+      if (Math.abs(was - left) < 0.5) continue
       animationsRef.current.push(
         node.animate([{ translate: `${was - left}px 0` }, { translate: '0 0' }], timing),
       )
@@ -134,7 +131,7 @@ function useReleaseSlide(containerRef: RefObject<HTMLElement | null>, holding: b
 }
 
 type Options<S> = {
-  /** 时间线的内容层：左把手松手后在它里面找 `data-slide` 的元素滑过去。 */
+  /** 时间线的内容层：修剪把手松手后在它里面找 `data-slide` 的元素滑过去。 */
   containerRef: RefObject<HTMLElement | null>
   /** 拖完松手时浏览器补的那一下 click 由它吞掉。 */
   clicks: ReturnType<typeof useClickAfterDrag>
@@ -151,7 +148,8 @@ type Options<S> = {
  * 预览，放不下的位置不去、停在上一个放得下的地方；松手只提交那一次结果，并吞掉随后的 click。没超过阈值算点按，
  * 不提交。指针被系统取消（pointercancel）或调用方 `cancel` 时什么都不提交，回到按下前的样子。
  *
- * 修剪把手用 `startTrim`：按的是左把手时，拖动中按 {@link GesturePreview.hold} 画，松手后滑到首尾相接的位置。
+ * 修剪一串首尾相接的块用 `startTrim`：拖动中调用方按已提交的布局画（见 {@link trimSpans}），松手后滑到首尾
+ * 相接的位置。
  */
 export function usePreviewGesture<S>({
   containerRef,
@@ -160,21 +158,22 @@ export function usePreviewGesture<S>({
   onCommit,
   onPreview,
 }: Options<S>) {
-  const [state, setState] = useState<{ preview: GesturePreview<S>; pin: Pin | undefined } | null>(
-    null,
-  )
+  const [state, setState] = useState<{
+    preview: GesturePreview<S>
+    trim: TrimTarget | undefined
+  } | null>(null)
   const gestureRef = useRef<Gesture<S> | null>(null)
-  useReleaseSlide(containerRef, state?.pin !== undefined)
+  useReleaseSlide(containerRef, state?.trim)
 
-  const show = (preview: GesturePreview<S> | null, pin?: Pin) => {
-    setState(preview === null ? null : { preview, pin })
+  const show = (preview: GesturePreview<S> | null, trim?: TrimTarget) => {
+    setState(preview === null ? null : { preview, trim })
     onPreview?.(preview)
   }
 
   const begin = (
     event: PointerEvent<HTMLElement>,
     compute: Gesture<S>['compute'],
-    pin: Pin | undefined,
+    trim: TrimTarget | undefined,
   ) => {
     if (event.button !== 0) return
     clicks.reset()
@@ -184,7 +183,7 @@ export function usePreviewGesture<S>({
       originX: event.clientX,
       originY: event.clientY,
       compute,
-      pin,
+      trim,
       moved: false,
       last: undefined,
     }
@@ -197,11 +196,11 @@ export function usePreviewGesture<S>({
   /** 按下一串首尾相接的块里某一块的修剪把手；不让按下传到块上（块自己也能拖）。 */
   const startTrim = (
     event: PointerEvent<HTMLElement>,
-    { id, edge, end }: TrimTarget,
+    target: TrimTarget,
     compute: Gesture<S>['compute'],
   ) => {
     event.stopPropagation()
-    begin(event, compute, edge === 'start' ? { id, end } : undefined)
+    begin(event, compute, target)
   }
 
   const move = (event: PointerEvent<HTMLElement>) => {
@@ -213,13 +212,8 @@ export function usePreviewGesture<S>({
     gesture.moved = true
     const step = gesture.compute(deltaPx, event.clientY)
     if (accepts(step)) gesture.last = step
-    const { last, pin } = gesture
-    show(
-      last === undefined
-        ? null
-        : { last, step, hold: (items, chain) => holdLeftTrim(items, pin, chain) },
-      pin,
-    )
+    const { last, trim } = gesture
+    show(last === undefined ? null : { last, step }, trim)
   }
 
   /** 松手；返回这一下算不算拖动（不算就当点按处理） */
@@ -243,15 +237,5 @@ export function usePreviewGesture<S>({
     show(null)
   }
 
-  return {
-    preview: state?.preview ?? null,
-    start,
-    startTrim,
-    move,
-    end,
-    cancel,
-    /** 一串首尾相接的块此刻的显示位置：没在拖左把手时就是它们自己。 */
-    hold: <T extends { id: string }>(items: readonly T[], chain: Chain<T>): Held<T> =>
-      state === null ? { items, shiftAt: (time) => time } : state.preview.hold(items, chain),
-  }
+  return { preview: state?.preview ?? null, start, startTrim, move, end, cancel }
 }

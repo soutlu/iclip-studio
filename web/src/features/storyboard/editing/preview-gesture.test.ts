@@ -1,17 +1,13 @@
 import { act, renderHook } from '@testing-library/react'
 import type { PointerEvent } from 'react'
-import { describe, expect, it, vi } from 'vitest'
-import { usePreviewGesture, type Chain } from './preview-gesture'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { trimSpans, usePreviewGesture, type TrimTarget } from './preview-gesture'
 import { useClickAfterDrag } from './timeline-drag'
+
+afterEach(() => vi.restoreAllMocks())
 
 type Block = { id: string; at: number; d: number }
 type Step = { dx: number; fits: boolean; blocks: readonly Block[] }
-
-const chain: Chain<Block> = {
-  startOf: (block) => block.at,
-  lengthOf: (block) => block.d,
-  moved: (block, at) => ({ ...block, at }),
-}
 
 /** 指针事件：只带核心读的字段，指针捕获由一个假的按下元素承担。 */
 const pointer = (clientX: number, { button = 0, clientY = 0 } = {}) =>
@@ -30,7 +26,6 @@ const pointer = (clientX: number, { button = 0, clientY = 0 } = {}) =>
 
 // 三块首尾相接：a 0–2、b 2–4、c 4–5（秒）；每 10px 是 0.1 秒
 const A: Block = { id: 'a', at: 0, d: 2 }
-const BLOCKS: readonly Block[] = [A, { id: 'b', at: 2, d: 2 }, { id: 'c', at: 4, d: 1 }]
 
 /** 往左拖 `dx` 像素时 b 的左把手：b 变长，c 跟着往后；拖过 1.5 秒放不下。 */
 const stretchB = (dx: number): Step => {
@@ -42,13 +37,56 @@ const stretchB = (dx: number): Step => {
   }
 }
 
-const setup = () => {
-  const onCommit = vi.fn()
+/**
+ * 时间线内容层：三块各带 `data-slide`，位置（像素，每秒 100px）由 `layout` 给出；jsdom 不排版，量到的就是它。
+ * `commit` 把位置换成这一步提交之后首尾相接的样子（同调用方在提交时改数据）。
+ */
+const timeline = () => {
+  const container = document.createElement('div')
+  const nodes = new Map(
+    ['a', 'b', 'c'].map((id) => {
+      const node = document.createElement('div')
+      node.dataset['slide'] = id
+      container.append(node)
+      return [id, node] as const
+    }),
+  )
+  let layout: readonly Block[] = [A, { id: 'b', at: 2, d: 2 }, { id: 'c', at: 4, d: 1 }]
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const block = layout.find((candidate) => nodes.get(candidate.id) === this)
+    return block === undefined
+      ? DOMRect.fromRect({ x: 0, y: 0, width: 600, height: 40 })
+      : DOMRect.fromRect({ x: block.at * 100, y: 0, width: block.d * 100, height: 40 })
+  })
+  const calls: { slide: string | undefined; keyframes: Keyframe[] }[] = []
+  vi.spyOn(Element.prototype, 'animate').mockImplementation(function (
+    this: Element,
+    keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+  ) {
+    calls.push({
+      slide: (this as HTMLElement).dataset['slide'],
+      keyframes: keyframes as Keyframe[],
+    })
+    return { cancel: () => {} } as unknown as Animation
+  })
+  return {
+    container,
+    calls,
+    commit: (step: Step) => {
+      layout = step.blocks
+    },
+  }
+}
+
+const setup = (view = timeline()) => {
+  const onCommit = vi.fn<(step: Step) => void>(view.commit)
   const onPreview = vi.fn()
-  const view = renderHook(() => {
+  const hook = renderHook(() => {
     const clicks = useClickAfterDrag()
     const gesture = usePreviewGesture<Step>({
-      containerRef: { current: null },
+      containerRef: { current: view.container },
       clicks,
       accepts: (step) => step.fits,
       onCommit,
@@ -56,14 +94,15 @@ const setup = () => {
     })
     return { clicks, gesture }
   })
-  const gesture = () => view.result.current.gesture
+  const gesture = () => hook.result.current.gesture
   return {
     onCommit,
     onPreview,
     gesture,
+    calls: view.calls,
     press: (compute = stretchB) => act(() => gesture().start(pointer(0), compute)),
-    pressTrim: (edge: 'start' | 'end') =>
-      act(() => gesture().startTrim(pointer(0), { id: 'b', edge, end: 4 }, stretchB)),
+    pressTrim: (target: TrimTarget, compute: (dx: number) => Step) =>
+      act(() => gesture().startTrim(pointer(0), target, compute)),
     move: (clientX: number) => act(() => gesture().move(pointer(clientX))),
     release: () => {
       let moved = false
@@ -72,7 +111,7 @@ const setup = () => {
       })
       return moved
     },
-    tookClick: () => view.result.current.clicks.take(),
+    tookClick: () => hook.result.current.clicks.take(),
   }
 }
 
@@ -94,7 +133,7 @@ describe('usePreviewGesture', () => {
     expect(gesture().preview?.last.dx).toBe(-5)
     move(-50)
     expect(gesture().preview?.last.dx).toBe(-50)
-    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ last: stretchB(-50) }))
+    expect(onPreview).toHaveBeenLastCalledWith({ last: stretchB(-50), step: stretchB(-50) })
     expect(onCommit).not.toHaveBeenCalled()
 
     expect(release()).toBe(true)
@@ -146,32 +185,90 @@ describe('usePreviewGesture', () => {
     expect(release()).toBe(false)
     expect(onCommit).not.toHaveBeenCalled()
   })
+})
 
-  it('左把手：被拖的块右边沿与后面的块停在按下时的位置，左边沿跟手；时刻按显示位置换算', () => {
-    const { pressTrim, move, gesture } = setup()
-    pressTrim('start')
-    // 往左 50px：b 变成 2–4.5、c 4.5–5.5；显示上 b 在 1.5–4、c 仍在 4
-    move(-50)
-    const held = gesture().hold(gesture().preview?.last.blocks ?? [], chain)
-    expect(held.items).toEqual([
-      { id: 'a', at: 0, d: 2 },
-      { id: 'b', at: 1.5, d: 2.5 },
-      { id: 'c', at: 4, d: 1 },
-    ])
-    expect(held.shiftAt(2)).toBe(1.5)
-    expect(held.shiftAt(1)).toBe(1)
-    // 拖动中给调用方的预览带着同一个摆法
-    expect(gesture().preview?.hold(gesture().preview?.last.blocks ?? [], chain).items).toEqual(
-      held.items,
-    )
+describe('修剪一串首尾相接的块：松手后滑到首尾相接的位置', () => {
+  /** 往右拖 `dx` 像素时 b 的左把手（往里裁）：b 变短，c 跟着往前。 */
+  const cutStart = (dx: number): Step => ({
+    dx,
+    fits: true,
+    blocks: [A, { id: 'b', at: 2, d: 2 - dx / 100 }, { id: 'c', at: 4 - dx / 100, d: 1 }],
+  })
+  /** 往左拖 `dx` 像素时 b 的右把手（往里裁）：b 变短，c 跟着往前。 */
+  const cutEnd = (dx: number): Step => ({
+    dx,
+    fits: true,
+    blocks: [A, { id: 'b', at: 2, d: 2 + dx / 100 }, { id: 'c', at: 4 + dx / 100, d: 1 }],
+  })
+  const slides = (calls: ReturnType<typeof timeline>['calls'], slide: string) =>
+    calls.filter((call) => call.slide === slide).map((call) => call.keyframes)
+
+  it('左把手：拖动中不动画；松手提交一次，被拖的块从保留段所在的地方、后面的块从原位滑过来，前面的块不动', () => {
+    const { pressTrim, move, release, onCommit, calls } = setup()
+    pressTrim({ slide: 'b', edge: 'start' }, cutStart)
+    move(30)
+    move(50)
+    expect(calls).toEqual([])
+    release()
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith(cutStart(50))
+    // b 拖动中保留下来的是 2.5–4 秒，松手后在 2–3.5 秒；c 从 4 秒到 3.5 秒
+    expect(slides(calls, 'b')).toEqual([[{ translate: '50px 0' }, { translate: '0 0' }]])
+    expect(slides(calls, 'c')).toEqual([[{ translate: '50px 0' }, { translate: '0 0' }]])
+    expect(slides(calls, 'a')).toEqual([])
   })
 
-  it('右把手与没在拖时都不挪显示位置', () => {
-    const { pressTrim, move, gesture } = setup()
-    expect(gesture().hold(BLOCKS, chain).items).toBe(BLOCKS)
-    pressTrim('end')
+  it('左把手往外拉长：被拖的块从拉长后左边沿所在的地方滑过来', () => {
+    const { pressTrim, move, release, calls } = setup()
+    pressTrim({ slide: 'b', edge: 'start' }, stretchB)
     move(-50)
-    const blocks = gesture().preview?.last.blocks ?? []
-    expect(gesture().hold(blocks, chain).items).toBe(blocks)
+    release()
+    // b 拖动中是 1.5–4 秒，松手后在 2–4.5 秒
+    expect(slides(calls, 'b')).toEqual([[{ translate: '-50px 0' }, { translate: '0 0' }]])
+    expect(slides(calls, 'c')).toEqual([[{ translate: '-50px 0' }, { translate: '0 0' }]])
+  })
+
+  it('右把手：被拖的块原地变长短，只有后面的块滑过来', () => {
+    const { pressTrim, move, release, calls } = setup()
+    pressTrim({ slide: 'b', edge: 'end' }, cutEnd)
+    move(-50)
+    expect(calls).toEqual([])
+    release()
+    expect(slides(calls, 'b')).toEqual([])
+    expect(slides(calls, 'c')).toEqual([[{ translate: '50px 0' }, { translate: '0 0' }]])
+    expect(slides(calls, 'a')).toEqual([])
+  })
+
+  it('取消、没拖动就松手、挪块（不是修剪）都不滑', () => {
+    const cancelled = setup()
+    cancelled.pressTrim({ slide: 'b', edge: 'start' }, cutStart)
+    cancelled.move(50)
+    act(() => cancelled.gesture().cancel())
+    expect(cancelled.calls).toEqual([])
+
+    const tapped = setup()
+    tapped.pressTrim({ slide: 'b', edge: 'start' }, cutStart)
+    tapped.release()
+    expect(tapped.calls).toEqual([])
+
+    const carried = setup()
+    carried.press(cutStart)
+    carried.move(50)
+    carried.release()
+    expect(carried.onCommit).toHaveBeenCalledTimes(1)
+    expect(carried.calls).toEqual([])
+  })
+})
+
+describe('trimSpans', () => {
+  // 这一块在 2–4 秒（长 2 秒）
+  it.each([
+    ['左把手往里裁', 'start', 1.5, { at: 2.5, len: 1.5 }, { at: 2, len: 0.5 }, undefined],
+    ['左把手往外拉长', 'start', 2.5, { at: 1.5, len: 2.5 }, undefined, { at: 1.5, len: 0.5 }],
+    ['右把手往里裁', 'end', 1.5, { at: 2, len: 1.5 }, { at: 3.5, len: 0.5 }, undefined],
+    ['右把手往外拉长', 'end', 2.5, { at: 2, len: 2.5 }, undefined, { at: 4, len: 0.5 }],
+    ['长度没变', 'start', 2, { at: 2, len: 2 }, undefined, undefined],
+  ] as const)('%s：保留段、要剪掉的段与拉长出来的段', (_, edge, next, kept, cut, added) => {
+    expect(trimSpans(edge, { at: 2, len: 2 }, next)).toEqual({ kept, cut, added })
   })
 })
