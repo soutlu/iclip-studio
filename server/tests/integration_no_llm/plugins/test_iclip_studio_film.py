@@ -1,0 +1,126 @@
+"""工程文件的检查经真实 Postgres 文件存储与素材台账的往返。"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncGenerator
+from typing import Any
+
+import pytest
+from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.domains.agents.public import AgentRunDeps
+from iclip.domains.identity.models import Principal
+from iclip.platform.db.engine import build_engine
+from iclip.platform.file_store.pg import PgFileStore
+from iclip.platform.file_store.store import FileSpace
+from iclip.platform.material_ledger.pg import PgMaterialLedger
+from iclip.platform.material_ledger.store import Material
+from iclip.plugins.iclip_studio.capability import IclipStudio
+from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip.plugins.workspace.scope import workspace_namespace
+from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_FRONT
+from tests.helpers.pg import truncate_clean
+
+USER = uuid.UUID("55555555-5555-5555-5555-555555555555")
+
+
+@pytest.fixture
+async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
+    engine = build_engine(migrated_pg)
+    async with engine.begin() as conn:
+        await truncate_clean(conn, ("agent_runtime.workspace_files", "agent_runtime.materials"))
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def conversation_id() -> str:
+    return f"c-{uuid.uuid4().hex[:8]}"
+
+
+def make_deps(conversation_id: str) -> AgentRunDeps:
+    return AgentRunDeps(
+        principal=Principal(
+            kind="user",
+            user_id=USER,
+            permissions=frozenset({"agent:run"}),
+            audit_label="logan",
+            api_key_id=None,
+        ),
+        conversation_id=conversation_id,
+        user_name="logan",
+    )
+
+
+async def call_once(
+    capability: IclipStudio[object], conversation_id: str, tool_name: str, args: dict[str, Any]
+) -> tuple[list[ToolReturnPart], list[str]]:
+    """模型只调一次工具，返回它收到的退回单和工具结果。"""
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="c1")])
+        return ModelResponse(parts=[TextPart("好")])
+
+    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
+        "写工程文件。", deps=make_deps(conversation_id)
+    )
+    returns = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    return (
+        [part for part in returns if part.outcome == "retried"],
+        [str(part.content) for part in returns if part.outcome != "retried"],
+    )
+
+
+def make_studio(engine: AsyncEngine) -> tuple[IclipStudio[object], PgFileStore, PgMaterialLedger]:
+    files = PgFileStore(engine)
+    ledger = PgMaterialLedger(engine)
+    capability = IclipStudio[object](
+        space=FileSpace(store=files, namespace=workspace_namespace),
+        ledger=ledger,
+    )
+    return capability, files, ledger
+
+
+async def test_check_round_trips_through_postgres(
+    engine: AsyncEngine, conversation_id: str
+) -> None:
+    capability, files, ledger = make_studio(engine)
+    namespace = f"{USER}/{conversation_id}"
+    await files.write(namespace, FILM_PATH, FILM)
+    await files.write(namespace, RUN_PATH, RUN)
+    await ledger.record(namespace, [Material(url=url, kind="image") for url in GIVEN_IMAGES])
+
+    retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
+    assert retries == []
+    assert checked.startswith("工程规范检查通过：8 个图片生成节点，2 个视频生成节点。")
+
+
+async def test_an_address_the_conversation_never_received_fails_the_check(
+    engine: AsyncEngine, conversation_id: str
+) -> None:
+    capability, files, ledger = make_studio(engine)
+    namespace = f"{USER}/{conversation_id}"
+    await files.write(namespace, FILM_PATH, FILM)
+    await ledger.record(namespace, [Material(url=SHOE_FRONT, kind="video")])
+
+    retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
+
+    assert retries == []
+    assert checked.startswith("工程规范检查未通过")
+    assert "src 不在这段对话的素材里" in checked

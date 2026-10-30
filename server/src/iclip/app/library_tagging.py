@@ -15,9 +15,6 @@ from typing import Any, Final
 import httpx
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
-from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
-from iclip.capabilities.video_breakdown.ports import BreakdownError
-from iclip.capabilities.workspace.scope import namespace_for
 from iclip.config import ResolvedIclipStudio
 from iclip.domains.library.repository import LibraryReports
 from iclip.domains.references.repository import ReferenceStore
@@ -30,6 +27,9 @@ from iclip.domains.tagging.models import (
     TagNode,
 )
 from iclip.platform.file_store.store import FileStore
+from iclip.plugins.video_breakdown.model import ArkBreakdownModel
+from iclip.plugins.video_breakdown.ports import BreakdownError
+from iclip.plugins.workspace.scope import namespace_for
 
 TAG_REASONING_EFFORT: Final = "low"
 

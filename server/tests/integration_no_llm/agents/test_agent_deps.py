@@ -18,6 +18,7 @@ from iclip.domains.agents.public import AgentRunDeps
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, new_conversation, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.plugins import FixedPlugin
 
 AGENT_ID = "storyboard"
 
@@ -51,16 +52,16 @@ def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
 
 
 @pytest.fixture(autouse=True)
-def registered_capability(monkeypatch: pytest.MonkeyPatch) -> None:
-    """替换组合根的能力表构造函数，使声明可解析测试 identity 能力。"""
+def registered_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """替换组合根的插件登记表构造函数，使声明可解析测试 identity 插件。"""
 
     from iclip.app import bootstrap
-    from iclip.app.capability_table import CapabilityTable
+    from iclip.app.plugin_registry import PluginRegistry
 
-    def only_identity(**_: object) -> CapabilityTable:
-        return {"identity": identity_capability()}
+    def only_identity(**_: object) -> PluginRegistry:
+        return {"identity": FixedPlugin(identity_capability())}
 
-    monkeypatch.setattr(bootstrap, "build_capability_table", only_identity)
+    monkeypatch.setattr(bootstrap, "build_plugin_registry", only_identity)
 
 
 async def tools_said(

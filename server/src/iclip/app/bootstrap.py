@@ -27,7 +27,6 @@ from iclip.app.agent_layer import (
     watch_and_reload,
 )
 from iclip.app.brand_templates import template_font_prober
-from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
 from iclip.app.conversation_same_style import LibrarySameStyleSource, SameStyleCopier
@@ -45,14 +44,12 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
+from iclip.app.plugin_registry import build_display_registry, build_plugin_registry
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.shot_document import SHOTS_PATH
-from iclip.capabilities.workspace.scope import parse_namespace
 from iclip.common.errors import NotFound
 from iclip.config import (
     QWEN_API_KEY_ENV,
@@ -154,6 +151,9 @@ from iclip.platform.object_store.store import (
     ServerUploadSigner,
 )
 from iclip.platform.outbound.fetch import PublicFetcher
+from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip.plugins.shot_document import SHOTS_PATH
+from iclip.plugins.workspace.scope import parse_namespace
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -625,7 +625,7 @@ def build_app(
             return {}
         return await generation.service.latest_master_by_conversation(conversation_ids)
 
-    capability_table = build_capability_table(
+    plugins = build_plugin_registry(
         workspace_store=announcing_workspace_store,
         material_ledger=material_ledger,
         http_client=http_client,
@@ -640,10 +640,10 @@ def build_app(
         reference_service=references.service if references.queue is not None else None,
         media_codec=codec,
     )
-    tool_displays = build_display_registry(capability_table)
+    tool_displays = build_display_registry(plugins)
     transcript_store = TranscriptStore()
     layer_deps = LayerDeps(
-        table=capability_table,
+        plugins=plugins,
         step_store=step_store,
         usage_ledger=usage_ledger,
         live=transcript_store,

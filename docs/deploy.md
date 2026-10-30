@@ -10,7 +10,7 @@
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
 3. 把一份 `server/configs/`（`config.yaml`）、`server/agents/`（`agents.yaml`、各 agent 目录）和 `server/skills/`（一个子目录一个 skill）放到本机。这三个目录不进仓库，修改后保存即生效；不挂 skill 时可以没有 `skills/`。
-   - 默认的 `storyboard` Agent 需要视频理解、媒体生成和对象存储。只跑基础对话时，去掉这条 Agent 声明和 `config.yaml` 的 `video`、`shot_video` 段，另声明一条不挂这些能力的 Agent。
+   - 默认的 `storyboard` Agent 需要视频理解、媒体生成和对象存储。只跑基础对话时，去掉这条 Agent 声明和 `config.yaml` 的 `video`、`shot_video` 段，另声明一条不挂这些插件的 Agent。
 4. 迁移数据库并启动后端：
 
    ```bash

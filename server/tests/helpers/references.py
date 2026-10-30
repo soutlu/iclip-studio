@@ -17,15 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from iclip.app.library_tagging import ArkTagger
 from iclip.app.reference_breakdown import ArkVideoBreakdowns
 from iclip.app.reference_test_video import TEST_VIDEO_MODEL
-from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
-from iclip.capabilities.video_breakdown.ports import SampledVideo
-from iclip.capabilities.video_breakdown.service import BreakdownRunner
 from iclip.config import RuntimeConfig, VideoGenerationSection
 from iclip.config.models import IclipStudioSection
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import TestVideoJob
 from iclip.domains.references.test_prompt import TestPrompt
 from iclip.platform.media.errors import MediaError
+from iclip.plugins.video_breakdown.model import ArkBreakdownModel
+from iclip.plugins.video_breakdown.ports import SampledVideo
+from iclip.plugins.video_breakdown.service import BreakdownRunner
 from tests.helpers.app import make_runtime_config
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 

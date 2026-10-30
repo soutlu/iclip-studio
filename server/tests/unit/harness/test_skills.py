@@ -121,7 +121,7 @@ def test_the_reference_tool_has_a_display(tmp_path: Path) -> None:
 
 
 def test_loading_a_skill_body_has_a_display_too() -> None:
-    """官方按需加载工具不归任何能力包，名字固定，画法跟 skill 表走。"""
+    """官方按需加载工具不归任何插件包，名字固定，画法跟 skill 表走。"""
 
     drawn = skill_display_table()["load_capability"]
 

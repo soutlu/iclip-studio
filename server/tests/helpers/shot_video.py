@@ -1,20 +1,30 @@
-"""镜头素材能力的内存替身：生成、对象存储和视频解析。"""
+"""取帧与出图插件的内存替身（生成、对象存储和视频解析），以及经插件装配的入口。"""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import get_args
 
-from iclip.capabilities.shot_video.ports import (
+import httpx
+
+from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
+from iclip.domains.identity.public import Principal
+from iclip.platform.file_store.store import FileSpace
+from iclip.platform.material_ledger.store import MaterialLedger
+from iclip.platform.media.codec import MediaCodec
+from iclip.plugins.base import PluginParameters
+from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo, ShotVideoPlugin
+from iclip.plugins.shot_video.ports import (
     ImageChannel,
+    ImageGenerations,
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
+    PublicObjectWriter,
+    ShotVideoPaths,
 )
-from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
-from iclip.domains.identity.public import Principal
 
 _ASPECT_RATIOS: frozenset[str] = frozenset(get_args(IMAGE_ASPECT_RATIOS))
 _RESOLUTIONS: frozenset[str] = frozenset(get_args(IMAGE_RESOLUTIONS))
@@ -123,4 +133,35 @@ class FakeUnderstanding:
         return self.document
 
 
-__all__ = ["FakeGenerations", "FakeObjects", "FakeUnderstanding", "Outcome"]
+def mount_shot_video(
+    *,
+    space: FileSpace,
+    ledger: MaterialLedger,
+    generations: ImageGenerations,
+    objects: PublicObjectWriter,
+    paths: ShotVideoPaths,
+    client: httpx.AsyncClient,
+    fetch_url: Callable[[str], str],
+    image_models: frozenset[str],
+    policy: GenerationPolicy,
+    codec: MediaCodec,
+) -> ShotVideo[object]:
+    """经 ``ShotVideoPlugin`` 装配并 build 一份取帧与出图 capability，和组合根挂给 agent 的同一条路。"""
+
+    (capability,) = ShotVideoPlugin(
+        space=space,
+        ledger=ledger,
+        generations=generations,
+        objects=objects,
+        paths=paths,
+        client=client,
+        fetch_url=fetch_url,
+        image_models=image_models,
+        policy=policy,
+        codec=codec,
+    ).build(PluginParameters())
+    assert isinstance(capability, ShotVideo)
+    return capability
+
+
+__all__ = ["FakeGenerations", "FakeObjects", "FakeUnderstanding", "Outcome", "mount_shot_video"]

@@ -9,7 +9,7 @@ SRC = Path(__file__).resolve().parents[3] / "src" / "iclip"
 
 # 框架及允许直接导入它的路径前缀（相对 src/iclip）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("pydantic_ai",): ("harness/", "capabilities/"),
+    ("pydantic_ai",): ("harness/", "plugins/"),
     ("pydantic_ai_harness",): ("harness/",),
     ("fastapi", "starlette"): (
         "app/",
@@ -52,7 +52,7 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("openai",): ("harness/models.py",),
     # 端口协议在 store.py，消费方不经 SDK 适配器就能依赖它。
     ("oss2",): ("platform/object_store/oss.py",),
-    ("PIL",): ("capabilities/shot_video/board.py", "platform/media/image.py"),
+    ("PIL",): ("plugins/shot_video/board.py", "platform/media/image.py"),
     # 队列实现、连接器类型与组合根需要直接引用 procrastinate。
     ("procrastinate",): (
         "domains/generation/queue.py",
@@ -66,7 +66,7 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
 }
 # 模块自有 SQL 按 infra_sql.py 文件名匹配。
 _SQLALCHEMY_MODULE_FILE = "infra_sql.py"
-_SQLALCHEMY_MODULE_PREFIXES = ("domains/", "capabilities/")
+_SQLALCHEMY_MODULE_PREFIXES = ("domains/", "plugins/")
 
 
 def _python_files() -> list[Path]:
@@ -112,7 +112,7 @@ def test_cross_module_imports_only_public() -> None:
 
     violations: list[str] = []
     domains = [p.name for p in (SRC / "domains").iterdir() if p.is_dir()]
-    for root_name, has_own in (("domains", True), ("capabilities", False)):
+    for root_name, has_own in (("domains", True), ("plugins", False)):
         for path in (SRC / root_name).rglob("*.py"):
             rel = _rel(path)
             own = rel.split("/")[1] if has_own else None

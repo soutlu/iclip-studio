@@ -1,0 +1,655 @@
+"""插件按名字解析，名字没登记即装配期报错。"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Callable, Mapping
+from typing import Any, cast
+
+import httpx
+import pytest
+from pydantic_ai.capabilities import Capability
+
+from iclip.app.plugin_registry import (
+    GenerationsAdapter,
+    ObjectWriterAdapter,
+    OssMediaProbe,
+    PluginRegistry,
+    build_display_registry,
+    build_plugin_registry,
+    resolve_plugins,
+)
+from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
+from iclip.common.errors import ValidationFailed
+from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
+from iclip.domains.generation.schemas import ImageGenerationIn
+from iclip.domains.generation.service import GenerationService, SettledRecords
+from iclip.domains.identity.public import Principal
+from iclip.domains.references.models import Outcome
+from iclip.domains.references.service import ReferenceService
+from iclip.harness.background import BackgroundTools
+from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.object_store.store import ObjectStoreUnavailable
+from iclip.plugins.iclip_studio.capability import IclipStudio
+from iclip.plugins.shot_video.capability import ShotVideo
+from iclip.plugins.shot_video.generation import IMAGE_MODEL
+from iclip.plugins.shot_video.ports import (
+    ImageRequest,
+    InvalidImageRequest,
+    ObjectWriteFailed,
+)
+from iclip.plugins.video.capability import Video
+from iclip.plugins.video_breakdown.capability import VideoBreakdown
+from iclip.plugins.video_shots.capability import VideoShots
+from iclip.plugins.workspace.capability import Workspace
+from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from tests.helpers.fetch_url import as_is, rewriting
+from tests.helpers.file_store import FakeFileStore
+from tests.helpers.generation import (
+    InMemoryGenerationRepository,
+    MemoryObjectStore,
+    image_request,
+    make_job,
+)
+from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.plugins import FixedPlugin
+
+IMAGE_URL = "https://bucket.oss-ap-southeast-1.aliyuncs.com/style.jpg"
+
+
+def idle_client() -> httpx.AsyncClient:
+    """装配测试不发送网络请求。"""
+
+    return httpx.AsyncClient()
+
+
+@pytest.fixture
+def video_settings() -> ResolvedVideo:
+    return ResolvedVideo(
+        understanding_url="https://vision.test/responses",
+        understanding_api_key="ark",
+        understanding_model="seed-vision",
+        understanding_thinking="medium",
+        understanding_fps=5,
+    )
+
+
+@pytest.fixture
+def shot_video_settings() -> ResolvedShotVideo:
+    return ResolvedShotVideo(
+        poll_interval_seconds=5.0,
+        dev_attempts=2,
+        pro_attempts=1,
+        backoff_seconds=5.0,
+        backoff_factor=3.0,
+        job_timeout_seconds=1800.0,
+    )
+
+
+@pytest.fixture
+def dummy() -> Capability[object]:
+    return Capability[object](id="dummy", instructions="按镜头表干活。")
+
+
+@pytest.fixture
+def registry(dummy: Capability[object]) -> PluginRegistry:
+    return {"dummy": FixedPlugin((dummy,))}
+
+
+def test_unknown_name_fails_loudly(registry: PluginRegistry) -> None:
+
+    with pytest.raises(RuntimeError, match="引用了未登记的插件 'shots'"):
+        resolve_plugins(("shots",), registry=registry, declared_by="agent storyboard")
+
+
+def test_registered_name_resolves(dummy: Capability[object], registry: PluginRegistry) -> None:
+    assert resolve_plugins(("dummy",), registry=registry, declared_by="agent storyboard") == (
+        dummy,
+    )
+
+
+def test_nothing_declared_mounts_nothing(registry: PluginRegistry) -> None:
+    assert resolve_plugins((), registry=registry, declared_by="agent storyboard") == ()
+
+
+def test_shot_video_is_not_registered_unless_the_composition_root_passes_it() -> None:
+
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+    )
+    assert set(built) == {"workspace", "iclip_studio", "video_shots"}
+    with pytest.raises(RuntimeError, match="引用了未登记的插件 'shot_video'"):
+        resolve_plugins(("shot_video",), registry=built, declared_by="agent storyboard")
+
+
+def test_plugins_without_their_own_config_are_always_registered() -> None:
+    """工程文件检查与镜头组交付只用工作区和素材台账：什么都没配也登记，挂时要一起挂 workspace。"""
+
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+    )
+
+    resolved = resolve_plugins(
+        ("workspace", "iclip_studio", "video_shots"), registry=built, declared_by="agent director"
+    )
+    assert [type(capability) for capability in resolved] == [Workspace, IclipStudio, VideoShots]
+    shots = resolved[2]
+    assert isinstance(shots, VideoShots)
+    assert set(shots.get_toolset().tools) == {"write_video_shots"}
+    with pytest.raises(RuntimeError, match="没挂 'workspace'"):
+        resolve_plugins(("video_shots",), registry=built, declared_by="agent replica")
+
+
+STUDIO = ResolvedIclipStudio(
+    breakdown_url="https://vision.test/responses",
+    breakdown_api_key="ark",
+    breakdown_model="seed-vision",
+    breakdown_concurrency=2,
+)
+STUDIO_VIDEO = "https://cdn.test/ref.mp4"
+STUDIO_PRINCIPAL = Principal(
+    kind="user",
+    user_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+    permissions=frozenset({"agent:run"}),
+    audit_label="logan",
+)
+
+
+class RecordingReferences:
+    """参考视频服务的替身：记下工具要了哪条视频，交回一份拆解。"""
+
+    def __init__(self) -> None:
+        self.asked: list[tuple[Principal, str]] = []
+
+    async def ensure(self, principal: Principal, video_url: str) -> Outcome:
+        self.asked.append((principal, video_url))
+        return Outcome(document="# 出场元素")
+
+
+async def test_video_breakdown_breaks_videos_down_through_the_reference_service() -> None:
+    """不需要对象存储：拆解在参考视频那一行上，与资料库共用。"""
+
+    references = RecordingReferences()
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+        iclip_studio=STUDIO,
+        reference_service=cast("ReferenceService", references),
+    )
+
+    workspace, capability, background, studio = resolve_plugins(
+        ("workspace", "video_breakdown", "iclip_studio"),
+        registry=built,
+        declared_by="agent replica",
+    )
+    assert isinstance(workspace, Workspace)
+    assert isinstance(capability, VideoBreakdown)
+    assert isinstance(background, BackgroundTools), "breakdown_video 要挂着后台工具才在后台跑"
+    assert isinstance(studio, IclipStudio), "后台工具只跟着 video_breakdown 挂"
+    assert isinstance(capability.breakdowns, ReferenceBreakdownsAdapter)
+    assert await capability.breakdowns.ensure(STUDIO_PRINCIPAL, STUDIO_VIDEO) == "# 出场元素"
+    assert references.asked == [(STUDIO_PRINCIPAL, STUDIO_VIDEO)]
+    with pytest.raises(RuntimeError, match="没挂 'workspace'"):
+        resolve_plugins(("video_breakdown",), registry=built, declared_by="agent replica")
+
+
+def test_video_breakdown_without_the_reference_service_is_an_assembly_error() -> None:
+    with pytest.raises(RuntimeError, match="video_breakdown 要有参考视频服务"):
+        build_plugin_registry(
+            workspace_store=FakeFileStore(),
+            material_ledger=FakeMaterialLedger(),
+            http_client=idle_client(),
+            fetch_url=as_is,
+            object_store=MemoryObjectStore(),
+            iclip_studio=STUDIO,
+        )
+
+
+def test_shot_video_passed_without_its_backing_is_an_assembly_error(
+    shot_video_settings: ResolvedShotVideo,
+) -> None:
+    """是否启用由 ResolvedSettings.shot_tools_enabled 判；传进来却缺生成或对象存储是组合根的错。"""
+
+    with pytest.raises(RuntimeError, match="shot_tools_enabled"):
+        build_plugin_registry(
+            workspace_store=FakeFileStore(),
+            material_ledger=FakeMaterialLedger(),
+            http_client=idle_client(),
+            fetch_url=as_is,
+            shot_video=shot_video_settings,
+        )
+
+
+def test_shot_video_is_registered_when_backed(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        generation_service=cast("GenerationService", object()),
+        settled_records=cast("SettledRecords", object()),
+        object_store=MemoryObjectStore(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+        video=video_settings,
+        shot_video=shot_video_settings,
+        image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
+    )
+    resolved = resolve_plugins(
+        ("workspace", "video", "shot_video"), registry=built, declared_by="agent storyboard"
+    )
+    assert [type(capability) for capability in resolved] == [Workspace, Video, ShotVideo]
+
+
+def test_shot_video_without_workspace_and_video_fails_at_assembly(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    """取帧读 video 写的拆解文档、产物靠工作区工具读取，少挂任一个都在装配时拒绝。"""
+
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        generation_service=cast("GenerationService", object()),
+        settled_records=cast("SettledRecords", object()),
+        object_store=MemoryObjectStore(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+        video=video_settings,
+        shot_video=shot_video_settings,
+        image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
+    )
+    with pytest.raises(RuntimeError, match=r"没挂 'workspace', 'video'.*agents\.yaml"):
+        resolve_plugins(("shot_video",), registry=built, declared_by="agent storyboard")
+    with pytest.raises(RuntimeError, match=r"没挂 'video'.*agents\.yaml"):
+        resolve_plugins(("workspace", "shot_video"), registry=built, declared_by="agent storyboard")
+
+
+def test_the_display_registry_merges_every_display_source(
+    video_settings: ResolvedVideo, shot_video_settings: ResolvedShotVideo
+) -> None:
+    """合并 display 表时需包含不在插件登记表中的 skill 和子代理工具。"""
+
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        generation_service=cast("GenerationService", object()),
+        settled_records=cast("SettledRecords", object()),
+        object_store=MemoryObjectStore(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+        video=video_settings,
+        shot_video=shot_video_settings,
+        image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
+    )
+
+    registry = build_display_registry(built)
+
+    # 每个来源各挑一件：workspace、video、video_shots、iclip_studio、shot_video、skill、派活；
+    # 来源内的清单归各自的测试。
+    assert {
+        "read_file",
+        "video_parser",
+        "write_video_shots",
+        "check_film",
+        "generate_shot_frames",
+        "load_capability",
+        "delegate_task",
+    } <= set(registry.entries)
+
+
+def test_a_plugin_with_an_empty_table_adds_nothing(registry: PluginRegistry) -> None:
+
+    displays = build_display_registry(registry)
+
+    assert set(displays.entries) == set(build_display_registry({}).entries)
+
+
+async def test_generations_adapter_translates_and_reports_bad_parameters() -> None:
+    """生成域定义请求约束，适配器负责映射参数与错误。"""
+
+    adapter = GenerationsAdapter(
+        cast("GenerationService", object()), cast("SettledRecords", object())
+    )
+    with pytest.raises(InvalidImageRequest, match="aspect_ratio"):
+        await adapter.submit(
+            cast("Principal", object()),
+            ImageRequest(
+                prompt="猫",
+                model="nano_banana_pro",
+                aspect_ratio="17:9",
+                resolution="1k",
+                channel="dev",
+                user_name="logan",
+            ),
+        )
+
+
+async def test_generations_adapter_carries_the_conversation_onto_the_job() -> None:
+
+    seen: list[ImageGenerationIn] = []
+
+    class _Recording:
+        async def submit_image(
+            self, principal: Principal, request: ImageGenerationIn
+        ) -> GenerationJob:
+            _ = principal
+            seen.append(request)
+            return make_job(request)
+
+    conversation_id = uuid.uuid4()
+    adapter = GenerationsAdapter(
+        cast("GenerationService", _Recording()), cast("SettledRecords", object())
+    )
+    await adapter.submit(
+        cast("Principal", object()),
+        ImageRequest(
+            prompt="猫",
+            model="nano_banana_pro",
+            aspect_ratio="1:1",
+            resolution="1k",
+            channel="dev",
+            user_name="designer-zhang",
+            conversation_id=str(conversation_id),
+        ),
+    )
+    assert seen[0].conversation_id == conversation_id
+    assert seen[0].user_name == "designer-zhang", "运行替谁跑，图就记在谁头上"
+
+
+class _StoreDown(MemoryObjectStore):
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
+        _ = (object_key, content, content_type, metadata)
+        raise ObjectStoreUnavailable("OSS 写入失败（试了 3 次）: Read timed out")
+
+
+def oss(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    fetch_url: Callable[[str], str] = as_is,
+) -> OssMediaProbe:
+    return OssMediaProbe(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetch_url=fetch_url
+    )
+
+
+# OSS image/info 的字段值均为字符串。
+INFO_BODY = {
+    "FileSize": {"value": "21839"},
+    "Format": {"value": "jpg"},
+    "ImageHeight": {"value": "267"},
+    "ImageWidth": {"value": "400"},
+}
+
+
+async def test_the_probe_reads_the_oss_image_info() -> None:
+
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, json=INFO_BODY)
+
+    info = await oss(handler).image_info(IMAGE_URL)
+
+    assert asked == [f"{IMAGE_URL}?x-oss-process=image/info"]
+    assert info == ImageInfo(media_type="image/jpeg", size_bytes=21839, width=400, height=267)
+
+
+async def test_the_probe_asks_the_rewritten_address_for_image_info() -> None:
+    """本桶地址先换成内网地址，再挂查询参数。"""
+
+    internal = "https://bucket.oss-ap-southeast-1-internal.aliyuncs.com"
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, json=INFO_BODY)
+
+    to_internal = rewriting("https://bucket.oss-ap-southeast-1.aliyuncs.com", internal)
+    await oss(handler, fetch_url=to_internal).image_info(IMAGE_URL)
+
+    assert asked == [f"{internal}/style.jpg?x-oss-process=image/info"]
+
+
+async def test_an_unknown_format_keeps_its_own_name() -> None:
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={**INFO_BODY, "Format": {"value": "bmp"}})
+
+    assert (await oss(handler).image_info(IMAGE_URL)).media_type == "image/bmp"
+
+
+async def test_a_non_success_status_is_a_probe_failure() -> None:
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="NoSuchKey")
+
+    with pytest.raises(MediaProbeFailed, match="对方返回 404"):
+        await oss(handler).image_info(IMAGE_URL)
+
+
+@pytest.mark.parametrize(
+    "body", [{"Format": {"value": "jpg"}}, {**INFO_BODY, "ImageWidth": {"value": "宽"}}]
+)
+async def test_missing_or_unreadable_fields_are_a_probe_failure(body: dict[str, Any]) -> None:
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    with pytest.raises(MediaProbeFailed, match="不是图片信息"):
+        await oss(handler).image_info(IMAGE_URL)
+
+
+async def test_a_non_json_body_is_a_probe_failure() -> None:
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"\xff\xd8\xff\xe0")
+
+    with pytest.raises(MediaProbeFailed, match="不是图片信息"):
+        await oss(handler).image_info(IMAGE_URL)
+
+
+@pytest.mark.parametrize(
+    "url", ["https://cdn.test/style.jpg", f"{IMAGE_URL}?Expires=1&Signature=abc"]
+)
+async def test_an_address_that_cannot_carry_the_info_parameter_is_refused_unasked(
+    url: str,
+) -> None:
+    """非 OSS 域名与已带 query 的地址走 harness.media 的同一道守卫，不发请求、不回显地址。"""
+
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, json=INFO_BODY)
+
+    with pytest.raises(MediaProbeFailed, match="OSS 处理参数") as caught:
+        await oss(handler).image_info(url)
+    assert url not in str(caught.value)
+    assert asked == []
+
+
+async def test_a_network_failure_is_a_probe_failure() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    with pytest.raises(MediaProbeFailed, match="地址访问不到"):
+        await oss(handler).image_info(IMAGE_URL)
+
+
+async def test_object_writer_adapter_translates_the_failure_and_passes_urls_through() -> None:
+    """适配器须转换平台异常为插件包异常，避免可处理的工具错误中断整个运行。"""
+
+    with pytest.raises(ObjectWriteFailed, match="Read timed out"):
+        await ObjectWriterAdapter(_StoreDown()).put_public_object(
+            object_key="k", content=b"x", content_type="image/jpeg"
+        )
+
+    adapter = ObjectWriterAdapter(MemoryObjectStore())
+    url = await adapter.put_public_object(object_key="k", content=b"x", content_type="image/jpeg")
+    assert url == "https://cdn.example.test/k"
+    # 复用取帧台账时按 key 重算板地址，须与写入时交回的逐字相同。
+    assert adapter.public_url("k") == url
+
+
+async def test_generations_adapter_turns_intake_rejection_into_a_fixable_error() -> None:
+    """受理层按所选模型的能力拒绝时，工具要能让模型改参数，而不是把异常裸抛出去。"""
+
+    class _Rejecting:
+        async def submit_image(
+            self, principal: Principal, request: ImageGenerationIn
+        ) -> GenerationJob:
+            _ = principal, request
+            raise ValidationFailed("nano_banana_pro 不支持分辨率 8k")
+
+    adapter = GenerationsAdapter(
+        cast("GenerationService", _Rejecting()), cast("SettledRecords", object())
+    )
+    with pytest.raises(InvalidImageRequest, match="不支持分辨率 8k"):
+        await adapter.submit(
+            cast("Principal", object()),
+            ImageRequest(
+                prompt="猫",
+                model="nano_banana_pro",
+                aspect_ratio="1:1",
+                resolution="1k",
+                channel="dev",
+                user_name="logan",
+            ),
+        )
+
+
+def cutter(user_id: uuid.UUID) -> Principal:
+    return Principal(
+        kind="user",
+        user_id=user_id,
+        permissions=frozenset({"agent:run"}),
+        audit_label="logan",
+    )
+
+
+async def test_cut_cells_are_recorded_against_their_grid_under_the_run_principal() -> None:
+    """切出来的每一格各落一条切图：来源是宫格，对话与需求单抄宫格，属主是运行主体，与地址同序。"""
+
+    owner = uuid.uuid4()
+    grid = make_job(
+        image_request(),
+        status=STATUS_COMPLETED,
+        owner_user_id=owner,
+        conversation_id=uuid.uuid4(),
+        task_id=uuid.uuid4(),
+        output=GenerationOutput(url="https://cdn.test/grid.png"),
+    )
+    repo = InMemoryGenerationRepository([grid])
+    adapter = GenerationsAdapter(cast("GenerationService", object()), SettledRecords(repo))
+    urls = ["https://cdn.test/cells/S1-1.jpg", "https://cdn.test/cells/S2-1.jpg"]
+
+    await adapter.record_cuts(cutter(owner), grid.id, urls)
+
+    cells = [job for job in repo.jobs.values() if job.operation == "cut"]
+    assert [job.output.url for job in cells] == urls
+    assert {
+        (
+            job.kind,
+            job.source_job_id,
+            job.conversation_id,
+            job.task_id,
+            job.owner_user_id,
+            job.status,
+            job.request,
+        )
+        for job in cells
+    } == {("image", grid.id, grid.conversation_id, grid.task_id, owner, STATUS_COMPLETED, None)}
+
+
+@pytest.mark.parametrize("grid_state", ["还没完成", "是视频"])
+async def test_cutting_from_anything_but_a_finished_image_is_a_bug(grid_state: str) -> None:
+    """工具刚等到宫格完成才切；对不上是装配或状态坏了，不当成模型能改的输入。"""
+
+    owner = uuid.uuid4()
+    grid = (
+        make_job(image_request(), owner_user_id=owner)
+        if grid_state == "还没完成"
+        else make_job(
+            status=STATUS_COMPLETED,
+            owner_user_id=owner,
+            output=GenerationOutput(url="https://cdn.test/take.mp4"),
+        )
+    )
+    repo = InMemoryGenerationRepository([grid])
+    adapter = GenerationsAdapter(cast("GenerationService", object()), SettledRecords(repo))
+
+    with pytest.raises(RuntimeError, match="宫格"):
+        await adapter.record_cuts(cutter(owner), grid.id, ["https://cdn.test/cells/S1-1.jpg"])
+    assert list(repo.jobs) == [grid.id]
+
+
+def test_shot_video_refuses_to_mount_when_its_image_model_is_not_wired(
+    shot_video_settings: ResolvedShotVideo,
+) -> None:
+    """出图把用哪家钉在代码里；配置没接这家，起不来比跑起来之后每次出图失败好。"""
+
+    with pytest.raises(RuntimeError, match=IMAGE_MODEL):
+        build_plugin_registry(
+            workspace_store=FakeFileStore(),
+            material_ledger=FakeMaterialLedger(),
+            generation_service=cast("GenerationService", object()),
+            settled_records=cast("SettledRecords", object()),
+            object_store=MemoryObjectStore(),
+            http_client=idle_client(),
+            fetch_url=as_is,
+            shot_video=shot_video_settings,
+            image_models=frozenset({"别的一家"}),
+            media_codec=SOFTWARE,
+        )
+
+
+def test_video_mounts_without_generation_or_object_store(video_settings: ResolvedVideo) -> None:
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+        video=video_settings,
+    )
+    resolved = resolve_plugins(("workspace", "video"), registry=built, declared_by="agent video")
+    assert [type(capability) for capability in resolved] == [Workspace, Video]
+    assert "shot_video" not in built
+    video = resolved[1]
+    assert isinstance(video, Video)
+    assert set(video.get_toolset().tools) == {"video_parser"}
+    display = build_display_registry(built)
+    assert "video_parser" in display.entries
+    assert "generate_shot_frames" not in display.entries
+    with pytest.raises(RuntimeError, match=r"没挂 'workspace'"):
+        resolve_plugins(("video",), registry=built, declared_by="agent video")
+
+
+def test_video_is_unavailable_without_understanding() -> None:
+    built = build_plugin_registry(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+    )
+    with pytest.raises(RuntimeError, match="未登记的插件 'video'"):
+        resolve_plugins(("workspace", "video"), registry=built, declared_by="agent video")

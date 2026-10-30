@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from iclip.capabilities.shot_document import VideoShotRequest
+from iclip.plugins.shot_document import VideoShotRequest
 
 FRAME_URL = "https://cdn.test/frames/s1-1.jpg"
 OTHER_FRAME_URL = "https://cdn.test/frames/s2-1.jpg"
