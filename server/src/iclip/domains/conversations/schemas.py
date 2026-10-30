@@ -7,10 +7,7 @@ from datetime import datetime
 from typing import Annotated, Final, Literal
 
 from agent_runtime.urls import is_http_url
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from pydantic.alias_generators import to_camel
-
-from iclip.common.film_view import (
+from iclip_video.film_view import (
     FilmImagePrompt,
     FilmLineEdit,
     FilmPromptImage,
@@ -21,6 +18,9 @@ from iclip.common.film_view import (
     FrameKind,
     SettingKind,
 )
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.alias_generators import to_camel
+
 from iclip.domains.conversations.models import (
     Conversation,
     ConversationActivity,

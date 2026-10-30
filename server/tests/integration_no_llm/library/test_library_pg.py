@@ -13,10 +13,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from iclip_video.shot_prompt import ShotCut, ShotScript, format_shot_prompt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.common.shot_prompt import ShotCut, ShotScript, format_shot_prompt
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED

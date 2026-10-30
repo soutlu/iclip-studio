@@ -12,9 +12,9 @@ from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
+from iclip_video.video.capability import Video
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 
-from iclip.plugins.video.capability import Video
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.shot_video import FakeUnderstanding
 

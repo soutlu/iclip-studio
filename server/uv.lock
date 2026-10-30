@@ -962,6 +962,7 @@ dependencies = [
     { name = "fastapi-users", extra = ["sqlalchemy"] },
     { name = "fonttools" },
     { name = "httpx" },
+    { name = "iclip-video-plugins" },
     { name = "oss2" },
     { name = "pillow" },
     { name = "procrastinate" },
@@ -999,6 +1000,7 @@ requires-dist = [
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14" },
     { name = "fonttools", specifier = ">=4.67.0" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "iclip-video-plugins", editable = "../plugins/video" },
     { name = "oss2", specifier = ">=2.19" },
     { name = "pillow", specifier = ">=10.1" },
     { name = "procrastinate", specifier = "==3.9.0" },
@@ -1024,6 +1026,36 @@ dev = [
     { name = "ruff", specifier = ">=0.6" },
     { name = "tach", specifier = ">=0.20" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4" },
+]
+
+[[package]]
+name = "iclip-video-plugins"
+version = "0.1.0"
+source = { editable = "../plugins/video" }
+dependencies = [
+    { name = "agent-runtime" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-ai-slim" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-runtime", editable = "../runtime" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "pydantic-ai-slim", specifier = ">=2.62.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.411" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "ruff", specifier = ">=0.16.6" },
+    { name = "structlog", specifier = ">=26.1.0" },
+    { name = "tach", specifier = ">=0.35.0" },
 ]
 
 [[package]]

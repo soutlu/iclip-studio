@@ -4,12 +4,12 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, Final
 
+from iclip_video.shot_prompt import parse_shot_prompt
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import TextClause, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.shot_prompt import parse_shot_prompt
 from iclip.domains.library.models import (
     HitCaseScope,
     MaterialSource,

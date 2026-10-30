@@ -13,6 +13,8 @@ from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
+from iclip_video.shot_document import SHOTS_PATH, validate_shots_document
+from iclip_video.video_shots.capability import VideoShots
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -25,8 +27,6 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.platform.db.engine import build_engine
-from iclip.plugins.shot_document import SHOTS_PATH, validate_shots_document
-from iclip.plugins.video_shots.capability import VideoShots
 from tests.helpers.pg import truncate_clean
 from tests.helpers.plugins import with_requirements
 

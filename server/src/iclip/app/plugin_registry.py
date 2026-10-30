@@ -22,6 +22,10 @@ from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.transcript.display import ToolDisplayRegistry
+from iclip_video.iclip_studio.capability import IclipStudio
+from iclip_video.video.capability import Video
+from iclip_video.video_shots.capability import VideoShots
+from iclip_video.video_understanding import ArkVideoUnderstanding
 from pydantic import ValidationError
 
 from iclip.app.film_images import FilmImagesAdapter, RunFilmImagesAdapter
@@ -36,7 +40,6 @@ from iclip.platform.http import validation_error_detail
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
-from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip.plugins.shot_video.ports import (
     ImageJob,
@@ -44,10 +47,7 @@ from iclip.plugins.shot_video.ports import (
     InvalidImageRequest,
     ObjectWriteFailed,
 )
-from iclip.plugins.video.capability import Video
 from iclip.plugins.video_breakdown.capability import VideoBreakdownPlugin
-from iclip.plugins.video_shots.capability import VideoShots
-from iclip.plugins.video_understanding import ArkVideoUnderstanding
 
 
 class GenerationsAdapter:

@@ -27,10 +27,12 @@ dependencies = [
     "fonttools>=4.67.0",
     "cryptography>=50.0.1",  # MultiFernet：模型供应商密钥里机密字段的加密与换钥
     "agent-runtime",
+    "iclip-video-plugins",
 ]
 
 [tool.uv.sources]
 agent-runtime = { path = "../runtime", editable = true }
+iclip-video-plugins = { path = "../plugins/video", editable = true }
 
 [dependency-groups]
 dev = [

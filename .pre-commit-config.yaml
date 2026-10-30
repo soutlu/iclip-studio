@@ -8,17 +8,17 @@ repos:
   - repo: local
     hooks:
       - id: python-ruff-check
-        name: server + runtime ruff check --fix
-        entry: bash -c 'cd server && uv run ruff check --fix . && cd ../runtime && uv run ruff check --fix .'
+        name: server + runtime + plugins/video ruff check --fix
+        entry: bash -c 'cd server && uv run ruff check --fix . && cd ../runtime && uv run ruff check --fix . && cd ../plugins/video && uv run ruff check --fix .'
         language: system
         pass_filenames: false
-        files: ^(server|runtime)/
+        files: ^(server|runtime|plugins)/
       - id: python-ruff-format
-        name: server + runtime ruff format
-        entry: bash -c 'cd server && uv run ruff format . && cd ../runtime && uv run ruff format .'
+        name: server + runtime + plugins/video ruff format
+        entry: bash -c 'cd server && uv run ruff format . && cd ../runtime && uv run ruff format . && cd ../plugins/video && uv run ruff format .'
         language: system
         pass_filenames: false
-        files: ^(server|runtime)/
+        files: ^(server|runtime|plugins)/
       - id: web-lint-staged
         name: web lint-staged
         entry: bash -c 'cd web && pnpm lint-staged'
@@ -37,6 +37,12 @@ repos:
       - id: runtime-typecheck-push
         name: runtime pyright (pre-push)
         entry: bash -c 'cd runtime && uv run pyright'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: video-plugins-typecheck-push
+        name: plugins/video pyright (pre-push)
+        entry: bash -c 'cd plugins/video && uv run pyright'
         language: system
         pass_filenames: false
         stages: [pre-push]

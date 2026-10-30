@@ -21,6 +21,7 @@ from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
+from iclip_video.video_document import video_doc_path
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
@@ -49,7 +50,6 @@ from iclip.plugins.shot_video.ports import ObjectWriteFailed
 from iclip.plugins.shot_video.toolset import (
     ShotVideoToolset,
 )
-from iclip.plugins.video_document import video_doc_path
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger

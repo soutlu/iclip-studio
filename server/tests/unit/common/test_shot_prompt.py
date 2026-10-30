@@ -8,14 +8,14 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
-from iclip.common.shot_prompt import (
+from iclip_video.shot_prompt import (
     ShotCut,
     ShotScript,
     format_seconds,
     format_shot_prompt,
     parse_shot_prompt,
 )
+
 from iclip.domains.generation.schemas import VideoShotIn
 from tests.helpers.generation import LEGACY_SHOT_PROMPT, SHOT_PROMPT, video_shot
 

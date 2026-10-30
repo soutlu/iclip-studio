@@ -11,10 +11,10 @@ from typing import Final
 from agent_runtime.file_store.store import FileStore
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.plugins.workspace.scope import namespace_for
+from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip_video.shot_document import SHOTS_PATH
 
 from iclip.domains.library.repository import LibraryReports
-from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.plugins.shot_document import SHOTS_PATH
 
 TREATMENT_PATH: Final = "treatment.md"
 """AI 导演写的新片执行方案，路径是 skill 里的约定。做同款把它拷进新对话；爆款素材库看素材片所在

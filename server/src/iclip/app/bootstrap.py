@@ -54,6 +54,8 @@ from agent_runtime.plugins.workspace.scope import parse_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip_video.shot_document import SHOTS_PATH
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from iclip.app.brand_templates import template_font_prober
@@ -167,8 +169,6 @@ from iclip.platform.object_store.store import (
     ServerUploadSigner,
 )
 from iclip.platform.outbound.fetch import PublicFetcher
-from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.plugins.shot_document import SHOTS_PATH
 
 _logger = structlog.stdlib.get_logger(__name__)
 

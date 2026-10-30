@@ -1,0 +1,46 @@
+source_roots = ["src"]
+
+# 视频格式：镜头组规则、出片正文的拼装与反拆、制作页视图的形状，后端的生成、资料库与对话也用。
+[[modules]]
+path = "iclip_video.shot_rules"
+depends_on = []
+utility = true
+
+[[modules]]
+path = "iclip_video.shot_prompt"
+depends_on = ["iclip_video.shot_rules"]
+
+[[modules]]
+path = "iclip_video.film_view"
+depends_on = []
+
+# 插件包共用、不带工具的模块。
+[[modules]]
+path = "iclip_video.shot_document"
+depends_on = ["iclip_video.shot_rules"]
+
+[[modules]]
+path = "iclip_video.video_document"
+depends_on = []
+
+[[modules]]
+path = "iclip_video.video_understanding"
+depends_on = ["iclip_video.video_document"]
+
+# 插件包之间不互相 import。
+[[modules]]
+path = "iclip_video.video"
+depends_on = ["iclip_video.video_document", "iclip_video.video_understanding"]
+
+[[modules]]
+path = "iclip_video.video_shots"
+depends_on = ["iclip_video.shot_document"]
+
+[[modules]]
+path = "iclip_video.iclip_studio"
+depends_on = [
+    "iclip_video.shot_rules",
+    "iclip_video.shot_prompt",
+    "iclip_video.film_view",
+    "iclip_video.shot_document",
+]

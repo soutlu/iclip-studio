@@ -1,0 +1,171 @@
+"""镜头组表插件：交付镜头组 prompt 表。"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Final, Self
+
+from agent_runtime.file_store.store import FileSpace, FileStore
+from agent_runtime.harness.files import write_or_retry
+from agent_runtime.harness.materials import require_materials
+from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.tool_args import REPLAY_CONTEXT, JsonText
+from agent_runtime.transcript.display import DisplayFn, FileIoDisplay, tool_note
+from pydantic import TypeAdapter, ValidationError
+from pydantic_ai import ModelRetry
+from pydantic_ai.capabilities import CapabilityOrdering
+from pydantic_ai.messages import ToolReturn
+from pydantic_ai.tools import AgentDepsT, RunContext, Tool
+from pydantic_ai.toolsets import FunctionToolset
+
+from iclip_video.shot_document import (
+    SHOTS_PATH,
+    ShotDocumentError,
+    VideoShotRequest,
+    build_video_shots_document,
+)
+
+CAPABILITY_ID: Final = "video_shots"
+
+ShotRequests = Annotated[list[VideoShotRequest], JsonText]
+"""交付工具的 ``shots`` 入参；工具卡按同一类型重放入参。"""
+
+_SHOT_REQUESTS: Final = TypeAdapter[list[VideoShotRequest]](ShotRequests)
+
+
+@dataclass
+class VideoShots(CapPlugin[AgentDepsT]):
+    """镜头组表插件。"""
+
+    label = "镜头组表"
+    summary = "提交镜头组的提示词表，每次提交全部镜头组，替换上一次的。"
+
+    space: FileSpace
+    """与工作区能力相同的 FileSpace。"""
+
+    ledger: MaterialLedger
+    """素材来源台账，供工具输入验证使用。"""
+
+    id: str | None = field(default=CAPABILITY_ID, kw_only=True)
+
+    def get_toolset(self) -> VideoShotsToolset[AgentDepsT]:
+        return VideoShotsToolset(self)
+
+    @classmethod
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
+
+    @classmethod
+    def bind(cls, *, space: FileSpace, ledger: MaterialLedger) -> type[Self]:
+        """把运行服务绑进类，交给登记表。"""
+
+        return cls._bound(space=space, ledger=ledger)
+
+    @classmethod
+    def from_spec(cls) -> Self:
+        return cls(**cls._bound_services())
+
+    def get_ordering(self) -> CapabilityOrdering:
+        # 写下的文件经 workspace 的文件工具读取。
+        return CapabilityOrdering(requires=(Workspace,))
+
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn]:
+        """工具卡声明。"""
+
+        return {"write_video_shots": _shots_display}
+
+
+class VideoShotsToolset(FunctionToolset[AgentDepsT]):
+    """交付工具；镜头帧地址的范围规则挂在登记处的验证器上。"""
+
+    def __init__(self, capability: VideoShots[AgentDepsT]) -> None:
+        super().__init__(id=capability.id)
+        self._cap = capability
+        self.add_tool(
+            Tool(
+                self.write_video_shots,
+                name="write_video_shots",
+                args_validator=self._validate_shot_delivery,
+            )
+        )
+
+    async def write_video_shots(
+        self,
+        ctx: RunContext[AgentDepsT],
+        aspect_ratio: str,
+        shots: ShotRequests,
+    ) -> ToolReturn[str]:
+        """提交镜头组 prompt 表；每次提交全部镜头组，替换已有的。
+
+        Args:
+            aspect_ratio: 目标画幅，如 ``9:16``。
+            shots: 按顺序排列的全部镜头组；以 JSON 数组传入，不要整体序列化成字符串。
+        """
+
+        files, namespace = self._workspace(ctx)
+        try:
+            document = build_video_shots_document(aspect_ratio, shots)
+        except ShotDocumentError as exc:
+            raise ModelRetry(str(exc)) from exc
+        await write_or_retry(files, namespace, SHOTS_PATH, document.file_text())
+        group_count = len(document.shots)
+        shot_count = sum(len(shot.prompt.timeline) for shot in document.shots)
+        seconds = sum(shot.seconds for shot in document.shots)
+        return ToolReturn(
+            return_value=(
+                f"镜头组 prompt 表已交付到 {SHOTS_PATH}："
+                f"{group_count} 个镜头组，{shot_count} 个镜头，合计 {seconds} 秒。"
+            ),
+            metadata=tool_note(chip=f"{group_count} 组 · {shot_count} 镜 · {seconds} 秒"),
+        )
+
+    async def _validate_shot_delivery(
+        self, ctx: RunContext[Any], aspect_ratio: str, shots: list[VideoShotRequest]
+    ) -> None:
+        """镜头帧地址须是本对话已登记的图片素材；表的形状由工具体校验。"""
+
+        _ = aspect_ratio
+        await require_materials(
+            self._cap.ledger,
+            self._cap.space.resolve(ctx),
+            (url for shot in shots for url in shot.image_urls),
+            kind="image",
+            what="镜头帧地址",
+        )
+
+    def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
+        """这次运行的文件存储与命名空间。"""
+
+        return self._cap.space.store, self._cap.space.resolve(ctx)
+
+
+def _shots_display(args: Any) -> FileIoDisplay:
+    """分镜表的交付画成一次普通的文件写入；``content`` 是这次要写进文件的原文。"""
+
+    return FileIoDisplay(operation="write", path=SHOTS_PATH, content=_shots_file_text(args))
+
+
+def _shots_file_text(args: Any) -> str | None:
+    """按交付工具同一套校验与序列化，由入参算出要写的原文；纯计算，不碰存储。
+
+    工具会退回的入参没有原文可写，给 None。入参按重放校验：字符串化的结构照常还原，
+    但不再记日志，实时建卡与每次读历史都会走到这里。
+    """
+
+    if not isinstance(args, dict):
+        return None
+    aspect_ratio = args.get("aspect_ratio")
+    if not isinstance(aspect_ratio, str):
+        return None
+    try:
+        shots = _SHOT_REQUESTS.validate_python(args.get("shots"), context=REPLAY_CONTEXT)
+        return build_video_shots_document(aspect_ratio, shots).file_text()
+    except (ValidationError, ShotDocumentError):
+        return None
+
+
+__all__ = ["CAPABILITY_ID", "VideoShots", "VideoShotsToolset"]

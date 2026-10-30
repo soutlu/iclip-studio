@@ -1,5 +1,5 @@
 name: setup-server
-description: 安装 uv 并按锁文件同步一个 Python 项目（server 或 runtime）的依赖。
+description: 安装 uv 并按锁文件同步一个 Python 项目（server、runtime 或 plugins/video）的依赖。
 
 inputs:
   working-directory:

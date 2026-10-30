@@ -15,6 +15,9 @@ from agent_runtime.plugins.base import PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.run_deps import AgentRunDeps
+from iclip_video.iclip_studio.capability import IclipStudio
+from iclip_video.video.capability import Video
+from iclip_video.video_shots.capability import VideoShots
 from pydantic_ai import Agent, AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.exceptions import UserError
@@ -39,7 +42,6 @@ from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import ObjectStoreUnavailable
-from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.shot_video.capability import ShotVideo
 from iclip.plugins.shot_video.generation import IMAGE_MODEL
 from iclip.plugins.shot_video.ports import (
@@ -47,9 +49,7 @@ from iclip.plugins.shot_video.ports import (
     InvalidImageRequest,
     ObjectWriteFailed,
 )
-from iclip.plugins.video.capability import Video
 from iclip.plugins.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
-from iclip.plugins.video_shots.capability import VideoShots
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (

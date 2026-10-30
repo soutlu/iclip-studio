@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       runtime: ${{ steps.scope.outputs.runtime }}
+      video_plugins: ${{ steps.scope.outputs.video_plugins }}
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
       web_format: ${{ steps.scope.outputs.web_format }}
@@ -54,6 +55,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           runtime=true
+          video_plugins=true
           server=true
           web=true
           web_format=false
@@ -62,6 +64,7 @@ jobs:
           if [ "$BASE_REF" = develop ]; then
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
               runtime=false
+              video_plugins=false
               server=false
               web=false
               render=false
@@ -72,6 +75,8 @@ jobs:
                   server/*) scope=server ;;
                   runtime/*.md) scope=docs ;;
                   runtime/*) scope=runtime ;;
+                  plugins/*.md) scope=docs ;;
+                  plugins/*) scope=video_plugins ;;
                   render/*.md) scope=docs ;;
                   render/*) scope=render ;;
                   web/*.md) scope=format ;;
@@ -80,13 +85,14 @@ jobs:
                   *) scope=all ;;
                 esac
                 case "$scope" in
-                  # 后端依赖 runtime，runtime 变了两边都查。
-                  runtime) runtime=true; server=true ;;
+                  # 视频插件依赖 runtime，后端依赖两者：runtime 变了三处都查，插件变了插件与后端都查。
+                  runtime) runtime=true; video_plugins=true; server=true ;;
+                  video_plugins) video_plugins=true; server=true ;;
                   server) server=true ;;
                   web) web=true ;;
                   render) render=true ;;
                   format) web_format=true ;;
-                  all) runtime=true; server=true; web=true; render=true ;;
+                  all) runtime=true; video_plugins=true; server=true; web=true; render=true ;;
                 esac
                 # 渲染服务打包 web 的成片合成构建与后端合同的 zod 生成物，测试用 web 组装的测试组件库，
                 # 它们变了也要查渲染服务。
@@ -104,9 +110,10 @@ jobs:
           if [ "$web" = true ]; then
             web_format=false
           fi
-          echo "base=$BASE_REF runtime=$runtime server=$server web=$web web_format=$web_format render=$render"
+          echo "base=$BASE_REF runtime=$runtime video_plugins=$video_plugins server=$server web=$web web_format=$web_format render=$render"
           {
             echo "runtime=$runtime"
+            echo "video_plugins=$video_plugins"
             echo "server=$server"
             echo "web=$web"
             echo "web_format=$web_format"
@@ -150,6 +157,46 @@ jobs:
       - uses: ./.github/actions/setup-server
         with:
           working-directory: runtime
+      - name: Run unit tests
+        run: uv run pytest tests/unit
+
+  video_plugins_static:
+    name: video-plugins-static
+    needs: scope
+    if: needs.scope.outputs.video_plugins == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugins/video
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: plugins/video
+      - name: Lint Python
+        run: uv run ruff check .
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+      - name: Check Python types
+        run: uv run pyright
+      - name: Check dependency boundaries
+        run: uv run tach check
+
+  video_plugins_unit:
+    name: video-plugins-unit
+    needs: scope
+    if: needs.scope.outputs.video_plugins == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugins/video
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: plugins/video
       - name: Run unit tests
         run: uv run pytest tests/unit
 
@@ -385,6 +432,8 @@ jobs:
       - secrets
       - runtime_static
       - runtime_unit
+      - video_plugins_static
+      - video_plugins_unit
       - server_static
       - server_unit
       - server_integration
@@ -414,6 +463,9 @@ jobs:
           RUNTIME_REQUIRED: ${{ needs.scope.outputs.runtime }}
           RUNTIME_STATIC_RESULT: ${{ needs.runtime_static.result }}
           RUNTIME_UNIT_RESULT: ${{ needs.runtime_unit.result }}
+          VIDEO_PLUGINS_REQUIRED: ${{ needs.scope.outputs.video_plugins }}
+          VIDEO_PLUGINS_STATIC_RESULT: ${{ needs.video_plugins_static.result }}
+          VIDEO_PLUGINS_UNIT_RESULT: ${{ needs.video_plugins_unit.result }}
           SERVER_REQUIRED: ${{ needs.scope.outputs.server }}
           SERVER_STATIC_RESULT: ${{ needs.server_static.result }}
           SERVER_UNIT_RESULT: ${{ needs.server_unit.result }}
@@ -436,13 +488,15 @@ jobs:
             if [ "$BASE_REF" = develop ]; then
               printf '检查模式：按变更范围。「需执行」为 false 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
             else
-              printf '检查模式：完整检查 runtime、server、web 和 render。\n\n'
+              printf '检查模式：完整检查 runtime、plugins/video、server、web 和 render。\n\n'
             fi
             printf '| Job | 需执行 | 结果 |\n| --- | --- | --- |\n'
             printf '| scope | true | %s |\n' "$SCOPE_RESULT"
             printf '| secrets | true | %s |\n' "$SECRETS_RESULT"
             printf '| runtime-static | %s | %s |\n' "$RUNTIME_REQUIRED" "$RUNTIME_STATIC_RESULT"
             printf '| runtime-unit | %s | %s |\n' "$RUNTIME_REQUIRED" "$RUNTIME_UNIT_RESULT"
+            printf '| video-plugins-static | %s | %s |\n' "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_STATIC_RESULT"
+            printf '| video-plugins-unit | %s | %s |\n' "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_UNIT_RESULT"
             printf '| server-static | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT"
             printf '| server-unit | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT"
             printf '| server-integration（2 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
@@ -471,6 +525,8 @@ jobs:
           require_result secrets true "$SECRETS_RESULT" || failed=1
           require_result runtime-static "$RUNTIME_REQUIRED" "$RUNTIME_STATIC_RESULT" || failed=1
           require_result runtime-unit "$RUNTIME_REQUIRED" "$RUNTIME_UNIT_RESULT" || failed=1
+          require_result video-plugins-static "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_STATIC_RESULT" || failed=1
+          require_result video-plugins-unit "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_UNIT_RESULT" || failed=1
           require_result server-static "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT" || failed=1
           require_result server-unit "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT" || failed=1
           require_result server-integration "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT" || failed=1

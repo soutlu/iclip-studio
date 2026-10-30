@@ -41,6 +41,15 @@ jobs:
         with:
           working-directory: runtime
 
+  video_plugins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: plugins/video
+
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 10

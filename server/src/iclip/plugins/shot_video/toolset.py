@@ -14,6 +14,7 @@ from agent_runtime.material_ledger.store import Material
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.tool_args import JsonText
 from agent_runtime.transcript.display import media_grid
+from iclip_video.video_document import video_doc_path
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
@@ -34,7 +35,6 @@ from iclip.plugins.shot_video.generation import (
 from iclip.plugins.shot_video.ports import ImageRequest
 from iclip.plugins.shot_video.prompt import assemble_anchor_prompt, assemble_grid_prompt
 from iclip.plugins.shot_video.shots import CELL_ID_SHAPE
-from iclip.plugins.video_document import video_doc_path
 
 _logger = structlog.stdlib.get_logger(__name__)
 

@@ -9,8 +9,8 @@ PROJECT = Path(__file__).resolve().parents[3]
 SRC = PROJECT / "src" / "agent_runtime"
 TESTS = PROJECT / "tests"
 
-# 运行时被宿主依赖，反过来不行：源码与测试都不得引用宿主包。
-HOST_PACKAGES = frozenset({"iclip"})
+# 运行时被宿主与应用的插件包依赖，反过来不行：源码与测试都不得引用它们。
+HOST_PACKAGES = frozenset({"iclip", "iclip_video"})
 
 # 框架及允许直接导入它的路径前缀（相对 src/agent_runtime）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
