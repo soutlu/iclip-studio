@@ -60,7 +60,8 @@ class ConfigSection(BaseModel):
 
 
 class EnvSettings(BaseSettings):
-    model_config = SettingsConfigDict(frozen=True, extra="ignore")
+    # 环境变量里是连接串与机密：pydantic 的报错默认带原值，这里不带。
+    model_config = SettingsConfigDict(frozen=True, extra="ignore", hide_input_in_errors=True)
 
 
 class CoreEnv(EnvSettings):
