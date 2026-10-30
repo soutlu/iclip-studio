@@ -10,14 +10,16 @@
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
    - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步。
-3. 把一份 `server/configs/`（`config.yaml`）、`server/agents/`（`agents.yaml`、各 agent 目录）和 `server/skills/`（一个子目录一个 skill）放到本机。这三个目录不进仓库，修改后保存即生效；不挂 skill 时可以没有 `skills/`。
-   - 默认的 `storyboard` Agent 需要视频理解、媒体生成和对象存储。只跑基础对话时，去掉这条 Agent 声明和 `config.yaml` 的 `video`、`shot_video` 段，另声明一条不挂这些插件的 Agent。
+3. 把一份 `server/configs/config.yaml` 放到本机，它不进仓库，改了要重启后端。模型、agent 与技能存在数据库里，不在文件里。
 4. 迁移数据库并启动后端：
 
    ```bash
    make db-upgrade   # 已有数据的库先备份
    make dev          # http://localhost:7788，健康检查 /healthz
    ```
+
+   - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到 agent 配置入库的版本](#升级到-agent-配置入库的版本)第 4–6 步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
+   - 带取帧、出图或视频理解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
 
 5. 另开一个终端启动前端：
 
@@ -53,7 +55,7 @@
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
    - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥的 Fernet key，必填，缺失或格式不对后端起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
-   - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
+   - `configs/`（`config.yaml`）：后端只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
    - `components/`：成片的组件库，web 与渲染服务只读挂载，镜像里没有；按[发布组件库](#发布组件库)放好，没有它编辑器读不到组件目录、导出失败
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
    - 高清版（超分）：在 `.env` 把 `VIDEO_ENHANCE_SUBMIT_URL` 设为上游超分接口的完整提交地址（与 `VIDEO_SUBMIT_URL` 同一台服务，查询地址与 key 共用），并在 `configs/config.yaml` 的 `media_generation.video` 下写 `enhance` 段（`model`、从高到低的 `resolutions`、`fps`，取值见[配置模型](../server/src/iclip/config/models.py)）；不设地址则高清版没有开通，设了地址却没写这一段启动报错。
@@ -121,15 +123,33 @@
 4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[持久化与迁移](architecture.md#4-持久化与迁移)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
 5. 升级到生成记录把产出并进 `output` 的版本（迁移 0039）时，先停后端再执行迁移：旧版本的代码读不了新的表结构。迁移完成后，在同一停机窗口里在库里执行 `VACUUM FULL iclip.generation_jobs`（期间锁表），回收迁移整表更新留下的旧行，实测每百万行十几秒；再按第 3 步启动新版本。
 
+### 升级到 agent 配置入库的版本
+
+这个版本起，模型、agent 与技能存在数据库里，运行时从库里装配，`config.yaml` 的 `models` 段与 `conversations.title_model` 不再认（还留着就启动失败），`agents/`、`skills/` 不再挂载。切换要停服，按顺序做：
+
+1. 停服务（`docker compose stop server`），备份数据库；把部署目录的 `configs/`、`agents/`、`skills/` 另存一份，并把 `configs/config.yaml` 复制成 `configs/config.old.yaml`。
+2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
+3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`）。
+4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`（`config.old.yaml` 不动）。
+5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）：
+
+   ```bash
+   docker compose run --rm -v ./agents:/app/agents:ro -v ./skills:/app/skills:ro server \
+     python -m scripts.import_agent_config \
+     --legacy-config configs/config.old.yaml --agents agents/agents.yaml --skills skills --dry-run
+   ```
+
+   它打印会写入的供应商、密钥、模型、默认模型、技能、agent 与对话会话数，最后一行是「--dry-run：以上内容没有写入」。有问题时打印「切换没有进行，什么都没写」和原因（检查清单见 [import_agent_config.py](../server/scripts/import_agent_config.py) 的文件头），改好文件再试。
+6. 去掉 `--dry-run` 正式运行，最后一行是「已写入」。全部在一个事务里，失败就整体回滚。
+7. `docker compose up -d` 启动服务，核对：首页列着原来的三个 agent；每个 agent 各开一段对话发一条消息；运行记录里的版本号（`agent_runtime.runs.metadata` 的 `agent_version_id`）是各 agent 的 v1；切换前就有的对话能接着聊。
+8. 删掉部署目录里的 `agents/`、`skills/` 与 `configs/config.old.yaml`。
+
+回滚：停服务，恢复第 1 步的数据库备份、旧版本的 `compose.yaml` 与 `IMAGE_TAG`、另存的 `configs/`、`agents/`、`skills/`，再启动。
+
 ### 改配置
 
-模型、agent、skill 与参考资料只在服务器的 `configs/`、`agents/`、`skills/` 里，不随镜像发版。修改后保存即生效，机制见[配置与装配](architecture.md#2-配置与装配)。
-
-- 配置写错时，原因在 `docker compose logs server` 和 `/healthz` 的 `config` 段。
-- 手动重载：`docker compose kill -s HUP server`。
-- 以下两种情况要执行 `docker compose up -d`（`restart` 不会重读 `.env`）：
-  - 改了 `models` 与 agents 以外的配置段，此时 `/healthz` 会标 `needs_restart`
-  - `.env` 新增了变量，比如新模型用了新的 key 变量
+- 模型、agent 与技能在配置页里改：发布 agent、发布技能、改密钥或模型后，下一次运行自动用上新的，不用重启；已有的对话固定在开对话时的 agent 版本上，见[配置与装配](architecture.md#2-配置与装配)。
+- `configs/config.yaml` 与 `.env` 改了要执行 `docker compose up -d`（`restart` 不会重读 `.env`），配置写错时原因在 `docker compose logs server`。
 
 ### 换密钥加密钥匙
 
