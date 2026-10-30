@@ -1431,6 +1431,78 @@ describe('草稿与编辑轨', () => {
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
   })
 
+  it('拖草稿块的左把手：拖动中草稿不存、总长不变，工具条时间与播放头都在把手处；松手后存一次、总长更新', async () => {
+    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
+    )
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    await user.click(within(draftTrack()).getByRole('button', { name: '镜头 2 · 1.0 秒 · 原片' }))
+    const key = draftStorageKey(CONVERSATION, ROOT_ID)
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    const draftWrites = () => writes.mock.calls.filter(([written]) => written === key)
+
+    // 镜头 2 在合成 1 秒处：开头往里裁 0.4 秒
+    const start = Object.assign(screen.getByRole('slider', { name: '裁剪开头' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 100 })
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 140 })
+    // 这块的右边沿停在 2 秒、左边沿跟到 1.4 秒：工具条时间与播放头都写 1.4 秒；总长与「共 X 秒」按松手前的草稿
+    await waitFor(() => expect(controls()).toHaveTextContent('00:01.40 / 00:08.00'))
+    expect(playhead()).toHaveValue('1.4')
+    expect(controls()).toHaveTextContent('共 8.0 秒')
+    expect(draftWrites()).toEqual([])
+
+    fireEvent.pointerUp(start, { pointerId: 1 })
+    // 首尾接上：这块从合成 1 秒开始，总长与「共 X 秒」一起变
+    await waitFor(() => expect(controls()).toHaveTextContent('00:01.00 / 00:07.60'))
+    expect(playhead()).toHaveValue('1')
+    expect(controls()).toHaveTextContent('共 7.6 秒 · 比原片短 0.4 秒')
+    expect(draftWrites()).toHaveLength(1)
+    expect(within(smallCard('镜头 2')).getByText('0.6 秒（这个镜头 1.0 秒）· 原片')).toBeVisible()
+  })
+
+  it('往右拉长草稿块：舞台按拖动中的草稿停在这块的结尾，不是后面那一块', async () => {
+    storeWholeEdit()
+    // jsdom 不排版：轨道区按 850px 宽算，裁过之后 8.5 秒的草稿每秒 100px。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 850, height: 200 }),
+    )
+    serveChain([editSegment({ id: EDIT_ID })])
+    const user = userEvent.setup()
+    await renderEditor()
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    // 编辑段第 3 段在合成 4–5 秒，后面接原片镜头 5；先用方向键把结尾裁到 4.5 秒
+    await user.click(within(draftTrack()).getByRole('button', { name: /第 3 段/ }))
+    act(() => screen.getByRole('slider', { name: '裁剪结尾' }).focus())
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    await waitFor(() => expect(controls()).toHaveTextContent('共 8.5 秒'))
+
+    const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
+      setPointerCapture: () => undefined,
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => undefined,
+    })
+    fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 450 })
+    fireEvent.pointerMove(end, { pointerId: 1, clientX: 490 })
+    // 拉长到 4.9 秒：按提交的草稿那里已是镜头 5（原片），舞台放的是拖动中的这一段；总长仍同「共 8.5 秒」
+    await waitFor(() => expect(controls()).toHaveTextContent('00:04.90 / 00:08.50'))
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', EDITED_URL)
+    expect(playhead()).toHaveValue('4.9')
+    expect(controls()).toHaveTextContent('共 8.5 秒')
+
+    fireEvent.pointerUp(end, { pointerId: 1 })
+    await waitFor(() => expect(controls()).toHaveTextContent('共 8.9 秒'))
+    expect(controls()).toHaveTextContent('00:04.90 / 00:08.90')
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', EDITED_URL)
+  })
+
   it('关键帧读不出的编辑段写「无法读取」，不能选用', async () => {
     files.delete(EDITED_URL)
     serveChain([editSegment({ id: EDIT_ID })])
