@@ -27,6 +27,7 @@ from iclip.domains.identity.middleware import PrincipalResolver
 from iclip.domains.identity.models import Principal
 from iclip.platform.db.engine import build_engine
 from tests.helpers.agents import declared_agent
+from tests.helpers.app import TEST_CREDENTIAL_KEY
 
 MODEL_KEY_ENV = "TEST_MODEL_KEY"
 
@@ -35,6 +36,7 @@ MODEL_KEY_ENV = "TEST_MODEL_KEY"
 def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
     monkeypatch.setenv(MODEL_KEY_ENV, "k")
     for name in ("SSO_BASE_URL", "OSS_BUCKET", "VIDEO_SUBMIT_URL", "VIDEO_UNDERSTANDING_URL"):
         monkeypatch.delenv(name, raising=False)

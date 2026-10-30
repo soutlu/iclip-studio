@@ -9,6 +9,7 @@
    - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
+   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步。
 3. 把一份 `server/configs/`（`config.yaml`）、`server/agents/`（`agents.yaml`、各 agent 目录）和 `server/skills/`（一个子目录一个 skill）放到本机。这三个目录不进仓库，修改后保存即生效；不挂 skill 时可以没有 `skills/`。
    - 默认的 `storyboard` Agent 需要视频理解、媒体生成和对象存储。只跑基础对话时，去掉这条 Agent 声明和 `config.yaml` 的 `video`、`shot_video` 段，另声明一条不挂这些插件的 Agent。
 4. 迁移数据库并启动后端：
@@ -51,6 +52,7 @@
 3. 在服务器上建一个部署目录，放入：
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
+   - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥的 Fernet key，必填，缺失或格式不对后端起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
    - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
    - `components/`：成片的组件库，web 与渲染服务只读挂载，镜像里没有；按[发布组件库](#发布组件库)放好，没有它编辑器读不到组件目录、导出失败
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
@@ -128,3 +130,11 @@
 - 以下两种情况要执行 `docker compose up -d`（`restart` 不会重读 `.env`）：
   - 改了 `models` 与 agents 以外的配置段，此时 `/healthz` 会标 `needs_restart`
   - `.env` 新增了变量，比如新模型用了新的 key 变量
+
+### 换密钥加密钥匙
+
+`CREDENTIAL_ENCRYPTION_KEYS` 是逗号分隔的多个 Fernet key：第一个用来加密，全部用来解密。换钥不停服：
+
+1. 生成一个新 key（命令见[服务器部署](#服务器部署)第 3 步），加在 `.env` 里这个变量的最前面，执行 `docker compose up -d`。此后新存的密钥用新 key，旧的照读。
+2. 执行 `docker compose run --rm server python -m scripts.admin rotate-credential-keys`，把库里全部密钥改用新 key 加密，命令会打印改了几把。
+3. 从变量里去掉旧 key，再执行 `docker compose up -d`。

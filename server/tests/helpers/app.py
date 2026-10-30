@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Awaitable, Callable
 
 import httpx
@@ -22,6 +23,9 @@ from iclip.domains.identity.public import Principal
 
 TEST_MODEL_NAME = "test-model"
 """集成层 ``models`` 夹具注册的替身模型名；agent 声明默认引用它。"""
+
+TEST_CREDENTIAL_KEY = base64.urlsafe_b64encode(b"test-credential-key-0123456789ab").decode()
+"""测试用的 ``CREDENTIAL_ENCRYPTION_KEYS``：一个合法的 Fernet key（32 字节 urlsafe base64）。"""
 
 
 def make_runtime_config(*, cors_allow_origins: tuple[str, ...] = ()) -> RuntimeConfig:
@@ -79,6 +83,7 @@ async def settled(client: httpx.AsyncClient, conversation_id: str, *, tries: int
 
 
 __all__ = [
+    "TEST_CREDENTIAL_KEY",
     "TEST_MODEL_NAME",
     "app_with_principal",
     "make_client",

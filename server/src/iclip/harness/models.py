@@ -5,17 +5,17 @@ from __future__ import annotations
 import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from openai import AsyncOpenAI
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.models.openai import OpenAIChatModelSettings, OpenAIResponsesModel
 from pydantic_ai.providers import Provider, infer_provider_class
 
-ModelApi = Literal["chat", "responses"]
+from iclip.common.model_vocab import ModelApi, ThinkingEffort
 
-ThinkingEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
-"""思考强度档位，即 OpenAI 方言的 ``reasoning.effort``。"""
+BuiltModel = Model
+"""装配出的一个模型实例；组合根经它引用模型类型，不直接 import 引擎。"""
 
 BuiltModels = Mapping[str, Model]
 """模型名称到实例的映射。"""
@@ -51,6 +51,16 @@ def _build_provider(spec: ModelSpec) -> Provider[Any]:
     raise RuntimeError(
         f"模型 {spec.name}：provider {spec.provider} 不支持自定义 base_url，请去掉该字段"
     )
+
+
+def provider_known(name: str) -> bool:
+    """官方认不认这个 provider 名。"""
+
+    try:
+        infer_provider_class(name)
+    except ValueError:
+        return False
+    return True
 
 
 def _model_settings(spec: ModelSpec) -> OpenAIChatModelSettings | None:
@@ -107,12 +117,14 @@ def rebuild_models(
 
 
 __all__ = [
+    "BuiltModel",
     "BuiltModels",
     "ModelApi",
     "ModelSpec",
     "ThinkingEffort",
     "build_model",
     "build_models",
+    "provider_known",
     "rebuild_models",
     "thinking_effort_of",
 ]

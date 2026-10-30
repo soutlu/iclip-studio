@@ -26,7 +26,12 @@ from iclip.config import ResolvedAgent
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
 from iclip.platform.db.engine import build_engine
-from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config
+from tests.helpers.app import (
+    TEST_CREDENTIAL_KEY,
+    TEST_MODEL_NAME,
+    make_client,
+    make_runtime_config,
+)
 from tests.helpers.pg import connected, reset_database
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
@@ -78,6 +83,7 @@ def migrated_pg(pg_url: str) -> str:
 def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.setenv("DATABASE_URL", migrated_pg)
     monkeypatch.setenv("AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.delenv("PMS_BASE_URL", raising=False)
     monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)

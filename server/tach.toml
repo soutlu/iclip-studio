@@ -132,6 +132,11 @@ depends_on = [
 path = "iclip.domains.brand_templates"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
 
+# 模型供应商：试连是端口，由组合根接到 Agent 引擎上。
+[[modules]]
+path = "iclip.domains.model_providers"
+depends_on = ["iclip.common", "iclip.domains.identity"]
+
 [[modules]]
 path = "iclip.domains.skills"
 depends_on = ["iclip.common", "iclip.domains.identity"]
@@ -199,6 +204,7 @@ depends_on = [
     "iclip.domains.brand_templates",
     "iclip.domains.tracking",
     "iclip.domains.skills",
+    "iclip.domains.model_providers",
     "iclip.harness",
     "iclip.plugins",
 ]

@@ -628,3 +628,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - 不带 `dryRun`（或 `dryRun=false`）是正式导入，答复同一形状；`problems` 不为空就是 `422`，`detail` 列出全部问题，什么都不写。正式导入只写草稿、不发布：新建一个技能，或整份替换同名技能的草稿，覆盖时不改显示名。
   - zip 里 `SKILL.md` 在根目录，或在唯一的顶层目录里（压缩一个文件夹时常见），顶层目录会去掉；`__MACOSX/` 与 `.DS_Store` 直接跳过。符号链接、`..`、绝对路径、重复路径、范围外与非文本文件都记进 `problems`；文件规则同上，压缩包本身最多 6 MB，解压后超过上限在解压前就拒绝。
 - **导出**：`GET /skills/{id}/export?versionId=` 给 `application/zip`，不带 `versionId` 是最新版，从没发布过是 `404`。下载文件名是 `<name>-v<N>.zip`，zip 里的文件都在顶层目录 `<name>/` 下；导出的包再导入得到同样的文件。
+
+## 18. 模型供应商 (Model Providers)
+
+供应商、密钥、模型声明与默认模型的语义见 [CONTEXT.md「供应商」等词条](../docs/CONTEXT.md#术语)。端点在 `/model-providers` 与 `/default-models` 下，权限看 `openapi.json`。下面的规则不合格都是 `422`，`detail` 是给人看的一句话，从不带字段的值。
+
+- **机密字段只给打码值**：密钥的 `fields` 按声明的字段名给值，声明里 `type` 为 `secret` 的字段任何答复都只给 `••••` 加末 4 位（原值不足 8 位只给 `••••`），其余字段原样给。
+- **字段**：新建时没给的字段用声明里的 `default`；值去掉首尾空白，空串当作没填；必填的缺了、声明里没有的字段都是 `422`。`PATCH …/credentials/{id}` 的 `fields` 只放要改的字段，给了就替换，没给的（包括机密字段）保持原值；把打码值原样传回不表示「不改」，它会被当成新值。
+- **试连**：新建密钥、或 `PATCH` 让字段真有变化时，保存前先试连，不通是 `422`、`detail` 以「试连没通过」开头带原因，什么都不存；只改名不试连。`POST …/credentials/test` 只试不存，没通过也是 `200`，看答复的 `ok`、`elapsedMs` 与 `reason`；体里 `credentialId` 与 `fields` 至少给一个，两个都给是把 `fields` 按上面的修改规则叠到已保存的那一把上再试。供应商没有启用的 `llm` 模型时没法试连，新建、修改与试连都是 `422`。
+- **默认密钥**：供应商的第一把密钥自动成为 `defaultCredentialId`；删默认密钥是 `409`，先用 `PATCH /model-providers/{id}` 的 `defaultCredentialId` 换成本供应商的另一把（别的供应商的或不存在的是 `422`）。
+- **模型**：模型在供应商里按（名字，类型）认，路径是 `…/models/{type}/{name}`，名字放在最后，可以带斜杠（如 `…/models/llm/ZHIPU/GLM-5.3-Flash`）。`source` 为 `declared` 的只能改 `enabled`，改属性或删除是 `422`；`custom` 的能改 `api`、`contextSize`、`thinking`（给 `null` 即清掉）、`enabled` 与删除，属性按声明里模型的同一套规则校验：`llm` 必须有 `api`，别的类型不能有 `api` 与 `thinking`，`thinking` 不能重复。声明不允许自己加模型（`customModels` 为假）、和已有模型同名同类型都是 `422`。
+- **默认模型**：`PUT /default-models/{type}` 体是 `{ providerId, modelName }`，供应商不存在、没有这个类型的这个模型、模型已停用都是 `422`；停用或删除当前的默认模型是 `409`，先把默认换掉。
