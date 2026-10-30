@@ -7,10 +7,10 @@ from typing import cast
 import pytest
 
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
-from iclip.capabilities.video_breakdown.ports import FailedBreakdown
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
+from iclip.plugins.video_breakdown.ports import FailedBreakdown
 from tests.helpers.references import DOCUMENT, VIDEO
 
 

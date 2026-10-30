@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from iclip.capabilities.shot_document import ShotDocumentError, validate_shots_document
 from iclip.common.shot_rules import MAX_REFERENCE_IMAGES, image_indexes_of
 from iclip.domains.generation.schemas import VideoGenerationIn
+from iclip.plugins.shot_document import ShotDocumentError, validate_shots_document
 
 SETTINGS = "人物与门厅保持一致。"
 WITH_IMAGE = "全景，她走进门厅 @Image1。"

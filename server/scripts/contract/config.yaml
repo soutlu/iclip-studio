@@ -65,7 +65,7 @@ media_generation:
     timeout_seconds: 300 # 一次生成请求等结果的上限
 
 video:
-  # VIDEO_UNDERSTANDING_URL 为空时不注册 video。
+  # VIDEO_UNDERSTANDING_URL 为空时不登记 video 插件。
   understanding_model: doubao-seed-2-0-lite-260428 # 供应方模型名
   understanding_thinking: medium # minimal / low / medium / high；省略时使用供应方默认值
   # 采样帧率范围 0.2–5；提高帧率有助于识别快速剪辑点，同时增加视频 token 消耗。

@@ -5,9 +5,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from iclip.capabilities.iclip_studio.film.checks import check_project_content, check_run_content
-from iclip.capabilities.shot_document import validate_shots_document
-from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
 from iclip.domains.conversations.service import DerivedFile, DerivedFileContent
 from iclip.platform.file_store.pg import PgFileStore
@@ -21,6 +18,9 @@ from iclip.platform.file_store.store import (
 )
 from iclip.platform.material_ledger.store import Material, MaterialLedger
 from iclip.platform.transcript.ops import ImageContent, PromptContent, VideoContent
+from iclip.plugins.iclip_studio.film.checks import check_project_content, check_run_content
+from iclip.plugins.shot_document import validate_shots_document
+from iclip.plugins.workspace.scope import namespace_for
 
 
 class ConversationWorkspace:

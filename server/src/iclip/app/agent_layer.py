@@ -18,7 +18,7 @@ from pathlib import Path
 import structlog
 from watchfiles import awatch
 
-from iclip.app.capability_table import CapabilityTable, resolve_capabilities
+from iclip.app.plugin_registry import PluginRegistry, resolve_plugins
 from iclip.config import (
     ResolvedAgent,
     ResolvedModel,
@@ -67,7 +67,7 @@ WATCH_DEBOUNCE_MS = 1500
 class LayerDeps:
     """启动期冻结、每次装配都复用的依赖。"""
 
-    table: CapabilityTable
+    plugins: PluginRegistry
     step_store: PgStepStore
     usage_ledger: UsageLedger
     live: TranscriptStore
@@ -96,17 +96,17 @@ def _capabilities(
     skills: SkillMount | None,
     names: Sequence[str],
     *,
-    table: CapabilityTable,
+    plugins: PluginRegistry,
     declared_by: str,
 ) -> AgentCapabilities:
-    """按声明解析能力，未声明的 skill 或 capability 不挂载。"""
+    """按声明解析 skill 与插件，未声明的不挂载。"""
 
     mounted = build_skill_capabilities(skills.library, skills.names) if skills else ()
-    return (*mounted, *resolve_capabilities(names, table=table, declared_by=declared_by))
+    return (*mounted, *resolve_plugins(names, registry=plugins, declared_by=declared_by))
 
 
 def _agent_definitions(
-    declared: Sequence[ResolvedAgent], *, table: CapabilityTable
+    declared: Sequence[ResolvedAgent], *, plugins: PluginRegistry
 ) -> tuple[AgentDefinition, ...]:
     """将配置声明转换为 harness 入参，避免内核依赖配置层。"""
 
@@ -119,7 +119,7 @@ def _agent_definitions(
             capabilities=_capabilities(
                 agent.skills,
                 agent.capabilities,
-                table=table,
+                plugins=plugins,
                 declared_by=f"agent {agent.agent_id}",
             ),
             subagents=tuple(
@@ -131,7 +131,7 @@ def _agent_definitions(
                     capabilities=_capabilities(
                         sub.skills,
                         sub.capabilities,
-                        table=table,
+                        plugins=plugins,
                         declared_by=f"子 agent {sub.name}",
                     ),
                     timeout_seconds=sub.timeout_seconds,
@@ -206,7 +206,7 @@ def build_agent_layer(
     else:
         generate_title = title_generator(built_models[title_model])
 
-    definitions = _agent_definitions(agents, table=deps.table)
+    definitions = _agent_definitions(agents, plugins=deps.plugins)
     # 子代理镜像要拿到实时投影、显示表和子代理档案，装配 Agent 前先备好。
     registry = build_agent_registry(
         definitions,

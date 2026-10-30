@@ -10,8 +10,6 @@ import pytest
 
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.film_images import FILM_NODE_KEY
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
 from iclip.common.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
@@ -19,6 +17,8 @@ from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO, MAX_PROMPT_
 from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileEntry, VersionConflict
 from iclip.platform.material_ledger.store import Material
+from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip.plugins.workspace.scope import namespace_for
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.film import (
     EXPECTED,

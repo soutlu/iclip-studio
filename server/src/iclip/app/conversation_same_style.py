@@ -8,12 +8,12 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.shot_document import SHOTS_PATH
-from iclip.capabilities.workspace.scope import namespace_for
 from iclip.domains.library.repository import LibraryReports
 from iclip.platform.file_store.store import FileStore
 from iclip.platform.material_ledger.pg import PgMaterialLedger
+from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip.plugins.shot_document import SHOTS_PATH
+from iclip.plugins.workspace.scope import namespace_for
 
 TREATMENT_PATH: Final = "treatment.md"
 """AI 导演写的新片执行方案，路径是 skill 里的约定。做同款把它拷进新对话；爆款素材库看素材片所在

@@ -112,12 +112,12 @@ depends_on = [
     "iclip.domains.identity",
 ]
 
-# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与能力包上；条数按表名读参考视频的移除标记。
+# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与插件包上；条数按表名读参考视频的移除标记。
 [[modules]]
 path = "iclip.domains.tagging"
 depends_on = ["iclip.common", "iclip.domains.identity"]
 
-# 参考视频的拆解、上传记录都是端口，由组合根接到能力包与生成域上；标签经 tagging。
+# 参考视频的拆解、上传记录都是端口，由组合根接到插件包与生成域上；标签经 tagging。
 [[modules]]
 path = "iclip.domains.references"
 depends_on = [
@@ -154,7 +154,7 @@ depends_on = [
 ]
 
 [[modules]]
-path = "iclip.capabilities"
+path = "iclip.plugins"
 depends_on = [
     "iclip.common",
     "iclip.platform.file_store",
@@ -195,5 +195,5 @@ depends_on = [
     "iclip.domains.brand_templates",
     "iclip.domains.tracking",
     "iclip.harness",
-    "iclip.capabilities",
+    "iclip.plugins",
 ]

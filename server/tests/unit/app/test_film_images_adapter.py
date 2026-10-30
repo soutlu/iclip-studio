@@ -10,13 +10,14 @@ from typing import Any
 import httpx
 import pytest
 
-from iclip.app.capability_table import build_capability_table
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
-from iclip.capabilities.iclip_studio.capability import IclipStudio
-from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
+from iclip.app.plugin_registry import build_plugin_registry
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
 from iclip.domains.identity.models import Principal
+from iclip.plugins.base import PluginParameters
+from iclip.plugins.iclip_studio.capability import IclipStudio
+from iclip.plugins.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
@@ -175,7 +176,7 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
 def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
     """生图现阶段由人自己做：要用的图片模型接上了也不登记生图工具，检查照常装配。"""
 
-    built = build_capability_table(
+    built = build_plugin_registry(
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
@@ -185,7 +186,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
     )
 
-    (capability,) = built["iclip_studio"]
+    (capability,) = built["iclip_studio"].build(PluginParameters())
     assert isinstance(capability, IclipStudio)
     tools = capability.get_toolset().tools
     assert "generate_images" not in tools

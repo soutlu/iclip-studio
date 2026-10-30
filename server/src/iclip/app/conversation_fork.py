@@ -7,13 +7,13 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
-from iclip.capabilities.workspace.scope import namespace_for
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.identity.public import Principal
 from iclip.harness.jobs import JobQueue
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.platform.file_store.store import FileStore
 from iclip.platform.material_ledger.pg import PgMaterialLedger
+from iclip.plugins.workspace.scope import namespace_for
 
 
 class ForkTranscriptAdapter:

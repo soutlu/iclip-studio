@@ -37,9 +37,6 @@ from pydantic_ai.models.function import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.capabilities.video_breakdown.capability import VideoBreakdown
-from iclip.capabilities.video_breakdown.ports import FailedBreakdown
-from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.public import Principal
 from iclip.harness.agents import (
@@ -82,6 +79,9 @@ from iclip.platform.transcript.ops import (
     utf16_len,
 )
 from iclip.platform.transcript.wire import TranscriptPage
+from iclip.plugins.video_breakdown.capability import VideoBreakdown
+from iclip.plugins.video_breakdown.ports import FailedBreakdown
+from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.runtime import (
     AGENT_ID,

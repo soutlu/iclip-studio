@@ -1,0 +1,172 @@
+"""取帧与出图能力装配，与工作区能力共用 FileSpace。"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Any, Final
+
+import httpx
+from pydantic_ai.agent.abstract import AgentInstructions
+from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.tools import AgentDepsT
+from pydantic_ai.toolsets import AgentToolset
+
+from iclip.harness.agents import AgentCapabilities
+from iclip.platform.file_store.store import FileSpace
+from iclip.platform.material_ledger.store import MaterialLedger
+from iclip.platform.media.codec import MediaCodec
+from iclip.platform.transcript.display import (
+    MEDIA_GRID_VIEW,
+    DisplayFn,
+    GenericDisplay,
+    ToolDisplay,
+    ToolDisplayEntry,
+    url_filename,
+)
+from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.shot_video.extraction import FrameExtractor
+from iclip.plugins.shot_video.generation import IMAGE_MODEL, FrameGenerator, GenerationPolicy
+from iclip.plugins.shot_video.ports import (
+    ImageGenerations,
+    PublicObjectWriter,
+    ShotVideoPaths,
+)
+from iclip.plugins.shot_video.toolset import ShotVideoToolset
+
+CAPABILITY_ID: Final = "shot_video"
+
+
+@dataclass
+class ShotVideo(AbstractCapability[AgentDepsT]):
+    """取帧与出图工具集。"""
+
+    space: FileSpace
+    """产物存储与命名空间，必须由组合根提供与工作区能力相同的 FileSpace。"""
+
+    ledger: MaterialLedger
+    """素材来源台账，记录产物地址并供工具输入验证使用。"""
+
+    paths: ShotVideoPaths
+    """产物对象路径布局；出图工具按它给每一格定键。"""
+
+    extractor: FrameExtractor
+
+    generator: FrameGenerator
+
+    id: str | None = field(default=CAPABILITY_ID, kw_only=True)
+
+    def get_toolset(self) -> AgentToolset[AgentDepsT] | None:
+        return ShotVideoToolset(self)
+
+    def get_instructions(self) -> AgentInstructions[AgentDepsT] | None:
+        # 不注入指令：这几件工具怎么接力是流程知识，归 skill（architecture.md §5）。
+        return None
+
+    @classmethod
+    def get_serialization_name(cls) -> str | None:
+        # 依赖都是运行期对象（服务、连接池），从 YAML spec 里造不出来。
+        return None
+
+
+class ShotVideoPlugin(CapPlugin[PluginParameters]):
+    """取帧与出图插件。"""
+
+    name = "shot_video"
+    label = "取帧与出图"
+    description = "从参考视频抽帧拼成图片，按描述生成镜头帧和设定图。"
+    requires = ("workspace", "video")
+    """取帧读 video 写下的拆解文档，产物经 workspace 的文件工具读取。"""
+
+    def __init__(
+        self,
+        *,
+        space: FileSpace,
+        ledger: MaterialLedger,
+        generations: ImageGenerations,
+        objects: PublicObjectWriter,
+        paths: ShotVideoPaths,
+        client: httpx.AsyncClient,
+        fetch_url: Callable[[str], str],
+        image_models: frozenset[str],
+        policy: GenerationPolicy,
+        codec: MediaCodec,
+    ) -> None:
+        """装配取帧与出图服务，取帧解码用 ``codec``；下载参考视频与整图前用 ``fetch_url`` 换算地址。
+
+        Raises:
+            RuntimeError: ``image_models`` 里没有出图要用的模型。
+        """
+
+        if IMAGE_MODEL not in image_models:
+            # 出图把用哪家钉在代码里，配置没接这家就是每次出图都失败，起不来比跑起来好。
+            raise RuntimeError(
+                f"出图工具要 {IMAGE_MODEL}，但 media_generation.image.models 里没有它；"
+                f"已接入的是 {'、'.join(sorted(image_models)) or '（空）'}"
+            )
+        self._space = space
+        self._ledger = ledger
+        self._paths = paths
+        self._extractor = FrameExtractor(
+            client=client, fetch_url=fetch_url, paths=paths, objects=objects, codec=codec
+        )
+        self._generator = FrameGenerator(
+            generations=generations,
+            objects=objects,
+            client=client,
+            fetch_url=fetch_url,
+            policy=policy,
+        )
+
+    def build(self, parameters: PluginParameters) -> AgentCapabilities:
+        return (
+            ShotVideo[Any](
+                space=self._space,
+                ledger=self._ledger,
+                paths=self._paths,
+                extractor=self._extractor,
+                generator=self._generator,
+            ),
+        )
+
+    def display_table(self) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
+        """工具卡与结果渲染声明。"""
+
+        # 标题写法见 docs/tool-design.md §4：书面动宾短语，数字进 metadata 角标。
+        return {
+            "plan_shot_frames": ToolDisplayEntry(
+                draw=lambda args: GenericDisplay(summary="提取候选帧", detail=_video_name(args)),
+                view=MEDIA_GRID_VIEW,
+            ),
+            "generate_shot_frames": ToolDisplayEntry(draw=_frames_display, view=MEDIA_GRID_VIEW),
+            "generate_anchor_sheet": ToolDisplayEntry(
+                draw=lambda _args: GenericDisplay(summary="生成设定图"), view=MEDIA_GRID_VIEW
+            ),
+        }
+
+
+def _video_name(args: Any) -> str | None:
+    url = args.get("video_url") if isinstance(args, dict) else None
+    return url_filename(url) if isinstance(url, str) else None
+
+
+def _frames_display(args: Any) -> ToolDisplay:
+    """主语是这批帧所属的镜头号；帧号形如 S8-1，镜头号取 S 后面的数字。"""
+
+    frames = args.get("frames") if isinstance(args, dict) else None
+    shots: list[int] = []
+    for frame in frames if isinstance(frames, list) else []:
+        no = frame.get("no") if isinstance(frame, dict) else None
+        head = no.split("-", 1)[0].lstrip("S") if isinstance(no, str) else ""
+        if head.isdigit() and int(head) not in shots:
+            shots.append(int(head))
+    detail = f"镜头 {'、'.join(map(str, sorted(shots)))}" if shots else None
+    return GenericDisplay(summary="生成画面", detail=detail)
+
+
+__all__ = [
+    "CAPABILITY_ID",
+    "GenerationPolicy",
+    "ShotVideo",
+    "ShotVideoPlugin",
+]

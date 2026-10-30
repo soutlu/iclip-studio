@@ -8,10 +8,6 @@ from collections.abc import Callable
 
 import httpx
 
-from iclip.capabilities.video_breakdown.media import FfmpegVideoSampler
-from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
-from iclip.capabilities.video_breakdown.ports import BreakdownError, FailedBreakdown
-from iclip.capabilities.video_breakdown.service import BreakdownRunner
 from iclip.config import ResolvedIclipStudio
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
@@ -23,6 +19,10 @@ from iclip.domains.references.models import (
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
+from iclip.plugins.video_breakdown.media import FfmpegVideoSampler
+from iclip.plugins.video_breakdown.model import ArkBreakdownModel
+from iclip.plugins.video_breakdown.ports import BreakdownError, FailedBreakdown
+from iclip.plugins.video_breakdown.service import BreakdownRunner
 
 
 class ArkVideoBreakdowns:

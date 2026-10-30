@@ -1,7 +1,7 @@
 """工具 display、结果渲染器（view）与给人看的结果形状。
 
 客户端按 display.kind 画卡头、按 view 选卡身渲染器、按 metadata 的形状填卡身与角标；
-能力包登记 display，组合根合并后供实时和历史投影共用。
+插件登记 display，组合根合并后供实时和历史投影共用。
 """
 
 from __future__ import annotations
@@ -15,9 +15,7 @@ from typing import (
     Final,
     Literal,
     NotRequired,
-    Protocol,
     TypedDict,
-    runtime_checkable,
 )
 from urllib.parse import unquote, urlsplit
 
@@ -252,7 +250,7 @@ class ToolDisplayRegistry:
 
     @staticmethod
     def merged(*tables: Mapping[str, DisplayFn | ToolDisplayEntry]) -> ToolDisplayRegistry:
-        """合并能力 display 表；重复工具名报错，渲染器可省略。"""
+        """合并插件、技能与委派工具的 display 表；重复工具名报错，渲染器可省略。"""
 
         entries: dict[str, ToolDisplayEntry] = {}
         for table in tables:
@@ -268,13 +266,6 @@ class ToolDisplayRegistry:
 
 
 ToolDisplayRegistry.EMPTY = ToolDisplayRegistry({})
-
-
-@runtime_checkable
-class ToolDisplaySource(Protocol):
-    """提供 display 表的能力接口，供组合根合并。"""
-
-    def display_table(self) -> Mapping[str, DisplayFn | ToolDisplayEntry]: ...
 
 
 __all__ = [
@@ -295,7 +286,6 @@ __all__ = [
     "ToolDisplay",
     "ToolDisplayEntry",
     "ToolDisplayRegistry",
-    "ToolDisplaySource",
     "ToolNote",
     "UrlFetchDisplay",
     "diff_note",
