@@ -1,6 +1,6 @@
-"""工作区能力，通过注入的 FileSpace 提供持久化文件工具。
+"""工作区插件，通过注入的 FileSpace 提供持久化文件工具。
 
-FileSpace 包含运行对象，无法由 YAML spec 构造，因此禁用序列化名称。
+FileSpace 等运行对象由组合根用 ``Workspace.bind`` 绑进类，spec 里只有插件名。
 文件清单由 list_files 按需读取，不逐轮注入模型上下文。"""
 
 from __future__ import annotations
@@ -8,19 +8,17 @@ from __future__ import annotations
 import difflib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, Final, Literal, Self
 
 import structlog
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.abstract import AgentInstructions
-from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ImageUrl, ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import AgentToolset, FunctionToolset
 
 from iclip.common.tool_args import JsonText
-from iclip.harness.agents import AgentCapabilities
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_http, require_material
 from iclip.harness.media import (
@@ -53,7 +51,7 @@ from iclip.platform.transcript.display import (
     search_results,
     tool_note,
 )
-from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.workspace.ports import ImageInfo, MediaProbe, MediaProbeFailed
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -81,8 +79,11 @@ _GUIDANCE = "这段对话有一个持久的工作目录，你和你派出去的�
 
 
 @dataclass
-class Workspace(AbstractCapability[AgentDepsT]):
-    """把工作区工具集挂到 agent 上。"""
+class Workspace(CapPlugin[AgentDepsT]):
+    """工作区文件插件；同一 agent 的其它插件写下的文件都靠它让模型看见。"""
+
+    label = "工作区文件"
+    summary = "查看、搜索、读写、移动和删除对话工作区里的文件，也能查看图片。"
 
     space: FileSpace
     """存储后端与运行命名空间解析规则。解析失败必须终止运行，禁止使用公共命名空间。"""
@@ -121,26 +122,21 @@ class Workspace(AbstractCapability[AgentDepsT]):
         return _GUIDANCE
 
     @classmethod
-    def get_serialization_name(cls) -> str | None:
-        return None
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
 
+    @classmethod
+    def bind(cls, *, space: FileSpace, probe: MediaProbe, ledger: MaterialLedger) -> type[Self]:
+        """把运行服务绑进类，交给登记表。"""
 
-class WorkspacePlugin(CapPlugin[PluginParameters]):
-    """工作区文件插件；同一 agent 的其它插件写下的文件都靠它让模型看见。"""
+        return cls._bound(space=space, probe=probe, ledger=ledger)
 
-    name = "workspace"
-    label = "工作区文件"
-    description = "查看、搜索、读写、移动和删除对话工作区里的文件，也能查看图片。"
+    @classmethod
+    def from_spec(cls) -> Self:
+        return cls(**cls._bound_services())
 
-    def __init__(self, *, space: FileSpace, probe: MediaProbe, ledger: MaterialLedger) -> None:
-        self._space = space
-        self._probe = probe
-        self._ledger = ledger
-
-    def build(self, parameters: PluginParameters) -> AgentCapabilities:
-        return (Workspace[Any](space=self._space, probe=self._probe, ledger=self._ledger),)
-
-    def display_table(self) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
         """工具卡与结果渲染声明。"""
 
         return {
@@ -659,6 +655,5 @@ __all__ = [
     "MAX_SEARCH_RESULTS",
     "CropRegion",
     "Workspace",
-    "WorkspacePlugin",
     "WorkspaceToolset",
 ]

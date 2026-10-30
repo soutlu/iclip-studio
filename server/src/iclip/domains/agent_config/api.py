@@ -15,6 +15,7 @@ from iclip.domains.agent_config.schemas import (
     AgentDraftIn,
     AgentImportOut,
     AgentOrderIn,
+    AgentPluginsOut,
     AgentProblemOut,
     AgentPublishIn,
     AgentPublishProblemsOut,
@@ -59,6 +60,15 @@ def create_agent_config_router(service: AgentConfigService) -> APIRouter:
         """按给的先后排；要给出全部 agent 的标识。"""
 
         return await service.reorder(body)
+
+    # 要登记在 /{agent_id} 之前，不然 plugins 会被当成 agent 标识。
+    @router.get("/plugins", response_model=AgentPluginsOut)
+    async def list_agent_plugins(
+        _: Annotated[Principal, require_permission(_MANAGE)],
+    ) -> AgentPluginsOut:
+        """本部署能挂的全部插件：插件名、名字、说明、要求一起启用的插件与参数的 JSON Schema。"""
+
+        return service.plugins()
 
     @router.post("/import", response_model=AgentImportOut)
     async def import_agents(

@@ -1,32 +1,32 @@
-"""镜头组能力：交付镜头组 prompt 表。"""
+"""镜头组表插件：交付镜头组 prompt 表。"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Self
 
 from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import ModelRetry
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.common.tool_args import REPLAY_CONTEXT, JsonText
-from iclip.harness.agents import AgentCapabilities
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_materials
 from iclip.platform.file_store.store import FileSpace, FileStore
 from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.transcript.display import DisplayFn, FileIoDisplay, tool_note
-from iclip.plugins.base import CapPlugin, PluginParameters
+from iclip.plugins.base import CapPlugin
 from iclip.plugins.shot_document import (
     SHOTS_PATH,
     ShotDocumentError,
     VideoShotRequest,
     build_video_shots_document,
 )
+from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "video_shots"
 
@@ -37,8 +37,11 @@ _SHOT_REQUESTS: Final = TypeAdapter[list[VideoShotRequest]](ShotRequests)
 
 
 @dataclass
-class VideoShots(AbstractCapability[AgentDepsT]):
-    """交付镜头组 prompt 表。"""
+class VideoShots(CapPlugin[AgentDepsT]):
+    """镜头组表插件。"""
+
+    label = "镜头组表"
+    summary = "提交镜头组的提示词表，每次提交全部镜头组，替换上一次的。"
 
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
@@ -52,27 +55,25 @@ class VideoShots(AbstractCapability[AgentDepsT]):
         return VideoShotsToolset(self)
 
     @classmethod
-    def get_serialization_name(cls) -> str | None:
-        return None
+    def get_serialization_name(cls) -> str:
+        return CAPABILITY_ID
 
+    @classmethod
+    def bind(cls, *, space: FileSpace, ledger: MaterialLedger) -> type[Self]:
+        """把运行服务绑进类，交给登记表。"""
 
-class VideoShotsPlugin(CapPlugin[PluginParameters]):
-    """镜头组表插件。"""
+        return cls._bound(space=space, ledger=ledger)
 
-    name = "video_shots"
-    label = "镜头组表"
-    description = "提交镜头组的提示词表，每次提交全部镜头组，替换上一次的。"
-    requires = ("workspace",)
-    """写下的文件经 workspace 的文件工具读取。"""
+    @classmethod
+    def from_spec(cls) -> Self:
+        return cls(**cls._bound_services())
 
-    def __init__(self, *, space: FileSpace, ledger: MaterialLedger) -> None:
-        self._space = space
-        self._ledger = ledger
+    def get_ordering(self) -> CapabilityOrdering:
+        # 写下的文件经 workspace 的文件工具读取。
+        return CapabilityOrdering(requires=(Workspace,))
 
-    def build(self, parameters: PluginParameters) -> AgentCapabilities:
-        return (VideoShots[Any](space=self._space, ledger=self._ledger),)
-
-    def display_table(self) -> Mapping[str, DisplayFn]:
+    @classmethod
+    def display_table(cls) -> Mapping[str, DisplayFn]:
         """工具卡声明。"""
 
         return {"write_video_shots": _shots_display}
@@ -167,4 +168,4 @@ def _shots_file_text(args: Any) -> str | None:
         return None
 
 
-__all__ = ["CAPABILITY_ID", "VideoShots", "VideoShotsPlugin", "VideoShotsToolset"]
+__all__ = ["CAPABILITY_ID", "VideoShots", "VideoShotsToolset"]

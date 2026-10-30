@@ -51,6 +51,7 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
 
     calls: tuple[tuple[str, str, dict[str, Any]], ...] = (
         ("GET", "/agents", {}),
+        ("GET", "/agents/plugins", {}),
         ("POST", "/agents", {"json": {"id": "director", "name": "导演"}}),
         ("PUT", "/agents/order", {"json": {"ids": []}}),
         ("GET", "/agents/director", {}),
@@ -68,6 +69,27 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
     )
     for method, url, kwargs in calls:
         assert (await client.request(method, url, **kwargs)).status_code == 403, (method, url)
+
+
+async def test_root_lists_the_plugins_from_the_registry(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """不需要任何配置也登记的三个插件都在；参数是插件 from_spec 签名写成的 JSON Schema。"""
+
+    await login_as_root(client, migrated_pg)
+
+    listed = await client.get("/agents/plugins")
+
+    assert listed.status_code == 200, listed.text
+    plugins = {plugin["name"]: plugin for plugin in listed.json()["items"]}
+    assert {"workspace", "iclip_studio", "video_shots"} <= set(plugins)
+    workspace = plugins["workspace"]
+    assert (workspace["label"], workspace["requires"]) == ("工作区文件", [])
+    assert workspace["description"]
+    assert workspace["parameters"]["type"] == "object"
+    assert workspace["parameters"]["properties"] == {}
+    assert workspace["parameters"]["additionalProperties"] is False
+    assert plugins["video_shots"]["requires"] == ["workspace"]
 
 
 async def test_root_manages_an_agent_end_to_end(

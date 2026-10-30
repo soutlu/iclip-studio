@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from iclip.domains.agent_config.public import Problem, problems_from_errors
+from iclip.domains.agent_config.public import PluginFacts, Problem, problems_from_errors
 
 NOTES = "notes"
 """没有依赖的测试插件，参数 ``limit`` 是正整数。"""
@@ -50,6 +50,18 @@ class FakePlugins:
         except ValidationError as exc:
             return problems_from_errors(exc.errors())
         return ()
+
+    def catalog(self) -> tuple[PluginFacts, ...]:
+        return tuple(
+            PluginFacts(
+                name=name,
+                label=f"{name} 插件",
+                description=f"测试用的 {name}。",
+                requires=requires,
+                parameters_schema=parameters.model_json_schema(),
+            )
+            for name, (requires, parameters) in self._plugins.items()
+        )
 
 
 __all__ = ["NOTES", "SEARCH", "FakePlugins", "NoParameters", "NotesParameters"]

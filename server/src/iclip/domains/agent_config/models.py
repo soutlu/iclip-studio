@@ -198,6 +198,17 @@ class ProviderFacts:
 
 
 @dataclass(frozen=True, slots=True)
+class PluginFacts:
+    """插件登记表里的一个插件：插件名、给人看的名字与说明、要求同挂的插件名、参数的 JSON Schema。"""
+
+    name: str
+    label: str
+    description: str
+    requires: tuple[str, ...]
+    parameters_schema: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class SkillFacts:
     """技能库里的一个技能：标识、归没归档与最新版（没发布过为 ``None``）。"""
 
@@ -225,6 +236,7 @@ __all__ = [
     "CompiledSubagent",
     "ConfigRefs",
     "ModelFacts",
+    "PluginFacts",
     "Problem",
     "ProviderFacts",
     "RevisionOperation",

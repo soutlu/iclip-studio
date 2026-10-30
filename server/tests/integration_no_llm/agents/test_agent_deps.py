@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AgentCapability, Capability
+from pydantic_ai.capabilities import Capability
 
 from iclip.config import ResolvedAgent
 from iclip.domains.agents.public import AgentRunDeps
@@ -23,7 +23,7 @@ from tests.helpers.plugins import FixedPlugin
 AGENT_ID = "storyboard"
 
 
-def identity_capability() -> tuple[AgentCapability[AgentRunDeps], ...]:
+def identity_capability() -> tuple[Capability[AgentRunDeps], ...]:
     """提供返回运行依赖的工具，用于验证 RunContext[AgentRunDeps] 注入。"""
 
     def whoami(ctx: RunContext[AgentRunDeps]) -> str:
@@ -59,7 +59,7 @@ def registered_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
     from iclip.app.plugin_registry import PluginRegistry
 
     def only_identity(**_: object) -> PluginRegistry:
-        return {"identity": FixedPlugin(identity_capability())}
+        return {"identity": FixedPlugin.bind(name="identity", capabilities=identity_capability())}
 
     monkeypatch.setattr(bootstrap, "build_plugin_registry", only_identity)
 

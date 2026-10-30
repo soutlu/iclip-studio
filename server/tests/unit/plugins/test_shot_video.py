@@ -32,11 +32,9 @@ from iclip.platform.material_ledger.store import Material
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
-from iclip.plugins.base import PluginParameters
 from iclip.plugins.shot_video.capability import (
     GenerationPolicy,
     ShotVideo,
-    ShotVideoPlugin,
 )
 from iclip.plugins.shot_video.delivery import FrameRequest
 from iclip.plugins.shot_video.extraction import EXTRACTION_PATH
@@ -50,10 +48,12 @@ from iclip.plugins.shot_video.shots import parse_shot_rows
 from iclip.plugins.shot_video.toolset import ShotVideoToolset
 from iclip.plugins.video.capability import Video
 from iclip.plugins.video_document import video_doc_path
+from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.plugins import required_tools, with_requirements
 from tests.helpers.shot_video import (
     FakeGenerations,
     FakeObjects,
@@ -152,13 +152,13 @@ def materials() -> FakeMaterialLedger:
 
 
 @pytest.fixture
-def plugin(
+def capability(
     files: FakeFileStore,
     materials: FakeMaterialLedger,
     generations: FakeGenerations,
     objects: FakeObjects,
-) -> ShotVideoPlugin:
-    return ShotVideoPlugin(
+) -> ShotVideo[object]:
+    return mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
         ledger=materials,
         generations=generations,
@@ -170,13 +170,6 @@ def plugin(
         policy=FAST,
         codec=SOFTWARE,
     )
-
-
-@pytest.fixture
-def capability(plugin: ShotVideoPlugin) -> ShotVideo[object]:
-    (capability,) = plugin.build(PluginParameters())
-    assert isinstance(capability, ShotVideo)
-    return capability
 
 
 @pytest.fixture
@@ -218,14 +211,22 @@ async def test_every_tool_reaches_the_model(capability: ShotVideo[object]) -> No
         seen.extend(sorted(tool.name for tool in info.function_tools))
         return ModelResponse(parts=[TextPart("好")])
 
-    agent = Agent(FunctionModel(script), capabilities=[capability])
+    agent = Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    )
     await agent.run("看看你有什么", deps=make_deps())
-    assert seen == ["generate_anchor_sheet", "generate_shot_frames", "plan_shot_frames"]
+    own = [name for name in seen if name not in required_tools(capability)]
+    assert own == ["generate_anchor_sheet", "generate_shot_frames", "plan_shot_frames"]
 
 
-def test_every_tool_has_a_display(plugin: ShotVideoPlugin, tools: ShotVideoToolset[object]) -> None:
+def test_shot_video_requires_workspace_and_video(capability: ShotVideo[object]) -> None:
+    assert ShotVideo.get_serialization_name() == "shot_video"
+    assert tuple(capability.get_ordering().requires) == (Workspace, Video)
 
-    drawn = ToolDisplayRegistry.merged(plugin.display_table()).entries
+
+def test_every_tool_has_a_display(tools: ShotVideoToolset[object]) -> None:
+
+    drawn = ToolDisplayRegistry.merged(ShotVideo.display_table()).entries
     assert set(drawn) == set(tools.tools)
     # 主语是去重、排序后的镜头号。
     frames = drawn["generate_shot_frames"].draw(
@@ -244,9 +245,9 @@ def test_every_tool_has_a_display(plugin: ShotVideoPlugin, tools: ShotVideoTools
     assert anchor.detail is None
 
 
-def test_every_media_tool_picks_a_renderer(plugin: ShotVideoPlugin) -> None:
+def test_every_media_tool_picks_a_renderer() -> None:
 
-    views = ToolDisplayRegistry.merged(plugin.display_table())
+    views = ToolDisplayRegistry.merged(ShotVideo.display_table())
     for tool_name in ("plan_shot_frames", "generate_shot_frames", "generate_anchor_sheet"):
         assert views.view_of(tool_name) == "media_grid"
 
@@ -269,7 +270,9 @@ async def test_an_out_of_scope_address_is_refused_on_the_agent_path(
             )
         return ModelResponse(parts=[TextPart("好")])
 
-    agent = Agent(FunctionModel(call_once), capabilities=[capability])
+    agent = Agent(
+        FunctionModel(call_once), capabilities=with_requirements(capability, capability.space)
+    )
     result = await agent.run("帮我拆一下", deps=make_deps())
 
     refusals = [
@@ -816,9 +819,9 @@ async def test_stringified_frames_are_parsed_on_the_agent_path(
         return ModelResponse(parts=[TextPart("好")])
 
     with capture_logs() as logs:
-        result = await Agent(FunctionModel(call_once), capabilities=[capability]).run(
-            "出这一批帧", deps=make_deps()
-        )
+        result = await Agent(
+            FunctionModel(call_once), capabilities=with_requirements(capability, capability.space)
+        ).run("出这一批帧", deps=make_deps())
 
     refusals = [
         part

@@ -21,7 +21,6 @@ from iclip.plugins.iclip_studio import capability as studio
 from iclip.plugins.iclip_studio.capability import (
     MAX_LISTED_PROBLEMS,
     IclipStudio,
-    IclipStudioPlugin,
     IclipStudioToolset,
 )
 from iclip.plugins.iclip_studio.film.checks import check
@@ -32,6 +31,7 @@ from iclip.plugins.iclip_studio.ports import (
     NodeImageJob,
     NodeImageRequest,
 )
+from iclip.plugins.workspace.capability import Workspace
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.film import (
@@ -507,12 +507,23 @@ def test_the_generate_tool_is_offered_only_when_its_model_is_connected(
     assert not offered(capability(files, ledger, None))
 
 
-def test_the_tool_cards_name_the_file_they_work_on(
-    files: FakeFileStore, ledger: FakeMaterialLedger
+def test_the_plugin_is_built_from_its_spec_without_image_generation(
+    files: FakeFileStore, ledger: FakeMaterialLedger, images: FakeNodeImages
 ) -> None:
-    table = IclipStudioPlugin(
-        space=FileSpace(store=files, namespace=workspace_namespace), ledger=ledger, images=None
-    ).display_table()
+    """组合根绑好服务后按 spec 造：只有检查，生图不登记给 agent；要求同挂 workspace。"""
+
+    plugin = IclipStudio[object].bind(
+        space=FileSpace(store=files, namespace=workspace_namespace), ledger=ledger, images=images
+    )
+    built = plugin.from_spec()
+
+    assert plugin.get_serialization_name() == "iclip_studio"
+    assert set(built.get_toolset().tools) == {"check_film"}
+    assert tuple(built.get_ordering().requires) == (Workspace,)
+
+
+def test_the_tool_cards_name_the_file_they_work_on() -> None:
+    table = IclipStudio.display_table()
 
     check_card, generate = table["check_film"], table["generate_images"]
     assert callable(check_card)

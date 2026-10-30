@@ -78,6 +78,24 @@ export const zAgentOut = z.object({
 })
 
 /**
+ * AgentPluginOut
+ */
+export const zAgentPluginOut = z.object({
+  description: z.string(),
+  label: z.string(),
+  name: z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+  requires: z.array(z.string()),
+})
+
+/**
+ * AgentPluginsOut
+ */
+export const zAgentPluginsOut = z.object({
+  items: z.array(zAgentPluginOut),
+})
+
+/**
  * AgentProblemOut
  */
 export const zAgentProblemOut = z.object({
@@ -3529,6 +3547,11 @@ export const zReorderAgentsAgentsOrderPutBody = zAgentOrderIn
  * Successful Response
  */
 export const zReorderAgentsAgentsOrderPutResponse = zAgentsOut
+
+/**
+ * Successful Response
+ */
+export const zListAgentPluginsAgentsPluginsGetResponse = zAgentPluginsOut
 
 export const zAgentDetailAgentsAgentIdGetPath = z.object({
   agent_id: z.string(),

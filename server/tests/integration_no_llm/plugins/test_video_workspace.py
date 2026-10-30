@@ -29,6 +29,7 @@ from iclip.plugins.video.capability import Video
 from iclip.plugins.video_document import video_doc_path
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.pg import truncate_clean
+from tests.helpers.plugins import with_requirements
 from tests.helpers.shot_video import FakeUnderstanding
 
 USER = uuid.UUID("44444444-4444-4444-4444-444444444444")
@@ -74,9 +75,9 @@ async def call_once(
             return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="c1")])
         return ModelResponse(parts=[TextPart("好")])
 
-    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "处理参考素材。", deps=make_deps(conversation_id)
-    )
+    result = await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("处理参考素材。", deps=make_deps(conversation_id))
     return [
         part
         for message in result.all_messages()

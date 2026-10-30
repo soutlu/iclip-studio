@@ -330,6 +330,44 @@ export type AgentOut = {
 }
 
 /**
+ * AgentPluginOut
+ */
+export type AgentPluginOut = {
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Parameters
+   */
+  parameters: {
+    [key: string]: unknown
+  }
+  /**
+   * Requires
+   */
+  requires: Array<string>
+}
+
+/**
+ * AgentPluginsOut
+ */
+export type AgentPluginsOut = {
+  /**
+   * Items
+   */
+  items: Array<AgentPluginOut>
+}
+
+/**
  * AgentProblemOut
  */
 export type AgentProblemOut = {
@@ -7117,6 +7155,23 @@ export type ReorderAgentsAgentsOrderPutResponses = {
 
 export type ReorderAgentsAgentsOrderPutResponse =
   ReorderAgentsAgentsOrderPutResponses[keyof ReorderAgentsAgentsOrderPutResponses]
+
+export type ListAgentPluginsAgentsPluginsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/agents/plugins'
+}
+
+export type ListAgentPluginsAgentsPluginsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentPluginsOut
+}
+
+export type ListAgentPluginsAgentsPluginsGetResponse =
+  ListAgentPluginsAgentsPluginsGetResponses[keyof ListAgentPluginsAgentsPluginsGetResponses]
 
 export type AgentDetailAgentsAgentIdGetData = {
   body?: never

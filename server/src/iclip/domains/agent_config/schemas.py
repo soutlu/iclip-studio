@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -58,6 +58,22 @@ class AgentOut(CamelModel):
 class AgentsOut(CamelModel):
     items: list[AgentOut]
     """按 ``sortOrder`` 从小到大，同序按 ``createdAt`` 倒序。"""
+
+
+class AgentPluginOut(CamelModel):
+    name: str
+    """插件名，配置里 ``tools[].toolset`` 写它。"""
+    label: str
+    description: str
+    requires: list[str]
+    """要求同一 agent 一起启用的插件名。"""
+    parameters: dict[str, Any]
+    """``tools[].parameters`` 的 JSON Schema；没有参数的插件是不收任何键的空对象。"""
+
+
+class AgentPluginsOut(CamelModel):
+    items: list[AgentPluginOut]
+    """本部署能挂的全部插件。"""
 
 
 class AgentDraftOut(CamelModel):

@@ -30,6 +30,7 @@ from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.plugins.workspace.scope import workspace_namespace
 from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_FRONT
 from tests.helpers.pg import truncate_clean
+from tests.helpers.plugins import with_requirements
 
 USER = uuid.UUID("55555555-5555-5555-5555-555555555555")
 
@@ -72,9 +73,9 @@ async def call_once(
             return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="c1")])
         return ModelResponse(parts=[TextPart("好")])
 
-    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
-        "写工程文件。", deps=make_deps(conversation_id)
-    )
+    result = await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("写工程文件。", deps=make_deps(conversation_id))
     returns = [
         part
         for message in result.all_messages()
