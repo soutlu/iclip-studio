@@ -70,18 +70,45 @@ ListAgents = Callable[[], Awaitable[AgentDirectory]]
 """读当前名册，由组合根接到 agent 配置；每次调都是库里此刻的一份。"""
 
 
-class OpenSession(Protocol):
-    """在运行时那一侧给新对话开会话，固定这个 agent 此刻的当前版本；由组合根接上。
+class RuntimeSessions(Protocol):
+    """运行时那一侧的会话操作，由组合根接到运行时的会话服务上。会话 id 等于对话 id，``*_user`` 是两端
+    对话的属主。对话行由用例在这些都做完之后才落：中途失败只留下寻址不到的数据。"""
 
-    没有这个 agent、或它不上首页菜单是 ``ValidationFailed``；已归档、还没发布过是 ``Conflict``。"""
+    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        """给新对话开会话，固定这个 agent 此刻的当前版本。
 
-    async def __call__(self, conversation_id: uuid.UUID, agent_id: str) -> None: ...
+        没有这个 agent、或它不上首页菜单是 ``ValidationFailed``；已归档、还没发布过是 ``Conflict``。"""
+        ...
 
+    async def fork(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        turn: int,
+        agent_id: str | None,
+    ) -> None:
+        """从源对话的第 ``turn`` 轮分叉：开会话、拷工作区文件与整份素材台账、写种子快照。
 
-class ForkSession(Protocol):
-    """分叉出来的对话开会话，照抄源对话会话的版本；由组合根接上。"""
+        ``agent_id`` 为 None 照抄源会话的版本，否则按 ``open`` 固定那个 agent 并照它抛错。源有没跑完的
+        消息、或数完轮数后又跑了一轮是 ``Conflict``；源没跑过或 ``turn`` 超出轮数是 ``ValidationFailed``。"""
+        ...
 
-    async def __call__(self, source_id: uuid.UUID, target_id: uuid.UUID) -> None: ...
+    async def copy_files(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        files: Sequence[tuple[str, str]],
+        require_any: frozenset[str],
+    ) -> bool:
+        """按（源路径，目标路径）清单拷几份文件进目标对话的工作区，连同整份素材台账；源里没有的跳过。
+        ``require_any`` 一个都不在时什么都不写、回 ``False``。"""
+        ...
 
 
 ActivitiesOf = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, ConversationActivity]]]
@@ -153,59 +180,13 @@ ClaimTask = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 """对话挂上需求单就是有人在做了：以 (需求单 id, 对话属主) 认领它。实现由组合根注入。"""
 
 
-class ForkTranscript(Protocol):
-    """副本起点的读写，由组合根接到 agent 引擎上。副本不复制运行记录，只写一张种子快照。"""
+@dataclass(frozen=True, slots=True)
+class SameStyleFiles:
+    """做同款拷哪几份文件，由组合根给：``files`` 是（源路径，新对话里的路径），``require_any`` 里一份都
+    没有的对话做不了同款。"""
 
-    async def idle(self, conversation_id: uuid.UUID) -> bool:
-        """这段对话此刻没有在跑、也没有排队的消息。
-
-        与重新生成同一个口径，比对话活动里的 ``busy`` 更严：排队中的那条一旦起跑就会写新快照，
-        轮号跟着变，分叉点会指到别的地方去。"""
-        ...
-
-    async def turn_count(self, conversation_id: uuid.UUID) -> int:
-        """源对话一共几轮；越界的分叉点在拷贝任何东西之前就被挡掉。"""
-        ...
-
-    async def seed(self, *, source_id: uuid.UUID, target_id: uuid.UUID, turn: int) -> bool:
-        """把源对话截到第 ``turn`` 轮的消息写成副本的第一张快照；源在数过轮数之后又跑了一轮就
-        什么都不写、回 ``False``，冲不冲突由用例判。
-
-        消息里的 run_id 照抄源对话：副本靠它们回源查每轮的终态与子代理，不另存一份。"""
-        ...
-
-
-class CopyConversationWorkspace(Protocol):
-    """把源对话的工作区文件与素材台账整份拷进副本。
-
-    命名空间是「属主/对话 id」，所以两端的属主都要给。素材必须跟着拷：不拷的话副本续跑时，
-    受素材约束的工具会把源对话里那些地址当成没登记过而拒绝。"""
-
-    async def __call__(
-        self,
-        *,
-        source_owner: uuid.UUID,
-        source_id: uuid.UUID,
-        target_owner: uuid.UUID,
-        target_id: uuid.UUID,
-    ) -> None: ...
-
-
-class CopySameStyle(Protocol):
-    """做同款：把源对话的几份制作文件拷进新对话的工作区，连同整份素材台账。
-
-    拷哪几份、拷过去叫什么由实现定。源工作区里既没有工程文件也没有分镜文件时
-    什么都不写、回 ``False``，做不做得了由用例判。台账整份跟着拷：运行文件里选用的图都登记
-    在台账里，新对话靠它认得这些地址。"""
-
-    async def __call__(
-        self,
-        *,
-        source_owner: uuid.UUID,
-        source_id: uuid.UUID,
-        target_owner: uuid.UUID,
-        target_id: uuid.UUID,
-    ) -> bool: ...
+    files: tuple[tuple[str, str], ...]
+    require_any: frozenset[str]
 
 
 class SameStyleSource(Protocol):
@@ -458,8 +439,7 @@ class ConversationService:
         self,
         repo: ConversationRepository,
         *,
-        open_session: OpenSession,
-        fork_session: ForkSession,
+        runtime: RuntimeSessions,
         list_collections: ListCollections,
         claim_task: ClaimTask,
         list_derived_files: ListDerivedFiles,
@@ -475,28 +455,23 @@ class ConversationService:
         activities_of: ActivitiesOf,
         busy_conversation_ids: BusyConversationIds,
         latest_master_urls: LatestMasterUrls,
-        fork_transcript: ForkTranscript,
-        copy_workspace: CopyConversationWorkspace,
-        copy_same_style: CopySameStyle,
+        same_style_files: SameStyleFiles,
         same_style_source: SameStyleSource,
         event_watermark: EventWatermarkOf,
         announce_row: AnnounceConversationRow,
         announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
-        self._open_session = open_session
-        self._fork_session = fork_session
+        self._runtime = runtime
         self._drafts = drafts
         self._draft_references = draft_references
         self._exports = exports
-        self._copy_same_style = copy_same_style
+        self._same_style_files = same_style_files
         self._same_style_source = same_style_source
         self._event_watermark = event_watermark
         self._announce_row = announce_row
         self._announce_deleted = announce_deleted
         self._claim_task = claim_task
-        self._fork_transcript = fork_transcript
-        self._copy_workspace = copy_workspace
         self._activities_of = activities_of
         self._busy_conversation_ids = busy_conversation_ids
         self._latest_master_urls = latest_master_urls
@@ -849,15 +824,15 @@ class ConversationService:
         ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
         这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。
 
-        新建时先在运行时开会话、固定 agent 此刻的当前版本，agent 不能开对话时按 ``OpenSession`` 抛错、
-        不落行；这个 id 已有对话行（重发）时不再开。"""
+        新建时先在运行时开会话、固定 agent 此刻的当前版本，agent 不能开对话时按 ``RuntimeSessions.open``
+        抛错、不落行；这个 id 已有对话行（重发）时不再开。"""
 
         now = datetime.now(UTC)
         new_id = conversation_id or uuid.uuid4()
         # 调用方铸的 id 在答复之前就可能被拿去改这段对话，created 帧与其他整行帧同样要按提交顺序发号。
         async with self._row_lock(new_id):
             if not (conversation_id is not None and await self._id_taken(conversation_id)):
-                await self._open_session(new_id, agent_id)
+                await self._runtime.open(new_id, agent_id=agent_id)
                 if same_as is not None:
                     await self._copy_same_as(principal, source_id=same_as, target_id=new_id)
             before = self._event_watermark()
@@ -907,11 +882,14 @@ class ConversationService:
         source_owner = await self._same_style_source(source_id)
         if source_owner is None:
             raise NotFound("资料库里没有这条视频")
-        if not await self._copy_same_style(
-            source_owner=source_owner,
+        same_style = self._same_style_files
+        if not await self._runtime.copy_files(
             source_id=source_id,
-            target_owner=principal.user_id,
+            source_user=source_owner,
             target_id=target_id,
+            target_user=principal.user_id,
+            files=same_style.files,
+            require_any=same_style.require_any,
         ):
             raise ValidationFailed("这段对话没有工程文件或分镜文件，做不了同款")
 
@@ -932,37 +910,25 @@ class ConversationService:
 
         副本不挂源的需求单：挂上就是认领，那会动到别人的单子。出片记录不拷，副本按血缘继承。
 
-        写五处（运行时会话、工作区、素材、种子快照、对话行），各自独立提交，对话行最后写。
-        中途失败的副本进不了任何对话列表，也读不出 transcript。
+        会话、工作区、素材与种子快照由运行时的分叉写，对话行在它之后由这里写，各自独立提交。
+        中途失败的副本进不了任何对话列表，也读不出 transcript。没跑完、没跑过、轮号越界与数完轮数后
+        源又跑了一轮都按 ``RuntimeSessions.fork`` 抛错，不落行。
 
         副本的会话照抄源会话的 agent 版本；换了 ``agent_id`` 就按新对话的规矩固定那个 agent 此刻的
-        当前版本，不能开对话时按 ``OpenSession`` 抛错。
+        当前版本，不能开对话时按 ``RuntimeSessions.open`` 抛错。
         """
 
         source = await self._readable(principal, source_id)
-        if not await self._fork_transcript.idle(source_id):
-            raise Conflict("这段对话还有没跑完的消息，等它收完尾再分叉")
-        turns = await self._fork_transcript.turn_count(source_id)
-        if turns == 0:
-            raise ValidationFailed("这段对话还没跑过，没有可分叉的轮次")
-        if turn > turns:
-            raise ValidationFailed(f"这段对话只有 {turns} 轮，分不出第 {turn} 轮")
         target_id = uuid.uuid4()
         now = datetime.now(UTC)
-        if agent_id is None or agent_id == source.agent_id:
-            await self._fork_session(source_id, target_id)
-        else:
-            await self._open_session(target_id, agent_id)
-        await self._copy_workspace(
-            source_owner=source.owner_user_id,
+        await self._runtime.fork(
             source_id=source_id,
-            target_owner=principal.user_id,
+            source_user=source.owner_user_id,
             target_id=target_id,
+            target_user=principal.user_id,
+            turn=turn,
+            agent_id=agent_id if agent_id not in (None, source.agent_id) else None,
         )
-        if not await self._fork_transcript.seed(
-            source_id=source_id, target_id=target_id, turn=turn
-        ):
-            raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
         before = self._event_watermark()
         conversation, _ = await self._repo.create_if_absent(
             Conversation(
@@ -1278,14 +1244,14 @@ __all__ = [
     "DerivedFile",
     "DerivedFileContent",
     "EventWatermarkOf",
-    "ForkSession",
     "LatestMasterUrls",
     "ListAgents",
     "ListCollections",
     "ListDerivedFiles",
     "ListState",
-    "OpenSession",
     "ReadDerivedFile",
+    "RuntimeSessions",
+    "SameStyleFiles",
     "Sidebar",
     "SidebarGroup",
     "WholeFilmDraftReferences",

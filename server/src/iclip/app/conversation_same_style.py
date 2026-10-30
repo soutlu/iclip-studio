@@ -1,5 +1,5 @@
-"""做同款的适配：对话域建对话时的认源与拷贝端口、资料库的「做得了同款」判断，接到资料库读模型、
-文件存储与素材台账上。
+"""做同款的适配：对话域建对话时拷哪几份文件与认源端口、资料库的「做得了同款」判断，接到资料库读模型与
+文件存储上。拷贝本身由运行时的会话服务按这里给的清单做。
 
 拷哪几份文件、拷过去叫什么、什么样的对话做得了同款都只在这里定，两处共用。"""
 
@@ -9,11 +9,11 @@ import uuid
 from typing import Final
 
 from agent_runtime.file_store.store import FileStore
-from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.plugins.workspace.scope import namespace_for
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip_video.shot_document import SHOTS_PATH
 
+from iclip.domains.conversations.service import SameStyleFiles
 from iclip.domains.library.repository import LibraryReports
 
 TREATMENT_PATH: Final = "treatment.md"
@@ -32,42 +32,21 @@ SAME_STYLE_FILES: Final = (
 _PRODUCTION_FILES: Final = frozenset({FILM_PATH, SHOTS_PATH})
 """有其中一份才做得了同款。"""
 
+SAME_STYLE: Final = SameStyleFiles(files=SAME_STYLE_FILES, require_any=_PRODUCTION_FILES)
+"""对话域做同款用的清单。"""
 
-class SameStyleCopier:
-    """对话域 ``CopySameStyle`` 的实现，另给资料库判断一段对话做不做得了同款。
 
-    写走 FileStore 的写入口而不是裸 SQL，容量与路径校验照旧生效；不走发帧的那一层：新对话的
-    行还没落库，这一刻没人订阅得了它。台账要 ``list_all``，所以拿 Postgres 实现。"""
+class ProductionFilesProbe:
+    """给资料库判断一段对话做不做得了同款，与对话域做同款同一个口径。"""
 
-    def __init__(self, *, store: FileStore, ledger: PgMaterialLedger) -> None:
+    def __init__(self, store: FileStore) -> None:
         self._store = store
-        self._ledger = ledger
 
     async def has_production_files(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:
         """这段对话的工作区里有没有工程文件或分镜文件。"""
 
         entries = await self._store.entries(namespace_for(owner, str(conversation_id)))
         return any(entry.path in _PRODUCTION_FILES for entry in entries)
-
-    async def __call__(
-        self,
-        *,
-        source_owner: uuid.UUID,
-        source_id: uuid.UUID,
-        target_owner: uuid.UUID,
-        target_id: uuid.UUID,
-    ) -> bool:
-        source = namespace_for(source_owner, str(source_id))
-        found = {path: await self._store.read(source, path) for path, _ in SAME_STYLE_FILES}
-        if all(found[path] is None for path in _PRODUCTION_FILES):
-            return False
-        target = namespace_for(target_owner, str(target_id))
-        for path, renamed in SAME_STYLE_FILES:
-            stored = found[path]
-            if stored is not None:
-                await self._store.write(target, renamed, stored.content)
-        await self._ledger.record(target, await self._ledger.list_all(source))
-        return True
 
 
 class LibrarySameStyleSource:
@@ -84,4 +63,4 @@ class LibrarySameStyleSource:
         return None if row is None else row.conversation_owner
 
 
-__all__ = ["LibrarySameStyleSource", "SameStyleCopier"]
+__all__ = ["SAME_STYLE", "LibrarySameStyleSource", "ProductionFilesProbe"]

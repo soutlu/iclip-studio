@@ -22,8 +22,9 @@ from iclip.domains.conversations.service import (
     SIDEBAR_COLLECTIONS,
     CollectionInfo,
     ConversationService,
-    ForkTranscript,
     ListState,
+    RuntimeSessions,
+    SameStyleFiles,
 )
 from iclip.domains.identity.public import Principal
 from iclip.platform.live.session_events import SessionEventClock
@@ -143,8 +144,7 @@ def build(
 ) -> ConversationService:
     return ConversationService(
         cast("ConversationRepository", repo),
-        open_session=_untouched,
-        fork_session=_untouched,
+        runtime=cast("RuntimeSessions", object()),
         list_collections=collections,
         claim_task=_untouched,
         list_derived_files=_untouched,
@@ -160,9 +160,7 @@ def build(
         activities_of=activities,
         busy_conversation_ids=busy,
         latest_master_urls=_untouched,
-        fork_transcript=cast("ForkTranscript", object()),
-        copy_workspace=_untouched,
-        copy_same_style=_untouched,
+        same_style_files=SameStyleFiles(files=(), require_any=frozenset()),
         same_style_source=_untouched,
         event_watermark=SessionEventClock().snapshot,
         announce_row=_untouched,

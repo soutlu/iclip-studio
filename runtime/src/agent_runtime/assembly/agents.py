@@ -166,7 +166,7 @@ class _Built:
 
 
 class AgentRuntime:
-    """按对话固定的版本装配 agent，也负责开运行时会话、首页名册与对话标题。
+    """按对话固定的版本装配 agent，也负责首页名册与对话标题；会话由 ``service/sessions.py`` 开。
 
     同一个缓存键的两次并发装配会各装一份、后到的覆盖先到的，结果等价，不加锁。"""
 
@@ -379,19 +379,6 @@ class AgentRuntime:
             return
         files = await self._skills.version_files(skill.latest_version_id)
         materialize_skill(root, name=skill.name, content_hash=content_hash, files=files)
-
-    # --- 会话 -----------------------------------------------------------------
-
-    async def open_session(self, conversation_id: uuid.UUID, agent_id: str) -> None:
-        """``OpenSession`` 的实现：固定这个 agent 此刻的当前版本。"""
-
-        version_id = await self._agent_config.version_for_new_session(agent_id)
-        await self._sessions.open(conversation_id, agent_version_id=version_id)
-
-    async def fork_session(self, source_id: uuid.UUID, target_id: uuid.UUID) -> None:
-        """``ForkSession`` 的实现：照抄源会话的版本。"""
-
-        await self._sessions.copy(source_id, target_id)
 
     # --- 首页与标题 -------------------------------------------------------------
 

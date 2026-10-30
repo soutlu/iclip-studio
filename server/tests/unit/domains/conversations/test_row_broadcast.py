@@ -23,8 +23,8 @@ from iclip.domains.conversations.service import (
     ActivitiesOf,
     ClaimTask,
     ConversationService,
-    ForkTranscript,
     GenerateTitle,
+    SameStyleFiles,
 )
 from iclip.domains.identity.public import Principal
 from iclip.platform.live.session_events import SessionEventClock
@@ -186,8 +186,35 @@ def _untouched(*_: object, **__: object) -> NoReturn:
     raise AssertionError("这里用不到这个端口")
 
 
-async def _opens_session(conversation_id: uuid.UUID, agent_id: str) -> None:
-    """运行时开会话的替身：这里只看整行广播，agent 都当作能开对话。"""
+class OpensSessions:
+    """运行时会话的替身：这里只看整行广播，agent 都当作能开对话；分叉与拷文件用不到。"""
+
+    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        return None
+
+    async def fork(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        turn: int,
+        agent_id: str | None,
+    ) -> None:
+        _untouched()
+
+    async def copy_files(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        files: Sequence[tuple[str, str]],
+        require_any: frozenset[str],
+    ) -> bool:
+        _untouched()
 
 
 async def _idle(ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, ConversationActivity]:
@@ -222,8 +249,7 @@ def build(
 ) -> ConversationService:
     return ConversationService(
         cast("ConversationRepository", repo),
-        open_session=_opens_session,
-        fork_session=_untouched,
+        runtime=OpensSessions(),
         list_collections=_untouched,
         claim_task=claim_task,
         list_derived_files=_untouched,
@@ -239,9 +265,7 @@ def build(
         activities_of=activities_of,
         busy_conversation_ids=_untouched,
         latest_master_urls=_untouched,
-        fork_transcript=cast("ForkTranscript", object()),
-        copy_workspace=_untouched,
-        copy_same_style=_untouched,
+        same_style_files=SameStyleFiles(files=(), require_any=frozenset()),
         same_style_source=_untouched,
         event_watermark=clock.snapshot,
         announce_row=announced.row,

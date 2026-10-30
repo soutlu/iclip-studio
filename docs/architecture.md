@@ -6,7 +6,7 @@
 
 后端是 FastAPI 模块化单体，Agent 引擎使用 PydanticAI 与 Pydantic AI Harness。`app/` 是唯一组合根：读取配置、创建连接池、装配模块、连接模块间的协议并管理生命周期。
 
-Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproject.toml)（包 `agent_runtime`，现有领域错误分类、工具入参的 JSON 文本归一化、地址形状判定、模型接口与思考档位的词表、agent 配置引用的「谁在用」形状、工作区文件存储与素材台账；`harness/` 是通用 Agent 装配、运行驱动、消息持久化、上下文压缩与 transcript 投影，不解释业务身份和业务规则；`transcript/` 是 transcript 实体、操作、工具卡显示协议、transcript 帧与 REST 信封；`plugins/` 是插件约定、登记表类型与通用的工作区插件；`run_deps.py` 是运行依赖 `AgentRunDeps`；`config/` 是技能库、模型供应商与 agent 配置三块的用例、规则与存储，它们的接口路由留在后端的 `domains/skills/`、`domains/model_providers/` 与 `domains/agent_config/`；`assembly/` 把三块配置接到引擎：按对话固定的版本装配 agent、按供应商声明建模型与试连、实现 agent 配置的三个查询端口）；后端依赖它，它不依赖后端。运行时自己的依赖图与框架引用边界以 [runtime/tach.toml](../runtime/tach.toml) 和 [运行时架构测试](../runtime/tests/unit/architecture/test_architecture.py) 为准。
+Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproject.toml)（包 `agent_runtime`，现有领域错误分类、工具入参的 JSON 文本归一化、地址形状判定、模型接口与思考档位的词表、agent 配置引用的「谁在用」形状、工作区文件存储与素材台账；`harness/` 是通用 Agent 装配、运行驱动、消息持久化、上下文压缩与 transcript 投影，不解释业务身份和业务规则；`transcript/` 是 transcript 实体、操作、工具卡显示协议、transcript 帧与 REST 信封；`plugins/` 是插件约定、登记表类型与通用的工作区插件；`run_deps.py` 是运行依赖 `AgentRunDeps`；`config/` 是技能库、模型供应商与 agent 配置三块的用例、规则与存储，它们的接口路由留在后端的 `domains/skills/`、`domains/model_providers/` 与 `domains/agent_config/`；`assembly/` 把三块配置接到引擎：按对话固定的版本装配 agent、按供应商声明建模型与试连、实现 agent 配置的三个查询端口；`service/` 是给应用的应用服务，应用经它操作运行时的会话与数据，不直接碰引擎内部）；后端依赖它，它不依赖后端。运行时自己的依赖图与框架引用边界以 [runtime/tach.toml](../runtime/tach.toml) 和 [运行时架构测试](../runtime/tests/unit/architecture/test_architecture.py) 为准。
 
 视频业务的 agent 插件是另一个单独的 Python 项目 [plugins/video/](../plugins/video/pyproject.toml)（包 `iclip_video`，现有 `iclip_studio`、`video`、`video_shots`、`video_breakdown`、`shot_video` 五个插件包，以及镜头组规则、出片正文的拼装与反拆、镜头组表、拆解文档与视频拆解协议、制作页视图的形状这些视频格式代码）；它只依赖运行时，后端依赖它，运行时不依赖它，它也绝不引用后端，边界以 [plugins/video/tach.toml](../plugins/video/tach.toml) 和 [视频插件架构测试](../plugins/video/tests/unit/architecture/test_architecture.py) 为准。插件不做 ffmpeg、图片合成、媒体下载与对象存储写入：`shot_video` 的取帧拼板与宫格切格是插件声明的两个粗粒度端口（`FrameBoards`、`GridCuts`），由后端的 [app/shot_media.py](../server/src/iclip/app/shot_media.py) 实现。
 
@@ -37,13 +37,14 @@ Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproje
 | [config/models.py](../server/src/iclip/config/models.py) | 配置字段、默认值、环境变量名、功能开关与依赖校验 |
 | 数据库（配置页） | 模型供应商与密钥、默认模型、技能库、agent 的草稿与版本，见下文三个领域 |
 | [app/bootstrap.py](../server/src/iclip/app/bootstrap.py) | 资源创建、模块装配、路由挂载与生命周期 |
-| [assembly/agents.py](../runtime/src/agent_runtime/assembly/agents.py) | 运行时按对话固定的版本从库里装配 agent、缓存、开运行时会话、首页名册与对话标题 |
+| [assembly/agents.py](../runtime/src/agent_runtime/assembly/agents.py) | 运行时按对话固定的版本从库里装配 agent、缓存、首页名册与对话标题 |
+| [service/sessions.py](../runtime/src/agent_runtime/service/sessions.py) | 运行时的会话服务：开会话、分叉、做同款的文件拷贝 |
 
 运行配置在启动期加载、校验：配置文件路径由 `CONFIG_FILE` 指定（CLI 的 `--config`），改了要重启。依赖服务的连接信息与凭证由环境变量提供；可选功能的启用条件与缺失依赖处理集中在 `resolve_settings()`，不在业务模块中重新读取配置。接口合同导出用 [scripts/contract/](../server/scripts/contract/config.yaml) 下的占位配置。
 
 模型、agent 与技能的配置在库里，运行时每次按版本装配，不读文件、不在启动期装配。import [asgi.py](../server/src/iclip/asgi.py) 只建插件登记表与各个服务，不连库、不装配 agent；连接与后台循环都在 lifespan 里，合同导出靠这一点只 import 不启动。
 
-**对话固定版本。** 运行时这一侧每段对话有一个会话（`agent_runtime.sessions`，[harness/sessions.py](../runtime/src/agent_runtime/harness/sessions.py)），id 等于对话 id，记着它固定的 agent 版本。对话域经两个端口开会话：建对话时 `OpenSession` 固定这个 agent 此刻的当前版本（agent 不存在、不上菜单、已归档或没发布过就拒绝，不落对话行）；分叉时 `ForkSession` 照抄源会话的版本，换了 agent 就按建对话的规矩开。会话先开、对话行后落，中途失败只留下不属于任何对话的会话行，同一个 id 重开时按新版本改写。会话表不加指向对话表与用户表的外键。首页名册（`GET /conversations/agents`）同样由组合根接到 agent 配置：上菜单、在用、发布过，按 `sort_order`。
+**对话固定版本。** 运行时这一侧每段对话有一个会话（`agent_runtime.sessions`，[harness/sessions.py](../runtime/src/agent_runtime/harness/sessions.py)），id 等于对话 id，记着它固定的 agent 版本。对话域经 `RuntimeSessions` 端口用运行时的会话服务 `SessionService`（[service/sessions.py](../runtime/src/agent_runtime/service/sessions.py)）开会话：建对话时 `open` 固定这个 agent 此刻的当前版本（agent 不存在、不上菜单、已归档或没发布过就拒绝，不落对话行）；分叉时 `fork` 照抄源会话的版本，换了 agent 就按建对话的规矩开。会话先开、对话行后落，中途失败只留下不属于任何对话的会话行，同一个 id 重开时按新版本改写。会话表不加指向对话表与用户表的外键。首页名册（`GET /conversations/agents`）同样由组合根接到 agent 配置：上菜单、在用、发布过，按 `sort_order`。
 
 **每次运行装配。** 运行驱动与受理消息的一方经 harness 的 `RunAgents` 协议取 Agent，运行时 `assembly/agents.py` 的 `AgentRuntime` 实现它，由组合根建出并接上：
 
@@ -113,7 +114,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 | `iclip` Agent 配置 | `runtime/src/agent_runtime/` 下的 `config/agent_config/infra_sql.py`；六张表：`agents` 一个 agent 一行（`id` 是文本标识）；`agent_drafts` 每个 agent 一份草稿，`config` 为 jsonb，带 `lock_version` 与 `base_version_id`；`agent_versions` 是发布后不再改的版本，同一 agent 内版本号唯一；`agent_revisions` 是操作记录（create、publish、restore、import、archive、unarchive）；`agent_skill_bindings` 与 `agent_version_skills` 分别是草稿与各版本的技能名单，`priority` 是先后。同一 agent 的保存、发布、恢复、归档都先锁住 agent 行与草稿行，版本号在锁下取最大号加一，版本、技能名单、操作记录与当前版本指针在同一个事务里写；正式导入的全部 agent 在一个事务里写。`active_version_id` 不加外键，状态、操作种类与配置格式只在 Python 里，不加 CHECK |
 | 资料库（跨生成记录、对话、用户三张表的只读聚合） | `domains/library/reports_pg.py`；同上，每次请求现算卡面与副本的血缘装填，数据到十万级再换成随出片完成更新的读表。爆款素材库不建表：条目与标签经标签域写，列表、入选状态与素材片资格按表名读条目与生成记录 |
 
-对话分叉横跨上表的运行时会话、工作区与素材台账、快照与对话行：对话领域服务的分叉用例先经 `ForkSession` 开会话（照抄源会话的版本），再按顺序调两个端口写工作区与素材、种子快照，最后自己落对话行；后两个端口由 [app/conversation_fork.py](../server/src/iclip/app/conversation_fork.py) 接到文件存储与 agent 引擎上，只回报事实，冲突与否由用例判。几处写入各开各的事务，没有统一回滚，靠这个顺序保证中途失败只留下寻址不到的孤儿数据。出片记录不拷，副本按血缘继承：生成域按对话读记录时经同一文件里的适配器问对话域要祖先与边界、主体读不读得到这段对话，递归查询只在对话的 Postgres 仓储上，不进对话仓储协议。做同款走建对话用例里的另一个端口，同样先拷后落行：[app/conversation_same_style.py](../server/src/iclip/app/conversation_same_style.py) 只拷固定几份制作文件（两份改名）与素材台账，同一份文件表也给资料库判断一段对话做不做得了同款，其中新片执行方案的路径也是爆款素材库判断能否入选、读来打标的那一份；源由同一文件里的认源端口按资料库读模型的卡给出属主，不走对话的可见范围。
+对话分叉横跨上表的运行时会话、工作区与素材台账、快照与对话行：对话领域服务的分叉用例先查调用者读不读得到源对话，再调运行时会话服务的 `fork`，最后自己落对话行。`fork` 先挡掉分不了的（源有没跑完或排着队的消息、没跑过、轮号越界），再依次开会话（照抄源会话的版本）、把工作区文件与整份素材台账拷进副本的命名空间、写种子快照，数完轮数后源又跑了一轮就报冲突；这些拒绝的措辞由它给出，入口原样答出。几处写入各开各的事务，没有统一回滚，靠这个顺序保证中途失败只留下寻址不到的孤儿数据。拷贝走文件存储的写入口，容量与路径校验照旧；组合根交给它的是不发文件变更帧的那一层，副本的对话行这一刻还没落库。血缘（来源与分叉点）记在对话行上，是产品数据。出片记录不拷，副本按血缘继承：生成域按对话读记录时经 [app/conversation_fork.py](../server/src/iclip/app/conversation_fork.py) 的适配器问对话域要祖先与边界、主体读不读得到这段对话，递归查询只在对话的 Postgres 仓储上，不进对话仓储协议。做同款在建对话用例里，同样先开会话、拷文件、最后落行：用例按资料库认源，再调会话服务的 `copy_files`，只拷 [app/conversation_same_style.py](../server/src/iclip/app/conversation_same_style.py) 定的几份制作文件（两份改名）与整份素材台账，工程文件与分镜文件一份都没有就什么都不拷。同一份文件表也给资料库判断一段对话做不做得了同款，其中新片执行方案的路径也是爆款素材库判断能否入选、读来打标的那一份；源由同一文件里的认源端口按资料库读模型的卡给出属主，不走对话的可见范围。
 
 表结构只经 [Alembic 迁移](../server/migrations/versions/) 演进，命令见 [AGENTS.md](../AGENTS.md)。新增表与迁移的对账范围、人工核对要求见 [测试规范](test-design.md#3-postgres-测试环境)。
 

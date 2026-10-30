@@ -73,6 +73,16 @@ depends_on = []
 path = "agent_runtime.config.agent_config"
 depends_on = []
 
+# 给应用的应用服务：经引擎的队列、历史与会话表，以及文件存储与素材台账操作会话；版本查询由组合根注入。
+[[modules]]
+path = "agent_runtime.service"
+depends_on = [
+    "agent_runtime.file_store",
+    "agent_runtime.material_ledger",
+    "agent_runtime.harness",
+    "agent_runtime.plugins",
+]
+
 # 装配把三块配置接到引擎：按对话固定的版本装出 Agent、建供应商模型、实现 agent 配置的查询端口。
 [[modules]]
 path = "agent_runtime.assembly"
