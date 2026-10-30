@@ -1470,6 +1470,40 @@ describe('草稿与编辑轨', () => {
     ])
   })
 
+  it('编辑记录还没读回来时草稿不能改：时间线不出现、不能合成，存着的草稿不被覆盖；读回来后照它恢复', async () => {
+    storeWholeEdit()
+    const key = draftStorageKey(CONVERSATION, ROOT_ID)
+    const stored = window.localStorage.getItem(key)
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('*/api/generations', async ({ request }) => {
+        // 只拦这条原作的编辑链；原片的关键帧照常读
+        if (new URL(request.url).searchParams.get('rootJobId') !== null) await held
+        return HttpResponse.json({ items: [editSegment({ id: EDIT_ID })] })
+      }),
+    )
+    await renderEditor()
+    expect(await screen.findByText('正在读取分段…')).toBeVisible()
+    // 等原片关键帧读完：之前这时时间线已经能点「关闭镜头」、修剪、Delete
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+    expect(screen.queryByRole('region', { name: '视频编辑时间线' })).toBeNull()
+    expect(composeButton()).toBeDisabled()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Delete' })
+    expect(window.localStorage.getItem(key)).toBe(stored)
+
+    act(() => release())
+    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
+    expect(draftNames()).toEqual([
+      ...shotsOnly([1, 2]),
+      ...parts([1, 2, 3]),
+      ...shotsOnly([5, 6, 7, 8]),
+    ])
+    expect(window.localStorage.getItem(key)).toBe(stored)
+  })
+
   it('存着的草稿对不上时从最近一次合成还原；和它一样就不能再合成', async () => {
     window.localStorage.setItem(
       draftStorageKey(CONVERSATION, ROOT_ID),

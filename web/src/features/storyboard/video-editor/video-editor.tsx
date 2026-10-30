@@ -319,11 +319,13 @@ function Editor({
       shots !== undefined &&
       blocks.every((block) => block.state.kind !== 'measuring'),
   })
-  const items = source === undefined ? [] : draftItemsOf(source, draft)
+  // 草稿定下之前没有块：时间线不画、合成不可点、Delete 拿不到选中的块
+  const items = source === undefined || draft === undefined ? [] : draftItemsOf(source, draft)
   const pieces = outputOf(items)
   const composing = composingOf(jobs, root.id)
   const composable =
     source !== undefined &&
+    draft !== undefined &&
     canCompose({
       source,
       pieces,
@@ -525,12 +527,13 @@ function Editor({
   }
 
   const toggleShot = (no: number) => {
-    if (source !== undefined) changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
+    if (source !== undefined && draft !== undefined)
+      changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
   }
 
   /** 选用或取消一段；取消时那块正选中就清掉选中。 */
   const togglePart = (editId: string, seg: number) => {
-    if (source === undefined) return undefined
+    if (source === undefined || draft === undefined) return undefined
     if (isPicked(draft, editId, seg)) {
       if (selection?.kind === 'draft' && selection.id === partItemId(editId, seg))
         setSelection(undefined)
@@ -544,6 +547,7 @@ function Editor({
    * 留在原来那一块的同一位置（见 keepPlace）。
    */
   const clickPart = (editId: string, seg: number) => {
+    if (draft === undefined) return
     const picking = !isPicked(draft, editId, seg)
     const after = togglePart(editId, seg)
     if (after === undefined) return
@@ -554,7 +558,7 @@ function Editor({
   /** 修剪草稿里的一块：后面的块跟着移，舞台与播放头跟到被拖的那一端。 */
   const trim = ({ id, edge, t0, t1 }: TrimChange) => {
     const item = items.find((candidate) => candidate.id === id)
-    if (busy || source === undefined || item === undefined) return
+    if (busy || source === undefined || draft === undefined || item === undefined) return
     const next = trimItem(draft, item, { t0, t1 })
     change(next)
     const now = draftItemsOf(source, next).find((candidate) => candidate.id === id)
@@ -766,7 +770,7 @@ function Editor({
           重试
         </Button>
       </p>
-    ) : clipsView && source !== undefined ? (
+    ) : clipsView && source !== undefined && draft !== undefined ? (
       <ClipsTimeline
         blocks={blocks}
         clock={currentTime}
