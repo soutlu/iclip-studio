@@ -1,18 +1,73 @@
-import { useRef, type CSSProperties, type KeyboardEvent, type ReactNode, type Ref } from 'react'
+import {
+  useEffectEvent,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type Ref,
+} from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
+import type { SecondsRange } from '../editing/clip'
 import type { PeaksState } from '../editing/media-analysis'
+import { trimSpans, usePreviewGesture, type TrimTarget } from '../editing/preview-gesture'
+import { shiftSelect, stepSelect } from '../editing/range-select'
 import { roundSeconds } from '../editing/time-label'
-import { Frames, TimelinePlayhead, TimelineRuler, Wave } from '../editing/timeline'
-import { useRovingFocus } from '../editing/timeline-drag'
-import { shiftSelect } from '../editing/range-select'
-import { selectedUnits, shotUnitId, stepSelect, type Selection, type Unit } from './composition'
-import { spansOverlap, type EditBlock, type Shot } from './edit-blocks'
+import {
+  Frames,
+  LimitBubble,
+  TimelinePlayhead,
+  TimelineRuler,
+  TrimHandle,
+  Wave,
+} from '../editing/timeline'
+import {
+  arrowStep,
+  DRAG_THRESHOLD,
+  releasePointer,
+  useClickAfterDrag,
+  useRovingFocus,
+  type Edge,
+} from '../editing/timeline-drag'
+import {
+  InsertionGhost,
+  InsertionPreview,
+  type InsertionBox,
+  type InsertionFace,
+  type InsertionGhostHandle,
+  type InsertionPreviewHandle,
+} from '../editing/timeline-insertion'
+import { TRIM_LIMIT_TEXT } from '../editing/trim-limit'
+import { useInsertionMotion } from '../editing/use-insertion-motion'
+import {
+  draftLineOf,
+  runTrimSpecOf,
+  shotItemId,
+  snapAhead,
+  snapNear,
+  totalOf,
+  trimSpecOf,
+  trimTo,
+  type DraftItem,
+  type TrimSpec,
+} from './draft'
+import {
+  coveredSpan,
+  editTitleOf,
+  lanePartsOf,
+  spanName,
+  type EditBlock,
+  type LanePart,
+  type Shot,
+} from './edit-blocks'
+import { useDraftReflow, type Flash } from './use-draft-reflow'
 import './editor-timeline.css'
 
 const secondsText = (value: number) => value.toFixed(1)
-
-type Span = { start: number; end: number }
 
 type FrameProps = { mediaUrl: string; start: number; end: number; peaks: PeaksState }
 
@@ -31,357 +86,1427 @@ function Faces({ mediaUrl, start, end, peaks }: FrameProps) {
   )
 }
 
-type ShellProps = {
-  scale: number
-  position: number
-  heads: ReactNode
-  /** 编辑轨的行数；整条没有编辑轨时不给。 */
-  editRows?: number | undefined
-  onSeek: (time: number) => void
-  onScrub: () => void
-  children: ReactNode
+/** 按元素的横向范围把指针位置换成时间线上的时刻。 */
+const clockIn = (lanes: HTMLElement | null, scale: number, clientX: number) => {
+  const bounds = lanes?.getBoundingClientRect()
+  if (bounds === undefined || bounds.width === 0) return 0
+  return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
 }
 
-/** 时间线外壳：轨头一列、标尺（只有它能定位）、轨道与播放头；刻度按原片时间。 */
-function TimelineShell({
-  scale,
-  position,
-  heads,
-  editRows,
-  onSeek,
-  onScrub,
-  children,
-}: ShellProps) {
-  const lanesRef = useRef<HTMLDivElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const clockAt = (clientX: number) => {
-    const bounds = lanesRef.current?.getBoundingClientRect()
-    if (bounds === undefined || bounds.width === 0) return 0
-    return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
-  }
-  const bounded = Math.max(0, Math.min(scale, position))
-  return (
-    <section
-      aria-label="视频编辑时间线"
-      className={cn('video-editor-timeline', editRows === undefined && 'is-whole')}
-      style={editRows === undefined ? undefined : ({ '--edit-rows': editRows } as CSSProperties)}
-    >
-      <div aria-hidden="true" className="video-editor-timeline-heads">
-        {heads}
-      </div>
-      {editRows === undefined ? null : (
-        <span aria-hidden="true" className="video-editor-timeline-divider" />
-      )}
-      <div
-        aria-label="时间线轨道，窄屏可横向滚动"
-        className="video-editor-timeline-scroll"
-        ref={scrollRef}
-        role="region"
-      >
-        <div className="video-editor-timeline-lanes" ref={lanesRef}>
-          <TimelineRuler
-            clockAt={clockAt}
-            currentTime={bounded}
-            onScrub={onScrub}
-            onSeek={onSeek}
-            scale={scale}
-            total={scale}
-            viewportRef={scrollRef}
-          />
-          {children}
-          <TimelinePlayhead style={{ left: `${(bounded / scale) * 100}%` }} />
-        </div>
-      </div>
-    </section>
-  )
-}
+/**
+ * 剪辑视图里全页唯一的选中：原片轨上的选区（原片时间，生成用；点镜头时按整镜头，拖两端把手可以停在镜头中间）、
+ * 草稿里的一块，或编辑轨上在跑的那条。
+ */
+export type Selection =
+  | ({ kind: 'run' } & SecondsRange)
+  | { kind: 'draft'; id: string }
+  | { kind: 'running'; id: string }
+  | undefined
+
+/** 修剪把手落到的新起止（按这一块来源自己的时间）。 */
+export type TrimChange = { id: string; edge: Edge; t0: number; t1: number }
+
+/** 原片选区的把手落到的新起止（原片时间）。 */
+export type RunChange = SecondsRange & { edge: Edge }
+
+/** 舞台停在哪：草稿预览时是合成时间，原片预览时是原片时间；结尾那一端取结尾前的那一帧。 */
+type Seek = { clock: number; boundary?: 'end' }
+
+/**
+ * 按着修剪把手时舞台怎么跟：草稿块给拖动中草稿的样子（`items`），原片选区给拖动中的选区（`run`）。`seek` 是被拖
+ * 那一端在拖动中草稿里的时刻，`shown` 是把手在已提交的布局里所在的标尺位置（工具条时间按它写，与播放头一致）；
+ * 两者只在拖草稿块的左把手、这块长度变了时不同。
+ */
+export type TrimPreview =
+  | { kind: 'draft'; items: readonly DraftItem[]; seek: Seek; shown: number }
+  | { kind: 'run'; run: RunChange; seek: Seek; shown: number }
 
 type ClipsTimelineProps = {
   rootUrl: string
-  /** 原片时长：时间线的刻度，选用不改变它。 */
+  /** 原片时长：每秒多少像素只由它决定，草稿更长时往右滚动。 */
   duration: number
   shots: readonly Shot[]
   blocks: readonly EditBlock[]
-  /** 原片轨上的选区单位（没被替换的镜头与已选用的编辑片段）。 */
-  units: readonly Unit[]
+  /** 草稿里的块，按合成时间首尾相接。 */
+  items: readonly DraftItem[]
+  shotOn: (no: number) => boolean
+  isPicked: (editId: string, seg: number) => boolean
   selection: Selection
-  /** 播放头在原片时间轴上的位置。 */
-  anchor: number
+  /** 播放头的时刻：草稿预览时是合成时间，原片预览时是原片时间（见 `clockOn`）。 */
+  clock: number
+  /** 播放头按哪种时间放：两种都用同一个每秒像素。标尺始终按合成时间定位。 */
+  clockOn: 'draft' | 'source'
   peaksOf: (url: string) => PeaksState
-  onSeek: (anchor: number) => void
+  /** 在标尺上按合成时间定位。 */
+  onSeek: (clock: number) => void
   onScrub: () => void
-  onSelectUnits: (ids: readonly string[]) => void
-  onClickBlock: (id: string) => void
+  /** 点镜头、Shift 点、方向键：按整镜头选中这一串，为 undefined 时清掉选区。 */
+  onSelectRun: (run: SecondsRange | undefined) => void
+  /** 改原片选区：拖把手松手、按方向键时提交。 */
+  onTrimRun: (change: RunChange) => void
+  onSelectDraft: (id: string) => void
+  onSelectRunning: (id: string) => void
+  onToggleShot: (no: number) => void
+  /** 点编辑轨上完成的一段：选用或取消，同点它的眼睛，另由编辑器决定选中。 */
+  onClickPart: (editId: string, seg: number) => void
+  /** 开关编辑轨上的一段：它的眼睛、把它拖进草稿、把草稿里的它拖出去都走这里。 */
+  onTogglePart: (editId: string, seg: number) => void
+  /** 修剪草稿里的一块：拖把手松手、按方向键时提交。 */
+  onTrim: (change: TrimChange) => void
+  /** 这样修剪之后草稿的样子（见 `trimItem`）：拖把手、还没松手时按它画。 */
+  previewTrim: (change: TrimChange) => readonly DraftItem[]
+  /** 按下修剪把手、拖动中每一步给一次舞台要跟到的样子；松手、取消时给 undefined。 */
+  onTrimPreview: (preview: TrimPreview | undefined) => void
+  /** 把这一段拖到草稿上、还没松手时草稿的样子（见 `previewPick`）；它已在草稿里时为 undefined。 */
+  previewPick: (editId: string, seg: number) => readonly DraftItem[] | undefined
   selectionBoxRef: Ref<HTMLSpanElement>
 }
 
-const blockStatus = (block: EditBlock, picked: boolean): { chip: string; name: string } => {
-  switch (block.state.kind) {
-    case 'ready': {
-      const length = `${secondsText(block.state.duration)} 秒`
-      return {
-        chip: `${block.name} · ${length}`,
-        name: `${block.name} · ${length} · ${picked ? '已选用' : '未选用'}`,
-      }
-    }
-    case 'running':
-      return { chip: `${block.name} · 生成中`, name: `${block.name} · 生成中` }
-    case 'measuring':
-      return { chip: `${block.name} · 读取中`, name: `${block.name} · 读取中` }
-    case 'failed':
-      return { chip: `${block.name} · 生成失败`, name: `${block.name} · 生成失败` }
-    case 'unreadable':
-      return { chip: `${block.name} · 无法读取`, name: `${block.name} · 无法读取` }
+/** 指针下是哪条轨的哪一块：草稿块与它的来源同 id（原片镜头 `shot-3`、编辑段 `<编辑片段>#<段>`）。 */
+type Hover = { track: 'draft' | 'film' | 'edit'; id: string }
+
+/** 按指针下的元素认出悬停的块；正在收起的块、块以外的地方都不算。 */
+const hoverAt = (target: EventTarget | null): Hover | undefined => {
+  const node = target instanceof Element ? target.closest<HTMLElement>('[data-hover-track]') : null
+  const track = node?.dataset['hoverTrack']
+  const id = node?.dataset['hoverId']
+  return (track === 'draft' || track === 'film' || track === 'edit') && id !== undefined
+    ? { track, id }
+    : undefined
+}
+
+/**
+ * 按住草稿里的一块或编辑轨上完成的一段：移动超过拖动阈值才算拖，缩影跟手，松手前不改草稿。
+ * 编辑段拖到草稿轨上松手 = 选用；草稿块拖出草稿轨松手 = 拿掉；别处松手取消，缩影回到原处。
+ */
+type Carry = {
+  from: 'part' | 'draft'
+  /** 编辑段的 id，或草稿块的 id。 */
+  id: string
+  face: InsertionFace
+  pointerId: number
+  x0: number
+  y0: number
+  x: number
+  y: number
+  moved: boolean
+  /** 指针在草稿轨上。 */
+  over: boolean
+  origin: InsertionBox
+  /** 按下时每秒多少像素、草稿轨多高：落点占位按它们摆。 */
+  pps: number
+  height: number
+  /** 松了手，缩影正飞向落点或回到原处。 */
+  returning: boolean
+  destination?: InsertionBox | undefined
+}
+
+/** 关联描边与连线怎么淡出：常驻的为空串，开关后自动出现的那一对在停留后 `fading`、拿掉时随收起 `out`。 */
+type Fade = '' | 'fading' | 'out'
+
+const fadeOf = (flash: Flash | undefined): Fade =>
+  flash === undefined ? '' : flash.out ? 'out' : flash.fading ? 'fading' : ''
+
+const fadeClass = (fade: Fade) => cn(fade !== '' && 'is-fading', fade === 'out' && 'is-out')
+
+/** 轨道区里 `attribute` 等于 `value` 的那个元素。 */
+const nodeOf = (lanes: HTMLElement, attribute: string, value: string) =>
+  [...lanes.querySelectorAll<HTMLElement>(`[${attribute}]`)].find(
+    (node) => node.getAttribute(attribute) === value,
+  )
+
+/** 拖动缩影上的一块：名字、开头半秒的画面与时长。 */
+const faceOf = (title: string, mediaUrl: string, t0: number, t1: number): InsertionFace => ({
+  title,
+  durationMs: Math.round((t1 - t0) * 1000),
+  media: <Frames part={{ mediaUrl, start: t0, end: Math.min(t1, t0 + 0.5) }} />,
+})
+
+/** 修剪把手落到的新起止（按草稿块来源自己的时间，或原片时间）。 */
+type Range = { t0: number; t1: number }
+
+/**
+ * 拖修剪把手的一步：草稿块带着这样修剪之后草稿的样子，以及把手被这段素材本身的开头、结尾或最短长度挡住时的
+ * 说明（`limit`）。
+ */
+type TrimStep =
+  | { kind: 'draft'; change: TrimChange; items: readonly DraftItem[]; limit: string | undefined }
+  | { kind: 'run'; change: RunChange }
+
+/** 正按着的修剪把手。 */
+type Pressed = {
+  /** 哪一对把手：草稿块的 id，或原片选区的 {@link RUN_HANDLES}。 */
+  key: string
+  edge: Edge
+  /**
+   * 这次拖动中轨道区铺到过的最多秒数（按下时的，往外拉长时跟着变多）：拖动中不比它窄，免得滚到最右时内容变短、
+   * 浏览器收回滚动，整条时间线在指针下跳。
+   */
+  content: number
+}
+
+const RUN_HANDLES = 'run'
+
+/** 来源时间上差这么点（秒）不算越过边界。 */
+const EDGE_EPSILON = 0.001
+
+/**
+ * 草稿块的把手 `edge` 被拖到 `time`（来源时间，吸附之前）时有没有被挡住：剪得比最短还短，或越过这段素材本身的
+ * 开头、结尾。没被挡住时为 undefined。
+ */
+const trimLimitOf = (spec: TrimSpec, edge: Edge, time: number) => {
+  const shortest =
+    edge === 'start'
+      ? time > spec.t1 - spec.min + EDGE_EPSILON
+      : time < spec.t0 + spec.min - EDGE_EPSILON
+  if (shortest) return TRIM_LIMIT_TEXT.shortest(spec.min)
+  const outside = edge === 'start' ? time < spec.lo - EDGE_EPSILON : time > spec.hi + EDGE_EPSILON
+  return outside ? TRIM_LIMIT_TEXT[edge] : undefined
+}
+
+const seekTo = (edge: Edge, clock: number): Seek =>
+  edge === 'end' ? { clock, boundary: 'end' } : { clock }
+
+const itemIn = (items: readonly DraftItem[], id: string) => {
+  const item = items.find((candidate) => candidate.id === id)
+  if (item === undefined) throw new Error('草稿里缺少被修剪的块')
+  return item
+}
+
+/**
+ * 拖草稿块的修剪把手时这一块按已提交的布局怎么画（见 `trimSpans`）：`committed` 是草稿本身，`step` 是拖动中的
+ * 样子。`face` 是画出来的这一整块：从 `block` 起止，里面是已提交与修剪后两段来源时间合起来的画面。
+ */
+const draftTrimOf = (
+  step: Extract<TrimStep, { kind: 'draft' }>,
+  committed: readonly DraftItem[],
+) => {
+  const { id, edge } = step.change
+  const item = itemIn(committed, id)
+  const trimmed = itemIn(step.items, id)
+  const spans = trimSpans(edge, { at: item.at, len: item.d }, trimmed.d)
+  const face: DraftItem = {
+    ...item,
+    t0: Math.min(item.t0, trimmed.t0),
+    t1: Math.max(item.t1, trimmed.t1),
+    at: spans.block.at,
+    d: spans.block.len,
+  }
+  return { id, edge, face, ...spans }
+}
+
+/** 这一步舞台怎么跟；`committed` 是草稿本身（把手的标尺位置按它的布局算）。 */
+const trimPreviewOf = (step: TrimStep, committed: readonly DraftItem[]): TrimPreview => {
+  if (step.kind === 'run') {
+    const { edge, start, end } = step.change
+    const clock = edge === 'end' ? end : start
+    return { kind: 'run', run: step.change, seek: seekTo(edge, clock), shown: clock }
+  }
+  const { edge, kept } = draftTrimOf(step, committed)
+  const trimmed = itemIn(step.items, step.change.id)
+  return {
+    kind: 'draft',
+    items: step.items,
+    seek: seekTo(edge, edge === 'end' ? trimmed.at + trimmed.d : trimmed.at),
+    shown: edge === 'end' ? kept.at + kept.len : kept.at,
   }
 }
 
-/** 片段的时间线：上面原片轨按镜头摆、固定在原片时间；下面编辑轨，每条编辑片段正对它替换的镜头。 */
+/** 横向位置：`at` 起、长 `len` 秒，换算成像素交给 CSS（每秒像素 `--pps` 只由原片时长与可视宽定）。 */
+const placed = (at: number, len: number, row?: number): CSSProperties =>
+  ({ '--at': at, '--len': len, ...(row === undefined ? {} : { '--row': row }) }) as CSSProperties
+
+const overlap = (a0: number, a1: number, b0: number, b1: number) =>
+  Math.min(a1, b1) - Math.max(a0, b0) > 0.001
+
+/** 「第 2 段 · 」：只有一段时不写。 */
+const partPrefix = (part: LanePart) =>
+  part.part !== undefined && part.block.state.kind === 'ready' && part.block.state.parts.length > 1
+    ? `第 ${part.part.seg} 段 · `
+    : ''
+
+/**
+ * 剪辑视图的时间线，三条轨自上而下：草稿（要合成的内容，按合成时间首尾相接）、原片（全部镜头，按原片时间）、
+ * 编辑（编辑片段对准它的生成区间，完成的按关键帧切段）。标尺属于草稿；只有一根播放头，草稿预览时按合成时间、
+ * 原片预览时按原片时间放。原片轨、编辑轨的位置只随原片变；草稿变了时只有草稿轨的块动画到新位置（见
+ * `useDraftReflow`）。编辑段可以拖进草稿、草稿块可以拖出草稿，拖动的缩影、落点占位与成片页共用。
+ */
 export function ClipsTimeline({
   rootUrl,
   duration,
   shots,
   blocks,
-  units,
+  items,
+  shotOn,
+  isPicked,
   selection,
-  anchor,
+  clock,
+  clockOn,
   peaksOf,
   onSeek,
   onScrub,
-  onSelectUnits,
-  onClickBlock,
+  onSelectRun,
+  onTrimRun,
+  onSelectDraft,
+  onSelectRunning,
+  onToggleShot,
+  onClickPart,
+  onTogglePart,
+  onTrim,
+  previewTrim,
+  onTrimPreview,
+  previewPick,
   selectionBoxRef,
 }: ClipsTimelineProps) {
-  const percent = (time: number) => `${(time / duration) * 100}%`
-  const span = ({ start, end }: Span): CSSProperties => ({
-    left: `calc(${percent(start)} + 1px)`,
-    width: `calc(${percent(end - start)} - 2px)`,
+  const lanesRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
+  const connectorRef = useRef<SVGSVGElement>(null)
+  // 指针最后在哪：块重画、横向滚动之后按它重新认悬停的块（旧元素被换掉时浏览器不发离开事件）。
+  const pointerRef = useRef<{ x: number; y: number }>(undefined)
+  const ghostRef = useRef<InsertionGhostHandle>(null)
+  const previewRef = useRef<InsertionPreviewHandle>(null)
+  const baseId = useId()
+  const motion = useInsertionMotion()
+  const clicks = useClickAfterDrag()
+  const [hover, setHover] = useState<Hover>()
+  const [pressed, setPressed] = useState<Pressed>()
+  const [carry, setCarry] = useState<Carry>()
+  // 修剪把手拖动中只预览，松手才提交一次；舞台按预览跟到被拖的那一端
+  const trimGesture = usePreviewGesture<TrimStep>({
+    containerRef: lanesRef,
+    viewportRef: scrollRef,
+    clicks,
+    onCommit: (last) => (last.kind === 'draft' ? onTrim(last.change) : onTrimRun(last.change)),
+    onPreview: (preview) => {
+      onTrimPreview(preview === null ? undefined : trimPreviewOf(preview.last, items))
+      if (preview?.last.kind !== 'draft') return
+      const reached = totalOf(preview.last.items)
+      setPressed((current) =>
+        current === undefined || current.content >= reached
+          ? current
+          : { ...current, content: reached },
+      )
+    },
+    onEnd: () => setPressed(undefined),
   })
-  const order = units.map((unit) => unit.id)
-  const unitOf = (shot: Shot) =>
-    units.find((unit) => unit.start <= shot.start && shot.end <= unit.end)
-  const chosen = selectedUnits(units, selection)
-  const chosenIds = chosen.map((unit) => unit.id)
-  const first = chosen[0]
-  const last = chosen.at(-1)
-  const editIds = new Set(units.flatMap((unit) => (unit.kind === 'edit' ? [unit.id] : [])))
+  const trimming = trimGesture.preview?.last
+  // 拖草稿块的修剪把手：别的块按草稿本身画、不动；被拖的这块画成一整块、盖在相邻的块上，要剪掉的那段调暗
+  const draftTrim = trimming?.kind === 'draft' ? draftTrimOf(trimming, items) : undefined
+  const trimStep = trimGesture.preview?.step
+  const trimLimit = trimStep?.kind === 'draft' ? trimStep.limit : undefined
+  const total = totalOf(items)
+  const bounded = Math.max(0, Math.min(clockOn === 'source' ? duration : total, clock))
+  const parts = lanePartsOf(blocks)
   const rows = Math.max(1, ...blocks.map((block) => block.row + 1))
-  const roving = useRovingFocus(
-    shots.map(shotUnitId),
-    first === undefined ? undefined : shotIdAt(shots, first.start),
+  const blockOf = (id: string) => blocks.find((block) => block.id === id)
+  const partOf = (id: string) => parts.find((part) => part.id === id)
+  const shotOf = (no: number) => shots.find((shot) => shot.no === no)
+
+  // ---- 拖放预演：编辑段拖到草稿上时，草稿轨按选用后的排序给它让出位置，落点占位画在空出来的地方 ----
+  const carrying = carry?.moved === true && !carry.returning ? carry : undefined
+  const carryPart = carry?.from === 'part' ? partOf(carry.id) : undefined
+  const carryPicked =
+    carryPart?.part !== undefined && isPicked(carryPart.block.id, carryPart.part.seg)
+  const projection =
+    carrying?.over === true && carryPart?.part !== undefined && !carryPicked
+      ? previewPick(carryPart.block.id, carryPart.part.seg)
+      : undefined
+  const landing = projection?.find((item) => item.id === carryPart?.id)
+  const shown =
+    projection === undefined || landing === undefined
+      ? items
+      : projection.filter((item) => item.id !== landing.id)
+  // 拖草稿块的修剪把手时播放头与标尺滑块停在把手所在的标尺位置，与工具条时间一致
+  const playheadAt =
+    draftTrim === undefined
+      ? bounded
+      : draftTrim.edge === 'end'
+        ? draftTrim.kept.at + draftTrim.kept.len
+        : draftTrim.kept.at
+  const itemOf = (id: string) => shown.find((item) => item.id === id)
+
+  const showHover = (next: Hover | undefined) =>
+    setHover((current) =>
+      current?.track === next?.track && current?.id === next?.id ? current : next,
+    )
+  const resyncHover = () => {
+    const pointer = pointerRef.current
+    if (pointer === undefined || carry?.moved === true) return
+    showHover(hoverAt(document.elementFromPoint(pointer.x, pointer.y)))
+  }
+  const syncHover = useEffectEvent(resyncHover)
+  // 草稿重画后按最终位置重认悬停（在重排动画开始之前，量到的是块的新位置）。
+  const shownIds = shown.map((item) => item.id).join(' ')
+  useLayoutEffect(() => syncHover(), [shownIds])
+
+  // ---- 连线：草稿里的一块 ↔ 它的来源。悬停任一边，或刚开关的那一块；选中不常驻，修剪、拖放时不画 ----
+  const busy = pressed !== undefined || carrying !== undefined
+  const hovered = hover === undefined ? undefined : itemOf(hover.id)
+  const drawConnector = () => {
+    const svg = connectorRef.current
+    const lanes = lanesRef.current
+    if (svg === null || lanes === null || pair === undefined) return
+    const from =
+      nodeOf(lanes, 'data-draft-id', pair.id) ?? nodeOf(lanes, 'data-leaving-id', pair.id)
+    const to = nodeOf(lanes, 'data-part-id', pair.id)
+    svg.style.display = from === undefined || to === undefined ? 'none' : ''
+    if (from === undefined || to === undefined) return
+    const box = lanes.getBoundingClientRect()
+    const a = from.getBoundingClientRect()
+    const b = to.getBoundingClientRect()
+    // 草稿块底边中点 → 编辑段顶边中点，两个控制点都在竖直方向上
+    const x1 = a.left + a.width / 2 - box.left
+    const y1 = a.bottom - box.top
+    const x2 = b.left + b.width / 2 - box.left
+    const y2 = b.top - box.top
+    const k = (y2 - y1) / 2
+    svg
+      .querySelector('path')
+      ?.setAttribute('d', `M${x1} ${y1}C${x1} ${y1 + k} ${x2} ${y2 - k} ${x2} ${y2}`)
+    const [start, end] = svg.querySelectorAll('circle')
+    start?.setAttribute('cx', String(x1))
+    start?.setAttribute('cy', String(y1))
+    end?.setAttribute('cx', String(x2))
+    end?.setAttribute('cy', String(y2))
+  }
+
+  // 轨道区铺的秒数：原片与草稿取长者（往右拉长最后一块时放得下拉长出来的那段）；拖修剪把手期间不比按下时窄，
+  // 收起动画期间不比开关前窄
+  const base = Math.max(
+    duration,
+    total,
+    totalOf(projection ?? []),
+    trimming?.kind === 'draft' ? totalOf(trimming.items) : 0,
+    pressed?.content ?? 0,
   )
-
-  const clickShot = (shot: Shot, extend: boolean) => {
-    const unit = unitOf(shot)
-    if (unit === undefined) return
-    roving.remember(shotUnitId(shot))
-    onSelectUnits(extend ? shiftSelect(order, chosenIds, unit.id) : [unit.id])
+  const reflow = useDraftReflow({
+    lanesRef,
+    scrollRef,
+    shown,
+    committed: items,
+    previewKey: landing === undefined ? '' : `${landing.id}@${landing.at}`,
+    content: base,
+    frozen: pressed !== undefined,
+    onFrame: drawConnector,
+  })
+  const content = Math.max(base, reflow.hold ?? 0)
+  const pair: Flash | undefined = busy
+    ? undefined
+    : hovered !== undefined
+      ? { id: hovered.id, kind: hovered.kind, out: false, fading: false }
+      : reflow.flash
+  useLayoutEffect(drawConnector)
+  /** 此刻每秒多少像素：轨道区的实际宽度除以它铺的秒数。 */
+  const ppsNow = () => {
+    const width = lanesRef.current?.getBoundingClientRect().width ?? 0
+    return width > 0 ? width / content : 1
   }
 
-  const keyDown = (event: KeyboardEvent<HTMLButtonElement>, shot: Shot) => {
+  // ---- 原片轨的选区：点镜头、Shift 扩选、方向键都按整镜头算，覆盖到的镜头碰到一部分也算 ----
+  const order = shots.map((shot) => shot.no)
+  // 拖选区把手时按预览画，松手才改选中
+  const run: SecondsRange | undefined =
+    trimming?.kind === 'run'
+      ? { start: trimming.change.start, end: trimming.change.end }
+      : selection?.kind === 'run'
+        ? selection
+        : undefined
+  const covered = run === undefined ? undefined : coveredSpan(shots, run)
+  const chosen =
+    covered === undefined ? [] : order.filter((no) => covered.from <= no && no <= covered.to)
+  /** 按整镜头选中 `nos` 这一串连续的镜头。 */
+  const runOf = (nos: readonly number[]): SecondsRange | undefined => {
+    const first = shotOf(nos[0] ?? 0)
+    const last = shotOf(nos.at(-1) ?? 0)
+    return first === undefined || last === undefined
+      ? undefined
+      : { start: first.start, end: last.end }
+  }
+  const roving = useRovingFocus(
+    shots.map((shot) => shotItemId(shot.no)),
+    chosen[0] === undefined ? undefined : shotItemId(chosen[0]),
+  )
+  const clickShot = (no: number, extend: boolean) => {
+    roving.remember(shotItemId(no))
+    onSelectRun(runOf(extend ? shiftSelect(order, chosen, no) : [no]))
+  }
+  const shotKeyDown = (event: KeyboardEvent<HTMLButtonElement>, no: number) => {
     const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : undefined
-    const unit = unitOf(shot)
-    if (direction === undefined || unit === undefined) return
+    if (direction === undefined) return
     event.preventDefault()
-    const next = stepSelect(order, chosenIds, unit.id, direction, event.shiftKey)
-    const target = units.find((item) => item.id === next.focus)
-    onSelectUnits(next.selection)
-    if (target !== undefined) roving.focus(shotIdAt(shots, target.start))
+    const next = stepSelect(order, chosen, no, direction, event.shiftKey)
+    onSelectRun(runOf(next.selection))
+    roving.focus(shotItemId(next.focus))
   }
 
+  // ---- 关联描边：悬停一边描出另一边，选中时常驻；连线的两端也描出，跟着连线淡出 ----
+  // 按位置记：同一处被描两次只画一个，已有常驻描边时不再叠一层会淡出的
+  const linked = new Map<string, Fade>()
+  const filmMarks = new Map<string, { start: number; end: number; fade: Fade }>()
+  const laneMarks = new Map<string, { part: LanePart; fade: Fade }>()
+  const put = <T extends { fade: Fade }>(marks: Map<string, T>, key: string, mark: T) => {
+    if (marks.get(key)?.fade !== '') marks.set(key, mark)
+  }
+  const markDraft = (id: string, fade: Fade = '') => {
+    if (linked.get(id) !== '') linked.set(id, fade)
+  }
+  const markFilm = (span: { start: number; end: number }, fade: Fade = '') =>
+    put(filmMarks, `${span.start}-${span.end}`, { start: span.start, end: span.end, fade })
+  const markSource = (item: { id: string; kind: DraftItem['kind'] }, fade: Fade = '') => {
+    const shot = item.kind === 'shot' ? shots.find((s) => shotItemId(s.no) === item.id) : undefined
+    if (shot !== undefined) markFilm(shot, fade)
+    const part = item.kind === 'edit' ? partOf(item.id) : undefined
+    if (part !== undefined) put(laneMarks, part.id, { part, fade })
+  }
+  const selectedItem = selection?.kind === 'draft' ? itemOf(selection.id) : undefined
+  if (selectedItem !== undefined) markSource(selectedItem)
+  for (const no of chosen) markDraft(shotItemId(no))
+  if (carrying !== undefined) {
+    // 拖着编辑段：描出它的生成区间；已在草稿里的描出它那块（不出落点占位）
+    if (carrying.over && carryPart !== undefined) {
+      markFilm(carryPart.block)
+      if (carryPicked) markDraft(carryPart.id)
+    }
+  } else if (hover?.track === 'draft') {
+    if (hovered !== undefined) markSource(hovered)
+  } else if (hover?.track === 'edit') {
+    const part = partOf(hover.id)
+    if (part?.part !== undefined) {
+      markDraft(part.id)
+      markFilm(part.block)
+    }
+  } else if (hover?.track === 'film') markDraft(hover.id)
+  if (pair !== undefined) {
+    const fade = fadeOf(pair)
+    if (!pair.out) markDraft(pair.id, fade)
+    markSource(pair, fade)
+  }
+
+  // ---- 选中描边：也是弹出卡的定位锚点 ----
+  const runningPart = selection?.kind === 'running' ? partOf(selection.id) : undefined
+  // 选中的草稿块此刻框住的那段：拖它的修剪把手时框住修剪后的范围，把手也摆在它两端
+  const keptSpan =
+    selectedItem === undefined
+      ? undefined
+      : (draftTrim?.kept ?? { at: selectedItem.at, len: selectedItem.d })
   const ring =
-    selection?.kind === 'edit'
-      ? blocks.find((block) => block.id === selection.id)
-      : first === undefined || last === undefined
-        ? undefined
-        : { start: first.start, end: last.end }
+    run !== undefined
+      ? { track: 'is-film', style: placed(run.start, run.end - run.start) }
+      : keptSpan !== undefined
+        ? { track: 'is-draft', style: placed(keptSpan.at, keptSpan.len) }
+        : runningPart !== undefined
+          ? {
+              track: 'is-edit',
+              style: placed(runningPart.at, runningPart.len, runningPart.block.row),
+            }
+          : undefined
+
+  // ---- 修剪把手：草稿里选中的那块，与原片轨上的选区，同一套拖动与方向键 ----
+  /**
+   * 按下修剪把手：拖动中按指针换算时间、离边界 8px 以内吸上去，只预览，松手才提交一次（见 usePreviewGesture）。
+   * `target` 是草稿里的那一块（拖动中所有块按草稿本身画、不动，松手后后面的块滑过去）；原片选区不给。
+   */
+  const pressTrim = (
+    event: PointerEvent<HTMLButtonElement>,
+    key: string,
+    spec: TrimSpec,
+    edge: Edge,
+    stepOf: (range: Range, time: number) => TrimStep,
+    target?: TrimTarget,
+  ) => {
+    if (event.button !== 0) return
+    // 开关后的重排与连线停在最终状态，拖动中不再有任何动画
+    reflow.cancel()
+    const pps = ppsNow()
+    const from = edge === 'end' ? spec.t1 : spec.t0
+    // `stepOf` 另收到把手被拖到的来源时刻（吸附、停在边界之前），按它判断有没有被挡住
+    const compute = (deltaPx: number) => {
+      const time = from + deltaPx / pps
+      return stepOf(trimTo(spec, edge, time, snapNear(spec.snaps, pps)), time)
+    }
+    if (target === undefined) {
+      event.stopPropagation()
+      trimGesture.start(event, compute)
+    } else trimGesture.startTrim(event, target, compute)
+    setPressed({ key, edge, content })
+    // 按下就把舞台换到这一端的画面
+    onTrimPreview(trimPreviewOf(stepOf({ t0: spec.t0, t1: spec.t1 }, from), items))
+  }
+  /** 方向键：每一步直接提交。 */
+  const keyTrim = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    spec: TrimSpec,
+    edge: Edge,
+    commit: (range: Range) => void,
+  ) => {
+    const step = arrowStep(event)
+    if (step === undefined) return
+    event.preventDefault()
+    const current = edge === 'end' ? spec.t1 : spec.t0
+    const snap = snapAhead(spec.snaps, current, step > 0 ? 1 : -1, ppsNow())
+    commit(trimTo(spec, edge, current + step, snap))
+  }
+  const pressedEdge = (key: string) => (pressed?.key === key ? pressed.edge : undefined)
+  const draftSpec = selectedItem === undefined ? undefined : trimSpecOf(selectedItem)
+  // 把手的读数：拖动中按修剪后的这一块
+  const handleItem =
+    selectedItem !== undefined && trimming?.kind === 'draft'
+      ? (trimming.items.find((item) => item.id === selectedItem.id) ?? selectedItem)
+      : selectedItem
+  const draftStep = (
+    id: string,
+    spec: TrimSpec,
+    edge: Edge,
+    range: Range,
+    time: number,
+  ): TrimStep => {
+    const change = { id, edge, ...range }
+    return {
+      kind: 'draft',
+      change,
+      items: previewTrim(change),
+      limit: trimLimitOf(spec, edge, time),
+    }
+  }
+  const runSpec = run === undefined ? undefined : runTrimSpecOf(run, shots, duration)
+  const runChange = (edge: Edge, { t0, t1 }: Range): RunChange => ({ edge, start: t0, end: t1 })
+
+  const draftName = (item: DraftItem) => {
+    if (item.kind === 'shot') return `镜头 ${item.no} · ${draftLineOf(item)}`
+    const block = blockOf(item.edit.id)
+    return `${block === undefined ? '编辑片段' : editTitleOf(block)} · ${draftLineOf(item)}`
+  }
+
+  // ---- 拖放：编辑段拖进草稿 = 选用，草稿块拖出草稿 = 拿掉；只改开关，不改选中 ----
+  const partTitle = (block: EditBlock, seg: number) =>
+    block.state.kind === 'ready' && block.state.parts.length > 1
+      ? `${editTitleOf(block)} · 第 ${seg} 段`
+      : editTitleOf(block)
+  /** 指针在草稿轨上：轨道区看得见的横向范围内、草稿那一条的高度里。 */
+  const overDraft = (x: number, y: number) => {
+    const view = scrollRef.current?.getBoundingClientRect()
+    const track = dropRef.current?.getBoundingClientRect()
+    return (
+      view !== undefined &&
+      track !== undefined &&
+      x >= view.left &&
+      x <= view.right &&
+      y >= track.top &&
+      y <= track.bottom
+    )
+  }
+  const pressCarry = (
+    event: PointerEvent<HTMLButtonElement>,
+    from: Carry['from'],
+    id: string,
+    face: InsertionFace,
+  ) => {
+    if (event.button !== 0 || (carry !== undefined && !carry.returning)) return
+    clicks.reset()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const box = (event.currentTarget.parentElement ?? event.currentTarget).getBoundingClientRect()
+    setCarry({
+      from,
+      id,
+      face,
+      pointerId: event.pointerId,
+      x0: event.clientX,
+      y0: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      moved: false,
+      over: from === 'draft',
+      origin: { left: box.left, top: box.top, width: box.width, height: box.height },
+      pps: ppsNow(),
+      height: dropRef.current?.getBoundingClientRect().height ?? 0,
+      returning: false,
+    })
+  }
+  const moveCarry = (event: PointerEvent<HTMLButtonElement>) => {
+    if (carry === undefined || carry.pointerId !== event.pointerId || carry.returning) return
+    const { clientX: x, clientY: y } = event
+    if (!carry.moved && Math.hypot(x - carry.x0, y - carry.y0) <= DRAG_THRESHOLD) return
+    ghostRef.current?.follow(x, y)
+    const over = overDraft(x, y)
+    if (!carry.moved) {
+      setHover(undefined)
+      reflow.cancel()
+    }
+    if (!carry.moved || over !== carry.over) setCarry({ ...carry, moved: true, over, x, y })
+  }
+  /** 松手：按显示着的落点改草稿，返回缩影飞去的地方；没改时回到原处，拿掉时不用飞。 */
+  const dropCarry = (current: Carry): InsertionBox | undefined => {
+    if (current.from === 'part') {
+      const part = partOf(current.id)
+      if (!current.over || part?.part === undefined || carryPicked) return current.origin
+      const pose = previewRef.current?.snapshot()?.value
+      const track = dropRef.current?.getBoundingClientRect()
+      // 新块从落点占位此刻的位置落下来，缩影飞到同一处
+      if (pose?.x !== undefined && pose.width !== undefined)
+        reflow.land(current.id, { left: pose.x, width: pose.width })
+      onTogglePart(part.block.id, part.part.seg)
+      return pose === undefined || track === undefined
+        ? current.origin
+        : {
+            left: track.left + (pose.x ?? 0),
+            top: track.top + (pose.y ?? 0),
+            width: pose.width ?? 0,
+            height: pose.height ?? 0,
+          }
+    }
+    const item = items.find((candidate) => candidate.id === current.id)
+    if (current.over || item === undefined) return current.origin
+    if (item.kind === 'shot') onToggleShot(item.no)
+    else onTogglePart(item.edit.id, item.seg)
+    return undefined
+  }
+  const endCarry = (event: PointerEvent<HTMLButtonElement>) => {
+    if (carry === undefined || carry.pointerId !== event.pointerId) return
+    releasePointer(event)
+    if (carry.returning) return
+    if (!carry.moved) {
+      setCarry(undefined)
+      return
+    }
+    clicks.swallow()
+    const destination = dropCarry(carry)
+    setCarry(destination === undefined ? undefined : { ...carry, returning: true, destination })
+  }
+  const returnCarry = () => {
+    clicks.swallow()
+    setCarry((current) =>
+      current === undefined || current.returning
+        ? current
+        : { ...current, returning: true, destination: current.origin },
+    )
+  }
+  useEscapeAheadOfDialog(carrying !== undefined, returnCarry)
+  const carryPointer = (from: Carry['from'], id: string, face: () => InsertionFace) => ({
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => pressCarry(event, from, id, face()),
+    onPointerMove: moveCarry,
+    onPointerUp: endCarry,
+    onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => {
+      releasePointer(event)
+      if (carry?.moved === true) returnCarry()
+      else setCarry(undefined)
+    },
+  })
+  const draftFace = (item: DraftItem) => {
+    const block = item.kind === 'edit' ? blockOf(item.edit.id) : undefined
+    const title =
+      item.kind === 'shot'
+        ? `镜头 ${item.no}`
+        : block === undefined
+          ? '编辑片段'
+          : partTitle(block, item.seg)
+    return faceOf(title, item.mediaUrl, item.t0, item.t1)
+  }
+  const previewPosition =
+    carrying === undefined || landing === undefined
+      ? undefined
+      : {
+          x: landing.at * carrying.pps + 1,
+          y: 0,
+          width: Math.max(6, landing.d * carrying.pps - 2),
+          height: carrying.height,
+          text: `插入 ${secondsText(landing.at)} 秒 · ${secondsText(landing.d)} 秒`,
+          blocked: false,
+          // 落点离轨道区右端不到提示的宽度时，提示靠右对齐
+          alignEnd: (content - landing.at) * carrying.pps < 160,
+        }
 
   return (
-    <TimelineShell
-      editRows={rows}
-      heads={
-        <>
-          <span className="video-editor-timeline-head is-film">
-            <Icon decorative name="video" size="sm" />
-            原片
-          </span>
-          <span className="video-editor-timeline-head is-edit">
-            <Icon decorative name="edit-segment" size="sm" />
-            编辑
-          </span>
-        </>
-      }
-      onScrub={onScrub}
-      onSeek={onSeek}
-      position={anchor}
-      scale={duration}
+    <section
+      aria-label="视频编辑时间线"
+      className="video-editor-timeline is-clips"
+      onPointerLeave={() => {
+        pointerRef.current = undefined
+        showHover(undefined)
+      }}
+      onPointerMove={(event) => {
+        pointerRef.current = { x: event.clientX, y: event.clientY }
+        if (carry?.moved !== true) showHover(hoverAt(event.target))
+      }}
+      style={{ '--edit-rows': rows } as CSSProperties}
     >
-      <div aria-label="原片" className="video-editor-timeline-track" role="group">
-        {shots.map((shot) => {
-          const unit = unitOf(shot)
-          const replaced = unit?.kind === 'edit'
-          const id = shotUnitId(shot)
-          return (
-            <button
-              aria-label={`镜头 ${shot.no} · ${roundSeconds(shot.start)}–${roundSeconds(shot.end)} 秒${replaced ? ' · 已换成编辑片段' : ''}`}
-              aria-pressed={unit !== undefined && chosenIds.includes(unit.id)}
-              className={cn('video-editor-timeline-block is-film ui-focus', replaced && 'is-off')}
-              key={id}
-              onClick={(event) => clickShot(shot, event.shiftKey)}
-              onFocus={() => roving.remember(id)}
-              onKeyDown={(event) => keyDown(event, shot)}
-              ref={roving.register(id)}
-              style={span(shot)}
-              tabIndex={roving.tabIndexOf(id)}
-              type="button"
-            >
-              <Faces
-                end={shot.end}
-                mediaUrl={rootUrl}
-                peaks={peaksOf(rootUrl)}
-                start={shot.start}
-              />
-              <span className="video-editor-timeline-chip">镜头 {shot.no}</span>
-            </button>
-          )
-        })}
+      <div aria-hidden="true" className="video-editor-timeline-heads">
+        <span className="video-editor-timeline-head is-draft">
+          <Icon decorative name="composite" size="sm" />
+          草稿
+        </span>
+        <span className="video-editor-timeline-head is-film">
+          <Icon decorative name="video" size="sm" />
+          原片
+        </span>
+        <span className="video-editor-timeline-head is-edit">
+          <Icon decorative name="edit-segment" size="sm" />
+          编辑
+        </span>
       </div>
+      <span aria-hidden="true" className="video-editor-timeline-divider is-film" />
+      <span aria-hidden="true" className="video-editor-timeline-divider is-edit" />
+      <div
+        aria-label="时间线轨道，可横向滚动"
+        className="video-editor-timeline-scroll"
+        onScroll={resyncHover}
+        ref={scrollRef}
+        role="region"
+      >
+        <div
+          className="video-editor-timeline-lanes"
+          ref={lanesRef}
+          style={{ '--duration': duration, '--content': content } as CSSProperties}
+        >
+          <TimelineRuler
+            clockAt={(clientX) => clockIn(lanesRef.current, content, clientX)}
+            currentTime={playheadAt}
+            onScrub={onScrub}
+            onSeek={(time) => onSeek(Math.min(total, time))}
+            scale={content}
+            tickScale={duration}
+            total={total}
+            viewportRef={scrollRef}
+          />
 
-      <div aria-label="编辑片段" className="video-editor-timeline-track" role="group">
-        {shots.map((shot) => {
-          const taken =
-            blocks.some(
-              (block) => block.row === 0 && spansOverlap(block, { from: shot.no, to: shot.no }),
-            ) || unitOf(shot)?.kind === 'edit'
-          return taken ? null : (
-            <button
-              aria-label={`生成镜头 ${shot.no}`}
-              className="video-editor-timeline-slot ui-focus"
-              key={`slot-${shot.no}`}
-              onClick={(event) => clickShot(shot, event.shiftKey)}
-              style={span(shot)}
-              tabIndex={-1}
-              type="button"
-            >
-              <Icon decorative name="add" size="xs" />
-              生成
-            </button>
-          )
-        })}
-        {blocks.map((block) => {
-          const picked = editIds.has(block.id)
-          const status = blockStatus(block, picked)
-          const { kind } = block.state
-          return (
-            <button
-              aria-label={status.name}
-              aria-pressed={selection?.kind === 'edit' && selection.id === block.id}
-              className={cn(
-                'video-editor-timeline-block is-edit ui-focus',
-                (kind === 'running' || kind === 'measuring') && 'is-running',
-                (kind === 'failed' || kind === 'unreadable') && 'is-failed',
-                kind === 'ready' && !picked && 'is-off',
-              )}
-              key={block.id}
-              onClick={() => onClickBlock(block.id)}
-              style={{ ...span(block), '--row': block.row } as CSSProperties}
-              type="button"
-            >
-              {block.state.kind === 'ready' && block.job.outputUrl !== null ? (
-                <>
-                  <Faces
-                    end={block.state.duration}
-                    mediaUrl={block.job.outputUrl}
-                    peaks={peaksOf(block.job.outputUrl)}
-                    start={0}
-                  />
-                  <span className="video-editor-timeline-chip">{status.chip}</span>
-                </>
-              ) : (
-                <span className="video-editor-timeline-status">
-                  <Icon
-                    decorative
-                    name={kind === 'failed' || kind === 'unreadable' ? 'alert' : 'sparkles'}
-                    size="xs"
-                  />
-                  {status.chip}
+          <div aria-label="草稿" className="video-editor-timeline-track" role="group">
+            {shown.map((item) => {
+              // 正在拖修剪把手的那块画成一整块：已提交与修剪后合起来的范围与画面
+              const face = draftTrim?.id === item.id ? draftTrim.face : item
+              return (
+                <div
+                  className={cn(
+                    'video-editor-timeline-block is-draft',
+                    face !== item && 'is-trimming',
+                  )}
+                  data-draft-id={item.id}
+                  data-hover-id={item.id}
+                  data-hover-track="draft"
+                  data-linked={linked.get(item.id)}
+                  data-slide={`draft:${item.id}`}
+                  key={item.id}
+                  style={placed(face.at, face.d)}
+                >
+                  <button
+                    aria-label={draftName(item)}
+                    aria-pressed={selectedItem?.id === item.id}
+                    className="video-editor-timeline-face ui-focus ui-focus-inline"
+                    onClick={() => {
+                      if (!clicks.take()) onSelectDraft(item.id)
+                    }}
+                    type="button"
+                    {...carryPointer('draft', item.id, () => draftFace(item))}
+                  >
+                    <DraftFace item={face} peaksOf={peaksOf} />
+                  </button>
+                </div>
+              )
+            })}
+            {/* 拿掉的块：在原地收起后消失，不能点 */}
+            {reflow.leaving.map((item) => (
+              <div
+                aria-hidden="true"
+                className="video-editor-timeline-block is-draft is-leaving"
+                data-leaving-id={item.id}
+                data-linked={pair?.out === true && pair.id === item.id ? 'out' : undefined}
+                key={item.id}
+                style={placed(item.at, item.d)}
+              >
+                <span className="video-editor-timeline-face">
+                  <DraftFace item={item} peaksOf={peaksOf} />
                 </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {ring === undefined ? null : (
-        <span
-          aria-hidden="true"
-          className={cn(
-            'video-editor-timeline-box',
-            selection?.kind === 'edit' ? 'is-edit' : 'is-film',
+              </div>
+            ))}
+          </div>
+          {/* 拖修剪把手往里裁：要剪掉的那段调暗，盖在被拖的那块上 */}
+          {draftTrim?.cut === undefined ? null : (
+            <span
+              aria-hidden="true"
+              className="timeline-trim-cut video-editor-timeline-cut"
+              data-testid="trim-cut"
+              style={placed(draftTrim.cut.at, draftTrim.cut.len)}
+            />
           )}
-          ref={selectionBoxRef}
-          style={{ ...span(ring), '--row': 'row' in ring ? ring.row : 0 } as CSSProperties}
+          <div className="video-editor-timeline-drop" ref={dropRef}>
+            <InsertionPreview
+              elementRef={previewRef}
+              face={carrying?.face}
+              motion={motion}
+              position={previewPosition}
+            />
+          </div>
+
+          <div aria-label="原片" className="video-editor-timeline-track" role="group">
+            {shots.map((shot) => {
+              const id = shotItemId(shot.no)
+              const on = shotOn(shot.no)
+              const toggle = `${on ? '关闭' : '开启'}镜头 ${shot.no}`
+              return (
+                <div
+                  className={cn(
+                    'video-editor-timeline-block is-film',
+                    !on && 'is-off timeline-dimmed',
+                  )}
+                  data-hover-id={id}
+                  data-hover-track="film"
+                  key={id}
+                  style={placed(shot.start, shot.end - shot.start)}
+                >
+                  <button
+                    aria-label={`镜头 ${shot.no} · ${roundSeconds(shot.start)}–${roundSeconds(shot.end)} 秒`}
+                    aria-pressed={chosen.includes(shot.no)}
+                    className="video-editor-timeline-face ui-focus ui-focus-inline"
+                    onClick={(event) => clickShot(shot.no, event.shiftKey)}
+                    onFocus={() => roving.remember(id)}
+                    onKeyDown={(event) => shotKeyDown(event, shot.no)}
+                    ref={roving.register(id)}
+                    tabIndex={roving.tabIndexOf(id)}
+                    type="button"
+                  >
+                    <Faces
+                      end={shot.end}
+                      mediaUrl={rootUrl}
+                      peaks={peaksOf(rootUrl)}
+                      start={shot.start}
+                    />
+                    <span aria-hidden="true" className="video-editor-timeline-no">
+                      {shot.no}
+                    </span>
+                  </button>
+                  <Eye label={toggle} on={on} onToggle={() => onToggleShot(shot.no)} />
+                </div>
+              )
+            })}
+          </div>
+
+          <div aria-label="编辑片段" className="video-editor-timeline-track" role="group">
+            {shots.map((shot) =>
+              parts.some(
+                (part) =>
+                  part.block.row === 0 &&
+                  overlap(part.at, part.at + part.len, shot.start, shot.end),
+              ) ? null : (
+                <button
+                  aria-label={`生成镜头 ${shot.no}`}
+                  className="video-editor-timeline-slot ui-focus"
+                  key={`slot-${shot.no}`}
+                  onClick={(event) => clickShot(shot.no, event.shiftKey)}
+                  style={placed(shot.start, shot.end - shot.start)}
+                  tabIndex={-1}
+                  type="button"
+                >
+                  <Icon decorative name="add" size="xs" />
+                  生成
+                </button>
+              ),
+            )}
+            {parts.map((part, index) => {
+              const seg = part.part
+              const url = part.block.job.outputUrl
+              return (
+                <LaneBlock
+                  key={part.id}
+                  nameId={`${baseId}-part-${index}`}
+                  onClickPart={(editId, at) => {
+                    if (!clicks.take()) onClickPart(editId, at)
+                  }}
+                  onSelectRunning={onSelectRunning}
+                  onTogglePart={onTogglePart}
+                  part={part}
+                  peaksOf={peaksOf}
+                  picked={seg !== undefined && isPicked(part.block.id, seg.seg)}
+                  pointer={
+                    seg === undefined || url === null
+                      ? undefined
+                      : carryPointer('part', part.id, () =>
+                          faceOf(partTitle(part.block, seg.seg), url, seg.b0, seg.b1),
+                        )
+                  }
+                  prefix={partPrefix(part)}
+                  selected={selection?.kind === 'running' && selection.id === part.id}
+                />
+              )
+            })}
+          </div>
+
+          {[...filmMarks].map(([key, mark]) => (
+            <span
+              aria-hidden="true"
+              className={cn('video-editor-timeline-link is-film', fadeClass(mark.fade))}
+              data-testid="timeline-link"
+              key={key}
+              style={placed(mark.start, mark.end - mark.start)}
+            />
+          ))}
+          {[...laneMarks.values()].map(({ part, fade }) => (
+            <span
+              aria-hidden="true"
+              className={cn('video-editor-timeline-link is-edit', fadeClass(fade))}
+              data-testid="timeline-link"
+              key={part.id}
+              style={placed(part.at, part.len, part.block.row)}
+            />
+          ))}
+          {pair?.kind === 'edit' ? (
+            <svg
+              aria-hidden="true"
+              className={cn('video-editor-timeline-connector', fadeClass(fadeOf(pair)))}
+              data-testid="timeline-connector"
+              ref={connectorRef}
+            >
+              <path />
+              <circle r={2} />
+              <circle r={2} />
+            </svg>
+          ) : null}
+
+          {ring === undefined ? null : (
+            <span
+              aria-hidden="true"
+              className={cn('video-editor-timeline-box', ring.track)}
+              data-follows={ring.track === 'is-draft' ? selectedItem?.id : undefined}
+              data-slide={ring.track === 'is-draft' ? 'ring' : undefined}
+              ref={selectionBoxRef}
+              style={ring.style}
+            />
+          )}
+
+          {selectedItem === undefined ||
+          handleItem === undefined ||
+          keptSpan === undefined ||
+          draftSpec === undefined ? null : (
+            <span
+              className="video-editor-timeline-trim is-draft"
+              data-follows={selectedItem.id}
+              data-slide="trim"
+              key={selectedItem.id}
+              style={placed(keptSpan.at, keptSpan.len)}
+            >
+              <TrimPair
+                onKeyDown={(event, edge) =>
+                  keyTrim(event, draftSpec, edge, (range) =>
+                    onTrim({ id: selectedItem.id, edge, ...range }),
+                  )
+                }
+                onPointerCancel={trimGesture.cancel}
+                onPointerDown={(event, edge) =>
+                  pressTrim(
+                    event,
+                    selectedItem.id,
+                    draftSpec,
+                    edge,
+                    (range, time) => draftStep(selectedItem.id, draftSpec, edge, range, time),
+                    { slide: `draft:${selectedItem.id}`, edge },
+                  )
+                }
+                onPointerMove={trimGesture.move}
+                onPointerUp={trimGesture.end}
+                pressed={pressedEdge(selectedItem.id)}
+                spec={trimSpecOf(handleItem)}
+                valueText={draftLineOf(handleItem)}
+              />
+            </span>
+          )}
+
+          {run === undefined || covered === undefined || runSpec === undefined ? null : (
+            <span
+              className="video-editor-timeline-trim is-film"
+              key={RUN_HANDLES}
+              style={placed(run.start, run.end - run.start)}
+            >
+              <TrimPair
+                onKeyDown={(event, edge) =>
+                  keyTrim(event, runSpec, edge, (range) => onTrimRun(runChange(edge, range)))
+                }
+                onPointerCancel={trimGesture.cancel}
+                onPointerDown={(event, edge) =>
+                  pressTrim(event, RUN_HANDLES, runSpec, edge, (range) => ({
+                    kind: 'run',
+                    change: runChange(edge, range),
+                  }))
+                }
+                onPointerMove={trimGesture.move}
+                onPointerUp={trimGesture.end}
+                pressed={pressedEdge(RUN_HANDLES)}
+                spec={runSpec}
+                valueText={`${spanName(covered)} · 原片 ${secondsText(run.start)} – ${secondsText(run.end)} 秒`}
+              />
+            </span>
+          )}
+
+          <TimelinePlayhead style={{ left: `${(playheadAt / content) * 100}%` }} />
+
+          {/* 拖草稿块的修剪把手被挡住：把手旁写明原因（把手在播放头处）；画在播放头之后，字不被挡 */}
+          {trimLimit === undefined ? null : (
+            <LimitBubble
+              left={`calc(${playheadAt} * var(--pps))`}
+              text={trimLimit}
+              viewportRef={scrollRef}
+            />
+          )}
+        </div>
+      </div>
+      {carry?.moved === true ? (
+        <InsertionGhost
+          blocked={carry.from === 'part' ? !carry.over || carryPicked : carry.over}
+          clientX={carry.x}
+          clientY={carry.y}
+          destination={carry.returning ? carry.destination : undefined}
+          face={carry.face}
+          motion={motion}
+          onRest={() => {
+            if (carry.returning) setCarry((current) => (current === carry ? undefined : current))
+          }}
+          ref={ghostRef}
         />
-      )}
-    </TimelineShell>
+      ) : null}
+    </section>
   )
 }
 
-/** 某个原片时刻所在镜头的按钮 id。 */
-const shotIdAt = (shots: readonly Shot[], time: number) => {
-  const shot = shots.find((item) => item.start <= time && time < item.end) ?? shots[0]
-  return shot === undefined ? '' : shotUnitId(shot)
+/** 草稿里一块的样子：画面、原声与原声行左端的镜头号（编辑段是 wand 图标）。 */
+function DraftFace({ item, peaksOf }: { item: DraftItem; peaksOf: (url: string) => PeaksState }) {
+  return (
+    <>
+      <Faces
+        end={item.t1}
+        mediaUrl={item.mediaUrl}
+        peaks={peaksOf(item.mediaUrl)}
+        start={item.t0}
+      />
+      <span aria-hidden="true" className="video-editor-timeline-no">
+        {item.kind === 'shot' ? item.no : <Icon decorative name="edit-segment" size="xs" />}
+      </span>
+    </>
+  )
 }
 
-type WholeTimelineProps = {
+type TrimPairProps = {
+  spec: TrimSpec
+  valueText: string
+  /** 正按着的那一端。 */
+  pressed: Edge | undefined
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, edge: Edge) => void
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>, edge: Edge) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: () => void
+}
+
+/** 一对修剪把手，放在按起止摆好的容器两端：草稿里选中的那块与原片选区共用。 */
+function TrimPair({
+  spec,
+  valueText,
+  pressed,
+  onKeyDown,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+}: TrimPairProps) {
+  return (['start', 'end'] as const).map((edge) => (
+    <TrimHandle
+      bounds={
+        edge === 'start'
+          ? { min: spec.lo, max: spec.t1 - spec.min }
+          : { min: spec.t0 + spec.min, max: spec.hi }
+      }
+      edge={edge}
+      key={edge}
+      onKeyDown={(event) => onKeyDown(event, edge)}
+      onPointerCancel={onPointerCancel}
+      onPointerDown={(event) => onPointerDown(event, edge)}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      pressed={pressed === edge}
+      style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+      value={edge === 'start' ? spec.t0 : spec.t1}
+      valueText={valueText}
+    />
+  ))
+}
+
+type EyeProps = { label: string; on: boolean; onToggle: () => void }
+
+/** 原声行右端的小眼睛：开关这一块在不在草稿里，永远能点，不改选中。 */
+function Eye({ label, on, onToggle }: EyeProps) {
+  return (
+    <span className="video-editor-timeline-eye">
+      <button
+        aria-label={label}
+        aria-pressed={on}
+        className="timeline-toggle"
+        onClick={onToggle}
+        title={label}
+        type="button"
+      >
+        <Icon decorative name={on ? 'included' : 'excluded'} size="xs" />
+      </button>
+    </span>
+  )
+}
+
+type LaneBlockProps = {
+  part: LanePart
+  prefix: string
+  picked: boolean
+  selected: boolean
+  /** 这一段的名字挂在哪个 id 上：这一块按它成组，眼睛的「选用这一段」就有了归属。 */
+  nameId: string
+  peaksOf: (url: string) => PeaksState
+  /** 完成的一段按住可以拖进草稿。 */
+  pointer:
+    | {
+        onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+        onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
+        onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+        onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => void
+      }
+    | undefined
+  onClickPart: (editId: string, seg: number) => void
+  onTogglePart: (editId: string, seg: number) => void
+  onSelectRunning: (id: string) => void
+}
+
+/** 编辑轨上的一块：完成的一段（点它或它的眼睛选用、取消，按住拖进草稿），或在跑、读取中、读不出的整条。 */
+function LaneBlock({
+  part,
+  prefix,
+  picked,
+  selected,
+  nameId,
+  peaksOf,
+  pointer,
+  onClickPart,
+  onTogglePart,
+  onSelectRunning,
+}: LaneBlockProps) {
+  const { block } = part
+  const style = placed(part.at, part.len, block.row)
+  const { kind } = block.state
+  if (kind === 'running')
+    return (
+      <button
+        aria-label={`${block.name} · 生成中`}
+        aria-pressed={selected}
+        className="video-editor-timeline-block is-edit is-running ui-focus"
+        data-hover-id={part.id}
+        data-hover-track="edit"
+        onClick={() => onSelectRunning(part.id)}
+        style={style}
+        type="button"
+      >
+        <span className="video-editor-timeline-status">
+          <Icon decorative name="sparkles" size="xs" />
+          生成中
+        </span>
+      </button>
+    )
+  if (part.part === undefined || block.job.outputUrl === null)
+    return (
+      <span
+        className={cn(
+          'video-editor-timeline-block is-edit',
+          kind === 'unreadable' ? 'is-failed' : 'is-running',
+        )}
+        style={style}
+      >
+        <span className="video-editor-timeline-status">
+          <Icon decorative name={kind === 'unreadable' ? 'alert' : 'sparkles'} size="xs" />
+          {block.name} · {kind === 'unreadable' ? '无法读取' : '读取中'}
+        </span>
+      </span>
+    )
+  const { seg, b0, b1 } = part.part
+  const url = block.job.outputUrl
+  return (
+    <div
+      aria-labelledby={nameId}
+      className={cn('video-editor-timeline-block is-edit', !picked && 'is-off timeline-dimmed')}
+      data-hover-id={part.id}
+      data-hover-track="edit"
+      data-part-id={part.id}
+      role="group"
+      style={style}
+    >
+      <button
+        aria-label={`${editTitleOf(block)} · ${prefix}${secondsText(b1 - b0)} 秒`}
+        className="video-editor-timeline-face ui-focus ui-focus-inline"
+        id={nameId}
+        onClick={() => onClickPart(block.id, seg)}
+        // 键盘用它的眼睛开关，这里只是鼠标的另一个入口
+        tabIndex={-1}
+        type="button"
+        {...pointer}
+      >
+        <Faces end={b1} mediaUrl={url} peaks={peaksOf(url)} start={b0} />
+      </button>
+      <Eye
+        label={picked ? '取消选用这一段' : '选用这一段'}
+        on={picked}
+        onToggle={() => onTogglePart(block.id, seg)}
+      />
+    </div>
+  )
+}
+
+/** 版本视图里的一版：画面按它自己的关键帧分块。 */
+export type VersionRow = {
+  jobId: string
   /** 轨头写的版本名，如「V2」「V1 原片」。 */
   label: string
+  original: boolean
   mediaUrl: string
-  shots: readonly Shot[]
-  duration: number
+  /** 关键帧还没读到（或读不出）时为 undefined，这一行先空着。 */
+  shots: readonly Shot[] | undefined
+  duration: number | undefined
+}
+
+type VersionsTimelineProps = {
+  /** 按完成先后排；画出来最新的在最上。 */
+  versions: readonly VersionRow[]
+  /** 正在合成的那一版：请求里各段的总长（秒），算不出时为 undefined；没在合成时不给。 */
+  composing: { duration: number | undefined } | undefined
+  viewedId: string
+  /** 正在看的那一版的播放头。 */
   currentTime: number
   peaksOf: (url: string) => PeaksState
+  onSelect: (jobId: string) => void
   onSeek: (clock: number) => void
   onScrub: () => void
 }
 
-/** 整条的时间线：只看、只能在标尺上定位，按这一版自己的关键帧分块。 */
-export function WholeTimeline({
-  label,
-  mediaUrl,
-  shots,
-  duration,
+/**
+ * 版本视图的时间线：每个版本一行，各行共用最长那一版的比例；点一行看那一版，只能在标尺上定位。
+ * 行多了在下面纵向滚动，标尺与播放头留在顶上。
+ */
+export function VersionsTimeline({
+  versions,
+  composing,
+  viewedId,
   currentTime,
   peaksOf,
+  onSelect,
   onSeek,
   onScrub,
-}: WholeTimelineProps) {
-  const percent = (time: number) => `${(time / duration) * 100}%`
+}: VersionsTimelineProps) {
+  const rulerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const rows = versions.toReversed()
+  const ids = rows.map((row) => row.jobId)
+  const roving = useRovingFocus(ids, viewedId)
+  const scale = Math.max(0, ...versions.map((row) => row.duration ?? 0), composing?.duration ?? 0)
+  const total = versions.find((row) => row.jobId === viewedId)?.duration
+  const bounded = Math.max(0, Math.min(total ?? 0, currentTime))
+  // 比例读到时长才有：一版都没读到时各行空着、不画标尺；看的那一版没读到时标尺不能拖。
+  const percent = (time: number) => `${(time / scale) * 100}%`
+  const span = (start: number, end: number): CSSProperties => ({
+    left: `calc(${percent(start)} + 1px)`,
+    width: `calc(${percent(end - start)} - 2px)`,
+  })
+
+  const keyDown = (event: KeyboardEvent<HTMLButtonElement>, jobId: string) => {
+    // 空格在编辑器里是播放；在行上是选中这一版，拦下来不让它再去播放。
+    if (event.key === ' ') {
+      event.preventDefault()
+      onSelect(jobId)
+      return
+    }
+    const direction = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : undefined
+    if (direction === undefined) return
+    event.preventDefault()
+    const next = ids[ids.indexOf(jobId) + direction]
+    if (next !== undefined) roving.focus(next)
+  }
+
   return (
-    <TimelineShell
-      heads={
-        <span className="video-editor-timeline-head is-film">
-          <Icon decorative name="video" size="sm" />
-          {label}
-        </span>
-      }
-      onScrub={onScrub}
-      onSeek={onSeek}
-      position={currentTime}
-      scale={duration}
+    <section
+      aria-label="视频编辑时间线"
+      className="video-editor-timeline is-versions"
+      style={{ '--version-rows': rows.length + (composing === undefined ? 0 : 1) } as CSSProperties}
     >
-      {shots.map((shot) => (
-        <span
-          aria-hidden="true"
-          className="video-editor-timeline-block is-film is-static"
-          key={shot.no}
-          style={{
-            left: `calc(${percent(shot.start)} + 1px)`,
-            width: `calc(${percent(shot.end - shot.start)} - 2px)`,
-          }}
-        >
-          <Faces end={shot.end} mediaUrl={mediaUrl} peaks={peaksOf(mediaUrl)} start={shot.start} />
-        </span>
-      ))}
-    </TimelineShell>
+      <div className="video-editor-versions-scroll" ref={scrollRef}>
+        <div className="video-editor-versions-header">
+          <div className="video-editor-versions-ruler" ref={rulerRef}>
+            {scale === 0 ? null : (
+              <>
+                <TimelineRuler
+                  clockAt={(clientX) => clockIn(rulerRef.current, scale, clientX)}
+                  currentTime={bounded}
+                  disabled={total === undefined}
+                  onScrub={onScrub}
+                  onSeek={onSeek}
+                  scale={scale}
+                  total={total ?? 0}
+                  viewportRef={scrollRef}
+                />
+                <TimelinePlayhead style={{ left: percent(bounded) }} />
+              </>
+            )}
+          </div>
+        </div>
+        <div aria-label="视频版本" className="video-editor-versions-rows" role="group">
+          {composing === undefined ? null : (
+            <button aria-label="合成中" className="video-editor-version-row" disabled type="button">
+              <span className="video-editor-version-head">
+                <Icon decorative name="composite" size="sm" />
+                合成中
+              </span>
+              <span className="video-editor-version-lane">
+                <span
+                  className="video-editor-timeline-block is-running"
+                  style={
+                    composing.duration === undefined || scale === 0
+                      ? { left: '1px', width: 'calc(100% - 2px)' }
+                      : span(0, composing.duration)
+                  }
+                />
+              </span>
+            </button>
+          )}
+          {rows.map((row) => (
+            <button
+              aria-label={row.label}
+              aria-pressed={row.jobId === viewedId}
+              className="video-editor-version-row ui-focus"
+              key={row.jobId}
+              onClick={() => {
+                roving.remember(row.jobId)
+                onSelect(row.jobId)
+              }}
+              onFocus={() => roving.remember(row.jobId)}
+              onKeyDown={(event) => keyDown(event, row.jobId)}
+              ref={roving.register(row.jobId)}
+              tabIndex={roving.tabIndexOf(row.jobId)}
+              type="button"
+            >
+              <span className="video-editor-version-head">
+                <Icon decorative name={row.original ? 'video' : 'composite'} size="sm" />
+                {row.label}
+              </span>
+              <span className="video-editor-version-lane">
+                {row.shots?.map((shot) => (
+                  <span
+                    className="video-editor-timeline-block"
+                    key={shot.no}
+                    style={span(shot.start, shot.end)}
+                  >
+                    <Faces
+                      end={shot.end}
+                      mediaUrl={row.mediaUrl}
+                      peaks={peaksOf(row.mediaUrl)}
+                      start={shot.start}
+                    />
+                  </span>
+                ))}
+                {row.jobId === viewedId && row.duration !== undefined ? (
+                  <span className="video-editor-timeline-box" style={span(0, row.duration)} />
+                ) : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }

@@ -132,17 +132,25 @@ async def trial_jobs(pg_url: str, reference_id: uuid.UUID) -> list[dict[str, Any
         return [dict(row) for row in rows.mappings()]
 
 
-async def settle(pg_url: str, reference_id: uuid.UUID, **columns: str) -> None:
+async def settle(
+    pg_url: str, reference_id: uuid.UUID, *, output_url: str | None = None, **columns: str
+) -> None:
     """把这条参考视频的试生成改成给定的状态与结果。"""
 
-    assignments = ", ".join(f"{name} = :{name}" for name in columns)
+    assignments = [f"{name} = :{name}" for name in columns]
+    if output_url is not None:
+        assignments.append("output = CAST(:output AS jsonb)")
     async with connected(pg_url) as conn:
         await conn.execute(
             text(
-                f"UPDATE iclip.generation_jobs SET {assignments}, finished_at = now()"
+                f"UPDATE iclip.generation_jobs SET {', '.join(assignments)}, finished_at = now()"
                 " WHERE metadata @> CAST(:tag AS jsonb)"
             ),
-            {**columns, "tag": json.dumps({"referenceId": str(reference_id)})},
+            {
+                **columns,
+                "output": json.dumps({"url": output_url}),
+                "tag": json.dumps({"referenceId": str(reference_id)}),
+            },
         )
 
 

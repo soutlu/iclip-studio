@@ -18,14 +18,24 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_SUBMITTED, GenerationJob
+from iclip.domains.generation.models import (
+    STATUS_COMPLETED,
+    STATUS_SUBMITTED,
+    GenerationJob,
+    GenerationOutput,
+)
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
     build_generation_module,
 )
 from iclip.domains.generation.repository import GenerationRepository
-from iclip.domains.generation.schemas import KIND_VIDEO, VideoEditIn, generation_out
+from iclip.domains.generation.schemas import (
+    KIND_VIDEO,
+    VideoEditIn,
+    VideoEditRequest,
+    generation_out,
+)
 from iclip.domains.generation.service import SettledRecords
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
@@ -139,10 +149,12 @@ async def _run_edit(
             video_request(),
             status=STATUS_COMPLETED,
             owner_user_id=PRINCIPAL.user_id,
-            output_url=server.url("base.mp4"),
+            output=GenerationOutput(url=server.url("base.mp4")),
         )
         upload = make_upload(
-            kind=KIND_VIDEO, owner_user_id=PRINCIPAL.user_id, output_url=server.url("clip.mp4")
+            kind=KIND_VIDEO,
+            owner_user_id=PRINCIPAL.user_id,
+            output=GenerationOutput(url=server.url("clip.mp4")),
         )
         repo.jobs.update({take.id: take, upload.id: upload})
         job = await module.service.submit_video_edit(
@@ -162,8 +174,10 @@ async def test_an_edit_goes_upstream_as_is_with_its_clip_recorded() -> None:
     (body,) = sent
     assert body["reference_video_urls"] == [clip_url], "片段地址原样交给上游"
     assert (body["seconds"], body["user_name"], body["prompt"]) == (-1, "tester", "换一双鞋")
-    assert (edit.range_start_ms, edit.range_end_ms) == (1000, 3000), "区间原样记，不改写"
-    assert stored_request(edit).model_dump()["reference_video_urls"] == [clip_url]
+    request = stored_request(edit)
+    assert isinstance(request, VideoEditRequest)
+    assert (request.range_start_ms, request.range_end_ms) == (1000, 3000), "区间原样记，不改写"
+    assert request.model_dump()["reference_video_urls"] == [clip_url]
     assert generation_out(edit, source_address=None).clip_stage is None, "编辑段没有本地加工"
 
 
@@ -186,9 +200,11 @@ async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets
             video_request(),
             status=STATUS_COMPLETED,
             owner_user_id=PRINCIPAL.user_id,
-            output_url=base_url,
+            output=GenerationOutput(url=base_url),
         )
-        upload = make_upload(kind=KIND_VIDEO, owner_user_id=PRINCIPAL.user_id, output_url=clip_url)
+        upload = make_upload(
+            kind=KIND_VIDEO, owner_user_id=PRINCIPAL.user_id, output=GenerationOutput(url=clip_url)
+        )
         repo.jobs.update({take.id: take, upload.id: upload})
         job = await module.service.submit_video_edit(
             PRINCIPAL, _edit_in(take.id, clip_url, start_ms=1000, end_ms=3000)
@@ -222,7 +238,9 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
     async with serving({"base.mp4": base, "clip.mp4": clip}) as server:
         take = await repo.create(make_job(video_request(), owner_user_id=me.user_id))
         await repo.mark_completed(
-            take.id, output_url=server.url("base.mp4"), provider_status="succeeded"
+            take.id,
+            output=GenerationOutput(url=server.url("base.mp4")),
+            provider_status="succeeded",
         )
         theirs = await records.record_upload(
             other,
@@ -269,11 +287,15 @@ async def test_a_reference_with_a_different_duration_is_submitted_without_rewrit
     assert edit.source_job_id is not None
     assert edit.root_job_id == edit.source_job_id
     assert repo.jobs[edit.source_job_id].source_job_id is None, "替换基底仍是原始出片"
-    assert (edit.range_start_ms, edit.range_end_ms) == (1000, 6000), "替换区间不按参考时长改写"
+    request = stored_request(edit)
+    assert isinstance(request, VideoEditRequest)
+    assert (request.range_start_ms, request.range_end_ms) == (1000, 6000), (
+        "替换区间不按参考时长改写"
+    )
     (body,) = sent
     assert body["reference_video_urls"] == [clip_url]
     assert body["seconds"] == -1, "实际生成时长跟随参考"
-    assert stored_request(edit).model_dump()["reference_video_urls"] == [clip_url]
+    assert request.model_dump()["reference_video_urls"] == [clip_url]
 
 
 async def test_an_image_clip_goes_through_the_same_queue_as_a_first_frame_request() -> None:
@@ -282,8 +304,7 @@ async def test_an_image_clip_goes_through_the_same_queue_as_a_first_frame_reques
         video_request(),
         status=STATUS_COMPLETED,
         owner_user_id=PRINCIPAL.user_id,
-        output_url="https://cdn.test/base.mp4",
-        duration_ms=6000,
+        output=GenerationOutput(url="https://cdn.test/base.mp4", duration_ms=6000),
         shot_index=2,
     )
     repo.jobs[take.id] = take

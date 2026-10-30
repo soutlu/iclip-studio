@@ -265,6 +265,11 @@ const ICONS = {
   user: User,
   video: Video,
   'video-type': Clapperboard,
+  /** 合成出来的视频版本 */
+  composite: Clapperboard,
+  /** 编辑视频里一块在不在要合成的草稿里 */
+  included: Eye,
+  excluded: EyeOff,
   warning: TriangleAlert,
   waveform: AudioLines,
   zoom: ZoomIn,

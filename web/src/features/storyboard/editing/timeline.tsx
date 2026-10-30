@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -11,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
+import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
 import type { PlaySegment } from './play-layout'
 import { roundSeconds, timeLabel } from './time-label'
@@ -20,7 +22,10 @@ import './timeline.css'
 const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
 
 type TimelineRulerProps = {
+  /** 标尺铺满的秒数：刻度一直标到这里。 */
   scale: number
+  /** 刻度间隔按这么多秒定；不给就按 `scale`。 */
+  tickScale?: number | undefined
   total: number
   currentTime: number
   viewportRef: RefObject<HTMLDivElement | null>
@@ -32,6 +37,7 @@ type TimelineRulerProps = {
 
 export function TimelineRuler({
   scale,
+  tickScale = scale,
   total,
   currentTime,
   viewportRef,
@@ -80,7 +86,8 @@ export function TimelineRuler({
     })
     return time
   }
-  const tickStep = TICK_STEPS.find((step) => step >= scale / 8) ?? Math.ceil(scale / 8 / 60) * 60
+  const tickStep =
+    TICK_STEPS.find((step) => step >= tickScale / 8) ?? Math.ceil(tickScale / 8 / 60) * 60
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
@@ -186,35 +193,99 @@ export function TimelinePlayhead({ style }: { style: CSSProperties }) {
   return <span aria-hidden="true" className="timeline-playhead" style={style} />
 }
 
-export function Frames({ part }: { part: PlaySegment }) {
-  const length = part.end - part.start
-  const count = Math.max(1, Math.min(24, Math.round(length * 2)))
-  const shots = Array.from({ length: count }).flatMap((_, at) => {
-    const url = videoSnapshotUrl(part.mediaUrl, 96, part.start + ((at + 0.5) * length) / count)
-    return url === undefined ? [] : [url]
+type LimitBubbleProps = {
+  text: string
+  /** 把手离内容层左边多远（CSS 长度）。 */
+  left: string
+  /** 时间线的横向滚动区：把手离它可视范围两端太近时气泡靠向里面。 */
+  viewportRef: RefObject<HTMLElement | null>
+}
+
+/**
+ * 拖到边界停住时把手旁的说明（为什么拖不过去），两个编辑器共用。气泡以把手为中心，把手贴近时间线可视范围两端时
+ * 收回来、靠向里面；每次画完按把手此刻在可视范围里的位置定（拖动中自动滚动的每一步都会重画）。
+ */
+export function LimitBubble({ text, left, viewportRef }: LimitBubbleProps) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const bubble = ref.current
+    const viewport = viewportRef.current
+    const parent = bubble?.offsetParent
+    if (bubble === null || viewport === null || parent === null || parent === undefined) return
+    const view = viewport.getBoundingClientRect()
+    const align = bubbleAlign(
+      parent.getBoundingClientRect().left + bubble.offsetLeft - view.left,
+      view.width,
+    )
+    bubble.classList.toggle('is-start', align === 'is-start')
+    bubble.classList.toggle('is-end', align === 'is-end')
   })
   return (
-    <span className="timeline-frames" style={{ flexGrow: length }}>
-      {shots.length === 0 ? (
+    <span className="timeline-limit-bubble" ref={ref} role="status" style={{ left }}>
+      <Icon decorative name="blocked" size="xs" />
+      {text}
+    </span>
+  )
+}
+
+/** 画面行最多画几格。 */
+const MAX_FRAMES = 24
+/** 格宽从这么多秒起，格子太多时翻倍。 */
+const FRAME_STEP = 0.5
+
+/** 格宽：0.5 秒 × 2^k 里放得下 `length` 秒、格子不超过上限的最小值（两端各可能多出被裁掉的一格）。 */
+const frameStepOf = (length: number) => {
+  let step = FRAME_STEP
+  while (Math.ceil(length / step) + 1 > MAX_FRAMES) step *= 2
+  return step
+}
+
+/**
+ * 一段素材的画面行。格子按素材自己的时间铺：从 0 秒起、每格 `step` 秒、取格子中点那一帧，只画与这一段有重叠
+ * 的格子，两端的格子被边裁掉。起止变了只在两端增减格子，中间的图不换地址、不重新请求；同一素材的不同段命中
+ * 同一批地址。格宽只看长度，跨过阈值才换一次。
+ */
+export function Frames({ part }: { part: PlaySegment }) {
+  const length = Math.max(0, part.end - part.start)
+  const step = frameStepOf(length)
+  const first = Math.floor(part.start / step)
+  const last = Math.max(first, Math.ceil(part.end / step) - 1)
+  const cells = Array.from({ length: last - first + 1 }).flatMap((_, at) => {
+    const from = (first + at) * step
+    const src = videoSnapshotUrl(part.mediaUrl, 96, from + step / 2)
+    return src === undefined ? [] : [{ from, src }]
+  })
+  const percent = (seconds: number) => `${length > 0 ? (seconds / length) * 100 : 0}%`
+  return (
+    <span className="timeline-frames">
+      {cells.length === 0 ? (
         <Icon decorative name="video" size="sm" />
       ) : (
-        shots.map((src) => <Frame key={src} src={src} />)
+        cells.map(({ from, src }) => (
+          <Frame
+            key={src}
+            src={src}
+            style={{
+              left: percent(from - part.start),
+              width: length > 0 ? percent(step) : '100%',
+            }}
+          />
+        ))
       )}
     </span>
   )
 }
 
-function Frame({ src }: { src: string }) {
+function Frame({ src, style }: { src: string; style: CSSProperties }) {
   const [failed, setFailed] = useState(false)
   return failed ? (
-    <span className="timeline-frame-empty" />
+    <span className="timeline-frame-empty" style={style} />
   ) : (
-    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} />
+    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} style={style} />
   )
 }
 
 export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
-  const length = part.end - part.start
   const body = (() => {
     switch (state.kind) {
       case 'loading':
@@ -240,11 +311,7 @@ export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) 
       }
     }
   })()
-  return (
-    <span className="timeline-wave" style={{ flexGrow: length }}>
-      {body}
-    </span>
-  )
+  return <span className="timeline-wave">{body}</span>
 }
 
 type TrimHandleProps = {

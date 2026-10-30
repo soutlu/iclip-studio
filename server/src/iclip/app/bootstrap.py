@@ -520,7 +520,7 @@ def build_app(
             return None
         if job.kind != KIND_VIDEO or job.operation != OPERATION_UPLOAD:
             return None
-        return job.output_url
+        return job.output.url
 
     brand_templates: BrandTemplatesModule | None = None
     if generation is not None:

@@ -6,15 +6,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
-from iclip.common.errors import ValidationFailed
+from iclip.domains.generation.models import GenerationOutput
 from iclip.domains.generation.provider import ProviderError
-from iclip.domains.generation.schemas import (
-    SubtitleSentence,
-    SubtitleWord,
-    sentences_from_payload,
-    sentences_to_payload,
-)
+from iclip.domains.generation.schemas import SubtitleSentence, SubtitleWord
 from iclip.domains.generation.subtitles import sentences_from_response
 
 
@@ -161,7 +157,7 @@ def test_sentences_are_stored_with_snake_case_keys_and_read_out_in_camel_case() 
         words=(SubtitleWord(start_ms=1, end_ms=2, text="好", punctuation="。"),),
     )
 
-    assert sentences_to_payload((sentence,)) == [
+    assert GenerationOutput(sentences=(sentence,)).model_dump(mode="json")["sentences"] == [
         {
             "start_ms": 1,
             "end_ms": 2,
@@ -194,13 +190,15 @@ def test_stored_sentences_read_back_with_their_words() -> None:
         SubtitleSentence(start_ms=2000, end_ms=3000, text="嗯。", speaker=None),
     )
 
-    assert sentences_from_payload(sentences_to_payload(sentences)) == sentences
+    stored = GenerationOutput(sentences=sentences).model_dump(mode="json")
+
+    assert GenerationOutput.model_validate(stored).sentences == sentences
 
 
 def test_a_stored_sentence_from_before_word_timing_reads_back_without_words() -> None:
     payload = [{"start_ms": 0, "end_ms": 900, "text": "好", "speaker": 0}]
 
-    assert sentences_from_payload(payload) == (
+    assert GenerationOutput.model_validate({"sentences": payload}).sentences == (
         SubtitleSentence(start_ms=0, end_ms=900, text="好", speaker=0, words=()),
     )
 
@@ -216,8 +214,8 @@ def test_a_stored_word_with_reversed_times_is_refused() -> None:
         }
     ]
 
-    with pytest.raises(ValidationFailed, match="字幕结果的形状不合法"):
-        sentences_from_payload(payload)
+    with pytest.raises(ValidationError, match="end_ms 不能早于 start_ms"):
+        GenerationOutput.model_validate({"sentences": payload})
 
 
 @pytest.mark.parametrize(

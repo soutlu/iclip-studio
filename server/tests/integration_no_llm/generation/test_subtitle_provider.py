@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 import pytest
 
+from iclip.domains.generation.models import GenerationOutput
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.schemas import SubtitleSentence
@@ -91,7 +92,7 @@ def _provider(services: FakeServices) -> QwenSubtitleProvider:
 
 
 def _subtitle_job() -> Any:
-    take = make_job(output_url=VIDEO_URL, status="completed")
+    take = make_job(output=GenerationOutput(url=VIDEO_URL), status="completed")
     return make_subtitle(take)
 
 

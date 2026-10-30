@@ -281,6 +281,45 @@ test.describe('成片编辑器 · 时间线', () => {
     await page.mouse.up()
   })
 
+  test('放大时间线后，拖修剪把手到时间区边缘时自动横向滚动，把手跟着指针，松手提交指针处的长度', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    for (let i = 0; i < 4; i += 1) await dialog.getByRole('button', { name: '放大时间线' }).click()
+    const viewport = await scrollViewport(dialog.getByRole('slider', { name: '时间线播放位置' }))
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollWidth > element.clientWidth))
+      .toBe(true)
+    // 第 2 段是素材 0–1.5 秒，结尾还能往后拉 4.5 秒
+    await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
+    const end = film.getByRole('slider', { name: '裁剪结尾' })
+    await end.scrollIntoViewIfNeeded()
+    const box = await boxOf(viewport)
+    const handle = await boxOf(end)
+    expect(handle.cx).toBeLessThan(box.x + box.width - 80)
+    const scrollBefore = await viewport.evaluate((element) => element.scrollLeft)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width - 10, handle.cy, { steps: 8 })
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(scrollBefore + 40)
+    // 退出靠边那一截：不再滚，把手停在指针下（位移算上了滚过的距离）
+    const resting = box.x + box.width - 80
+    await page.mouse.move(resting, handle.cy, { steps: 2 })
+    const scrolled = await viewport.evaluate((element) => element.scrollLeft)
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBe(scrolled)
+    await expect.poll(async () => Math.abs((await boxOf(end)).cx - resting)).toBeLessThanOrEqual(3)
+    // 松手提交的长度就是指针处：从这一段开头量到指针
+    const { pps } = await pixelsPerSecond(dialog)
+    const second = await boxOf(film.getByRole('group', { name: /^第 2 段/ }))
+    const expectedMs = ((resting - second.x) / pps) * 1000
+    await page.mouse.up()
+    await expect
+      .poll(async () => Math.abs(((await readDraft(page))?.layer0[1]?.duration ?? 0) - expectedMs))
+      .toBeLessThanOrEqual(FRAME_MS)
+  })
+
   test('成片最长 120 秒：放不下时说明原因，松手不加入；拉长与挪动到上限停住', async ({ page }) => {
     // 视频共 115.6 秒，最后一段用 6 秒的组件、只放 4 秒（共 119.6 秒，再加一个 1 秒的镜头就超了）：
     // 拉长时先碰到的是成片上限、不是组件自己的时长
@@ -490,6 +529,241 @@ test.describe('成片编辑器 · 时间线', () => {
     await expect(film.getByRole('group')).toHaveCount(5)
     await page.keyboard.press('ControlOrMeta+z')
     await expect(film.getByRole('group')).toHaveCount(6)
+  })
+
+  test('拖画面轨一段的左把手往外拉长：被拖的段画成一整块、带着拉回来的原声，盖在前一段上；别的段不动；松手后首尾接上', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    // 第 3 段是 v2：素材 1.5–3.2 秒，开头还能往前拉
+    await film.getByRole('button', { name: /^选中：第 3 段/ }).click()
+    const segment = (n: number) => film.getByRole('group', { name: new RegExp(`^第 ${n} 段`) })
+    const boxes = async () => ({
+      second: await boxOf(segment(2)),
+      third: await boxOf(segment(3)),
+      fourth: await boxOf(segment(4)),
+    })
+    const wave = segment(3).getByTestId('timeline-wave')
+    await expect(wave).toBeVisible()
+    /** 原声行画了素材多长：波形每列是一个峰值，列数随素材时间段变。 */
+    const waveColumns = async () =>
+      Number((await wave.getAttribute('viewBox'))?.split(' ')[2] ?? Number.NaN)
+    const columnsBefore = await waveColumns()
+    const before = await boxes()
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    const { pps } = await pixelsPerSecond(dialog)
+    const pull = Math.round(pps * 0.4)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pull, handle.cy, { steps: 6 })
+    const during = await boxes()
+    for (const key of ['second', 'fourth'] as const) {
+      expect(Math.abs(during[key].x - before[key].x)).toBeLessThanOrEqual(1)
+      expect(Math.abs(during[key].width - before[key].width)).toBeLessThanOrEqual(1)
+    }
+    // 被拖的段是一个元素：从把手处到原来的结尾，原声行画的是素材 1.1–3.2 秒
+    expect(Math.abs(during.third.x - (before.third.x - pull))).toBeLessThanOrEqual(2)
+    expect(
+      Math.abs(during.third.x + during.third.width - (before.third.x + before.third.width)),
+    ).toBeLessThanOrEqual(1)
+    expect((await waveColumns()) / columnsBefore).toBeCloseTo(2.1 / 1.7, 1)
+    // 盖在前一段上：拉回来的那截里（避开把手的命中区）最上面是被拖的段
+    const onTop = await segment(3).evaluate(
+      (element: HTMLElement, x: number) => {
+        const box = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(x, box.bottom - 4))
+      },
+      before.third.x - pull * 0.4,
+    )
+    expect(onTop).toBe(true)
+    // 把手停在拉长后的开头
+    const moved = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    expect(Math.abs(moved.cx - (handle.cx - pull))).toBeLessThanOrEqual(2)
+    await expect(film.getByTestId('trim-cut')).toHaveCount(0)
+    await page.mouse.up()
+
+    // 松手：第 3 段接在第 2 段后面，第 4 段跟着往后
+    await expect
+      .poll(async () => {
+        const after = await boxes()
+        return [
+          after.third.x - (after.second.x + after.second.width),
+          after.fourth.x - before.fourth.x - pull,
+        ].map((gap) => Math.abs(gap) <= 3)
+      })
+      .toEqual([true, true])
+    await expect
+      .poll(async () => (await readDraft(page))?.layer0[2]?.playbackStart)
+      .toBeLessThan(1_500)
+  })
+
+  test('第一段左把手往回拉：左边停在 0，向右变长盖在第二段上，把手留在 0；松手后后面的段往右滑', async ({
+    page,
+  }) => {
+    // 第一段是素材 1.0–2.5 秒，开头还能往前拉 1 秒
+    const layer0 = [video('v1', 1_000, 2_500), ...BASE.slice(2)]
+    const { dialog, film } = await openWith(page, { layer0 })
+    await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
+    const segment = (n: number) => film.getByRole('group', { name: new RegExp(`^第 ${n} 段`) })
+    const before = { first: await boxOf(segment(1)), second: await boxOf(segment(2)) }
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    const { pps } = await pixelsPerSecond(dialog)
+    const pull = Math.round(pps * 0.4)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pull, handle.cy, { steps: 6 })
+    const first = await boxOf(segment(1))
+    const second = await boxOf(segment(2))
+    expect(Math.abs(first.x - before.first.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(first.width - (before.first.width + pull))).toBeLessThanOrEqual(2)
+    expect(Math.abs(second.x - before.second.x)).toBeLessThanOrEqual(1)
+    // 盖在第二段开头那截上
+    const onTop = await segment(1).evaluate(
+      (element: HTMLElement, x: number) => {
+        const box = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(x, box.bottom - 4))
+      },
+      before.second.x + pull / 2,
+    )
+    expect(onTop).toBe(true)
+    // 把手留在 0（时间区开头）
+    const moved = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    expect(Math.abs(moved.cx - handle.cx)).toBeLessThanOrEqual(2)
+    await page.mouse.up()
+
+    // 入点早了拉过的那么多（像素按每秒像素换成毫秒，差几毫秒）
+    const pulledMs = (pull / pps) * 1000
+    await expect
+      .poll(async () => {
+        const clip = (await readDraft(page))?.layer0[0]
+        return [
+          Math.abs((clip?.playbackStart ?? 0) - (1_000 - pulledMs)) <= 5,
+          Math.abs((clip?.duration ?? 0) - (1_500 + pulledMs)) <= 5,
+        ]
+      })
+      .toEqual([true, true])
+    await expect
+      .poll(async () => Math.abs((await boxOf(segment(2))).x - (before.second.x + pull)) <= 3)
+      .toBe(true)
+  })
+
+  test('修剪拖到边界：把手旁说明停住的原因（这段的开头、结尾、最短），没到边界时不出', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    const { pps } = await pixelsPerSecond(dialog)
+    const bubble = (text: string) => dialog.getByRole('status').filter({ hasText: text })
+    const drag = async (n: number, name: '裁剪开头' | '裁剪结尾', seconds: number[]) => {
+      await film.getByRole('button', { name: new RegExp(`^选中：第 ${n} 段`) }).click()
+      const handle = await boxOf(film.getByRole('slider', { name }))
+      await page.mouse.move(handle.cx, handle.cy)
+      await page.mouse.down()
+      return async (step: number) => {
+        await page.mouse.move(handle.cx + pps * (seconds[step] ?? 0), handle.cy, { steps: 4 })
+      }
+    }
+
+    // 第 3 段（素材 1.5–3.2 秒）开头往前拉 0.5 秒还没到头；拉 2 秒过了素材开头
+    const third = await drag(3, '裁剪开头', [-0.5, -2])
+    await third(0)
+    await expect(bubble('已到这段的开头')).toHaveCount(0)
+    await third(1)
+    await expect(bubble('已到这段的开头')).toBeVisible()
+    await page.mouse.up()
+    await expect(bubble('已到这段的开头')).toHaveCount(0)
+
+    // 第 6 段（素材 5.1–6 秒）结尾往后拉过素材结尾
+    const sixth = await drag(6, '裁剪结尾', [0.5])
+    await sixth(0)
+    await expect(bubble('已到这段的结尾')).toBeVisible()
+    await page.mouse.up()
+
+    // 第 4 段（0.8 秒）结尾往前剪过头：停在最短
+    const fourth = await drag(4, '裁剪结尾', [-1.2])
+    await fourth(0)
+    await expect(bubble('最短 0.1 秒')).toBeVisible()
+    await page.mouse.up()
+    await expect(dialog.getByRole('status').filter({ hasText: /^最短/ })).toHaveCount(0)
+  })
+
+  test('第一段开头往前拉过素材开头：整块钉在 0，说明在 0 处、靠时间区左边对齐', async ({
+    page,
+  }) => {
+    // 第一段用素材 1–2 秒：开头还能往前拉 1 秒，拉 1.5 秒过了素材开头
+    const { dialog, film } = await openWith(page, { layer0: [video('v0', 1_000, 2_000), ...BASE] })
+    const { pps, left } = await pixelsPerSecond(dialog)
+    await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪开头' }))
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pps * 1.5, handle.cy, { steps: 6 })
+    const bubble = dialog.getByRole('status').filter({ hasText: '已到这段的开头' })
+    await expect(bubble).toBeVisible()
+    const box = await boxOf(bubble)
+    const viewport = await boxOf(
+      await dialog.getByRole('slider', { name: '时间线播放位置' }).evaluateHandle((element) => {
+        for (let parent = element.parentElement; parent !== null; parent = parent.parentElement)
+          if (/auto|scroll/.test(getComputedStyle(parent).overflowX)) return parent
+        throw new Error('时间线滚动区域不存在')
+      }),
+    )
+    // 说明从 0 处起、向右展开，不出时间区
+    expect(Math.abs(box.x - left)).toBeLessThanOrEqual(2)
+    expect(box.x).toBeGreaterThanOrEqual(viewport.x)
+    await page.mouse.up()
+    await expect
+      .poll(async () => (await readDraft(page))?.layer0[0])
+      .toMatchObject({
+        start: 0,
+        duration: 2_000,
+        playbackStart: 0,
+      })
+  })
+
+  test('拖画面轨一段的右把手往里裁：拖动中后面的段不动，剪掉的那段调暗；松手后后面的段接上', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    // 第 3 段是 v2，长 1.7 秒
+    await film.getByRole('button', { name: /^选中：第 3 段/ }).click()
+    const segment = (n: number) => film.getByRole('group', { name: new RegExp(`^第 ${n} 段`) })
+    const boxes = async () => ({ third: await boxOf(segment(3)), fourth: await boxOf(segment(4)) })
+    const before = await boxes()
+    const handle = await boxOf(film.getByRole('slider', { name: '裁剪结尾' }))
+    const { pps } = await pixelsPerSecond(dialog)
+    const pull = Math.round(pps * 0.4)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(handle.cx - pull, handle.cy, { steps: 6 })
+    const during = await boxes()
+    for (const key of ['third', 'fourth'] as const) {
+      expect(Math.abs(during[key].x - before[key].x)).toBeLessThanOrEqual(1)
+      expect(Math.abs(during[key].width - before[key].width)).toBeLessThanOrEqual(1)
+    }
+    // 调暗层从把手处到这段原来的结尾，画在这段里
+    const cut = film.getByTestId('trim-cut')
+    const dimmed = await boxOf(cut)
+    expect(Math.abs(dimmed.x - (handle.cx - pull))).toBeLessThanOrEqual(3)
+    expect(
+      Math.abs(dimmed.x + dimmed.width - (before.third.x + before.third.width)),
+    ).toBeLessThanOrEqual(1)
+    const moved = await boxOf(film.getByRole('slider', { name: '裁剪结尾' }))
+    expect(Math.abs(moved.cx - (handle.cx - pull))).toBeLessThanOrEqual(2)
+    await expect(film.getByTestId('trim-extend')).toHaveCount(0)
+    await page.mouse.up()
+    await expect(cut).toHaveCount(0)
+
+    // 松手：第 4 段接到第 3 段后面
+    await expect
+      .poll(async () => {
+        const after = await boxes()
+        return [
+          after.fourth.x - (after.third.x + after.third.width),
+          after.fourth.x - (before.fourth.x - pull),
+        ].map((gap) => Math.abs(gap) <= 3)
+      })
+      .toEqual([true, true])
+    await expect.poll(async () => (await readDraft(page))?.layer0[2]?.duration).toBeLessThan(1_700)
   })
 
   test('特效轨：拖动和微调；上下新增预演展开一行，松手才提交，取消恢复原排列', async ({ page }) => {

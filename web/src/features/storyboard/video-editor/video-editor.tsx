@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { PercentCrop } from 'react-image-crop'
 import { errorMessageOf } from '@/shared/api/client'
@@ -15,56 +15,91 @@ import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
 import { GenerationPicker } from '../components/generation-picker'
-import { StageFailure } from '../components/stage-failure'
 import {
   compileImageClipPrompt,
   compileReferencePrompt,
   draftPartsOf,
   MAX_FIRST_FRAMES,
 } from '../edit-prompt'
+import type { SecondsRange } from '../editing/clip'
 import { EditorPreview, type EditorPreviewHandle } from '../editing/editor-preview'
-import { EditorVersionStrip } from '../editing/editor-version-strip'
-import { useAudioPeaks, useKeyframes, type PeaksState } from '../editing/media-analysis'
-import { layoutPlay, type PlaySegment } from '../editing/play-layout'
+import {
+  keyframeQuery,
+  useAudioPeaks,
+  useKeyframes,
+  type PeaksState,
+} from '../editing/media-analysis'
+import { layoutPlay } from '../editing/play-layout'
 import { isShortcutTarget } from '../editing/shortcut-target'
-import { useMediaDurations } from '../editing/use-media-durations'
+import { StageLabel } from '../editing/stage-label'
 import { useStableValue } from '../editing/use-stable-value'
 import { isComposite, ORIGINAL_LABEL } from '../editing/version-lineage'
 import { useShotGenerations, useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard, type AiEditCardHandle } from './ai-edit-card'
 import { clipGenerationBlock, referenceImageCountOf } from './clip-generation'
 import {
-  anchorOfClock,
   canCompose,
-  clockOfAnchor,
+  composeSegmentsOf,
   compositeSegmentsOf,
-  compositionOf,
-  pickedBlocksOf,
-  picksFromComposite,
-  segmentsOf,
-  selectedUnits,
-  shotUnitId,
-  unitsOf,
-  type Selection,
-  type Unit,
-} from './composition'
-import { EditBlockCard } from './edit-block-card'
-import { editBlocksOf, isSettling, laneEditsOf, shotsOf, spanName } from './edit-blocks'
+  draftItemsOf,
+  draftLineOf,
+  isPicked,
+  keepPlace,
+  outputOf,
+  pickPart,
+  previewPick,
+  putShot,
+  readyEditsOf,
+  shotOn,
+  totalOf,
+  trimItem,
+  unpickPart,
+  type Draft,
+  type DraftSource,
+} from './draft'
+import {
+  coveredSpan,
+  editBlocksOf,
+  editTitleOf,
+  failedEditsOf,
+  failureMessageOf,
+  isRangeOf,
+  laneEditsOf,
+  partItemId,
+  shotsOf,
+  spanName,
+  type KeyframeRead,
+} from './edit-blocks'
 import {
   composingOf,
+  failedCompositeOf,
   latestCompositeOf,
   projectVersions,
   rootVersionGroup,
   type ChainVersion,
 } from './edit-chain'
 import { DurationSlider } from './duration-slider'
-import { ClipsTimeline, WholeTimeline } from './editor-timeline'
+import {
+  ClipsTimeline,
+  VersionsTimeline,
+  type RunChange,
+  type Selection,
+  type TrimChange,
+  type TrimPreview,
+  type VersionRow,
+} from './editor-timeline'
+import { FailureNotice } from './failure-notice'
+import {
+  failureNoticesOf,
+  useDismissedFailures,
+  type FailureNotice as Notice,
+} from './failure-notices'
 import { planFrames } from './first-frames'
+import { SelectionCard } from './selection-card'
 import { ShotPrompts } from './shot-prompts'
+import { useDraft } from './use-draft'
 import { useGenerationSettings } from './use-generation-settings'
-import { usePicks } from './use-picks'
 import { useSubmissionGuard } from './use-submission-guard'
-import { posterOf, wholeStripEntries } from './version-strip'
 import {
   imageSizeQuery,
   seedVideoEditJob,
@@ -86,8 +121,17 @@ const REFERENCE_FRAME_WIDTH = 1280
 const LENGTH_NOTE_THRESHOLD = 0.05
 
 const secondsText = (value: number) => value.toFixed(1)
+const posterOf = (url: string) => videoSnapshotUrl(url, 320)
 
-type View = 'whole' | 'clips'
+/**
+ * 镜头提示词面板左边在视口里的横坐标。面板挂在按钮所在的宿主里、右端对齐按钮；刚挂上时还没定位、
+ * 又在缩放进场，所以不量面板自己的位置，按宿主右端减面板的布局宽度算。
+ */
+const promptsPanelLeft = (panel: HTMLElement): number =>
+  (panel.closest('.video-editor-prompts') ?? panel).getBoundingClientRect().right -
+  panel.offsetWidth
+
+type View = 'versions' | 'clips'
 
 type Props = {
   conversationId: string
@@ -100,7 +144,7 @@ type Props = {
 
 export function VideoEditor({ conversationId, video, loading, shotIndex, onClose }: Props) {
   const conversationJobs = useShotGenerations(conversationId).data
-  // 从一次合成打开时，编辑的仍是它的原片；整条先看打开的那一版。
+  // 从一次合成打开时，编辑的仍是它的原片；版本视图先看打开的那一版。
   const opened = video !== undefined && isComposite(video) ? video : undefined
   const root =
     opened === undefined ? video : conversationJobs?.find((job) => job.id === opened.rootJobId)
@@ -183,20 +227,28 @@ function Editor({
   const previewRef = useRef<EditorPreviewHandle>(null)
   const selectionBoxRef = useRef<HTMLSpanElement>(null)
   const cardRef = useRef<AiEditCardHandle>(null)
-  const [view, setView] = useState<View>(openedCompositeId === undefined ? 'clips' : 'whole')
-  // 整条看的那一版；没选就是最近完成的一版。
+  const [view, setView] = useState<View>(openedCompositeId === undefined ? 'clips' : 'versions')
+  // 版本视图看的那一版；没选就是最近完成的一版。
   const [viewedId, setViewedId] = useState(openedCompositeId)
-  // 整条版本条上点开看原因的失败合成。
-  const [failedCompositeId, setFailedCompositeId] = useState<string>()
+  // 打开着的镜头提示词面板：生成卡要让开它。
+  const [promptsPanel, setPromptsPanel] = useState<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<Selection>()
+  // 剪辑视图的舞台预览什么：原片轨有选区时可以预览整条原片（播放头按原片时间），其余时候预览草稿（播放头按合成时间）。
+  const [preview, setPreview] = useState<'draft' | 'source'>('draft')
+  // 原片预览时草稿的播放头停在哪（合成时间）：回到草稿预览时还原。
+  const [draftClock, setDraftClock] = useState(0)
+  // 舞台播放头的时刻：草稿预览、版本视图是所放内容的时间，原片预览是原片时间。
   const [currentTime, setCurrentTime] = useState(0)
-  // 选中后播放头要停的原片位置。选用一变预览先在自己的 effect 里回到原处，子组件的 effect 先跑，在这里跳才不会被覆盖。
-  const [seekRequest, setSeekRequest] = useState<{ anchor: number }>()
+  // 播放头要停的时刻（按舞台此刻放的内容）。草稿一变、预览一换，预览先在自己的 effect 里回到原处或开头，
+  // 子组件的 effect 先跑，在这里跳才不会被覆盖。
+  const [seekRequest, setSeekRequest] = useState<{ clock: number; boundary?: 'end' }>()
   const [request, setRequest] = useState(NO_REQUEST)
   // 首帧、尾帧拖过的裁切框，按图片地址记，与输入卡的草稿一样活到编辑器关闭。
   const [frameCrops, setFrameCrops] = useState(NO_CROPS)
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
+  // 正按着修剪把手：拖动中的样子只给舞台、时间线和卡上的文字看，草稿与选区松手才改。
+  const [trimPreview, setTrimPreview] = useState<TrimPreview>()
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const { downloading, download } = useMediaDownload()
@@ -213,109 +265,123 @@ function Editor({
     () => (shots === undefined ? [] : laneEditsOf(root.id, jobs, shots)),
     [root.id, jobs, shots],
   )
+  const failedEdits = useMemo(
+    () => (shots === undefined ? [] : failedEditsOf(root.id, jobs, shots)),
+    [root.id, jobs, shots],
+  )
+  // 每条完成的编辑段按它自己文件的关键帧切段，读法同原片；读到的时长就是它的时长。
   const resultUrls = useStableValue(
     lane.flatMap(({ job }) =>
       job.status === 'completed' && job.outputUrl !== null ? [job.outputUrl] : [],
     ),
   )
-  const knownDurations = useMemo(() => {
-    const known: Record<string, number> = {}
-    for (const { job } of lane)
-      if (job.outputUrl !== null && job.durationMs !== null)
-        known[job.outputUrl] = job.durationMs / 1000
-    return known
-  }, [lane])
-  const durations = useMediaDurations(resultUrls, knownDurations)
-  const blocks = useMemo(() => editBlocksOf(lane, durations), [lane, durations])
-  const durationOf = (jobId: string) => {
-    const state = blocks.find((block) => block.id === jobId)?.state
-    return state?.kind === 'ready' ? state.duration : undefined
-  }
+  const resultKeyframes = useQueries({
+    queries: resultUrls.map(keyframeQuery),
+    combine: (results) =>
+      new Map(
+        results.map((result, at): [string, KeyframeRead] => [
+          resultUrls[at] ?? '',
+          { data: result.data, isError: result.isError },
+        ]),
+      ),
+  })
+  const blocks = editBlocksOf(lane, (url) => resultKeyframes.get(url))
+  const source: DraftSource | undefined =
+    shots === undefined
+      ? undefined
+      : {
+          rootId: root.id,
+          rootUrl: mediaUrl,
+          duration,
+          shots,
+          edits: readyEditsOf(blocks),
+        }
+  const lengthOf = (jobId: string) =>
+    jobId === root.id
+      ? keyframes.data?.duration
+      : source?.edits.find((edit) => edit.id === jobId)?.duration
 
   const latest = latestCompositeOf(jobs, root.id)
-  const latestSegments =
-    latest === undefined ? undefined : compositeSegmentsOf(latest, root.id, durationOf)
-  const { picks, pick, unpick } = usePicks({
+  const latestSegments = latest === undefined ? undefined : compositeSegmentsOf(latest, lengthOf)
+  const { draft, change } = useDraft({
     conversationId,
     rootJobId: root.id,
-    blocks,
-    fallback: shots === undefined ? [] : picksFromComposite(latestSegments, root.id, shots, blocks),
+    source,
+    latest: latestSegments,
     ready:
       chainJobs !== undefined &&
       shots !== undefined &&
       blocks.every((block) => block.state.kind !== 'measuring'),
   })
-  const picked = useMemo(() => pickedBlocksOf(blocks, picks), [blocks, picks])
-  const units = useMemo(() => unitsOf(shots ?? [], picked), [shots, picked])
-  const pieces = useMemo(
-    () => compositionOf({ id: root.id, mediaUrl }, shots ?? [], picked),
-    [root.id, mediaUrl, shots, picked],
-  )
-  const segments = segmentsOf(pieces)
+  // 草稿定下之前没有块：时间线不画、合成不可点、Delete 拿不到选中的块
+  const items = source === undefined || draft === undefined ? [] : draftItemsOf(source, draft)
+  const pieces = outputOf(items)
+  // 舞台此刻放的草稿：拖草稿块的修剪把手时是拖动中的样子；合成、「共 X 秒」与浏览器里存的都按草稿本身。
+  const staged = trimPreview?.kind === 'draft' ? trimPreview.items : items
   const composing = composingOf(jobs, root.id)
   const composable =
-    shots !== undefined &&
+    source !== undefined &&
+    draft !== undefined &&
     canCompose({
-      current: segments,
-      original: [{ sourceJobId: root.id, start: 0, end: duration }],
+      source,
+      pieces,
       latest: latestSegments,
       composing: composing !== undefined,
       busy,
     })
 
-  // 最近完成的合成一换（不论从哪里提交），整条切到它，从头、停着。
+  // 最近完成的合成一换（不论从哪里提交），切到版本视图看它，从头、停着。
   const latestId = latest?.id ?? null
   const [seenLatestId, setSeenLatestId] = useState<string | null>()
   if (chainJobs !== undefined && seenLatestId !== latestId) {
     if (seenLatestId !== undefined && latestId !== null) {
-      setView('whole')
+      setView('versions')
       setViewedId(latestId)
-      setFailedCompositeId(undefined)
       setSelection(undefined)
     }
     setSeenLatestId(latestId)
   }
 
-  // 只在新的定位请求时跳：之后选用再变不该把播放头拉回去。
-  const seekToAnchor = useEffectEvent((anchor: number) =>
-    previewRef.current?.previewAt(clockOfAnchor(pieces, anchor)),
+  // 只在新的定位请求时跳：之后草稿再变不该把播放头拉回去。
+  const seekTo = useEffectEvent(({ clock, boundary }: { clock: number; boundary?: 'end' }) =>
+    previewRef.current?.previewAt(clock, boundary),
   )
   useEffect(() => {
-    if (seekRequest !== undefined) seekToAnchor(seekRequest.anchor)
+    if (seekRequest !== undefined) seekTo(seekRequest)
   }, [seekRequest])
 
-  // 片段的选区
+  // 剪辑视图的选中
   const clipsView = view === 'clips'
-  const chosenUnits = clipsView ? selectedUnits(units, selection) : []
-  const firstUnit = chosenUnits[0]
-  const lastUnit = chosenUnits.at(-1)
-  const selectedBlock =
-    clipsView && selection?.kind === 'edit'
-      ? blocks.find((block) => block.id === selection.id)
+  const selectedItem =
+    clipsView && selection?.kind === 'draft'
+      ? items.find((item) => item.id === selection.id)
       : undefined
-  // 选着的编辑片段不在了，或在跑的那条落定了，就不再选着。
-  if (selection?.kind === 'edit') {
-    const block = blocks.find((item) => item.id === selection.id)
-    if (block === undefined || (selection.settling && !isSettling(block.state)))
-      setSelection(undefined)
-  }
+  const runningBlock =
+    clipsView && selection?.kind === 'running'
+      ? blocks.find((block) => block.id === selection.id && block.state.kind === 'running')
+      : undefined
+  // 选着的草稿块被拿掉了，或在跑的那条落定了，就不再选着。
+  if (
+    (selection?.kind === 'draft' && selectedItem === undefined && clipsView) ||
+    (selection?.kind === 'running' && runningBlock === undefined && clipsView)
+  )
+    setSelection(undefined)
+  // 原片轨上选中的选区（原片时间）：卡上的首帧、尾帧按它取，拖把手松手才换。
+  const chosenRun: SecondsRange | undefined =
+    clipsView && selection?.kind === 'run'
+      ? { start: selection.start, end: selection.end }
+      : undefined
+  // 此刻的选区：拖把手时是拖动中的样子（卡头的镜头、卡上的起止、舞台标签跟着变），和它覆盖到的镜头（碰到一部分也算）。
+  const range: SecondsRange | undefined =
+    chosenRun !== undefined && trimPreview?.kind === 'run'
+      ? { start: trimPreview.run.start, end: trimPreview.run.end }
+      : chosenRun
   const shotSpan =
-    firstUnit === undefined || lastUnit === undefined
-      ? undefined
-      : {
-          from: shots?.find((shot) => shot.start === firstUnit.start)?.no ?? 0,
-          to: shots?.find((shot) => shot.end === lastUnit.end)?.no ?? 0,
-        }
-  const range =
-    firstUnit === undefined || lastUnit === undefined
-      ? undefined
-      : { start: firstUnit.start, end: lastUnit.end }
-  const unitSegment = (unit: Unit): PlaySegment =>
-    unit.kind === 'shot'
-      ? { mediaUrl, start: unit.start, end: unit.end }
-      : { mediaUrl: unit.block.job.outputUrl ?? '', start: 0, end: unit.block.state.duration }
-  const referenceClips = chosenUnits.map(unitSegment)
-  const selectedDuration = referenceClips.reduce((sum, clip) => sum + clip.end - clip.start, 0)
+    range === undefined || shots === undefined ? undefined : coveredSpan(shots, range)
+  const sourcePreview = range !== undefined && preview === 'source'
+  // 参考片段只从原片上取选区那一段。
+  const referenceClips = range === undefined ? [] : [{ mediaUrl, ...range }]
+  const selectedDuration = range === undefined ? 0 : range.end - range.start
 
   const generationBlockOf = (referenceImageCount: number) =>
     chosen === undefined
@@ -331,10 +397,8 @@ function Editor({
   const frameUrls =
     mode === 'image' ? compileReferencePrompt(draftPartsOf(request)).referenceImageUrls : []
   const imageSizes = useImageSizes(frameUrls)
-  const videoSize = useQuery({
-    ...videoSizeQuery(mediaUrl),
-    enabled: mode === 'image',
-  }).data
+  // 舞台按原片画幅摆，图生的首帧也按它裁；读到之前舞台按播放器读到的画面比例。
+  const videoSize = useQuery(videoSizeQuery(mediaUrl)).data
   const framePlans = planFrames({
     urls: frameUrls,
     sizeOf: (url) => imageSizes.get(url),
@@ -376,11 +440,11 @@ function Editor({
     )
   }
   const generatingSameShots =
-    shotSpan !== undefined &&
-    blocks.some(
-      (block) =>
-        block.from === shotSpan.from && block.to === shotSpan.to && isSettling(block.state),
-    )
+    range !== undefined &&
+    blocks.some((block) => block.state.kind === 'running' && isRangeOf(block.job, range))
+  // 区间与选区完全相同的生成里最近一次失败了：卡上写出原因，对这个区间重新提交后就不再是最近一次。
+  const lastFailure =
+    range === undefined ? undefined : failedEdits.find((edit) => isRangeOf(edit.job, range))
   const blockReason =
     range === undefined
       ? undefined
@@ -396,44 +460,169 @@ function Editor({
   const seedJob = (job: GenerationJob) =>
     seedVideoEditJob(queryClient, conversationId, root.id, job)
 
-  /** 选中原片轨上的几个单位：停下，播放头到选区开头，弹出生成卡。 */
-  const selectUnits = (ids: readonly string[]) => {
+  /**
+   * 进原片预览（已在里面就留着），舞台停在 `seek`、不播放；从草稿预览进来时记下草稿播放头。
+   * 两种预览一换，舞台放的内容就换了，正在播放的随之停下。
+   */
+  const showSource = (seek: { clock: number; boundary?: 'end' }) => {
+    if (!sourcePreview) setDraftClock(clipsView ? currentTime : 0)
+    setPreview('source')
+    setSeekRequest(seek)
+  }
+
+  /** 回到草稿预览，播放头到合成时间 `clock`；不给时回到进原片预览前草稿播放头所在的位置。 */
+  const showDraft = (clock?: number) => {
+    setPreview('draft')
+    if (clock !== undefined) setSeekRequest({ clock })
+    else if (sourcePreview) setSeekRequest({ clock: draftClock })
+  }
+
+  /** 选中原片轨上的选区：舞台预览原片、停在选区开头，弹出生成卡；为 undefined 时清掉选区，回到草稿预览。 */
+  const selectRun = (next: SecondsRange | undefined) => {
     if (busy) return
-    setSelection(ids.length === 0 ? undefined : { kind: 'units', ids })
     setCardOpen(true)
-    const first = units.find((unit) => unit.id === ids[0])
-    if (first !== undefined) setSeekRequest({ anchor: first.start })
+    if (next === undefined) {
+      setSelection(undefined)
+      showDraft()
+      return
+    }
+    setSelection({ kind: 'run', ...next })
+    showSource({ clock: next.start })
   }
 
-  /** 点编辑轨上的一条：可用的立即选用（重叠的取消），在跑、失败的只看状态。 */
-  const clickBlock = (id: string) => {
-    const block = blocks.find((item) => item.id === id)
-    if (block === undefined || busy) return
-    if (block.state.kind === 'ready') pick(id)
-    setSelection({ kind: 'edit', id, settling: isSettling(block.state) })
-    setSeekRequest({ anchor: block.start })
+  /** 改原片选区（拖把手松手、按方向键）：舞台停在把手所在那一帧（结尾那一端取结尾前一点），播放头跟到那一端。 */
+  const trimRun = ({ edge, start, end }: RunChange) => {
+    if (busy) return
+    setSelection({ kind: 'run', start, end })
+    showSource(edge === 'end' ? { clock: end, boundary: 'end' } : { clock: start })
   }
 
-  /** 改用原片：取消这条的选用，选中换回来的镜头。 */
-  const restoreOriginal = (id: string) => {
-    const block = blocks.find((item) => item.id === id)
-    if (block === undefined || busy) return
-    unpick(id)
-    const restored = (shots ?? []).filter((shot) => block.from <= shot.no && shot.no <= block.to)
-    setSelection({ kind: 'units', ids: restored.map(shotUnitId) })
-    setCardOpen(true)
-    setSeekRequest({ anchor: block.start })
+  /** 选中草稿里的一块：出修剪把手与小卡，回到草稿预览，播放头到它开头。 */
+  const selectDraft = (id: string, within = items) => {
+    const item = within.find((candidate) => candidate.id === id)
+    if (item === undefined) return
+    setSelection({ kind: 'draft', id })
+    showDraft(item.at)
+  }
+
+  /** 选中编辑轨上在跑的那条：小卡写进度，回到草稿预览。 */
+  const selectRunning = (id: string) => {
+    setSelection({ kind: 'running', id })
+    showDraft()
+  }
+
+  /** 在标尺上定位：标尺始终属于草稿，原片预览时回到草稿预览，选区与生成卡留着。 */
+  const seekDraft = (clock: number) => {
+    if (sourcePreview) showDraft(clock)
+    else previewRef.current?.previewAt(clock)
+  }
+
+  /** 改草稿：播放头留在原来那一块的同一位置（见 keepPlace）；原片预览时舞台不动，只挪记着的草稿播放头。 */
+  const changeDraft = (next: Draft) => {
+    if (busy || source === undefined) return
+    const after = draftItemsOf(source, next)
+    change(next)
+    if (sourcePreview) setDraftClock(keepPlace(items, after, draftClock))
+    else setSeekRequest({ clock: keepPlace(items, after, currentTime) })
+    return after
+  }
+
+  const toggleShot = (no: number) => {
+    if (source !== undefined && draft !== undefined)
+      changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
+  }
+
+  /** 选用或取消一段；取消时那块正选中就清掉选中。 */
+  const togglePart = (editId: string, seg: number) => {
+    if (source === undefined || draft === undefined) return undefined
+    if (isPicked(draft, editId, seg)) {
+      if (selection?.kind === 'draft' && selection.id === partItemId(editId, seg))
+        setSelection(undefined)
+      return changeDraft(unpickPart(draft, editId, seg))
+    }
+    return changeDraft(pickPart(source, draft, editId, seg))
+  }
+
+  /**
+   * 点编辑轨上完成的一段：同点它的眼睛，另回到草稿预览。选用后选中它在草稿里的那块；取消选用时播放头
+   * 留在原来那一块的同一位置（见 keepPlace）。
+   */
+  const clickPart = (editId: string, seg: number) => {
+    if (draft === undefined) return
+    const picking = !isPicked(draft, editId, seg)
+    const after = togglePart(editId, seg)
+    if (after === undefined) return
+    if (picking) selectDraft(partItemId(editId, seg), after)
+    else if (sourcePreview) showDraft(keepPlace(items, after, draftClock))
+  }
+
+  /** 草稿里的一块修剪到新起止之后的草稿；这一块不在草稿里时为 undefined。 */
+  const trimmedDraft = ({ id, t0, t1 }: TrimChange) => {
+    const item = items.find((candidate) => candidate.id === id)
+    return draft === undefined || item === undefined ? undefined : trimItem(draft, item, { t0, t1 })
+  }
+
+  /** 修剪草稿里的一块（拖把手松手、按方向键）：后面的块跟着移，舞台与播放头跟到被拖的那一端。 */
+  const trim = (trimChange: TrimChange) => {
+    const next = trimmedDraft(trimChange)
+    if (busy || source === undefined || next === undefined) return
+    change(next)
+    const now = draftItemsOf(source, next).find((candidate) => candidate.id === trimChange.id)
+    if (now === undefined) return
+    setSeekRequest(
+      trimChange.edge === 'end' ? { clock: now.at + now.d, boundary: 'end' } : { clock: now.at },
+    )
+  }
+
+  /**
+   * 按着修剪把手：舞台按拖动中的样子停在被拖的那一端（原片选区换到原片预览），草稿与选区不动；松手、取消时
+   * 回到按提交的样子放。
+   */
+  const followTrim = (next: TrimPreview | undefined) => {
+    if (busy && next !== undefined) return
+    setTrimPreview(next)
+    if (next?.kind === 'run') showSource(next.seek)
+    else if (next !== undefined) setSeekRequest(next.seek)
+  }
+
+  /** 拿掉草稿里的一块 = 关掉它的眼睛。 */
+  const removeItem = (id: string) => {
+    const item = items.find((candidate) => candidate.id === id)
+    if (item === undefined) return
+    if (item.kind === 'shot') toggleShot(item.no)
+    else togglePart(item.edit.id, item.seg)
   }
 
   const chooseView = (next: View) => {
     if (next === view) return
     setView(next)
     setSelection(undefined)
-    setFailedCompositeId(undefined)
-    if (next === 'whole') setViewedId(undefined)
+    setPreview('draft')
+    if (next === 'versions') setViewedId(undefined)
+  }
+
+  const { dismissed, dismiss } = useDismissedFailures(conversationId, root.id)
+  const notices = failureNoticesOf(failedEdits, failedCompositeOf(jobs, root.id), dismissed)
+
+  /** 点失败提醒：回到剪辑视图；编辑段的失败另把原片选区恢复成那次生成的实际起止、弹出生成卡。 */
+  const openFailure = ({ edit }: Notice) => {
+    if (busy) return
+    chooseView('clips')
+    if (edit === undefined) {
+      setSelection(undefined)
+      showDraft()
+      return
+    }
+    selectRun({ start: edit.start, end: edit.end })
   }
 
   const collapseCard = () => setCardOpen(false)
+
+  /** 点生成卡的 ✕ 或按 Escape：卡收成胶囊、选区留着，舞台回到草稿预览。 */
+  const closeCard = () => {
+    collapseCard()
+    showDraft()
+  }
 
   const generate = async (input: ComposerSubmission) => {
     if (busy || !canGenerate || range === undefined || chosen === undefined) return
@@ -473,10 +662,10 @@ function Editor({
         conversationId,
         taskId: root.taskId,
         baseJobId: root.id,
-        segments,
+        segments: composeSegmentsOf(pieces),
       })
       seedJob(job)
-      toast.success('已提交合成，完成后整条将切换到新版本')
+      toast.success('已提交合成，完成后切到版本视图查看')
     } catch (error) {
       toast.error(errorMessageOf(error, '合成任务提交失败'))
     } finally {
@@ -484,26 +673,42 @@ function Editor({
     }
   }
 
-  // 整条看的那一版
+  // 版本视图：每一版读自己的关键帧，看的那一版放在舞台上
   const rootVersion: ChainVersion = { jobId: root.id, label: ORIGINAL_LABEL, mediaUrl }
+  const listed = versions.length === 0 ? [rootVersion] : versions
   const viewed =
-    versions.find((version) => version.jobId === viewedId) ?? versions.at(-1) ?? rootVersion
-  const viewedKeyframes = useKeyframes(view === 'whole' ? viewed.mediaUrl : undefined)
-  const viewedShots = useMemo(
-    () => (viewedKeyframes.data === undefined ? undefined : shotsOf(viewedKeyframes.data)),
-    [viewedKeyframes.data],
-  )
-  const viewedDuration = viewedKeyframes.data?.duration
-  const strip = wholeStripEntries(root, versions, jobs)
-  const failedComposite =
-    view === 'whole' ? jobs.find((job) => job.id === failedCompositeId) : undefined
+    listed.find((version) => version.jobId === viewedId) ?? listed.at(-1) ?? rootVersion
+  const versionKeyframes = useQueries({
+    queries: (clipsView ? [] : listed).map((version) => keyframeQuery(version.mediaUrl)),
+  })
+  const versionRows = listed.map((version, at): VersionRow => {
+    const index = versionKeyframes[at]?.data
+    return {
+      ...version,
+      original: version.jobId === root.id,
+      shots: index === undefined ? undefined : shotsOf(index),
+      duration: index?.duration,
+    }
+  })
+  const viewedKeyframes = versionKeyframes[listed.indexOf(viewed)]
+  const viewedDuration = viewedKeyframes?.data?.duration
+  const composingLength = (
+    composing === undefined ? undefined : compositeSegmentsOf(composing, lengthOf)
+  )?.reduce((sum, { start, end }) => sum + end - start, 0)
 
   const wholePlay =
     viewedDuration === undefined
       ? undefined
       : layoutPlay([{ mediaUrl: viewed.mediaUrl, start: 0, end: viewedDuration }])
-  const current = clipsView ? (shots === undefined ? undefined : pieces) : wholePlay
-  const total = clipsView ? (pieces.at(-1)?.at ?? 0) + (pieces.at(-1)?.duration ?? 0) : 0
+  // 剪辑视图的舞台：原片预览放整条原片；草稿预览按草稿播放，每块是它来源用到的那一段。
+  const current = clipsView
+    ? shots === undefined
+      ? undefined
+      : sourcePreview
+        ? layoutPlay([{ mediaUrl, start: 0, end: duration }])
+        : layoutPlay(outputOf(staged))
+    : wholePlay
+  const total = clipsView ? totalOf(items) : 0
   const lengthDifference = total - duration
 
   const audioUrls = useStableValue(
@@ -516,7 +721,7 @@ function Editor({
               : [],
           ),
         ]
-      : [viewed.mediaUrl],
+      : listed.map((version) => version.mediaUrl),
   )
   const peaks = useAudioPeaks(audioUrls)
   useFailureToasts(
@@ -550,82 +755,97 @@ function Editor({
   )
 
   const barEnd = clipsView ? (
-    <>
-      <span aria-hidden="true" className="editor-bar-divider" />
-      <Button
-        className="video-editor-compose"
-        disabled={!composable}
-        leadingIcon="video"
-        loading={submission === 'compose'}
-        onClick={() => void compose()}
-        size="md"
-      >
-        {composing === undefined ? '合成新版本' : '正在合成'}
-      </Button>
-    </>
+    <Button
+      className="video-editor-compose"
+      disabled={!composable}
+      leadingIcon="video"
+      loading={submission === 'compose'}
+      onClick={() => void compose()}
+      size="md"
+    >
+      {composing === undefined ? '合成新版本' : '正在合成'}
+    </Button>
   ) : (
     <Button
-      className="editor-bar-button"
+      className="video-editor-compose"
       leadingIcon="download"
       loading={downloading}
       onClick={() => void download(viewed.mediaUrl, '生成的视频')}
       size="md"
-      variant="ghost"
+      variant="inverted"
     >
       下载
     </Button>
   )
 
+  // 版本视图只在看的那一版读不出关键帧时报错；别的版本读不出只是那一行空着。
   const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
   const peaksOf = (url: string) => peaks.get(url) ?? LOADING_PEAKS
-  const timeline = timelineKeyframes.isError ? (
-    <p className="editor-timeline-loading" role="alert">
-      {errorMessageOf(timelineKeyframes.error, '该视频的关键帧读取失败')}
-      <Button onClick={() => void timelineKeyframes.refetch()} size="md" variant="ghost">
-        重试
-      </Button>
-    </p>
-  ) : clipsView && shots !== undefined ? (
-    <ClipsTimeline
-      anchor={anchorOfClock(pieces, currentTime)}
-      blocks={blocks}
-      duration={duration}
-      onClickBlock={clickBlock}
-      onScrub={collapseCard}
-      onSeek={(anchor) => previewRef.current?.previewAt(clockOfAnchor(pieces, anchor))}
-      onSelectUnits={selectUnits}
-      peaksOf={peaksOf}
-      rootUrl={mediaUrl}
-      selection={selection}
-      selectionBoxRef={selectionBoxRef}
-      shots={shots}
-      units={units}
-    />
-  ) : !clipsView && viewedShots !== undefined && viewedDuration !== undefined ? (
-    <WholeTimeline
-      currentTime={currentTime}
-      duration={viewedDuration}
-      label={viewed.label}
-      mediaUrl={viewed.mediaUrl}
-      onScrub={() => {}}
-      onSeek={(clock) => previewRef.current?.previewAt(clock)}
-      peaksOf={peaksOf}
-      shots={viewedShots}
-    />
-  ) : (
-    <p className="editor-timeline-loading" role="status">
-      正在读取分段…
-    </p>
-  )
+  const timeline =
+    timelineKeyframes?.isError === true ? (
+      <p className="editor-timeline-loading" role="alert">
+        {errorMessageOf(timelineKeyframes.error, '该视频的关键帧读取失败')}
+        <Button onClick={() => void timelineKeyframes.refetch()} size="md" variant="ghost">
+          重试
+        </Button>
+      </p>
+    ) : clipsView && source !== undefined && draft !== undefined ? (
+      <ClipsTimeline
+        blocks={blocks}
+        clock={currentTime}
+        duration={duration}
+        isPicked={(editId, seg) => isPicked(draft, editId, seg)}
+        clockOn={sourcePreview ? 'source' : 'draft'}
+        items={items}
+        onClickPart={clickPart}
+        onScrub={collapseCard}
+        onSeek={seekDraft}
+        onSelectDraft={(id) => selectDraft(id)}
+        onSelectRun={selectRun}
+        onSelectRunning={selectRunning}
+        onToggleShot={toggleShot}
+        onTogglePart={(editId, seg) => void togglePart(editId, seg)}
+        onTrim={trim}
+        onTrimPreview={followTrim}
+        onTrimRun={trimRun}
+        peaksOf={peaksOf}
+        previewPick={(editId, seg) => previewPick(source, draft, editId, seg)}
+        previewTrim={(trimChange) => draftItemsOf(source, trimmedDraft(trimChange) ?? draft)}
+        rootUrl={mediaUrl}
+        selection={selection}
+        selectionBoxRef={selectionBoxRef}
+        shotOn={(no) => shotOn(source, draft, no)}
+        shots={source.shots}
+      />
+    ) : !clipsView ? (
+      <VersionsTimeline
+        composing={composing === undefined ? undefined : { duration: composingLength }}
+        currentTime={currentTime}
+        onScrub={() => {}}
+        onSeek={(clock) => previewRef.current?.previewAt(clock)}
+        onSelect={setViewedId}
+        peaksOf={peaksOf}
+        versions={versionRows}
+        viewedId={viewed.jobId}
+      />
+    ) : (
+      <p className="editor-timeline-loading" role="status">
+        正在读取分段…
+      </p>
+    )
 
-  const frameOf = (unit: Unit | undefined, edge: 'start' | 'end', width = CARD_FRAME_WIDTH) => {
-    if (unit === undefined) return undefined
-    const segment = unitSegment(unit)
-    const at =
-      edge === 'start' ? segment.start : Math.max(segment.start, segment.end - LAST_FRAME_LEAD)
-    return videoSnapshotUrl(segment.mediaUrl, width, at)
-  }
-  const unitsCard =
+  // 生成卡的首帧、尾帧取选中的原片选区的起止，小卡取草稿块用到的开头：都按已提交的取，拖把手松手才换。
+  const frameOf = (edge: 'start' | 'end', width = CARD_FRAME_WIDTH) =>
+    chosenRun === undefined
+      ? undefined
+      : videoSnapshotUrl(
+          mediaUrl,
+          width,
+          edge === 'start'
+            ? chosenRun.start
+            : Math.max(chosenRun.start, chosenRun.end - LAST_FRAME_LEAD),
+        )
+  const generationCard =
     range === undefined || shotSpan === undefined ? null : (
       <AiEditCard
         alerts={
@@ -646,11 +866,15 @@ function Editor({
         }
         anchorRef={selectionBoxRef}
         attachmentPreview={attachmentPreview}
+        avoidLeft={promptsPanel === null ? undefined : () => promptsPanelLeft(promptsPanel)}
         canGenerate={canGenerate && !busy}
         detail={
           blockReason ??
-          `原片 ${secondsText(range.start)} – ${secondsText(range.end)} 秒 · ${mode === 'image' ? '根据引用图片生成新版本' : '视频和原声一起重做'}`
+          (lastFailure === undefined
+            ? `原片 ${secondsText(range.start)} – ${secondsText(range.end)} 秒 · ${mode === 'image' ? '根据引用图片生成新版本' : '视频和原声一起重做'}`
+            : `上次生成失败：${failureMessageOf(lastFailure.job)}`)
         }
+        detailFailed={blockReason === undefined && lastFailure !== undefined}
         draft={request}
         durationControl={
           mode === 'image' && chosen !== undefined ? (
@@ -663,8 +887,8 @@ function Editor({
             />
           ) : null
         }
-        firstFrameReferenceUrl={frameOf(firstUnit, 'start', REFERENCE_FRAME_WIDTH)}
-        frames={{ first: frameOf(firstUnit, 'start'), last: frameOf(lastUnit, 'end') }}
+        firstFrameReferenceUrl={frameOf('start', REFERENCE_FRAME_WIDTH)}
+        frames={{ first: frameOf('start'), last: frameOf('end') }}
         generating={submission === 'edit'}
         generationBlockOf={generationBlockOf}
         mode={mode}
@@ -683,7 +907,7 @@ function Editor({
             value={chosen?.model.id ?? ''}
           />
         }
-        onCollapse={collapseCard}
+        onCollapse={closeCard}
         onDraftChange={(parts) => {
           setRequest(parts)
           setGenerateError(null)
@@ -703,34 +927,42 @@ function Editor({
         referenceLimit={chosen?.model.maxReferenceImages}
       />
     )
-  const blockCard =
-    selectedBlock === undefined ? null : (
-      <EditBlockCard
+  // 原片预览时舞台左上角注明放的是原片的哪几个镜头，同成片页预览素材。
+  const stageLabel =
+    sourcePreview && range !== undefined && shotSpan !== undefined ? (
+      <StageLabel label={`原片 · ${spanName(shotSpan)}`} range={range} time={currentTime} />
+    ) : null
+  const selectedEdit =
+    selectedItem?.kind === 'edit'
+      ? blocks.find((block) => block.id === selectedItem.edit.id)
+      : undefined
+  const smallCard =
+    selectedItem !== undefined ? (
+      <SelectionCard
         anchorRef={selectionBoxRef}
-        block={selectedBlock}
-        key={selectedBlock.id}
+        frame={videoSnapshotUrl(selectedItem.mediaUrl, CARD_FRAME_WIDTH, selectedItem.t0)}
+        key={selectedItem.id}
+        // 拖把手时写拖动中的长度，同把手的读数
+        line={draftLineOf(staged.find((item) => item.id === selectedItem.id) ?? selectedItem)}
         onClose={() => setSelection(undefined)}
-        onUseOriginal={() => restoreOriginal(selectedBlock.id)}
-        picked={picked.some((block) => block.id === selectedBlock.id)}
+        title={
+          selectedItem.kind === 'shot'
+            ? `镜头 ${selectedItem.no}`
+            : selectedEdit === undefined
+              ? '编辑片段'
+              : editTitleOf(selectedEdit)
+        }
       />
-    )
-
-  const stageFailure =
-    failedComposite !== undefined ? (
-      <StageFailure
-        key={failedComposite.id}
-        message={failedComposite.errorMessage?.trim()}
-        title="合成失败"
+    ) : runningBlock !== undefined ? (
+      <SelectionCard
+        anchorRef={selectionBoxRef}
+        frame={undefined}
+        key={runningBlock.id}
+        line="完成后显示在编辑轨"
+        onClose={() => setSelection(undefined)}
+        title={`${spanName(runningBlock)} · 正在生成`}
       />
-    ) : selectedBlock?.state.kind === 'failed' ? (
-      <StageFailure
-        key={selectedBlock.id}
-        message={selectedBlock.state.message.trim()}
-        title="生成失败"
-      />
-    ) : selectedBlock?.state.kind === 'unreadable' ? (
-      <StageFailure key={selectedBlock.id} message="结果时长读取失败" title="生成失败" />
-    ) : undefined
+    ) : null
 
   return (
     <DialogRoot
@@ -745,16 +977,27 @@ function Editor({
         aria-describedby={undefined}
         className="editor-dialog video-editor-dialog"
         onEscapeKeyDown={(event) => {
-          if (unitsCard !== null && cardOpen) {
+          if (generationCard !== null && cardOpen) {
             event.preventDefault()
-            collapseCard()
-          } else if (blockCard !== null) {
+            closeCard()
+          } else if (smallCard !== null) {
             event.preventDefault()
             setSelection(undefined)
           }
         }}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={(event) => {
+          // 选中草稿里一块时 Delete / Backspace 等于关掉它的眼睛
+          if (
+            (event.key === 'Delete' || event.key === 'Backspace') &&
+            selectedItem !== undefined &&
+            !event.defaultPrevented &&
+            isShortcutTarget(event)
+          ) {
+            event.preventDefault()
+            removeItem(selectedItem.id)
+            return
+          }
           // 空格播放、暂停；焦点在按钮上时也不触发按钮
           if (
             event.key !== ' ' ||
@@ -769,14 +1012,6 @@ function Editor({
         }}
       >
         <DialogHeader
-          actions={
-            <ShotPrompts
-              canAppend={unitsCard !== null && !busy}
-              onAppend={(text) => cardRef.current?.appendText(text)}
-              root={root}
-              shotIndex={shotIndex}
-            />
-          }
           className="editor-header border-0"
           closeLabel="关闭视频编辑"
           title={
@@ -789,53 +1024,67 @@ function Editor({
               )}
             </span>
           }
-        >
-          <div aria-label="查看方式" className="video-editor-view-switch" role="group">
-            {(['whole', 'clips'] as const).map((option) => (
-              <button
-                aria-pressed={view === option}
-                disabled={busy}
-                key={option}
-                onClick={() => chooseView(option)}
-                type="button"
-              >
-                {option === 'whole' ? '整条' : '片段'}
-              </button>
-            ))}
-          </div>
-        </DialogHeader>
+        />
         <div aria-label="视频编辑器" className="editor-workspace">
           <EditorPreview
+            aspectRatio={videoSize === undefined ? undefined : videoSize.width / videoSize.height}
             backdrop={posterOf(mediaUrl)}
             barEnd={barEnd}
-            contentKey={clipsView ? 'clips' : `whole:${viewed.jobId}`}
+            barNotice={
+              notices.length === 0 ? null : (
+                <FailureNotice
+                  notices={notices}
+                  onDismiss={(notice) => dismiss(notice.id)}
+                  onOpen={openFailure}
+                />
+              )
+            }
+            barStart={
+              <div aria-label="查看方式" className="video-editor-view-switch" role="group">
+                {(['versions', 'clips'] as const).map((option) => (
+                  <button
+                    aria-pressed={view === option}
+                    disabled={busy}
+                    key={option}
+                    onClick={() => chooseView(option)}
+                    type="button"
+                  >
+                    {option === 'versions' ? '版本' : '剪辑'}
+                  </button>
+                ))}
+              </div>
+            }
+            barTools={
+              <ShotPrompts
+                canAppend={generationCard !== null && !busy}
+                onAppend={(text) => cardRef.current?.appendText(text)}
+                panelRef={setPromptsPanel}
+                root={root}
+                shotIndex={shotIndex}
+              />
+            }
+            contentKey={
+              clipsView ? (sourcePreview ? 'source' : 'clips') : `version:${viewed.jobId}`
+            }
             current={current}
             currentTime={currentTime}
+            shownTime={trimPreview?.shown}
+            // 拖草稿块的把手时舞台放的是拖动中的草稿，总长仍按草稿本身写，同「共 X 秒」
+            shownDuration={trimPreview?.kind === 'draft' ? total : undefined}
             onPlay={collapseCard}
             onTime={setCurrentTime}
-            overlay={clipsView ? (unitsCard ?? blockCard) : null}
-            picture={stageFailure}
+            overlay={
+              clipsView ? (
+                <>
+                  {stageLabel}
+                  {generationCard ?? smallCard}
+                </>
+              ) : null
+            }
             poster={posterOf(current?.[0]?.mediaUrl ?? mediaUrl)}
             readout={readout}
             ref={previewRef}
             timeline={timeline}
-            versions={
-              clipsView ? null : (
-                <EditorVersionStrip
-                  entries={strip}
-                  onSelect={(key) => {
-                    if (jobs.some((job) => job.id === key && job.status !== 'completed')) {
-                      setFailedCompositeId(key)
-                      return
-                    }
-                    setFailedCompositeId(undefined)
-                    setViewedId(key)
-                  }}
-                  selectedKey={failedComposite?.id ?? viewed.jobId}
-                  title="整条"
-                />
-              )
-            }
           />
         </div>
       </DialogSurface>

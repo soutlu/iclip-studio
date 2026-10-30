@@ -1,9 +1,16 @@
+/* 工具条上的平铺文字按钮，高度同工具条的图标按钮。 */
 .video-editor-prompts > button {
-  padding: 0 16px;
-  border-radius: var(--radius-sm);
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-variant);
   font-size: var(--text-label);
-  background: var(--color-top-layer);
-  box-shadow: 0 0 0 0.5px var(--color-hairline);
+  line-height: var(--text-label--line-height);
+}
+
+.video-editor-prompts > button > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .video-editor-prompts-panel {

@@ -45,21 +45,24 @@
   cursor: default;
 }
 
+/* 画面行、原声行各铺满所在的那一行。画面格按素材时间摆（left、width 是百分比，见 Frames），两端被裁掉。 */
 .timeline-frames {
+  position: relative;
   display: flex;
   min-width: 0;
   height: 100%;
-  flex-basis: 0;
+  flex: 1 1 0;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   color: var(--color-on-surface-faint);
 }
 
 .timeline-frames img,
 .timeline-frame-empty {
-  min-width: 0;
+  position: absolute;
+  top: 0;
   height: 100%;
-  flex: 1 1 0;
   object-fit: cover;
 }
 
@@ -70,7 +73,7 @@
   display: flex;
   min-width: 0;
   height: 100%;
-  flex-basis: 0;
+  flex: 1 1 0;
   align-items: center;
   justify-content: center;
 }
@@ -157,6 +160,58 @@
 
 .timeline-handle:is(:focus-visible, :active, .is-pressed)::after {
   background: var(--color-surface-container-lowest);
+}
+
+/* 调暗：盖一层面板色，等于把块调淡。编辑视频关着的原片镜头、没选用的编辑段整块盖（.timeline-dimmed 的
+   ::before，位置与层级由编辑器给）；两个编辑器修剪拖动中要剪掉的那段（.timeline-trim-cut）只盖那一段。 */
+.timeline-dimmed::before,
+.timeline-trim-cut {
+  background: color-mix(in srgb, var(--color-surface-container-low) 62%, transparent);
+  pointer-events: none;
+}
+
+/* 拖到边界停住时把手旁的说明（成片总长上限、这段的开头结尾、最短）：两个编辑器共用，压在标尺上、以把手为中心；
+   把手贴近时间线可视范围两端时收回来。横向位置由编辑器给。 */
+.timeline-limit-bubble {
+  position: absolute;
+  top: -2px;
+  z-index: var(--z-local-3);
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-limit-bubble.is-start {
+  translate: 0 0;
+}
+
+.timeline-limit-bubble.is-end {
+  translate: -100% 0;
+}
+
+/* 轨道上的开关（成片的字幕开关、编辑视频的小眼睛）：开着是按下态，浅墨底、深色图标；关着无底、灰色；
+   悬停图标变深。键盘焦点也用浅墨底表示，不加外框，保持紧凑轨道的尺寸。 */
+.timeline-toggle {
+  color: var(--color-on-surface-muted);
+}
+
+.timeline-toggle:hover {
+  color: var(--color-on-surface);
+}
+
+.timeline-toggle:is([aria-pressed='true'], :focus-visible) {
+  outline: none;
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
 }
 
 .timeline-time-preview {
@@ -261,4 +316,147 @@
 .timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
   ~ .timeline-playhead::after {
   background: var(--color-surface-container-lowest);
+}
+
+/* 拖到时间线上的缩影、完整时长占位与落点提示（timeline-insertion.tsx）；位置由同一动效驱动接管。 */
+.timeline-insertion-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-popup);
+  display: flex;
+  width: 158px;
+  height: 52px;
+  align-items: center;
+  gap: 9px;
+  overflow: hidden;
+  padding: 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.timeline-insertion-ghost.is-blocked {
+  filter: grayscale(0.6);
+}
+
+.timeline-insertion-thumb {
+  display: flex;
+  width: 54px;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+}
+
+.timeline-insertion-thumb > *,
+.timeline-insertion-thumb img {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  object-fit: cover;
+}
+
+.timeline-insertion-details {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+}
+
+.timeline-insertion-details > span,
+.timeline-insertion-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-insertion-details small {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-insertion-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--z-local-3);
+  color: var(--color-primary);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.timeline-insertion-preview[hidden] {
+  display: none;
+}
+
+.timeline-insertion-surface {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface-container-lowest));
+}
+
+.timeline-insertion-surface::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: currentColor;
+}
+
+.timeline-insertion-preview .timeline-insertion-thumb {
+  width: 38px;
+  height: 70%;
+  opacity: 0.42;
+}
+
+.timeline-insertion-name {
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.timeline-insertion-preview.is-blocked {
+  color: var(--color-on-surface-muted);
+}
+
+.timeline-insertion-preview.is-blocked .timeline-insertion-surface {
+  background: var(--color-surface-container-high);
+}
+
+.timeline-insertion-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 8px;
+  display: block;
+  padding: 2px 9px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-1);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-insertion-tip.is-end {
+  right: 0;
+  left: auto;
 }

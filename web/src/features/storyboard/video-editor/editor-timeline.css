@@ -1,11 +1,15 @@
-/* 两条轨：原片轨（画面一行、原声一行）在上，编辑轨在下按行叠放；行数由 --edit-rows 给出。整条只有一条轨。 */
+/* 剪辑视图三条轨自上而下：草稿（画面 28 + 原声 16）、原片（画面 24 + 原声 16）、编辑（行高 36，块高 30 =
+   画面 14 + 原声 16，按行叠放，行数由 --edit-rows 给出），轨间 8。画面上不放文字，镜头号、开关都在原声行。
+   版本视图每个版本一行，见 .is-versions。 */
 .video-editor-timeline {
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
   --timeline-playhead-top: calc(var(--timeline-track-top) - 4px);
   --timeline-playhead-bottom: 0;
+  --draft-height: 44px;
+  --film-top: calc(var(--timeline-track-top) + var(--draft-height) + 8px);
   --film-height: 40px;
-  --edit-top: calc(var(--timeline-track-top) + var(--film-height) + 8px);
+  --edit-top: calc(var(--film-top) + var(--film-height) + 8px);
   --edit-row: 36px;
   --edit-block: 30px;
   --timeline-height: calc(var(--edit-top) + var(--edit-rows, 1) * var(--edit-row) + 2px);
@@ -15,10 +19,6 @@
   min-width: 0;
   margin-top: 6px;
   color: var(--color-on-surface);
-}
-
-.video-editor-timeline.is-whole {
-  --timeline-height: calc(var(--timeline-track-top) + var(--film-height) + 4px);
 }
 
 .video-editor-timeline-heads {
@@ -40,8 +40,13 @@
   white-space: nowrap;
 }
 
-.video-editor-timeline-head.is-film {
+.video-editor-timeline-head.is-draft {
   top: var(--timeline-track-top);
+  height: var(--draft-height);
+}
+
+.video-editor-timeline-head.is-film {
+  top: var(--film-top);
   height: var(--film-height);
 }
 
@@ -50,10 +55,9 @@
   height: calc(var(--edit-rows, 1) * var(--edit-row) + 2px);
 }
 
-/* 两条轨之间的分割线，从轨头贯通到右边。 */
+/* 轨与轨之间的分割线，从轨头贯通到右边。 */
 .video-editor-timeline-divider {
   position: absolute;
-  top: calc(var(--edit-top) - 4px);
   right: 0;
   left: 0;
   height: 1px;
@@ -61,20 +65,37 @@
   pointer-events: none;
 }
 
+.video-editor-timeline-divider.is-film {
+  top: calc(var(--film-top) - 4px);
+}
+
+.video-editor-timeline-divider.is-edit {
+  top: calc(var(--edit-top) - 4px);
+}
+
+/* 草稿比原片长时标尺、三条轨与播放头在这里一起横向滚动，轨头列不动。高度固定（底下 12px 留给滚动条），
+   出现、消失滚动条时面板高度不变；两侧的内边距用负外边距抵掉，播放头圆头、把手在两端不被裁掉。
+   它是尺寸容器：轨道区按它的可视宽算每秒像素（见 .video-editor-timeline-lanes）。 */
 .video-editor-timeline-scroll {
   min-width: 0;
+  height: calc(var(--timeline-height) + 22px);
   flex: 1;
-  margin: -10px -8px -6px;
-  padding: 10px 8px 6px;
+  margin: -10px -8px -12px;
+  padding: 10px 8px 12px;
+  container-type: inline-size;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
 
-/* 不让选文字：Shift 点镜头会把文本选区扩进来。 */
+/* 每秒像素只由原片定：可视宽（窄屏至少 520px）正好放下原片，--duration 是原片时长、--content 是轨道区铺的秒数。
+   原片轨、编辑轨的位置因此不随草稿变。不让选文字：Shift 点镜头会把文本选区扩进来。 */
 .video-editor-timeline-lanes {
+  --pps: calc(max(100cqw, 520px) / var(--duration));
+
   position: relative;
-  min-width: 520px;
+  width: calc(var(--content) * var(--pps));
   height: var(--timeline-height);
   isolation: isolate;
   user-select: none;
@@ -100,22 +121,65 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface-container-high);
   cursor: pointer;
-  transition: opacity var(--dur-m) var(--ease);
+}
+
+/* 剪辑视图里的块、占位、描边与修剪把手都按 --at 起、长 --len 秒摆，两边各让 1px。 */
+.video-editor-timeline-lanes
+  :is(
+    .video-editor-timeline-block,
+    .video-editor-timeline-slot,
+    .video-editor-timeline-box,
+    .video-editor-timeline-link,
+    .video-editor-timeline-trim,
+    .video-editor-timeline-cut
+  ) {
+  left: calc(var(--at) * var(--pps) + 1px);
+  width: calc(var(--len) * var(--pps) - 2px);
+}
+
+.video-editor-timeline-block.is-draft {
+  top: var(--timeline-track-top);
+  height: var(--draft-height);
+}
+
+/* 拖修剪把手时被拖的那块（已提交与修剪后合起来画成一整块）：盖在相邻的块上。 */
+.video-editor-timeline-block.is-trimming {
+  z-index: var(--z-local-2);
+}
+
+/* 拖草稿块修剪把手时要剪掉的那段（样子见 timeline.css）：在被拖的块上层，选中描边与把手之下。 */
+.video-editor-timeline-cut {
+  position: absolute;
+  top: var(--timeline-track-top);
+  z-index: var(--z-local-2);
+  height: var(--draft-height);
+  border-radius: var(--radius-sm);
 }
 
 .video-editor-timeline-block.is-film {
-  top: var(--timeline-track-top);
+  top: var(--film-top);
   height: var(--film-height);
-}
-
-.video-editor-timeline-block.is-static {
-  cursor: default;
 }
 
 .video-editor-timeline-block.is-edit {
   top: calc(var(--edit-top) + 4px + var(--row, 0) * var(--edit-row));
   height: var(--edit-block);
   border-radius: var(--radius-xs);
+}
+
+/* 块上点选的那一层：画面行加原声行，铺满整块。 */
+.video-editor-timeline-face {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  cursor: pointer;
 }
 
 .video-editor-timeline-frames {
@@ -125,8 +189,16 @@
   overflow: hidden;
 }
 
+.video-editor-timeline-block.is-draft .video-editor-timeline-frames {
+  height: 28px;
+}
+
+.video-editor-timeline-block.is-film .video-editor-timeline-frames {
+  height: 24px;
+}
+
 .video-editor-timeline-block.is-edit .video-editor-timeline-frames {
-  height: 18px;
+  height: 14px;
 }
 
 .video-editor-timeline-wave {
@@ -138,18 +210,96 @@
   background: var(--color-surface-container);
 }
 
+/* 剪辑视图的原声行按自己的宽决定放不放得下说明（见下）。 */
+.video-editor-timeline-lanes .video-editor-timeline-wave {
+  container: video-editor-wave / inline-size;
+}
+
 /* 编辑片段只有 30px 高，原声行放不下「无声」这类说明，空着即可。 */
 .video-editor-timeline-block.is-edit .timeline-wave-note {
   display: none;
 }
 
-/* 被替换的镜头与没选用的编辑片段调淡。 */
-.video-editor-timeline-block.is-off {
-  opacity: var(--state-disabled-content);
+/* 原声行左端是镜头号（或 wand 图标）、原片轨右端是开关，居中的「无声」在窄块上会压到它们：放不下就不写。 */
+@container video-editor-wave (width < 80px) {
+  .timeline-wave-note {
+    display: none;
+  }
 }
 
-.video-editor-timeline-block.is-off:hover {
-  opacity: 0.62;
+/* 镜头号（编辑段是 wand 图标）放在原声行最左边，不压在画面上。 */
+.video-editor-timeline-no {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  height: 16px;
+  align-items: center;
+  padding: 0 3px 0 5px;
+  background: var(--color-surface-container);
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* 关着的原片镜头、没选用的编辑段：整块盖一层调暗层（颜色见 timeline.css 的 .timeline-dimmed）；开关在这层之上，
+   不跟着调淡。 */
+.video-editor-timeline-block.is-off::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-1);
+  transition: background-color var(--dur-m) var(--ease);
+}
+
+.video-editor-timeline-block.is-edit.is-off:hover::before {
+  background: color-mix(in srgb, var(--color-surface-container-low) 38%, transparent);
+}
+
+/* 小眼睛在原声行右端，盖住那一截波形；按下态的浅墨底只画在图标下面（见 .timeline-toggle）。 */
+.video-editor-timeline-eye {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-local-2);
+  display: grid;
+  width: 20px;
+  height: 16px;
+  place-items: center;
+  background: var(--color-surface-container);
+}
+
+/* 调淡层下的开关：底色取原声行调淡后的颜色，和周围一致。 */
+.video-editor-timeline-block.is-off .video-editor-timeline-eye {
+  background: color-mix(
+    in srgb,
+    var(--color-surface-container-low) 62%,
+    var(--color-surface-container)
+  );
+}
+
+.video-editor-timeline-block.is-edit.is-off:hover .video-editor-timeline-eye {
+  background: color-mix(
+    in srgb,
+    var(--color-surface-container-low) 38%,
+    var(--color-surface-container)
+  );
+}
+
+.video-editor-timeline-eye > button {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease);
 }
 
 .video-editor-timeline-block.is-running {
@@ -163,33 +313,14 @@
   animation: video-editor-shimmer 1.6s linear infinite;
 }
 
+.video-editor-timeline-block.is-failed {
+  cursor: default;
+}
+
 @keyframes video-editor-shimmer {
   to {
     background-position: -200% 0;
   }
-}
-
-.video-editor-timeline-chip {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  max-width: calc(100% - 6px);
-  overflow: hidden;
-  padding: 0 4px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-inverse-surface) 82%, transparent);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.video-editor-timeline-block.is-edit .video-editor-timeline-chip {
-  top: 1px;
-  left: 2px;
 }
 
 .video-editor-timeline-status {
@@ -236,7 +367,7 @@
   color: var(--color-on-surface-variant);
 }
 
-/* 选区外框，也是弹出卡的定位锚点。 */
+/* 选中描边，也是弹出卡的定位锚点；全页只有一个。 */
 .video-editor-timeline-box {
   position: absolute;
   z-index: var(--z-local-2);
@@ -245,8 +376,13 @@
   pointer-events: none;
 }
 
-.video-editor-timeline-box.is-film {
+.video-editor-timeline-box.is-draft {
   top: var(--timeline-track-top);
+  height: var(--draft-height);
+}
+
+.video-editor-timeline-box.is-film {
+  top: var(--film-top);
   height: var(--film-height);
 }
 
@@ -254,6 +390,214 @@
   top: calc(var(--edit-top) + 4px + var(--row, 0) * var(--edit-row));
   height: var(--edit-block);
   border-radius: var(--radius-xs);
+}
+
+/* 关联描边：草稿块与它的来源之间的对应关系，比选中描边细、颜色浅。草稿这一端画在块自己身上。 */
+.video-editor-timeline-link,
+.video-editor-timeline-block[data-linked]::after {
+  box-shadow: inset 0 0 0 1px var(--color-outline);
+  pointer-events: none;
+}
+
+.video-editor-timeline-block[data-linked]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-2);
+  border-radius: inherit;
+}
+
+.video-editor-timeline-link {
+  position: absolute;
+  z-index: var(--z-local-2);
+  border-radius: var(--radius-sm);
+}
+
+.video-editor-timeline-link.is-film {
+  top: var(--film-top);
+  height: var(--film-height);
+}
+
+.video-editor-timeline-link.is-edit {
+  top: calc(var(--edit-top) + 4px + var(--row, 0) * var(--edit-row));
+  height: var(--edit-block);
+  border-radius: var(--radius-xs);
+}
+
+/* 连线：草稿里的编辑段（底边中点）↔ 编辑轨上的那一段（顶边中点），可以越过原片轨；端点各一个 4px 圆点。
+   路径与端点由脚本按两端此刻的位置画（重排动画中每帧重画）。 */
+.video-editor-timeline-connector {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-2);
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: var(--color-outline);
+  pointer-events: none;
+}
+
+.video-editor-timeline-connector path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.video-editor-timeline-connector circle {
+  fill: currentColor;
+}
+
+/* 开关后自动出现的那一对：停留之后淡出；拿掉的那一块随收起一起淡出。 */
+.video-editor-timeline-connector.is-fading,
+.video-editor-timeline-link.is-fading,
+.video-editor-timeline-block:is([data-linked='fading'], [data-linked='out'])::after {
+  animation: video-editor-fade-out var(--dur-s) var(--ease) forwards;
+}
+
+.video-editor-timeline-connector.is-out,
+.video-editor-timeline-link.is-out,
+.video-editor-timeline-block[data-linked='out']::after {
+  animation-duration: var(--dur-m);
+}
+
+@keyframes video-editor-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* 拿掉的块在原地收起，收起中不能点、不算悬停。 */
+.video-editor-timeline-block.is-leaving {
+  pointer-events: none;
+}
+
+/* 草稿那一条：拖放时量指针在不在草稿上，编辑段的落点占位也摆在这里面。 */
+.video-editor-timeline-drop {
+  position: absolute;
+  top: var(--timeline-track-top);
+  right: 0;
+  left: 0;
+  z-index: var(--z-local-3);
+  height: var(--draft-height);
+  pointer-events: none;
+}
+
+/* 草稿里选中那块、原片轨上选区两端的修剪把手，竖直居中在所在轨的画面行（草稿 28，原片 24）。 */
+/* 自己就在把手那一层：松手滑动时它成了层叠上下文，把手也不会落到选中块下面。 */
+.video-editor-timeline-trim {
+  position: absolute;
+  z-index: var(--z-local-3);
+  pointer-events: none;
+}
+
+.video-editor-timeline-trim.is-draft {
+  --timeline-handle-top: 14px;
+
+  top: var(--timeline-track-top);
+  height: var(--draft-height);
+}
+
+.video-editor-timeline-trim.is-film {
+  --timeline-handle-top: 12px;
+
+  top: var(--film-top);
+  height: var(--film-height);
+}
+
+.video-editor-timeline-trim > .timeline-handle {
+  pointer-events: auto;
+}
+
+/* 版本视图：每行画面 32、原声 16，行间 8；超过 4 行时行区纵向滚动。标尺与播放头在滚动区顶上吸住，
+   播放头和悬停引导线往下伸到看得见的最后一行底边；和各行在同一个滚动区里，出现滚动条时宽度一起变。 */
+.video-editor-timeline.is-versions {
+  --version-row: 48px;
+  --version-gap: 8px;
+  --version-visible: calc(
+    min(var(--version-rows), 4) * (var(--version-row) + var(--version-gap)) - var(--version-gap)
+  );
+  --timeline-playhead-bottom: calc(-1 * var(--version-visible));
+
+  display: block;
+}
+
+.video-editor-versions-scroll {
+  max-height: calc(
+    var(--timeline-track-top) + 4 * (var(--version-row) + var(--version-gap)) - var(--version-gap) +
+      4px
+  );
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.video-editor-versions-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-local-3);
+  height: var(--timeline-track-top);
+  padding-left: var(--version-head-width, 76px);
+  background: var(--color-surface-container-low);
+}
+
+.video-editor-versions-ruler {
+  position: relative;
+  height: 100%;
+}
+
+.video-editor-versions-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--version-gap);
+  padding-bottom: 4px;
+}
+
+.video-editor-version-row {
+  display: flex;
+  width: 100%;
+  height: var(--version-row);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-editor-version-row:disabled {
+  cursor: default;
+}
+
+.video-editor-version-head {
+  display: flex;
+  width: var(--version-head-width, 76px);
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+
+.video-editor-version-lane {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+}
+
+.video-editor-version-lane > .video-editor-timeline-block,
+.video-editor-version-lane > .video-editor-timeline-box {
+  top: 0;
+  height: 100%;
+}
+
+.video-editor-version-lane .video-editor-timeline-frames {
+  height: 32px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -267,7 +611,12 @@
     width: 52px;
   }
 
-  .video-editor-timeline-head > svg {
+  .video-editor-timeline.is-versions {
+    --version-head-width: 52px;
+  }
+
+  .video-editor-timeline-head > svg,
+  .video-editor-version-head > svg {
     display: none;
   }
 }

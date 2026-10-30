@@ -1,5 +1,5 @@
 import { Popover } from 'radix-ui'
-import type { ComponentPropsWithoutRef } from 'react'
+import type { ComponentPropsWithRef } from 'react'
 import { cn } from '@/shared/lib/utils'
 
 export const PopupRoot = Popover.Root
@@ -12,7 +12,7 @@ export const POPUP_SURFACE_CLASS = [
   'data-[state=closed]:animate-out data-[state=closed]:duration-(--dur-s) data-[state=closed]:ease-(--ease-accel) data-[state=closed]:zoom-out-95 data-[state=closed]:fade-out data-[state=open]:animate-in data-[state=open]:duration-(--dur-m) data-[state=open]:ease-(--ease-decel) data-[state=open]:zoom-in-95 data-[state=open]:fade-in',
 ].join(' ')
 
-type PopupSurfaceProps = ComponentPropsWithoutRef<typeof Popover.Content> & {
+type PopupSurfaceProps = ComponentPropsWithRef<typeof Popover.Content> & {
   showArrow?: boolean
   /** 箭头填色须与 className 改过的表面底色一致。 */
   arrowClassName?: string

@@ -68,7 +68,7 @@ export function CaptionControls({
       <button
         aria-label={toggleLabel}
         aria-pressed={!hidden}
-        className={cn('wf-caption-toggle ui-state', hidden && 'text-on-surface-muted')}
+        className="wf-caption-toggle timeline-toggle ui-state"
         onClick={onToggleHidden}
         title={toggleLabel}
         type="button"

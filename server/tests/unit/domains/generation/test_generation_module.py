@@ -11,7 +11,7 @@ import httpx
 import pytest
 from procrastinate.testing import InMemoryConnector
 
-from iclip.domains.generation.models import STATUS_COMPLETED
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationOutput
 from iclip.domains.generation.module import (
     IMAGE_MODEL_SPECS,
     GenerationModule,
@@ -234,8 +234,9 @@ async def test_an_enhancement_runs_through_the_video_lane_to_both_addresses() ->
     take = make_job(
         video_request(resolution="720p"),
         status=STATUS_COMPLETED,
-        output_url="https://cdn.test/take.mp4",
-        watermark_output_url="https://cdn.test/take-wm.mp4",
+        output=GenerationOutput(
+            url="https://cdn.test/take.mp4", watermark_url="https://cdn.test/take-wm.mp4"
+        ),
     )
     repo = InMemoryGenerationRepository([take])
     module = build(
@@ -253,7 +254,7 @@ async def test_an_enhancement_runs_through_the_video_lane_to_both_addresses() ->
     await module.queue.run_poll(str(job.id))
 
     done = repo.jobs[job.id]
-    assert (done.status, done.output_url, done.watermark_output_url) == (
+    assert (done.status, done.output.url, done.output.watermark_url) == (
         STATUS_COMPLETED,
         "https://cdn.test/hd.mp4",
         "https://cdn.test/hd-wm.mp4",

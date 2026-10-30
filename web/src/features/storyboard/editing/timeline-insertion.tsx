@@ -9,6 +9,7 @@ import {
 import { createPortal } from 'react-dom'
 import { cn } from '@/shared/lib/utils'
 import type { MotionSnapshot, useInsertionMotion } from './use-insertion-motion'
+import './timeline.css'
 
 export type InsertionFace = { title: string; media: ReactNode; durationMs: number }
 export type InsertionBox = { left: number; top: number; width: number; height: number }
@@ -21,7 +22,7 @@ const ghostPosition = (x: number, y: number) => ({
   y: Math.max(8, Math.min(window.innerHeight - 60, y + 36)),
 })
 
-/** 三种来源共用的紧凑缩影；按住时坐标直接跟手，松手后才缓动到落点或来源。 */
+/** 拖到时间线上的东西共用的紧凑缩影；按住时坐标直接跟手，松手后才缓动到落点或来源。 */
 export function InsertionGhost({
   face,
   motion,
@@ -84,11 +85,11 @@ export function InsertionGhost({
   return createPortal(
     <div
       aria-hidden="true"
-      className={cn('wf-insertion-ghost', blocked && 'is-blocked')}
+      className={cn('timeline-insertion-ghost', blocked && 'is-blocked')}
       ref={localRef}
     >
-      <span className="wf-insertion-thumb">{face.media}</span>
-      <span className="wf-insertion-details">
+      <span className="timeline-insertion-thumb">{face.media}</span>
+      <span className="timeline-insertion-details">
         <span>{face.title}</span>
         <small>{(face.durationMs / 1000).toFixed(1)} 秒</small>
       </span>
@@ -107,7 +108,7 @@ export type InsertionPreviewPosition = {
   alignEnd: boolean
 }
 
-/** 占位长度等于完整时长，内部颜色表示可放置；画面轨与特效轨使用相同结构。 */
+/** 占位长度等于完整时长，内部颜色表示可放置；各条轨使用相同结构。 */
 export function InsertionPreview({
   face,
   position,
@@ -149,19 +150,19 @@ export function InsertionPreview({
   }, [motion, position])
   return (
     <div
-      className={cn('wf-insertion-preview', position?.blocked && 'is-blocked')}
+      className={cn('timeline-insertion-preview', position?.blocked && 'is-blocked')}
       data-testid="timeline-insertion-preview"
       hidden
       ref={localRef}
     >
-      <span aria-hidden="true" className="wf-insertion-surface">
-        <span className="wf-insertion-thumb">{face?.media}</span>
-        <span className="wf-insertion-name">
+      <span aria-hidden="true" className="timeline-insertion-surface">
+        <span className="timeline-insertion-thumb">{face?.media}</span>
+        <span className="timeline-insertion-name">
           {face?.title} · {((face?.durationMs ?? 0) / 1000).toFixed(1)} 秒
         </span>
       </span>
       {position === undefined ? null : (
-        <span className={cn('wf-insertion-tip', position.alignEnd && 'is-end')} role="status">
+        <span className={cn('timeline-insertion-tip', position.alignEnd && 'is-end')} role="status">
           {position.text}
         </span>
       )}

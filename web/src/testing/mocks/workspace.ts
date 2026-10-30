@@ -428,6 +428,19 @@ export const seedMockWorkspace = (
       status: 'completed',
       watermarkOutputUrl: VIDEO_URL,
     }),
+    // 上面那条出片较早的一次片段编辑失败了（镜头 5–6）：编辑器工具条上常驻失败提醒，编辑轨上不占位置。
+    job({
+      createdAt: '2026-09-01T11:20:00Z',
+      errorMessage: '模型超时，未生成视频',
+      id: '5c3a4182-1c30-4e41-9eab-2e3f4a5b6c7d',
+      prompt: '把背景换成傍晚的暖光',
+      rangeStartMs: 4000,
+      rangeEndMs: 6000,
+      rootJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+      shotIndex: 2,
+      sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+      status: 'failed',
+    }),
     // 只记了正文与分辨率：素材片卡按分镜画幅画，不显示模型。
     job({
       createdAt: '2026-09-01T11:40:00Z',

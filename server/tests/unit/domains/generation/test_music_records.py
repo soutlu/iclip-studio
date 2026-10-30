@@ -21,6 +21,7 @@ from iclip.domains.generation.models import (
     STATUS_FAILED,
     STATUS_PENDING,
     GenerationJob,
+    GenerationOutput,
 )
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.provider import ProviderError, ProviderSubmission
@@ -324,7 +325,7 @@ async def test_generated_music_completes_with_its_address_and_duration_and_nothi
     await world.queue.run_submit(str(music.id))
 
     stored = world.repo.jobs[music.id]
-    assert (stored.status, stored.output_url, stored.duration_ms) == (
+    assert (stored.status, stored.output.url, stored.output.duration_ms) == (
         STATUS_COMPLETED,
         MUSIC_URL,
         31_500,
@@ -348,7 +349,7 @@ async def test_a_failed_generation_is_recorded_and_never_resubmitted() -> None:
     await world.queue.run_submit(str(music.id))
 
     stored = world.repo.jobs[music.id]
-    assert (stored.status, stored.error_code, stored.output_url) == (
+    assert (stored.status, stored.error_code, stored.output.url) == (
         STATUS_FAILED,
         "OUTPUT_STORE_FAILED",
         None,
@@ -366,8 +367,7 @@ async def test_generated_music_reads_back_by_id_and_by_kind_and_conversation() -
         owner_user_id=me,
         conversation_id=conversation,
         status=STATUS_COMPLETED,
-        output_url=MUSIC_URL,
-        duration_ms=31_500,
+        output=GenerationOutput(url=MUSIC_URL, duration_ms=31_500),
         finished_at=datetime.now(UTC),
     )
     other = make_music(owner_user_id=me)

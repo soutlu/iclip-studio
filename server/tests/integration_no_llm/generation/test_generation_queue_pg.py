@@ -165,7 +165,7 @@ async def test_a_synchronous_generation_runs_end_to_end(
     await wait_for_status(repo, job.id, STATUS_COMPLETED)
 
     stored = await repo.get(job.id, owner=None)
-    assert stored.output_url == "https://cdn.test/out.png"
+    assert stored.output.url == "https://cdn.test/out.png"
     assert stored.provider_task_id == "img-1"
     assert stored.submitted_at is not None and stored.finished_at is not None
 
@@ -195,7 +195,7 @@ async def test_an_asynchronous_generation_runs_end_to_end(
 
     assert video.submit_calls == [job.id]
     assert video.poll_calls == [job.id]
-    assert (await repo.get(job.id, owner=None)).output_url == "https://cdn.test/v.mp4"
+    assert (await repo.get(job.id, owner=None)).output.url == "https://cdn.test/v.mp4"
 
 
 async def test_a_submitted_row_missing_its_poll_is_polled_after_the_submit_replays(
@@ -226,7 +226,7 @@ async def test_a_submitted_row_missing_its_poll_is_polled_after_the_submit_repla
 
     assert video.submit_calls == [], "回执已经在库里，绝不能再提交一次"
     assert video.poll_calls == [job.id]
-    assert (await repo.get(job.id, owner=None)).output_url == "https://cdn.test/v.mp4"
+    assert (await repo.get(job.id, owner=None)).output.url == "https://cdn.test/v.mp4"
 
 
 async def test_a_restart_mid_submit_fails_the_row_honestly(

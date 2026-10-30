@@ -18,6 +18,7 @@ from iclip.config import (
     VideoGenerationSection,
 )
 from iclip.domains.generation.models import (
+    REFERENCE_TRIAL_KEY,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -26,6 +27,7 @@ from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
     GenerationOperation,
+    GenerationOutput,
     GenerationStatus,
     InFlightPhase,
     Inheritance,
@@ -44,12 +46,14 @@ from iclip.domains.generation.schemas import (
     KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
+    OPERATION_GENERATE,
     OPERATION_UPLOAD,
     ImageGenerationIn,
     MusicRequest,
     SubtitleRequest,
     SubtitleSentence,
     VideoComposeRequest,
+    VideoEditRequest,
     VideoEnhanceRequest,
     VideoEnhanceResolution,
     VideoGenerationIn,
@@ -87,17 +91,20 @@ def video_request(**overrides: Any) -> VideoGenerationIn:
     return VideoGenerationIn(**fields)
 
 
-def edit_request(**overrides: Any) -> VideoGenerationIn:
-    """编辑段落库的请求：参考视频恰好一条，是调用方上传的参考片段。"""
+def edit_request(**overrides: Any) -> VideoEditRequest:
+    """编辑段落库的请求：参考视频恰好一条，是调用方上传的参考片段；区间默认 1–4 秒。"""
 
-    return video_request(
-        **{
-            "seconds": -1,
-            "aspect_ratio": None,
-            "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
-            **overrides,
-        }
-    )
+    fields: dict[str, Any] = {
+        "model": "vendor-a-seedance-2-5",
+        "prompt": "一只猫跳上窗台",
+        "user_name": "logan",
+        "seconds": -1,
+        "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
+        "range_start_ms": 1000,
+        "range_end_ms": 4000,
+    }
+    fields.update(overrides)
+    return VideoEditRequest(**fields)
 
 
 def compose_request(**overrides: Any) -> VideoComposeRequest:
@@ -179,14 +186,7 @@ def make_job(
     shot_index: int | None = None,
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
-    source_url: str | None = None,
-    range_start_ms: int | None = None,
-    range_end_ms: int | None = None,
-    output_url: str | None = None,
-    watermark_output_url: str | None = None,
-    duration_ms: int | None = None,
-    content_md5: str | None = None,
-    sentences: tuple[SubtitleSentence, ...] | None = None,
+    output: GenerationOutput | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> GenerationJob:
@@ -202,7 +202,7 @@ def make_job(
     else:
         raise AssertionError("kind 与 operation 只给没有请求的行，且要一起给")
     default_provider = (
-        row_operation
+        None
         if payload is None
         else FAKE_VIDEO_PROVIDER
         if row_kind == KIND_VIDEO
@@ -222,9 +222,6 @@ def make_job(
         shot_index=shot_index,
         root_job_id=root_job_id,
         source_job_id=source_job_id,
-        source_url=source_url,
-        range_start_ms=range_start_ms,
-        range_end_ms=range_end_ms,
         kind=row_kind,
         operation=row_operation,
         provider=provider or default_provider,
@@ -232,11 +229,7 @@ def make_job(
         status=status,
         provider_task_id=provider_task_id,
         provider_status=None,
-        output_url=output_url,
-        watermark_output_url=watermark_output_url,
-        duration_ms=duration_ms,
-        content_md5=content_md5,
-        sentences=sentences,
+        output=output or GenerationOutput(),
         error_code=error_code,
         error_message=error_message,
         created_at=created_at or now,
@@ -252,14 +245,28 @@ def stored_request(job: GenerationJob) -> GenerationRequest:
     return job.request
 
 
-def make_edit(base: GenerationJob, **fields: Any) -> GenerationJob:
+def external_base(job: GenerationJob) -> str | None:
+    """帧图编辑请求快照里记的外部底图地址；没有为 ``None``。"""
+
+    return job.request.source_url if isinstance(job.request, ImageGenerationIn) else None
+
+
+def edit_range(job: GenerationJob) -> tuple[int | None, int | None]:
+    """编辑段请求快照里的区间；不是编辑段为 ``(None, None)``。"""
+
+    if isinstance(job.request, VideoEditRequest):
+        return job.request.range_start_ms, job.request.range_end_ms
+    return None, None
+
+
+def make_edit(
+    base: GenerationJob, *, range_start_ms: int = 1000, range_end_ms: int = 4000, **fields: Any
+) -> GenerationJob:
     """基于 ``base`` 的一条编辑段：来源是基底，原作与镜号随基底（基底是出片就是它自己），区间默认 1–4 秒。"""
 
-    fields.setdefault("range_start_ms", 1000)
-    fields.setdefault("range_end_ms", 4000)
     fields.setdefault("shot_index", base.shot_index)
     return make_job(
-        edit_request(),
+        edit_request(range_start_ms=range_start_ms, range_end_ms=range_end_ms),
         source_job_id=base.id,
         root_job_id=base.root_job_id or base.id,
         **fields,
@@ -287,12 +294,12 @@ def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
 def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
     """识别素材片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
 
-    assert video.output_url is not None, "只识别有地址的素材片"
+    assert video.output.url is not None, "只识别有地址的素材片"
     fields.setdefault("owner_user_id", video.owner_user_id)
     fields.setdefault("conversation_id", video.conversation_id)
     fields.setdefault("task_id", video.task_id)
     return make_job(
-        SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output_url),
+        SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output.url),
         source_job_id=video.id,
         **fields,
     )
@@ -319,14 +326,14 @@ def make_enhancement(
 ) -> GenerationJob:
     """给来源 ``source``（素材片或成片）做的一条超分记录：种类是视频，镜号随来源，不挂对话，默认排队中。"""
 
-    assert source.output_url is not None, "只给有地址的来源做高清版"
+    assert source.output.url is not None, "只给有地址的来源做高清版"
     fields.setdefault("shot_index", source.shot_index)
     return make_job(
         VideoEnhanceRequest(
             model="video-enhance",
             resolution=resolution,
             fps=30,
-            video_url=source.output_url,
+            video_url=source.output.url,
             user_name="logan",
         ),
         source_job_id=source.id,
@@ -349,7 +356,9 @@ def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> Generati
 
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", datetime.now(UTC))
-    fields.setdefault("output_url", f"https://cdn.test/iclip/agent/uploads/{uuid.uuid4()}.png")
+    fields.setdefault(
+        "output", GenerationOutput(url=f"https://cdn.test/iclip/agent/uploads/{uuid.uuid4()}.png")
+    )
     return make_job(kind=kind, operation=OPERATION_UPLOAD, **fields)
 
 
@@ -359,7 +368,8 @@ def make_cut(grid: GenerationJob, **fields: Any) -> GenerationJob:
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", datetime.now(UTC))
     fields.setdefault(
-        "output_url", f"https://cdn.test/shot-frames/{grid.id}/out/{uuid.uuid4()}.jpg"
+        "output",
+        GenerationOutput(url=f"https://cdn.test/shot-frames/{grid.id}/out/{uuid.uuid4()}.jpg"),
     )
     fields.setdefault("conversation_id", grid.conversation_id)
     fields.setdefault("owner_user_id", grid.owner_user_id)
@@ -404,7 +414,7 @@ class InMemoryGenerationRepository:
             for job in self.jobs.values()
             if job.kind == kind
             and job.status == STATUS_COMPLETED
-            and job.output_url == output_url
+            and job.output.url == output_url
             and (operation is None or job.operation == operation)
             and (
                 (
@@ -420,18 +430,32 @@ class InMemoryGenerationRepository:
         found = [
             job
             for job in self.jobs.values()
-            if job.content_md5 == content_md5
+            if job.output.content_md5 == content_md5
             and job.kind == KIND_VIDEO
             and job.operation == OPERATION_UPLOAD
         ]
         return min(found, key=lambda job: (job.created_at, job.id), default=None)
 
+    async def latest_reference_trial(
+        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
+    ) -> GenerationJob | None:
+        found = [
+            job
+            for job in self.jobs.values()
+            if job.metadata is not None
+            and job.metadata.get(REFERENCE_TRIAL_KEY) == str(reference_id)
+            and (owner is None or job.owner_user_id == owner)
+            and job.kind == KIND_VIDEO
+            and job.operation == OPERATION_GENERATE
+        ]
+        return max(found, key=lambda job: (job.created_at, job.id), default=None)
+
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         urls: dict[uuid.UUID, str] = {}
         for job_id in ids:
             job = self.jobs.get(job_id)
-            if job is not None and job.output_url is not None:
-                urls[job_id] = job.output_url
+            if job is not None and job.output.url is not None:
+                urls[job_id] = job.output.url
         return urls
 
     async def get(
@@ -523,11 +547,9 @@ class InMemoryGenerationRepository:
         self,
         job_id: uuid.UUID,
         *,
-        output_url: str,
+        output: GenerationOutput,
         provider_status: str,
         provider_task_id: str | None = None,
-        watermark_output_url: str | None = None,
-        duration_ms: int | None = None,
         only_if_status: GenerationStatus | None = None,
     ) -> GenerationJob | None:
         current = self.jobs[job_id]
@@ -536,11 +558,9 @@ class InMemoryGenerationRepository:
         return self._replace(
             job_id,
             status=STATUS_COMPLETED,
-            output_url=output_url,
-            watermark_output_url=watermark_output_url,
+            output=output,
             provider_status=provider_status,
             provider_task_id=provider_task_id or current.provider_task_id,
-            duration_ms=current.duration_ms if duration_ms is None else duration_ms,
             submitted_at=current.submitted_at or datetime.now(UTC),
             finished_at=datetime.now(UTC),
         )
@@ -560,7 +580,7 @@ class InMemoryGenerationRepository:
         return self._replace(
             job_id,
             status=STATUS_COMPLETED,
-            sentences=sentences,
+            output=GenerationOutput(sentences=sentences),
             provider_status=provider_status,
             provider_task_id=provider_task_id,
             submitted_at=current.submitted_at or datetime.now(UTC),
@@ -596,8 +616,12 @@ class InMemoryGenerationRepository:
         *,
         provider_status: str,
         only_if_status: GenerationStatus | None = None,
+        skip_unchanged: bool = False,
     ) -> GenerationJob | None:
-        if only_if_status is not None and self.jobs[job_id].status != only_if_status:
+        current = self.jobs[job_id]
+        if only_if_status is not None and current.status != only_if_status:
+            return None
+        if skip_unchanged and current.provider_status == provider_status:
             return None
         return self._replace(job_id, provider_status=provider_status)
 

@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
@@ -176,10 +176,10 @@ async def test_confirming_records_an_upload_even_without_media_generation(
         job.kind,
         job.operation,
         job.status,
-        job.output_url,
+        job.output.url,
         job.request,
         job.source_job_id,
-        job.source_url,
+        job.provider,
         job.conversation_id,
         job.task_id,
         job.owner_user_id,
@@ -286,12 +286,12 @@ async def test_the_same_video_uploaded_again_shares_the_first_address(
     assert await upload_rows(pg_url) == 2
     first_row, second_row = await stored(pg_url, first_id), await stored(pg_url, second_id)
     md5 = hashlib.md5(content).hexdigest()
-    assert (first_row.owner_user_id, first_row.output_url, first_row.content_md5) == (
+    assert (first_row.owner_user_id, first_row.output.url, first_row.output.content_md5) == (
         uuid.UUID(first_user_id),
         first["url"],
         md5,
     )
-    assert (second_row.owner_user_id, second_row.output_url, second_row.content_md5) == (
+    assert (second_row.owner_user_id, second_row.output.url, second_row.output.content_md5) == (
         uuid.UUID(second_user_id),
         first["url"],
         md5,
@@ -319,7 +319,7 @@ async def test_the_same_image_or_music_uploaded_twice_keeps_two_addresses(
     )
     assert (first_key in bucket.objects, second_key in bucket.objects) == (True, True)
     rows = [await stored(pg_url, upload_id) for upload_id in (first_id, second_id)]
-    assert [row.content_md5 for row in rows] == [None, None]
+    assert [row.output.content_md5 for row in rows] == [None, None]
 
 
 @pytest.fixture
@@ -407,9 +407,8 @@ async def test_music_attached_to_a_conversation_is_listed_with_its_generated_mus
             )
             await repo.mark_completed(
                 generated.id,
-                output_url="https://example.test/music.m4a",
+                output=GenerationOutput(url="https://example.test/music.m4a", duration_ms=30_000),
                 provider_status="succeeded",
-                duration_ms=30_000,
             )
         finally:
             await engine.dispose()

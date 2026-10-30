@@ -13,8 +13,14 @@ from iclip.domains.generation.models import (
     STATUS_FAILED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationOutput,
 )
-from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
+from iclip.domains.generation.schemas import (
+    SubtitleRequest,
+    SubtitleSentence,
+    SubtitleWord,
+    generation_out,
+)
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import make_job, make_subtitle, video_request
 
@@ -43,8 +49,7 @@ async def completed_take(
     )
     done = await repo.mark_completed(
         take.id,
-        output_url=TAKE_URL,
-        watermark_output_url="https://cdn.example.test/take-wm.mp4",
+        output=GenerationOutput(url=TAKE_URL, watermark_url="https://cdn.example.test/take-wm.mp4"),
         provider_status="succeeded",
     )
     assert done is not None
@@ -61,7 +66,7 @@ async def test_a_subtitle_record_round_trips_its_request_and_sentences(
 
     created = await repo.create(make_subtitle(take))
     assert created.request == SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=TAKE_URL)
-    assert created.sentences is None
+    assert created.output.sentences is None
     await repo.mark_submitting(created.id)
     done = await repo.mark_transcribed(
         created.id,
@@ -72,9 +77,13 @@ async def test_a_subtitle_record_round_trips_its_request_and_sentences(
     )
 
     assert done is not None
-    assert (done.status, done.sentences, done.output_url) == (STATUS_COMPLETED, SENTENCES, None)
+    assert (done.status, done.output.sentences, done.output.url) == (
+        STATUS_COMPLETED,
+        SENTENCES,
+        None,
+    )
     assert done.submitted_at is not None and done.finished_at is not None
-    assert (await repo.get(created.id, owner=owner)).sentences == SENTENCES
+    assert (await repo.get(created.id, owner=owner)).output.sentences == SENTENCES
     listed = await repo.list_for_owner(
         owner=owner, limit=10, kind="subtitle", source_job_id=take.id
     )
@@ -96,12 +105,18 @@ async def test_no_voice_over_is_stored_as_an_empty_array(engine: AsyncEngine) ->
     async with engine.connect() as conn:
         stored = (
             await conn.execute(
-                text("SELECT jsonb_typeof(sentences) FROM iclip.generation_jobs WHERE id = :id"),
+                text(
+                    "SELECT jsonb_typeof(output -> 'sentences') FROM iclip.generation_jobs"
+                    " WHERE id = :id"
+                ),
                 {"id": created.id},
             )
         ).scalar_one()
     assert stored == "array"
-    assert (await repo.get(created.id, owner=owner)).sentences == ()
+    read = await repo.get(created.id, owner=owner)
+    assert read.output.sentences == ()
+    out = generation_out(read, source_address=None).model_dump(mode="json", by_alias=True)
+    assert out["sentences"] == [], "接口给空数组"
 
 
 async def test_the_status_guard_keeps_a_failed_subtitle_record_failed(engine: AsyncEngine) -> None:
@@ -126,7 +141,7 @@ async def test_the_status_guard_keeps_a_failed_subtitle_record_failed(engine: As
 
     assert late is None
     stored = await repo.get(created.id, owner=owner)
-    assert (stored.status, stored.sentences) == (STATUS_FAILED, None)
+    assert (stored.status, stored.output.sentences) == (STATUS_FAILED, None)
 
 
 async def test_subtitle_records_do_not_count_as_videos_in_flight_or_masters(

@@ -9,16 +9,18 @@
 
 .editor-header {
   align-items: center;
-  min-height: 60px;
+  min-height: 48px;
   border: 0;
   padding: 0 20px 0 24px;
 }
 
 .editor-header h2 {
-  overflow: visible;
-  font-size: var(--text-title);
-  line-height: var(--text-title--line-height);
-  white-space: normal;
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-title {
@@ -89,6 +91,30 @@
   display: contents;
 }
 
+/* 舞台左上角注明放的是哪条视频的哪一段（见 StageLabel）：成片页预览素材、编辑视频预览原片时用。 */
+.editor-stage-label {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: var(--z-local-2);
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-top-layer);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+.editor-stage-label > span {
+  color: var(--color-on-surface-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* 画面内的 cqw 以实际画面宽为参照，内嵌、放大与窗口缩放共用一份度量。
    画面里的文字随放大换字号：--preview-text-size、--preview-text-line-height。 */
 .editor-preview {
@@ -134,34 +160,6 @@
   color: var(--color-on-surface-muted);
   font-size: var(--text-body-sm);
   text-align: center;
-}
-
-/* 滚动容器按自己的内边距框裁切子元素阴影；内边距放宽到格子阴影的扩散范围（横向约 14px、纵向约 24px）。 */
-.editor-versions {
-  position: absolute;
-  top: 50%;
-  right: 2px;
-  z-index: var(--z-local-2);
-  display: flex;
-  max-height: 100%;
-  flex-direction: column;
-  gap: 12px;
-  translate: 0 -50%;
-  padding: 24px 20px;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.editor-versions-title {
-  align-self: center;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  white-space: nowrap;
-}
-
-.editor-version-failed {
-  color: color-mix(in srgb, var(--color-error) 60%, var(--color-on-scrim));
 }
 
 .editor-enlarge-scrim {
@@ -244,7 +242,7 @@
   min-height: 32px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 24px;
 }
 
 .editor-bar-group {
@@ -254,22 +252,24 @@
   gap: 2px;
 }
 
-.editor-bar button,
+/* 放不下时只有左组的提醒缩短，其余控件与右组都不挤。 */
+.editor-bar-group.is-start {
+  flex: 1 1 auto;
+}
+
+.editor-bar-group.is-end {
+  flex: none;
+}
+
+.editor-bar-group > * {
+  flex: none;
+}
+
+.editor-bar-group > button,
 .editor-enlarge-transport button {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-full);
-}
-
-.editor-bar .editor-bar-button {
-  width: auto;
-  padding: 0 10px;
-  color: var(--color-on-surface-variant);
-}
-
-.editor-bar .editor-bar-button:disabled {
-  opacity: var(--state-disabled-content);
-  cursor: default;
 }
 
 .editor-clock {
@@ -341,26 +341,6 @@
 
   .editor-hero-wrap {
     inset: 12px;
-  }
-
-  .editor-versions {
-    position: static;
-    max-height: none;
-    flex-direction: row;
-    translate: none;
-    padding: 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-radius: var(--radius-lg);
-    background: var(--color-surface-container-low);
-  }
-
-  .editor-versions .version-thumb {
-    box-shadow: none;
-  }
-
-  .editor-versions .version-thumb[aria-pressed='true'] {
-    box-shadow: 0 0 0 1.5px var(--color-on-surface);
   }
 }
 

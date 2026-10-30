@@ -160,11 +160,11 @@ class Seed:
                     text(
                         "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
                         " kind, operation, provider, request, status, shot_index, metadata,"
-                        " source_job_id, root_job_id, range_start_ms, range_end_ms, created_at,"
+                        " source_job_id, root_job_id, created_at,"
                         " submitted_at, finished_at)"
                         " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
                         " CAST(:request AS jsonb), :status, :shot, CAST(:metadata AS jsonb),"
-                        " :edit_of, :edit_of, :range_start_ms, :range_end_ms, :created_at,"
+                        " :edit_of, :edit_of, :created_at,"
                         " :submitted_at, :finished_at)"
                     ),
                     {
@@ -175,13 +175,16 @@ class Seed:
                         "conversation_id": conversation_id,
                         "request": json.dumps(
                             {"model": "m", "prompt": "p", "user_name": label or names[owner]}
+                            | (
+                                {}
+                                if edit_of is None
+                                else {"range_start_ms": 1000, "range_end_ms": 4000}
+                            )
                         ),
                         "status": status,
                         "shot": shot,
                         "metadata": None if metadata is None else json.dumps(metadata),
                         "edit_of": edit_of,
-                        "range_start_ms": None if edit_of is None else 1000,
-                        "range_end_ms": None if edit_of is None else 4000,
                         "created_at": created_at,
                         "submitted_at": submitted_at,
                         "finished_at": finished_at,
@@ -213,10 +216,11 @@ class Seed:
                     text(
                         "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
                         " kind, operation, provider, request, status, shot_index, source_job_id,"
-                        " root_job_id, output_url, created_at, submitted_at, finished_at)"
+                        " root_job_id, output, created_at, submitted_at, finished_at)"
                         " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
                         " CAST(:request AS jsonb), :status, :shot, :root, :root,"
-                        " 'https://example.test/master.mp4', :at, :at, :at)"
+                        " jsonb_build_object('url', 'https://example.test/master.mp4'),"
+                        " :at, :at, :at)"
                     ),
                     {
                         "id": master_id,
@@ -765,10 +769,11 @@ async def test_forks_do_not_count_toward_any_metric(
         await conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, shot_index,"
-                " kind, operation, provider, request, status, output_url, created_at,"
+                " kind, operation, provider, request, status, output, created_at,"
                 " submitted_at, finished_at)"
                 " VALUES (:id, :owner, :conversation_id, 1, :kind, :operation, 'p',"
-                " :request, :status, 'https://example.test/copy.mp4', :at, :at, :at)"
+                " :request, :status, jsonb_build_object('url', 'https://example.test/copy.mp4'),"
+                " :at, :at, :at)"
             ),
             {
                 "id": fork_video,
@@ -855,10 +860,11 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
-                    " shot_index, kind, operation, provider, request, status, output_url,"
+                    " shot_index, kind, operation, provider, request, status, output,"
                     " created_at, submitted_at, finished_at)"
                     " VALUES (:id, :owner, :conversation_id, :shot, :kind, :operation, 'p',"
-                    " :request, :status, 'https://example.test/bare.mp4', :at, :at, :at)"
+                    " :request, :status, jsonb_build_object('url', 'https://example.test/bare.mp4'),"
+                    " :at, :at, :at)"
                 ),
                 {
                     "id": video_id,
@@ -905,10 +911,11 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
-                    " kind, operation, provider, request, status, source_job_id, output_url,"
+                    " kind, operation, provider, request, status, source_job_id, output,"
                     " created_at, finished_at)"
                     " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'p',"
-                    " CAST(:request AS jsonb), :status, :source, :url, :at, :at)"
+                    " CAST(:request AS jsonb), :status, :source,"
+                    " jsonb_build_object('url', CAST(:url AS text)), :at, :at)"
                 ),
                 {
                     "id": job_id,
@@ -940,14 +947,14 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
     at = ago(hours=1)
     async with engine.begin() as conn:
         for status, sentences in (
-            (STATUS_COMPLETED, "[]"),
+            (STATUS_COMPLETED, '{"sentences": []}'),
             (STATUS_FAILED, None),
             (STATUS_SUBMITTED, None),
         ):
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
-                    " kind, operation, provider, request, status, source_job_id, sentences,"
+                    " kind, operation, provider, request, status, source_job_id, output,"
                     " created_at, submitted_at, finished_at)"
                     " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'qwen_asr',"
                     " CAST(:request AS jsonb), :status, :source, CAST(:sentences AS jsonb),"
@@ -1008,10 +1015,11 @@ async def plant_take(
     await conn.execute(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, shot_index,"
-            " kind, operation, provider, request, status, output_url, created_at, submitted_at,"
+            " kind, operation, provider, request, status, output, created_at, submitted_at,"
             " finished_at)"
             " VALUES (:id, :owner, :conversation_id, :shot, :kind, :operation, 'p',"
-            " CAST(:request AS jsonb), :status, :url, :at, :at, :at)"
+            " CAST(:request AS jsonb), :status, jsonb_build_object('url', CAST(:url AS text)),"
+            " :at, :at, :at)"
         ),
         {
             "id": take,
@@ -1044,9 +1052,10 @@ async def plant_composite(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, shot_index,"
             " kind, operation, provider, request, status, source_job_id, root_job_id,"
-            " output_url, created_at, submitted_at, finished_at)"
+            " output, created_at, submitted_at, finished_at)"
             " SELECT :id, :owner, CAST(:conversation_id AS uuid), shot_index, :kind, :operation,"
-            " 'ffmpeg', CAST(:request AS jsonb), :status, id, id, :url, :at, :at, :at"
+            " 'ffmpeg', CAST(:request AS jsonb), :status, id, id,"
+            " jsonb_build_object('url', CAST(:url AS text)), :at, :at, :at"
             " FROM iclip.generation_jobs WHERE id = :base"
         ),
         {
@@ -1139,8 +1148,9 @@ async def test_audio_records_do_not_count_toward_any_metric(
             "operation": OPERATION_GENERATE,
             "request": json.dumps({"model": "m", "prompt": "轻快"}),
             "status": status,
-            "output_url": "https://example.test/m.m4a" if status == STATUS_COMPLETED else None,
-            "duration_ms": 30_000 if status == STATUS_COMPLETED else None,
+            "output": json.dumps({"url": "https://example.test/m.m4a", "duration_ms": 30_000})
+            if status == STATUS_COMPLETED
+            else None,
             "finished_at": None if status == STATUS_SUBMITTED else at,
         }
         for status in (STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED)
@@ -1151,8 +1161,7 @@ async def test_audio_records_do_not_count_toward_any_metric(
             "operation": OPERATION_UPLOAD,
             "request": None,
             "status": STATUS_COMPLETED,
-            "output_url": "https://example.test/u.mp3",
-            "duration_ms": None,
+            "output": json.dumps({"url": "https://example.test/u.mp3"}),
             "finished_at": at,
         }
     )
@@ -1161,10 +1170,10 @@ async def test_audio_records_do_not_count_toward_any_metric(
             await conn.execute(
                 text(
                     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
-                    " kind, operation, provider, request, status, output_url, duration_ms,"
+                    " kind, operation, provider, request, status, output,"
                     " created_at, submitted_at, finished_at)"
                     " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'qwen_music',"
-                    " CAST(:request AS jsonb), :status, :output_url, :duration_ms,"
+                    " CAST(:request AS jsonb), :status, CAST(:output AS jsonb),"
                     " :at, :at, :finished_at)"
                 ),
                 {"id": uuid.uuid4(), "owner": seed.sara, "kind": KIND_AUDIO, "at": at, **row},

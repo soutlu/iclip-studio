@@ -19,6 +19,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationOutput,
     GenerationStatus,
 )
 from iclip.domains.generation.provider import (
@@ -134,7 +135,7 @@ async def test_sync_submit_completes_in_one_step() -> None:
 
     stored = repo.jobs[job.id]
     assert stored.status == STATUS_COMPLETED
-    assert stored.output_url == "https://cdn.test/out.png"
+    assert stored.output.url == "https://cdn.test/out.png"
     assert stored.provider_task_id == str(job.id)
     assert image.poll_calls == [], "同步接口不该被轮询"
     assert connector.jobs == {}, "已经终态了，别再排一次轮询"
@@ -158,7 +159,7 @@ async def test_a_sync_result_lands_its_measured_duration_on_the_record() -> None
     await queue.run_submit(str(job.id))
 
     stored = repo.jobs[job.id]
-    assert (stored.status, stored.duration_ms) == (STATUS_COMPLETED, 7040)
+    assert (stored.status, stored.output.duration_ms) == (STATUS_COMPLETED, 7040)
 
 
 async def test_marks_submitting_before_calling_provider() -> None:
@@ -277,7 +278,7 @@ async def test_a_polled_result_lands_its_reported_duration_on_the_record() -> No
     await queue.run_poll(str(job.id))
 
     stored = repo.jobs[job.id]
-    assert (stored.status, stored.duration_ms) == (STATUS_COMPLETED, 10042)
+    assert (stored.status, stored.output.duration_ms) == (STATUS_COMPLETED, 10042)
 
 
 async def test_running_job_asks_again_at_a_fixed_interval() -> None:
@@ -444,7 +445,9 @@ async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
             only_if_status: GenerationStatus | None = None,
         ) -> GenerationJob | None:
             await self.mark_completed(
-                job_id, output_url="https://cdn.test/out.png", provider_status="succeeded"
+                job_id,
+                output=GenerationOutput(url="https://cdn.test/out.png"),
+                provider_status="succeeded",
             )
             return await super().mark_failed(
                 job_id,
@@ -462,7 +465,7 @@ async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
 
     stored = repo.jobs[job.id]
     assert stored.status == STATUS_COMPLETED
-    assert stored.output_url == "https://cdn.test/out.png"
+    assert stored.output.url == "https://cdn.test/out.png"
     assert stored.error_code is None
 
 

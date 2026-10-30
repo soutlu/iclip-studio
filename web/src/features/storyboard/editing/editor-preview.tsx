@@ -16,6 +16,7 @@ import { IconButton } from '@/shared/ui/button'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
+import { framePosition } from './frame-seek'
 import { locateClock, totalDuration, type LaidOutSegment } from './play-layout'
 import { timeLabel } from './time-label'
 
@@ -38,7 +39,6 @@ const SLOTS: readonly { id: string; slot: Slot }[] = [
 
 // requestAnimationFrame 约 16ms 一帧，提前两帧切到预载好的下一段。
 const SWITCH_AHEAD = 0.03
-const END_PREVIEW_OFFSET = 0.001
 
 const sameSegments = (
   left: readonly LaidOutSegment[] | undefined,
@@ -74,16 +74,25 @@ type Props = {
   poster: string | undefined
   backdrop: string | undefined
   currentTime: number
+  /** 工具条上写的时刻，不给时是 `currentTime`：拖修剪把手时是把手所在的标尺位置，与播放头一致。 */
+  shownTime?: number | undefined
+  /** 工具条上写的总长，不给时是舞台所放内容的长度：拖修剪把手时按松手前的样子写，同「共 X 秒」。 */
+  shownDuration?: number | undefined
   onTime: (clock: number) => void
   onPlay: () => void
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
-  picture?: ReactNode
   overlay: ReactNode
-  versions: ReactNode
   readout: ReactNode
   timeline: ReactNode
+  /** 工具条左端，播放按钮之前，中间隔一条分隔线。 */
+  barStart: ReactNode
+  /** 时间之后的提醒；为 null 时连同它前面的分隔线都不显示。 */
+  barNotice: ReactNode
+  /** 右组里静音之前的工具。 */
+  barTools: ReactNode
+  /** 工具条右端，前面隔一条分隔线。 */
   barEnd: ReactNode
   ref: Ref<EditorPreviewHandle>
 }
@@ -94,16 +103,19 @@ export function EditorPreview({
   poster,
   backdrop,
   currentTime,
+  shownTime = currentTime,
+  shownDuration,
   onTime,
   onPlay,
   onPlaybackChange,
   externalAudio,
   aspectRatio,
-  picture,
   overlay,
-  versions,
   readout,
   timeline,
+  barStart,
+  barNotice,
+  barTools,
   barEnd,
   ref,
 }: Props) {
@@ -198,12 +210,18 @@ export function EditorPreview({
     if (segments === undefined) return
     const boundedClock = Math.min(duration, Math.max(0, clock))
     const mediaClock =
-      boundary === 'end' ? Math.max(0, boundedClock - END_PREVIEW_OFFSET) : boundedClock
+      boundary === 'end' ? framePosition(boundedClock, 'end', 0, duration) : boundedClock
     const located = locateClock(segments, mediaClock)
     const segment = located === undefined ? undefined : segments[located.index]
     if (located === undefined || segment === undefined) return
     if (located.index !== index) setIndex(located.index)
-    load(active, segment, located.offset)
+    load(
+      active,
+      segment,
+      boundary === 'end'
+        ? located.offset
+        : framePosition(located.offset, 'start', 0, segment.duration),
+    )
     onTime(boundedClock)
   }
   const seekFromEffect = useEffectEvent(seek)
@@ -321,8 +339,8 @@ export function EditorPreview({
   )
   const clock = (
     <span className="editor-clock">
-      {timeLabel(currentTime)}
-      <span> / {timeLabel(duration)}</span>
+      {timeLabel(shownTime)}
+      <span> / {timeLabel(shownDuration ?? duration)}</span>
     </span>
   )
   const muteButton = (
@@ -405,7 +423,6 @@ export function EditorPreview({
           key={switches}
         />
       )}
-      {failed ? null : picture}
       {segments === undefined ? <PreviewMessage>正在读取视频信息…</PreviewMessage> : null}
       {failed ? (
         <div className="editor-preview-message" role="alert">
@@ -431,7 +448,6 @@ export function EditorPreview({
           <div className="editor-hero-wrap" ref={placeInline} />
           {overlay}
         </section>
-        {versions}
       </div>
       {createPortal(stage, stageHost)}
       <DialogRoot open={enlarged} onOpenChange={setEnlarged}>
@@ -483,13 +499,22 @@ export function EditorPreview({
       <div className="editor-timeline-area">
         <div className="editor-timeline-panel">
           <div aria-label="播放控件" className="editor-bar" role="group">
-            <div className="editor-bar-group">
+            <div className="editor-bar-group is-start">
+              {barStart}
+              <span aria-hidden="true" className="editor-bar-divider" />
               {playButton}
               {clock}
+              {barNotice === null ? null : (
+                <>
+                  <span aria-hidden="true" className="editor-bar-divider" />
+                  {barNotice}
+                </>
+              )}
             </div>
-            <div className="editor-bar-group">
+            <div className="editor-bar-group is-end">
               {readout}
               <span aria-hidden="true" className="editor-bar-divider" />
+              {barTools}
               {muteButton}
               <IconButton
                 label="放大"
@@ -498,6 +523,7 @@ export function EditorPreview({
                 ref={enlargeRef}
                 size="sm"
               />
+              <span aria-hidden="true" className="editor-bar-divider" />
               {barEnd}
             </div>
           </div>

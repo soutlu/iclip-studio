@@ -17,7 +17,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageProvider,
     GatewayImageSettings,
 )
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
@@ -38,6 +38,7 @@ from tests.helpers.generation import (
     MemoryObjectStore,
     compose_request,
     image_request,
+    make_edit,
     make_enhancement,
     make_job,
     video_request,
@@ -157,6 +158,28 @@ async def test_video_submit_sends_protocol_payload_and_key(
     if generate_audio is not None:
         expected_payload["generate_audio"] = generate_audio
     assert seen["body"] == expected_payload, "请求原样转发：没给的不发，归属字段不发"
+
+
+async def test_an_edit_goes_upstream_without_its_range() -> None:
+    """编辑段的区间记在请求快照里，只记账、不发给上游。"""
+
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = httpx.Response(200, content=request.content).json()
+        return httpx.Response(200, json={"task_id": "t-3"})
+
+    await video_provider(handler).submit(make_edit(make_job(video_request())))
+
+    assert seen["body"] == {
+        "model": "vendor-a-seedance-2-5",
+        "prompt": "一只猫跳上窗台",
+        "user_name": "logan",
+        "reference_image_urls": [],
+        "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
+        "reference_audio_urls": [],
+        "seconds": -1,
+    }
 
 
 async def test_video_submit_forwards_the_assembled_prompt_but_not_the_shot() -> None:
@@ -781,8 +804,9 @@ def finished_take() -> GenerationJob:
     return make_job(
         video_request(resolution="720p"),
         status="completed",
-        output_url="https://cdn.test/take.mp4",
-        watermark_output_url="https://cdn.test/take-wm.mp4",
+        output=GenerationOutput(
+            url="https://cdn.test/take.mp4", watermark_url="https://cdn.test/take-wm.mp4"
+        ),
     )
 
 
@@ -790,7 +814,7 @@ def finished_film() -> GenerationJob:
     return make_job(
         whole_film_request(uuid.uuid4()),
         status="completed",
-        output_url="https://cdn.test/film.mp4",
+        output=GenerationOutput(url="https://cdn.test/film.mp4"),
     )
 
 
@@ -820,7 +844,7 @@ async def test_an_enhancement_goes_to_its_own_address_with_the_upstream_body(
                 "model": "video-enhance",
                 "resolution": "1080p",
                 "fps": 30,
-                "video_url": origin.output_url,
+                "video_url": origin.output.url,
                 "user_name": "logan",
             },
         )

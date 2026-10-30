@@ -109,14 +109,16 @@ class WholeFilmExportAdapter:
                 (
                     record
                     for record in records
-                    if record.status == STATUS_COMPLETED and record.sentences is not None
+                    if record.status == STATUS_COMPLETED and record.output.sentences is not None
                 ),
                 None,
             )
-            if latest is not None and latest.sentences is not None:
+            if latest is not None and latest.output.sentences is not None:
                 found.append(
                     WholeFilmSubtitles(
-                        source_job_id=source, subtitle_job_id=latest.id, sentences=latest.sentences
+                        source_job_id=source,
+                        subtitle_job_id=latest.id,
+                        sentences=latest.output.sentences,
                     )
                 )
         return found
@@ -177,7 +179,7 @@ class WholeFilmExportAdapter:
             progress=progress,
             queue_position=queue_position,
             error=error,
-            download_url=job.output_url if status == "done" else None,
+            download_url=job.output.url if status == "done" else None,
             source_job_ids=_source_job_ids(job),
         )
 

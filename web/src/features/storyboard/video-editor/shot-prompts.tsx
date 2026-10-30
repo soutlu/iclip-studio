@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type Ref } from 'react'
 import { Button, IconButton } from '@/shared/ui/button'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { historyShotOf, type GenerationJob } from '../storyboard.api'
@@ -9,9 +9,12 @@ type ShotPromptsProps = {
   shotIndex: number | undefined
   canAppend: boolean
   onAppend: (text: string) => void
+  /** 打开时挂上的面板，关上后为 null。 */
+  panelRef?: Ref<HTMLDivElement> | undefined
 }
 
-export function ShotPrompts({ root, shotIndex, canAppend, onAppend }: ShotPromptsProps) {
+/** 镜头提示词：工具条上的按钮，面板从按钮往上弹、右端对齐按钮。 */
+export function ShotPrompts({ root, shotIndex, canAppend, onAppend, panelRef }: ShotPromptsProps) {
   const [open, setOpen] = useState(false)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const shot = historyShotOf(root)
@@ -24,15 +27,19 @@ export function ShotPrompts({ root, shotIndex, canAppend, onAppend }: ShotPrompt
             镜头提示词
           </Button>
         </PopupTrigger>
+        {/* 挂在宿主里：挂到 body 时，编辑器弹窗的 FocusScope 会在节点移除时把面板关掉。 */}
         <PopupSurface
           align="end"
           aria-label="镜头提示词"
           className="video-editor-prompts-panel"
+          // 往上弹时最高到编辑器弹窗顶边留 12px，放不下就在面板里滚动。
+          collisionBoundary={host?.closest('[role="dialog"]') ?? []}
           collisionPadding={12}
           container={host}
           onInteractOutside={(event) => event.preventDefault()}
           onKeyDown={(event) => event.stopPropagation()}
-          side="bottom"
+          ref={panelRef}
+          side="top"
           sideOffset={8}
         >
           <header className="video-editor-prompts-head">

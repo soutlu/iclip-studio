@@ -10,19 +10,6 @@
   outline: none;
 }
 
-.wf-dialog .editor-header {
-  min-height: 48px;
-}
-
-.wf-dialog .editor-header h2 {
-  overflow: hidden;
-  font-size: var(--text-body);
-  font-weight: 500;
-  line-height: var(--text-body--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .wf-dialog .editor-compose {
   height: 32px;
   font-size: var(--text-body-sm);
@@ -1283,16 +1270,6 @@
   border-radius: var(--radius-xs);
 }
 
-.wf-caption-toggle:hover {
-  color: var(--color-on-surface);
-}
-
-/* 字幕开着是按下态（同下拉按钮展开时的浅墨底）；关着无底、灰色 */
-.wf-caption-toggle[aria-pressed='true'] {
-  background: var(--color-state-active);
-  color: var(--color-on-surface);
-}
-
 .wf-caption-style {
   display: flex;
   min-width: 0;
@@ -1316,8 +1293,7 @@
   background: var(--color-state-active);
 }
 
-/* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸。 */
-.wf-caption-toggle:focus-visible,
+/* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸；字幕开关的状态见共用的 .timeline-toggle。 */
 .wf-caption-style:focus-visible,
 .wf-caption-recognize:focus-visible {
   outline: none;
@@ -1523,6 +1499,15 @@
   z-index: var(--z-local-2);
 }
 
+/* 修剪拖动中被拖的段（已提交与修剪后合起来画成一整块）盖在相邻的段上，多选时也盖住同一选区里的其他段 */
+.wf-lane.is-trimming > .wf-clip.is-selected {
+  z-index: auto;
+}
+
+.wf-lane.is-trimming > .wf-clip.is-trimming {
+  z-index: var(--z-local-2);
+}
+
 /* 画面轨的选区外框：贴着选中的段，单选、多选都画，同编辑视频 */
 .wf-selection-box {
   position: absolute;
@@ -1532,6 +1517,15 @@
   border-radius: var(--radius-sm);
   box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
   pointer-events: none;
+}
+
+/* 修剪画面轨一段时要剪掉的那段（样子见 editing/timeline.css）：画在被拖的段里，在把手之下。 */
+.wf-trim-mark {
+  position: absolute;
+  top: 0;
+  z-index: var(--z-local-1);
+  height: 100%;
+  border-radius: var(--radius-sm);
 }
 
 .wf-clip-label {
@@ -1711,7 +1705,7 @@
   opacity: 1;
 }
 
-.is-adding-overlay-row .wf-lane.is-overlay .wf-insertion-surface {
+.is-adding-overlay-row .wf-lane.is-overlay .timeline-insertion-surface {
   background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface-container-lowest));
 }
 
@@ -1792,33 +1786,6 @@
   height: 9px;
 }
 
-.wf-drop-bubble {
-  position: absolute;
-  top: -2px;
-  z-index: var(--z-local-3);
-  display: inline-flex;
-  height: 22px;
-  align-items: center;
-  gap: 4px;
-  translate: -50% 0;
-  padding: 0 8px 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-/* 碰到时间区两端时说明框收回来 */
-.wf-drop-bubble.is-start {
-  translate: 0 0;
-}
-
-.wf-drop-bubble.is-end {
-  translate: -100% 0;
-}
-
 /* 吸附时的对齐线 */
 .wf-snap-guide {
   position: absolute;
@@ -1831,152 +1798,10 @@
   pointer-events: none;
 }
 
-/* 三种插入共用的缩影、完整时长占位与落点提示；位置由同一动效驱动接管。 */
-.wf-insertion-ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: var(--z-popup);
-  display: flex;
-  width: 158px;
-  height: 52px;
-  align-items: center;
-  gap: 9px;
-  overflow: hidden;
-  padding: 7px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-lowest);
-  box-shadow: var(--shadow-2);
-  pointer-events: none;
-  will-change: transform;
-}
-
-.wf-insertion-ghost.is-blocked {
-  filter: grayscale(0.6);
-}
-
-.wf-insertion-thumb {
-  display: flex;
-  width: 54px;
-  height: 36px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-muted);
-}
-
-.wf-insertion-thumb > *,
-.wf-insertion-thumb img {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  object-fit: cover;
-}
-
-.wf-insertion-thumb .wf-component-thumb {
+/* 组件缩略图放进插入缩影与占位时，跟着缩略框的圆角，不再叠阴影。 */
+.timeline-insertion-thumb .wf-component-thumb {
   border-radius: inherit;
   box-shadow: none;
-}
-
-.wf-insertion-details {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-}
-
-.wf-insertion-details > span,
-.wf-insertion-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wf-insertion-details small {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-.wf-insertion-preview {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: var(--z-local-3);
-  color: var(--color-primary);
-  pointer-events: none;
-  will-change: transform;
-}
-
-.wf-insertion-preview[hidden] {
-  display: none;
-}
-
-.wf-insertion-surface {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  padding: 0 8px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface-container-lowest));
-}
-
-.wf-insertion-surface::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 2px;
-  background: currentColor;
-}
-
-.wf-insertion-preview .wf-insertion-thumb {
-  width: 38px;
-  height: 70%;
-  opacity: 0.42;
-}
-
-.wf-insertion-name {
-  font-size: var(--text-caption);
-  font-weight: 500;
-}
-
-.wf-insertion-preview.is-blocked {
-  color: var(--color-on-surface-muted);
-}
-
-.wf-insertion-preview.is-blocked .wf-insertion-surface {
-  background: var(--color-surface-container-high);
-}
-
-.wf-insertion-tip {
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: 8px;
-  display: block;
-  padding: 2px 9px;
-  border-radius: var(--radius-xs);
-  background: var(--color-inverse-surface);
-  box-shadow: var(--shadow-1);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.wf-insertion-tip.is-end {
-  right: 0;
-  left: auto;
 }
 
 /* ---- 视频素材区 ---- */
@@ -2160,30 +1985,6 @@
 .wf-material-video {
   height: auto;
   object-fit: contain;
-}
-
-/* 舞台左上角注明放的是哪条素材的哪个镜头 */
-.wf-stage-label {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: var(--z-local-2);
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-top-layer);
-  box-shadow: 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  white-space: nowrap;
-}
-
-.wf-stage-label > span {
-  color: var(--color-on-surface-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .wf-range.is-lifting {

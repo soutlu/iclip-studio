@@ -14,7 +14,7 @@ from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
 from iclip.common.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
-from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO, MAX_PROMPT_CHARS
 from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileEntry, VersionConflict
@@ -144,7 +144,7 @@ def generated(node: str, url: str) -> GenerationJob:
         owner_user_id=OWNER,
         conversation_id=CONVERSATION,
         metadata={FILM_NODE_KEY: node},
-        output_url=url,
+        output=GenerationOutput(url=url),
     )
 
 
@@ -276,7 +276,7 @@ def insert_into_setting(url: str) -> FilmTextEdit:
 
 
 async def test_an_inserted_upload_is_recorded_as_material_and_joins_the_list() -> None:
-    upload = make_upload(owner_user_id=OWNER, output_url=UPLOADED)
+    upload = make_upload(owner_user_id=OWNER, output=GenerationOutput(url=UPLOADED))
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
 
     view = await made.adapter.edit_text(
@@ -296,7 +296,7 @@ async def test_an_inserted_upload_is_recorded_as_material_and_joins_the_list() -
 
 
 async def test_inserting_an_address_that_is_not_this_conversations_image_is_refused() -> None:
-    someone_else = make_upload(owner_user_id=uuid.uuid4(), output_url=UPLOADED)
+    someone_else = make_upload(owner_user_id=uuid.uuid4(), output=GenerationOutput(url=UPLOADED))
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [someone_else])
 
     with pytest.raises(ValidationFailed, match="只能插入这段对话里的图"):
@@ -308,7 +308,7 @@ async def test_inserting_an_address_that_is_not_this_conversations_image_is_refu
 
 
 async def test_a_refused_insertion_records_nothing() -> None:
-    upload = make_upload(owner_user_id=OWNER, output_url=UPLOADED)
+    upload = make_upload(owner_user_id=OWNER, output=GenerationOutput(url=UPLOADED))
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
     shared = FilmTextEdit(
         "value:videoCapture", text="摄影：手机拍摄，参考 @Image11。", images=(UPLOADED,)
@@ -335,7 +335,7 @@ async def choose(
 
 
 async def test_a_users_own_upload_is_recorded_as_material_before_it_is_chosen() -> None:
-    upload = make_upload(owner_user_id=OWNER, output_url=UPLOADED)
+    upload = make_upload(owner_user_id=OWNER, output=GenerationOutput(url=UPLOADED))
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
 
     view = await choose(made, "scene", UPLOADED)
@@ -346,7 +346,7 @@ async def test_a_users_own_upload_is_recorded_as_material_before_it_is_chosen() 
 
 
 async def test_an_address_that_is_not_this_conversations_image_is_refused() -> None:
-    someone_else = make_upload(owner_user_id=uuid.uuid4(), output_url=UPLOADED)
+    someone_else = make_upload(owner_user_id=uuid.uuid4(), output=GenerationOutput(url=UPLOADED))
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [someone_else])
 
     with pytest.raises(ValidationFailed, match="只能换成这段对话里的图"):
@@ -532,7 +532,7 @@ async def test_a_refused_generation_writes_nothing() -> None:
     with pytest.raises(ValidationFailed, match=r"^这次没有生成："):
         await generate(made, "scene", prompt=too_long)
 
-    assert [job.output_url for job in made.jobs.jobs.values()] == [GENERATED_SCENE]
+    assert [job.output.url for job in made.jobs.jobs.values()] == [GENERATED_SCENE]
     assert await made.content(RUN_PATH) == NO_SCENE
 
 
