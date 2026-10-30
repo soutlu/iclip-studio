@@ -170,10 +170,10 @@
   pointer-events: none;
 }
 
-/* 修剪拖动中往外拉长多出来的那段：浅色底加描边的框，盖在相邻的块上（同把手、播放头旋钮的浅色框）。
+/* 修剪拖动中往外拉长多出来的那段：浅墨底加描边的框，盖在相邻的块上、透出它的画面（底色同选中态）。
    位置、高度与层级由各编辑器给。 */
 .timeline-trim-extend {
-  background: var(--color-surface-container-lowest);
+  background: var(--color-state-active);
   box-shadow: inset 0 0 0 1px var(--color-outline);
   pointer-events: none;
 }
