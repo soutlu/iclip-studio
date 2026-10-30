@@ -365,7 +365,7 @@ describe('关联描边', () => {
 
 /**
  * jsdom 不排版：轨道区按它铺的秒数每秒 100px、从 x=100 起；块按摆放参数（--at、--len 秒）横排，编辑轨的块
- * （带 --row）在 y=156 起按行往下，其余在草稿那一条（y=28，高 64）；别的元素铺满 600×200。
+ * （带 --row）在 y=132 起按行往下（行高 36、块高 30），其余在草稿那一条（y=28，高 44）；别的元素铺满 600×200。
  */
 const layOut = () =>
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
@@ -380,9 +380,9 @@ const layOut = () =>
     const row = this.style.getPropertyValue('--row')
     return DOMRect.fromRect({
       x: 100 + at * 100 + 1,
-      y: row === '' ? 28 : 156 + Number(row) * 42,
+      y: row === '' ? 28 : 132 + Number(row) * 36,
       width: len * 100 - 2,
-      height: row === '' ? 64 : 36,
+      height: row === '' ? 44 : 30,
     })
   })
 
