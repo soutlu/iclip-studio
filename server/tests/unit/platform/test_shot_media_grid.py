@@ -6,7 +6,7 @@ from collections.abc import Collection
 
 import pytest
 
-from iclip.plugins.shot_video.grid import (
+from iclip.platform.shot_media.grid import (
     GrayImage,
     GridError,
     fit_box_to_aspect,

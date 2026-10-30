@@ -7,9 +7,9 @@ from typing import Any, Final
 
 import httpx
 
-from iclip.plugins.video_breakdown.media import FRAME_FPS, FRAME_MAX_PIXELS
-from iclip.plugins.video_breakdown.ports import BreakdownError, SampledVideo
-from iclip.plugins.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
+from iclip.platform.video_breakdown.media import FRAME_FPS, FRAME_MAX_PIXELS
+from iclip.platform.video_breakdown.ports import BreakdownError, SampledVideo
+from iclip.platform.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
 
 TIMEOUT_SECONDS: Final = 900.0
 """付费拆解的总超时；超时无法确认上游是否已执行，不自动重试。"""

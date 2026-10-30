@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Final
 
-from iclip.plugins.video_breakdown.model import ArkBreakdownModel
-from iclip.plugins.video_breakdown.ports import VideoSampler
+from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import VideoSampler
 
 SAMPLED_MAX_SECONDS: Final = 60.0
 """不超过这个时长的视频自己抽帧（每秒 10 帧，切点更准）；更长的把地址交给对方取帧。"""

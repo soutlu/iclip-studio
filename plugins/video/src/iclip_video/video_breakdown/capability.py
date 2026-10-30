@@ -21,7 +21,7 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, Com
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.plugins.video_breakdown.ports import (
+from iclip_video.video_breakdown.ports import (
     BreakdownFailureReason,
     FailedBreakdown,
     ReferenceBreakdowns,

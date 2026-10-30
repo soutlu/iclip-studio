@@ -1,4 +1,5 @@
-"""使用内存替身验证取帧与出图工具、生成重试与能力装配；ffmpeg 执行由集成测试覆盖。"""
+"""使用内存替身验证取帧与出图工具、生成重试、端口错误的转换与能力装配；抽帧拼板与切格的媒体处理
+在宿主服务里，由那边的测试覆盖。"""
 
 from __future__ import annotations
 
@@ -6,9 +7,8 @@ import inspect
 import json
 import uuid
 from dataclasses import replace
-from typing import Any, get_args
+from typing import Any
 
-import httpx
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
@@ -16,14 +16,13 @@ from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
-from iclip_video.video.capability import Video
-from iclip_video.video_document import video_doc_path
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
     TextPart,
     ToolCallPart,
+    ToolReturn,
     ToolReturnPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -32,34 +31,40 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 from structlog.testing import capture_logs
 
-from iclip.domains.generation.module import IMAGE_MODEL_SPECS
-from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.object_store.layout import MEDIA_PATHS
-from iclip.plugins.shot_video.capability import (
+from iclip_video.shot_video.capability import (
     GenerationPolicy,
     ShotVideo,
 )
-from iclip.plugins.shot_video.delivery import FrameRequest
-from iclip.plugins.shot_video.extraction import EXTRACTION_PATH
-from iclip.plugins.shot_video.generation import (
+from iclip_video.shot_video.delivery import FrameRequest
+from iclip_video.shot_video.extraction import EXTRACTION_PATH
+from iclip_video.shot_video.generation import (
     ANCHOR_ASPECT,
     GRID_RESOLUTION,
-    IMAGE_MODEL,
 )
-from iclip.plugins.shot_video.ports import ImageChannel, ImageJob
-from iclip.plugins.shot_video.shots import parse_shot_rows
-from iclip.plugins.shot_video.toolset import ShotVideoToolset
-from tests.helpers.fetch_url import as_is, rewriting
+from iclip_video.shot_video.ports import (
+    BoardsNotStored,
+    BoardsUnreadable,
+    FrameBoardsFailed,
+    GridCutFailed,
+    ShotsOutOfRange,
+)
+from iclip_video.shot_video.shots import parse_shot_rows
+from iclip_video.shot_video.toolset import ShotVideoToolset
+from iclip_video.video.capability import Video
+from iclip_video.video_document import video_doc_path
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import required_tools, with_requirements
 from tests.helpers.shot_video import (
+    FakeBoards,
+    FakeCuts,
     FakeGenerations,
-    FakeObjects,
-    FakeUnderstanding,
+    FakePaths,
     Outcome,
+    board_url,
     mount_shot_video,
 )
+from tests.helpers.video_understanding import FakeUnderstanding
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 CONVERSATION = "33333333-3333-3333-3333-333333333333"
@@ -93,12 +98,6 @@ def make_context(deps: object) -> RunContext[object]:
     return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
 
 
-def board_url(*, key: str = "k", index: int = 1) -> str:
-    """替身对象存储为这次取帧的这块板发布的地址。"""
-
-    return FakeObjects().public_url(MEDIA_PATHS.shot_board(extraction_key=key, index=index))
-
-
 def ledger(*_cell_ids: str, url: str | None = None) -> str:
     """取帧账本。逐格请求不校验帧号是否在账本里，出图工具只看它存不存在。"""
 
@@ -117,8 +116,13 @@ def generations() -> FakeGenerations:
 
 
 @pytest.fixture
-def objects() -> FakeObjects:
-    return FakeObjects()
+def boards() -> FakeBoards:
+    return FakeBoards()
+
+
+@pytest.fixture
+def cuts() -> FakeCuts:
+    return FakeCuts()
 
 
 @pytest.fixture
@@ -145,19 +149,16 @@ def capability(
     files: FakeFileStore,
     materials: FakeMaterialLedger,
     generations: FakeGenerations,
-    objects: FakeObjects,
+    boards: FakeBoards,
+    cuts: FakeCuts,
 ) -> ShotVideo[object]:
     return mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
         ledger=materials,
         generations=generations,
-        objects=objects,
-        paths=MEDIA_PATHS,
-        client=None,  # type: ignore[arg-type]  # 本测试不调用素材下载。
-        fetch_url=as_is,
-        image_models=frozenset({IMAGE_MODEL}),
+        boards=boards,
+        cuts=cuts,
         policy=FAST,
-        codec=SOFTWARE,
     )
 
 
@@ -370,12 +371,13 @@ async def test_reference_images_take_an_address_the_tools_wrote_down(
 
 
 async def test_plan_needs_the_document_first(
-    tools: ShotVideoToolset[object], ctx: RunContext[object]
+    tools: ShotVideoToolset[object], ctx: RunContext[object], boards: FakeBoards
 ) -> None:
-    """替身不提供 HTTP 客户端；缺少文档时应在下载前失败。"""
+    """缺少文档时在要预览板之前失败，不下载视频。"""
 
     with pytest.raises(ModelRetry, match="video_parser"):
         await tools.plan_shot_frames(ctx, VIDEO)
+    assert boards.calls == []
 
 
 async def test_plan_points_at_a_repair_the_model_can_perform(
@@ -389,13 +391,96 @@ async def test_plan_points_at_a_repair_the_model_can_perform(
 
 
 async def test_plan_rejects_a_document_with_a_broken_timecode(
-    tools: ShotVideoToolset[object], ctx: RunContext[object], files: FakeFileStore
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    boards: FakeBoards,
 ) -> None:
     """结束时间不晚于开始时间时无法取帧，应在下载和抽帧前拒绝。"""
 
     await files.write(NAMESPACE, video_doc_path(VIDEO), "**[00:05.000-00:02.000]** 中景")
     with pytest.raises(ModelRetry, match="终点不晚于起点"):
         await tools.plan_shot_frames(ctx, VIDEO)
+    assert boards.calls == []
+
+
+async def test_plan_writes_the_ledger_the_boards_port_built(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    materials: FakeMaterialLedger,
+    boards: FakeBoards,
+) -> None:
+    """工作区里没有台账：交给端口的 previous 为空，端口建出的台账照原样落盘，板地址登记进素材台账。"""
+
+    await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
+
+    result = await tools.plan_shot_frames(ctx, VIDEO)
+
+    [call] = boards.calls
+    assert (call.video_url, call.rows, call.previous) == (VIDEO, parse_shot_rows(DOCUMENT), None)
+    stored = await files.read(NAMESPACE, EXTRACTION_PATH)
+    assert stored is not None
+    assert json.loads(stored.content) == {
+        "extractionVersion": 1,
+        "extractionKey": "k",
+        "boards": [{"board": 1, "url": board_url(1)}],
+    }
+    assert isinstance(result, ToolReturn)
+    assert result.return_value == {
+        "message": "取帧完成：共 1 个结构层级，组合成 1 组图片。"
+        "每组图中每张视频帧左上的标注即帧号（S<镜头号>-<序号>）。",
+        "boards": [{"board": 1, "shots": [1, 2], "url": board_url(1)}],
+    }
+    assert board_url(1) in materials.urls(NAMESPACE)
+
+
+async def test_plan_hands_the_workspace_ledger_to_the_port_and_keeps_it_when_reused(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    boards: FakeBoards,
+) -> None:
+    """台账能否复用由端口判断；端口说复用，工作区里那份就不重写。"""
+
+    await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
+    original = ledger()
+    await files.write(NAMESPACE, EXTRACTION_PATH, original)
+
+    await tools.plan_shot_frames(ctx, VIDEO)
+
+    [call] = boards.calls
+    assert call.previous is not None
+    assert [(board.board, board.url) for board in call.previous.boards] == [(1, board_url(1))]
+    stored = await files.read(NAMESPACE, EXTRACTION_PATH)
+    assert stored is not None
+    assert stored.content == original
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ShotsOutOfRange("镜头时间戳越界（视频时长 3000ms）：镜头 1。对着拆解文档核一遍。"),
+        BoardsUnreadable("取不到素材（HTTPStatusError）: https://cdn.test/ref.mp4"),
+        BoardsNotStored("图片没存进对象存储：Read timed out。重新调用一次。"),
+    ],
+    ids=["out-of-range", "unreadable", "not-stored"],
+)
+async def test_plan_hands_the_port_failure_to_the_model_word_for_word(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    boards: FakeBoards,
+    failure: FrameBoardsFailed,
+) -> None:
+    await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
+    boards.error = failure
+
+    with pytest.raises(ModelRetry) as raised:
+        await tools.plan_shot_frames(ctx, VIDEO)
+
+    assert raised.value.message == str(failure)
+    assert await files.read(NAMESPACE, EXTRACTION_PATH) is None
 
 
 async def test_generate_needs_the_extraction_ledger(
@@ -437,7 +522,17 @@ async def test_a_broken_ledger_counts_as_missing(
 ) -> None:
     await files.write(NAMESPACE, EXTRACTION_PATH, content)
 
-    assert await capability.extractor.load(files, NAMESPACE, expected_key="k") is None
+    assert await capability.extractor.load(files, NAMESPACE) is None
+
+
+async def test_a_ledger_of_another_version_counts_as_missing(
+    capability: ShotVideo[object], files: FakeFileStore
+) -> None:
+    await files.write(
+        NAMESPACE, EXTRACTION_PATH, json.dumps({**json.loads(ledger()), "extractionVersion": 2})
+    )
+
+    assert await capability.extractor.load(files, NAMESPACE) is None
 
 
 async def test_a_well_formed_ledger_loads_as_a_model(
@@ -445,38 +540,10 @@ async def test_a_well_formed_ledger_loads_as_a_model(
 ) -> None:
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger())
 
-    loaded = await capability.extractor.load(files, NAMESPACE, expected_key="k")
+    loaded = await capability.extractor.load(files, NAMESPACE)
 
     assert loaded is not None
     assert [(board.board, board.url) for board in loaded.boards] == [(1, board_url())]
-    assert await capability.extractor.load(files, NAMESPACE, expected_key="other") is None
-
-
-FORGED_BOARD_URLS = {
-    "external": "https://evil.test/board.jpg",
-    "our-key-on-a-foreign-host": f"https://evil.test/{MEDIA_PATHS.shot_board(extraction_key='k', index=1)}",
-    "another-extraction": board_url(key="other"),
-    "another-board": board_url(index=2),
-    "extra-query": f"{board_url()}?v=1",
-}
-"""key 保留、板地址被改：外部地址，本系统的对象路径挂到别的域名，别的视频或拆解文档（也就是
-别的对话才会产出）的板，同一次取帧的另一块板，真地址后面缀参数。"""
-
-
-@pytest.mark.parametrize("url", list(FORGED_BOARD_URLS.values()), ids=list(FORGED_BOARD_URLS))
-async def test_a_reused_ledger_only_vouches_for_the_boards_this_extraction_published(
-    capability: ShotVideo[object], files: FakeFileStore, url: str
-) -> None:
-    """台账在模型可写的工作区里；板地址按 key 与板号重算后整串比对，对不上按不存在处理，
-    复用分支拿不到它，也就登记不了它。"""
-
-    await files.write(NAMESPACE, EXTRACTION_PATH, ledger(url=url))
-
-    with capture_logs() as logs:
-        assert await capability.extractor.load(files, NAMESPACE, expected_key="k") is None
-
-    assert [log["boards"] for log in logs] == [[1]]
-    assert url not in repr(logs)
 
 
 async def test_generate_treats_a_broken_ledger_as_missing(
@@ -670,7 +737,6 @@ async def test_generate_walks_every_channel_on_any_failure(
 async def test_generate_stays_on_dev_when_pro_is_off(
     ctx: RunContext[object],
     generations: FakeGenerations,
-    objects: FakeObjects,
     files: FakeFileStore,
 ) -> None:
 
@@ -681,13 +747,9 @@ async def test_generate_stays_on_dev_when_pro_is_off(
         space=FileSpace(store=files, namespace=workspace_namespace),
         ledger=FakeMaterialLedger(),
         generations=generations,
-        objects=objects,
-        paths=MEDIA_PATHS,
-        client=None,  # type: ignore[arg-type]
-        fetch_url=as_is,
-        image_models=frozenset({IMAGE_MODEL}),
+        boards=FakeBoards(),
+        cuts=FakeCuts(),
         policy=replace(FAST, dev_attempts=2, pro_attempts=0),
-        codec=SOFTWARE,
     ).get_toolset()
     assert isinstance(toolset, ShotVideoToolset)
     result = await submit_once(toolset, ctx, files)
@@ -714,7 +776,6 @@ async def test_generate_rejects_bad_parameters_before_paying(
 async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
     ctx: RunContext[object],
     generations: FakeGenerations,
-    objects: FakeObjects,
     files: FakeFileStore,
 ) -> None:
     """超时对模型报告失败，诊断留日志；总时限耗尽后不新增生成。"""
@@ -724,13 +785,9 @@ async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
         space=FileSpace(store=files, namespace=workspace_namespace),
         ledger=FakeMaterialLedger(),
         generations=generations,
-        objects=objects,
-        paths=MEDIA_PATHS,
-        client=None,  # type: ignore[arg-type]
-        fetch_url=as_is,
-        image_models=frozenset({IMAGE_MODEL}),
+        boards=FakeBoards(),
+        cuts=FakeCuts(),
         policy=replace(FAST, dev_attempts=1, pro_attempts=1, total_timeout_seconds=0.02),
-        codec=SOFTWARE,
     ).get_toolset()
     assert isinstance(toolset, ShotVideoToolset)
     with capture_logs() as logs:
@@ -825,78 +882,121 @@ async def test_stringified_frames_are_parsed_on_the_agent_path(
     assert [log["field"] for log in parsed] == ["frames"]
 
 
-def test_the_pinned_image_model_can_do_what_the_frame_tools_ask_for() -> None:
-    """出图把用哪家、多大、哪个渠道都钉在代码里，模型面签名里没有这些参数。
-
-    钉的那家给不了其中任何一样，就是每次出图都拿到一个模型改不了的错误。这些全是代码
-    里的常量，所以在这里拦，不等部署。"""
-
-    spec = IMAGE_MODEL_SPECS.get(IMAGE_MODEL)
-    assert spec is not None, f"{IMAGE_MODEL} 没有对应的适配器"
-    assert GRID_RESOLUTION in spec.resolutions
-    assert ANCHOR_ASPECT in spec.aspect_ratios
-    assert set(get_args(ImageChannel)) <= set(spec.channels)
+GRID = "https://cdn.test/out.png"
+"""``Outcome`` 默认交回的整图地址。"""
 
 
-INTERNAL = "https://iclip.oss-cn-shenzhen-internal.aliyuncs.com"
+async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    materials: FakeMaterialLedger,
+    generations: FakeGenerations,
+    cuts: FakeCuts,
+) -> None:
+    """每格的对象路径按帧号定，收缩到目标画幅；交回的地址与整图一起登记进素材台账。"""
 
+    await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
 
-def downloading_capability(
-    asked: list[str], files: FakeFileStore, generations: FakeGenerations, objects: FakeObjects
-) -> ShotVideo[object]:
-    """下载一律 404 并记下请求地址；本桶前缀 ``https://cdn.test`` 换到 ``INTERNAL``。"""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        asked.append(str(request.url))
-        return httpx.Response(404)
-
-    return mount_shot_video(
-        space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=FakeMaterialLedger(),
-        generations=generations,
-        objects=objects,
-        paths=MEDIA_PATHS,
-        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-        fetch_url=rewriting("https://cdn.test", INTERNAL),
-        image_models=frozenset({IMAGE_MODEL}),
-        policy=FAST,
-        codec=SOFTWARE,
+    result = await tools.generate_shot_frames(
+        ctx,
+        [FrameRequest(no="S1-1", prompt="雨中中景"), FrameRequest(no="S2-1", prompt="鞋底特写")],
+        [],
+        "全局参考",
+        "9:16",
     )
 
-
-async def test_frame_extraction_downloads_the_reference_video_from_the_rewritten_address(
-    files: FakeFileStore, generations: FakeGenerations, objects: FakeObjects
-) -> None:
-    asked: list[str] = []
-    capability = downloading_capability(asked, files, generations, objects)
-
-    with pytest.raises(ModelRetry):
-        await capability.extractor.ledger(
-            files, NAMESPACE, video_url=VIDEO, rows=parse_shot_rows(DOCUMENT)
-        )
-
-    assert asked == [f"{INTERNAL}/ref.mp4"]
-
-
-async def test_cutting_a_grid_downloads_it_from_the_rewritten_address(
-    files: FakeFileStore, generations: FakeGenerations, objects: FakeObjects
-) -> None:
-    asked: list[str] = []
-    capability = downloading_capability(asked, files, generations, objects)
-    job = ImageJob(
-        job_id=uuid.uuid4(),
-        status="completed",
-        channel="dev",
-        output_url="https://cdn.test/iclip/agent/generated-images/grid.png",
+    [job_id] = generations.job_ids
+    keys = (
+        FakePaths().shot_cell(job_id=job_id, cell_id="S1-1"),
+        FakePaths().shot_cell(job_id=job_id, cell_id="S2-1"),
     )
+    assert [
+        (call.user_id, call.job_id, call.grid_url, call.object_keys, call.aspect)
+        for call in cuts.calls
+    ] == [(USER, job_id, GRID, keys, "9:16")]
+    urls = [f"https://cdn.test/{key}" for key in keys]
+    assert result.return_value == {
+        "frames": [{"no": "S1-1", "url": urls[0]}, {"no": "S2-1", "url": urls[1]}]
+    }
+    assert {*urls, GRID} <= materials.urls(NAMESPACE)
 
-    with pytest.raises(ToolFailed):
-        await capability.generator.cut(
-            make_deps().user_id,
-            job,
-            object_keys=["k"],
-            aspect=None,
-            failure_message="整图下载失败。",
+
+async def test_anchor_sheet_cuts_one_cell_per_entity_without_shrinking(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    generations: FakeGenerations,
+    cuts: FakeCuts,
+) -> None:
+    result = await tools.generate_anchor_sheet(ctx, ["全身正面平视的女性", "空景全景平视的门厅"])
+
+    [job_id] = generations.job_ids
+    [call] = cuts.calls
+    assert call.object_keys == (
+        FakePaths().anchor_sheet(job_id=job_id, index=1),
+        FakePaths().anchor_sheet(job_id=job_id, index=2),
+    )
+    assert call.aspect is None
+    assert result.return_value == {
+        "images": [
+            {"index": index, "url": f"https://cdn.test/{key}"}
+            for index, key in enumerate(call.object_keys, start=1)
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("tool", "message"),
+    [("frames", "镜头帧处理失败。"), ("anchor", "设定图处理失败。")],
+)
+async def test_a_failed_cut_is_a_brief_failure_with_the_reason_in_the_log(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    materials: FakeMaterialLedger,
+    generations: FakeGenerations,
+    cuts: FakeCuts,
+    tool: str,
+    message: str,
+) -> None:
+    """切格、下载、转存失败对模型只说哪一步没成，原因只进日志；没切成的格子不登记。"""
+
+    await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
+    cuts.error = GridCutFailed("OSS 写入失败（试了 3 次）: Read timed out")
+    before = set(materials.urls(NAMESPACE))
+
+    with capture_logs() as logs, pytest.raises(ToolFailed) as raised:
+        if tool == "frames":
+            await tools.generate_shot_frames(
+                ctx, [FrameRequest(no="S1-1", prompt="猫")], [], "全局", "9:16"
+            )
+        else:
+            await tools.generate_anchor_sheet(ctx, ["全身正面平视的女性"])
+
+    assert raised.value.message == message
+    assert logs[-1]["reason"] == "OSS 写入失败（试了 3 次）: Read timed out"
+    assert logs[-1]["job_id"] == str(generations.job_ids[0])
+    assert materials.urls(NAMESPACE) == before
+
+
+async def test_a_cut_that_cannot_be_recorded_goes_up_unchanged(
+    tools: ShotVideoToolset[object],
+    ctx: RunContext[object],
+    files: FakeFileStore,
+    materials: FakeMaterialLedger,
+    generations: FakeGenerations,
+    cuts: FakeCuts,
+) -> None:
+    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试，也不登记素材。"""
+
+    await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
+    cuts.error = ConnectionError("数据库断了")
+    before = set(materials.urls(NAMESPACE))
+
+    with pytest.raises(ConnectionError, match="数据库断了"):
+        await tools.generate_shot_frames(
+            ctx, [FrameRequest(no="S1-1", prompt="猫")], [], "全局", "9:16"
         )
 
-    assert asked == [f"{INTERNAL}/iclip/agent/generated-images/grid.png"]
+    assert len(generations.job_ids) == 1
+    assert materials.urls(NAMESPACE) == before

@@ -1,6 +1,6 @@
-"""参考视频的拆解：把 references 声明的拆解端口接到 ``video_breakdown`` 的拆解（``BreakdownRunner``）上；
-反过来把 ``video_breakdown`` 的 ``ReferenceBreakdowns`` 端口接到参考视频服务上。打标在
-[library_tagging.py](library_tagging.py)。"""
+"""参考视频的拆解：把 references 声明的拆解端口接到 ``platform/video_breakdown`` 的拆解
+（``BreakdownRunner``）上；反过来把 ``video_breakdown`` 插件的 ``ReferenceBreakdowns`` 端口接到参考视频
+服务上。打标在 [library_tagging.py](library_tagging.py)。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import httpx
+from iclip_video.video_breakdown.ports import FailedBreakdown
 
 from iclip.config import ResolvedIclipStudio
 from iclip.domains.identity.public import Principal
@@ -20,10 +21,10 @@ from iclip.domains.references.models import (
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
-from iclip.plugins.video_breakdown.media import FfmpegVideoSampler
-from iclip.plugins.video_breakdown.model import ArkBreakdownModel
-from iclip.plugins.video_breakdown.ports import BreakdownError, FailedBreakdown
-from iclip.plugins.video_breakdown.service import BreakdownRunner
+from iclip.platform.video_breakdown.media import FfmpegVideoSampler
+from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import BreakdownError
+from iclip.platform.video_breakdown.service import BreakdownRunner
 
 
 class ArkVideoBreakdowns:

@@ -1,3 +1,5 @@
+"""取帧与切格用到的 ffmpeg 调用：整片按固定帧率抽帧、解码降采样灰度图、一次解码裁多个矩形。"""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -7,7 +9,7 @@ from tempfile import TemporaryDirectory
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.process import PROBE_TIMEOUT_SECONDS, run
-from iclip.plugins.shot_video.grid import GrayImage, parse_pgm
+from iclip.platform.shot_media.grid import GrayImage, parse_pgm
 
 EXTRACT_TIMEOUT_SECONDS = 900.0
 """全片解码抽帧的超时上限。"""

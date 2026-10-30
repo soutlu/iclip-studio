@@ -10,7 +10,7 @@ import pytest
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.process import ffmpeg_available, run
-from iclip.plugins.video_breakdown.media import (
+from iclip.platform.video_breakdown.media import (
     FRAME_MAX_PIXELS,
     FfmpegVideoSampler,
     sample_file,

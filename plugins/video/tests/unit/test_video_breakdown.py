@@ -28,14 +28,14 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
-from iclip.plugins.video_breakdown.capability import (
+from iclip_video.video_breakdown.capability import (
     BREAKDOWN_RETRIES,
     VideoBreakdown,
     VideoBreakdownPlugin,
     VideoBreakdownToolset,
     breakdown_doc_path,
 )
-from iclip.plugins.video_breakdown.ports import BreakdownFailureReason, FailedBreakdown
+from iclip_video.video_breakdown.ports import BreakdownFailureReason, FailedBreakdown
 from tests.helpers.file_store import FakeFileStore
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")

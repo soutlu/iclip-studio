@@ -14,7 +14,13 @@ SERVER_PACKAGES = frozenset({"iclip"})
 
 # 框架及允许直接导入它的路径前缀（相对 src/iclip_video）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("pydantic_ai",): ("iclip_studio/", "video/", "video_shots/"),
+    ("pydantic_ai",): (
+        "iclip_studio/",
+        "video/",
+        "video_shots/",
+        "video_breakdown/",
+        "shot_video/",
+    ),
     # Agent 引擎在运行时，插件不直接引用 harness 与模型 SDK。
     ("pydantic_ai_harness",): (),
     ("openai",): (),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from iclip.plugins.shot_video.shots import ShotSpan, sample_rows
+from iclip_video.shot_video.shots import ShotSpan, sample_rows
 
 
 def ids(rows: tuple[tuple[ShotSpan, ...], ...]) -> list[list[str]]:

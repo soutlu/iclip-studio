@@ -1,4 +1,5 @@
-"""取帧与出图插件的内存替身（生成、对象存储和视频解析），以及经插件装配的入口。"""
+"""取帧与出图插件的内存替身（生成、对象存储、切图记录和视频解析），以及用后端真实媒体适配器装配
+插件的入口。"""
 
 from __future__ import annotations
 
@@ -10,19 +11,20 @@ from typing import get_args
 import httpx
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import MaterialLedger
-
-from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
-from iclip.platform.media.codec import MediaCodec
-from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
-from iclip.plugins.shot_video.ports import (
+from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
+from iclip_video.shot_video.generation import IMAGE_MODEL
+from iclip_video.shot_video.ports import (
     ImageChannel,
     ImageGenerations,
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
-    PublicObjectWriter,
-    ShotVideoPaths,
 )
+
+from iclip.app.shot_media import FrameBoardsAdapter, GridCutsAdapter
+from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
+from iclip.platform.media.codec import MediaCodec
+from iclip.platform.object_store.layout import MEDIA_PATHS
 
 _ASPECT_RATIOS: frozenset[str] = frozenset(get_args(IMAGE_ASPECT_RATIOS))
 _RESOLUTIONS: frozenset[str] = frozenset(get_args(IMAGE_RESOLUTIONS))
@@ -52,12 +54,6 @@ class FakeGenerations:
     jobs: dict[uuid.UUID, tuple[ImageChannel, Outcome]] = field(
         default_factory=dict[uuid.UUID, tuple[ImageChannel, Outcome]]
     )
-    cuts: list[tuple[uuid.UUID, tuple[str, ...]]] = field(
-        default_factory=list[tuple[uuid.UUID, tuple[str, ...]]]
-    )
-    """记过的切图：(宫格任务号, 各格地址)。"""
-    cut_error: Exception | None = None
-    """设了就在记切图时抛它，模拟落库失败。"""
 
     async def submit(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
         _ = user_id
@@ -86,16 +82,26 @@ class FakeGenerations:
             error_message=outcome.error_message,
         )
 
+    def channels(self) -> list[str]:
+        return [request.channel for request in self.submitted]
+
+
+@dataclass
+class FakeCutRecords:
+    """记下每次记的切图：(宫格任务号, 各格地址)；设了 ``error`` 就抛它，模拟落库失败。"""
+
+    cuts: list[tuple[uuid.UUID, tuple[str, ...]]] = field(
+        default_factory=list[tuple[uuid.UUID, tuple[str, ...]]]
+    )
+    error: Exception | None = None
+
     async def record_cuts(
         self, user_id: uuid.UUID, grid_job_id: uuid.UUID, urls: Sequence[str]
     ) -> None:
         _ = user_id
-        if self.cut_error is not None:
-            raise self.cut_error
+        if self.error is not None:
+            raise self.error
         self.cuts.append((grid_job_id, tuple(urls)))
-
-    def channels(self) -> list[str]:
-        return [request.channel for request in self.submitted]
 
 
 @dataclass
@@ -136,29 +142,33 @@ def mount_shot_video(
     space: FileSpace,
     ledger: MaterialLedger,
     generations: ImageGenerations,
-    objects: PublicObjectWriter,
-    paths: ShotVideoPaths,
+    objects: FakeObjects,
+    records: FakeCutRecords,
     client: httpx.AsyncClient,
     fetch_url: Callable[[str], str],
-    image_models: frozenset[str],
     policy: GenerationPolicy,
     codec: MediaCodec,
 ) -> ShotVideo[object]:
-    """经 ``ShotVideo.bind`` 绑好服务、再 ``from_spec`` 造一份取帧与出图 capability，和组合根挂给
-    agent 的同一条路。"""
+    """经 ``ShotVideo.bind`` 接上后端真实的取帧拼板与切格适配器、再 ``from_spec`` 造一份 capability，
+    和组合根挂给 agent 的同一条路；生成、对象存储与切图记录用替身。"""
 
     return ShotVideo.bind(
         space=space,
         ledger=ledger,
         generations=generations,
-        objects=objects,
-        paths=paths,
-        client=client,
-        fetch_url=fetch_url,
-        image_models=image_models,
+        boards=FrameBoardsAdapter(client, fetch_url=fetch_url, objects=objects, codec=codec),
+        cuts=GridCutsAdapter(client, fetch_url=fetch_url, objects=objects, records=records),
+        paths=MEDIA_PATHS,
+        image_models=frozenset({IMAGE_MODEL}),
         policy=policy,
-        codec=codec,
     ).from_spec()
 
 
-__all__ = ["FakeGenerations", "FakeObjects", "FakeUnderstanding", "Outcome", "mount_shot_video"]
+__all__ = [
+    "FakeCutRecords",
+    "FakeGenerations",
+    "FakeObjects",
+    "FakeUnderstanding",
+    "Outcome",
+    "mount_shot_video",
+]

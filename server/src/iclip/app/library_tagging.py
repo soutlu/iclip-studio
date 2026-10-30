@@ -28,8 +28,8 @@ from iclip.domains.tagging.models import (
     TaggingFailed,
     TagNode,
 )
-from iclip.plugins.video_breakdown.model import ArkBreakdownModel
-from iclip.plugins.video_breakdown.ports import BreakdownError
+from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import BreakdownError
 
 TAG_REASONING_EFFORT: Final = "low"
 

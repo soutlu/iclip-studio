@@ -1,37 +1,25 @@
-"""镜头图生成、渠道重试与网格裁剪转存。版记录与工具返回值由调用方拼装。"""
+"""镜头图生成与渠道重试，切格转存交给 ``GridCuts`` 端口。版记录与工具返回值由调用方拼装。"""
 
 from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Final, NoReturn
 
-import httpx
 import structlog
-from iclip_video.shot_document import AspectError, parse_aspect
 from pydantic_ai import ModelRetry, ToolFailed
 
-from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fetch import MAX_IMAGE_BYTES, fetched
-from iclip.plugins.shot_video.ffmpeg import crop_cells, decode_gray
-from iclip.plugins.shot_video.grid import (
-    GridError,
-    fit_box_to_aspect,
-    grid_cell_boxes,
-    scale_box,
-)
-from iclip.plugins.shot_video.ports import (
+from iclip_video.shot_video.ports import (
+    GridCutFailed,
+    GridCuts,
     ImageChannel,
     ImageGenerations,
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
-    ObjectWriteFailed,
-    PublicObjectWriter,
 )
-from iclip.plugins.shot_video.prompt import GRID_CELLS, GRID_COLS, GRID_ROWS
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -44,8 +32,6 @@ GRID_RESOLUTION: Final = "4k"
 
 ANCHOR_ASPECT: Final = "1:1"
 """设定图使用方形网格；裁切后不再收缩到目标画幅，避免裁掉主体。"""
-
-_JPEG: Final = "image/jpeg"
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,18 +71,11 @@ class FrameGenerator:
         self,
         *,
         generations: ImageGenerations,
-        objects: PublicObjectWriter,
-        client: httpx.AsyncClient,
-        fetch_url: Callable[[str], str],
+        cuts: GridCuts,
         policy: GenerationPolicy,
     ) -> None:
-        """``fetch_url`` 在下载整图前换算地址（本桶对象走内网），由组合根注入；交回的
-        ``CellCut.grid_url`` 仍是原地址。"""
-
         self._generations = generations
-        self._objects = objects
-        self._client = client
-        self._fetch_url = fetch_url
+        self._cuts = cuts
         self._policy = policy
 
     async def generate(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
@@ -131,7 +110,7 @@ class FrameGenerator:
         aspect: str | None,
         failure_message: str,
     ) -> CellCut:
-        """下载整图、裁剪并转存，逐格地址与 ``object_keys`` 同序；转存成功的每一格各记一条切图。
+        """经 ``GridCuts`` 切格转存，逐格地址与 ``object_keys`` 同序；转存成功的每一格各记一条切图。
 
         整图恒为 GRID_CELLS 格，``object_keys`` 只给实际请求的那几格，多出来的是补位格，
         不转存也不记。切格、下载、转存失败时向模型报告简短错误，诊断信息留日志；记录落不下是
@@ -141,20 +120,12 @@ class FrameGenerator:
         if not grid_url:
             job_failure(job, message=failure_message, reason="生成记录未携带结果 URL")
         try:
-            cells = await self._slice_grid(grid_url, aspect=aspect, job_id=job.job_id)
-        except (MediaError, GridError, AspectError) as exc:
-            job_failure(job, message=failure_message, reason=str(exc))
-        if len(cells) != GRID_CELLS:
-            job_failure(job, message=failure_message, reason="整图切格数量异常")
-
-        try:
-            urls = await self._put_all(
-                list(zip(object_keys, cells[: len(object_keys)], strict=True))
+            urls = await self._cuts.cut(
+                user_id, job.job_id, grid_url=grid_url, object_keys=object_keys, aspect=aspect
             )
-        except ObjectWriteFailed as exc:
+        except GridCutFailed as exc:
             job_failure(job, message=failure_message, reason=str(exc))
-        await self._generations.record_cuts(user_id, job.job_id, urls)
-        return CellCut(grid_url=grid_url, urls=tuple(urls))
+        return CellCut(grid_url=grid_url, urls=urls)
 
     async def _run_one(
         self, user_id: uuid.UUID, request: ImageRequest, *, deadline: float
@@ -174,51 +145,6 @@ class FrameGenerator:
             await asyncio.sleep(self._policy.poll_interval_seconds)
             job = await self._generations.get(user_id, job.job_id)
         return job
-
-    async def _put_all(self, cells: Sequence[tuple[str, bytes]]) -> list[str]:
-        """并行上传格子并保持返回顺序；等待全部任务结束后报告首个失败，避免遗留未收集异常。"""
-
-        results = await asyncio.gather(
-            *(
-                self._objects.put_public_object(
-                    object_key=object_key, content=content, content_type=_JPEG
-                )
-                for object_key, content in cells
-            ),
-            return_exceptions=True,
-        )
-        urls: list[str] = []
-        for result in results:
-            if isinstance(result, BaseException):
-                raise result
-            urls.append(result)
-        return urls
-
-    async def _slice_grid(
-        self, grid_url: str, *, aspect: str | None, job_id: uuid.UUID
-    ) -> list[bytes]:
-        """检测网格并裁剪，指定 aspect 时居中收缩；检测不到分隔带的轴由 grid 按等分退回，并记告警。"""
-
-        async with fetched(
-            self._client, self._fetch_url(grid_url), max_bytes=MAX_IMAGE_BYTES, suffix=".img"
-        ) as source:
-            gray, full_width = await decode_gray(source)
-            layout = grid_cell_boxes(gray, rows=GRID_ROWS, cols=GRID_COLS)
-            if not layout.detected:
-                _logger.warning(
-                    "网格分隔带检测不全，按等分裁切",
-                    job_id=str(job_id),
-                    cells=len(layout.boxes),
-                    detected_x=layout.detected_x,
-                    detected_y=layout.detected_y,
-                )
-            boxes = [
-                scale_box(box, from_width=gray.width, to_width=full_width) for box in layout.boxes
-            ]
-            if aspect is not None:
-                ratio = parse_aspect(aspect)
-                boxes = [fit_box_to_aspect(box, ratio) for box in boxes]
-            return await crop_cells(source, boxes)
 
 
 def job_failure(job: ImageJob, *, message: str, reason: str | None = None) -> NoReturn:

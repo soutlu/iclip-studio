@@ -7,7 +7,7 @@ agent 配置只按插件名引用。"""
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 import httpx
@@ -23,13 +23,17 @@ from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.transcript.display import ToolDisplayRegistry
 from iclip_video.iclip_studio.capability import IclipStudio
+from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
+from iclip_video.shot_video.ports import ImageJob, ImageRequest, InvalidImageRequest
 from iclip_video.video.capability import Video
+from iclip_video.video_breakdown.capability import VideoBreakdownPlugin
 from iclip_video.video_shots.capability import VideoShots
 from iclip_video.video_understanding import ArkVideoUnderstanding
 from pydantic import ValidationError
 
 from iclip.app.film_images import FilmImagesAdapter, RunFilmImagesAdapter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
+from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
@@ -39,29 +43,19 @@ from iclip.domains.references.service import ReferenceService
 from iclip.platform.http import validation_error_detail
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
-from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
-from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
-from iclip.plugins.shot_video.ports import (
-    ImageJob,
-    ImageRequest,
-    InvalidImageRequest,
-    ObjectWriteFailed,
-)
-from iclip.plugins.video_breakdown.capability import VideoBreakdownPlugin
+from iclip.platform.object_store.store import PublicBucket
 
 
 class GenerationsAdapter:
-    """将能力请求转换为生成域的统一请求模型，并将任务记录收窄为能力协议字段；切出来的格子交给
-    生成域记成切图记录。每次调用都用 ``resolve_principal`` 按运行属主 id 重建主体，它的错误原样抛出。"""
+    """将能力请求转换为生成域的统一请求模型，并将任务记录收窄为能力协议字段。每次调用都用
+    ``resolve_principal`` 按运行属主 id 重建主体，它的错误原样抛出。"""
 
     def __init__(
         self,
         service: GenerationService,
-        records: SettledRecords,
         resolve_principal: Callable[[uuid.UUID], Awaitable[Principal]],
     ) -> None:
         self._service = service
-        self._records = records
         self._resolve_principal = resolve_principal
 
     async def submit(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
@@ -90,12 +84,6 @@ class GenerationsAdapter:
     async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
         principal = await self._resolve_principal(user_id)
         return _job_view(await self._service.get(principal, job_id))
-
-    async def record_cuts(
-        self, user_id: uuid.UUID, grid_job_id: uuid.UUID, urls: Sequence[str]
-    ) -> None:
-        principal = await self._resolve_principal(user_id)
-        await self._records.record_cuts(principal, grid_job_id, urls)
 
 
 _IMAGE_MEDIA_TYPES: Mapping[str, str] = {
@@ -139,24 +127,6 @@ class OssMediaProbe:
             )
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             raise MediaProbeFailed("对方给的不是图片信息") from exc
-
-
-class ObjectWriterAdapter:
-    """将对象存储异常转换为能力协议错误，使工具可报告失败而非终止整个运行。"""
-
-    def __init__(self, store: PublicBucket) -> None:
-        self._store = store
-
-    async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
-        try:
-            return await self._store.put_public_object(
-                object_key=object_key, content=content, content_type=content_type
-            )
-        except ObjectStoreUnavailable as exc:
-            raise ObjectWriteFailed(str(exc)) from exc
-
-    def public_url(self, object_key: str) -> str:
-        return self._store.public_url(object_key)
 
 
 def _job_view(job: GenerationJob) -> ImageJob:
@@ -267,13 +237,17 @@ def build_plugin_registry(
             ShotVideo.bind(
                 space=space,
                 ledger=material_ledger,
-                generations=GenerationsAdapter(
-                    generation_service, settled_records, resolve_principal
+                generations=GenerationsAdapter(generation_service, resolve_principal),
+                boards=FrameBoardsAdapter(
+                    http_client, fetch_url=fetch_url, objects=object_store, codec=media_codec
                 ),
-                objects=ObjectWriterAdapter(object_store),
+                cuts=GridCutsAdapter(
+                    http_client,
+                    fetch_url=fetch_url,
+                    objects=object_store,
+                    records=CutRecordsAdapter(settled_records, resolve_principal),
+                ),
                 paths=MEDIA_PATHS,
-                client=http_client,
-                fetch_url=fetch_url,
                 image_models=image_models,
                 policy=GenerationPolicy(
                     poll_interval_seconds=shot_video.poll_interval_seconds,
@@ -283,7 +257,6 @@ def build_plugin_registry(
                     backoff_factor=shot_video.backoff_factor,
                     total_timeout_seconds=shot_video.job_timeout_seconds,
                 ),
-                codec=media_codec,
             )
         )
     return {plugin.get_serialization_name(): plugin for plugin in plugins}
@@ -301,7 +274,6 @@ def build_display_registry(registry: PluginRegistry) -> ToolDisplayRegistry:
 
 __all__ = [
     "GenerationsAdapter",
-    "ObjectWriterAdapter",
     "OssMediaProbe",
     "build_display_registry",
     "build_plugin_registry",
