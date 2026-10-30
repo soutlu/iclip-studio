@@ -281,6 +281,45 @@ test.describe('成片编辑器 · 时间线', () => {
     await page.mouse.up()
   })
 
+  test('放大时间线后，拖修剪把手到时间区边缘时自动横向滚动，把手跟着指针，松手提交指针处的长度', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE })
+    for (let i = 0; i < 4; i += 1) await dialog.getByRole('button', { name: '放大时间线' }).click()
+    const viewport = await scrollViewport(dialog.getByRole('slider', { name: '时间线播放位置' }))
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollWidth > element.clientWidth))
+      .toBe(true)
+    // 第 2 段是素材 0–1.5 秒，结尾还能往后拉 4.5 秒
+    await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
+    const end = film.getByRole('slider', { name: '裁剪结尾' })
+    await end.scrollIntoViewIfNeeded()
+    const box = await boxOf(viewport)
+    const handle = await boxOf(end)
+    expect(handle.cx).toBeLessThan(box.x + box.width - 80)
+    const scrollBefore = await viewport.evaluate((element) => element.scrollLeft)
+    await page.mouse.move(handle.cx, handle.cy)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width - 10, handle.cy, { steps: 8 })
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(scrollBefore + 40)
+    // 退出靠边那一截：不再滚，把手停在指针下（位移算上了滚过的距离）
+    const resting = box.x + box.width - 80
+    await page.mouse.move(resting, handle.cy, { steps: 2 })
+    const scrolled = await viewport.evaluate((element) => element.scrollLeft)
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBe(scrolled)
+    await expect.poll(async () => Math.abs((await boxOf(end)).cx - resting)).toBeLessThanOrEqual(3)
+    // 松手提交的长度就是指针处：从这一段开头量到指针
+    const { pps } = await pixelsPerSecond(dialog)
+    const second = await boxOf(film.getByRole('group', { name: /^第 2 段/ }))
+    const expectedMs = ((resting - second.x) / pps) * 1000
+    await page.mouse.up()
+    await expect
+      .poll(async () => Math.abs(((await readDraft(page))?.layer0[1]?.duration ?? 0) - expectedMs))
+      .toBeLessThanOrEqual(FRAME_MS)
+  })
+
   test('成片最长 120 秒：放不下时说明原因，松手不加入；拉长与挪动到上限停住', async ({ page }) => {
     // 视频共 115.6 秒，最后一段用 6 秒的组件、只放 4 秒（共 119.6 秒，再加一个 1 秒的镜头就超了）：
     // 拉长时先碰到的是成片上限、不是组件自己的时长

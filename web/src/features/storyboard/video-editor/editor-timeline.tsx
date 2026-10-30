@@ -227,7 +227,10 @@ type Pressed = {
   /** 哪一对把手：草稿块的 id，或原片选区的 {@link RUN_HANDLES}。 */
   key: string
   edge: Edge
-  /** 按下时轨道区铺了多少秒：拖动中不比它窄，免得滚到最右时内容变短、整条时间线在指针下跳。 */
+  /**
+   * 这次拖动中轨道区铺到过的最多秒数（按下时的，往外拉长时跟着变多）：拖动中不比它窄，免得滚到最右时内容变短、
+   * 浏览器收回滚动，整条时间线在指针下跳。
+   */
   content: number
 }
 
@@ -344,10 +347,19 @@ export function ClipsTimeline({
   // 修剪把手拖动中只预览，松手才提交一次；舞台按预览跟到被拖的那一端
   const trimGesture = usePreviewGesture<TrimStep>({
     containerRef: lanesRef,
+    viewportRef: scrollRef,
     clicks,
     onCommit: (last) => (last.kind === 'draft' ? onTrim(last.change) : onTrimRun(last.change)),
-    onPreview: (preview) =>
-      onTrimPreview(preview === null ? undefined : trimPreviewOf(preview.last, items)),
+    onPreview: (preview) => {
+      onTrimPreview(preview === null ? undefined : trimPreviewOf(preview.last, items))
+      if (preview?.last.kind !== 'draft') return
+      const reached = totalOf(preview.last.items)
+      setPressed((current) =>
+        current === undefined || current.content >= reached
+          ? current
+          : { ...current, content: reached },
+      )
+    },
     onEnd: () => setPressed(undefined),
   })
   const trimming = trimGesture.preview?.last

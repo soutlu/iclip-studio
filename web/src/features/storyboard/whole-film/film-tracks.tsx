@@ -14,6 +14,7 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
+import { useEdgeScroll } from '../editing/edge-scroll'
 import type { PeaksState } from '../editing/media-analysis'
 import { trimSpans, usePreviewGesture, type GesturePreview } from '../editing/preview-gesture'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
@@ -167,9 +168,6 @@ const NEW_ROW_BELOW_PX = 10
 const DROP_SLOP_PX = 16
 /** 相邻轨之间的空隙里，离哪条轨这么近就算那条轨 */
 const LANE_SLOP_PX = 4
-/** 带着东西靠近时间区左右边缘这么近就自动横向滚动，每秒滚这么多像素 */
-const SCROLL_EDGE_PX = 40
-const SCROLL_SPEED = 420
 /** 拍点在切点前后这么近就算卡在拍上 */
 const ON_BEAT_MS = 10
 
@@ -421,6 +419,7 @@ export function FilmTracks({
   const clicks = useClickAfterDrag()
   const gesture = usePreviewGesture<GestureStep>({
     containerRef: contentRef,
+    viewportRef: scrollRef,
     clicks,
     accepts: (step) => step.result.ok,
     onCommit: (last) => apply(last.result),
@@ -466,7 +465,6 @@ export function FilmTracks({
   } | null>(null)
   // 拖动中指针最后在哪；靠近边缘时自动滚动用
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
-  const refreshRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const element = scrollRef.current
@@ -755,7 +753,23 @@ export function FilmTracks({
         )
       },
     }
-    refreshRef.current = () => {
+    return () => {
+      tracksRef.current = null
+    }
+  })
+
+  // 带着东西靠近时间区左右边缘：自动横向滚动，落点跟着重算。东西是从时间区外（素材区、组件栏）拖来的，指针在
+  // 时间区里（上方留一点余量）才滚
+  useEdgeScroll({
+    viewportRef: scrollRef,
+    active: (carry !== null && !carry.returning) || (lift?.moved === true && !lift.returning),
+    pointer: () => pointerRef.current,
+    reach: (pointer, box) =>
+      pointer.clientY >= box.top - DROP_SLOP_PX &&
+      pointer.clientY <= box.bottom &&
+      pointer.clientX >= box.left &&
+      pointer.clientX <= box.right,
+    onScroll: () => {
       setCarry((current) =>
         current === null || current.returning
           ? current
@@ -774,48 +788,8 @@ export function FilmTracks({
               pointerRef.current?.clientY ?? current.clientY,
             ),
       )
-    }
-    return () => {
-      tracksRef.current = null
-    }
+    },
   })
-
-  // 带着东西靠近时间区左右边缘：自动横向滚动，落点跟着重算
-  const dragging = (carry !== null && !carry.returning) || (lift?.moved === true && !lift.returning)
-  useEffect(() => {
-    if (!dragging) return
-    let frame = 0
-    let last: number | undefined
-    const tick = (now: number) => {
-      const elapsed = last === undefined ? 16 : Math.min(32, now - last)
-      last = now
-      const pointer = pointerRef.current
-      const viewport = scrollRef.current
-      if (pointer !== null && viewport !== null) {
-        const box = viewport.getBoundingClientRect()
-        const inside =
-          pointer.clientY >= box.top - DROP_SLOP_PX &&
-          pointer.clientY <= box.bottom &&
-          pointer.clientX >= box.left &&
-          pointer.clientX <= box.right
-        const direction = !inside
-          ? 0
-          : pointer.clientX < box.left + SCROLL_EDGE_PX
-            ? -1
-            : pointer.clientX > box.right - SCROLL_EDGE_PX
-              ? 1
-              : 0
-        if (direction !== 0) {
-          const before = viewport.scrollLeft
-          viewport.scrollLeft += (direction * SCROLL_SPEED * elapsed) / 1000
-          if (viewport.scrollLeft !== before) refreshRef.current()
-        }
-      }
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [dragging])
 
   const selectedOverlay = selection?.kind === 'overlay' ? selection.id : undefined
   const selectedClips = clipIdsOf(selection)

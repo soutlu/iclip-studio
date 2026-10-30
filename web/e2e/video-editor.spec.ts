@@ -570,6 +570,80 @@ test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟�
   await expect(lane(dialog).getByRole('button', { name: '镜头 2–4 · 生成中' })).toBeVisible()
 })
 
+test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾把手到右边缘：自动滚动，把手跟着指针，松手提交指针处的长度', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openEditor(page)
+  await waitForShots(dialog)
+  // 镜头 1（1 秒）编辑成 3 秒的样片、三段都选用：草稿 8 秒，时间线每秒像素按 6 秒的原片定，能往右滚 2 秒
+  await requestBox(dialog).fill('换成黄昏的暖光')
+  await expect(generateButton(dialog)).toBeEnabled()
+  await submitEdit(page, dialog)
+  const partName = (seg: number) => `镜头 1 的编辑片段 · 第 ${seg} 段 · 1.0 秒`
+  await expect(partEye(dialog, partName(3))).toBeVisible({ timeout: STEP_TIMEOUT })
+  for (const seg of [1, 2, 3]) await partEye(dialog, partName(seg)).click()
+  await expect(controls(dialog)).toContainText('共 8.0 秒 · 比原片长 2.0 秒')
+
+  // 草稿里镜头 4 在 5–6 秒，结尾正贴着可视范围右边；先用方向键剪掉 0.5 秒，给把手留出往外拉的余地
+  await draft(dialog)
+    .getByRole('button', { name: /^镜头 4 ·/ })
+    .click()
+  const end = timelineOf(dialog).getByRole('slider', { name: '裁剪结尾', exact: true })
+  await end.focus()
+  for (let i = 0; i < 5; i += 1) await page.keyboard.press('ArrowLeft')
+  await expect(
+    draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.5 秒（这个镜头 1\.0 秒）/ }),
+  ).toBeVisible()
+  const viewport = timelineOf(dialog).getByRole('region', { name: '时间线轨道，可横向滚动' })
+  await viewport.evaluate((element) => {
+    element.scrollLeft = 0
+  })
+  const box = await viewport.boundingBox()
+  const handle = await end.boundingBox()
+  if (box === null || handle === null) throw new Error('时间线尚未布局')
+  const handleX = handle.x + handle.width / 2
+  const handleY = handle.y + handle.height / 2
+  expect(handleX).toBeLessThan(box.x + box.width - 80)
+
+  await page.mouse.move(handleX, handleY)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 10, handleY, { steps: 8 })
+  const scrollLeft = () => viewport.evaluate((element) => element.scrollLeft)
+  await expect.poll(scrollLeft).toBeGreaterThan(40)
+  // 指针停在边上：滚到内容最右端停住
+  let last = -1
+  await expect
+    .poll(
+      async () => {
+        const now = await scrollLeft()
+        const settled = now === last
+        last = now
+        return settled
+      },
+      { intervals: [250] },
+    )
+    .toBe(true)
+  // 回到草稿 5.8 秒处（已离开靠边那一截）：不再滚，把手停在指针下（位移算上了滚过的距离）
+  const resting = await xAt(dialog, 5.8)
+  expect(resting).toBeLessThan(box.x + box.width - 80)
+  await page.mouse.move(resting, handleY, { steps: 2 })
+  await expect
+    .poll(async () => {
+      const moved = await end.boundingBox()
+      return moved === null ? Infinity : Math.abs(moved.x + moved.width / 2 - resting)
+    })
+    .toBeLessThanOrEqual(3)
+  expect(await scrollLeft()).toBe(last)
+  await page.mouse.up()
+  // 松手提交指针处：镜头 4 用 5–5.8 秒这 0.8 秒
+  await expect(
+    draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.8 秒（这个镜头 1\.0 秒）/ }),
+  ).toBeVisible()
+  await expect(controls(dialog)).toContainText('共 7.8 秒')
+})
+
 test('点镜头只选中不播放、播放头在选区开头；空格从播放头播、再按暂停，焦点在镜头上也不改选中', async ({
   page,
 }) => {

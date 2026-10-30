@@ -7,6 +7,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react'
+import { useEdgeScroll } from './edge-scroll'
 import { DRAG_THRESHOLD, type Edge, type useClickAfterDrag } from './timeline-drag'
 
 /**
@@ -60,6 +61,11 @@ type Gesture<S> = {
   element: HTMLElement
   originX: number
   originY: number
+  /** 按下时滚动区滚到哪；修剪拖动的位移算上之后滚过的距离。 */
+  scrollX: number
+  /** 指针最后在哪：滚动区滚了、指针没动时按它重算。 */
+  x: number
+  y: number
   /** 横向的累计位移，与指针现在的纵坐标（换行的拖动按它算落在哪一行） */
   compute: (deltaPx: number, clientY: number) => S
   trim: TrimTarget | undefined
@@ -67,8 +73,11 @@ type Gesture<S> = {
   last: S | undefined
 }
 
-/** 正按着的一次拖动（每次按下一个新对象）：拖动期间在 window 上听它的松手、取消与丢失捕获。 */
-type Held = object
+/**
+ * 正按着的一次拖动（每次按下一个新对象）：拖动期间在 window 上听它的松手、取消与丢失捕获；修剪（`trim`）时
+ * 另外边缘滚动、听滚动区的 scroll。
+ */
+type Held = { trim: boolean }
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -149,6 +158,11 @@ function useReleaseSlide(
 type Options<S> = {
   /** 时间线的内容层：修剪把手松手后在它里面找 `data-slide` 的元素滑过去。 */
   containerRef: RefObject<HTMLElement | null>
+  /**
+   * 时间线的横向滚动区：修剪拖动中指针靠近它左右边缘时自动滚动（见 useEdgeScroll），`compute` 收到的位移算上
+   * 按下以来滚过的距离。
+   */
+  viewportRef: RefObject<HTMLElement | null>
   /** 拖完松手时浏览器补的那一下 click 由它吞掉。 */
   clicks: ReturnType<typeof useClickAfterDrag>
   /** 这一步放不放得下；放不下时预览停在上一个放得下的一步。不给时每一步都放得下。 */
@@ -170,11 +184,14 @@ type Options<S> = {
  * lostpointercapture（元素被移出文档时这个事件发到 document）。哪个先到就按哪个结束，只结束一次：pointerup 与
  * 丢失捕获按松手，pointercancel 按取消。
  *
- * 修剪一串首尾相接的块用 `startTrim`：拖动中调用方按已提交的布局画（见 {@link trimSpans}），松手后滑到首尾
- * 相接的位置。
+ * 修剪一串首尾相接的块用 `startTrim`：拖动中调用方按已提交的布局画（见 {@link trimSpans}），指针靠近时间线
+ * 可视范围左右边缘时自动滚动（指针拖出可视范围也接着滚），松手后滑到首尾相接的位置。修剪拖动的位移算上按下
+ * 以来滚动区滚过的距离，滚动区滚了（自动滚动、滚轮、内容变短被浏览器收回）而指针没动时也重算一步，把手不脱离
+ * 指针。挪块不自动滚动。
  */
 export function usePreviewGesture<S>({
   containerRef,
+  viewportRef,
   clicks,
   accepts = () => true,
   onCommit,
@@ -192,6 +209,16 @@ export function usePreviewGesture<S>({
   const show = (preview: GesturePreview<S> | null, trim?: TrimTarget) => {
     setState(preview === null ? null : { preview, trim })
     onPreview?.(preview)
+  }
+
+  /** 按指针最后的位置（修剪拖动另算上滚过的距离）算这一步、更新预览。 */
+  const advance = (gesture: Gesture<S>) => {
+    const scrolled =
+      gesture.trim === undefined ? 0 : (viewportRef.current?.scrollLeft ?? 0) - gesture.scrollX
+    const step = gesture.compute(gesture.x - gesture.originX + scrolled, gesture.y)
+    if (accepts(step)) gesture.last = step
+    const { last, trim } = gesture
+    show(last === undefined ? null : { last, step }, trim)
   }
 
   /** 结束这次拖动；已经结束过（或已换成另一次）时什么都不做。返回这一下算不算拖动。 */
@@ -234,6 +261,31 @@ export function usePreviewGesture<S>({
     }
   }, [held])
 
+  /** 滚动区滚了：修剪拖动已经在拖时按指针最后的位置重算一步。 */
+  const scrolled = useEffectEvent(() => {
+    const gesture = gestureRef.current
+    if (gesture?.trim !== undefined && gesture.moved) advance(gesture)
+  })
+
+  // 修剪拖动中听滚动区的 scroll：自动滚动、滚轮，以及拖动中内容变短时浏览器收回的滚动都算进位移
+  const trimming = held?.trim === true
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!trimming || viewport === null) return
+    const listener = () => scrolled()
+    viewport.addEventListener('scroll', listener)
+    return () => viewport.removeEventListener('scroll', listener)
+  }, [trimming, viewportRef])
+
+  useEdgeScroll({
+    viewportRef,
+    active: trimming,
+    pointer: () => {
+      const gesture = gestureRef.current
+      return gesture?.moved === true ? { clientX: gesture.x, clientY: gesture.y } : null
+    },
+  })
+
   const begin = (
     event: PointerEvent<HTMLElement>,
     compute: Gesture<S>['compute'],
@@ -248,12 +300,15 @@ export function usePreviewGesture<S>({
       element,
       originX: event.clientX,
       originY: event.clientY,
+      scrollX: viewportRef.current?.scrollLeft ?? 0,
+      x: event.clientX,
+      y: event.clientY,
       compute,
       trim,
       moved: false,
       last: undefined,
     }
-    setHeld({})
+    setHeld({ trim: trim !== undefined })
   }
 
   /** 按下一处开始拖（挪块）。 */
@@ -273,14 +328,13 @@ export function usePreviewGesture<S>({
   const move = (event: PointerEvent<HTMLElement>) => {
     const gesture = gestureRef.current
     if (gesture === null || gesture.pointerId !== event.pointerId) return
-    const deltaPx = event.clientX - gesture.originX
+    gesture.x = event.clientX
+    gesture.y = event.clientY
+    const deltaX = event.clientX - gesture.originX
     const deltaY = event.clientY - gesture.originY
-    if (!gesture.moved && Math.max(Math.abs(deltaPx), Math.abs(deltaY)) <= DRAG_THRESHOLD) return
+    if (!gesture.moved && Math.max(Math.abs(deltaX), Math.abs(deltaY)) <= DRAG_THRESHOLD) return
     gesture.moved = true
-    const step = gesture.compute(deltaPx, event.clientY)
-    if (accepts(step)) gesture.last = step
-    const { last, trim } = gesture
-    show(last === undefined ? null : { last, step }, trim)
+    advance(gesture)
   }
 
   /** 松手；返回这一下算不算拖动（不算就当点按处理） */
