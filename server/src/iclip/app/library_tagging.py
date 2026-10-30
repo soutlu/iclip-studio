@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 import httpx
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileStore
-from agent_runtime.plugins.workspace.scope import namespace_for
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
 from iclip.config import ResolvedIclipStudio

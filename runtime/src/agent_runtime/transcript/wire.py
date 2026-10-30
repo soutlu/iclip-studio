@@ -128,6 +128,9 @@ class TranscriptPage(Envelope):
 
     ``agents`` 与 ``pending_interactions`` 是协议要求的字段：前者是主 agent 加各子代理，后者从
     待回应的交互里取。
+
+    这里只有 transcript 本身：运行时不认识应用的对话表，标题、属主、血缘这类信封字段由应用在自己的
+    答复模型上加。
     """
 
     agent_id: str
@@ -138,17 +141,6 @@ class TranscriptPage(Envelope):
     todos: tuple[Any, ...] = ()
     prompts: tuple[Prompt, ...] = ()
     meta: TranscriptMeta = TranscriptMeta()
-    title: str = ""
-    """标题位于信封顶层，避免被协议 meta schema 丢弃；后续更新通过 session.meta.updated 发送。"""
-    owner_user_id: str | None = None
-    """属主，与 ``title`` 一样是 REST 端点贴上的信封字段：会话页据此判断这是不是自己的对话。
-    引擎侧不认识对话表，直接由引擎生成的页（场景金样）没有它。"""
-    deleted_at: str | None = None
-    """属主删掉这段对话的 ISO 时刻，同样由 REST 端点贴上；只有治理者复盘墓碑时非空。"""
-    forked_from: str | None = None
-    """这段对话分叉自哪一段，同样由 REST 端点贴上；会话页据此画血缘提示，不是分叉来的为空。"""
-    fork_turn: int | None = None
-    """分叉自源对话的第几轮，与 ``forked_from`` 同时有值。"""
     agents: tuple[AgentDescriptor, ...] = ()
     pending_interactions: tuple[str, ...] = ()
     seq: int

@@ -19,6 +19,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.runtime import (
     AGENT_ID,
     LOCKED_BY,
@@ -28,7 +29,6 @@ from tests.helpers.runtime import (
     build_runner,
     drained,
     new_conversation_id,
-    records_nothing,
     says,
     submit_text,
 )
@@ -55,7 +55,7 @@ def _service(
         history=TranscriptHistory(step_store, queue, ToolDisplayRegistry.EMPTY, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        record_materials=records_nothing,
+        ledger=FakeMaterialLedger(),
     )
 
 

@@ -20,6 +20,7 @@ from agent_runtime.assembly.directories import (
     ProviderDirectory,
     RegistryPluginDirectory,
 )
+from agent_runtime.assembly.displays import build_display_registry
 from agent_runtime.assembly.models import PydanticAiCredentialProbe, require_known_providers
 from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
 from agent_runtime.config.agent_config.public import AgentConfigService, AgentReferences
@@ -31,6 +32,7 @@ from agent_runtime.config.model_providers.repository import CredentialProbe
 from agent_runtime.config.skills.infra_sql import SqlSkillStore
 from agent_runtime.config.skills.public import SkillsService
 from agent_runtime.errors import NotFound
+from agent_runtime.file_store.namespace import parse_namespace
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.file_store.store import (
     FileEntry,
@@ -50,8 +52,7 @@ from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.harness.usage_ledger_pg import PgConversationUsage
 from agent_runtime.material_ledger.pg import PgMaterialLedger
-from agent_runtime.plugins.workspace.scope import parse_namespace
-from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.run_deps import AgentRunDeps, conversation_of
 from agent_runtime.service.sessions import SessionService
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,7 +82,7 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
-from iclip.app.plugin_registry import build_display_registry, build_plugin_registry
+from iclip.app.plugin_registry import build_plugin_registry
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
@@ -246,10 +247,6 @@ class AnnouncingFileStore:
 
     async def search(self, namespace: str, query: str, *, limit: int) -> SearchResult:
         return await self._inner.search(namespace, query, limit=limit)
-
-
-def _conversation_of(deps: object) -> str | None:
-    return deps.conversation_id if isinstance(deps, AgentRunDeps) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -478,9 +475,7 @@ def build_app(
     announcing_workspace_store = AnnouncingFileStore(workspace_store, live_connections)
 
     material_ledger = PgMaterialLedger(active_engine)
-    conversation_workspace = ConversationWorkspace(
-        workspace_store, announcing_workspace_store, material_ledger
-    )
+    conversation_workspace = ConversationWorkspace(workspace_store, announcing_workspace_store)
 
     async def clear_conversation_completion(conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         await conversations.service.clear_completed(conversation_id, owner)
@@ -599,7 +594,7 @@ def build_app(
         active_engine, max_snapshots_per_run=settings.agent_runs.max_snapshots_per_run
     )
     usage_ledger = UsageLedger(
-        store=PgConversationUsage(active_engine), conversation_of=_conversation_of
+        store=PgConversationUsage(active_engine), conversation_of=conversation_of
     )
     collection_repo = SqlCollectionRepository(active_engine)
     collections = build_collections_module(collection_repo)
@@ -828,7 +823,7 @@ def build_app(
         store=transcript_store,
         history=transcript_history,
         queue=job_queue,
-        record_materials=conversation_workspace.record_materials,
+        ledger=material_ledger,
         runner=ConversationRunner(
             agents=agent_runtime,
             store=transcript_store,

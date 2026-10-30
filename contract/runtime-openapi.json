@@ -28,6 +28,44 @@
         "title": "ActiveVersionOut",
         "type": "object"
       },
+      "ActivitiesIn": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "ActivitiesIn",
+        "type": "object"
+      },
+      "ActivitiesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SessionActivityOut"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Items",
+            "type": "object"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ActivitiesOut",
+        "type": "object"
+      },
       "AgentConfig": {
         "additionalProperties": false,
         "description": "一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。",
@@ -107,6 +145,80 @@
           "name"
         ],
         "title": "AgentCreateIn",
+        "type": "object"
+      },
+      "AgentDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "disposedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disposedat"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "parentAgentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentagentid"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "main",
+                  "sub",
+                  "independent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "agentId"
+        ],
+        "title": "AgentDescriptor",
         "type": "object"
       },
       "AgentDetailOut": {
@@ -198,6 +310,36 @@
         "title": "AgentDetailOut",
         "type": "object"
       },
+      "AgentDirectoryOut": {
+        "additionalProperties": false,
+        "description": "上菜单、在用、发布过的 agent，按配置里的先后；``default`` 是第一个，名册空着为空。",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "default"
+        ],
+        "title": "AgentDirectoryOut",
+        "type": "object"
+      },
       "AgentDraftIn": {
         "additionalProperties": false,
         "properties": {
@@ -275,6 +417,25 @@
           "updatedAt"
         ],
         "title": "AgentDraftOut",
+        "type": "object"
+      },
+      "AgentEntryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentEntryOut",
         "type": "object"
       },
       "AgentImportItemOut": {
@@ -649,6 +810,35 @@
         "title": "AgentPublishProblemsOut",
         "type": "object"
       },
+      "AgentRef": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "child",
+                  "member"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "required": [
+          "agentId"
+        ],
+        "title": "AgentRef",
+        "type": "object"
+      },
       "AgentRestoreIn": {
         "additionalProperties": false,
         "properties": {
@@ -661,6 +851,50 @@
           "lockVersion"
         ],
         "title": "AgentRestoreIn",
+        "type": "object"
+      },
+      "AgentStatusMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "contextTokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contexttokens"
+          },
+          "contextUsage": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextusage"
+          },
+          "maxContextTokens": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxcontexttokens"
+          }
+        },
+        "title": "AgentStatusMeta",
         "type": "object"
       },
       "AgentUpdateIn": {
@@ -869,6 +1103,92 @@
         "title": "AgentsOut",
         "type": "object"
       },
+      "AppendOp": {
+        "additionalProperties": false,
+        "description": "往某个块的尾巴追加文字。``offset`` 的单位是 UTF-16，见 ``utf16_len``。",
+        "properties": {
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "op": {
+            "const": "append",
+            "default": "append",
+            "title": "Op",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FrameTarget"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "offset",
+          "text"
+        ],
+        "title": "AppendOp",
+        "type": "object"
+      },
+      "ApprovalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approved"
+        ],
+        "title": "ApprovalRequest",
+        "type": "object"
+      },
+      "AttachmentSource": {
+        "additionalProperties": false,
+        "properties": {
+          "fileId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fileid"
+          },
+          "kind": {
+            "enum": [
+              "url",
+              "file",
+              "session_media"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "AttachmentSource",
+        "type": "object"
+      },
       "Body_import_agents_v1_admin_agents_import_post": {
         "properties": {
           "file": {
@@ -897,6 +1217,24 @@
           "file"
         ],
         "title": "Body_import_skill_v1_admin_skills_import_post",
+        "type": "object"
+      },
+      "BusyOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "BusyOut",
         "type": "object"
       },
       "CapToolConfig": {
@@ -1478,6 +1816,223 @@
         "title": "DraftFileWriteIn",
         "type": "object"
       },
+      "FileEntry": {
+        "description": "用于目录列表与写入结果的文件元信息。",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size_bytes",
+          "version",
+          "updated_at"
+        ],
+        "title": "FileEntry",
+        "type": "object"
+      },
+      "FileWriteIn": {
+        "additionalProperties": false,
+        "description": "整份覆盖一份文件。``expected_version`` 给了就按它比对：对不上（含文件已删）是 409；不给照写。",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "FileWriteIn",
+        "type": "object"
+      },
+      "FilesCopyIn": {
+        "additionalProperties": false,
+        "description": "按清单把源会话的几份文件拷进 ``target_id``，连同整份素材台账；目标的属主是 ``X-End-User``。",
+        "properties": {
+          "files": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "require_any": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Require Any",
+            "type": "array"
+          },
+          "source_user": {
+            "format": "uuid",
+            "title": "Source User",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "source_user",
+          "files"
+        ],
+        "title": "FilesCopyIn",
+        "type": "object"
+      },
+      "FilesCopyOut": {
+        "additionalProperties": false,
+        "properties": {
+          "copied": {
+            "title": "Copied",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "copied"
+        ],
+        "title": "FilesCopyOut",
+        "type": "object"
+      },
+      "FilesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileEntry"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "FilesOut",
+        "type": "object"
+      },
+      "FrameTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "frameId": {
+            "title": "Frameid",
+            "type": "string"
+          },
+          "stepId": {
+            "title": "Stepid",
+            "type": "string"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          },
+          "type": {
+            "const": "frame",
+            "default": "frame",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turnId",
+          "stepId",
+          "frameId"
+        ],
+        "title": "FrameTarget",
+        "type": "object"
+      },
+      "FrameUpsertOp": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "discriminator": {
+              "mapping": {
+                "notice": "#/components/schemas/NoticeFrame",
+                "text": "#/components/schemas/TextFrame",
+                "thinking": "#/components/schemas/ThinkingFrame",
+                "tool": "#/components/schemas/ToolFrame"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TextFrame"
+              },
+              {
+                "$ref": "#/components/schemas/ThinkingFrame"
+              },
+              {
+                "$ref": "#/components/schemas/ToolFrame"
+              },
+              {
+                "$ref": "#/components/schemas/NoticeFrame"
+              }
+            ],
+            "title": "Frame"
+          },
+          "op": {
+            "const": "frame.upsert",
+            "default": "frame.upsert",
+            "title": "Op",
+            "type": "string"
+          },
+          "stepId": {
+            "title": "Stepid",
+            "type": "string"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turnId",
+          "stepId",
+          "frame"
+        ],
+        "title": "FrameUpsertOp",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "description": "请求校验失败，与领域错误同一个信封。",
         "properties": {
@@ -1490,6 +2045,192 @@
           "detail"
         ],
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageContent": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/AttachmentSource"
+          },
+          "type": {
+            "const": "image",
+            "default": "image",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ImageContent",
+        "type": "object"
+      },
+      "Interaction": {
+        "additionalProperties": false,
+        "description": "待人回应的审批或提问。``request`` / ``response`` 的形状由发起方决定。",
+        "properties": {
+          "interactionId": {
+            "title": "Interactionid",
+            "type": "string"
+          },
+          "interactionKind": {
+            "enum": [
+              "approval",
+              "question"
+            ],
+            "title": "Interactionkind",
+            "type": "string"
+          },
+          "request": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request"
+          },
+          "response": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled",
+              "answered",
+              "dismissed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "toolCallId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolcallid"
+          }
+        },
+        "required": [
+          "interactionId",
+          "interactionKind",
+          "state"
+        ],
+        "title": "Interaction",
+        "type": "object"
+      },
+      "InteractionUpsertOp": {
+        "additionalProperties": false,
+        "properties": {
+          "interaction": {
+            "$ref": "#/components/schemas/Interaction"
+          },
+          "op": {
+            "const": "interaction.upsert",
+            "default": "interaction.upsert",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interaction"
+        ],
+        "title": "InteractionUpsertOp",
+        "type": "object"
+      },
+      "ItemsRemoveOp": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "op": {
+            "const": "items.remove",
+            "default": "items.remove",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "ItemsRemoveOp",
+        "type": "object"
+      },
+      "Material": {
+        "description": "图片或视频素材及其 URL。",
+        "properties": {
+          "kind": {
+            "enum": [
+              "image",
+              "video"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "kind"
+        ],
+        "title": "Material",
+        "type": "object"
+      },
+      "MaterialsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/Material"
+            },
+            "title": "Materials",
+            "type": "array"
+          }
+        },
+        "required": [
+          "materials"
+        ],
+        "title": "MaterialsIn",
+        "type": "object"
+      },
+      "MetaMergeOp": {
+        "additionalProperties": false,
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/TranscriptMeta"
+          },
+          "op": {
+            "const": "meta.merge",
+            "default": "meta.merge",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meta"
+        ],
+        "title": "MetaMergeOp",
         "type": "object"
       },
       "ModelProviderCreateIn": {
@@ -1719,6 +2460,163 @@
         "title": "ModelUpdateIn",
         "type": "object"
       },
+      "NoticeFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "frameId": {
+            "title": "Frameid",
+            "type": "string"
+          },
+          "kind": {
+            "const": "notice",
+            "default": "notice",
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "frameId",
+          "level",
+          "message"
+        ],
+        "title": "NoticeFrame",
+        "type": "object"
+      },
+      "OpsBatchOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ops": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "append": "#/components/schemas/AppendOp",
+                  "frame.upsert": "#/components/schemas/FrameUpsertOp",
+                  "interaction.upsert": "#/components/schemas/InteractionUpsertOp",
+                  "items.remove": "#/components/schemas/ItemsRemoveOp",
+                  "meta.merge": "#/components/schemas/MetaMergeOp",
+                  "prompt.upsert": "#/components/schemas/PromptUpsertOp",
+                  "step.upsert": "#/components/schemas/StepUpsertOp",
+                  "task.upsert": "#/components/schemas/TaskUpsertOp",
+                  "turn.upsert": "#/components/schemas/TurnUpsertOp"
+                },
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TurnUpsertOp"
+                },
+                {
+                  "$ref": "#/components/schemas/StepUpsertOp"
+                },
+                {
+                  "$ref": "#/components/schemas/FrameUpsertOp"
+                },
+                {
+                  "$ref": "#/components/schemas/AppendOp"
+                },
+                {
+                  "$ref": "#/components/schemas/TaskUpsertOp"
+                },
+                {
+                  "$ref": "#/components/schemas/InteractionUpsertOp"
+                },
+                {
+                  "$ref": "#/components/schemas/PromptUpsertOp"
+                },
+                {
+                  "$ref": "#/components/schemas/MetaMergeOp"
+                },
+                {
+                  "$ref": "#/components/schemas/ItemsRemoveOp"
+                }
+              ]
+            },
+            "title": "Ops",
+            "type": "array"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "ops"
+        ],
+        "title": "OpsBatchOut",
+        "type": "object"
+      },
+      "OpsCatchup": {
+        "additionalProperties": false,
+        "description": "``GET /transcript/ops`` 的补批响应。\n\n``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流\n对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/OpsBatchOut"
+            },
+            "title": "Batches",
+            "type": "array"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "latest_seq": {
+            "title": "Latest Seq",
+            "type": "integer"
+          },
+          "stream_epoch": {
+            "title": "Stream Epoch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "batches",
+          "latest_seq",
+          "complete",
+          "stream_epoch"
+        ],
+        "title": "OpsCatchup",
+        "type": "object"
+      },
       "ProbeOut": {
         "additionalProperties": false,
         "properties": {
@@ -1748,6 +2646,152 @@
           "reason"
         ],
         "title": "ProbeOut",
+        "type": "object"
+      },
+      "Prompt": {
+        "additionalProperties": false,
+        "description": "用户消息的服务端记录。客户端的乐观气泡第一层认领就是按 ``promptId`` 查这张表。",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "image": "#/components/schemas/ImageContent",
+                      "text": "#/components/schemas/TextContent",
+                      "video": "#/components/schemas/VideoContent"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContent"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          },
+          "promptId": {
+            "title": "Promptid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "queued",
+              "blocked",
+              "completed",
+              "failed",
+              "aborted"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steeredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steeredat"
+          },
+          "userMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usermessageid"
+          }
+        },
+        "required": [
+          "promptId",
+          "status",
+          "createdAt"
+        ],
+        "title": "Prompt",
+        "type": "object"
+      },
+      "PromptQueueOut": {
+        "additionalProperties": false,
+        "description": "``GET /prompts``：在跑的那条加排着的那些。",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Prompt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "queued": {
+            "items": {
+              "$ref": "#/components/schemas/Prompt"
+            },
+            "title": "Queued",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active",
+          "queued"
+        ],
+        "title": "PromptQueueOut",
+        "type": "object"
+      },
+      "PromptUpsertOp": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "prompt.upsert",
+            "default": "prompt.upsert",
+            "title": "Op",
+            "type": "string"
+          },
+          "prompt": {
+            "$ref": "#/components/schemas/Prompt"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "PromptUpsertOp",
         "type": "object"
       },
       "ProviderModelOut": {
@@ -1840,6 +2884,247 @@
           "usedBy"
         ],
         "title": "ProviderModelOut",
+        "type": "object"
+      },
+      "RegenerateBody": {
+        "additionalProperties": false,
+        "description": "``POST /turns/{turn_id}:regenerate`` 的请求体。两个字段都可省，整个体也可以不带。\n\n``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套\n幂等：重发同一个 id 退回已有那条，不会再截一轮。",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "image": "#/components/schemas/ImageContent",
+                      "text": "#/components/schemas/TextContent",
+                      "video": "#/components/schemas/VideoContent"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContent"
+                    }
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "prompt_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Id"
+          }
+        },
+        "title": "RegenerateBody",
+        "type": "object"
+      },
+      "RunStatusOut": {
+        "additionalProperties": false,
+        "description": "``GET /status``：这段对话此刻在跑、跑完了还是出错了。\n\n``running`` 含排队；``awaiting`` 卡在人工审批上，不给决定就不会往下走；``idle`` 是从没跑过。",
+        "properties": {
+          "status": {
+            "enum": [
+              "running",
+              "awaiting",
+              "completed",
+              "failed",
+              "aborted",
+              "idle"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "RunStatusOut",
+        "type": "object"
+      },
+      "SessionActivityOut": {
+        "additionalProperties": false,
+        "description": "一段会话此刻的活动：三项各自独立，等审批时 ``busy`` 仍为真。",
+        "properties": {
+          "busy": {
+            "title": "Busy",
+            "type": "boolean"
+          },
+          "last_turn_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "completed",
+                  "failed",
+                  "aborted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Turn Reason"
+          },
+          "pending_interaction": {
+            "enum": [
+              "none",
+              "approval",
+              "question"
+            ],
+            "title": "Pending Interaction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "busy",
+          "pending_interaction"
+        ],
+        "title": "SessionActivityOut",
+        "type": "object"
+      },
+      "SessionForkIn": {
+        "additionalProperties": false,
+        "description": "从路径上的源会话第 ``turn`` 轮分叉出 ``target_id``；目标的属主是 ``X-End-User``。",
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "source_user": {
+            "format": "uuid",
+            "title": "Source User",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "turn": {
+            "minimum": 1.0,
+            "title": "Turn",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_id",
+          "source_user",
+          "turn"
+        ],
+        "title": "SessionForkIn",
+        "type": "object"
+      },
+      "SessionOpenIn": {
+        "additionalProperties": false,
+        "description": "开一个会话：固定这个 agent 此刻的当前版本。",
+        "properties": {
+          "agent_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agent_id"
+        ],
+        "title": "SessionOpenIn",
+        "type": "object"
+      },
+      "SessionPromptIn": {
+        "additionalProperties": false,
+        "description": "发一条消息：协议请求体（``PromptSubmission``）的 ``prompt_id`` 与 ``content``，加上这段会话用哪个\nagent 与这条消息替谁发。\n\n属主是 ``X-End-User``；``user_name`` 由应用按它的规则定好，这里必填。",
+        "properties": {
+          "agent_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "content": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "image": "#/components/schemas/ImageContent",
+                  "text": "#/components/schemas/TextContent",
+                  "video": "#/components/schemas/VideoContent"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                },
+                {
+                  "$ref": "#/components/schemas/VideoContent"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Content",
+            "type": "array"
+          },
+          "prompt_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "user_name": {
+            "minLength": 1,
+            "title": "User Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt_id",
+          "content",
+          "user_name",
+          "agent_id"
+        ],
+        "title": "SessionPromptIn",
         "type": "object"
       },
       "SkillCreateIn": {
@@ -2374,6 +3659,207 @@
         "title": "SkillsOut",
         "type": "object"
       },
+      "SteerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Prompt Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt_ids"
+        ],
+        "title": "SteerRequest",
+        "type": "object"
+      },
+      "StepHeader": {
+        "additionalProperties": false,
+        "properties": {
+          "endMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endmessage"
+          },
+          "endReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endreason"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "finishReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishreason"
+          },
+          "kind": {
+            "const": "step",
+            "default": "step",
+            "title": "Kind",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "completed",
+              "interrupted",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stepId": {
+            "title": "Stepid",
+            "type": "string"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "stepId",
+          "turnId",
+          "ordinal",
+          "state"
+        ],
+        "title": "StepHeader",
+        "type": "object"
+      },
+      "StepUpsertOp": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "step.upsert",
+            "default": "step.upsert",
+            "title": "Op",
+            "type": "string"
+          },
+          "step": {
+            "$ref": "#/components/schemas/StepHeader"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turnId",
+          "step"
+        ],
+        "title": "StepUpsertOp",
+        "type": "object"
+      },
+      "StepUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "inputCacheCreation": {
+            "title": "Inputcachecreation",
+            "type": "integer"
+          },
+          "inputCacheRead": {
+            "title": "Inputcacheread",
+            "type": "integer"
+          },
+          "inputOther": {
+            "title": "Inputother",
+            "type": "integer"
+          },
+          "output": {
+            "title": "Output",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inputOther",
+          "output",
+          "inputCacheRead",
+          "inputCacheCreation"
+        ],
+        "title": "StepUsage",
+        "type": "object"
+      },
+      "StoredFile": {
+        "description": "文件全文与版本号。\n\n读取不截断，避免编辑工具将截断内容写回后丢失文件尾部。",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "version"
+        ],
+        "title": "StoredFile",
+        "type": "object"
+      },
       "SubagentConfig": {
         "additionalProperties": false,
         "description": "派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。",
@@ -2424,6 +3910,1122 @@
           "agent"
         ],
         "title": "SubagentConfig",
+        "type": "object"
+      },
+      "TaskUpsertOp": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "task.upsert",
+            "default": "task.upsert",
+            "title": "Op",
+            "type": "string"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TranscriptTask"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "title": "TaskUpsertOp",
+        "type": "object"
+      },
+      "TextContent": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TextContent",
+        "type": "object"
+      },
+      "TextFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "image": "#/components/schemas/ImageContent",
+                      "text": "#/components/schemas/TextContent",
+                      "video": "#/components/schemas/VideoContent"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContent"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "frameId": {
+            "title": "Frameid",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "promptIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promptids"
+          },
+          "role": {
+            "enum": [
+              "assistant",
+              "user"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frameId",
+          "role",
+          "text"
+        ],
+        "title": "TextFrame",
+        "type": "object"
+      },
+      "ThinkingFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "frameId": {
+            "title": "Frameid",
+            "type": "string"
+          },
+          "kind": {
+            "const": "thinking",
+            "default": "thinking",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frameId",
+          "text"
+        ],
+        "title": "ThinkingFrame",
+        "type": "object"
+      },
+      "TitleIn": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TitleIn",
+        "type": "object"
+      },
+      "TitleOut": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TitleOut",
+        "type": "object"
+      },
+      "ToolFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "agentRefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentRef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentrefs"
+          },
+          "approvalId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvalid"
+          },
+          "display": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "frameId": {
+            "title": "Frameid",
+            "type": "string"
+          },
+          "input": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "kind": {
+            "const": "tool",
+            "default": "tool",
+            "title": "Kind",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "toolCallId": {
+            "title": "Toolcallid",
+            "type": "string"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          }
+        },
+        "required": [
+          "frameId",
+          "toolCallId",
+          "name",
+          "state"
+        ],
+        "title": "ToolFrame",
+        "type": "object"
+      },
+      "TranscriptMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "idle",
+                  "turn",
+                  "disposing",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentStatusMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TranscriptMeta",
+        "type": "object"
+      },
+      "TranscriptPage": {
+        "additionalProperties": false,
+        "description": "``GET /transcript`` 的一页。\n\n``agents`` 与 ``pending_interactions`` 是协议要求的字段：前者是主 agent 加各子代理，后者从\n待回应的交互里取。\n\n这里只有 transcript 本身：运行时不认识应用的对话表，标题、属主、血缘这类信封字段由应用在自己的\n答复模型上加。",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentDescriptor"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "interactions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Interaction"
+            },
+            "title": "Interactions",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTurn"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TranscriptMeta",
+            "default": {}
+          },
+          "pending_interactions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Interactions",
+            "type": "array"
+          },
+          "prompts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Prompt"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stream_epoch": {
+            "title": "Stream Epoch",
+            "type": "string"
+          },
+          "tasks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTask"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "todos": {
+            "default": [],
+            "items": {},
+            "title": "Todos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "agent_id",
+          "items",
+          "has_more",
+          "seq",
+          "stream_epoch"
+        ],
+        "title": "TranscriptPage",
+        "type": "object"
+      },
+      "TranscriptStep": {
+        "additionalProperties": false,
+        "description": "带上块的完整一步。``GET /transcript`` 的分页与快照里用这一份，操作里用光头部那份。",
+        "properties": {
+          "endMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endmessage"
+          },
+          "endReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endreason"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "finishReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishreason"
+          },
+          "frames": {
+            "default": [],
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "notice": "#/components/schemas/NoticeFrame",
+                  "text": "#/components/schemas/TextFrame",
+                  "thinking": "#/components/schemas/ThinkingFrame",
+                  "tool": "#/components/schemas/ToolFrame"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextFrame"
+                },
+                {
+                  "$ref": "#/components/schemas/ThinkingFrame"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolFrame"
+                },
+                {
+                  "$ref": "#/components/schemas/NoticeFrame"
+                }
+              ]
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "kind": {
+            "const": "step",
+            "default": "step",
+            "title": "Kind",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "completed",
+              "interrupted",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stepId": {
+            "title": "Stepid",
+            "type": "string"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "stepId",
+          "turnId",
+          "ordinal",
+          "state"
+        ],
+        "title": "TranscriptStep",
+        "type": "object"
+      },
+      "TranscriptTask": {
+        "additionalProperties": false,
+        "description": "一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台\n工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。",
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentid"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detached": {
+            "title": "Detached",
+            "type": "boolean"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "kind": {
+            "enum": [
+              "shell",
+              "subagent",
+              "tool",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outputTail": {
+            "default": "",
+            "title": "Outputtail",
+            "type": "string"
+          },
+          "resultSummary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resultsummary"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "timed_out",
+              "killed",
+              "lost"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stateReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statereason"
+          },
+          "taskId": {
+            "title": "Taskid",
+            "type": "string"
+          },
+          "thinkingEffort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinkingeffort"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "kind",
+          "state",
+          "detached"
+        ],
+        "title": "TranscriptTask",
+        "type": "object"
+      },
+      "TranscriptTurn": {
+        "additionalProperties": false,
+        "description": "带上步的完整一轮。",
+        "properties": {
+          "content": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "image": "#/components/schemas/ImageContent",
+                  "text": "#/components/schemas/TextContent",
+                  "video": "#/components/schemas/VideoContent"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                },
+                {
+                  "$ref": "#/components/schemas/VideoContent"
+                }
+              ]
+            },
+            "title": "Content",
+            "type": "array"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "kind": {
+            "const": "turn",
+            "default": "turn",
+            "title": "Kind",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/TurnOrigin"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TranscriptStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "triggerPromptId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggerpromptid"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "turnId",
+          "ordinal",
+          "state",
+          "origin",
+          "content"
+        ],
+        "title": "TranscriptTurn",
+        "type": "object"
+      },
+      "TurnHeader": {
+        "additionalProperties": false,
+        "description": "一轮的头部。``steps`` 不在这里——步是单独的操作发的。",
+        "properties": {
+          "content": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "image": "#/components/schemas/ImageContent",
+                  "text": "#/components/schemas/TextContent",
+                  "video": "#/components/schemas/VideoContent"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextContent"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageContent"
+                },
+                {
+                  "$ref": "#/components/schemas/VideoContent"
+                }
+              ]
+            },
+            "title": "Content",
+            "type": "array"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "kind": {
+            "const": "turn",
+            "default": "turn",
+            "title": "Kind",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/TurnOrigin"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "triggerPromptId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggerpromptid"
+          },
+          "turnId": {
+            "title": "Turnid",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "turnId",
+          "ordinal",
+          "state",
+          "origin",
+          "content"
+        ],
+        "title": "TurnHeader",
+        "type": "object"
+      },
+      "TurnOrigin": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "user",
+              "cron",
+              "task",
+              "hook",
+              "compaction",
+              "side",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "TurnOrigin",
+        "type": "object"
+      },
+      "TurnUpsertOp": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "turn.upsert",
+            "default": "turn.upsert",
+            "title": "Op",
+            "type": "string"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/TurnHeader"
+          }
+        },
+        "required": [
+          "turn"
+        ],
+        "title": "TurnUpsertOp",
+        "type": "object"
+      },
+      "TurnUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "cachedTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cachedtokens"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "inputTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputtokens"
+          },
+          "outputTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputtokens"
+          }
+        },
+        "title": "TurnUsage",
+        "type": "object"
+      },
+      "VideoContent": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/AttachmentSource"
+          },
+          "type": {
+            "const": "video",
+            "default": "video",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "VideoContent",
         "type": "object"
       }
     },
@@ -5093,6 +7695,1368 @@
         "summary": "Restore Skill Version",
         "tags": [
           "skills"
+        ]
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "operationId": "directory_v1_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDirectoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Directory",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/sessions": {
+      "post": {
+        "description": "开会话。没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过是 409；这个 id 已有会话就按\n这次的版本改写。",
+        "operationId": "open_session_v1_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionOpenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Open Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/files": {
+      "get": {
+        "operationId": "list_files_v1_sessions__session_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "只列这条路径本身与它下面的文件（按目录段匹配）；不给列全部。",
+            "in": "query",
+            "name": "prefix",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "只列这条路径本身与它下面的文件（按目录段匹配）；不给列全部。",
+              "title": "Prefix",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "List Files",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/files/{path}": {
+      "get": {
+        "operationId": "read_file_v1_sessions__session_id__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Read File",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "put": {
+        "description": "整份覆盖。只收规范路径：应用按原始路径挑的文档校验，不能被存储层归一化后的路径绕过。",
+        "operationId": "write_file_v1_sessions__session_id__files__path__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileWriteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileEntry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Write File",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/files:copy": {
+      "post": {
+        "description": "按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。",
+        "operationId": "copy_files_v1_sessions__session_id__files_copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilesCopyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesCopyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Copy Files",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/interactions/{interaction_id}": {
+      "post": {
+        "description": "对一张审批卡点同意或拒绝。重复同一个决定 204，改主意 409，卡不在等回应的那几张里 404。",
+        "operationId": "approve_v1_sessions__session_id__interactions__interaction_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "interaction_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._-]{1,128}$",
+              "title": "Interaction Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Approve",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/materials": {
+      "get": {
+        "operationId": "lookup_material_v1_sessions__session_id__materials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "素材地址，按原始字符串精确匹配。",
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "description": "素材地址，按原始字符串精确匹配。",
+              "minLength": 1,
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Material"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Lookup Material",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "post": {
+        "operationId": "record_materials_v1_sessions__session_id__materials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Record Materials",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/prompts": {
+      "get": {
+        "operationId": "queue_view_v1_sessions__session_id__prompts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Queue View",
+        "tags": [
+          "transcript"
+        ]
+      },
+      "post": {
+        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n受理前先装一次这段会话固定的 agent 版本，装不起来是 409（``agent_unavailable``），什么都不写；\n带地址的图片与视频附件在入队前登记进会话的素材台账。",
+        "operationId": "submit_v1_sessions__session_id__prompts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPromptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Prompt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Submit",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/prompts/{prompt_id}:abort": {
+      "post": {
+        "description": "停掉一条消息。排队的直接撤，在跑的发第一方取消让它自己收尾。",
+        "operationId": "abort_v1_sessions__session_id__prompts__prompt_id__abort_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prompt_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._-]{1,128}$",
+              "title": "Prompt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Abort",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/prompts:steer": {
+      "post": {
+        "description": "把排队中的几条插进正在跑的那一轮。",
+        "operationId": "steer_v1_sessions__session_id__prompts_steer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SteerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Steer",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/status": {
+      "get": {
+        "description": "这段会话跑没跑完、有没有出错；排队中的算在跑。",
+        "operationId": "run_status_v1_sessions__session_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Run Status",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/transcript": {
+      "get": {
+        "description": "一页轮子。不给位置就是最新那几轮，往上翻给 ``before_turn``；子代理的 id 不属于这段会话是 404。",
+        "operationId": "page_v1_sessions__session_id__transcript_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "这段会话的 agent id，读用量仪表要按它装出的模型算窗口。",
+            "in": "query",
+            "name": "session_agent",
+            "required": true,
+            "schema": {
+              "description": "这段会话的 agent id，读用量仪表要按它装出的模型算窗口。",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Session Agent",
+              "type": "string"
+            }
+          },
+          {
+            "description": "读哪条流：main 是主 agent，子代理给它的 id。",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "default": "main",
+              "description": "读哪条流：main 是主 agent，子代理给它的 id。",
+              "pattern": "^[A-Za-z0-9._-]{1,128}$",
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_turn",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Turn"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_turn",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Turn"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Page",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/transcript/ops": {
+      "get": {
+        "description": "补上 ``since_seq`` 之后的批次。``complete`` 为假（出了日志窗口，或 ``stream_epoch`` 对不上\n当前实时流）就整页重拉。",
+        "operationId": "catchup_v1_sessions__session_id__transcript_ops_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since_seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Since Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "读哪条流：main 是主 agent，子代理给它的 id。",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "default": "main",
+              "description": "读哪条流：main 是主 agent，子代理给它的 id。",
+              "pattern": "^[A-Za-z0-9._-]{1,128}$",
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream_epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stream Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsCatchup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Catchup",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/turns/{turn_id}:regenerate": {
+      "post": {
+        "description": "重新生成最后一轮，答复是重跑那条的记录。轮 id 不合形状 422，会话在忙或不是末轮 409，\n末轮是分叉带过来的 404。",
+        "operationId": "regenerate_v1_sessions__session_id__turns__turn_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._-]{1,128}$",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RegenerateBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Prompt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Regenerate",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}:abort": {
+      "post": {
+        "description": "停掉整段会话：排着的全撤，在跑的发第一方取消；什么都没有也是 204。",
+        "operationId": "abort_session_v1_sessions__session_id__abort_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Abort Session",
+        "tags": [
+          "transcript"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}:fork": {
+      "post": {
+        "description": "从源会话分叉：固定版本、拷工作区文件与整份素材台账、写种子快照。\n\n源有没跑完或排着队的消息是 409，源没跑过、轮号越界是 422；数完轮数后源又跑了一轮是 409，那时\n会话、文件与素材已经写了。",
+        "operationId": "fork_session_v1_sessions__session_id__fork_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionForkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Fork Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/v1/sessions:activities": {
+      "post": {
+        "description": "这几段会话此刻的活动，按持久化队列算。",
+        "operationId": "activities_v1_sessions_activities_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivitiesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivitiesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Activities",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/v1/sessions:busy": {
+      "get": {
+        "description": "此刻占着执行位（在跑或等审批）的会话。",
+        "operationId": "busy_v1_sessions_busy_get",
+        "parameters": [
+          {
+            "description": "只算这个属主的会话；不给算全部。",
+            "in": "query",
+            "name": "end_user",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "只算这个属主的会话；不给算全部。",
+              "title": "End User"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Busy",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/v1/titles": {
+      "post": {
+        "operationId": "generate_title_v1_titles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TitleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Generate Title",
+        "tags": [
+          "agents"
         ]
       }
     }

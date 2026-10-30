@@ -512,7 +512,6 @@
     "meta": {
       "activity": "idle"
     },
-    "title": "",
     "agents": [
       {
         "agentId": "main",

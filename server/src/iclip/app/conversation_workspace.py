@@ -1,11 +1,11 @@
-"""对话与工作区的适配：文件读写、素材登记及文档校验。"""
+"""对话与工作区的适配：文件读写及文档校验。"""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
 
 from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.file_store.store import (
     FileStore,
@@ -15,9 +15,6 @@ from agent_runtime.file_store.store import (
     VersionConflict,
     normalize_path,
 )
-from agent_runtime.material_ledger.store import Material, MaterialLedger
-from agent_runtime.plugins.workspace.scope import namespace_for
-from agent_runtime.transcript.ops import ImageContent, PromptContent, VideoContent
 from iclip_video.iclip_studio.film.checks import check_project_content, check_run_content
 from iclip_video.shot_document import validate_shots_document
 
@@ -27,25 +24,9 @@ from iclip.domains.conversations.service import DerivedFile, DerivedFileContent
 class ConversationWorkspace:
     """在组合根将属主与对话 id 转换为工作区命名空间，隔离两侧领域知识。"""
 
-    def __init__(self, store: PgFileStore, announcing: FileStore, ledger: MaterialLedger) -> None:
+    def __init__(self, store: PgFileStore, announcing: FileStore) -> None:
         self._store = store
         self._announcing = announcing
-        self._ledger = ledger
-
-    async def record_materials(
-        self, owner: uuid.UUID, conversation_id: str, content: Sequence[PromptContent]
-    ) -> None:
-        """登记用户附件，使工具可按素材来源规则使用其地址。"""
-
-        materials = [
-            Material(
-                url=part.source.url,
-                kind="image" if isinstance(part, ImageContent) else "video",
-            )
-            for part in content
-            if isinstance(part, ImageContent | VideoContent) and part.source.url is not None
-        ]
-        await self._ledger.record(namespace_for(owner, conversation_id), materials)
 
     async def list_files(
         self, owner: uuid.UUID, conversation_id: uuid.UUID

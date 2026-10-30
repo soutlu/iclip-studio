@@ -35,6 +35,7 @@ from pydantic_ai_harness.step_persistence import (
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.transcript import NoPromptRuns, PerRunBatchReads
 
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
@@ -244,16 +245,13 @@ async def test_child_page_does_not_rebuild_the_main_stream(engine: AsyncEngine) 
     large = await _seed(store, runs=50, delegate_every=5)
     history = _ReadSpy(store, NoPromptRuns(), delegate_tool=DELEGATE_TOOL)
 
-    async def noop(*_: object) -> None:
-        return None
-
     no_runner: Any = None  # 子代理页不碰运行驱动
     service = TranscriptService(
         store=TranscriptStore(),
         history=history,
         queue=JobQueue(engine),
         runner=no_runner,
-        record_materials=noop,
+        ledger=FakeMaterialLedger(),
     )
 
     def child_page(seeded: Seeded) -> Callable[[], Awaitable[object]]:
