@@ -14,8 +14,8 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
-import { holdLeftTrim, useReleaseSlide } from '../editing/left-trim'
 import type { PeaksState } from '../editing/media-analysis'
+import { usePreviewGesture, type Chain, type GesturePreview } from '../editing/preview-gesture'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
 import {
   arrowStep,
@@ -66,7 +66,6 @@ import {
   snapTargets,
   type TimelineScale,
 } from './timeline-scale'
-import { usePreviewGesture, type GestureStep } from './use-preview-gesture'
 
 export type MusicView = { url: string; title: string; peaks: PeaksState }
 
@@ -178,6 +177,42 @@ type Edge = 'start' | 'end'
 
 /** 画面轨上连着的几段一共多长 */
 const spanMs = (clips: readonly Layer0Clip[]) => clips.reduce((sum, clip) => sum + clip.duration, 0)
+
+/** 画面轨的段首尾相接（毫秒）：拖左把手时按它挪显示位置 */
+const LAYER0_CHAIN: Chain<Layer0Clip> = {
+  startOf: (clip) => clip.start,
+  lengthOf: (clip) => clip.duration,
+  moved: (clip, start) => ({ ...clip, start }),
+}
+
+/** 拖到某处时算出的一步：编辑结果，以及拖动中要画的吸附线、停住的原因、特效块要去的行 */
+type GestureStep = {
+  result: EditResult
+  guideMs?: number | null
+  /** 拖不过去的原因（如到了成片总长上限），拖动中写在旁边 */
+  note?: string | undefined
+  /** 原因写在哪个时刻上方 */
+  noteAtMs?: number | undefined
+  /** 拖动特效块时它要去的行：轨道上的行先不变，松手才换 */
+  row?: OverlayRow | undefined
+  /** 正在挪的特效块 */
+  overlayId?: string | undefined
+}
+
+/** 拖动中的样子：上一个放得下的结果，与这一刻的提示 */
+const filmPreviewOf = (preview: GesturePreview<GestureStep> | null) => {
+  if (preview === null) return null
+  const { last, step } = preview
+  if (!last.result.ok) return null
+  return {
+    draft: last.result.draft,
+    guideMs: step.result.ok ? (step.guideMs ?? null) : null,
+    note: step.note,
+    noteAtMs: step.noteAtMs ?? last.noteAtMs,
+    row: last.row,
+    overlayId: last.overlayId,
+  }
+}
 
 type Carrying = {
   clientX: number
@@ -385,28 +420,28 @@ export function FilmTracks({
   captionStatus,
   musicAction,
 }: FilmTracksProps) {
-  const gesture = usePreviewGesture(apply)
-  const previewed = gesture.preview?.draft ?? draft
-  // 拖画面轨一段的左把手：只挪显示，草稿照常首尾相接（见 holdLeftTrim）
-  const held = holdLeftTrim(previewed.layer0, gesture.preview?.pin, {
-    startOf: (clip) => clip.start,
-    lengthOf: (clip) => clip.duration,
-    moved: (clip, start) => ({ ...clip, start }),
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const clicks = useClickAfterDrag()
+  const gesture = usePreviewGesture<GestureStep>({
+    containerRef: contentRef,
+    clicks,
+    accepts: (step) => step.result.ok,
+    onCommit: (last) => apply(last.result),
   })
+  const preview = filmPreviewOf(gesture.preview)
+  const previewed = preview?.draft ?? draft
+  // 拖画面轨一段的左把手：只挪显示，草稿照常首尾相接；松手后这段与后面的段（连同选区外框）滑过去
+  const held = gesture.hold(previewed.layer0, LAYER0_CHAIN)
   const shown =
     held.items === previewed.layer0 ? previewed : { ...previewed, layer0: [...held.items] }
   const total = filmDuration(previewed)
   const { pps, contentWidth } = scale
   const beatsMs = beats.map((beat) => beat.timeMs)
   const gridStep = rulerTickStep(contentWidth / Math.max(pps, 1))
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  // 松开左把手：这段与后面的段（连同选区外框）从按下时的位置滑到首尾相接后的位置
-  useReleaseSlide(contentRef, gesture.preview?.pin !== undefined)
   const filmLaneRef = useRef<HTMLDivElement>(null)
   const overlayLaneRef = useRef<HTMLDivElement>(null)
   const musicLaneRef = useRef<HTMLDivElement>(null)
-  const clicks = useClickAfterDrag()
   const [carry, setCarry] = useState<Carrying | null>(null)
   const [lift, setLift] = useState<Lift | null>(null)
   const liftCancelledRef = useRef(false)
@@ -442,7 +477,7 @@ export function FilmTracks({
     carry !== null && !carry.returning && carry.point?.lane === 'overlay' && carry.attempt?.ok
       ? carry.point.overlayRow
       : undefined
-  const previewRow = carriedRow ?? gesture.preview?.row
+  const previewRow = carriedRow ?? preview?.row
   const newRow = previewRow !== undefined && 'insertAt' in previewRow ? previewRow : undefined
   const laneRows = Math.max(1, rows + (newRow === undefined ? 0 : 1))
 
@@ -642,10 +677,7 @@ export function FilmTracks({
       current === null ? null : { ...current, returning: true, destination: current.origin },
     )
   })
-  useEscapeAheadOfDialog(gesture.preview?.overlayId !== undefined, () => {
-    clicks.swallow()
-    gesture.cancel()
-  })
+  useEscapeAheadOfDialog(preview?.overlayId !== undefined, gesture.cancel)
 
   useEffect(() => {
     tracksRef.current = {
@@ -793,15 +825,11 @@ export function FilmTracks({
   /** 按下之后交给拖动预览的那几个指针事件 */
   const gestureFollow: Omit<PointerHandlers, 'onPointerDown'> = {
     onPointerMove: gesture.move,
-    onPointerUp: (event) => {
-      if (gesture.end(event)) clicks.swallow()
-    },
+    onPointerUp: gesture.end,
     onPointerCancel: gesture.cancel,
   }
 
   const startTrim = (event: PointerEvent<HTMLElement>, clip: Layer0Clip, edge: Edge) => {
-    event.stopPropagation()
-    clicks.reset()
     const edgeMs = edge === 'end' ? clip.start + clip.duration : clip.start
     // 吸附目标只取被拖段之前的边界（之后的边界随波纹一起动）、播放头与拍点
     const targets = snapTargets({
@@ -809,9 +837,9 @@ export function FilmTracks({
       playheadMs,
       beatsMs,
     }).filter((target) => Math.round(target.time * 1000) !== edgeMs)
-    // 左把手：这段的右边沿与后面的段停在按下时的位置，左边沿跟手；吸附线与提示因此都按按下时的时间画
-    const pin = edge === 'start' ? { id: clip.id, end: clip.start + clip.duration } : undefined
-    gesture.start(event, (deltaPx): GestureStep => {
+    // 左把手：这段的右边沿与后面的段停在按下时的位置，左边沿跟手（见 usePreviewGesture）
+    const target = { id: clip.id, edge, end: clip.start + clip.duration }
+    gesture.startTrim(event, target, (deltaPx): GestureStep => {
       const snapped = snapMs(edgeMs + pxToMs(deltaPx, pps), targets, pps, snap)
       const deltaMs = snapped.ms - edgeMs
       const result = trimClip(draft, { clipId: clip.id, edge, deltaMs }, context)
@@ -824,14 +852,12 @@ export function FilmTracks({
         guideMs: after.duration === wanted ? snapped.guideMs : null,
         note: stopped ? FILM_LIMIT_TEXT : undefined,
         noteAtMs: edge === 'end' ? after.start + after.duration : after.start,
-        pin,
       }
     })
   }
 
   const startOverlayTrim = (event: PointerEvent<HTMLElement>, overlay: OverlayClip, edge: Edge) => {
     event.stopPropagation()
-    clicks.reset()
     const edgeMs = edge === 'end' ? overlay.start + overlay.duration : overlay.start
     const targets = snapTargets({
       spans: [...draft.layer0, ...draft.overlays.filter((o) => o.id !== overlay.id)],
@@ -859,7 +885,6 @@ export function FilmTracks({
 
   /** 按住特效块中部拖：左右改时间（长度不变），上下换行；两端吸附到切点、播放头、拍点、其他块的边缘和刻度 */
   const startOverlayMove = (event: PointerEvent<HTMLElement>, overlay: OverlayClip) => {
-    clicks.reset()
     const targets = snapTargets({
       spans: [...draft.layer0, ...draft.overlays.filter((o) => o.id !== overlay.id)],
       playheadMs,
@@ -922,9 +947,7 @@ export function FilmTracks({
         onPointerCancel={gesture.cancel}
         onPointerDown={(event) => onPress(event, edge)}
         onPointerMove={gesture.move}
-        onPointerUp={(event) => {
-          if (gesture.end(event)) clicks.swallow()
-        }}
+        onPointerUp={gesture.end}
         pressed={false}
         style={edge === 'start' ? { left: 0 } : { left: '100%' }}
         value={durationMs / 1000}
@@ -1187,7 +1210,7 @@ export function FilmTracks({
   const rowTop = (row: OverlayRow) =>
     ROWS_TOP_PX + ('track' in row ? row.track : row.insertAt) * ROW_PX
 
-  const moving = gesture.preview?.overlayId
+  const moving = preview?.overlayId
   const overlaysShown = draft.overlays.map((overlay) => {
     if (overlay.id !== moving) {
       return newRow !== undefined && overlay.track >= newRow.insertAt
@@ -1200,7 +1223,7 @@ export function FilmTracks({
   const trimmed = (overlay: OverlayClip) =>
     moving === undefined ? (shown.overlays.find((o) => o.id === overlay.id) ?? overlay) : overlay
 
-  const guideMs = gesture.preview?.guideMs ?? hover?.point?.guideMs ?? null
+  const guideMs = preview?.guideMs ?? hover?.point?.guideMs ?? null
   const markerLeft =
     marker === undefined ? 0 : msToPx(filmDrop?.start ?? insertClock(marker.index), pps)
   const bubbleAlign = (left: number) =>
@@ -1398,8 +1421,8 @@ export function FilmTracks({
                 const timed = trimmed(overlay)
                 const isMoving = overlay.id === moving
                 const top =
-                  isMoving && gesture.preview?.row !== undefined
-                    ? rowTop(gesture.preview.row)
+                  isMoving && preview?.row !== undefined
+                    ? rowTop(preview.row)
                     : ROWS_TOP_PX + overlay.track * ROW_PX
                 return (
                   <Block
@@ -1466,9 +1489,9 @@ export function FilmTracks({
                 ? null
                 : (() => {
                     const overlay = overlaysShown.find((o) => o.id === moving)
-                    const row = gesture.preview?.row
+                    const row = preview?.row
                     if (overlay === undefined || row === undefined) return null
-                    const note = gesture.preview?.note
+                    const note = preview?.note
                     return (
                       <span
                         className={cn(
@@ -1519,7 +1542,6 @@ export function FilmTracks({
                   pointer={{
                     ...gestureFollow,
                     onPointerDown: (event) => {
-                      clicks.reset()
                       const current = draft.music
                       if (current === null || musicMedia === undefined) return
                       // 往左拖是用歌里更靠后的一段：成片 0 秒对齐的位置后移
@@ -1577,17 +1599,17 @@ export function FilmTracks({
               ) : null}
             </div>
           </div>
-          {gesture.preview?.note !== undefined && gesture.preview.noteAtMs !== undefined ? (
+          {preview?.note !== undefined && preview.noteAtMs !== undefined ? (
             <span
               className={cn(
                 'wf-drop-bubble',
-                bubbleAlign(msToPx(held.shiftAt(gesture.preview.noteAtMs), pps)),
+                bubbleAlign(msToPx(held.shiftAt(preview.noteAtMs), pps)),
               )}
               role="status"
-              style={{ left: `${msToPx(held.shiftAt(gesture.preview.noteAtMs), pps)}px` }}
+              style={{ left: `${msToPx(held.shiftAt(preview.noteAtMs), pps)}px` }}
             >
               <Icon decorative name="blocked" size="xs" />
-              {gesture.preview.note}
+              {preview.note}
             </span>
           ) : null}
           {guideMs === null ? null : (

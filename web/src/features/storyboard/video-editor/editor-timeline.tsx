@@ -13,8 +13,13 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { roundToMs, type SecondsRange } from '../editing/clip'
-import { holdLeftTrim, useReleaseSlide, type LeftTrimHold } from '../editing/left-trim'
 import type { PeaksState } from '../editing/media-analysis'
+import {
+  usePreviewGesture,
+  type Chain,
+  type GesturePreview,
+  type TrimTarget,
+} from '../editing/preview-gesture'
 import { shiftSelect, stepSelect } from '../editing/range-select'
 import { roundSeconds } from '../editing/time-label'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
@@ -101,6 +106,18 @@ export type TrimChange = { id: string; edge: Edge; t0: number; t1: number }
 /** 原片选区的把手落到的新起止（原片时间）。 */
 export type RunChange = SecondsRange & { edge: Edge }
 
+/** 舞台停在哪：草稿预览时是合成时间，原片预览时是原片时间；结尾那一端取结尾前的那一帧。 */
+type Seek = { clock: number; boundary?: 'end' }
+
+/**
+ * 按着修剪把手时舞台怎么跟：草稿块给拖动中草稿的样子（`items`），原片选区给拖动中的选区（`run`）。`seek` 是被拖
+ * 那一端的时刻，`shown` 是把手所在的标尺位置（工具条时间按它写，与播放头一致）；两者只在拖草稿块的左把手、这块
+ * 的显示位置挪过时不同。
+ */
+export type TrimPreview =
+  | { kind: 'draft'; items: readonly DraftItem[]; seek: Seek; shown: number }
+  | { kind: 'run'; run: RunChange; seek: Seek; shown: number }
+
 type ClipsTimelineProps = {
   rootUrl: string
   /** 原片时长：每秒多少像素只由它决定，草稿更长时往右滚动。 */
@@ -122,6 +139,7 @@ type ClipsTimelineProps = {
   onScrub: () => void
   /** 点镜头、Shift 点、方向键：按整镜头选中这一串，为 undefined 时清掉选区。 */
   onSelectRun: (run: SecondsRange | undefined) => void
+  /** 改原片选区：拖把手松手、按方向键时提交。 */
   onTrimRun: (change: RunChange) => void
   onSelectDraft: (id: string) => void
   onSelectRunning: (id: string) => void
@@ -130,9 +148,12 @@ type ClipsTimelineProps = {
   onClickPart: (editId: string, seg: number) => void
   /** 开关编辑轨上的一段：它的眼睛、把它拖进草稿、把草稿里的它拖出去都走这里。 */
   onTogglePart: (editId: string, seg: number) => void
+  /** 修剪草稿里的一块：拖把手松手、按方向键时提交。 */
   onTrim: (change: TrimChange) => void
-  /** 按下（true）、松开（false）修剪把手：拖动中卡片上的首帧、尾帧停在按下时那一帧，松手再换。 */
-  onTrimDrag: (dragging: boolean) => void
+  /** 这样修剪之后草稿的样子（见 `trimItem`）：拖把手、还没松手时按它画。 */
+  previewTrim: (change: TrimChange) => readonly DraftItem[]
+  /** 按下修剪把手、拖动中每一步给一次舞台要跟到的样子；松手、取消时给 undefined。 */
+  onTrimPreview: (preview: TrimPreview | undefined) => void
   /** 把这一段拖到草稿上、还没松手时草稿的样子（见 `previewPick`）；它已在草稿里时为 undefined。 */
   previewPick: (editId: string, seg: number) => readonly DraftItem[] | undefined
   selectionBoxRef: Ref<HTMLSpanElement>
@@ -198,26 +219,59 @@ const faceOf = (title: string, mediaUrl: string, t0: number, t1: number): Insert
   media: <Frames part={{ mediaUrl, start: t0, end: Math.min(t1, t0 + 0.5) }} />,
 })
 
-/** 修剪把手落到新起止时交给谁：草稿里的一块，或原片选区。 */
-type TrimEmit = (edge: Edge, range: { t0: number; t1: number }) => void
+/** 修剪把手落到的新起止（按草稿块来源自己的时间，或原片时间）。 */
+type Range = { t0: number; t1: number }
 
-type Drag = {
-  /** 拖的是哪一对把手：草稿块的 id，或原片选区的 {@link RUN_HANDLES}。 */
+/** 拖修剪把手的一步：草稿块带着这样修剪之后草稿的样子。 */
+type TrimStep =
+  | { kind: 'draft'; change: TrimChange; items: readonly DraftItem[] }
+  | { kind: 'run'; change: RunChange }
+
+/** 正按着的修剪把手。 */
+type Pressed = {
+  /** 哪一对把手：草稿块的 id，或原片选区的 {@link RUN_HANDLES}。 */
   key: string
   edge: Edge
-  pointerId: number
-  x0: number
-  from: number
-  pps: number
-  spec: TrimSpec
-  emit: TrimEmit
   /** 按下时轨道区铺了多少秒：拖动中不比它窄，免得滚到最右时内容变短、整条时间线在指针下跳。 */
-  hold: number
-  /** 拖的是草稿块的左把手：这块的右边沿与后面的块停在按下时的位置（见 holdLeftTrim）。 */
-  pin: LeftTrimHold | undefined
+  content: number
 }
 
 const RUN_HANDLES = 'run'
+
+/** 草稿的块按合成时间首尾相接：拖左把手时按它挪显示位置。 */
+const DRAFT_CHAIN: Chain<DraftItem> = {
+  startOf: (item) => item.at,
+  lengthOf: (item) => item.d,
+  moved: (item, at) => ({ ...item, at: roundToMs(at) }),
+}
+
+const seekTo = (edge: Edge, clock: number): Seek =>
+  edge === 'end' ? { clock, boundary: 'end' } : { clock }
+
+/** 这一步舞台怎么跟；`hold` 是这次拖动摆显示位置的办法（按下还没拖时不挪）。 */
+const trimPreviewOf = (
+  step: TrimStep,
+  hold: GesturePreview<TrimStep>['hold'] | undefined,
+): TrimPreview => {
+  if (step.kind === 'run') {
+    const { edge, start, end } = step.change
+    const clock = edge === 'end' ? end : start
+    return { kind: 'run', run: step.change, seek: seekTo(edge, clock), shown: clock }
+  }
+  const { id, edge } = step.change
+  const edgeOf = (items: readonly DraftItem[]) => {
+    const item = items.find((candidate) => candidate.id === id)
+    if (item === undefined) throw new Error('修剪后的草稿缺少被修剪的块')
+    return edge === 'end' ? item.at + item.d : item.at
+  }
+  const shown = hold === undefined ? step.items : hold(step.items, DRAFT_CHAIN).items
+  return {
+    kind: 'draft',
+    items: step.items,
+    seek: seekTo(edge, edgeOf(step.items)),
+    shown: edgeOf(shown),
+  }
+}
 
 /** 横向位置：`at` 起、长 `len` 秒，换算成像素交给 CSS（每秒像素 `--pps` 只由原片时长与可视宽定）。 */
 const placed = (at: number, len: number, row?: number): CSSProperties =>
@@ -260,7 +314,8 @@ export function ClipsTimeline({
   onClickPart,
   onTogglePart,
   onTrim,
-  onTrimDrag,
+  previewTrim,
+  onTrimPreview,
   previewPick,
   selectionBoxRef,
 }: ClipsTimelineProps) {
@@ -276,9 +331,20 @@ export function ClipsTimeline({
   const motion = useInsertionMotion()
   const clicks = useClickAfterDrag()
   const [hover, setHover] = useState<Hover>()
-  const [drag, setDrag] = useState<Drag>()
+  const [pressed, setPressed] = useState<Pressed>()
   const [carry, setCarry] = useState<Carry>()
-  const total = totalOf(items)
+  // 修剪把手拖动中只预览，松手才提交一次；舞台按预览跟到被拖的那一端
+  const trimGesture = usePreviewGesture<TrimStep>({
+    containerRef: lanesRef,
+    clicks,
+    onCommit: (last) => (last.kind === 'draft' ? onTrim(last.change) : onTrimRun(last.change)),
+    onPreview: (preview) =>
+      onTrimPreview(preview === null ? undefined : trimPreviewOf(preview.last, preview.hold)),
+  })
+  const trimming = trimGesture.preview?.last
+  // 草稿此刻的样子：拖草稿块的修剪把手时是预览
+  const draftNow = trimming?.kind === 'draft' ? trimming.items : items
+  const total = totalOf(draftNow)
   const bounded = Math.max(0, Math.min(clockOn === 'source' ? duration : total, clock))
   const parts = lanePartsOf(blocks)
   const rows = Math.max(1, ...blocks.map((block) => block.row + 1))
@@ -296,19 +362,16 @@ export function ClipsTimeline({
       ? previewPick(carryPart.block.id, carryPart.part.seg)
       : undefined
   const landing = projection?.find((item) => item.id === carryPart?.id)
-  // 拖草稿块的左把手：只挪显示，草稿本身照常首尾相接（见 holdLeftTrim）
-  const held = holdLeftTrim(
+  // 拖草稿块的左把手：只挪显示，草稿本身照常首尾相接；松手后这块与后面的块（连同选中描边、修剪把手）滑过去
+  const held = trimGesture.hold(
     projection === undefined || landing === undefined
-      ? items
+      ? draftNow
       : projection.filter((item) => item.id !== landing.id),
-    drag?.pin,
-    {
-      startOf: (item) => item.at,
-      lengthOf: (item) => item.d,
-      moved: (item, at) => ({ ...item, at: roundToMs(at) }),
-    },
+    DRAFT_CHAIN,
   )
   const shown = held.items
+  // 播放头与标尺滑块按显示位置放：拖左把手时停在把手所在的标尺位置，与工具条时间一致
+  const playheadAt = clockOn === 'draft' ? held.shiftAt(bounded) : bounded
   const itemOf = (id: string) => shown.find((item) => item.id === id)
 
   const showHover = (next: Hover | undefined) =>
@@ -326,7 +389,7 @@ export function ClipsTimeline({
   useLayoutEffect(() => syncHover(), [shownIds])
 
   // ---- 连线：草稿里的一块 ↔ 它的来源。悬停任一边，或刚开关的那一块；选中不常驻，修剪、拖放时不画 ----
-  const busy = drag !== undefined || carrying !== undefined
+  const busy = pressed !== undefined || carrying !== undefined
   const hovered = hover === undefined ? undefined : itemOf(hover.id)
   const drawConnector = () => {
     const svg = connectorRef.current
@@ -357,7 +420,7 @@ export function ClipsTimeline({
   }
 
   // 轨道区铺的秒数：原片与草稿取长者；拖修剪把手期间不比按下时窄，收起动画期间不比开关前窄
-  const base = Math.max(duration, total, totalOf(projection ?? []), drag?.hold ?? 0)
+  const base = Math.max(duration, total, totalOf(projection ?? []), pressed?.content ?? 0)
   const reflow = useDraftReflow({
     lanesRef,
     scrollRef,
@@ -365,11 +428,9 @@ export function ClipsTimeline({
     committed: items,
     previewKey: landing === undefined ? '' : `${landing.id}@${landing.at}`,
     content: base,
-    frozen: drag !== undefined,
+    frozen: pressed !== undefined,
     onFrame: drawConnector,
   })
-  // 松开左把手：这块与后面的块（连同选中描边、修剪把手）从按下时的位置滑到首尾相接后的位置
-  useReleaseSlide(lanesRef, drag?.pin !== undefined)
   const content = Math.max(base, reflow.hold ?? 0)
   const pair: Flash | undefined = busy
     ? undefined
@@ -385,7 +446,13 @@ export function ClipsTimeline({
 
   // ---- 原片轨的选区：点镜头、Shift 扩选、方向键都按整镜头算，覆盖到的镜头碰到一部分也算 ----
   const order = shots.map((shot) => shot.no)
-  const run = selection?.kind === 'run' ? selection : undefined
+  // 拖选区把手时按预览画，松手才改选中
+  const run: SecondsRange | undefined =
+    trimming?.kind === 'run'
+      ? { start: trimming.change.start, end: trimming.change.end }
+      : selection?.kind === 'run'
+        ? selection
+        : undefined
   const covered = run === undefined ? undefined : coveredSpan(shots, run)
   const chosen =
     covered === undefined ? [] : order.filter((no) => covered.from <= no && no <= covered.to)
@@ -472,66 +539,63 @@ export function ClipsTimeline({
           : undefined
 
   // ---- 修剪把手：草稿里选中的那块，与原片轨上的选区，同一套拖动与方向键 ----
+  /**
+   * 按下修剪把手：拖动中按指针换算时间、离边界 8px 以内吸上去，只预览，松手才提交一次（见 usePreviewGesture）。
+   * `target` 是草稿里的那一块（拖它的左把手时右边沿与后面的块不动）；原片选区不给。
+   */
   const pressTrim = (
     event: PointerEvent<HTMLButtonElement>,
     key: string,
     spec: TrimSpec,
     edge: Edge,
-    emit: TrimEmit,
-    pin?: LeftTrimHold,
+    stepOf: (range: Range) => TrimStep,
+    target?: TrimTarget,
   ) => {
     if (event.button !== 0) return
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
     // 开关后的重排与连线停在最终状态，拖动中不再有任何动画
     reflow.cancel()
-    setDrag({
-      key,
-      edge,
-      pointerId: event.pointerId,
-      x0: event.clientX,
-      from: edge === 'end' ? spec.t1 : spec.t0,
-      pps: ppsNow(),
-      spec,
-      emit,
-      hold: content,
-      pin: edge === 'start' ? pin : undefined,
-    })
-    onTrimDrag(true)
+    const pps = ppsNow()
+    const from = edge === 'end' ? spec.t1 : spec.t0
+    const compute = (deltaPx: number) =>
+      stepOf(trimTo(spec, edge, from + deltaPx / pps, snapNear(spec.snaps, pps)))
+    if (target === undefined) {
+      event.stopPropagation()
+      trimGesture.start(event, compute)
+    } else trimGesture.startTrim(event, target, compute)
+    setPressed({ key, edge, content })
     // 按下就把舞台换到这一端的画面
-    emit(edge, { t0: spec.t0, t1: spec.t1 })
+    onTrimPreview(trimPreviewOf(stepOf({ t0: spec.t0, t1: spec.t1 }), undefined))
   }
-  const moveTrim = (event: PointerEvent<HTMLButtonElement>) => {
-    if (drag === undefined || drag.pointerId !== event.pointerId) return
-    const time = drag.from + (event.clientX - drag.x0) / drag.pps
-    drag.emit(drag.edge, trimTo(drag.spec, drag.edge, time, snapNear(drag.spec.snaps, drag.pps)))
+  const releaseTrim = (event: PointerEvent<HTMLButtonElement>) => {
+    trimGesture.end(event)
+    setPressed(undefined)
   }
-  const endTrim = (event: PointerEvent<HTMLButtonElement>) => {
-    if (drag === undefined || drag.pointerId !== event.pointerId) return
-    releasePointer(event)
-    setDrag(undefined)
-    onTrimDrag(false)
+  const cancelTrim = () => {
+    trimGesture.cancel()
+    setPressed(undefined)
   }
+  /** 方向键：每一步直接提交。 */
   const keyTrim = (
     event: KeyboardEvent<HTMLButtonElement>,
     spec: TrimSpec,
     edge: Edge,
-    emit: TrimEmit,
+    commit: (range: Range) => void,
   ) => {
     const step = arrowStep(event)
     if (step === undefined) return
     event.preventDefault()
     const current = edge === 'end' ? spec.t1 : spec.t0
     const snap = snapAhead(spec.snaps, current, step > 0 ? 1 : -1, ppsNow())
-    emit(edge, trimTo(spec, edge, current + step, snap))
+    commit(trimTo(spec, edge, current + step, snap))
   }
-  const pressedEdge = (key: string) => (drag?.key === key ? drag.edge : undefined)
+  const pressedEdge = (key: string) => (pressed?.key === key ? pressed.edge : undefined)
   const draftSpec = selectedItem === undefined ? undefined : trimSpecOf(selectedItem)
-  const emitDraft: TrimEmit = (edge, range) => {
-    if (selectedItem !== undefined) onTrim({ id: selectedItem.id, edge, ...range })
+  const draftStep = (id: string, edge: Edge, range: Range): TrimStep => {
+    const change = { id, edge, ...range }
+    return { kind: 'draft', change, items: previewTrim(change) }
   }
   const runSpec = run === undefined ? undefined : runTrimSpecOf(run, shots, duration)
-  const emitRun: TrimEmit = (edge, { t0, t1 }) => onTrimRun({ edge, start: t0, end: t1 })
+  const runChange = (edge: Edge, { t0, t1 }: Range): RunChange => ({ edge, start: t0, end: t1 })
 
   const draftName = (item: DraftItem) => {
     if (item.kind === 'shot') return `镜头 ${item.no} · ${draftLineOf(item)}`
@@ -721,7 +785,7 @@ export function ClipsTimeline({
         >
           <TimelineRuler
             clockAt={(clientX) => clockIn(lanesRef.current, content, clientX)}
-            currentTime={bounded}
+            currentTime={playheadAt}
             onScrub={onScrub}
             onSeek={(time) => onSeek(Math.min(total, time))}
             scale={content}
@@ -926,15 +990,24 @@ export function ClipsTimeline({
               style={placed(selectedItem.at, selectedItem.d)}
             >
               <TrimPair
-                onKeyDown={(event, edge) => keyTrim(event, draftSpec, edge, emitDraft)}
-                onPointerDown={(event, edge) =>
-                  pressTrim(event, selectedItem.id, draftSpec, edge, emitDraft, {
-                    id: selectedItem.id,
-                    end: selectedItem.at + selectedItem.d,
-                  })
+                onKeyDown={(event, edge) =>
+                  keyTrim(event, draftSpec, edge, (range) =>
+                    onTrim({ id: selectedItem.id, edge, ...range }),
+                  )
                 }
-                onPointerEnd={endTrim}
-                onPointerMove={moveTrim}
+                onPointerCancel={cancelTrim}
+                onPointerDown={(event, edge) =>
+                  pressTrim(
+                    event,
+                    selectedItem.id,
+                    draftSpec,
+                    edge,
+                    (range) => draftStep(selectedItem.id, edge, range),
+                    { id: selectedItem.id, edge, end: selectedItem.at + selectedItem.d },
+                  )
+                }
+                onPointerMove={trimGesture.move}
+                onPointerUp={releaseTrim}
                 pressed={pressedEdge(selectedItem.id)}
                 spec={draftSpec}
                 valueText={draftLineOf(selectedItem)}
@@ -949,12 +1022,18 @@ export function ClipsTimeline({
               style={placed(run.start, run.end - run.start)}
             >
               <TrimPair
-                onKeyDown={(event, edge) => keyTrim(event, runSpec, edge, emitRun)}
-                onPointerDown={(event, edge) =>
-                  pressTrim(event, RUN_HANDLES, runSpec, edge, emitRun)
+                onKeyDown={(event, edge) =>
+                  keyTrim(event, runSpec, edge, (range) => onTrimRun(runChange(edge, range)))
                 }
-                onPointerEnd={endTrim}
-                onPointerMove={moveTrim}
+                onPointerCancel={cancelTrim}
+                onPointerDown={(event, edge) =>
+                  pressTrim(event, RUN_HANDLES, runSpec, edge, (range) => ({
+                    kind: 'run',
+                    change: runChange(edge, range),
+                  }))
+                }
+                onPointerMove={trimGesture.move}
+                onPointerUp={releaseTrim}
                 pressed={pressedEdge(RUN_HANDLES)}
                 spec={runSpec}
                 valueText={`${spanName(covered)} · 原片 ${secondsText(run.start)} – ${secondsText(run.end)} 秒`}
@@ -962,12 +1041,7 @@ export function ClipsTimeline({
             </span>
           )}
 
-          {/* 拖左把手期间播放头按显示位置放：停在被拖的那一端 */}
-          <TimelinePlayhead
-            style={{
-              left: `${((clockOn === 'draft' ? held.shiftAt(bounded) : bounded) / content) * 100}%`,
-            }}
-          />
+          <TimelinePlayhead style={{ left: `${(playheadAt / content) * 100}%` }} />
         </div>
       </div>
       {carry?.moved === true ? (
@@ -1013,7 +1087,8 @@ type TrimPairProps = {
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, edge: Edge) => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>, edge: Edge) => void
   onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
-  onPointerEnd: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: () => void
 }
 
 /** 一对修剪把手，放在按起止摆好的容器两端：草稿里选中的那块与原片选区共用。 */
@@ -1024,7 +1099,8 @@ function TrimPair({
   onKeyDown,
   onPointerDown,
   onPointerMove,
-  onPointerEnd,
+  onPointerUp,
+  onPointerCancel,
 }: TrimPairProps) {
   return (['start', 'end'] as const).map((edge) => (
     <TrimHandle
@@ -1036,10 +1112,10 @@ function TrimPair({
       edge={edge}
       key={edge}
       onKeyDown={(event) => onKeyDown(event, edge)}
-      onPointerCancel={onPointerEnd}
+      onPointerCancel={onPointerCancel}
       onPointerDown={(event) => onPointerDown(event, edge)}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerEnd}
+      onPointerUp={onPointerUp}
       pressed={pressed === edge}
       style={edge === 'start' ? { left: 0 } : { left: '100%' }}
       value={edge === 'start' ? spec.t0 : spec.t1}

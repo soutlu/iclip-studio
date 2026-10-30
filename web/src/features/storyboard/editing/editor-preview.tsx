@@ -74,6 +74,8 @@ type Props = {
   poster: string | undefined
   backdrop: string | undefined
   currentTime: number
+  /** 工具条上写的时刻，不给时是 `currentTime`：拖修剪把手时是把手所在的标尺位置，与播放头一致。 */
+  shownTime?: number | undefined
   onTime: (clock: number) => void
   onPlay: () => void
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
@@ -99,6 +101,7 @@ export function EditorPreview({
   poster,
   backdrop,
   currentTime,
+  shownTime = currentTime,
   onTime,
   onPlay,
   onPlaybackChange,
@@ -333,7 +336,7 @@ export function EditorPreview({
   )
   const clock = (
     <span className="editor-clock">
-      {timeLabel(currentTime)}
+      {timeLabel(shownTime)}
       <span> / {timeLabel(duration)}</span>
     </span>
   )
