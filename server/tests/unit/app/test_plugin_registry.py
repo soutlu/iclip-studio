@@ -10,6 +10,11 @@ from typing import Any, cast
 import httpx
 import pytest
 from agent_runtime.errors import NotFound, ValidationFailed
+from agent_runtime.harness.background import BackgroundTools
+from agent_runtime.plugins.base import PluginRegistry
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from agent_runtime.run_deps import AgentRunDeps
 from pydantic_ai import Agent, AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.exceptions import UserError
@@ -21,20 +26,17 @@ from iclip.app.plugin_registry import (
     GenerationsAdapter,
     ObjectWriterAdapter,
     OssMediaProbe,
-    PluginRegistry,
     build_display_registry,
     build_plugin_registry,
 )
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
-from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
-from iclip.harness.background import BackgroundTools
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from iclip.plugins.iclip_studio.capability import IclipStudio
@@ -48,8 +50,6 @@ from iclip.plugins.shot_video.ports import (
 from iclip.plugins.video.capability import Video
 from iclip.plugins.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
 from iclip.plugins.video_shots.capability import VideoShots
-from iclip.plugins.workspace.capability import Workspace
-from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
@@ -484,7 +484,7 @@ async def test_a_non_json_body_is_a_probe_failure() -> None:
 async def test_an_address_that_cannot_carry_the_info_parameter_is_refused_unasked(
     url: str,
 ) -> None:
-    """非 OSS 域名与已带 query 的地址走 harness.media 的同一道守卫，不发请求、不回显地址。"""
+    """非 OSS 域名与已带 query 的地址走 agent_runtime.harness.media 的同一道守卫，不发请求、不回显地址。"""
 
     asked: list[str] = []
 

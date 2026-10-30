@@ -10,6 +10,13 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any
 
+from agent_runtime.harness.agents import DELEGATE_TOOL
+from agent_runtime.harness.jobs import JobQueue
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.history import TranscriptHistory, TranscriptHistoryView
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.transcript.ops import MAIN_AGENT_ID
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -28,13 +35,6 @@ from pydantic_ai_harness.step_persistence import (
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.agents import DELEGATE_TOOL
-from iclip.harness.jobs import JobQueue
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.history import TranscriptHistory, TranscriptHistoryView
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.transcript.ops import MAIN_AGENT_ID
 from tests.helpers.transcript import NoPromptRuns, PerRunBatchReads
 
 T0 = datetime(2026, 9, 1, tzinfo=UTC)

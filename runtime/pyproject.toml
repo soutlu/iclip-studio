@@ -1,16 +1,21 @@
 [project]
 name = "agent-runtime"
 version = "0.1.0"
-description = "Agent 运行时：错误分类、工作区文件存储与素材台账等运行内核，供宿主服务依赖"
+description = "Agent 运行时：agent 执行引擎、对话内容格式、插件基础、工作区文件与素材台账，供各应用服务依赖"
 requires-python = ">=3.13"
 dependencies = [
     "sqlalchemy[asyncio]>=2.0.52",
     "pydantic>=2.13.5",
     "structlog>=26.1.0",
+    "pydantic-ai-slim[openai]>=2.62.0",  # OpenAI 兼容端点（含百炼）
+    # 0.x 的 minor 版本可能破坏 API；导入边界见 tests/unit/architecture/test_architecture.py
+    "pydantic-ai-harness>=0.62.0",
 ]
 
 [dependency-groups]
 dev = [
+    # 运行器关停单测要建一个 asyncpg engine（不连库）。
+    "asyncpg>=0.31.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-timeout>=2.4.0",

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from agent_runtime.harness.models import thinking_effort_of
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 
 from iclip.app.model_providers import build_provider_model, require_known_providers
 from iclip.domains.model_providers.catalog import Declarations, load_declarations
 from iclip.domains.model_providers.models import ModelProperties, ProviderModel
-from iclip.harness.models import thinking_effort_of
 
 FIELDS = {"api_key": "sk-test", "base_url": "https://dashscope.test/compatible-mode/v1"}
 

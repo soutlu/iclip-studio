@@ -11,21 +11,14 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 from agent_runtime.errors import Conflict, ValidationFailed
-from fastapi import FastAPI
-from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai_harness.step_persistence import ContinuableSnapshot
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from iclip.harness.jobs import JobQueue, JobQueueView, Submission
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.activity import ActivityState
-from iclip.harness.transcript.history import TranscriptHistory, TurnRewind
-from iclip.harness.transcript.runner import ConversationRunner
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.transcript.ops import (
+from agent_runtime.harness.jobs import JobQueue, JobQueueView, Submission
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.activity import ActivityState
+from agent_runtime.harness.transcript.history import TranscriptHistory, TurnRewind
+from agent_runtime.harness.transcript.runner import ConversationRunner
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.transcript.ops import (
     MAIN_AGENT_ID,
     AttachmentSource,
     ImageContent,
@@ -34,6 +27,13 @@ from iclip.platform.transcript.ops import (
     TextContent,
     TextFrame,
 )
+from fastapi import FastAPI
+from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai_harness.step_persistence import ContinuableSnapshot
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from tests.helpers.agents import AgentSeed
 from tests.helpers.app import TEST_MODEL_NAME, make_client, new_conversation, settled
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db

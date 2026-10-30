@@ -6,6 +6,15 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from agent_runtime.harness.job_status import JobStatus
+from agent_runtime.harness.transcript.from_messages import SteeredPrompt
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import OpBatch, TranscriptStore
+from agent_runtime.harness.transcript.subscription import subscribe_frames
+from agent_runtime.transcript.display import ToolDisplayRegistry
+from agent_runtime.transcript.ops import MAIN_AGENT_ID
+from agent_runtime.transcript.wire import TranscriptPage
 from pydantic import BaseModel
 from pydantic_ai_harness.step_persistence import (
     InMemoryStepStore,
@@ -15,15 +24,6 @@ from pydantic_ai_harness.step_persistence import (
     ToolEffectRecord,
 )
 
-from iclip.harness.job_status import JobStatus
-from iclip.harness.transcript.from_messages import SteeredPrompt
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import OpBatch, TranscriptStore
-from iclip.harness.transcript.subscription import subscribe_frames
-from iclip.platform.transcript.display import ToolDisplayRegistry
-from iclip.platform.transcript.ops import MAIN_AGENT_ID
-from iclip.platform.transcript.wire import TranscriptPage
 from tests.helpers.golden import CONTRACT_DIR, check_golden_file
 
 GOLDEN_DIR = CONTRACT_DIR / "transcript"

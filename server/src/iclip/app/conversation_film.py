@@ -17,6 +17,7 @@ from agent_runtime.file_store.store import (
     VersionConflict,
 )
 from agent_runtime.material_ledger.store import Material, MaterialLedger
+from agent_runtime.plugins.workspace.scope import namespace_for
 from pydantic import ValidationError
 
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
@@ -39,7 +40,6 @@ from iclip.plugins.iclip_studio.film.studio import (
     set_aspect_ratio,
 )
 from iclip.plugins.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
-from iclip.plugins.workspace.scope import namespace_for
 
 _STALE = "分镜刚被改过，刷新后再改"
 _BROKEN = "分镜现在有问题，等 AI 导演改好再改"

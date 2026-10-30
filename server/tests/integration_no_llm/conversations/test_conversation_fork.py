@@ -16,6 +16,7 @@ from typing import NoReturn
 import httpx
 import pytest
 from agent_runtime.errors import Conflict, NotFound
+from agent_runtime.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -33,11 +34,10 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
-from iclip.harness.step_store_pg import PgStepStore
 from iclip.platform.db.engine import build_engine
+from iclip.platform.live.session_events import SessionEventClock
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
-from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import AgentSeed, seed_agents
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db

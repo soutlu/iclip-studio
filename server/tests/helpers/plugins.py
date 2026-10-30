@@ -8,13 +8,13 @@ from typing import Any, Self
 
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 
-from iclip.platform.transcript.display import DisplayFn, ToolDisplayEntry
-from iclip.plugins.base import CapPlugin
 from iclip.plugins.video.capability import Video
-from iclip.plugins.workspace.capability import Workspace
-from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.shot_video import FakeUnderstanding
 

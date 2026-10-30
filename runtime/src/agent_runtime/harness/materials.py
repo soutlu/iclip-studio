@@ -1,0 +1,67 @@
+"""限定工具素材 URL 来自当前命名空间的台账，并校验媒体类型。
+
+此处验证来源和类型；SSRF 防护属于实际获取素材的出网边界。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from pydantic_ai import ModelRetry
+
+from agent_runtime.harness.media import media_kind_label
+from agent_runtime.material_ledger.store import MaterialKind, MaterialLedger
+from agent_runtime.urls import is_http_url
+
+
+def require_http(url: str, *, what: str) -> None:
+    """要求素材地址使用 HTTP(S)；错误不回显被拒地址。"""
+
+    if not is_http_url(url):
+        raise ModelRetry(f"{what}必须是带主机名的 http(s) 地址；换成对话或工具结果里给出的地址。")
+
+
+async def require_material(
+    ledger: MaterialLedger,
+    namespace: str,
+    url: str,
+    *,
+    kind: MaterialKind,
+    what: str,
+    recorded_at: str | None = None,
+) -> None:
+    """校验当前会话的素材与类型。
+
+    错误不回显被拒 URL，避免未经认可的地址通过错误消息进入模型上下文。
+    能力的产出地址落在某个工作区文件里时给 recorded_at，让模型能自己读回来。
+    """
+
+    recorded = await ledger.lookup(namespace, url)
+    if recorded is None:
+        raise ModelRetry(
+            f"这个{what}不是这段对话里的素材。只能用对话里给你的地址、或工具结果里"
+            f"返回的地址，不要自己拼{'；' + recorded_at if recorded_at else '。'}"
+        )
+    if recorded.kind != kind:
+        raise ModelRetry(
+            f"这个地址在对话里是一份{media_kind_label(recorded.kind)}，当不了{what}。"
+            f"换一个{media_kind_label(kind)}的地址。"
+        )
+
+
+async def require_materials(
+    ledger: MaterialLedger,
+    namespace: str,
+    urls: Iterable[str],
+    *,
+    kind: MaterialKind,
+    what: str,
+) -> None:
+    """逐个校验一组素材地址：HTTP(S)，且是当前会话里该类型的素材。"""
+
+    for url in urls:
+        require_http(url, what=what)
+        await require_material(ledger, namespace, url, kind=kind, what=what)
+
+
+__all__ = ["require_http", "require_material", "require_materials"]

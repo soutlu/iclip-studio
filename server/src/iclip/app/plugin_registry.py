@@ -13,7 +13,15 @@ from typing import Any
 import httpx
 from agent_runtime.errors import ValidationFailed
 from agent_runtime.file_store.store import FileSpace, FileStore
+from agent_runtime.harness.agents import delegate_display_table
+from agent_runtime.harness.media import image_info_url
+from agent_runtime.harness.skills import skill_display_table
 from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.plugins.base import CapPlugin, PluginRegistry
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.transcript.display import ToolDisplayRegistry
 from pydantic import ValidationError
 
 from iclip.app.film_images import FilmImagesAdapter, RunFilmImagesAdapter
@@ -24,15 +32,10 @@ from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.service import ReferenceService
-from iclip.harness.agents import delegate_display_table
-from iclip.harness.media import image_info_url
-from iclip.harness.skills import skill_display_table
 from iclip.platform.http import validation_error_detail
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
-from iclip.platform.transcript.display import ToolDisplayRegistry
-from iclip.plugins.base import CapPlugin
 from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip.plugins.shot_video.ports import (
@@ -45,12 +48,6 @@ from iclip.plugins.video.capability import Video
 from iclip.plugins.video_breakdown.capability import VideoBreakdownPlugin
 from iclip.plugins.video_shots.capability import VideoShots
 from iclip.plugins.video_understanding import ArkVideoUnderstanding
-from iclip.plugins.workspace.capability import Workspace
-from iclip.plugins.workspace.ports import ImageInfo, MediaProbeFailed
-from iclip.plugins.workspace.scope import workspace_namespace
-
-PluginRegistry = Mapping[str, type[CapPlugin[Any]]]
-"""插件名对应绑好服务的插件类；装配时整张表交给 ``Agent.from_spec``，由它按 spec 各造一份实例。"""
 
 
 class GenerationsAdapter:
@@ -113,7 +110,7 @@ _IMAGE_MEDIA_TYPES: Mapping[str, str] = {
 class OssMediaProbe:
     """通过 OSS image/info 查询尺寸、大小与格式，无需下载像素。
 
-    查询地址由 ``harness.media`` 构造，先经 ``fetch_url`` 换算（本桶对象走内网）再挂参数；对外
+    查询地址由 ``agent_runtime.harness.media`` 构造，先经 ``fetch_url`` 换算（本桶对象走内网）再挂参数；对外
     错误使用固定文案，避免回显带参数的地址。"""
 
     def __init__(self, client: httpx.AsyncClient, *, fetch_url: Callable[[str], str]) -> None:
@@ -306,7 +303,6 @@ __all__ = [
     "GenerationsAdapter",
     "ObjectWriterAdapter",
     "OssMediaProbe",
-    "PluginRegistry",
     "build_display_registry",
     "build_plugin_registry",
 ]

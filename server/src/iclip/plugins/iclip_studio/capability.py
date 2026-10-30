@@ -10,15 +10,10 @@ from typing import Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material, MaterialLedger
-from pydantic_ai import ModelRetry
-from pydantic_ai.capabilities import CapabilityOrdering
-from pydantic_ai.messages import ToolReturn
-from pydantic_ai.tools import AgentDepsT, RunContext
-from pydantic_ai.toolsets import FunctionToolset
-
-from iclip.common.shot_prompt import format_shot_prompt
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.platform.transcript.display import (
+from agent_runtime.plugins.base import CapPlugin
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.display import (
     MEDIA_GRID_VIEW,
     DisplayFn,
     GenericDisplay,
@@ -26,7 +21,13 @@ from iclip.platform.transcript.display import (
     media_grid,
     tool_note,
 )
-from iclip.plugins.base import CapPlugin
+from pydantic_ai import ModelRetry
+from pydantic_ai.capabilities import CapabilityOrdering
+from pydantic_ai.messages import ToolReturn
+from pydantic_ai.tools import AgentDepsT, RunContext
+from pydantic_ai.toolsets import FunctionToolset
+
+from iclip.common.shot_prompt import format_shot_prompt
 from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.plugins.iclip_studio.film.load import ConversationImages, load_film
 from iclip.plugins.iclip_studio.film.markup import Node
@@ -38,7 +39,6 @@ from iclip.plugins.iclip_studio.ports import (
     NodeImageRequest,
     NodeImages,
 )
-from iclip.plugins.workspace.capability import Workspace
 
 CAPABILITY_ID: Final = "iclip_studio"
 

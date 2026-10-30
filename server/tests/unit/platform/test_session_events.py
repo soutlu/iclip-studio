@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from iclip.platform.transcript.session_events import SessionEventClock
+from iclip.platform.live.session_events import SessionEventClock
 
 
 def test_each_conversation_counts_its_own_events_from_one() -> None:

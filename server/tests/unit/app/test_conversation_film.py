@@ -10,6 +10,7 @@ import pytest
 from agent_runtime.errors import Conflict, ValidationFailed
 from agent_runtime.file_store.store import FileEntry, VersionConflict
 from agent_runtime.material_ledger.store import Material
+from agent_runtime.plugins.workspace.scope import namespace_for
 
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.film_images import FILM_NODE_KEY
@@ -18,7 +19,6 @@ from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, Gen
 from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO, MAX_PROMPT_CHARS
 from iclip.domains.identity.models import Principal
 from iclip.plugins.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.plugins.workspace.scope import namespace_for
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.film import (
     EXPECTED,

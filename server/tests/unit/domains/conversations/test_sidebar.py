@@ -26,7 +26,7 @@ from iclip.domains.conversations.service import (
     ListState,
 )
 from iclip.domains.identity.public import Principal
-from iclip.platform.transcript.session_events import SessionEventClock
+from iclip.platform.live.session_events import SessionEventClock
 from tests.helpers.film import UnusedFilmPage
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)

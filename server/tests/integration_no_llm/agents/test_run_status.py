@@ -6,19 +6,19 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
+from agent_runtime.harness.agents import DELEGATE_TOOL
+from agent_runtime.harness.jobs import JobQueue
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.runner import ConversationRunner
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.transcript.display import ToolDisplayRegistry
+from agent_runtime.transcript.ops import TextContent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.agents import DELEGATE_TOOL
-from iclip.harness.jobs import JobQueue
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import ConversationRunner
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.transcript.display import ToolDisplayRegistry
-from iclip.platform.transcript.ops import TextContent
 from tests.helpers.runtime import (
     AGENT_ID,
     LOCKED_BY,

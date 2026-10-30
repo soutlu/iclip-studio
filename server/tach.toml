@@ -38,7 +38,7 @@ depends_on = ["iclip.common", "iclip.platform.db", "iclip.platform.http"]
 
 [[modules]]
 path = "iclip.domains.agents"
-depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.transcript"]
+depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.live"]
 
 [[modules]]
 path = "iclip.domains.conversations"
@@ -147,24 +147,14 @@ path = "iclip.domains.inspirations"
 depends_on = ["iclip.common", "iclip.domains.identity", "iclip.domains.products"]
 
 [[modules]]
-path = "iclip.platform.transcript"
+path = "iclip.platform.live"
 depends_on = ["iclip.common"]
-
-[[modules]]
-path = "iclip.harness"
-depends_on = [
-    "iclip.common",
-    "iclip.platform.transcript",
-]
 
 [[modules]]
 path = "iclip.plugins"
 depends_on = [
     "iclip.common",
     "iclip.platform.media",
-    "iclip.platform.transcript",
-    "iclip.harness",
-    "iclip.domains.agents",
 ]
 
 [[modules]]
@@ -176,7 +166,6 @@ depends_on = [
     "iclip.platform.object_store",
     "iclip.platform.media",
     "iclip.platform.outbound",
-    "iclip.platform.transcript",
     "iclip.config",
     "iclip.domains.identity",
     "iclip.domains.agents",
@@ -196,6 +185,5 @@ depends_on = [
     "iclip.domains.skills",
     "iclip.domains.model_providers",
     "iclip.domains.agent_config",
-    "iclip.harness",
     "iclip.plugins",
 ]

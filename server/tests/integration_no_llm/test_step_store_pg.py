@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from agent_runtime.harness.step_store_pg import PgMediaStore, PgStepStore
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     BinaryContent,
@@ -32,7 +33,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.step_store_pg import PgMediaStore, PgStepStore
 from iclip.platform.db.engine import build_engine
 from tests.helpers.pg import (
     insert_inline_snapshot,

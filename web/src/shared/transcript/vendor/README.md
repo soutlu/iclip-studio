@@ -6,7 +6,7 @@
 
 - 工具帧增加 `metadata`：声明位于 [model/frame.ts](model/frame.ts)，接收校验位于 [contract/schema.ts](contract/schema.ts)，相等判断位于 [ops/apply.ts](ops/apply.ts) 的 `frameEquals`，三处一起维护；它承载面向用户的工具结果。
 - 轮头部和用户文本帧使用 `content` 保存原始消息 part，代替上游的 `prompt` 与 `attachmentIds`；类型、schema 与 [ops/apply.ts](ops/apply.ts) 的相等判断共同维护这一扩展。上游的 `triggerPromptId` 保留在 [model/turn.ts](model/turn.ts)、schema 与相等判断里，乐观气泡按它认领。
-- 未引入上游 `history/`。历史投影由[后端 transcript](../../../../../server/src/iclip/harness/transcript/from_messages.py)生成，相关上游 history 测试未保留。
+- 未引入上游 `history/`。历史投影由[后端 transcript](../../../../../runtime/src/agent_runtime/harness/transcript/from_messages.py)生成，相关上游 history 测试未保留。
 - 未引入上游用户文本帧的 `origin`（技能激活与 `clientMetadata`）、[消息记录](model/prompt.ts)的 `clientMetadata` 和 `contract/origin.ts`。
 - [测试目录](__tests__/)使用相对导入，并按本仓的消息形状调整测试数据。
 
@@ -14,4 +14,4 @@
 
 日常业务适配、连接封装与应用状态放在[上级目录](../)，不在 vendor 内修改。除上述改写外，本目录文件与上游一致。上游同步或跨端协议变更需要修改本目录时，逐项核对并保留上述本仓扩展，不直接覆盖整目录。
 
-协议变更同时核对前端 schema、类型、操作投影和[后端协议类型](../../../../../server/src/iclip/platform/transcript/wire.py)，更新对应层的契约与行为测试。保留上游许可证；字段是否接受、保留或丢弃以 schema 为准。
+协议变更同时核对前端 schema、类型、操作投影和[后端协议类型](../../../../../runtime/src/agent_runtime/transcript/wire.py)，更新对应层的契约与行为测试。保留上游许可证；字段是否接受、保留或丢弃以 schema 为准。

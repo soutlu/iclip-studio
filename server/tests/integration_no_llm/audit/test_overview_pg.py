@@ -11,6 +11,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from agent_runtime.harness.jobs import JobQueue
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.runner import ConversationRunner
+from agent_runtime.harness.transcript.store import TranscriptStore
 from pydantic_ai.messages import ModelMessage
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -20,10 +24,6 @@ from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.schemas import MetricsOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
-from iclip.harness.jobs import JobQueue
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.runner import ConversationRunner
-from iclip.harness.transcript.store import TranscriptStore
 from tests.helpers.audit import Plant
 from tests.helpers.runtime import (
     AGENT_ID,

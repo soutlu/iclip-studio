@@ -9,15 +9,15 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.plugins.base import CapPlugin, PluginRegistry
+from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 from pydantic_ai.capabilities import Capability
 
 from iclip.app.agent_config import RegistryPluginDirectory
-from iclip.app.plugin_registry import PluginRegistry, build_plugin_registry
+from iclip.app.plugin_registry import build_plugin_registry
 from iclip.config import ResolvedVideo
 from iclip.domains.agent_config.public import Problem
-from iclip.platform.transcript.display import DisplayFn, ToolDisplayEntry
-from iclip.plugins.base import CapPlugin
-from iclip.plugins.workspace.capability import Workspace
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.identity import FakePrincipals

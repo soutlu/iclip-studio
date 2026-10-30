@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from agent_runtime.harness.step_store_pg import PgStepStore
 from pydantic_ai.messages import (
     BinaryContent,
     ModelMessage,
@@ -15,7 +16,6 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 from scripts.dedup_snapshot_messages import rewrite_inline_snapshots
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.step_store_pg import PgStepStore
 from tests.helpers.pg import insert_inline_snapshot, raw_snapshot_messages, stored_message_count
 
 

@@ -12,10 +12,10 @@ from typing import Final, Protocol
 
 import structlog
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.transcript.ops import ImageContent, PromptContent
 from agent_runtime.urls import is_http_url, is_oss_processable
 
 from iclip.domains.identity.public import Principal
-from iclip.platform.transcript.ops import ImageContent, PromptContent
 
 _logger = structlog.stdlib.get_logger(__name__)
 
