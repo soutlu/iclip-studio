@@ -14,7 +14,6 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.common.tool_args import JsonText
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.public import Principal
 from iclip.harness.files import write_or_retry
 from iclip.harness.materials import require_materials
 from iclip.platform.file_store.store import FileStore
@@ -160,7 +159,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         """
 
         files, namespace = self._workspace(ctx)
-        principal = _principal(ctx)
+        owner = _owner(ctx)
         # 出图不用台账内容，只要求先取过帧。
         if await self._cap.extractor.load(files, namespace, expected_key=None) is None:
             raise ModelRetry("取帧账本不存在或版本不兼容，先调用 plan_shot_frames。")
@@ -176,7 +175,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
             raise ModelRetry(str(exc)) from exc
 
         job = await self._cap.generator.generate(
-            principal,
+            owner,
             ImageRequest(
                 prompt=prompt,
                 model=IMAGE_MODEL,
@@ -191,7 +190,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         if job.status != "completed" or not job.output_url:
             job_failure(job, message="镜头帧生成失败。")
         cut = await self._cap.generator.cut(
-            principal,
+            owner,
             job,
             object_keys=[
                 self._cap.paths.shot_cell(job_id=job.job_id, cell_id=cell_id)
@@ -221,10 +220,10 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         """
 
         _, namespace = self._workspace(ctx)
-        principal = _principal(ctx)
+        owner = _owner(ctx)
         descriptions = resolve_cells(cells)
         job = await self._cap.generator.generate(
-            principal,
+            owner,
             ImageRequest(
                 model=IMAGE_MODEL,
                 prompt=assemble_anchor_prompt(cells=descriptions, target_aspect=ANCHOR_ASPECT),
@@ -238,7 +237,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         if job.status != "completed" or not job.output_url:
             job_failure(job, message="设定图生成失败。")
         cut = await self._cap.generator.cut(
-            principal,
+            owner,
             job,
             object_keys=[
                 self._cap.paths.anchor_sheet(job_id=job.job_id, index=index)
@@ -325,18 +324,18 @@ def _conversation_id(ctx: RunContext[AgentDepsT]) -> str:
     return conversation_id
 
 
-def _principal(ctx: RunContext[AgentDepsT]) -> Principal:
-    """取这次运行的可信主体。
+def _owner(ctx: RunContext[AgentDepsT]) -> uuid.UUID:
+    """取这次运行的属主用户 id。
 
     deps 不是 ``AgentRunDeps`` 说明运行身份没注进来，那是装配 bug 不是模型的输入
     错误，所以让它炸，不翻成一句可重试的提示。
     """
 
-    return _deps(ctx).principal
+    return _deps(ctx).user_id
 
 
 def _user_name(ctx: RunContext[AgentDepsT]) -> str:
-    """这次运行替谁跑：随消息进来的归属标签，出图时发给上游落表。不看运行主体是谁。"""
+    """这次运行替谁跑：随消息进来的归属标签，出图时发给上游落表。不看运行属主是谁。"""
 
     return _deps(ctx).user_name
 

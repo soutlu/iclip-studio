@@ -5,15 +5,17 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
 
-from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
+from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter, RunFilmImagesAdapter
 from iclip.app.plugin_registry import build_plugin_registry
+from iclip.common.errors import NotFound
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
-from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
+from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD, ImageGenerationIn
+from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.models import Principal
 from iclip.plugins.iclip_studio.capability import IclipStudio
 from iclip.plugins.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
@@ -27,6 +29,7 @@ from tests.helpers.generation import (
     image_request,
     make_job,
 )
+from tests.helpers.identity import FakePrincipals
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 OWNER = uuid.UUID("77777777-7777-7777-7777-777777777777")
@@ -165,6 +168,55 @@ async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
     assert not await adapter.belongs(PRINCIPAL, str(fork), "https://cdn.test/after-fork.png")
 
 
+class _RecordingImages:
+    """生成域的替身：记下每次收到的主体，查询按受理时的那一行答。"""
+
+    def __init__(self) -> None:
+        self.principals: list[Principal] = []
+        self._jobs: dict[uuid.UUID, GenerationJob] = {}
+
+    async def submit_image(self, principal: Principal, request: ImageGenerationIn) -> GenerationJob:
+        self.principals.append(principal)
+        job = make_job(request)
+        self._jobs[job.id] = job
+        return job
+
+    async def get(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
+        self.principals.append(principal)
+        return self._jobs[job_id]
+
+
+def run_images(principals: FakePrincipals) -> tuple[RunFilmImagesAdapter, _RecordingImages]:
+    service = _RecordingImages()
+    images = FilmImagesAdapter(cast("GenerationService", service))
+    return RunFilmImagesAdapter(images, principals), service
+
+
+async def test_the_director_tool_rebuilds_the_owner_principal_on_every_call() -> None:
+    """AI 导演的工具只给属主 id：每次调用都按它重建一次主体，生成域收到的就是重建出的那一个。"""
+
+    principals = FakePrincipals(PRINCIPAL)
+    adapter, service = run_images(principals)
+
+    job = await adapter.submit(OWNER, node_request())
+    await adapter.get(OWNER, job.job_id)
+
+    assert principals.asked == [OWNER, OWNER]
+    assert service.principals == [PRINCIPAL, PRINCIPAL]
+
+
+async def test_the_director_tool_lets_a_resolver_failure_through() -> None:
+    """属主账号不在了：重建主体的错误原样抛出，生成域一次都不调。"""
+
+    adapter, service = run_images(FakePrincipals())
+
+    with pytest.raises(NotFound, match="用户不存在"):
+        await adapter.submit(OWNER, node_request())
+    with pytest.raises(NotFound, match="用户不存在"):
+        await adapter.get(OWNER, uuid.uuid4())
+    assert service.principals == []
+
+
 async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
     adapter = FilmImagesAdapter(film_image_service(InMemoryGenerationRepository()))
 
@@ -180,6 +232,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         material_ledger=FakeMaterialLedger(),
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
         fetch_url=as_is,
+        resolve_principal=FakePrincipals(),
         generation_service=film_image_service(InMemoryGenerationRepository()),
         object_store=MemoryObjectStore(),
         image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),

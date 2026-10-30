@@ -12,7 +12,6 @@ import httpx
 import structlog
 from pydantic_ai import ModelRetry, ToolFailed
 
-from iclip.domains.identity.public import Principal
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MAX_IMAGE_BYTES, fetched
 from iclip.plugins.shot_document import AspectError, parse_aspect
@@ -100,7 +99,7 @@ class FrameGenerator:
         self._fetch_url = fetch_url
         self._policy = policy
 
-    async def generate(self, principal: Principal, request: ImageRequest) -> ImageJob:
+    async def generate(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
         """生成没成功就按配置渠道顺序另起一次，不分错误码；提交前校验失败直接让模型改参数，
         到了总时限就停。返回成功结果或最后一次结果。"""
 
@@ -111,7 +110,7 @@ class FrameGenerator:
         for index, channel in enumerate(channels):
             try:
                 job = await self._run_one(
-                    principal, replace(request, channel=channel), deadline=deadline
+                    user_id, replace(request, channel=channel), deadline=deadline
                 )
             except InvalidImageRequest as exc:
                 # 提交前校验失败，不产生付费调用，可要求模型修正参数。
@@ -125,7 +124,7 @@ class FrameGenerator:
 
     async def cut(
         self,
-        principal: Principal,
+        user_id: uuid.UUID,
         job: ImageJob,
         *,
         object_keys: Sequence[str],
@@ -154,14 +153,14 @@ class FrameGenerator:
             )
         except ObjectWriteFailed as exc:
             job_failure(job, message=failure_message, reason=str(exc))
-        await self._generations.record_cuts(principal, job.job_id, urls)
+        await self._generations.record_cuts(user_id, job.job_id, urls)
         return CellCut(grid_url=grid_url, urls=tuple(urls))
 
     async def _run_one(
-        self, principal: Principal, request: ImageRequest, *, deadline: float
+        self, user_id: uuid.UUID, request: ImageRequest, *, deadline: float
     ) -> ImageJob:
 
-        job = await self._generations.submit(principal, request)
+        job = await self._generations.submit(user_id, request)
         loop = asyncio.get_running_loop()
         while not job.finished:
             if loop.time() >= deadline:
@@ -173,7 +172,7 @@ class FrameGenerator:
                     error_message="等这次生成等超时了；它可能还在后台跑",
                 )
             await asyncio.sleep(self._policy.poll_interval_seconds)
-            job = await self._generations.get(principal, job.job_id)
+            job = await self._generations.get(user_id, job.job_id)
         return job
 
     async def _put_all(self, cells: Sequence[tuple[str, bytes]]) -> list[str]:

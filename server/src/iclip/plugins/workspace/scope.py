@@ -41,7 +41,7 @@ def workspace_namespace(ctx: RunContext[Any]) -> str:
             f"工作区算不出命名空间：这次运行的 deps 是 {type(deps).__name__}，"
             "不是 AgentRunDeps——运行身份没有注入进来。"
         )
-    return namespace_for(deps.principal.user_id, deps.conversation_id)
+    return namespace_for(deps.user_id, deps.conversation_id)
 
 
 __all__ = ["namespace_for", "parse_namespace", "workspace_namespace"]

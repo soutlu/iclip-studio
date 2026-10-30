@@ -26,7 +26,6 @@ from pydantic_ai_harness.subagents import SubAgent, SubAgents
 from structlog.testing import capture_logs
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import (
     FileSpace,
     InvalidPath,
@@ -82,20 +81,8 @@ class FakeProbe:
         return self.info
 
 
-def make_principal(user_id: uuid.UUID = USER) -> Principal:
-    return Principal(
-        kind="user",
-        user_id=user_id,
-        permissions=frozenset({"agent:run"}),
-        audit_label="logan",
-        api_key_id=None,
-    )
-
-
 def make_deps(user_id: uuid.UUID = USER, conversation_id: str = THREAD) -> AgentRunDeps:
-    return AgentRunDeps(
-        principal=make_principal(user_id), conversation_id=conversation_id, user_name="logan"
-    )
+    return AgentRunDeps(user_id=user_id, conversation_id=conversation_id, user_name="logan")
 
 
 def make_context(deps: object) -> RunContext[object]:

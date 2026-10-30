@@ -6,8 +6,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from iclip.domains.identity.public import Principal
-
 
 class InvalidNodeImageRequest(ValueError):
     """生图请求在受理时被拒：没有产生付费调用。"""
@@ -46,13 +44,13 @@ class NodeImageJob:
 
 
 class NodeImages(Protocol):
-    """生图节点与生成记录之间的往来：出图、查进度。"""
+    """生图节点与生成记录之间的往来：出图、查进度。``user_id`` 是运行属主，实现方每次按它重建主体。"""
 
-    async def submit(self, principal: Principal, request: NodeImageRequest) -> NodeImageJob:
+    async def submit(self, user_id: uuid.UUID, request: NodeImageRequest) -> NodeImageJob:
         """受理生成并返回任务记录；实际出图由后台执行。被拒抛 ``InvalidNodeImageRequest``。"""
         ...
 
-    async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob: ...
+    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> NodeImageJob: ...
 
 
 __all__ = [

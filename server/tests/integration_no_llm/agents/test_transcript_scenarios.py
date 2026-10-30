@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,6 @@ from pydantic_ai.models.function import (
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.public import Principal
 from iclip.harness.agents import DELEGATE_TOOL, delegate_display_table
 from iclip.harness.background import (
     BackgroundOutcome,
@@ -1113,7 +1113,7 @@ class FailingBreakdowns:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+    async def ensure(self, user_id: uuid.UUID, video_url: str) -> str | FailedBreakdown:
         self.calls += 1
         return FailedBreakdown(reason="model_call_failed")
 
@@ -1152,15 +1152,7 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
 
     async def deps_for(row: JobRow) -> AgentRunDeps:
         return AgentRunDeps(
-            principal=Principal(
-                kind="user",
-                user_id=row.owner_user_id,
-                permissions=frozenset({"agent:run"}),
-                audit_label="logan",
-                api_key_id=None,
-            ),
-            conversation_id=row.conversation_id,
-            user_name="logan",
+            user_id=row.owner_user_id, conversation_id=row.conversation_id, user_name="logan"
         )
 
     store = TranscriptStore()

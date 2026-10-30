@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import uuid
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -43,12 +44,19 @@ class ArkVideoBreakdowns:
 
 
 class ReferenceBreakdownsAdapter:
-    """``video_breakdown`` 的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。"""
+    """``video_breakdown`` 的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。
+    每次调用都用 ``resolve_principal`` 按运行属主 id 重建主体，它的错误原样抛出。"""
 
-    def __init__(self, service: ReferenceService) -> None:
+    def __init__(
+        self,
+        service: ReferenceService,
+        resolve_principal: Callable[[uuid.UUID], Awaitable[Principal]],
+    ) -> None:
         self._service = service
+        self._resolve_principal = resolve_principal
 
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+    async def ensure(self, user_id: uuid.UUID, video_url: str) -> str | FailedBreakdown:
+        principal = await self._resolve_principal(user_id)
         outcome = await self._service.ensure(principal, video_url)
         if outcome.document is not None:
             return outcome.document
