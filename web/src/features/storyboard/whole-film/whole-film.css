@@ -1499,6 +1499,15 @@
   z-index: var(--z-local-2);
 }
 
+/* 修剪拖动中被拖的段（已提交与修剪后合起来画成一整块）盖在相邻的段上，多选时也盖住同一选区里的其他段 */
+.wf-lane.is-trimming > .wf-clip.is-selected {
+  z-index: auto;
+}
+
+.wf-lane.is-trimming > .wf-clip.is-trimming {
+  z-index: var(--z-local-2);
+}
+
 /* 画面轨的选区外框：贴着选中的段，单选、多选都画，同编辑视频 */
 .wf-selection-box {
   position: absolute;
@@ -1510,19 +1519,13 @@
   pointer-events: none;
 }
 
-/* 修剪画面轨一段时标出的那段（样子见 editing/timeline.css）：拉长出来的框在画面轨里、盖在相邻的段上；要剪掉的
-   那段画在被拖的段里，在把手之下。 */
+/* 修剪画面轨一段时要剪掉的那段（样子见 editing/timeline.css）：画在被拖的段里，在把手之下。 */
 .wf-trim-mark {
   position: absolute;
-  top: 2px;
-  z-index: var(--z-local-1);
-  height: 48px;
-  border-radius: var(--radius-sm);
-}
-
-.wf-clip > .wf-trim-mark {
   top: 0;
+  z-index: var(--z-local-1);
   height: 100%;
+  border-radius: var(--radius-sm);
 }
 
 .wf-clip-label {
