@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Literal
+from typing import Final, Literal
 
 import httpx
 import procrastinate
@@ -247,6 +247,61 @@ class AnnouncingFileStore:
 
     async def search(self, namespace: str, query: str, *, limit: int) -> SearchResult:
         return await self._inner.search(namespace, query, limit=limit)
+
+
+VIDEO_APP_ID: Final = "video"
+"""后端在运行时里的应用标识：后端开的会话都归它，迁移 0044 给已有会话回填的也是它。"""
+
+
+class VideoAppSessions:
+    """对话域的 ``RuntimeSessions``：经运行时的会话服务开会话、分叉与拷文件，都以 ``VIDEO_APP_ID`` 的
+    身份。"""
+
+    def __init__(self, service: SessionService) -> None:
+        self._service = service
+
+    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        await self._service.open(session_id, app_id=VIDEO_APP_ID, agent_id=agent_id)
+
+    async def fork(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        turn: int,
+        agent_id: str | None,
+    ) -> None:
+        await self._service.fork(
+            app_id=VIDEO_APP_ID,
+            source_id=source_id,
+            source_user=source_user,
+            target_id=target_id,
+            target_user=target_user,
+            turn=turn,
+            agent_id=agent_id,
+        )
+
+    async def copy_files(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        files: Sequence[tuple[str, str]],
+        require_any: frozenset[str],
+    ) -> bool:
+        return await self._service.copy_files(
+            app_id=VIDEO_APP_ID,
+            source_id=source_id,
+            source_user=source_user,
+            target_id=target_id,
+            target_user=target_user,
+            files=files,
+            require_any=require_any,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -737,7 +792,7 @@ def build_app(
         conversation_repo,
         act_as=identity.act_as,
         list_agents=list_agents,
-        runtime=session_service,
+        runtime=VideoAppSessions(session_service),
         list_collections=list_owner_collections,
         claim_task=tasks.service.claim,
         list_derived_files=conversation_workspace.list_files,
@@ -955,4 +1010,4 @@ def build_app(
     return app
 
 
-__all__ = ["AgentServices", "build_app"]
+__all__ = ["VIDEO_APP_ID", "AgentServices", "VideoAppSessions", "build_app"]

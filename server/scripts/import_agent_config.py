@@ -64,7 +64,7 @@ from agent_runtime.model_vocab import ThinkingEffort
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.app.bootstrap import AgentServices, build_app
+from iclip.app.bootstrap import VIDEO_APP_ID, AgentServices, build_app
 from iclip.config import RuntimeConfig, load_runtime_config, resolve_settings
 from iclip.platform.db.engine import build_engine
 
@@ -631,14 +631,15 @@ async def apply_plan(
     ]
     await agents.reorder(AgentOrderIn(ids=order))
 
-    # 现有对话（含已删的）各开一个会话：agent 还在就指向它刚发布的 v1，不在了版本为空（运行时装不起来）。
+    # 现有对话（含已删的）各开一个归后端的会话：agent 还在就指向它刚发布的 v1，不在了版本为空（运行时装不起来）。
     await conn.execute(
         text(
-            "INSERT INTO agent_runtime.sessions (id, agent_version_id)"
-            " SELECT c.id, a.active_version_id FROM iclip.conversations c"
+            "INSERT INTO agent_runtime.sessions (id, app_id, agent_version_id)"
+            " SELECT c.id, :app_id, a.active_version_id FROM iclip.conversations c"
             " LEFT JOIN iclip.agents a ON a.id = c.agent_id"
             " ON CONFLICT (id) DO NOTHING"
-        )
+        ),
+        {"app_id": VIDEO_APP_ID},
     )
     counted = (
         await conn.execute(

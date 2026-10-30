@@ -211,9 +211,11 @@ def create_app(
 
     v1 = APIRouter(prefix="/v1", dependencies=[Depends(auth.calling_app)])
     v1.include_router(admin)
-    v1.include_router(create_sessions_router(sessions, job_queue))
-    v1.include_router(create_transcript_router(transcripts))
-    v1.include_router(create_workspace_router(file_store, material_ledger))
+    v1.include_router(create_sessions_router(sessions, job_queue, auth.calling_app))
+    v1.include_router(create_transcript_router(transcripts, sessions, auth.calling_app))
+    v1.include_router(
+        create_workspace_router(file_store, material_ledger, sessions, auth.calling_app)
+    )
     v1.include_router(create_agents_router(agent_runtime))
     app.include_router(v1)
     return app

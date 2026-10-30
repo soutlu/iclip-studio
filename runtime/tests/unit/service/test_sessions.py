@@ -1,26 +1,30 @@
-"""会话服务：分叉先挡掉分不了的、再固定版本、拷文件与素材、写种子快照；按清单拷文件缺了必需的就什么都不拷。
+"""会话服务：分叉先挡掉分不了的、再固定版本、拷文件与素材、写种子快照；按清单拷文件缺了必需的就什么都不拷；
+会话归开它的应用，别的应用的会话当作不存在、它的 id 也开不走。
 
 会话表、队列与历史用替身，文件存储与素材台账用内存实现。不连库。"""
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import pytest
 
-from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileEntry, StoredFile
 from agent_runtime.harness.job_status import JobStatus
 from agent_runtime.harness.jobs import JobQueueView, JobRow
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.service.sessions import SessionService
+from agent_runtime.service.sessions import SESSION_ID_TAKEN, SESSION_NOT_FOUND, SessionService
 from agent_runtime.transcript.ops import TextContent
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 
+APP = "video"
+OTHER_APP = "shop"
 SOURCE = uuid.uuid4()
 TARGET = uuid.uuid4()
 SOURCE_USER = uuid.uuid4()
@@ -34,14 +38,30 @@ REF = Material(url="https://example.test/ref.mp4", kind="video")
 
 @dataclass
 class RecordingSessions:
+    """会话表替身：``apps`` 是已有会话归哪个应用（源与目标默认归 ``APP``），开与照抄按真实表的规矩认归属。"""
+
+    apps: dict[uuid.UUID, str] = field(default_factory=lambda: {SOURCE: APP, TARGET: APP})
     opened: dict[uuid.UUID, uuid.UUID | None] = field(default_factory=dict)
     copied: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
 
-    async def open(self, session_id: uuid.UUID, *, agent_version_id: uuid.UUID | None) -> None:
+    async def open(
+        self, session_id: uuid.UUID, *, app_id: str, agent_version_id: uuid.UUID | None
+    ) -> bool:
+        if self.apps.setdefault(session_id, app_id) != app_id:
+            return False
         self.opened[session_id] = agent_version_id
+        return True
 
-    async def copy(self, source_id: uuid.UUID, target_id: uuid.UUID) -> None:
+    async def copy(self, source_id: uuid.UUID, target_id: uuid.UUID, *, app_id: str) -> bool:
+        if self.apps.setdefault(target_id, app_id) != app_id:
+            return False
         self.copied.append((source_id, target_id))
+        return True
+
+    async def owned(
+        self, session_ids: Collection[uuid.UUID], *, app_id: str
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(one for one in session_ids if self.apps.get(one) == app_id)
 
 
 async def current_version(agent_id: str) -> uuid.UUID:
@@ -171,6 +191,7 @@ class Runtime:
 
 async def fork(runtime: Runtime, *, turn: int = 1, agent_id: str | None = None) -> None:
     await runtime.service().fork(
+        app_id=APP,
         source_id=SOURCE,
         source_user=SOURCE_USER,
         target_id=TARGET,
@@ -274,7 +295,7 @@ async def test_an_agent_that_cannot_open_fails_the_fork_before_any_file_is_copie
 async def test_open_pins_the_agents_current_version() -> None:
     runtime = Runtime()
 
-    await runtime.service().open(TARGET, agent_id="assistant")
+    await runtime.service().open(TARGET, app_id=APP, agent_id="assistant")
 
     assert runtime.sessions.opened == {TARGET: ASSISTANT_VERSION}
 
@@ -285,6 +306,7 @@ REQUIRED = frozenset({"film.icml"})
 
 async def copy_files(runtime: Runtime) -> bool:
     return await runtime.service().copy_files(
+        app_id=APP,
         source_id=SOURCE,
         source_user=SOURCE_USER,
         target_id=TARGET,
@@ -325,6 +347,7 @@ async def test_copies_write_only_through_the_given_store_without_a_version_check
 
     await copy_files(runtime)
     await runtime.service().fork(
+        app_id=APP,
         source_id=SOURCE,
         source_user=SOURCE_USER,
         target_id=uuid.uuid4(),
@@ -336,3 +359,101 @@ async def test_copies_write_only_through_the_given_store_without_a_version_check
     assert runtime.files.writes, "拷贝要经存储的写入口"
     assert {expected for _, _, expected in runtime.files.writes} == {None}
     assert all(space.startswith(f"{TARGET_USER}/") for space, _, _ in runtime.files.writes)
+
+
+class AlwaysBusyQueue:
+    """一问就说源在忙：归属没认过就问到队列，别的应用会从 409 里看出这个会话存在。"""
+
+    async def view(self, conversation_id: str) -> JobQueueView:
+        return JobQueueView(active=_row("running"), queued=())
+
+
+async def test_a_fork_from_another_apps_session_is_not_found_before_anything_else() -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps={SOURCE: OTHER_APP}))
+    await runtime.seed_source({"video_shot.json": "{}"})
+    service = SessionService(
+        sessions=runtime.sessions,
+        version_for_new_session=current_version,
+        queue=AlwaysBusyQueue(),
+        history=runtime.history,
+        files=runtime.files,
+        ledger=runtime.ledger,
+    )
+
+    with pytest.raises(NotFound) as raised:
+        await service.fork(
+            app_id=APP,
+            source_id=SOURCE,
+            source_user=SOURCE_USER,
+            target_id=TARGET,
+            target_user=TARGET_USER,
+            turn=1,
+            agent_id=None,
+        )
+
+    assert str(raised.value) == SESSION_NOT_FOUND
+    assert await runtime.nothing_written()
+
+
+async def test_a_fork_from_a_session_that_does_not_exist_is_the_same_not_found() -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps={}))
+
+    with pytest.raises(NotFound) as raised:
+        await fork(runtime)
+
+    assert str(raised.value) == SESSION_NOT_FOUND
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize("agent_id", [None, "assistant"], ids=["copy-pin", "switch-agent"])
+async def test_a_fork_onto_an_id_another_app_holds_is_a_conflict_before_any_file_is_copied(
+    agent_id: str | None,
+) -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps={SOURCE: APP, TARGET: OTHER_APP}))
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(Conflict) as raised:
+        await fork(runtime, agent_id=agent_id)
+
+    assert str(raised.value) == SESSION_ID_TAKEN
+    assert await runtime.nothing_written()
+
+
+async def test_open_of_an_id_another_app_holds_is_a_conflict_and_keeps_its_owner() -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps={TARGET: OTHER_APP}))
+
+    with pytest.raises(Conflict) as raised:
+        await runtime.service().open(TARGET, app_id=APP, agent_id="assistant")
+
+    assert str(raised.value) == SESSION_ID_TAKEN
+    assert runtime.sessions.apps == {TARGET: OTHER_APP}
+    assert not runtime.sessions.opened
+
+
+async def test_open_gives_the_new_session_to_the_calling_app() -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps={}))
+
+    await runtime.service().open(TARGET, app_id=APP, agent_id="assistant")
+
+    assert runtime.sessions.apps == {TARGET: APP}
+    assert await runtime.service().owned([TARGET], app_id=APP) == {TARGET}
+    assert await runtime.service().owned([TARGET], app_id=OTHER_APP) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "apps",
+    [{SOURCE: OTHER_APP, TARGET: APP}, {SOURCE: APP, TARGET: OTHER_APP}, {SOURCE: APP}],
+    ids=["source-elsewhere", "target-elsewhere", "target-missing"],
+)
+async def test_copy_files_needs_both_sessions_to_be_the_callers_before_reading_anything(
+    apps: dict[uuid.UUID, str],
+) -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps=apps))
+    await runtime.seed_source({"film.icml": "<film/>"})
+
+    with pytest.raises(NotFound) as raised:
+        await copy_files(runtime)
+
+    assert str(raised.value) == SESSION_NOT_FOUND
+    assert not await runtime.files.entries(TARGET_SPACE)
+    assert not runtime.ledger.urls(TARGET_SPACE)
