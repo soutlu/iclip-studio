@@ -163,16 +163,6 @@ describe('成片编辑器', () => {
     expect(savedDraft()?.canvas).toEqual({ width: 720, height: 1280 })
   })
 
-  it('没选范围时按 Enter 说明原因', async () => {
-    const user = userEvent.setup()
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    ;(await within(materials).findByRole('button', { name: /^生成 A 镜头 1，/ })).focus()
-    await user.keyboard('{Enter}')
-    expect(await screen.findByText('先在下方点一个镜头选中范围')).toBeInTheDocument()
-    expect(within(filmLane()).queryByRole('group', { name: /^第 1 段/ })).toBeNull()
-  })
-
   it('别处存过更新的一版：换成那一版并说明', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -559,8 +549,6 @@ describe('成片编辑器 · 画面轨多选', () => {
   })
 })
 
-describe('成片编辑器 · 素材多镜头', () => {})
-
 /** 切到「通用」栏的某个分类，返回卡片网格 */
 const generalTab = async (user: ReturnType<typeof userEvent.setup>, category: string) => {
   await user.click(screen.getByRole('tab', { name: '通用' }))
@@ -844,18 +832,6 @@ describe('成片编辑器 · 组件', () => {
     await user.click(button)
     expect(button).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('dialog', { name: '组件 · 测试画面' })).not.toBeInTheDocument()
-  })
-
-  it('改可填项回车即是一步编辑，自动保存', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    const name = within(await openSegment(user)).getByLabelText('文字')
-    await user.clear(name)
-    await user.type(name, '城市{Enter}')
-    await waitSaved((document) =>
-      expect(document?.layer0[1]).toMatchObject({ variables: { text: '城市' } }),
-    )
   })
 
   it('撤销改字：回到改之前的那一版，并存回服务端', async () => {

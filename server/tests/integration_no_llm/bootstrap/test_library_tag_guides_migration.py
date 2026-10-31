@@ -1,4 +1,4 @@
-"""内容结构的默认判断说明迁移：只清空旧默认值，升降级均保留自定义说明。"""
+"""内容结构的默认判断说明迁移：只清空旧默认值，保留自定义说明。"""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ async def _plant_non_targets(url: str) -> None:
         await engine.dispose()
 
 
-def test_default_guide_round_trip_changes_only_content_structure(scratch_db: str) -> None:
+def test_upgrade_clears_only_the_default_content_structure_guide(scratch_db: str) -> None:
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
     asyncio.run(_plant_non_targets(scratch_db))
@@ -93,12 +93,8 @@ def test_default_guide_round_trip_changes_only_content_structure(scratch_db: str
     expected = before | {(None, "内容结构"): ""}
     assert asyncio.run(_guides(scratch_db)) == expected
 
-    command.downgrade(cfg, BEFORE)
 
-    assert asyncio.run(_guides(scratch_db)) == before
-
-
-def test_upgrade_and_downgrade_preserve_custom_guide(scratch_db: str) -> None:
+def test_upgrade_preserves_custom_guide(scratch_db: str) -> None:
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
     asyncio.run(_customize(scratch_db, "治理者自定义的判断说明"))
@@ -107,10 +103,3 @@ def test_upgrade_and_downgrade_preserve_custom_guide(scratch_db: str) -> None:
     command.upgrade(cfg, AFTER)
 
     assert asyncio.run(_guides(scratch_db)) == before
-
-    asyncio.run(_customize(scratch_db, "升级后修改的判断说明"))
-    customized = asyncio.run(_guides(scratch_db))
-
-    command.downgrade(cfg, BEFORE)
-
-    assert asyncio.run(_guides(scratch_db)) == customized

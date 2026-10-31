@@ -8,10 +8,8 @@ import uuid
 import httpx
 import pytest
 from pydantic_ai.models import Model
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.helpers.app import TEST_MODEL_NAME
-from tests.helpers.references import plant_user
 from tests.helpers.runtime import says
 from tests.helpers.runtime_service import add_model, connect_provider, publish_agent, settled
 
@@ -40,8 +38,8 @@ async def session(admin: httpx.AsyncClient, app_client: httpx.AsyncClient) -> st
 
 
 @pytest.fixture
-async def other(engine: AsyncEngine) -> uuid.UUID:
-    return await plant_user(engine, "other-owner")
+def other() -> uuid.UUID:
+    return uuid.uuid4()
 
 
 def as_owner(owner: uuid.UUID) -> dict[str, str]:

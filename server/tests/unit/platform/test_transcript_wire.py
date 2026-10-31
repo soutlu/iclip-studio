@@ -12,9 +12,6 @@ from iclip.platform.live.frames import (
     GenerationChangedPayload,
     ServerHello,
     ServerHelloPayload,
-    SessionDeleted,
-    SessionMetaPayload,
-    SessionMetaUpdated,
 )
 
 AT = "2026-10-30T08:00:00+00:00"
@@ -38,30 +35,6 @@ def test_the_hello_carries_its_capabilities_inside_the_payload() -> None:
             "heartbeat_ms": 1,
             "capabilities": {"event_batching": False, "compression": False},
         },
-    }
-
-
-def test_title_and_deletion_frames_name_the_conversation_on_the_envelope_only() -> None:
-    title = SessionMetaUpdated(
-        session_id="c-1",
-        owner_user_id="u-1",
-        timestamp=AT,
-        payload=SessionMetaPayload(title="片名"),
-    )
-    deleted = SessionDeleted(session_id="c-1", owner_user_id="u-1", timestamp=AT)
-
-    assert _sent(title) == {
-        "type": "session.meta.updated",
-        "session_id": "c-1",
-        "owner_user_id": "u-1",
-        "timestamp": AT,
-        "payload": {"title": "片名"},
-    }
-    assert _sent(deleted) == {
-        "type": "event.session.deleted",
-        "session_id": "c-1",
-        "owner_user_id": "u-1",
-        "timestamp": AT,
     }
 
 

@@ -13,7 +13,6 @@ import pytest
 from pydantic import ValidationError
 
 from agent_runtime.settings import (
-    AgentRunsSection,
     ResolvedApp,
     ResolvedHooks,
     load_config,
@@ -191,10 +190,6 @@ def test_missing_or_empty_config_file_fails(tmp_path: Path) -> None:
         load_config(tmp_path / "missing.yaml")
     with pytest.raises(ValueError, match="为空"):
         load_config(write_config(tmp_path, ""))
-
-
-def test_skill_cache_dir_defaults_under_the_temp_dir() -> None:
-    assert AgentRunsSection().skill_cache_dir.name == "agent-runtime-skills"
 
 
 def test_database_url_must_be_asyncpg_and_the_error_hides_it(

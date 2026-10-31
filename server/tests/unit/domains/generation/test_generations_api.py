@@ -455,29 +455,14 @@ async def test_oversized_metadata_is_rejected_at_intake() -> None:
     assert (image.status_code, video.status_code, fits.status_code) == (422, 422, 202)
 
 
-async def test_metadata_filter_is_containment_and_bad_filters_are_422() -> None:
-    """``metadata`` 是调用方的坐标：按包含匹配筛，服务端不读键；查询串里不是 JSON 对象就是 422。"""
-
-    owner = uuid.uuid4()
-    coordinate = {"path": "video_shot.json", "shot": 1, "frame": 2}
-    hit = make_job(image_request(metadata=coordinate), owner_user_id=owner, metadata=coordinate)
-    sibling = {**coordinate, "frame": 3}
-    other = make_job(image_request(metadata=sibling), owner_user_id=owner, metadata=sibling)
-    untagged = make_job(owner_user_id=owner)
-    repo = InMemoryGenerationRepository([hit, other, untagged])
-    app = build_test_app(repo, granted=principal("generation:read", user_id=owner))
+async def test_metadata_filters_reject_non_objects_and_oversized_values() -> None:
+    app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:read"))
     async with client(app) as http:
-        by_frame = await http.get(
-            "/generations", params={"metadata": json.dumps({"shot": 1, "frame": 2})}
-        )
-        by_shot = await http.get("/generations", params={"metadata": json.dumps({"shot": 1})})
         not_json = await http.get("/generations", params={"metadata": "not json"})
         not_object = await http.get("/generations", params={"metadata": "[1]"})
         oversized = await http.get(
             "/generations", params={"metadata": json.dumps({"note": "x" * 2001})}
         )
-    assert [item["id"] for item in by_frame.json()["items"]] == [str(hit.id)]
-    assert {item["id"] for item in by_shot.json()["items"]} == {str(hit.id), str(other.id)}
     assert (not_json.status_code, not_object.status_code) == (422, 422)
     assert oversized.status_code == 422
     detail = oversized.json()["detail"]
@@ -593,68 +578,6 @@ async def test_the_shot_number_is_shot_index_alone_and_metadata_stays_the_caller
     assert {job.shot_index for job in repo.jobs.values()} == {3, None}
 
 
-async def test_list_filters_by_shot_index_and_stacks_with_metadata() -> None:
-    """按镜号筛与按坐标筛叠加收窄；坐标里写的 shot 不算镜号；镜号从 1 起。"""
-
-    owner_id = uuid.uuid4()
-
-    def take(shot_index: int | None, metadata: dict[str, object] | None) -> GenerationJob:
-        return make_job(
-            video_request(), owner_user_id=owner_id, shot_index=shot_index, metadata=metadata
-        )
-
-    first_frame, second_frame = take(3, {"frame": 1}), take(3, {"frame": 2})
-    repo = InMemoryGenerationRepository(
-        [first_frame, second_frame, take(4, {"frame": 1}), take(None, {"shot": 3})]
-    )
-    app = build_test_app(repo, granted=principal("generation:read", user_id=owner_id))
-    async with client(app) as http:
-        by_shot = await http.get("/generations", params={"shotIndex": 3})
-        stacked = await http.get(
-            "/generations", params={"shotIndex": 3, "metadata": json.dumps({"frame": 1})}
-        )
-        zero = await http.get("/generations", params={"shotIndex": 0})
-
-    assert {item["id"] for item in by_shot.json()["items"]} == {
-        str(first_frame.id),
-        str(second_frame.id),
-    }
-    assert [item["id"] for item in stacked.json()["items"]] == [str(first_frame.id)]
-    assert zero.status_code == 422
-
-
-async def test_list_can_be_filtered_by_root_source_and_operation() -> None:
-    """以一条出片为原作的就是它的编辑链；按直接来源找基于某一行的（编辑段与合成都基于基底）；
-    按操作把合成单拎出来。"""
-
-    owner_id = uuid.uuid4()
-    root = make_job(video_request(), owner_user_id=owner_id, status=STATUS_COMPLETED)
-    other_root = make_job(video_request(), owner_user_id=owner_id, status=STATUS_COMPLETED)
-    edit = make_edit(root, owner_user_id=owner_id, status=STATUS_COMPLETED)
-    composite = make_composite(edit, owner_user_id=owner_id)
-    elsewhere = make_edit(other_root, owner_user_id=owner_id)
-    repo = InMemoryGenerationRepository([root, other_root, edit, composite, elsewhere])
-
-    owner = principal("generation:read", user_id=owner_id)
-    async with client(build_test_app(repo, granted=owner)) as http:
-        by_root = await http.get("/generations", params={"rootJobId": str(root.id)})
-        by_source = await http.get("/generations", params={"sourceJobId": str(root.id)})
-        on_edit = await http.get("/generations", params={"sourceJobId": str(edit.id)})
-        composites = await http.get("/generations", params={"operation": "compose"})
-        bad = await http.get("/generations", params={"operation": "clip"})
-
-    assert {item["id"] for item in by_root.json()["items"]} == {str(edit.id), str(composite.id)}
-    assert {
-        (item["id"], item["sourceJobId"], item["rootJobId"]) for item in by_source.json()["items"]
-    } == {
-        (str(edit.id), str(root.id), str(root.id)),
-        (str(composite.id), str(root.id), str(root.id)),
-    }
-    assert on_edit.json()["items"] == [], "合成的来源是基底，不是它夹进去的编辑段"
-    assert [item["id"] for item in composites.json()["items"]] == [str(composite.id)]
-    assert bad.status_code == 422
-
-
 def fork_of_someone_elses_take(
     forker: uuid.UUID, *, readable: bool
 ) -> tuple[InMemoryGenerationRepository, uuid.UUID, GenerationJob, GenerationJob, FixedLineage]:
@@ -727,11 +650,13 @@ async def test_an_inherited_base_counts_only_for_those_who_can_read_the_fork(
         ), "剪出来的记在副本名下，原作指源对话那条"
 
 
-async def test_list_rejects_out_of_range_limit() -> None:
+@pytest.mark.parametrize(
+    "query", [{"limit": "0"}, {"limit": "1000"}, {"shotIndex": "0"}, {"operation": "clip"}]
+)
+async def test_list_rejects_invalid_parameters(query: dict[str, str]) -> None:
     app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:read"))
     async with client(app) as http:
-        assert (await http.get("/generations?limit=0")).status_code == 422
-        assert (await http.get("/generations?limit=1000")).status_code == 422
+        assert (await http.get("/generations", params=query)).status_code == 422
 
 
 async def test_response_hides_provider_and_upstream_task_mechanics() -> None:

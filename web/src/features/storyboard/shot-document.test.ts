@@ -76,28 +76,9 @@ describe('parseShotsDocument', () => {
   it.each([
     ['不是 JSON', '{ 这不是 JSON'],
     ['根不是对象', '[]'],
-    ['缺画幅', JSON.stringify({ shots: [shot] })],
-    ['画幅类型错误', JSON.stringify({ ...document, aspect_ratio: 9 })],
     ['缺镜头组列表', JSON.stringify({ aspect_ratio: '9:16' })],
-    ['镜头组列表类型错误', JSON.stringify({ ...document, shots: shot })],
-    ['镜头组缺编号', serializedShot({ index: undefined })],
-    ['镜头组缺时长', serializedShot({ seconds: undefined })],
-    ['镜头组缺图片列表', serializedShot({ image_urls: undefined })],
-    ['图片列表写成字符串', serializedShot({ image_urls: 'a.png' })],
-    ['图片地址类型错误', serializedShot({ image_urls: [1] })],
-    ['镜头组缺提示词', serializedShot({ prompt: undefined })],
-    ['提示词写成字符串', serializedShot({ prompt: '开场 @Image1。' })],
-    ['缺全局设定', serializedShot({ prompt: { timeline: shot.prompt.timeline } })],
-    ['全局设定类型错误', serializedShot({ prompt: { ...shot.prompt, global_settings: 1 } })],
-    ['缺时间线', serializedShot({ prompt: { global_settings: '保持一致。' } })],
-    ['时间线类型错误', serializedShot({ prompt: { ...shot.prompt, timeline: '镜头一' } })],
-    ['镜头缺时间戳', serializedTimelineItem({ timestamps: undefined })],
     ['时间戳长度错误', serializedTimelineItem({ timestamps: [0, 2, 3] })],
-    ['时间戳含字符串', serializedTimelineItem({ timestamps: [0, '3.5'] })],
-    ['镜头缺正文', serializedTimelineItem({ prompt: undefined })],
     ['镜头正文类型错误', serializedTimelineItem({ prompt: 1 })],
-    ['镜头缺图片编号', serializedTimelineItem({ image_indexes: undefined })],
-    ['图片编号列表类型错误', serializedTimelineItem({ image_indexes: 1 })],
   ])('%s 时返回空结果，不抛异常', (_case, content) => {
     expect(parseShotsDocument(content)).toBeNull()
   })

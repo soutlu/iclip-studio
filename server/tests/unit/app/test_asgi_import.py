@@ -46,13 +46,9 @@ def _run_after_importing_the_app(tmp_path: Path, code: str) -> subprocess.Comple
     )
 
 
-def test_importing_the_asgi_app_touches_no_database(tmp_path: Path) -> None:
-    done = _run_after_importing_the_app(tmp_path, "")
-
-    assert done.returncode == 0, done.stderr
-
-
-def test_importing_the_asgi_app_does_not_load_the_runtime_service(tmp_path: Path) -> None:
+def test_importing_the_asgi_app_neither_connects_to_database_nor_loads_runtime_service(
+    tmp_path: Path,
+) -> None:
     """后端引用运行时的错误信封（``agent_runtime.http.errors``），不该连带 import 运行时服务的 app 工厂。"""
 
     done = _run_after_importing_the_app(tmp_path, "print('agent_runtime.http.app' in sys.modules)")

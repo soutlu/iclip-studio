@@ -136,13 +136,14 @@ def submission(request: ImageRequest, user_id: uuid.UUID = OWNER.user_id) -> dic
 
 async def test_an_image_is_submitted_and_read_back_through_the_adapter() -> None:
     repo = InMemoryGenerationRepository()
+    request = image_request()
     app = internal_app(
         services(generations=GenerationsAdapter(film_image_service(repo), FakePrincipals(OWNER)))
     )
 
     async with client_for(app) as client:
         submitted = await client.post(
-            "/internal/runtime/plugins/generations", json=submission(image_request())
+            "/internal/runtime/plugins/generations", json=submission(request)
         )
         assert submitted.status_code == 200, submitted.text
         job = TypeAdapter(ImageJob).validate_python(submitted.json())
@@ -154,6 +155,7 @@ async def test_an_image_is_submitted_and_read_back_through_the_adapter() -> None
     (row,) = repo.jobs.values()
     assert (job.job_id, job.status, job.channel) == (row.id, "pending", "dev")
     assert row.owner_user_id == OWNER.user_id
+    assert row.conversation_id == uuid.UUID(request.conversation_id)
     assert TypeAdapter(ImageJob).validate_python(read.json()) == job
 
 

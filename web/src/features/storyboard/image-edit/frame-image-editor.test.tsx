@@ -13,9 +13,9 @@ import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
 import { FrameImageEditor } from './frame-image-editor'
 import { editDraftKey } from './image-edit-draft'
-import type { FrameEditDraft, FrameEditTarget } from './image-edit-types'
+import type { FrameEditDraft, StoryboardFrameTarget } from './image-edit-types'
 
-const target: FrameEditTarget = {
+const target: StoryboardFrameTarget = {
   conversationId: 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d',
   shotIndex: 1,
   frameNumber: 1,
@@ -40,21 +40,27 @@ const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
 
 type EditorPageProps = {
   initialKey?: string
+  target?: StoryboardFrameTarget
   onApply?: (previousUrl: string | null, url: string | null) => void
   onClose?: (opened: ReadonlySet<string>) => void
 }
 
 /** 分镜那一侧的替身：替换就把第 1 帧换掉，关窗就卸载编辑器。 */
-function EditorPage({ initialKey, onApply, onClose }: EditorPageProps) {
+function EditorPage({
+  initialKey,
+  onApply,
+  onClose,
+  target: editTarget = target,
+}: EditorPageProps) {
   const [open, setOpen] = useState(true)
   const [frames, setFrames] = useState([BASE, FRAME_2])
   return (
     <>
       {open && (
         <FrameImageEditor
-          target={target}
+          target={editTarget}
           currentUrl={frames[0]}
-          subtitle="镜头组 1 · 帧 @1"
+          subtitle={`镜头组 ${editTarget.shotIndex} · 帧 @${editTarget.frameNumber}`}
           frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
           aspectRatio="9:16"
           initialKey={initialKey}
@@ -321,24 +327,35 @@ describe('图片编辑器', () => {
     expect(await within(editor).findByText(/记录刷新失败/)).toBeVisible()
   })
 
-  it('打开期间跑完的结果挂绿点、舞台不自动切换；点开即清，打开前就有的结果不挂', async () => {
-    const older = job({ status: 'completed', outputUrl: RESULT, createdAt: '2026-09-07T11:00:00Z' })
-    const running = job({ status: 'submitted' })
+  it('按当前格读取历史：打开期间跑完的结果挂绿点，点开即清，舞台不自动切换', async () => {
+    const editTarget = { ...target, shotIndex: 2, frameNumber: 1 }
+    const metadata = { shot: 2, frame: 1 }
+    const older = job({
+      status: 'completed',
+      outputUrl: RESULT,
+      createdAt: '2026-09-07T11:00:00Z',
+      metadata,
+    })
+    const running = job({ status: 'submitted', metadata })
     const fresh = {
       ...running,
       status: 'completed' as const,
       outputUrl: 'https://example.com/fresh.png',
     }
     let landed = false
+    const queries: URLSearchParams[] = []
     server.use(
-      http.get('*/api/generations', () =>
-        HttpResponse.json({ items: [landed ? fresh : running, older] }),
-      ),
+      http.get('*/api/generations', ({ request }) => {
+        queries.push(new URL(request.url).searchParams)
+        return HttpResponse.json({ items: [landed ? fresh : running, older] })
+      }),
     )
-    const { queryClient } = await renderWithProviders(<EditorPage />)
+    const { queryClient } = await renderWithProviders(<EditorPage target={editTarget} />)
     const editor = await screen.findByRole('dialog')
     const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     await within(strip).findByRole('button', { name: /^生成中 · / })
+    expect(queries[0]?.get('kind')).toBe('image')
+    expect(JSON.parse(queries[0]?.get('metadata') ?? 'null')).toEqual(metadata)
 
     landed = true
     await act(() => queryClient.invalidateQueries())

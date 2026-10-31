@@ -165,12 +165,10 @@ def test_a_stored_shot_without_its_prompt_fails_loudly() -> None:
         {"model": ""},
         {"user_name": "   "},
         {"reference_image_urls": ["file:///etc/passwd"]},
-        {"image_urls": ["https://example.test/a.png"]},
-        {"session_id": "s-1"},
     ],
 )
 def test_video_request_rejects_what_we_can_judge_ourselves(overrides: dict[str, object]) -> None:
-    """上游的废弃别名与它会丢弃的字段，在我们这里是未知字段，直接拒。"""
+    """输入的内容与地址必须满足本系统能判断的约束。"""
 
     with pytest.raises(ValueError):
         video_request(**overrides)

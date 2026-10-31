@@ -5,42 +5,18 @@ from __future__ import annotations
 
 import base64
 from collections.abc import AsyncGenerator, Mapping
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from pydantic_ai.capabilities import Capability
 
 from agent_runtime.http.app import create_app
-from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
-from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 
 ADMIN_KEY = "admin-app-key-0123456789-0123456789"
 READER_KEY = "reader-app-key-0123456789-012345678"
 END_USER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
-
-
-@dataclass
-class LimitedPlugin(CapPlugin[Any]):
-    """测试插件：带一个参数。"""
-
-    label = "限量"
-    summary = "测试用。"
-
-    @classmethod
-    def get_serialization_name(cls) -> str:
-        return "limited"
-
-    @classmethod
-    def from_spec(cls, *, limit: int = 10) -> Capability[Any]:
-        return Capability[Any](id="limited", instructions=f"最多 {limit} 条。")
-
-    @classmethod
-    def display_table(cls) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
-        return {}
 
 
 @pytest.fixture
@@ -57,7 +33,7 @@ def app() -> FastAPI:
         log_level="WARNING",
         log_format="console",
     )
-    return create_app(settings, plugins={"limited": LimitedPlugin})
+    return create_app(settings, plugins={})
 
 
 @pytest.fixture
@@ -76,13 +52,6 @@ async def test_health_needs_no_key(client: httpx.AsyncClient) -> None:
     response = await client.get("/healthz")
 
     assert (response.status_code, response.json()) == (200, {"status": "ok"})
-
-
-async def test_an_admin_app_reads_the_plugins_it_was_given(client: httpx.AsyncClient) -> None:
-    response = await client.get("/v1/admin/agents/plugins", headers=bearer(ADMIN_KEY))
-
-    assert response.status_code == 200, response.text
-    assert [one["name"] for one in response.json()["items"]] == ["limited"]
 
 
 @pytest.mark.parametrize(

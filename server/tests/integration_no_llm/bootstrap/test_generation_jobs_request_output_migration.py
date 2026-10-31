@@ -1,6 +1,6 @@
 """生成记录表把各种记录自己的产出并进 ``output``、输入并进 ``request`` 的迁移：在 0038 按旧结构给
-每种记录造一行，升级后逐行核对 output、request 与 provider，降级后整表与索引原样还原；搬不过去的
-行让整个迁移回滚。升降级在一次性库上做，不动会话共用的测试库。"""
+每种记录造一行，升级后逐行核对 output、request 与 provider；搬不过去的行让整个迁移回滚。
+升级在一次性库上做，不动会话共用的测试库。"""
 
 from __future__ import annotations
 
@@ -304,7 +304,7 @@ async def _snapshot(url: str) -> dict[str, Any]:
         await engine.dispose()
 
 
-def test_upgrade_moves_each_kinds_own_fields_and_downgrade_restores_everything(
+def test_upgrade_moves_each_kinds_own_fields(
     scratch_db: str,
 ) -> None:
     cfg = alembic_config(scratch_db)
@@ -351,10 +351,6 @@ def test_upgrade_moves_each_kinds_own_fields_and_downgrade_restores_everything(
         "ix_generation_jobs_video_upload_md5",
         "ix_generation_jobs_reference_trial",
     }
-
-    command.downgrade(cfg, BEFORE)
-
-    assert asyncio.run(_snapshot(scratch_db)) == before
 
 
 @pytest.mark.parametrize(

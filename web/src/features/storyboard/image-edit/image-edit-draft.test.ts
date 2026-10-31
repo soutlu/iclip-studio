@@ -51,14 +51,6 @@ describe('未提交图片编辑草稿', () => {
     expect(isEmptyDraft(onBase)).toBe(false)
   })
 
-  it('换了存储前缀：旧形状的草稿读不到，也不报错', () => {
-    sessionStorage.setItem(
-      `cue:frame-edit:${target.conversationId}:${target.shotIndex}:${target.frameNumber}`,
-      JSON.stringify({ [BASE]: { annotations: [], instructions: [], references: [] } }),
-    )
-    expect(loadEditDrafts(target)).toEqual({})
-  })
-
   it('读坏的草稿抛出来，由调用方决定怎么提示', () => {
     sessionStorage.setItem(editDraftKey(target), JSON.stringify({ [BASE]: { annotations: 1 } }))
     expect(() => loadEditDrafts(target)).toThrow()

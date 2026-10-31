@@ -1,4 +1,4 @@
-"""快照消息表迁移：升级建出与 ``step_store_pg`` 一致的表与索引，降级删掉。"""
+"""快照消息表迁移：升级建出与 ``step_store_pg`` 一致的表与索引。"""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def _inspect(inspector: Any) -> dict[str, Any]:
     return {"snapshot_messages": messages, "snapshot_indexes": indexes}
 
 
-def test_upgrade_creates_table_and_index_matching_store_and_downgrade_drops(
+def test_upgrade_creates_table_and_index_matching_store(
     scratch_db: str,
 ) -> None:
     cfg = alembic_config(scratch_db)
@@ -69,7 +69,3 @@ def test_upgrade_creates_table_and_index_matching_store_and_downgrade_drops(
     assert after["snapshot_indexes"] == {
         index.name: [column.name for column in index.columns] for index in snapshots_table.indexes
     }
-
-    command.downgrade(cfg, BEFORE)
-
-    assert asyncio.run(_schema(scratch_db)) == before

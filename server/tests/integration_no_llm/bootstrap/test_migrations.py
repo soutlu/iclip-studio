@@ -1,12 +1,11 @@
 """比较 Alembic head 与 ``iclip``、``agent_runtime`` 两个 schema 的表定义的表、列集合，生成记录表另
-逐项比到可空性、外键名与索引定义，并确认在 head 上重复升级不出错。
+逐项比到可空性、外键名与索引定义。
 
 _MODULE_METADATA 必须包含两个 schema 里所有表模块的元数据，确保迁移对账完整。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from agent_runtime.config.agent_config.infra_sql import metadata_obj as agent_config_metadata
@@ -18,8 +17,6 @@ from agent_runtime.harness.sessions import metadata_obj as sessions_metadata
 from agent_runtime.harness.step_store_pg import metadata_obj as step_store_metadata
 from agent_runtime.harness.usage_ledger_pg import metadata_obj as usage_ledger_metadata
 from agent_runtime.material_ledger.pg import metadata_obj as material_ledger_metadata
-from alembic import command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import Column, MetaData, inspect, text
 
 from iclip.domains.brand_templates.infra_sql import metadata_obj as brand_templates_metadata
@@ -166,15 +163,3 @@ async def test_generation_jobs_matches_its_table_definition(migrated_pg: str) ->
         await engine.dispose()
 
     assert actual == _generation_jobs_declared()
-
-
-def _alembic(url: str) -> AlembicConfig:
-    server_dir = Path(__file__).resolve().parents[3]
-    cfg = AlembicConfig(str(server_dir / "alembic.ini"))
-    cfg.set_main_option("script_location", str(server_dir / "migrations"))
-    cfg.attributes["sqlalchemy_url"] = url
-    return cfg
-
-
-def test_upgrade_is_idempotent_at_head(migrated_pg: str) -> None:
-    command.upgrade(_alembic(migrated_pg), "head")

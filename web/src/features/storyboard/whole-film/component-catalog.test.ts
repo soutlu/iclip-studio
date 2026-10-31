@@ -4,7 +4,6 @@ import {
   brandGroups,
   captionStyles,
   categoryGroups,
-  defaultLaneLabel,
   durationMsOf,
   thumbnailOf,
   type CatalogItem,
@@ -39,11 +38,6 @@ describe('组件目录', () => {
     )
   })
 
-  it('点卡片的默认去处：block 进画面轨、其余进特效轨', () => {
-    expect(defaultLaneLabel(item('fixture-scene'))).toBe('画面轨')
-    expect(defaultLaneLabel(item('fixture-overlay'))).toBe('特效轨')
-  })
-
   it('缩略图在这一版组件库的 thumbnails/ 下，没有缩略图的为 undefined', () => {
     expect(thumbnailOf(catalog, item('fixture-scene'))).toBe(
       '/hyperframes/test-fixtures/thumbnails/fixture-scene.svg',
@@ -54,11 +48,6 @@ describe('组件目录', () => {
 
 describe('侧栏分组', () => {
   const names = (items: CatalogItem[]) => items.map((entry) => entry.name)
-
-  it('没有品牌组件时品牌栏没有小标题', () => {
-    const plain = { ...catalog, items: catalog.items.filter((entry) => entry.brand === undefined) }
-    expect(brandGroups(plain)).toEqual([])
-  })
 
   it('字幕样式不进品牌栏和通用栏，只列在字幕样式菜单里，保持目录的顺序', () => {
     const brandedCaption = { ...item('default-caption'), name: 'brand-caption', brand: 'A' }
