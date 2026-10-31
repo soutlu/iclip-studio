@@ -45,7 +45,9 @@ async def open_session(conn: AsyncConnection, conversation_id: uuid.UUID) -> Non
 async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[PgAuditReports]:
     """报表连同它调的运行时服务：运行时 app 接同一个测试库，客户端经 ASGI 传输层直达，不出网。"""
 
-    runtime = create_app(runtime_settings(make_runtime_config(), engine), plugins={}, engine=engine)
+    runtime = create_app(
+        runtime_settings(make_runtime_config(), engine, hooks=False), plugins={}, engine=engine
+    )
     async with RuntimeClient(
         RUNTIME_URL, RUNTIME_APP_KEY, transport=httpx.ASGITransport(app=runtime)
     ) as client:

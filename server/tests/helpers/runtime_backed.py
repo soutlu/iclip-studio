@@ -134,15 +134,24 @@ def _hooks() -> ResolvedHooks:
 
 
 def runtime_settings(
-    config: RuntimeConfig, engine: AsyncEngine, *, skill_cache_dir: Path | None = None
+    config: RuntimeConfig,
+    engine: AsyncEngine,
+    *,
+    skill_cache_dir: Path | None = None,
+    hooks: bool = True,
 ) -> RuntimeSettings:
     """运行时服务的设置：同一个库，一个有管理权限的应用 ``video``，回调后端的内部接口，日志同后端的配置；
-    ``skill_cache_dir`` 是技能缓存目录（给了就不碰系统临时目录）。"""
+    ``skill_cache_dir`` 是技能缓存目录（给了就不碰系统临时目录）；``hooks=False`` 时不配回调，给只读统计、
+    不跑消息的测试用。"""
 
     return RuntimeSettings(
         database_url=engine.url.render_as_string(hide_password=False),
         credential_encryption_keys=(TEST_CREDENTIAL_KEY,),
-        apps=(ResolvedApp(id=VIDEO_APP_ID, key=RUNTIME_APP_KEY, admin=True, hooks=_hooks()),),
+        apps=(
+            ResolvedApp(
+                id=VIDEO_APP_ID, key=RUNTIME_APP_KEY, admin=True, hooks=_hooks() if hooks else None
+            ),
+        ),
         agent_runs=AgentRunsSection()
         if skill_cache_dir is None
         else AgentRunsSection(skill_cache_dir=skill_cache_dir),
