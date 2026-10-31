@@ -2,7 +2,8 @@
 运行时的 ``/v1/admin/…``，答复的状态码、正文、``content-type`` 与 ``content-disposition`` 原样交回。
 
 运行时那组接口与后端这三组同形（子路径、请求与答复、报错信封），所以转发不改写任何内容；运行时答不上
-（连不上、超时、5xx）由客户端库抛 ``RuntimeUnavailable``，组合根装的错误处理器答 503。
+（连不上、超时、5xx，或不认后端这个应用的 401、403）由客户端库抛 ``RuntimeUnavailable``，组合根装的错误
+处理器答 503。
 """
 
 from __future__ import annotations

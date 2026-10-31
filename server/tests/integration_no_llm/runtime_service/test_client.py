@@ -1,5 +1,6 @@
 """运行时的客户端库对着真的运行时服务跑：开会话、发消息跑完、读状态与页与补批、工作区文件与素材、活动与
-占位、分叉、按清单拷文件、名册与起标题、管理接口透传、两条 WebSocket，以及别的应用的会话读不到。
+占位、分叉、按清单拷文件、名册与起标题、管理接口透传、两条 WebSocket、不认的应用是应用级拒绝，以及别的应用
+的会话读不到。
 
 经 ``ASGIWebSocketTransport`` 挂上运行时服务（HTTP 交给它继承的 ``ASGITransport``）；运行驱动与事件分发由
 ``running`` 夹具跑着服务的 lifespan 起停，与测试同一个事件循环、同一个 engine。这个传输层的任务组要在同一个
@@ -23,7 +24,7 @@ from agent_runtime.app_wire import (
     SessionPromptIn,
     TitleIn,
 )
-from agent_runtime.client import RuntimeClient, StreamClosed
+from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed
 from agent_runtime.errors import AgentUnavailable, Conflict, NotFound
 from agent_runtime.live.frames import Ack, SessionActivity, TranscriptOpsFrame, TranscriptResetFrame
 from agent_runtime.material_ledger.store import Material
@@ -282,6 +283,22 @@ async def test_admin_requests_pass_through(runtime_app: FastAPI, actor: uuid.UUI
     assert "storyboard" in [item["id"] for item in json.loads(listed.content)["items"]]
 
 
+async def test_app_refusals_are_app_rejected(runtime_app: FastAPI, actor: uuid.UUID) -> None:
+    """不认的密钥（401）、没有管理权限的应用（403）在带类型的方法与管理接口上都是应用级拒绝。"""
+
+    async with (
+        connect(runtime_app) as reader,
+        connect(runtime_app, "unknown-key-0123456789-0123456789-ab") as stranger,
+    ):
+        with pytest.raises(AppRejected) as not_admin:
+            await reader.admin_request("POST", "agents", end_user=actor, json={"id": "x"})
+        with pytest.raises(AppRejected) as unknown:
+            await stranger.agents()
+
+    assert (not_admin.value.status, not_admin.value.detail) == (403, "这个应用没有管理权限")
+    assert (unknown.value.status, unknown.value.detail) == (401, "应用密钥无效")
+
+
 async def test_another_apps_session_is_not_found(
     published: None, runtime_app: FastAPI, owner: uuid.UUID
 ) -> None:
@@ -351,10 +368,11 @@ async def test_event_stream_delivers_activity_during_a_run(
     assert seen[-1] == (False, "completed")
 
 
-async def test_an_unknown_app_key_is_closed_with_1008(runtime_app: FastAPI) -> None:
+async def test_an_unknown_app_key_is_refused_before_the_handshake(runtime_app: FastAPI) -> None:
     async with connect(runtime_app, "unknown-key-0123456789-0123456789-ab") as client:
-        with pytest.raises(StreamClosed) as raised:
+        with pytest.raises(AppRejected) as raised:
             async with client.connect_events():
                 pass
 
-    assert raised.value.code == 1008
+    assert not isinstance(raised.value, StreamClosed)
+    assert raised.value.status is None

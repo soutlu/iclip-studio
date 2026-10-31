@@ -4,8 +4,8 @@
 素材台账的形状），信封 snake_case、嵌套的 transcript 实体 camelCase。每个请求带 ``Authorization: Bearer
 <应用密钥>``；会话接口里要属主的方法收 ``owner``，放进 ``X-End-User``。
 
-报错：约定的 4xx 还原成同类领域错误（``detail`` 与 ``code`` 原样），其余都是 ``RuntimeUnavailable``，见
-``agent_runtime.client.errors``。任何请求都不重试：写操作重发可能重复生效，要不要重来由调用方决定。
+报错：约定的 404、409、422 还原成同类领域错误（``detail`` 与 ``code`` 原样），401、403 是运行时不认这个
+应用（``AppRejected``），其余都是 ``RuntimeUnavailable``，见 ``agent_runtime.client.errors``。任何请求都不重试：写操作重发可能重复生效，要不要重来由调用方决定。
 """
 
 from __future__ import annotations
@@ -40,8 +40,11 @@ from agent_runtime.app_wire import (
     TitleOut,
 )
 from agent_runtime.client.errors import (
+    APP_REJECTION_STATUSES,
+    AppRejected,
     RuntimeUnavailable,
     StreamClosed,
+    app_rejection,
     error_for,
     transport_failure,
 )
@@ -65,6 +68,9 @@ DEFAULT_TIMEOUT: Final = httpx.Timeout(60.0, connect=5.0)
 _FILE_ENTRY = TypeAdapter(FileEntry)
 _STORED_FILE = TypeAdapter(StoredFile)
 _MATERIAL = TypeAdapter(Material)
+
+_UNKNOWN_APP_CLOSE: Final = 1008
+"""运行时认不出应用时在握手前关连接用的关闭码（RFC 6455 的 policy violation）。"""
 
 AdminFiles = Mapping[str, tuple[str, bytes, str]]
 """管理接口的表单上传：字段名 →（文件名，内容，内容类型）。"""
@@ -380,7 +386,8 @@ class RuntimeClient:
         ``headers`` 里的 ``Authorization`` 与 ``X-End-User`` 不用：密钥是本客户端的，代办用户只看
         ``end_user``，不给就不带。
 
-        4xx 不抛，状态码与正文原样交回；5xx、连不上、超时抛 ``RuntimeUnavailable``。
+        401、403 抛 ``AppRejected``：说的是这个应用的密钥与权限，不是代办用户，不交给浏览器；其余 4xx 不抛，
+        状态码与正文原样交回；5xx、连不上、超时抛 ``RuntimeUnavailable``。
         """
 
         relative = path.lstrip("/")
@@ -411,6 +418,8 @@ class RuntimeClient:
             raise transport_failure(exc) from exc
         if response.status_code >= 500:
             raise RuntimeUnavailable("运行时服务出错", status=response.status_code)
+        if response.status_code in APP_REJECTION_STATUSES:
+            raise app_rejection(response)
         return AdminResponse(
             status_code=response.status_code,
             content=response.content,
@@ -436,7 +445,8 @@ class RuntimeClient:
 
     @asynccontextmanager
     async def _connect(self, path: str) -> AsyncGenerator[AsyncWebSocketSession]:
-        """握手并交出连接。握手失败：认不出应用以 ``1008`` 关是 ``StreamClosed``，答了别的状态码、连不上
+        """握手并交出连接。握手失败：认不出应用是 ``AppRejected``（在 ASGI 传输层上是握手前以 ``1008`` 关，
+        经 ASGI 服务器是它代答的 HTTP 403），握手前以别的关闭码关是 ``StreamClosed``，答了别的状态码、连不上
         是 ``RuntimeUnavailable``。
 
         httpx-ws 的会话里有任务组，从 ``async with`` 体里抛出的异常会被包成只有一个成员的异常组；这里拆开，
@@ -459,13 +469,17 @@ class RuntimeClient:
         except WebSocketDisconnect as exc:
             if connected:
                 raise
+            if exc.code == _UNKNOWN_APP_CLOSE:
+                raise AppRejected(exc.reason, status=None) from exc
             raise StreamClosed(exc.code, exc.reason) from exc
         except WebSocketUpgradeError as exc:
             if connected:
                 raise
-            raise RuntimeUnavailable(
-                "运行时拒绝了实时连接", status=exc.response.status_code
-            ) from exc
+            status = exc.response.status_code
+            if status in APP_REJECTION_STATUSES:
+                # 握手的答复正文没读进来，原因只有状态码。
+                raise AppRejected("", status=status) from exc
+            raise RuntimeUnavailable("运行时拒绝了实时连接", status=status) from exc
         except httpx.HTTPError as exc:
             if connected:
                 raise

@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any, Final
 
 import structlog
-from agent_runtime.client import RuntimeUnavailable
+from agent_runtime.client import AppRejected, RuntimeUnavailable
 from agent_runtime.errors import DomainError
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -30,9 +30,17 @@ def install_error_handlers(app: FastAPI) -> None:
     async def _runtime_unavailable_handler(
         _request: Request, exc: RuntimeUnavailable
     ) -> JSONResponse:
-        """原因只进日志，答复里只有一句固定的话；两边都没有应用密钥。"""
+        """原因只进日志，答复里只有一句固定的话；两边都没有应用密钥。运行时不认后端这个应用是部署配错了，
+        记一条错误；浏览器照样只看到不可用，不当成登录失效。"""
 
-        _logger.warning("运行时服务答不上", reason=exc.reason, status=exc.status)
+        if isinstance(exc, AppRejected):
+            _logger.error(
+                "运行时拒绝了后端的应用密钥或权限，检查 RUNTIME_APP_KEY 与运行时 apps.video 配置",
+                status=exc.status,
+                detail=exc.detail,
+            )
+        else:
+            _logger.warning("运行时服务答不上", reason=exc.reason, status=exc.status)
         return JSONResponse(status_code=503, content={"detail": RUNTIME_UNAVAILABLE_DETAIL})
 
     @app.exception_handler(DomainError)

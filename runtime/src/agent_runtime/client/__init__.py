@@ -4,7 +4,7 @@
 的形状），不碰 Web 框架、数据库与引擎；边界见运行时架构测试。
 """
 
-from agent_runtime.client.errors import RuntimeUnavailable, StreamClosed
+from agent_runtime.client.errors import AppRejected, RuntimeUnavailable, StreamClosed
 from agent_runtime.client.runtime_client import (
     DEFAULT_TIMEOUT,
     AdminFiles,
@@ -23,6 +23,7 @@ __all__ = [
     "AdminFiles",
     "AdminResponse",
     "AppEventFrame",
+    "AppRejected",
     "EventStream",
     "RuntimeClient",
     "RuntimeUnavailable",
