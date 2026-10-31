@@ -32,7 +32,7 @@ marker 由 [tests/conftest.py](../server/tests/conftest.py) 按目录注入；�
 
 transcript 按场景测：[场景测试](../server/tests/integration_no_llm/agents/test_transcript_scenarios.py)用假模型跑真实运行，断言实时重放出的页与冷启动重建的页逐字相等，并把三个场景存成 `contract/transcript/` 下的金样（`UPDATE_GOLDEN=1` 重生成），前端 [golden 测试](../web/src/shared/transcript/golden.test.ts)用 vendored schema 解析同一份。只有历史才会遇到的规则留在 [历史重建单测](../runtime/tests/unit/harness/test_transcript_from_messages.py)，手工事件或官方模型解析协议流才能造出的形状留在 [投影器单测](../runtime/tests/unit/harness/test_transcript_projector.py)；新场景先进场景文件，不另开对照测试。
 
-模块责任、测试层与执行分组分别判断。[CI](../.github/workflows/ci.yml) 的 `sessions` / `application` 是平衡耗时的执行分组，不代表模块归属；前端 Node / jsdom 是执行环境。具体文件选择以配置为准，分组调整须核对收集结果没有重复或遗漏。
+模块责任、测试层与执行分组分别判断。[CI](../.github/workflows/ci.yml) 的后端集成测试按实际耗时分组，不代表模块归属；每组使用独立 Postgres，组内串行执行。前端 Node / jsdom 是执行环境。具体文件选择以配置为准，分组调整须核对收集结果没有重复或遗漏。
 
 ## 2. 断言与替身
 
