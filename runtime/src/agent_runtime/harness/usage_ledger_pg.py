@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from typing import Final
 
-from sqlalchemy import BigInteger, Column, MetaData, PrimaryKeyConstraint, Table, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Index,
+    MetaData,
+    PrimaryKeyConstraint,
+    Table,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -28,6 +37,8 @@ conversation_usage_table = Table(
     Column("first_at", TIMESTAMP(timezone=True), nullable=False),
     Column("last_at", TIMESTAMP(timezone=True), nullable=False),
     PrimaryKeyConstraint("conversation_id", "model_name"),
+    # 运行统计按时间窗取用量，看最后一次累加的时刻（harness/stats_pg.py）。
+    Index("idx_conversation_usage_last", "last_at"),
 )
 
 

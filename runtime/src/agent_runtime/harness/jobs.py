@@ -89,6 +89,8 @@ agent_jobs_table = Table(
         postgresql_where=Column("status").in_(_ACTIVE),
     ),
     Index("idx_agent_jobs_queue", "conversation_id", "created_at"),
+    # 运行统计按时间窗取消息（harness/stats_pg.py）。
+    Index("idx_agent_jobs_created", "created_at"),
     Index(
         "idx_agent_jobs_lease",
         "heartbeat_at",

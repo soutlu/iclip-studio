@@ -96,8 +96,15 @@ ORDER BY j.conversation_id, j.created_at, j.prompt_id
 )
 
 # 顶层运行只认 agent_job_runs 登记过的 run_id（运行驱动发放的）；子代理的内部运行带 parent_run_id、不登记。
-# 开始是第一条 run_started 事件，结束是第一条 run_completed / run_failed，两头缺一不算。时间窗看开始事件，
-# 只能在聚合之后筛；按会话取时先在聚合前圈住会话。
+# 开始是第一条 run_started 事件，结束是第一条 run_completed / run_failed，两头缺一不算。按会话取时先在
+# 聚合前圈住会话。时间窗看开始事件，只能在聚合之后筛：聚合前先经 idx_events_run_started 圈出窗里有
+# 开始事件的运行（第一条开始事件在窗里的一定在其中），只聚合它们的事件，结束事件不按窗裁；圈进来的
+# 第一条开始事件在窗外的，由聚合后的筛选去掉。
+_STARTED_IN_WINDOW: Final = f"""AND r.run_id IN (
+      SELECT b.run_id FROM agent_runtime.events b
+      WHERE b.kind = 'run_started'
+      {_BY_WINDOW.format(anchor="b.timestamp")})"""
+
 _RUN_TIMES: Final = """
 SELECT s.id AS session_id, r.run_id, j.user_name,
        min(e.timestamp) FILTER (WHERE e.kind = 'run_started') AS started_at,
@@ -122,7 +129,7 @@ ORDER BY t.session_id, t.started_at, t.run_id
     ),
     "window": text(
         f"""
-SELECT * FROM ({_RUN_TIMES.format(inner="")}) t
+SELECT * FROM ({_RUN_TIMES.format(inner=_STARTED_IN_WINDOW)}) t
 WHERE TRUE
 {_BY_WINDOW.format(anchor="t.started_at")}
 ORDER BY t.session_id, t.started_at, t.run_id

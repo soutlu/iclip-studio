@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Protocol
@@ -86,6 +86,50 @@ class RuntimeFacts:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class WindowFacts:
+    """一段时间窗 ``[since, until)`` 一次取齐的事实行，落在窗里的筛选范围都从这份里切，不再向运行时取。
+
+    ``prompts`` / ``runs`` / ``usage`` 是按这段窗取的（看各行自己的时刻）；``cycles`` 是交付周期样本
+    （最后一条出片在窗里的对话）连同最后一条出片的完成时刻，``cycle_runs`` 是它们的全部运行；
+    ``sessions`` 是向运行时要过首末消息的 ``session_ids`` 里跑过的那些。``until`` 为空不设上界。"""
+
+    since: datetime
+    until: datetime | None
+    prompts: Sequence[PromptStatOut]
+    runs: Sequence[RunStatOut]
+    usage: Sequence[UsageStatOut]
+    cycles: Mapping[uuid.UUID, datetime]
+    cycle_runs: Sequence[RunStatOut]
+    session_ids: frozenset[uuid.UUID]
+    sessions: Sequence[SessionStatOut]
+
+    def covers(self, since: datetime, until: datetime | None) -> bool:
+        return self.since <= since and (
+            self.until is None or (until is not None and until <= self.until)
+        )
+
+    def within(self, since: datetime, until: datetime | None) -> RuntimeFacts:
+        """落在本窗里的 ``[since, until)`` 要的事实行，与直接按这段窗向运行时取的一致：窗内的消息、运行
+        与用量，最后一条出片在窗内的对话的全部运行，它们与窗内有用量的对话的首末消息。"""
+
+        def inside(moment: datetime) -> bool:
+            return moment >= since and (until is None or moment < until)
+
+        cycles = {conversation for conversation, at in self.cycles.items() if inside(at)}
+        usage = [row for row in self.usage if inside(row.last_at)]
+        wanted = {*cycles, *(row.session_id for row in usage)}
+        return RuntimeFacts(
+            prompts=[row for row in self.prompts if inside(row.created_at)],
+            runs=merge_runs(
+                [row for row in self.runs if inside(row.started_at)],
+                [row for row in self.cycle_runs if row.session_id in cycles],
+            ),
+            usage=usage,
+            sessions=[row for row in self.sessions if row.session_id in wanted],
+        )
+
+
 def _batches(ids: Collection[uuid.UUID]) -> Iterable[tuple[uuid.UUID, ...]]:
     ordered = sorted(set(ids))
     for start in range(0, len(ordered), MAX_STATS_SESSIONS):
@@ -152,4 +196,4 @@ def merge_runs(*groups: Sequence[RunStatOut]) -> tuple[RunStatOut, ...]:
     return tuple(merged.values())
 
 
-__all__ = ["FACTS_CTE", "RuntimeFacts", "RuntimeStats", "merge_runs"]
+__all__ = ["FACTS_CTE", "RuntimeFacts", "RuntimeStats", "WindowFacts", "merge_runs"]

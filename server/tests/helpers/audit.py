@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections import Counter
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Final
+from typing import Any, Final
 
 import httpx
+from agent_runtime.app_wire import (
+    PromptStatsOut,
+    RunStatsOut,
+    SessionStatsOut,
+    StatsQueryIn,
+    StatsSessionsIn,
+    UsageStatsOut,
+)
 from agent_runtime.client import RuntimeClient
 from agent_runtime.http.app import create_app
 from sqlalchemy import text
@@ -41,16 +50,49 @@ async def open_session(conn: AsyncConnection, conversation_id: uuid.UUID) -> Non
     )
 
 
+class CountingRuntimeClient(RuntimeClient):
+    """记下每个统计接口调了几次的运行时客户端；调用照常发给运行时服务。``stats_calls`` 的键是
+    ``/v1/stats/`` 下的路径名。"""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.stats_calls: Counter[str] = Counter()
+
+    async def stats_prompts(self, body: StatsQueryIn) -> PromptStatsOut:
+        self.stats_calls["prompts"] += 1
+        return await super().stats_prompts(body)
+
+    async def stats_runs(self, body: StatsQueryIn) -> RunStatsOut:
+        self.stats_calls["runs"] += 1
+        return await super().stats_runs(body)
+
+    async def stats_usage(self, body: StatsQueryIn) -> UsageStatsOut:
+        self.stats_calls["usage"] += 1
+        return await super().stats_usage(body)
+
+    async def stats_sessions(self, body: StatsSessionsIn) -> SessionStatsOut:
+        self.stats_calls["sessions"] += 1
+        return await super().stats_sessions(body)
+
+
 @asynccontextmanager
-async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[PgAuditReports]:
-    """报表连同它调的运行时服务：运行时 app 接同一个测试库，客户端经 ASGI 传输层直达，不出网。"""
+async def audit_runtime_client(engine: AsyncEngine) -> AsyncGenerator[CountingRuntimeClient]:
+    """报表调的运行时服务的客户端：运行时 app 接同一个测试库，客户端经 ASGI 传输层直达，不出网。"""
 
     runtime = create_app(
         runtime_settings(make_runtime_config(), engine, hooks=False), plugins={}, engine=engine
     )
-    async with RuntimeClient(
+    async with CountingRuntimeClient(
         RUNTIME_URL, RUNTIME_APP_KEY, transport=httpx.ASGITransport(app=runtime)
     ) as client:
+        yield client
+
+
+@asynccontextmanager
+async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[PgAuditReports]:
+    """报表连同它调的运行时服务，见 ``audit_runtime_client``。"""
+
+    async with audit_runtime_client(engine) as client:
         yield PgAuditReports(engine, RuntimeStats(client))
 
 
@@ -265,4 +307,11 @@ class Plant:
         )
 
 
-__all__ = ["EVER", "Plant", "audit_reports", "open_session"]
+__all__ = [
+    "EVER",
+    "CountingRuntimeClient",
+    "Plant",
+    "audit_reports",
+    "audit_runtime_client",
+    "open_session",
+]

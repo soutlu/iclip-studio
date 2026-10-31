@@ -117,6 +117,47 @@ async def test_window_falls_on_each_rows_own_time_and_sessions_take_everything(
     ]
 
 
+async def test_runs_in_a_window_keep_their_whole_history_outside_it(
+    engine: AsyncEngine, app_client: httpx.AsyncClient
+) -> None:
+    """窗口只圈开始事件：窗内开始、窗后才结束的照算，结束取窗外那条；窗前开始、窗内结束的不算；
+    窗前已有一条开始事件、窗内又补了一条的，第一条开始在窗外，也不算。"""
+
+    async with engine.begin() as conn:
+        plant = Plant(conn)
+        session_id = await open_session(conn, "reader")
+        prompt = await plant.prompt(session_id, user_name="Sara.Hong", at=ago(hours=8))
+        await plant.run(prompt, started_at=ago(hours=8), ended_at=ago(hours=4))
+        await plant.run(prompt, started_at=ago(hours=3), ended_at=ago(minutes=30))
+        await plant.run(prompt, started_at=ago(hours=7), ended_at=ago(hours=6))
+        restarted = (
+            await conn.execute(
+                text(
+                    "SELECT r.run_id FROM agent_runtime.agent_job_runs r"
+                    " JOIN agent_runtime.events e ON e.run_id = r.run_id"
+                    " WHERE r.prompt_id = :prompt_id AND e.kind = 'run_started'"
+                    " AND e.timestamp = :at"
+                ),
+                {"prompt_id": prompt, "at": ago(hours=7)},
+            )
+        ).scalar_one()
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.events (run_id, kind, step_index, timestamp, metadata)"
+                " VALUES (:run_id, 'run_started', 1, :at, '{}')"
+            ),
+            {"run_id": restarted, "at": ago(hours=2)},
+        )
+
+    runs = await post(
+        app_client, "/stats/runs", {"since": iso(ago(hours=5)), "until": iso(ago(hours=1))}
+    )
+
+    assert [(moment(row["started_at"]), moment(row["ended_at"])) for row in runs] == [
+        (ago(hours=3), ago(minutes=30))
+    ]
+
+
 async def test_runs_are_registered_top_level_runs_that_reached_an_end(
     engine: AsyncEngine, app_client: httpx.AsyncClient
 ) -> None:
