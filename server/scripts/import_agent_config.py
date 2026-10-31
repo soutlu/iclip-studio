@@ -10,9 +10,9 @@ skills 目录）写进数据库，并给现有对话开运行时会话。
 旧文件直接用 PyYAML 读，不经过新版的配置加载。数据库照常按 ``CONFIG_FILE``（缺省 ``configs/config.yaml``，
 已删掉 ``models`` 段与 ``title_model``）连；技能库、模型供应商与 agent 配置三块服务按运行时服务的同一套装配
 直接建（``CREDENTIAL_ENCRYPTION_KEYS`` 来自环境变量），插件登记表按 ``--runtime-config`` 里的 ``plugins``
-打开插件包得到，与运行时服务启动时同一份。运行时配置里配了 ``shot_video`` 时，插件包打开时要向后端的内部接口
-取接入的图片模型：这一步要后端已经起来、``RUNTIME_INTERNAL_TOKEN`` 与运行时配置里的一致，取不到就拒绝、
-什么都不写。写入都经各领域的服务，复用它们的校验、试连与发布检查，所以新建密钥会真的连一次模型供应商。
+打开插件包得到，与运行时服务启动时同一份。运行时配置里配了 ``shot_video`` 或 ``video_breakdown`` 时，插件包
+打开时要向后端的内部接口核对插件服务：这一步要后端已经起来、``RUNTIME_INTERNAL_TOKEN`` 与运行时配置里的一致、
+后端开了对应服务，否则就拒绝、什么都不写。写入都经各领域的服务，复用它们的校验、试连与发布检查，所以新建密钥会真的连一次模型供应商。
 
 检查清单（任何一条不满足就报错停下，什么都不写）：
 
@@ -738,8 +738,8 @@ async def deployment_plugins(
             bind = await stack.enter_async_context(factory(config.plugins.config))
         except (RuntimeError, ValidationError) as exc:
             raise ImportRefused(
-                f"按运行时配置打开插件包失败：{exc}。配了 shot_video 时插件包要向后端取图片模型，"
-                "先把后端起来、RUNTIME_INTERNAL_TOKEN 与运行时配置里的一致，再跑"
+                f"按运行时配置打开插件包失败：{exc}。配了 shot_video 或 video_breakdown 时插件包要向后端"
+                "核对插件服务，先把后端起来、RUNTIME_INTERNAL_TOKEN 与运行时配置里的一致，再跑"
             ) from exc
         yield bind(PluginHost(files=PgFileStore(engine), ledger=PgMaterialLedger(engine)))
 

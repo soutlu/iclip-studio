@@ -26,6 +26,12 @@ class InvalidImageRequest(ValueError):
     """生成请求校验失败，由工具转换为模型可修正的错误。"""
 
 
+class ImageJobUnavailable(RuntimeError):
+    """查任务状态时宿主暂时答不了（重启、网关 502/503/504、连不上或超时），任务本身不受影响。
+
+    只有经 HTTP 的实现会抛；工具照旧轮询到总时限，不当成这次生成失败。"""
+
+
 @dataclass(frozen=True, slots=True)
 class ImageRequest:
     """图像生成参数，取值由生成域统一校验。"""
@@ -67,7 +73,13 @@ class ImageGenerations(Protocol):
         """受理生成并返回任务记录；实际 Provider 调用由后台执行。"""
         ...
 
-    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob: ...
+    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
+        """查任务状态。
+
+        Raises:
+            ImageJobUnavailable: 宿主暂时答不了，过一会儿再查。
+        """
+        ...
 
 
 class LedgerBoard(BaseModel):
@@ -202,6 +214,7 @@ __all__ = [
     "ImageChannel",
     "ImageGenerations",
     "ImageJob",
+    "ImageJobUnavailable",
     "ImageRequest",
     "InvalidImageRequest",
     "JobStatus",

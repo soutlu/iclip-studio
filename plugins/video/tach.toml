@@ -63,10 +63,19 @@ depends_on = [
 path = "iclip_video.oss_media"
 depends_on = []
 
+# 后端开了哪些插件服务的答复，后端与内部接口的客户端共用。
+[[modules]]
+path = "iclip_video.plugin_services"
+depends_on = []
+
 # 要后端服务的端口经内部接口的 HTTP 实现，请求与答复用各插件包的 wire 模型。
 [[modules]]
 path = "iclip_video.internal_api"
-depends_on = ["iclip_video.shot_video", "iclip_video.video_breakdown"]
+depends_on = [
+    "iclip_video.plugin_services",
+    "iclip_video.shot_video",
+    "iclip_video.video_breakdown",
+]
 
 # 运行时服务的入口：按配置把各插件包绑进插件登记表，可以引用每个插件包。
 [[modules]]

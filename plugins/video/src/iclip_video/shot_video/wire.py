@@ -103,12 +103,6 @@ class GridCutFailure(_Wire):
     code: Literal["grid_cut_failed"] = GRID_CUT_FAILED
 
 
-class ImageModels(_Wire):
-    """宿主接入的图片模型名，按名字排序；出图工具装配时核对它要的那家在不在里面。"""
-
-    models: tuple[str, ...]
-
-
 __all__ = [
     "GRID_CUT_FAILED",
     "FrameBoardsCall",
@@ -117,6 +111,5 @@ __all__ = [
     "GridCutCall",
     "GridCutFailure",
     "GridCutResult",
-    "ImageModels",
     "ImageSubmission",
 ]

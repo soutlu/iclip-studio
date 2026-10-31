@@ -22,13 +22,14 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, m
 
 from iclip_video.iclip_studio.capability import IclipStudio
 from iclip_video.internal_api import (
+    CONNECT_TIMEOUT_SECONDS,
     HttpFrameBoards,
     HttpGridCuts,
     HttpImageGenerations,
     HttpReferenceBreakdowns,
     InternalApi,
     InternalApiError,
-    image_models,
+    plugin_services,
 )
 from iclip_video.oss_media import OssMediaProbe, rebased_fetch_url
 from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
@@ -40,9 +41,6 @@ from iclip_video.video_understanding import TIMEOUT_SECONDS, ArkVideoUnderstandi
 DEFAULT_INTERNAL_TIMEOUT_SECONDS: Final = 1800.0
 """调后端内部接口等答复的默认上限。后端最慢的两条都要等：拆解排队后最多等 20 分钟才答，取帧拼板下载视频
 最多 5 分钟、抽帧最多 15 分钟。"""
-
-CONNECT_TIMEOUT_SECONDS: Final = 10.0
-"""连后端内部接口建连的上限。"""
 
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Z_][A-Z0-9_]*$")]
 
@@ -131,14 +129,14 @@ async def open_video_plugins(
     """``agent_runtime.plugins.base.PluginFactory`` 的实现。
 
     进入时校验配置、读机密的环境变量，建两个 HTTP 客户端：调后端内部接口的那个带根地址、令牌与超时，
-    查 OSS 与调方舟的那个什么都不带，令牌不会发到别处去。配了 ``shot_video`` 时向后端取接入的图片模型，
-    交回的绑定函数用它核对出图要的那家。退出时关掉两个客户端。``internal_transport`` 与
-    ``outbound_transport`` 是测试换传输层的口子。
+    查 OSS 与调方舟的那个什么都不带，令牌不会发到别处去。配了 ``shot_video`` 或 ``video_breakdown`` 时
+    向后端取它开了哪些插件服务，后端没开对应的那项就起不来；交回的绑定函数用后端接入的图片模型核对出图要的
+    那家。退出时关掉两个客户端。``internal_transport`` 与 ``outbound_transport`` 是测试换传输层的口子。
 
     Raises:
         pydantic.ValidationError: 配置形状不对。
-        RuntimeError: 机密的环境变量没设置；配了 ``shot_video`` 却取不到图片模型；绑定时出图要的模型不在
-            后端接入的模型里。
+        RuntimeError: 机密的环境变量没设置；取不到后端开了哪些插件服务；配了的插件后端没开对应服务；
+            绑定时出图要的模型不在后端接入的模型里。
     """
 
     settings = VideoPluginsConfig.model_validate(config)
@@ -158,7 +156,7 @@ async def open_video_plugins(
         understanding = (
             _understanding(settings.video, outbound) if settings.video is not None else None
         )
-        models = await _image_models(api) if settings.shot_video is not None else frozenset()
+        models = await _check_backend(api, settings)
 
         def bind(host: PluginHost) -> PluginRegistry:
             return _registry(
@@ -183,6 +181,9 @@ def _internal_client(
         headers={"Authorization": f"Bearer {token}"},
         # 建连另有短上限：后端地址不通时启动检查立刻失败，不等满整段答复上限。
         timeout=httpx.Timeout(section.timeout_seconds, connect=CONNECT_TIMEOUT_SECONDS),
+        # 并发由调用方自己约束（运行时同时跑的运行数），池上不封顶：等池子空出连接也算在整段答复上限里，
+        # 慢的拆解与取帧占满池子时，后面的调用排着队等到超时。
+        limits=httpx.Limits(max_connections=None, max_keepalive_connections=20),
     )
 
 
@@ -250,13 +251,40 @@ def _registry(
     return {plugin.get_serialization_name(): plugin for plugin in plugins}
 
 
-async def _image_models(api: InternalApi | None) -> frozenset[str]:
-    """出图工具启动时核对它要的模型后端接没接；取不到就起不来，不带着一件注定失败的工具跑。"""
+async def _check_backend(api: InternalApi | None, settings: VideoPluginsConfig) -> frozenset[str]:
+    """配了要后端服务的插件，启动时核对后端开了对应服务，交回后端接入的图片模型（没配 ``shot_video`` 为空）。
+    取不到或没开就起不来，不带着注定 404 的工具跑。"""
 
+    wanted = [
+        name
+        for name, section in (
+            ("shot_video", settings.shot_video),
+            ("video_breakdown", settings.video_breakdown),
+        )
+        if section is not None
+    ]
+    if not wanted:
+        return frozenset()
+    names = " 与 ".join(wanted)
     try:
-        return await image_models(_require(api, "shot_video"))
+        services = await plugin_services(_require(api, names))
     except InternalApiError as exc:
-        raise RuntimeError(f"shot_video 启动时要向后端取接入的图片模型，没取到：{exc}") from exc
+        raise RuntimeError(f"{names} 启动时要向后端取它开了哪些插件服务，没取到：{exc}") from exc
+    missing: list[str] = []
+    if settings.shot_video is not None and services.shot_video is None:
+        missing.append(
+            "配了 shot_video，后端没开取帧与出图：后端 config.yaml 要写 shot_video: {}，"
+            "并开媒体生成与对象存储"
+        )
+    if settings.video_breakdown is not None and not services.video_breakdown:
+        missing.append(
+            "配了 video_breakdown，后端没开参考视频拆解：后端 config.yaml 要写 iclip_studio 段"
+        )
+    if missing:
+        raise RuntimeError("；".join(missing))
+    if services.shot_video is None:
+        return frozenset()
+    return frozenset(services.shot_video.image_models)
 
 
 def _fetch_url(section: OssSection | None) -> Callable[[str], str]:
@@ -286,7 +314,6 @@ def _secret(env_name: str, what: str) -> str:
 
 
 __all__ = [
-    "CONNECT_TIMEOUT_SECONDS",
     "DEFAULT_INTERNAL_TIMEOUT_SECONDS",
     "InternalApiSection",
     "OssSection",

@@ -46,6 +46,7 @@ from iclip.app.runtime_events import RuntimeEvents
 from iclip.app.runtime_internal import (
     RUNTIME_INTERNAL_PREFIX,
     RuntimePluginServices,
+    ShotServices,
     TurnNaming,
     create_runtime_internal_router,
 )
@@ -634,7 +635,7 @@ def build_app(
         try:
             # 客户端在 lifespan 这个任务里进出：测试换上的 ASGI WebSocket 传输层的任务组要求同一个任务。
             async with runtime_client:
-                # 事件流连不上不挡启动：运行时启动时要向后端取图片模型，部署里后端先起。
+                # 事件流连不上不挡启动：运行时启动时要向后端核对插件服务，部署里后端先起。
                 runtime_events.start()
                 if connector is not None:
                     await connector.open_async()
@@ -731,24 +732,25 @@ def build_app(
         )
     )
     # 插件服务那几组挂不挂的条件同视频插件包按运行时配置登记插件的条件（iclip_video.registry）。
-    image_port: GenerationsAdapter | None = None
-    boards_port: FrameBoardsAdapter | None = None
-    cuts_port: GridCutsAdapter | None = None
+    shot_services: ShotServices | None = None
     if (
         settings.shot_tools_enabled
         and generation is not None
         and public_objects is not None
         and codec is not None
     ):
-        image_port = GenerationsAdapter(generation.service, user_principal)
-        boards_port = FrameBoardsAdapter(
-            http_client, fetch_url=fetch_url, objects=public_objects, codec=codec
-        )
-        cuts_port = GridCutsAdapter(
-            http_client,
-            fetch_url=fetch_url,
-            objects=public_objects,
-            records=CutRecordsAdapter(settled_records, user_principal),
+        shot_services = ShotServices(
+            generations=GenerationsAdapter(generation.service, user_principal),
+            boards=FrameBoardsAdapter(
+                http_client, fetch_url=fetch_url, objects=public_objects, codec=codec
+            ),
+            cuts=GridCutsAdapter(
+                http_client,
+                fetch_url=fetch_url,
+                objects=public_objects,
+                records=CutRecordsAdapter(settled_records, user_principal),
+            ),
+            image_models=generation.image_models,
         )
     app.include_router(
         create_runtime_internal_router(
@@ -757,15 +759,12 @@ def build_app(
             conversations=conversations.service,
             naming=turn_naming,
             plugins=RuntimePluginServices(
-                generations=image_port,
-                boards=boards_port,
-                cuts=cuts_port,
+                shot_video=shot_services,
                 breakdowns=(
                     ReferenceBreakdownsAdapter(references.service, user_principal)
                     if settings.iclip_studio is not None and references.queue is not None
                     else None
                 ),
-                image_models=(generation.image_models if generation is not None else frozenset()),
             ),
         )
     )

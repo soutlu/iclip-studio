@@ -9,9 +9,9 @@ setup:
 	cd web && pnpm install && pnpm hf:registry
 	cd render && pnpm install
 
-# 起后端（7788）与运行时服务（7790），Ctrl-C 两个一起停。运行时等后端答了健康检查才起：配了 shot_video 时它启动
-# 就向后端取图片模型。后端启动失败时 --reload 的监督进程不退出，所以最多等 60 秒，超时连同后端一起退出。
-# 两个都用后端的虚拟环境（它可编辑地装着 runtime/ 与 plugins/video/），源码改动各自重载。
+# 起后端（7788）与运行时服务（7790），Ctrl-C 两个一起停。运行时等后端答了健康检查才起：配了 shot_video 或
+# video_breakdown 时它启动就向后端核对插件服务。后端启动失败时 --reload 的监督进程不退出，所以最多等 60 秒，
+# 超时连同后端一起退出。两个都用后端的虚拟环境（它可编辑地装着 runtime/ 与 plugins/video/），源码改动各自重载。
 dev:
 	@trap 'kill 0' INT TERM EXIT; \
 	(cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir . --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \

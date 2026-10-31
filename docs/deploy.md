@@ -20,7 +20,7 @@
    make dev          # 后端 http://localhost:7788，运行时 http://localhost:7790，健康检查都是 /healthz
    ```
 
-   - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 时启动就向后端取图片模型），后端 60 秒内没答就连同后端一起退出，原因在上面后端的报错里；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
+   - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务），后端 60 秒内没答就连同后端一起退出，原因在上面后端的报错里；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
 
    - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到 agent 配置入库的版本](#升级到-agent-配置入库的版本)第 4–6 步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
    - 带取帧、出图或视频理解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
@@ -81,7 +81,7 @@
    curl http://localhost/api/healthz
    ```
 
-   - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 时启动就向后端取图片模型，取不到起不来（原因在 `docker compose logs runtime`）。后端日志里先有几条「运行时事件流断了」是正常的，运行时起来后出现「运行时事件流已连上」。
+   - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务，取不到或后端没开对应服务都起不来（原因在 `docker compose logs runtime`）。后端日志里先有几条「运行时事件流断了」是正常的，运行时起来后出现「运行时事件流已连上」。
 
 6. 设置首个管理员：
    - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。
@@ -152,7 +152,7 @@
 2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
 3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`，0045 把技能库、模型供应商与 agent 配置的表挪进 `agent_runtime`；第 5、6 步的切换命令要在它们之后跑）。
 4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`，并按[升级](#升级)第 6 步建好 `configs/runtime.yaml`、改好搬到运行时配置的那几段、在 `.env` 补上运行时服务那几项（`config.old.yaml` 不动）：下一步的命令也按 `configs/config.yaml` 读后端配置。
-5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 段时，插件包打开时要向后端取图片模型，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
+5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 或 `video_breakdown` 段时，插件包打开时要向后端核对插件服务，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
 
    ```bash
    docker compose run --rm -v ./agents:/app/agents:ro -v ./skills:/app/skills:ro server \

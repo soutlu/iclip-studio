@@ -23,7 +23,7 @@ from iclip.config import (
     SubtitleSection,
     VideoGenerationSection,
 )
-from iclip.config.models import IclipStudioSection
+from iclip.config.models import IclipStudioSection, ShotVideoSection
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.generation import MemoryObjectStore
@@ -265,6 +265,59 @@ async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_wa
     off = [log for log in logs if log["event"] == "音乐生成未启用"]
     assert len(off) == (0 if configured else 1)
     assert response.status_code == 401, "入口挂着，没登录先 401"
+
+
+def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig:
+    config = config_with_media() if media else minimal_config()
+    return config.model_copy(
+        update={
+            "shot_video": ShotVideoSection() if shot_video else None,
+            "iclip_studio": IclipStudioSection(breakdown_model="seed") if studio else None,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("config", "answer"),
+    [
+        pytest.param(
+            config_with(media=True, shot_video=True, studio=True),
+            {"shot_video": {"image_models": ["nano_banana_pro"]}, "video_breakdown": True},
+            id="all",
+        ),
+        pytest.param(
+            config_with(media=True, shot_video=False, studio=True),
+            {"shot_video": None, "video_breakdown": True},
+            id="no-shot-video-section",
+        ),
+        pytest.param(
+            config_with(media=False, shot_video=True, studio=False),
+            {"shot_video": None, "video_breakdown": False},
+            id="shot-video-without-media",
+        ),
+        pytest.param(
+            config_with(media=False, shot_video=False, studio=False),
+            {"shot_video": None, "video_breakdown": False},
+            id="none",
+        ),
+    ],
+)
+async def test_the_plugin_services_answer_follows_the_backend_config(
+    local_media_env: None, config: RuntimeConfig, answer: dict[str, object]
+) -> None:
+    """运行时启动时照这份核对配了的插件：取帧与出图要 ``shot_video`` 段连同媒体生成与对象存储，
+    拆解要 ``iclip_studio`` 段。"""
+
+    app = build_app(config, engine=engine(), object_store=MemoryObjectStore(), media_codec=SOFTWARE)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/internal/runtime/plugins/services", headers={"Authorization": f"Bearer {'i' * 32}"}
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == answer
 
 
 def test_without_an_injected_codec_the_startup_probe_chooses(

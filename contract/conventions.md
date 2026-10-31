@@ -771,8 +771,9 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 | `POST /internal/runtime/plugins/frame-boards` | `FrameBoardsCall`：`{video_url, rows, previous}` | `BoardsResult`：`{ledger, reused}` | `422`，`{detail, code}`：`code` 为 `shots_out_of_range` / `boards_unreadable` / `boards_not_stored`，`detail` 是给模型的原话 |
 | `POST /internal/runtime/plugins/grid-cuts` | `GridCutCall`：`{user_id, job_id, grid_url, cells, aspect}`；`cells` 是 `{kind: "shot_cells", cell_ids}` 或 `{kind: "anchor_sheets", indexes}` | `{urls}`，与 `cells` 同序 | 没切成或没存下 `422`，`{detail, code: "grid_cut_failed"}`，`detail` 是诊断原因；切图记录落不下 `500` |
 | `POST /internal/runtime/plugins/reference-breakdowns` | `ReferenceBreakdownCall`：`{user_id, video_url}` | 拆成了 `{document}`，没拆成 `{failed: {reason}}`；要排拆解时等到出结果才答 | — |
-| `GET /internal/runtime/plugins/image-models` | — | `{models}`：接入的图片模型名，按名字排序；没开媒体生成时为空 | — |
+| `GET /internal/runtime/plugins/services` | — | `PluginServices`：`{shot_video, video_breakdown}`；`shot_video` 挂着时为 `{image_models}`（接入的图片模型名，按名字排序），没挂为 `null`；`video_breakdown` 为拆解挂没挂 | — |
 
-- 生图、取帧拼板与切格只在后端登记了 `shot_video` 时挂，拆解只在登记了 `video_breakdown` 时挂；没挂的答 `404`。生图模型名始终挂。
+- 生图、取帧拼板与切格只在后端开了取帧与出图（`shot_video: {}` 段、媒体生成、对象存储与 ffmpeg 齐）时挂，拆解只在后端配了 `iclip_studio` 段时挂；没挂的答 `404`。插件服务清单始终挂，照同一份条件如实回答。
+- 运行时配了 `shot_video` 或 `video_breakdown` 就在启动时取插件服务清单，后端没开对应服务就起不来；答复模型在 [plugin_services.py](../plugins/video/src/iclip_video/plugin_services.py)。
 - 切格时每格存到哪个对象 key 由后端定，插件只给帧号或序号。
-- 调用方是视频插件包的 HTTP 客户端（[internal_api.py](../plugins/video/src/iclip_video/internal_api.py)）：上表的 `422` 还原成端口声明的同一个错误、`detail` 原话不变（取帧拼板与切格按 `code` 认，没带 `code` 的 `422` 是请求结构不对，不算端口的失败），其余状态码、连不上与超时都当作调用失败，不让模型改参数重试。
+- 调用方是视频插件包的 HTTP 客户端（[internal_api.py](../plugins/video/src/iclip_video/internal_api.py)）：上表的 `422` 还原成端口声明的同一个错误、`detail` 原话不变（取帧拼板与切格按 `code` 认，没带 `code` 的 `422` 是请求结构不对，不算端口的失败），其余状态码、连不上与超时都当作调用失败，不让模型改参数重试。例外是查出图任务：连不上、超时与 `502` / `503` / `504` 算后端暂时不可达，出图工具接着轮询到总时限；单次查询上限 30 秒。提交不是幂等的，照旧失败即报。

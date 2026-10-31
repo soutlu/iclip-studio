@@ -17,6 +17,7 @@ from iclip_video.shot_video.ports import (
     ImageChannel,
     ImageGenerations,
     ImageJob,
+    ImageJobUnavailable,
     ImageRequest,
     InvalidImageRequest,
     ShotCells,
@@ -144,7 +145,11 @@ class FrameGenerator:
                     error_message="等这次生成等超时了；它可能还在后台跑",
                 )
             await asyncio.sleep(self._policy.poll_interval_seconds)
-            job = await self._generations.get(user_id, job.job_id)
+            try:
+                job = await self._generations.get(user_id, job.job_id)
+            except ImageJobUnavailable as exc:
+                # 任务已提交、还在宿主后台跑；这时放弃，用户重来就重复计费。照旧等到总时限。
+                _logger.warning("查出图任务暂时失败", job_id=str(job.job_id), reason=str(exc))
         return job
 
 
