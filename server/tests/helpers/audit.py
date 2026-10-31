@@ -15,7 +15,7 @@ from typing import Final
 
 import httpx
 from agent_runtime.client import RuntimeClient
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
