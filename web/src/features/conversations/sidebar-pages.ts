@@ -41,14 +41,20 @@ const sidebarPagesOptions = (
       const query = new URLSearchParams({ state })
       // 服务端解析不了空游标：从头读时不带 cursor 参数。
       if (pageParam !== null) query.set('cursor', pageParam)
-      const page = await apiFetch(
-        `${
-          collectionId ? `/conversations/by-collection/${collectionId}` : '/conversations/ungrouped'
-        }?${query.toString()}`,
-        zConversationPageOut,
-        { signal, cache: 'no-store', fallbackErrorMessage: '加载更多任务失败' },
+      const rows = conversationRowsOf(client)
+      return rows.track(
+        () =>
+          apiFetch(
+            `${
+              collectionId
+                ? `/conversations/by-collection/${collectionId}`
+                : '/conversations/ungrouped'
+            }?${query.toString()}`,
+            zConversationPageOut,
+            { signal, cache: 'no-store', fallbackErrorMessage: '加载更多任务失败' },
+          ),
+        (page, book) => ({ ...page, items: rows.mergeRows(page.items, book) }),
       )
-      return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
     },
     initialPageParam: null as string | null,
     initialData: () =>

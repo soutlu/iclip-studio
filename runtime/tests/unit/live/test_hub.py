@@ -17,7 +17,7 @@ from agent_runtime.live.frames import (
     FsChangesPayload,
     Ping,
     PingPayload,
-    SessionActivity,
+    SessionWorkChanged,
     TranscriptOpsFrame,
     TranscriptResetFrame,
 )
@@ -53,8 +53,8 @@ def lookup(apps: Mapping[str, str], delays: Mapping[str, int]) -> AppOf:
     return app_of
 
 
-def busy(session_id: str, *, busy: bool) -> SessionActivity:
-    return SessionActivity(
+def busy(session_id: str, *, busy: bool) -> SessionWorkChanged:
+    return SessionWorkChanged(
         session_id=session_id,
         owner_user_id=OWNER,
         timestamp=AT,
@@ -127,7 +127,7 @@ async def test_events_arrive_in_publish_order_even_when_a_lookup_is_slow(
     assert [
         (frame.session_id, frame.payload.busy)
         for frame in sink.frames
-        if isinstance(frame, SessionActivity)
+        if isinstance(frame, SessionWorkChanged)
     ] == [
         (BFF_SESSION, False),
         (OTHER_BFF_SESSION, True),

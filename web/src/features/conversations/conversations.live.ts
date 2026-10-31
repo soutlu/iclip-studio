@@ -1,5 +1,5 @@
 /**
- * 全局帧落到对话行池，照 Kimi 的事件 reducer：同一拍到达的帧合批落地，行的变化只改池，
+ * 全局帧落到对话行池，照 Kimi 的事件 reducer：帧按到达先后生效，同一拍到达的帧合批落地，行的变化只改池，
  * 成员与计数要变时才重拉对应列表；轮状态变化时按 id 补读单行兜底（照 Kimi）。视频帧不上行，只让视频进度重拉。
  *
  * 帧带属主（合同 §5「全局帧」）：别人的对话只牵动全部对话页与视频进度，不动自己的侧栏。
@@ -123,18 +123,18 @@ const reduce = (
   effects: Effects,
 ): void => {
   if (update.kind === 'reconnected') {
-    // 全局帧不补发；重连后整份重拉，按水位规则合进池里。
+    // 全局帧不补发；重连后整份重拉，结果经记录本合进池里。
     effects.sidebar = true
     effects.audit = true
     effects.search = true
     effects.videoProgress = true
     return
   }
-  const mine = update.mark.ownerUserId === userId
+  const mine = update.ownerUserId === userId
 
   switch (update.kind) {
     case 'title':
-      rows.applyTitle(update.conversationId, update.title, update.mark)
+      rows.applyTitle(update.conversationId, update.title)
       return
 
     case 'activity': {
@@ -147,17 +147,14 @@ const reduce = (
       ) {
         effects.audit = true
       }
-      rows.applyActivity(
-        update.conversationId,
-        {
-          busy: update.busy,
-          lastTurnReason: update.lastTurnReason,
-          pendingInteraction: update.pendingInteraction,
-        },
-        update.mark,
-      )
+      rows.applyActivity(update.conversationId, {
+        busy: update.busy,
+        lastTurnReason: update.lastTurnReason,
+        pendingInteraction: update.pendingInteraction,
+      })
       if (!mine) return
-      // 照 Kimi：轮状态变了（开跑、收场、待审批 / 提问出现或消失）按 id 补读一行兜底，结果仍按 lastSeq 合并。
+      // 照 Kimi：轮状态变了（开跑、收场、待审批 / 提问出现或消失）按 id 补读一行兜底，结果同样经记录本合并，
+      // 读的期间到达的帧在结果回来后重放。
       // 随运行变的行字段虽然另有 updated 帧，补读不依赖服务端每个写入口都发了帧。
       // 筛选列表也只在轮状态变了时重算：同样的状态再来一帧，归属不会变。
       if (
@@ -173,14 +170,14 @@ const reduce = (
     }
 
     case 'created':
-      rows.applyRow(update.row, update.mark)
+      rows.applyRow(update.row)
       effects.audit = true
       if (mine) effects.sidebar = true
       return
 
     case 'updated': {
       const before = rows.get(update.conversationId)
-      rows.applyRow(update.row, update.mark)
+      rows.applyRow(update.row)
       const membership =
         before === undefined ||
         before.collectionId !== update.row.collectionId ||

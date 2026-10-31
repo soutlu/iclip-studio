@@ -1,9 +1,9 @@
 """运行时服务两条 WebSocket 的帧：应用事件流 ``/v1/events`` 与对话内容流 ``/v1/ws``。
 
 这里是运行时帧的唯一定义处，形状就是浏览器收到的形状：外层 ``{type, session_id, timestamp, payload}``
-照 Kimi，应用原样转给浏览器。唯一的差别是会话事件的 ``epoch`` / ``seq``：运行时的帧上没有，应用转给浏览器
-时自己盖。信封字段名原样（snake_case），嵌套的 transcript 实体与操作照用 camelCase 别名；序列化用
-``model_dump_json(exclude_none=True, by_alias=True)``。``timestamp`` 是构造帧那一刻的 ISO 8601 UTC 时间。
+照 Kimi，应用原样转给浏览器。信封字段名原样（snake_case），嵌套的 transcript 实体与操作照用 camelCase
+别名；序列化用 ``model_dump_json(exclude_none=True, by_alias=True)``。``timestamp`` 是构造帧那一刻的
+ISO 8601 UTC 时间。
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def timestamp_now() -> str:
 # --- 应用事件流 ---------------------------------------------------------------
 
 
-class SessionActivity(Envelope):
+class SessionWorkChanged(Envelope):
     """一段会话的活动变了，即 ``event.session.work_changed``。写入提交后同步入队，同一条连接上先到的先发：
     一条跑完接着起下一条时先 idle 后 busy。"""
 
@@ -44,7 +44,7 @@ class SessionActivity(Envelope):
     payload: SessionActivityOut
 
 
-AppEvent = SessionActivity
+AppEvent = SessionWorkChanged
 """应用事件流上的事件；每条连接收到的是这个应用所有会话的全部事件。"""
 
 
@@ -127,7 +127,7 @@ class Pong(Envelope):
     payload: PingPayload | None = None
 
 
-EventServerFrame = Annotated[SessionActivity | Ping, Field(discriminator="type")]
+EventServerFrame = Annotated[SessionWorkChanged | Ping, Field(discriminator="type")]
 """``/v1/events`` 上服务端发的帧。"""
 
 TranscriptServerFrame = Annotated[
@@ -150,7 +150,7 @@ __all__ = [
     "Ping",
     "PingPayload",
     "Pong",
-    "SessionActivity",
+    "SessionWorkChanged",
     "SubscribeAckPayload",
     "TranscriptClientFrame",
     "TranscriptOpsFrame",

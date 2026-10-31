@@ -29,7 +29,7 @@ from agent_runtime.live.frames import (
     FsChanged,
     FsChangeEntry,
     FsChangesPayload,
-    SessionActivity,
+    SessionWorkChanged,
 )
 from agent_runtime.live.hub import AppEventHub, FileChangeSink, SessionFileChanges
 from agent_runtime.service.sessions import SessionService
@@ -54,8 +54,8 @@ async def app_of(session_id: str) -> str | None:
     return APPS.get(session_id)
 
 
-def activity(session_id: str, *, busy: bool) -> SessionActivity:
-    return SessionActivity(
+def activity(session_id: str, *, busy: bool) -> SessionWorkChanged:
+    return SessionWorkChanged(
         session_id=session_id,
         owner_user_id=OWNER,
         timestamp=AT,

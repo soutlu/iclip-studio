@@ -1,9 +1,10 @@
-"""浏览器连接经后端转到运行时：回执一帧一个、Transcript 帧盖本进程的事件水位、两条上游各自断开时的关闭码、
+"""浏览器连接经后端转到运行时：回执一帧一个、运行时的帧原样转发、两条上游各自断开时的关闭码、
 文件变化经对话内容流原样到达订着的连接，以及活动与轮次收尾分走两条上游时客户端看得到的先后。"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import uuid
 from typing import Any
@@ -153,15 +154,37 @@ def test_each_subscribe_frame_gets_exactly_one_ack(ws_agent_app: FastAPI, pg_url
     )
 
 
-# --- 信封水位 --------------------------------------------------------------------
+# --- 原样转发 --------------------------------------------------------------------
 
 
-def test_transcript_frames_carry_the_current_event_number_and_events_tick(
-    ws_agent_app: FastAPI, pg_url: str
+def _wire(frame: Any) -> dict[str, Any]:
+    """帧在 WebSocket 上的样子，与运行时和后端发帧时的序列化相同。"""
+
+    sent: dict[str, Any] = json.loads(frame.model_dump_json(exclude_none=True, by_alias=True))
+    return sent
+
+
+def test_relayed_frames_are_the_runtimes_frames_field_for_field(
+    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """运行时的 reset / ops 盖上这段对话此刻的事件序号、不另发号；夹在中间的全局帧（改名、活动、整行）各发
-    一个新号，之后的 Transcript 帧带上它。"""
+    """浏览器收到的 reset / ops 与活动帧，和后端从运行时收到的那一帧逐字段相同，先后也相同：后端只决定发给谁。"""
 
+    from_runtime: list[dict[str, Any]] = []
+    receive = TranscriptChannel.receive
+    following = EventStream.__anext__
+
+    async def recording_receive(channel: TranscriptChannel) -> Any:
+        frame = await receive(channel)
+        from_runtime.append(_wire(frame))
+        return frame
+
+    async def recording_next(stream: EventStream) -> Any:
+        event = await following(stream)
+        from_runtime.append(_wire(event))
+        return event
+
+    monkeypatch.setattr(TranscriptChannel, "receive", recording_receive)
+    monkeypatch.setattr(EventStream, "__anext__", recording_next)
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -169,31 +192,28 @@ def test_transcript_frames_carry_the_current_event_number_and_events_tick(
             assert ws.receive_json()["type"] == "server_hello"
             subscribe(ws, conversation_id)
             reset = until(ws, "transcript.reset")
-            renamed = tc.patch(f"/conversations/{conversation_id}", json={"title": "新名字"})
-            assert renamed.status_code == 200, renamed.text
-            _send(tc, conversation_id, "prm_stamp")
+            _send(tc, conversation_id, "prm_verbatim")
             frames = [reset, *_frames_until_turn_and_idle(ws, conversation_id)]
 
-    epochs = {frame["epoch"] for frame in frames}
-    assert len(epochs) == 1
-    last_event = reset["seq"]
-    events = transcripts = 0
-    for frame in frames:
-        if frame["type"].startswith("transcript."):
-            assert frame["seq"] == last_event, "Transcript 帧带此刻的序号、不发号"
-            transcripts += 1
-        else:
-            assert frame["seq"] == last_event + 1, f"{frame['type']} 发下一个号"
-            last_event = frame["seq"]
-            events += 1
-    assert transcripts >= 2
-    assert events >= 3, "改名、开跑的整行、忙与闲的活动"
+    relayed = ("transcript.reset", "transcript.ops", "event.session.work_changed")
+    received = [frame for frame in frames if frame["type"] in relayed]
+    sent = [
+        frame
+        for frame in from_runtime
+        if frame["type"] in relayed and frame["session_id"] == conversation_id
+    ]
+    assert {frame["type"] for frame in received} == set(relayed)
+    # 两条上游各自按序转发；浏览器停在收尾与空闲之后，运行时可能已经多发了几帧。
+    for kind in (("transcript.reset", "transcript.ops"), ("event.session.work_changed",)):
+        browser = [frame for frame in received if frame["type"] in kind]
+        runtime = [frame for frame in sent if frame["type"] in kind]
+        assert browser == runtime[: len(browser)]
 
 
 def test_relayed_frames_keep_the_runtimes_timestamp(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """浏览器收到的 Transcript 帧就是运行时的帧加上 ``epoch`` / ``seq``：时刻是运行时出帧时取的，后端不重盖。
+    """浏览器收到的 Transcript 帧就是运行时的帧：时刻是运行时出帧时取的，后端不重盖。
     运行时在同一进程里，只把它出帧取时刻的那一处钉住，后端自己的时钟照常走。"""
 
     pinned = "2000-01-01T00:00:00+00:00"
@@ -208,15 +228,7 @@ def test_relayed_frames_keep_the_runtimes_timestamp(
 
     assert hello["timestamp"] != pinned
     assert reset["timestamp"] == pinned
-    assert set(reset) == {
-        "type",
-        "seq",
-        "epoch",
-        "session_id",
-        "timestamp",
-        "stream_epoch",
-        "payload",
-    }
+    assert set(reset) == {"type", "session_id", "timestamp", "stream_epoch", "payload"}
     assert reset["payload"]["type"] == "transcript.reset"
 
 
@@ -226,9 +238,9 @@ def test_relayed_frames_keep_the_runtimes_timestamp(
 def test_after_the_turn_ends_and_the_badge_goes_idle_the_row_reads_idle(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """活动走事件流、轮次收尾走对话内容流，两条上游之间不保证先后。前端收到活动变化就按 id 补读这一行、按
-    lastSeq 合并（conversations.live.ts）：所以要的是活动帧按 忙 → 闲 的顺序、序号递增地到达，并且收到闲那一帧
-    之后补读的行已经是空闲。"""
+    """活动走事件流、轮次收尾走对话内容流，两条上游之间不保证先后。前端收到活动变化就按 id 补读这一行，读的
+    期间到达的帧在结果回来后重放（conversations.live.ts）：所以要的是活动帧按 忙 → 闲 的顺序到达，并且收到闲
+    那一帧之后补读的行已经是空闲。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -245,10 +257,8 @@ def test_after_the_turn_ends_and_the_badge_goes_idle_the_row_reads_idle(
     assert work[0]["payload"]["busy"] is True
     assert work[-1]["payload"]["busy"] is False
     assert work[-1]["payload"]["last_turn_reason"] == "completed"
-    assert [frame["seq"] for frame in work] == sorted({frame["seq"] for frame in work})
     assert row["activity"]["busy"] is False
     assert row["activity"]["lastTurnReason"] == "completed"
-    assert row["lastSeq"] >= work[-1]["seq"]
 
 
 # --- 上游断开 --------------------------------------------------------------------

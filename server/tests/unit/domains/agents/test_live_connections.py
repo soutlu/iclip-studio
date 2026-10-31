@@ -1,4 +1,4 @@
-"""全局帧的信封：带属主、带这段对话的事件序号；没有对话的生成任务不占序号。"""
+"""全局帧的信封：带属主、不带序号；运行时的活动帧原样转发。"""
 
 from __future__ import annotations
 
@@ -6,13 +6,16 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from agent_runtime.live.frames import SessionActivity
+from agent_runtime.live.frames import SessionWorkChanged
 from agent_runtime.transcript.wire import SessionActivityOut
 
 from iclip.domains.agents.transcript_api import LiveConnections
 
 RUNTIME_AT = "2026-10-30T08:00:00+00:00"
 """运行时出帧的时刻；活动帧照用它，不重盖。"""
+
+ENVELOPE = {"type", "session_id", "owner_user_id", "timestamp", "payload"}
+"""全局帧外层的全部字段（合同 §5「全局帧」）。"""
 
 
 @dataclass(eq=False)
@@ -36,18 +39,10 @@ def _live(owner: uuid.UUID) -> tuple[LiveConnections, Listening]:
     return live, connection
 
 
-def test_event_frames_carry_the_owner_and_count_up_per_conversation() -> None:
+def test_event_frames_carry_the_owner_and_no_event_number() -> None:
     owner, conversation = uuid.uuid4(), uuid.uuid4()
     live, connection = _live(owner)
 
-    live.announce_activity(
-        SessionActivity(
-            session_id=str(conversation),
-            owner_user_id=str(owner),
-            timestamp=RUNTIME_AT,
-            payload=SessionActivityOut(busy=True, pending_interaction="none"),
-        )
-    )
     live.announce_title(owner, conversation, "片名")
     live.announce_generation_changed(
         owner,
@@ -59,18 +54,27 @@ def test_event_frames_carry_the_owner_and_count_up_per_conversation() -> None:
         shot_index=None,
         metadata=None,
     )
+    live.announce_session_row("updated", owner, conversation, {"id": str(conversation)})
     live.announce_session_deleted(owner, conversation)
 
-    assert [frame["seq"] for frame in connection.frames] == [1, 2, 3, 4]
+    title, generation, row, deleted = connection.frames
+    assert [frame["type"] for frame in connection.frames] == [
+        "session.meta.updated",
+        "event.generation.changed",
+        "event.session.updated",
+        "event.session.deleted",
+    ]
+    assert set(title) == set(generation) == set(row) == ENVELOPE
+    # 删除帧的对话 id 只在外层，没有 payload。
+    assert set(deleted) == ENVELOPE - {"payload"}
     assert {frame["owner_user_id"] for frame in connection.frames} == {str(owner)}
-    assert {frame["epoch"] for frame in connection.frames} == {live.clock.epoch}
-    assert all("timestamp" in frame for frame in connection.frames)
+    assert {frame["session_id"] for frame in connection.frames} == {str(conversation)}
 
 
-def test_an_activity_frame_is_the_runtimes_frame_plus_the_event_number() -> None:
+def test_an_activity_frame_is_the_runtimes_frame_verbatim() -> None:
     owner, conversation = uuid.uuid4(), uuid.uuid4()
     live, connection = _live(owner)
-    runtime_frame = SessionActivity(
+    runtime_frame = SessionWorkChanged(
         session_id=str(conversation),
         owner_user_id=str(owner),
         timestamp=RUNTIME_AT,
@@ -81,15 +85,10 @@ def test_an_activity_frame_is_the_runtimes_frame_plus_the_event_number() -> None
 
     live.announce_activity(runtime_frame)
 
-    [frame] = connection.frames
-    assert frame == {
-        **runtime_frame.model_dump(exclude_none=True, by_alias=True),
-        "seq": 1,
-        "epoch": live.clock.epoch,
-    }
+    assert connection.frames == [runtime_frame.model_dump(exclude_none=True, by_alias=True)]
 
 
-def test_a_generation_without_a_conversation_takes_no_event_number() -> None:
+def test_a_generation_without_a_conversation_omits_the_session_id() -> None:
     owner = uuid.uuid4()
     live, connection = _live(owner)
 
@@ -105,28 +104,5 @@ def test_a_generation_without_a_conversation_takes_no_event_number() -> None:
     )
 
     [frame] = connection.frames
-    assert "seq" not in frame
-    assert "session_id" not in frame
+    assert set(frame) == ENVELOPE - {"session_id"}
     assert frame["owner_user_id"] == str(owner)
-
-
-def test_a_row_frame_is_an_event_numbered_after_the_rows_own_watermark() -> None:
-    """照 Kimi 的 ``event.session.updated``：带整行的帧也发新号，比行内 ``lastSeq`` 大。
-
-    写入之前读库的 HTTP 行带的是同一个旧水位 1。它晚于这一帧到达时，客户端按信封序号 2 记了
-    行内事实字段的水位，1 不大于 2 就盖不掉；若帧序号也是 1，两边打平，旧行会盖掉新事实。"""
-
-    owner, conversation = uuid.uuid4(), uuid.uuid4()
-    live, connection = _live(owner)
-    live.clock.tick(conversation)
-    read_before_the_write = live.clock.snapshot().seq_of(conversation)
-
-    live.announce_session_row(
-        "updated", owner, conversation, {"id": str(conversation), "lastSeq": read_before_the_write}
-    )
-    live.announce_title(owner, conversation, "后来的名字")
-
-    row, title = connection.frames
-    assert (row["type"], row["payload"]["lastSeq"]) == ("event.session.updated", 1)
-    assert row["seq"] == 2 > read_before_the_write
-    assert title["seq"] == 3

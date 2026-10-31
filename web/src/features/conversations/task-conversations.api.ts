@@ -84,8 +84,13 @@ export const useTaskConversations = (taskId: string, canAudit: boolean) => {
   useVideoProgress(refetchInterval)
   return useQuery({
     queryKey,
-    queryFn: async ({ client, signal }) =>
-      conversationRowsOf(client).mergeRows(await fetchTaskConversations(taskId, canAudit, signal)),
+    queryFn: ({ client, signal }) => {
+      const rows = conversationRowsOf(client)
+      return rows.track(
+        () => fetchTaskConversations(taskId, canAudit, signal),
+        (found, book) => rows.mergeRows(found, book),
+      )
+    },
     refetchInterval,
   })
 }

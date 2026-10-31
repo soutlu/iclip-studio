@@ -1,8 +1,7 @@
-"""对话行变化的广播：整行里的 ``lastSeq`` 必须取在写入之前。不连库。
+"""对话行变化的广播：哪些写入发整行帧、帧里是什么，以及同一段对话的整行帧按提交顺序广播。不连库。
 
-客户端拿事件序号与行上的 ``lastSeq`` 合并 ``activity``：序号不大于水位的事件，行里已经有了；大于的，
-以事件为准。水位要是取在写入之后，写入与取水位之间发生的事件会被当成「行里已经有了」，而行其实早于
-它。帧自己的序号由广播方在提交后另发，见 ``test_live_connections``；同一段对话的整行帧按提交顺序取号。
+帧上没有序号，客户端按到达先后生效：同一段对话两次写入的整行帧要是广播得比提交乱，后到的旧行会把新行
+盖回去，所以广播顺序必须等于提交顺序。
 """
 
 from __future__ import annotations
@@ -27,7 +26,6 @@ from iclip.domains.conversations.service import (
     SameStyleFiles,
 )
 from iclip.domains.identity.public import Principal
-from iclip.platform.live.session_events import SessionEventClock
 from tests.helpers.film import UnusedFilmPage
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
@@ -53,17 +51,15 @@ def _row(**overrides: Any) -> Conversation:
 
 
 @dataclass
-class RacingRepo:
-    """写入途中另有一帧事件发号，模拟别的写入在本次写入与取水位之间提交。"""
+class OneRowRepo:
+    """只存一行的仓储；``missing`` 为真时写入都按对话不可见抛 ``NotFound``。"""
 
-    clock: SessionEventClock
     row: Conversation
     missing: bool = False
 
     def _write(self, **changes: Any) -> Conversation:
         if self.missing:
             raise NotFound("没有这段对话")
-        self.clock.tick(self.row.id)
         self.row = replace(self.row, **changes)
         return self.row
 
@@ -102,7 +98,7 @@ class RacingRepo:
 
 @dataclass
 class PlainRepo:
-    """按调用先后提交、不另插事件的仓储；``committed`` 依次记下每次写入后的标题，即提交顺序。"""
+    """按调用先后提交的仓储；``committed`` 依次记下每次写入后的标题，即提交顺序。"""
 
     row: Conversation
     committed: list[str] = field(default_factory=list)
@@ -137,12 +133,11 @@ class PlainRepo:
 
 @dataclass
 class Announced:
-    clock: SessionEventClock | None = None
-    """给了就照 ``LiveConnections`` 在广播时取号：标题帧与整行帧都占号，按 (序号, 种类, 标题) 记进 ``frames``。"""
+    """按广播的先后记下每一帧。"""
+
     rows: list[tuple[str, uuid.UUID, uuid.UUID, Mapping[str, Any]]] = field(default_factory=list)
     deleted: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
     titles: list[tuple[uuid.UUID, uuid.UUID, str]] = field(default_factory=list)
-    frames: list[tuple[int, str, str]] = field(default_factory=list)
 
     def row(
         self,
@@ -152,16 +147,12 @@ class Announced:
         row: Mapping[str, Any],
     ) -> None:
         self.rows.append((kind, owner, conversation_id, row))
-        if self.clock is not None:
-            self.frames.append((self.clock.tick(conversation_id), kind, row["title"]))
 
     def gone(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> None:
         self.deleted.append((owner, conversation_id))
 
     def title(self, owner: uuid.UUID, conversation_id: uuid.UUID, title: str) -> None:
         self.titles.append((owner, conversation_id, title))
-        if self.clock is not None:
-            self.frames.append((self.clock.tick(conversation_id), "title", title))
 
 
 class ClaimDown(Exception):
@@ -240,7 +231,6 @@ async def _settle() -> None:
 
 def build(
     repo: object,
-    clock: SessionEventClock,
     announced: Announced,
     *,
     claim_task: ClaimTask = _untouched,
@@ -268,49 +258,39 @@ def build(
         video_progress_of=_untouched,
         same_style_files=SameStyleFiles(files=(), require_any=frozenset()),
         same_style_source=_untouched,
-        event_watermark=clock.snapshot,
         announce_row=announced.row,
         announce_deleted=announced.gone,
     )
 
 
-async def test_an_updated_row_carries_the_watermark_taken_before_the_write() -> None:
-    clock = SessionEventClock()
+async def test_marking_done_announces_the_written_row() -> None:
     existing = _row()
-    clock.tick(existing.id)
-    repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
 
-    await build(repo, clock, announced).set_completed(OWNER, existing.id, completed=True)
+    await build(OneRowRepo(row=existing), announced).set_completed(
+        OWNER, existing.id, completed=True
+    )
 
     [(kind, owner, conversation_id, row)] = announced.rows
     assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
-    # 写入途中那一帧拿到 2：它比这一行新，行上的水位必须停在写入之前的 1。
-    assert clock.current(existing.id) == 2
-    assert row["lastSeq"] == 1
-    assert row["eventEpoch"] == clock.epoch
     assert row["completedAt"] is not None
 
 
 async def test_a_rename_announces_the_title_event_and_the_row() -> None:
-    clock = SessionEventClock()
     existing = _row()
-    repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
 
-    await build(repo, clock, announced).rename(OWNER, existing.id, title="新名字")
+    await build(OneRowRepo(row=existing), announced).rename(OWNER, existing.id, title="新名字")
 
     assert announced.titles == [(OWNER.user_id, existing.id, "新名字")]
     [(kind, _, _, row)] = announced.rows
-    assert (kind, row["title"], row["lastSeq"]) == ("updated", "新名字", 0)
+    assert (kind, row["title"]) == ("updated", "新名字")
 
 
 async def test_a_new_conversation_is_announced_but_an_idempotent_replay_is_not() -> None:
-    clock = SessionEventClock()
     existing = _row()
-    repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
-    service = build(repo, clock, announced)
+    service = build(OneRowRepo(row=existing), announced)
 
     await service.create(OWNER, agent_id="storyboard", conversation_id=existing.id)
     assert announced.rows == []
@@ -329,11 +309,9 @@ async def test_a_new_conversation_is_announced_but_an_idempotent_replay_is_not()
 async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> None:
     """首次死在对话行提交之后、认领之前：created 帧照样发出；同一个 id 重发补上认领，不再补发帧。"""
 
-    clock = SessionEventClock()
-    repo = RacingRepo(clock=clock, row=_row())
     announced = Announced()
     claims = FlakyClaims()
-    service = build(repo, clock, announced, claim_task=claims)
+    service = build(OneRowRepo(row=_row()), announced, claim_task=claims)
     conversation_id, task_id = uuid.uuid4(), uuid.uuid4()
 
     with pytest.raises(ClaimDown):
@@ -357,11 +335,10 @@ async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> No
 async def test_attaching_a_task_announces_the_row_before_claiming_it() -> None:
     """认领是别的模块的端口：它失败时行已经提交，updated 帧不能跟着丢；重新挂同一张单补上认领。"""
 
-    clock = SessionEventClock()
     existing = _row()
     announced = Announced()
     claims = FlakyClaims()
-    service = build(PlainRepo(row=existing), clock, announced, claim_task=claims)
+    service = build(PlainRepo(row=existing), announced, claim_task=claims)
     task_id = uuid.uuid4()
 
     with pytest.raises(ClaimDown):
@@ -374,16 +351,14 @@ async def test_attaching_a_task_announces_the_row_before_claiming_it() -> None:
     assert claims.owners == {task_id: OWNER.user_id}
 
 
-async def test_concurrent_writes_take_frame_numbers_in_commit_order() -> None:
-    """两次改名在读活动处交错：先提交那次的活动读得慢，它的整行帧也不能比后提交那次晚取号。
+async def test_concurrent_writes_broadcast_their_rows_in_commit_order() -> None:
+    """两次改名在读活动处交错：先提交那次的活动读得慢，它的整行帧也不能比后提交那次晚广播。
 
-    不串行时帧是 seq 3 = new-write、seq 4 = old-write，客户端按「序号大者为准」把标题改回旧的，
-    库里却是新的。"""
+    不串行时广播是 new-write、old-write，客户端按到达先后生效，把标题改回旧的，库里却是新的。"""
 
-    clock = SessionEventClock()
     existing = _row()
     repo = PlainRepo(row=existing)
-    announced = Announced(clock=clock)
+    announced = Announced()
     gate = asyncio.Event()
     reads = 0
 
@@ -396,7 +371,7 @@ async def test_concurrent_writes_take_frame_numbers_in_commit_order() -> None:
             await gate.wait()
         return {}
 
-    service = build(repo, clock, announced, activities_of=first_read_is_slow)
+    service = build(repo, announced, activities_of=first_read_is_slow)
     first = asyncio.create_task(service.rename(OWNER, existing.id, title="old-write"))
     await _until(lambda: reads == 1)
     second = asyncio.create_task(service.rename(OWNER, existing.id, title="new-write"))
@@ -405,14 +380,13 @@ async def test_concurrent_writes_take_frame_numbers_in_commit_order() -> None:
     await asyncio.gather(first, second)
 
     assert repo.committed == ["old-write", "new-write"]
-    rows = sorted((seq, title) for seq, kind, title in announced.frames if kind == "updated")
-    assert [title for _, title in rows] == repo.committed
+    assert [row["title"] for _, _, _, row in announced.rows] == repo.committed
+    assert [title for _, _, title in announced.titles] == repo.committed
 
 
 async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
     """生成标题要调模型，不能占着这段对话的行锁：模型还没回话时，属主的改名照常落地。"""
 
-    clock = SessionEventClock()
     existing = _row()
     repo = PlainRepo(row=existing)
     announced = Announced()
@@ -422,7 +396,7 @@ async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
         await gate.wait()
         return "模型起的名字"
 
-    service = build(repo, clock, announced, generate_title=slow_title)
+    service = build(repo, announced, generate_title=slow_title)
     naming = asyncio.create_task(service.name_at_turn_start(existing.id, "做一条春季新款视频"))
     await _settle()
     assert not naming.done()
@@ -437,7 +411,6 @@ async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
 
 
 async def test_a_default_title_is_generated_and_announced() -> None:
-    clock = SessionEventClock()
     existing = _row()
     repo = PlainRepo(row=existing)
     announced = Announced()
@@ -445,7 +418,7 @@ async def test_a_default_title_is_generated_and_announced() -> None:
     async def titled(_: str) -> str | None:
         return "春季新款视频"
 
-    service = build(repo, clock, announced, generate_title=titled)
+    service = build(repo, announced, generate_title=titled)
     await service.name_at_turn_start(existing.id, "做一条春季新款视频")
 
     assert (repo.row.title, repo.row.title_kind) == ("春季新款视频", "generated")
@@ -453,7 +426,6 @@ async def test_a_default_title_is_generated_and_announced() -> None:
 
 
 async def test_a_title_that_could_not_be_generated_stays_default_for_the_next_turn() -> None:
-    clock = SessionEventClock()
     existing = _row()
     repo = PlainRepo(row=existing)
     announced = Announced()
@@ -461,7 +433,7 @@ async def test_a_title_that_could_not_be_generated_stays_default_for_the_next_tu
     async def nothing(_: str) -> str | None:
         return None
 
-    service = build(repo, clock, announced, generate_title=nothing)
+    service = build(repo, announced, generate_title=nothing)
     await service.name_at_turn_start(existing.id, "做一条春季新款视频")
 
     assert (repo.row.title, repo.row.title_kind) == ("一段对话", "default")
@@ -472,13 +444,12 @@ async def test_a_title_that_could_not_be_generated_stays_default_for_the_next_tu
 async def test_a_title_that_is_no_longer_default_is_not_generated_again(kind: TitleKind) -> None:
     """改过名或已经起过名的对话，开新一轮时不再调模型。"""
 
-    clock = SessionEventClock()
     existing = _row(title="已有的名字", title_kind=kind)
     repo = PlainRepo(row=existing)
     announced = Announced()
 
     # 生成端口是 _untouched：一旦调模型就抛错。
-    service = build(repo, clock, announced)
+    service = build(repo, announced)
     await service.name_at_turn_start(existing.id, "做一条春季新款视频")
 
     assert (repo.row.title, repo.row.title_kind) == ("已有的名字", kind)
@@ -488,49 +459,40 @@ async def test_a_title_that_is_no_longer_default_is_not_generated_again(kind: Ti
 async def test_clearing_the_completion_mark_from_another_domain_announces_the_row() -> None:
     """出片提交抹掉收尾标记，与属主手动取消是同一种行变化。"""
 
-    clock = SessionEventClock()
     existing = _row(completed_at=NOW)
-    repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
 
-    await build(repo, clock, announced).clear_completed(existing.id, OWNER.user_id)
+    await build(OneRowRepo(row=existing), announced).clear_completed(existing.id, OWNER.user_id)
 
     [(kind, _, _, row)] = announced.rows
     assert (kind, row["completedAt"]) == ("updated", None)
 
 
 async def test_clearing_the_mark_on_an_invisible_conversation_announces_nothing() -> None:
-    clock = SessionEventClock()
-    repo = RacingRepo(clock=clock, row=_row(), missing=True)
+    repo = OneRowRepo(row=_row(), missing=True)
     announced = Announced()
 
-    await build(repo, clock, announced).clear_completed(repo.row.id, OWNER.user_id)
+    await build(repo, announced).clear_completed(repo.row.id, OWNER.user_id)
 
     assert announced.rows == []
 
 
 async def test_a_delete_is_announced_after_it_lands() -> None:
-    clock = SessionEventClock()
     existing = _row()
     announced = Announced()
 
-    await build(RacingRepo(clock=clock, row=existing), clock, announced).delete(OWNER, existing.id)
+    await build(OneRowRepo(row=existing), announced).delete(OWNER, existing.id)
 
     assert announced.deleted == [(OWNER.user_id, existing.id)]
 
 
 async def test_starting_a_run_announces_the_new_run_and_the_cleared_mark() -> None:
-    """开跑记录运行发 ``updated``：帧带新的 lastRunId、收尾标记为空，行内水位停在写入之前。
+    """开跑记录运行发 ``updated``：帧带新的 lastRunId，收尾标记为空。"""
 
-    写入途中另有一帧发号（开跑的活动帧），行内 ``lastSeq`` 小于它；广播方随后给这一帧另发的号更大。"""
-
-    clock = SessionEventClock()
     existing = _row(completed_at=NOW, last_run_id="run-0")
-    clock.tick(existing.id)
-    repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
 
-    await build(repo, clock, announced).begin_run(
+    await build(OneRowRepo(row=existing), announced).begin_run(
         owner=OWNER.user_id, agent_id="storyboard", conversation_id=str(existing.id), run_id="run-1"
     )
 
@@ -538,22 +500,17 @@ async def test_starting_a_run_announces_the_new_run_and_the_cleared_mark() -> No
     assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
     assert row["lastRunId"] == "run-1"
     assert row["completedAt"] is None
-    assert row["lastSeq"] == 1
-    assert clock.current(existing.id) == 2
 
 
 async def test_a_reported_run_start_broadcasts_the_reported_activity_without_reading_it() -> None:
     """运行时回调带来的活动直接进行里，不经 ``ActivitiesOf`` 再读（替身一读就炸）。"""
 
-    clock = SessionEventClock()
     existing = _row(completed_at=NOW)
-    repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
     reported = ConversationActivity(busy=True, pending_interaction="approval")
 
-    await build(repo, clock, announced, activities_of=_untouched).begin_reported_run(
-        existing.id, run_id="run-1", activity=reported
-    )
+    service = build(OneRowRepo(row=existing), announced, activities_of=_untouched)
+    await service.begin_reported_run(existing.id, run_id="run-1", activity=reported)
 
     [(kind, owner, conversation_id, row)] = announced.rows
     assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
@@ -566,12 +523,10 @@ async def test_a_reported_run_start_broadcasts_the_reported_activity_without_rea
 
 
 async def test_a_reported_run_start_on_a_missing_conversation_is_not_found() -> None:
-    clock = SessionEventClock()
-    repo = RacingRepo(clock=clock, row=_row())
     announced = Announced()
 
     with pytest.raises(NotFound):
-        await build(repo, clock, announced).begin_reported_run(
+        await build(OneRowRepo(row=_row()), announced).begin_reported_run(
             uuid.uuid4(), run_id="run-1", activity=ConversationActivity()
         )
 

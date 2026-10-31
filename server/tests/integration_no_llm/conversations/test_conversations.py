@@ -103,11 +103,7 @@ async def test_concurrent_client_minted_id_creates_one_conversation(
         first.text,
         second.text,
     )
-    # 行上的 lastSeq 是各自读行之前的事件水位：落败的那次可能读在 created 帧发号之后，不算行的内容。
-    rows = [
-        {key: value for key, value in response.json()["conversation"].items() if key != "lastSeq"}
-        for response in (first, second)
-    ]
+    rows = [response.json()["conversation"] for response in (first, second)]
     assert rows[0] == rows[1]
     listed = await client.get(SEARCH)
     assert [item["id"] for item in listed.json()["items"]] == [minted]
@@ -359,9 +355,7 @@ async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(
 async def test_one_conversation_can_be_read_by_id_within_the_usual_visibility(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """单行读与其他读路径同一口径：属主读自己活着的，治理者连墓碑也读得到，别人与墓碑的属主都是 404。
-
-    行上带读这一行之前的事件水位与它所属的进程。"""
+    """单行读与其他读路径同一口径：属主读自己活着的，治理者连墓碑也读得到，别人与墓碑的属主都是 404。"""
 
     await login_as_editor(client, pg_url)
     mine = (await create(client, title="这段")).json()["conversation"]
@@ -370,8 +364,6 @@ async def test_one_conversation_can_be_read_by_id_within_the_usual_visibility(
     assert read.status_code == 200, read.text
     row = read.json()["conversation"]
     assert (row["id"], row["title"]) == (mine["id"], "这段")
-    assert isinstance(row["lastSeq"], int)
-    assert row["eventEpoch"] == mine["eventEpoch"]
 
     async with make_client(app) as stranger:
         await login_as_editor(stranger, pg_url, username="mallory")

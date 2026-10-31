@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 TitleKind = Literal["default", "generated", "custom"]
 """标题来源，取值须与数据库检查约束同步。"""
@@ -70,21 +70,6 @@ class WholeFilmDraft:
     updated_at: datetime
 
 
-class EventWatermark(Protocol):
-    """某一刻各段对话的会话事件水位，由组合根从广播方取来。
-
-    读库或写库之前取一份：行上的 ``lastSeq`` 按它填，客户端拿帧序号与它比先后。"""
-
-    @property
-    def epoch(self) -> str:
-        """序号所属的进程；不同 epoch 的序号不可比。"""
-        ...
-
-    def seq_of(self, conversation_id: uuid.UUID) -> int:
-        """这段对话在取水位那一刻已发出的最大事件序号；没发过是 0。"""
-        ...
-
-
 WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
 """一次导出走到哪一步，取值照渲染服务。"""
 
@@ -120,7 +105,6 @@ __all__ = [
     "IDLE_ACTIVITY",
     "Conversation",
     "ConversationActivity",
-    "EventWatermark",
     "TitleKind",
     "VideoPhase",
     "WholeFilmDraft",

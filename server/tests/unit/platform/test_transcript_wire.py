@@ -43,21 +43,15 @@ def test_the_hello_carries_its_capabilities_inside_the_payload() -> None:
 
 def test_title_and_deletion_frames_name_the_conversation_on_the_envelope_only() -> None:
     title = SessionMetaUpdated(
-        seq=1,
-        epoch="e-1",
         session_id="c-1",
         owner_user_id="u-1",
         timestamp=AT,
         payload=SessionMetaPayload(title="片名"),
     )
-    deleted = SessionDeleted(
-        seq=2, epoch="e-1", session_id="c-1", owner_user_id="u-1", timestamp=AT
-    )
+    deleted = SessionDeleted(session_id="c-1", owner_user_id="u-1", timestamp=AT)
 
     assert _sent(title) == {
         "type": "session.meta.updated",
-        "seq": 1,
-        "epoch": "e-1",
         "session_id": "c-1",
         "owner_user_id": "u-1",
         "timestamp": AT,
@@ -65,8 +59,6 @@ def test_title_and_deletion_frames_name_the_conversation_on_the_envelope_only() 
     }
     assert _sent(deleted) == {
         "type": "event.session.deleted",
-        "seq": 2,
-        "epoch": "e-1",
         "session_id": "c-1",
         "owner_user_id": "u-1",
         "timestamp": AT,
@@ -75,7 +67,6 @@ def test_title_and_deletion_frames_name_the_conversation_on_the_envelope_only() 
 
 def test_a_generation_frame_omits_empty_origin_fields_on_the_wire() -> None:
     frame = GenerationChanged(
-        epoch="e-1",
         owner_user_id="u-1",
         session_id=None,
         timestamp=AT,
@@ -88,7 +79,6 @@ def test_a_generation_frame_omits_empty_origin_fields_on_the_wire() -> None:
 
     assert sent == {
         "type": "event.generation.changed",
-        "epoch": "e-1",
         "owner_user_id": "u-1",
         "timestamp": AT,
         "payload": {"id": "job-1", "kind": "video", "operation": "compose", "status": "pending"},
@@ -97,8 +87,6 @@ def test_a_generation_frame_omits_empty_origin_fields_on_the_wire() -> None:
 
 def test_a_video_frame_carries_its_shot_index_under_the_envelopes_own_name() -> None:
     frame = GenerationChanged(
-        seq=1,
-        epoch="e-1",
         owner_user_id="u-1",
         session_id="c-1",
         timestamp=AT,
@@ -121,8 +109,6 @@ def test_a_video_frame_carries_its_shot_index_under_the_envelopes_own_name() -> 
 def test_a_generation_frame_carries_the_callers_metadata_verbatim() -> None:
     coordinate = {"path": "video_shot.json", "shot": 1, "frame": 3}
     frame = GenerationChanged(
-        seq=1,
-        epoch="e-1",
         owner_user_id="u-1",
         session_id="c-1",
         timestamp=AT,

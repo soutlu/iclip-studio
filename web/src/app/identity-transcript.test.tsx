@@ -154,10 +154,8 @@ const subscribedTo = (received: readonly { type?: string; payload?: { session_id
 /** 服务端给某段对话改了名：全局帧发给此刻开着的每条连接。 */
 const announceTitle = (fake: FakeTranscriptServer, conversationId: string, title: string) => {
   fake.broadcast({
-    epoch: 'event-epoch',
     owner_user_id: OWNERS[conversationId],
     payload: { title },
-    seq: 1,
     session_id: conversationId,
     timestamp: '2026-10-30T08:00:00+00:00',
     type: 'session.meta.updated',

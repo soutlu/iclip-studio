@@ -38,7 +38,7 @@ export const SERVER_HELLO = {
 }
 
 /**
- * 全局帧信封（合同 §5）：属主与这段对话的会话事件水位，序号与 mock 行上的 lastSeq 同一个时钟。
+ * 全局帧信封（合同 §5）：属主与出帧时刻。
  * 属主缺省取 mock 里这段对话的属主；给别人的对话发帧时显式传。
  */
 export const sessionEnvelope = (conversationId: string, ownerUserId?: string) => {

@@ -1,7 +1,7 @@
-"""实时流 epoch、会话事件水位与会话生命周期帧。
+"""实时流 epoch 与会话生命周期帧。
 
-客户端先读基线、再带 ``transcript_since`` + ``transcript_epoch`` 订阅；全局帧带属主与这段对话的事件
-序号，列表行带读行之前的水位，两边按序号比先后。
+客户端先读基线、再带 ``transcript_since`` + ``transcript_epoch`` 订阅；全局帧带属主，在写入提交之后发出，
+同一段对话的帧按提交先后到达。
 """
 
 from __future__ import annotations
@@ -102,37 +102,10 @@ def test_a_watermark_without_its_epoch_or_from_another_stream_gets_a_reset(
             assert foreign["stream_epoch"] == page["stream_epoch"]
 
 
-def test_transcript_frames_carry_the_conversations_event_watermark_without_advancing_it(
+def test_lifecycle_frames_carry_the_owner_in_commit_order(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """Transcript 帧信封上的 ``epoch`` + ``seq`` 是这段对话当前的事件序号，照 Kimi 的易失帧不另发号。"""
-
-    with TestClient(ws_agent_app) as tc:
-        sign_in(tc, pg_url)
-        conversation_id = open_conversation(tc)
-        row = tc.get(f"/conversations/{conversation_id}").json()["conversation"]
-
-        with tc.websocket_connect("/ws") as ws:
-            assert ws.receive_json()["type"] == "server_hello"
-            subscribe(ws, conversation_id)
-            reset = until(ws, "transcript.reset")
-            assert reset["epoch"] == row["eventEpoch"]
-            assert reset["seq"] == row["lastSeq"]
-
-            _send(tc, conversation_id, "prm_env")
-            busy = until(ws, "event.session.work_changed")
-            ops = until(ws, "transcript.ops")
-            assert ops["seq"] >= busy["seq"]
-            settled(tc, conversation_id)
-
-        after = tc.get(f"/conversations/{conversation_id}").json()["conversation"]
-        assert after["lastSeq"] > busy["seq"], "跑完那一帧 idle 在读行之前发出，行的水位越过它"
-
-
-def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
-    ws_agent_app: FastAPI, pg_url: str
-) -> None:
-    """建、改、标收尾、删各是一帧事件，提交后发新号；带整行的帧，行内 ``lastSeq`` 是写之前的水位。"""
+    """建、开跑、改名、换需求单、换合集、删各发一帧，提交之后发出，按写入的先后到达。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -146,20 +119,16 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
             assert (created["session_id"], created["owner_user_id"]) == (conversation_id, owner_id)
             assert created["payload"]["id"] == conversation_id
             assert created["payload"]["ownerUserId"] == owner_id
-            assert created["payload"]["lastSeq"] == 0
-            assert created["seq"] == 1
-            assert created["epoch"] == created["payload"]["eventEpoch"]
+            assert set(created) == {"type", "session_id", "owner_user_id", "timestamp", "payload"}
 
             _send(tc, conversation_id, "prm_life")
             busy = until(ws, "event.session.work_changed")
             # 开跑记录运行也是一次行变化：带出新的 lastRunId 与抹掉的收尾标记。
             began = until(ws, "event.session.updated")
-            idle = until(ws, "event.session.work_changed")
+            until(ws, "event.session.work_changed")
             assert busy["owner_user_id"] == owner_id
-            assert created["seq"] < busy["seq"] < began["seq"] < idle["seq"]
             assert began["payload"]["lastRunId"] is not None
             assert began["payload"]["completedAt"] is None
-            assert began["payload"]["lastSeq"] < began["seq"]
             settled(tc, conversation_id)
 
             renamed = tc.patch(f"/conversations/{conversation_id}", json={"title": "改过的"})
@@ -168,18 +137,12 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
             updated = until(ws, "event.session.updated")
             assert title["owner_user_id"] == owner_id
             assert (title["session_id"], title["payload"]) == (conversation_id, {"title": "改过的"})
-            assert title["seq"] == idle["seq"] + 1
-            assert updated["seq"] == title["seq"] + 1
-            # 行写于取水位之后：行内水位停在写之前，帧自己发的号更大。
-            assert updated["payload"]["lastSeq"] == idle["seq"]
             assert updated["payload"]["title"] == "改过的"
-            assert renamed.json()["conversation"]["lastSeq"] == idle["seq"]
 
             unlinked = tc.put(f"/conversations/{conversation_id}/task", json={"taskId": None})
             assert unlinked.status_code == 200, unlinked.text
             detached = until(ws, "event.session.updated")
             assert detached["payload"]["taskId"] is None
-            assert detached["seq"] == updated["seq"] + 1
 
             moved = tc.put(
                 f"/conversations/{conversation_id}/collection", json={"collectionId": None}
@@ -187,43 +150,13 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
             assert moved.status_code == 200, moved.text
             regrouped = until(ws, "event.session.updated")
             assert regrouped["payload"]["collectionId"] is None
-            assert regrouped["seq"] == detached["seq"] + 1
 
             assert tc.delete(f"/conversations/{conversation_id}").status_code == 204
             deleted = until(ws, "event.session.deleted")
             # 对话 id 只在外层，没有 payload。
+            assert set(deleted) == {"type", "session_id", "owner_user_id", "timestamp"}
             assert deleted["session_id"] == conversation_id
-            assert "payload" not in deleted
             assert deleted["owner_user_id"] == owner_id
-            assert deleted["seq"] == regrouped["seq"] + 1
-
-
-def test_a_row_read_before_a_write_cannot_overwrite_the_updated_frame(
-    ws_agent_app: FastAPI, pg_url: str
-) -> None:
-    """写入之前读库的 HTTP 行晚于 ``updated`` 帧到达时，序号关系保证它盖不掉帧带来的事实字段。
-
-    客户端按帧的信封序号记行内事实字段的水位，HTTP 行只盖过序号不大于它 ``lastSeq`` 的字段。旧行的
-    ``lastSeq`` 严格小于帧序号，所以收尾标记留在帧上的值；两者若相等（帧不另发号），旧行会盖回去。"""
-
-    with TestClient(ws_agent_app) as tc:
-        sign_in(tc, pg_url)
-        conversation_id = open_conversation(tc)
-
-        with tc.websocket_connect("/ws") as ws:
-            assert ws.receive_json()["type"] == "server_hello"
-
-            stale = tc.get(f"/conversations/{conversation_id}").json()["conversation"]
-            assert stale["completedAt"] is None
-
-            done = tc.put(f"/conversations/{conversation_id}/completion", json={"completed": True})
-            assert done.status_code == 200, done.text
-            marked = until(ws, "event.session.updated")
-
-            assert marked["payload"]["completedAt"] is not None
-            assert marked["payload"]["lastSeq"] == stale["lastSeq"]
-            assert stale["lastSeq"] < marked["seq"]
-            assert marked["epoch"] == stale["eventEpoch"]
 
 
 def test_an_idempotent_replay_of_create_announces_nothing(

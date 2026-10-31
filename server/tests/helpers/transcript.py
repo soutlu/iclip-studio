@@ -218,7 +218,7 @@ def ws_frames(
 ) -> list[Any]:
     """这条流从订阅起会收到的全部帧：一帧 reset，之后每批一帧 ops。
 
-    只记客户端要解析的部分：帧类型、信封上的 ``stream_epoch`` 与载荷；会话事件序号与时间戳不进金样。
+    只记客户端要解析的部分：帧类型、信封上的 ``stream_epoch`` 与载荷；``session_id`` 与时间戳不进金样。
     """
 
     view = store.subscribe_view(conversation_id, agent_id)

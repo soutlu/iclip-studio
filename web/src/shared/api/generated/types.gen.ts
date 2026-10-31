@@ -1372,10 +1372,6 @@ export type ConversationOut = {
    */
   deletedAt: string | null
   /**
-   * Eventepoch
-   */
-  eventEpoch: string
-  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -1391,10 +1387,6 @@ export type ConversationOut = {
    * Lastrunid
    */
   lastRunId: string | null
-  /**
-   * Lastseq
-   */
-  lastSeq: number
   /**
    * Owneruserid
    */
@@ -1498,10 +1490,6 @@ export type ConversationsAuditItemOut = {
    */
   deletedAt: string | null
   /**
-   * Eventepoch
-   */
-  eventEpoch: string
-  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -1517,10 +1505,6 @@ export type ConversationsAuditItemOut = {
    * Lastrunid
    */
   lastRunId: string | null
-  /**
-   * Lastseq
-   */
-  lastSeq: number
   /**
    * Latestmasterurl
    */

@@ -25,7 +25,7 @@ from agent_runtime.live.frames import (
     FsChangesPayload,
     Ping,
     PingPayload,
-    SessionActivity,
+    SessionWorkChanged,
     SubscribeAckPayload,
     TranscriptOpsFrame,
     TranscriptResetFrame,
@@ -60,7 +60,7 @@ OPS = TranscriptOpsFrame(
     stream_epoch="e1",
     payload=OpsPayload(agent_id="main", ops=(), seq=1),
 )
-ACTIVITY = SessionActivity(
+ACTIVITY = SessionWorkChanged(
     session_id=SESSION,
     owner_user_id=OWNER,
     timestamp=AT,

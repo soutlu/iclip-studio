@@ -365,7 +365,7 @@ def _put(tc: TestClient, conversation_id: str, path: str, body: str) -> None:
 def test_a_subscribed_connection_gets_every_file_change_of_the_conversation_as_is(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """运行时的文件帧原样转给浏览器：外层只有对话与时刻，没有会话事件水位；按路径筛由客户端自己做。"""
+    """运行时的文件帧原样转给浏览器：外层只有对话与时刻；按路径筛由客户端自己做。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)

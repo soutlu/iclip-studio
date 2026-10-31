@@ -65,14 +65,13 @@ const workChanged = (
 const runStarted = (conversationId: string, runId: string) => {
   const row = mockConversations.find((one) => one.id === conversationId)
   if (row === undefined) throw new Error('没有这段对话')
-  const before = row.lastSeq
   row.lastRunId = runId
   row.completedAt = null
   return {
     ...sessionEnvelope(conversationId),
     type: 'event.session.updated',
     session_id: conversationId,
-    payload: { ...row, lastSeq: before },
+    payload: { ...row },
   }
 }
 
@@ -107,15 +106,12 @@ const render = async (initialPath = '/', permissions = mockAuthUser.permissions)
   return { onStartInCollection, router, socket, user }
 }
 
-const rowUpdated = (row: (typeof mockConversations)[number]) => {
-  const before = row.lastSeq
-  return {
-    ...sessionEnvelope(row.id),
-    type: 'event.session.updated',
-    session_id: row.id,
-    payload: { ...row, lastSeq: before },
-  }
-}
+const rowUpdated = (row: (typeof mockConversations)[number]) => ({
+  ...sessionEnvelope(row.id),
+  type: 'event.session.updated',
+  session_id: row.id,
+  payload: { ...row },
+})
 
 const countReads = (pathname: string) => {
   const reads = { count: 0 }

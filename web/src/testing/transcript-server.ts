@@ -376,7 +376,6 @@ export class FakeTranscriptServer {
         snapshot: { ...snapshot, hasMoreOlder: snapshot.items.length > 0, items: [] },
         type: 'transcript.reset',
       },
-      seq: 0,
       session_id: conversationId,
       stream_epoch: stream.epoch,
       timestamp: new Date().toISOString(),
@@ -393,7 +392,6 @@ export class FakeTranscriptServer {
   ) {
     return {
       payload: { agent_id: agentId, ops, seq, type: 'transcript.ops' },
-      seq: 0,
       session_id: conversationId,
       stream_epoch: stream.epoch,
       timestamp: new Date().toISOString(),

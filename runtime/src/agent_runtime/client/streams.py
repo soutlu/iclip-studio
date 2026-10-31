@@ -28,7 +28,7 @@ from agent_runtime.live.frames import (
     FsChanged,
     Ping,
     Pong,
-    SessionActivity,
+    SessionWorkChanged,
     TranscriptOpsFrame,
     TranscriptResetFrame,
     TranscriptServerFrame,
@@ -38,13 +38,13 @@ from agent_runtime.transcript.wire import Envelope, Subscribe, Unsubscribe
 TranscriptFrame = TranscriptResetFrame | TranscriptOpsFrame | FsChanged | Ack
 """对话内容流上交给调用方的帧（心跳已经回掉了）。"""
 
-AppEventFrame = SessionActivity
+AppEventFrame = SessionWorkChanged
 """应用事件流上交给调用方的事件，只有会话活动（心跳已经回掉了）。"""
 
 _TRANSCRIPT_FRAME = TypeAdapter[TranscriptResetFrame | TranscriptOpsFrame | FsChanged | Ack | Ping](
     TranscriptServerFrame
 )
-_EVENT_FRAME = TypeAdapter[SessionActivity | Ping](EventServerFrame)
+_EVENT_FRAME = TypeAdapter[SessionWorkChanged | Ping](EventServerFrame)
 
 _NETWORK_CLOSE = 1006
 """没有收到关闭帧就断了（RFC 6455 的 abnormal closure）。"""
