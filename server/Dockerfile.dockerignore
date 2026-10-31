@@ -16,7 +16,7 @@
 **/*.py[cod]
 **/.python-version
 **/.env*
-# 运行配置、agent 与技能由部署挂载，不进镜像。
+# 运行配置由部署挂载，不进镜像；agents/、skills/ 是 agent 配置入库前的旧目录，本机留着也不发送。
 server/configs/
 server/agents/
 server/skills/
