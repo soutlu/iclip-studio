@@ -74,10 +74,20 @@ class IdleQueue:
 
 
 @dataclass
-class MovedHistory:
-    """数完两轮后源又变化，无法规划可提交的分叉起点。"""
+class RecordingSeed:
+    committed: bool = False
 
+    async def commit(self) -> None:
+        self.committed = True
+
+
+@dataclass
+class TwoTurnHistory:
+    """源有两轮；``moved`` 为真时数完轮数后源又变化（比如末轮被重新生成截掉），规划不出分叉起点。"""
+
+    moved: bool = False
     planned: list[tuple[str, int, str]] = field(default_factory=list)
+    seed: RecordingSeed = field(default_factory=RecordingSeed)
 
     async def turn_count(self, conversation_id: str) -> int:
         assert conversation_id == str(SOURCE)
@@ -85,15 +95,16 @@ class MovedHistory:
 
     async def plan_fork(
         self, conversation_id: str, *, ordinal: int, target_conversation_id: str
-    ) -> None:
+    ) -> RecordingSeed | None:
         self.planned.append((conversation_id, ordinal, target_conversation_id))
+        return None if self.moved else self.seed
 
 
 @dataclass
 class Runtime:
     sessions: RecordingSessions = field(default_factory=RecordingSessions)
     queue: SessionQueue = field(default_factory=IdleQueue)
-    history: MovedHistory = field(default_factory=MovedHistory)
+    history: TwoTurnHistory = field(default_factory=TwoTurnHistory)
     files: FakeFileStore = field(default_factory=FakeFileStore)
     ledger: FakeMaterialLedger = field(default_factory=FakeMaterialLedger)
 
@@ -140,8 +151,8 @@ async def fork(runtime: Runtime, *, turn: int = 1, agent_id: str | None = None) 
     )
 
 
-async def test_a_source_that_moved_before_the_seed_is_a_conflict_and_nothing_is_seeded() -> None:
-    runtime = Runtime()
+async def test_a_source_that_moved_before_planning_is_a_conflict_before_any_write() -> None:
+    runtime = Runtime(history=TwoTurnHistory(moved=True))
     await runtime.seed_source({"video_shot.json": "{}"})
 
     with pytest.raises(Conflict) as raised:
@@ -149,6 +160,7 @@ async def test_a_source_that_moved_before_the_seed_is_a_conflict_and_nothing_is_
 
     assert str(raised.value) == "这段对话刚刚又跑了一轮，重新挑一个分叉点"
     assert runtime.history.planned == [(str(SOURCE), 1, str(TARGET))]
+    assert await runtime.nothing_written()
 
 
 async def test_an_agent_that_cannot_open_fails_the_fork_before_any_file_is_copied() -> None:
