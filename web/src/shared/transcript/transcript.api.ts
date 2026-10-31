@@ -2,7 +2,7 @@
 
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
-import { zTranscriptPage } from '@/shared/api/generated/zod.gen'
+import { zConversationEnvelope, zTranscriptPage } from '@/shared/api/generated/zod.gen'
 import { MAIN_AGENT_ID } from './connection'
 import { agentTranscriptSnapshotSchema, type AgentTranscriptSnapshot } from './vendor'
 
@@ -17,7 +17,7 @@ export interface TranscriptPage {
   hasMoreOlder: boolean
   /** 子代理名册，与主页同一份。 */
   agents: readonly AgentDescriptor[]
-  /** 初始标题来自基线，后续改名由 session.meta.updated 推送。 */
+  /** 初始标题来自基线，后续改名由 session.meta.updated 推送，重连后由 fetchConversationTitle 补读。 */
   title: string
   /** 属主；治理者看别人的对话时与登录人不同，页面据此进入只读。 */
   ownerUserId: string | null
@@ -85,4 +85,21 @@ export const fetchTranscriptPage = async (
     snapshot,
     title: page.title,
   }
+}
+
+/** 读一段对话的整行，只取标题；重连后对齐断线期间丢了帧的改名（合同 §5「全局帧」）。 */
+export const fetchConversationTitle = async (
+  conversationId: string,
+  signal: AbortSignal,
+): Promise<string> => {
+  const { conversation } = await apiFetch(
+    `/conversations/${conversationId}`,
+    zConversationEnvelope,
+    {
+      cache: 'no-store',
+      fallbackErrorMessage: '读取任务失败',
+      signal,
+    },
+  )
+  return conversation.title
 }

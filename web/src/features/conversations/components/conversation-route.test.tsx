@@ -12,7 +12,7 @@ import { renderWithProviders } from '@/testing/render'
 import { Toaster } from '@/shared/ui/toast'
 import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
-import { sessionEnvelope } from '@/testing/ws'
+import { type FakeSocket, SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 
 // jsdom 不支持 Lottie 加载时的 canvas 探测；替换装饰动画以验证会话行为。
 vi.mock('lottie-web/build/player/lottie_light', () => ({
@@ -684,4 +684,102 @@ describe('ConversationRoute', () => {
 
     expect(await screen.findByRole('heading', { name: '改过的名字' })).toBeVisible()
   })
+
+  it('收到改名后断线重连：补读回来之前页头仍是改过的名字，补读落地后跟上服务端', async () => {
+    const row = addMockConversation('改过的名字', undefined, undefined, ROW_ID)
+    const release = holdRowReads()
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+    act(() => socket.deliver(titleFrame('改过的名字')))
+    await screen.findByRole('heading', { name: '改过的名字' })
+
+    await reconnect(socket, () => {
+      row.title = '又改了一次'
+    })
+
+    // 流没断，主池只带水位重订、不重读基线；补读悬着的这段时间不退回打开页面时的名字。
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(screen.getByRole('heading', { name: '改过的名字' })).toBeVisible()
+    release()
+    expect(await screen.findByRole('heading', { name: '又改了一次' })).toBeVisible()
+  }, 10_000)
+
+  it('断线期间别处改了名：重连后补读那一行，页头换成新名字', async () => {
+    const row = addMockConversation('夜景延时素材生成', undefined, undefined, ROW_ID)
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+
+    await reconnect(socket, () => {
+      row.title = '断线期间改的名字'
+    })
+
+    expect(await screen.findByRole('heading', { name: '断线期间改的名字' })).toBeVisible()
+  }, 10_000)
+
+  it('补读在途时又到了改名帧：帧比读到的新，读回来的旧名字不盖掉它', async () => {
+    const row = addMockConversation('夜景延时素材生成', undefined, undefined, ROW_ID)
+    const release = holdRowReads()
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+
+    await reconnect(socket, () => {
+      row.title = '断线期间改的名字'
+    })
+    act(() => socket.deliver(titleFrame('重连后又改的名字')))
+    await screen.findByRole('heading', { name: '重连后又改的名字' })
+    let settled = false
+    server.events.on('response:mocked', ({ request }) => {
+      if (new URL(request.url).pathname === `/api/conversations/${ROW_ID}`) settled = true
+    })
+    release()
+
+    await waitFor(() => expect(settled).toBe(true))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(screen.getByRole('heading', { name: '重连后又改的名字' })).toBeVisible()
+  }, 10_000)
 })
+
+/** 重连用例补读整行，行的 id 要过 ConversationOut 的 uuid 校验。 */
+const ROW_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+
+const renderRowConversation = async () =>
+  renderWithProviders(<ConversationRoute conversationId={ROW_ID} />)
+
+const titleFrame = (title: string) => ({
+  ...sessionEnvelope(ROW_ID),
+  payload: { title },
+  session_id: ROW_ID,
+  type: 'session.meta.updated',
+})
+
+/** 之后读这段对话整行的请求先悬着，调返回的函数放行，交给默认 handler 答复。 */
+const holdRowReads = () => {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  server.use(
+    http.get(`*/api/conversations/${ROW_ID}`, async () => {
+      await held
+    }),
+  )
+  return release
+}
+
+/**
+ * 断线后等连接按退避（1 秒另加至多 250ms 抖动）重连，再完成握手。`duringOutage` 是断线期间服务端那边的变化，
+ * 全局帧不补发。假连接不回 reset：模拟运行时的流没断。
+ */
+const reconnect = async (socket: FakeSocket, duringOutage: () => void) => {
+  const handshake = socket.onmessage
+  act(() => socket.onclose?.())
+  duringOutage()
+  await waitFor(
+    () => {
+      expect(socket.onmessage).not.toBeNull()
+      expect(socket.onmessage).not.toBe(handshake)
+    },
+    { timeout: 3000 },
+  )
+  act(() => socket.deliver(SERVER_HELLO))
+}

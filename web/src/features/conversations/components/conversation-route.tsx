@@ -10,8 +10,8 @@ import {
   unclaimed,
 } from '@/shared/transcript/local-prompts'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
+import { useConversationTitle } from '@/shared/transcript/use-conversation-title'
 import { useLocalPrompts } from '@/shared/transcript/use-local-prompts'
-import { useSessionTitles } from '@/shared/transcript/use-session-titles'
 import { useTranscript } from '@/shared/transcript/use-transcript'
 import type { PromptContentPart, ToolCallFrame, TranscriptTurn } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
@@ -102,8 +102,7 @@ export function ConversationRoute({
   sourceLink,
 }: ConversationRouteProps) {
   const { loadOlder, refresh, view } = useTranscript(conversationId)
-  const { titleOf } = useSessionTitles()
-  const title = titleOf(conversationId) ?? view.title
+  const title = useConversationTitle(conversationId, view.title)
   // 页头的合集标签只用侧栏已经拿到的拓扑，不为它单发请求；拓扑里找不到就不显示。
   const collection = useCachedConversationCollection(conversationId)
   // 只读只发生在治理者复盘别人的或已删的对话时，名册接口也只有治理者能读。
