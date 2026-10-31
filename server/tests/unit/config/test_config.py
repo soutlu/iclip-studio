@@ -11,8 +11,11 @@ import pytest
 from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
-from iclip.config import ResolvedSettings, RuntimeConfig, load_runtime_config, resolve_settings
-from tests.helpers.app import TEST_CREDENTIAL_KEY
+from iclip.config import (
+    CredentialKeysEnv,
+    load_runtime_config,
+    resolve_settings,
+)
 
 DB_URL = "postgresql+asyncpg://x"
 
@@ -72,13 +75,14 @@ def _core(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("DATABASE_URL", DB_URL)
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
-    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
     monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
     monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_KEY)
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", INTERNAL_TOKEN)
 
 
 RUNTIME_URL = "http://runtime:7790"
 RUNTIME_KEY = "runtime-app-key-for-config-tests-0123"
+INTERNAL_TOKEN = "runtime-internal-token-for-config-0123"
 
 
 def test_valid_config_loads(tmp_path: Path) -> None:
@@ -100,19 +104,27 @@ def test_unknown_key_rejected(tmp_path: Path, content: str, key: str) -> None:
         load_runtime_config(write(tmp_path, content))
 
 
-def test_lease_must_outlast_a_heartbeat(tmp_path: Path) -> None:
-    """租约必须长于心跳间隔，避免有效运行被误判失联。"""
+@pytest.mark.parametrize(
+    ("section", "moved_to"),
+    [
+        ("agent_runs: {max_attempts: 2}", "configs/runtime.yaml 的 agent_runs"),
+        ("conversations: {compaction: {keep_messages: 20}}", "configs/runtime.yaml 的 compaction"),
+        ("video: {understanding_model: seed}", "configs/runtime.yaml 的 plugins.config.video"),
+        ("shot_video: {dev_attempts: 2}", "configs/runtime.yaml 的 plugins.config.shot_video"),
+    ],
+    ids=["agent_runs", "conversations", "video", "shot_video-policy"],
+)
+def test_a_section_moved_to_the_runtime_names_where_it_went(
+    tmp_path: Path, section: str, moved_to: str
+) -> None:
+    """后端不再认的段不是一句「Extra inputs are not permitted」，而是点名它和它在运行时配置里的位置。"""
 
-    bad = VALID + "\nagent_runs: {heartbeat_seconds: 30, lease_seconds: 30}\n"
-    with pytest.raises(ValidationError, match="heartbeat_seconds"):
-        load_runtime_config(write(tmp_path, bad))
+    with pytest.raises(ValidationError, match=moved_to):
+        load_runtime_config(write(tmp_path, VALID + section + "\n"))
 
 
-def test_a_prompt_must_be_claimable_at_least_once(tmp_path: Path) -> None:
-
-    bad = VALID + "\nagent_runs: {max_attempts: 0}\n"
-    with pytest.raises(ValidationError, match="max_attempts"):
-        load_runtime_config(write(tmp_path, bad))
+def test_an_empty_shot_video_section_still_switches_the_shot_tools_on(tmp_path: Path) -> None:
+    assert load_runtime_config(write(tmp_path, VALID + "shot_video: {}\n")).shot_video is not None
 
 
 def test_cors_wildcard_rejected(tmp_path: Path) -> None:
@@ -137,15 +149,11 @@ def test_resolve_names_every_missing_variable_at_once(tmp_path: Path) -> None:
     assert "AUTH_SECRET" in message
 
 
-def test_missing_credential_keys_fail_startup_naming_the_variable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    monkeypatch.delenv("CREDENTIAL_ENCRYPTION_KEYS")
+def test_missing_credential_keys_name_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """后端运行不要这把钥匙；切换命令读它时缺了照样点名。"""
 
     with pytest.raises(ValidationError, match="CREDENTIAL_ENCRYPTION_KEYS"):
-        resolve_settings(config)
+        CredentialKeysEnv()  # pyright: ignore[reportCallIssue]
 
 
 @pytest.mark.parametrize(
@@ -156,15 +164,13 @@ def test_missing_credential_keys_fail_startup_naming_the_variable(
         (f"{Fernet.generate_key().decode()},,", "第 2 个 key 是空的"),
     ],
 )
-def test_malformed_credential_keys_fail_startup_without_echoing_them(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str, reason: str
+def test_malformed_credential_keys_are_refused_without_echoing_them(
+    monkeypatch: pytest.MonkeyPatch, value: str, reason: str
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", value)
 
     with pytest.raises(ValidationError) as caught:
-        resolve_settings(config)
+        CredentialKeysEnv()  # pyright: ignore[reportCallIssue]
 
     assert reason in str(caught.value.errors()[0]["msg"])
     printed = str(caught.value)
@@ -172,13 +178,11 @@ def test_malformed_credential_keys_fail_startup_without_echoing_them(
         assert key not in printed
 
 
-def test_credential_keys_keep_their_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
+def test_credential_keys_keep_their_order(monkeypatch: pytest.MonkeyPatch) -> None:
     first, second = Fernet.generate_key().decode(), Fernet.generate_key().decode()
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", f" {first} , {second} ")
 
-    assert resolve_settings(config).credential_encryption_keys == (first, second)
+    assert CredentialKeysEnv().key_list == (first, second)  # pyright: ignore[reportCallIssue]
 
 
 def test_resolve_rejects_non_asyncpg_url_without_echoing_it(
@@ -209,14 +213,26 @@ def test_blank_value_counts_as_missing(tmp_path: Path, monkeypatch: pytest.Monke
         resolve_settings(config)
 
 
-def test_the_runtime_internal_token_is_optional(
+def test_a_missing_runtime_internal_token_fails_startup_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """开跑检查在内部接口上：没有令牌每次运行都过不了，所以启动就失败。"""
+
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.delenv("RUNTIME_INTERNAL_TOKEN")
+
+    with pytest.raises(ValidationError, match="RUNTIME_INTERNAL_TOKEN"):
+        resolve_settings(config)
+
+
+def test_the_runtime_internal_token_is_trimmed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    assert resolve_settings(config).runtime_internal_token is None
-
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", " " + "t" * 32 + " ")
+
     assert resolve_settings(config).runtime_internal_token == "t" * 32
 
 
@@ -302,11 +318,6 @@ def test_sso_on_requires_redirect(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert resolved.sso.app_name == "iclip", "应用名来自 YAML，不是环境变量"
 
 
-def resolve_with_base(config: RuntimeConfig, monkeypatch: pytest.MonkeyPatch) -> ResolvedSettings:
-    _core(monkeypatch)
-    return resolve_settings(config)
-
-
 @pytest.mark.parametrize(
     "legacy",
     [
@@ -320,15 +331,6 @@ def test_the_model_settings_moved_to_the_database_are_refused(tmp_path: Path, le
 
     with pytest.raises(ValidationError):
         load_runtime_config(write(tmp_path, VALID + legacy))
-
-
-def test_the_skill_cache_defaults_under_the_system_temp_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    resolved = resolve_with_base(load_runtime_config(write(tmp_path, VALID)), monkeypatch)
-
-    assert resolved.agent_runs.skill_cache_dir.name == "iclip-skills"
-    assert resolved.agent_runs.assembly_cache_size == 64
 
 
 MEDIA = """
@@ -696,17 +698,8 @@ def test_whole_film_render_url_must_be_http(
         resolve_settings(config)
 
 
-VIDEO_SECTION = """
-video:
-  understanding_model: seed-vision
-  understanding_thinking: medium
-  understanding_fps: 5
-"""
-
 SHOT_VIDEO = """
-shot_video:
-  dev_attempts: 2
-  pro_attempts: 1
+shot_video: {}
 """
 
 VIDEO_ENV = {
@@ -715,87 +708,30 @@ VIDEO_ENV = {
 }
 
 
-def _video_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    _media_env(monkeypatch)
-    for name, value in VIDEO_ENV.items():
-        monkeypatch.setenv(name, value)
-
-
-def test_video_off_when_understanding_url_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """未配置视频解析地址时关闭 video；取帧与出图的节奏段照常解析。"""
-
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION + SHOT_VIDEO))
-    _video_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_UNDERSTANDING_URL")
-    settings = resolve_settings(config)
-
-    assert settings.video is None
-    assert settings.shot_video is not None
-
-
-def test_video_resolves_shape_and_credentials(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION + SHOT_VIDEO))
-    _video_env(monkeypatch)
-    settings = resolve_settings(config)
-
-    assert settings.video is not None
-    assert settings.video.understanding_url == "https://vision.test/responses"
-    assert settings.video.understanding_model == "seed-vision", "对方的模型名来自 YAML"
-    assert settings.video.understanding_thinking == "medium"
-    assert settings.video.understanding_fps == 5
-    assert settings.shot_video is not None
-    assert (settings.shot_video.dev_attempts, settings.shot_video.pro_attempts) == (2, 1)
-
-
-def test_video_half_configured_fails_loudly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION))
-    _video_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_UNDERSTANDING_API_KEY")
-    with pytest.raises(ValidationError, match="VIDEO_UNDERSTANDING_API_KEY"):
-        resolve_settings(config)
-
-
 def test_shot_tools_enabled_when_generation_and_bucket_are_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION + SHOT_VIDEO))
-    _video_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
+    _media_env(monkeypatch)
     settings = resolve_settings(config)
 
+    assert settings.shot_video
     assert settings.shot_tools_missing == ()
     assert settings.shot_tools_enabled
 
 
-def test_video_resolves_without_media_generation_and_names_what_shot_video_lacks(
+def test_shot_video_without_media_generation_names_what_it_lacks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION + SHOT_VIDEO))
-    _video_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
+    _media_env(monkeypatch)
     monkeypatch.delenv("VIDEO_SUBMIT_URL")
     settings = resolve_settings(config)
 
     assert settings.media_generation is None
-    assert settings.video is not None
-    assert settings.shot_video is not None
+    assert settings.shot_video
     assert settings.shot_tools_missing == ("VIDEO_SUBMIT_URL",)
     assert not settings.shot_tools_enabled
-
-
-def test_video_without_generation_still_requires_credentials(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION))
-    _video_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
-    monkeypatch.delenv("VIDEO_UNDERSTANDING_API_KEY")
-    with pytest.raises(ValidationError, match="VIDEO_UNDERSTANDING_API_KEY"):
-        resolve_settings(config)
 
 
 def test_shot_video_section_absent_means_off(
@@ -803,11 +739,11 @@ def test_shot_video_section_absent_means_off(
 ) -> None:
     """没写 shot_video 段就不装取帧与出图，也不算缺东西。"""
 
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION))
-    _video_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
     settings = resolve_settings(config)
 
-    assert settings.shot_video is None
+    assert not settings.shot_video
     assert settings.shot_tools_missing == ()
     assert not settings.shot_tools_enabled
 
@@ -882,6 +818,16 @@ def test_local_queue_concurrency_must_be_positive(
         _local_concurrencies(tmp_path, monkeypatch, written=written)
 
 
+def test_iclip_studio_half_configured_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + ICLIP_STUDIO))
+    _core(monkeypatch)
+    monkeypatch.setenv("VIDEO_UNDERSTANDING_URL", VIDEO_ENV["VIDEO_UNDERSTANDING_URL"])
+    with pytest.raises(ValidationError, match="VIDEO_UNDERSTANDING_API_KEY"):
+        resolve_settings(config)
+
+
 def test_iclip_studio_off_when_understanding_url_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -894,8 +840,8 @@ def test_iclip_studio_off_when_understanding_url_empty(
 
 
 def test_ffmpeg_required_by_shot_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION + SHOT_VIDEO))
-    _video_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
+    _media_env(monkeypatch)
 
     assert resolve_settings(config).ffmpeg_required
 
@@ -918,8 +864,8 @@ def test_ffmpeg_not_required_without_either(
 ) -> None:
     """写了 shot_video 段但依赖没齐，媒体生成也关着，就没人用 ffmpeg。"""
 
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + VIDEO_SECTION + SHOT_VIDEO))
-    _video_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
+    _media_env(monkeypatch)
     monkeypatch.delenv("VIDEO_SUBMIT_URL")
     settings = resolve_settings(config)
 

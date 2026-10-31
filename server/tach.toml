@@ -9,10 +9,6 @@ path = "iclip.platform.db"
 depends_on = []
 
 [[modules]]
-path = "iclip.platform.http"
-depends_on = ["iclip.common"]
-
-[[modules]]
 path = "iclip.platform.paging"
 depends_on = ["iclip.common"]
 
@@ -49,7 +45,7 @@ depends_on = ["iclip.common"]
 
 [[modules]]
 path = "iclip.domains.identity"
-depends_on = ["iclip.common", "iclip.platform.db", "iclip.platform.http"]
+depends_on = ["iclip.common", "iclip.platform.db"]
 
 [[modules]]
 path = "iclip.domains.agents"
@@ -112,7 +108,6 @@ path = "iclip.domains.generation"
 depends_on = [
     "iclip.common",
     "iclip.platform.db",
-    "iclip.platform.http",
     "iclip.platform.media",
     "iclip.platform.object_store",
     "iclip.platform.paging",
@@ -169,7 +164,6 @@ path = "iclip.app"
 depends_on = [
     "iclip.common",
     "iclip.platform.db",
-    "iclip.platform.http",
     "iclip.platform.object_store",
     "iclip.platform.media",
     "iclip.platform.outbound",

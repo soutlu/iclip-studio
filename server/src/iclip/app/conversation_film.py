@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import StoredFile
+from agent_runtime.http.errors import validation_error_detail
 from agent_runtime.material_ledger.store import Material, MaterialLedger
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
@@ -34,7 +35,6 @@ from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.domains.generation.schemas import VideoGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal, resolve_user_name
-from iclip.platform.http import validation_error_detail
 
 _STALE = "分镜刚被改过，刷新后再改"
 _BROKEN = "分镜现在有问题，等 AI 导演改好再改"

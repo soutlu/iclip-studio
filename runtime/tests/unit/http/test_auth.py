@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic_ai.capabilities import Capability
 
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry

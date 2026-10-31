@@ -26,7 +26,6 @@ from iclip.config import (
 from iclip.config.models import IclipStudioSection
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
-from tests.helpers.app import TEST_CREDENTIAL_KEY
 from tests.helpers.generation import MemoryObjectStore
 
 
@@ -44,9 +43,9 @@ def minimal_config() -> RuntimeConfig:
 def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
-    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
     monkeypatch.setenv("RUNTIME_URL", "http://runtime.test")
     monkeypatch.setenv("RUNTIME_APP_KEY", "r" * 32)
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", "i" * 32)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.setenv("OSS_BUCKET", "iclip")
     monkeypatch.setenv("OSS_ENDPOINT", "https://oss.test")
@@ -111,11 +110,12 @@ async def test_without_media_generation_the_routes_are_absent(base_env: None) ->
         assert (await client.post("/generations", json={})).status_code == 404
 
 
-@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY"])
+@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY", "RUNTIME_INTERNAL_TOKEN"])
 def test_startup_fails_without_the_runtime_service(
     base_env: None, monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
-    """开会话、首页名册、起标题、对话活动与配置页都经运行时服务，少了它的地址或密钥就起不来。"""
+    """开会话、首页名册、起标题、对话活动与配置页都经运行时服务，少了它的地址或密钥就起不来；运行时回调后端
+    的内部接口少了令牌，每次运行都过不了开跑检查，同样起不来。"""
 
     monkeypatch.delenv(missing)
 

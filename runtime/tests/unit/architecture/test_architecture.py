@@ -25,6 +25,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("sqlalchemy",): (
         # 运行时服务的组合根建 engine；三块配置服务的装配拿它建存储，切换命令也用这一处。
         "http/app.py",
+        # 换钥命令直连数据库，自己建 engine。
+        "admin.py",
         "assembly/config_services.py",
         "file_store/pg.py",
         "material_ledger/pg.py",

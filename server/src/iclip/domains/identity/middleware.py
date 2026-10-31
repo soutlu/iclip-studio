@@ -75,11 +75,20 @@ class PrincipalResolver:
 
 
 class PrincipalMiddleware:
-    """纯 ASGI 中间件：对 http 与 websocket 握手统一建立 ``state.principal``。"""
+    """纯 ASGI 中间件：对 http 与 websocket 握手统一建立 ``state.principal``。
 
-    def __init__(self, app: ASGIApp, resolver: PrincipalResolver) -> None:
+    路径以 ``anonymous_prefixes`` 里任一前缀开头的请求不解析凭证、一律匿名：这类路由自己核凭证，
+    不用用户主体。"""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        resolver: PrincipalResolver,
+        anonymous_prefixes: tuple[str, ...] = (),
+    ) -> None:
         self._app = app
         self._resolver = resolver
+        self._anonymous_prefixes = anonymous_prefixes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] in {"http", "websocket"}:
@@ -87,7 +96,11 @@ class PrincipalMiddleware:
             structlog.contextvars.clear_contextvars()
             structlog.contextvars.bind_contextvars(request_id=uuid.uuid4().hex[:12])
             connection = HTTPConnection(scope)
-            principal = await self._resolver.resolve(connection.headers, connection.cookies)
+            principal = (
+                None
+                if str(scope["path"]).startswith(self._anonymous_prefixes)
+                else await self._resolver.resolve(connection.headers, connection.cookies)
+            )
             if principal is not None:
                 structlog.contextvars.bind_contextvars(principal=principal.audit_label)
             bind_principal(connection, principal)

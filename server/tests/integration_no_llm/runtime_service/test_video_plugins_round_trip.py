@@ -16,7 +16,7 @@ from typing import Any, Literal, cast
 
 import httpx
 import pytest
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from agent_runtime.settings import (
     AgentRunsSection,
     CompactionSection,

@@ -2,8 +2,8 @@
 
 - 运行时 app 接同一个测试库与同一个 engine。后端的运行时客户端经 ``ASGIWebSocketTransport`` 接它（HTTP 与
   两条 WebSocket 同一个传输层）；运行时回调后端（开跑检查、运行开始、轮次开始）经 ``httpx.ASGITransport``
-  接后端 app，地址是后端的内部接口，令牌是环境变量 ``RUNTIME_INTERNAL_TOKEN``（集成层 ``base_env`` 设好）；
-  没设令牌时运行时不配回调，后端也不挂内部接口。
+  接后端 app，地址是后端的内部接口，令牌是环境变量 ``RUNTIME_INTERNAL_TOKEN``（集成层 ``base_env`` 设好，
+  后端缺了它起不来）。
 - 插件登记表交给运行时：默认是视频插件包在没配任何可选段时登记的那三个（``standard_plugins``），绑上运行时
   服务的工作区与素材台账；要替身插件的测试给 ``plugins``。模型替身与试连替身两边共用一份。
 - 不跑 lifespan 时（``httpx.ASGITransport`` 驱动后端）运行照样跑：运行时受理消息就起运行；只有两条
@@ -19,6 +19,7 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Final
 
 import httpx
@@ -26,7 +27,7 @@ from agent_runtime.assembly.agents import AgentRuntime, ModelBuilder, build_runt
 from agent_runtime.assembly.config_services import ConfigServices
 from agent_runtime.config.model_providers.repository import CredentialProbe
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
@@ -122,24 +123,22 @@ def standard_plugins(host: PluginHost) -> PluginRegistry:
     return {plugin.get_serialization_name(): plugin for plugin in plugins}
 
 
-def _hooks() -> ResolvedHooks | None:
-    token = os.environ.get("RUNTIME_INTERNAL_TOKEN", "").strip()
-    if not token:
-        return None
+def _hooks() -> ResolvedHooks:
     base = f"{SERVER_URL}{RUNTIME_INTERNAL_PREFIX}/hooks"
     return ResolvedHooks(
-        token=token,
+        token=os.environ["RUNTIME_INTERNAL_TOKEN"].strip(),
         gate=f"{base}/gate",
         run_started=f"{base}/run-started",
         turn_started=f"{base}/turn-started",
     )
 
 
-def runtime_settings(config: RuntimeConfig, engine: AsyncEngine) -> RuntimeSettings:
-    """运行时服务的设置：同一个库，一个有管理权限的应用 ``video``，回调后端的内部接口（环境里有令牌时），
-    技能缓存与日志同后端的配置。"""
+def runtime_settings(
+    config: RuntimeConfig, engine: AsyncEngine, *, skill_cache_dir: Path | None = None
+) -> RuntimeSettings:
+    """运行时服务的设置：同一个库，一个有管理权限的应用 ``video``，回调后端的内部接口，日志同后端的配置；
+    ``skill_cache_dir`` 是技能缓存目录（给了就不碰系统临时目录）。"""
 
-    skill_cache_dir = config.agent_runs.skill_cache_dir
     return RuntimeSettings(
         database_url=engine.url.render_as_string(hide_password=False),
         credential_encryption_keys=(TEST_CREDENTIAL_KEY,),
@@ -160,15 +159,17 @@ def build_backed_app(
     build_model: ModelBuilder = build_runtime_model,
     credential_probe: CredentialProbe | None = None,
     plugins: PluginRegistry | PluginBinder = standard_plugins,
+    skill_cache_dir: Path | None = None,
     **options: Any,
 ) -> FastAPI:
     """先装运行时 app，再照 ``build_app`` 装后端（``options`` 原样交给它）接上它，最后把运行时的回调接到后端。
 
-    交回的是后端 app，它的 lifespan 换成先运行时、后后端的组合。"""
+    ``skill_cache_dir`` 交给运行时（见 ``runtime_settings``）。交回的是后端 app，它的 lifespan 换成先运行时、
+    后后端的组合。"""
 
     to_server = LateASGITransport()
     runtime = create_app(
-        runtime_settings(config, engine),
+        runtime_settings(config, engine, skill_cache_dir=skill_cache_dir),
         plugins=plugins,
         credential_probe=credential_probe,
         engine=engine,

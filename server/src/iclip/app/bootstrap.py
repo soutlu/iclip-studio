@@ -44,6 +44,7 @@ from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_refe
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.runtime_events import RuntimeEvents
 from iclip.app.runtime_internal import (
+    RUNTIME_INTERNAL_PREFIX,
     RuntimePluginServices,
     TurnNaming,
     create_runtime_internal_router,
@@ -55,7 +56,6 @@ from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
 from iclip.config import (
     QWEN_API_KEY_ENV,
-    RUNTIME_INTERNAL_TOKEN_ENV,
     ObjectStoreEnv,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
@@ -634,9 +634,7 @@ def build_app(
             conversation_writable=conversations.service.workspace_writable,
         )
 
-    turn_naming = (
-        None if settings.runtime_internal_token is None else TurnNaming(conversations.service)
-    )
+    turn_naming = TurnNaming(conversations.service)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -668,8 +666,7 @@ def build_app(
                     await runtime_events.stop()
                     live_connections.close_all(GOING_AWAY)
                     # 后台起名要经运行时服务起标题：先收掉它们，再关客户端。
-                    if turn_naming is not None:
-                        await turn_naming.aclose()
+                    await turn_naming.aclose()
         finally:
             await http_client.aclose()
             if render_client is not None:
@@ -684,7 +681,7 @@ def build_app(
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     install_error_handlers(app)
-    # 测试等轮次开始回调交出的后台起名跑完；没挂内部接口时为 None。
+    # 测试等轮次开始回调交出的后台起名跑完。
     app.state.turn_naming = turn_naming
     # 测试等事件流连上再发消息，免得漏掉开头的活动。
     app.state.runtime_events = runtime_events
@@ -740,54 +737,54 @@ def build_app(
             ),
         )
     )
-    if settings.runtime_internal_token is None or turn_naming is None:
-        _logger.info("运行时内部接口未挂上", requires=RUNTIME_INTERNAL_TOKEN_ENV)
-    else:
-        # 挂不挂的条件同视频插件包按运行时配置登记插件的条件（iclip_video.registry）。
-        image_port: GenerationsAdapter | None = None
-        boards_port: FrameBoardsAdapter | None = None
-        cuts_port: GridCutsAdapter | None = None
-        if (
-            settings.shot_tools_enabled
-            and generation is not None
-            and public_objects is not None
-            and codec is not None
-        ):
-            image_port = GenerationsAdapter(generation.service, user_principal)
-            boards_port = FrameBoardsAdapter(
-                http_client, fetch_url=fetch_url, objects=public_objects, codec=codec
-            )
-            cuts_port = GridCutsAdapter(
-                http_client,
-                fetch_url=fetch_url,
-                objects=public_objects,
-                records=CutRecordsAdapter(settled_records, user_principal),
-            )
-        app.include_router(
-            create_runtime_internal_router(
-                token=settings.runtime_internal_token,
-                user_principal=user_principal,
-                conversations=conversations.service,
-                naming=turn_naming,
-                video_generation_of=video_generation_of,
-                plugins=RuntimePluginServices(
-                    generations=image_port,
-                    boards=boards_port,
-                    cuts=cuts_port,
-                    breakdowns=(
-                        ReferenceBreakdownsAdapter(references.service, user_principal)
-                        if settings.iclip_studio is not None and references.queue is not None
-                        else None
-                    ),
-                    image_models=(
-                        generation.image_models if generation is not None else frozenset()
-                    ),
-                ),
-            )
+    # 插件服务那几组挂不挂的条件同视频插件包按运行时配置登记插件的条件（iclip_video.registry）。
+    image_port: GenerationsAdapter | None = None
+    boards_port: FrameBoardsAdapter | None = None
+    cuts_port: GridCutsAdapter | None = None
+    if (
+        settings.shot_tools_enabled
+        and generation is not None
+        and public_objects is not None
+        and codec is not None
+    ):
+        image_port = GenerationsAdapter(generation.service, user_principal)
+        boards_port = FrameBoardsAdapter(
+            http_client, fetch_url=fetch_url, objects=public_objects, codec=codec
         )
+        cuts_port = GridCutsAdapter(
+            http_client,
+            fetch_url=fetch_url,
+            objects=public_objects,
+            records=CutRecordsAdapter(settled_records, user_principal),
+        )
+    app.include_router(
+        create_runtime_internal_router(
+            token=settings.runtime_internal_token,
+            user_principal=user_principal,
+            conversations=conversations.service,
+            naming=turn_naming,
+            video_generation_of=video_generation_of,
+            plugins=RuntimePluginServices(
+                generations=image_port,
+                boards=boards_port,
+                cuts=cuts_port,
+                breakdowns=(
+                    ReferenceBreakdownsAdapter(references.service, user_principal)
+                    if settings.iclip_studio is not None and references.queue is not None
+                    else None
+                ),
+                image_models=(generation.image_models if generation is not None else frozenset()),
+            ),
+        )
+    )
 
     # Starlette 里后加的中间件在外层；CORS 要在最外层，preflight 不带凭证也得被它应答。
-    app.add_middleware(PrincipalMiddleware, resolver=identity.resolver)
+    # 内部接口自己核运行时的令牌，不解析用户凭证：不然每次回调都按 Bearer 去查一次 API key。
+    app.add_middleware(
+        PrincipalMiddleware,
+        resolver=identity.resolver,
+        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/",),
+    )
     if settings.security.cors_allow_origins:
         app.add_middleware(
             CORSMiddleware,

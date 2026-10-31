@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from agent_runtime.plugins.base import PluginRegistry
 from agent_runtime.settings import (
     AgentRunsSection,

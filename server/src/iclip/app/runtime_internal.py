@@ -1,6 +1,6 @@
 """给运行时服务的内部接口：开跑检查、运行开始与轮次开始三个回调，以及插件经 HTTP 调的几个后端服务。
 
-组合根只在配了 ``RUNTIME_INTERNAL_TOKEN`` 时挂上；路由不进 OpenAPI，路径、请求体、状态码与报错写在
+组合根总是挂上（``RUNTIME_INTERNAL_TOKEN`` 必填）；身份中间件不解析这组路由的凭证。路由不进 OpenAPI，路径、请求体、状态码与报错写在
 contract/conventions.md §21。回调的请求体是运行时 ``agent_runtime.hooks`` 的模型，插件服务的请求与
 答复在 ``iclip_video`` 各插件包的 ``wire.py``，与插件的 HTTP 客户端共用。回调与插件服务都调进程内
 那一份领域服务与端口适配器，不另写一套。"""

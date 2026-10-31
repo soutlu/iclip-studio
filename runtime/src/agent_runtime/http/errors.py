@@ -1,8 +1,9 @@
 """HTTP 错误信封：领域错误按分类映射状态码，请求校验错误压成一句话，都返回 ``{"detail": "<一句话>"}``，
 领域错误带 ``code`` 时一并放进去；文档里的 422 也照这个形状。
 
-状态码表、信封与校验文案和后端（``iclip.platform.http`` 与 ``iclip.app.errors``）逐条一致：
-后端转发运行时的答复时原样交给浏览器。
+后端（``iclip.app.errors``）也装这一套、拼校验文案也用这里的 ``validation_error_detail``：后端转发运行时的
+答复时原样交给浏览器，两边的状态码与信封只在这里定一次。本模块只依赖 FastAPI 与 ``agent_runtime.errors``，
+后端引用它不连带装上运行时服务。
 """
 
 from __future__ import annotations

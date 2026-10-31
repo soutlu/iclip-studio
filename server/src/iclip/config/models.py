@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Final, Literal
+from typing import Annotated, Any, Final, Literal
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet
@@ -57,8 +57,12 @@ RUNTIME_URL_ENV: Final = "RUNTIME_URL"
 
 RUNTIME_APP_KEY_ENV: Final = "RUNTIME_APP_KEY"
 
-DEFAULT_SKILL_CACHE_DIRNAME: Final = "iclip-skills"
-"""``agent_runs.skill_cache_dir`` 不写时，技能缓存放在系统临时目录下的这个子目录。"""
+_MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
+    "agent_runs": "agent_runs",
+    "conversations": "compaction（原 conversations.compaction）",
+    "video": "plugins.config.video",
+}
+"""后端不再认、搬到运行时配置（``configs/runtime.yaml``）的段：后端的段名 → 运行时配置里的位置。"""
 
 
 class ConfigSection(BaseModel):
@@ -90,7 +94,9 @@ class CoreEnv(EnvSettings):
 
 
 class CredentialKeysEnv(EnvSettings):
-    """模型供应商密钥里机密字段的加密钥匙：逗号分隔的 Fernet key，第一个加密，全部用来解密。"""
+    """模型供应商密钥里机密字段的加密钥匙：逗号分隔的 Fernet key，第一个加密，全部用来解密。
+
+    后端运行不读它（解密在运行时服务里），只有切换命令 ``scripts/import_agent_config.py`` 用。"""
 
     keys: RequiredEnv = Field(validation_alias=CREDENTIAL_ENCRYPTION_KEYS_ENV)
 
@@ -241,10 +247,6 @@ class SsoSection(ConfigSection):
     app_name: str
 
 
-# 方舟收到别的取值会静默改用默认档。
-ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
-
-
 class VideoEnhanceSection(ConfigSection):
     """高清版（超分）：用哪个模型、提到哪几档（从高到低，界面按这个顺序列）、帧率。"""
 
@@ -324,49 +326,14 @@ class MediaGenerationSection(ConfigSection):
     music: MusicSection | None = None
 
 
-class VideoSection(ConfigSection):
-    understanding_model: str
-    understanding_thinking: ArkReasoningEffort | None = None
-    understanding_fps: float | None = Field(default=None, ge=0.2, le=5)
-
-
 class IclipStudioSection(ConfigSection):
     breakdown_model: str
     breakdown_concurrency: int | None = Field(default=None, ge=1)
 
 
 class ShotVideoSection(ConfigSection):
-    poll_interval_seconds: float = Field(default=5.0, gt=0)
-    dev_attempts: int = Field(default=2, ge=1)
-    pro_attempts: int = Field(default=1, ge=0)
-    backoff_seconds: float = Field(default=5.0, gt=0)
-    backoff_factor: float = Field(default=3.0, ge=1)
-    job_timeout_seconds: float = Field(default=1800.0, gt=0)
-
-
-class CompactionSection(ConfigSection):
-    max_fraction: float = Field(default=0.85, gt=0, lt=1)
-    keep_messages: int = Field(default=20, ge=1)
-
-
-class ConversationsSection(ConfigSection):
-    compaction: CompactionSection = CompactionSection()
-
-
-class AgentRunsSection(ConfigSection):
-    heartbeat_seconds: int = Field(default=10, gt=0)
-    lease_seconds: int = Field(default=30, gt=0)
-    sweep_seconds: int = Field(default=15, gt=0)
-    max_attempts: int = Field(default=2, ge=1)
-    max_snapshots_per_run: int = Field(default=3, ge=1)
-    assembly_cache_size: int = Field(default=64, ge=1)
-    skill_cache_dir: Path | None = None
-
-    @model_validator(mode="after")
-    def _lease_outlasts_a_heartbeat(self) -> AgentRunsSection:
-        if self.lease_seconds <= self.heartbeat_seconds:
-            raise ValueError("lease_seconds 必须大于 heartbeat_seconds")
-        return self
+    """写了就给运行时的 ``shot_video`` 插件挂取帧拼板、切格与出图的内部接口；出图的重试策略在运行时配置的
+    ``plugins.config.shot_video``。"""
 
 
 class OpsSection(ConfigSection):
@@ -382,12 +349,31 @@ class RuntimeConfig(BaseSettings):
     security: SecuritySection
     sso: SsoSection
     media_generation: MediaGenerationSection | None = None
-    video: VideoSection | None = None
     shot_video: ShotVideoSection | None = None
     iclip_studio: IclipStudioSection | None = None
-    conversations: ConversationsSection = ConversationsSection()
-    agent_runs: AgentRunsSection = AgentRunsSection()
     ops: OpsSection = OpsSection()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_sections_moved_to_the_runtime(cls, data: Any) -> Any:
+        """搬去运行时的段还写着时点名它和新位置；不然只有一句「Extra inputs are not permitted」。"""
+
+        if not isinstance(data, Mapping):
+            return data
+        sections: Mapping[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
+        for name, moved_to in _MOVED_TO_RUNTIME.items():
+            if name in sections:
+                raise ValueError(
+                    f"{name} 段已搬到运行时服务的配置（configs/runtime.yaml 的 {moved_to}），"
+                    "从后端的配置文件里删掉它"
+                )
+        shot_video = sections.get("shot_video")
+        if isinstance(shot_video, Mapping) and shot_video:
+            raise ValueError(
+                "shot_video 段的出图重试策略已搬到运行时服务的配置（configs/runtime.yaml 的 "
+                "plugins.config.shot_video），后端这一段只留 shot_video: {}"
+            )
+        return data
 
     @classmethod
     def settings_customise_sources(
@@ -476,30 +462,11 @@ class ResolvedMediaGeneration:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedVideo:
-    understanding_url: str
-    understanding_api_key: str
-    understanding_model: str
-    understanding_thinking: ArkReasoningEffort | None
-    understanding_fps: float | None
-
-
-@dataclass(frozen=True, slots=True)
 class ResolvedIclipStudio:
     breakdown_url: str
     breakdown_api_key: str
     breakdown_model: str
     breakdown_concurrency: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedShotVideo:
-    poll_interval_seconds: float
-    dev_attempts: int
-    pro_attempts: int
-    backoff_seconds: float
-    backoff_factor: float
-    job_timeout_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,53 +486,30 @@ class ResolvedRuntimeService:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedAgentRuns:
-    heartbeat_seconds: int
-    lease_seconds: int
-    sweep_seconds: int
-    max_attempts: int
-    max_snapshots_per_run: int
-    assembly_cache_size: int
-    """装配好的 agent 在每个进程里最多缓存几份。"""
-    skill_cache_dir: Path
-    """技能版本按内容 hash 写进的本机目录；不写时放在系统临时目录下。"""
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedCompaction:
-    max_fraction: float
-    keep_messages: int
-
-
-@dataclass(frozen=True, slots=True)
 class ResolvedSettings:
     app_name: str
     database_url: str
     db_schema: str
     security: ResolvedSecurity
-    credential_encryption_keys: tuple[str, ...]
-    """模型供应商密钥的加密钥匙，第一个加密，全部用来解密。"""
     sso: ResolvedSso | None
     object_store: ObjectStoreEnv | None
     media_generation: ResolvedMediaGeneration | None
-    video: ResolvedVideo | None
-    shot_video: ResolvedShotVideo | None
+    shot_video: bool
+    """配了 ``shot_video`` 段：要给运行时挂取帧拼板、切格与出图的内部接口。"""
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
     """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
-    runtime_internal_token: str | None
-    """运行时服务调内部接口带的令牌；为 None 时内部接口不挂。"""
+    runtime_internal_token: str
+    """运行时服务调内部接口带的令牌；必填。"""
     runtime_service: ResolvedRuntimeService
     """后端经它的 HTTP 接口调运行时服务；必填。"""
-    compaction: ResolvedCompaction
-    agent_runs: ResolvedAgentRuns
     log_level: str
     log_format: Literal["console", "json"]
 
     @property
     def shot_tools_missing(self) -> tuple[str, ...]:
-        if self.shot_video is None:
+        if not self.shot_video:
             return ()
         return tuple(
             name
@@ -578,7 +522,7 @@ class ResolvedSettings:
 
     @property
     def shot_tools_enabled(self) -> bool:
-        return self.shot_video is not None and not self.shot_tools_missing
+        return self.shot_video and not self.shot_tools_missing
 
     @property
     def ffmpeg_required(self) -> bool:
@@ -675,19 +619,6 @@ def _resolve_qwen_service(section: QwenServiceSection | None) -> ResolvedQwenSer
     )
 
 
-def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
-    if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
-        return None
-    env = _from_env(VideoUnderstandingEnv)
-    return ResolvedVideo(
-        understanding_url=env.url,
-        understanding_api_key=env.api_key,
-        understanding_model=section.understanding_model,
-        understanding_thinking=section.understanding_thinking,
-        understanding_fps=section.understanding_fps,
-    )
-
-
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
     if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
         return None
@@ -697,19 +628,6 @@ def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipSt
         breakdown_api_key=env.api_key,
         breakdown_model=section.breakdown_model,
         breakdown_concurrency=section.breakdown_concurrency,
-    )
-
-
-def _resolve_shot_video(section: ShotVideoSection | None) -> ResolvedShotVideo | None:
-    if section is None:
-        return None
-    return ResolvedShotVideo(
-        poll_interval_seconds=section.poll_interval_seconds,
-        dev_attempts=section.dev_attempts,
-        pro_attempts=section.pro_attempts,
-        backoff_seconds=section.backoff_seconds,
-        backoff_factor=section.backoff_factor,
-        job_timeout_seconds=section.job_timeout_seconds,
     )
 
 
@@ -774,38 +692,19 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             cookie_secure=config.security.cookie_secure,
             cors_allow_origins=config.security.cors_allow_origins,
         ),
-        credential_encryption_keys=_from_env(CredentialKeysEnv).key_list,
         sso=sso,
         object_store=object_store,
         media_generation=media_generation,
-        video=_resolve_video(config.video),
-        shot_video=_resolve_shot_video(config.shot_video),
+        shot_video=config.shot_video is not None,
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
         whole_film_render=_resolve_whole_film_render(
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
-        runtime_internal_token=(
-            _from_env(RuntimeInternalEnv).token
-            if _switched_on(RUNTIME_INTERNAL_TOKEN_ENV)
-            else None
-        ),
+        # 缺了启动失败：开跑检查在这组内部接口上，没有它每次运行都过不了检查。
+        runtime_internal_token=_from_env(RuntimeInternalEnv).token,
         runtime_service=_resolve_runtime_service(),
-        compaction=ResolvedCompaction(
-            max_fraction=config.conversations.compaction.max_fraction,
-            keep_messages=config.conversations.compaction.keep_messages,
-        ),
-        agent_runs=ResolvedAgentRuns(
-            heartbeat_seconds=config.agent_runs.heartbeat_seconds,
-            lease_seconds=config.agent_runs.lease_seconds,
-            sweep_seconds=config.agent_runs.sweep_seconds,
-            max_attempts=config.agent_runs.max_attempts,
-            max_snapshots_per_run=config.agent_runs.max_snapshots_per_run,
-            assembly_cache_size=config.agent_runs.assembly_cache_size,
-            skill_cache_dir=config.agent_runs.skill_cache_dir
-            or Path(tempfile.gettempdir()) / DEFAULT_SKILL_CACHE_DIRNAME,
-        ),
         log_level=config.ops.log_level,
         log_format=config.ops.log_format,
     )

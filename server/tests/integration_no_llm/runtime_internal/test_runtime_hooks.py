@@ -1,4 +1,4 @@
-"""后端给运行时的内部接口：没配令牌就不挂、令牌不对 401，以及开跑检查、运行开始与轮次开始三个回调。
+"""后端给运行时的内部接口：令牌不对 401，以及开跑检查、运行开始与轮次开始三个回调。
 
 回调请求体是运行时 ``agent_runtime.hooks`` 的模型，这里按它们的 JSON 形状直接发。"""
 
@@ -24,26 +24,13 @@ from tests.helpers.agents import TEST_PROVIDER, AgentSeed
 from tests.helpers.app import TEST_MODEL_NAME, new_conversation
 from tests.helpers.auth import login_as_editor
 from tests.helpers.references import plant_user
-from tests.helpers.runtime_backed import config_services_of
+from tests.helpers.runtime_backed import RUNTIME_INTERNAL_TOKEN, config_services_of
 from tests.helpers.ws import AGENT_ID, open_conversation, sign_in, until
 
-TOKEN = "runtime-internal-test-token-0123456789"
-"""测试用的内部令牌，不少于 32 个字符。"""
+TOKEN = RUNTIME_INTERNAL_TOKEN
+"""集成层 ``base_env`` 设好的内部令牌。"""
 
 AUTHORIZED = {"Authorization": f"Bearer {TOKEN}"}
-
-
-@pytest.fixture
-def runtime_token() -> str | None:
-    return TOKEN
-
-
-@pytest.fixture
-def base_env(base_env: None, monkeypatch: pytest.MonkeyPatch, runtime_token: str | None) -> None:
-    if runtime_token is None:
-        monkeypatch.delenv("RUNTIME_INTERNAL_TOKEN", raising=False)
-    else:
-        monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", runtime_token)
 
 
 @pytest.fixture
@@ -67,16 +54,6 @@ def gate_body(owner: uuid.UUID) -> dict[str, Any]:
 
 
 IDLE = {"busy": False, "pending_interaction": "none"}
-
-
-@pytest.mark.parametrize("runtime_token", [None])
-async def test_without_the_token_no_internal_route_is_mounted(client: httpx.AsyncClient) -> None:
-    gate = await client.post(
-        "/internal/runtime/hooks/gate", json=gate_body(uuid.uuid4()), headers=AUTHORIZED
-    )
-    models = await client.get("/internal/runtime/plugins/image-models", headers=AUTHORIZED)
-
-    assert (gate.status_code, models.status_code) == (404, 404)
 
 
 @pytest.mark.parametrize(

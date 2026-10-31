@@ -64,44 +64,15 @@ media_generation:
     concurrency: 2 # 生成队列每个进程同时跑几条
     timeout_seconds: 300 # 一次生成请求等结果的上限
 
-video:
-  # VIDEO_UNDERSTANDING_URL 为空时不登记 video 插件。
-  understanding_model: doubao-seed-2-0-lite-260428 # 供应方模型名
-  understanding_thinking: medium # minimal / low / medium / high；省略时使用供应方默认值
-  # 采样帧率范围 0.2–5；提高帧率有助于识别快速剪辑点，同时增加视频 token 消耗。
-  understanding_fps: 5
-
 iclip_studio:
   # 写出这一段即启用视频拆解（video_breakdown 与参考视频的后台拆解）；须同时配置 VIDEO_UNDERSTANDING_*，并在 PATH 上有 ffmpeg。
   breakdown_model: doubao-seed-2-1-lite-260915 # 拆解视频用的供应方模型名
   # 参考视频后台拆解每个进程的并发，多进程时总并发乘以进程数；不写时按启动探测选中的编解码取：硬件 4，软件 2
   # breakdown_concurrency: 4
 
-shot_video:
-  # 写出这一段即启用取帧与出图；须同时启用媒体生成与对象存储，并在 PATH 上有 ffmpeg。
-  # 出图先使用 dev 渠道，耗尽 dev_attempts 后转 pro；成功后停止重试。
-  poll_interval_seconds: 5 # 结果轮询间隔
-  dev_attempts: 2
-  pro_attempts: 1
-  backoff_seconds: 5 # 初次重试间隔，后续乘以 backoff_factor
-  backoff_factor: 3
-  job_timeout_seconds: 1800 # 单次出图工具调用的总时限
-
-conversations:
-  compaction:
-    # 压缩阈值为 context_window × max_fraction；未配置窗口时禁用压缩。
-    max_fraction: 0.85 # 历史估算占窗口的触发比例
-    keep_messages: 20 # 摘要之后保留的原始消息条数
-
-agent_runs:
-  # lease_seconds 必须大于 heartbeat_seconds。
-  heartbeat_seconds: 10 # 运行期间的心跳间隔
-  lease_seconds: 30 # 心跳失联判定时限；超时后由清扫续跑或判失败
-  sweep_seconds: 15 # 中断清扫与队列唤醒间隔
-  max_attempts: 2 # 单条消息的最大认领次数；1 表示中断后不续跑
-  max_snapshots_per_run: 3 # 每个 run 保留的全量历史快照数
-  assembly_cache_size: 64 # 每个进程最多缓存几份装配好的 agent
-  # skill_cache_dir: /var/cache/iclip-skills # 技能版本的本机缓存目录；不写时放在系统临时目录下
+# 写出这一段即给运行时的 shot_video 插件挂取帧与出图的内部接口；须同时启用媒体生成与对象存储，并在 PATH 上有
+# ffmpeg。出图的重试策略在运行时配置的 plugins.config.shot_video。
+shot_video: {}
 
 ops:
   log_level: INFO

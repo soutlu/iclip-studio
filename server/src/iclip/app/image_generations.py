@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.http.errors import validation_error_detail
 from iclip_video.shot_video.ports import ImageJob, ImageRequest, InvalidImageRequest
 from pydantic import ValidationError
 
@@ -13,7 +14,6 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
-from iclip.platform.http import validation_error_detail
 
 
 class GenerationsAdapter:

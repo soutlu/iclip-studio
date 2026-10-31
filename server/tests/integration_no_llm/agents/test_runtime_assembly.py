@@ -338,8 +338,9 @@ async def test_a_plugin_removed_from_the_code_makes_its_versions_unavailable(
 
     def build(registry: dict[str, Any]) -> FastAPI:
         return build_backed_app(
-            make_runtime_config(skill_cache_dir=tmp_path / "skills"),
+            make_runtime_config(),
             engine=engine,
+            skill_cache_dir=tmp_path / "skills",
             build_model=model_builder(models),
             credential_probe=KeyCheckingProbe({GOOD_KEY}),
             plugins=registry,

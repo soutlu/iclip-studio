@@ -25,7 +25,8 @@ from agent_runtime.material_ledger.store import Material
 class WorkspaceFiles(Protocol):
     """对话工作区里读、写、列文件；按命名空间寻址。
 
-    ``write`` 版本对不上抛 ``Conflict``，路径、内容或容量不合规抛 ``ValidationFailed``。"""
+    ``read`` 路径不合规抛 ``ValidationFailed``；``write`` 版本对不上抛 ``Conflict``，路径、内容或容量不合规抛
+    ``ValidationFailed``。"""
 
     async def read(self, namespace: str, path: str) -> StoredFile | None: ...
 

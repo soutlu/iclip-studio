@@ -5,14 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, Response
 
 from iclip.app.errors import install_error_handlers
 from iclip.config import (
-    AgentRunsSection,
     AppSection,
     DbSection,
     OpsSection,
@@ -30,18 +28,14 @@ TEST_CREDENTIAL_KEY = base64.urlsafe_b64encode(b"test-credential-key-0123456789a
 """测试用的 ``CREDENTIAL_ENCRYPTION_KEYS``：一个合法的 Fernet key（32 字节 urlsafe base64）。"""
 
 
-def make_runtime_config(
-    *, cors_allow_origins: tuple[str, ...] = (), skill_cache_dir: Path | None = None
-) -> RuntimeConfig:
-    """测试运行配置；地址与凭证由 base_env 提供，``cors_allow_origins`` 是跨域白名单，
-    ``skill_cache_dir`` 是技能缓存目录（给了就不碰系统临时目录）。"""
+def make_runtime_config(*, cors_allow_origins: tuple[str, ...] = ()) -> RuntimeConfig:
+    """测试运行配置；地址与凭证由 base_env 提供，``cors_allow_origins`` 是跨域白名单。"""
 
     return RuntimeConfig(
         app=AppSection(name="iclip-test"),
         db=DbSection(schema="iclip"),
         security=SecuritySection(cors_allow_origins=cors_allow_origins),
         sso=SsoSection(app_name="iclip"),
-        agent_runs=AgentRunsSection(skill_cache_dir=skill_cache_dir),
         ops=OpsSection(log_level="WARNING"),
     )
 
