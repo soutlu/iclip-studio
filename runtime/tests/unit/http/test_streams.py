@@ -1,40 +1,123 @@
-"""应用事件流的连接：认不出应用在握手前以 1008 关闭；送达这个应用的事件；出站积压超过上限以 1013 关闭。
-只挂事件流的路由与一个查表的集线器，不碰库。"""
+"""两条 WebSocket 的连接层：认不出应用在握手前以 1008 关闭；事件流送达这个应用的会话活动、出站积压超过上限以
+1013 关闭；对话内容流上订着一段会话的连接收它的文件变化，按订阅登记与注销。
+
+只挂两条路由、一个查表的集线器与替身的 transcript 服务和会话服务，不碰库。真实的订阅、档位与写文件见后端
+``tests/integration_no_llm/runtime_service/test_app_streams.py``。"""
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable, Generator
+import uuid
+from collections.abc import AsyncGenerator, Callable, Collection, Generator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from agent_runtime.errors import NotFound
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.subscription import SubscribeFrames
 from agent_runtime.http.auth import build_app_auth
-from agent_runtime.http.streams import MAX_OUTBOUND, create_events_router
-from agent_runtime.live.frames import SessionActivity
-from agent_runtime.live.hub import AppEventHub
+from agent_runtime.http.streams import (
+    MAX_OUTBOUND,
+    create_events_router,
+    create_transcript_ws_router,
+)
+from agent_runtime.live.frames import (
+    FsChanged,
+    FsChangeEntry,
+    FsChangesPayload,
+    SessionActivity,
+)
+from agent_runtime.live.hub import AppEventHub, FileChangeSink, SessionFileChanges
+from agent_runtime.service.sessions import SessionService
 from agent_runtime.settings import ResolvedApp
-from agent_runtime.transcript.wire import SessionActivityOut
+from agent_runtime.transcript.ops import MAIN_AGENT_ID, TranscriptSnapshot
+from agent_runtime.transcript.wire import ResetPayload, SessionActivityOut
 
 BFF_KEY = "bff-app-key-0123456789-0123456789-ab"
 TOOL_KEY = "tool-app-key-0123456789-0123456789-a"
 BFF_SESSION = "0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d"
+OTHER_BFF_SESSION = "9d2c1b0a-5e4f-4a3b-8c7d-6e5f4a3b2c1d"
 TOOL_SESSION = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 OWNER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
+CHILD = "run-child"
+"""替身 transcript 服务认作属于每段会话的子代理流。"""
+AT = "2026-10-30T08:00:00+00:00"
+
+APPS = {BFF_SESSION: "bff", OTHER_BFF_SESSION: "bff", TOOL_SESSION: "tool"}
 
 
 async def app_of(session_id: str) -> str | None:
-    return {BFF_SESSION: "bff", TOOL_SESSION: "tool"}.get(session_id)
+    return APPS.get(session_id)
 
 
 def activity(session_id: str, *, busy: bool) -> SessionActivity:
     return SessionActivity(
         session_id=session_id,
         owner_user_id=OWNER,
-        activity=SessionActivityOut(busy=busy, pending_interaction="none"),
+        timestamp=AT,
+        payload=SessionActivityOut(busy=busy, pending_interaction="none"),
     )
+
+
+def wrote(session_id: str, path: str = "notes.md") -> FsChanged:
+    return FsChanged(
+        session_id=session_id,
+        timestamp=AT,
+        payload=FsChangesPayload(changes=(FsChangeEntry(path=path, change="modified"),)),
+    )
+
+
+class FakeTranscripts:
+    """只认主流与 ``CHILD``；订阅一律回一帧 reset，不记监听。"""
+
+    async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
+        if agent_id not in (MAIN_AGENT_ID, CHILD):
+            raise NotFound(f"agent not in session: {agent_id}")
+
+    def subscribe(
+        self, conversation_id: str, *, agent_id: str, since: int | None, epoch: str | None
+    ) -> SubscribeFrames:
+        reset = ResetPayload(agent_id=agent_id, snapshot=TranscriptSnapshot(), seq=0)
+        return SubscribeFrames(stream_epoch="e1", frames=(reset,))
+
+    def listen(self, conversation_id: str, listener: object, *, agent_id: str) -> None:
+        pass
+
+    def unlisten(self, conversation_id: str, listener: object, *, agent_id: str) -> None:
+        pass
+
+    def pin(self, conversation_id: str) -> None:
+        pass
+
+    def unpin(self, conversation_id: str) -> None:
+        pass
+
+
+class FakeSessions:
+    async def owned(
+        self, session_ids: Collection[uuid.UUID], *, app_id: str
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(sid for sid in session_ids if APPS.get(str(sid)) == app_id)
+
+
+class RecordingFileChanges(SessionFileChanges):
+    """照常分发，另记下每次登记与注销。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.log: list[tuple[str, str]] = []
+
+    def attach(self, session_id: str, sink: FileChangeSink) -> None:
+        self.log.append(("attach", session_id))
+        super().attach(session_id, sink)
+
+    def detach(self, session_id: str, sink: FileChangeSink) -> None:
+        self.log.append(("detach", session_id))
+        super().detach(session_id, sink)
 
 
 @pytest.fixture
@@ -43,7 +126,12 @@ def hub() -> AppEventHub:
 
 
 @pytest.fixture
-def client(hub: AppEventHub) -> Generator[TestClient]:
+def file_changes() -> RecordingFileChanges:
+    return RecordingFileChanges()
+
+
+@pytest.fixture
+def client(hub: AppEventHub, file_changes: RecordingFileChanges) -> Generator[TestClient]:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await hub.start()
@@ -60,6 +148,14 @@ def client(hub: AppEventHub) -> Generator[TestClient]:
         )
     )
     app.include_router(create_events_router(auth.identify, hub))
+    app.include_router(
+        create_transcript_ws_router(
+            auth.identify,
+            cast(TranscriptService, FakeTranscripts()),
+            cast(SessionService, FakeSessions()),
+            file_changes,
+        )
+    )
     with TestClient(app) as tc:
         yield tc
 
@@ -69,24 +165,77 @@ def bearer(key: str) -> dict[str, str]:
 
 
 def in_app_loop(client: TestClient, action: Callable[[], None]) -> None:
-    """在服务的事件循环里同步跑 ``action``：集线器只在那个循环里收事件。"""
+    """在服务的事件循环里同步跑 ``action``：连接的出站队列只在那个循环里收帧。"""
 
     portal = client.portal
     assert portal is not None, "TestClient 要在 with 里用"
     portal.call(action)
 
 
+def subscribe(
+    ws: Any, session_id: str, transcript: dict[str, str], *, frame_id: str = "s1"
+) -> dict[str, Any]:
+    """发一帧 subscribe_v2，等到它的回执交回（其间的 reset 跳过）。"""
+
+    ws.send_json(
+        {
+            "type": "subscribe_v2",
+            "id": frame_id,
+            "payload": {"session_id": session_id, "transcript": transcript},
+        }
+    )
+    return until_ack(ws, frame_id)
+
+
+def unsubscribe(
+    ws: Any, session_id: str, agent_ids: tuple[str, ...] = (), *, frame_id: str = "u1"
+) -> None:
+    ws.send_json(
+        {
+            "type": "unsubscribe_v2",
+            "id": frame_id,
+            "payload": {"session_id": session_id, "agent_ids": list(agent_ids)},
+        }
+    )
+    until_ack(ws, frame_id)
+
+
+def until_ack(ws: Any, frame_id: str) -> dict[str, Any]:
+    for _ in range(20):
+        frame: dict[str, Any] = ws.receive_json()
+        if frame["type"] == "ack" and frame["id"] == frame_id:
+            return frame
+    raise AssertionError(f"没等到回执 {frame_id}")
+
+
+def next_change(ws: Any) -> dict[str, Any]:
+    """下一帧文件变化，其间的 reset / 回执跳过。"""
+
+    for _ in range(20):
+        frame: dict[str, Any] = ws.receive_json()
+        if frame["type"] == "event.fs.changed":
+            return frame
+    raise AssertionError("没等到文件变化")
+
+
+# --- 握手 -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/v1/events", "/v1/ws"])
 @pytest.mark.parametrize("headers", [{}, bearer("not-a-known-key"), {"Authorization": BFF_KEY}])
 def test_an_unknown_app_is_refused_before_the_handshake(
-    client: TestClient, headers: dict[str, str]
+    client: TestClient, path: str, headers: dict[str, str]
 ) -> None:
     with (
         pytest.raises(WebSocketDisconnect) as refused,
-        client.websocket_connect("/v1/events", headers=headers),
+        client.websocket_connect(path, headers=headers),
     ):
         pass
 
     assert refused.value.code == 1008
+
+
+# --- 应用事件流 -----------------------------------------------------------------
 
 
 def test_a_connection_receives_only_its_apps_events(client: TestClient, hub: AppEventHub) -> None:
@@ -101,10 +250,11 @@ def test_a_connection_receives_only_its_apps_events(client: TestClient, hub: App
         frame = ws.receive_json()
 
     assert frame == {
-        "type": "session.activity",
+        "type": "event.session.work_changed",
         "session_id": BFF_SESSION,
         "owner_user_id": OWNER,
-        "activity": {"busy": True, "pending_interaction": "none"},
+        "timestamp": AT,
+        "payload": {"busy": True, "pending_interaction": "none"},
     }
 
 
@@ -123,3 +273,84 @@ def test_overflowing_the_outbound_queue_closes_the_connection(
             ws.receive_json()
 
     assert closed.value.code == 1013
+
+
+# --- 对话内容流上的文件变化 -------------------------------------------------------
+
+
+def test_a_subscribed_session_gets_its_file_changes_even_at_the_off_grade(
+    client: TestClient, file_changes: RecordingFileChanges
+) -> None:
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "off"})
+
+        def publish() -> None:
+            # 没订的那段先发：要是也转了过来，下面收到的第一帧就是它。
+            file_changes.publish(wrote(OTHER_BFF_SESSION, "elsewhere.md"))
+            file_changes.publish(wrote(BFF_SESSION))
+
+        in_app_loop(client, publish)
+        changed = next_change(ws)
+
+    assert changed == {
+        "type": "event.fs.changed",
+        "session_id": BFF_SESSION,
+        "timestamp": AT,
+        "payload": {"changes": [{"path": "notes.md", "change": "modified"}]},
+    }
+
+
+def test_a_session_of_another_app_is_never_registered(
+    client: TestClient, file_changes: RecordingFileChanges
+) -> None:
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        refused = subscribe(ws, TOOL_SESSION, {MAIN_AGENT_ID: "delta"})
+
+    assert refused["payload"] == {"accepted": [], "not_found": [TOOL_SESSION]}
+    assert file_changes.log == []
+
+
+def test_several_agents_register_once_and_the_last_one_out_unregisters(
+    client: TestClient, file_changes: RecordingFileChanges
+) -> None:
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta", CHILD: "turn"})
+        # 同一帧再发是更新档位，不再登记。
+        subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "turn", CHILD: "off"}, frame_id="s2")
+        unsubscribe(ws, BFF_SESSION, (CHILD,))
+        assert file_changes.log == [("attach", BFF_SESSION)]
+
+        # 还有主流订着，照样收得到。
+        in_app_loop(client, lambda: file_changes.publish(wrote(BFF_SESSION, "still.md")))
+        still = next_change(ws)
+
+        unsubscribe(ws, BFF_SESSION, (MAIN_AGENT_ID,), frame_id="u2")
+        assert file_changes.log == [("attach", BFF_SESSION), ("detach", BFF_SESSION)]
+
+        # 撤空了就收不到：另订一段会话当哨兵，先到的必须是哨兵那一帧。
+        subscribe(ws, OTHER_BFF_SESSION, {MAIN_AGENT_ID: "off"}, frame_id="s3")
+
+        def publish() -> None:
+            file_changes.publish(wrote(BFF_SESSION, "gone.md"))
+            file_changes.publish(wrote(OTHER_BFF_SESSION, "sentinel.md"))
+
+        in_app_loop(client, publish)
+        after = next_change(ws)
+
+    assert still["payload"]["changes"][0]["path"] == "still.md"
+    assert (after["session_id"], after["payload"]["changes"][0]["path"]) == (
+        OTHER_BFF_SESSION,
+        "sentinel.md",
+    )
+
+
+def test_disconnecting_unregisters_every_subscribed_session(
+    client: TestClient, file_changes: RecordingFileChanges
+) -> None:
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"})
+        subscribe(ws, OTHER_BFF_SESSION, {MAIN_AGENT_ID: "off"}, frame_id="s2")
+
+    attached = {session for action, session in file_changes.log if action == "attach"}
+    detached = {session for action, session in file_changes.log if action == "detach"}
+    assert attached == detached == {BFF_SESSION, OTHER_BFF_SESSION}

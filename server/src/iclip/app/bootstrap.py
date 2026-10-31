@@ -398,7 +398,7 @@ def build_app(
         PgInspirationVideos(active_engine),
         PgStyleDirectory(catalog_engine) if catalog_engine is not None else NoStyleDirectory(),
     )
-    # 工作区文件与素材台账在运行时服务里；写文件后的变更帧由运行时的事件流送来，经 runtime_events 转出。
+    # 工作区文件与素材台账在运行时服务里；写文件后的变更帧由运行时在订着这段对话的对话内容流上送来，浏览器连接原样转出。
     workspace_files = RuntimeFiles(runtime_client)
     material_ledger = RuntimeMaterials(runtime_client)
     live_connections = LiveConnections()

@@ -210,7 +210,12 @@ describe('MainTranscriptPool', () => {
 
     const stream = fake.stream('c1')
     fake.broadcast({
-      payload: { agent_id: 'main', ops: append(999, '错位'), seq: stream.seq + 1 },
+      payload: {
+        agent_id: 'main',
+        ops: append(999, '错位'),
+        seq: stream.seq + 1,
+        type: 'transcript.ops',
+      },
       seq: 0,
       session_id: 'c1',
       stream_epoch: stream.epoch,
@@ -246,6 +251,7 @@ describe('MainTranscriptPool', () => {
           tasks: [],
           todos: [],
         },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',
@@ -264,6 +270,7 @@ describe('MainTranscriptPool', () => {
           },
         ],
         seq: 41,
+        type: 'transcript.ops',
       },
       seq: 0,
       session_id: 'c1',
@@ -299,6 +306,7 @@ describe('MainTranscriptPool', () => {
           tasks: [],
           todos: [],
         },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',
@@ -317,6 +325,7 @@ describe('MainTranscriptPool', () => {
           },
         ],
         seq: 41,
+        type: 'transcript.ops',
       },
       seq: 0,
       session_id: 'c1',
@@ -374,6 +383,7 @@ describe('MainTranscriptPool', () => {
         has_more_older: true,
         seq: stream.seq,
         snapshot: { interactions: [], items: [], meta: {}, prompts: [], tasks: [], todos: [] },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',

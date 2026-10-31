@@ -14,7 +14,7 @@ from agent_runtime.harness.transcript.store import OpBatch, TranscriptStore
 from agent_runtime.harness.transcript.subscription import subscribe_frames
 from agent_runtime.transcript.display import ToolDisplayRegistry
 from agent_runtime.transcript.ops import MAIN_AGENT_ID
-from agent_runtime.transcript.wire import TranscriptPage
+from agent_runtime.transcript.wire import OpsPayload, TranscriptPage
 from pydantic import BaseModel
 from pydantic_ai_harness.step_persistence import (
     InMemoryStepStore,
@@ -235,11 +235,9 @@ def ws_frames(
             {
                 "type": "transcript.ops",
                 "stream_epoch": batch.epoch,
-                "payload": {
-                    "agent_id": agent_id,
-                    "seq": batch.seq,
-                    "ops": [op.model_dump(by_alias=True, exclude_none=True) for op in batch.ops],
-                },
+                "payload": OpsPayload(agent_id=agent_id, ops=batch.ops, seq=batch.seq).model_dump(
+                    by_alias=True, exclude_none=True
+                ),
             }
         )
     return frames

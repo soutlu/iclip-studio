@@ -127,7 +127,8 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     })
   }, [connection, conversationId, queryClient])
 
-  // 订整个工作区：任何文件变了，列表与那个文件的查询一起失效。分镜标签在 video_shot.json 落地那一刻出现。
+  // 盯整个工作区：任何文件变了，列表与那个文件的查询一起失效。分镜标签在 video_shot.json 落地那一刻出现。
+  // 文件帧跟着对话订阅来，上面的 useTranscript 订着这段对话。
   useEffect(() => {
     if (connection === null) return undefined
     return connection.watchFs(

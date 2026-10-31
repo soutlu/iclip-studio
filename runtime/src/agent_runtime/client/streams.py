@@ -35,16 +35,16 @@ from agent_runtime.live.frames import (
 )
 from agent_runtime.transcript.wire import Envelope, Subscribe, Unsubscribe
 
-TranscriptFrame = TranscriptResetFrame | TranscriptOpsFrame | Ack
+TranscriptFrame = TranscriptResetFrame | TranscriptOpsFrame | FsChanged | Ack
 """对话内容流上交给调用方的帧（心跳已经回掉了）。"""
 
-AppEventFrame = SessionActivity | FsChanged
-"""应用事件流上交给调用方的事件（心跳已经回掉了）。"""
+AppEventFrame = SessionActivity
+"""应用事件流上交给调用方的事件，只有会话活动（心跳已经回掉了）。"""
 
-_TRANSCRIPT_FRAME = TypeAdapter[TranscriptResetFrame | TranscriptOpsFrame | Ack | Ping](
+_TRANSCRIPT_FRAME = TypeAdapter[TranscriptResetFrame | TranscriptOpsFrame | FsChanged | Ack | Ping](
     TranscriptServerFrame
 )
-_EVENT_FRAME = TypeAdapter[SessionActivity | FsChanged | Ping](EventServerFrame)
+_EVENT_FRAME = TypeAdapter[SessionActivity | Ping](EventServerFrame)
 
 _NETWORK_CLOSE = 1006
 """没有收到关闭帧就断了（RFC 6455 的 abnormal closure）。"""
@@ -86,7 +86,7 @@ class _Socket:
 
 
 class TranscriptChannel:
-    """对话内容流的一条连接：每段会话发一帧 ``subscribe_v2``，收回执与 reset / ops。
+    """对话内容流的一条连接：每段会话发一帧 ``subscribe_v2``，收回执、reset / ops 与订着的会话的文件变化。
 
     帧按 ``session_id`` 分流由调用方做；一条连接只该有一个任务在 ``receive``，订阅可以从别的任务发。
     """
@@ -101,13 +101,13 @@ class TranscriptChannel:
         await self._socket.send(frame)
 
     async def receive(self) -> TranscriptFrame:
-        """等下一帧回执、reset 或 ops；期间的心跳自动回掉。"""
+        """等下一帧回执、reset、ops 或文件变化；期间的心跳自动回掉。"""
 
         return await self._socket.receive(_TRANSCRIPT_FRAME)
 
 
 class EventStream:
-    """应用事件流：``async for`` 依次交出这个应用所有会话的事件，期间的心跳自动回掉。"""
+    """应用事件流：``async for`` 依次交出这个应用所有会话的活动，期间的心跳自动回掉。"""
 
     def __init__(self, ws: AsyncWebSocketSession) -> None:
         self._socket = _Socket(ws)

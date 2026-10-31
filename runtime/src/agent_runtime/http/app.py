@@ -49,8 +49,14 @@ from agent_runtime.http.stats import create_stats_router
 from agent_runtime.http.streams import create_events_router, create_transcript_ws_router
 from agent_runtime.http.transcript import create_transcript_router
 from agent_runtime.http.workspace import create_workspace_router
-from agent_runtime.live.frames import FsChanged, FsChangeEntry, SessionActivity
-from agent_runtime.live.hub import AppEventHub
+from agent_runtime.live.frames import (
+    FsChanged,
+    FsChangeEntry,
+    FsChangesPayload,
+    SessionActivity,
+    timestamp_now,
+)
+from agent_runtime.live.hub import AppEventHub, SessionFileChanges
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
@@ -77,7 +83,7 @@ def create_app(
 
     ``plugins`` 是交给本服务的插件登记表：agent 装配按它造插件，管理接口校验 agent 配置（插件名、要求
     同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区或素材台账的插件给
-    ``PluginBinder``，用本服务的工作区存储与素材台账绑定，写入才会发到应用事件流。``credential_probe``
+    ``PluginBinder``，用本服务的工作区存储与素材台账绑定，写入才会发给订着这段会话的对话内容流连接。``credential_probe``
     不给就用真实的试连；``engine`` 不给就按 ``settings.database_url`` 自己建，给了由调用方负责关；
     ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子。
     """
@@ -92,28 +98,31 @@ def create_app(
         else create_async_engine(settings.database_url, pool_pre_ping=True)
     )
 
-    # 应用事件流：会话活动与工作区文件变更在写入提交后同步交给集线器，按会话归属的应用分发。
+    # 会话活动在写入提交后同步交给应用事件流的集线器，按会话归属的应用分发；工作区文件变化同步交给按会话
+    # 登记的对话内容流连接，跟着订阅走。
     session_store = PgSessionStore(active_engine)
     session_apps = SessionApps(session_store)
     event_hub = AppEventHub(session_apps.app_of)
+    file_changes = SessionFileChanges()
 
     def on_activity(session_id: str, owner: uuid.UUID, state: ActivityState) -> None:
         event_hub.publish(
             SessionActivity(
                 session_id=session_id,
                 owner_user_id=str(owner),
-                activity=_activity_out(state),
+                timestamp=timestamp_now(),
+                payload=_activity_out(state),
             )
         )
 
     def on_file_change(
-        owner: uuid.UUID, session_id: uuid.UUID, path: str, change: FileChange
+        _owner: uuid.UUID, session_id: uuid.UUID, path: str, change: FileChange
     ) -> None:
-        event_hub.publish(
+        file_changes.publish(
             FsChanged(
                 session_id=str(session_id),
-                owner_user_id=str(owner),
-                entries=(FsChangeEntry(path=path, change=change),),
+                timestamp=timestamp_now(),
+                payload=FsChangesPayload(changes=(FsChangeEntry(path=path, change=change),)),
             )
         )
 
@@ -282,7 +291,9 @@ def create_app(
     app.include_router(v1)
     # WebSocket 不在 v1 的路由组里：组上的 Bearer 依赖只在 HTTP 请求上跑，两条连接自己认应用。
     app.include_router(create_events_router(auth.identify, event_hub))
-    app.include_router(create_transcript_ws_router(auth.identify, transcripts, sessions))
+    app.include_router(
+        create_transcript_ws_router(auth.identify, transcripts, sessions, file_changes)
+    )
     return app
 
 

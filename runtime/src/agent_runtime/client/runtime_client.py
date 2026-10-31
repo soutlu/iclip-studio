@@ -470,7 +470,7 @@ class RuntimeClient:
 
     @asynccontextmanager
     async def connect_events(self) -> AsyncGenerator[EventStream]:
-        """连上应用事件流 ``/v1/events``，``async for`` 收事件。"""
+        """连上应用事件流 ``/v1/events``，``async for`` 收会话活动。"""
 
         async with self._connect("/v1/events") as ws:
             yield EventStream(ws)

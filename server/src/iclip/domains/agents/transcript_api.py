@@ -1,8 +1,8 @@
 """Transcript REST 端点与多对话 WebSocket：逐对话校验权限，transcript 本身经运行时服务的客户端读写与订阅。
 
 REST 端点判完谁看得见、谁能写，再转给运行时服务的会话接口，会话的属主放进 ``X-End-User``。WebSocket 是一条
-转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时的 reset / ops 盖上
-本进程的会话事件水位再发给浏览器；文件订阅与全局帧都在本进程里。
+转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时的回执与文件变化原样
+发给浏览器，reset / ops 盖上本进程的会话事件水位再发；全局帧在本进程里。
 
 WebSocket 握手不受 CORS 约束且会携带 cookie，必须独立校验 Origin，防止跨站劫持。"""
 
@@ -19,8 +19,17 @@ import structlog
 from agent_runtime.app_wire import SessionPromptIn
 from agent_runtime.client import RuntimeClient, RuntimeUnavailable, TranscriptChannel
 from agent_runtime.errors import DomainError
-from agent_runtime.live.frames import Ack as RuntimeAck
-from agent_runtime.live.frames import TranscriptOpsFrame, TranscriptResetFrame
+from agent_runtime.live.frames import (
+    Ack,
+    FsChanged,
+    Ping,
+    PingPayload,
+    SessionActivity,
+    SubscribeAckPayload,
+    TranscriptOpsFrame,
+    TranscriptResetFrame,
+    timestamp_now,
+)
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
 from agent_runtime.transcript.wire import (
     ApprovalRequest,
@@ -50,29 +59,17 @@ from iclip.domains.identity.public import (
     websocket_principal,
 )
 from iclip.platform.live.frames import (
-    Ack,
     ClientFrame,
-    FsChanged,
-    FsChangeEntry,
-    FsChangePayload,
     GenerationChanged,
     GenerationChangedPayload,
-    Ping,
-    PingPayload,
     ServerHello,
     ServerHelloPayload,
     SessionCreated,
     SessionDeleted,
-    SessionDeletedPayload,
     SessionMetaPayload,
     SessionMetaUpdated,
     SessionUpdated,
     SessionWorkChanged,
-    SessionWorkPayload,
-    SubscribeAckPayload,
-    WatchFsAckPayload,
-    WatchFsAdd,
-    WatchFsRemove,
 )
 from iclip.platform.live.session_events import SessionEventClock
 
@@ -229,34 +226,26 @@ class LiveConnections:
             SessionMetaUpdated(
                 seq=self.clock.tick(conversation_id),
                 epoch=self.clock.epoch,
+                session_id=str(conversation_id),
                 owner_user_id=str(owner),
-                payload=SessionMetaPayload(session_id=str(conversation_id), title=title),
+                timestamp=timestamp_now(),
+                payload=SessionMetaPayload(title=title),
             ),
         )
 
-    def announce_activity(
-        self,
-        owner: uuid.UUID,
-        conversation_id: uuid.UUID,
-        *,
-        busy: bool,
-        pending_interaction: Literal["none", "approval", "question"],
-        last_turn_reason: Literal["completed", "failed", "aborted"] | None,
-    ) -> None:
-        """向属主与治理者的连接广播活动状态；使用基础字段避免依赖引擎类型。"""
+    def announce_activity(self, frame: SessionActivity) -> None:
+        """把运行时的活动帧原样发给属主与治理者的连接，只加上这段对话的新事件号；``timestamp`` 用运行时的。"""
 
+        owner = uuid.UUID(frame.owner_user_id)
         self._announce(
             owner,
             SessionWorkChanged(
-                seq=self.clock.tick(conversation_id),
+                seq=self.clock.tick(uuid.UUID(frame.session_id)),
                 epoch=self.clock.epoch,
-                session_id=str(conversation_id),
-                owner_user_id=str(owner),
-                payload=SessionWorkPayload(
-                    busy=busy,
-                    pending_interaction=pending_interaction,
-                    last_turn_reason=last_turn_reason,
-                ),
+                session_id=frame.session_id,
+                owner_user_id=frame.owner_user_id,
+                timestamp=frame.timestamp,
+                payload=frame.payload,
             ),
         )
 
@@ -281,6 +270,7 @@ class LiveConnections:
                 epoch=self.clock.epoch,
                 session_id=None if conversation_id is None else str(conversation_id),
                 owner_user_id=str(owner),
+                timestamp=timestamp_now(),
                 payload=GenerationChangedPayload(
                     id=str(job_id),
                     kind=kind,
@@ -291,23 +281,6 @@ class LiveConnections:
                 ),
             ),
         )
-
-    def announce_fs_changed(
-        self,
-        owner: uuid.UUID,
-        conversation_id: uuid.UUID,
-        *,
-        path: str,
-        change: Literal["created", "modified", "deleted"] = "modified",
-    ) -> None:
-        """通知属主与治理者的连接，仅发送给通过 watch_fs_add 订阅对应路径的连接。
-
-        这是这段对话的一帧会话事件，不论有没有连接订着都发号，各连接拿到同一个序号。"""
-
-        seq = self.clock.tick(conversation_id)
-        for connection in tuple(self._connections):
-            if connection.receives(owner):
-                connection.offer_fs_change(str(conversation_id), path, change, seq=seq)
 
     def announce_session_row(
         self,
@@ -332,6 +305,7 @@ class LiveConnections:
                 epoch=self.clock.epoch,
                 session_id=str(conversation_id),
                 owner_user_id=str(owner),
+                timestamp=timestamp_now(),
                 payload=dict(row),
             ),
         )
@@ -346,7 +320,7 @@ class LiveConnections:
                 epoch=self.clock.epoch,
                 session_id=str(conversation_id),
                 owner_user_id=str(owner),
-                payload=SessionDeletedPayload(session_id=str(conversation_id)),
+                timestamp=timestamp_now(),
             ),
         )
 
@@ -609,13 +583,13 @@ class _Connection:
 
     transcript 订阅转给这条连接独占的一条运行时对话内容流：``subscribe_v2`` 先在这里核可见性，看不见的
     就地回 ``not_found``、不转过去，看得见的原样（换成规范写法的 id）转过去，回执由运行时给，一帧一个；
-    ``unsubscribe_v2`` 原样转过去。运行时发来的 reset / ops 盖上这段对话当前的会话事件水位（不发新号）
-    再发出。文件订阅只在这里记。运行时那一头断了就以 1001 关掉这条连接。
+    ``unsubscribe_v2`` 原样转过去。运行时发来的回执与订着的对话的文件变化原样发出，reset / ops 盖上这段
+    对话当前的会话事件水位（不发新号）再发出。运行时那一头断了就以 1001 关掉这条连接。
 
     出站经有界队列，回调与转发只往里放、不等发送；缓冲溢出时断开以便重连补批。
 
-    帧里的对话 id 两种写法都收，订阅、文件监听与回发的 ``session_id`` 一律用规范写法：客户端按
-    ``session_id`` 分流，全局帧与 REST 也只给这一种拼写，多一种会让同一段对话在客户端裂成两份。"""
+    帧里的对话 id 两种写法都收，订阅与回发的 ``session_id`` 一律用规范写法：客户端按 ``session_id``
+    分流，全局帧与 REST 也只给这一种拼写，多一种会让同一段对话在客户端裂成两份。"""
 
     def __init__(
         self,
@@ -632,8 +606,6 @@ class _Connection:
         self._principal = principal
         self._outbound: asyncio.Queue[Any] = asyncio.Queue(maxsize=MAX_EVENT_BUFFER)
         self._overflowed = False
-        # 文件订阅按对话记录路径与递归标记，独立于 Transcript 订阅。
-        self._watches: dict[str, dict[str, bool]] = {}
         self._last_inbound = datetime.now(UTC)
 
     async def serve(self) -> None:
@@ -650,11 +622,10 @@ class _Connection:
     async def _serve_with(self, upstream: TranscriptChannel) -> None:
         await self._send(
             ServerHello(
-                timestamp=datetime.now(UTC).isoformat(),
+                timestamp=timestamp_now(),
                 payload=ServerHelloPayload(
                     ws_connection_id=uuid.uuid4().hex,
                     heartbeat_ms=int(HEARTBEAT_SECONDS * 1000),
-                    max_event_buffer_size=MAX_EVENT_BUFFER,
                 ),
             )
         )
@@ -667,7 +638,7 @@ class _Connection:
         try:
             await self._read(upstream)
         except (WebSocketDisconnect, ConnectionError):
-            _logger.debug("订阅连接断开", watching=len(self._watches))
+            _logger.debug("订阅连接断开")
         finally:
             # 这一头没有要放开的实时状态：订阅在运行时那边，随下面关掉对话内容流一起撤掉。先同步取消
             # 各任务再 await，连接任务被取消时 finally 里的 await 会被再次取消。
@@ -700,17 +671,6 @@ class _Connection:
                 update={"session_id": _canonical_session_id(raw) or raw}
             )
             await upstream.unsubscribe(frame.model_copy(update={"payload": payload}))
-        elif isinstance(frame, WatchFsAdd):
-            await self._watch_fs(frame)
-        elif isinstance(frame, WatchFsRemove):
-            raw = frame.payload.session_id
-            conversation_id = _canonical_session_id(raw) or raw
-            watched = self._watches.get(conversation_id, {})
-            for path in frame.payload.paths:
-                watched.pop(path, None)
-            if not watched:
-                self._watches.pop(conversation_id, None)
-            await self._outbound.put(Ack(id=frame.id, payload=self._watch_ack(conversation_id)))
 
     async def _visible(self, session_id: str) -> str | None:
         """帧里的对话 id 规范化并核可见性，拿不到就是 ``None``。
@@ -743,77 +703,22 @@ class _Connection:
         await upstream.subscribe(frame.model_copy(update={"payload": payload}))
 
     async def _relay(self, upstream: TranscriptChannel) -> None:
-        """把运行时发来的回执与 reset / ops 转给浏览器；运行时那一头断了就以 1001 关掉这条连接。"""
+        """把运行时发来的帧转给浏览器：回执与文件变化原样，reset / ops 盖上会话事件水位；运行时那一头断了
+        就以 1001 关掉这条连接。文件变化只在这条上游订着的对话上才有，订阅前已经核过可见性。"""
 
         try:
             while True:
                 frame = await upstream.receive()
-                if isinstance(frame, RuntimeAck):
-                    self.offer(_ack_of(frame))
+                if isinstance(frame, Ack | FsChanged):
+                    self.offer(frame)
                 else:
                     self.offer(self._wrap(frame))
         except RuntimeUnavailable as exc:
             _logger.warning("运行时的对话内容流断了，关掉这条订阅连接", reason=str(exc))
             self.drop(GOING_AWAY)
 
-    async def _watch_fs(self, frame: WatchFsAdd) -> None:
-        conversation_id = await self._visible(frame.payload.session_id)
-        if conversation_id is None:
-            # 看不见的对话保留连接上的其他订阅。
-            await self._outbound.put(Ack(id=frame.id, code=40401, msg="会话不存在"))
-            return
-        watched = self._watches.setdefault(conversation_id, {})
-        for path in frame.payload.paths:
-            watched[path] = frame.payload.recursive
-        await self._outbound.put(Ack(id=frame.id, payload=self._watch_ack(conversation_id)))
-
-    def _watch_ack(self, conversation_id: str) -> WatchFsAckPayload:
-        watched = self._watches.get(conversation_id, {})
-        return WatchFsAckPayload(
-            watched_paths=tuple(sorted(watched)),
-            current_count=sum(len(paths) for paths in self._watches.values()),
-        )
-
-    def _watching(self, conversation_id: str, path: str) -> bool:
-        """匹配文件精确订阅或目录订阅范围；空串是工作区根，订它就能看到整个工作区的变动。"""
-
-        for watched, recursive in self._watches.get(conversation_id, {}).items():
-            if watched == path:
-                return True
-            if watched == "":
-                inside = path
-            elif path.startswith(watched + "/"):
-                inside = path[len(watched) + 1 :]
-            else:
-                continue
-            if recursive or "/" not in inside:
-                return True
-        return False
-
-    def offer_fs_change(
-        self,
-        conversation_id: str,
-        path: str,
-        change: Literal["created", "modified", "deleted"],
-        *,
-        seq: int,
-    ) -> None:
-        """``seq`` 是广播方为这一帧发的会话事件序号，各连接相同。"""
-
-        if not self._watching(conversation_id, path):
-            return
-        self.offer(
-            FsChanged(
-                seq=seq,
-                epoch=self._clock.epoch,
-                session_id=conversation_id,
-                timestamp=datetime.now(UTC).isoformat(),
-                payload=FsChangePayload(changes=(FsChangeEntry(path=path, change=change),)),
-            )
-        )
-
     def receives(self, owner: uuid.UUID) -> bool:
-        """全局帧与文件变更帧发给谁：属主自己的连接，和治理者的连接。
+        """全局帧发给谁：属主自己的连接，和治理者的连接。
 
         权限按握手时的主体快照，吊销后要重连才生效。"""
 
@@ -835,17 +740,17 @@ class _Connection:
     def _wrap(
         self, frame: TranscriptResetFrame | TranscriptOpsFrame
     ) -> TranscriptReset | TranscriptOps:
-        """运行时的帧盖上信封。``stream_epoch`` 与 ``payload.seq`` 是客户端续传用的 Transcript 水位，原样；
-        外层 ``epoch`` + ``seq`` 是这段对话当前的会话事件序号，Transcript 帧不另发号（照 Kimi 的易失帧）。"""
+        """运行时的帧只加上外层 ``epoch`` + ``seq``：这段对话当前的会话事件序号，Transcript 帧不另发号（照
+        Kimi 的易失帧）。其余原样：``stream_epoch`` 与 ``payload.seq`` 是客户端续传用的 Transcript 水位，
+        ``timestamp`` 是运行时出帧的时刻。"""
 
         seq = self._clock.current(frame.session_id)
-        stamped = datetime.now(UTC).isoformat()
         if isinstance(frame, TranscriptResetFrame):
             return TranscriptReset(
                 seq=seq,
                 epoch=self._clock.epoch,
                 session_id=frame.session_id,
-                timestamp=stamped,
+                timestamp=frame.timestamp,
                 stream_epoch=frame.stream_epoch,
                 payload=frame.payload,
             )
@@ -853,7 +758,7 @@ class _Connection:
             seq=seq,
             epoch=self._clock.epoch,
             session_id=frame.session_id,
-            timestamp=stamped,
+            timestamp=frame.timestamp,
             stream_epoch=frame.stream_epoch,
             payload=frame.payload,
         )
@@ -880,7 +785,9 @@ class _Connection:
                 await self._ws.close(code=1001)
                 return
             with contextlib.suppress(asyncio.QueueFull):
-                self._outbound.put_nowait(Ping(payload=PingPayload(nonce=uuid.uuid4().hex[:8])))
+                self._outbound.put_nowait(
+                    Ping(timestamp=timestamp_now(), payload=PingPayload(nonce=uuid.uuid4().hex[:8]))
+                )
 
     async def _send(self, frame: Any) -> None:
         """按字段别名序列化实体和操作，以匹配客户端协议；WebSocket 不经过 FastAPI 响应序列化。"""
@@ -890,17 +797,6 @@ class _Connection:
         except RuntimeError as exc:
             # Starlette 在关闭后发送时抛 RuntimeError，统一转换为连接断开。
             raise WebSocketDisconnect(code=1006) from exc
-
-
-def _ack_of(frame: RuntimeAck) -> Ack:
-    """运行时的回执换成浏览器的回执：同一个 id、码与说明，订阅结果原样。"""
-
-    payload = (
-        None
-        if frame.payload is None
-        else SubscribeAckPayload(accepted=frame.payload.accepted, not_found=frame.payload.not_found)
-    )
-    return Ack(id=frame.id, code=frame.code, msg=frame.msg, payload=payload)
 
 
 async def _serve(

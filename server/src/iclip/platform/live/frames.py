@@ -1,5 +1,8 @@
-"""连接级 WS 帧：握手、全局事件、文件变更、回执与心跳。信封基类、transcript 帧与 REST 响应信封在
-``agent_runtime.transcript.wire``。
+"""后端自己发给浏览器的连接级 WS 帧：握手、全局事件与盖了会话事件水位的转发帧。
+
+外层照 Kimi 是 ``{type, session_id, timestamp, payload}``，回执以外每帧都带 ``timestamp``。从运行时转来的
+文件变化、回执与心跳就是运行时的帧，定义在 ``agent_runtime.live.frames``，这里只引用；会话活动与 Transcript
+帧是运行时的帧加上本进程的会话事件水位。信封基类与 transcript 帧在 ``agent_runtime.transcript.wire``。
 
 信封使用 snake_case，嵌套实体与操作使用 camelCase，与客户端 schema.ts 保持一致。
 每帧 reset 必须携带 seq 以覆盖客户端水位，支持进程重启后从 1 重新编号；``stream_epoch`` 标出
@@ -9,19 +12,17 @@
 
 - ``stream_epoch`` + ``payload.seq``：某个 agent 的 Transcript 批次号，续订补批用。
 - ``epoch`` + ``seq``：这段对话的会话事件序号（见 ``session_events``），给列表行与帧排先后。
-  事件帧（标题、活动、生成任务、会话生命周期、文件变更）各发一个新号；created / updated 帧里
-  整行的 ``lastSeq`` 是写入之前的水位，比信封序号小；Transcript 帧带当前序号，不发新号。
+  事件帧（标题、活动、生成任务、会话生命周期）各发一个新号；created / updated 帧里整行的 ``lastSeq``
+  是写入之前的水位，比信封序号小；Transcript 帧带当前序号，不发新号；文件变化帧不带序号。
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
+from agent_runtime.live.frames import Ack, FsChanged, Ping, Pong, SessionActivity
 from agent_runtime.transcript.wire import (
     Envelope,
-    Event,
-    LastTurnReason,
-    PendingInteraction,
     Subscribe,
     TranscriptOps,
     TranscriptReset,
@@ -41,18 +42,16 @@ class ServerHelloPayload(Envelope):
     ws_connection_id: str
     protocol_version: int = 2
     heartbeat_ms: int
-    max_event_buffer_size: int
+    capabilities: ServerHelloCapabilities = ServerHelloCapabilities()
 
 
 class ServerHello(Envelope):
     type: Literal["server_hello"] = "server_hello"
     timestamp: str
     payload: ServerHelloPayload
-    capabilities: ServerHelloCapabilities = ServerHelloCapabilities()
 
 
 class SessionMetaPayload(Envelope):
-    session_id: str
     title: str
 
 
@@ -66,34 +65,24 @@ class SessionMetaUpdated(Envelope):
     type: Literal["session.meta.updated"] = "session.meta.updated"
     seq: int
     epoch: str
+    session_id: str
     owner_user_id: str
+    timestamp: str
     payload: SessionMetaPayload
 
 
-class SessionWorkPayload(Envelope):
-    busy: bool
-    pending_interaction: PendingInteraction
-    last_turn_reason: LastTurnReason | None = None
-
-
-class SessionWorkChanged(Envelope):
-    """某段对话「在忙什么」变了。
+class SessionWorkChanged(SessionActivity):
+    """某段对话「在忙什么」变了：运行时的 ``event.session.work_changed`` 原样，加上本进程的会话事件水位。
 
     与 ``session.meta.updated`` 同一类：**不看订阅，发给属主与治理者连着的每一条连接**。侧栏列着几十段
     对话却一段都没订，按订阅发的话它永远收不到角标。
-
-    ``session_id`` 在信封上而不在 payload 里，与协议其余 ``event.*`` 一致。
 
     **易失**：这一帧不进任何日志，掉了就是掉了。所以列表行上也带着同一份事实（见
     ``ConversationOut.activity``），断线重连后重拉列表即可对齐——帧只负责「不必等下一次重拉」。
     """
 
-    type: Literal["event.session.work_changed"] = "event.session.work_changed"
     seq: int
     epoch: str
-    session_id: str
-    owner_user_id: str
-    payload: SessionWorkPayload
 
 
 class GenerationChangedPayload(Envelope):
@@ -124,6 +113,7 @@ class GenerationChanged(Envelope):
     epoch: str
     session_id: str | None = None
     owner_user_id: str
+    timestamp: str
     payload: GenerationChangedPayload
 
 
@@ -141,6 +131,7 @@ class SessionCreated(Envelope):
     epoch: str
     session_id: str
     owner_user_id: str
+    timestamp: str
     payload: dict[str, Any]
 
 
@@ -156,75 +147,20 @@ class SessionUpdated(Envelope):
     epoch: str
     session_id: str
     owner_user_id: str
+    timestamp: str
     payload: dict[str, Any]
 
 
-class SessionDeletedPayload(Envelope):
-    session_id: str
-
-
 class SessionDeleted(Envelope):
-    """属主删掉了一段对话。照 Kimi 的 ``event.session.deleted``；是事件帧，发新序号。"""
+    """属主删掉了一段对话。照 Kimi 的 ``event.session.deleted``，但对话 id 只在外层、没有 ``payload``，与
+    其余对话帧一致；是事件帧，发新序号。"""
 
     type: Literal["event.session.deleted"] = "event.session.deleted"
     seq: int
     epoch: str
     session_id: str
     owner_user_id: str
-    payload: SessionDeletedPayload
-
-
-class FsChangeEntry(Envelope):
-    path: str
-    change: Literal["created", "modified", "deleted"]
-    kind: Literal["file", "directory"] = "file"
-
-
-class FsChangePayload(Envelope):
-    changes: tuple[FsChangeEntry, ...]
-    coalesced_window_ms: int = 0
-    """在写入入口立即发送变更，合并窗口为零。"""
-
-
-class FsChanged(Event):
-    """某段对话的工作区文件变了，照 kimi 的 ``event.fs.changed``。
-
-    **只发给用 ``watch_fs_add`` 订了这段对话这个路径的连接**，不是全局帧：文件变动只有正看着
-    它的那一页关心。能订、能收的是属主与治理者的连接，与全局帧同一范围。帧上不带版本与写入者——收到就重读那个文件，版本在文件上；是不是自己刚写
-    的由客户端记自己写回时拿到的版本号来判。
-
-    **易失**：掉了就是掉了。文件列表接口才是事实源，这一帧只负责「不必等下一次重拉」。
-    """
-
-    type: Literal["event.fs.changed"] = "event.fs.changed"
-    payload: FsChangePayload
-
-
-class Ack(Envelope):
-    """控制帧的回执。``code`` 为 0 即成功，与协议一致。"""
-
-    type: Literal["ack"] = "ack"
-    id: str
-    code: int = 0
-    msg: str = ""
-    payload: Any = None
-
-
-class SubscribeAckPayload(Envelope):
-    accepted: tuple[str, ...] = ()
-    not_found: tuple[str, ...] = ()
-    resync_required: tuple[str, ...] = ()
-
-
-class PingPayload(Envelope):
-    nonce: str
-
-
-class Ping(Envelope):
-    """心跳。客户端照着 ``nonce`` 原样回一帧 pong。"""
-
-    type: Literal["ping"] = "ping"
-    payload: PingPayload
+    timestamp: str
 
 
 ServerFrame = Annotated[
@@ -244,68 +180,21 @@ ServerFrame = Annotated[
 ]
 
 
-class WatchFsPayload(Envelope):
-    """订一段对话里的几个路径。路径是目录时 ``recursive`` 决定只看直接子项还是整棵；空串是工作区根。"""
-
-    session_id: str
-    paths: tuple[str, ...]
-    recursive: bool = False
-
-
-class WatchFsAdd(Envelope):
-    type: Literal["watch_fs_add"] = "watch_fs_add"
-    id: str
-    payload: WatchFsPayload
-
-
-class WatchFsRemove(Envelope):
-    type: Literal["watch_fs_remove"] = "watch_fs_remove"
-    id: str
-    payload: WatchFsPayload
-
-
-class WatchFsAckPayload(Envelope):
-    watched_paths: tuple[str, ...] = ()
-    current_count: int = 0
-
-
-class Pong(Envelope):
-    type: Literal["pong"] = "pong"
-    payload: PingPayload | None = None
-
-
-ClientFrame = Annotated[
-    Subscribe | Unsubscribe | WatchFsAdd | WatchFsRemove | Pong,
-    Field(discriminator="type"),
-]
+ClientFrame = Annotated[Subscribe | Unsubscribe | Pong, Field(discriminator="type")]
 
 
 __all__ = [
-    "Ack",
     "ClientFrame",
-    "FsChangeEntry",
-    "FsChangePayload",
-    "FsChanged",
     "GenerationChanged",
     "GenerationChangedPayload",
-    "Ping",
-    "PingPayload",
-    "Pong",
     "ServerFrame",
     "ServerHello",
     "ServerHelloCapabilities",
     "ServerHelloPayload",
     "SessionCreated",
     "SessionDeleted",
-    "SessionDeletedPayload",
     "SessionMetaPayload",
     "SessionMetaUpdated",
     "SessionUpdated",
     "SessionWorkChanged",
-    "SessionWorkPayload",
-    "SubscribeAckPayload",
-    "WatchFsAckPayload",
-    "WatchFsAdd",
-    "WatchFsPayload",
-    "WatchFsRemove",
 ]

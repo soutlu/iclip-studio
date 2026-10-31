@@ -7,12 +7,13 @@
 - 每 ``HEARTBEAT_SECONDS`` 秒发一帧 ``ping``；连着 ``HEARTBEAT_MISS_LIMIT`` 个周期没收到任何入站帧就以
   ``1001`` 关闭。
 
-事件流：一条连接收调用方应用所有会话的事件，先到的先发，别的应用的收不到；入站只看是不是活着。
+事件流：一条连接收调用方应用所有会话的活动，先到的先发，别的应用的收不到；入站只看是不是活着。
 
 对话内容流：照后端浏览器那条连接的 transcript 一半，每段会话发一帧 ``subscribe_v2``，规则相同（档位、
 先监听再取快照、补批帧筛空了也发、实时批筛空了不发、升档先 reset、子代理流要能回溯到这段会话）。
-会话不归调用方应用与不存在一样答 ``not_found``。帧上没有会话事件序号。连接断开时撤掉它的全部监听，
-最后一个撤掉时放开这段会话的实时状态。
+会话不归调用方应用与不存在一样答 ``not_found``。帧上没有会话事件序号。订着一段会话（任何档位，含
+``off``）的连接还收它的工作区文件变化 ``event.fs.changed``。连接断开时撤掉它的全部监听，最后一个撤掉时
+放开这段会话的实时状态、不再收它的文件变化。
 """
 
 from __future__ import annotations
@@ -40,8 +41,9 @@ from agent_runtime.live.frames import (
     TranscriptClientFrame,
     TranscriptOpsFrame,
     TranscriptResetFrame,
+    timestamp_now,
 )
-from agent_runtime.live.hub import AppEventHub
+from agent_runtime.live.hub import AppEventHub, SessionFileChanges
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.transcript.granularity import (
     TranscriptGrade,
@@ -170,7 +172,9 @@ class _Channel:
                 await self._ws.close(code=1001)
                 return
             with contextlib.suppress(asyncio.QueueFull):
-                self._outbound.put_nowait(Ping(payload=PingPayload(nonce=uuid.uuid4().hex[:8])))
+                self._outbound.put_nowait(
+                    Ping(timestamp=timestamp_now(), payload=PingPayload(nonce=uuid.uuid4().hex[:8]))
+                )
 
     async def _send(self, frame: Envelope) -> None:
         """嵌套的 transcript 实体与操作按别名（camelCase）序列化；WebSocket 不经 FastAPI 的响应序列化。"""
@@ -183,7 +187,10 @@ class _Channel:
 
 
 class _TranscriptConnection(_Channel):
-    """对话内容流的一条连接：按（会话，agent）各订各的，帧按 ``session_id`` 分流。"""
+    """对话内容流的一条连接：按（会话，agent）各订各的，帧按 ``session_id`` 分流。
+
+    订着一段会话（不论几个 agent、什么档位）的期间，这条连接在 ``file_changes`` 里登记着这段会话，收它的
+    文件变化帧。"""
 
     def __init__(
         self,
@@ -191,11 +198,13 @@ class _TranscriptConnection(_Channel):
         app: CallingApp,
         transcripts: TranscriptService,
         sessions: SessionService,
+        file_changes: SessionFileChanges,
     ) -> None:
         super().__init__(websocket)
         self._app = app
         self._transcripts = transcripts
         self._sessions = sessions
+        self._file_changes = file_changes
         self._listeners: dict[tuple[str, str], Callable[[OpBatch], None]] = {}
         self._grades: dict[tuple[str, str], TranscriptGrade] = {}
 
@@ -272,6 +281,8 @@ class _TranscriptConnection(_Channel):
         if key not in self._listeners:
             if not self._listening(session_id):
                 self._transcripts.pin(session_id)
+                # 订阅时已核过会话归调用方应用，文件变化跟着订阅走，off 档也收。
+                self._file_changes.attach(session_id, self)
             listener = self._listener_for(session_id, agent_id)
             self._listeners[key] = listener
             self._transcripts.listen(session_id, listener, agent_id=agent_id)
@@ -302,7 +313,7 @@ class _TranscriptConnection(_Channel):
         return on_batch
 
     def _unlisten(self, session_id: str, agent_ids: Sequence[str] = ()) -> None:
-        """幂等退订；不点名就撤这段会话的全部 agent，最后一个撤掉时放开实时状态的固定。"""
+        """幂等退订；不点名就撤这段会话的全部 agent，最后一个撤掉时放开实时状态的固定、注销文件变化。"""
 
         keys = [
             key
@@ -314,6 +325,7 @@ class _TranscriptConnection(_Channel):
             self._transcripts.unlisten(session_id, self._listeners.pop(key), agent_id=key[1])
         if keys and not self._listening(session_id):
             self._transcripts.unpin(session_id)
+            self._file_changes.detach(session_id, self)
 
 
 Catchup = ResetPayload | OpsPayload
@@ -331,8 +343,12 @@ def _wrap(
     session_id: str, payload: Catchup, epoch: str
 ) -> TranscriptResetFrame | TranscriptOpsFrame:
     if isinstance(payload, ResetPayload):
-        return TranscriptResetFrame(session_id=session_id, stream_epoch=epoch, payload=payload)
-    return TranscriptOpsFrame(session_id=session_id, stream_epoch=epoch, payload=payload)
+        return TranscriptResetFrame(
+            session_id=session_id, timestamp=timestamp_now(), stream_epoch=epoch, payload=payload
+        )
+    return TranscriptOpsFrame(
+        session_id=session_id, timestamp=timestamp_now(), stream_epoch=epoch, payload=payload
+    )
 
 
 def create_events_router(identify: Identify, hub: AppEventHub) -> APIRouter:
@@ -345,7 +361,7 @@ def create_events_router(identify: Identify, hub: AppEventHub) -> APIRouter:
         app = await _accepted_app(websocket, identify, "events")
         if app is None:
             return
-        # 事件流的入站只用来证明活着，集线器经 offer 交来这个应用的事件。
+        # 事件流的入站只用来证明活着，集线器经 offer 交来这个应用的会话活动。
         connection = _Channel(websocket)
         hub.attach(app.id, connection)
         try:
@@ -357,9 +373,13 @@ def create_events_router(identify: Identify, hub: AppEventHub) -> APIRouter:
 
 
 def create_transcript_ws_router(
-    identify: Identify, transcripts: TranscriptService, sessions: SessionService
+    identify: Identify,
+    transcripts: TranscriptService,
+    sessions: SessionService,
+    file_changes: SessionFileChanges,
 ) -> APIRouter:
-    """``/v1/ws``：不在 ``/v1`` 的 HTTP 路由组里，鉴权自己做。"""
+    """``/v1/ws``：不在 ``/v1`` 的 HTTP 路由组里，鉴权自己做。``file_changes`` 是会通知的文件存储交出
+    变化的那一处，连接按订阅在里面登记。"""
 
     router = APIRouter()
 
@@ -368,7 +388,7 @@ def create_transcript_ws_router(
         app = await _accepted_app(websocket, identify, "transcript")
         if app is None:
             return
-        await _TranscriptConnection(websocket, app, transcripts, sessions).serve()
+        await _TranscriptConnection(websocket, app, transcripts, sessions, file_changes).serve()
 
     return router
 

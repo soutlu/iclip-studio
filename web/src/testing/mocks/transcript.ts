@@ -618,11 +618,12 @@ export const transcriptHandlers = [
     client.send(
       JSON.stringify({
         payload: {
+          capabilities: { compression: false, event_batching: false },
           heartbeat_ms: 10_000,
-          max_event_buffer_size: 2048,
           protocol_version: 2,
           ws_connection_id: 'mock',
         },
+        timestamp: new Date().toISOString(),
         type: 'server_hello',
       }),
     )
@@ -657,47 +658,34 @@ export const transcriptHandlers = [
     const joined = new Map<string, Connection>()
     // 按连接去重文件更新计划，避免 StrictMode 重订造成重复版本递增。
     const fsScheduled = new Set<string>()
+    /** 照服务端：文件变化跟着订阅走，只发给此刻还订着这段对话的连接。 */
+    const scheduleShotsChange = (conversationId: string) => {
+      if (fsScheduled.has(conversationId)) return
+      fsScheduled.add(conversationId)
+      setTimeout(() => {
+        if (!joined.has(conversationId) || !touchMockShots(conversationId)) return
+        client.send(
+          JSON.stringify({
+            payload: { changes: [{ change: 'modified', path: SHOTS_MOCK_PATH }] },
+            session_id: conversationId,
+            timestamp: new Date().toISOString(),
+            type: 'event.fs.changed',
+          }),
+        )
+      }, FS_CHANGE_DELAY_MS)
+    }
     client.addEventListener('message', (event) => {
       if (typeof event.data !== 'string') return
       const frame = JSON.parse(event.data) as {
         id?: string
         payload?: {
           agent_ids?: string[]
-          paths?: string[]
           session_id?: string
           transcript?: Record<string, string>
           transcript_epoch?: Record<string, string>
           transcript_since?: Record<string, number>
         }
         type?: string
-      }
-
-      if (frame.type === 'watch_fs_add' || frame.type === 'watch_fs_remove') {
-        const watched = frame.payload?.paths ?? []
-        client.send(
-          JSON.stringify({
-            id: frame.id,
-            payload: { current_count: watched.length, watched_paths: watched },
-            type: 'ack',
-          }),
-        )
-        const conversationId = frame.payload?.session_id ?? ''
-        if (frame.type !== 'watch_fs_add' || fsScheduled.has(conversationId)) return
-        fsScheduled.add(conversationId)
-        setTimeout(() => {
-          if (!touchMockShots(conversationId)) return
-          client.send(
-            JSON.stringify({
-              payload: {
-                changes: [{ change: 'modified', kind: 'file', path: SHOTS_MOCK_PATH }],
-                coalesced_window_ms: 0,
-              },
-              session_id: conversationId,
-              type: 'event.fs.changed',
-            }),
-          )
-        }, FS_CHANGE_DELAY_MS)
-        return
       }
 
       if (frame.type === 'unsubscribe_v2') {
@@ -736,10 +724,16 @@ export const transcriptHandlers = [
           for (const batch of replay) {
             client.send(
               JSON.stringify({
-                payload: { agent_id: agentId, ops: batch.ops, seq: batch.seq },
+                payload: {
+                  agent_id: agentId,
+                  ops: batch.ops,
+                  seq: batch.seq,
+                  type: 'transcript.ops',
+                },
                 seq: 1,
                 session_id: conversationId,
                 stream_epoch: MOCK_STREAM_EPOCH,
+                timestamp: new Date().toISOString(),
                 type: 'transcript.ops',
               }),
             )
@@ -761,10 +755,12 @@ export const transcriptHandlers = [
                 tasks: [],
                 todos: [],
               },
+              type: 'transcript.reset',
             },
             seq: 1,
             session_id: conversationId,
             stream_epoch: MOCK_STREAM_EPOCH,
+            timestamp: new Date().toISOString(),
             type: 'transcript.reset',
           }),
         )
@@ -779,15 +775,20 @@ export const transcriptHandlers = [
         send: (payload) =>
           client.send(
             JSON.stringify({
-              payload,
+              payload: { ...payload, type: 'transcript.ops' },
               seq: payload.seq,
               session_id: conversationId,
               stream_epoch: MOCK_STREAM_EPOCH,
+              timestamp: new Date().toISOString(),
               type: 'transcript.ops',
             }),
           ),
       }
       for (const agentId of agentIds) connection.agents.add(agentId)
+      // 演示的分镜改动只给打开着的那页（主流 delta 档）排一次；侧栏 turn 档订着的对话不动它的文件。
+      if ((frame.payload?.transcript ?? { main: 'delta' })['main'] === 'delta') {
+        scheduleShotsChange(conversationId)
+      }
       if (existing !== undefined) return
       joined.set(conversationId, connection)
       connections.add(connection)
@@ -810,7 +811,11 @@ export const transcriptHandlers = [
     const unwatchGenerations = watchMockGenerations(({ conversationId, ...payload }) => {
       const envelope =
         conversationId === null
-          ? { epoch: MOCK_EVENT_EPOCH, owner_user_id: mockAuthUser.id }
+          ? {
+              epoch: MOCK_EVENT_EPOCH,
+              owner_user_id: mockAuthUser.id,
+              timestamp: new Date().toISOString(),
+            }
           : { ...mockSessionEnvelope(conversationId), session_id: conversationId }
       client.send(JSON.stringify({ ...envelope, payload, type: 'event.generation.changed' }))
     })

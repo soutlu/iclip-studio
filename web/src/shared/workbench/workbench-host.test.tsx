@@ -169,8 +169,9 @@ const renderHost = (
   )
 
 const fsChanged = (path: string, change: 'created' | 'modified' | 'deleted') => ({
-  payload: { changes: [{ change, kind: 'file', path }], coalesced_window_ms: 0 },
+  payload: { changes: [{ change, path }] },
   session_id: CONVERSATION_ID,
+  timestamp: '2026-10-30T08:00:00+00:00',
   type: 'event.fs.changed',
 })
 
@@ -217,6 +218,7 @@ const delegationReset = (state: 'running' | 'done') => ({
       tasks: [],
       todos: [],
     },
+    type: 'transcript.reset',
   },
   session_id: CONVERSATION_ID,
   stream_epoch: MOCK_STREAM_EPOCH,
@@ -254,7 +256,8 @@ describe('WorkbenchHost 收起态', () => {
     act(() => {
       socket.deliver({
         ...sessionEnvelope(CONVERSATION_ID),
-        payload: { session_id: CONVERSATION_ID, title: '修改后的项目名' },
+        payload: { title: '修改后的项目名' },
+        session_id: CONVERSATION_ID,
         type: 'session.meta.updated',
       })
     })
@@ -432,10 +435,6 @@ describe('WorkbenchHost 展开态', () => {
     serveFiles(['video/a.md'])
     const { socket } = await renderHost()
     await screen.findByRole('button', { name: '展开工作台' })
-    const asked = socket
-      .frames()
-      .find((frame) => frame.type === 'watch_fs_add' && frame.payload?.['recursive'] === true)
-    expect(asked?.payload).toMatchObject({ paths: [''], session_id: CONVERSATION_ID })
 
     serveFiles(['video/a.md', 'video_shot.json'])
     socket.deliver(fsChanged('video_shot.json', 'created'))

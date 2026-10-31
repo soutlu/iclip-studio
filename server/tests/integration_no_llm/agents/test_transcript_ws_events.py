@@ -167,6 +167,7 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
             title = until(ws, "session.meta.updated")
             updated = until(ws, "event.session.updated")
             assert title["owner_user_id"] == owner_id
+            assert (title["session_id"], title["payload"]) == (conversation_id, {"title": "改过的"})
             assert title["seq"] == idle["seq"] + 1
             assert updated["seq"] == title["seq"] + 1
             # 行写于取水位之后：行内水位停在写之前，帧自己发的号更大。
@@ -190,8 +191,9 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
 
             assert tc.delete(f"/conversations/{conversation_id}").status_code == 204
             deleted = until(ws, "event.session.deleted")
+            # 对话 id 只在外层，没有 payload。
             assert deleted["session_id"] == conversation_id
-            assert deleted["payload"] == {"session_id": conversation_id}
+            assert "payload" not in deleted
             assert deleted["owner_user_id"] == owner_id
             assert deleted["seq"] == regrouped["seq"] + 1
 

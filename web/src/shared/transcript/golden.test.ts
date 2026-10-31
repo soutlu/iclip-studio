@@ -13,7 +13,7 @@ import {
 import type { TranscriptOpsEvent } from './vendor'
 
 interface Golden {
-  ws?: Array<{ type: string; stream_epoch?: unknown; payload: unknown }>
+  ws?: Array<{ type: string; stream_epoch?: unknown; payload: { type?: unknown } }>
   rest: unknown
   child_rest?: unknown
 }
@@ -31,6 +31,10 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
     // vendored schema 不认这个信封字段，这里直接看原始金样，免得被 schema 剥掉后测不出缺失。
     expect((sample.rest as { stream_epoch?: unknown }).stream_epoch).toEqual(expect.any(String))
     for (const frame of sample.ws ?? []) expect(frame.stream_epoch).toEqual(expect.any(String))
+  })
+
+  it('每帧载荷自己带 type，与外层相同（客户端直接把载荷交给事件 schema）', () => {
+    for (const frame of sample.ws ?? []) expect(frame.payload.type).toBe(frame.type)
   })
 
   it('REST 一页过 transcript schema', () => {
@@ -54,21 +58,15 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
   it.skipIf(sample.ws === undefined)('WS 帧序列逐帧过 schema，回放不缺批、轮数与 REST 一致', () => {
     const frames = sample.ws ?? []
     expect(frames[0]?.type).toBe('transcript.reset')
-    // 与 connection.ts 同一种喂法：帧类型和载荷拍平后交给事件 schema。
-    const reset = transcriptResetEventSchema.parse({
-      type: frames[0]?.type,
-      ...(frames[0]?.payload as object),
-    })
+    // 与 connection.ts 同一种喂法：载荷原样交给事件 schema。
+    const reset = transcriptResetEventSchema.parse(frames[0]?.payload)
     expect(reset.agent_id).toBe('main')
 
     const transcript = new AgentTranscript('main')
     for (const frame of frames.slice(1)) {
       expect(frame.type).toBe('transcript.ops')
       // schema 推出的类型带 `?: T | undefined`，与 exactOptionalPropertyTypes 下的接口不等价，按 vendored 接口收窄。
-      const batch = transcriptOpsEventSchema.parse({
-        type: frame.type,
-        ...(frame.payload as object),
-      }) as TranscriptOpsEvent
+      const batch = transcriptOpsEventSchema.parse(frame.payload) as TranscriptOpsEvent
       const applied = transcript.apply(batch.ops)
       expect(applied.gap).toBeUndefined()
     }

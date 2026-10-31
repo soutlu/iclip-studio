@@ -49,7 +49,7 @@ function RemountableConversation() {
 }
 
 const opsFrame = (ops: unknown[], seq: number) => ({
-  payload: { agent_id: 'main', ops, seq },
+  payload: { agent_id: 'main', ops, seq, type: 'transcript.ops' },
   session_id: 'c1',
   stream_epoch: MOCK_STREAM_EPOCH,
   type: 'transcript.ops',
@@ -257,6 +257,7 @@ describe('ConversationRoute', () => {
           },
         ],
         seq: 11,
+        type: 'transcript.ops',
       },
       session_id: 'c1',
       stream_epoch: MOCK_STREAM_EPOCH,
@@ -1204,7 +1205,8 @@ describe('ConversationRoute', () => {
     socket.deliver({
       ...sessionEnvelope('c1'),
       type: 'session.meta.updated',
-      payload: { session_id: 'c1', title: '改过的名字' },
+      session_id: 'c1',
+      payload: { title: '改过的名字' },
     })
 
     expect(await screen.findByRole('heading', { name: '改过的名字' })).toBeVisible()

@@ -27,7 +27,13 @@ export class FakeSocket {
 }
 
 export const SERVER_HELLO = {
-  payload: { heartbeat_ms: 10_000, protocol_version: 2, ws_connection_id: 'w1' },
+  payload: {
+    capabilities: { compression: false, event_batching: false },
+    heartbeat_ms: 10_000,
+    protocol_version: 2,
+    ws_connection_id: 'w1',
+  },
+  timestamp: '2026-10-30T08:00:00+00:00',
   type: 'server_hello',
 }
 

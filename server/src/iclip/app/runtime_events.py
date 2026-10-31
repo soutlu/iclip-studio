@@ -1,4 +1,5 @@
-"""运行时应用事件流的消费者：每个后端进程一条 ``/v1/events``，把会话活动与工作区文件变更转成浏览器的全局帧。
+"""运行时应用事件流的消费者：每个后端进程一条 ``/v1/events``，把会话活动转成浏览器的全局帧。浏览器收到的
+就是运行时的 ``event.session.work_changed``，只加上本进程发的会话事件号。
 
 事件按到达的先后逐个处理（发号、按今天的规则投递都在这一个任务里），所以同一段对话的帧在每条浏览器连接上
 仍按序号递增。事件流断了（运行时重启、网络中断、还没起来）先记日志，再以 1001 关掉此刻全部浏览器连接——
@@ -10,12 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import uuid
 from typing import Final
 
 import structlog
-from agent_runtime.client import AppEventFrame, RuntimeClient, RuntimeUnavailable
-from agent_runtime.live.frames import SessionActivity
+from agent_runtime.client import RuntimeClient, RuntimeUnavailable
 
 from iclip.domains.agents.transcript_api import GOING_AWAY, LiveConnections
 
@@ -71,7 +70,7 @@ class RuntimeEvents:
                     wait = self._first_retry
                     _logger.info("运行时事件流已连上")
                     async for event in events:
-                        self._handle(event)
+                        self._live.announce_activity(event)
             except RuntimeUnavailable as exc:
                 self._connected.clear()
                 _logger.warning(
@@ -87,24 +86,6 @@ class RuntimeEvents:
             self._live.close_all(GOING_AWAY)
             await asyncio.sleep(wait)
             wait = min(wait * 2, self._max_retry)
-
-    def _handle(self, event: AppEventFrame) -> None:
-        owner = uuid.UUID(event.owner_user_id)
-        conversation_id = uuid.UUID(event.session_id)
-        if isinstance(event, SessionActivity):
-            activity = event.activity
-            self._live.announce_activity(
-                owner,
-                conversation_id,
-                busy=activity.busy,
-                pending_interaction=activity.pending_interaction,
-                last_turn_reason=activity.last_turn_reason,
-            )
-        else:
-            for entry in event.entries:
-                self._live.announce_fs_changed(
-                    owner, conversation_id, path=entry.path, change=entry.change
-                )
 
 
 __all__ = ["FIRST_RETRY_SECONDS", "MAX_RETRY_SECONDS", "RuntimeEvents"]

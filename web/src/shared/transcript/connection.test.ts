@@ -15,15 +15,26 @@ const SNAPSHOT = {
 
 const EPOCH = 'e1'
 
+/** 帧外层的出帧时刻。 */
+const AT = '2026-10-30T08:00:00+00:00'
+
 /** 水位连同它所属的实时流。 */
 const mark = (seq: number, epoch = EPOCH) => ({ epoch, seq })
 
+// payload 自己带 type，与外层相同（合同 §5「订阅」）。
 function reset(seq: number, conversationId = 'c1', epoch = EPOCH) {
   return {
     type: 'transcript.reset',
     session_id: conversationId,
+    timestamp: AT,
     stream_epoch: epoch,
-    payload: { agent_id: 'main', snapshot: SNAPSHOT, has_more_older: true, seq },
+    payload: {
+      type: 'transcript.reset',
+      agent_id: 'main',
+      snapshot: SNAPSHOT,
+      has_more_older: true,
+      seq,
+    },
   }
 }
 
@@ -31,10 +42,21 @@ function ops(seq: number, conversationId = 'c1', list: TranscriptOps = [], epoch
   return {
     type: 'transcript.ops',
     session_id: conversationId,
+    timestamp: AT,
     stream_epoch: epoch,
-    payload: { agent_id: 'main', ops: list, seq },
+    payload: { type: 'transcript.ops', agent_id: 'main', ops: list, seq },
   }
 }
+
+const fsChanged = (
+  conversationId: string,
+  changes: Array<{ path: string; change: 'created' | 'modified' | 'deleted' }>,
+) => ({
+  type: 'event.fs.changed',
+  session_id: conversationId,
+  timestamp: AT,
+  payload: { changes },
+})
 
 /** 塞进坏帧里的正文，告警里不该出现。 */
 const BODY = '帧正文不进日志'
@@ -47,14 +69,15 @@ const malformed = (type: string, envelope: object) => ({
 
 /** JSON 坏掉的一条，加上各类帧载荷形状不对的各一条；type 是告警里应带的帧类型。 */
 /** 全局帧信封：属主与会话事件水位（合同 §5「全局帧」）。 */
-const ENVELOPE = { epoch: 'e1', owner_user_id: 'u1', seq: 3 }
+const ENVELOPE = { epoch: 'e1', owner_user_id: 'u1', seq: 3, timestamp: AT }
 const MARK = { epoch: 'e1', ownerUserId: 'u1', seq: 3 }
 
 const MALFORMED = [
   { label: 'JSON', raw: `{"type":"${BODY}`, type: undefined },
   malformed('session.meta.updated', {
     ...ENVELOPE,
-    payload: { session_id: 'c9', title: { text: BODY } },
+    session_id: 'c9',
+    payload: { title: { text: BODY } },
   }),
   malformed('event.session.work_changed', {
     ...ENVELOPE,
@@ -68,22 +91,34 @@ const MALFORMED = [
   }),
   malformed('event.fs.changed', {
     session_id: 'c1',
-    payload: { changes: [{ path: BODY, change: 'renamed', kind: 'file' }], coalesced_window_ms: 0 },
+    payload: { changes: [{ path: BODY, change: 'renamed' }] },
   }),
   malformed('transcript.reset', {
     session_id: 'c1',
     stream_epoch: EPOCH,
-    payload: { agent_id: 'main', has_more_older: true, seq: 9, snapshot: BODY },
+    payload: {
+      type: 'transcript.reset',
+      agent_id: 'main',
+      has_more_older: true,
+      seq: 9,
+      snapshot: BODY,
+    },
   }),
   malformed('transcript.ops', {
     session_id: 'c1',
     stream_epoch: EPOCH,
-    payload: { agent_id: 'main', ops: BODY, seq: 6 },
+    payload: { type: 'transcript.ops', agent_id: 'main', ops: BODY, seq: 6 },
+  }),
+  // 载荷就是 transcript 事件本身：自己不带 type 的不认。
+  malformed('transcript.ops', {
+    session_id: 'c1',
+    stream_epoch: EPOCH,
+    payload: { agent_id: 'main', ops: [], seq: 6, note: BODY },
   }),
   // 不知道属于哪条实时流的批次，水位无从记起。
   malformed('transcript.ops', {
     session_id: 'c1',
-    payload: { agent_id: 'main', ops: [], seq: 6, note: BODY },
+    payload: { type: 'transcript.ops', agent_id: 'main', ops: [], seq: 6, note: BODY },
   }),
 ]
 
@@ -304,7 +339,8 @@ describe('TranscriptConnection', () => {
     socket.deliver({
       ...ENVELOPE,
       type: 'session.meta.updated',
-      payload: { session_id: 'c9', title: '新名字' },
+      session_id: 'c9',
+      payload: { title: '新名字' },
     })
     expect(connection.watermarkOf('c1', 'main')).toEqual(mark(6))
     expect(seen).toEqual([{ conversationId: 'c9', kind: 'title', mark: MARK, title: '新名字' }])
@@ -419,7 +455,8 @@ describe('TranscriptConnection', () => {
     socket.deliver({
       ...ENVELOPE,
       type: 'session.meta.updated',
-      payload: { session_id: 'c9', title: '夜景延时素材生成' },
+      session_id: 'c9',
+      payload: { title: '夜景延时素材生成' },
     })
     // 运行帧省略结束原因，上层应规范化为 null。
     socket.deliver({
@@ -546,12 +583,8 @@ describe('TranscriptConnection', () => {
 
     socket.deliver({ ...ENVELOPE, type: 'event.session.created', session_id: row.id, payload: row })
     socket.deliver({ ...ENVELOPE, type: 'event.session.updated', session_id: row.id, payload: row })
-    socket.deliver({
-      ...ENVELOPE,
-      type: 'event.session.deleted',
-      session_id: row.id,
-      payload: { session_id: row.id },
-    })
+    // 删除帧的对话 id 只在信封上，没有 payload。
+    socket.deliver({ ...ENVELOPE, type: 'event.session.deleted', session_id: row.id })
 
     expect(seen).toEqual([
       { conversationId: row.id, kind: 'created', mark: MARK, row },
@@ -588,42 +621,32 @@ describe('TranscriptConnection', () => {
     socket.deliver({
       ...ENVELOPE,
       type: 'session.meta.updated',
-      payload: { session_id: 'c9', title: '新名字' },
+      session_id: 'c9',
+      payload: { title: '新名字' },
     })
 
     expect(seen).toEqual([])
   })
 
-  it('订文件：发 watch_fs_add，变动按对话与路径分给它的 handler', () => {
+  it('监听文件只在本地登记、不发帧，变动按对话与路径分给它的 handler', () => {
     const connection = connect(['c1'])
-    const seen: string[] = []
-    connection.watchFs('c1', ['video_shot.json'], (changes) => {
-      for (const change of changes) seen.push(change.path)
-    })
+    const sentBefore = socket.frames().length
+    const seen: Array<{ path: string; change: string }> = []
+    connection.watchFs('c1', ['video_shot.json'], (changes) => seen.push(...changes))
 
-    const asked = socket.frames().find((frame) => frame.type === 'watch_fs_add')
-    expect(asked?.payload).toEqual({
-      paths: ['video_shot.json'],
-      recursive: false,
-      session_id: 'c1',
-    })
+    expect(socket.frames()).toHaveLength(sentBefore)
 
-    socket.deliver({
-      type: 'event.fs.changed',
-      session_id: 'c1',
-      payload: {
-        changes: [
-          { path: 'video_shot.json', change: 'modified', kind: 'file' },
-          { path: 'frames/extraction.json', change: 'created', kind: 'file' },
-        ],
-        coalesced_window_ms: 0,
-      },
-    })
+    socket.deliver(
+      fsChanged('c1', [
+        { path: 'video_shot.json', change: 'modified' },
+        { path: 'frames/extraction.json', change: 'created' },
+      ]),
+    )
 
-    expect(seen).toEqual(['video_shot.json'])
+    expect(seen).toEqual([{ path: 'video_shot.json', change: 'modified' }])
   })
 
-  it('订目录：空串是工作区根，recursive 收整棵，不 recursive 只收直接子项', () => {
+  it('监听目录：空串是工作区根，recursive 收整棵，不 recursive 只收直接子项', () => {
     const connection = connect(['c1'])
     const whole: string[] = []
     const top: string[] = []
@@ -635,21 +658,13 @@ describe('TranscriptConnection', () => {
       top.push(...changes.map((c) => `d:${c.path}`)),
     )
 
-    const asked = socket.frames().filter((frame) => frame.type === 'watch_fs_add')
-    expect(asked.map((frame) => frame.payload?.['recursive'])).toEqual([true, false, false])
-
-    socket.deliver({
-      type: 'event.fs.changed',
-      session_id: 'c1',
-      payload: {
-        changes: [
-          { path: 'storyboard.md', change: 'created', kind: 'file' },
-          { path: 'frames/extraction.json', change: 'created', kind: 'file' },
-          { path: 'frames/grids/a.json', change: 'created', kind: 'file' },
-        ],
-        coalesced_window_ms: 0,
-      },
-    })
+    socket.deliver(
+      fsChanged('c1', [
+        { path: 'storyboard.md', change: 'created' },
+        { path: 'frames/extraction.json', change: 'created' },
+        { path: 'frames/grids/a.json', change: 'created' },
+      ]),
+    )
 
     expect(whole).toEqual(['storyboard.md', 'frames/extraction.json', 'frames/grids/a.json'])
     expect(top).toEqual(['storyboard.md', 'd:frames/extraction.json'])
@@ -660,34 +675,21 @@ describe('TranscriptConnection', () => {
     const seen: string[] = []
     connection.watchFs('c1', ['video_shot.json'], () => seen.push('called'))
 
-    socket.deliver({
-      type: 'event.fs.changed',
-      session_id: 'c2',
-      payload: {
-        changes: [{ path: 'video_shot.json', change: 'modified', kind: 'file' }],
-        coalesced_window_ms: 0,
-      },
-    })
+    socket.deliver(fsChanged('c2', [{ path: 'video_shot.json', change: 'modified' }]))
 
     expect(seen).toEqual([])
   })
 
-  it('退订之后发 watch_fs_remove，也不再收变动', () => {
+  it('取消监听不发帧，之后也不再收变动', () => {
     const connection = connect(['c1'])
     const seen: string[] = []
     const stop = connection.watchFs('c1', ['video_shot.json'], () => seen.push('called'))
+    const sentBefore = socket.frames().length
 
     stop()
-    expect(socket.frames().some((frame) => frame.type === 'watch_fs_remove')).toBe(true)
+    expect(socket.frames()).toHaveLength(sentBefore)
 
-    socket.deliver({
-      type: 'event.fs.changed',
-      session_id: 'c1',
-      payload: {
-        changes: [{ path: 'video_shot.json', change: 'modified', kind: 'file' }],
-        coalesced_window_ms: 0,
-      },
-    })
+    socket.deliver(fsChanged('c1', [{ path: 'video_shot.json', change: 'modified' }]))
 
     expect(seen).toEqual([])
   })
@@ -717,10 +719,8 @@ describe('TranscriptConnection', () => {
 
     // 子流的帧按 agent_id 分发，主流那份回调不收；水位各记各的。
     socket.deliver({
-      type: 'transcript.ops',
-      session_id: 'c1',
-      stream_epoch: EPOCH,
-      payload: { agent_id: 'run-child', ops: [], seq: 2 },
+      ...ops(2),
+      payload: { type: 'transcript.ops', agent_id: 'run-child', ops: [], seq: 2 },
     })
     expect(child.map(([kind]) => kind)).toEqual(['ops'])
     expect(received.map(([conversationId]) => conversationId)).toEqual(['c1'])
@@ -786,10 +786,8 @@ describe('TranscriptConnection', () => {
       'run-a',
     )
     socket.deliver({
-      type: 'transcript.ops',
-      session_id: 'c1',
-      stream_epoch: EPOCH,
-      payload: { agent_id: 'run-a', ops: [], seq: 3 },
+      ...ops(3),
+      payload: { type: 'transcript.ops', agent_id: 'run-a', ops: [], seq: 3 },
     })
     connection.subscribe('c1', { onReset: () => {}, onOps: () => true }, 'delta', 'stale')
     const asked = socket
@@ -808,18 +806,23 @@ describe('TranscriptConnection', () => {
     expect(resent?.payload?.['transcript']).toEqual({ main: 'delta', 'run-a': 'delta' })
   })
 
-  it('断线重连之后把还在的文件订阅原样重发', () => {
+  it('断线重连之后文件监听还在，只重发对话订阅、不为文件发帧', () => {
     vi.useFakeTimers()
     const connection = connect(['c1'])
-    connection.watchFs('c1', ['video_shot.json'], () => {})
+    const seen: string[] = []
+    connection.watchFs('c1', ['video_shot.json'], (changes) =>
+      seen.push(...changes.map((change) => change.path)),
+    )
     const before = socket
 
     before.onclose?.()
     vi.advanceTimersByTime(2_000)
     socket.deliver(SERVER_HELLO)
 
-    const watches = before.frames().filter((frame) => frame.type === 'watch_fs_add')
-    expect(watches).toHaveLength(2)
+    // FakeSocket 在 createSocket 里复用同一个实例，前后两次连接发的帧都记在它上面。
+    expect(before.frames().map((frame) => frame.type)).toEqual(['subscribe_v2', 'subscribe_v2'])
+    socket.deliver(fsChanged('c1', [{ path: 'video_shot.json', change: 'modified' }]))
+    expect(seen).toEqual(['video_shot.json'])
     vi.useRealTimers()
   })
 })
