@@ -43,7 +43,7 @@ from agent_runtime.config.skills.models import (
 from agent_runtime.config.skills.rules import content_hash, file_entry
 from agent_runtime.errors import Conflict, NotFound
 
-DB_SCHEMA: Final = "iclip"
+DB_SCHEMA: Final = "agent_runtime"
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
@@ -56,7 +56,7 @@ skills_table = Table(
     Column("description", Text, nullable=False),
     Column("latest_version_id", Uuid, nullable=True),
     Column("status", Text, nullable=False),
-    Column("created_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("created_by", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     UniqueConstraint("name", name="uq_skills_name"),
@@ -70,7 +70,7 @@ skill_draft_files_table = Table(
     Column("content", Text, nullable=False),
     Column("size", Integer, nullable=False),
     Column("hash", Text, nullable=False),
-    Column("updated_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("updated_by", Uuid, nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     PrimaryKeyConstraint("skill_id", "path"),
 )
@@ -84,7 +84,7 @@ skill_versions_table = Table(
     Column("note", Text, nullable=True),
     Column("manifest", JSONB, nullable=False),
     Column("content_hash", Text, nullable=False),
-    Column("created_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("created_by", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     UniqueConstraint("skill_id", "version", name="uq_skill_versions_skill_version"),
     Index("ix_skill_versions_content_hash", "content_hash"),
@@ -104,7 +104,7 @@ _DUPLICATE_NAME: Final = "uq_skills_name"
 _SKILL_COLUMNS: Final = """
 s.id, s.name, s.display_name, s.description, s.latest_version_id, s.status, s.created_by,
 s.created_at, s.updated_at, v.version AS latest_version, v.content_hash AS latest_content_hash
-FROM iclip.skills s LEFT JOIN iclip.skill_versions v ON v.id = s.latest_version_id"""
+FROM agent_runtime.skills s LEFT JOIN agent_runtime.skill_versions v ON v.id = s.latest_version_id"""
 
 _LIST: Final = text(f"SELECT {_SKILL_COLUMNS} ORDER BY s.created_at DESC, s.id DESC")
 _GET: Final = text(f"SELECT {_SKILL_COLUMNS} WHERE s.id = :id")
@@ -112,46 +112,46 @@ _BY_NAME: Final = text(f"SELECT {_SKILL_COLUMNS} WHERE s.name = :name")
 _LOCK: Final = text(f"SELECT {_SKILL_COLUMNS} WHERE s.id = :id FOR UPDATE OF s")
 
 _ALL_DRAFT_ENTRIES: Final = text("""
-SELECT skill_id, path, size, hash FROM iclip.skill_draft_files""")
+SELECT skill_id, path, size, hash FROM agent_runtime.skill_draft_files""")
 
 _DRAFT: Final = text("""
-SELECT path, size, hash, updated_at FROM iclip.skill_draft_files
+SELECT path, size, hash, updated_at FROM agent_runtime.skill_draft_files
 WHERE skill_id = :skill_id ORDER BY path COLLATE "C"
 """)
 """按码位排，与清单（Python 的 ``sorted``）同一个先后；库的默认排序规则会把大小写混着排。"""
 
 _DRAFT_CONTENTS: Final = text("""
-SELECT path, content FROM iclip.skill_draft_files WHERE skill_id = :skill_id""")
+SELECT path, content FROM agent_runtime.skill_draft_files WHERE skill_id = :skill_id""")
 
 _DRAFT_FILE: Final = text("""
-SELECT path, content, size, hash, updated_at FROM iclip.skill_draft_files
+SELECT path, content, size, hash, updated_at FROM agent_runtime.skill_draft_files
 WHERE skill_id = :skill_id AND path = :path""")
 
 _PUT_FILE: Final = text("""
-INSERT INTO iclip.skill_draft_files (skill_id, path, content, size, hash, updated_by)
+INSERT INTO agent_runtime.skill_draft_files (skill_id, path, content, size, hash, updated_by)
 VALUES (:skill_id, :path, :content, :size, :hash, :by)
 ON CONFLICT (skill_id, path) DO UPDATE
 SET content = EXCLUDED.content, size = EXCLUDED.size, hash = EXCLUDED.hash,
     updated_by = EXCLUDED.updated_by, updated_at = now()""")
 
 _DELETE_FILE: Final = text("""
-DELETE FROM iclip.skill_draft_files WHERE skill_id = :skill_id AND path = :path""")
+DELETE FROM agent_runtime.skill_draft_files WHERE skill_id = :skill_id AND path = :path""")
 
-_CLEAR_DRAFT: Final = text("DELETE FROM iclip.skill_draft_files WHERE skill_id = :skill_id")
+_CLEAR_DRAFT: Final = text("DELETE FROM agent_runtime.skill_draft_files WHERE skill_id = :skill_id")
 
-_TOUCH: Final = text("UPDATE iclip.skills SET updated_at = now() WHERE id = :id")
+_TOUCH: Final = text("UPDATE agent_runtime.skills SET updated_at = now() WHERE id = :id")
 
 _NEXT_VERSION: Final = text("""
-SELECT coalesce(max(version), 0) + 1 FROM iclip.skill_versions WHERE skill_id = :skill_id""")
+SELECT coalesce(max(version), 0) + 1 FROM agent_runtime.skill_versions WHERE skill_id = :skill_id""")
 
 _POINT_TO: Final = text("""
-UPDATE iclip.skills
+UPDATE agent_runtime.skills
 SET latest_version_id = :version_id, description = :description, updated_at = now()
 WHERE id = :id""")
 
 _VERSION_COLUMNS: Final = """
 id, skill_id, version, note, manifest, content_hash, created_by, created_at
-FROM iclip.skill_versions"""
+FROM agent_runtime.skill_versions"""
 
 _VERSIONS: Final = text(f"""
 SELECT {_VERSION_COLUMNS} WHERE skill_id = :skill_id ORDER BY version DESC""")
@@ -159,10 +159,10 @@ SELECT {_VERSION_COLUMNS} WHERE skill_id = :skill_id ORDER BY version DESC""")
 _VERSION: Final = text(f"SELECT {_VERSION_COLUMNS} WHERE skill_id = :skill_id AND id = :id")
 
 _VERSION_FILES: Final = text("""
-SELECT path, content FROM iclip.skill_version_files WHERE version_id = :version_id""")
+SELECT path, content FROM agent_runtime.skill_version_files WHERE version_id = :version_id""")
 
 _VERSION_FILE: Final = text("""
-SELECT content FROM iclip.skill_version_files WHERE version_id = :version_id AND path = :path""")
+SELECT content FROM agent_runtime.skill_version_files WHERE version_id = :version_id AND path = :path""")
 
 
 def _skill_of(row: RowMapping) -> Skill:

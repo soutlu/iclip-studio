@@ -48,15 +48,15 @@ async def failing_version_files(engine: AsyncEngine) -> AsyncGenerator[None]:
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "CREATE FUNCTION iclip.test_fail_skill_version_files() RETURNS trigger"
+                "CREATE FUNCTION agent_runtime.test_fail_skill_version_files() RETURNS trigger"
                 " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'version files refused'; END $$"
             )
         )
         await conn.execute(
             text(
                 "CREATE TRIGGER test_fail_skill_version_files"
-                " BEFORE INSERT ON iclip.skill_version_files"
-                " FOR EACH ROW EXECUTE FUNCTION iclip.test_fail_skill_version_files()"
+                " BEFORE INSERT ON agent_runtime.skill_version_files"
+                " FOR EACH ROW EXECUTE FUNCTION agent_runtime.test_fail_skill_version_files()"
             )
         )
     try:
@@ -64,15 +64,20 @@ async def failing_version_files(engine: AsyncEngine) -> AsyncGenerator[None]:
     finally:
         async with engine.begin() as conn:
             await conn.execute(
-                text("DROP TRIGGER test_fail_skill_version_files ON iclip.skill_version_files")
+                text(
+                    "DROP TRIGGER test_fail_skill_version_files"
+                    " ON agent_runtime.skill_version_files"
+                )
             )
-            await conn.execute(text("DROP FUNCTION iclip.test_fail_skill_version_files()"))
+            await conn.execute(text("DROP FUNCTION agent_runtime.test_fail_skill_version_files()"))
 
 
 async def row_counts(engine: AsyncEngine) -> dict[str, int]:
     async with engine.connect() as conn:
         return {
-            table: (await conn.execute(text(f"SELECT count(*) FROM iclip.{table}"))).scalar_one()
+            table: (
+                await conn.execute(text(f"SELECT count(*) FROM agent_runtime.{table}"))
+            ).scalar_one()
             for table in TABLES
         }
 

@@ -173,10 +173,10 @@ async def importing(
 
 async def counts(engine: AsyncEngine) -> dict[str, int]:
     tables = (
-        "iclip.agents",
-        "iclip.skills",
-        "iclip.model_providers",
-        "iclip.provider_credentials",
+        "agent_runtime.agents",
+        "agent_runtime.skills",
+        "agent_runtime.model_providers",
+        "agent_runtime.provider_credentials",
         "agent_runtime.sessions",
     )
     async with engine.connect() as conn:
@@ -206,12 +206,13 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
 
     # 供应商按声明名接入；密钥按（api_key_env，base_url）去重，第一把是默认。
     ((provider_id, provider_name, default_key),) = await rows(
-        engine, "SELECT id, provider, default_credential_id FROM iclip.model_providers"
+        engine, "SELECT id, provider, default_credential_id FROM agent_runtime.model_providers"
     )
     assert provider_name == "bailian"
     credentials = await rows(
         engine,
-        "SELECT id, name FROM iclip.provider_credentials WHERE provider_id = :p ORDER BY created_at",
+        "SELECT id, name FROM agent_runtime.provider_credentials"
+        " WHERE provider_id = :p ORDER BY created_at",
         p=provider_id,
     )
     assert [name for _id, name in credentials] == ["T_QWEN_A", "T_QWEN_B"]
@@ -219,7 +220,7 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
     second_key = credentials[1][0]
     # 声明里没有的模型建成自己加的：接口、上下文长度与它配的档位。
     ((properties,),) = await rows(
-        engine, "SELECT properties FROM iclip.provider_models WHERE name = 'qwen-custom'"
+        engine, "SELECT properties FROM agent_runtime.provider_models WHERE name = 'qwen-custom'"
     )
     assert (properties["api"], properties["context_size"], properties["thinking"]) == (
         "chat",
@@ -227,21 +228,22 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
         ["high"],
     )
     ((title_model,),) = await rows(
-        engine, "SELECT model_name FROM iclip.default_models WHERE type = 'llm'"
+        engine, "SELECT model_name FROM agent_runtime.default_models WHERE type = 'llm'"
     )
     assert title_model == "qwen3.8-flash"
 
     skills = await rows(
         engine,
-        "SELECT s.name, v.version FROM iclip.skills s"
-        " JOIN iclip.skill_versions v ON v.id = s.latest_version_id ORDER BY s.name",
+        "SELECT s.name, v.version FROM agent_runtime.skills s"
+        " JOIN agent_runtime.skill_versions v ON v.id = s.latest_version_id ORDER BY s.name",
     )
     assert skills == [("director-guide", 1), ("shot-rules", 1)]
 
     agents = await rows(
         engine,
         "SELECT a.id, a.name, a.listed, a.sort_order, v.version, v.config"
-        " FROM iclip.agents a JOIN iclip.agent_versions v ON v.id = a.active_version_id"
+        " FROM agent_runtime.agents a"
+        " JOIN agent_runtime.agent_versions v ON v.id = a.active_version_id"
         " ORDER BY a.sort_order",
     )
     assert [(row[0], row[1], row[2], row[4]) for row in agents] == [
@@ -278,15 +280,16 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
     ]
     bound = await rows(
         engine,
-        "SELECT s.name FROM iclip.agent_version_skills b JOIN iclip.skills s ON s.id = b.skill_id"
-        " JOIN iclip.agents a ON a.active_version_id = b.version_id WHERE a.id = 'storyboard'"
+        "SELECT s.name FROM agent_runtime.agent_version_skills b"
+        " JOIN agent_runtime.skills s ON s.id = b.skill_id"
+        " JOIN agent_runtime.agents a ON a.active_version_id = b.version_id WHERE a.id = 'storyboard'"
         " ORDER BY b.priority",
     )
     assert [name for (name,) in bound] == ["director-guide", "shot-rules"]
 
     sessions = dict(await rows(engine, "SELECT id, agent_version_id FROM agent_runtime.sessions"))
     ((director_v1,),) = await rows(
-        engine, "SELECT active_version_id FROM iclip.agents WHERE id = 'director'"
+        engine, "SELECT active_version_id FROM agent_runtime.agents WHERE id = 'director'"
     )
     assert sessions == {director_chat: director_v1, gone_chat: None}
     assert await rows(engine, "SELECT DISTINCT app_id FROM agent_runtime.sessions") == [("video",)]

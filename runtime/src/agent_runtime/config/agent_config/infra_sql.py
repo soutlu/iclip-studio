@@ -44,7 +44,7 @@ from agent_runtime.config.agent_config.models import (
 from agent_runtime.config.agent_config.repository import ImportedAgent
 from agent_runtime.errors import Conflict, NotFound
 
-DB_SCHEMA: Final = "iclip"
+DB_SCHEMA: Final = "agent_runtime"
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
@@ -58,7 +58,7 @@ agents_table = Table(
     Column("listed", Boolean, nullable=False),
     Column("sort_order", Integer, nullable=False),
     Column("active_version_id", Uuid, nullable=True),
-    Column("created_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("created_by", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
 )
@@ -70,7 +70,7 @@ agent_drafts_table = Table(
     Column("config", JSONB, nullable=False),
     Column("base_version_id", Uuid, nullable=True),
     Column("lock_version", Integer, nullable=False),
-    Column("updated_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("updated_by", Uuid, nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
 )
 
@@ -82,7 +82,7 @@ agent_versions_table = Table(
     Column("version", Integer, nullable=False),
     Column("config", JSONB, nullable=False),
     Column("note", Text, nullable=True),
-    Column("created_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("created_by", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     UniqueConstraint("agent_id", "version", name="uq_agent_versions_agent_version"),
 )
@@ -95,7 +95,7 @@ agent_revisions_table = Table(
     Column("operation", Text, nullable=False),
     Column("from_version_id", Uuid, nullable=True),
     Column("to_version_id", Uuid, nullable=True),
-    Column("actor_id", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("actor_id", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
 )
 
@@ -126,9 +126,9 @@ d.config AS draft_config, d.base_version_id, d.lock_version, d.updated_by AS dra
 d.updated_at AS draft_updated_at,
 v.version AS active_version, v.config AS active_config, v.note AS active_note,
 v.created_by AS active_created_by, v.created_at AS active_created_at
-FROM iclip.agents a
-JOIN iclip.agent_drafts d ON d.agent_id = a.id
-LEFT JOIN iclip.agent_versions v ON v.id = a.active_version_id"""
+FROM agent_runtime.agents a
+JOIN agent_runtime.agent_drafts d ON d.agent_id = a.id
+LEFT JOIN agent_runtime.agent_versions v ON v.id = a.active_version_id"""
 
 _ORDER: Final = "ORDER BY a.sort_order, a.created_at DESC, a.id DESC"
 
@@ -137,33 +137,35 @@ _GET: Final = text(f"SELECT {_STATE_COLUMNS} WHERE a.id = :id")
 _LOCK: Final = text(f"SELECT {_STATE_COLUMNS} WHERE a.id = :id FOR UPDATE OF a, d")
 
 _ALL_BINDINGS: Final = text("""
-SELECT agent_id, skill_id FROM iclip.agent_skill_bindings ORDER BY agent_id, priority""")
+SELECT agent_id, skill_id FROM agent_runtime.agent_skill_bindings ORDER BY agent_id, priority""")
 _BINDINGS: Final = text("""
-SELECT skill_id FROM iclip.agent_skill_bindings WHERE agent_id = :agent_id ORDER BY priority""")
+SELECT skill_id FROM agent_runtime.agent_skill_bindings WHERE agent_id = :agent_id ORDER BY priority""")
 _VERSION_SKILLS: Final = text("""
-SELECT version_id, skill_id FROM iclip.agent_version_skills
+SELECT version_id, skill_id FROM agent_runtime.agent_version_skills
 WHERE version_id = ANY(:ids) ORDER BY version_id, priority""")
 
 _VERSION_COLUMNS: Final = """
-id, agent_id, version, config, note, created_by, created_at FROM iclip.agent_versions"""
+id, agent_id, version, config, note, created_by, created_at FROM agent_runtime.agent_versions"""
 _VERSIONS: Final = text(
     f"SELECT {_VERSION_COLUMNS} WHERE agent_id = :agent_id ORDER BY version DESC"
 )
 _VERSION: Final = text(f"SELECT {_VERSION_COLUMNS} WHERE agent_id = :agent_id AND id = :id")
 
 _NEXT_VERSION: Final = text("""
-SELECT coalesce(max(version), 0) + 1 FROM iclip.agent_versions WHERE agent_id = :agent_id""")
-_NEXT_SORT_ORDER: Final = text("SELECT coalesce(max(sort_order), -1) + 1 FROM iclip.agents")
+SELECT coalesce(max(version), 0) + 1 FROM agent_runtime.agent_versions WHERE agent_id = :agent_id""")
+_NEXT_SORT_ORDER: Final = text("SELECT coalesce(max(sort_order), -1) + 1 FROM agent_runtime.agents")
 
-_CLEAR_BINDINGS: Final = text("DELETE FROM iclip.agent_skill_bindings WHERE agent_id = :agent_id")
+_CLEAR_BINDINGS: Final = text(
+    "DELETE FROM agent_runtime.agent_skill_bindings WHERE agent_id = :agent_id"
+)
 
 _POINT_TO: Final = text("""
-UPDATE iclip.agents SET active_version_id = :version_id, updated_at = now() WHERE id = :id""")
+UPDATE agent_runtime.agents SET active_version_id = :version_id, updated_at = now() WHERE id = :id""")
 _DRAFT_BASE: Final = text("""
-UPDATE iclip.agent_drafts SET base_version_id = :version_id WHERE agent_id = :agent_id""")
+UPDATE agent_runtime.agent_drafts SET base_version_id = :version_id WHERE agent_id = :agent_id""")
 
 _REORDER: Final = text("""
-UPDATE iclip.agents a SET sort_order = o.position - 1, updated_at = now()
+UPDATE agent_runtime.agents a SET sort_order = o.position - 1, updated_at = now()
 FROM unnest(CAST(:ids AS text[])) WITH ORDINALITY AS o(id, position)
 WHERE a.id = o.id""")
 

@@ -25,7 +25,7 @@ sessions_table = Table(
     metadata_obj,
     Column("id", Uuid, primary_key=True),
     Column("app_id", Text, nullable=False),
-    # 迁移里外键指向 iclip.agent_versions；这份元数据只给本模块读写，不声明跨 schema 的外键。
+    # 外键（指向 agent_versions）由迁移建；这份元数据只给本模块读写，不引用 agent 配置的表定义。
     Column("agent_version_id", Uuid, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
 )

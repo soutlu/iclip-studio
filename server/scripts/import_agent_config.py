@@ -651,7 +651,7 @@ async def apply_plan(
         text(
             "INSERT INTO agent_runtime.sessions (id, app_id, agent_version_id)"
             " SELECT c.id, :app_id, a.active_version_id FROM iclip.conversations c"
-            " LEFT JOIN iclip.agents a ON a.id = c.agent_id"
+            " LEFT JOIN agent_runtime.agents a ON a.id = c.agent_id"
             " ON CONFLICT (id) DO NOTHING"
         ),
         {"app_id": VIDEO_APP_ID},

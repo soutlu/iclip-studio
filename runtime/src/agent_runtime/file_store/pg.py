@@ -52,7 +52,12 @@ workspace_files_table = Table(
     Column("path", Text, nullable=False),
     Column("content", Text, nullable=False),
     # 生成列由 PostgreSQL 计算容量；Computed 排除 INSERT/UPDATE 显式赋值。
-    Column("size_bytes", BigInteger, Computed("octet_length(content)", persisted=True)),
+    Column(
+        "size_bytes",
+        BigInteger,
+        Computed("octet_length(content)", persisted=True),
+        nullable=False,
+    ),
     Column("version", BigInteger, nullable=False),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False),
     Column("updated_at", TIMESTAMP(timezone=True), nullable=False),

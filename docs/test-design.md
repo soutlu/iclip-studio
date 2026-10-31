@@ -40,7 +40,7 @@ transcript 按场景测：[场景测试](../server/tests/integration_no_llm/agen
 
 CI 使用明确配置的 Postgres service container；连接失败应报错，不能依赖本地跳过路径。真实外部服务测试缺凭证时可以跳过；凭证齐备后的连接、协议或业务失败不得伪装成缺凭证。
 
-新增 `iclip` 自有表时，把模块元数据纳入 [迁移对账测试](../server/tests/integration_no_llm/bootstrap/test_migrations.py) 的 `_MODULE_METADATA`。该测试只比较表名与列名集合；列类型、索引、约束，以及 `agent_runtime` 和 procrastinate 表的迁移需另行核对。
+新增 `iclip` 或 `agent_runtime` 的表时，把模块元数据纳入 [迁移对账测试](../server/tests/integration_no_llm/bootstrap/test_migrations.py) 的 `_MODULE_METADATA`。该测试只比较两个 schema 的表名与列名集合；列类型、可空性、索引、约束，以及 procrastinate 表的迁移需另行核对。
 
 ## 4. 验证边界
 

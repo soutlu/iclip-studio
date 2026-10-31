@@ -172,7 +172,9 @@ async def ready_agent(world: World, agent_id: str, **fields: Any) -> uuid.UUID:
 async def row_counts(engine: AsyncEngine) -> dict[str, int]:
     async with engine.connect() as conn:
         return {
-            table: (await conn.execute(text(f"SELECT count(*) FROM iclip.{table}"))).scalar_one()
+            table: (
+                await conn.execute(text(f"SELECT count(*) FROM agent_runtime.{table}"))
+            ).scalar_one()
             for table in TABLES
         }
 
@@ -181,7 +183,7 @@ async def operations(engine: AsyncEngine, agent_id: str) -> list[str]:
     async with engine.connect() as conn:
         rows = await conn.execute(
             text(
-                "SELECT operation FROM iclip.agent_revisions WHERE agent_id = :id"
+                "SELECT operation FROM agent_runtime.agent_revisions WHERE agent_id = :id"
                 " ORDER BY created_at, operation"
             ),
             {"id": agent_id},
@@ -196,15 +198,15 @@ async def failing_version_skills(engine: AsyncEngine) -> AsyncGenerator[None]:
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "CREATE FUNCTION iclip.test_fail_agent_version_skills() RETURNS trigger"
+                "CREATE FUNCTION agent_runtime.test_fail_agent_version_skills() RETURNS trigger"
                 " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'version skills refused'; END $$"
             )
         )
         await conn.execute(
             text(
                 "CREATE TRIGGER test_fail_agent_version_skills"
-                " BEFORE INSERT ON iclip.agent_version_skills"
-                " FOR EACH ROW EXECUTE FUNCTION iclip.test_fail_agent_version_skills()"
+                " BEFORE INSERT ON agent_runtime.agent_version_skills"
+                " FOR EACH ROW EXECUTE FUNCTION agent_runtime.test_fail_agent_version_skills()"
             )
         )
     try:
@@ -212,9 +214,12 @@ async def failing_version_skills(engine: AsyncEngine) -> AsyncGenerator[None]:
     finally:
         async with engine.begin() as conn:
             await conn.execute(
-                text("DROP TRIGGER test_fail_agent_version_skills ON iclip.agent_version_skills")
+                text(
+                    "DROP TRIGGER test_fail_agent_version_skills"
+                    " ON agent_runtime.agent_version_skills"
+                )
             )
-            await conn.execute(text("DROP FUNCTION iclip.test_fail_agent_version_skills()"))
+            await conn.execute(text("DROP FUNCTION agent_runtime.test_fail_agent_version_skills()"))
 
 
 async def test_new_agent_has_an_empty_draft_and_a_create_record(
