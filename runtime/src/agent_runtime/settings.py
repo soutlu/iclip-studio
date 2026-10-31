@@ -66,7 +66,8 @@ class HooksSection(ConfigSection):
 
     token_env: EnvName | None = None
     gate: HttpUrl | None
-    """开跑检查：每次运行开跑前等它答 2xx，否则这次运行失败。"""
+    """开跑检查：每次运行开跑前等它答 2xx。没答复（超时、连不上）或答 502/503/504 时退避重试约 30 秒，
+    还没放行、或答了别的非 2xx，这次运行失败，原因记在消息行上。"""
     run_started: HttpUrl | None
     """每次顶层运行挂上租约后等它答完再往下跑；失败只记日志。"""
     turn_started: HttpUrl | None

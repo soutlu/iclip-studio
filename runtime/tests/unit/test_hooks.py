@@ -1,5 +1,6 @@
-"""回调应用：开跑检查答 2xx 才放行，非 2xx、超时、连不上都抛 ``HookRejected``；运行与轮次开始失败只记日志。
-请求按会话归属的应用找地址，带令牌与 JSON 请求体；应用没配的回调不发。"""
+"""回调应用：开跑检查答 2xx 才放行；超时、连不上、答 502/503/504 在重试窗口里再试，窗口用完或答别的非 2xx
+抛 ``HookRejected``；运行与轮次开始失败只记日志。请求按会话归属的应用找地址，带令牌与 JSON 请求体；
+应用没配的回调不发。"""
 
 from __future__ import annotations
 
@@ -11,10 +12,10 @@ from collections.abc import AsyncGenerator, Callable
 import httpx
 import pytest
 
+from agent_runtime.errors import HookRejected
 from agent_runtime.hooks import (
     AppHooks,
     GatePayload,
-    HookRejected,
     RunStartedPayload,
     TurnStartedPayload,
 )
@@ -65,10 +66,23 @@ def recorder() -> Recorder:
     return Recorder()
 
 
+def quick_hooks(client: httpx.AsyncClient) -> AppHooks:
+    """重试退避缩到几十毫秒的 ``AppHooks``，窗口内能试好几次。"""
+
+    return AppHooks(
+        hooks={"bff": BFF_HOOKS},
+        app_of=app_of,
+        client=client,
+        first_retry_seconds=0.01,
+        max_retry_seconds=0.02,
+        retry_window_seconds=0.1,
+    )
+
+
 @pytest.fixture
 async def hooks(recorder: Recorder) -> AsyncGenerator[AppHooks]:
     async with httpx.AsyncClient(transport=httpx.MockTransport(recorder)) as client:
-        yield AppHooks(hooks={"bff": BFF_HOOKS}, app_of=app_of, client=client)
+        yield quick_hooks(client)
 
 
 def gate_payload(session: uuid.UUID = SESSION) -> GatePayload:
@@ -103,25 +117,67 @@ async def test_the_gate_posts_the_payload_with_the_token(
 
 
 @pytest.mark.parametrize("status", [403, 500, 302])
-async def test_a_non_2xx_gate_answer_rejects_the_run(
+async def test_a_non_2xx_gate_answer_rejects_the_run_without_retrying(
     hooks: AppHooks, recorder: Recorder, status: int
 ) -> None:
     recorder.answer = lambda _request: httpx.Response(status)
 
-    with pytest.raises(HookRejected, match=str(status)):
+    with pytest.raises(HookRejected, match=f"答了 {status}"):
         await hooks.gate(gate_payload())
+    assert len(recorder.requests) == 1
+
+
+def answering(code: int) -> Handler:
+    return lambda _request: httpx.Response(code)
+
+
+TRANSIENT = pytest.mark.parametrize(
+    "transient",
+    [
+        raising(httpx.ReadTimeout("慢")),
+        raising(httpx.ConnectError("连不上")),
+        answering(502),
+        answering(503),
+        answering(504),
+    ],
+    ids=["timeout", "connect", "502", "503", "504"],
+)
+
+
+@TRANSIENT
+async def test_the_gate_retries_a_temporarily_absent_app_until_it_answers(
+    hooks: AppHooks, recorder: Recorder, transient: Handler
+) -> None:
+    answers = iter([transient, transient, answering(204)])
+    recorder.answer = lambda request: next(answers)(request)
+
+    await hooks.gate(gate_payload())
+
+    assert len(recorder.requests) == 3
 
 
 @pytest.mark.parametrize(
     "error", [httpx.ReadTimeout("慢"), httpx.ConnectError("连不上")], ids=["timeout", "connect"]
 )
-async def test_a_gate_that_does_not_answer_rejects_the_run(
+async def test_a_gate_that_never_answers_rejects_the_run_after_the_window(
     hooks: AppHooks, recorder: Recorder, error: httpx.HTTPError
 ) -> None:
     recorder.answer = raising(error)
 
-    with pytest.raises(HookRejected):
+    with pytest.raises(HookRejected, match="没有答复"):
         await hooks.gate(gate_payload())
+    assert len(recorder.requests) > 1
+
+
+@pytest.mark.parametrize("code", [502, 503, 504])
+async def test_a_gateway_error_that_persists_rejects_the_run_with_its_status(
+    hooks: AppHooks, recorder: Recorder, code: int
+) -> None:
+    recorder.answer = answering(code)
+
+    with pytest.raises(HookRejected, match=f"答了 {code}"):
+        await hooks.gate(gate_payload())
+    assert len(recorder.requests) > 1
 
 
 async def test_a_gate_slower_than_the_timeout_rejects_the_run() -> None:
@@ -132,9 +188,8 @@ async def test_a_gate_slower_than_the_timeout_rejects_the_run() -> None:
         return httpx.Response(204)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(slow)) as client:
-        hooks = AppHooks(hooks={"bff": BFF_HOOKS}, app_of=app_of, client=client)
-        with pytest.raises(HookRejected):
-            await hooks.gate(gate_payload())
+        with pytest.raises(HookRejected, match="没有答复"):
+            await quick_hooks(client).gate(gate_payload())
 
 
 async def test_apps_without_a_gate_are_not_called(hooks: AppHooks, recorder: Recorder) -> None:

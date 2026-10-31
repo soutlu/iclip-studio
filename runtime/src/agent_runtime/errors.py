@@ -42,11 +42,20 @@ class AgentUnavailable(Conflict):
     code = "agent_unavailable"
 
 
+class HookRejected(DomainError):
+    """开跑检查没放行：应用答了不该重试的非 2xx，或在重试窗口里一直没答复、一直答 502/503/504。
+
+    消息是给人看的原因，说清是没有答复还是答了哪个状态码。只在运行驱动里抛、记在消息行上，不经 HTTP 答出去。"""
+
+    code = "gate_rejected"
+
+
 __all__ = [
     "AgentUnavailable",
     "AuthenticationFailed",
     "Conflict",
     "DomainError",
+    "HookRejected",
     "NotFound",
     "PermissionDenied",
     "ValidationFailed",

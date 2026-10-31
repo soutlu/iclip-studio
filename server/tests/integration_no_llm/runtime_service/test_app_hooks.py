@@ -1,17 +1,23 @@
-"""运行时回调应用：开跑检查不放行（非 2xx、超时）这次运行失败；运行开始在这次运行的第一批操作之前调到；
-轮次开始每轮一次，审批续跑不算；没配回调的应用一次都不调。回调经 ``HookRecorder`` 接住。"""
+"""运行时回调应用：开跑检查不放行这次运行失败，原因记在消息行上，应用暂时不在（没答复、答 502/503/504）先在
+窗口里重试；运行开始在这次运行的第一批操作之前调到；轮次开始每轮一次，审批续跑不算；没配回调的应用一次都
+不调。回调经 ``HookRecorder`` 接住。"""
 
 from __future__ import annotations
 
-from typing import Any
+import uuid
+from collections.abc import AsyncGenerator
 
 import httpx
 import pytest
+from agent_runtime.harness.jobs import JobRow
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.hooks import AppHooks, GatePayload
 from agent_runtime.settings import ResolvedHooks
 from pydantic_ai.models import Model
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.helpers.app import TEST_MODEL_NAME
-from tests.helpers.runtime import calls_then_says, says
+from tests.helpers.runtime import build_runner, calls_then_says, drained, says, submit_text
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
     HOOK_TOKEN,
@@ -53,19 +59,10 @@ def test_the_gate_is_called_with_the_prompt_and_lets_the_run_through(
     assert set(hook_recorder.tokens) == {f"Bearer {HOOK_TOKEN}"}
 
 
-def answer_timeout() -> httpx.Response:
-    raise httpx.ReadTimeout("开跑检查太慢")
-
-
-@pytest.mark.parametrize(
-    "answer",
-    [lambda: httpx.Response(403), answer_timeout],
-    ids=["forbidden", "timeout"],
-)
 def test_a_gate_that_does_not_let_it_through_fails_the_run(
-    live: LiveRuntime, hook_recorder: HookRecorder, answer: Any
+    live: LiveRuntime, hook_recorder: HookRecorder
 ) -> None:
-    hook_recorder.answers["gate"] = answer
+    hook_recorder.answers["gate"] = lambda: httpx.Response(403)
     session = live.open_session()
 
     live.send(session, "prm_refused")
@@ -73,6 +70,95 @@ def test_a_gate_that_does_not_let_it_through_fails_the_run(
 
     assert live.status(session) == "failed"
     assert [body["prompt_id"] for body in hook_recorder.named("gate")] == ["prm_refused"]
+
+
+# --- 开跑检查接在运行驱动上：应用暂时不在就重试，没放行的原因记在消息行上 -----------------
+
+
+async def reader_app(_session_id: str) -> str:
+    return "reader"
+
+
+@pytest.fixture
+async def quick_gate(hook_recorder: HookRecorder) -> AsyncGenerator[AppHooks]:
+    """回调经 ``hook_recorder`` 接住、重试退避缩到几十毫秒的开跑检查。"""
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(hook_recorder)) as client:
+        yield AppHooks(
+            hooks={"reader": READER_HOOKS},
+            app_of=reader_app,
+            client=client,
+            first_retry_seconds=0.01,
+            max_retry_seconds=0.02,
+            retry_window_seconds=0.1,
+        )
+
+
+async def run_through_gate(engine: AsyncEngine, gate: AppHooks) -> JobRow:
+    """照组合根的接法把开跑检查接在运行依赖构造上，跑完一条消息，交回它的消息行。"""
+
+    async def deps_for(row: JobRow) -> None:
+        await gate.gate(
+            GatePayload(
+                session_id=uuid.UUID(row.conversation_id),
+                owner_user_id=row.owner_user_id,
+                user_name=row.user_name,
+                prompt_id=row.prompt_id,
+                run_id=row.run_id,
+            )
+        )
+
+    runner, _store, queue = build_runner(
+        engine, says("答：走起来"), store=TranscriptStore(), deps_for=deps_for
+    )
+    conversation_id = str(uuid.uuid4())
+    prompt_id = await submit_text(runner, queue, conversation_id, "开始")
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    row = await queue.get(prompt_id)
+    assert row is not None
+    return row
+
+
+def no_answer() -> httpx.Response:
+    raise httpx.ConnectError("后端在重启")
+
+
+async def test_the_run_goes_ahead_once_a_temporarily_absent_gate_answers(
+    engine: AsyncEngine, quick_gate: AppHooks, hook_recorder: HookRecorder
+) -> None:
+    answers = iter([no_answer, lambda: httpx.Response(503), lambda: httpx.Response(204)])
+    hook_recorder.answers["gate"] = lambda: next(answers)()
+
+    row = await run_through_gate(engine, quick_gate)
+
+    assert (row.status, row.interrupt_reason) == ("completed", None)
+    assert len(hook_recorder.named("gate")) == 3
+
+
+async def test_a_forbidding_gate_fails_the_run_at_once_with_the_reason(
+    engine: AsyncEngine, quick_gate: AppHooks, hook_recorder: HookRecorder
+) -> None:
+    hook_recorder.answers["gate"] = lambda: httpx.Response(403)
+
+    row = await run_through_gate(engine, quick_gate)
+
+    assert row.status == "failed"
+    assert row.interrupt_reason is not None
+    assert "答了 403" in row.interrupt_reason
+    assert len(hook_recorder.named("gate")) == 1
+
+
+async def test_a_gate_that_never_answers_fails_the_run_after_the_window_with_the_reason(
+    engine: AsyncEngine, quick_gate: AppHooks, hook_recorder: HookRecorder
+) -> None:
+    hook_recorder.answers["gate"] = no_answer
+
+    row = await run_through_gate(engine, quick_gate)
+
+    assert row.status == "failed"
+    assert row.interrupt_reason is not None
+    assert "没有答复" in row.interrupt_reason
 
 
 def test_run_started_comes_before_the_runs_first_ops(

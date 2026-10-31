@@ -33,7 +33,7 @@ from pydantic_ai.tools import DeferredToolResults, RunContext
 from pydantic_ai_harness.compaction import ReportContextUsage, SummarizingCompaction
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 
-from agent_runtime.errors import AgentUnavailable, Conflict, NotFound
+from agent_runtime.errors import AgentUnavailable, Conflict, HookRejected, NotFound
 from agent_runtime.harness.agents import DELEGATE_TOOL
 from agent_runtime.harness.background import interrupt_stale_receipts
 from agent_runtime.harness.context_compaction import ContextCompaction
@@ -92,7 +92,9 @@ class RunAgents(Protocol):
 
 
 DepsFor = Callable[[JobRow], Awaitable[Any]]
-"""为消息构造运行依赖；身份固定为消息入队时的属主，由组合根提供具体依赖。"""
+"""为消息构造运行依赖；身份固定为消息入队时的属主，由组合根提供具体依赖。
+
+不让这次运行开跑时抛 ``HookRejected``：运行记失败，原因记在消息行上。"""
 
 TurnStarted = Callable[[JobRow], Awaitable[None]]
 """一轮的首次 run 挂上租约后在后台调用一次，与这一轮并行、不等它完成；审批与崩溃续跑不再调用。
@@ -556,6 +558,16 @@ class ConversationRunner:
             reason = f"{exc.code}: {exc}"
             _logger.warning(
                 "对话的 agent 装配不起来，这次运行记为失败",
+                prompt_id=row.prompt_id,
+                conversation_id=row.conversation_id,
+                code=exc.code,
+                reason=str(exc),
+            )
+        except HookRejected as exc:
+            # 开跑检查没放行（暂时性的已在窗口里重试过）：同样把原因记在消息行上。
+            reason = f"{exc.code}: {exc}"
+            _logger.warning(
+                "开跑检查没放行，这次运行记为失败",
                 prompt_id=row.prompt_id,
                 conversation_id=row.conversation_id,
                 code=exc.code,
