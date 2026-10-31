@@ -268,6 +268,9 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
       { sourceJobId: baseJobId, start: 3, end: 6 },
     ],
   })
+  await expect(
+    controls(dialog).getByRole('button', { name: '正在合成', exact: true }),
+  ).toBeDisabled()
 
   // 合成完成：自动切到版本视图看新的一版，它在最上面一行；只能下载、不能合成。
   await expect(view(dialog, '版本')).toHaveAttribute('aria-pressed', 'true', {
@@ -457,8 +460,13 @@ test('提交未受理时保护关闭与站内离开，受理后编辑轨显示�
   await waitForShots(dialog)
   await shot(dialog, 2).click()
   await requestBox(dialog).fill('换成暖色光线')
-  const release = await holdReferenceUpload(page)
+  await pauseMockResponses(page, '/api/generations/video-edits')
+  const submitted = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
+  )
   await generateButton(dialog).click()
+  await submitted
   await expect(card(dialog).getByRole('button', { name: '正在提交', exact: true })).toBeDisabled()
   await expect(view(dialog, '版本')).toBeDisabled()
   const editingUrl = page.url()
@@ -468,10 +476,11 @@ test('提交未受理时保护关闭与站内离开，受理后编辑轨显示�
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeVisible()
 
-  await release()
+  await releaseMockResponses(page, '/api/generations/video-edits')
   await expect(lane(dialog).getByRole('button', { name: '镜头 2 · 生成中' })).toBeVisible({
     timeout: STEP_TIMEOUT,
   })
+  await expect(view(dialog, '版本')).toBeEnabled()
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeHidden()
 })

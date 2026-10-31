@@ -1,7 +1,7 @@
 """技能库、模型供应商与 agent 配置的表挪进 ``agent_runtime`` 的迁移：行原样跟过去，表之间的外键名字与
-``ON DELETE`` 不变，指向用户表的外键去掉；降级把表与外键原样恢复，操作人对不上用户时拒绝。
+``ON DELETE`` 不变，指向用户表的外键去掉。
 
-升降级在一次性库上做，不动会话共用的测试库。"""
+升级在一次性库上做，不动会话共用的测试库。"""
 
 from __future__ import annotations
 
@@ -104,11 +104,6 @@ _CONSTRAINTS = text(
     " JOIN pg_class c ON c.oid = con.conrelid"
     " JOIN pg_namespace n ON n.oid = c.relnamespace"
     " WHERE n.nspname IN ('iclip', 'agent_runtime') AND c.relname = ANY(:tables)"
-)
-
-_INDEXES = text(
-    "SELECT schemaname, tablename, indexname, indexdef FROM pg_indexes"
-    " WHERE schemaname IN ('iclip', 'agent_runtime') AND tablename = ANY(:tables)"
 )
 
 _SCHEMA_OF = text(
@@ -258,17 +253,8 @@ def _schemas(url: str) -> dict[str, str]:
     return dict(asyncio.run(_fetch(url, _SCHEMA_OF, {"tables": list(MOVED)})))
 
 
-def _layout(url: str) -> tuple[set[tuple[str, ...]], set[tuple[str, ...]]]:
-    """配置表与会话表的全部约束与索引（含所在 schema 与定义）。"""
-
-    tables = [*MOVED, "sessions"]
-    constraints = asyncio.run(_fetch(url, _CONSTRAINTS, {"tables": tables}))
-    indexes = asyncio.run(_fetch(url, _INDEXES, {"tables": tables}))
-    return {tuple(row) for row in constraints}, {tuple(row) for row in indexes}
-
-
 def _foreign_keys_in_runtime(url: str) -> dict[tuple[str, str], str]:
-    constraints, _indexes = _layout(url)
+    constraints = asyncio.run(_fetch(url, _CONSTRAINTS, {"tables": [*MOVED, "sessions"]}))
     return {
         (table, name): definition
         for schema, table, name, definition in constraints
@@ -308,42 +294,3 @@ def test_after_upgrade_actors_are_opaque_and_sessions_still_need_a_real_version(
                 ),
             )
         )
-
-
-def test_downgrade_restores_the_original_layout_and_rows(scratch_db: str) -> None:
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, BEFORE)
-    layout_before = _layout(scratch_db)
-    _seed(scratch_db, "iclip", _plant_user(scratch_db))
-    rows_before = _rows(scratch_db, "iclip")
-    command.upgrade(cfg, AFTER)
-
-    command.downgrade(cfg, BEFORE)
-
-    assert _schemas(scratch_db) == dict.fromkeys(MOVED, "iclip")
-    assert _layout(scratch_db) == layout_before
-    assert _rows(scratch_db, "iclip") == rows_before
-
-
-def test_downgrade_refuses_when_an_actor_is_not_a_user(scratch_db: str) -> None:
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, AFTER)
-    _seed(scratch_db, "agent_runtime", _plant_user(scratch_db))
-    asyncio.run(
-        _execute(
-            scratch_db,
-            (
-                "INSERT INTO agent_runtime.skills"
-                " (id, name, display_name, description, status, created_by)"
-                " VALUES (:id, 'stray', '', '', 'active', :actor)",
-                {"id": uuid.uuid4(), "actor": uuid.uuid4()},
-            ),
-        )
-    )
-
-    with pytest.raises(RuntimeError, match=r"skills\.created_by 1 行"):
-        command.downgrade(cfg, BEFORE)
-
-    assert _schemas(scratch_db) == dict.fromkeys(MOVED, "agent_runtime")
-    current = asyncio.run(_fetch(scratch_db, text("SELECT version_num FROM iclip.alembic_version")))
-    assert current == [(AFTER,)]

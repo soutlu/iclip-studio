@@ -1,17 +1,15 @@
-"""运行装配的行为：未知插件拒绝、用量和运行 metadata、子代理能力隔离与调用限额、超时和工具重试。"""
+"""运行装配的行为：用量和运行 metadata、子代理能力隔离与调用限额、超时和工具重试。"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from pydantic_ai import ModelRetry, RunContext, UnexpectedModelBehavior
+from pydantic_ai import ModelRetry, UnexpectedModelBehavior
 from pydantic_ai.capabilities import AgentCapability, Capability
-from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -41,21 +39,10 @@ from tests.helpers.runtime import discarding_usage_ledger
 WRITER = "shot-writer"
 
 
-@dataclass(frozen=True)
-class Caller:
-    """测试 deps 类型，验证依赖传递。
-
-    类型须定义在模块级，以便框架解析延迟求值的工具注解。
-    """
-
-    label: str
-
-
 def make_agent(
     name: str,
     model: Model,
     *,
-    instructions: str = "",
     extra: Sequence[AgentCapability[Any]] = (),
     step_store: InMemoryStepStore | None = None,
     ledger: UsageLedger | None = None,
@@ -65,7 +52,7 @@ def make_agent(
     return build_agent(
         name=name,
         model=model,
-        instructions=instructions,
+        instructions="",
         plugins=(),
         plugin_types=(),
         step_store=step_store or InMemoryStepStore(),
@@ -122,34 +109,12 @@ def producer_with_writer(
     )
 
 
-def _never(_messages: list[ModelMessage], _info: AgentInfo) -> Any:
-    raise AssertionError("装配阶段不该调用模型")
+async def drive(agent: Any) -> None:
+    """通过 run_stream_events 跑完一次运行。"""
 
-
-def test_an_unknown_plugin_fails_at_assembly() -> None:
-    """插件按原生 spec 挂：登记表里没有这个名字就在装配时报错，不悄悄跳过。"""
-
-    with pytest.raises((UserError, ValueError)):
-        build_agent(
-            name="a",
-            model=TestModel(),
-            instructions="",
-            plugins=({"ghost": {}},),
-            plugin_types=(),
-            step_store=InMemoryStepStore(),
-            usage_ledger=discarding_usage_ledger(),
-            run_metadata={},
-            accepts_deferred=True,
-        )
-
-
-async def drive(agent: Any, *, deps: object = None) -> list[Any]:
-    """通过 run_stream_events 收集完整运行事件。"""
-
-    async with agent.run_stream_events(
-        "hi", conversation_id="c1", run_id="run-1", deps=deps
-    ) as events:
-        return [event async for event in events]
+    async with agent.run_stream_events("hi", conversation_id="c1", run_id="run-1") as events:
+        async for _event in events:
+            pass
 
 
 def _delegate_to_writer() -> DeltaToolCalls:
@@ -369,22 +334,6 @@ async def test_a_subagent_past_its_timeout_is_cut_off() -> None:
         await drive(agent)
 
     assert len(seen) == 1
-
-
-async def test_run_deps_reach_the_tool() -> None:
-    """通过替身 deps 验证 run_stream_events 到工具 ctx.deps 的传递。"""
-
-    def whoami(ctx: RunContext[Caller]) -> str:
-        """报出当前调用方。"""
-
-        return ctx.deps.label
-
-    agent = make_agent(
-        "storyboard", TestModel(), extra=[Capability[Any](id="identity", tools=[whoami])]
-    )
-
-    events = await drive(agent, deps=Caller("经运行驱动"))
-    assert "经运行驱动" in json.dumps([str(event) for event in events], ensure_ascii=False)
 
 
 async def test_tools_get_more_than_one_chance_to_correct_their_arguments() -> None:

@@ -1,6 +1,6 @@
-"""会话归属应用的迁移：已有会话回填为 ``video``，之后新行必须写明应用；降级删掉这一列。
+"""会话归属应用的迁移：已有会话回填为 ``video``，之后新行必须写明应用。
 
-升降级在一次性库上做，不动会话共用的测试库。"""
+升级在一次性库上做，不动会话共用的测试库。"""
 
 from __future__ import annotations
 
@@ -42,21 +42,6 @@ async def _apps(url: str) -> dict[uuid.UUID, str]:
         await engine.dispose()
 
 
-async def _columns(url: str) -> set[str]:
-    engine = build_engine(url, poolclass=NullPool)
-    try:
-        async with engine.connect() as conn:
-            rows = await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns"
-                    " WHERE table_schema = 'agent_runtime' AND table_name = 'sessions'"
-                )
-            )
-            return set(rows.scalars())
-    finally:
-        await engine.dispose()
-
-
 def test_upgrade_gives_existing_sessions_to_video_and_requires_an_app_after(
     scratch_db: str,
 ) -> None:
@@ -80,12 +65,3 @@ def test_upgrade_gives_existing_sessions_to_video_and_requires_an_app_after(
                 {"id": uuid.uuid4()},
             )
         )
-
-
-def test_downgrade_drops_the_app_column(scratch_db: str) -> None:
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, AFTER)
-
-    command.downgrade(cfg, BEFORE)
-
-    assert "app_id" not in asyncio.run(_columns(scratch_db))

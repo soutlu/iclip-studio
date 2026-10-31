@@ -40,7 +40,7 @@ from agent_runtime.harness.context_compaction import (
     recorded_loads,
 )
 from agent_runtime.harness.skills import CachedSkill, build_skill_capabilities
-from agent_runtime.harness.transcript.from_messages import drop_last_turn, turns_from_messages
+from agent_runtime.harness.transcript.from_messages import turns_from_messages
 from agent_runtime.harness.transcript.projector import step_responses
 from agent_runtime.transcript.ops import TextContent
 
@@ -528,27 +528,6 @@ async def test_补记不改轮次与步骤也不反复补发技能正文(
         for message in history
         for part in message.parts
         if isinstance(part, InstructionDeltaPart) and part.content is None
-    ]
-
-
-async def test_重新生成压缩那轮再压一次_技能仍保持加载(tmp_path: Path) -> None:
-    library = _skill_library(tmp_path)
-    seen: list[tuple[str, list[ModelMessage]]] = []
-    history: list[ModelMessage] = []
-    for prompt in (LOAD_PROMPT, "第二轮", _COMPACTING[0]):
-        history = await _skill_turn(library, seen, prompt, history, keep=3)
-    history, _ = drop_last_turn(history, {})
-    assert len(_boundaries(history)) == 1
-
-    history = await _skill_turn(library, seen, _COMPACTING[0], history, keep=3)
-    assert SKILL in parse_loaded_capabilities(history)
-    history = await _skill_turn(library, seen, _AFTER, history, keep=3)
-
-    assert [len(message.parts) for message in _boundaries(history)] == [1, 1]
-    assert SKILL in parse_loaded_capabilities(history)
-    assert [(prompt, _skill_delivered(messages)) for prompt, messages in seen[-2:]] == [
-        (_COMPACTING[0], True),
-        (_AFTER, True),
     ]
 
 

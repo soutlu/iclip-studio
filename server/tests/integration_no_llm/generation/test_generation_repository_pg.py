@@ -1,4 +1,7 @@
-"""验证生成仓储的数据库时钟、JSON 往返、外键、条件更新原子性与分叉继承的读范围。"""
+"""验证生成仓储的数据库时钟、JSON 往返、外键、条件更新原子性与分叉继承的读范围。
+
+列表筛选经 HTTP 入口走真实 SQL，同时核对参数解析、包含匹配与分页。
+"""
 
 from __future__ import annotations
 
@@ -8,12 +11,14 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 import pytest
 from agent_runtime.errors import NotFound, ValidationFailed
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.generation.api import create_generations_router
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -28,6 +33,9 @@ from iclip.domains.generation.models import (
 )
 from iclip.domains.generation.schemas import SubtitleSentence
 from iclip.domains.generation.stored_requests import GenerationRequest
+from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.public import Principal
+from tests.helpers.app import app_with_principal, make_client
 from tests.helpers.fork_lineage import (
     complete,
     finished,
@@ -39,6 +47,7 @@ from tests.helpers.generation import (
     compose_request,
     edit_range,
     edit_request,
+    film_image_service,
     image_request,
     make_composite,
     make_cut,
@@ -48,6 +57,24 @@ from tests.helpers.generation import (
     make_upload,
     video_request,
 )
+from tests.helpers.identity import InMemoryUserRepository
+
+
+def query_client(repo: SqlGenerationRepository, owner: uuid.UUID) -> httpx.AsyncClient:
+    """列表经真实路由、服务与 SQL 仓储；只注入主体，不启服务后台或外部模型。"""
+
+    app = app_with_principal(
+        Principal(
+            kind="user",
+            user_id=owner,
+            permissions=frozenset({"generation:read"}),
+            audit_label="reader",
+        )
+    )
+    app.include_router(
+        create_generations_router(film_image_service(repo), act_as=ActAs(InMemoryUserRepository()))
+    )
+    return make_client(app)
 
 
 async def insert_job(
@@ -323,25 +350,37 @@ async def test_metadata_containment_filtering_pagination_and_owner_scope(
     other = await make_user(engine)
     first = await repo.create(edit(1, owner))
     second = await repo.create(edit(1, owner))
-    await repo.create(edit(2, owner))
+    other_frame = await repo.create(edit(2, owner))
+    await repo.create(make_job(owner_user_id=owner))
     foreign = await repo.create(edit(1, other))
 
-    async def page_before(before: uuid.UUID | None = None) -> tuple[GenerationJob, ...]:
-        return await repo.list_for_owner(
-            owner=owner,
-            limit=1,
-            kind="image",
-            metadata={"shot": 1, "frame": 1},
-            before=before,
-        )
+    async with query_client(repo, owner) as http:
 
-    page = await page_before()
-    assert [job.id for job in page] == [second.id]
-    assert page[0].request == second.request
-    assert [job.id for job in await page_before(before=second.id)] == [first.id]
-    assert await page_before(before=first.id) == ()
-    with pytest.raises(NotFound):
-        await page_before(before=foreign.id)
+        async def page_before(before: uuid.UUID | None = None) -> httpx.Response:
+            params = {
+                "limit": "1",
+                "kind": "image",
+                "metadata": json.dumps({"shot": 1, "frame": 1}),
+            }
+            if before is not None:
+                params["before"] = str(before)
+            return await http.get("/generations", params=params)
+
+        page = await page_before()
+        assert page.status_code == 200, page.text
+        assert [job["id"] for job in page.json()["items"]] == [str(second.id)]
+        assert [job["id"] for job in (await page_before(second.id)).json()["items"]] == [
+            str(first.id)
+        ]
+        assert (await page_before(first.id)).json()["items"] == []
+        assert (await page_before(foreign.id)).status_code == 404
+        by_shot = await http.get("/generations", params={"metadata": json.dumps({"shot": 1})})
+        assert {job["id"] for job in by_shot.json()["items"]} == {
+            str(first.id),
+            str(second.id),
+            str(other_frame.id),
+        }
+    assert (await repo.get(second.id, owner=owner)).request == second.request
 
 
 async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
@@ -507,6 +546,8 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
     )
     composite = await repo.create(make_composite(edit, owner_user_id=owner))
     other_edit = await repo.create(make_edit(take, owner_user_id=owner))
+    other_take = await repo.create(make_job(video_request(), owner_user_id=owner))
+    unrelated_edit = await repo.create(make_edit(other_take, owner_user_id=owner))
 
     read_back = await repo.get(edit.id, owner=owner)
     assert (
@@ -527,14 +568,32 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
         "合成的各段连同出处读回来原样，取到结尾的那段仍是开放的"
     )
 
-    async def listed(**filters: Any) -> set[uuid.UUID]:
-        return {job.id for job in await repo.list_for_owner(owner=owner, limit=10, **filters)}
+    async with query_client(repo, owner) as http:
 
-    assert await listed(source_job_id=take.id) == {edit.id, other_edit.id, composite.id}
-    assert await listed(source_job_id=take.id, operation="generate") == {edit.id, other_edit.id}
-    assert await listed(operation="compose") == {composite.id}
-    assert await listed(operation="generate", root_job_id=take.id) == {edit.id, other_edit.id}
-    assert await listed(operation="generate") == {take.id, edit.id, other_edit.id}
+        async def listed(**filters: str) -> set[uuid.UUID]:
+            response = await http.get("/generations", params=filters)
+            assert response.status_code == 200, response.text
+            return {uuid.UUID(job["id"]) for job in response.json()["items"]}
+
+        assert await listed(sourceJobId=str(take.id)) == {edit.id, other_edit.id, composite.id}
+        assert await listed(sourceJobId=str(edit.id)) == set(), "合成的来源是基底，不是夹入的编辑段"
+        assert await listed(sourceJobId=str(take.id), operation="generate") == {
+            edit.id,
+            other_edit.id,
+        }
+        assert await listed(operation="compose") == {composite.id}
+        assert await listed(rootJobId=str(take.id)) == {edit.id, other_edit.id, composite.id}
+        assert await listed(operation="generate", rootJobId=str(take.id)) == {
+            edit.id,
+            other_edit.id,
+        }
+        assert await listed(operation="generate") == {
+            take.id,
+            edit.id,
+            other_edit.id,
+            other_take.id,
+            unrelated_edit.id,
+        }
 
 
 async def test_shot_index_round_trips_and_filters_alongside_the_coordinates(
@@ -568,14 +627,18 @@ async def test_shot_index_round_trips_and_filters_alongside_the_coordinates(
     assert (await repo.get(edit.id, owner=owner)).shot_index == 2
     assert (await repo.get(tagged_only.id, owner=owner)).shot_index is None
 
-    async def listed(**filters: Any) -> set[uuid.UUID]:
-        return {job.id for job in await repo.list_for_owner(owner=owner, limit=10, **filters)}
+    async with query_client(repo, owner) as http:
 
-    assert await listed(shot_index=2) == {take.id, edit.id}
-    assert await listed(shot_index=2, conversation_id=uuid.uuid4()) == set()
-    assert await listed(shot_index=2, metadata={"frame": 1}) == {take.id}
-    assert await listed(shot_index=3) == {other_shot.id}
-    assert await listed(shot_index=4) == set()
+        async def listed(**filters: str) -> set[uuid.UUID]:
+            response = await http.get("/generations", params=filters)
+            assert response.status_code == 200, response.text
+            return {uuid.UUID(job["id"]) for job in response.json()["items"]}
+
+        assert await listed(shotIndex="2") == {take.id, edit.id}
+        assert await listed(shotIndex="2", conversationId=str(uuid.uuid4())) == set()
+        assert await listed(shotIndex="2", metadata=json.dumps({"frame": 1})) == {take.id}
+        assert await listed(shotIndex="3") == {other_shot.id}
+        assert await listed(shotIndex="4") == set()
 
 
 async def test_duration_is_written_only_when_completion_brings_one(engine: AsyncEngine) -> None:

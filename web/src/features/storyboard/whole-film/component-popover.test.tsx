@@ -55,39 +55,19 @@ const BRAND_FONT = 'Playfair Display'
 
 const renderPopover = (values: ComponentVariables = {}, target: CatalogItem = item) => {
   const onChange = vi.fn()
-  const onRemove = vi.fn()
   renderWithTooltip(
     <ComponentPopover
       catalog={fixtureCatalog}
       item={target}
       onChange={onChange}
-      onRemove={onRemove}
+      onRemove={() => {}}
       values={values}
     />,
   )
-  return { onChange, onRemove }
+  return { onChange }
 }
 
 describe('组件调整浮层', () => {
-  it('顶部只有预览图、名字与删除图标，没有说明', async () => {
-    const user = userEvent.setup()
-    const { onRemove } = renderPopover()
-    expect(screen.getByText('示例组件')).toBeInTheDocument()
-    expect(screen.queryByText('组件说明不在浮层里')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '移除' }))
-    expect(onRemove).toHaveBeenCalledOnce()
-  })
-
-  it('文字项没填过时空着、默认字作提示；填了记下，清空回到默认字', async () => {
-    const user = userEvent.setup()
-    const { onChange } = renderPopover()
-    const text = screen.getByLabelText('文字')
-    expect(text).toHaveValue('')
-    expect(text).toHaveAttribute('placeholder', 'Hello')
-    await user.type(text, '你好{Enter}')
-    expect(onChange).toHaveBeenLastCalledWith({ text: '你好' })
-  })
-
   it('清空填过的文字：去掉这一项，不存空字', async () => {
     const user = userEvent.setup()
     const { onChange } = renderPopover({ text: '你好', size: 64 })

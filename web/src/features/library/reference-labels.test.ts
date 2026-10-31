@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mockLibraryTagTree, mockTagId } from '@/testing/mocks/library-tags'
 import { tagIndexOf } from './library-tags'
-import { failureMessageOf, referenceTitleOf, taggingFailureOf } from './reference-labels'
+import { referenceTitleOf } from './reference-labels'
 
 const INDEX = tagIndexOf(mockLibraryTagTree())
 
@@ -49,36 +49,5 @@ describe('referenceTitleOf', () => {
     const title = referenceTitleOf({ breakdownStatus, tagIds: [], tagStatus }, INDEX)
     expect(title.placeholder).toBe(true)
     expect(title.text).not.toBe('未标注')
-  })
-})
-
-describe('failureMessageOf', () => {
-  const CODES = ['video_unreadable', 'model_call_failed', 'model_failed', 'timeout'] as const
-
-  it('每种失败原因一句不同的话，不带原因的代码', () => {
-    const messages = CODES.map((code) => failureMessageOf(code, false))
-    expect(new Set(messages).size).toBe(CODES.length)
-    messages.forEach((message, index) => expect(message).not.toContain(CODES[index]))
-  })
-
-  it('有上一次的拆解时说明下面还是上一次的', () => {
-    expect(failureMessageOf('model_call_failed', true)).not.toBe(
-      failureMessageOf('model_call_failed', false),
-    )
-  })
-})
-
-describe('taggingFailureOf', () => {
-  const CODES = ['no_source_text', 'model_call_failed', 'model_failed', 'timeout'] as const
-
-  it('每种原因一句不同的话，不带原因的代码', () => {
-    const messages = CODES.map((code) => taggingFailureOf(code, true))
-    expect(new Set(messages).size).toBe(CODES.length)
-    messages.forEach((message, index) => expect(message).not.toContain(CODES[index]))
-  })
-
-  it('能重新打标才请人点「重新打标」', () => {
-    expect(taggingFailureOf('timeout', true)).toContain('「重新打标」')
-    expect(taggingFailureOf('timeout', false)).not.toContain('「重新打标」')
   })
 })

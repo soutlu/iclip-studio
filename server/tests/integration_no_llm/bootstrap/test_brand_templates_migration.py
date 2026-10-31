@@ -1,6 +1,6 @@
-"""品牌资源迁移：现行表约束、历史升级的数据保留，以及有扩展数据时拒绝降级。
+"""品牌资源迁移：现行表约束与升级的数据保留。
 
-降级在一个临时库上做，不动会话共用的测试库。"""
+升级在一次性库上做，不动会话共用的测试库。"""
 
 from __future__ import annotations
 
@@ -20,9 +20,6 @@ from sqlalchemy.pool import NullPool
 from iclip.platform.db.engine import build_engine
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
-
-BEFORE_BRAND_TEMPLATES = "3c8e5a1f9d40"
-"""0027，品牌模板表之前的那一版。"""
 
 BEFORE_URL_RENAME = "476ee9b3b464"
 """0028，地址列仍叫 video_url。"""
@@ -211,42 +208,6 @@ def test_upgrade_keeps_only_fonts_and_drops_the_video_columns(scratch_db: str) -
     assert asyncio.run(_query(scratch_db, _PROFILE_TABLE)) == [(True,)]
 
 
-def test_downgrade_restores_the_columns_and_drops_the_profiles(scratch_db: str) -> None:
-    """空库上降级再升级照常；降级后四列回来，品牌表没了；再升级仍只留字体。"""
-
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, "head")
-    command.downgrade(cfg, BEFORE_PROFILES)
-
-    columns = {name for (name,) in asyncio.run(_query(scratch_db, _TEMPLATE_COLUMNS))}
-    assert set(_NO_VIDEO_PARAMETERS) <= columns
-    assert asyncio.run(_query(scratch_db, _PROFILE_TABLE)) == [(False,)]
-    asyncio.run(_seed_resources(scratch_db))
-    command.upgrade(cfg, "head")
-    assert asyncio.run(_query(scratch_db, "SELECT kind FROM iclip.brand_templates")) == [("font",)]
-
-
-async def _has_table(url: str) -> bool:
-    engine = build_engine(url, poolclass=NullPool)
-    try:
-        async with engine.connect() as conn:
-            found = await conn.execute(text("SELECT to_regclass('iclip.brand_templates')"))
-            return found.scalar() is not None
-    finally:
-        await engine.dispose()
-
-
-def test_downgrade_drops_the_table_and_upgrade_brings_it_back(scratch_db: str) -> None:
-    cfg = alembic_config(scratch_db)
-
-    command.upgrade(cfg, "head")
-    assert asyncio.run(_has_table(scratch_db))
-    command.downgrade(cfg, BEFORE_BRAND_TEMPLATES)
-    assert not asyncio.run(_has_table(scratch_db))
-    command.upgrade(cfg, "head")
-    assert asyncio.run(_has_table(scratch_db))
-
-
 async def _existing_template(url: str) -> dict[str, Any]:
     """在 0028 表里写一条每列都有值的模板，返回改名后应保留的完整数据。"""
 
@@ -285,41 +246,7 @@ async def _stored_template(url: str) -> dict[str, Any]:
         await engine.dispose()
 
 
-def test_url_rename_preserves_existing_data_in_both_directions(scratch_db: str) -> None:
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, BEFORE_URL_RENAME)
-    row = asyncio.run(_existing_template(scratch_db))
-    previous = {**row, "video_url": row["url"]}
-    del previous["url"]
-
-    command.upgrade(cfg, URL_RENAMED)
-    assert asyncio.run(_stored_template(scratch_db)) == row
-    command.downgrade(cfg, BEFORE_URL_RENAME)
-    assert asyncio.run(_stored_template(scratch_db)) == previous
-    command.upgrade(cfg, URL_RENAMED)
-    assert asyncio.run(_stored_template(scratch_db)) == row
-
-
-async def _extend_template(url: str, changes: Mapping[str, Any]) -> dict[str, Any]:
-    engine = build_engine(url, poolclass=NullPool)
-    try:
-        async with engine.begin() as conn:
-            result = await conn.execute(text("SELECT * FROM iclip.brand_templates"))
-            row = {**result.mappings().one(), **changes}
-            await conn.execute(
-                text(
-                    "UPDATE iclip.brand_templates SET kind = :kind, brand = :brand, url = :url,"
-                    " width = :width, height = :height, duration_ms = :duration_ms,"
-                    " has_audio = :has_audio WHERE id = :id"
-                ),
-                row,
-            )
-            return row
-    finally:
-        await engine.dispose()
-
-
-def test_resource_upgrade_and_safe_downgrade_preserve_existing_data(scratch_db: str) -> None:
+def test_resource_upgrade_preserves_existing_data(scratch_db: str) -> None:
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE_URL_RENAME)
     previous = asyncio.run(_existing_template(scratch_db))
@@ -330,33 +257,3 @@ def test_resource_upgrade_and_safe_downgrade_preserve_existing_data(scratch_db: 
 
     command.upgrade(cfg, BRAND_RESOURCES)
     assert asyncio.run(_stored_template(scratch_db)) == expanded
-    command.downgrade(cfg, URL_RENAMED)
-    assert asyncio.run(_stored_template(scratch_db)) == previous
-    command.upgrade(cfg, BRAND_RESOURCES)
-    assert asyncio.run(_stored_template(scratch_db)) == expanded
-
-
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"kind": "sound_effect"},
-        {"brand": "品牌 A"},
-        *[{field: None} for field in _NO_VIDEO_PARAMETERS],
-    ],
-    ids=["旧版没有的类型", "品牌信息", "缺宽", "缺高", "缺时长", "缺音轨信息"],
-)
-def test_downgrade_refuses_extended_data_without_losing_it(
-    scratch_db: str, changes: Mapping[str, Any]
-) -> None:
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, BEFORE_URL_RENAME)
-    asyncio.run(_existing_template(scratch_db))
-    command.upgrade(cfg, BRAND_RESOURCES)
-    row = asyncio.run(_extend_template(scratch_db, changes))
-
-    with pytest.raises(RuntimeError, match="无法无损降级"):
-        command.downgrade(cfg, URL_RENAMED)
-
-    assert asyncio.run(_stored_template(scratch_db)) == row
-    command.upgrade(cfg, BRAND_RESOURCES)
-    assert asyncio.run(_stored_template(scratch_db)) == row

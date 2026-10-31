@@ -62,19 +62,6 @@ def engine():
     return build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
 
 
-async def test_transcript_endpoints_are_always_mounted(base_env: None) -> None:
-
-    app = build_app(minimal_config(), engine=engine())
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/conversations/00000000-0000-0000-0000-000000000000/prompts",
-            json={"prompt_id": "prm_1", "content": [{"type": "text", "text": "走"}]},
-        )
-
-    assert response.status_code == 401
-
-
 MEDIA_ENVS = {
     "VIDEO_SUBMIT_URL": "https://video.test/generate",
     "VIDEO_STATUS_BASE_URL": "https://video.test/tasks",

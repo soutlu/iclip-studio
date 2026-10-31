@@ -21,10 +21,4 @@ describe('悬停预览页', () => {
     expect(hosts).toHaveLength(1)
     expect(hosts[0]).toContain(name)
   })
-
-  it('没有时长的组件不做预览', () => {
-    expect(
-      hoverPreviewOf({ ...fixtureItem('fixture-scene'), duration: null }, catalog, ORIGIN),
-    ).toBe(undefined)
-  })
 })

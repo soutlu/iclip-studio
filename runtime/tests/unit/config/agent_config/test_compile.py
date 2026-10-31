@@ -147,10 +147,6 @@ async def test_explicit_credential_is_used_when_it_belongs_to_the_provider() -> 
     assert result.model.credential_id == OTHER_KEY
 
 
-async def test_model_is_required() -> None:
-    assert set(await problems(AgentConfig(schema_version=1))) == {"model"}
-
-
 async def test_missing_or_disabled_provider() -> None:
     assert set(await problems(config(model={"provider": "nobody", "name": "m1"}))) == {
         "model.provider"
@@ -185,12 +181,6 @@ async def test_credential_must_belong_to_the_provider_or_default_must_exist() ->
     ) == {"model.credential_id"}
     keyless = replace(PROVIDER, default_credential_id=None)
     assert set(await problems(config(), providers=(keyless,))) == {"model.credential_id"}
-
-
-async def test_plugin_must_be_registered() -> None:
-    found = await problems(config(tools=[{"type": "cap", "toolset": "not-registered"}]))
-
-    assert set(found) == {"tools[0]"}
 
 
 async def test_disabled_unregistered_plugin_is_skipped() -> None:

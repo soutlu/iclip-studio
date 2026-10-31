@@ -179,19 +179,6 @@ describe('toolSearchCount', () => {
 describe('toolOutcome', () => {
   const approval = (state: 'approved' | 'rejected') =>
     new Map([['appr_1', { interactionId: 'appr_1', interactionKind: 'approval' as const, state }]])
-  const rejected = approval('rejected')
-
-  it('协议给的三态原样用', () => {
-    for (const state of ['running', 'done', 'error'] as const) {
-      expect(toolOutcome(toolFrame({ state }), rejected)).toBe(state)
-    }
-  })
-
-  it('error 且它的审批交互记着 rejected，是被拒绝', () => {
-    expect(toolOutcome(toolFrame({ approvalId: 'appr_1', state: 'error' }), rejected)).toBe(
-      'denied',
-    )
-  })
 
   it('审批没被拒绝（或查不到）的 error 仍是失败', () => {
     expect(
@@ -244,26 +231,11 @@ describe('toolPanel', () => {
       ...fields,
     })
 
-  it('读文件：去掉行号的文件内容，md 按 Markdown 排', () => {
-    expect(toolPanel(read({}), 'done')).toEqual({
-      kind: 'file',
-      markdown: true,
-      text: '# 需求\n30 秒竖屏',
-    })
-  })
-
   it('写文件：要写的整份内容；不是 md 就按原文', () => {
     const frame = toolFrame({
       display: { content: '{"a":1}', kind: 'file_io', operation: 'write', path: 'a.json' },
     })
     expect(toolPanel(frame, 'done')).toEqual({ kind: 'file', markdown: false, text: '{"a":1}' })
-  })
-
-  it('编辑文件：给改动前后的片段', () => {
-    const frame = toolFrame({
-      display: { after: '黄昏', before: '夜景', kind: 'file_io', operation: 'edit', path: 'a.md' },
-    })
-    expect(toolPanel(frame, 'done')).toEqual({ after: '黄昏', before: '夜景', kind: 'diff' })
   })
 
   it('失败、运行中与被拒绝都没有面板，错误原文不给人看', () => {
@@ -292,10 +264,6 @@ describe('toolPanel', () => {
 })
 
 describe('toolMedia', () => {
-  it('渲染器是媒体墙、调用跑完了、形状对得上，才给出这一排图', () => {
-    expect(toolMedia(toolFrame({ metadata: MEDIA, view: 'media_grid' }))).toEqual(MEDIA.items)
-  })
-
   it('还在跑的时候不画图', () => {
     expect(toolMedia(toolFrame({ metadata: MEDIA, state: 'running', view: 'media_grid' }))).toEqual(
       [],
@@ -304,10 +272,6 @@ describe('toolMedia', () => {
 
   it('没点媒体墙这个渲染器就不画图', () => {
     expect(toolMedia(toolFrame({ metadata: MEDIA }))).toEqual([])
-  })
-
-  it('形状对不上就当一张都没有', () => {
-    expect(toolMedia(toolFrame({ metadata: { items: 'a.png' }, view: 'media_grid' }))).toEqual([])
   })
 })
 

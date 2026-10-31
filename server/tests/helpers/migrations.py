@@ -14,7 +14,7 @@ _SERVER_DIR = Path(__file__).resolve().parents[2]
 
 
 def alembic_config(url: str) -> AlembicConfig:
-    """按仓库里的 ``alembic.ini`` 与迁移目录，对 ``url`` 那个库升降级。"""
+    """按仓库里的 ``alembic.ini`` 与迁移目录，为 ``url`` 那个库配置迁移。"""
 
     cfg = AlembicConfig(str(_SERVER_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(_SERVER_DIR / "migrations"))

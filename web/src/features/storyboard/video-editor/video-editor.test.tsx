@@ -94,13 +94,13 @@ const rootWithShotPrompts = makeGenerationJob({
   },
 })
 
-const renderEditor = (video = root, onClose = () => {}) =>
+const renderEditor = (video = root) =>
   renderWithProviders(
     <>
       <VideoEditor
         conversationId={CONVERSATION}
         loading={false}
-        onClose={onClose}
+        onClose={() => {}}
         shotIndex={1}
         video={video}
       />
@@ -1654,73 +1654,6 @@ describe('失败提醒', () => {
 })
 
 describe('合成与版本视图', () => {
-  it('合成：草稿按顺序拼，同一来源相接的并成一段、编辑段写明起止；完成后自动切到版本视图看新版本，只能下载、不能合成', async () => {
-    let chain: GenerationJob[] = [editSegment({ id: EDIT_ID })]
-    const composed: Record<string, unknown>[] = []
-    serveJobs(() => chain)
-    server.use(
-      http.post('*/api/generations/video-composites', async ({ request }) => {
-        const body = (await request.json()) as { segments: unknown[] }
-        composed.push(body)
-        // 后端把各段原样记进请求，另带上出处地址。
-        const created = composite({
-          id: COMPOSITE_ID,
-          status: 'submitted',
-          outputUrl: null,
-          finishedAt: null,
-          request: { segments: body.segments },
-        })
-        chain = [...chain, created]
-        return HttpResponse.json({ generation: created }, { status: 202 })
-      }),
-    )
-    const user = userEvent.setup()
-    const view = await renderEditor()
-    await originalTrack()
-    expect(composeButton()).toBeDisabled()
-    await within(editTrack()).findByRole('button', { name: /第 1 段/ })
-    for (const seg of [1, 2, 3]) await user.click(partEye(new RegExp(`第 ${seg} 段`)))
-    expect(composeButton()).toBeEnabled()
-    await user.click(composeButton())
-
-    await waitFor(() => expect(composed).toHaveLength(1))
-    expect(composed[0]).toEqual({
-      conversationId: CONVERSATION,
-      taskId: null,
-      baseJobId: ROOT_ID,
-      segments: [
-        { sourceJobId: ROOT_ID, start: 0, end: 2 },
-        { sourceJobId: EDIT_ID, start: 0, end: 3 },
-        { sourceJobId: ROOT_ID, start: 4, end: 8 },
-      ],
-    })
-    expect(await within(controls()).findByRole('button', { name: '正在合成' })).toBeDisabled()
-    await user.click(viewButton('版本'))
-    expect(await findVersion('合成中')).toBeDisabled()
-    expect(versionButton('V1 原片')).toHaveAttribute('aria-pressed', 'true')
-    await user.click(viewButton('剪辑'))
-
-    chain = chain.map((job) =>
-      job.id === COMPOSITE_ID
-        ? {
-            ...job,
-            status: 'completed' as const,
-            outputUrl: COMPOSITE_URL,
-            finishedAt: '2026-09-16T10:09:00Z',
-          }
-        : job,
-    )
-    await act(() => view.queryClient.invalidateQueries())
-    await waitFor(() => expect(viewButton('版本')).toHaveAttribute('aria-pressed', 'true'))
-    expect(await findVersion('V2')).toHaveAttribute('aria-pressed', 'true')
-    expect(within(controls()).getByRole('button', { name: '下载' })).toBeEnabled()
-    expect(within(controls()).queryByRole('button', { name: /合成/ })).toBeNull()
-    expect(await screen.findByLabelText('视频播放器')).toHaveAttribute('src', COMPOSITE_URL)
-
-    await user.click(viewButton('剪辑'))
-    expect(composeButton()).toBeDisabled()
-  })
-
   it('合成提交失败时提示原因，内容不变可重试', async () => {
     serveChain([editSegment({ id: EDIT_ID })])
     server.use(
@@ -1795,52 +1728,6 @@ describe('合成与版本视图', () => {
 
     expect(await findVersion('V1 原片')).toHaveAttribute('aria-pressed', 'true')
     expect(within(versionRows()).getAllByRole('button')).toHaveLength(1)
-  })
-
-  it('提交未受理时不能切换查看方式、不能关闭或离开；受理后都恢复', async () => {
-    loginAs(mockAuthUser)
-    const chain: GenerationJob[] = []
-    let accept = () => {}
-    const acceptance = new Promise<void>((resolve) => (accept = resolve))
-    serveJobs(() => chain)
-    server.use(
-      http.post('*/api/generations/video-edits', async () => {
-        await acceptance
-        const created = editSegment({
-          status: 'submitted',
-          outputUrl: null,
-          rangeStartMs: 1000,
-          rangeEndMs: 2000,
-        })
-        chain.push(created)
-        return HttpResponse.json({ generation: created }, { status: 202 })
-      }),
-    )
-    const user = userEvent.setup()
-    const onClose = vi.fn()
-    const { router } = await renderEditor(root, onClose)
-    await user.click(await shot(2))
-    pasteTextIntoComposer(requestBox(), '换成黄昏')
-    await waitFor(() => expect(generateButton()).toBeEnabled())
-    await user.click(generateButton())
-    try {
-      expect(within(openCard()).getByRole('button', { name: '正在提交' })).toBeDisabled()
-      expect(viewButton('版本')).toBeDisabled()
-      await user.click(screen.getByRole('button', { name: '关闭视频编辑' }))
-      expect(onClose).not.toHaveBeenCalled()
-      await act(async () => {
-        void router.navigate({ to: '/c/$conversationId', params: { conversationId: 'other' } })
-      })
-      expect(router.state.location.pathname).toBe('/c/test')
-    } finally {
-      await act(async () => accept())
-    }
-    expect(
-      await within(editTrack()).findByRole('button', { name: '镜头 2 · 生成中' }),
-    ).toBeVisible()
-    expect(viewButton('版本')).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: '关闭视频编辑' }))
-    expect(onClose).toHaveBeenCalledOnce()
   })
 
   it('提交失败保留输入和错误，允许重新提交', async () => {

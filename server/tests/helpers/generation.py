@@ -40,6 +40,7 @@ from iclip.domains.generation.provider import (
     ProviderSubmission,
 )
 from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSettings, ProviderLane
+from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,
@@ -486,6 +487,9 @@ class InMemoryGenerationRepository:
         before: uuid.UUID | None = None,
         inherited: Inheritance = (),
     ) -> tuple[GenerationJob, ...]:
+        assert metadata is None and shot_index is None and root_job_id is None and before is None, (
+            "坐标、镜号、原作与分页筛选由真实 HTTP / Postgres 测试覆盖"
+        )
         rows = [
             job
             for job in self.jobs.values()
@@ -497,8 +501,6 @@ class InMemoryGenerationRepository:
                 or inherited_through(job, inherited)
             )
             and (task_id is None or job.task_id == task_id)
-            and (shot_index is None or job.shot_index == shot_index)
-            and (root_job_id is None or job.root_job_id == root_job_id)
             and (source_job_id is None or job.source_job_id == source_job_id)
         ]
         rows = [
@@ -507,19 +509,6 @@ class InMemoryGenerationRepository:
             if (kind is None or job.kind == kind)
             and (operation is None or job.operation == operation)
         ]
-        if metadata is not None:
-            # 顶层键相等。Postgres 的 @> 对嵌套对象是递归包含，分镜页的坐标是平的，这里不模拟嵌套。
-            rows = [
-                job
-                for job in rows
-                if job.metadata is not None
-                and all(job.metadata.get(key) == value for key, value in metadata.items())
-            ]
-        if before is not None:
-            anchor = await self.get(before, owner=owner, inherited=inherited)
-            rows = [
-                job for job in rows if (job.created_at, job.id) < (anchor.created_at, anchor.id)
-            ]
         rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
         return tuple(rows[:limit])
 
@@ -767,7 +756,7 @@ async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> No
 
 
 def film_image_service(
-    repo: InMemoryGenerationRepository,
+    repo: GenerationRepository,
     lineage: FixedLineage | None = None,
     *,
     image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),

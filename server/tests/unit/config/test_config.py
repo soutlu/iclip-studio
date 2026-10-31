@@ -505,15 +505,26 @@ def test_music_and_subtitles_are_off_without_the_shared_key(
     assert media is not None and media.subtitle is None and media.music is None
 
 
-def test_the_shared_key_does_not_enable_absent_music_or_subtitles(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("sections", "subtitle_enabled", "music_enabled"),
+    [("", False, False), (SUBTITLE, True, False), (MUSIC, False, True)],
+    ids=["neither-configured", "subtitles-only", "music-only"],
+)
+def test_the_shared_key_enables_only_the_configured_services(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sections: str,
+    subtitle_enabled: bool,
+    music_enabled: bool,
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + sections))
     _media_env(monkeypatch)
     monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
     media = resolve_settings(config).media_generation
 
-    assert media is not None and media.subtitle is None and media.music is None
+    assert media is not None
+    assert (media.subtitle is not None) == subtitle_enabled
+    assert (media.music is not None) == music_enabled
 
 
 def test_music_and_subtitles_resolve_their_addresses_and_share_the_trimmed_key(
