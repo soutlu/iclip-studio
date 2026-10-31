@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 import pytest
 from agent_runtime.file_store.store import FileSpace
@@ -22,6 +23,7 @@ from iclip_video.iclip_studio.capability import (
 )
 from iclip_video.iclip_studio.film.checks import check
 from iclip_video.iclip_studio.film.film import Film
+from iclip_video.iclip_studio.film.load import ConversationImages, load_film
 from iclip_video.iclip_studio.film.prompts import render_video
 from iclip_video.iclip_studio.ports import (
     InvalidNodeImageRequest,
@@ -228,6 +230,54 @@ async def test_a_video_address_cannot_stand_in_for_an_image(
 
     line = FILM.count("\n", 0, FILM.index('<media:Image id="shoeFrontPhoto"')) + 1
     assert f"film.icml 第 {line} 行：src 不在这段对话的素材里" in text_of(result)
+
+
+class CountingLedger(FakeMaterialLedger):
+    """记下单条与批量查询各调了几次。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.single = 0
+        self.batches: list[list[str]] = []
+
+    async def lookup(self, namespace: str, url: str) -> Material | None:
+        self.single += 1
+        return await super().lookup(namespace, url)
+
+    async def lookup_many(self, namespace: str, urls: Sequence[str]) -> dict[str, Material]:
+        self.batches.append(list(urls))
+        return await super().lookup_many(namespace, urls)
+
+
+@pytest.mark.parametrize("run", [RUN, None], ids=["both-files", "project-only"])
+async def test_loading_checks_every_address_with_one_ledger_query(run: str | None) -> None:
+    ledger = CountingLedger()
+    await ledger.record(NAMESPACE, [Material(url=url, kind="image") for url in GIVEN_IMAGES])
+
+    film = await load_film(FILM, run, images=ConversationImages(ledger, NAMESPACE))
+
+    assert isinstance(film, Film)
+    assert (ledger.single, len(ledger.batches)) == (0, 1)
+    assert set(ledger.batches[0]) == {node.attrs["src"] for _, node in film.given_images()}
+
+
+async def test_unknown_addresses_found_by_the_one_query_are_reported_without_echoing_them() -> None:
+    ledger = CountingLedger()
+    known = tuple(url for node, url in GENERATED.items() if node not in ("personB", "scene"))
+    await ledger.record(
+        NAMESPACE, [Material(url=url, kind="image") for url in (*PHOTO_URLS, *known)]
+    )
+    await ledger.record(NAMESPACE, [Material(url=GENERATED["scene"], kind="video")])
+
+    problems = await load_film(FILM, RUN, images=ConversationImages(ledger, NAMESPACE))
+
+    assert isinstance(problems, list)
+    assert (ledger.single, len(ledger.batches)) == (0, 1)
+    assert [line.split("：", 1)[1] for line in problems] == [
+        "src 不在这段对话的素材里；只能写对话素材里的图片地址"
+    ] * 2
+    assert all(line.startswith("film.icrun 第 ") for line in problems)
+    assert not any(url in line for line in problems for url in GENERATED.values())
 
 
 def film_of(run: str = RUN) -> Film:

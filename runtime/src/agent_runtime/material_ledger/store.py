@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -27,6 +27,10 @@ class MaterialLedger(Protocol):
     async def record(self, namespace: str, materials: Sequence[Material]) -> None: ...
 
     async def lookup(self, namespace: str, url: str) -> Material | None: ...
+
+    async def lookup_many(self, namespace: str, urls: Sequence[str]) -> Mapping[str, Material]:
+        """一次查一批地址，只答登记过的那些（地址 → 素材）；地址可以重复，空输入答空。"""
+        ...
 
 
 __all__ = ["Material", "MaterialKind", "MaterialLedger"]

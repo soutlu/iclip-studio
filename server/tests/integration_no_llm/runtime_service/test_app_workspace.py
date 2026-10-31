@@ -7,6 +7,7 @@ import uuid
 
 import httpx
 import pytest
+from agent_runtime.app_wire import MAX_MATERIAL_LOOKUP_URLS
 from pydantic_ai.models import Model
 
 from tests.helpers.app import TEST_MODEL_NAME
@@ -105,6 +106,42 @@ async def test_materials_are_recorded_and_looked_up(
     assert unknown.json()["detail"] == "这段对话的素材里没有这个地址"
     elsewhere = await app_client.get(base, params={"url": IMAGE}, headers=as_owner(other))
     assert elsewhere.status_code == 404
+
+
+async def test_a_batch_lookup_answers_only_what_this_sessions_ledger_holds(
+    app_client: httpx.AsyncClient, session: str, other: uuid.UUID
+) -> None:
+    clip = "https://cdn.test/clip.mp4"
+    theirs = "https://cdn.test/theirs.png"
+    base = f"/sessions/{session}/materials"
+    await app_client.post(
+        base,
+        json={"materials": [{"url": IMAGE, "kind": "image"}, {"url": clip, "kind": "video"}]},
+    )
+    await app_client.post(
+        base, json={"materials": [{"url": theirs, "kind": "image"}]}, headers=as_owner(other)
+    )
+
+    found = await app_client.post(
+        f"{base}:lookup", json={"urls": [IMAGE, clip, IMAGE, theirs, "https://cdn.test/x.png"]}
+    )
+
+    assert found.status_code == 200, found.text
+    assert sorted(found.json()["materials"], key=lambda one: one["url"]) == [
+        {"url": IMAGE, "kind": "image"},
+        {"url": clip, "kind": "video"},
+    ]
+
+
+async def test_a_batch_lookup_over_the_limit_is_422(
+    app_client: httpx.AsyncClient, session: str
+) -> None:
+    urls = [f"https://cdn.test/{index}.png" for index in range(MAX_MATERIAL_LOOKUP_URLS + 1)]
+
+    refused = await app_client.post(f"/sessions/{session}/materials:lookup", json={"urls": urls})
+
+    assert refused.status_code == 422
+    assert refused.json()["detail"].startswith("urls: ")
 
 
 async def test_a_fork_copies_files_materials_and_history_to_the_target_owner(

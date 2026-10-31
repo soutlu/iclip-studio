@@ -1,4 +1,4 @@
-"""会话工作区与素材台账接口：列文件、读一份、带版本写一份；登记素材、按地址查一条。
+"""会话工作区与素材台账接口：列文件、读一份、带版本写一份；登记素材、按地址查一条或一批。
 
 命名空间是「``X-End-User``（会话属主）/会话 id」，与 agent 的工作区插件、受理消息时登记附件同一条规则。
 报错同后端读写工作区文件的端点：路径或内容不合规 422，版本对不上 409，文件不在 404。写文件经组合根交来的
@@ -14,7 +14,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from agent_runtime.app_wire import FilesOut, FileWriteIn, MaterialsIn
+from agent_runtime.app_wire import (
+    FilesOut,
+    FileWriteIn,
+    MaterialsIn,
+    MaterialsLookupIn,
+    MaterialsLookupOut,
+)
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import (
@@ -122,6 +128,17 @@ def create_workspace_router(
         if found is None:
             raise NotFound("这段对话的素材里没有这个地址")
         return found
+
+    @router.post("/materials:lookup", response_model=MaterialsLookupOut)
+    async def lookup_materials(
+        session_id: uuid.UUID,
+        body: MaterialsLookupIn,
+        owner: SessionOwner,
+        app: CallingApp = caller,
+    ) -> MaterialsLookupOut:
+        await sessions.require_owned(session_id, app_id=app.id)
+        found = await ledger.lookup_many(_namespace(owner, session_id), body.urls)
+        return MaterialsLookupOut(materials=tuple(found.values()))
 
     return router
 

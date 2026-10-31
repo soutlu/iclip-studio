@@ -136,6 +136,12 @@ def _requests(owner: uuid.UUID) -> dict[str, Callable[[str, str], Request]]:
             None,
         ),
         "lookup-material": lambda s, _: ("GET", f"/sessions/{s}/materials", None, {"url": IMAGE}),
+        "lookup-materials": lambda s, _: (
+            "POST",
+            f"/sessions/{s}/materials:lookup",
+            {"urls": [IMAGE]},
+            None,
+        ),
         "fork": lambda s, _: (
             "POST",
             f"/sessions/{s}:fork",

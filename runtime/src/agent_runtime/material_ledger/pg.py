@@ -11,10 +11,12 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     Table,
     Text,
+    any_,
+    bindparam,
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -71,6 +73,23 @@ class PgMaterialLedger:
         if row is None:
             return None
         return Material(url=url, kind=cast(MaterialKind, row[0]))
+
+    async def lookup_many(self, namespace: str, urls: Sequence[str]) -> dict[str, Material]:
+        """一条 ``url = ANY(:urls)`` 查完一批；空输入不查库。"""
+
+        if not urls:
+            return {}
+        table = materials_table
+        wanted = bindparam("urls", list(dict.fromkeys(urls)), type_=ARRAY(Text))
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(table.c.url, table.c.kind).where(
+                        table.c.namespace == namespace, table.c.url == any_(wanted)
+                    )
+                )
+            ).all()
+        return {row[0]: Material(url=row[0], kind=cast(MaterialKind, row[1])) for row in rows}
 
     async def list_all(self, namespace: str) -> tuple[Material, ...]:
         """整份读出一个命名空间的素材，供组合根在分叉与做同款时搬进新对话。

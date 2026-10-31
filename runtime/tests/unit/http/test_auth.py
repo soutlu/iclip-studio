@@ -119,6 +119,7 @@ OWNER_SCOPED = {
     ("put", "/v1/sessions/{session_id}/files/{path}"),
     ("post", "/v1/sessions/{session_id}/materials"),
     ("get", "/v1/sessions/{session_id}/materials"),
+    ("post", "/v1/sessions/{session_id}/materials:lookup"),
 }
 """会话接口里要会话属主的那几个：算命名空间、记新消息的属主，或给分叉与拷文件的目标定属主。"""
 
