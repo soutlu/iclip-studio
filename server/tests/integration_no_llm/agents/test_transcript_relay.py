@@ -1,23 +1,39 @@
-"""浏览器连接经后端转到运行时：回执一帧一个、运行时的帧原样转发、两条上游各自断开时的关闭码、
-文件变化经对话内容流原样到达订着的连接，以及活动与轮次收尾分走两条上游时客户端看得到的先后。"""
+"""浏览器连接经后端转到运行时：回执一帧一个、运行时的帧原文转发（多了字段也照转）、事件流上新加的字段与
+帧不断连接、两条上游各自断开与事件流重新连上时的关闭码、溢出后连接照常收尾、文件变化经对话内容流原样到达
+订着的连接，以及活动与轮次收尾分走两条上游时客户端看得到的先后。"""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import pkgutil
 import threading
 import uuid
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from agent_runtime.client import EventStream, StreamClosed, TranscriptChannel
+from agent_runtime.client import (
+    EventStream,
+    RawFrame,
+    RuntimeClient,
+    StreamClosed,
+    TranscriptChannel,
+    WorkChangedFrame,
+)
 from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.live.frames import Ping, PingPayload, timestamp_now
 from agent_runtime.plugins.base import PluginHost, PluginRegistry
+from agent_runtime.transcript.wire import Envelope
 from fastapi import FastAPI
 from sqlalchemy import text
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from iclip.domains.agents.transcript_api import MAX_EVENT_BUFFER, LiveConnections
+from iclip.domains.conversations.service import ConversationService
+from iclip.domains.identity.public import Principal
 from tests.helpers.agents import AgentSeed
 from tests.helpers.film import FILM, GIVEN_IMAGES, RUN
 from tests.helpers.pg import connected
@@ -61,13 +77,20 @@ def _send(tc: TestClient, conversation_id: str, prompt_id: str) -> None:
 def _frames_until_turn_and_idle(ws: Any, conversation_id: str) -> list[dict[str, Any]]:
     """收这段对话的帧，直到这一轮在 transcript 上收了尾、活动也回到空闲。"""
 
-    frames: list[dict[str, Any]] = []
+    return [json.loads(raw) for raw in _texts_until_turn_and_idle(ws, conversation_id)]
+
+
+def _texts_until_turn_and_idle(ws: Any, conversation_id: str) -> list[str]:
+    """同 ``_frames_until_turn_and_idle``，交回浏览器收到的原文。"""
+
+    texts: list[str] = []
     turn_ended = idle = False
     for _ in range(200):
-        frame: dict[str, Any] = ws.receive_json()
+        raw: str = ws.receive_text()
+        frame: dict[str, Any] = json.loads(raw)
         if frame.get("session_id") != conversation_id:
             continue
-        frames.append(frame)
+        texts.append(raw)
         if frame["type"] == "transcript.ops" and any(
             op["op"] == "turn.upsert" and op["turn"]["state"] != "running"
             for op in frame["payload"]["ops"]
@@ -76,7 +99,7 @@ def _frames_until_turn_and_idle(ws: Any, conversation_id: str) -> list[dict[str,
         if frame["type"] == "event.session.work_changed" and not frame["payload"]["busy"]:
             idle = True
         if turn_ended and idle:
-            return frames
+            return texts
     raise AssertionError("没等到这一轮收尾与空闲两帧")
 
 
@@ -157,9 +180,14 @@ def test_each_subscribe_frame_gets_exactly_one_ack(ws_agent_app: FastAPI, pg_url
 
 
 def _wire(frame: Any) -> dict[str, Any]:
-    """帧在 WebSocket 上的样子，与运行时和后端发帧时的序列化相同。"""
+    """帧在 WebSocket 上的样子：原文帧就是它的原文，解析过的帧与运行时和后端发帧时的序列化相同。"""
 
-    sent: dict[str, Any] = json.loads(frame.model_dump_json(exclude_none=True, by_alias=True))
+    raw = (
+        frame.text
+        if isinstance(frame, RawFrame | WorkChangedFrame)
+        else frame.model_dump_json(exclude_none=True, by_alias=True)
+    )
+    sent: dict[str, Any] = json.loads(raw)
     return sent
 
 
@@ -207,6 +235,145 @@ def test_relayed_frames_are_the_runtimes_frames_field_for_field(
         browser = [frame for frame in received if frame["type"] in kind]
         runtime = [frame for frame in sent if frame["type"] in kind]
         assert browser == runtime[: len(browser)]
+
+
+# --- 运行时先于后端升级 ------------------------------------------------------------
+
+_RUNTIME_SEND = "agent_runtime.http.streams._Channel._send"
+"""运行时两条 WebSocket 发帧的那一处；测试在这里改写帧，模拟比后端新的运行时。"""
+
+_TRANSCRIPT_FRAMES = ("transcript.reset", "transcript.ops", "ack")
+
+
+class _Text:
+    """替身帧：运行时发帧时调它的 ``model_dump_json``，拿到的就是这段原文。"""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def model_dump_json(self, **_: Any) -> str:
+        return self._text
+
+
+def _rewrite_runtime_frames(
+    monkeypatch: pytest.MonkeyPatch, rewrite: Callable[[dict[str, Any]], tuple[str, ...] | None]
+) -> None:
+    """运行时每发一帧先交给 ``rewrite``：返回 None 照发原帧，否则依次发它给的原文。"""
+
+    original = pkgutil.resolve_name(_RUNTIME_SEND)
+
+    async def send(channel: Any, frame: Envelope) -> None:
+        texts = rewrite(_wire(frame))
+        if texts is None:
+            await original(channel, frame)
+            return
+        for raw in texts:
+            await original(channel, _Text(raw))
+
+    monkeypatch.setattr(_RUNTIME_SEND, send)
+
+
+def _extended(wire: dict[str, Any]) -> str:
+    """外层与 ``payload`` 里各多一个后端不认识的字段；序列化的写法也与运行时不同，原文对得上才是没重新序列化。"""
+
+    extended = {**wire, "added_later": {"nested": [1, 2]}}
+    if isinstance(wire.get("payload"), dict):
+        extended["payload"] = {**wire["payload"], "also_added": True}
+    return json.dumps(extended, ensure_ascii=False)
+
+
+def _ack(ws: Any, frame_id: str) -> dict[str, Any]:
+    """等这一帧订阅的回执，跳过期间的其他帧。"""
+
+    for _ in range(200):
+        frame: dict[str, Any] = ws.receive_json()
+        if frame["type"] == "ack" and frame["id"] == frame_id:
+            return frame
+    raise AssertionError(f"没等到 {frame_id} 的回执")
+
+
+def test_runtime_frames_with_unknown_fields_reach_the_browser_verbatim(
+    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """对话内容流的帧多了后端不认识的字段：浏览器收到的就是运行时发的那段原文，连接不断。"""
+
+    sent: list[str] = []
+
+    def extend(wire: dict[str, Any]) -> tuple[str, ...] | None:
+        if wire["type"] not in _TRANSCRIPT_FRAMES:
+            return None
+        sent.append(_extended(wire))
+        return (sent[-1],)
+
+    _rewrite_runtime_frames(monkeypatch, extend)
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+        with tc.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+            subscribe(ws, conversation_id)
+            _send(tc, conversation_id, "prm_extended")
+            received: list[str] = []
+            while True:
+                raw = ws.receive_text()
+                frame = json.loads(raw)
+                if frame["type"] not in _TRANSCRIPT_FRAMES:
+                    continue
+                received.append(raw)
+                if frame["type"] == "transcript.ops" and any(
+                    op["op"] == "turn.upsert" and op["turn"]["state"] != "running"
+                    for op in frame["payload"]["ops"]
+                ):
+                    break
+            # 连接还在：再订一段看不见的对话，照常回执。
+            missing = str(uuid.uuid4())
+            subscribe(ws, missing, frame_id="probe")
+            probe = _ack(ws, "probe")
+        settled(tc, conversation_id)
+
+    assert {json.loads(raw)["type"] for raw in received} == set(_TRANSCRIPT_FRAMES)
+    assert received == sent[: len(received)]
+    assert probe["payload"]["not_found"] == [missing]
+
+
+def test_added_event_fields_and_types_do_not_close_browser_connections(
+    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """事件流上的活动多了字段、还多了后端不认识的帧：活动按属主发出，浏览器收到的就是运行时发的那段原文；
+    认不出的不知道该发给谁，跳过，也不当成断线去关浏览器连接。"""
+
+    sent: list[str] = []
+
+    def extend(wire: dict[str, Any]) -> tuple[str, ...] | None:
+        if wire["type"] != "event.session.work_changed":
+            return None
+        novel = {"type": "event.session.something_new", "session_id": wire["session_id"]}
+        sent.append(_extended(wire))
+        return (json.dumps(novel), sent[-1])
+
+    _rewrite_runtime_frames(monkeypatch, extend)
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+        with tc.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+            subscribe(ws, conversation_id)
+            until(ws, "transcript.reset")
+            _send(tc, conversation_id, "prm_events_extended")
+            texts = _texts_until_turn_and_idle(ws, conversation_id)
+            subscribe(ws, str(uuid.uuid4()), frame_id="probe")
+            _ack(ws, "probe")
+        settled(tc, conversation_id)
+
+    frames = [json.loads(raw) for raw in texts]
+    work = [raw for raw in texts if json.loads(raw)["type"] == "event.session.work_changed"]
+    mine = [raw for raw in sent if json.loads(raw)["session_id"] == conversation_id]
+    assert work == mine[: len(work)]
+    assert (json.loads(work[0])["payload"]["busy"], json.loads(work[-1])["payload"]["busy"]) == (
+        True,
+        False,
+    )
+    assert not any(frame["type"] == "event.session.something_new" for frame in frames)
 
 
 # --- 活动与轮次收尾的先后 ------------------------------------------------------------
@@ -323,6 +490,139 @@ def test_a_dropped_event_stream_closes_every_browser_connection_then_reconnects(
             busy = until(again, "event.session.work_changed")
 
     assert busy["session_id"] == conversation_id
+
+
+def _closed_before_ack(ws: Any, frame_id: str) -> int:
+    """收帧直到连接被关，交回关闭码；先收到 ``frame_id`` 的回执说明连接没被关。"""
+
+    for _ in range(200):
+        try:
+            frame = ws.receive_json()
+        except WebSocketDisconnect as closed:
+            return closed.code
+        if frame["type"] == "ack" and frame["id"] == frame_id:
+            raise AssertionError("连接没被关，订阅照常回了执")
+    raise AssertionError("连接没被关")
+
+
+def test_a_browser_connected_while_the_event_stream_was_down_is_closed_when_it_reconnects(
+    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """浏览器的重连比事件流快：断线期间连上、重拉过的连接，在事件流连上时也以 1001 关，重连后重拉补上
+    两者之间的活动。"""
+
+    dropping = threading.Event()
+    holding = threading.Event()
+    reconnecting = threading.Event()
+    released = threading.Event()
+    following = EventStream.__anext__
+    connect_events = RuntimeClient.connect_events
+
+    async def flaky(stream: EventStream) -> Any:
+        event = await following(stream)
+        if dropping.is_set():
+            dropping.clear()
+            raise StreamClosed(1012, "测试里断开")
+        return event
+
+    @asynccontextmanager
+    async def held(client: RuntimeClient) -> AsyncGenerator[EventStream]:
+        # 断开之后的那次重连停在握手前，直到测试放行。
+        if holding.is_set():
+            reconnecting.set()
+            while not released.is_set():
+                await asyncio.sleep(0.01)
+        async with connect_events(client) as events:
+            yield events
+
+    monkeypatch.setattr(EventStream, "__anext__", flaky)
+    monkeypatch.setattr(RuntimeClient, "connect_events", held)
+    events = ws_agent_app.state.runtime_events
+
+    async def reconnected() -> None:
+        await asyncio.wait_for(events.wait_connected(), 10)
+
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+        holding.set()
+        dropping.set()
+        with tc.websocket_connect("/ws") as before:
+            assert before.receive_json()["type"] == "server_hello"
+            _send(tc, conversation_id, "prm_drop")
+            assert _closed_with(before) == 1001
+        assert reconnecting.wait(10), "事件流没有开始重连"
+        try:
+            with tc.websocket_connect("/ws") as during:
+                assert during.receive_json()["type"] == "server_hello"
+                released.set()
+                assert tc.portal is not None
+                tc.portal.call(reconnected)
+                subscribe(during, str(uuid.uuid4()), frame_id="probe")
+                assert _closed_before_ack(during, "probe") == 1001
+        finally:
+            released.set()
+        settled(tc, conversation_id)
+
+
+# --- 溢出 ------------------------------------------------------------------------
+
+
+def test_an_overflowed_connection_ends_even_with_a_local_ack_pending(
+    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """溢出后发送泵以 1013 关了连接、不再取队列，读循环这时正要就地回一个 ``not_found`` 回执：它不等队列空位，
+    连接照常收尾，运行时那边这条连接占着的实时状态放开。"""
+
+    connections: list[Any] = []
+    add = LiveConnections.add
+    agent_of = ConversationService.agent_of
+    blocked = str(uuid.uuid4())
+    looking_up = threading.Event()
+    released = threading.Event()
+
+    def recording_add(live: LiveConnections, connection: Any) -> None:
+        connections.append(connection)
+        add(live, connection)
+
+    async def held_agent_of(
+        service: ConversationService, principal: Principal, conversation_id: str, *, writing: bool
+    ) -> str:
+        # 读循环停在核这段对话的可见性上，溢出与关连接在这期间发生。
+        if conversation_id == blocked:
+            looking_up.set()
+            while not released.is_set():
+                await asyncio.sleep(0.01)
+        return await agent_of(service, principal, conversation_id, writing=writing)
+
+    monkeypatch.setattr(LiveConnections, "add", recording_add)
+    monkeypatch.setattr(ConversationService, "agent_of", held_agent_of)
+    store: TranscriptStore = ws_agent_app.state.transcript_store
+
+    def offer(times: int) -> None:
+        [connection] = connections
+        for _ in range(times):
+            connection.offer(Ping(timestamp=timestamp_now(), payload=PingPayload(nonce="fill")))
+
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+        with tc.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+            subscribe(ws, conversation_id, frame_id="s1")
+            _ack(ws, "s1")
+            assert store.holds(conversation_id)
+            subscribe(ws, blocked, frame_id="held")
+            try:
+                assert looking_up.wait(10), "读循环没有去核可见性"
+                assert tc.portal is not None
+                tc.portal.call(offer, MAX_EVENT_BUFFER + 1)
+                assert _closed_with(ws) == 1013
+                # 发送泵退出后，转发与广播仍会把队列填满（这里直接填），回执就放不进去了。
+                tc.portal.call(offer, MAX_EVENT_BUFFER)
+            finally:
+                released.set()
+            _wait_released(store, conversation_id)
 
 
 # --- 文件变化 --------------------------------------------------------------------

@@ -1,10 +1,12 @@
 """运行时应用事件流的消费者：每个后端进程一条 ``/v1/events``，把会话活动转成浏览器的全局帧。浏览器收到的
-就是运行时的 ``event.session.work_changed``，原样转发。
+就是运行时发来的 ``event.session.work_changed`` 原文（运行时新加的字段一并到达），后端只按解析出的属主决定
+发给谁；认不出类型的帧不知道该发给谁，记日志后跳过。
 
 事件按到达的先后在这一个任务里逐个投递，所以同一段对话的帧在每条浏览器连接上仍按运行时发出的先后到达。
-事件流断了（运行时重启、网络中断、还没起来）先记日志，再以 1001 关掉此刻全部浏览器连接——
-断线期间的事件不补发，客户端重连后重订、重拉列表对齐——然后按封顶的退避重连。后端启动时运行时可能还没起来
-（它启动时要向后端核对插件服务），所以第一次连接也走这条重连路。
+事件流断了（运行时重启、网络中断、还没起来）先记日志，再以 1001 关掉此刻全部浏览器连接，然后按封顶的退避
+重连；每次连上时也以 1001 关掉此刻全部浏览器连接。断线期间的事件不补发，客户端重连后重订、重拉列表对齐。
+浏览器的重连退避与这里的不同，可能在断线期间就已重连、重拉过，之后到事件流连上为止的活动它收不到，所以连上
+时再关一次。后端启动时运行时可能还没起来（它启动时要向后端核对插件服务），所以第一次连接也走这条重连路。
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import contextlib
 from typing import Final
 
 import structlog
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable
+from agent_runtime.client import RuntimeClient, RuntimeUnavailable, WorkChangedFrame
 
 from iclip.domains.agents.transcript_api import GOING_AWAY, LiveConnections
 
@@ -57,7 +59,8 @@ class RuntimeEvents:
         self._task = None
 
     async def wait_connected(self) -> None:
-        """等事件流连上；测试在开始发消息前经它确认不会漏掉活动。"""
+        """等事件流连上；连上时关浏览器连接在它返回之前，测试在它之后开的连接不会被这一次关掉，也不会漏掉
+        活动。"""
 
         await self._connected.wait()
 
@@ -66,11 +69,16 @@ class RuntimeEvents:
         while True:
             try:
                 async with self._client.connect_events() as events:
+                    # 关连接与置位之间没有 await：等 wait_connected 的一方之后开的连接不会被关。
+                    self._live.close_all(GOING_AWAY)
                     self._connected.set()
                     wait = self._first_retry
                     _logger.info("运行时事件流已连上")
                     async for event in events:
-                        self._live.announce_activity(event)
+                        if isinstance(event, WorkChangedFrame):
+                            self._live.announce_activity(event)
+                        else:
+                            _logger.info("运行时事件流上有认不出的帧，跳过", frame_type=event.type)
             except RuntimeUnavailable as exc:
                 self._connected.clear()
                 _logger.warning(
