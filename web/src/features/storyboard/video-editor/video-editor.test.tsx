@@ -18,7 +18,7 @@ const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: 
 const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 
 vi.mock('mediabunny', async () => {
-  const { createMediaReaderMock } = await import('@/testing/editor')
+  const { createMediaReaderMock } = await import('@/testing/media-reader')
   class BufferTarget {
     buffer: ArrayBuffer | null = null
   }

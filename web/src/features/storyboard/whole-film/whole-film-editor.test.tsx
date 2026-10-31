@@ -27,7 +27,7 @@ import { wholeFilmQueryKeys } from './whole-film.api'
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 
 vi.mock('mediabunny', async () => {
-  const { createMediaReaderMock } = await import('@/testing/editor')
+  const { createMediaReaderMock } = await import('@/testing/media-reader')
   class AudioSampleSink {}
   return { ...createMediaReaderMock(files), AudioSampleSink }
 })
