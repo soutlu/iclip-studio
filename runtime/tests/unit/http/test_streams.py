@@ -1,12 +1,14 @@
 """两条 WebSocket 的连接层：认不出应用在握手前以 1008 关闭；事件流送达这个应用的会话活动、出站积压超过上限以
-1013 关闭；对话内容流订阅补批时溢出同样以 1013 关闭，对方断开后放开固定、监听与文件变化登记；订着一段会话的
-连接收它的文件变化，按订阅登记与注销。
+1013 关闭；对话内容流订阅补批时实时批挤爆队列同样以 1013 关闭，对方断开后、或读循环还在处理上一帧时自己收尾，
+都放开固定、监听与文件变化登记；补批放不进余量改发 reset、连接不断；订着一段会话的连接收它的文件变化，按订阅
+登记与注销。
 
 只挂两条路由、一个查表的集线器与替身的 transcript 服务和会话服务，不碰库。真实的订阅、档位与写文件见后端
 ``tests/integration_no_llm/runtime_service/test_app_streams.py``。"""
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Collection, Generator
@@ -39,7 +41,7 @@ from agent_runtime.live.hub import AppEventHub, FileChangeSink, SessionFileChang
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.settings import ResolvedApp
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, ItemsRemoveOp, TranscriptSnapshot
-from agent_runtime.transcript.wire import ResetPayload, SessionActivityOut
+from agent_runtime.transcript.wire import OpsPayload, ResetPayload, SessionActivityOut
 
 BFF_KEY = "bff-app-key-0123456789-0123456789-ab"
 TOOL_KEY = "tool-app-key-0123456789-0123456789-a"
@@ -76,13 +78,15 @@ def wrote(session_id: str, path: str = "notes.md") -> FsChanged:
 
 
 class FakeTranscripts:
-    """只认主流与 ``CHILD``；订阅一律回一帧 reset。记着固定次数与监听；取快照前先给刚登记的监听推
-    ``live_during_subscribe`` 条实时批，当作先监听、再取快照两步之间落下的批次。"""
+    """只认主流与 ``CHILD``；带水位订阅回 ``catchup`` 条补批，没有补批或不带水位回一帧 reset。记着固定次数
+    与监听；取快照前先给刚登记的监听推 ``live_during_subscribe`` 条实时批，当作先监听、再取快照两步之间落下的
+    批次。"""
 
     def __init__(self) -> None:
         self.pins = 0
         self.listeners: dict[tuple[str, str], Listener] = {}
         self.live_during_subscribe = 0
+        self.catchup = 0
 
     async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
         if agent_id not in (MAIN_AGENT_ID, CHILD):
@@ -94,6 +98,12 @@ class FakeTranscripts:
         listener = self.listeners[(conversation_id, agent_id)]
         for seq in range(1, self.live_during_subscribe + 1):
             listener(OpBatch(seq=seq, ops=(ItemsRemoveOp(ids=("t1",)),), epoch="e1"))
+        if since is not None and self.catchup:
+            batches = tuple(
+                OpsPayload(agent_id=agent_id, ops=(ItemsRemoveOp(ids=("t1",)),), seq=since + offset)
+                for offset in range(1, self.catchup + 1)
+            )
+            return SubscribeFrames(stream_epoch="e1", frames=batches)
         reset = ResetPayload(agent_id=agent_id, snapshot=TranscriptSnapshot(), seq=0)
         return SubscribeFrames(stream_epoch="e1", frames=(reset,))
 
@@ -111,9 +121,16 @@ class FakeTranscripts:
 
 
 class FakeSessions:
+    """按 ``APPS`` 核归属；``delay`` 秒后才答，当作真去查库。"""
+
+    def __init__(self) -> None:
+        self.delay = 0.0
+
     async def owned(
         self, session_ids: Collection[uuid.UUID], *, app_id: str
     ) -> frozenset[uuid.UUID]:
+        if self.delay:
+            await asyncio.sleep(self.delay)
         return frozenset(sid for sid in session_ids if APPS.get(str(sid)) == app_id)
 
 
@@ -149,8 +166,16 @@ def transcripts() -> FakeTranscripts:
 
 
 @pytest.fixture
+def sessions() -> FakeSessions:
+    return FakeSessions()
+
+
+@pytest.fixture
 def client(
-    hub: AppEventHub, file_changes: RecordingFileChanges, transcripts: FakeTranscripts
+    hub: AppEventHub,
+    file_changes: RecordingFileChanges,
+    transcripts: FakeTranscripts,
+    sessions: FakeSessions,
 ) -> Generator[TestClient]:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -172,7 +197,7 @@ def client(
         create_transcript_ws_router(
             auth.identify,
             cast(TranscriptService, transcripts),
-            cast(SessionService, FakeSessions()),
+            cast(SessionService, sessions),
             file_changes,
         )
     )
@@ -192,18 +217,29 @@ def in_app_loop(client: TestClient, action: Callable[[], None]) -> None:
     portal.call(action)
 
 
+def send_subscribe(
+    ws: Any,
+    session_id: str,
+    transcript: dict[str, str],
+    *,
+    frame_id: str = "s1",
+    since: dict[str, int] | None = None,
+) -> None:
+    """发一帧 subscribe_v2；带水位时 epoch 一律是替身的 ``e1``。"""
+
+    payload: dict[str, Any] = {"session_id": session_id, "transcript": transcript}
+    if since is not None:
+        payload["transcript_since"] = since
+        payload["transcript_epoch"] = dict.fromkeys(since, "e1")
+    ws.send_json({"type": "subscribe_v2", "id": frame_id, "payload": payload})
+
+
 def subscribe(
     ws: Any, session_id: str, transcript: dict[str, str], *, frame_id: str = "s1"
 ) -> dict[str, Any]:
     """发一帧 subscribe_v2，等到它的回执交回（其间的 reset 跳过）。"""
 
-    ws.send_json(
-        {
-            "type": "subscribe_v2",
-            "id": frame_id,
-            "payload": {"session_id": session_id, "transcript": transcript},
-        }
-    )
+    send_subscribe(ws, session_id, transcript, frame_id=frame_id)
     return until_ack(ws, frame_id)
 
 
@@ -301,16 +337,7 @@ def test_overflowing_during_catchup_closes_and_releases_the_session(
     transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
 
     with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
-        ws.send_json(
-            {
-                "type": "subscribe_v2",
-                "id": "s1",
-                "payload": {
-                    "session_id": BFF_SESSION,
-                    "transcript": {MAIN_AGENT_ID: "delta", CHILD: "delta"},
-                },
-            }
-        )
+        send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta", CHILD: "delta"})
         with pytest.raises(WebSocketDisconnect) as closed:
             for _ in range(20):
                 ws.receive_json()
@@ -323,6 +350,50 @@ def test_overflowing_during_catchup_closes_and_releases_the_session(
         assert released, (transcripts.pins, list(transcripts.listeners))
 
     assert file_changes.log == [("attach", BFF_SESSION), ("detach", BFF_SESSION)]
+
+
+@pytest.mark.timeout(10)
+def test_a_close_while_handling_a_frame_ends_the_connection_quietly(
+    client: TestClient,
+    transcripts: FakeTranscripts,
+    sessions: FakeSessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 第一帧的实时批挤爆队列；第二帧核归属要等一会儿，发送泵趁这时以 1013 关了连接，读循环处理完
+    # 这一帧再去读，应用侧已断开。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 2)
+    transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
+    sessions.delay = 0.05
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"})
+        send_subscribe(ws, OTHER_BFF_SESSION, {MAIN_AGENT_ID: "delta"}, frame_id="s2")
+        with pytest.raises(WebSocketDisconnect) as closed:
+            for _ in range(20):
+                ws.receive_json()
+        assert closed.value.code == 1013
+
+        # 不等对方回关闭帧，连接自己收尾；退出 with 时连接任务不带着异常结束。
+        released = eventually(lambda: transcripts.pins == 0 and not transcripts.listeners)
+        assert released, (transcripts.pins, list(transcripts.listeners))
+
+
+@pytest.mark.timeout(10)
+def test_catchup_that_does_not_fit_falls_back_to_a_reset(
+    client: TestClient, transcripts: FakeTranscripts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 补批刚好占满余量，回执就放不下了：改发 reset，连接不断，对方覆盖水位后重取历史。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 4)
+    transcripts.catchup = streams.MAX_OUTBOUND
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"}, since={MAIN_AGENT_ID: 7})
+        reset, ack = ws.receive_json(), ws.receive_json()
+        # 再来回一趟，证明连接还开着。
+        unsubscribe(ws, BFF_SESSION)
+
+    assert (reset["type"], reset["payload"]["agent_id"]) == ("transcript.reset", MAIN_AGENT_ID)
+    assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", "s1", [BFF_SESSION])
 
 
 # --- 对话内容流上的文件变化 -------------------------------------------------------

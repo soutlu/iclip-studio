@@ -12,9 +12,9 @@
 
 对话内容流：照后端浏览器那条连接的 transcript 一半，每段会话发一帧 ``subscribe_v2``，规则相同（档位、
 先监听再取快照、补批帧筛空了也发、实时批筛空了不发、升档先 reset、子代理流要能回溯到这段会话）。
-会话不归调用方应用与不存在一样答 ``not_found``。订着一段会话（任何档位，含
-``off``）的连接还收它的工作区文件变化 ``event.fs.changed``。连接断开时撤掉它的全部监听，最后一个撤掉时
-放开这段会话的实时状态、不再收它的文件变化。
+补批连同回执放不进出站队列的余量时改发 reset。会话不归调用方应用与不存在一样答 ``not_found``。订着一段
+会话（任何档位，含 ``off``）的连接还收它的工作区文件变化 ``event.fs.changed``。连接断开时撤掉它的全部
+监听，最后一个撤掉时放开这段会话的实时状态、不再收它的文件变化。
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from collections.abc import Callable, Mapping, Sequence
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
+from starlette.websockets import WebSocketState
 
 from agent_runtime.errors import DomainError
 from agent_runtime.harness.transcript.service import TranscriptService
@@ -154,7 +155,14 @@ class _Channel:
 
     async def _read(self) -> None:
         while True:
-            raw = await self._ws.receive_text()
+            try:
+                raw = await self._ws.receive_text()
+            except RuntimeError as exc:
+                if self._ws.application_state is not WebSocketState.DISCONNECTED:
+                    raise
+                # 读循环还在处理上一帧时，发送泵（1013）或心跳（1001）已关了连接，Starlette 不让再读，
+                # 当作断开。
+                raise WebSocketDisconnect(code=1006) from exc
             self._last_inbound = asyncio.get_running_loop().time()
             await self._handle(raw)
 
@@ -288,6 +296,12 @@ class _TranscriptConnection(_Channel):
             subscribed = self._transcripts.subscribe(
                 session_id, agent_id=agent_id, since=since, epoch=epoch
             )
+            # 补批一口气放不下就会溢出断开，对方水位没动、重连又是同样的补批；改发 reset 让对方覆盖水位、
+            # 重取历史。余量留一格给订阅回执，回执放不下同样断开。监听已先登记，取 reset 不漏批次。
+            if len(subscribed.frames) >= self._outbound.maxsize - self._outbound.qsize():
+                subscribed = self._transcripts.subscribe(
+                    session_id, agent_id=agent_id, since=None, epoch=None
+                )
             for item in subscribed.frames:
                 # 补批帧筛空了也发：它推进对方的水位。
                 self.offer(_wrap(session_id, _graded(item, grade), subscribed.stream_epoch))
