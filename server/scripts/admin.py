@@ -7,13 +7,11 @@ root 引导有两条路：SSO 场景配置 ROOT_EMAIL，非 SSO 场景用这里�
     uv run --env-file ../.env python -m scripts.admin list-users
     uv run --env-file ../.env python -m scripts.admin set-roles <username_or_email> root,editor
     uv run --env-file ../.env python -m scripts.admin issue-key <username_or_email> <key名> <perm1,perm2>
-    uv run --env-file ../.env python -m scripts.admin rotate-credential-keys
 
 issue-key 默认随机生成明文；设置 API_KEY_TOKEN 则按它签发，用于沿用调用方
 已在用的串。
 
-rotate-credential-keys 把模型供应商全部密钥的机密字段改用 CREDENTIAL_ENCRYPTION_KEYS
-的第一个 key 加密，换钥步骤见 docs/deploy.md「换密钥加密钥匙」。
+模型供应商密钥的换钥在运行时服务那边（``python -m agent_runtime.admin rotate-credential-keys``）。
 """
 
 from __future__ import annotations
@@ -25,17 +23,11 @@ import sys
 import uuid
 from datetime import UTC, datetime
 
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.cipher import CredentialCipher
-from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
-from agent_runtime.config.model_providers.service import rotate_credential_keys
 from agent_runtime.errors import ValidationFailed
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from iclip.config import CREDENTIAL_ENCRYPTION_KEYS_ENV, CredentialKeysEnv
 from iclip.domains.identity.infra_sql import ApiKeyRow, User
 from iclip.domains.identity.rbac import PERMISSIONS, ROLES
 from iclip.domains.identity.service import (
@@ -145,23 +137,6 @@ async def _issue_key(identifier: str, name: str, permissions_csv: str) -> None:
         await engine.dispose()
 
 
-async def _rotate_credential_keys() -> None:
-    try:
-        keys = CredentialKeysEnv().key_list  # pyright: ignore[reportCallIssue]
-    except ValidationError as exc:
-        sys.exit(f"{CREDENTIAL_ENCRYPTION_KEYS_ENV} 不合法：{exc.errors()[0]['msg']}")
-    engine = build_engine(_database_url())
-    try:
-        rotated = await rotate_credential_keys(
-            SqlModelProviderStore(engine),
-            declarations=load_declarations(),
-            cipher=CredentialCipher(keys),
-        )
-        print(f"已把 {rotated} 把密钥的机密字段改用第一个 key 加密")
-    finally:
-        await engine.dispose()
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="iClip 引导型管理 CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -173,17 +148,14 @@ def main() -> None:
     p_key.add_argument("identifier")
     p_key.add_argument("name")
     p_key.add_argument("permissions", help="逗号分隔权限列表")
-    sub.add_parser("rotate-credential-keys")
     args = parser.parse_args()
 
     if args.command == "list-users":
         asyncio.run(_list_users())
     elif args.command == "set-roles":
         asyncio.run(_set_roles(args.identifier, args.roles))
-    elif args.command == "issue-key":
-        asyncio.run(_issue_key(args.identifier, args.name, args.permissions))
     else:
-        asyncio.run(_rotate_credential_keys())
+        asyncio.run(_issue_key(args.identifier, args.name, args.permissions))
 
 
 if __name__ == "__main__":

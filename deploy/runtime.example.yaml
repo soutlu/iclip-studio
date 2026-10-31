@@ -36,7 +36,9 @@ plugins:
     #   model: <方舟视频理解模型>
     # 写了就登记 video_breakdown：拆解交给后端的参考视频（后端要配 iclip_studio 段）。
     # video_breakdown: {}
-    # 写了就登记 shot_video：启动时向后端取接入的图片模型，所以后端要先起来（后端要开 shot_video 段与媒体生成）。
+    # 写了就登记 shot_video：启动时向后端取接入的图片模型，所以后端要先起来（后端要写 shot_video: {} 并开媒体生成）。
+    # 出图的重试策略写在这一段（poll_interval_seconds、dev_attempts、pro_attempts、backoff_seconds、backoff_factor、
+    # job_timeout_seconds），不写用默认值。
     # shot_video: {}
 
 ops:

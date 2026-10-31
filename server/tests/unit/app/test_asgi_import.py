@@ -1,5 +1,5 @@
 """import ``iclip.asgi`` 只建插件登记表与各个服务，不连库、不装配 agent：合同导出靠这一点，数据库连不上也
-照样 import 得进来。"""
+照样 import 得进来；也不连带装上运行时服务本身。"""
 
 from __future__ import annotations
 
@@ -23,21 +23,20 @@ sso: {app_name: iclip}
 """
 
 
-def test_importing_the_asgi_app_touches_no_database(tmp_path: Path) -> None:
+def _run_after_importing_the_app(tmp_path: Path, code: str) -> subprocess.CompletedProcess[str]:
     config = tmp_path / "config.yaml"
     config.write_text(MINIMAL_CONFIG, encoding="utf-8")
     env = {
         **{name: value for name, value in os.environ.items() if name not in PLACEHOLDER_ENV},
         "AUTH_SECRET": PLACEHOLDER_ENV["AUTH_SECRET"],
-        "CREDENTIAL_ENCRYPTION_KEYS": PLACEHOLDER_ENV["CREDENTIAL_ENCRYPTION_KEYS"],
         "RUNTIME_URL": PLACEHOLDER_ENV["RUNTIME_URL"],
         "RUNTIME_APP_KEY": PLACEHOLDER_ENV["RUNTIME_APP_KEY"],
+        "RUNTIME_INTERNAL_TOKEN": PLACEHOLDER_ENV["RUNTIME_INTERNAL_TOKEN"],
         "DATABASE_URL": UNREACHABLE_DATABASE,
         "CONFIG_FILE": str(config),
     }
-
-    done = subprocess.run(
-        [sys.executable, "-c", "import iclip.asgi"],
+    return subprocess.run(
+        [sys.executable, "-c", f"import sys\nimport iclip.asgi\n{code}"],
         cwd=SERVER_DIR,
         env=env,
         capture_output=True,
@@ -46,4 +45,17 @@ def test_importing_the_asgi_app_touches_no_database(tmp_path: Path) -> None:
         check=False,
     )
 
+
+def test_importing_the_asgi_app_touches_no_database(tmp_path: Path) -> None:
+    done = _run_after_importing_the_app(tmp_path, "")
+
     assert done.returncode == 0, done.stderr
+
+
+def test_importing_the_asgi_app_does_not_load_the_runtime_service(tmp_path: Path) -> None:
+    """后端引用运行时的错误信封（``agent_runtime.http.errors``），不该连带 import 运行时服务的 app 工厂。"""
+
+    done = _run_after_importing_the_app(tmp_path, "print('agent_runtime.http.app' in sys.modules)")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip().splitlines()[-1] == "False"

@@ -35,7 +35,6 @@ iclip-video-plugins = { path = "../plugins/video", editable = true }
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
-    "asgi-lifespan>=2",
     "testcontainers[postgres]>=4",
     "ruff>=0.6",
     "pyright>=1.1.380",

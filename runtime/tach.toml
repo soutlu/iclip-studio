@@ -144,6 +144,11 @@ depends_on = [
 path = "agent_runtime.main"
 depends_on = ["agent_runtime.http"]
 
+# 直连数据库的管理命令：换钥。
+[[modules]]
+path = "agent_runtime.admin"
+depends_on = ["agent_runtime.settings", "agent_runtime.config.model_providers"]
+
 # 装配把三块配置接到引擎：按对话固定的版本装出 Agent、建供应商模型、实现 agent 配置的查询端口。
 [[modules]]
 path = "agent_runtime.assembly"

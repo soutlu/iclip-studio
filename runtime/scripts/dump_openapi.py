@@ -13,7 +13,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from agent_runtime.settings import (
     AgentRunsSection,
     CompactionSection,

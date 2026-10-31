@@ -5,6 +5,7 @@ import uuid
 from typing import Annotated, Any
 
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.http.errors import validation_error_detail
 from fastapi import APIRouter, Query
 from pydantic import TypeAdapter, ValidationError
 
@@ -39,7 +40,6 @@ from iclip.domains.identity.public import (
     require_permission,
     resolve_user_name,
 )
-from iclip.platform.http import validation_error_detail
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 

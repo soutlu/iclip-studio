@@ -9,9 +9,9 @@
    - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
-   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥。
+   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥，后端运行不读它。
    - `RUNTIME_URL`（本地是 `http://localhost:7790`）与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：消息、transcript、实时推送、工作区文件、配置页、开对话与首页名册都经运行时服务（见[后端架构](architecture.md#1-模块职责)）。`RUNTIME_APP_KEY` 不少于 32 个字符，运行时配置里应用 `video` 的 `key_env` 指向它。
-   - `RUNTIME_INTERNAL_TOKEN` 必填，不少于 32 个字符：运行时回调后端（开跑检查、运行开始、轮次开始）与插件调后端都带它，没设时后端不挂内部接口、运行时配了回调却读不到令牌起不来。
+   - `RUNTIME_INTERNAL_TOKEN` 必填，不少于 32 个字符，缺了后端与运行时都起不来：运行时回调后端（开跑检查、运行开始、轮次开始）与插件调后端都带它。
 3. 把一份 `server/configs/config.yaml` 放到本机，再把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `server/configs/runtime.yaml`，里面的 `http://server:7788` 都换成 `http://localhost:7788`，按要用的插件打开对应的段。两份都不进仓库，改了要重启。模型、agent 与技能存在数据库里，不在文件里。
 4. 迁移数据库并启动后端与运行时服务：
 
@@ -58,14 +58,14 @@
 3. 在服务器上建一个部署目录，放入：
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
-   - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥的 Fernet key，必填，缺失或格式不对后端起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
+   - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥的 Fernet key，必填，缺失或格式不对运行时服务起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
    - `configs/`：只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
      - `config.yaml`：后端的运行配置
-     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，接入的应用必须叫 `video`；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开，后端那边要有对应的配置段，见[配置与装配](architecture.md#2-配置与装配)
+     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，接入的应用必须叫 `video`；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video` 只在运行时这边配，见[配置与装配](architecture.md#2-配置与装配)
    - `.env` 里运行时服务那几项（compose 只把这几项交给运行时容器）：
      - `RUNTIME_URL=http://runtime:7790`，后端用
      - `RUNTIME_APP_KEY`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `apps.video.key_env`）
-     - `RUNTIME_INTERNAL_TOKEN`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `hooks.token_env` 与 `plugins.config.internal_api.token_env`）
+     - `RUNTIME_INTERNAL_TOKEN`：必填，不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `hooks.token_env` 与 `plugins.config.internal_api.token_env`）
      - `DATABASE_URL` 与 `CREDENTIAL_ENCRYPTION_KEYS` 两个服务共用
      - `VIDEO_UNDERSTANDING_API_KEY`：`runtime.yaml` 打开了 `video` 段时它的 `api_key_env`
    - `components/`：成片的组件库，web 与渲染服务只读挂载，镜像里没有；按[发布组件库](#发布组件库)放好，没有它编辑器读不到组件目录、导出失败
@@ -136,6 +136,12 @@
 3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
 4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[持久化与迁移](architecture.md#4-持久化与迁移)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
 5. 升级到生成记录把产出并进 `output` 的版本（迁移 0039）时，先停后端再执行迁移：旧版本的代码读不了新的表结构。迁移完成后，在同一停机窗口里在库里执行 `VACUUM FULL iclip.generation_jobs`（期间锁表），回收迁移整表更新留下的旧行，实测每百万行十几秒；再按第 3 步启动新版本。
+6. 升级到 agent 改在运行时服务里跑的版本时，启动前先改 `configs/config.yaml`，还留着下面这些段后端启动失败，报错点名那一段和它在运行时配置里的位置：
+   - 删掉 `agent_runs` 段，改过的值写进 `configs/runtime.yaml` 的 `agent_runs`（字段同名）。
+   - 删掉 `conversations` 段，`conversations.compaction` 的值写进 `configs/runtime.yaml` 的 `compaction`（字段同名）。
+   - 删掉 `video` 段，视频理解改在 `configs/runtime.yaml` 的 `plugins.config.video` 配：`understanding_model` → `model`，`understanding_thinking` → `thinking`，`understanding_fps` → `fps`，再写上 `understanding_url`（原来 `VIDEO_UNDERSTANDING_URL` 的值）与 `api_key_env: VIDEO_UNDERSTANDING_API_KEY`。`.env` 的 `VIDEO_UNDERSTANDING_*` 留着，后端的 `iclip_studio` 拆解还用。
+   - `shot_video` 段只留 `shot_video: {}`，出图重试策略（`poll_interval_seconds`、`dev_attempts`、`pro_attempts`、`backoff_seconds`、`backoff_factor`、`job_timeout_seconds`）写进 `configs/runtime.yaml` 的 `plugins.config.shot_video`（字段同名）。
+   - `.env` 里要有 `RUNTIME_INTERNAL_TOKEN`（见[服务器部署](#服务器部署)第 3 步），缺了后端起不来。
 
 ### 升级到 agent 配置入库的版本
 
@@ -144,7 +150,7 @@
 1. 停服务（`docker compose stop server`），备份数据库；把部署目录的 `configs/`、`agents/`、`skills/` 另存一份，并把 `configs/config.yaml` 复制成 `configs/config.old.yaml`。
 2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
 3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`，0045 把技能库、模型供应商与 agent 配置的表挪进 `agent_runtime`；第 5、6 步的切换命令要在它们之后跑）。
-4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`（`config.old.yaml` 不动）。
+4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`，并按[升级](#升级)第 6 步改好搬到运行时配置的那几段（`config.old.yaml` 不动）：下一步的命令也按 `configs/config.yaml` 读后端配置。
 5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 段时，插件包打开时要向后端取图片模型，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
 
    ```bash
@@ -170,5 +176,5 @@
 `CREDENTIAL_ENCRYPTION_KEYS` 是逗号分隔的多个 Fernet key：第一个用来加密，全部用来解密。换钥不停服：
 
 1. 生成一个新 key（命令见[服务器部署](#服务器部署)第 3 步），加在 `.env` 里这个变量的最前面，执行 `docker compose up -d`。此后新存的密钥用新 key，旧的照读。
-2. 执行 `docker compose run --rm server python -m scripts.admin rotate-credential-keys`，把库里全部密钥改用新 key 加密，命令会打印改了几把。
+2. 执行 `docker compose run --rm runtime python -m agent_runtime.admin rotate-credential-keys`，把库里全部密钥改用新 key 加密，命令会打印改了几把。
 3. 从变量里去掉旧 key，再执行 `docker compose up -d`。

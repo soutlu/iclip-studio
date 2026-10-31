@@ -737,7 +737,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 ## 21. 后端给运行时的内部接口
 
-运行时服务调后端：§20 的三个回调，以及视频插件经 HTTP 用的后端服务。后端只在配了环境变量 `RUNTIME_INTERNAL_TOKEN`（不少于 32 个字符）时挂这组路由，没配就一条都不挂；它们不进 [`openapi.json`](openapi.json)。
+运行时服务调后端：§20 的三个回调，以及视频插件经 HTTP 用的后端服务。环境变量 `RUNTIME_INTERNAL_TOKEN`（不少于 32 个字符）是后端的必填项，没配后端起不来，这组路由总是挂着；它们不进 [`openapi.json`](openapi.json)。这组路由不认用户凭证：带的 Bearer 只按内部令牌核，不当 API key 查。
 
 - 每条都要 `Authorization: Bearer <RUNTIME_INTERNAL_TOKEN>`，与运行时给应用 `video` 配的 `hooks.token_env` 里是同一个值；缺了或不对是 `401`，`detail` 为 `运行时内部接口的令牌不对`。
 - 报错用 §4 的信封。按运行属主重建主体的（开跑检查与插件服务）：属主不存在 `404`（`用户不存在`），已停用 `403`（`账号已停用`）；这组路由上的 `401` 只表示令牌不对。

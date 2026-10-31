@@ -39,12 +39,9 @@ class ConversationWorkspace:
     async def read_file(
         self, owner: uuid.UUID, conversation_id: uuid.UUID, path: str
     ) -> DerivedFileContent | None:
-        """读取工作区文件，路径格式错误转换为 422。"""
+        """读取工作区文件；路径不合规由运行时答 422，经客户端还原成 ``ValidationFailed``。"""
 
-        try:
-            stored = await self._store.read(namespace_for(owner, str(conversation_id)), path)
-        except InvalidPath as exc:
-            raise ValidationFailed(str(exc)) from exc
+        stored = await self._store.read(namespace_for(owner, str(conversation_id)), path)
         if stored is None:
             return None
         return DerivedFileContent(path=stored.path, content=stored.content, version=stored.version)

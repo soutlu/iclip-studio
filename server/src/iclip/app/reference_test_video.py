@@ -10,6 +10,7 @@ import uuid
 from typing import Final
 
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.http.errors import validation_error_detail
 from pydantic import ValidationError
 
 from iclip.domains.generation.models import REFERENCE_TRIAL_KEY, GenerationJob
@@ -30,7 +31,6 @@ from iclip.domains.references.models import (
     TestVideoStatus,
 )
 from iclip.domains.references.test_prompt import TestPrompt
-from iclip.platform.http import validation_error_detail
 
 TEST_VIDEO_MODEL: Final = "wan3.0-video-prime"
 TEST_VIDEO_RESOLUTION: Final = "480p"

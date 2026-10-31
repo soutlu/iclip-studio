@@ -37,7 +37,10 @@ from agent_runtime.config.model_providers.schemas import (
     ProbeOut,
     ProviderModelOut,
 )
-from agent_runtime.config.model_providers.service import ModelProviderService
+from agent_runtime.config.model_providers.service import (
+    ModelProviderService,
+    rotate_credential_keys,
+)
 
 __all__ = [
     "API_KEY_FIELD",
@@ -71,4 +74,5 @@ __all__ = [
     "RuntimeModel",
     "SqlModelProviderStore",
     "load_declarations",
+    "rotate_credential_keys",
 ]

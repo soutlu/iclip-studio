@@ -95,8 +95,9 @@ async def oss_app(
         await reset_database(conn)
     try:
         built = build_backed_app(
-            make_runtime_config(skill_cache_dir=tmp_path / "skills"),
+            make_runtime_config(),
             engine=engine,
+            skill_cache_dir=tmp_path / "skills",
             build_model=model_builder(models),
             credential_probe=KeyCheckingProbe({GOOD_KEY}),
             object_store=bucket,

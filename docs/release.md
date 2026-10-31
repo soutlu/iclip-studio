@@ -34,9 +34,9 @@ gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=pus
 
 ## 镜像与流水线
 
-三个镜像：`iclip-server`（[server/Dockerfile](../server/Dockerfile)）、`iclip-web`（[web/Dockerfile](../web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](../web/nginx.conf)）与 `iclip-render`（[render/Dockerfile](../render/Dockerfile)，成片渲染服务，只有 linux/amd64：Chrome headless shell 只出这一种 Linux 版本）。[release-images](../.github/workflows/release-images.yml) 在 GitHub Actions 上并行构建，直接上传到 ACR，部署时从 ACR 拉取。渲染镜像构建时要从 GitHub 与 Google 的 Chrome 下载站取 ffmpeg 与 Chrome，冷构建比另两个慢。web 与渲染镜像都不带成片组件库，组件库随部署目录发布，见[发布组件库](deploy.md#发布组件库)。
+四个镜像：`iclip-server`（[server/Dockerfile](../server/Dockerfile)）、`iclip-runtime`（[runtime/Dockerfile](../runtime/Dockerfile)，agent 运行时服务，装运行时与视频插件包）、`iclip-web`（[web/Dockerfile](../web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](../web/nginx.conf)）与 `iclip-render`（[render/Dockerfile](../render/Dockerfile)，成片渲染服务，只有 linux/amd64：Chrome headless shell 只出这一种 Linux 版本）。镜像名与 [deploy/compose.yaml](../deploy/compose.yaml) 里的一致。[release-images](../.github/workflows/release-images.yml) 在 GitHub Actions 上并行构建，直接上传到 ACR，部署时从 ACR 拉取。渲染镜像构建时要从 GitHub 与 Google 的 Chrome 下载站取 ffmpeg 与 Chrome，冷构建比其余几个慢。web 与渲染镜像都不带成片组件库，组件库随部署目录发布，见[发布组件库](deploy.md#发布组件库)。
 
-- **版本**：推送 `vX.Y.Z` 标签即构建并上传三个镜像。三个镜像都上传并核验成功、且该版本提交仍是 `main` 的最新提交时，才更新 `latest`。
+- **版本**：推送 `vX.Y.Z` 标签即构建并上传四个镜像。四个镜像都上传并核验成功、且该版本提交仍是 `main` 的最新提交时，才更新 `latest`。
 - **试打包**：手动选择分支运行只生成 `branch-<分支名>` 镜像，不更新正式版本和 `latest`。
 - **缓存**：GHCR 只保存构建缓存，下次打包复用没变的部分；上传 ACR 时只传远端缺少的层。工作流自动读写缓存，无需另配 GHCR 凭证。
 
@@ -54,10 +54,11 @@ Actions variables：`ACR_REGISTRY`、`ACR_NAMESPACE`；secrets：`ACR_USERNAME`�
 
 ## 本地构建
 
-在仓库根目录执行。后端依赖仓库里的 `runtime/` 与 `plugins/video/`，构建上下文由 [server/Dockerfile.dockerignore](../server/Dockerfile.dockerignore) 限定为这三个项目；前端构建需要 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](../web/Dockerfile.dockerignore) 限定为前端和合同文件；渲染服务要编进前端的合成代码与生成的合同类型，构建上下文由 [render/Dockerfile.dockerignore](../render/Dockerfile.dockerignore) 限定。Apple Silicon 上渲染镜像按 amd64 在模拟下构建和运行，只能用软件渲染。
+在仓库根目录执行。后端依赖仓库里的 `runtime/` 与 `plugins/video/`，构建上下文由 [server/Dockerfile.dockerignore](../server/Dockerfile.dockerignore) 限定为这三个项目；运行时服务按部署包 `deploy/runtime-video` 装运行时与视频插件，构建上下文由 [runtime/Dockerfile.dockerignore](../runtime/Dockerfile.dockerignore) 限定为这三处；前端构建需要 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](../web/Dockerfile.dockerignore) 限定为前端和合同文件；渲染服务要编进前端的合成代码与生成的合同类型，构建上下文由 [render/Dockerfile.dockerignore](../render/Dockerfile.dockerignore) 限定。Apple Silicon 上渲染镜像按 amd64 在模拟下构建和运行，只能用软件渲染。
 
 ```bash
 docker build -f server/Dockerfile -t iclip-server:local .
+docker build -f runtime/Dockerfile -t iclip-runtime:local .
 docker build -f web/Dockerfile -t iclip-web:local .
 docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render:local .
 ```

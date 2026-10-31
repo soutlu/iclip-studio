@@ -89,7 +89,7 @@ class VideoBreakdownSection(_Section):
 
 
 class ShotVideoSection(_Section):
-    """写了就登记 ``shot_video``，字段是出图的重试策略，默认值同后端的 ``shot_video`` 配置段。"""
+    """写了就登记 ``shot_video``，字段是出图的重试策略；后端的 ``shot_video`` 配置段只是挂内部接口的开关。"""
 
     poll_interval_seconds: float = Field(default=5.0, gt=0)
     dev_attempts: int = Field(default=2, ge=1)

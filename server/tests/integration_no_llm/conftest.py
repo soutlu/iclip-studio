@@ -154,6 +154,7 @@ def _build_app(
     engine: AsyncEngine,
     models: Mapping[str, Model],
     plugins: PluginRegistry | PluginBinder,
+    skill_cache_dir: Path,
 ) -> FastAPI:
     return build_backed_app(
         config,
@@ -161,6 +162,7 @@ def _build_app(
         build_model=model_builder(models),
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
         plugins=plugins,
+        skill_cache_dir=skill_cache_dir,
     )
 
 
@@ -175,9 +177,7 @@ async def app(
 ) -> FastAPI:
     """经 ``engine`` 夹具清表：同一个用例里也要 ``engine`` 的，清表一定发生在种 agent 之前。"""
 
-    built = _build_app(
-        make_runtime_config(skill_cache_dir=tmp_path / "skills"), engine, models, runtime_plugins
-    )
+    built = _build_app(make_runtime_config(), engine, models, runtime_plugins, tmp_path / "skills")
     if agent_seeds:
         await seed_agents(config_services_of(built), engine, agent_seeds)
     return built
@@ -208,12 +208,11 @@ def ws_agent_app(
     asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
     built = _build_app(
-        make_runtime_config(
-            cors_allow_origins=cors_allow_origins, skill_cache_dir=tmp_path / "skills"
-        ),
+        make_runtime_config(cors_allow_origins=cors_allow_origins),
         engine,
         models,
         runtime_plugins,
+        tmp_path / "skills",
     )
     if agent_seeds:
         asyncio.run(seed_agents(config_services_of(built), engine, agent_seeds))

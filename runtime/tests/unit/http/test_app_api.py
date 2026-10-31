@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from agent_runtime.http import create_app
+from agent_runtime.http.app import create_app
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
 from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 from agent_runtime.transcript.wire import TranscriptPage

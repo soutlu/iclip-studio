@@ -167,6 +167,8 @@ def test_no_silent_exception_fallbacks() -> None:
 RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.client": "运行时服务的客户端库：HTTP 接口、两条 WebSocket、报错还原",
     "agent_runtime.errors": "领域错误分类，两边同一套，客户端库按它还原运行时的 4xx",
+    # 后端转发运行时的答复原样交给浏览器，两边的报错只能是同一个形状；它只依赖 FastAPI 与上面那个模块。
+    "agent_runtime.http.errors": "状态码表、错误信封与校验文案，两边同一套",
     "agent_runtime.urls": "地址形状判定",
     "agent_runtime.app_wire": "会话接口的请求体与答复体",
     "agent_runtime.hooks": "运行时回调后端的请求体",
