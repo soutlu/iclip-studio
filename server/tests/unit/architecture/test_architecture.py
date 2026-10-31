@@ -208,8 +208,6 @@ def test_the_server_imports_only_the_runtime_shapes_and_client() -> None:
 
 
 RUNTIME_SCHEMA = "agent_runtime"
-RUNTIME_SCHEMA_ALLOWLIST: dict[str, str] = {}
-"""源码里还能写运行时 schema 的文件；应当为空。迁移与切换命令（``migrations/``、``scripts/``）不在 src 里。"""
 
 
 def _code_strings(tree: ast.AST) -> list[ast.Constant]:
@@ -236,8 +234,6 @@ def test_the_server_never_names_runtime_tables() -> None:
     violations: list[str] = []
     for path in _python_files():
         rel = _rel(path)
-        if rel in RUNTIME_SCHEMA_ALLOWLIST:
-            continue
         for node in _code_strings(ast.parse(path.read_text(encoding="utf-8"))):
             value = str(node.value)
             if value == RUNTIME_SCHEMA or f"{RUNTIME_SCHEMA}." in value:

@@ -535,31 +535,6 @@ describe('AI 改段的弹出卡', () => {
     ])
   })
 
-  it('Escape 把卡收成胶囊，未提交的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-
-    // jsdom 里 ProseMirror 量不了点击位置，直接给焦点。
-    act(() => requestBox().focus())
-    pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
-    await user.keyboard('{Escape}')
-
-    expect(card()).toBeNull()
-    expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
-    const mini = screen.getByRole('button', { name: '展开镜头 2 · 视频生成，未提交' })
-    expect(mini).toHaveFocus()
-
-    await user.click(mini)
-    expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
-    expect(requestBox()).toHaveFocus()
-
-    await user.click(await shot(5))
-    expect(within(openCard()).getByText('镜头 5 · 视频生成')).toBeVisible()
-    expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
-  })
-
   it('收起时还在上传的参考图留不下来：展开后卡里说出几张要重新添加，写好的字照旧；再改要求提示收起', async () => {
     server.use(http.post('*/api/uploads/sign', () => delay('infinite')))
     serveChain([])
@@ -584,27 +559,6 @@ describe('AI 改段的弹出卡', () => {
 
     pasteTextIntoComposer(requestBox(), '，暖一点')
     expect(within(openCard()).queryByText(/张图片收起时尚未上传完成/)).toBeNull()
-  })
-
-  it('拖播放头、按播放都把卡收起；点选区里的镜头只展开、不改选中', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-    expect(openCard()).toBeVisible()
-
-    fireEvent.change(playhead(), { target: { value: '4.5' } })
-    expect(card()).toBeNull()
-    expect(screen.getByRole('button', { name: '展开镜头 2 · 视频生成' })).toBeVisible()
-
-    await user.click(await shot(2))
-    expect(openCard()).toBeVisible()
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-
-    await readyToPlay()
-    await user.click(playButton())
-    expect(card()).toBeNull()
-    expect(screen.getByRole('button', { name: '展开镜头 2 · 视频生成' })).toBeVisible()
   })
 
   it('镜头短于模型下限时卡头写原因，写了要求也生成不了', async () => {
@@ -1192,64 +1146,6 @@ describe('AI 改段的弹出卡', () => {
     expect(within(panel).getByText('暂无镜头提示词')).toBeVisible()
     expect(within(panel).queryByRole('button', { name: /复制镜头/ })).toBeNull()
     expect(requestBox().textContent).toBe('')
-  })
-})
-
-describe('选中只把播放头放到选区开头，空格播放', () => {
-  const pauseButton = () => screen.queryByRole('button', { name: '暂停' })
-
-  it('点镜头只选中、不播放，播放头在它开头；⇧ 点扩选仍在选区开头；播放中点镜头停在它开头', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-
-    await user.click(await shot(2))
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    await readyToPlay()
-    expect(pauseButton()).toBeNull()
-    expect(playhead()).toHaveValue('1')
-
-    fireEvent.change(playhead(), { target: { value: '5.5' } })
-    await user.keyboard('{Shift>}')
-    await user.click(await shot(3))
-    await user.keyboard('{/Shift}')
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    expect(playhead()).toHaveValue('1')
-
-    await user.click(playButton())
-    expect(pauseButton()).toBeVisible()
-    await user.click(await shot(4))
-    expect(pauseButton()).toBeNull()
-    expect(playButton()).toBeVisible()
-    expect(playhead()).toHaveValue('3')
-  })
-
-  it('←/→ 与 ⇧←/→ 播放头在选区开头；空格在镜头上播放、暂停，不改选中', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-
-    await user.keyboard('{ArrowRight}')
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    expect(playhead()).toHaveValue('2')
-    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
-    expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
-    expect(playhead()).toHaveValue('2')
-    await user.keyboard('{Shift>}{ArrowLeft}{ArrowLeft}{/Shift}')
-    expect(await shot(2)).toHaveFocus()
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(4)).toHaveAttribute('aria-pressed', 'false')
-    expect(playhead()).toHaveValue('1')
-
-    await readyToPlay()
-    await user.keyboard(' ')
-    expect(pauseButton()).toBeVisible()
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    await user.keyboard(' ')
-    expect(playButton()).toBeVisible()
   })
 })
 

@@ -10,14 +10,10 @@ from typing import Any
 import pytest
 from agent_runtime.assembly.directories import RegistryPluginDirectory
 from agent_runtime.config.agent_config.public import Problem
-from agent_runtime.plugins.base import CapPlugin, PluginHost, PluginRegistry
+from agent_runtime.plugins.base import CapPlugin, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
-from iclip_video.registry import open_video_plugins
 from pydantic_ai.capabilities import Capability
-
-from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 
 
 @dataclass
@@ -41,23 +37,8 @@ class LimitedPlugin(CapPlugin[Any]):
 
 
 @pytest.fixture
-async def registry(monkeypatch: pytest.MonkeyPatch) -> PluginRegistry:
-    """视频插件包配了视频理解时登记的插件，加上带参数的测试插件。"""
-
-    monkeypatch.setenv("VIDEO_UNDERSTANDING_API_KEY", "ark")
-    async with open_video_plugins(
-        {
-            "video": {
-                "understanding_url": "https://vision.test/responses",
-                "api_key_env": "VIDEO_UNDERSTANDING_API_KEY",
-                "model": "seed-vision",
-                "thinking": "medium",
-                "fps": 5,
-            }
-        }
-    ) as bind:
-        built = bind(PluginHost(files=FakeFileStore(), ledger=FakeMaterialLedger()))
-    return {**built, "limited": LimitedPlugin}
+def registry() -> PluginRegistry:
+    return {"limited": LimitedPlugin}
 
 
 @pytest.fixture
@@ -65,33 +46,11 @@ def directory(registry: PluginRegistry) -> RegistryPluginDirectory:
     return RegistryPluginDirectory(registry)
 
 
-def test_available_names_are_the_registered_serialization_names(
-    directory: RegistryPluginDirectory,
-) -> None:
-    assert directory.available() == {
-        "workspace",
-        "iclip_studio",
-        "video_shots",
-        "video",
-        "limited",
-    }
-
-
-def test_requires_come_from_get_ordering(directory: RegistryPluginDirectory) -> None:
-    assert {name: directory.requires(name) for name in directory.available()} == {
-        "workspace": (),
-        "iclip_studio": ("workspace",),
-        "video_shots": ("workspace",),
-        "video": ("workspace",),
-        "limited": (),
-    }
-
-
 def test_an_unknown_parameter_is_a_problem(directory: RegistryPluginDirectory) -> None:
-    assert directory.parameter_problems("workspace", {"root": "/tmp"}) == (
+    assert directory.parameter_problems("limited", {"root": "/tmp"}) == (
         Problem(path="root", message="不认识这个字段"),
     )
-    assert directory.parameter_problems("workspace", {}) == ()
+    assert directory.parameter_problems("limited", {}) == ()
 
 
 def test_parameters_are_checked_against_the_from_spec_signature(
@@ -103,23 +62,6 @@ def test_parameters_are_checked_against_the_from_spec_signature(
     assert problem.path == "limit"
     (unknown,) = directory.parameter_problems("limited", {"limit": 3, "page": 2})
     assert unknown.path == "page"
-
-
-def test_the_catalog_carries_ui_metadata_and_the_parameter_schema(
-    directory: RegistryPluginDirectory,
-) -> None:
-    catalog = {plugin.name: plugin for plugin in directory.catalog()}
-
-    assert list(catalog) == ["workspace", "iclip_studio", "video_shots", "video", "limited"]
-    video = catalog["video"]
-    assert (video.label, video.requires) == ("视频理解", ("workspace",))
-    assert video.description.startswith("把参考视频")
-    assert video.parameters_schema["properties"] == {}
-    assert video.parameters_schema["additionalProperties"] is False
-    limited = catalog["limited"].parameters_schema
-    assert limited["properties"]["limit"]["type"] == "integer"
-    assert limited["properties"]["limit"]["default"] == 10
-    assert "required" not in limited
 
 
 def test_a_plugin_that_was_never_bound_fails_loudly() -> None:

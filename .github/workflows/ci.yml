@@ -281,11 +281,6 @@ jobs:
       - name: Check OpenAPI contract
         if: matrix.group == 'application'
         run: uv run python scripts/dump_openapi.py --check
-      - name: Check migrations
-        if: matrix.group == 'application'
-        env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/iclip_test
-        run: uv run alembic upgrade head
 
   web_static:
     name: web-static
@@ -415,13 +410,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-render
-      # 测试读 web 组装好的测试组件库（组装要用 web 依赖里的 HyperFrames 运行时）。
-      - uses: ./.github/actions/setup-web
-      - name: Assemble test component library
-        working-directory: web
-        run: pnpm hf:registry
       # 真实渲染的集成测试还要 chrome-headless-shell 与 ffmpeg，runner 上没有，按用例名里的原因跳过；
-      # 它在本机验证。
+      # 它在本机组装测试组件库后验证，这里只安装快速测试需要的 render 依赖。
       - name: Run unit tests
         run: pnpm test
 

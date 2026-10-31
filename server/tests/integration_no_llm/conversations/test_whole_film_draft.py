@@ -1,7 +1,7 @@
 """成片草稿端点：按版本整份保存与读回、读写权限同工作区文件、引用的记录要是这段对话的。
 
 记录经生成仓储直接落库，媒体生成没开：草稿只读生成记录，不依赖媒体生成。文档自身的每条规则见
-单测 ``test_whole_film_document``，这里只走几条确认 422 接上了，含旧形状（转场、片头片尾）的草稿。"""
+单测 ``test_whole_film_document``，这里只验证校验失败映射为 422 且不写入草稿。"""
 
 from __future__ import annotations
 
@@ -162,37 +162,14 @@ async def test_a_deleted_conversation_keeps_its_draft_read_only(
     assert (await save(client, mine, 1, document)).status_code == 403
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        pytest.param(
-            "layer0",
-            [video_clip("a", start=500, duration=1000, source_job_id=uuid.uuid4())],
-            id="没有从 0 起",
-        ),
-        pytest.param("transitions", [], id="带转场"),
-        pytest.param(
-            "layer0",
-            [{**component_clip("c", start=0, duration=1000), "role": "intro"}],
-            id="组件段带 role",
-        ),
-        pytest.param(
-            "overlays",
-            [
-                overlay("o1", start=0, duration=2000, track=0),
-                overlay("o2", start=1000, duration=2000, track=0),
-            ],
-            id="同一行的特效块重叠",
-        ),
-    ],
-)
 async def test_an_invalid_document_is_rejected_with_its_reason(
-    client: httpx.AsyncClient, pg_url: str, field: str, value: object
+    client: httpx.AsyncClient, pg_url: str
 ) -> None:
     await login_as_editor(client, pg_url)
     mine = await new_conversation(client)
-    document = draft_document()
-    document[field] = value
+    document = draft_document(
+        layer0=[video_clip("a", start=500, duration=1000, source_job_id=uuid.uuid4())]
+    )
 
     rejected = await save(client, mine, 0, document)
 

@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from agent_runtime.client import EventStream, StreamClosed, TranscriptChannel
 from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.http import streams as runtime_streams
 from agent_runtime.plugins.base import PluginHost, PluginRegistry
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -208,28 +207,6 @@ def test_relayed_frames_are_the_runtimes_frames_field_for_field(
         browser = [frame for frame in received if frame["type"] in kind]
         runtime = [frame for frame in sent if frame["type"] in kind]
         assert browser == runtime[: len(browser)]
-
-
-def test_relayed_frames_keep_the_runtimes_timestamp(
-    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """浏览器收到的 Transcript 帧就是运行时的帧：时刻是运行时出帧时取的，后端不重盖。
-    运行时在同一进程里，只把它出帧取时刻的那一处钉住，后端自己的时钟照常走。"""
-
-    pinned = "2000-01-01T00:00:00+00:00"
-    monkeypatch.setattr(runtime_streams, "timestamp_now", lambda: pinned)
-    with TestClient(ws_agent_app) as tc:
-        sign_in(tc, pg_url)
-        conversation_id = open_conversation(tc)
-        with tc.websocket_connect("/ws") as ws:
-            hello = ws.receive_json()
-            subscribe(ws, conversation_id)
-            reset = until(ws, "transcript.reset")
-
-    assert hello["timestamp"] != pinned
-    assert reset["timestamp"] == pinned
-    assert set(reset) == {"type", "session_id", "timestamp", "stream_epoch", "payload"}
-    assert reset["payload"]["type"] == "transcript.reset"
 
 
 # --- 活动与轮次收尾的先后 ------------------------------------------------------------

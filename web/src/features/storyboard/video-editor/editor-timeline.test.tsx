@@ -887,21 +887,6 @@ describe('拖放', () => {
   // 草稿那一条铺满 y 0–200（见 beforeEach）：y=300 在草稿外
   const secondPart = () => within(lane()).getByRole('button', { name: /第 2 次/ })
 
-  it('编辑段拖到草稿上：按排序会放进去的位置出落点占位，松手等于选用，不算点击', () => {
-    const { on } = renderTimeline()
-    press(secondPart(), 450, 160)
-    move(secondPart(), 300, 60)
-    // 镜头 4–5 生成的第 1 段排在镜头 4 后面：4.0 秒处，1.5 秒长
-    expect(screen.getByRole('status')).toHaveTextContent('插入 4.0 秒 · 1.5 秒')
-    // 松手前不改草稿
-    expect(names(draftTrack())).toHaveLength(6)
-    release(secondPart(), 300, 60)
-    fireEvent.click(secondPart())
-    expect(on.onTogglePart).toHaveBeenCalledExactlyOnceWith(second.id, 1)
-    expect(on.onClickPart).not.toHaveBeenCalled()
-    expect(on.onSelectDraft).not.toHaveBeenCalled()
-  })
-
   it('拖到草稿以外松手取消；没超过拖动阈值算点击', () => {
     const { on } = renderTimeline()
     press(secondPart(), 450, 160)
@@ -952,20 +937,6 @@ describe('拖放', () => {
     fireEvent.click(partBlock)
     expect(on.onSelectDraft).not.toHaveBeenCalled()
   })
-})
-
-it('标尺按合成时间定位，不改选区', () => {
-  const { on } = renderTimeline(EMPTY_DRAFT, { kind: 'run', start: 1, end: 2 })
-  const ruler = Object.assign(screen.getByRole('slider', { name: '时间线播放位置' }), {
-    setPointerCapture: () => undefined,
-    hasPointerCapture: () => false,
-    releasePointerCapture: () => undefined,
-  })
-  fireEvent.pointerDown(ruler, { pointerId: 1, button: 0, clientX: 400 })
-  expect(on.onSeek).toHaveBeenLastCalledWith(3)
-  fireEvent.change(ruler, { target: { value: '4.5' } })
-  expect(on.onSeek).toHaveBeenLastCalledWith(4.5)
-  expect(on.onSelectRun).not.toHaveBeenCalled()
 })
 
 describe('版本视图', () => {

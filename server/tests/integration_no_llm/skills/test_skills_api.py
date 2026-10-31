@@ -15,9 +15,10 @@ from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in
 SKILL_MD = "---\nname: pdf-tools\ndescription: 处理 PDF\n---\n\n# PDF 工具\n"
 
 
-async def login_as_root(client: httpx.AsyncClient, pg_url: str) -> None:
-    await register_and_login(client, username="root", email="root@example.com")
+async def login_as_root(client: httpx.AsyncClient, pg_url: str) -> str:
+    user_id = await register_and_login(client, username="root", email="root@example.com")
     await set_roles_in_db(pg_url, "root@example.com", ["root"])
+    return user_id
 
 
 def zip_upload(data: bytes) -> dict[str, tuple[str, bytes, str]]:
@@ -64,7 +65,7 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
 
 
 async def test_root_manages_a_skill_end_to_end(client: httpx.AsyncClient, migrated_pg: str) -> None:
-    await login_as_root(client, migrated_pg)
+    author = await login_as_root(client, migrated_pg)
 
     created = await client.post(
         "/skills", json={"name": "pdf-tools", "displayName": "PDF 工具", "description": "处理 PDF"}
@@ -72,6 +73,7 @@ async def test_root_manages_a_skill_end_to_end(client: httpx.AsyncClient, migrat
     assert created.status_code == 201, created.text
     skill = created.json()
     assert (skill["name"], skill["status"], skill["latestVersion"]) == ("pdf-tools", "active", None)
+    assert skill["createdBy"] == author
     assert skill["hasUnpublishedChanges"] is True
     assert [one["path"] for one in skill["draftFiles"]] == ["SKILL.md"]
     base = f"/skills/{skill['id']}"
@@ -105,7 +107,7 @@ async def test_root_manages_a_skill_end_to_end(client: httpx.AsyncClient, migrat
     published = await client.post(f"{base}/versions", json={"note": "第一版"})
     assert published.status_code == 201, published.text
     version = published.json()
-    assert (version["version"], version["note"]) == (1, "第一版")
+    assert (version["version"], version["note"], version["createdBy"]) == (1, "第一版", author)
     unchanged = await client.post(f"{base}/versions", json={})
     assert unchanged.status_code == 422
 

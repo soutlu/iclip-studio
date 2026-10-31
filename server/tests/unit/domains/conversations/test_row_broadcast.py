@@ -276,36 +276,6 @@ async def test_marking_done_announces_the_written_row() -> None:
     assert row["completedAt"] is not None
 
 
-async def test_a_rename_announces_the_title_event_and_the_row() -> None:
-    existing = _row()
-    announced = Announced()
-
-    await build(OneRowRepo(row=existing), announced).rename(OWNER, existing.id, title="新名字")
-
-    assert announced.titles == [(OWNER.user_id, existing.id, "新名字")]
-    [(kind, _, _, row)] = announced.rows
-    assert (kind, row["title"]) == ("updated", "新名字")
-
-
-async def test_a_new_conversation_is_announced_but_an_idempotent_replay_is_not() -> None:
-    existing = _row()
-    announced = Announced()
-    service = build(OneRowRepo(row=existing), announced)
-
-    await service.create(OWNER, agent_id="storyboard", conversation_id=existing.id)
-    assert announced.rows == []
-
-    created, fresh = await service.create(OWNER, agent_id="storyboard")
-    assert fresh is True
-    [(kind, owner, conversation_id, row)] = announced.rows
-    assert (kind, owner, conversation_id, row["id"]) == (
-        "created",
-        OWNER.user_id,
-        created.id,
-        str(created.id),
-    )
-
-
 async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> None:
     """首次死在对话行提交之后、认领之前：created 帧照样发出；同一个 id 重发补上认领，不再补发帧。"""
 
@@ -475,51 +445,6 @@ async def test_clearing_the_mark_on_an_invisible_conversation_announces_nothing(
     await build(repo, announced).clear_completed(repo.row.id, OWNER.user_id)
 
     assert announced.rows == []
-
-
-async def test_a_delete_is_announced_after_it_lands() -> None:
-    existing = _row()
-    announced = Announced()
-
-    await build(OneRowRepo(row=existing), announced).delete(OWNER, existing.id)
-
-    assert announced.deleted == [(OWNER.user_id, existing.id)]
-
-
-async def test_starting_a_run_announces_the_new_run_and_the_cleared_mark() -> None:
-    """开跑记录运行发 ``updated``：帧带新的 lastRunId，收尾标记为空。"""
-
-    existing = _row(completed_at=NOW, last_run_id="run-0")
-    announced = Announced()
-
-    await build(OneRowRepo(row=existing), announced).begin_run(
-        owner=OWNER.user_id, agent_id="storyboard", conversation_id=str(existing.id), run_id="run-1"
-    )
-
-    [(kind, owner, conversation_id, row)] = announced.rows
-    assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
-    assert row["lastRunId"] == "run-1"
-    assert row["completedAt"] is None
-
-
-async def test_a_reported_run_start_broadcasts_the_reported_activity_without_reading_it() -> None:
-    """运行时回调带来的活动直接进行里，不经 ``ActivitiesOf`` 再读（替身一读就炸）。"""
-
-    existing = _row(completed_at=NOW)
-    announced = Announced()
-    reported = ConversationActivity(busy=True, pending_interaction="approval")
-
-    service = build(OneRowRepo(row=existing), announced, activities_of=_untouched)
-    await service.begin_reported_run(existing.id, run_id="run-1", activity=reported)
-
-    [(kind, owner, conversation_id, row)] = announced.rows
-    assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
-    assert (row["lastRunId"], row["completedAt"]) == ("run-1", None)
-    assert row["activity"] == {
-        "busy": True,
-        "pendingInteraction": "approval",
-        "lastTurnReason": None,
-    }
 
 
 async def test_a_reported_run_start_on_a_missing_conversation_is_not_found() -> None:

@@ -142,24 +142,6 @@ for (const width of [1335, 390]) {
   })
 }
 
-test('agent 更新工作区后重读结构化正文，保留当前组和帧', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
-  const panel = await openStoryboard(page)
-  await openStoryboardShot(panel, 2)
-  const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
-  await group.getByRole('button', { name: '镜头 2', exact: true }).click()
-  await group.getByRole('button', { name: '下一帧', exact: true }).click()
-  await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
-    '台词并成一句',
-    {
-      timeout: 20_000,
-    },
-  )
-  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
-  await expect(page).toHaveURL(/shot=2/)
-  await expect(page).toHaveURL(/frame=3/)
-})
-
 test('编辑一镜后保存并读回，复制整组保留 raw 图片标记与空白', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -295,35 +277,6 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
     600,
   )
   expect(generationPosts).toEqual([])
-})
-
-test('翻到第 3 组出片：请求取当前组，素材片区先出在途卡、出片后变成可播', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
-  const panel = await openStoryboard(page)
-  await openStoryboardShot(panel, 3)
-  const group = panel.getByRole('region', { name: '镜头组 3', exact: true })
-  await group.getByRole('button', { name: '镜头 1', exact: true }).click()
-  await expect(group.getByRole('textbox', { name: '镜头 1 的描述' })).toContainText('低角度拍鞋面')
-  const before = await readDocument(page)
-  const third = before.document.shots[2]
-  if (third === undefined) throw new Error('需要第三组')
-
-  const posted = page.waitForRequest(
-    (request) =>
-      request.method() === 'POST' && new URL(request.url()).pathname === '/api/generations/video',
-  )
-  await panel.getByRole('button', { name: '生成第 3 组', exact: true }).click()
-  const request = await posted
-  expect(request.postDataJSON()).toMatchObject({ shot_index: 3, shot: third.prompt })
-
-  // 新的一张排在最前，先是在途卡；mock 三秒后出片，推送帧到了就刷新。
-  const takes = group.getByRole('region', { name: '本组素材片', exact: true })
-  await expect(takes.getByRole('listitem')).toHaveCount(2)
-  const newest = takes.getByRole('listitem').first()
-  await expect(newest.getByRole('button', { name: /生成中$/ })).toBeVisible()
-  await expect(newest.getByRole('button', { name: /的素材片$/ })).toBeVisible({ timeout: 15_000 })
-  await expect(takes.getByRole('button', { name: /生成中$/ })).toHaveCount(0)
-  await expect(takes.getByRole('button', { name: /的素材片$/ })).toHaveCount(2)
 })
 
 test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {

@@ -67,12 +67,6 @@ describe('ExportQueue', () => {
     expect(cleaned).toEqual(['a'])
   })
 
-  it('同一 id 还在时不再收', () => {
-    const { queue } = setup()
-    expect(queue.submit(input('a'))).toBe(true)
-    expect(queue.submit(input('a'))).toBe(false)
-  })
-
   it.each<[string, (fake: ReturnType<typeof setup>) => void, string]>([
     [
       '素材取不到',

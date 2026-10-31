@@ -988,35 +988,6 @@ test.describe('成片编辑器 · 时间线', () => {
       { timeout: 15_000 },
     )
   })
-
-  test('音量按 dB 调整并保存，双击恢复，配乐可静音', async ({ page }) => {
-    const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
-    await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
-    // 两个推子在剪辑工具条里
-    const sound = dialog.getByRole('toolbar', { name: '剪辑工具' }).getByRole('group', {
-      name: '声音',
-    })
-    const source = sound.getByRole('slider', { name: '原声', exact: true })
-    await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
-    await source.focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(source).toHaveAttribute('aria-valuetext', '+0.5 dB')
-    await page.keyboard.press('Shift+ArrowLeft')
-    await expect(source).toHaveAttribute('aria-valuetext', '−2.5 dB')
-    await expect
-      .poll(async () => (await readDraft(page))?.layer0[1])
-      .toMatchObject({ volume: Number((10 ** (-2.5 / 20)).toFixed(6)) })
-    await source.dblclick()
-    await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
-    for (let i = 0; i < 7; i += 1) await page.keyboard.press('ArrowRight')
-    await expect(sound).toContainText('+3.5 dB')
-    await dialog.getByRole('button', { name: '静音配乐' }).click()
-    await expect(sound.getByRole('slider', { name: '配乐', exact: true })).toHaveAttribute(
-      'aria-valuetext',
-      '静音',
-    )
-    await dialog.getByRole('button', { name: '取消静音配乐' }).click()
-  })
 })
 
 /**

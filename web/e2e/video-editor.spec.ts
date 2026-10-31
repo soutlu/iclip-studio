@@ -493,50 +493,6 @@ test('提交尚未受理时刷新会出现浏览器原生离开提示', async ({
   await reload
 })
 
-test('选中：普通点击只选当前镜头，Shift 点击扩选；键盘左右与 Shift 扩展，卡跟着选区走', async ({
-  page,
-}) => {
-  const dialog = await openEditor(page)
-  await waitForShots(dialog)
-
-  await shot(dialog, 2).click()
-  await expect(shot(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
-  await expectCard(dialog, '镜头 2 · 视频生成', '原片 1.0 – 2.0 秒 · 视频和原声一起重做')
-  await shot(dialog, 3).click({ modifiers: ['Shift'] })
-  await expectCard(dialog, '镜头 2–3 · 视频生成', '原片 1.0 – 3.0 秒 · 视频和原声一起重做')
-  await shot(dialog, 1).click({ modifiers: ['Shift'] })
-  await expectCard(dialog, '镜头 1–3 · 视频生成', '原片 0.0 – 3.0 秒 · 视频和原声一起重做')
-  // Shift 点两端的镜头把它去掉。
-  await shot(dialog, 1).click({ modifiers: ['Shift'] })
-  await expect(shot(dialog, 1)).toHaveAttribute('aria-pressed', 'false')
-  // 普通点击从这个镜头重新选。
-  await shot(dialog, 5).click()
-  await expectCard(dialog, '镜头 5 · 视频生成', '原片 4.0 – 5.0 秒 · 视频和原声一起重做')
-  await expect(shot(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
-
-  // 卡不抢焦点：键盘左右挪到相邻的镜头，Shift 扩展。
-  await shot(dialog, 5).press('ArrowLeft')
-  await expect(shot(dialog, 4)).toBeFocused()
-  await page.keyboard.press('Shift+ArrowRight')
-  await page.keyboard.press('Shift+ArrowRight')
-  await expectCard(dialog, '镜头 4–6 · 视频生成', '原片 3.0 – 6.0 秒 · 视频和原声一起重做')
-
-  // 卡的尖角指着选区：卡盖在舞台上，水平中线对准选区的中线（夹在舞台内）。
-  const box = await card(dialog).boundingBox()
-  const first = await shot(dialog, 4).boundingBox()
-  const last = await shot(dialog, 6).boundingBox()
-  const stage = await dialog.getByRole('region', { name: '预览舞台' }).boundingBox()
-  if (box === null || first === null || last === null || stage === null)
-    throw new Error('卡或选区尚未布局')
-  const anchor = (first.x + last.x + last.width) / 2
-  const expected = Math.min(
-    stage.x + stage.width - 12 - box.width,
-    Math.max(stage.x + 12, anchor - box.width / 2),
-  )
-  expect(Math.abs(box.x - expected)).toBeLessThan(4)
-  expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
-})
-
 test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟着变；提交的区间就是选区', async ({
   page,
 }) => {

@@ -1,6 +1,6 @@
-"""运行时的客户端库对着真的运行时服务跑：开会话、发消息跑完、读状态与页与补批、工作区文件与素材、活动与
-占位、分叉、按清单拷文件、名册与起标题、管理接口透传、两条 WebSocket、不认的应用是应用级拒绝，以及别的应用
-的会话读不到。
+"""客户端库与真实运行时服务的贯通冒烟：一段会话、两条 WebSocket，以及应用身份拒绝。
+
+HTTP 方法与错误映射的完整矩阵在运行时的客户端单测中验证；业务接口行为由运行时 HTTP 集成与后端场景覆盖。
 
 经 ``ASGIWebSocketTransport`` 挂上运行时服务（HTTP 交给它继承的 ``ASGITransport``）；运行驱动与事件分发由
 ``running`` 夹具跑着服务的 lifespan 起停，与测试同一个事件循环、同一个 engine。这个传输层的任务组要在同一个
@@ -9,23 +9,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 
 import httpx
 import pytest
 from agent_runtime.app_wire import (
-    ActivitiesIn,
-    FilesCopyIn,
-    FileWriteIn,
-    MaterialsIn,
-    SessionForkIn,
     SessionOpenIn,
     SessionPromptIn,
-    TitleIn,
 )
 from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed
-from agent_runtime.errors import AgentUnavailable, Conflict, NotFound
 from agent_runtime.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import AttachmentSource, ImageContent, TextContent, TurnUpsertOp
@@ -37,7 +29,6 @@ from pydantic_ai.models import Model
 from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.runtime import says
 from tests.helpers.runtime_service import (
-    ADMIN_KEY,
     READER_KEY,
     add_model,
     connect_provider,
@@ -97,13 +88,6 @@ async def _settled(client: RuntimeClient, session_id: uuid.UUID) -> None:
             await asyncio.sleep(0.02)
 
 
-async def _run_one_turn(client: RuntimeClient, owner: uuid.UUID) -> uuid.UUID:
-    session_id = await _open(client)
-    await client.submit_prompt(session_id, _prompt("prm_first"), owner=owner)
-    await _settled(client, session_id)
-    return session_id
-
-
 async def test_a_session_runs_and_reads_back(
     running: None, published: None, runtime_app: FastAPI, owner: uuid.UUID
 ) -> None:
@@ -130,159 +114,6 @@ async def test_a_session_runs_and_reads_back(
         assert found == Material(url=IMAGE, kind="image")
 
 
-async def test_a_prompt_for_another_agent_is_agent_unavailable(
-    published: None, admin: httpx.AsyncClient, runtime_app: FastAPI, owner: uuid.UUID
-) -> None:
-    await publish_agent(admin, "storyboard")
-
-    async with connect(runtime_app) as reader:
-        session_id = await _open(reader)
-        with pytest.raises(AgentUnavailable) as raised:
-            await reader.submit_prompt(
-                session_id, _prompt("prm_other", agent="storyboard"), owner=owner
-            )
-
-    assert raised.value.code == "agent_unavailable"
-    assert str(raised.value)
-
-
-async def test_files_write_read_and_conflict(
-    published: None, runtime_app: FastAPI, owner: uuid.UUID
-) -> None:
-    async with connect(runtime_app) as reader:
-        session_id = await _open(reader)
-        written = await reader.write_file(
-            session_id, "notes.md", FileWriteIn(content="记一笔"), owner=owner
-        )
-        again = await reader.write_file(
-            session_id,
-            "notes.md",
-            FileWriteIn(content="再记一笔", expected_version=written.version),
-            owner=owner,
-        )
-        read = await reader.read_file(session_id, "notes.md", owner=owner)
-        listed = await reader.list_files(session_id, owner=owner)
-
-        assert (read.content, read.version) == ("再记一笔", again.version)
-        assert [entry.path for entry in listed.files] == ["notes.md"]
-        with pytest.raises(Conflict):
-            await reader.write_file(
-                session_id,
-                "notes.md",
-                FileWriteIn(content="旧版", expected_version=written.version),
-                owner=owner,
-            )
-        with pytest.raises(NotFound) as missing:
-            await reader.read_file(session_id, "missing.md", owner=owner)
-
-    assert str(missing.value) == "这段对话里没有这个文件"
-
-
-async def test_materials_record_and_lookup(
-    published: None, runtime_app: FastAPI, owner: uuid.UUID
-) -> None:
-    video = Material(url="https://cdn.test/ref.mp4", kind="video")
-
-    async with connect(runtime_app) as reader:
-        session_id = await _open(reader)
-        await reader.record_materials(session_id, MaterialsIn(materials=(video,)), owner=owner)
-
-        assert await reader.lookup_material(session_id, video.url, owner=owner) == video
-        with pytest.raises(NotFound):
-            await reader.lookup_material(session_id, "https://cdn.test/other.mp4", owner=owner)
-
-
-async def test_activities_and_busy_answer_only_own_sessions(
-    running: None, published: None, runtime_app: FastAPI, owner: uuid.UUID
-) -> None:
-    async with connect(runtime_app) as reader:
-        session_id = await _run_one_turn(reader, owner)
-        activities = await reader.activities(ActivitiesIn(ids=(session_id, uuid.uuid4())))
-        busy = await reader.busy(owner=owner)
-
-    assert set(activities.items) == {session_id}
-    assert activities.items[session_id].busy is False
-    assert activities.items[session_id].last_turn_reason == "completed"
-    assert busy.ids == ()
-
-
-async def test_fork_copies_the_session(
-    running: None, published: None, runtime_app: FastAPI, owner: uuid.UUID
-) -> None:
-    target = uuid.uuid4()
-
-    async with connect(runtime_app) as reader:
-        source = await _run_one_turn(reader, owner)
-        await reader.write_file(source, "notes.md", FileWriteIn(content="源"), owner=owner)
-        await reader.fork_session(
-            source, SessionForkIn(target_id=target, source_user=owner, turn=1), owner=owner
-        )
-
-        page = await reader.transcript_page(target, session_agent=AGENT)
-        copied = await reader.read_file(target, "notes.md", owner=owner)
-
-    assert [turn.turn_id for turn in page.items] == ["t1"]
-    assert copied.content == "源"
-
-
-async def test_files_copy_by_list(published: None, runtime_app: FastAPI, owner: uuid.UUID) -> None:
-    async with connect(runtime_app) as reader:
-        source = await _open(reader)
-        target = await _open(reader)
-        await reader.write_file(source, "plan.md", FileWriteIn(content="方案"), owner=owner)
-
-        copied = await reader.copy_files(
-            source,
-            FilesCopyIn(
-                target_id=target,
-                source_user=owner,
-                files=(("plan.md", "copy.md"),),
-                require_any=("plan.md",),
-            ),
-            owner=owner,
-        )
-        skipped = await reader.copy_files(
-            source,
-            FilesCopyIn(
-                target_id=target,
-                source_user=owner,
-                files=(("plan.md", "again.md"),),
-                require_any=("missing.md",),
-            ),
-            owner=owner,
-        )
-        read = await reader.read_file(target, "copy.md", owner=owner)
-
-    assert (copied.copied, skipped.copied) == (True, False)
-    assert read.content == "方案"
-
-
-async def test_agents_and_title(published: None, runtime_app: FastAPI) -> None:
-    async with connect(runtime_app) as reader:
-        directory = await reader.agents()
-        title = await reader.generate_title(TitleIn(text="拍一条新品视频"))
-
-    assert [item.id for item in directory.items] == [AGENT]
-    assert directory.default == AGENT
-    # 没设默认对话模型：起不出标题，应用照旧用默认名。
-    assert title.title is None
-
-
-async def test_admin_requests_pass_through(runtime_app: FastAPI, actor: uuid.UUID) -> None:
-    body = {"id": "storyboard", "name": "分镜"}
-
-    async with connect(runtime_app, ADMIN_KEY) as bff:
-        created = await bff.admin_request("POST", "agents", end_user=actor, json=body)
-        duplicate = await bff.admin_request("POST", "agents", end_user=actor, json=body)
-        listed = await bff.admin_request("GET", "agents")
-
-    assert created.status_code == 201, created.content
-    assert duplicate.status_code == 409
-    assert set(json.loads(duplicate.content)) == {"detail"}
-    assert (listed.status_code, listed.content_type) == (200, "application/json")
-    assert "storyboard" in [item["id"] for item in json.loads(listed.content)["items"]]
-
-
 async def test_app_refusals_are_app_rejected(runtime_app: FastAPI, actor: uuid.UUID) -> None:
     """不认的密钥（401）、没有管理权限的应用（403）在带类型的方法与管理接口上都是应用级拒绝。"""
 
@@ -297,19 +128,6 @@ async def test_app_refusals_are_app_rejected(runtime_app: FastAPI, actor: uuid.U
 
     assert (not_admin.value.status, not_admin.value.detail) == (403, "这个应用没有管理权限")
     assert (unknown.value.status, unknown.value.detail) == (401, "应用密钥无效")
-
-
-async def test_another_apps_session_is_not_found(
-    published: None, runtime_app: FastAPI, owner: uuid.UUID
-) -> None:
-    async with connect(runtime_app) as reader, connect(runtime_app, ADMIN_KEY) as bff:
-        session_id = await _open(reader)
-
-        with pytest.raises(NotFound):
-            await bff.run_status(session_id)
-        with pytest.raises(NotFound):
-            await bff.read_file(session_id, "notes.md", owner=owner)
-        assert (await bff.activities(ActivitiesIn(ids=(session_id,)))).items == {}
 
 
 async def test_transcript_stream_subscribes_then_streams_a_run(

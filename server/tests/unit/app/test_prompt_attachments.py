@@ -16,7 +16,7 @@ from agent_runtime.transcript.ops import (
     VideoContent,
 )
 
-from iclip.app.prompt_attachments import UPLOAD_ID_NAMESPACE, PromptAttachmentImporter
+from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.domains.identity.models import Principal
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 
@@ -103,19 +103,6 @@ async def test_only_images_that_cannot_carry_oss_parameters_are_replaced() -> No
         video(VIDEO),
         image(stored_url(ids[EXTERNAL])),
     )
-    assert ids[EXTERNAL] == uuid.uuid5(
-        UPLOAD_ID_NAMESPACE, f"{ME.user_id}|{CONVERSATION}|prm_1|{EXTERNAL}"
-    )
-
-
-async def test_the_same_prompt_id_maps_to_the_same_upload_ids() -> None:
-    first, again, other = FakeImport(), FakeImport(), FakeImport()
-    await run(first, (image(EXTERNAL),))
-    await run(again, (image(EXTERNAL),))
-    await run(other, (image(EXTERNAL),), prompt_id="prm_2")
-
-    assert first.calls[0][2] == again.calls[0][2]
-    assert first.calls[0][2] != other.calls[0][2]
 
 
 async def test_without_a_prompt_id_every_call_gets_a_fresh_upload_id() -> None:

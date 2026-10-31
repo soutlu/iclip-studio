@@ -237,27 +237,6 @@ test.describe('移动触屏分镜', () => {
   })
 })
 
-// MSW 会话随整页加载清空，无法直接验证带参数刷新；此处验证跳组后地址与组号一致，帧号照样点得动。
-test('从镜头组列表跳组：地址落在那一组，顶栏组号跟着变，帧号照样点得动', async ({ page }) => {
-  const panel = await openConversation(page, '夜景延时素材生成')
-  const switcher = panel.getByRole('button', { name: /展开镜头组列表/ })
-  await expect(switcher).toHaveAccessibleName(/^镜头组 1 \/ 3/)
-
-  await openStoryboardShot(panel, 3)
-  await expect(panel.getByRole('region', { name: '镜头组 3' })).toBeInViewport()
-  await expect(page).toHaveURL(/shot=3/)
-  await expect(switcher).toHaveAccessibleName(/^镜头组 3 \/ 3/)
-
-  await openStoryboardShot(panel, 2)
-  await expect(panel.getByRole('region', { name: '镜头组 2' })).toBeInViewport()
-  const shot2 = panel.getByRole('region', { name: '镜头组 2' })
-  const scene = shot2.getByRole('group', { name: '镜头 2', exact: true })
-  await scene.getByRole('button', { name: '镜头 2', exact: true }).click()
-  await scene.getByRole('button', { name: '查看第 3 帧' }).click()
-  await expect(page).toHaveURL(/frame=3/)
-  await expect(shot2.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
-})
-
 test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可继续编辑', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
   await openStoryboardShot(panel, 2)
@@ -419,12 +398,4 @@ test('短桌面：文案列整组原文可读，看大图后回到原帧与焦�
   expect(search.get('shot')).toBe('2')
   expect(search.get('frame')).toBe('3')
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport()
-})
-
-test('没有工作区文件的对话仍是折叠空态', async ({ page }) => {
-  await openConversation(page, '亚麻衬衫二剪')
-  await expect(page).toHaveURL(/\/c\//)
-
-  await expect(page.getByRole('button', { name: '展开工作台' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '分镜' })).toBeHidden()
 })

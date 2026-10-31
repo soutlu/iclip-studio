@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from iclip.domains.conversations.whole_film_schemas import (
     MAX_CANVAS_EDGE,
@@ -21,6 +21,10 @@ from iclip.domains.conversations.whole_film_schemas import (
     MAX_VARIABLES,
     MAX_VOLUME,
     MIN_CLIP_MS,
+    Degrees,
+    Offset,
+    Scale,
+    Variables,
     WholeFilmDocument,
 )
 from tests.helpers.whole_film import butted, component_clip, draft_document, overlay, video_clip
@@ -160,8 +164,6 @@ def test_positions_default_to_where_the_component_puts_it() -> None:
     assert {key: dumped["overlays"][0][key] for key in ("x", "y")} == {"x": 0, "y": 0}
 
 
-@pytest.mark.parametrize("where", ["captions", "overlay"])
-@pytest.mark.parametrize("axis", ["x", "y", "pivotX", "pivotY"])
 @pytest.mark.parametrize(
     ("value", "accepted"),
     [
@@ -172,17 +174,13 @@ def test_positions_default_to_where_the_component_puts_it() -> None:
         pytest.param(1.5, False, id="不是整数"),
     ],
 )
-def test_positions_stay_within_the_largest_canvas(
-    where: str, axis: str, value: object, accepted: bool
-) -> None:
-    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
-    moved = document["captions"] if where == "captions" else document["overlays"][0]
-    moved[axis] = value
-
+def test_positions_stay_within_the_largest_canvas(value: object, accepted: bool) -> None:
+    position = TypeAdapter(Offset)
     if accepted:
-        assert parse(document).model_dump(mode="json", by_alias=True) == document
+        assert position.validate_python(value) == value
     else:
-        rejected(document)
+        with pytest.raises(ValidationError):
+            position.validate_python(value)
 
 
 def test_transforms_default_to_unscaled_and_unrotated() -> None:
@@ -200,7 +198,6 @@ def test_transforms_default_to_unscaled_and_unrotated() -> None:
     assert {key: dumped["overlays"][0][key] for key in defaults} == defaults
 
 
-@pytest.mark.parametrize("where", ["captions", "overlay"])
 @pytest.mark.parametrize(
     ("field", "value", "accepted"),
     [
@@ -214,17 +211,13 @@ def test_transforms_default_to_unscaled_and_unrotated() -> None:
         pytest.param("rotation", 181, False, id="超过 180"),
     ],
 )
-def test_transforms_stay_within_their_ranges(
-    where: str, field: str, value: float, accepted: bool
-) -> None:
-    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
-    placed = document["captions"] if where == "captions" else document["overlays"][0]
-    placed[field] = value
-
+def test_transforms_stay_within_their_ranges(field: str, value: float, accepted: bool) -> None:
+    transform = TypeAdapter(Scale if field == "scale" else Degrees)
     if accepted:
-        assert parse(document).model_dump(mode="json", by_alias=True) == document
+        assert transform.validate_python(value) == value
     else:
-        rejected(document)
+        with pytest.raises(ValidationError):
+            transform.validate_python(value)
 
 
 def test_unknown_fields_are_rejected() -> None:
@@ -419,23 +412,13 @@ def test_component_names_are_non_blank_and_bounded(component: str, accepted: boo
         pytest.param({" ": 1}, False, id="空白名字"),
     ],
 )
-@pytest.mark.parametrize("where", ["component", "captions"])
-def test_variables_are_flat_and_bounded(
-    variables: dict[str, Any], accepted: bool, where: str
-) -> None:
-    """组件段与字幕的可填项同一套规矩。"""
-
-    clip = component_clip("c", start=0, duration=1000)
-    if where == "component":
-        clip["variables"] = variables
-        document = draft_document(layer0=[clip])
-    else:
-        document = draft_document(layer0=[clip], captions_variables=variables)
-
+def test_variables_are_flat_and_bounded(variables: dict[str, Any], accepted: bool) -> None:
+    values = TypeAdapter(Variables)
     if accepted:
-        parse(document)
+        assert values.validate_python(variables) == variables
     else:
-        rejected(document)
+        with pytest.raises(ValidationError):
+            values.validate_python(variables)
 
 
 def test_clip_ids_are_unique_across_the_document() -> None:
