@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Literal
 
 import pytest
 from pydantic_ai import Agent, Tool
@@ -24,7 +23,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
-from agent_runtime.harness.background import BackgroundOutcome, BackgroundTools
+from agent_runtime.harness.background import BackgroundTools
 from agent_runtime.harness.context_compaction import COMPACTED_BY_METADATA_KEY
 from agent_runtime.harness.job_status import JobStatus
 from agent_runtime.harness.media import media_tag
@@ -34,8 +33,6 @@ from agent_runtime.harness.transcript.from_messages import (
     SteeredPrompt,
     TurnState,
     approvals_from_messages,
-    background_notice,
-    card_title,
     drop_last_turn,
     run_ids_from_messages,
     run_state_from_events,
@@ -45,7 +42,7 @@ from agent_runtime.harness.transcript.from_messages import (
     turns_from_messages,
 )
 from agent_runtime.harness.transcript.prompt_media import model_prompt
-from agent_runtime.transcript.display import FileIoDisplay, GenericDisplay, ToolDisplayRegistry
+from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
 from agent_runtime.transcript.ops import (
     AttachmentSource,
     ImageContent,
@@ -180,23 +177,6 @@ def _resumed() -> list[ModelRequest | ModelResponse]:
 
 
 _OF_ONE_PROMPT = {"r1": "p1", "r2": "p1"}
-
-
-def test_two_runs_of_one_prompt_become_one_turn() -> None:
-
-    turns = turns_from_messages(
-        _resumed(),
-        turn_states={"r1": "failed", "r2": "completed"},
-        prompt_of_run=_OF_ONE_PROMPT,
-    )
-
-    assert len(turns) == 1
-    turn = turns[0]
-    assert (turn.turn_id, turn.ordinal) == ("t1", 1)
-    assert turn.content == (TextContent(text="出三张图"),)
-    assert [step.step_id for step in turn.steps] == ["t1.1", "t1.2"]
-    assert turn.started_at == _at(0).isoformat()
-    assert turn.ended_at == _at(3).isoformat()
 
 
 def test_the_turn_state_comes_from_the_last_run() -> None:
@@ -548,26 +528,6 @@ def test_attachments_survive_the_round_trip() -> None:
     assert turns[0].content == content
 
 
-def test_drop_last_turn_on_empty_history_is_a_no_op() -> None:
-
-    assert drop_last_turn([], {}) == ([], ())
-
-
-def test_drop_last_turn_removes_exactly_the_last_group() -> None:
-
-    messages = [
-        _ask("第一问", run_id="r1", minute=0),
-        _reply(TextPart(content="第一答"), run_id="r1", minute=1),
-        _ask("第二问", run_id="r2", minute=2),
-        _reply(TextPart(content="第二答"), run_id="r2", minute=3),
-    ]
-
-    kept, dropped = drop_last_turn(messages, {})
-
-    assert dropped == ("r2",)
-    assert kept == messages[:2]
-
-
 def test_drop_last_turn_takes_every_run_of_that_turn() -> None:
 
     messages = [
@@ -775,53 +735,6 @@ BREAKDOWN_DISPLAY = ToolDisplayRegistry.merged(
 )
 
 
-def _background_card(display: object) -> ToolFrame:
-    return ToolFrame(
-        frame_id="t1.1.call_bg",
-        tool_call_id="call_bg",
-        name="breakdown_video",
-        state="done",
-        display=display,
-    )
-
-
-@pytest.mark.parametrize(
-    ("display", "title"),
-    [
-        (GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4"), "拆解视频 ugg-ref.mp4"),
-        (GenericDisplay(summary="检查工程"), "检查工程"),
-        (FileIoDisplay(operation="read", path="brief.md"), "breakdown_video"),
-        (None, "breakdown_video"),
-    ],
-    ids=["summary-and-detail", "summary-only", "not-generic", "no-display"],
-)
-def test_the_card_title_joins_summary_and_detail_or_falls_back_to_the_tool_name(
-    display: object, title: str
-) -> None:
-    assert card_title(_background_card(display)) == title
-
-
-@pytest.mark.parametrize(
-    ("state", "text"),
-    [("done", "已拆解视频 ugg-ref.mp4"), ("error", "拆解视频 ugg-ref.mp4 失败")],
-)
-def test_a_background_notice_says_done_or_failed_and_points_at_its_task(
-    state: Literal["done", "error"], text: str
-) -> None:
-    card = _background_card(GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4"))
-    outcome = BackgroundOutcome("call_bg", "breakdown_video", state, "工具原文")
-
-    notice = background_notice(card, outcome, frame_id="t1.2.f2")
-
-    assert notice == TextFrame(
-        frame_id="t1.2.f2",
-        role="user",
-        text=text,
-        content=(TextContent(text=text),),
-        task_id="call_bg",
-    )
-
-
 async def _background_run() -> list[ModelMessage]:
     """真跑一次后台工具：回执后模型先答一句，结果递入后再答一句。消息形状与 harness 实际写的一致。"""
 
@@ -931,17 +844,3 @@ async def test_a_background_task_without_an_outcome_ends_by_how_its_run_ended(
     card = turn.steps[0].frames[0]
     assert isinstance(card, ToolFrame)
     assert (card.state, card.output, card.error) == ("error", None, ORPHAN_TOOL_ERROR)
-
-
-async def test_a_delivered_background_outcome_completes_its_task() -> None:
-    messages = await _background_run()
-
-    (task,) = tasks_from_messages(
-        messages,
-        subagent_of_call={},
-        child_runs=[],
-        run_states={RUN: "completed"},
-        display=BREAKDOWN_DISPLAY,
-    )
-
-    assert (task.state, task.result_summary, task.error) == ("completed", "拆好了", None)

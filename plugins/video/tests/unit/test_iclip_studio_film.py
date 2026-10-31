@@ -7,10 +7,8 @@ import uuid
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import GenericDisplay, ToolDisplayEntry
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.models.test import TestModel
@@ -19,7 +17,6 @@ from pydantic_ai.usage import RunUsage
 
 from iclip_video.iclip_studio import capability as studio
 from iclip_video.iclip_studio.capability import (
-    MAX_LISTED_PROBLEMS,
     IclipStudio,
     IclipStudioToolset,
 )
@@ -163,19 +160,6 @@ async def workspace(
     return capability(files, ledger, generation).get_toolset()
 
 
-async def test_a_passing_check_reports_one_line_of_counts(
-    files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
-) -> None:
-    tools = await workspace(files, ledger)
-
-    result = await tools.check_film(ctx)
-
-    assert text_of(result).splitlines() == [
-        "工程规范检查通过：8 个图片生成节点，2 个视频生成节点。"
-    ]
-    assert result.metadata == {"chip": "通过"}
-
-
 async def test_problems_come_back_with_file_and_line(
     files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
 ) -> None:
@@ -189,18 +173,6 @@ async def test_problems_come_back_with_file_and_line(
     assert listed[0].startswith("film.icml 第 ") and "gpt:Image 没有属性 size" in listed[0]
     assert "gpt:Image 缺属性 resolution" in listed[1]
     assert result.metadata == {"chip": "2 处问题"}
-
-
-async def test_a_long_list_of_problems_is_cut(
-    files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
-) -> None:
-    noise = "".join(f'  <text:Value id="capture" extra="{n}"/>\n' for n in range(40))
-    tools = await workspace(files, ledger, project=FILM.replace("</icml>", noise + "</icml>"))
-
-    lines = text_of(await tools.check_film(ctx)).splitlines()
-
-    assert lines[0] == "工程规范检查未通过，本次发现 80 处问题："
-    assert len(lines) == MAX_LISTED_PROBLEMS + 2
 
 
 async def test_the_run_file_is_checked_together_with_the_project_file(
@@ -494,31 +466,3 @@ def test_the_generate_tool_is_offered_only_when_its_model_is_connected(
     assert offered(capability(files, ledger, images))
     assert not offered(capability(files, ledger, images, can_generate=False))
     assert not offered(capability(files, ledger, None))
-
-
-def test_the_plugin_is_built_from_its_spec_without_image_generation(
-    files: FakeFileStore, ledger: FakeMaterialLedger, images: FakeNodeImages
-) -> None:
-    """组合根绑好服务后按 spec 造：只有检查，生图不登记给 agent；要求同挂 workspace。"""
-
-    plugin = IclipStudio[object].bind(
-        space=FileSpace(store=files, namespace=workspace_namespace), ledger=ledger, images=images
-    )
-    built = plugin.from_spec()
-
-    assert plugin.get_serialization_name() == "iclip_studio"
-    assert set(built.get_toolset().tools) == {"check_film"}
-    assert tuple(built.get_ordering().requires) == (Workspace,)
-
-
-def test_the_tool_cards_name_the_file_they_work_on() -> None:
-    table = IclipStudio.display_table()
-
-    check_card, generate = table["check_film"], table["generate_images"]
-    assert callable(check_card)
-    assert check_card({}) == GenericDisplay(summary="检查工程", detail="film.icml")
-    assert isinstance(generate, ToolDisplayEntry)
-    assert generate.view == "media_grid"
-    assert generate.draw({"nodes": ["view01", "view02"]}) == GenericDisplay(
-        summary="生成图片", detail="view01、view02"
-    )

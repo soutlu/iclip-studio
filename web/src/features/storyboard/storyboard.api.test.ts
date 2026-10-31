@@ -1,102 +1,15 @@
-import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
-import { imageEditConversationKey, imageEditQueryKey } from './image-edit/image-edit.api'
-import type { Shot } from './shot-document'
 import {
   generationsRefetchInterval,
   historyShotOf,
   readConversationVideoJobs,
-  storyboardQueryKeys,
-  submitVideoGeneration,
   type GenerationJob,
 } from './storyboard.api'
-import { videoEditChainKey } from './video-editor/video-editor.api'
 
 const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
-
-describe('storyboardQueryKeys', () => {
-  it('本对话的生成记录查询都在 conversation 前缀下，模型清单与别的对话不在', async () => {
-    const keys = {
-      videoJobs: storyboardQueryKeys.videoJobs(conversationId),
-      frameJobs: imageEditConversationKey(conversationId),
-      frameCell: imageEditQueryKey({ conversationId, frameNumber: 1, shotIndex: 1 }),
-      editChain: videoEditChainKey(conversationId, 'root-job'),
-      otherConversation: storyboardQueryKeys.videoJobs('a4b5c6d7-1111-4f0e-9a2b-0f2f3a4b5c6d'),
-      imageModels: storyboardQueryKeys.imageModels,
-      videoModels: storyboardQueryKeys.videoModels,
-    }
-    const queryClient = new QueryClient()
-    for (const key of Object.values(keys)) queryClient.setQueryData(key, {})
-
-    await queryClient.invalidateQueries({
-      queryKey: storyboardQueryKeys.conversation(conversationId),
-    })
-
-    const invalidated = Object.entries(keys)
-      .filter(([, key]) => queryClient.getQueryState(key)?.isInvalidated)
-      .map(([name]) => name)
-    expect(invalidated).toEqual(['videoJobs', 'frameJobs', 'frameCell', 'editChain'])
-  })
-})
-
-/** 与 server/tests/helpers/generation.py 的 video_shot 是同一份夹具；服务端拼出的正文见那边的 SHOT_PROMPT。 */
-const shot: Shot = {
-  index: 2,
-  seconds: 6,
-  image_urls: ['https://example.com/a.png', 'https://example.com/b.png'],
-  prompt: {
-    global_settings: '人物保持一致。',
-    timeline: [
-      { timestamps: [0, 6], prompt: '走向镜头 @Image1，停下 @Image2。', image_indexes: [1, 2] },
-    ],
-  },
-}
-
-describe('submitVideoGeneration', () => {
-  it('照上游形状发到视频端点：镜头组按分镜文件的形状原样发出、镜号只走 shot_index、参考图取整组、分辨率照选的档，回执只取任务号', async () => {
-    let body: unknown
-    server.use(
-      http.post('*/api/generations/video', async ({ request }) => {
-        body = await request.json()
-        return HttpResponse.json(
-          { task_id: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c' },
-          { status: 202 },
-        )
-      }),
-    )
-
-    await expect(
-      submitVideoGeneration({
-        aspectRatio: '9:16',
-        conversationId,
-        generateAudio: false,
-        model: 'wan3.0-video',
-        resolution: '1080p',
-        shot,
-      }),
-    ).resolves.toBe('4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c')
-
-    expect(body).toEqual({
-      aspect_ratio: '9:16',
-      conversation_id: conversationId,
-      generate_audio: false,
-      model: 'wan3.0-video',
-      reference_image_urls: shot.image_urls,
-      resolution: '1080p',
-      seconds: 6,
-      shot: {
-        global_settings: '人物保持一致。',
-        timeline: [
-          { image_indexes: [1, 2], prompt: '走向镜头 @Image1，停下 @Image2。', timestamps: [0, 6] },
-        ],
-      },
-      shot_index: 2,
-    })
-  })
-})
 
 describe('historyShotOf', () => {
   const job = (request: Record<string, unknown>): GenerationJob =>

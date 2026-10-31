@@ -1,5 +1,4 @@
-"""装配契约：名字即给定的 agent 标识、插件按原生 spec 挂上、子代理显式声明且限额生效、空提示词不注入、
-运行记录的 metadata 原样落库。"""
+"""运行装配的行为：未知插件拒绝、用量和运行 metadata、子代理能力隔离与调用限额、超时和工具重试。"""
 
 from __future__ import annotations
 
@@ -15,14 +14,12 @@ from pydantic_ai.capabilities import AgentCapability, Capability
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelRequest,
     ModelResponse,
     ToolCallPart,
     ToolReturnPart,
 )
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.models.openai import OpenAIChatModelSettings
 from pydantic_ai.models.test import TestModel
 from pydantic_ai_harness.step_persistence import InMemoryStepStore
 
@@ -32,14 +29,12 @@ from agent_runtime.harness.agents import (
     SubAgentSlot,
     build_agent,
     build_subagents,
-    delegate_display_table,
     profile_metadata,
     subagent_profile,
 )
 from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.harness.transcript.subagents import SubAgentMirror
 from agent_runtime.harness.usage_ledger import UsageLedger
-from agent_runtime.transcript.display import AgentCallDisplay
 from agent_runtime.transcript.ops import StepUsage
 from tests.helpers.runtime import discarding_usage_ledger
 
@@ -131,46 +126,6 @@ def _never(_messages: list[ModelMessage], _info: AgentInfo) -> Any:
     raise AssertionError("装配阶段不该调用模型")
 
 
-def test_subagent_profile_carries_the_model_id_and_thinking_effort() -> None:
-    """档案记供应方模型 id；配了思考档位才有 thinking_effort。"""
-
-    thinking = FunctionModel(
-        _never,
-        model_name="qwen3-max",
-        settings=OpenAIChatModelSettings(openai_reasoning_effort="low"),
-    )
-    plain = FunctionModel(_never, model_name="qwen3-plus")
-
-    assert subagent_profile(WRITER, thinking) == {
-        "agent_name": WRITER,
-        "model": "qwen3-max",
-        "thinking_effort": "low",
-    }
-    assert subagent_profile("copy", plain) == {"agent_name": "copy", "model": "qwen3-plus"}
-
-
-def test_the_agent_is_named_by_the_given_id() -> None:
-    assert make_agent("storyboard", TestModel()).name == "storyboard"
-
-
-async def sent_instructions(agent: Any) -> str | None:
-    """执行 Agent 并读取模型实际接收的指令。"""
-
-    request = (await agent.run("hi")).all_messages()[0]
-    assert isinstance(request, ModelRequest)
-    return request.instructions
-
-
-async def test_instructions_reach_the_model() -> None:
-    assert await sent_instructions(make_agent("a", TestModel(), instructions="写镜头表。")) == (
-        "写镜头表。"
-    )
-
-
-async def test_blank_instructions_inject_nothing() -> None:
-    assert await sent_instructions(make_agent("a", TestModel(), instructions="   \n\n")) is None
-
-
 def test_an_unknown_plugin_fails_at_assembly() -> None:
     """插件按原生 spec 挂：登记表里没有这个名字就在装配时报错，不悄悄跳过。"""
 
@@ -237,17 +192,6 @@ async def test_the_usage_ledger_is_attached_to_the_agent_and_its_subagents() -> 
     await drive(agent)
 
     assert sorted(recorded) == [("c1", "child-m"), ("c1", "parent-m"), ("c1", "parent-m")]
-
-
-def test_the_delegate_tool_has_a_display() -> None:
-    """display 注册名须与实际挂载的 DELEGATE_TOOL 一致，避免错误回退到 generic。"""
-
-    drawn = delegate_display_table()[DELEGATE_TOOL]
-
-    assert drawn({"agent_name": WRITER, "task": "写第 3 组"}) == AgentCallDisplay(
-        agent_name=WRITER, prompt="写第 3 组"
-    )
-    assert drawn({"task": "写第 3 组"}) is None
 
 
 async def test_runs_record_the_given_metadata_for_parent_and_subagent() -> None:

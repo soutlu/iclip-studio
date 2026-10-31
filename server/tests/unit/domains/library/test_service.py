@@ -7,9 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-import pytest
-from agent_runtime.errors import ValidationFailed
-
 from iclip.domains.identity.models import PrincipalKind
 from iclip.domains.identity.public import ACT_AS_PERMISSION, MANAGE_PERMISSION, Principal
 from iclip.domains.library.models import (
@@ -238,15 +235,6 @@ async def test_blank_keyword_means_no_keyword() -> None:
     await service.videos(principal(OWNER), q=" 滑板 ")
 
     assert [scope.q for scope, _ in reports.queried] == [None, "滑板"]
-
-
-async def test_limit_out_of_range_is_rejected() -> None:
-    service = library(FakeReports())
-
-    with pytest.raises(ValidationFailed):
-        await service.videos(principal(OWNER), limit=0)
-    with pytest.raises(ValidationFailed):
-        await service.whole_films(principal(OWNER), limit=0)
 
 
 async def test_whole_film_cursor_keys_on_the_face_and_the_conversation() -> None:

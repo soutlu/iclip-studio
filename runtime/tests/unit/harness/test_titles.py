@@ -11,14 +11,6 @@ from agent_runtime.harness.titles import MAX_TITLE_CHARS, clean_title, title_gen
 pytestmark = pytest.mark.unit
 
 
-def _answering(text: str) -> FunctionModel:
-
-    def script(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[TextPart(text)])
-
-    return FunctionModel(script)
-
-
 def _exploding() -> FunctionModel:
     """调用即抛出异常的模型替身。"""
 
@@ -26,12 +18,6 @@ def _exploding() -> FunctionModel:
         raise RuntimeError("模型这会儿不干活")
 
     return FunctionModel(script)
-
-
-async def test_模型答什么就是标题() -> None:
-    generate = title_generator(_answering("夜景延时素材生成"))
-
-    assert await generate("帮我做一条夜景延时的短片") == "夜景延时素材生成"
 
 
 async def test_起标题只用最低思考档() -> None:

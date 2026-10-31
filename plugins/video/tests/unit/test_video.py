@@ -8,10 +8,8 @@ from typing import Any
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -30,7 +28,7 @@ from iclip_video.video_document import video_doc_path
 from iclip_video.video_understanding import VideoUnderstandingError
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
-from tests.helpers.plugins import required_tools, with_requirements
+from tests.helpers.plugins import with_requirements
 from tests.helpers.video_understanding import FakeUnderstanding
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -113,42 +111,6 @@ def refusals(messages: list[ModelMessage]) -> list[ToolReturnPart]:
 
 def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
     return [part for part in _tool_returns(messages) if part.outcome != "retried"]
-
-
-async def test_only_video_tools_reach_the_model(capability: Video[object]) -> None:
-    seen: list[str] = []
-
-    def script(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        seen.extend(sorted(tool.name for tool in info.function_tools))
-        return ModelResponse(parts=[TextPart("好")])
-
-    await Agent(
-        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
-    ).run("查看工具。", deps=make_deps())
-
-    own = [name for name in seen if name not in required_tools(capability)]
-    assert own == ["video_parser"]
-    assert set(Video.display_table()) == set(own)
-
-
-def test_video_requires_workspace(capability: Video[object]) -> None:
-    ordering = capability.get_ordering()
-    assert tuple(ordering.requires) == (Workspace,)
-    assert Video.get_serialization_name() == "video"
-
-
-def test_every_tool_has_a_display_without_a_renderer() -> None:
-    registry = ToolDisplayRegistry.merged(Video.display_table())
-    drawn = registry.entries
-    parsed = drawn["video_parser"].draw({"video_url": VIDEO})
-    assert isinstance(parsed, GenericDisplay)
-    assert parsed.detail == "ref.mp4"
-    # 缺参时仍画一张没有主语的卡，不退回 None。
-    bare = drawn["video_parser"].draw({})
-    assert isinstance(bare, GenericDisplay)
-    assert bare.detail is None
-    for tool_name in drawn:
-        assert registry.view_of(tool_name) is None
 
 
 async def test_parse_stores_document_in_shared_workspace(

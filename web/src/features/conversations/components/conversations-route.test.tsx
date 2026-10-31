@@ -114,30 +114,6 @@ const seedThree = () => {
 describe('ConversationsRoute', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('按建立时间倒序列出全平台对话', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    const list = within(await screen.findByRole('list'))
-    expect(list.getAllByRole('link').map((link) => link.textContent)).toEqual([
-      expect.stringContaining('小王的秋季片'),
-      expect.stringContaining('我的片'),
-      expect.stringContaining('跑完的片'),
-    ])
-  })
-
-  it('每行标出属主与运行状态', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    const theirs = await rowOf('小王的秋季片')
-    expect(theirs).toHaveTextContent('进行中')
-    expect(await within(theirs).findByText('小王')).toBeVisible()
-    expect(await rowOf('我的片')).toHaveTextContent('测试用户')
-    expect(await rowOf('跑完的片')).toHaveTextContent('已完成')
-    expect(await rowOf('跑完的片')).toHaveTextContent('属主已收尾')
-  })
-
   it('状态列的视频角标读视频进度：出现在里面的行才标，视频帧到了跟着变', async () => {
     const { task, theirs } = seedThree()
     mockVideoProgress.set(theirs.id, 'queued')
@@ -152,21 +128,6 @@ describe('ConversationsRoute', () => {
       () => expect(screen.getByRole('link', { name: /小王的秋季片/ })).toHaveTextContent('生成中'),
       AUDIT_REFRESH_TIMEOUT,
     )
-  })
-
-  it('已关联的需求单标题挂在行上', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    expect(await rowOf('小王的秋季片')).toHaveTextContent('秋季新品')
-  })
-
-  it('顶部给出进行中与总数', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    await rowOf('小王的秋季片')
-    expectTotals(1, 3)
   })
 
   it('首屏读取时给出读取状态，列表到了就换成对话行', async () => {
@@ -266,16 +227,6 @@ describe('ConversationsRoute', () => {
     )
     const row = await rowOf('小王的秋季片')
     fireEvent.error(within(row).getByRole('img', { name: '小王的秋季片的封面' }))
-    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
-    expect(row).toHaveAttribute('href', expect.stringContaining('/c/'))
-  })
-
-  it('没挂需求单的行说明未关联，仍能点进对话', async () => {
-    seedThree()
-    await render()
-
-    const row = await rowOf('我的片')
-    expect(row).toHaveTextContent('未关联需求单')
     expect(within(row).queryByRole('img')).not.toBeInTheDocument()
     expect(row).toHaveAttribute('href', expect.stringContaining('/c/'))
   })

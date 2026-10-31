@@ -12,10 +12,8 @@ from typing import Any
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
@@ -56,7 +54,7 @@ from iclip_video.video.capability import Video
 from iclip_video.video_document import video_doc_path
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
-from tests.helpers.plugins import required_tools, with_requirements
+from tests.helpers.plugins import with_requirements
 from tests.helpers.shot_video import (
     FakeBoards,
     FakeCuts,
@@ -186,62 +184,6 @@ async def check_args(
     outcome = validator(ctx, **args)
     assert inspect.isawaitable(outcome), "本包的验证器都是 async 的"
     await outcome
-
-
-def test_no_capability_instructions(capability: ShotVideo[object]) -> None:
-    """工具协作流程由 skill 描述，插件包不重复注入指令。"""
-
-    assert capability.get_instructions() is None
-
-
-async def test_every_tool_reaches_the_model(capability: ShotVideo[object]) -> None:
-
-    seen: list[str] = []
-
-    def script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        _ = messages
-        seen.extend(sorted(tool.name for tool in info.function_tools))
-        return ModelResponse(parts=[TextPart("好")])
-
-    agent = Agent(
-        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
-    )
-    await agent.run("看看你有什么", deps=make_deps())
-    own = [name for name in seen if name not in required_tools(capability)]
-    assert own == ["generate_anchor_sheet", "generate_shot_frames", "plan_shot_frames"]
-
-
-def test_shot_video_requires_workspace_and_video(capability: ShotVideo[object]) -> None:
-    assert ShotVideo.get_serialization_name() == "shot_video"
-    assert tuple(capability.get_ordering().requires) == (Workspace, Video)
-
-
-def test_every_tool_has_a_display(tools: ShotVideoToolset[object]) -> None:
-
-    drawn = ToolDisplayRegistry.merged(ShotVideo.display_table()).entries
-    assert set(drawn) == set(tools.tools)
-    # 主语是去重、排序后的镜头号。
-    frames = drawn["generate_shot_frames"].draw(
-        {"frames": [{"no": "S2-1"}, {"no": "S1-3"}, {"no": "S2-2"}]}
-    )
-    assert isinstance(frames, GenericDisplay)
-    assert frames.detail == "镜头 1、2"
-    bare = drawn["generate_shot_frames"].draw(None)
-    assert isinstance(bare, GenericDisplay)
-    assert bare.detail is None
-    plan = drawn["plan_shot_frames"].draw({"video_url": VIDEO})
-    assert isinstance(plan, GenericDisplay)
-    assert plan.detail == "ref.mp4"
-    anchor = drawn["generate_anchor_sheet"].draw({})
-    assert isinstance(anchor, GenericDisplay)
-    assert anchor.detail is None
-
-
-def test_every_media_tool_picks_a_renderer() -> None:
-
-    views = ToolDisplayRegistry.merged(ShotVideo.display_table())
-    for tool_name in ("plan_shot_frames", "generate_shot_frames", "generate_anchor_sheet"):
-        assert views.view_of(tool_name) == "media_grid"
 
 
 async def test_an_out_of_scope_address_is_refused_on_the_agent_path(

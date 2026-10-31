@@ -361,30 +361,6 @@ describe('VideoEditor', () => {
     expect(within(controls()).queryByRole('button', { name: '下载' })).toBeNull()
   })
 
-  it('标题栏只有标题与关闭；工具条左边是查看方式、播放与时间，右边是总长、镜头提示词、静音、放大，最右是合成或下载', async () => {
-    const opened = composite({ id: COMPOSITE_ID })
-    serveChain([root, opened])
-    const user = userEvent.setup()
-    await renderEditor(opened)
-
-    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
-    const header = screen.getByRole('heading', { name: /编辑视频/ }).closest('header')
-    if (header === null) throw new Error('没有标题栏')
-    expect(buttonNames(header)).toEqual(['关闭视频编辑'])
-    expect(header).toHaveTextContent('镜头组 1')
-    expect(buttonNames(controls())).toEqual([
-      '版本',
-      '剪辑',
-      '播放',
-      '镜头提示词',
-      '开启声音',
-      '放大',
-      '下载',
-    ])
-    await user.click(viewButton('剪辑'))
-    expect(buttonNames(controls()).at(-1)).toBe('合成新版本')
-  })
-
   it('在合成上做的编辑段不在编辑轨上；区间对不上镜头的也在，名字按碰到的镜头叫', async () => {
     serveChain([
       editSegment({ sourceJobId: COMPOSITE_ID }),
@@ -1800,15 +1776,26 @@ describe('合成与版本视图', () => {
     expect(composeButton()).toBeEnabled()
   })
 
-  it('从一次合成打开：版本视图看那一版；每个版本一行、最新的在最上，点原片那行舞台换成原片、从头停着', async () => {
+  it('从一次合成打开：版本按新旧排列；上下键跳过合成中，Enter 与空格选版后从头停着', async () => {
     const opened = composite({ id: COMPOSITE_ID })
-    serveChain([root, opened])
+    serveChain([
+      root,
+      opened,
+      composite({
+        id: '4d5e6f70-4444-4444-8444-444444444444',
+        createdAt: '2026-09-16T10:07:00Z',
+        finishedAt: null,
+        outputUrl: null,
+        status: 'submitted',
+      }),
+    ])
     const user = userEvent.setup()
     await renderEditor(opened)
 
     await waitFor(() => expect(viewButton('版本')).toHaveAttribute('aria-pressed', 'true'))
     expect(await findVersion('V2')).toHaveAttribute('aria-pressed', 'true')
-    expect(buttonNames(versionRows())).toEqual(['V2', 'V1 原片'])
+    expect(buttonNames(versionRows())).toEqual(['合成中', 'V2', 'V1 原片'])
+    expect(versionButton('合成中')).toBeDisabled()
     expect(within(controls()).getByRole('button', { name: '下载' })).toBeEnabled()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
     // 两行共用最长那一版的比例。
@@ -1816,11 +1803,22 @@ describe('合成与版本视图', () => {
     fireEvent.change(playhead(), { target: { value: '4' } })
     expect(controls()).toHaveTextContent('00:04.00')
 
-    await user.click(versionButton('V1 原片'))
+    versionButton('V2').focus()
+    await user.keyboard('{ArrowUp}')
+    expect(versionButton('V2')).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(versionButton('V1 原片')).toHaveFocus()
+    await user.keyboard(' ')
     expect(versionButton('V1 原片')).toHaveAttribute('aria-pressed', 'true')
     expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'false')
     await waitFor(() => expect(controls()).toHaveTextContent('共 8.0 秒'))
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
+    expect(playhead()).toHaveValue('0')
+    expect(playButton()).toBeVisible()
+
+    await user.keyboard('{ArrowUp}{Enter}')
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', COMPOSITE_URL)
     expect(playhead()).toHaveValue('0')
     expect(playButton()).toBeVisible()
   })

@@ -35,7 +35,7 @@ from tests.helpers.app import (
     make_runtime_config,
 )
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
-from tests.helpers.pg import reset_database
+from tests.helpers.pg import connected, reset_database
 from tests.helpers.runtime_backed import (
     RUNTIME_APP_KEY,
     RUNTIME_INTERNAL_TOKEN,
@@ -111,8 +111,8 @@ def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.delenv("OSS_BUCKET", raising=False)
 
 
-async def _reset(engine: AsyncEngine) -> None:
-    async with engine.begin() as conn:
+async def _reset(url: str) -> None:
+    async with connected(url) as conn:
         await reset_database(conn)
 
 
@@ -120,9 +120,9 @@ async def _reset(engine: AsyncEngine) -> None:
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
     """清空测试表后给出引擎，供直接装配仓储、报表与运行时的测试使用。"""
 
+    await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
-        await _reset(engine)
         yield engine
     finally:
         await engine.dispose()
@@ -205,8 +205,8 @@ def ws_agent_app(
     使用 NullPool 避免 asyncpg 连接跨事件循环复用。
     """
 
+    asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
-    asyncio.run(_reset(engine))
     built = _build_app(
         make_runtime_config(cors_allow_origins=cors_allow_origins),
         engine,
@@ -266,9 +266,9 @@ async def sso_app(
         if pms_transport is not None
         else None
     )
+    await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
-        await _reset(engine)
         yield build_backed_app(
             make_runtime_config(),
             engine=engine,

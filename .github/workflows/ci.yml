@@ -249,10 +249,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: agents
-            tests: tests/integration_no_llm/agents
+          - group: sessions
+            tests: >-
+              tests/integration_no_llm/agents
+              tests/integration_no_llm/conversations
+              tests/integration_no_llm/runtime_service
           - group: application
-            tests: tests/integration_no_llm --ignore=tests/integration_no_llm/agents
+            tests: >-
+              tests/integration_no_llm
+              --ignore=tests/integration_no_llm/agents
+              --ignore=tests/integration_no_llm/conversations
+              --ignore=tests/integration_no_llm/runtime_service
     defaults:
       run:
         working-directory: server

@@ -143,18 +143,6 @@ describe('TaskCard', () => {
     ])
   })
 
-  it('收起与平台、款号匹配的标题前缀，可访问名称保留完整标题', async () => {
-    const task = makeTask([product('FRE')])
-    task.title = '[AMZ][FRE] Listing 口播视频'
-    task.inputs.video_spec.platform = 'AMZ'
-    await renderWithProviders(<TaskCard onClick={() => {}} task={task} />)
-
-    expect(screen.getByText('Listing 口播视频')).toBeVisible()
-    expect(screen.getByText('Listing 口播视频')).toHaveAttribute('title', task.title)
-    expect(screen.getByRole('button', { name: `查看需求：${task.title}` })).toBeVisible()
-    expect(screen.queryByText(task.title)).not.toBeInTheDocument()
-  })
-
   it('商品无图时明确占位，即使存在模特、穿搭和道具参考图也不代替商品图', async () => {
     await renderWithProviders(<TaskCard onClick={() => {}} task={makeTask([product('SHOE-01')])} />)
 

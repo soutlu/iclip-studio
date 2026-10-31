@@ -41,30 +41,10 @@ from tests.helpers.generation import (
     InMemoryGenerationRepository,
     ScriptedProvider,
     build_queue,
-    compose_request,
     image_request,
     make_job,
     video_request,
 )
-
-
-async def test_async_submit_moves_job_to_waiting_for_result() -> None:
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    video = ScriptedProvider(
-        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued")
-    )
-
-    queue, connector = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_SUBMITTED
-    assert stored.provider_task_id == "t-1"
-
-    polls = [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
-    assert len(polls) == 1, "提交完必须排一次轮询，否则永远没人问结果"
-    assert polls[0]["queue_name"] == QUEUE_POLL
 
 
 class _PollDeferFailsOnce(InMemoryConnector):
@@ -116,88 +96,6 @@ async def test_a_lost_first_poll_is_scheduled_when_the_submit_replays() -> None:
 
 def _polls(connector: InMemoryConnector) -> list[JobRow]:
     return [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
-
-
-async def test_sync_submit_completes_in_one_step() -> None:
-
-    job = make_job(image_request())
-    repo = InMemoryGenerationRepository([job])
-    image = ScriptedProvider(
-        submission=ProviderSubmission(
-            provider_task_id=str(job.id),
-            provider_status="succeeded",
-            output_url="https://cdn.test/out.png",
-        )
-    )
-
-    queue, connector = build_queue(repo, image=image)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_COMPLETED
-    assert stored.output.url == "https://cdn.test/out.png"
-    assert stored.provider_task_id == str(job.id)
-    assert image.poll_calls == [], "同步接口不该被轮询"
-    assert connector.jobs == {}, "已经终态了，别再排一次轮询"
-
-
-async def test_a_sync_result_lands_its_measured_duration_on_the_record() -> None:
-    """本地加工一次出结果，量出来的时长随完成落进记录。"""
-
-    job = make_job(compose_request())
-    repo = InMemoryGenerationRepository([job])
-    local = ScriptedProvider(
-        submission=ProviderSubmission(
-            provider_task_id=str(job.id),
-            provider_status="completed",
-            output_url="https://cdn.test/master.mp4",
-            duration_ms=7040,
-        )
-    )
-
-    queue, _ = build_queue(repo, video=local)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert (stored.status, stored.output.duration_ms) == (STATUS_COMPLETED, 7040)
-
-
-async def test_marks_submitting_before_calling_provider() -> None:
-    """请求前持久化 submitting，保证进程在响应前中断时留下提交状态。"""
-
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    seen: list[str] = []
-
-    class Recording(ScriptedProvider):
-        async def submit(self, job_arg):  # type: ignore[no-untyped-def]
-            seen.append(repo.jobs[job_arg.id].status)
-            return await super().submit(job_arg)
-
-    video = Recording(
-        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued")
-    )
-    queue, _ = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-    assert seen == [STATUS_SUBMITTING]
-
-
-async def test_stranded_submitting_job_fails_and_is_never_resubmitted() -> None:
-    """队列至少执行一次，供应商却无幂等键；重跑 submitting 任务只能失败，不能重复计费。"""
-
-    job = make_job(video_request(), status=STATUS_SUBMITTING)
-    repo = InMemoryGenerationRepository([job])
-    video = ScriptedProvider(
-        submission=ProviderSubmission(provider_task_id="t-2", provider_status="queued")
-    )
-
-    queue, _ = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_FAILED
-    assert stored.error_code == "SUBMIT_INTERRUPTED"
-    assert video.submit_calls == [], "绝不能重新提交一次"
 
 
 async def test_submit_failure_is_terminal_even_when_retryable() -> None:

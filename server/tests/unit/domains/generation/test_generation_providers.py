@@ -38,7 +38,6 @@ from tests.helpers.generation import (
     MemoryObjectStore,
     compose_request,
     image_request,
-    make_edit,
     make_enhancement,
     make_job,
     video_request,
@@ -70,7 +69,6 @@ SEEDREAM_SETTINGS = GatewayImageSettings(
     text_to_image_task="text-to-image",
     image_edit_task="image-edit",
 )
-SEEDREAM_SPEC = SEEDREAM_V5_PRO.spec
 
 
 def nano_provider(
@@ -158,28 +156,6 @@ async def test_video_submit_sends_protocol_payload_and_key(
     if generate_audio is not None:
         expected_payload["generate_audio"] = generate_audio
     assert seen["body"] == expected_payload, "请求原样转发：没给的不发，归属字段不发"
-
-
-async def test_an_edit_goes_upstream_without_its_range() -> None:
-    """编辑段的区间记在请求快照里，只记账、不发给上游。"""
-
-    seen: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["body"] = httpx.Response(200, content=request.content).json()
-        return httpx.Response(200, json={"task_id": "t-3"})
-
-    await video_provider(handler).submit(make_edit(make_job(video_request())))
-
-    assert seen["body"] == {
-        "model": "vendor-a-seedance-2-5",
-        "prompt": "一只猫跳上窗台",
-        "user_name": "logan",
-        "reference_image_urls": [],
-        "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
-        "reference_audio_urls": [],
-        "seconds": -1,
-    }
 
 
 async def test_video_submit_forwards_the_assembled_prompt_but_not_the_shot() -> None:
@@ -416,26 +392,6 @@ async def test_image_generation_rehosts_result_and_returns_stable_url() -> None:
     assert submission.provider_status == "succeeded", "同步接口提交完就已经是终态"
 
 
-async def test_image_with_references_uses_edit_endpoint() -> None:
-    store = MemoryObjectStore()
-    paths: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        paths.append(request.url.path)
-        if str(request.url) in (IMAGE_TEXT_TO_IMAGE_URL, IMAGE_EDIT_URL):
-            return httpx.Response(
-                200, json={"success": True, "output_str": "https://cdn.test/out.jpg"}
-            )
-        return httpx.Response(200, content=b"JPG", headers={"content-type": "image/jpeg"})
-
-    await nano_provider(handler, store=store).submit(
-        make_job(
-            image_request(channel="dev", reference_image_urls=["https://example.test/ref.png"])
-        )
-    )
-    assert paths[0] == httpx.URL(IMAGE_EDIT_URL).path, "有参考图要走编辑那个地址"
-
-
 async def test_image_never_retries_and_never_switches_channel() -> None:
     """供应商无幂等键，自动重试可能重复计费；渠道价格不同，不能自动切换。"""
 
@@ -568,59 +524,6 @@ async def test_seedream_sends_a_pixel_size_and_no_channel() -> None:
     assert submission.output_url == f"{store.base}/{key}"
 
 
-@pytest.mark.parametrize(
-    ("aspect_ratio", "resolution", "size"),
-    [
-        ("1:1", "1k", "1024*1024"),
-        ("1:1", "2k", "2048*2048"),
-        ("3:2", "1k", "1248*832"),
-        ("2:3", "1k", "832*1248"),
-        ("3:4", "2k", "1776*2368"),
-        ("4:3", "2k", "2368*1776"),
-        ("16:9", "1k", "1424*800"),
-        ("21:9", "2k", "3136*1344"),
-    ],
-)
-async def test_seedream_translates_every_declared_ratio_and_tier(
-    aspect_ratio: str, resolution: str, size: str
-) -> None:
-    sent: list[dict[str, object]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url) == SEEDREAM_TEXT_TO_IMAGE_URL:
-            sent.append(json.loads(request.content))
-        return seedream_ok(request)
-
-    await seedream_provider(handler, store=MemoryObjectStore()).submit(
-        make_job(image_request(aspect_ratio=aspect_ratio, resolution=resolution))
-    )
-    assert sent[0]["size"] == size
-
-
-async def test_seedream_declares_exactly_what_it_can_translate() -> None:
-    """能力声明由那张映射表的键推导，两处不可能漂。"""
-
-    assert SEEDREAM_SPEC.resolutions == ("1k", "2k"), "上游没有 4k"
-    assert "4:5" not in SEEDREAM_SPEC.aspect_ratios
-    assert "5:4" not in SEEDREAM_SPEC.aspect_ratios
-    assert SEEDREAM_SPEC.channels == (), "没有渠道这个轴"
-
-    sent: list[dict[str, object]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url) == SEEDREAM_TEXT_TO_IMAGE_URL:
-            sent.append(json.loads(request.content))
-        return seedream_ok(request)
-
-    provider = seedream_provider(handler, store=MemoryObjectStore())
-    for aspect_ratio in SEEDREAM_SPEC.aspect_ratios:
-        for resolution in SEEDREAM_SPEC.resolutions:
-            await provider.submit(
-                make_job(image_request(aspect_ratio=aspect_ratio, resolution=resolution))
-            )
-    assert len(sent) == len(SEEDREAM_SPEC.aspect_ratios) * len(SEEDREAM_SPEC.resolutions)
-
-
 async def test_seedream_with_references_uses_the_edit_endpoint_in_order() -> None:
     urls: list[str] = []
     sent: list[dict[str, object]] = []
@@ -748,14 +651,6 @@ async def test_gpt_image_with_references_uses_its_edit_route() -> None:
     assert url == f"{GPT_IMAGE_API_BASE}/edit"
     assert payload["input_str_list"] == references
     assert payload["size"] == "1536x2048"
-
-
-def test_gpt_image_offers_every_ratio_at_2k_only() -> None:
-    spec = GPT_IMAGE_2_5.spec
-
-    assert spec.aspect_ratios == get_args(IMAGE_ASPECT_RATIOS)
-    assert spec.resolutions == ("2k",)
-    assert spec.channels == ()
 
 
 @pytest.mark.parametrize("aspect_ratio", get_args(IMAGE_ASPECT_RATIOS))

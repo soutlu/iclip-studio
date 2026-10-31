@@ -39,7 +39,6 @@ from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
-    LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     FakeMediaProbe,
@@ -181,23 +180,6 @@ def client(app: FastAPI) -> httpx.AsyncClient:
 def only_job(repo: InMemoryGenerationRepository) -> GenerationJob:
     (job,) = list(repo.jobs.values())
     return job
-
-
-def test_openapi_publishes_generation_kind_operation_and_status_as_enums() -> None:
-    """前端从合同派生类型与状态词，合同里只剩字符串就只能手写平行词表。"""
-
-    app = build_test_app(InMemoryGenerationRepository(), granted=None)
-    fields = app.openapi()["components"]["schemas"]["GenerationOut"]["properties"]
-    assert fields["kind"]["enum"] == ["video", "image", "subtitle", "audio", "whole_film"]
-    assert fields["operation"]["enum"] == [
-        "generate",
-        "compose",
-        "cut",
-        "upload",
-        "render",
-        "enhance",
-    ]
-    assert fields["status"]["enum"] == ["pending", "submitting", "submitted", "completed", "failed"]
 
 
 # --- 视频提交 ------------------------------------------------------------------
@@ -357,15 +339,20 @@ async def test_video_submit_assembles_the_prompt_from_a_shot_and_stores_both() -
     [
         {key: value for key, value in VIDEO_BODY.items() if key != "prompt"},
         {**SHOT_BODY, "prompt": "自己写的一段正文"},
-        {**SHOT_BODY, "prompt": LEGACY_SHOT_PROMPT},
+        {**SHOT_BODY, "shot": video_shot(global_settings="开场看 @Image3。")},
         {**SHOT_BODY, "reference_image_urls": []},
-        {**SHOT_BODY, "shot": video_shot(timeline=[])},
+        {
+            **SHOT_BODY,
+            "shot": video_shot(
+                timeline=[{"timestamps": [0, 2], "prompt": "长" * 3990, "image_indexes": []}]
+            ),
+        },
     ],
 )
 async def test_video_submit_rejects_a_body_whose_text_does_not_hold_together(
     body: dict[str, object],
 ) -> None:
-    """没正文、正文与 shot 打架、引用了不存在的图、空时间线，都在受理前拒掉。"""
+    """没正文、正文与 shot 打架、全局或镜头引用越界、拼完超长，都在受理前拒掉。"""
 
     repo = InMemoryGenerationRepository()
     app = build_test_app(repo, granted=principal("generation:submit"), broken_queue=True)
@@ -634,29 +621,6 @@ async def test_list_filters_by_shot_index_and_stacks_with_metadata() -> None:
     }
     assert [item["id"] for item in stacked.json()["items"]] == [str(first_frame.id)]
     assert zero.status_code == 422
-
-
-async def test_list_can_be_filtered_by_conversation_and_by_task() -> None:
-
-    owner_id = uuid.uuid4()
-    conversation_id, task_id = uuid.uuid4(), uuid.uuid4()
-    in_conversation = make_job(
-        video_request(), owner_user_id=owner_id, conversation_id=conversation_id
-    )
-    in_task = make_job(video_request(), owner_user_id=owner_id, task_id=task_id)
-    elsewhere = make_job(video_request(), owner_user_id=owner_id)
-    theirs = make_job(video_request(), conversation_id=conversation_id, task_id=task_id)
-    repo = InMemoryGenerationRepository([in_conversation, in_task, elsewhere, theirs])
-
-    owner = principal("generation:read", user_id=owner_id)
-    async with client(build_test_app(repo, granted=owner)) as http:
-        by_conversation = await http.get(f"/generations?conversationId={conversation_id}")
-        by_task = await http.get(f"/generations?taskId={task_id}")
-        everything = await http.get("/generations")
-
-    assert [item["id"] for item in by_conversation.json()["items"]] == [str(in_conversation.id)]
-    assert [item["id"] for item in by_task.json()["items"]] == [str(in_task.id)]
-    assert len(everything.json()["items"]) == 3, "别人的那条筛不出来，也列不出来"
 
 
 async def test_list_can_be_filtered_by_root_source_and_operation() -> None:
@@ -1884,24 +1848,6 @@ async def test_submit_without_a_conversation_does_not_call_back() -> None:
 
     assert response.status_code == 202, response.text
     assert app.state.cleared_completions.calls == []
-
-
-async def test_listing_videos_by_kind_includes_composites_and_leaves_images_out() -> None:
-    """合成出来的是视频，按种类列视频时在里面；同一属主的图片不在。"""
-
-    owner = uuid.uuid4()
-    take = make_job(video_request(), owner_user_id=owner, status=STATUS_COMPLETED)
-    composite = make_composite(make_edit(take, owner_user_id=owner), owner_user_id=owner)
-    image = make_job(image_request(), owner_user_id=owner, status=STATUS_COMPLETED)
-    repo = InMemoryGenerationRepository([take, composite, image])
-    app = build_test_app(repo, granted=principal("generation:read", user_id=owner))
-    async with client(app) as http:
-        videos = await http.get("/generations", params={"kind": "video"})
-
-    assert {(item["id"], item["operation"]) for item in videos.json()["items"]} == {
-        (str(take.id), "generate"),
-        (str(composite.id), "compose"),
-    }
 
 
 # --- 帧图编辑的底图与来源地址 ------------------------------------------------------

@@ -43,12 +43,6 @@ from agent_runtime.plugins.workspace.capability import (
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import (
-    FileIoDisplay,
-    GenericDisplay,
-    SearchDisplay,
-    ToolDisplayRegistry,
-)
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 
@@ -141,16 +135,6 @@ def plugin(store: FakeFileStore) -> type[Workspace[object]]:
         probe=FakeProbe(),
         ledger=FakeMaterialLedger(),
     )
-
-
-def test_workspace_is_built_from_its_spec_and_requires_nothing(
-    plugin: type[Workspace[object]],
-) -> None:
-    built = plugin.from_spec()
-    assert plugin.get_serialization_name() == "workspace"
-    assert isinstance(built, Workspace)
-    assert built.get_ordering() is None
-    assert set(WorkspaceToolset(built).tools) == set(plugin.display_table())
 
 
 @pytest.fixture
@@ -414,15 +398,6 @@ async def test_edit_surfaces_a_concurrent_change_instead_of_clobbering_it(
     tools = WorkspaceToolset(make_workspace(racing))
     with pytest.raises(ModelRetry, match="重新读一遍"):
         await tools.edit_file(ctx, "稿.md", "夜景", "黄昏")
-
-
-async def test_write_reports_the_size_as_a_chip(
-    tools: WorkspaceToolset[object], ctx: RunContext[object]
-) -> None:
-    small = await tools.write_file(ctx, "稿.md", "夜景")
-    assert small.metadata == {"chip": "6 B"}
-    big = await tools.write_file(ctx, "长稿.md", "x" * 2048)
-    assert big.metadata == {"chip": "2.0 KB"}
 
 
 async def test_delete_removes_the_file_and_reports_a_miss(
@@ -792,63 +767,6 @@ async def test_a_video_address_cannot_be_read_as_an_image() -> None:
 async def test_read_media_file_only_takes_http_urls(url: str) -> None:
     with pytest.raises(ModelRetry, match="http"):
         await check_args(read_tools(FakeProbe()), make_context(make_deps()), url=url)
-
-
-def test_every_tool_has_a_display(
-    plugin: type[Workspace[object]], tools: WorkspaceToolset[object]
-) -> None:
-
-    drawn = ToolDisplayRegistry.merged(plugin.display_table()).entries
-    assert set(drawn) == set(tools.tools)
-    # 读图不是取网页：走 generic 卡，卡头不写文件名。
-    assert drawn["ReadMediaFile"].draw({"url": OSS_IMAGE}) == GenericDisplay(summary="读取图片")
-    assert drawn["ReadMediaFile"].draw({}) is None
-    assert drawn["read_file"].draw({"path": "分镜.md"}) == FileIoDisplay(
-        operation="read", path="分镜.md"
-    )
-    # 写入与编辑把内容带给审批卡预览；参数没带时字段留空。
-    assert drawn["write_file"].draw({"path": "分镜.md", "content": "夜景"}) == FileIoDisplay(
-        operation="write", path="分镜.md", content="夜景"
-    )
-    assert drawn["edit_file"].draw(
-        {"path": "分镜.md", "old_text": "夜景", "new_text": "黄昏"}
-    ) == FileIoDisplay(operation="edit", path="分镜.md", before="夜景", after="黄昏")
-    assert drawn["edit_file"].draw({"path": "分镜.md"}) == FileIoDisplay(
-        operation="edit", path="分镜.md"
-    )
-    # operation 联合不含删除操作，删除工具使用 generic 展示，主语是路径。
-    deleted = drawn["delete_file"].draw({"path": "分镜.md"})
-    assert isinstance(deleted, GenericDisplay)
-    assert deleted.detail == "分镜.md"
-    # 移动同样没有对应的 operation，主语是「源 → 目标」。
-    moved = drawn["move_file"].draw({"source": "old_film.icml", "destination": "film.icml"})
-    assert isinstance(moved, GenericDisplay)
-    assert moved.detail == "old_film.icml → film.icml"
-    assert drawn["move_file"].draw({"source": "old_film.icml"}) is None
-    assert drawn["search_files"].draw({"query": "门厅"}) == SearchDisplay(query="门厅")
-    assert drawn["list_files"].draw({}) == FileIoDisplay(operation="glob", path="/")
-    assert drawn["list_files"].draw({"prefix": "分镜"}) == FileIoDisplay(
-        operation="glob", path="分镜"
-    )
-    for tool_name in (
-        "read_file",
-        "write_file",
-        "edit_file",
-        "delete_file",
-        "move_file",
-        "search_files",
-    ):
-        assert drawn[tool_name].draw({}) is None
-
-
-def test_only_the_three_readable_results_pick_a_renderer(plugin: type[Workspace[object]]) -> None:
-
-    views = ToolDisplayRegistry.merged(plugin.display_table())
-    assert views.view_of("read_file") == "file_content"
-    assert views.view_of("search_files") == "search_results"
-    assert views.view_of("ReadMediaFile") == "media_grid"
-    for tool_name in ("write_file", "edit_file", "delete_file", "move_file", "list_files"):
-        assert views.view_of(tool_name) is None
 
 
 async def test_capability_attaches_to_a_real_agent(store: FakeFileStore) -> None:

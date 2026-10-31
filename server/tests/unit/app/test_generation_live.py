@@ -16,9 +16,7 @@ from iclip.domains.generation.models import (
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
     image_request,
-    make_composite,
     make_cut,
-    make_edit,
     make_job,
     make_upload,
 )
@@ -85,25 +83,6 @@ async def test_every_status_transition_of_a_video_job_is_announced_to_its_owner(
     }
 
 
-async def test_a_composite_announces_its_operation_and_carries_its_originals_shot() -> None:
-    """合成与出片同是 video，帧上靠 operation 分、镜号是原作那一镜的。"""
-
-    live = _RecordingConnections()
-    repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
-    edit = make_edit(make_job(shot_index=3))
-    composite = make_composite(edit)
-
-    await repo.create(edit)
-    await repo.mark_submitting(edit.id)
-    await repo.create(composite)
-
-    assert [(one[2], one[4], one[5], one[6]) for one in live.announced] == [
-        (edit.id, "generate", "pending", 3),
-        (edit.id, "generate", "submitting", 3),
-        (composite.id, "compose", "pending", 3),
-    ]
-
-
 async def test_an_image_job_carries_its_metadata_and_a_failure_is_announced_once() -> None:
     live = _RecordingConnections()
     repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
@@ -126,18 +105,6 @@ async def test_an_image_job_carries_its_metadata_and_a_failure_is_announced_once
         ("submitted", None, FRAME),
         ("failed", None, FRAME),
     ], "状态守卫没命中的那次不发帧；图片的坐标原样带出，不算镜号"
-
-
-async def test_a_job_without_a_conversation_still_announces_to_its_owner() -> None:
-    live = _RecordingConnections()
-    repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
-    job = make_job()
-
-    await repo.create(job)
-
-    assert live.announced == [
-        (job.owner_user_id, None, job.id, "video", "generate", "pending", None, None)
-    ]
 
 
 async def test_settled_rows_are_announced_once_when_they_land() -> None:

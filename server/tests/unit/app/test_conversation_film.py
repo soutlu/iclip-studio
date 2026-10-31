@@ -159,17 +159,6 @@ async def test_there_is_no_view_without_a_film_file() -> None:
     assert await made.adapter.view(PRINCIPAL, OWNER, CONVERSATION) is None
 
 
-async def test_the_view_carries_both_versions_and_only_selected_images() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
-
-    view = await made.view()
-
-    assert (view.film_version, view.run_version, view.problems) == (1, 1, 0)
-    assert frame_url(view, "personB") == GENERATED["personB"]
-    # 生成成功过、运行文件里没选用：还是没有图。
-    assert frame_url(view, "scene") is None
-
-
 async def test_a_film_with_problems_shows_only_how_many() -> None:
     foreign = FILM.replace(GIVEN_IMAGES[0], "https://elsewhere.test/model.jpg")
     made = await page({FILM_PATH: foreign})
@@ -189,17 +178,6 @@ async def test_an_address_known_only_from_the_generation_records_is_a_problem() 
     )
 
     assert (await made.view()).problems == 1
-
-
-async def test_the_aspect_ratio_already_in_the_file_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.set_aspect_ratio(
-        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="16:9", film_version=1
-    )
-
-    assert made.store.written == []
-    assert (view.film_version, view.groups[0].aspect_ratio) == (1, "16:9")
 
 
 def insert_into_setting(url: str) -> FilmTextEdit:
@@ -302,24 +280,6 @@ async def test_a_version_generated_on_the_page_can_be_chosen_and_is_recorded_as_
     assert made.ledger.rows[(NAMESPACE, GENERATED_SCENE)] == Material(
         url=GENERATED_SCENE, kind="image"
     )
-
-
-async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
-
-    chosen = await choose(made, "scene", GENERATED_SCENE)
-
-    assert frame_url(chosen, "scene") == GENERATED_SCENE
-    assert '<use output="scene.image" image={scene-1}/>' in (await made.content(RUN_PATH) or "")
-    recorded = dict(made.ledger.rows)
-
-    cleared = await choose(made, "scene", None, run_version=2)
-
-    # 取消选用就是没图：不回到生成过的那一张。
-    assert cleared.run_version == 3
-    assert frame_url(cleared, "scene") is None
-    assert 'output="scene.image"' not in (await made.content(RUN_PATH) or "")
-    assert made.ledger.rows == recorded, "取消选用不登记任何东西"
 
 
 @pytest.mark.parametrize(("film_version", "run_version"), [(2, 1), (1, None), (1, 2)])

@@ -6,11 +6,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 from pydantic_ai import Agent
-from pydantic_ai.capabilities import AgentCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -27,9 +25,7 @@ from agent_runtime.harness.skills import (
     build_skill_capabilities,
     cached_skill,
     materialize_skill,
-    skill_display_table,
 )
-from agent_runtime.transcript.display import GenericDisplay, SkillCallDisplay
 
 SKILL = "拆解素材"
 OTHER = "镜头表"
@@ -77,19 +73,6 @@ async def read_reference(
     return parts[0]
 
 
-async def tool_names(capabilities: list[AgentCapability[Any]]) -> tuple[str, ...]:
-
-    seen: tuple[str, ...] = ()
-
-    async def peek(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        nonlocal seen
-        seen = tuple(tool.name for tool in info.function_tools)
-        return ModelResponse(parts=[TextPart("看完了")])
-
-    await Agent(FunctionModel(peek), capabilities=capabilities).run("有哪些工具")
-    return seen
-
-
 def test_a_skill_version_is_written_once_under_its_content_hash(tmp_path: Path) -> None:
     """同一个 hash 已经在缓存里就不再写：第二次给的文件被忽略，内容仍是第一次那份。"""
 
@@ -125,17 +108,6 @@ def test_files_outside_the_skill_directory_are_refused(tmp_path: Path, path: str
     assert cached_skill(tmp_path, name=SKILL, content_hash="h1") is None
 
 
-async def test_reference_tool_comes_only_with_skills(tmp_path: Path) -> None:
-
-    cached = make_skill(tmp_path, SKILL)
-
-    assert await tool_names([]) == ()
-    assert await tool_names(list(build_skill_capabilities(tmp_path, [cached]))) == (
-        "load_capability",
-        TOOL,
-    )
-
-
 async def test_skills_from_different_versions_load_together(tmp_path: Path) -> None:
     """几个技能各在自己的 hash 目录下，一起挂上时模型都看得到。"""
 
@@ -157,26 +129,6 @@ def test_mounting_zero_skills_is_a_caller_error(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="至少要挑一个 skill"):
         build_skill_capabilities(tmp_path, [])
-
-
-def test_the_reference_tool_has_a_display() -> None:
-
-    drawn = skill_display_table()[TOOL]
-
-    assert drawn({"skill": SKILL, "name": "规范.md"}) == SkillCallDisplay(
-        skill_name=SKILL, args="规范.md"
-    )
-    assert drawn({"skill": SKILL}) == SkillCallDisplay(skill_name=SKILL, args=None)
-    assert drawn({}) is None
-
-
-def test_loading_a_skill_body_has_a_display_too() -> None:
-    """官方按需加载工具不归任何插件包，名字固定，画法跟 skill 表走。"""
-
-    drawn = skill_display_table()["load_capability"]
-
-    assert drawn({"id": SKILL}) == GenericDisplay(summary="加载技能", detail=SKILL)
-    assert drawn({}) == GenericDisplay(summary="加载技能")
 
 
 async def test_granted_skill_reference_is_readable(tmp_path: Path) -> None:

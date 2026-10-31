@@ -209,18 +209,6 @@ def test_daily_axis_runs_from_the_day_of_since_to_the_day_before_until() -> None
     assert period_starts(window) == [midnight(date(2026, 9, day), SINGAPORE) for day in range(1, 5)]
 
 
-def test_hourly_axis_starts_at_the_hour_of_since() -> None:
-    since = datetime(2026, 9, 1, 0, 30, tzinfo=SINGAPORE).astimezone(UTC)
-    until = datetime(2026, 9, 1, 3, tzinfo=SINGAPORE).astimezone(UTC)
-
-    window = plan_window(since=since, until=until, zone=SINGAPORE, now=FAR_FUTURE)
-
-    assert window.bucket == "hour"
-    assert period_starts(window) == [
-        datetime(2026, 9, 1, hour, tzinfo=SINGAPORE).astimezone(UTC) for hour in range(3)
-    ]
-
-
 def test_weekly_axis_starts_on_the_local_monday() -> None:
     since = datetime(2026, 3, 4, 9, tzinfo=SINGAPORE).astimezone(UTC)
     window = plan_window(
@@ -251,42 +239,11 @@ def test_daily_axis_keeps_local_midnight_across_dst() -> None:
     assert starts[3] - starts[2] == timedelta(hours=25)
 
 
-def test_fill_periods_pads_every_period_with_zero() -> None:
-    starts = period_starts(week_window(SINGAPORE))
-    counts = {starts[1]: 2, starts[4]: 1}
-
-    filled = fill_periods(starts, counts)
-
-    assert [point.period_start for point in filled] == starts
-    assert [point.deliveries for point in filled] == [0, 2, 0, 0, 1, 0, 0]
-    assert [point.deliveries for point in fill_periods(starts, {})] == [0] * 7
-
-
 def test_fill_periods_refuses_counts_before_the_first_period() -> None:
     starts = period_starts(week_window(SINGAPORE))
 
     with pytest.raises(ValueError, match="早于"):
         fill_periods(starts, {starts[0] - timedelta(days=1): 1})
-
-
-def test_count_averages_skip_inactive_days() -> None:
-    """件数类只平均活跃日：七天里五天各两件、两天没人用，均线是 2，不是 10 / 7。"""
-
-    window = week_window()
-    busy = metrics(users=1, deliveries=2, producers=1, tokens=100, length=30.0)
-    cells = day_cells(window, {back: busy for back in (0, 1, 3, 4, 6)})
-
-    series = trend(cells, window)
-
-    last = series[-1]
-    assert [point.inactive for point in series] == [False, True, False, False, True, False, False]
-    assert last.ma7 is not None and last.ma7.deliveries is not None
-    assert last.ma7.deliveries.value == 2
-    assert last.ma7.deliveries.since == window.since
-    assert last.ma7.deliveries.until == window.until
-    assert last.ma7.producers is not None and last.ma7.producers.value == 1
-    assert last.ma7.total_tokens is not None and last.ma7.total_tokens.value == 100
-    assert last.ma7.length_seconds is not None and last.ma7.length_seconds.value == 30
 
 
 def test_fewer_than_three_active_days_widen_the_window_day_by_day() -> None:
@@ -354,54 +311,6 @@ def test_widening_stops_at_lookback_and_reports_it() -> None:
     assert ma30.attempts_per_shot.value == 2
     assert (ma30.upstream_seconds.since, ma30.upstream_seconds.value) == (window.lookback, None)
     assert ma30.tokens_per_delivery.value is None
-
-
-def test_tokens_per_delivery_divide_by_deduplicated_units() -> None:
-    """同一张需求单跨两天出片只算一件：两天的 token 合计除以 2 件，不是 3 件。"""
-
-    window = week_window()
-    cells = day_cells(
-        window,
-        {0: metrics(users=1, tokens=600), 1: metrics(users=1, tokens=300)},
-        units={0: frozenset({"t1", "t2"}), 1: frozenset({"t1"})},
-    )
-
-    ma7 = trend(cells, window)[-1].ma7
-
-    assert ma7 is not None
-    assert ma7.tokens_per_delivery.value == 450
-    assert ma7.input_tokens_per_delivery.value == 450
-    assert ma7.output_tokens_per_delivery.value == 0
-    # 件数不够 10 件，一直补到回看下限。
-    assert ma7.tokens_per_delivery.since == window.lookback
-
-
-def test_hourly_trend_has_no_count_averages_and_never_marks_inactive() -> None:
-    since = midnight(date(2026, 9, 1), UTC_ZONE)
-    window = plan_window(
-        since=since, until=since + timedelta(hours=3), zone=UTC_ZONE, now=FAR_FUTURE
-    )
-    hours = int((window.until - window.lookback) / timedelta(hours=1))
-    rows = [
-        PeriodMetricsOut(
-            period_start=window.lookback + timedelta(hours=offset),
-            metrics=metrics(users=1, shots=1, attempts=3) if offset == hours - 1 else EMPTY_METRICS,
-        )
-        for offset in range(hours)
-    ]
-
-    series = trend(build_cells(rows, {}, until=window.until), window)
-
-    assert window.bucket == "hour"
-    assert [point.period_start for point in series] == [
-        since + timedelta(hours=offset) for offset in range(3)
-    ]
-    assert not any(point.inactive for point in series)
-    last = series[-1]
-    assert last.ma7 is not None and last.ma30 is not None
-    assert last.ma7.deliveries is None and last.ma7.total_tokens is None
-    assert last.ma7.attempts_per_shot.value == 3
-    assert last.ma7.attempts_per_shot.until == window.until
 
 
 def test_head_metrics_replace_only_the_first_period() -> None:

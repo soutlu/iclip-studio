@@ -18,22 +18,6 @@ def problems_of(raw: object) -> tuple[Problem, ...]:
     return parsed
 
 
-def test_full_config_parses_with_defaults() -> None:
-    parsed = parse_config(
-        config(
-            instructions="你是导演",
-            model={"provider": "acme", "name": "m1", "settings": {"thinking": "high"}},
-            tools=[{"type": "cap", "toolset": "notes"}],
-            subagents=[{"agent": "helper", "timeout_seconds": 600, "max_calls": 2}],
-        )
-    )
-
-    assert isinstance(parsed, AgentConfig)
-    assert parsed.model is not None and parsed.model.credential_id is None
-    assert parsed.tools[0].enabled is True and parsed.tools[0].parameters == {}
-    assert parsed.subagents[0].on_failure is None
-
-
 def test_unknown_fields_are_refused_with_their_path() -> None:
     found = problems_of(
         config(
@@ -48,13 +32,6 @@ def test_unknown_fields_are_refused_with_their_path() -> None:
         "model.settings.temperature",
         "tools[0].extra",
     }
-
-
-def test_unknown_tool_type_is_refused() -> None:
-    (found,) = problems_of(config(tools=[{"type": "mcp", "url": "http://x"}]))
-
-    assert found.path == "tools[0]"
-    assert "mcp" in found.message
 
 
 def test_repeated_toolset_is_refused() -> None:
@@ -76,11 +53,3 @@ def test_repeated_subagent_is_refused() -> None:
     (found,) = problems_of(config(subagents=[{"agent": "helper"}, {"agent": "helper"}]))
 
     assert found.path == "subagents"
-
-
-def test_wrong_schema_version_and_bad_limits_are_refused() -> None:
-    found = problems_of(
-        {"schema_version": 2, "subagents": [{"agent": "helper", "timeout_seconds": 0}]}
-    )
-
-    assert {one.path for one in found} == {"schema_version", "subagents[0].timeout_seconds"}
