@@ -1448,8 +1448,9 @@ test.describe('成片编辑器 · 画面上缩放、旋转与拖出画面', () =
     if (before === null) throw new Error('预览里没有文字条')
 
     await dragBy(page, name, 40, -30)
+    // 松手会提交草稿并换页，先记录还在拖动的画面位置。
+    const dragged = await placedInPreview(dialog, 'o1')
     await page.mouse.up()
-    const released = await placedInPreview(dialog, 'o1')
     await expect.poll(async () => (await readDraft(page))?.overlays[0]?.x ?? 0).not.toBe(0)
     const moved = (await readDraft(page))?.overlays[0]
     if (moved?.x === undefined || moved.y === undefined) throw new Error('文字条不见了')
@@ -1462,18 +1463,19 @@ test.describe('成片编辑器 · 画面上缩放、旋转与拖出画面', () =
       pivotX: PANEL_CENTER.x,
       pivotY: PANEL_CENTER.y,
     })
-    // 换上的新页面停在拖到的地方；松手时画面上已经在那里，换页前后同一个位置
+    // 换上的新页面停在拖到的地方；松手前画面上已经在那里，换页前后同一个位置
     await expect
       .poll(async () => (await placedInPreview(dialog, 'o1'))?.dataX)
       .toBe(String(moved.x))
+    await waitForPreview(dialog)
     const after = await placedInPreview(dialog, 'o1')
-    if (after === null || released === null) throw new Error('文字条不见了')
+    if (after === null || dragged === null) throw new Error('文字条不见了')
     expect(Math.abs(after.left - before.left - moved.x * after.scale)).toBeLessThanOrEqual(1)
     expect(Math.abs(after.top - before.top - moved.y * after.scale)).toBeLessThanOrEqual(1)
-    expect(Math.abs(released.left - after.left)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(released.top - after.top)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(dragged.left - after.left)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(dragged.top - after.top)).toBeLessThanOrEqual(0.5)
 
-    await waitForPreview(dialog)
+    await expect(selectionFrame(dialog)).toBeVisible()
     const frame = await boxOf(selectionFrame(dialog))
     await dragHandle(page, selectionFrame(dialog).locator('[data-handle="rotate"]'), (from) =>
       turnAround({ x: frame.cx, y: frame.cy }, from, 20),
@@ -1494,7 +1496,12 @@ test.describe('成片编辑器 · 画面上缩放、旋转与拖出画面', () =
     await page.mouse.up()
     await expect.poll(async () => (await readDraft(page))?.overlays[0]?.x ?? 0).toBeGreaterThan(0)
     // 文字条右边（不挪时在画布 96 像素处）挪到了 180 宽的画布外
-    expect(((await readDraft(page))?.overlays[0]?.x ?? 0) + 96).toBeGreaterThan(180)
+    const movedX = (await readDraft(page))?.overlays[0]?.x ?? 0
+    expect(movedX + 96).toBeGreaterThan(180)
+    // 持久化已完成时预览仍可能换页；等新位置画好，再取轮廓坐标并点击。
+    await expect.poll(async () => (await placedInPreview(dialog, 'o1'))?.dataX).toBe(String(movedX))
+    await waitForPreview(dialog)
+    await expect(selectionFrame(dialog)).toBeVisible()
     await expect
       .poll(async () => {
         const frame = await boxOf(selectionFrame(dialog))

@@ -40,5 +40,6 @@ export function ComponentHoverPreview({ srcdoc }: { srcdoc: string }) {
     }
   }, [srcdoc])
 
-  return <span aria-hidden className="wf-hover-slot" ref={hostRef} />
+  // 播放器的加载遮罩会在 shadow DOM 里重新启用指针；整个装饰子树都不能截走卡片的点击与拖动。
+  return <span aria-hidden className="wf-hover-slot" inert ref={hostRef} />
 }

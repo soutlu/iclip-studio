@@ -3,7 +3,7 @@ name: cache-warm
 permissions:
   contents: read
 
-# 只安装依赖、不跑检查，把 pnpm store、Playwright Chromium、中文字体与 uv 缓存存到 develop / main 上。
+# 只安装依赖、不跑检查，把 pnpm store、Playwright Chromium、中文字体、ffmpeg 安装包与 uv 缓存存到 develop / main 上。
 # 指向这两个分支的 PR 能恢复目标分支存下的缓存；PR 自己存的缓存只属于该 PR，别的 PR 用不到。
 # 不设路径过滤：缓存被淘汰后，下一次推送就会重建。
 on:
@@ -31,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-server
+      - uses: ./.github/actions/setup-ffmpeg
 
   runtime:
     runs-on: ubuntu-latest

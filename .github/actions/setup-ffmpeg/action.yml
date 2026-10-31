@@ -1,0 +1,36 @@
+name: setup-ffmpeg
+description: 缓存 Ubuntu 官方安装包，离线安装并验证 ffmpeg 与 ffprobe。
+
+runs:
+  using: composite
+  steps:
+    - name: Identify runner image
+      id: image
+      shell: bash
+      run: |
+        printf 'key=%s-%s-%s\n' "${ImageOS:?}" "${ImageVersion:?}" "$(dpkg --print-architecture)" >> "$GITHUB_OUTPUT"
+    # 依赖包取决于镜像中已安装的系统库，不能跨镜像版本恢复。
+    - uses: actions/cache@v4
+      id: packages
+      with:
+        path: ~/.cache/ffmpeg-debs/*.deb
+        key: ffmpeg-debs-${{ steps.image.outputs.key }}-${{ hashFiles('.github/actions/setup-ffmpeg/action.yml') }}
+    - name: Download ffmpeg packages
+      if: steps.packages.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.cache/ffmpeg-debs"
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends --download-only \
+          -o Dir::Cache::archives="$HOME/.cache/ffmpeg-debs" ffmpeg
+    - name: Install cached ffmpeg packages
+      shell: bash
+      run: |
+        sudo apt-get install -y -qq --no-install-recommends --no-download \
+          -o Dir::Cache::archives="$HOME/.cache/ffmpeg-debs" \
+          "$HOME"/.cache/ffmpeg-debs/*.deb
+    - name: Verify media tools
+      shell: bash
+      run: |
+        ffmpeg -hide_banner -version
+        ffprobe -hide_banner -version
