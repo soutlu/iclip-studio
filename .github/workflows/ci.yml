@@ -250,9 +250,22 @@ jobs:
       matrix:
         include:
           - group: agents
-            tests: tests/integration_no_llm/agents
+            tests: >-
+              tests/integration_no_llm/agents
+              --ignore-glob=tests/integration_no_llm/agents/test_transcript_ws*.py
+              --ignore=tests/integration_no_llm/agents/test_transcript_relay.py
+              tests/integration_no_llm/agent_config
+              tests/integration_no_llm/runtime_calls
+              tests/integration_no_llm/runtime_internal
+              tests/integration_no_llm/test_job_queue_and_runner.py
+          - group: realtime
+            tests: >-
+              tests/integration_no_llm/agents/test_transcript_ws*.py
+              tests/integration_no_llm/agents/test_transcript_relay.py
           - group: conversations
-            tests: tests/integration_no_llm/conversations
+            tests: >-
+              tests/integration_no_llm/conversations
+              tests/integration_no_llm/collections
           - group: services
             tests: >-
               tests/integration_no_llm/runtime_service
@@ -263,17 +276,26 @@ jobs:
               tests/integration_no_llm/audit
               tests/integration_no_llm/library
               tests/integration_no_llm/references
+              tests/integration_no_llm/skills
+              tests/integration_no_llm/model_providers
           - group: application
             tests: >-
               tests/integration_no_llm
               --ignore=tests/integration_no_llm/agents
+              --ignore=tests/integration_no_llm/agent_config
+              --ignore=tests/integration_no_llm/runtime_calls
+              --ignore=tests/integration_no_llm/runtime_internal
+              --ignore=tests/integration_no_llm/test_job_queue_and_runner.py
               --ignore=tests/integration_no_llm/conversations
+              --ignore=tests/integration_no_llm/collections
               --ignore=tests/integration_no_llm/identity
               --ignore=tests/integration_no_llm/audit
               --ignore=tests/integration_no_llm/runtime_service
               --ignore=tests/integration_no_llm/generation
               --ignore=tests/integration_no_llm/library
               --ignore=tests/integration_no_llm/references
+              --ignore=tests/integration_no_llm/skills
+              --ignore=tests/integration_no_llm/model_providers
     defaults:
       run:
         working-directory: server
@@ -353,7 +375,7 @@ jobs:
         run: pnpm test --shard=${{ matrix.shard }}/4
 
   web_e2e:
-    name: web-e2e (${{ matrix.shard }}/5)
+    name: web-e2e (${{ matrix.shard }}/6)
     needs: scope
     if: needs.scope.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -361,7 +383,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: web
@@ -372,7 +394,7 @@ jobs:
           playwright: 'true'
       # 每片自行构建 mock 并启动 preview；生产构建由 web-build 独立验证。
       - name: Run end-to-end tests
-        run: pnpm test:e2e --shard=${{ matrix.shard }}/5
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/6
       - name: Upload Playwright traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -511,11 +533,11 @@ jobs:
             printf '| video-plugins-unit | %s | %s |\n' "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_UNIT_RESULT"
             printf '| server-static | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT"
             printf '| server-unit | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT"
-            printf '| server-integration（5 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
+            printf '| server-integration（6 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
             printf '| web-static | %s | %s |\n' "$WEB_REQUIRED" "$WEB_STATIC_RESULT"
             printf '| web-build | %s | %s |\n' "$WEB_REQUIRED" "$WEB_BUILD_RESULT"
             printf '| web-unit（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_UNIT_RESULT"
-            printf '| web-e2e（5 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_E2E_RESULT"
+            printf '| web-e2e（6 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_E2E_RESULT"
             printf '| web-format | %s | %s |\n' "$WEB_FORMAT_REQUIRED" "$WEB_FORMAT_RESULT"
             printf '| render-static | %s | %s |\n' "$RENDER_REQUIRED" "$RENDER_STATIC_RESULT"
             printf '| render-unit | %s | %s |\n' "$RENDER_REQUIRED" "$RENDER_UNIT_RESULT"
