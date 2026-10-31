@@ -23,7 +23,6 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_app
 from iclip.app.conversation_same_style import SAME_STYLE
 from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
@@ -55,6 +54,7 @@ from tests.helpers.media import synthesize_video
 from tests.helpers.media_server import serving
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
+from tests.helpers.runtime_backed import build_backed_app
 
 URL = "/conversations"
 AGENT_ID = "storyboard"
@@ -528,7 +528,7 @@ async def media_app(
     )
     engine = build_engine(migrated_pg)
     try:
-        built = build_app(
+        built = build_backed_app(
             config,
             engine=engine,
             object_store=MemoryObjectStore(),

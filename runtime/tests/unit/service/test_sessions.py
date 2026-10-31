@@ -304,7 +304,7 @@ FILES = (("film.icml", "old_film.icml"), ("treatment.md", "treatment.md"))
 REQUIRED = frozenset({"film.icml"})
 
 
-async def copy_files(runtime: Runtime) -> bool:
+async def copy_files(runtime: Runtime, *, require_any: frozenset[str] = REQUIRED) -> bool:
     return await runtime.service().copy_files(
         app_id=APP,
         source_id=SOURCE,
@@ -312,7 +312,7 @@ async def copy_files(runtime: Runtime) -> bool:
         target_id=TARGET,
         target_user=TARGET_USER,
         files=FILES,
-        require_any=REQUIRED,
+        require_any=require_any,
     )
 
 
@@ -337,6 +337,17 @@ async def test_copy_files_without_any_required_file_copies_nothing() -> None:
 
     assert not await runtime.files.entries(TARGET_SPACE)
     assert not runtime.ledger.urls(TARGET_SPACE)
+
+
+async def test_copy_files_without_a_precondition_copies_what_the_source_has() -> None:
+    runtime = Runtime()
+    await runtime.seed_source({"treatment.md": "方案"})
+
+    assert await copy_files(runtime, require_any=frozenset())
+
+    copied = await runtime.target_files()
+    assert {path: stored.content for path, stored in copied.items()} == {"treatment.md": "方案"}
+    assert runtime.ledger.urls(TARGET_SPACE) == {REF.url}
 
 
 async def test_copies_write_only_through_the_given_store_without_a_version_check() -> None:

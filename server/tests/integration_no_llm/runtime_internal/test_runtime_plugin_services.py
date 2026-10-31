@@ -45,6 +45,7 @@ from iclip.app.plugin_registry import GenerationsAdapter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.app.runtime_internal import (
     RuntimePluginServices,
+    TurnNaming,
     create_runtime_internal_router,
 )
 from iclip.app.shot_media import GridCutsAdapter
@@ -81,11 +82,13 @@ async def _no_video(_conversation_id: uuid.UUID) -> Literal["none", "queued", "r
 def internal_app(plugins: RuntimePluginServices) -> FastAPI:
     app = FastAPI()
     install_error_handlers(app)
+    conversations = cast("ConversationService", object())
     app.include_router(
         create_runtime_internal_router(
             token=TOKEN,
             user_principal=FakePrincipals(OWNER),
-            conversations=cast("ConversationService", object()),
+            conversations=conversations,
+            naming=TurnNaming(conversations),
             video_generation_of=_no_video,
             plugins=plugins,
         )

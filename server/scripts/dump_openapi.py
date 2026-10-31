@@ -32,8 +32,10 @@ PLACEHOLDER_ENV = {
     "OSS_PUBLIC_URL_BASE": "https://placeholder.invalid/public",
     "PRODUCT_CATALOG_DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
     "QWEN_API_KEY": "openapi-dump-placeholder",
+    "RUNTIME_APP_KEY": "openapi-dump-placeholder-runtime-key-0123456789",
     # 内部接口挂上也不进合同（include_in_schema=False），导出照样逐字相同。
     "RUNTIME_INTERNAL_TOKEN": "openapi-dump-placeholder-internal-0123456789",
+    "RUNTIME_URL": "https://placeholder.invalid/runtime",
     "SSO_BASE_URL": "https://placeholder.invalid/sso",
     "SSO_REDIRECT_URL": "https://placeholder.invalid/auth/sso/callback",
     "VIDEO_API_KEY": "openapi-dump-placeholder",

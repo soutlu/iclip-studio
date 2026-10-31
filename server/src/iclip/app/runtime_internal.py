@@ -7,6 +7,7 @@ contract/conventions.md §21。回调的请求体是运行时 ``agent_runtime.ho
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
@@ -108,18 +109,55 @@ def _bearer_check(token: str) -> Callable[[Request], Awaitable[None]]:
     return check
 
 
+class TurnNaming:
+    """轮次开始回调交来的自动起名：每次一个后台任务，与这一轮的运行并行，同进程内运行驱动的
+    ``on_turn_started``。
+
+    起名要等运行时起标题（调模型），回调不等它；任务记在这里，关停时 ``aclose`` 取消没跑完的并等它们收尾。
+    对话已删记一条 info，其余失败记一条带堆栈的错误日志，都不往外抛。"""
+
+    def __init__(self, conversations: ConversationService) -> None:
+        self._conversations = conversations
+        self._tasks: set[asyncio.Task[None]] = set()
+
+    def start(self, conversation_id: uuid.UUID, text: str) -> None:
+        task = asyncio.create_task(self._name(conversation_id, text))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _name(self, conversation_id: uuid.UUID, text: str) -> None:
+        try:
+            await self._conversations.name_at_turn_start(conversation_id, text)
+        except NotFound:
+            _logger.info("对话已删除，跳过自动起名", conversation_id=str(conversation_id))
+        except Exception:
+            _logger.exception("自动起名失败", conversation_id=str(conversation_id))
+
+    async def wait(self) -> None:
+        """等此刻手上的起名都跑完；测试经它确认后台起名做没做。"""
+
+        await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
+
+    async def aclose(self) -> None:
+        pending = tuple(self._tasks)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 def create_runtime_internal_router(
     *,
     token: str,
     user_principal: ResolvePrincipal,
     conversations: ConversationService,
+    naming: TurnNaming,
     video_generation_of: VideoGenerationOf,
     plugins: RuntimePluginServices,
 ) -> APIRouter:
     """建内部接口的路由，每条都要 ``Authorization: Bearer <token>``（定长比较），缺了或不对答 401。
 
-    开跑检查经 ``user_principal`` 重建属主主体；``video_generation_of`` 补上运行开始回调里没有的
-    视频出片阶段。"""
+    开跑检查经 ``user_principal`` 重建属主主体；轮次开始交给 ``naming`` 在后台起名；
+    ``video_generation_of`` 补上运行开始回调里没有的视频出片阶段。"""
 
     router = APIRouter(
         prefix=RUNTIME_INTERNAL_PREFIX,
@@ -154,12 +192,9 @@ def create_runtime_internal_router(
 
     @router.post("/hooks/turn-started", status_code=204)
     async def turn_started(payload: TurnStartedPayload) -> Response:
-        """按这一轮的用户文本起标题，等它起完再答；对话已删照样 204。"""
+        """按这一轮的用户文本在后台起标题，不等它起完就答 204。"""
 
-        try:
-            await conversations.name_at_turn_start(payload.session_id, payload.text)
-        except NotFound:
-            _logger.info("对话已删除，跳过自动起名", conversation_id=str(payload.session_id))
+        naming.start(payload.session_id, payload.text)
         return Response(status_code=204)
 
     @router.get("/plugins/image-models")
@@ -239,6 +274,7 @@ __all__ = [
     "RUNTIME_INTERNAL_PREFIX",
     "ResolvePrincipal",
     "RuntimePluginServices",
+    "TurnNaming",
     "VideoGenerationOf",
     "create_runtime_internal_router",
 ]

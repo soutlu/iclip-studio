@@ -19,7 +19,6 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
@@ -56,6 +55,7 @@ from tests.helpers.generation import (
 )
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.render import StubRender
+from tests.helpers.runtime_backed import build_backed_app
 from tests.helpers.whole_film import component_clip, draft_document, video_clip
 
 URL = "/conversations"
@@ -92,7 +92,7 @@ async def _app(
         monkeypatch.delenv("WHOLE_FILM_RENDER_URL", raising=False)
     else:
         monkeypatch.setenv("WHOLE_FILM_RENDER_URL", render_url)
-    built = build_app(
+    built = build_backed_app(
         config_with_media(),
         engine=engine,
         queue_connector=InMemoryConnector(),

@@ -17,7 +17,6 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client
@@ -33,6 +32,7 @@ from tests.helpers.hit_cases import (
 from tests.helpers.pg import reset_database
 from tests.helpers.references import STUDIO_ENVS, FakeArk, ark_pipeline, config_with_studio
 from tests.helpers.references import plant_user as plant_named_user
+from tests.helpers.runtime_backed import build_backed_app
 from tests.helpers.tagging import tag_id
 
 PASSWORD = "password-123"
@@ -61,7 +61,7 @@ async def studio_app(
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
     try:
-        yield build_app(
+        yield build_backed_app(
             config_with_studio(),
             engine=engine,
             object_store=MemoryObjectStore(),

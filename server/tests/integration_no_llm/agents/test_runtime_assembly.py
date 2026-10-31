@@ -56,6 +56,7 @@ from tests.helpers.runtime import (
     new_conversation_id,
     submit_text,
 )
+from tests.helpers.runtime_backed import build_backed_app
 
 OTHER_MODEL = "other-model"
 TITLE_MODEL = "title-model"
@@ -342,7 +343,7 @@ async def test_a_plugin_removed_from_the_code_makes_its_versions_unavailable(
             return registry
 
         monkeypatch.setattr(bootstrap, "build_plugin_registry", only)
-        return bootstrap.build_app(
+        return build_backed_app(
             make_runtime_config(skill_cache_dir=tmp_path / "skills"),
             engine=engine,
             build_model=model_builder(models),

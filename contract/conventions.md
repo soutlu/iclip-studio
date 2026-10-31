@@ -747,7 +747,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 |---|---|---|---|
 | `POST /internal/runtime/hooks/gate` | `GatePayload` | `204` | 属主不存在 `404`，已停用 `403` |
 | `POST /internal/runtime/hooks/run-started` | `RunStartedPayload` | `204`：对话行记下 `lastRunId`、刷新 `updatedAt`、抹掉收尾标记，再广播 `event.session.updated`（§5「全局帧」）；行里的 `activity` 用请求体那份，`videoGeneration` 由后端补上 | 对话不存在或已删 `404` |
-| `POST /internal/runtime/hooks/turn-started` | `TurnStartedPayload` | `204`：对话还是默认标题就按 `text` 起一个，起完才答；对话已删照样 `204` | — |
+| `POST /internal/runtime/hooks/turn-started` | `TurnStartedPayload` | `204`，不等起名：对话还是默认标题就在后台按 `text` 起一个（经运行时的 `POST /v1/titles`），对话已删就不起；后端关停时没起完的取消 | — |
 
 - 运行开始的请求体只有会话 id，属主与 agent 取对话行自己的。
 

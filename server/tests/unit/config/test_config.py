@@ -42,6 +42,8 @@ MANIFEST = (
     "T_QWEN_KEY",
     "WHOLE_FILM_RENDER_URL",
     "RUNTIME_INTERNAL_TOKEN",
+    "RUNTIME_URL",
+    "RUNTIME_APP_KEY",
 )
 
 
@@ -71,6 +73,12 @@ def _core(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", DB_URL)
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
+    monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
+    monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_KEY)
+
+
+RUNTIME_URL = "http://runtime:7790"
+RUNTIME_KEY = "runtime-app-key-for-config-tests-0123"
 
 
 def test_valid_config_loads(tmp_path: Path) -> None:
@@ -224,6 +232,52 @@ def test_a_short_runtime_internal_token_fails_startup_without_echoing_it(
 
     assert "32" in str(caught.value)
     assert "too-short-internal" not in str(caught.value)
+
+
+def test_the_runtime_service_is_resolved_from_both_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL + "/")
+
+    resolved = resolve_settings(config).runtime_service
+
+    assert (resolved.url, resolved.app_key) == (RUNTIME_URL, RUNTIME_KEY)
+
+
+@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY"])
+def test_startup_fails_naming_a_missing_runtime_service_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(ValidationError, match=missing):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(
+    ("name", "written", "reason"),
+    [
+        ("RUNTIME_APP_KEY", "short-runtime-app-key", "32"),
+        ("RUNTIME_URL", "runtime-without-scheme:7790", "http"),
+    ],
+    ids=["short-key", "not-http"],
+)
+def test_a_malformed_runtime_service_variable_fails_startup_without_echoing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, written: str, reason: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.setenv(name, written)
+
+    with pytest.raises(ValidationError, match=name) as caught:
+        resolve_settings(config)
+
+    assert reason in str(caught.value)
+    assert written not in str(caught.value)
 
 
 def test_sso_off_when_env_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

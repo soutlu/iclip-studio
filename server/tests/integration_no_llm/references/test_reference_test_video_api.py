@@ -17,7 +17,6 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.domains.references.test_prompt import build_test_prompt
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
@@ -33,6 +32,7 @@ from tests.helpers.references import (
     config_with_studio_and_media,
     plant_reference,
 )
+from tests.helpers.runtime_backed import build_backed_app
 
 PASSWORD = "password-123"
 SUBMIT_GRANTS = ["generation:read", "generation:submit"]
@@ -86,7 +86,7 @@ async def media_app(
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
     try:
-        yield build_app(
+        yield build_backed_app(
             config_with_studio_and_media(),
             engine=engine,
             object_store=MemoryObjectStore(),

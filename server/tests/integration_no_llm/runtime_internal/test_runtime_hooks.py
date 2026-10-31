@@ -209,12 +209,14 @@ async def test_turn_started_names_the_conversation_once(
     body = {"session_id": conversation_id, "text": "给新款连衣裙做一条 15 秒的短视频"}
 
     first = await client.post("/internal/runtime/hooks/turn-started", json=body, headers=AUTHORIZED)
+    await app.state.turn_naming.wait()
     named = (await client.get(f"/conversations/{conversation_id}")).json()["conversation"]
     renamed = await client.patch(f"/conversations/{conversation_id}", json={"title": "我改的"})
     assert renamed.status_code == 200, renamed.text
     second = await client.post(
         "/internal/runtime/hooks/turn-started", json=body, headers=AUTHORIZED
     )
+    await app.state.turn_naming.wait()
     kept = (await client.get(f"/conversations/{conversation_id}")).json()["conversation"]
 
     assert (first.status_code, second.status_code) == (204, 204)

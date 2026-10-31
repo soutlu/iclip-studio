@@ -7,6 +7,7 @@ from typing import Literal
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
@@ -50,6 +51,8 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
+    monkeypatch.setenv("RUNTIME_URL", "http://runtime.test")
+    monkeypatch.setenv("RUNTIME_APP_KEY", "r" * 32)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.setenv("OSS_BUCKET", "iclip")
     monkeypatch.setenv("OSS_ENDPOINT", "https://oss.test")
@@ -112,6 +115,18 @@ async def test_without_media_generation_the_routes_are_absent(base_env: None) ->
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         assert (await client.post("/generations", json={})).status_code == 404
+
+
+@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY"])
+def test_startup_fails_without_the_runtime_service(
+    base_env: None, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    """开会话、首页名册、起标题、对话活动与配置页都经运行时服务，少了它的地址或密钥就起不来。"""
+
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(ValidationError, match=missing):
+        build_app(minimal_config(), engine=engine())
 
 
 def test_media_generation_without_ffmpeg_fails_at_startup(

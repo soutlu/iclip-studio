@@ -53,6 +53,10 @@ CREDENTIAL_ENCRYPTION_KEYS_ENV: Final = "CREDENTIAL_ENCRYPTION_KEYS"
 
 RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
 
+RUNTIME_URL_ENV: Final = "RUNTIME_URL"
+
+RUNTIME_APP_KEY_ENV: Final = "RUNTIME_APP_KEY"
+
 DEFAULT_SKILL_CACHE_DIRNAME: Final = "iclip-skills"
 """``agent_runs.skill_cache_dir`` 不写时，技能缓存放在系统临时目录下的这个子目录。"""
 
@@ -172,6 +176,30 @@ class RuntimeInternalEnv(EnvSettings):
     token: RequiredEnv = Field(validation_alias=RUNTIME_INTERNAL_TOKEN_ENV)
 
     @field_validator("token")
+    @classmethod
+    def _long_enough(cls, value: str) -> str:
+        if len(value) < _MIN_SECRET_LENGTH:
+            raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
+        return value
+
+
+class RuntimeServiceEnv(EnvSettings):
+    """运行时服务的地址与后端在它那里的应用密钥；密钥与运行时配置里应用 ``video`` 的 ``key_env`` 指向的
+    值相同。"""
+
+    url: RequiredEnv = Field(validation_alias=RUNTIME_URL_ENV)
+    """运行时服务的内网根地址（不含 ``/v1``），只给服务端用。"""
+    app_key: RequiredEnv = Field(validation_alias=RUNTIME_APP_KEY_ENV)
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            raise ValueError(f"{RUNTIME_URL_ENV} 必须是 http:// 或 https:// 地址")
+        return value.rstrip("/")
+
+    @field_validator("app_key")
     @classmethod
     def _long_enough(cls, value: str) -> str:
         if len(value) < _MIN_SECRET_LENGTH:
@@ -485,6 +513,12 @@ class ResolvedWholeFilmRender:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedRuntimeService:
+    url: str
+    app_key: str
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedAgentRuns:
     heartbeat_seconds: int
     lease_seconds: int
@@ -522,6 +556,8 @@ class ResolvedSettings:
     """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
     runtime_internal_token: str | None
     """运行时服务调内部接口带的令牌；为 None 时内部接口不挂。"""
+    runtime_service: ResolvedRuntimeService
+    """后端经它的 HTTP 接口调运行时服务；必填。"""
     compaction: ResolvedCompaction
     agent_runs: ResolvedAgentRuns
     log_level: str
@@ -702,6 +738,13 @@ def _resolve_whole_film_render(
     return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
 
 
+def _resolve_runtime_service() -> ResolvedRuntimeService:
+    """两个变量缺一个都启动失败：开会话、首页名册、起标题、对话活动与配置页的管理接口都经运行时服务。"""
+
+    env = _from_env(RuntimeServiceEnv)
+    return ResolvedRuntimeService(url=env.url, app_key=env.app_key)
+
+
 def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
     core = _from_env(CoreEnv)
 
@@ -748,6 +791,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             if _switched_on(RUNTIME_INTERNAL_TOKEN_ENV)
             else None
         ),
+        runtime_service=_resolve_runtime_service(),
         compaction=ResolvedCompaction(
             max_fraction=config.conversations.compaction.max_fraction,
             keep_messages=config.conversations.compaction.keep_messages,

@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
+import structlog
+from agent_runtime.client import RuntimeUnavailable
 from agent_runtime.errors import DomainError
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,10 +17,23 @@ from fastapi.responses import JSONResponse
 
 from iclip.platform.http import status_code_for, validation_error_detail
 
+_logger = structlog.stdlib.get_logger(__name__)
+
+RUNTIME_UNAVAILABLE_DETAIL: Final = "运行时服务暂时不可用，请稍后再试"
+
 
 def install_error_handlers(app: FastAPI) -> None:
-    """装上两个异常处理器（领域错误按分类映射状态码，请求校验失败一律 422），并把 OpenAPI
-    里的 422 改成同一个字符串信封。"""
+    """装上三个异常处理器（领域错误按分类映射状态码，请求校验失败一律 422，运行时服务答不上一律 503），
+    并把 OpenAPI 里的 422 改成同一个字符串信封。"""
+
+    @app.exception_handler(RuntimeUnavailable)
+    async def _runtime_unavailable_handler(
+        _request: Request, exc: RuntimeUnavailable
+    ) -> JSONResponse:
+        """原因只进日志，答复里只有一句固定的话；两边都没有应用密钥。"""
+
+        _logger.warning("运行时服务答不上", reason=exc.reason, status=exc.status)
+        return JSONResponse(status_code=503, content={"detail": RUNTIME_UNAVAILABLE_DETAIL})
 
     @app.exception_handler(DomainError)
     async def _domain_error_handler(_request: Request, exc: DomainError) -> JSONResponse:
@@ -64,4 +79,4 @@ def _openapi_with_string_validation_error(app: FastAPI) -> Callable[[], dict[str
     return openapi
 
 
-__all__ = ["install_error_handlers"]
+__all__ = ["RUNTIME_UNAVAILABLE_DETAIL", "install_error_handlers"]
