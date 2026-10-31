@@ -40,7 +40,7 @@ from agent_runtime.transcript.wire import (
     Unsubscribe,
 )
 from agent_runtime.transcript.wire import TranscriptPage as SessionTranscriptPage
-from fastapi import APIRouter, Depends, Path, Query, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 from pydantic import TypeAdapter, ValidationError
 
@@ -461,7 +461,7 @@ def create_transcript_router(
         before_turn: Annotated[str | None, Query()] = None,
         after_turn: Annotated[str | None, Query()] = None,
         page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-    ) -> Response:
+    ) -> TranscriptPage:
         """一页轮子。不给位置就是最新那几轮，往上翻给 ``before_turn``。
 
         ``agent_id`` 默认主 agent；给子代理的 id 就读它那条流，不属于这段对话的 id 是 404。
@@ -479,18 +479,13 @@ def create_transcript_router(
             after_turn=after_turn,
             page_size=page_size,
         )
-        # 一页可能有几百 KB：客户端库已经解析过一次，这里不再校验地贴上页头字段、直接答 JSON，FastAPI
-        # 也就不按 response_model 再校验一遍。序列化同它的默认：按别名、保留 null。
-        enveloped = TranscriptPage.model_construct(
+        return TranscriptPage(
             **dict(page),
             title=header.title,
             owner_user_id=str(header.owner_user_id),
             deleted_at=None if header.deleted_at is None else header.deleted_at.isoformat(),
             forked_from=None if header.forked_from is None else str(header.forked_from),
             fork_turn=header.fork_turn,
-        )
-        return Response(
-            content=enveloped.model_dump_json(by_alias=True), media_type="application/json"
         )
 
     @router.get("/transcript/ops", response_model=OpsCatchup)
