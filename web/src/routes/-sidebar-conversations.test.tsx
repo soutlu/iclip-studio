@@ -785,7 +785,8 @@ describe('SidebarConversations', () => {
     socket.deliver({
       ...sessionEnvelope(conversation?.id ?? ''),
       type: 'session.meta.updated',
-      payload: { session_id: conversation?.id ?? '', title: '夜景延时素材生成' },
+      session_id: conversation?.id ?? '',
+      payload: { title: '夜景延时素材生成' },
     })
 
     expect(await screen.findByText('夜景延时素材生成')).toBeVisible()
@@ -975,7 +976,6 @@ describe('SidebarConversations', () => {
       ...sessionEnvelope(created.id),
       type: 'event.session.deleted',
       session_id: created.id,
-      payload: { session_id: created.id },
     })
     await waitFor(() =>
       expect(screen.queryByRole('link', { name: '另一个窗口建的' })).not.toBeInTheDocument(),

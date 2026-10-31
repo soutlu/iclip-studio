@@ -16,7 +16,7 @@ export const MOCK_EVENT_EPOCH = 'mock-events'
 
 const mockEventSeqs = new Map<string, number>()
 
-/** 给这段对话的下一帧全局帧发号，返回信封上的属主与水位。 */
+/** 给这段对话的下一帧全局帧发号，返回信封上的属主、水位与出帧时刻。 */
 export const mockSessionEnvelope = (conversationId: string) => {
   const seq = (mockEventSeqs.get(conversationId) ?? 0) + 1
   mockEventSeqs.set(conversationId, seq)
@@ -24,6 +24,7 @@ export const mockSessionEnvelope = (conversationId: string) => {
     epoch: MOCK_EVENT_EPOCH,
     owner_user_id: mockConversationOwner(conversationId),
     seq,
+    timestamp: new Date().toISOString(),
   }
 }
 

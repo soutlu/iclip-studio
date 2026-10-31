@@ -22,6 +22,7 @@ from agent_runtime.live.frames import (
     Ack,
     FsChanged,
     FsChangeEntry,
+    FsChangesPayload,
     Ping,
     PingPayload,
     SessionActivity,
@@ -45,23 +46,33 @@ KEY = "app-key-0123456789-0123456789-abcdef"
 SESSION = "0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d"
 OWNER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
 
+AT = "2026-10-30T08:00:00+00:00"
+
 RESET = TranscriptResetFrame(
     session_id=SESSION,
+    timestamp=AT,
     stream_epoch="e1",
     payload=ResetPayload(agent_id="main", snapshot=TranscriptSnapshot(), seq=0),
 )
 OPS = TranscriptOpsFrame(
-    session_id=SESSION, stream_epoch="e1", payload=OpsPayload(agent_id="main", ops=(), seq=1)
+    session_id=SESSION,
+    timestamp=AT,
+    stream_epoch="e1",
+    payload=OpsPayload(agent_id="main", ops=(), seq=1),
 )
 ACTIVITY = SessionActivity(
     session_id=SESSION,
     owner_user_id=OWNER,
-    activity=SessionActivityOut(busy=True, pending_interaction="none"),
+    timestamp=AT,
+    payload=SessionActivityOut(busy=True, pending_interaction="none"),
+)
+IDLE = ACTIVITY.model_copy(
+    update={"payload": SessionActivityOut(busy=False, pending_interaction="none")}
 )
 CHANGED = FsChanged(
     session_id=SESSION,
-    owner_user_id=OWNER,
-    entries=(FsChangeEntry(path="notes.md", change="created"),),
+    timestamp=AT,
+    payload=FsChangesPayload(changes=(FsChangeEntry(path="notes.md", change="created"),)),
 )
 
 
@@ -141,11 +152,12 @@ def _subscribe() -> Subscribe:
 async def test_transcript_frames_parse_and_pings_are_answered(fake: FakeRuntime) -> None:
     fake.script = [
         Expect(),
-        Send(Ping(payload=PingPayload(nonce="n1"))),
+        Send(Ping(timestamp=AT, payload=PingPayload(nonce="n1"))),
         Expect(),
         Send(Ack(id="s1", payload=SubscribeAckPayload(accepted=(SESSION,)))),
         Send(RESET),
         Send(OPS),
+        Send(CHANGED),
         Expect(),
     ]
 
@@ -154,12 +166,13 @@ async def test_transcript_frames_parse_and_pings_are_answered(fake: FakeRuntime)
         ack = await channel.receive()
         reset = await channel.receive()
         ops = await channel.receive()
+        changed = await channel.receive()
         await channel.unsubscribe(
             Unsubscribe(id="u1", payload=UnsubscribePayload(session_id=SESSION))
         )
 
     assert ack == Ack(id="s1", payload=SubscribeAckPayload(accepted=(SESSION,)))
-    assert (reset, ops) == (RESET, OPS)
+    assert (reset, ops, changed) == (RESET, OPS, CHANGED)
     assert fake.authorization == [f"Bearer {KEY}"]
     assert fake.inbound == [
         {
@@ -241,9 +254,9 @@ async def test_events_arrive_in_order_with_pings_answered_until_the_close(
 ) -> None:
     fake.script = [
         Send(ACTIVITY),
-        Send(Ping(payload=PingPayload(nonce="n2"))),
+        Send(Ping(timestamp=AT, payload=PingPayload(nonce="n2"))),
         Expect(),
-        Send(CHANGED),
+        Send(IDLE),
         Close(1001),
     ]
     received: list[Any] = []
@@ -253,7 +266,7 @@ async def test_events_arrive_in_order_with_pings_answered_until_the_close(
             async for event in events:
                 received.append(event)
 
-    assert received == [ACTIVITY, CHANGED]
+    assert received == [ACTIVITY, IDLE]
     assert fake.inbound == [{"type": "pong", "payload": {"nonce": "n2"}}]
     assert raised.value.code == 1001
 

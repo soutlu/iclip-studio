@@ -54,8 +54,8 @@ export interface TranscriptConnectionOptions {
   now?: () => number
 }
 
-/** 全局帧单独校验，不修改 vendor 协议；放入 TranscriptMeta 会被其 schema 丢弃未知字段。 */
-const titleSchema = z.object({ session_id: z.string(), title: z.string() })
+/** 全局帧单独校验，不修改 vendor 协议；放入 TranscriptMeta 会被其 schema 丢弃未知字段。session_id 在信封上。 */
+const titleSchema = z.object({ title: z.string() })
 
 // session_id 位于信封；last_turn_reason 在运行时可能省略，结束时提供。
 const workChangedSchema = z.object({
@@ -85,15 +85,11 @@ const sessionEnvelopeSchema = z.object({
 })
 const generationEnvelopeSchema = sessionEnvelopeSchema.extend({ seq: z.int().optional() })
 
+/** 标题帧与删除帧：对话 id 在信封上；删除帧没有 payload。 */
+const conversationEnvelopeSchema = sessionEnvelopeSchema.extend({ session_id: z.string() })
+
 // 整行 ConversationOut 不省略空值，照生成的 schema 解析。
-const rowFrameSchema = sessionEnvelopeSchema.extend({
-  session_id: z.string(),
-  payload: zConversationOut,
-})
-const deletedFrameSchema = sessionEnvelopeSchema.extend({
-  session_id: z.string(),
-  payload: z.object({ session_id: z.string() }),
-})
+const rowFrameSchema = conversationEnvelopeSchema.extend({ payload: zConversationOut })
 
 type GenerationChange = z.infer<typeof generationChangedSchema>
 
@@ -103,10 +99,8 @@ const fsChangedSchema = z.object({
     z.object({
       path: z.string(),
       change: z.enum(['created', 'modified', 'deleted']),
-      kind: z.string(),
     }),
   ),
-  coalesced_window_ms: z.number(),
 })
 
 export type FsChange = z.infer<typeof fsChangedSchema>['changes'][number]
@@ -173,12 +167,12 @@ export interface ConnectionHealth {
 
 interface FsWatch {
   paths: readonly string[]
-  /** 目录订阅是否看整棵；空串路径是工作区根。 */
+  /** 目录监听是否看整棵；空串路径是工作区根。 */
   recursive: boolean
   handler: (changes: readonly FsChange[]) => void
 }
 
-/** 与服务端同一条匹配规则：文件要路径相同，目录看直接子项或整棵，空串是根。 */
+/** 本地按路径筛文件帧：文件要路径相同，目录看直接子项或整棵，空串是根。 */
 const watchCovers = (watch: FsWatch, path: string): boolean =>
   watch.paths.some((watched) => {
     if (watched === path) return true
@@ -316,7 +310,11 @@ export class TranscriptConnection {
     })
   }
 
-  /** 文件订阅独立于 transcript；重连重发订阅，调用方须重拉以补偿断线期间丢失的文件通知。 */
+  /**
+   * 在本地登记文件监听，按路径筛这段对话的 event.fs.changed，不发任何帧。服务端只把文件帧发给这条连接
+   * 订着的对话（任何档位都算），所以调用方要保证这段对话订着：会话页经 main-pool 用 delta 订着当前对话。
+   * 通知是易失的，断线期间的丢了不补，调用方照旧在重连后重读。
+   */
   watchFs(
     conversationId: string,
     paths: readonly string[],
@@ -327,12 +325,10 @@ export class TranscriptConnection {
     const watches = this.fsWatches.get(conversationId) ?? new Set<FsWatch>()
     watches.add(watch)
     this.fsWatches.set(conversationId, watches)
-    if (this.connected) this.sendFsWatch('watch_fs_add', conversationId, watch)
     return () => {
       const current = this.fsWatches.get(conversationId)
       if (current === undefined || !current.delete(watch)) return
       if (current.size === 0) this.fsWatches.delete(conversationId)
-      this.sendFsWatch('watch_fs_remove', conversationId, watch)
     }
   }
 
@@ -389,12 +385,12 @@ export class TranscriptConnection {
         return
       }
       case 'session.meta.updated': {
-        const envelope = sessionEnvelopeSchema.safeParse(frame)
+        const envelope = conversationEnvelopeSchema.safeParse(frame)
         if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = titleSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
-          conversationId: parsed.data.session_id,
+          conversationId: envelope.data.session_id,
           kind: 'title',
           mark: { ...markOf(envelope.data), seq: envelope.data.seq },
           title: parsed.data.title,
@@ -430,7 +426,7 @@ export class TranscriptConnection {
         return
       }
       case 'event.session.deleted': {
-        const parsed = deletedFrameSchema.safeParse(frame)
+        const parsed = conversationEnvelopeSchema.safeParse(frame)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
           conversationId: parsed.data.session_id,
@@ -476,10 +472,8 @@ export class TranscriptConnection {
         }
         const subscription = this.subscriptions.get(frame.session_id)
         if (subscription === undefined) return
-        this.apply(frame.type, subscription, frame.stream_epoch, {
-          type: frame.type,
-          ...(frame.payload as object),
-        })
+        // payload 自己带 type，本身就是一个完整的 transcript 事件。
+        this.apply(frame.type, subscription, frame.stream_epoch, frame.payload)
         return
       }
       default:
@@ -496,9 +490,9 @@ export class TranscriptConnection {
     console.warn('丢弃不合协议的 WebSocket 帧', { issues, type })
   }
 
-  private apply(type: string, subscription: Subscription, epoch: string, wrapped: object): void {
+  private apply(type: string, subscription: Subscription, epoch: string, event: unknown): void {
     if (type === 'transcript.reset') {
-      const parsed = transcriptResetEventSchema.safeParse(wrapped)
+      const parsed = transcriptResetEventSchema.safeParse(event)
       if (!parsed.success) return this.discard(type, issuesOf(parsed.error))
       const { agent_id, snapshot, has_more_older, seq } = parsed.data
       const agent = subscription.agents.get(agent_id)
@@ -510,7 +504,7 @@ export class TranscriptConnection {
       if (seq !== undefined) subscription.watermarks.set(agent_id, { epoch, seq })
       return
     }
-    const parsed = transcriptOpsEventSchema.safeParse(wrapped)
+    const parsed = transcriptOpsEventSchema.safeParse(event)
     if (!parsed.success) return this.discard(type, issuesOf(parsed.error))
     const { agent_id, ops, seq } = parsed.data
     const agent = subscription.agents.get(agent_id)
@@ -561,23 +555,7 @@ export class TranscriptConnection {
     this.reconnectAttempts = 0
     this.options.onConnectionState?.(true)
     for (const conversationId of this.subscriptions.keys()) this.sendSubscribe(conversationId)
-    for (const [conversationId, watches] of this.fsWatches) {
-      for (const watch of watches) this.sendFsWatch('watch_fs_add', conversationId, watch)
-    }
     if (reopened) this.announce({ kind: 'reconnected' })
-  }
-
-  /** 文件订阅不进入 transcript 的 pending 表，避免文件拒绝回执撤销对话订阅。 */
-  private sendFsWatch(
-    type: 'watch_fs_add' | 'watch_fs_remove',
-    conversationId: string,
-    watch: FsWatch,
-  ): void {
-    this.send({
-      type,
-      id: this.mintId(),
-      payload: { session_id: conversationId, paths: [...watch.paths], recursive: watch.recursive },
-    })
   }
 
   private sendSubscribe(conversationId: string, added: readonly string[] = []): void {

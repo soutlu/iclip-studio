@@ -345,25 +345,27 @@ async def _seed_file(pg_url: str, namespace: str, path: str, content: str) -> No
         )
 
 
-def _watch(ws: Any, conversation_id: str, *paths: str, recursive: bool = False) -> dict[str, Any]:
-    ws.send_json(
-        {
-            "type": "watch_fs_add",
-            "id": f"watch-{'-'.join(paths)}",
-            "payload": {
-                "session_id": conversation_id,
-                "paths": list(paths),
-                "recursive": recursive,
-            },
-        }
+def _subscribed_off(ws: Any, conversation_id: str, frame_id: str = "s1") -> dict[str, Any]:
+    """off 档订一段对话：不发 reset，交回它的回执。文件变化跟着订阅走，off 档也收。"""
+
+    subscribe(ws, conversation_id, grade="off", frame_id=frame_id)
+    ack = until(ws, "ack")
+    assert ack["id"] == frame_id
+    return ack
+
+
+def _put(tc: TestClient, conversation_id: str, path: str, body: str) -> None:
+    written = tc.put(
+        f"/conversations/{conversation_id}/workspace/file",
+        json={"path": path, "content": body, "expectedVersion": 1},
     )
-    return until(ws, "ack")
+    assert written.status_code == 200, written.text
 
 
-def test_watching_the_workspace_root_covers_every_file_only_when_recursive(
+def test_a_subscribed_connection_gets_every_file_change_of_the_conversation_as_is(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """空串路径是工作区根：recursive 看整棵，否则只看根目录直接子项。"""
+    """运行时的文件帧原样转给浏览器：外层只有对话与时刻，没有会话事件水位；按路径筛由客户端自己做。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -373,85 +375,64 @@ def test_watching_the_workspace_root_covers_every_file_only_when_recursive(
         asyncio.run(_seed_file(pg_url, namespace, "storyboard.md", "初稿"))
         asyncio.run(_seed_file(pg_url, namespace, "frames/grids/a.json", "{}"))
 
-        with tc.websocket_connect("/ws") as whole, tc.websocket_connect("/ws") as top:
-            assert whole.receive_json()["type"] == "server_hello"
-            assert top.receive_json()["type"] == "server_hello"
-            assert _watch(whole, conversation_id, "", recursive=True)["code"] == 0
-            assert _watch(top, conversation_id, "")["code"] == 0
-
-            for path, body in (("frames/grids/a.json", '{"v": 2}'), ("storyboard.md", "二稿")):
-                written = tc.put(
-                    f"/conversations/{conversation_id}/workspace/file",
-                    json={"path": path, "content": body, "expectedVersion": 1},
-                )
-                assert written.status_code == 200, written.text
-
-            first = until(whole, "event.fs.changed")
-            second = until(whole, "event.fs.changed")
-            only = until(top, "event.fs.changed")
-
-    assert [
-        change["path"] for frame in (first, second) for change in frame["payload"]["changes"]
-    ] == [
-        "frames/grids/a.json",
-        "storyboard.md",
-    ]
-    assert only["payload"]["changes"] == [
-        {"path": "storyboard.md", "change": "modified", "kind": "file"}
-    ]
-
-
-def test_fs_changed_reaches_only_the_connections_watching_that_path(
-    ws_agent_app: FastAPI, pg_url: str
-) -> None:
-    """文件事件仅投递给订阅对应路径的连接；交叉写入验证订阅隔离。"""
-
-    with TestClient(ws_agent_app) as tc:
-        sign_in(tc, pg_url)
-        conversation_id = open_conversation(tc)
-        owner = tc.get("/users/me").json()["user"]["id"]
-        # PUT 只覆盖已有文件，因此先创建两份基线。
-        asyncio.run(_seed_file(pg_url, f"{owner}/{conversation_id}", "提纲.md", "三幕"))
-        asyncio.run(_seed_file(pg_url, f"{owner}/{conversation_id}", "其他.md", "甲"))
-
-        with tc.websocket_connect("/ws") as a, tc.websocket_connect("/ws") as b:
-            assert a.receive_json()["type"] == "server_hello"
-            assert b.receive_json()["type"] == "server_hello"
-            ack = _watch(a, conversation_id, "提纲.md")
-            assert ack["code"] == 0
-            assert ack["payload"] == {"watched_paths": ["提纲.md"], "current_count": 1}
-            _watch(b, conversation_id, "其他.md")
-
-            for path, body, version in (("提纲.md", "四幕", 1), ("其他.md", "乙", 1)):
-                written = tc.put(
-                    f"/conversations/{conversation_id}/workspace/file",
-                    json={"path": path, "content": body, "expectedVersion": version},
-                )
-                assert written.status_code == 200, written.text
-
-            to_a = until(a, "event.fs.changed")
-            to_b = until(b, "event.fs.changed")
-
-    assert to_a["session_id"] == conversation_id
-    assert to_a["payload"] == {
-        "changes": [{"path": "提纲.md", "change": "modified", "kind": "file"}],
-        "coalesced_window_ms": 0,
-    }
-    assert to_b["payload"]["changes"] == [{"path": "其他.md", "change": "modified", "kind": "file"}]
-
-
-def test_watching_an_unknown_conversation_is_refused_without_dropping_the_connection(
-    ws_agent_app: FastAPI, pg_url: str
-) -> None:
-
-    with TestClient(ws_agent_app) as tc:
-        sign_in(tc, pg_url)
         with tc.websocket_connect("/ws") as ws:
             assert ws.receive_json()["type"] == "server_hello"
-            ack = _watch(ws, str(uuid.uuid4()), "提纲.md")
-            assert ack["code"] == 40401
-            conversation_id = open_conversation(tc)
-            assert _watch(ws, conversation_id, "提纲.md")["code"] == 0
+            assert _subscribed_off(ws, conversation_id)["payload"]["accepted"] == [conversation_id]
+            _put(tc, conversation_id, "frames/grids/a.json", '{"v": 2}')
+            _put(tc, conversation_id, "storyboard.md", "二稿")
+            first = until(ws, "event.fs.changed")
+            second = until(ws, "event.fs.changed")
+
+    assert set(first) == {"type", "session_id", "timestamp", "payload"}
+    assert first["session_id"] == conversation_id
+    assert first["payload"] == {"changes": [{"path": "frames/grids/a.json", "change": "modified"}]}
+    assert second["payload"] == {"changes": [{"path": "storyboard.md", "change": "modified"}]}
+
+
+def test_file_changes_reach_only_connections_subscribed_to_the_conversation(
+    ws_agent_app: FastAPI, pg_url: str
+) -> None:
+    """另订一段对话当哨兵：没订或已退订的连接，先收到的必须是哨兵那一帧。"""
+
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id, sentinel = open_conversation(tc), open_conversation(tc)
+        owner = tc.get("/users/me").json()["user"]["id"]
+        for conversation, path in (
+            (conversation_id, "提纲.md"),
+            (conversation_id, "再改.md"),
+            (sentinel, "哨兵.md"),
+            (sentinel, "又一个哨兵.md"),
+        ):
+            asyncio.run(_seed_file(pg_url, f"{owner}/{conversation}", path, "初稿"))
+
+        with tc.websocket_connect("/ws") as watching, tc.websocket_connect("/ws") as bystander:
+            assert watching.receive_json()["type"] == "server_hello"
+            assert bystander.receive_json()["type"] == "server_hello"
+            _subscribed_off(watching, conversation_id)
+            _subscribed_off(watching, sentinel, "s2")
+            _subscribed_off(bystander, sentinel)
+
+            _put(tc, conversation_id, "提纲.md", "四幕")
+            _put(tc, sentinel, "哨兵.md", "到")
+            seen = until(watching, "event.fs.changed")
+            bystander_first = until(bystander, "event.fs.changed")
+            until(watching, "event.fs.changed")
+
+            watching.send_json(
+                {"type": "unsubscribe_v2", "id": "u1", "payload": {"session_id": conversation_id}}
+            )
+            assert until(watching, "ack")["id"] == "u1"
+            _put(tc, conversation_id, "再改.md", "五幕")
+            _put(tc, sentinel, "又一个哨兵.md", "到")
+            after_unsubscribe = until(watching, "event.fs.changed")
+
+    assert (seen["session_id"], seen["payload"]["changes"][0]["path"]) == (
+        conversation_id,
+        "提纲.md",
+    )
+    assert bystander_first["session_id"] == sentinel
+    assert after_unsubscribe["payload"]["changes"][0]["path"] == "又一个哨兵.md"
 
 
 def test_activity_frames_reach_a_connection_that_subscribed_nothing(
@@ -500,14 +481,12 @@ def test_activity_frames_reach_a_connection_that_subscribed_nothing(
 def test_governor_can_subscribe_to_a_deleted_conversation_but_its_owner_cannot(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """订阅与文件监听跟着 ``agent_of(writing=False)`` 放开墓碑，治理者订得上；属主订不上，与 REST 同口径。"""
+    """订阅跟着 ``agent_of(writing=False)`` 放开墓碑，治理者订得上；属主订不上，与 REST 同口径。"""
 
     with TestClient(ws_agent_app) as tc:
         owner = sign_in_as(tc, pg_url, username="logan", roles=("editor",))
         governor = sign_in_as(tc, pg_url, username="gov", roles=("root",))
         conversation_id = open_conversation(tc, headers=owner)
-        owner_id = tc.get("/users/me", headers=owner).json()["user"]["id"]
-        asyncio.run(_seed_file(pg_url, f"{owner_id}/{conversation_id}", "提纲.md", "三幕"))
         assert tc.delete(f"/conversations/{conversation_id}", headers=owner).status_code == 204
 
         with (
@@ -519,17 +498,16 @@ def test_governor_can_subscribe_to_a_deleted_conversation_but_its_owner_cannot(
 
             subscribe(gov_ws, conversation_id, grade="turn")
             assert until(gov_ws, "transcript.reset")["session_id"] == conversation_id
-            assert _watch(gov_ws, conversation_id, "提纲.md")["code"] == 0
 
             subscribe(owner_ws, conversation_id)
             assert until(owner_ws, "ack")["payload"]["not_found"] == [conversation_id]
-            assert _watch(owner_ws, conversation_id, "提纲.md")["code"] == 40401
 
 
 def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """治理者的连接收全平台的活动、标题与文件变更帧，也能订别人的对话；别的普通用户一帧都收不到。"""
+    """治理者的连接收全平台的活动与标题帧，也能订别人的对话、收它的文件变化；别的普通用户订不上，一帧都
+    收不到。"""
 
     with TestClient(ws_agent_app) as tc:
         owner = sign_in_as(tc, pg_url, username="logan", roles=("editor",))
@@ -548,8 +526,9 @@ def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
             assert other_ws.receive_json()["type"] == "server_hello"
             subscribe(gov_ws, conversation_id, grade="turn")
             assert until(gov_ws, "transcript.reset")["session_id"] == conversation_id
-            assert _watch(gov_ws, conversation_id, "提纲.md")["code"] == 0
-            assert _watch(other_ws, conversation_id, "提纲.md")["code"] == 40401
+            # 订不上就收不到这段对话的文件变化：能收的范围就是能订的范围。
+            subscribe(other_ws, conversation_id, grade="off", frame_id="theirs")
+            assert until(other_ws, "ack")["payload"]["not_found"] == [conversation_id]
 
             sent = tc.post(
                 f"/conversations/{conversation_id}/prompts",
@@ -567,7 +546,7 @@ def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
             )
             assert renamed.status_code == 200, renamed.text
             title = until(gov_ws, "session.meta.updated")
-            assert title["payload"] == {"session_id": conversation_id, "title": "改了名"}
+            assert (title["session_id"], title["payload"]) == (conversation_id, {"title": "改了名"})
 
             written = tc.put(
                 f"/conversations/{conversation_id}/workspace/file",
@@ -578,15 +557,9 @@ def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
             changed = until(gov_ws, "event.fs.changed")
             assert changed["session_id"] == conversation_id
 
-            # 陌生人的连接：上面几件事一帧都没到。帧按序入队，这里订一下自己的对话，
+            # 陌生人的连接：上面几件事一帧都没到。帧按序入队，这里 off 档订一下自己的对话，
             # 跳过心跳后收到的第一帧就该是这一帧的回执。
-            other_ws.send_json(
-                {
-                    "type": "watch_fs_add",
-                    "id": "w-mine",
-                    "payload": {"session_id": mine, "paths": ["提纲.md"]},
-                }
-            )
+            subscribe(other_ws, mine, grade="off", frame_id="w-mine")
             frame = other_ws.receive_json()
             while frame["type"] == "ping":
                 frame = other_ws.receive_json()

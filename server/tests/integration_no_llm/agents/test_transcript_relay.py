@@ -1,5 +1,5 @@
 """浏览器连接经后端转到运行时：回执一帧一个、Transcript 帧盖本进程的事件水位、两条上游各自断开时的关闭码、
-文件变更经事件流到达，以及活动与轮次收尾分走两条上游时客户端看得到的先后。"""
+文件变化经对话内容流原样到达订着的连接，以及活动与轮次收尾分走两条上游时客户端看得到的先后。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from agent_runtime.client import EventStream, StreamClosed, TranscriptChannel
 from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.http import streams as runtime_streams
 from agent_runtime.plugins.base import PluginHost, PluginRegistry
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -64,9 +65,7 @@ def _frames_until_turn_and_idle(ws: Any, conversation_id: str) -> list[dict[str,
     turn_ended = idle = False
     for _ in range(200):
         frame: dict[str, Any] = ws.receive_json()
-        # 改名帧的对话 id 在 payload 里，其余在信封上。
-        session = frame.get("session_id") or frame.get("payload", {}).get("session_id")
-        if session != conversation_id:
+        if frame.get("session_id") != conversation_id:
             continue
         frames.append(frame)
         if frame["type"] == "transcript.ops" and any(
@@ -137,11 +136,15 @@ def test_each_subscribe_frame_gets_exactly_one_ack(ws_agent_app: FastAPI, pg_url
         "last": 1,
     }
     assert acks["visible"][0]["payload"]["accepted"] == [mine]
-    assert acks["invisible"][0]["payload"] == {
-        "accepted": [],
-        "not_found": [theirs],
-        "resync_required": [],
+    # 就地回的与运行时回的是同一种回执。
+    assert acks["invisible"][0] == {
+        "type": "ack",
+        "id": "invisible",
+        "code": 0,
+        "msg": "",
+        "payload": {"accepted": [], "not_found": [theirs]},
     }
+    assert set(acks["visible"][0]) == set(acks["invisible"][0])
     assert acks["missing"][0]["payload"]["not_found"] == [missing]
     assert acks["malformed"][0]["payload"]["not_found"] == ["not-a-uuid"]
     assert (acks["stranger"][0]["code"], acks["stranger"][0]["msg"]) == (
@@ -185,6 +188,36 @@ def test_transcript_frames_carry_the_current_event_number_and_events_tick(
             events += 1
     assert transcripts >= 2
     assert events >= 3, "改名、开跑的整行、忙与闲的活动"
+
+
+def test_relayed_frames_keep_the_runtimes_timestamp(
+    ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """浏览器收到的 Transcript 帧就是运行时的帧加上 ``epoch`` / ``seq``：时刻是运行时出帧时取的，后端不重盖。
+    运行时在同一进程里，只把它出帧取时刻的那一处钉住，后端自己的时钟照常走。"""
+
+    pinned = "2000-01-01T00:00:00+00:00"
+    monkeypatch.setattr(runtime_streams, "timestamp_now", lambda: pinned)
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+        with tc.websocket_connect("/ws") as ws:
+            hello = ws.receive_json()
+            subscribe(ws, conversation_id)
+            reset = until(ws, "transcript.reset")
+
+    assert hello["timestamp"] != pinned
+    assert reset["timestamp"] == pinned
+    assert set(reset) == {
+        "type",
+        "seq",
+        "epoch",
+        "session_id",
+        "timestamp",
+        "stream_epoch",
+        "payload",
+    }
+    assert reset["payload"]["type"] == "transcript.reset"
 
 
 # --- 活动与轮次收尾的先后 ------------------------------------------------------------
@@ -305,36 +338,40 @@ def test_a_dropped_event_stream_closes_every_browser_connection_then_reconnects(
     assert busy["session_id"] == conversation_id
 
 
-# --- 文件变更 --------------------------------------------------------------------
+# --- 文件变化 --------------------------------------------------------------------
 
 
-def _watch(ws: Any, conversation_id: str, path: str) -> None:
-    ws.send_json(
-        {
-            "type": "watch_fs_add",
-            "id": f"watch-{path}",
-            "payload": {"session_id": conversation_id, "paths": [path]},
-        }
-    )
-    assert until(ws, "ack")["code"] == 0
-
-
-def test_a_plugin_write_reaches_a_watching_browser(ws_agent_app: FastAPI, pg_url: str) -> None:
-    """插件在运行时写工作区，变更经应用事件流到后端，再发给订着这个路径的浏览器连接。"""
+def test_a_plugin_write_reaches_the_subscribed_browser_as_is(
+    ws_agent_app: FastAPI, pg_url: str
+) -> None:
+    """插件在运行时写工作区，文件帧经这条连接背后的对话内容流原样到浏览器；没订这段对话的连接收不到。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         created = tc.post("/conversations", json={"agentId": JOTTER})
         assert created.status_code == 201, created.text
         conversation_id = str(created.json()["conversation"]["id"])
-        with tc.websocket_connect("/ws") as ws:
+        with tc.websocket_connect("/ws") as ws, tc.websocket_connect("/ws") as bystander:
             assert ws.receive_json()["type"] == "server_hello"
-            _watch(ws, conversation_id, JOTTED)
+            assert bystander.receive_json()["type"] == "server_hello"
+            subscribe(ws, conversation_id, grade="turn")
+            assert until(ws, "ack")["payload"]["accepted"] == [conversation_id]
             _send(tc, conversation_id, "prm_jot")
             changed = until(ws, "event.fs.changed", tries=200)
+            settled(tc, conversation_id)
+            # 帧按序入队：旁观的连接此刻订一段别的对话，跳过全局帧与心跳后先到的应是它的回执，
+            # 说明前面那帧文件变化没给它。
+            subscribe(bystander, open_conversation(tc), grade="off", frame_id="probe")
+            bystander_first = next(
+                frame
+                for frame in iter(bystander.receive_json, None)
+                if frame["type"] in {"ack", "event.fs.changed"}
+            )
 
+    assert set(changed) == {"type", "session_id", "timestamp", "payload"}
     assert changed["session_id"] == conversation_id
-    assert changed["payload"]["changes"] == [{"path": JOTTED, "change": "created", "kind": "file"}]
+    assert changed["payload"] == {"changes": [{"path": JOTTED, "change": "created"}]}
+    assert (bystander_first["type"], bystander_first["id"]) == ("ack", "probe")
 
 
 async def _seed_film(pg_url: str, namespace: str) -> None:
@@ -358,10 +395,10 @@ async def _seed_film(pg_url: str, namespace: str) -> None:
             )
 
 
-def test_a_film_edit_on_the_page_reaches_a_watching_browser(
+def test_a_film_edit_on_the_page_reaches_the_subscribed_browser(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """制作页改画幅：后端经运行时写工程文件，变更同样经事件流回到订着它的浏览器连接。"""
+    """制作页改画幅：后端经运行时写工程文件，变化同样经对话内容流回到订着这段对话的浏览器连接。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -370,7 +407,8 @@ def test_a_film_edit_on_the_page_reaches_a_watching_browser(
         asyncio.run(_seed_film(pg_url, f"{owner}/{conversation_id}"))
         with tc.websocket_connect("/ws") as ws:
             assert ws.receive_json()["type"] == "server_hello"
-            _watch(ws, conversation_id, "film.icml")
+            subscribe(ws, conversation_id, grade="off")
+            assert until(ws, "ack")["payload"]["accepted"] == [conversation_id]
             edited = tc.put(
                 f"/conversations/{conversation_id}/film/aspect-ratio",
                 json={"filmVersion": 1, "aspectRatio": "9:16"},
@@ -378,6 +416,4 @@ def test_a_film_edit_on_the_page_reaches_a_watching_browser(
             assert edited.status_code == 200, edited.text
             changed = until(ws, "event.fs.changed")
 
-    assert changed["payload"]["changes"] == [
-        {"path": "film.icml", "change": "modified", "kind": "file"}
-    ]
+    assert changed["payload"]["changes"] == [{"path": "film.icml", "change": "modified"}]

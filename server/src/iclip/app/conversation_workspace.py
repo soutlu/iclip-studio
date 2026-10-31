@@ -16,7 +16,7 @@ from iclip.domains.conversations.service import DerivedFile, DerivedFileContent
 
 class ConversationWorkspace:
     """在组合根将属主与对话 id 转换为工作区命名空间，隔离两侧领域知识。写入成功后的文件变更帧由运行时
-    在应用事件流上发出。"""
+    发给订着这段对话的对话内容流。"""
 
     def __init__(self, store: WorkspaceFiles) -> None:
         self._store = store

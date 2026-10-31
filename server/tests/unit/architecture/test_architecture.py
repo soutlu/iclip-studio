@@ -172,7 +172,7 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.urls": "地址形状判定",
     "agent_runtime.app_wire": "会话接口的请求体与答复体",
     "agent_runtime.hooks": "运行时回调后端的请求体",
-    "agent_runtime.live.frames": "两条 WebSocket 上运行时发的帧",
+    "agent_runtime.live.frames": "两条 WebSocket 上运行时发的帧，浏览器收到的回执、文件变化与心跳就是它们",
     "agent_runtime.transcript.wire": "transcript 的消息请求体、读页信封与帧的信封基类",
     "agent_runtime.transcript.ops": "transcript 实体：消息内容、主 agent 的 id",
     "agent_runtime.file_store.store": "工作区文件的形状与路径规则",

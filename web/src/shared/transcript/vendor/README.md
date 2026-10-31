@@ -1,6 +1,6 @@
 # vendor：transcript 协议数据层
 
-本目录来自 `@moonshot-ai/transcript` 0.0.2，仓库为 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 `packages/transcript`，对齐到上游提交 `c9f01f0`（2026-10-10）；包版本号不标识协议内容，核对以该提交为准。许可证见 [LICENSE](LICENSE)。本仓保留了协议扩展与裁剪，不是上游的逐字副本。
+本目录来自 `@moonshot-ai/transcript` 0.0.2，仓库为 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 `packages/transcript`，对齐到上游提交 `c9f01f0`（2026-10-10）；包版本号不标识协议内容，核对以该提交为准。已核对到 `a2afdbc`（2026-10-30），其间上游只改了 `history/`（本仓不引进）和轮上的可选字段 `wedged`（由 Kimi 服务端写，我们的运行时不写，未引进）。许可证见 [LICENSE](LICENSE)。本仓保留了协议扩展与裁剪，不是上游的逐字副本。
 
 ## 做过的改写
 

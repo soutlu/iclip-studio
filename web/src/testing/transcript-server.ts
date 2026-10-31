@@ -48,7 +48,13 @@ interface ClientFrame {
 }
 
 const SERVER_HELLO = {
-  payload: { heartbeat_ms: 10_000, protocol_version: 2, ws_connection_id: 'fake' },
+  payload: {
+    capabilities: { compression: false, event_batching: false },
+    heartbeat_ms: 10_000,
+    protocol_version: 2,
+    ws_connection_id: 'fake',
+  },
+  timestamp: '2026-10-30T08:00:00+00:00',
   type: 'server_hello',
 }
 
@@ -368,10 +374,12 @@ export class FakeTranscriptServer {
         has_more_older: snapshot.items.length > 0,
         seq: stream.seq,
         snapshot: { ...snapshot, hasMoreOlder: snapshot.items.length > 0, items: [] },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: conversationId,
       stream_epoch: stream.epoch,
+      timestamp: new Date().toISOString(),
       type: 'transcript.reset',
     }
   }
@@ -384,10 +392,11 @@ export class FakeTranscriptServer {
     ops: readonly TranscriptOperation[],
   ) {
     return {
-      payload: { agent_id: agentId, ops, seq },
+      payload: { agent_id: agentId, ops, seq, type: 'transcript.ops' },
       seq: 0,
       session_id: conversationId,
       stream_epoch: stream.epoch,
+      timestamp: new Date().toISOString(),
       type: 'transcript.ops',
     }
   }

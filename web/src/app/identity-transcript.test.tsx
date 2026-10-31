@@ -156,8 +156,10 @@ const announceTitle = (fake: FakeTranscriptServer, conversationId: string, title
   fake.broadcast({
     epoch: 'event-epoch',
     owner_user_id: OWNERS[conversationId],
-    payload: { session_id: conversationId, title },
+    payload: { title },
     seq: 1,
+    session_id: conversationId,
+    timestamp: '2026-10-30T08:00:00+00:00',
     type: 'session.meta.updated',
   })
 }

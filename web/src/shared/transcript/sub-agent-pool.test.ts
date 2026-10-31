@@ -73,6 +73,7 @@ describe('SubAgentTranscriptPool', () => {
         has_more_older: true,
         seq: stream.seq,
         snapshot: { interactions: [], items: [], meta: {}, prompts: [], tasks: [], todos: [] },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',

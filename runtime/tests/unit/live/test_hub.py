@@ -1,5 +1,6 @@
-"""应用事件集线器：每个应用的每条连接收到这个应用所有会话的事件、别的应用的收不到，查归属要等的时候也按
-收下的先后送达；没有连接或查不到归属的事件丢掉。帧按约定的形状序列化。"""
+"""两条通道的分发：应用事件集线器让每个应用的每条连接收到这个应用所有会话的活动、别的应用的收不到，查归属
+要等的时候也按收下的先后送达，没有连接或查不到归属的丢掉；文件变化按会话发给登记了它的连接。帧按约定的形状
+序列化。"""
 
 from __future__ import annotations
 
@@ -13,26 +14,31 @@ from agent_runtime.live.frames import (
     AppEvent,
     FsChanged,
     FsChangeEntry,
+    FsChangesPayload,
+    Ping,
+    PingPayload,
     SessionActivity,
     TranscriptOpsFrame,
+    TranscriptResetFrame,
 )
-from agent_runtime.live.hub import AppEventHub, AppOf
-from agent_runtime.transcript.ops import ItemsRemoveOp
-from agent_runtime.transcript.wire import OpsPayload, SessionActivityOut
+from agent_runtime.live.hub import AppEventHub, AppOf, SessionFileChanges
+from agent_runtime.transcript.ops import ItemsRemoveOp, TranscriptSnapshot
+from agent_runtime.transcript.wire import OpsPayload, ResetPayload, SessionActivityOut
 
 BFF_SESSION = "0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d"
 OTHER_BFF_SESSION = "9d2c1b0a-5e4f-4a3b-8c7d-6e5f4a3b2c1d"
 TOOL_SESSION = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 OWNER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
+AT = "2026-10-30T08:00:00+00:00"
 
 APPS = {BFF_SESSION: "bff", OTHER_BFF_SESSION: "bff", TOOL_SESSION: "tool"}
 
 
 class Sink:
     def __init__(self) -> None:
-        self.frames: list[AppEvent] = []
+        self.frames: list[AppEvent | FsChanged] = []
 
-    def offer(self, frame: AppEvent) -> None:
+    def offer(self, frame: AppEvent | FsChanged) -> None:
         self.frames.append(frame)
 
 
@@ -51,15 +57,16 @@ def busy(session_id: str, *, busy: bool) -> SessionActivity:
     return SessionActivity(
         session_id=session_id,
         owner_user_id=OWNER,
-        activity=SessionActivityOut(busy=busy, pending_interaction="none"),
+        timestamp=AT,
+        payload=SessionActivityOut(busy=busy, pending_interaction="none"),
     )
 
 
 def wrote(session_id: str, path: str) -> FsChanged:
     return FsChanged(
         session_id=session_id,
-        owner_user_id=OWNER,
-        entries=(FsChangeEntry(path=path, change="created"),),
+        timestamp=AT,
+        payload=FsChangesPayload(changes=(FsChangeEntry(path=path, change="created"),)),
     )
 
 
@@ -81,6 +88,9 @@ async def drained(*sinks: Sink, count: int, tries: int = 100) -> None:
     raise AssertionError("事件没送到")
 
 
+# --- 应用事件集线器 -------------------------------------------------------------
+
+
 async def test_every_connection_of_an_app_gets_its_events_and_no_other_apps(
     hub: AppEventHub,
 ) -> None:
@@ -90,7 +100,7 @@ async def test_every_connection_of_an_app_gets_its_events_and_no_other_apps(
     hub.attach("tool", tool)
 
     hub.publish(busy(BFF_SESSION, busy=True))
-    hub.publish(wrote(TOOL_SESSION, "notes.md"))
+    hub.publish(busy(TOOL_SESSION, busy=True))
     hub.publish(busy(OTHER_BFF_SESSION, busy=False))
     await drained(first, second, tool, count=5)
 
@@ -115,7 +125,7 @@ async def test_events_arrive_in_publish_order_even_when_a_lookup_is_slow(
     await drained(sink, count=4)
 
     assert [
-        (frame.session_id, frame.activity.busy)
+        (frame.session_id, frame.payload.busy)
         for frame in sink.frames
         if isinstance(frame, SessionActivity)
     ] == [
@@ -188,37 +198,90 @@ async def test_without_connections_events_are_not_queued() -> None:
     assert looked_up == []
 
 
+# --- 文件变化 -------------------------------------------------------------------
+
+
+def test_a_file_change_goes_to_every_connection_registered_for_its_session() -> None:
+    changes = SessionFileChanges()
+    first, second, elsewhere = Sink(), Sink(), Sink()
+    changes.attach(BFF_SESSION, first)
+    changes.attach(BFF_SESSION, second)
+    changes.attach(OTHER_BFF_SESSION, elsewhere)
+
+    changes.publish(wrote(BFF_SESSION, "notes.md"))
+
+    # 同步送到，不等事件循环。
+    assert first.frames == [wrote(BFF_SESSION, "notes.md")]
+    assert second.frames == first.frames
+    assert elsewhere.frames == []
+
+
+def test_a_detached_connection_gets_no_more_file_changes() -> None:
+    changes = SessionFileChanges()
+    gone, staying = Sink(), Sink()
+    changes.attach(BFF_SESSION, gone)
+    changes.attach(BFF_SESSION, staying)
+    changes.detach(BFF_SESSION, gone)
+    # 没登记过的注销什么都不做。
+    changes.detach(TOOL_SESSION, gone)
+
+    changes.publish(wrote(BFF_SESSION, "notes.md"))
+    changes.publish(wrote(TOOL_SESSION, "notes.md"))
+
+    assert gone.frames == []
+    assert [frame.session_id for frame in staying.frames] == [BFF_SESSION]
+
+
+# --- 帧的形状 -------------------------------------------------------------------
+
+
 def test_frames_serialize_to_the_documented_shape() -> None:
     activity = json.loads(busy(BFF_SESSION, busy=False).model_dump_json(exclude_none=True))
     assert activity == {
-        "type": "session.activity",
+        "type": "event.session.work_changed",
         "session_id": BFF_SESSION,
         "owner_user_id": OWNER,
-        "activity": {"busy": False, "pending_interaction": "none"},
+        "timestamp": AT,
+        "payload": {"busy": False, "pending_interaction": "none"},
     }
 
     changed = json.loads(wrote(TOOL_SESSION, "a/b.md").model_dump_json(exclude_none=True))
     assert changed == {
-        "type": "fs.changed",
+        "type": "event.fs.changed",
         "session_id": TOOL_SESSION,
-        "owner_user_id": OWNER,
-        "entries": [{"path": "a/b.md", "change": "created"}],
+        "timestamp": AT,
+        "payload": {"changes": [{"path": "a/b.md", "change": "created"}]},
     }
 
     ops = TranscriptOpsFrame(
         session_id=BFF_SESSION,
+        timestamp=AT,
         stream_epoch="epoch-1",
-        payload=OpsPayload(
-            agent_id="main",
-            ops=(ItemsRemoveOp(ids=("t1",)),),
-            seq=3,
-        ),
+        payload=OpsPayload(agent_id="main", ops=(ItemsRemoveOp(ids=("t1",)),), seq=3),
     )
     sent = json.loads(ops.model_dump_json(exclude_none=True, by_alias=True))
-    # 信封上只有会话与实时流，没有会话事件的 epoch / seq。
+    # 信封上只有会话、时刻与实时流，没有会话事件的 epoch / seq；载荷带与外层相同的 type。
     assert sent == {
         "type": "transcript.ops",
         "session_id": BFF_SESSION,
+        "timestamp": AT,
         "stream_epoch": "epoch-1",
-        "payload": {"agent_id": "main", "ops": [{"op": "items.remove", "ids": ["t1"]}], "seq": 3},
+        "payload": {
+            "type": "transcript.ops",
+            "agent_id": "main",
+            "ops": [{"op": "items.remove", "ids": ["t1"]}],
+            "seq": 3,
+        },
     }
+
+    reset = TranscriptResetFrame(
+        session_id=BFF_SESSION,
+        timestamp=AT,
+        stream_epoch="epoch-1",
+        payload=ResetPayload(agent_id="main", snapshot=TranscriptSnapshot(), seq=0),
+    )
+    sent_reset = json.loads(reset.model_dump_json(exclude_none=True, by_alias=True))
+    assert (sent_reset["timestamp"], sent_reset["payload"]["type"]) == (AT, "transcript.reset")
+
+    ping = json.loads(Ping(timestamp=AT, payload=PingPayload(nonce="n1")).model_dump_json())
+    assert ping == {"type": "ping", "timestamp": AT, "payload": {"nonce": "n1"}}

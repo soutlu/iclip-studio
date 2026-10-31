@@ -1,8 +1,10 @@
 """运行时服务的两条 WebSocket：对话内容流 ``/v1/ws`` 按 subscribe_v2 订阅、按档位发帧、只认调用方应用自己的
-会话，断开时放开全部监听与固定；应用事件流 ``/v1/events`` 按应用分发会话活动与工作区文件变更。"""
+会话，订着的会话的工作区文件变化也发在这条上，断开时放开全部监听与固定；应用事件流 ``/v1/events`` 按应用
+分发会话活动。"""
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -14,6 +16,7 @@ from tests.helpers.runtime import calls_then_says, says
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
     JOTTED,
+    READER_KEY,
     LiveRuntime,
     ops_until_turn_ends,
     receive,
@@ -47,16 +50,23 @@ def test_subscribing_then_running_delivers_a_reset_then_ops(live: LiveRuntime) -
             "msg": "",
             "payload": {"accepted": [session], "not_found": []},
         }
-        # 运行时帧上只有会话与实时流，没有会话事件序号。
-        assert set(reset) == {"type", "session_id", "stream_epoch", "payload"}
+        # 运行时帧上只有会话、时刻与实时流，没有会话事件序号；载荷带与外层相同的 type。
+        assert set(reset) == {"type", "session_id", "timestamp", "stream_epoch", "payload"}
         assert reset["session_id"] == session
-        assert (reset["payload"]["agent_id"], reset["payload"]["seq"]) == ("main", 0)
+        assert (reset["payload"]["type"], reset["payload"]["agent_id"]) == (
+            "transcript.reset",
+            "main",
+        )
+        assert reset["payload"]["seq"] == 0
+        assert datetime.fromisoformat(reset["timestamp"]).utcoffset() == timedelta(0)
 
         live.send(session, "prm_ws")
         frames = ops_until_turn_ends(ws)
 
     assert [frame["payload"]["seq"] for frame in frames] == list(range(1, len(frames) + 1))
     assert {frame["stream_epoch"] for frame in frames} == {reset["stream_epoch"]}
+    assert {frame["payload"]["type"] for frame in frames} == {"transcript.ops"}
+    assert all("timestamp" in frame for frame in frames)
     assert {"prompt.upsert", "turn.upsert", "append"} <= ops_of(frames)
     # 嵌套的实体与操作按别名（camelCase）。
     assert "turnId" in str(frames)
@@ -204,10 +214,10 @@ def activities_until_idle(ws: Any, session: str, *, tries: int = 60) -> list[dic
     seen: list[dict[str, Any]] = []
     for _ in range(tries):
         frame: dict[str, Any] = ws.receive_json()
-        if frame["type"] != "session.activity" or frame["session_id"] != session:
+        if frame["type"] != "event.session.work_changed" or frame["session_id"] != session:
             continue
         seen.append(frame)
-        if not frame["activity"]["busy"]:
+        if not frame["payload"]["busy"]:
             return seen
     raise AssertionError("没等到空闲")
 
@@ -221,39 +231,129 @@ def test_session_activity_arrives_busy_then_idle_and_only_to_its_app(live: LiveR
         seen = activities_until_idle(events, session)
         # 另一个应用自己的事件排在被测应用的事件之后（分发只有一条队列）：它收到的第一帧是自己的，
         # 说明前面那些一帧都没给它。
-        put = live.tc.put(
-            f"/v1/sessions/{other_session}/files/mine.md",
-            json={"content": "别的应用"},
-            headers=live.headers(ADMIN_KEY),
-        )
-        assert put.status_code == 200, put.text
+        live.send(other_session, "prm_other", key=ADMIN_KEY)
         first_of_other = other.receive_json()
+    live.settled(other_session, ADMIN_KEY)
 
-    assert [frame["activity"] for frame in seen] == [
+    assert [frame["payload"] for frame in seen] == [
         {"busy": True, "pending_interaction": "none"},
         {"busy": False, "pending_interaction": "none", "last_turn_reason": "completed"},
     ]
     assert {frame["owner_user_id"] for frame in seen} == {str(live.owner)}
-    assert (first_of_other["type"], first_of_other["session_id"]) == ("fs.changed", other_session)
+    assert set(seen[0]) == {"type", "session_id", "owner_user_id", "timestamp", "payload"}
+    assert (first_of_other["type"], first_of_other["session_id"]) == (
+        "event.session.work_changed",
+        other_session,
+    )
 
 
-def test_a_files_put_announces_created_then_modified(live: LiveRuntime) -> None:
+def test_the_event_stream_carries_no_file_changes(live: LiveRuntime) -> None:
+    session = live.open_session()
+
+    with live.connect("/v1/events") as events:
+        put = live.tc.put(
+            f"/v1/sessions/{session}/files/notes.md",
+            json={"content": "写一笔"},
+            headers=live.headers(),
+        )
+        assert put.status_code == 200, put.text
+        # 写文件排在前面：要是事件流上还发文件变化，下面收到的第一帧就是它。
+        live.send(session, "prm_after_put")
+        first = events.receive_json()
+    live.settled(session)
+
+    assert (first["type"], first["payload"]["busy"]) == ("event.session.work_changed", True)
+
+
+# --- 对话内容流上的文件变化 -------------------------------------------------------
+
+
+def put_file(live: LiveRuntime, session: str, path: str, *, key: str = READER_KEY) -> None:
+    put = live.tc.put(
+        f"/v1/sessions/{session}/files/{path}",
+        json={"content": f"写 {path}"},
+        headers=live.headers(key),
+    )
+    assert put.status_code == 200, put.text
+
+
+def subscribed_off(ws: Any, session: str, frame_id: str) -> None:
+    """off 档订一段会话：不发 reset，第一帧就是回执。"""
+
+    subscribe(ws, session, grade="off", frame_id=frame_id)
+    ack = ws.receive_json()
+    assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", frame_id, [session])
+
+
+def test_a_files_put_reaches_the_off_grade_subscriber_created_then_modified(
+    live: LiveRuntime,
+) -> None:
     session = live.open_session()
     path = f"/v1/sessions/{session}/files/notes/brief.md"
 
-    with live.connect("/v1/events") as events:
+    with live.connect("/v1/ws") as ws:
+        subscribed_off(ws, session, "s1")
         for content in ("第一版", "第二版"):
             assert live.tc.put(path, json={"content": content}, headers=live.headers()).is_success
-        created = receive(events, "fs.changed")
-        modified = receive(events, "fs.changed")
+        created = receive(ws, "event.fs.changed")
+        modified = receive(ws, "event.fs.changed")
 
+    stamped = created.pop("timestamp")
+    assert datetime.fromisoformat(stamped).utcoffset() == timedelta(0)
     assert created == {
-        "type": "fs.changed",
+        "type": "event.fs.changed",
         "session_id": session,
-        "owner_user_id": str(live.owner),
-        "entries": [{"path": "notes/brief.md", "change": "created"}],
+        "payload": {"changes": [{"path": "notes/brief.md", "change": "created"}]},
     }
-    assert modified["entries"] == [{"path": "notes/brief.md", "change": "modified"}]
+    assert modified["payload"] == {"changes": [{"path": "notes/brief.md", "change": "modified"}]}
+
+
+def test_file_changes_reach_only_connections_subscribed_to_the_session(
+    live: LiveRuntime,
+) -> None:
+    """另订一段会话当哨兵：没订或已退订的连接，先收到的必须是哨兵那一帧。"""
+
+    session, sentinel = live.open_session(), live.open_session()
+
+    with live.connect("/v1/ws") as watching, live.connect("/v1/ws") as bystander:
+        subscribed_off(watching, session, "s1")
+        subscribed_off(watching, sentinel, "s2")
+        subscribed_off(bystander, sentinel, "s1")
+
+        put_file(live, session, "first.md")
+        put_file(live, sentinel, "mark.md")
+        seen = receive(watching, "event.fs.changed")
+        bystander_first = receive(bystander, "event.fs.changed")
+        receive(watching, "event.fs.changed")
+
+        watching.send_json(
+            {"type": "unsubscribe_v2", "id": "u1", "payload": {"session_id": session}}
+        )
+        assert receive(watching, "ack")["id"] == "u1"
+        put_file(live, session, "after.md")
+        put_file(live, sentinel, "mark-again.md")
+        after_unsubscribe = receive(watching, "event.fs.changed")
+
+    assert seen["session_id"] == session
+    assert bystander_first["session_id"] == sentinel
+    assert after_unsubscribe["payload"]["changes"][0]["path"] == "mark-again.md"
+
+
+def test_another_apps_connection_cannot_receive_the_sessions_file_changes(
+    live: LiveRuntime,
+) -> None:
+    session, theirs = live.open_session(), live.open_session(ADMIN_KEY)
+
+    with live.connect("/v1/ws", ADMIN_KEY) as other:
+        subscribe(other, session, grade="off")
+        refused = receive(other, "ack")
+        subscribed_off(other, theirs, "s2")
+        put_file(live, session, "mine.md")
+        put_file(live, theirs, "theirs.md", key=ADMIN_KEY)
+        first = receive(other, "event.fs.changed")
+
+    assert refused["payload"] == {"accepted": [], "not_found": [session]}
+    assert first["session_id"] == theirs
 
 
 class TestAPluginWrite:
@@ -265,14 +365,15 @@ class TestAPluginWrite:
     def live_agent_plugins(self) -> tuple[str, ...]:
         return ("jotting",)
 
-    def test_is_announced_on_the_event_stream(self, live: LiveRuntime) -> None:
+    def test_reaches_the_connection_subscribed_to_the_session(self, live: LiveRuntime) -> None:
         session = live.open_session()
 
-        with live.connect("/v1/events") as events:
+        with live.connect("/v1/ws") as ws:
+            subscribe(ws, session, grade="turn")
             live.send(session, "prm_jot")
-            changed = receive(events, "fs.changed")
+            changed = receive(ws, "event.fs.changed")
 
         assert changed["session_id"] == session
-        assert changed["entries"] == [{"path": JOTTED, "change": "created"}]
+        assert changed["payload"] == {"changes": [{"path": JOTTED, "change": "created"}]}
         live.settled(session)
         assert live.status(session) == "completed"

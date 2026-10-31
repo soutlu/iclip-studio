@@ -125,7 +125,7 @@ class PluginHost:
     """组合根交给插件绑定函数的服务。"""
 
     files: FileStore
-    """工作区存储：写完就发 ``fs.changed`` 的那一份。"""
+    """工作区存储：写完就发 ``event.fs.changed`` 的那一份。"""
 
     ledger: MaterialLedger
     """对话素材台账。"""

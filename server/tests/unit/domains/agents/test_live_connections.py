@@ -6,7 +6,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from agent_runtime.live.frames import SessionActivity
+from agent_runtime.transcript.wire import SessionActivityOut
+
 from iclip.domains.agents.transcript_api import LiveConnections
+
+RUNTIME_AT = "2026-10-30T08:00:00+00:00"
+"""运行时出帧的时刻；活动帧照用它，不重盖。"""
 
 
 @dataclass(eq=False)
@@ -35,7 +41,12 @@ def test_event_frames_carry_the_owner_and_count_up_per_conversation() -> None:
     live, connection = _live(owner)
 
     live.announce_activity(
-        owner, conversation, busy=True, pending_interaction="none", last_turn_reason=None
+        SessionActivity(
+            session_id=str(conversation),
+            owner_user_id=str(owner),
+            timestamp=RUNTIME_AT,
+            payload=SessionActivityOut(busy=True, pending_interaction="none"),
+        )
     )
     live.announce_title(owner, conversation, "片名")
     live.announce_generation_changed(
@@ -53,6 +64,29 @@ def test_event_frames_carry_the_owner_and_count_up_per_conversation() -> None:
     assert [frame["seq"] for frame in connection.frames] == [1, 2, 3, 4]
     assert {frame["owner_user_id"] for frame in connection.frames} == {str(owner)}
     assert {frame["epoch"] for frame in connection.frames} == {live.clock.epoch}
+    assert all("timestamp" in frame for frame in connection.frames)
+
+
+def test_an_activity_frame_is_the_runtimes_frame_plus_the_event_number() -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    live, connection = _live(owner)
+    runtime_frame = SessionActivity(
+        session_id=str(conversation),
+        owner_user_id=str(owner),
+        timestamp=RUNTIME_AT,
+        payload=SessionActivityOut(
+            busy=False, pending_interaction="none", last_turn_reason="aborted"
+        ),
+    )
+
+    live.announce_activity(runtime_frame)
+
+    [frame] = connection.frames
+    assert frame == {
+        **runtime_frame.model_dump(exclude_none=True, by_alias=True),
+        "seq": 1,
+        "epoch": live.clock.epoch,
+    }
 
 
 def test_a_generation_without_a_conversation_takes_no_event_number() -> None:

@@ -84,7 +84,8 @@ const activityFrame = (
 
 const titleFrame = (conversationId: string, title: string) => ({
   ...sessionEnvelope(conversationId),
-  payload: { session_id: conversationId, title },
+  payload: { title },
+  session_id: conversationId,
   type: 'session.meta.updated',
 })
 
@@ -122,7 +123,6 @@ const rowFrame = (
 
 const deletedFrame = (conversationId: string) => ({
   ...sessionEnvelope(conversationId),
-  payload: { session_id: conversationId },
   session_id: conversationId,
   type: 'event.session.deleted',
 })

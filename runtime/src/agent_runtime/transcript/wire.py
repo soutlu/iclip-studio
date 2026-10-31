@@ -37,8 +37,10 @@ class Envelope(BaseModel):
 
 
 class ResetPayload(Envelope):
-    """``has_more_older`` 在 snapshot 外面，协议就是这么放的。"""
+    """``has_more_older`` 在 snapshot 外面，协议就是这么放的。``type`` 与外层帧的相同，照 Kimi：载荷本身就是
+    一个完整的 transcript 事件，客户端直接交给事件 schema。"""
 
+    type: Literal["transcript.reset"] = "transcript.reset"
     agent_id: str
     snapshot: TranscriptSnapshot
     has_more_older: bool = True
@@ -46,8 +48,9 @@ class ResetPayload(Envelope):
 
 
 class OpsPayload(Envelope):
-    """一批操作。``seq`` 是这一批的批次号，每 agent 连续。"""
+    """一批操作。``seq`` 是这一批的批次号，每 agent 连续；``type`` 同 ``ResetPayload``。"""
 
+    type: Literal["transcript.ops"] = "transcript.ops"
     agent_id: str
     ops: tuple[EmittableOperation, ...]
     seq: int

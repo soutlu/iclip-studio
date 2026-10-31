@@ -4,6 +4,7 @@
       "type": "transcript.reset",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.reset",
         "agent_id": "main",
         "snapshot": {
           "items": [],
@@ -49,8 +50,8 @@
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 1,
         "ops": [
           {
             "op": "prompt.upsert",
@@ -66,15 +67,16 @@
               "createdAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 1
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 2,
         "ops": [
           {
             "op": "turn.upsert",
@@ -102,15 +104,16 @@
               "activity": "turn"
             }
           }
-        ]
+        ],
+        "seq": 2
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 3,
         "ops": [
           {
             "op": "step.upsert",
@@ -124,15 +127,16 @@
               "startedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 3
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 4,
         "ops": [
           {
             "op": "step.upsert",
@@ -147,15 +151,16 @@
               "endedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 4
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 5,
         "ops": [
           {
             "op": "frame.upsert",
@@ -175,15 +180,16 @@
               }
             }
           }
-        ]
+        ],
+        "seq": 5
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 6,
         "ops": [
           {
             "op": "frame.upsert",
@@ -202,15 +208,16 @@
               }
             }
           }
-        ]
+        ],
+        "seq": 6
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 7,
         "ops": [
           {
             "op": "frame.upsert",
@@ -243,15 +250,16 @@
               "startedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 7
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 8,
         "ops": [
           {
             "op": "frame.upsert",
@@ -271,15 +279,16 @@
               }
             }
           }
-        ]
+        ],
+        "seq": 8
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 9,
         "ops": [
           {
             "op": "step.upsert",
@@ -293,15 +302,16 @@
               "startedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 9
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 10,
         "ops": [
           {
             "op": "frame.upsert",
@@ -325,15 +335,16 @@
             "offset": 0,
             "text": "简报写好了，等拆解。"
           }
-        ]
+        ],
+        "seq": 10
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 11,
         "ops": [
           {
             "op": "frame.upsert",
@@ -346,15 +357,16 @@
               "text": "简报写好了，等拆解。"
             }
           }
-        ]
+        ],
+        "seq": 11
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 12,
         "ops": [
           {
             "op": "frame.upsert",
@@ -388,15 +400,16 @@
               "resultSummary": "视频拆解完毕，文档在 references/ref.md。"
             }
           }
-        ]
+        ],
+        "seq": 12
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 13,
         "ops": [
           {
             "op": "step.upsert",
@@ -411,15 +424,16 @@
               "endedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 13
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 14,
         "ops": [
           {
             "op": "step.upsert",
@@ -433,15 +447,16 @@
               "startedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 14
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 15,
         "ops": [
           {
             "op": "frame.upsert",
@@ -465,15 +480,16 @@
             "offset": 0,
             "text": "拆解好了，接着写分镜。"
           }
-        ]
+        ],
+        "seq": 15
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 16,
         "ops": [
           {
             "op": "frame.upsert",
@@ -486,15 +502,16 @@
               "text": "拆解好了，接着写分镜。"
             }
           }
-        ]
+        ],
+        "seq": 16
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 17,
         "ops": [
           {
             "op": "step.upsert",
@@ -509,15 +526,16 @@
               "endedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 17
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 18,
         "ops": [
           {
             "op": "step.upsert",
@@ -576,15 +594,16 @@
               }
             }
           }
-        ]
+        ],
+        "seq": 18
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 19,
         "ops": [
           {
             "op": "turn.upsert",
@@ -619,15 +638,16 @@
               "activity": "idle"
             }
           }
-        ]
+        ],
+        "seq": 19
       }
     },
     {
       "type": "transcript.ops",
       "stream_epoch": "<epoch>",
       "payload": {
+        "type": "transcript.ops",
         "agent_id": "main",
-        "seq": 20,
         "ops": [
           {
             "op": "prompt.upsert",
@@ -644,7 +664,8 @@
               "finishedAt": "<ts>"
             }
           }
-        ]
+        ],
+        "seq": 20
       }
     }
   ],
