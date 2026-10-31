@@ -340,6 +340,24 @@ jobs:
         if: matrix.group == 'application'
         run: uv run python scripts/dump_openapi.py --check
 
+  # 运行时镜像按 deploy/runtime-video/uv.lock 安装，上面几组测的是 server/uv.lock 的版本。后端检查选中时
+  # runtime/、plugins/video/、server/ 都可能改了依赖，deploy/ 下的改动按 all 也会选中它。
+  runtime_image_lock:
+    name: runtime-image-lock
+    needs: scope
+    if: needs.scope.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # 与 setup-server 固定同一版本；这里只核对锁，不同步依赖。
+      - uses: astral-sh/setup-uv@v10.0.1
+      - name: Check lock is up to date
+        run: uv lock --check
+        working-directory: deploy/runtime-video
+      - name: Check versions match server lock
+        run: python3 scripts/check-locks.py
+
   web_static:
     name: web-static
     needs: scope
@@ -487,6 +505,7 @@ jobs:
       - server_static
       - server_unit
       - server_integration
+      - runtime_image_lock
       - web_static
       - web_build
       - web_unit
@@ -520,6 +539,7 @@ jobs:
           SERVER_STATIC_RESULT: ${{ needs.server_static.result }}
           SERVER_UNIT_RESULT: ${{ needs.server_unit.result }}
           SERVER_INTEGRATION_RESULT: ${{ needs.server_integration.result }}
+          RUNTIME_IMAGE_LOCK_RESULT: ${{ needs.runtime_image_lock.result }}
           WEB_REQUIRED: ${{ needs.scope.outputs.web }}
           WEB_STATIC_RESULT: ${{ needs.web_static.result }}
           WEB_BUILD_RESULT: ${{ needs.web_build.result }}
@@ -550,6 +570,7 @@ jobs:
             printf '| server-static | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT"
             printf '| server-unit | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT"
             printf '| server-integration（8 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
+            printf '| runtime-image-lock | %s | %s |\n' "$SERVER_REQUIRED" "$RUNTIME_IMAGE_LOCK_RESULT"
             printf '| web-static | %s | %s |\n' "$WEB_REQUIRED" "$WEB_STATIC_RESULT"
             printf '| web-build | %s | %s |\n' "$WEB_REQUIRED" "$WEB_BUILD_RESULT"
             printf '| web-unit（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_UNIT_RESULT"
@@ -580,6 +601,7 @@ jobs:
           require_result server-static "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT" || failed=1
           require_result server-unit "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT" || failed=1
           require_result server-integration "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT" || failed=1
+          require_result runtime-image-lock "$SERVER_REQUIRED" "$RUNTIME_IMAGE_LOCK_RESULT" || failed=1
           require_result web-static "$WEB_REQUIRED" "$WEB_STATIC_RESULT" || failed=1
           require_result web-build "$WEB_REQUIRED" "$WEB_BUILD_RESULT" || failed=1
           require_result web-unit "$WEB_REQUIRED" "$WEB_UNIT_RESULT" || failed=1

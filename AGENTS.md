@@ -11,19 +11,20 @@
 | `make setup` | 安装后端与前端依赖 |
 | `make dev` | 启动后端与运行时服务；环境准备见[本地启动](docs/deploy.md#本地启动) |
 | `make db-upgrade` | 执行 Alembic 迁移；服务启动不自动建表 |
-| `make check` | 运行时（`runtime/`）、视频插件（`plugins/video/`）与后端的 lint、格式、类型、依赖边界、常规测试，以及合同与文档对账；CI 已包含这些检查，本地不必跑 |
+| `make check` | 运行时（`runtime/`）、视频插件（`plugins/video/`）与后端的 lint、格式、类型、依赖边界、常规测试，以及合同、运行时镜像的锁与文档对账；CI 已包含这些检查，本地不必跑 |
 | `make web-check` | 前端 `ci:check`；CI 已包含这些检查，本地不必跑 |
 | `make test` | 运行时、视频插件与后端的单元测试和无真实 LLM 的集成测试 |
 | `make test-external` | 使用外部服务凭证的测试；环境与跳过规则见 [测试规范](docs/test-design.md) |
 | `make contract` | 从后端与运行时服务导出 OpenAPI |
 | `make docs-check` | 核对 Markdown 相对链接与 make 目标 |
+| `make lock-check` | 核对运行时镜像的锁 `deploy/runtime-video/uv.lock`：与项目文件一致，且与 `server/uv.lock` 共有的包同一版本 |
 | `make hooks` | 安装本地 pre-commit / pre-push hooks |
 
 `make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库按[本地启动](docs/deploy.md#本地启动)的步骤。
 
 本地只跑与改动相关的检查，通过后再推送；生产构建与全量 e2e 交给 CI，不在本地重复。
 
-- 后端、运行时或视频插件变更提交前执行 `make lint`、`make format-check` 与 `make typecheck`（三个项目都查），并运行与改动直接相关的 pytest；改了端点再跑 `make contract`，改了模块依赖关系再跑 `make tach`。完整测试由 CI 运行，本地不重复跑 `make check`。前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
+- 后端、运行时或视频插件变更提交前执行 `make lint`、`make format-check` 与 `make typecheck`（三个项目都查），并运行与改动直接相关的 pytest；改了端点再跑 `make contract`，改了模块依赖关系再跑 `make tach`，改了 Python 依赖再跑 `make lock-check`。完整测试由 CI 运行，本地不重复跑 `make check`。前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
 - 成片渲染服务（`render/`，以及它编进去的前端成片合成代码、组件目录与生成的合同）变更在 `render/` 执行 `pnpm lint`、`pnpm typecheck` 与 `pnpm test`；本机找不到 chrome-headless-shell 时真实渲染的集成测试跳过并写明原因。
 - 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
