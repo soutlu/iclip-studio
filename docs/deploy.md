@@ -20,7 +20,7 @@
    make dev          # 后端 http://localhost:7788，运行时 http://localhost:7790，健康检查都是 /healthz
    ```
 
-   - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 时启动就向后端取图片模型）；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
+   - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 时启动就向后端取图片模型），后端 60 秒内没答就连同后端一起退出，原因在上面后端的报错里；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
 
    - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到 agent 配置入库的版本](#升级到-agent-配置入库的版本)第 4–6 步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
    - 带取帧、出图或视频理解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
@@ -137,11 +137,12 @@
 4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[持久化与迁移](architecture.md#4-持久化与迁移)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
 5. 升级到生成记录把产出并进 `output` 的版本（迁移 0039）时，先停后端再执行迁移：旧版本的代码读不了新的表结构。迁移完成后，在同一停机窗口里在库里执行 `VACUUM FULL iclip.generation_jobs`（期间锁表），回收迁移整表更新留下的旧行，实测每百万行十几秒；再按第 3 步启动新版本。
 6. 升级到 agent 改在运行时服务里跑的版本时，启动前先改 `configs/config.yaml`，还留着下面这些段后端启动失败，报错点名那一段和它在运行时配置里的位置：
+   - 按[服务器部署](#服务器部署)第 3 步从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 建好 `configs/runtime.yaml`，下面搬过去的值写进这份文件。
    - 删掉 `agent_runs` 段，改过的值写进 `configs/runtime.yaml` 的 `agent_runs`（字段同名）。
    - 删掉 `conversations` 段，`conversations.compaction` 的值写进 `configs/runtime.yaml` 的 `compaction`（字段同名）。
    - 删掉 `video` 段，视频理解改在 `configs/runtime.yaml` 的 `plugins.config.video` 配：`understanding_model` → `model`，`understanding_thinking` → `thinking`，`understanding_fps` → `fps`，再写上 `understanding_url`（原来 `VIDEO_UNDERSTANDING_URL` 的值）与 `api_key_env: VIDEO_UNDERSTANDING_API_KEY`。`.env` 的 `VIDEO_UNDERSTANDING_*` 留着，后端的 `iclip_studio` 拆解还用。
    - `shot_video` 段只留 `shot_video: {}`，出图重试策略（`poll_interval_seconds`、`dev_attempts`、`pro_attempts`、`backoff_seconds`、`backoff_factor`、`job_timeout_seconds`）写进 `configs/runtime.yaml` 的 `plugins.config.shot_video`（字段同名）。
-   - `.env` 里要有 `RUNTIME_INTERNAL_TOKEN`（见[服务器部署](#服务器部署)第 3 步），缺了后端起不来。
+   - `.env` 里补上运行时服务那几项（`RUNTIME_URL`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN` 等，见[服务器部署](#服务器部署)第 3 步），缺了后端起不来。
 
 ### 升级到 agent 配置入库的版本
 
@@ -150,7 +151,7 @@
 1. 停服务（`docker compose stop server`），备份数据库；把部署目录的 `configs/`、`agents/`、`skills/` 另存一份，并把 `configs/config.yaml` 复制成 `configs/config.old.yaml`。
 2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
 3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`，0045 把技能库、模型供应商与 agent 配置的表挪进 `agent_runtime`；第 5、6 步的切换命令要在它们之后跑）。
-4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`，并按[升级](#升级)第 6 步改好搬到运行时配置的那几段（`config.old.yaml` 不动）：下一步的命令也按 `configs/config.yaml` 读后端配置。
+4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`，并按[升级](#升级)第 6 步建好 `configs/runtime.yaml`、改好搬到运行时配置的那几段、在 `.env` 补上运行时服务那几项（`config.old.yaml` 不动）：下一步的命令也按 `configs/config.yaml` 读后端配置。
 5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 段时，插件包打开时要向后端取图片模型，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
 
    ```bash
