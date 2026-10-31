@@ -72,11 +72,20 @@ def _last_user_text(messages: list[ModelMessage]) -> str:
 
 
 @pytest.fixture
-def models() -> dict[str, FunctionModel]:
-    """延迟响应以覆盖对话忙碌窗口；提供 stream_function 以适配流式运行。"""
+def reply_allowed() -> asyncio.Event:
+    """默认放行模型响应；需要忙碌窗口的用例自行暂停并释放。"""
+
+    allowed = asyncio.Event()
+    allowed.set()
+    return allowed
+
+
+@pytest.fixture
+def models(reply_allowed: asyncio.Event) -> dict[str, FunctionModel]:
+    """提供流式模型替身，忙碌窗口由用例显式控制。"""
 
     async def reply(messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
-        await asyncio.sleep(0.5)
+        await reply_allowed.wait()
         yield f"答：{_last_user_text(messages)}"
 
     return {TEST_MODEL_NAME: FunctionModel(stream_function=reply)}
@@ -163,7 +172,7 @@ async def test_regenerate_with_new_content_replays_the_edited_message(
 
 
 async def test_regenerating_twice_with_the_same_prompt_id_returns_the_first(
-    app: FastAPI, pg_url: str
+    app: FastAPI, pg_url: str, reply_allowed: asyncio.Event
 ) -> None:
     """幂等请求认领须早于忙碌检查，避免重试被拒或重复截断末轮。"""
 
@@ -175,18 +184,26 @@ async def test_regenerating_twice_with_the_same_prompt_id_returns_the_first(
         await _send(client, conversation_id, "prm_t2", "第二问")
         await settled(client, conversation_id)
 
-        first = await client.post(
-            f"/conversations/{conversation_id}/turns/t2:regenerate",
-            json={"prompt_id": "prm_retry"},
-        )
-        again = await client.post(
-            f"/conversations/{conversation_id}/turns/t2:regenerate",
-            json={"prompt_id": "prm_retry"},
-        )
-        assert first.status_code == 200, first.text
-        assert again.status_code == 200, again.text
-        assert first.json()["promptId"] == "prm_retry"
-        assert again.json()["promptId"] == "prm_retry"
+        reply_allowed.clear()
+        try:
+            first = await client.post(
+                f"/conversations/{conversation_id}/turns/t2:regenerate",
+                json={"prompt_id": "prm_retry"},
+            )
+            assert first.status_code == 200, first.text
+            assert first.json()["promptId"] == "prm_retry"
+            pending = (await client.get(f"/conversations/{conversation_id}/prompts")).json()
+            assert pending["active"]["promptId"] == "prm_retry"
+            assert pending["queued"] == []
+
+            again = await client.post(
+                f"/conversations/{conversation_id}/turns/t2:regenerate",
+                json={"prompt_id": "prm_retry"},
+            )
+            assert again.status_code == 200, again.text
+            assert again.json()["promptId"] == "prm_retry"
+        finally:
+            reply_allowed.set()
         await settled(client, conversation_id)
         page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
 
@@ -209,20 +226,32 @@ async def test_regenerate_with_empty_content_is_unprocessable(app: FastAPI, pg_u
     assert empty.status_code == 422
 
 
-async def test_regenerate_while_busy_is_conflict(app: FastAPI, pg_url: str) -> None:
+async def test_regenerate_while_busy_is_conflict(
+    app: FastAPI, pg_url: str, reply_allowed: asyncio.Event
+) -> None:
 
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
-        await _send(client, conversation_id, "prm_busy1", "问")
-        await _send(client, conversation_id, "prm_busy2", "再问")
+        reply_allowed.clear()
+        try:
+            await _send(client, conversation_id, "prm_busy1", "问")
+            await _send(client, conversation_id, "prm_busy2", "再问")
+            pending = (await client.get(f"/conversations/{conversation_id}/prompts")).json()
+            assert pending["active"]["promptId"] == "prm_busy1"
+            assert [prompt["promptId"] for prompt in pending["queued"]] == ["prm_busy2"]
 
-        refused_running = await client.post(f"/conversations/{conversation_id}/turns/t1:regenerate")
-        refused_queued = await client.post(f"/conversations/{conversation_id}/turns/t2:regenerate")
+            refused_running = await client.post(
+                f"/conversations/{conversation_id}/turns/t1:regenerate"
+            )
+            refused_queued = await client.post(
+                f"/conversations/{conversation_id}/turns/t2:regenerate"
+            )
+            assert refused_running.status_code == 409
+            assert refused_queued.status_code == 409
+        finally:
+            reply_allowed.set()
         await settled(client, conversation_id)
-
-    assert refused_running.status_code == 409
-    assert refused_queued.status_code == 409
 
 
 async def test_regenerate_an_older_turn_is_conflict(app: FastAPI, pg_url: str) -> None:

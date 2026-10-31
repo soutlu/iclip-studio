@@ -244,22 +244,35 @@ jobs:
     if: needs.scope.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # 每组独占一个 runner 和 Postgres；用例会清表，同一数据库内仍串行执行。
+    # 按 CI 实际耗时分组；每组独占 runner 和 Postgres，组内清表的用例仍串行执行。
     strategy:
       fail-fast: false
       matrix:
         include:
-          - group: sessions
+          - group: agents
+            tests: tests/integration_no_llm/agents
+          - group: conversations
             tests: >-
-              tests/integration_no_llm/agents
               tests/integration_no_llm/conversations
+              tests/integration_no_llm/identity
+              tests/integration_no_llm/audit
+          - group: services
+            tests: >-
               tests/integration_no_llm/runtime_service
+              tests/integration_no_llm/generation
+              tests/integration_no_llm/library
+              tests/integration_no_llm/references
           - group: application
             tests: >-
               tests/integration_no_llm
               --ignore=tests/integration_no_llm/agents
               --ignore=tests/integration_no_llm/conversations
+              --ignore=tests/integration_no_llm/identity
+              --ignore=tests/integration_no_llm/audit
               --ignore=tests/integration_no_llm/runtime_service
+              --ignore=tests/integration_no_llm/generation
+              --ignore=tests/integration_no_llm/library
+              --ignore=tests/integration_no_llm/references
     defaults:
       run:
         working-directory: server
@@ -498,7 +511,7 @@ jobs:
             printf '| video-plugins-unit | %s | %s |\n' "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_UNIT_RESULT"
             printf '| server-static | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT"
             printf '| server-unit | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT"
-            printf '| server-integration（2 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
+            printf '| server-integration（4 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
             printf '| web-static | %s | %s |\n' "$WEB_REQUIRED" "$WEB_STATIC_RESULT"
             printf '| web-build | %s | %s |\n' "$WEB_REQUIRED" "$WEB_BUILD_RESULT"
             printf '| web-unit（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_UNIT_RESULT"
