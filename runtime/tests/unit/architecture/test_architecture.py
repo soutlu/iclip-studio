@@ -229,12 +229,7 @@ HOST_TABLE_IN_SQL = re.compile(
     rf"\b(from|join|into|update|table|references)\s+{HOST_SCHEMA}\.", re.IGNORECASE
 )
 
-HOST_SCHEMA_ALLOWLIST: dict[str, str] = {
-    # 三块配置的表还在宿主的 schema 里；表挪进 agent_runtime 之后这三行一并删掉，名单回到空。
-    "config/agent_config/infra_sql.py": "agent 配置的表还在 iclip schema",
-    "config/model_providers/infra_sql.py": "模型供应商的表还在 iclip schema",
-    "config/skills/infra_sql.py": "技能库的表还在 iclip schema",
-}
+HOST_SCHEMA_ALLOWLIST: dict[str, str] = {}
 """源码里还能写宿主 schema 的文件。运行时只读写自己 schema 里的表，宿主的数据经应用的接口拿。"""
 
 
