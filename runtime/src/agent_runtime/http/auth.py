@@ -15,15 +15,14 @@ import hmac
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Final
+from typing import Annotated
 
 from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from agent_runtime.app_wire import END_USER_HEADER
 from agent_runtime.errors import AuthenticationFailed, PermissionDenied
 from agent_runtime.settings import ResolvedApp
-
-END_USER_HEADER: Final = "X-End-User"
 
 _bearer = HTTPBearer(
     scheme_name="AppKey",
@@ -107,7 +106,6 @@ def build_app_auth(apps: Sequence[ResolvedApp]) -> AppAuth:
 
 
 __all__ = [
-    "END_USER_HEADER",
     "AppAuth",
     "CallingApp",
     "EndUser",

@@ -93,6 +93,26 @@ depends_on = []
 path = "agent_runtime.live"
 depends_on = ["agent_runtime.transcript"]
 
+# 给应用的 /v1 接口的请求体与答复体：路由与客户端库共用，不碰 Web 框架。
+[[modules]]
+path = "agent_runtime.app_wire"
+depends_on = [
+    "agent_runtime.transcript",
+    "agent_runtime.file_store",
+    "agent_runtime.material_ledger",
+]
+
+# 应用用的客户端库：经 HTTP 与 WebSocket 调运行时服务，只认接口与帧的形状，不碰服务端的实现。
+[[modules]]
+path = "agent_runtime.client"
+depends_on = [
+    "agent_runtime.app_wire",
+    "agent_runtime.transcript",
+    "agent_runtime.live",
+    "agent_runtime.file_store",
+    "agent_runtime.material_ledger",
+]
+
 # 回调应用：请求体的形状与按会话归属找地址发请求，应用那一侧也引用这里的请求体。
 [[modules]]
 path = "agent_runtime.hooks"
@@ -103,6 +123,7 @@ depends_on = ["agent_runtime.settings", "agent_runtime.transcript"]
 [[modules]]
 path = "agent_runtime.http"
 depends_on = [
+    "agent_runtime.app_wire",
     "agent_runtime.settings",
     "agent_runtime.live",
     "agent_runtime.hooks",

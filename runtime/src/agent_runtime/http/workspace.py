@@ -14,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
+from agent_runtime.app_wire import FilesOut, FileWriteIn, MaterialsIn
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import (
@@ -29,23 +30,6 @@ from agent_runtime.file_store.store import (
 from agent_runtime.http.auth import CallingApp, SessionOwner
 from agent_runtime.material_ledger.store import Material, MaterialLedger
 from agent_runtime.service.sessions import SessionService
-from agent_runtime.transcript.wire import Envelope
-
-
-class FilesOut(Envelope):
-    files: tuple[FileEntry, ...]
-
-
-class FileWriteIn(Envelope):
-    """整份覆盖一份文件。``expected_version`` 给了就按它比对：对不上（含文件已删）是 409；不给照写。"""
-
-    content: str
-    expected_version: int | None = None
-
-
-class MaterialsIn(Envelope):
-    materials: tuple[Material, ...]
-    """同一地址重复登记保留首条。"""
 
 
 def _namespace(owner: uuid.UUID, session_id: uuid.UUID) -> str:
@@ -142,4 +126,4 @@ def create_workspace_router(
     return router
 
 
-__all__ = ["FileWriteIn", "FilesOut", "MaterialsIn", "create_workspace_router"]
+__all__ = ["create_workspace_router"]

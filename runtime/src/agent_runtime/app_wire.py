@@ -1,0 +1,159 @@
+"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区与素材台账、agent 名册与起标题。
+
+路由（``agent_runtime.http``）与应用用的客户端库（``agent_runtime.client``）共用这一份，只依赖 pydantic
+与 transcript、文件存储、素材台账的形状，不碰 Web 框架。transcript 的消息与读页信封在
+``agent_runtime.transcript.wire``。
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Annotated, Final
+
+from pydantic import Field
+
+from agent_runtime.file_store.store import FileEntry
+from agent_runtime.material_ledger.store import Material
+from agent_runtime.transcript.wire import Envelope, PromptId, PromptParts, SessionActivityOut
+
+END_USER_HEADER: Final = "X-End-User"
+"""代办用户的请求头：管理接口里是操作人，会话接口里是会话的属主，值都是用户 id。"""
+
+MAX_AGENT_ID_CHARS = 128
+"""agent 标识的长度上限，与后端建对话的请求体一致。"""
+
+AgentIdField = Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
+
+
+# --- 会话 ---------------------------------------------------------------------
+
+
+class SessionOpenIn(Envelope):
+    """开一个会话：固定这个 agent 此刻的当前版本。"""
+
+    id: uuid.UUID
+    agent_id: AgentIdField
+
+
+class SessionForkIn(Envelope):
+    """从路径上的源会话第 ``turn`` 轮分叉出 ``target_id``；目标的属主是 ``X-End-User``。"""
+
+    target_id: uuid.UUID
+    source_user: uuid.UUID
+    """源会话的属主。"""
+    turn: Annotated[int, Field(ge=1)]
+    """从第几轮分叉，从 1 数，这一轮包含在副本里。"""
+    agent_id: AgentIdField | None = None
+    """不给照抄源会话固定的版本；给了按开会话的规矩固定那个 agent 的当前版本。"""
+
+
+class FilesCopyIn(Envelope):
+    """按清单把源会话的几份文件拷进 ``target_id``，连同整份素材台账；目标的属主是 ``X-End-User``。"""
+
+    target_id: uuid.UUID
+    source_user: uuid.UUID
+    """源会话的属主。"""
+    files: tuple[tuple[str, str], ...]
+    """（源路径，目标路径）；源里没有的跳过。"""
+    require_any: tuple[str, ...] = ()
+    """这些源路径一个都不在时什么都不写，答 ``copied: false``。"""
+
+
+class FilesCopyOut(Envelope):
+    copied: bool
+
+
+class ActivitiesIn(Envelope):
+    ids: tuple[uuid.UUID, ...]
+
+
+class ActivitiesOut(Envelope):
+    items: dict[uuid.UUID, SessionActivityOut]
+    """按会话 id；只有调用方应用自己的会话，不存在的与别的应用的都不在，没跑过的是空闲。"""
+
+
+class BusyOut(Envelope):
+    ids: tuple[uuid.UUID, ...]
+
+
+# --- 消息 ---------------------------------------------------------------------
+
+
+class SessionPromptIn(Envelope):
+    """发一条消息：协议请求体（``PromptSubmission``）的 ``prompt_id`` 与 ``content``，加上这段会话用哪个
+    agent 与这条消息替谁发。
+
+    属主是 ``X-End-User``；``user_name`` 由应用按它的规则定好，这里必填。
+    """
+
+    prompt_id: PromptId
+    content: PromptParts
+    user_name: Annotated[str, Field(min_length=1)]
+    agent_id: AgentIdField
+
+
+# --- 工作区与素材台账 -----------------------------------------------------------
+
+
+class FilesOut(Envelope):
+    files: tuple[FileEntry, ...]
+
+
+class FileWriteIn(Envelope):
+    """整份覆盖一份文件。``expected_version`` 给了就按它比对：对不上（含文件已删）是 409；不给照写。"""
+
+    content: str
+    expected_version: int | None = None
+
+
+class MaterialsIn(Envelope):
+    materials: tuple[Material, ...]
+    """同一地址重复登记保留首条。"""
+
+
+# --- agent 名册与起标题 ----------------------------------------------------------
+
+
+class AgentEntryOut(Envelope):
+    id: str
+    name: str
+    """给人看的名字。"""
+
+
+class AgentDirectoryOut(Envelope):
+    """上菜单、在用、发布过的 agent，按配置里的先后；``default`` 是第一个，名册空着为空。"""
+
+    items: tuple[AgentEntryOut, ...]
+    default: str | None
+
+
+class TitleIn(Envelope):
+    text: str
+    """这一轮的用户消息。"""
+
+
+class TitleOut(Envelope):
+    title: str | None
+    """没设默认对话模型、建不出模型或模型没给出标题时为空，应用照旧用默认名。"""
+
+
+__all__ = [
+    "END_USER_HEADER",
+    "MAX_AGENT_ID_CHARS",
+    "ActivitiesIn",
+    "ActivitiesOut",
+    "AgentDirectoryOut",
+    "AgentEntryOut",
+    "AgentIdField",
+    "BusyOut",
+    "FileWriteIn",
+    "FilesCopyIn",
+    "FilesCopyOut",
+    "FilesOut",
+    "MaterialsIn",
+    "SessionForkIn",
+    "SessionOpenIn",
+    "SessionPromptIn",
+    "TitleIn",
+    "TitleOut",
+]
