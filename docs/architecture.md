@@ -20,7 +20,7 @@ Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproje
 
 浏览器那条 WebSocket（`/ws`）是一条转发：每条浏览器连接对应一条运行时的对话内容流，连上浏览器后就连它。`subscribe_v2` 先在后端核这段对话的可见性，看不见的、不存在的与写法不对的就地回 `not_found`、不转过去；看得见的换成规范写法的 id 原样转过去，档位、水位、补批与子代理流的归属由运行时照同一套规则处理，回执也由它给，所以每帧只有一个回执。`unsubscribe_v2` 原样转过去。运行时发来的回执、reset / ops、文件变化与它新加的帧不解析，原文转给浏览器。会话活动由应用事件流送来，后端原样发给属主与治理者的连接；其余全局帧只在后端。浏览器这一段的心跳照旧，运行时那一段的心跳由客户端库自动回。对话内容流断了（运行时关连接、网络中断）就以 `1001` 关掉浏览器连接，客户端照常重连、重订。连接结束时退出对话内容流，运行时撤掉它的全部订阅并放开实时状态。
 
-会话活动经运行时的应用事件流到后端：每个后端进程一个消费者（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)），随 lifespan 起停，逐个处理事件，按解析出的属主把运行时的 `event.session.work_changed` 原文发给属主与治理者（运行时新加的字段一并到达），认不出类型的帧记日志后跳过。事件流断了（含后端启动时运行时还没起来）先记日志，再以 `1001` 关掉此刻全部浏览器连接（断线期间的事件不补发，客户端重连后重拉列表对齐），然后按封顶 10 秒的退避重连；每次连上时也以 `1001` 关掉此刻全部浏览器连接，因为浏览器的重连退避与这里不同，可能在断线期间就已重连、重拉过，之后到事件流连上为止的活动它收不到。活动与轮次收尾分走两条上游，两者之间不保证先后；前端收到活动变化就按 id 补读一行，读的期间到达的帧在结果回来后重放，收到空闲那一帧之后读到的行已经是空闲。
+会话活动经运行时的应用事件流到后端：每个后端进程一个消费者（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)），随 lifespan 起停，逐个处理事件，按解析出的属主把运行时的 `event.session.work_changed` 原文发给属主与治理者（运行时新加的字段一并到达），认不出类型的帧记日志后跳过。事件流断了（含后端启动时运行时还没起来）先记日志（从没连上过时只在第一次失败记一条 info「运行时还没起来」，自启动起超过 60 秒仍没连上才每次记 warning；连上过再断，每次失败都记 warning），再以 `1001` 关掉此刻全部浏览器连接（断线期间的事件不补发，客户端重连后重拉列表对齐），然后按封顶 10 秒的退避重连；每次连上时也以 `1001` 关掉此刻全部浏览器连接，因为浏览器的重连退避与这里不同，可能在断线期间就已重连、重拉过，之后到事件流连上为止的活动它收不到。活动与轮次收尾分走两条上游，两者之间不保证先后；前端收到活动变化就按 id 补读一行，读的期间到达的帧在结果回来后重放，收到空闲那一帧之后读到的行已经是空闲。
 
 视频业务的 agent 插件是另一个单独的 Python 项目 [plugins/video/](../plugins/video/pyproject.toml)（包 `iclip_video`，现有 `iclip_studio`、`video`、`video_shots`、`video_breakdown`、`shot_video` 五个插件包，以及镜头组规则、出片正文的拼装与反拆、镜头组表、拆解文档与视频拆解协议、制作页视图的形状这些视频格式代码）；它只依赖运行时，后端依赖它，运行时不依赖它，它也绝不引用后端，边界以 [plugins/video/tach.toml](../plugins/video/tach.toml) 和 [视频插件架构测试](../plugins/video/tests/unit/architecture/test_architecture.py) 为准。插件不做 ffmpeg、图片合成、媒体下载与对象存储写入：`shot_video` 的取帧拼板与宫格切格是插件声明的两个粗粒度端口（`FrameBoards`、`GridCuts`），由后端的 [app/shot_media.py](../server/src/iclip/app/shot_media.py) 实现；切格时插件只说要留哪几格（出图按帧号、设定图按序号），每格存到哪个对象 key 由后端按存储布局定。
 
@@ -159,4 +159,4 @@ WebSocket 订阅、活动状态和文件变更帧的对外约定见 [contract/co
 
 ## 6. 日志
 
-[app/logging.py](../server/src/iclip/app/logging.py) 统一配置 structlog 与标准库日志的渲染链。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。
+structlog 与标准库日志的渲染链在两个文件里，做法相同：后端的 [app/logging.py](../server/src/iclip/app/logging.py) 与运行时服务的 [agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py)，各自定服务名与 `QUIET_LOGGERS`。后端只能引用运行时的形状、报错与客户端库，所以不合成一份。console 格式用本机时间，时间后一列是服务名（「后端」或「运行时」）；JSON 格式的时间是 ISO UTC。两种格式都不打探活成功的 `/healthz` 访问行和 websockets 重复的连接行。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。
