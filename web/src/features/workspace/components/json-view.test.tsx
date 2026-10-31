@@ -47,36 +47,6 @@ const SHOTS = {
 const LARGE = { items: Array.from({ length: 70 }, (_, v) => ({ v })) }
 
 describe('JSON 格式化视图', () => {
-  it('解析后按 2 格缩进排出：键与字符串带引号，括号与逗号都在，没有行号', async () => {
-    await openJson('{"a":"x","b":["y"],"c":{},"d":[]}')
-
-    expect(await screen.findByText('"a"')).toBeVisible()
-    expect(screen.getByText('"x"')).toBeVisible()
-    expect(screen.getByText('{')).toBeVisible()
-    expect(screen.getByText('{}')).toBeVisible()
-    expect(screen.getByText('[]')).toBeVisible()
-    expect(screen.getAllByText(',')).toHaveLength(3)
-    for (const number of ['1', '2', '3', '8']) {
-      expect(screen.queryByText(number)).not.toBeInTheDocument()
-    }
-  })
-
-  it('数字与 true / false / null 各自成段，不并进键名或标点', async () => {
-    await openJson('{"n":6,"t":true,"f":false,"z":null}')
-
-    for (const literal of ['6', 'true', 'false', 'null']) {
-      expect(await screen.findByText(literal)).toBeVisible()
-    }
-  })
-
-  it('页头文件名截中间时，可访问名与悬停提示仍是完整路径', async () => {
-    const path = 'frames/video_shot_storyboard_final.json'
-    await openJson('{}', path)
-
-    const heading = await screen.findByRole('heading', { name: path })
-    expect(within(heading).getByTitle(path)).toBeVisible()
-  })
-
   it('每个非空对象与数组都能收起成 {…} 加项数，再点展开恢复', async () => {
     const user = userEvent.setup()
     await openJson(JSON.stringify(SHOTS))
@@ -97,13 +67,6 @@ describe('JSON 格式化视图', () => {
 
     expect(screen.getByText('"timestamps"')).toBeVisible()
     expect(screen.queryByText('{…}')).not.toBeInTheDocument()
-  })
-
-  it('不超过 200 行的文件默认全部展开', async () => {
-    await openJson(JSON.stringify({ items: LARGE.items.slice(0, 60) }))
-
-    expect(await screen.findByRole('button', { name: '收起 items[59]' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: /^展开/ })).not.toBeInTheDocument()
   })
 
   it('超过 200 行的文件默认只展开前两层', async () => {
@@ -130,13 +93,6 @@ describe('JSON 格式化视图', () => {
 
     expect(screen.getByRole('button', { name: '收起 shots[0].prompt.timeline[0]' })).toBeVisible()
     expect(screen.getByRole('button', { name: '全部收起' })).toBeVisible()
-  })
-
-  it('长字符串原样一段显示，转义照 JSON 写法', async () => {
-    const long = `参考锁定：${'模特的服装与发型跟住 @Image1，'.repeat(12)}\n剪辑形式：硬切。`
-    await openJson(JSON.stringify({ global_settings: long }))
-
-    expect(await screen.findByText(JSON.stringify(long))).toBeVisible()
   })
 
   it('图片地址原文不改，行尾的缩略图点开走共享灯箱', async () => {

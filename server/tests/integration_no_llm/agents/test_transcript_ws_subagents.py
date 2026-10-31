@@ -16,10 +16,12 @@ from fastapi import FastAPI
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from sqlalchemy import text
 from starlette.testclient import TestClient
 
 from tests.helpers.agents import AgentSeed, SubagentSeed
 from tests.helpers.app import TEST_MODEL_NAME
+from tests.helpers.pg import connected
 from tests.helpers.runtime import delegates
 from tests.helpers.ws import AGENT_ID, drain_turn, open_conversation, sign_in, subscribe, until
 
@@ -45,7 +47,7 @@ def _says_in_two_halves() -> FunctionModel:
             await asyncio.sleep(0.02)
         yield SECOND_HALF
 
-    return FunctionModel(stream_function=stream)
+    return FunctionModel(stream_function=stream, model_name=WRITER_MODEL)
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +101,9 @@ def _run_a_delegation(tc: TestClient, conversation_id: str) -> str:
         return _child_of(drain_turn(ws))
 
 
-def test_a_child_stream_is_read_by_its_agent_id(ws_agent_app: FastAPI, pg_url: str) -> None:
+def test_a_child_stream_is_read_by_its_agent_id(
+    ws_agent_app: FastAPI, pg_url: str, models: dict[str, Model]
+) -> None:
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -133,6 +137,29 @@ def test_a_child_stream_is_read_by_its_agent_id(ws_agent_app: FastAPI, pg_url: s
             ).status_code
             == 422
         )
+
+    async def read_usage() -> dict[str, tuple[int, int, int]]:
+        async with connected(pg_url) as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT model_name, requests, input_tokens, output_tokens "
+                    "FROM agent_runtime.conversation_usage WHERE conversation_id = :conversation_id"
+                ),
+                {"conversation_id": conversation_id},
+            )
+            return {
+                row.model_name: (row.requests, row.input_tokens, row.output_tokens) for row in rows
+            }
+
+    # 派活与收尾的两次父响应、一次子响应都归入原对话，审计不能漏算子代理费用。
+    usage = asyncio.run(read_usage())
+    assert {name: requests for name, (requests, _, _) in usage.items()} == {
+        models[TEST_MODEL_NAME].model_name: 2,
+        WRITER_MODEL: 1,
+    }
+    assert all(
+        input_tokens > 0 and output_tokens > 0 for _, input_tokens, output_tokens in usage.values()
+    )
 
 
 def test_ws_subscribes_each_agent_in_the_table(ws_agent_app: FastAPI, pg_url: str) -> None:

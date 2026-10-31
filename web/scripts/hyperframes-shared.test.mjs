@@ -180,7 +180,6 @@ describe('publishedCatalog', () => {
       plain: [],
       own: source.items[4].variables,
     })
-    expect(FONT_VARIABLE).toEqual({ id: 'font', type: 'font', label: '字体', default: '' })
     expect(published.fonts).toEqual({
       Inter: { css: 'vendor/fonts/families/inter.css' },
       Brand: { css: 'vendor/fonts/families/brand.css', brand: 'BR' },

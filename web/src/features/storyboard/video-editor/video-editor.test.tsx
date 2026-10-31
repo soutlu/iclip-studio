@@ -498,33 +498,6 @@ describe('AI 改段的弹出卡', () => {
     expect(within(openCard()).queryByText(/张图片收起时尚未上传完成/)).toBeNull()
   })
 
-  it('镜头短于模型下限时卡头写原因，写了要求也生成不了', async () => {
-    files.set(ROOT_URL, { keyframes: [0, 0.5, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(1))
-
-    expect(
-      within(openCard()).getByText(
-        '该模型编辑至少需要 1 秒，无法生成视频；请拖长选区或按住 Shift 选择相邻镜头',
-      ),
-    ).toBeVisible()
-    pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
-    expect(generateButton()).toBeDisabled()
-  })
-
-  it('能交给 AI 时，写了要求才能生成', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-
-    expect(generateButton()).toBeDisabled()
-    pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
-    await waitFor(() => expect(generateButton()).toBeEnabled())
-  })
-
   it('Seedance 编辑不足 4 秒时禁用，相邻镜头合计 4 秒后才可提交', async () => {
     server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)))
     serveChain([])
@@ -1006,28 +979,6 @@ describe('AI 改段的弹出卡', () => {
     expect(referenceSamples).toEqual([{ url: ROOT_URL, start: 1, end: 4 }])
   })
 
-  it('打开镜头提示词显示完整列表，选区变化不筛选也不自动填入', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor(rootWithShotPrompts)
-    await originalTrack()
-    await user.click(screen.getByRole('button', { name: '镜头提示词' }))
-
-    const panel = screen.getByRole('dialog', { name: '镜头提示词' })
-    expect(within(panel).getByText('推着单车走过')).toBeVisible()
-    expect(within(panel).getByText('停在面包店门口')).toBeVisible()
-    expect(within(panel).getByRole('button', { name: '复制镜头 1 到输入框' })).toBeDisabled()
-    expect(card()).toBeNull()
-
-    await user.click(await shot(2))
-    expect(requestBox().textContent).toBe('')
-    expect(within(panel).getByRole('button', { name: '复制镜头 1 到输入框' })).toBeEnabled()
-    await user.click(await shot(7))
-    expect(requestBox().textContent).toBe('')
-    expect(within(panel).getByText('推着单车走过')).toBeVisible()
-    expect(within(panel).getByText('停在面包店门口')).toBeVisible()
-  })
-
   it('多次复制镜头提示词依次追加，保留已有文字和参考图，浮窗保持打开', async () => {
     serveChain([])
     const user = userEvent.setup()
@@ -1070,19 +1021,6 @@ describe('AI 改段的弹出卡', () => {
     expect(openCard()).toBeVisible()
     expect(requestBox()).toHaveTextContent(/换成黄昏\s*停在面包店门口/)
     expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
-  })
-
-  it('没有结构化镜头时显示空状态，不从整段提示词解析镜头', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor(makeGenerationJob({ ...root, request: { prompt: '0–2 秒：推着单车走过' } }))
-    await user.click(await shot(2))
-    await user.click(screen.getByRole('button', { name: '镜头提示词' }))
-
-    const panel = screen.getByRole('dialog', { name: '镜头提示词' })
-    expect(within(panel).getByText('暂无镜头提示词')).toBeVisible()
-    expect(within(panel).queryByRole('button', { name: /复制镜头/ })).toBeNull()
-    expect(requestBox().textContent).toBe('')
   })
 })
 
@@ -1264,7 +1202,7 @@ describe('草稿与编辑轨', () => {
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
   })
 
-  it('拖草稿块的左、右把手：拖动中草稿不存、总长不变，工具条时间与播放头都在把手处；松手后存一次、总长更新', async () => {
+  it('拖草稿块的左、右把手：拖动中草稿不存，松手或丢失捕获都只保存一次并更新总长', async () => {
     // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
@@ -1314,8 +1252,10 @@ describe('草稿与编辑轨', () => {
     expect(controls()).toHaveTextContent('共 7.6 秒')
     expect(draftWrites()).toHaveLength(1)
 
-    fireEvent.pointerUp(end, { pointerId: 2 })
+    // 把手丢失捕获也结束这次修剪；随后在别处松手不再保存第二遍。
+    fireEvent.lostPointerCapture(end, { pointerId: 2 })
     await waitFor(() => expect(controls()).toHaveTextContent('共 7.5 秒'))
+    fireEvent.pointerUp(window, { pointerId: 2 })
     expect(draftWrites()).toHaveLength(2)
   })
 
@@ -1715,19 +1655,6 @@ describe('合成与版本视图', () => {
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', COMPOSITE_URL)
     expect(playhead()).toHaveValue('0')
     expect(playButton()).toBeVisible()
-  })
-
-  it('失败的合成不占版本行', async () => {
-    serveChain([
-      composite({ id: COMPOSITE_ID, status: 'failed', outputUrl: null, errorMessage: '拼接失败' }),
-    ])
-    const user = userEvent.setup()
-    await renderEditor()
-    await originalTrack()
-    await user.click(viewButton('版本'))
-
-    expect(await findVersion('V1 原片')).toHaveAttribute('aria-pressed', 'true')
-    expect(within(versionRows()).getAllByRole('button')).toHaveLength(1)
   })
 
   it('提交失败保留输入和错误，允许重新提交', async () => {

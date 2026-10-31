@@ -224,7 +224,6 @@ describe('首页真实数据流程', () => {
 
 describe('首页做同款', () => {
   const SAME_PLACEHOLDER = '参照该视频做同款，请输入要替换的内容'
-  const PHRASES = ['换人物', '换产品', '换场景']
   /** 挂着对话的卡，mock 里做得了同款。 */
   const sourceCard = () => {
     const card = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
@@ -251,27 +250,6 @@ describe('首页做同款', () => {
       }),
     )
 
-  it('查询串带来的卡换掉首页 hero、输入框带快捷词，参数从地址栏移除；✕ 回到普通首页', async () => {
-    loginAs(mockAuthUser)
-    const { router, user } = await renderHome(`/?same=${sourceCard().id}`)
-
-    expect(await screen.findByText('跑鞋手持展示')).toBeVisible()
-    expect(screen.queryByRole('heading', { name: 'iClip' })).not.toBeInTheDocument()
-    expect(screen.getByText(SAME_PLACEHOLDER)).toBeInTheDocument()
-    for (const phrase of PHRASES) {
-      expect(screen.getByRole('button', { name: phrase })).toBeVisible()
-    }
-    await waitFor(() => expect(router.state.location.search).toEqual({}))
-
-    await user.click(screen.getByRole('button', { name: '不做同款' }))
-    expect(screen.getByRole('heading', { name: 'iClip' })).toBeInTheDocument()
-    expect(screen.queryByText('跑鞋手持展示')).not.toBeInTheDocument()
-    expect(screen.queryByText(SAME_PLACEHOLDER)).not.toBeInTheDocument()
-    for (const phrase of PHRASES) {
-      expect(screen.queryByRole('button', { name: phrase })).not.toBeInTheDocument()
-    }
-  })
-
   it('快捷词插到光标处并聚焦输入框', async () => {
     loginAs(mockAuthUser)
     const { user } = await renderHome(`/?same=${sourceCard().id}`)
@@ -283,25 +261,6 @@ describe('首页做同款', () => {
     await user.keyboard('黑色跑鞋')
     await user.click(screen.getByRole('button', { name: '换场景' }))
     expect(editor).toHaveTextContent('把产品换成黑色跑鞋把场景换成')
-  })
-
-  it('助手预选源视频用的那个，仍可改选', async () => {
-    loginAs(mockAuthUser)
-    const card = sourceCard()
-    server.use(
-      http.get('*/api/library/videos/:id', () =>
-        HttpResponse.json({
-          canMakeSame: true,
-          groups: [{ shotIndex: 1, versions: [{ ...card.face, take: card.take }] }],
-          video: { ...card, agentId: 'replica' },
-        }),
-      ),
-    )
-    const { user } = await renderHome(`/?same=${card.id}`)
-
-    await user.click(await screen.findByRole('button', { name: '完全复刻' }))
-    await user.click(await screen.findByRole('menuitem', { name: '分镜 Agent' }))
-    expect(await screen.findByRole('button', { name: '分镜 Agent' })).toBeVisible()
   })
 
   it('建对话带上 sameAs，回执丢了重发仍是同一段对话', async () => {

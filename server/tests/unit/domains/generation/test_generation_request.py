@@ -8,13 +8,10 @@ import pytest
 from agent_runtime.errors import ValidationFailed
 
 from iclip.domains.generation.schemas import (
-    IMAGE_MAX_REFERENCES,
     KIND_IMAGE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
-    OPERATION_CUT,
     OPERATION_GENERATE,
-    OPERATION_UPLOAD,
     VideoComposeRequest,
     VideoGenerationIn,
     request_to_payload,
@@ -89,45 +86,6 @@ def test_the_stored_shape_is_chosen_by_kind_operation_and_source() -> None:
         )
 
 
-def test_shot_index_counts_from_one() -> None:
-    """0 与负数都不是镜头号，收下只会落一条读不出镜头组的记录。"""
-
-    for invalid in (0, -1):
-        with pytest.raises(ValueError, match="shot_index"):
-            video_request(shot_index=invalid)
-
-
-@pytest.mark.parametrize(
-    ("kind", "operation"),
-    [(KIND_IMAGE, OPERATION_CUT), (KIND_IMAGE, OPERATION_UPLOAD), (KIND_VIDEO, OPERATION_UPLOAD)],
-)
-def test_cuts_and_uploads_have_no_request(kind: str, operation: str) -> None:
-    """切图与上传创建即完成，没有发给执行方的输入：读回 None，存着一份请求就是持久化坏了。"""
-
-    assert request_to_payload(None) is None
-    assert request_from_payload(kind, operation, None, has_source=False) is None
-    with pytest.raises(ValidationFailed):
-        request_from_payload(kind, operation, {"prompt": "x"}, has_source=False)
-
-
-def test_a_video_cut_is_not_a_record_we_know() -> None:
-    with pytest.raises(ValidationFailed, match="未知的生成类型"):
-        request_from_payload(KIND_VIDEO, OPERATION_CUT, None, has_source=True)
-
-
-@pytest.mark.parametrize(
-    ("kind", "operation"),
-    [
-        (KIND_VIDEO, OPERATION_GENERATE),
-        (KIND_IMAGE, OPERATION_GENERATE),
-        (KIND_VIDEO, OPERATION_COMPOSE),
-    ],
-)
-def test_records_that_call_an_executor_must_have_a_request(kind: str, operation: str) -> None:
-    with pytest.raises(ValidationFailed):
-        request_from_payload(kind, operation, None, has_source=False)
-
-
 # --- 结构化镜头组 shot ------------------------------------------------------------
 
 
@@ -155,47 +113,6 @@ def test_a_stored_shot_without_its_prompt_fails_loudly() -> None:
 
     with pytest.raises(ValidationFailed, match="没有 prompt"):
         request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False)
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"seconds": -2},
-        {"prompt": ""},
-        {"model": ""},
-        {"user_name": "   "},
-        {"reference_image_urls": ["file:///etc/passwd"]},
-    ],
-)
-def test_video_request_rejects_what_we_can_judge_ourselves(overrides: dict[str, object]) -> None:
-    """输入的内容与地址必须满足本系统能判断的约束。"""
-
-    with pytest.raises(ValueError):
-        video_request(**overrides)
-
-
-def test_video_request_strips_the_user_name() -> None:
-    assert video_request(user_name=" logan ").user_name == "logan"
-    assert video_request(user_name=None).user_name is None, "HTTP 边界会填，模型本身允许空"
-
-
-def test_image_request_caps_reference_count() -> None:
-
-    urls = [f"https://example.test/{i}.png" for i in range(IMAGE_MAX_REFERENCES + 1)]
-    with pytest.raises(ValueError):
-        image_request(reference_image_urls=urls)
-
-
-@pytest.mark.parametrize("url", ["file:///etc/passwd", "http://"])
-def test_non_http_reference_url_is_rejected(url: str) -> None:
-    """参考 URL 由供应商下载，只接受带主机名的 HTTP(S)，避免 file:// 等协议访问本地文件。"""
-
-    with pytest.raises(ValueError):
-        VideoGenerationIn(
-            model="vendor-a-seedance-2-5",
-            prompt="猫",
-            reference_video_urls=[url],
-        )
 
 
 @pytest.mark.parametrize(

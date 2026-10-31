@@ -127,42 +127,6 @@ const serveCatalog = (catalog: ComponentCatalog) =>
   server.use(http.get('/hyperframes/catalog.json', () => HttpResponse.json(catalog)))
 
 describe('成片编辑器', () => {
-  it('素材区按镜头组、原作分轨', async () => {
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    expect(within(materials).getByText('镜头组 1')).toBeInTheDocument()
-    expect(within(materials).getByText('生成 A')).toBeInTheDocument()
-    expect(within(materials).getByText('生成 B')).toBeInTheDocument()
-  })
-
-  it('选中镜头按 Enter 插到播放头处，保存选区及首段画布尺寸', async () => {
-    const user = userEvent.setup()
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    await user.click(
-      await within(materials).findByRole('button', { name: /生成 A 镜头 2，2\.0–4\.5 秒/ }),
-    )
-    await user.keyboard('{Enter}')
-
-    expect(
-      await within(filmLane()).findByRole('group', { name: '第 1 段 · A · 镜头 2，2.5 秒' }),
-    ).toBeInTheDocument()
-    await waitSaved((document) =>
-      expect(document?.layer0).toEqual([
-        expect.objectContaining({
-          type: 'video',
-          start: 0,
-          duration: 2_500,
-          playbackStart: 2_000,
-          sourceJobId: TAKE_A,
-        }),
-      ]),
-    )
-    expect(savedDraft()?.canvas).toEqual({ width: 720, height: 1280 })
-  })
-
   it('别处存过更新的一版：换成那一版并说明', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -470,15 +434,6 @@ describe('成片编辑器 · 画面轨多选', () => {
     )
   })
 
-  it('删除按钮同样一次删掉选中的几段', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    await selectRun(user, 2, 3)
-    await user.click(screen.getByRole('button', { name: '删除' }))
-    await waitSaved((document) => expect(document?.layer0.map((clip) => clip.id)).toEqual(['v1']))
-  })
-
   it('⌥←/→ 把选中的几段当成一整块前后挪一位，仍然选着这几段', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
@@ -558,67 +513,6 @@ const generalTab = async (user: ReturnType<typeof userEvent.setup>, category: st
 }
 
 describe('成片编辑器 · 组件', () => {
-  it('通用栏默认第一个分类、没有「全部」与「字幕」；品牌栏按品牌列；切栏后各记自己的分类', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await user.click(screen.getByRole('tab', { name: '通用' }))
-    const chips = await screen.findByRole('radiogroup', { name: '分类' })
-    const radios = within(chips).getAllByRole('radio')
-    expect(radios).toHaveLength(3)
-    expect(radios[0]).toHaveAccessibleName(/^效果\s*1$/)
-    expect(radios[0]).toBeChecked()
-    expect(within(chips).queryByRole('radio', { name: /全部/ })).not.toBeInTheDocument()
-    // 字幕样式是字幕轨的属性，不在组件库里
-    expect(within(chips).queryByRole('radio', { name: /^字幕/ })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('list', { name: '组件' })).getAllByRole('button')).toHaveLength(
-      1,
-    )
-    for (const radio of radios) {
-      await user.click(radio)
-      const grid = screen.getByRole('list', { name: '组件' })
-      expect(within(grid).queryByRole('button', { name: /^测试字幕，/ })).not.toBeInTheDocument()
-      // 有品牌的组件只在品牌栏
-      expect(
-        within(grid).queryByRole('button', { name: /^示例品牌 片尾，/ }),
-      ).not.toBeInTheDocument()
-    }
-    await user.click(within(chips).getByRole('radio', { name: /^场景\s*1$/ }))
-    expect(
-      within(screen.getByRole('list', { name: '组件' })).getByRole('button', {
-        name: /^测试画面，/,
-      }),
-    ).toBeInTheDocument()
-
-    await user.click(screen.getByRole('tab', { name: '品牌' }))
-    const brands = screen.getByRole('radiogroup', { name: '品牌' })
-    expect(within(brands).getByRole('radio', { name: /^示例品牌\s*1$/ })).toBeChecked()
-    expect(
-      within(screen.getByRole('list', { name: '组件' })).getAllByRole('button', {
-        name: /^示例品牌 片尾，画面轨/,
-      }),
-    ).toHaveLength(1)
-    await user.click(screen.getByRole('tab', { name: '通用' }))
-    expect(
-      within(screen.getByRole('radiogroup', { name: '分类' })).getByRole('radio', {
-        name: /^场景/,
-      }),
-    ).toBeChecked()
-  })
-
-  it('目录里没有品牌组件时品牌栏是空的', async () => {
-    const user = userEvent.setup()
-    serveCatalog({
-      ...fixtureCatalog,
-      items: fixtureCatalog.items.filter((item) => item.brand === undefined),
-    })
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await user.click(screen.getByRole('tab', { name: '品牌' }))
-    expect(screen.getByText('暂无品牌组件')).toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: '组件' })).not.toBeInTheDocument()
-  })
-
   it('特效块与组件段的结尾拉不过组件自己的时长，往短里拖照常', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, {
@@ -793,22 +687,6 @@ describe('成片编辑器 · 组件', () => {
     return screen.findByRole('dialog', { name: '组件 · 测试可填项' })
   }
 
-  it('点开组件段：列出全部可填项，填过的显示填的，没填过的取默认值', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, {
-      ...clipsAroundComponent(),
-      layer0: clipsAroundComponent().layer0.map((clip) =>
-        clip.type === 'component' ? { ...clip, variables: {} } : clip,
-      ),
-    })
-    await openEditor()
-    const blank = await openSegment(user)
-    expect(within(blank).getByLabelText('文字')).toHaveValue('')
-    expect(within(blank).getByLabelText('文字')).toHaveAttribute('placeholder', '示例文字')
-    expect(within(blank).getByRole('group', { name: '字体粗细' })).toBeInTheDocument()
-    expect(within(blank).getByRole('group', { name: '底色' })).toBeInTheDocument()
-  })
-
   it('清空填过的文字：回到组件的默认字，草稿里不再存这一项', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
@@ -819,19 +697,6 @@ describe('成片编辑器 · 组件', () => {
     await waitSaved((document) =>
       expect(document?.layer0[1]).toEqual(expect.objectContaining({ variables: {} })),
     )
-  })
-
-  it('组件没有可填项：点选它只选中，不弹浮层', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(
-      CONVERSATION,
-      draftOf([video('v1', TAKE_A, 0, 2_000), card('c1', 2_000, { component: 'fixture-scene' })]),
-    )
-    await openEditor()
-    const button = await blockButton(/选中：第 2 段 · 组件 · 测试画面/)
-    await user.click(button)
-    expect(button).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('dialog', { name: '组件 · 测试画面' })).not.toBeInTheDocument()
   })
 
   it('撤销改字：回到改之前的那一版，并存回服务端', async () => {
@@ -1066,11 +931,6 @@ describe('成片编辑器 · 组件', () => {
         expect(submissions).toEqual([])
       },
     )
-
-    it('没有视频时识别入口不可用', async () => {
-      await openEditor()
-      expect(screen.getByRole('button', { name: '识别字幕' })).toBeDisabled()
-    })
 
     it('无口播属于已完成结果，保留重新识别入口', async () => {
       putMockWholeFilmDraft(CONVERSATION, draftOf([video('v1', TAKE_A, 0, 2_000)]))

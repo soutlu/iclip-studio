@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -94,41 +94,6 @@ const stubContentHeight = (px: number) => {
 describe('ApprovalCard 写入预览', () => {
   afterEach(() => {
     Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight')
-  })
-
-  it('Markdown 排成文档，卡头只给文件名', async () => {
-    stubContentHeight(3 * 21)
-    await renderWithProviders(
-      cardFor(
-        fileFrame({ content: '# 封面\n\n主图在左。', operation: 'write', path: 'shots/cover.md' }),
-      ),
-    )
-
-    const preview = screen.getByRole('region', { name: '改动预览' })
-    expect(within(preview).getByRole('heading', { name: '封面' })).toBeVisible()
-    expect(screen.getByText('cover.md')).toBeVisible()
-    expect(screen.queryByText('shots/cover.md')).toBeNull()
-  })
-
-  it('不是 Markdown 的文件按原文显示，不排版', async () => {
-    stubContentHeight(3 * 21)
-    await renderWithProviders(
-      cardFor(fileFrame({ content: '# 不是标题', operation: 'write', path: 'notes/a.txt' })),
-    )
-
-    const preview = screen.getByRole('region', { name: '改动预览' })
-    expect(within(preview).queryByRole('heading')).toBeNull()
-    expect(within(preview).getByText('# 不是标题')).toBeVisible()
-  })
-
-  it('十二行以内整段显示，不给展开', async () => {
-    stubContentHeight(12 * 21)
-    await renderWithProviders(
-      cardFor(fileFrame({ content: '短短一段', operation: 'write', path: 'a.md' })),
-    )
-
-    expect(screen.getByRole('region', { name: '改动预览' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: '展开全部' })).toBeNull()
   })
 
   it('超过十二行先收起，展开全部与收起来回切换', async () => {

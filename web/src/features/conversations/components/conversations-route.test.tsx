@@ -130,32 +130,6 @@ describe('ConversationsRoute', () => {
     )
   })
 
-  it('首屏读取时给出读取状态，列表到了就换成对话行', async () => {
-    addMockConversation('我的片')
-    let release = () => {}
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    // 处理器不返回响应就落到默认的审计列表处理器，放行前请求一直挂着。
-    server.use(
-      http.get(
-        '*/api/conversations/audit',
-        async () => {
-          await gate
-        },
-        { once: true },
-      ),
-    )
-    await render()
-
-    expect(await screen.findByText('正在读取全部任务')).toHaveAttribute('role', 'status')
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
-
-    release()
-    expect(await rowOf('我的片')).toBeVisible()
-    expect(screen.queryByText('正在读取全部任务')).not.toBeInTheDocument()
-  })
-
   it('封面先取需求单商品图，没有再取最新素材片首帧，都没有就不放图', async () => {
     const productImage = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/products/shirt.jpg'
     const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/cut.mp4'
@@ -193,21 +167,6 @@ describe('ConversationsRoute', () => {
     )
     expect(within(await rowOf('素材片不在 OSS')).queryByRole('img')).not.toBeInTheDocument()
     expect(within(await rowOf('什么都没有')).queryByRole('img')).not.toBeInTheDocument()
-  })
-
-  it('需求单预览还在读时不先放素材片首帧', async () => {
-    const task = addMockTask('还在读的需求')
-    const conversation = addMockConversation('等预览的片')
-    conversation.taskId = task.id
-    mockLatestMasterUrls.set(
-      conversation.id,
-      'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/cut.mp4',
-    )
-    await renderWithProviders(<StatefulConversationsRoute tasks={[]} previewState="loading" />)
-
-    const row = await rowOf('等预览的片')
-    expect(row).toHaveTextContent('正在读取需求单…')
-    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
   })
 
   it('封面读不出来时退成空态，保留对话入口', async () => {

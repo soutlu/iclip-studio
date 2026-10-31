@@ -9,26 +9,24 @@
 | 文件                                                                              | 上游               | 说明                                                                                   |
 | --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------- |
 | `utils/rounding.ts`                                                               | 全文               | 上游没有对应测试                                                                       |
-| `player/lib/time.ts`、`time.test.ts`                                              | 全文               |                                                                                        |
-| `player/components/timelineSnapping.ts`、`.test.ts`                               | 全文               | 吸附到播放头、片段边界、拍点、刻度                                                     |
-| `player/components/timelineZoom.ts`、`.test.ts`                                   | 全文               | 缩放档位与滑杆                                                                         |
+| `player/lib/time.ts`                                                               | 全文               |                                                                                        |
+| `player/components/timelineSnapping.ts`                                            | 全文               | 吸附到播放头、片段边界、拍点、刻度                                                     |
+| `player/components/timelineZoom.ts`                                                | 全文               | 缩放档位与滑杆                                                                         |
 | `player/components/timelineLayout.ts`、`automationLaneHeight.ts`                  | 全文               | 时间与像素换算、行几何                                                                 |
-| `player/components/timelineLayout.test.ts`                                        | 删去部分用例       | 删去依赖未收录模块（`timelineRulerGeometry`、`timelineViewportGeometry`）的 4 个用例 |
-| `player/components/timelineGaps.ts`、`.test.ts`                                   | 全文               | 整轨压实 `resolveAllTrackGaps`                                                         |
+| `player/components/timelineGaps.ts`                                                | 全文               | 整轨压实 `resolveAllTrackGaps`                                                         |
 | `player/components/timelineEditing.ts`                                            | 摘录               | 只取 `resolveTimelineMove`（去掉 z-index 叠放分支及其可选入参、出参）、`resolveTimelineResize` 与两个数值格式化函数 |
-| `player/components/timelineEditing.test.ts`                                       | 摘录               | 只留上述函数与分组移动、分组修剪的用例                                                 |
 | `player/components/timelineGroupEditing.ts`                                       | 摘录（第 1–175 行） | 去掉多选分组修剪的接线；`clampPlaybackRate` 由 `@hyperframes/parsers` 的源码（`packages/parsers/src/mediaDuration.ts` 第 25–34 行）内联替代；`DEFAULT_TIMELINE_MIN_DURATION` 改为导出 |
 | `player/components/timelineCollision.ts`                                          | 摘录               | 只取特效块落到行上最近的空位 `resolveNearestFreeStart`（及其三个小函数）、在行外开新行 `resolveInsertRow` 与 `timeRangesOverlap`，去掉分音画区与分组的落点代码；上游测试未收录 |
 | `player/components/timelineStackingSync.ts`                                       | 全文               | 换行后只给被挪的块重排叠放 `computeStackingPatches`；`spansOverlap` 取已安装的 `@hyperframes/core`；上游测试未收录 |
-| `components/editor/snapEngine.ts`、`.test.ts`                                     | 全文               | 画面上拖动的吸附与参考线；本仓只吸画面本身的中线与四边，不吸别的块                     |
+| `components/editor/snapEngine.ts`                                                  | 全文               | 画面上拖动的吸附与参考线；本仓只吸画面本身的中线与四边，不吸别的块                     |
 | `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts`                  | 本仓替身           | 只声明被抄文件引用的类型：`ZoomMode`、`TimelineTimeRange` 照抄，`TimelineElement` 只留被读的字段 |
 
 ## 工具配置
 
-- 类型检查走单独的 composite 项目 [tsconfig.vendor-hyperframes.json](../../../../../../tsconfig.vendor-hyperframes.json)，测试文件不做类型检查（同 transcript vendor）。上游只开 `strict`，这里只放宽上游源码实际触发的 `exactOptionalPropertyTypes` 与 `noUncheckedIndexedAccess`。
+- 类型检查走单独的 composite 项目 [tsconfig.vendor-hyperframes.json](../../../../../../tsconfig.vendor-hyperframes.json)。上游只开 `strict`，这里只放宽上游源码实际触发的 `exactOptionalPropertyTypes` 与 `noUncheckedIndexedAccess`。
 - ESLint、Prettier、knip 都排除本目录；design-guard 照常扫描。
-- 测试由本仓 Vitest 照常运行（`pnpm test -- whole-film`）。
+- 本仓编辑规则由[上级目录的测试](../../editing/)验证，浏览器交互由 [whole-film-timeline.spec.ts](../../../../../../e2e/whole-film-timeline.spec.ts) 与 [whole-film-editor.spec.ts](../../../../../../e2e/whole-film-editor.spec.ts) 验证。
 
 ## 维护边界
 
-本仓的成片编辑规则写在[上级目录](../../editing/)，不改这里的文件。升级上游版本时，按上表逐个文件重新照抄、保留本仓的改动说明，再跑本目录测试；不直接覆盖整个目录。
+本仓的成片编辑规则写在[上级目录](../../editing/)，不改这里的文件。升级上游版本时，按上表逐个文件重新照抄、保留本仓的改动说明，再跑本仓编辑规则与成片浏览器用例；不直接覆盖整个目录。

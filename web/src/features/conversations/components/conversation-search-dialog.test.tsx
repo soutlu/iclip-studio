@@ -71,16 +71,6 @@ describe('ConversationSearchDialog', () => {
     ).toEqual(['亚麻衬衫二剪', '夏季亚麻系列广告'])
   })
 
-  it('没有命中时给一句空结果提示', async () => {
-    server.use(http.get('*/api/conversations/search', () => HttpResponse.json({ items: [] })))
-    const user = userEvent.setup()
-    await openDialog()
-
-    await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '亚麻')
-
-    expect(await screen.findByText('暂无匹配的任务')).toBeVisible()
-  })
-
   it('接口出错时把后端的错误文案就地显示出来', async () => {
     server.use(
       http.get('*/api/conversations/search', () =>

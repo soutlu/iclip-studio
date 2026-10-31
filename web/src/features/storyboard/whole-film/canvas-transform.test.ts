@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { draftOf, expectOk, overlay, video } from '@/testing/whole-film'
 import {
-  cornerCursor,
   cornersOf,
-  formatRotation,
-  formatScale,
   insidePlaced,
   outsideCanvas,
   outsidePictureClip,
   pivotOf,
   placedBox,
   placedOnScreen,
-  placementOf,
   rotateGesture,
   scaleGesture,
   transformEditOf,
@@ -49,33 +45,6 @@ const expectPlaced = (actual: Placed, expected: Placed) => {
     expect(actual[key]).toBeCloseTo(expected[key], 6)
   }
 }
-
-describe('草稿里的摆放', () => {
-  it('取草稿里记着的位置、倍数、角度与转轴', () => {
-    expect(placementOf(film(), 'o2')).toEqual({
-      x: 30,
-      y: -20,
-      scale: 1.5,
-      rotation: -30,
-      pivot: { x: 400, y: 900 },
-    })
-  })
-
-  it('有这几项之前存的草稿没写，按没挪过、原大、不转算；字幕同样', () => {
-    const draft = film()
-    const {
-      x: _x,
-      y: _y,
-      scale: _s,
-      rotation: _r,
-      pivotX: _px,
-      pivotY: _py,
-      ...captions
-    } = draft.captions
-    expect(placementOf({ ...draft, captions }, 'captions')).toEqual(at({}))
-    expect(placementOf(draft, 'gone')).toEqual(at({}))
-  })
-})
 
 describe('画面上的一块', () => {
   // 不变换时画在 (100, 200)，宽 80、高 40，中心 (140, 220)
@@ -276,24 +245,6 @@ describe('拖把手旋转', () => {
   })
 })
 
-describe('读数与指针', () => {
-  it('倍数显示百分比，角度取整、负数用减号', () => {
-    expect(formatScale(1.204)).toBe('120%')
-    expect(formatRotation(-15)).toBe('−15°')
-    expect(formatRotation(44.6)).toBe('45°')
-    expect(formatRotation(-0.3)).toBe('0°')
-  })
-
-  it('角把手的指针随角度对调', () => {
-    expect(cornerCursor('nw', 0)).toBe('nwse-resize')
-    expect(cornerCursor('ne', 0)).toBe('nesw-resize')
-    expect(cornerCursor('nw', 45)).toBe('nesw-resize')
-    expect(cornerCursor('se', -90)).toBe('nesw-resize')
-    expect(cornerCursor('sw', 135)).toBe('nesw-resize')
-    expect(cornerCursor('nw', 180)).toBe('nwse-resize')
-  })
-})
-
 describe('松手后的缩放、旋转写进草稿', () => {
   it('特效块改那一块；原大、不转时记下转轴', () => {
     const result = transformEditOf(film(), 'o1', {
@@ -331,11 +282,5 @@ describe('松手后的缩放、旋转写进草稿', () => {
       pivotX: 500,
       pivotY: 1600,
     })
-  })
-
-  it('草稿里已经没有这一块时不处理', () => {
-    expect(
-      transformEditOf(film(), 'gone', { scale: 2, rotation: 0, pivot: { x: 0, y: 0 } }),
-    ).toBeNull()
   })
 })

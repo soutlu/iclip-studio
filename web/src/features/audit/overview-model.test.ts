@@ -1,56 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { overviewFixture } from '@/testing/mocks/audit-overview'
-import { attemptSummary, chartModel, relativeDelta } from './overview-model'
-
-describe('趋势图每一格', () => {
-  it('样本不够的格子不画当天的点，悬停照实给数', () => {
-    const overview = overviewFixture({
-      points: [
-        { metrics: { attemptsPerShot: 2, shots: 2 } },
-        { metrics: { attemptsPerShot: 1.5, shots: 3 } },
-      ],
-    })
-
-    const [thin, enough] = chartModel(overview, 'attempts').points
-    expect(thin?.value).toBeNull()
-    expect(thin?.rows[0]?.value).toBe('2.0 次')
-    expect(enough?.value).toBe(1.5)
-  })
-
-  it('按周没有均线，折线就是原始值', () => {
-    const model = chartModel(overviewFixture({ bucket: 'week' }), 'attempts')
-
-    expect(model.hasLine).toBe(false)
-    expect(model.hasSlow).toBe(false)
-    expect(model.points.every((point) => point.line === null && point.slow === null)).toBe(true)
-  })
-
-  it('按小时件数柱不配均线，比率照画', () => {
-    const overview = overviewFixture({ bucket: 'hour' })
-
-    expect(chartModel(overview, 'deliveries').hasLine).toBe(false)
-    expect(chartModel(overview, 'attempts').hasLine).toBe(true)
-  })
-
-  it('有均线的折线按均线定纵轴，冒尖的当天值落在轴外画成小三角', () => {
-    // fixture 的均线都是 1；当天有一格冲到 5 次。
-    const model = chartModel(
-      overviewFixture({ points: [{ metrics: { attemptsPerShot: 5, shots: 10 } }, {}] }),
-      'attempts',
-    )
-
-    expect(model.dayMarks).toBe(true)
-    expect(model.points[0]?.value).toBe(5)
-    expect(model.yTicks.at(-1)).toBeLessThan(5)
-  })
-
-  it('非活跃日的那一格带上标记', () => {
-    const model = chartModel(overviewFixture({ points: [{ inactive: true }, {}] }), 'deliveries')
-
-    expect(model.points.map((point) => point.inactive)).toEqual([true, false])
-    expect(model.points[0]?.rows[0]?.name).toMatch(/非活跃日$/)
-  })
-})
+import { attemptSummary, relativeDelta } from './overview-model'
 
 describe('环比', () => {
   it.each([

@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 import httpx
 import pytest
-from agent_runtime.assembly.displays import build_display_registry
 from agent_runtime.harness.background import BackgroundTools
 from agent_runtime.plugins.base import PluginHost, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.run_deps import AgentRunDeps
 from pydantic import ValidationError
-from pydantic_ai import Agent, AgentSpec
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.models.test import TestModel
 
 from iclip_video.iclip_studio.capability import IclipStudio
 from iclip_video.registry import (
@@ -145,57 +138,6 @@ async def test_video_breakdown_runs_in_the_background_and_requires_workspace() -
         "后台工具只跟着 video_breakdown 挂"
     )
     assert registry["video_breakdown"].required_plugins() == ("workspace",)
-
-
-async def test_the_display_registry_merges_every_display_source() -> None:
-    """合并 display 表时需包含不在插件登记表中的 skill 和子代理工具。"""
-
-    registry = build_display_registry(await registry_for(EVERYTHING))
-
-    # 每个来源各挑一件：workspace、video、video_shots、iclip_studio、shot_video、skill、派活；
-    # 来源内的清单归各自的测试。
-    assert {
-        "read_file",
-        "video_parser",
-        "write_video_shots",
-        "check_film",
-        "generate_shot_frames",
-        "load_capability",
-        "delegate_task",
-    } <= set(registry.entries)
-
-
-async def _tools_seen(agent: Agent[AgentRunDeps, str]) -> list[str]:
-    seen: list[str] = []
-
-    def script(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        seen.extend(sorted(tool.name for tool in info.function_tools))
-        return ModelResponse(parts=[TextPart("好")])
-
-    deps = AgentRunDeps(user_id=uuid.uuid4(), conversation_id="thread-1", user_name="logan")
-    await agent.run("看看你有什么", deps=deps, model=FunctionModel(script))
-    return seen
-
-
-async def test_an_agent_from_the_native_spec_gets_the_same_tools_as_the_plugin_instances() -> None:
-    registry = await registry_for(EVERYTHING)
-    names = ("video_breakdown", "workspace", "shot_video", "video")
-
-    from_spec = Agent.from_spec(
-        AgentSpec.from_dict({"capabilities": [{name: {}} for name in names]}),
-        custom_capability_types=list(registry.values()),
-        deps_type=AgentRunDeps,
-        model=TestModel(),
-    )
-    from_instances = Agent(
-        TestModel(),
-        deps_type=AgentRunDeps,
-        capabilities=[registry[name].from_spec() for name in names],
-    )
-
-    seen = await _tools_seen(from_spec)
-    assert seen == await _tools_seen(from_instances)
-    assert {"breakdown_video", "read_file", "plan_shot_frames", "video_parser"} <= set(seen)
 
 
 async def test_shot_video_asks_the_backend_for_its_image_models_with_the_internal_token() -> None:

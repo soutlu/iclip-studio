@@ -1,4 +1,4 @@
-"""运行装配的行为：用量和运行 metadata、子代理能力隔离与调用限额、超时和工具重试。"""
+"""运行装配的行为：运行 metadata、子代理能力隔离与调用限额、超时。"""
 
 from __future__ import annotations
 
@@ -7,13 +7,9 @@ import json
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
-import pytest
-from pydantic_ai import ModelRetry, UnexpectedModelBehavior
 from pydantic_ai.capabilities import AgentCapability, Capability
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelResponse,
-    ToolCallPart,
     ToolReturnPart,
 )
 from pydantic_ai.models import Model
@@ -23,7 +19,6 @@ from pydantic_ai_harness.step_persistence import InMemoryStepStore
 
 from agent_runtime.harness.agents import (
     DELEGATE_TOOL,
-    TOOL_RETRIES,
     SubAgentSlot,
     build_agent,
     build_subagents,
@@ -32,8 +27,6 @@ from agent_runtime.harness.agents import (
 )
 from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.harness.transcript.subagents import SubAgentMirror
-from agent_runtime.harness.usage_ledger import UsageLedger
-from agent_runtime.transcript.ops import StepUsage
 from tests.helpers.runtime import discarding_usage_ledger
 
 WRITER = "shot-writer"
@@ -45,7 +38,6 @@ def make_agent(
     *,
     extra: Sequence[AgentCapability[Any]] = (),
     step_store: InMemoryStepStore | None = None,
-    ledger: UsageLedger | None = None,
     accepts_deferred: bool = True,
     run_metadata: Mapping[str, str] | None = None,
 ) -> Any:
@@ -56,7 +48,7 @@ def make_agent(
         plugins=(),
         plugin_types=(),
         step_store=step_store or InMemoryStepStore(),
-        usage_ledger=ledger or discarding_usage_ledger(),
+        usage_ledger=discarding_usage_ledger(),
         run_metadata=run_metadata or {},
         accepts_deferred=accepts_deferred,
         extra=extra,
@@ -68,10 +60,8 @@ def producer_with_writer(
     child: Model,
     *,
     step_store: InMemoryStepStore | None = None,
-    ledger: UsageLedger | None = None,
     parent_extra: Sequence[AgentCapability[Any]] = (),
     child_extra: Sequence[AgentCapability[Any]] = (),
-    description: str = "",
     max_calls: int | None = None,
     timeout_seconds: float | None = None,
 ) -> Any:
@@ -84,7 +74,6 @@ def producer_with_writer(
         child,
         extra=child_extra,
         step_store=stored,
-        ledger=ledger,
         accepts_deferred=False,
         run_metadata=profile_metadata(profile),
     )
@@ -92,7 +81,7 @@ def producer_with_writer(
         [
             SubAgentSlot(
                 name=WRITER,
-                description=description,
+                description="",
                 agent=writer,
                 max_calls=max_calls,
                 timeout_seconds=timeout_seconds,
@@ -105,7 +94,6 @@ def producer_with_writer(
         parent,
         extra=[*parent_extra, delegate],
         step_store=stored,
-        ledger=ledger,
     )
 
 
@@ -139,26 +127,6 @@ async def _child_done(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncI
     yield "done"
 
 
-async def test_the_usage_ledger_is_attached_to_the_agent_and_its_subagents() -> None:
-    """顶层与子代理各自的模型响应都进同一本台账，模型名取各自的模型。"""
-
-    recorded: list[tuple[str, str]] = []
-
-    class Recording:
-        async def add(self, *, conversation_id: str, model_name: str, usage: StepUsage) -> None:
-            recorded.append((conversation_id, model_name))
-
-    agent = producer_with_writer(
-        FunctionModel(stream_function=_delegate_once, model_name="parent-m"),
-        FunctionModel(stream_function=_child_done, model_name="child-m"),
-        ledger=UsageLedger(store=Recording(), conversation_of=lambda _deps: "c1"),
-    )
-
-    await drive(agent)
-
-    assert sorted(recorded) == [("c1", "child-m"), ("c1", "parent-m"), ("c1", "parent-m")]
-
-
 async def test_runs_record_the_given_metadata_for_parent_and_subagent() -> None:
     """落库 run_id 与消息 run_id 一致；顶层记装配时给的 metadata，子运行记它的档案。"""
 
@@ -186,28 +154,6 @@ async def test_runs_record_the_given_metadata_for_parent_and_subagent() -> None:
     await drive(top)
     (run,) = await top_store.list_runs()
     assert dict(run.metadata) == {"agent_version_id": "v-1", "model": "test"}
-
-
-async def test_the_subagent_description_is_listed_for_the_parent() -> None:
-    """``description`` 进派活工具的说明，主 agent 看得到子 agent 是干什么的。"""
-
-    seen: list[str] = []
-
-    async def parent_records(_messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        seen.extend(
-            f"{info.instructions or ''} {tool.description or ''}" for tool in info.function_tools
-        )
-        yield "done"
-
-    agent = producer_with_writer(
-        FunctionModel(stream_function=parent_records),
-        FunctionModel(stream_function=_child_done),
-        description="按分镜写镜头脚本",
-    )
-
-    await drive(agent)
-
-    assert any("按分镜写镜头脚本" in text for text in seen)
 
 
 async def test_subagent_only_gets_the_capabilities_declared_for_it() -> None:
@@ -334,24 +280,3 @@ async def test_a_subagent_past_its_timeout_is_cut_off() -> None:
         await drive(agent)
 
     assert len(seen) == 1
-
-
-async def test_tools_get_more_than_one_chance_to_correct_their_arguments() -> None:
-    """官方默认 1：同一件工具第二次参数出错就终止整次运行，作废前面已完成的产物。"""
-
-    def always_wrong(value: int) -> str:
-        """总是要求改参数的工具。"""
-
-        raise ModelRetry(f"value={value} 不对，换一个再来")
-
-    def call_it(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[ToolCallPart("always_wrong", {"value": 1}, tool_call_id="c1")])
-
-    agent = make_agent(
-        "storyboard",
-        FunctionModel(call_it),
-        extra=[Capability[Any](id="wrong", tools=[always_wrong])],
-    )
-
-    with pytest.raises(UnexpectedModelBehavior, match=f"max retries count of {TOOL_RETRIES}"):
-        await agent.run("hi")

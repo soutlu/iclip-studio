@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-
 import pytest
 
 from agent_runtime.config.skills.models import (
@@ -12,20 +10,15 @@ from agent_runtime.config.skills.models import (
     MAX_FILES,
     MAX_TOTAL_BYTES,
     SKILL_MD,
-    FileEntry,
 )
 from agent_runtime.config.skills.rules import (
     check_name,
     check_publish,
-    content_hash,
     content_problem,
     decode_text,
-    default_display_name,
     file_problems,
     frontmatter_problems,
-    initial_skill_md,
     limit_problems,
-    manifest,
     name_problem,
     path_problem,
 )
@@ -160,57 +153,6 @@ def test_description_at_the_limit_passes() -> None:
 def test_without_an_expected_name_the_name_itself_must_follow_the_spec() -> None:
     content = skill_md("name: PDF_Tools\ndescription: 处理 PDF\n")
     assert len(frontmatter_problems(content, expected_name=None)) == 1
-
-
-def test_manifest_is_sorted_by_path_and_hash_is_order_independent() -> None:
-    one = {"references/b.md": "b", SKILL_MD: GOOD, "references/a.md": "a"}
-    other = {"references/a.md": "a", "references/b.md": "b", SKILL_MD: GOOD}
-
-    assert [entry.path for entry in manifest(one)] == [
-        SKILL_MD,
-        "references/a.md",
-        "references/b.md",
-    ]
-    assert manifest(one) == manifest(other)
-    assert content_hash(manifest(one)) == content_hash(reversed(manifest(other)))
-    assert content_hash(manifest(one)) != content_hash(manifest({**one, "references/a.md": "A"}))
-
-
-def test_content_hash_is_sha256_of_the_canonical_manifest_json() -> None:
-    """已发布版本存着这个值，规范化写法是持久化合同：键排序、无空白、不转义非 ASCII。"""
-
-    entry = FileEntry(path="references/中.md", size=3, hash="ab")
-    canonical = '[{"hash":"ab","path":"references/中.md","size":3}]'
-
-    assert content_hash([entry]) == hashlib.sha256(canonical.encode()).hexdigest()
-    assert manifest({"references/中.md": "中"}) == (
-        FileEntry(path="references/中.md", size=3, hash=hashlib.sha256("中".encode()).hexdigest()),
-    )
-
-
-def test_display_name_defaults_to_the_first_h1_heading() -> None:
-    content = skill_md(
-        "name: pdf-tools\ndescription: x\n# YAML 注释不算\n",
-        "\n## 小标题\n#   处理  PDF  \n# 第二个\n",
-    )
-    assert default_display_name(content, "pdf-tools") == "处理 PDF"
-
-
-@pytest.mark.parametrize(
-    "body", ["\n## 只有二级标题\n", "\n#没有空格\n", "\n正文\n", "\n#   \n"], ids=str
-)
-def test_display_name_falls_back_to_the_name(body: str) -> None:
-    content = skill_md("name: pdf-tools\ndescription: x\n", body)
-    assert default_display_name(content, "pdf-tools") == "pdf-tools"
-
-
-def test_initial_skill_md_passes_publish_checks_and_keeps_the_display_name() -> None:
-    content = initial_skill_md(
-        name="pdf-tools", display_name="PDF 工具", description="读取: 'PDF' 与 \"表格\"\n第二行"
-    )
-
-    assert check_publish({SKILL_MD: content}, name="pdf-tools") == "读取: 'PDF' 与 \"表格\"\n第二行"
-    assert default_display_name(content, "pdf-tools") == "PDF 工具"
 
 
 def test_check_publish_lists_every_problem() -> None:

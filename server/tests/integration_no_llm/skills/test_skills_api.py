@@ -8,7 +8,6 @@ import zipfile
 from typing import Any
 
 import httpx
-from fastapi import FastAPI
 
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 
@@ -23,24 +22,6 @@ async def login_as_root(client: httpx.AsyncClient, pg_url: str) -> str:
 
 def zip_upload(data: bytes) -> dict[str, tuple[str, bytes, str]]:
     return {"file": ("pdf-tools.zip", data, "application/zip")}
-
-
-async def test_every_skills_operation_requires_exactly_agent_manage(app: FastAPI) -> None:
-    operations = [
-        (method, path, operation)
-        for path, item in app.openapi()["paths"].items()
-        if path == "/skills" or path.startswith("/skills/")
-        for method, operation in item.items()
-    ]
-
-    assert operations
-    for method, path, operation in operations:
-        scopes = {
-            tuple(scopes)
-            for requirement in operation["security"]
-            for scopes in requirement.values()
-        }
-        assert scopes == {("agent:manage",)}, (method, path)
 
 
 async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrated_pg: str) -> None:

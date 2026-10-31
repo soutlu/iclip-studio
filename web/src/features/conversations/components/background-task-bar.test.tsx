@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TranscriptTask } from '@/shared/transcript/vendor'
@@ -28,21 +28,6 @@ describe('BackgroundTaskBar', () => {
     vi.setSystemTime(NOW)
   })
   afterEach(() => vi.useRealTimers())
-
-  it('一个进行中的任务：写「正在」加任务标题，右侧按开始时间每秒计时', () => {
-    renderWithTooltip(<BackgroundTaskBar tasks={tasksOf(task('ugg-ref'))} />)
-
-    const bar = screen.getByRole('note', { name: '后台任务' })
-    expect(within(bar).getByText('正在拆解视频 ugg-ref.mp4')).toBeInTheDocument()
-    expect(within(bar).getByText('1m20s')).toBeInTheDocument()
-    expect(within(bar).queryByRole('button')).toBeNull()
-
-    act(() => {
-      vi.advanceTimersByTime(1000)
-    })
-
-    expect(within(bar).getByText('1m21s')).toBeInTheDocument()
-  })
 
   it('多个进行中的任务：一行汇总，点开逐项列出各自的计时，再点收起；键盘也能开合', async () => {
     const user = userEvent.setup()

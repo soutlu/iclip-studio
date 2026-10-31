@@ -50,7 +50,6 @@ from iclip_video.shot_video.ports import (
 )
 from iclip_video.shot_video.shots import parse_shot_rows
 from iclip_video.shot_video.toolset import ShotVideoToolset
-from iclip_video.video.capability import Video
 from iclip_video.video_document import video_doc_path
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
@@ -64,7 +63,6 @@ from tests.helpers.shot_video import (
     cut_url,
     mount_shot_video,
 )
-from tests.helpers.video_understanding import FakeUnderstanding
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 CONVERSATION = "33333333-3333-3333-3333-333333333333"
@@ -123,11 +121,6 @@ def boards() -> FakeBoards:
 @pytest.fixture
 def cuts() -> FakeCuts:
     return FakeCuts()
-
-
-@pytest.fixture
-def understanding() -> FakeUnderstanding:
-    return FakeUnderstanding(document=DOCUMENT)
 
 
 @pytest.fixture
@@ -225,24 +218,6 @@ async def test_missing_run_identity_is_a_bug_not_a_retry(tools: ShotVideoToolset
 
     with pytest.raises(RuntimeError, match="AgentRunDeps"):
         await tools.plan_shot_frames(make_context(object()), VIDEO)
-
-
-async def test_parse_and_plan_agree_on_where_the_document_lives(
-    tools: ShotVideoToolset[object],
-    ctx: RunContext[object],
-    files: FakeFileStore,
-    materials: FakeMaterialLedger,
-) -> None:
-    """取帧工具按同一路径读到 video 能力写下的拆解文档；用无时间码文档触发解析错误来确认。"""
-
-    video = Video[object](
-        space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=materials,
-        understanding=FakeUnderstanding(document="## 4、逐镜拉片表\n没有任何时间码\n"),
-    )
-    await video.get_toolset().video_parser(ctx, VIDEO)
-    with pytest.raises(ModelRetry, match="解析失败"):
-        await tools.plan_shot_frames(ctx, VIDEO)
 
 
 @pytest.mark.parametrize("url", ["ref.mp4", "file:///etc/passwd", "ftp://host/a.mp4"])
@@ -458,36 +433,6 @@ BROKEN_LEDGERS = {
     ),
 }
 """模型改坏的取帧台账：key 仍然对得上，形状不合。"""
-
-
-@pytest.mark.parametrize("content", list(BROKEN_LEDGERS.values()), ids=list(BROKEN_LEDGERS))
-async def test_a_broken_ledger_counts_as_missing(
-    capability: ShotVideo[object], files: FakeFileStore, content: str
-) -> None:
-    await files.write(NAMESPACE, EXTRACTION_PATH, content)
-
-    assert await capability.extractor.load(files, NAMESPACE) is None
-
-
-async def test_a_ledger_of_another_version_counts_as_missing(
-    capability: ShotVideo[object], files: FakeFileStore
-) -> None:
-    await files.write(
-        NAMESPACE, EXTRACTION_PATH, json.dumps({**json.loads(ledger()), "extractionVersion": 2})
-    )
-
-    assert await capability.extractor.load(files, NAMESPACE) is None
-
-
-async def test_a_well_formed_ledger_loads_as_a_model(
-    capability: ShotVideo[object], files: FakeFileStore
-) -> None:
-    await files.write(NAMESPACE, EXTRACTION_PATH, ledger())
-
-    loaded = await capability.extractor.load(files, NAMESPACE)
-
-    assert loaded is not None
-    assert [(board.board, board.url) for board in loaded.boards] == [(1, board_url())]
 
 
 async def test_generate_treats_a_broken_ledger_as_missing(

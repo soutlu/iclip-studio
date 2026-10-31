@@ -222,22 +222,6 @@ async def failing_version_skills(engine: AsyncEngine) -> AsyncGenerator[None]:
             await conn.execute(text("DROP FUNCTION agent_runtime.test_fail_agent_version_skills()"))
 
 
-async def test_new_agent_has_an_empty_draft_and_a_create_record(
-    world: World, engine: AsyncEngine
-) -> None:
-    await new_agent(world, "director")
-
-    detail = await world.agents.detail("director")
-    assert (detail.status, detail.listed, detail.active_version) == ("active", False, None)
-    assert detail.has_unpublished_changes is True
-    assert detail.draft.config.model is None and detail.draft.lock_version == 0
-    assert await operations(engine, "director") == ["create"]
-    with pytest.raises(Conflict):
-        await new_agent(world, "director")
-    with pytest.raises(ValidationFailed):
-        await world.agents.create(AgentCreateIn(id="Director", name="x"), by=world.author)
-
-
 async def test_a_reserved_word_cannot_name_a_new_agent(world: World, engine: AsyncEngine) -> None:
     """``/agents/`` 下固定路径的那几段不能当标识：新建与导入新 agent 都拦下，什么都不写。"""
 

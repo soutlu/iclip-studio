@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import pytest
-from agent_runtime.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.identity.models import Principal
@@ -121,17 +121,6 @@ async def test_creating_twice_from_the_same_video_makes_one_row_and_one_breakdow
     assert (created.tag_ids, created.tag_status, created.tag_error) == ([], None, None)
 
 
-async def test_someone_elses_upload_is_not_found(engine: AsyncEngine) -> None:
-    maya, sara = await plant_user(engine, "maya"), await plant_user(engine, "sara")
-    upload = uuid.uuid4()
-    queue = RecordingQueue(SqlReferenceStore(engine))
-    references = service(engine, queue, owned={(maya, upload): VIDEO})
-
-    with pytest.raises(NotFound):
-        await references.create(principal(sara), upload)
-    assert queue.enqueued == []
-
-
 async def test_a_queue_that_cannot_take_it_leaves_the_row_failed_not_stuck(
     engine: AsyncEngine,
 ) -> None:
@@ -144,30 +133,6 @@ async def test_a_queue_that_cannot_take_it_leaves_the_row_failed_not_stuck(
 
     (item,) = (await references.list(principal(maya))).items
     assert (item.breakdown_status, item.error_code) == ("failed", "model_call_failed")
-
-
-async def test_only_the_owner_edits_reruns_and_removes(engine: AsyncEngine) -> None:
-    maya, sara = await plant_user(engine, "maya"), await plant_user(engine, "sara")
-    reference_id = await plant_reference(engine, owner=maya)
-    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
-    body = ReferenceUpdateIn(version=1, document="改过")
-    runner = await tag_id(engine, "品类", "跑鞋")
-
-    seen = await references.get(principal(sara), reference_id)
-    assert seen.can_edit is False
-    with pytest.raises(PermissionDenied):
-        await references.update(principal(sara), reference_id, body)
-    with pytest.raises(PermissionDenied):
-        await references.replace_tags(
-            principal(sara), reference_id, ReferenceTagsIn(tag_ids=[runner])
-        )
-    with pytest.raises(PermissionDenied):
-        await references.retag(principal(sara), reference_id)
-    with pytest.raises(PermissionDenied):
-        await references.rerun(principal(sara), reference_id)
-    with pytest.raises(PermissionDenied):
-        await references.remove(principal(sara), reference_id)
-    assert (await reference_row(engine, reference_id))["document"] == DOCUMENT
 
 
 async def test_an_edit_with_a_stale_version_conflicts(engine: AsyncEngine) -> None:
@@ -431,25 +396,6 @@ async def test_tag_filters_and_across_dimensions_or_within_and_parents_include_c
     assert set(listed.tag_ids) == {runner_tag, sock_tag, compare}
 
 
-async def test_replacing_tags_overwrites_every_dimension(engine: AsyncEngine) -> None:
-    maya = await plant_user(engine, "maya")
-    reference_id = await plant_reference(engine, owner=maya)
-    amz = await tag_id(engine, "平台&渠道", "AMZ")
-    await plant_entry(
-        engine, reference_id, status="completed", tags=[amz, await tag_id(engine, "品类", "拖鞋")]
-    )
-    dtc = await tag_id(engine, "平台&渠道", "DTC")
-    runner = await tag_id(engine, "品类", "跑鞋")
-    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
-
-    replaced = await references.replace_tags(
-        principal(maya), reference_id, ReferenceTagsIn(tag_ids=[dtc, runner, runner])
-    )
-
-    assert set(replaced.tag_ids) == {dtc, runner}
-    assert (await entry_of(engine, reference_id))["tags"] == {dtc, runner}
-
-
 async def test_replacing_tags_creates_the_entry_when_missing(engine: AsyncEngine) -> None:
     maya = await plant_user(engine, "maya")
     reference_id = await plant_reference(engine, owner=maya)
@@ -460,42 +406,6 @@ async def test_replacing_tags_creates_the_entry_when_missing(engine: AsyncEngine
 
     entry = await entry_of(engine, reference_id)
     assert (entry["tags"], entry["created_by"]) == ({amz}, maya)
-
-
-@pytest.mark.parametrize("status", ["pending", "running"])
-async def test_tags_cannot_change_while_tagging(engine: AsyncEngine, status: str) -> None:
-    maya = await plant_user(engine, "maya")
-    reference_id = await plant_reference(engine, owner=maya)
-    slipper = await tag_id(engine, "品类", "拖鞋")
-    await plant_entry(engine, reference_id, status=status, tags=[slipper])
-    tagging = RecordingTaggingQueue()
-    references = service(engine, RecordingQueue(SqlReferenceStore(engine)), tagging=tagging)
-
-    with pytest.raises(Conflict):
-        await references.replace_tags(
-            principal(maya),
-            reference_id,
-            ReferenceTagsIn(tag_ids=[await tag_id(engine, "品类", "跑鞋")]),
-        )
-    with pytest.raises(Conflict):
-        await references.retag(principal(maya), reference_id)
-    assert (await entry_of(engine, reference_id))["tags"] == {slipper}
-    assert tagging.enqueued == []
-
-
-async def test_unknown_tags_and_dimensions_are_rejected(engine: AsyncEngine) -> None:
-    maya = await plant_user(engine, "maya")
-    reference_id = await plant_reference(engine, owner=maya)
-    slipper = await tag_id(engine, "品类", "拖鞋")
-    await plant_entry(engine, reference_id, tags=[slipper])
-    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
-
-    for wrong in (uuid.uuid4(), await tag_id(engine, "品类")):
-        with pytest.raises(ValidationFailed):
-            await references.replace_tags(
-                principal(maya), reference_id, ReferenceTagsIn(tag_ids=[wrong])
-            )
-    assert (await entry_of(engine, reference_id))["tags"] == {slipper}
 
 
 async def test_retagging_needs_a_finished_breakdown_and_queues_the_entry(

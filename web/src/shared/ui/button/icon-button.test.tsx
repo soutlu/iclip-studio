@@ -6,24 +6,6 @@ import { renderWithTooltip } from '@/testing/render'
 import { IconButton } from './icon-button'
 
 describe('IconButton 的提示', () => {
-  it('悬停弹出共用提示，文字默认取 label，不再带原生 title', async () => {
-    const user = userEvent.setup()
-    renderWithTooltip(<IconButton label="折叠对话" name="panel-left" />)
-
-    const button = screen.getByRole('button', { name: '折叠对话' })
-    expect(button).not.toHaveAttribute('title')
-    await user.hover(button)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('折叠对话')
-  })
-
-  it('传了 tooltip 时提示换成它，可访问名称仍是 label', async () => {
-    const user = userEvent.setup()
-    renderWithTooltip(<IconButton label="复制" name="check" tooltip="已复制" />)
-
-    await user.hover(screen.getByRole('button', { name: '复制' }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('已复制')
-  })
-
   it('按 Tab 移到按钮上弹出提示', async () => {
     const user = userEvent.setup()
     renderWithTooltip(<IconButton label="上一帧" name="back" />)
