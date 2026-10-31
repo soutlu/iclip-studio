@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from agent_runtime.http.app import create_app
-from agent_runtime.http.logging import configure_logging
+from agent_runtime.http.logging import QUIET_LOGGERS, SERVICE_NAME, configure_logging
 from agent_runtime.plugins.base import PluginBinder, PluginFactory
 from agent_runtime.settings import PluginsSection, load_config, resolve_settings
 
@@ -87,7 +87,9 @@ def app_from_env() -> ASGIApp:
     config = load_config(Path(os.environ[CONFIG_ENV]))
     settings = resolve_settings(config)
     # 插件包在建 app 之前打开，它的日志也要按配置的级别与格式出。
-    configure_logging(settings.log_level, settings.log_format)
+    configure_logging(
+        settings.log_level, settings.log_format, service=SERVICE_NAME, quiet=QUIET_LOGGERS
+    )
     if config.plugins is None:
         _logger.warning("没有配置插件包，插件登记表为空，挂了插件的 agent 配置一律校验不过")
         return create_app(settings, plugins={})

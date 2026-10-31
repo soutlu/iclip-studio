@@ -81,7 +81,7 @@
    curl http://localhost/api/healthz
    ```
 
-   - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务，取不到或后端没开对应服务都起不来（原因在 `docker compose logs runtime`）。后端日志里先有几条「运行时事件流断了」是正常的，运行时起来后出现「运行时事件流已连上」。
+   - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务，取不到或后端没开对应服务都起不来（原因在 `docker compose logs runtime`）。后端日志里先有一条「运行时还没起来，起来后自动连上事件流」，运行时起来后出现「运行时事件流已连上」；启动 60 秒后仍连不上，后端每次重连失败记一条「运行时事件流自启动起一直连不上」的 warning。
 
 6. 设置首个管理员：
    - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。

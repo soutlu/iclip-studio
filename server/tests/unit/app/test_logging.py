@@ -1,4 +1,4 @@
-"""验证标准库与 structlog 统一日志格式及请求上下文。"""
+"""后端自己的日志配置：服务名、被压低的第三方 logger 与请求上下文。渲染链本身由运行时的测试负责。"""
 
 from __future__ import annotations
 
@@ -30,37 +30,38 @@ def restore_logging() -> Iterator[None]:
         structlog.contextvars.clear_contextvars()
 
 
-def test_json_lines_share_one_shape_and_carry_context(
+def test_json_lines_carry_request_context_and_drop_procrastinate_info(
     capsys: pytest.CaptureFixture[str], restore_logging: None
 ) -> None:
     configure_logging("INFO", "json")
     structlog.contextvars.bind_contextvars(request_id="req-1")
 
-    logging.getLogger("uvicorn.access").info('%s - "%s" %d', "127.0.0.1", "GET /x", 200)
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d', "127.0.0.1", "GET", "/x", "1.1", 200
+    )
     structlog.stdlib.get_logger("iclip.test").warning("捡回中断的生成任务", count=2)
     logging.getLogger("procrastinate.worker").info("Starting job")
+    logging.getLogger("procrastinate.worker").warning("Job failed")
 
     lines = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
-    assert [line["logger"] for line in lines] == ["uvicorn.access", "iclip.test"]
-    access, ours = lines
-    assert access["event"] == '127.0.0.1 - "GET /x" 200'
-    assert access["level"] == "info"
+    assert [(line["logger"], line["event"]) for line in lines] == [
+        ("uvicorn.access", '127.0.0.1 - "GET /x HTTP/1.1" 200'),
+        ("iclip.test", "捡回中断的生成任务"),
+        ("procrastinate.worker", "Job failed"),
+    ]
+    access, ours, _ = lines
     assert access["request_id"] == "req-1"
-    assert ours["event"] == "捡回中断的生成任务"
-    assert ours["count"] == 2
     assert ours["request_id"] == "req-1"
-    assert "timestamp" in ours
+    assert ours["count"] == 2
 
 
-def test_console_line_keeps_event_and_fields(
+def test_console_line_names_the_backend(
     capsys: pytest.CaptureFixture[str], restore_logging: None
 ) -> None:
     configure_logging("INFO", "console")
 
-    structlog.stdlib.get_logger("iclip.test").info("生成任务提交失败", job_id="j1", code="E1")
+    structlog.stdlib.get_logger("iclip.test").info("生成任务提交失败", job_id="j1")
 
     (line,) = capsys.readouterr().err.splitlines()
-    assert "生成任务提交失败" in line
-    assert "job_id=j1" in line
-    assert "code=E1" in line
-    assert "iclip.test" in line
+    assert line[9:].startswith("后端   [info")
+    assert "生成任务提交失败 [iclip.test] job_id=j1" in line
