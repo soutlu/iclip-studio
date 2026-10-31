@@ -471,7 +471,6 @@ export const zConversationActivityOut = z.object({
   busy: z.boolean(),
   lastTurnReason: z.enum(['completed', 'failed', 'aborted']).nullish(),
   pendingInteraction: z.enum(['none', 'approval', 'question']),
-  videoGeneration: z.enum(['none', 'queued', 'running']),
 })
 
 /**
@@ -650,6 +649,17 @@ export const zConversationRename = z.object({
  */
 export const zConversationTaskIn = z.object({
   taskId: z.uuid().nullable(),
+})
+
+/**
+ * ConversationVideoProgressOut
+ *
+ * 看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。
+ *
+ * 单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。
+ */
+export const zConversationVideoProgressOut = z.object({
+  conversations: z.record(z.string(), z.enum(['queued', 'running'])),
 })
 
 /**
@@ -3904,6 +3914,11 @@ export const zListUngroupedConversationsUngroupedGetQuery = z.object({
  * Successful Response
  */
 export const zListUngroupedConversationsUngroupedGetResponse = zConversationPageOut
+
+/**
+ * Successful Response
+ */
+export const zReadVideoProgressConversationsVideoProgressGetResponse = zConversationVideoProgressOut
 
 export const zDeleteConversationConversationsConversationIdDeletePath = z.object({
   conversation_id: z.uuid(),

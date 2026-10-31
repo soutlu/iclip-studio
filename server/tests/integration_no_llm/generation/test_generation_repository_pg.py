@@ -377,10 +377,7 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
     )
     await repo.mark_submitting(composite.id)
 
-    phases = await repo.in_flight_by_conversation(
-        [queued_only, running, settled, images_only, editing, composing, uuid.uuid4()],
-        kind="video",
-    )
+    phases = await repo.in_flight_by_conversation(owner=owner, kind="video")
 
     assert phases == {
         queued_only: "queued",
@@ -388,7 +385,7 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
         editing: "queued",
         composing: "running",
     }
-    assert await repo.in_flight_by_conversation([], kind="video") == {}
+    assert await repo.in_flight_by_conversation(owner=await make_user(engine), kind="video") == {}
 
 
 async def test_latest_master_by_conversation_takes_each_conversations_newest_master(

@@ -143,12 +143,11 @@ def test_run_started_records_the_run_and_broadcasts_the_reported_activity(
     assert updated["session_id"] == conversation_id
     assert updated["payload"]["lastRunId"] == "run-from-runtime"
     assert updated["payload"]["completedAt"] is None
-    activity = updated["payload"]["activity"]
-    assert (activity["busy"], activity["pendingInteraction"], activity["videoGeneration"]) == (
-        True,
-        "approval",
-        "none",
-    )
+    assert updated["payload"]["activity"] == {
+        "busy": True,
+        "pendingInteraction": "approval",
+        "lastTurnReason": None,
+    }
     assert (row["lastRunId"], row["completedAt"]) == ("run-from-runtime", None)
     assert datetime.fromisoformat(row["updatedAt"]) > datetime.fromisoformat(before["updatedAt"])
 

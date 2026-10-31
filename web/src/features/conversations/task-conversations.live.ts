@@ -7,7 +7,7 @@ import { conversationRowsOf } from './conversation-rows'
 import { taskConversationsQueryKey } from './task-conversations.api'
 
 /**
- * 面板挂载期间订阅。行上的标题、活动与出片汇总由 useLiveConversations 落进行池，面板按 id 取行，
+ * 面板挂载期间订阅。行上的标题与活动由 useLiveConversations 落进行池、视频进度也由它重拉，面板按 id 取，
  * 这里只管成员：列表里有哪几段对话由服务端按需求单算。
  */
 export const useLiveTaskConversations = (taskId: string, canAudit: boolean): void => {

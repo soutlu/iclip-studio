@@ -322,7 +322,6 @@ async def test_sidebar_filters_by_run_state(client: httpx.AsyncClient, pg_url: s
         "busy": False,
         "pendingInteraction": "none",
         "lastTurnReason": "completed",
-        "videoGeneration": "none",
     }, "跑完的那段活动事实照旧，只是不再被 done 筛出来"
 
 

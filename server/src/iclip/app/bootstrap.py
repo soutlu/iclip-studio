@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from typing import Final, Literal
+from typing import Final
 
 import httpx
 import procrastinate
@@ -527,32 +527,23 @@ def build_app(
             CollectionInfo(id=item.id, name=item.name, updated_at=item.updated_at) for item in found
         )
 
-    async def video_generations(
-        conversation_ids: Sequence[uuid.UUID],
-    ) -> Mapping[uuid.UUID, InFlightPhase]:
+    async def video_progress_of(owner: uuid.UUID | None) -> Mapping[uuid.UUID, InFlightPhase]:
         if generation is None:
             return {}
-        return await generation.service.in_flight_by_conversation(conversation_ids, kind=KIND_VIDEO)
-
-    async def video_generation_of(
-        conversation_id: uuid.UUID,
-    ) -> Literal["none", "queued", "running"]:
-        return (await video_generations([conversation_id])).get(conversation_id, "none")
+        return await generation.service.in_flight_by_conversation(owner=owner, kind=KIND_VIDEO)
 
     async def activities_of(
         conversation_ids: Sequence[uuid.UUID],
     ) -> Mapping[uuid.UUID, ConversationActivity]:
         states = await runtime_ports.activities(conversation_ids)
-        videos = await video_generations(conversation_ids)
         activities: dict[uuid.UUID, ConversationActivity] = {}
         for one in conversation_ids:
             state = states.get(one)
-            # 运行时只答有会话的对话；没有会话就没跑过，与队列里查不到时一样是空闲，出片阶段照样补上。
+            # 运行时只答有会话的对话；没有会话就没跑过，与队列里查不到时一样是空闲。
             activities[one] = ConversationActivity(
                 busy=state is not None and state.busy,
                 pending_interaction="none" if state is None else state.pending_interaction,
                 last_turn_reason=None if state is None else state.last_turn_reason,
-                video_generation=videos.get(one, "none"),
             )
         return activities
 
@@ -618,6 +609,7 @@ def build_app(
         activities_of=activities_of,
         busy_conversation_ids=runtime_ports.busy,
         latest_master_urls=latest_master_urls,
+        video_progress_of=video_progress_of,
         same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
     )
@@ -765,7 +757,6 @@ def build_app(
             user_principal=user_principal,
             conversations=conversations.service,
             naming=turn_naming,
-            video_generation_of=video_generation_of,
             plugins=RuntimePluginServices(
                 generations=image_port,
                 boards=boards_port,

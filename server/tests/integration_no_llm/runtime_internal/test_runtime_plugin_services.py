@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import httpx
 import pytest
@@ -75,10 +75,6 @@ LEDGER = ExtractionLedger(
 GRID_URL = "https://cdn.test/grid.png"
 
 
-async def _no_video(_conversation_id: uuid.UUID) -> Literal["none", "queued", "running"]:
-    raise AssertionError("插件服务用不到视频出片阶段")
-
-
 def internal_app(plugins: RuntimePluginServices) -> FastAPI:
     app = FastAPI()
     install_error_handlers(app)
@@ -89,7 +85,6 @@ def internal_app(plugins: RuntimePluginServices) -> FastAPI:
             user_principal=FakePrincipals(OWNER),
             conversations=conversations,
             naming=TurnNaming(conversations),
-            video_generation_of=_no_video,
             plugins=plugins,
         )
     )

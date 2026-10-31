@@ -191,9 +191,9 @@ class AnnouncingGenerationRepository:
         )
 
     async def in_flight_by_conversation(
-        self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        return await self._inner.in_flight_by_conversation(conversation_ids, kind=kind)
+        return await self._inner.in_flight_by_conversation(owner=owner, kind=kind)
 
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]

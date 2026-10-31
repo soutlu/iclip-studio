@@ -265,6 +265,7 @@ def build(
         activities_of=activities_of,
         busy_conversation_ids=_untouched,
         latest_master_urls=_untouched,
+        video_progress_of=_untouched,
         same_style_files=SameStyleFiles(files=(), require_any=frozenset()),
         same_style_source=_untouched,
         event_watermark=clock.snapshot,
@@ -548,9 +549,7 @@ async def test_a_reported_run_start_broadcasts_the_reported_activity_without_rea
     existing = _row(completed_at=NOW)
     repo = RacingRepo(clock=clock, row=existing)
     announced = Announced()
-    reported = ConversationActivity(
-        busy=True, pending_interaction="approval", video_generation="queued"
-    )
+    reported = ConversationActivity(busy=True, pending_interaction="approval")
 
     await build(repo, clock, announced, activities_of=_untouched).begin_reported_run(
         existing.id, run_id="run-1", activity=reported
@@ -563,7 +562,6 @@ async def test_a_reported_run_start_broadcasts_the_reported_activity_without_rea
         "busy": True,
         "pendingInteraction": "approval",
         "lastTurnReason": None,
-        "videoGeneration": "queued",
     }
 
 

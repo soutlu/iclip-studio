@@ -116,7 +116,7 @@ async def test_enhancements_do_not_count_as_videos_in_flight_or_masters(
         done = await repo.create(make_enhancement(source, "720p", owner_user_id=owner))
         await complete(repo, done, HD_URL)
 
-    assert await repo.in_flight_by_conversation([conversation], kind="video") == {}
+    assert await repo.in_flight_by_conversation(owner=owner, kind="video") == {}
     assert await repo.latest_master_by_conversation([conversation]) == {
         conversation: take.output.url
     }

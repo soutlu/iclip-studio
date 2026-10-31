@@ -32,6 +32,7 @@ from iclip.domains.conversations.schemas import (
     ConversationsAuditOut,
     ConversationsPageOut,
     ConversationTaskIn,
+    ConversationVideoProgressOut,
     FilmAspectRatioIn,
     FilmImageChoiceIn,
     FilmImageGenerationIn,
@@ -294,6 +295,20 @@ def create_conversations_router(
             next_cursor=page.next_cursor,
             total=page.total,
             running_total=page.running_total,
+        )
+
+    @router.get("/video-progress", response_model=ConversationVideoProgressOut)
+    async def read_video_progress(
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> ConversationVideoProgressOut:
+        """还有视频记录没跑完的对话各到哪一步；没列出的就是没有。
+
+        出片、编辑段与合成都算，至少一条已离开排队就是 ``running``；字幕、音频、成片与超分记录不算。
+        范围按记录的属主：普通用户只看自己的，治理者与替人办事的钥匙看全平台。收到本对话的视频帧
+        就重拉这一份。"""
+
+        return ConversationVideoProgressOut(
+            conversations=dict(await service.video_progress(principal))
         )
 
     @router.get("/by-task/{task_id}", response_model=ConversationsPageOut)
@@ -599,7 +614,8 @@ def create_conversations_router(
         await service.delete(principal, conversation_id)
         return Response(status_code=204)
 
-    # 带路径参数的单行读放在最后：``/agents``、``/search``、``/audit``、``/ungrouped`` 先匹配。
+    # 带路径参数的单行读放在最后：``/agents``、``/search``、``/audit``、``/video-progress``、
+    # ``/ungrouped`` 先匹配。
     @router.get("/{conversation_id}", response_model=ConversationEnvelope)
     async def read_conversation(
         conversation_id: uuid.UUID,

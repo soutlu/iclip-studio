@@ -1,8 +1,8 @@
 /**
  * 全局帧落到对话行池，照 Kimi 的事件 reducer：同一拍到达的帧合批落地，行的变化只改池，
- * 成员与计数要变时才重拉对应列表；轮状态与出片变化时按 id 补读单行兜底（照 Kimi）。
+ * 成员与计数要变时才重拉对应列表；轮状态变化时按 id 补读单行兜底（照 Kimi）。视频帧不上行，只让视频进度重拉。
  *
- * 帧带属主（合同 §5「全局帧」）：别人的对话只牵动全部对话页，不动自己的侧栏。
+ * 帧带属主（合同 §5「全局帧」）：别人的对话只牵动全部对话页与视频进度，不动自己的侧栏。
  */
 
 import { useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
@@ -19,12 +19,31 @@ import {
 import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
 
 /**
- * 全部对话页的重拉窗口。
+ * 全部对话页与视频进度的重拉窗口。
  *
- * 治理者收全平台的帧，而这是个无限查询：一次失效要顺序重拉所有已展开的分页，每页后端还跑两条 COUNT。
- * 窗口尾随而不是每帧重置，持续的帧流下也能按时重拉一次。
+ * 治理者收全平台的帧：全部对话页是个无限查询，一次失效要顺序重拉所有已展开的分页，每页后端还跑两条 COUNT；
+ * 视频进度一阵出片就是一串帧。窗口尾随而不是每帧重置，持续的帧流下也能按时重拉一次。
  */
-const AUDIT_REFRESH_WINDOW_MS = 1000
+const REFRESH_WINDOW_MS = 1000
+
+/**
+ * 窗口内只失效一次。各条路共用一个出口：立刻失效与窗口到期的失效撞在一起会互相取消已发出的重拉。
+ */
+const trailingRefresh = (queryClient: QueryClient, queryKey: readonly unknown[]) => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return {
+    cancel: () => {
+      if (timer !== undefined) clearTimeout(timer)
+    },
+    soon: () => {
+      if (timer !== undefined) return
+      timer = setTimeout(() => {
+        timer = undefined
+        void queryClient.invalidateQueries({ queryKey })
+      }, REFRESH_WINDOW_MS)
+    },
+  }
+}
 
 /** 一批帧落地后要做的事，同类合并，一批只做一次。 */
 interface Effects {
@@ -38,6 +57,8 @@ interface Effects {
   /** 重连后对齐搜索结果的成员。 */
   search: boolean
   rows: Set<string>
+  /** 有对话的视频记录跳了状态，或者重连了：视频进度要重拉。 */
+  videoProgress: boolean
 }
 
 const noEffects = (): Effects => ({
@@ -47,7 +68,14 @@ const noEffects = (): Effects => ({
   rows: new Set(),
   search: false,
   sidebar: false,
+  videoProgress: false,
 })
+
+/** 一批帧带出的窗口重拉。 */
+interface Refreshes {
+  audit: () => void
+  videoProgress: () => void
+}
 
 /** 在侧栏顶层订阅一次全局会话更新；治理者还会收到别人对话的帧。 */
 export const useLiveConversations = (enabled = true): void => {
@@ -59,16 +87,9 @@ export const useLiveConversations = (enabled = true): void => {
   useEffect(() => {
     if (!enabled) return
     const rows = conversationRowsOf(queryClient)
-
-    let auditTimer: ReturnType<typeof setTimeout> | undefined
-    // 三条路共用一个出口：立刻失效与窗口到期的失效撞在一起会互相取消已发出的重拉。
-    const refreshAuditSoon = () => {
-      if (auditTimer !== undefined) return
-      auditTimer = setTimeout(() => {
-        auditTimer = undefined
-        void queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.auditAll })
-      }, AUDIT_REFRESH_WINDOW_MS)
-    }
+    const audit = trailingRefresh(queryClient, conversationsQueryKeys.auditAll)
+    const videoProgress = trailingRefresh(queryClient, conversationsQueryKeys.videoProgress)
+    const refreshes: Refreshes = { audit: audit.soon, videoProgress: videoProgress.soon }
 
     let queued: SessionUpdate[] = []
     const flush = () => {
@@ -78,7 +99,7 @@ export const useLiveConversations = (enabled = true): void => {
       rows.batch(() => {
         for (const update of batch) reduce(rows, update, userId, effects)
       })
-      run(queryClient, effects, refreshAuditSoon)
+      run(queryClient, effects, refreshes)
     }
 
     const stop = connection.watchSessions((update) => {
@@ -87,7 +108,8 @@ export const useLiveConversations = (enabled = true): void => {
     })
 
     return () => {
-      if (auditTimer !== undefined) clearTimeout(auditTimer)
+      audit.cancel()
+      videoProgress.cancel()
       stop()
     }
   }, [connection, enabled, queryClient, userId])
@@ -105,6 +127,7 @@ const reduce = (
     effects.sidebar = true
     effects.audit = true
     effects.search = true
+    effects.videoProgress = true
     return
   }
   const mine = update.mark.ownerUserId === userId
@@ -179,10 +202,10 @@ const reduce = (
 
     case 'generation': {
       const conversationId = update.conversationId
-      // 图片与切段不上行；收尾标记的抹除由服务端的 updated 帧送来。
+      // 只有挂着对话的视频记录算进视频进度；收尾标记的抹除由服务端的 updated 帧送来。
       if (conversationId === null || update.jobKind !== 'video') return
-      // 帧上只有单条任务的状态，行上要的是视频汇总：补读这一行。别人的对话只在池里已有这一行时补。
-      if (mine || rows.get(conversationId) !== undefined) effects.rows.add(conversationId)
+      // 帧上只有单条任务的状态，要的是按对话的汇总：重拉视频进度，不补读行。
+      effects.videoProgress = true
       // 帧上分不出素材片还是编辑段，编辑段完成也会多重拉一次，无害。
       if (update.status === 'completed') effects.masters.add(conversationId)
       return
@@ -199,7 +222,7 @@ const listedInAudit = (queryClient: QueryClient, conversationId: string): boolea
         data?.pages.some((page) => page.items.some((item) => item.id === conversationId)) ?? false,
     )
 
-const run = (queryClient: QueryClient, effects: Effects, refreshAuditSoon: () => void): void => {
+const run = (queryClient: QueryClient, effects: Effects, refreshes: Refreshes): void => {
   if (effects.sidebar) void refreshConversationLists(queryClient, 'sidebar')
   else if (effects.filtered) {
     void queryClient.invalidateQueries(conversationsQueryKeys.filteredLists('more'))
@@ -211,8 +234,9 @@ const run = (queryClient: QueryClient, effects: Effects, refreshAuditSoon: () =>
     effects.audit ||
     [...effects.masters].some((conversationId) => listedInAudit(queryClient, conversationId))
   ) {
-    refreshAuditSoon()
+    refreshes.audit()
   }
+  if (effects.videoProgress) refreshes.videoProgress()
   for (const conversationId of effects.rows)
     void refreshConversationRow(queryClient, conversationId)
 }

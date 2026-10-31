@@ -76,5 +76,5 @@ async def test_audio_records_do_not_count_as_videos_in_flight_or_masters(
         provider_status="succeeded",
     )
 
-    assert await repo.in_flight_by_conversation([quiet, busy_music], kind="video") == {}
+    assert await repo.in_flight_by_conversation(owner=owner, kind="video") == {}
     assert await repo.latest_master_by_conversation([quiet, busy_music]) == {quiet: TAKE_URL}

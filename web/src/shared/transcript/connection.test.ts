@@ -526,7 +526,6 @@ describe('TranscriptConnection', () => {
         busy: false,
         lastTurnReason: null,
         pendingInteraction: 'none',
-        videoGeneration: 'none',
       },
       agentId: 'storyboard',
       collectionId: null,

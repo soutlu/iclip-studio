@@ -440,6 +440,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             activities_of=_untouched,
             busy_conversation_ids=_untouched,
             latest_master_urls=_untouched,
+            video_progress_of=_untouched,
             same_style_files=SAME_STYLE,
             same_style_source=_untouched,
             event_watermark=SessionEventClock().snapshot,

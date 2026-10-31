@@ -5,12 +5,7 @@ import { ConversationRowStore } from './conversation-rows'
 const ID = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001'
 
 const row = (overrides: Partial<SessionRow> = {}): SessionRow => ({
-  activity: {
-    busy: false,
-    lastTurnReason: null,
-    pendingInteraction: 'none',
-    videoGeneration: 'none',
-  },
+  activity: { busy: false, lastTurnReason: null, pendingInteraction: 'none' },
   agentId: 'storyboard',
   collectionId: null,
   completedAt: null,
@@ -81,18 +76,6 @@ describe('ConversationRowStore 合并规则（合同 §5 水位）', () => {
     expect(store.get(ID)?.activity.busy).toBe(true)
     expect(store.get(ID)?.title).toBe('改名')
     expect(store.get(ID)?.completedAt).toBe('2026-10-01T01:00:00Z')
-  })
-
-  it('视频汇总没有帧来源，单独成组：轮次帧的水位挡不住行上的视频汇总', () => {
-    const store = new ConversationRowStore()
-    store.mergeRows([row({ lastSeq: 3 })])
-    store.applyActivity(ID, busy, mark(6))
-
-    store.mergeRows([
-      row({ activity: { ...row().activity, videoGeneration: 'running' }, lastSeq: 4 }),
-    ])
-
-    expect(store.get(ID)?.activity).toMatchObject({ busy: true, videoGeneration: 'running' })
   })
 
   it('开跑帧把收尾标记记成空，水位同这一帧：开跑前读库的行带着旧标记晚到也不复原', () => {

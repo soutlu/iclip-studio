@@ -15,7 +15,7 @@ import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { Toaster } from '@/shared/ui/toast'
 import { SidebarConversations } from './-sidebar-conversations'
-import { mockConversations } from '@/testing/mocks/conversations'
+import { mockConversations, mockVideoProgress } from '@/testing/mocks/conversations'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 import { stubSidebarViewport } from '@/testing/scroll-viewport'
@@ -89,6 +89,9 @@ const workFrame = (
   session_id: conversationId,
   payload: { pending_interaction: 'none', ...payload },
 })
+
+/** 视频帧让视频进度在一秒的尾随窗口后才重拉（见 conversations.live.ts），等它时放宽超时。 */
+const PROGRESS_REFRESH_TIMEOUT = { timeout: 3000 }
 
 const render = async (initialPath = '/', permissions = mockAuthUser.permissions) => {
   loginAs(mockAuthUser, { permissions })
@@ -409,12 +412,8 @@ describe('SidebarConversations', () => {
   it('键盘从对话链接 Tab 到 ⋯ 按钮，行尾状态仍留在原处可读', async () => {
     const [conversation] = seedConversations(1)
     if (conversation !== undefined) {
-      conversation.activity = {
-        busy: false,
-        lastTurnReason: 'failed',
-        pendingInteraction: 'none',
-        videoGeneration: 'running',
-      }
+      conversation.activity = { busy: false, lastTurnReason: 'failed', pendingInteraction: 'none' }
+      mockVideoProgress.set(conversation.id, 'running')
     }
     const { user } = await render()
     const link = await screen.findByRole('link', { name: '第0段' })
@@ -793,17 +792,13 @@ describe('SidebarConversations', () => {
     expect(screen.queryByText('第0段')).not.toBeInTheDocument()
   })
 
-  it('行上带着出片在跑就画摄像机角标；视频帧到了重拉列表，跑完角标收掉，与轮次角标互不干扰', async () => {
+  it('视频进度里有这段对话就画角标；视频帧到了重拉视频进度，跑完角标收掉，与轮次角标互不干扰', async () => {
     const [conversation] = seedConversations(1)
     const id = conversation?.id ?? ''
     if (conversation !== undefined) {
-      conversation.activity = {
-        busy: true,
-        lastTurnReason: null,
-        pendingInteraction: 'none',
-        videoGeneration: 'queued',
-      }
+      conversation.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'none' }
     }
+    mockVideoProgress.set(id, 'queued')
     const { socket } = await render()
     expect(await screen.findByLabelText('视频排队中')).toBeVisible()
     expect(screen.getByLabelText('进行中')).toBeVisible()
@@ -815,7 +810,7 @@ describe('SidebarConversations', () => {
     await waitFor(() => expect(screen.queryByLabelText('进行中')).not.toBeInTheDocument())
     expect(screen.getByLabelText('视频排队中')).toBeVisible()
 
-    if (conversation !== undefined) conversation.activity.videoGeneration = 'running'
+    mockVideoProgress.set(id, 'running')
     socket.deliver({
       ...sessionEnvelope(id),
       type: 'event.generation.changed',
@@ -827,9 +822,11 @@ describe('SidebarConversations', () => {
         status: 'submitted',
       },
     })
-    expect(await screen.findByLabelText('视频生成中')).toBeVisible()
+    expect(
+      await screen.findByLabelText('视频生成中', undefined, PROGRESS_REFRESH_TIMEOUT),
+    ).toBeVisible()
 
-    if (conversation !== undefined) conversation.activity.videoGeneration = 'none'
+    mockVideoProgress.delete(id)
     socket.deliver({
       ...sessionEnvelope(id),
       type: 'event.generation.changed',
@@ -841,7 +838,10 @@ describe('SidebarConversations', () => {
         status: 'completed',
       },
     })
-    await waitFor(() => expect(screen.queryByLabelText('视频生成中')).not.toBeInTheDocument())
+    await waitFor(
+      () => expect(screen.queryByLabelText('视频生成中')).not.toBeInTheDocument(),
+      PROGRESS_REFRESH_TIMEOUT,
+    )
   })
 
   it('服务端说这段对话跑起来了，那一行就转圈；跑完了转圈收掉', async () => {
@@ -861,26 +861,17 @@ describe('SidebarConversations', () => {
   it('行尾等人与失败直接写短词；悬停整行出提示条，按行尾顺序列出这一行的全部状态', async () => {
     const [waiting, busy] = seedConversations(2)
     if (waiting !== undefined) {
-      waiting.activity = {
-        busy: true,
-        lastTurnReason: null,
-        pendingInteraction: 'question',
-        videoGeneration: 'none',
-      }
+      waiting.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'question' }
     }
     if (busy !== undefined) {
-      busy.activity = {
-        busy: true,
-        lastTurnReason: null,
-        pendingInteraction: 'none',
-        videoGeneration: 'running',
-      }
+      busy.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'none' }
+      mockVideoProgress.set(busy.id, 'running')
     }
     const { user } = await render()
 
     expect(await screen.findByText('等待回答')).toBeVisible()
     expect(screen.getByRole('img', { name: '进行中' })).toBeVisible()
-    expect(screen.getByRole('img', { name: '视频生成中' })).toBeVisible()
+    expect(await screen.findByRole('img', { name: '视频生成中' })).toBeVisible()
 
     await user.hover(screen.getByRole('link', { name: busy?.title ?? '' }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('进行中 · 视频生成中')
@@ -909,7 +900,6 @@ describe('SidebarConversations', () => {
         busy: false,
         lastTurnReason: 'completed',
         pendingInteraction: 'none',
-        videoGeneration: 'none',
       }
     }
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'completed' }))
@@ -921,12 +911,7 @@ describe('SidebarConversations', () => {
   it('从没打开过的对话不画未读点：行上带的 completed 与收场帧都不算', async () => {
     const done = addMockConversation('跑完了')
     done.lastRunId = 'run-1'
-    done.activity = {
-      busy: false,
-      lastTurnReason: 'completed',
-      pendingInteraction: 'none',
-      videoGeneration: 'none',
-    }
+    done.activity = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' }
     const { socket } = await render()
     await screen.findByText('跑完了')
 

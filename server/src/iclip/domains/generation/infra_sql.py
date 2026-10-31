@@ -416,16 +416,15 @@ class SqlGenerationRepository:
         return tuple(_job_from_row(row) for row in rows)
 
     async def in_flight_by_conversation(
-        self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        if not conversation_ids:
-            return {}
-        # 一段对话下只要有一条已交给上游就算 running；全部还在本系统排队才是 queued。
+        # 一段对话下只要有一条已离开排队（提交中或已交给上游）就算 running；全部还在排队才是 queued。
         running = func.bool_or(_JOBS.status != STATUS_PENDING)
         stmt = (
             select(_JOBS.conversation_id, running)
             .where(
-                _JOBS.conversation_id.in_(list(conversation_ids)),
+                *owner_conditions(_JOBS.owner_user_id, owner),
+                _JOBS.conversation_id.is_not(None),
                 _JOBS.kind == kind,
                 _UNFINISHED,
             )

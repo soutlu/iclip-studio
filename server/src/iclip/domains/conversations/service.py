@@ -19,6 +19,7 @@ from iclip.domains.conversations.models import (
     Conversation,
     ConversationActivity,
     EventWatermark,
+    VideoPhase,
     WholeFilmDraft,
     WholeFilmExport,
 )
@@ -119,6 +120,10 @@ BusyConversationIds = Callable[[uuid.UUID | None], Awaitable[frozenset[uuid.UUID
 
 LatestMasterUrls = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, str]]]
 """批量读这些对话各自名下最新一条素材片的地址（不含分叉继承来的），由组合根注入；没有素材片的 id 不在结果里。"""
+
+VideoProgressOf = Callable[[uuid.UUID | None], Awaitable[Mapping[uuid.UUID, VideoPhase]]]
+"""还有视频记录没跑完的对话各到哪一步，由组合根接到生成域；给属主只看他名下的记录，给 None 看全平台。
+一条都没有的对话不在结果里。"""
 
 GenerateTitle = Callable[[str], Awaitable[str | None]]
 """由组合根注入的标题生成器；返回 None 表示本次不生成标题。"""
@@ -455,6 +460,7 @@ class ConversationService:
         activities_of: ActivitiesOf,
         busy_conversation_ids: BusyConversationIds,
         latest_master_urls: LatestMasterUrls,
+        video_progress_of: VideoProgressOf,
         same_style_files: SameStyleFiles,
         same_style_source: SameStyleSource,
         event_watermark: EventWatermarkOf,
@@ -475,6 +481,7 @@ class ConversationService:
         self._activities_of = activities_of
         self._busy_conversation_ids = busy_conversation_ids
         self._latest_master_urls = latest_master_urls
+        self._video_progress_of = video_progress_of
         self._generate_title = generate_title
         self._announce_title = announce_title
         self._list_collections = list_collections
@@ -1095,6 +1102,14 @@ class ConversationService:
             latest_master_urls=await self._latest_master_urls([item.id for item in page.items]),
         )
 
+    async def video_progress(self, principal: Principal) -> Mapping[uuid.UUID, VideoPhase]:
+        """主体看得见的视频记录里，还没跑完的按对话汇总到哪一步。
+
+        范围按记录的属主算：普通用户只看自己的，治理者与替人办事的钥匙看全平台。不查对话行，
+        客户端只给自己列着的对话画角标。"""
+
+        return await self._video_progress_of(visible_owner_incl_act_as(principal))
+
     async def rename(
         self, principal: Principal, conversation_id: uuid.UUID, *, title: str
     ) -> Conversation:
@@ -1280,6 +1295,7 @@ __all__ = [
     "SameStyleFiles",
     "Sidebar",
     "SidebarGroup",
+    "VideoProgressOf",
     "WholeFilmDraftReferences",
     "WholeFilmExports",
     "WholeFilmRenderUnavailable",

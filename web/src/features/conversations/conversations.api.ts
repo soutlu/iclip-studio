@@ -76,6 +76,8 @@ export const conversationsQueryKeys = {
   }) => [...MORE_KEY, collectionId ?? 'ungrouped', state] as const,
   /** 一段对话的整行。不在 all 前缀下：列表刷新不连带重读，行的变化由行池送达。 */
   row: (conversationId: string) => ['conversation-row', conversationId] as const,
+  /** 视频进度。不在 all 前缀下：改对话不改它，它只随视频帧与重连重拉。 */
+  videoProgress: ['conversation-video-progress'] as const,
   search: (keyword: string) => [...SEARCH_KEY, keyword] as const,
   /** 所有关键词的搜索结果；重连对账时整体失效。 */
   searchAll: SEARCH_KEY,
@@ -211,7 +213,7 @@ const rowReadsOf = (store: ConversationRowStore): Map<string, AbortController> =
 }
 
 /**
- * 取一段对话的整行并合进行池，跟上 `lastRunId`、`activity.videoGeneration` 等帧上没有的字段；404 按删除处理。
+ * 取一段对话的整行并合进行池，跟上 `lastRunId` 等帧上没有的字段；404 按删除处理。
  * 新的一次中止在途那次，只有最后一次的结果进池；已记墓碑的对话照样读。读取失败只记警告，行保持原值。
  */
 export const refreshConversationRow = async (

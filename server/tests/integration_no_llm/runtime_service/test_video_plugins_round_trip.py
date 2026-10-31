@@ -12,7 +12,7 @@ import subprocess
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -135,10 +135,6 @@ def objects() -> FakeObjects:
     return FakeObjects()
 
 
-async def _no_video(_conversation_id: uuid.UUID) -> Literal["none", "queued", "running"]:
-    raise AssertionError("插件服务用不到视频出片阶段")
-
-
 def backend_app(boards: FrameBoardsAdapter) -> FastAPI:
     """后端的内部接口：真实的取帧拼板适配器与接入的图片模型，回调用不到对话服务。"""
 
@@ -151,7 +147,6 @@ def backend_app(boards: FrameBoardsAdapter) -> FastAPI:
             user_principal=FakePrincipals(),
             conversations=conversations,
             naming=TurnNaming(conversations),
-            video_generation_of=_no_video,
             plugins=RuntimePluginServices(
                 generations=None,
                 boards=boards,

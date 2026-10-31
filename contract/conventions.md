@@ -188,7 +188,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - **HTTP 行**：只盖过水位不大于它 `lastSeq` 的字段。写入之前读库的旧行，`lastSeq` 小于随后 `updated` 帧的信封 `seq`，晚到也盖不掉那一帧的事实；
     帧里可能稍旧的 `activity` 也盖不掉序号更大的 `work_changed`。
 - **都是易失通知**，客户端据此更新列表；断线期间的变化不补发，重连后须重拉列表，按上面的水位规则合并，从 `ConversationOut` 对齐当前事实。
-- `event.generation.changed` 不带结果地址，只说哪条任务跳到了哪个状态；收到就重拉 §11 的列表。`kind`、`operation` 与 `status` 的词汇同 `GenerationOut`，列表接口是事实源，客户端保留轮询兜底。对话行上的 `activity.videoGeneration` 也靠它推动：帧上没有汇总值，收到本对话的视频帧（出片、编辑段、合成都是）就重拉 §6 的列表。
+- `event.generation.changed` 不带结果地址，只说哪条任务跳到了哪个状态；收到就重拉 §11 的列表。`kind`、`operation` 与 `status` 的词汇同 `GenerationOut`，列表接口是事实源，客户端保留轮询兜底。视频进度（§6）也靠它推动：帧上没有汇总值，收到本对话的视频帧（出片、编辑段、合成都算）就重拉视频进度。
 - 一条跑完接着起下一条会先发 idle 再发 busy。
 
 #### 文件订阅
@@ -221,7 +221,8 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `lastRunId` 只标识最近一次运行，不能作为续读地址；刷新与重连按对话 ID 和 Transcript 水位恢复（§5）。
 - `GET /conversations/{id}` 读一段对话的整行，可见范围同其他读路径：属主读自己活着的，替人办事的钥匙读得到活着的，治理者连墓碑也读得到；其余是 `404`。列表在轮次状态变化后用它单独刷新一行。
 - 每行带 `lastSeq` 与 `eventEpoch`：读这一行之前，这段对话已发出的最大会话事件序号与它所属的服务进程；与全局帧信封的 `seq`、`epoch` 同一套，合并规则见 §5「全局帧」。
-- `activity` 的领域语义见 [CONTEXT.md](../docs/CONTEXT.md)，变化通过 §5 的全局帧通知。
+- `activity` 只有运行时给的轮次事实：`busy`、`pendingInteraction` 与 `lastTurnReason`，领域语义见 [CONTEXT.md](../docs/CONTEXT.md)，变化通过 §5 的全局帧通知。
+- `GET /conversations/video-progress` 是视频进度：`{ "conversations": { "<对话 id>": "queued" | "running" } }`，只列至少有一条视频记录还没跑完的对话，没列出的就是没有。出片、编辑段与合成都算，字幕、音频、成片与超分记录不算，没挂对话的不算；排队、提交中、等结果算没跑完，完成与失败不算。至少一条已不在排队（提交中或等结果）就是 `running`，全在排队是 `queued`。范围按记录的属主：普通用户只看自己的，替人办事的钥匙与治理者看全平台。客户端收到本对话的视频帧就重拉它（§5「全局帧」）。
 - **标题服务端自动起，只成功写入一次**：设了 `llm` 的默认模型（§18「默认模型」）时用它起名，没设就不起；每轮开始时按这一轮的消息尝试起名，与这一轮并行，
   不等它跑完；用户自己改过名（`PATCH`，或者开对话时就给了 `title`）的一律不碰。起不出来就还叫默认名，
   下一轮开始时再试，不报错。改名与自动起名都会发一帧 `session.meta.updated`（见 §5 全局帧）。
@@ -471,7 +472,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 记录的 `request` 是 `{ model, videoUrl, audioFormat, sampleRate, speakerDiarization }`：识别的是素材片的原片地址（不是水印版），服务端抽成单声道 16 kHz mp3 发给识别服务，音频本身不落库。字幕记录没有 `outputUrl`、`watermarkOutputUrl`、`rootJobId`、镜号与区间，`sourceUrl` 是被识别那条素材片的地址。
 - 结果在 `sentences`：完成后是 `[{ startMs, endMs, text, speaker, words }]`，按识别给的先后；`speaker` 是识别服务给的说话人编号，只在这条视频里区分谁在说，可以为 `null`。`words` 是这句的逐词时间 `[{ startMs, endMs, text, punctuation }]`，按识别给的先后，`punctuation` 是紧跟这个词的标点，没有就是 `""`；识别没给逐词时间的句子与早先的记录 `words` 为 `[]`。没有口播（视频没有音轨，或识别出来一句都没有）是正常结果，记为 `completed`、`sentences` 为 `[]`。别的记录与没完成的字幕记录 `sentences` 为 `null`。
 - 失败是终态，不自动重试：取不到素材片 `MEDIA_SOURCE_UNREACHABLE`，抽音频失败 `MEDIA_PROCESS_FAILED`，抽出的音频超过识别接口的 Base64 上限 `SUBTITLE_AUDIO_TOO_LARGE`；识别服务连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂或没有 `request_id` `PROVIDER_MALFORMED`。
-- 按 `GET /generations?kind=subtitle&sourceJobId=` 找一条素材片的字幕记录，单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答字幕记录。字幕记录不计审计口径（§12）、不进资料库，也不算对话的 `activity.videoGeneration`。
+- 按 `GET /generations?kind=subtitle&sourceJobId=` 找一条素材片的字幕记录，单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答字幕记录。字幕记录不计审计口径（§12）、不进资料库，也不算视频进度（§6）。
 
 ### 音频记录
 
@@ -480,7 +481,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 前端拿制作页（§6）的 `musicDescription` 原样当 `prompt`；它为 `null` 或对话没有工程文件时，由用户写一句。
 - 记录的 `request` 是 `{ model, prompt, format, sampleRate, channels }`：`model` 是 `qwen-audio-3.1-tts-next`，`prompt` 就是发出的那段，后三项是向模型要的音频（`wav`、48000、2）。完成后 `outputUrl` 是本系统桶里的 m4a：服务端下载模型给的音频，去掉首尾静音、统一响度、编成 48 kHz 双声道 AAC 后转存；`durationMs` 是规整后量出的时长。上传的音乐没有 `durationMs`。
 - 失败是终态，不自动重试：音乐模型连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂、没有 `request_id` 或没有音频地址 `PROVIDER_MALFORMED`；生成之后取不到模型给的音频 `OUTPUT_DOWNLOAD_FAILED`，规整失败（包括整段都是静音）`MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
-- 按 `GET /generations?kind=audio&conversationId=` 列一段对话的背景音乐，生成的与确认时挂到这段对话的上传（§10）都在里面；没挂对话的上传按属主列（`kind=audio&operation=upload`）；单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答音频记录。音频记录不计审计口径（§12）、不进资料库、不算对话的 `activity.videoGeneration`，也不是 `video.downloaded` 的主语。
+- 按 `GET /generations?kind=audio&conversationId=` 列一段对话的背景音乐，生成的与确认时挂到这段对话的上传（§10）都在里面；没挂对话的上传按属主列（`kind=audio&operation=upload`）；单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答音频记录。音频记录不计审计口径（§12）、不进资料库、不算视频进度（§6），也不是 `video.downloaded` 的主语。
 
 ### 高清版
 
@@ -490,7 +491,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **同一来源同一档只留一条没失败的**：已有排队、提交中、等结果或已完成的超分记录（谁提的都算）时，直接答那一条，照样 `202`，不新建、不排队；失败的可以再提，另起一条，失败那条留着。
 - 记录的 `request` 是 `{ model, resolution, fps, video_url, user_name }`，照上游超分接口原样转发（与出片请求一样是 snake_case）：`model` 与 `fps` 取运行配置，`fps` 为 `null` 就不插帧，这时发给上游的请求里没有这一项；`video_url` 是来源的原片地址，不是水印版。超分记录不挂对话（`GET /generations` 按对话列不到它），`taskId`、`metadata`、`rootJobId` 与区间都为空，`shotIndex` 抄来源，`sourceUrl` 是来源的地址。完成后 `outputUrl`、`watermarkOutputUrl` 与 `durationMs` 同出片，失败码也同出片；服务器上关掉了高清版而还有排着队的超分记录，它失败、码是 `ENHANCE_NOT_CONFIGURED`。
 - `GET /generations/{id}/enhancements` 答 `{ downloadedJobIds, tiers }`。`tiers` 是运行配置的档里比来源清晰的那几档（按短边比，480p < 720p < 1080p），保持配置的先后（从高到低）；每档 `{ resolution, job, mine }`，`job` 是这一档最近建立的一条超分记录（谁提的都算，失败的也算），没有为 `null`；`mine` 是这条记录的属主是不是这次读的主体，没有记录为 `false`，前端只对自己的记录在下载按钮上加点。来源的清晰度按出片请求里的 `resolution` 推，合成按原作，成片按画面轨第一条素材片（是合成也按原作）；推不出（没写或认不出）就列全部配置的档，由上游判。`downloadedJobIds` 是下载这条来源的高清版时要各记一条 `video.downloaded` 的素材片：来源是素材片就是它自己，是成片就是它导出时用到的各条（同 §13 成片版本的 `sourceJobIds`）；超分记录本身不是 `video.downloaded` 的主语。`id` 不存在是 `404`；来源不是素材片或导出完成的成片时答 `{ downloadedJobIds: [], tiers: [] }`；高清版没开通时 `tiers` 为空、`downloadedJobIds` 照给。
-- 超分记录不计审计口径（§12）、不进资料库（§13），不当编辑段与合成的基底，不算对话的 `activity.videoGeneration`，不识别字幕；`GET /generations/video/{task_id}`、§6 的成片导出（读最新一次、取消）都不认它。
+- 超分记录不计审计口径（§12）、不进资料库（§13），不当编辑段与合成的基底，不算视频进度（§6），不识别字幕；`GET /generations/video/{task_id}`、§6 的成片导出（读最新一次、取消）都不认它。
 
 ### 图片
 
@@ -748,7 +749,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 | 路径 | 请求体 | 成功 | 失败 |
 |---|---|---|---|
 | `POST /internal/runtime/hooks/gate` | `GatePayload` | `204` | 属主不存在 `404`，已停用 `403` |
-| `POST /internal/runtime/hooks/run-started` | `RunStartedPayload` | `204`：对话行记下 `lastRunId`、刷新 `updatedAt`、抹掉收尾标记，再广播 `event.session.updated`（§5「全局帧」）；行里的 `activity` 用请求体那份，`videoGeneration` 由后端补上 | 对话不存在或已删 `404` |
+| `POST /internal/runtime/hooks/run-started` | `RunStartedPayload` | `204`：对话行记下 `lastRunId`、刷新 `updatedAt`、抹掉收尾标记，再广播 `event.session.updated`（§5「全局帧」）；行里的 `activity` 用请求体那份 | 对话不存在或已删 `404` |
 | `POST /internal/runtime/hooks/turn-started` | `TurnStartedPayload` | `204`，不等起名：对话还是默认标题就在后台按 `text` 起一个（经运行时的 `POST /v1/titles`），对话已删就不起；后端关停时没起完的取消 | — |
 
 - 运行开始的请求体只有会话 id，属主与 agent 取对话行自己的。

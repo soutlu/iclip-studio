@@ -3,10 +3,9 @@
  * 需求单面板的查询只管成员、游标与计数，渲染时按 id 从这里取行。
  *
  * 合并规则见合同 §5「全局帧」：
- * - 字段分组记水位：标题、收尾标记、轮次活动（busy / 待处理 / 结局）、视频汇总、其余事实字段。
+ * - 字段分组记水位：标题、收尾标记、轮次活动（busy / 待处理 / 结局）、其余事实字段。
  * - 事件帧在提交后发号；HTTP 行的 `lastSeq` 是读库之前的水位。HTTP 行只盖过水位不大于 `lastSeq` 的分组。
  * - `created` / `updated` 帧：事实字段（标题、收尾、其余）按信封序号记水位；活动按行内 `lastSeq` 与 HTTP 行同一口径。
- * - 视频汇总没有帧来源，只随行更新，单独成组，免得被活动帧的水位挡住。
  * - 序号只在同一 epoch 内可比。epoch 按本池第一次见到的先后排：没见过的视为最新，整行收下并把水位重置到它；
  *   比这一行当前 epoch 更早的来源一律丢弃。
  * - 删除记墓碑：之后 `deletedAt` 为空的行一律不再收（对话 id 不复用），带 `deletedAt` 的墓碑行（治理者复盘）照收。
@@ -20,7 +19,7 @@ import type { SessionEventMark, SessionRow } from '@/shared/transcript/connectio
 type Row = SessionRow
 type Turn = Pick<Row['activity'], 'busy' | 'lastTurnReason' | 'pendingInteraction'>
 
-const GROUPS = ['title', 'completed', 'turn', 'video', 'facts'] as const
+const GROUPS = ['title', 'completed', 'turn', 'facts'] as const
 type Group = (typeof GROUPS)[number]
 type Marks = Record<Group, number>
 
@@ -49,7 +48,6 @@ const marksAt = (seq: number): Marks => ({
   facts: seq,
   title: seq,
   turn: seq,
-  video: seq,
 })
 
 const turnOf = (row: Row): Turn => ({
@@ -68,26 +66,18 @@ const sameRow = (left: Row, right: Row): boolean => {
   const keys = Object.keys(right) as (keyof Row)[]
   if (keys.length !== Object.keys(left).length) return false
   return keys.every((key) =>
-    key === 'activity'
-      ? sameTurn(turnOf(left), turnOf(right)) &&
-        left.activity.videoGeneration === right.activity.videoGeneration
-      : left[key] === right[key],
+    key === 'activity' ? sameTurn(turnOf(left), turnOf(right)) : left[key] === right[key],
   )
 }
 
 /** 由各组来源拼出一行：facts 给底，其余组各取自己那份。 */
 const compose = (
   facts: Row,
-  sources: {
-    title: string
-    completedAt: string | null
-    turn: Turn
-    video: Row['activity']['videoGeneration']
-  },
+  sources: { title: string; completedAt: string | null; turn: Turn },
   lastSeq: number,
 ): Row => ({
   ...facts,
-  activity: { ...facts.activity, ...sources.turn, videoGeneration: sources.video },
+  activity: { ...facts.activity, ...sources.turn },
   completedAt: sources.completedAt,
   lastSeq,
   title: sources.title,
@@ -215,16 +205,11 @@ export class ConversationRowStore {
       const completedAt =
         mark.seq > entry.marks.completed ? row.completedAt : this.completedOf(entry, row)
       const turn = entry.marks.turn <= row.lastSeq ? turnOf(row) : this.turnOfEntry(entry, row)
-      const video =
-        entry.marks.video <= row.lastSeq || entry.row === null
-          ? row.activity.videoGeneration
-          : entry.row.activity.videoGeneration
-      const next = compose(facts, { completedAt, title, turn, video }, row.lastSeq)
+      const next = compose(facts, { completedAt, title, turn }, row.lastSeq)
       for (const group of ['facts', 'title', 'completed'] as const) {
         entry.marks[group] = Math.max(entry.marks[group], mark.seq)
       }
       entry.marks.turn = Math.max(entry.marks.turn, row.lastSeq)
-      entry.marks.video = Math.max(entry.marks.video, row.lastSeq)
       entry.pending = {}
       this.commit(entry, next)
     })
@@ -280,13 +265,9 @@ export class ConversationRowStore {
     const completedAt =
       entry.marks.completed <= lastSeq ? row.completedAt : this.completedOf(entry, row)
     const turn = entry.marks.turn <= lastSeq ? turnOf(row) : this.turnOfEntry(entry, row)
-    const video =
-      takes('video') || entry.row === null
-        ? row.activity.videoGeneration
-        : entry.row.activity.videoGeneration
     const next = compose(
       facts,
-      { completedAt, title, turn, video },
+      { completedAt, title, turn },
       Math.max(lastSeq, entry.row?.lastSeq ?? 0),
     )
     for (const group of GROUPS) entry.marks[group] = Math.max(entry.marks[group], lastSeq)
@@ -327,7 +308,6 @@ export class ConversationRowStore {
           completedAt: 'completedAt' in pending ? (pending.completedAt ?? null) : row.completedAt,
           title: pending.title ?? row.title,
           turn: pending.turn ?? turnOf(row),
-          video: row.activity.videoGeneration,
         },
         row.lastSeq,
       )

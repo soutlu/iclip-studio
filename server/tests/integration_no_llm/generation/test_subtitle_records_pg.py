@@ -162,5 +162,5 @@ async def test_subtitle_records_do_not_count_as_videos_in_flight_or_masters(
         finished.id, sentences=SENTENCES, provider_status="succeeded", provider_task_id="r"
     )
 
-    assert await repo.in_flight_by_conversation([quiet, busy_subtitles], kind="video") == {}
+    assert await repo.in_flight_by_conversation(owner=owner, kind="video") == {}
     assert await repo.latest_master_by_conversation([quiet, busy_subtitles]) == {quiet: TAKE_URL}
