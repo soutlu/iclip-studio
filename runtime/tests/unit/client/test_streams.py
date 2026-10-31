@@ -1,5 +1,6 @@
-"""客户端库的两条 WebSocket：帧解析成 ``live.frames`` 的类型、``ping`` 自动回同 ``nonce`` 的 ``pong``、运行时
-关连接抛带关闭码的 ``StreamClosed``、认不出应用是 ``AppRejected``、帧解析不了是 ``RuntimeUnavailable``。
+"""客户端库的两条 WebSocket：对话内容流交出帧的原文、事件流把会话活动解析成 ``live.frames`` 的类型，两边都
+容忍运行时新加的字段与帧；``ping`` 自动回同 ``nonce`` 的 ``pong``、运行时关连接抛带关闭码的 ``StreamClosed``、
+认不出应用是 ``AppRejected``、帧读不出类型或认得的帧解析不了是 ``RuntimeUnavailable``。
 
 对面是测试里的一个小 Starlette 应用，按脚本发帧、收帧、关连接，经 ``ASGIWebSocketTransport`` 接上，不碰库。
 """
@@ -17,7 +18,13 @@ from starlette.applications import Starlette
 from starlette.routing import WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from agent_runtime.client import AppRejected, RuntimeClient, RuntimeUnavailable, StreamClosed
+from agent_runtime.client import (
+    AppRejected,
+    RawFrame,
+    RuntimeClient,
+    RuntimeUnavailable,
+    StreamClosed,
+)
 from agent_runtime.live.frames import (
     Ack,
     FsChanged,
@@ -149,12 +156,36 @@ def _subscribe() -> Subscribe:
     )
 
 
-async def test_transcript_frames_parse_and_pings_are_answered(fake: FakeRuntime) -> None:
+def _text(frame: Envelope) -> str:
+    """帧在 WebSocket 上的原文，与运行时发帧时的序列化相同。"""
+
+    return frame.model_dump_json(exclude_none=True, by_alias=True)
+
+
+def _raw(frame: Envelope) -> RawFrame:
+    return RawFrame(type=json.loads(_text(frame))["type"], text=_text(frame))
+
+
+def _with_extra(frame: Envelope) -> str:
+    """运行时新版本可能发的样子：外层与 ``payload`` 里各多一个这个客户端不认识的字段。"""
+
+    wire = json.loads(_text(frame))
+    wire["added_later"] = {"nested": [1, 2]}
+    wire["payload"]["also_added"] = True
+    return json.dumps(wire, ensure_ascii=False)
+
+
+ACK = Ack(id="s1", payload=SubscribeAckPayload(accepted=(SESSION,)))
+
+
+async def test_transcript_frames_come_as_raw_text_and_pings_are_answered(
+    fake: FakeRuntime,
+) -> None:
     fake.script = [
         Expect(),
         Send(Ping(timestamp=AT, payload=PingPayload(nonce="n1"))),
         Expect(),
-        Send(Ack(id="s1", payload=SubscribeAckPayload(accepted=(SESSION,)))),
+        Send(ACK),
         Send(RESET),
         Send(OPS),
         Send(CHANGED),
@@ -171,8 +202,7 @@ async def test_transcript_frames_parse_and_pings_are_answered(fake: FakeRuntime)
             Unsubscribe(id="u1", payload=UnsubscribePayload(session_id=SESSION))
         )
 
-    assert ack == Ack(id="s1", payload=SubscribeAckPayload(accepted=(SESSION,)))
-    assert (reset, ops, changed) == (RESET, OPS, CHANGED)
+    assert (ack, reset, ops, changed) == (_raw(ACK), _raw(RESET), _raw(OPS), _raw(CHANGED))
     assert fake.authorization == [f"Bearer {KEY}"]
     assert fake.inbound == [
         {
@@ -195,7 +225,7 @@ async def test_a_server_close_raises_with_its_close_code(fake: FakeRuntime) -> N
 
     with pytest.raises(StreamClosed) as raised:
         async with _client(fake) as client, client.connect_transcript() as channel:
-            assert await channel.receive() == Ack(id="s1")
+            assert await channel.receive() == _raw(Ack(id="s1"))
             await channel.receive()
 
     assert raised.value.code == 1013
@@ -239,12 +269,73 @@ async def test_a_handshake_answered_with_another_status_is_plain_runtime_unavail
     assert raised.value.status == 502
 
 
-async def test_an_unparseable_frame_is_runtime_unavailable(fake: FakeRuntime) -> None:
-    fake.script = [Send('{"type": "transcript.nonsense"}')]
+async def test_transcript_frames_with_fields_or_types_this_client_does_not_know_come_verbatim(
+    fake: FakeRuntime,
+) -> None:
+    """运行时先于应用升级：多出的字段与新的帧类型都照原文交出，连接不断。"""
+
+    extended = _with_extra(RESET)
+    novel = '{"type": "transcript.something_new", "session_id": "x", "payload": {}}'
+    fake.script = [Send(extended), Send(novel), Send(OPS)]
+
+    async with _client(fake) as client, client.connect_transcript() as channel:
+        received = [await channel.receive() for _ in range(3)]
+
+    assert received == [
+        RawFrame(type="transcript.reset", text=extended),
+        RawFrame(type="transcript.something_new", text=novel),
+        _raw(OPS),
+    ]
+
+
+@pytest.mark.parametrize(
+    "frame",
+    ["not json", '["transcript.ops"]', '{"session_id": "x"}', '{"type": "ping"}'],
+    ids=["not-json", "not-an-object", "no-type", "ping-without-nonce"],
+)
+async def test_a_frame_without_a_readable_type_is_runtime_unavailable(
+    fake: FakeRuntime, frame: str
+) -> None:
+    fake.script = [Send(frame)]
 
     with pytest.raises(RuntimeUnavailable) as raised:
         async with _client(fake) as client, client.connect_transcript() as channel:
             await channel.receive()
+
+    assert not isinstance(raised.value, StreamClosed)
+
+
+async def test_events_tolerate_added_fields_and_hand_back_unknown_types_raw(
+    fake: FakeRuntime,
+) -> None:
+    """认得的事件多出字段照样解析（多的忽略），带多余字段的心跳照样回，认不出的类型原文交出、不断流。"""
+
+    novel = '{"type": "event.session.something_new", "session_id": "x"}'
+    fake.script = [
+        Send(_with_extra(ACTIVITY)),
+        Send(_with_extra(Ping(timestamp=AT, payload=PingPayload(nonce="n3")))),
+        Expect(),
+        Send(novel),
+        Send(IDLE),
+        Close(1001),
+    ]
+    received: list[Any] = []
+
+    with pytest.raises(StreamClosed):
+        async with _client(fake) as client, client.connect_events() as events:
+            async for event in events:
+                received.append(event)
+
+    assert received == [ACTIVITY, RawFrame(type="event.session.something_new", text=novel), IDLE]
+    assert fake.inbound == [{"type": "pong", "payload": {"nonce": "n3"}}]
+
+
+async def test_a_known_event_that_does_not_parse_is_runtime_unavailable(fake: FakeRuntime) -> None:
+    fake.script = [Send('{"type": "event.session.work_changed", "session_id": "x"}')]
+
+    with pytest.raises(RuntimeUnavailable) as raised:
+        async with _client(fake) as client, client.connect_events() as events:
+            await anext(events)
 
     assert not isinstance(raised.value, StreamClosed)
 

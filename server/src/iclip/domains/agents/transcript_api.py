@@ -1,8 +1,8 @@
 """Transcript REST 端点与多对话 WebSocket：逐对话校验权限，transcript 本身经运行时服务的客户端读写与订阅。
 
 REST 端点判完谁看得见、谁能写，再转给运行时服务的会话接口，会话的属主放进 ``X-End-User``。WebSocket 是一条
-转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时发来的帧原样发给浏览器；
-全局帧在本进程里。
+转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时发来的帧不解析、原文
+发给浏览器；全局帧在本进程里。
 
 WebSocket 握手不受 CORS 约束且会携带 cookie，必须独立校验 Origin，防止跨站劫持。"""
 
@@ -17,7 +17,7 @@ from typing import Annotated, Any, Final, Literal, Protocol
 
 import structlog
 from agent_runtime.app_wire import SessionPromptIn
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable, TranscriptChannel
+from agent_runtime.client import RawFrame, RuntimeClient, RuntimeUnavailable, TranscriptChannel
 from agent_runtime.errors import DomainError
 from agent_runtime.live.frames import (
     Ack,
@@ -40,7 +40,8 @@ from agent_runtime.transcript.wire import (
     Unsubscribe,
 )
 from agent_runtime.transcript.wire import TranscriptPage as SessionTranscriptPage
-from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Path, Query, Response, WebSocket, WebSocketDisconnect
+from fastapi.websockets import WebSocketState
 from pydantic import TypeAdapter, ValidationError
 
 from iclip.common.generation_vocab import GenerationKind, GenerationOperation, GenerationStatus
@@ -460,7 +461,7 @@ def create_transcript_router(
         before_turn: Annotated[str | None, Query()] = None,
         after_turn: Annotated[str | None, Query()] = None,
         page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-    ) -> TranscriptPage:
+    ) -> Response:
         """一页轮子。不给位置就是最新那几轮，往上翻给 ``before_turn``。
 
         ``agent_id`` 默认主 agent；给子代理的 id 就读它那条流，不属于这段对话的 id 是 404。
@@ -478,13 +479,18 @@ def create_transcript_router(
             after_turn=after_turn,
             page_size=page_size,
         )
-        return TranscriptPage(
+        # 一页可能有几百 KB：客户端库已经解析过一次，这里不再校验地贴上页头字段、直接答 JSON，FastAPI
+        # 也就不按 response_model 再校验一遍。序列化同它的默认：按别名、保留 null。
+        enveloped = TranscriptPage.model_construct(
             **dict(page),
             title=header.title,
             owner_user_id=str(header.owner_user_id),
             deleted_at=None if header.deleted_at is None else header.deleted_at.isoformat(),
             forked_from=None if header.forked_from is None else str(header.forked_from),
             fork_turn=header.fork_turn,
+        )
+        return Response(
+            content=enveloped.model_dump_json(by_alias=True), media_type="application/json"
         )
 
     @router.get("/transcript/ops", response_model=OpsCatchup)
@@ -553,10 +559,10 @@ class _Connection:
 
     transcript 订阅转给这条连接独占的一条运行时对话内容流：``subscribe_v2`` 先在这里核可见性，看不见的
     就地回 ``not_found``、不转过去，看得见的原样（换成规范写法的 id）转过去，回执由运行时给，一帧一个；
-    ``unsubscribe_v2`` 原样转过去。运行时发来的回执、reset / ops 与订着的对话的文件变化原样发出。运行时那一头
-    断了就以 1001 关掉这条连接。
+    ``unsubscribe_v2`` 原样转过去。运行时发来的回执、reset / ops、订着的对话的文件变化与它新加的帧都不解析，
+    原文发出。运行时那一头断了就以 1001 关掉这条连接。
 
-    出站经有界队列，回调与转发只往里放、不等发送；缓冲溢出时断开以便重连补批。
+    出站经有界队列，回调、转发与就地回执都只往里放、不等发送；缓冲溢出时断开以便重连补批。
 
     帧里的对话 id 两种写法都收，订阅与回发的 ``session_id`` 一律用规范写法：客户端按 ``session_id``
     分流，全局帧与 REST 也只给这一种拼写，多一种会让同一段对话在客户端裂成两份。"""
@@ -616,7 +622,7 @@ class _Connection:
 
     async def _read(self, upstream: TranscriptChannel) -> None:
         while True:
-            raw = await self._ws.receive_text()
+            raw = await self._receive()
             self._last_inbound = datetime.now(UTC)
             try:
                 frame = _CLIENT_FRAME.validate_json(raw)
@@ -659,7 +665,8 @@ class _Connection:
         if conversation_id is None:
             # 不泄露不可见对话的存在性，也不影响连接上的其他订阅；不转给运行时，回执就这一个。
             # 拒了的写法没有规范形式，回执里原样带回客户端问的那个。
-            await self._outbound.put(
+            # 不等队列空位：发送泵溢出退出后没人再取，等就再也读不到下一帧、连接收不了尾。
+            self.offer(
                 Ack(
                     id=frame.id,
                     payload=SubscribeAckPayload(not_found=(frame.payload.session_id,)),
@@ -671,7 +678,7 @@ class _Connection:
         await upstream.subscribe(frame.model_copy(update={"payload": payload}))
 
     async def _relay(self, upstream: TranscriptChannel) -> None:
-        """把运行时发来的帧原样转给浏览器；运行时那一头断了就以 1001 关掉这条连接。对话的帧只来自这条上游
+        """把运行时发来的帧原文转给浏览器；运行时那一头断了就以 1001 关掉这条连接。对话的帧只来自这条上游
         订着的对话，订阅前已经核过可见性。"""
 
         try:
@@ -728,13 +735,26 @@ class _Connection:
                 )
 
     async def _send(self, frame: Any) -> None:
-        """按字段别名序列化实体和操作，以匹配客户端协议；WebSocket 不经过 FastAPI 响应序列化。"""
+        """运行时的帧发原文；本进程的帧按字段别名序列化实体和操作，以匹配客户端协议，WebSocket 不经过
+        FastAPI 响应序列化。"""
 
+        text = (
+            frame.text
+            if isinstance(frame, RawFrame)
+            else frame.model_dump_json(exclude_none=True, by_alias=True)
+        )
         try:
-            await self._ws.send_text(frame.model_dump_json(exclude_none=True, by_alias=True))
+            await self._ws.send_text(text)
         except RuntimeError as exc:
             # Starlette 在关闭后发送时抛 RuntimeError，统一转换为连接断开。
             raise WebSocketDisconnect(code=1006) from exc
+
+    async def _receive(self) -> str:
+        if self._ws.application_state == WebSocketState.DISCONNECTED:
+            # 发送泵或心跳已经关了连接（溢出、上游断开、心跳超时），Starlette 不让再收、会抛 RuntimeError；
+            # 当作连接断开，读循环就此收尾。别的 RuntimeError 照常抛。
+            raise WebSocketDisconnect(code=1006)
+        return await self._ws.receive_text()
 
 
 async def _serve(

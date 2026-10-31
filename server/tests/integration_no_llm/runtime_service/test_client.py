@@ -20,7 +20,12 @@ from agent_runtime.app_wire import (
 )
 from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed
 from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
+from agent_runtime.live.frames import (
+    Ack,
+    SessionWorkChanged,
+    TranscriptOpsFrame,
+    TranscriptResetFrame,
+)
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import AttachmentSource, ImageContent, TextContent, TurnUpsertOp
 from agent_runtime.transcript.wire import Subscribe, SubscribePayload
@@ -162,17 +167,14 @@ async def test_transcript_stream_subscribes_then_streams_a_run(
         )
         async with reader.connect_transcript() as channel, asyncio.timeout(WAIT):
             await channel.subscribe(subscription)
-            reset = await channel.receive()
-            ack = await channel.receive()
-            assert isinstance(reset, TranscriptResetFrame)
+            reset = TranscriptResetFrame.model_validate_json((await channel.receive()).text)
+            ack = Ack.model_validate_json((await channel.receive()).text)
             assert (reset.session_id, reset.payload.agent_id, reset.payload.seq) == (sid, "main", 0)
-            assert isinstance(ack, Ack)
             assert ack.payload is not None and ack.payload.accepted == (sid,)
 
             await reader.submit_prompt(session_id, _prompt("prm_ws"), owner=owner)
             while True:
-                frame = await channel.receive()
-                assert isinstance(frame, TranscriptOpsFrame)
+                frame = TranscriptOpsFrame.model_validate_json((await channel.receive()).text)
                 assert frame.stream_epoch == reset.stream_epoch
                 seqs.append(frame.payload.seq)
                 if any(
@@ -195,6 +197,7 @@ async def test_event_stream_delivers_activity_during_a_run(
         async with reader.connect_events() as events, asyncio.timeout(WAIT):
             await reader.submit_prompt(session_id, _prompt("prm_events"), owner=owner)
             async for event in events:
+                assert isinstance(event, SessionWorkChanged)
                 if event.session_id == str(session_id):
                     assert event.owner_user_id == str(owner)
                     seen.append((event.payload.busy, event.payload.last_turn_reason))

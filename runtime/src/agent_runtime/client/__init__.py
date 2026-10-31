@@ -14,8 +14,8 @@ from agent_runtime.client.runtime_client import (
 from agent_runtime.client.streams import (
     AppEventFrame,
     EventStream,
+    RawFrame,
     TranscriptChannel,
-    TranscriptFrame,
 )
 
 __all__ = [
@@ -25,9 +25,9 @@ __all__ = [
     "AppEventFrame",
     "AppRejected",
     "EventStream",
+    "RawFrame",
     "RuntimeClient",
     "RuntimeUnavailable",
     "StreamClosed",
     "TranscriptChannel",
-    "TranscriptFrame",
 ]
