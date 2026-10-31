@@ -114,6 +114,12 @@ events_table = Table(
     Column("metadata", Text, nullable=False),
     Column("idempotency_key", Text),
     Index("idx_events_run", "run_id", "seq"),
+    # 运行统计按时间窗取运行时，先按开始事件的时刻圈出窗里的运行（harness/stats_pg.py）。
+    Index(
+        "idx_events_run_started",
+        "timestamp",
+        postgresql_where=text("kind = 'run_started'"),
+    ),
     Index(
         "idx_events_idempotency",
         "run_id",

@@ -21,10 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.audit.models import Scope
 from iclip.domains.audit.reports_pg import PgAuditReports
+from iclip.domains.audit.runtime_facts import RuntimeStats
 from iclip.domains.audit.schemas import MetricsOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
-from tests.helpers.audit import EVER, Plant
+from tests.helpers.audit import EVER, Plant, audit_runtime_client
 from tests.helpers.runtime import (
     AGENT_ID,
     build_runner,
@@ -404,6 +405,24 @@ async def test_daily_overview_marks_inactive_days_and_dedupes_deliveries(
         (2, 1),
         (3, 2),
     ]
+
+
+async def test_overview_takes_each_kind_of_runtime_fact_once(engine: AsyncEngine) -> None:
+    """本期、上期、趋势格连同回看、被截的首期与前几镜，共用一次取回的事实行：消息、用量各按时间窗
+    取一次，运行按时间窗与按交付周期的对话各一次，首末消息一次（不到一批的会话数）。起点不在零点上，
+    首期要另算。"""
+
+    await plant_week(engine)
+
+    async with audit_runtime_client(engine) as client:
+        service = AuditService(PgAuditReports(engine, RuntimeStats(client)))
+        overview = await service.overview(
+            since=local(DAY0, 6), until=local(DAY0 + timedelta(days=7)), timezone="Asia/Singapore"
+        )
+
+    assert overview.series[0].period_start == local(DAY0)
+    assert len(overview.top_shots) == 3
+    assert client.stats_calls == {"prompts": 1, "usage": 1, "runs": 2, "sessions": 1}
 
 
 async def test_a_shot_lands_on_its_first_success_and_belongs_to_its_owner(

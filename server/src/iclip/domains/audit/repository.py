@@ -30,6 +30,12 @@ class ExecutionPage:
 
 
 class AuditReports(Protocol):
+    async def spanning(self, span: Scope) -> AuditReports:
+        """一次取齐 ``span`` 这段时间窗要从运行时取的事实行，交回带着它们的报表：筛选范围落在
+        ``span`` 里的查询从中切，不再按时间窗向运行时取；越出 ``span`` 的抛 ``ValueError``。
+        ``user_name`` 不参与预取。"""
+        ...
+
     async def overall(self, scope: Scope) -> MetricsOut:
         """整个筛选范围一格。"""
         ...

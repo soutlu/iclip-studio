@@ -30,7 +30,12 @@ from iclip.domains.audit.executions import (
 )
 from iclip.domains.audit.models import ExecutionSort, OverviewBucket, Scope, SortOrder
 from iclip.domains.audit.repository import ExecutionPage
-from iclip.domains.audit.runtime_facts import FACTS_CTE, RuntimeFacts, RuntimeStats, merge_runs
+from iclip.domains.audit.runtime_facts import (
+    FACTS_CTE,
+    RuntimeFacts,
+    RuntimeStats,
+    WindowFacts,
+)
 from iclip.domains.audit.schemas import (
     EMPTY_METRICS,
     AttemptBucketOut,
@@ -486,10 +491,11 @@ JOIN person p ON p.conversation_id = t.conversation_id
 ORDER BY {_TOP_ORDER.format(t="t")}
 """)
 
-# 指标 SQL 里交付周期的样本：最后一条出片落在时间窗里的对话。它们的运行与首末消息要整段取。
+# 指标 SQL 里交付周期的样本：最后一条出片落在时间窗里的对话，连同那条出片的完成时刻。它们的运行与
+# 首末消息要整段取。
 _CYCLE_CONVERSATIONS: Final = text(f"""
 WITH {_VIDEOS}
-SELECT v.conversation_id
+SELECT v.conversation_id, max(v.finished_at) AS delivered_at
 FROM videos v
 WHERE v.delivered
 GROUP BY v.conversation_id
@@ -726,29 +732,53 @@ async def audit_connection(engine: AsyncEngine) -> AsyncGenerator[AsyncConnectio
 class PgAuditReports:
     """``AuditReports`` 的 Postgres 实现。每个方法先按 ``iclip`` 的数据圈出要整段取的会话，经
     ``RuntimeStats`` 取回事实行，再开只读连接查询，连接都经 ``audit_connection``；取事实行时不占连接。
-    运行时答不上抛 ``RuntimeUnavailable``。"""
+    ``spanning`` 交回的实例带着一段时间窗预取的事实行，窗里的筛选范围从中切。运行时答不上抛
+    ``RuntimeUnavailable``。"""
 
-    def __init__(self, engine: AsyncEngine, stats: RuntimeStats) -> None:
+    def __init__(
+        self, engine: AsyncEngine, stats: RuntimeStats, window: WindowFacts | None = None
+    ) -> None:
         self._engine = engine
         self._stats = stats
+        self._window = window
+
+    async def spanning(self, span: Scope) -> PgAuditReports:
+        return PgAuditReports(self._engine, self._stats, await self._load(span))
 
     async def _ids(self, statement: TextClause, params: dict[str, Any]) -> list[uuid.UUID]:
         async with audit_connection(self._engine) as conn:
             return list((await conn.execute(statement, params)).scalars().all())
 
-    async def _window_facts(self, scope: Scope) -> RuntimeFacts:
-        """指标 SQL 按时间窗要的事实行：窗内的消息、运行与用量，交付周期样本（最后一条出片在窗内的
+    async def _load(self, span: Scope) -> WindowFacts:
+        """向运行时取齐 ``span`` 的事实行：窗内的消息、运行与用量，交付周期样本（最后一条出片在窗内的
         对话）的全部运行；交付周期样本与窗内有用量的对话再取首末消息定人与起点。"""
 
-        cycles = await self._ids(_CYCLE_CONVERSATIONS, {"since": scope.since, "until": scope.until})
-        usage = await self._stats.usage_in(scope.since, scope.until)
-        prompts = await self._stats.prompts_in(scope.since, scope.until)
-        runs = merge_runs(
-            await self._stats.runs_in(scope.since, scope.until),
-            await self._stats.runs_of(cycles),
+        async with audit_connection(self._engine) as conn:
+            rows = await conn.execute(
+                _CYCLE_CONVERSATIONS, {"since": span.since, "until": span.until}
+            )
+            cycles = {row.conversation_id: row.delivered_at for row in rows}
+        usage = await self._stats.usage_in(span.since, span.until)
+        session_ids = frozenset({*cycles, *(row.session_id for row in usage)})
+        return WindowFacts(
+            since=span.since,
+            until=span.until,
+            prompts=await self._stats.prompts_in(span.since, span.until),
+            runs=await self._stats.runs_in(span.since, span.until),
+            usage=usage,
+            cycles=cycles,
+            cycle_runs=await self._stats.runs_of(cycles.keys()),
+            session_ids=session_ids,
+            sessions=await self._stats.sessions_of(session_ids),
         )
-        sessions = await self._stats.sessions_of({*cycles, *(row.session_id for row in usage)})
-        return RuntimeFacts(prompts=prompts, runs=runs, usage=usage, sessions=sessions)
+
+    async def _window_facts(self, scope: Scope) -> RuntimeFacts:
+        """指标 SQL 按时间窗要的事实行：带着预取的从中切，否则按这段窗现取。"""
+
+        window = self._window if self._window is not None else await self._load(scope)
+        if not window.covers(scope.since, scope.until):
+            raise ValueError("筛选范围越出了预取事实行的时间窗")
+        return window.within(scope.since, scope.until)
 
     async def _metrics(self, dimension: str, scope: Scope, **extra: Any) -> Sequence[RowMapping]:
         facts = await self._window_facts(scope)
@@ -771,7 +801,12 @@ class PgAuditReports:
         return [PeriodMetricsOut(period_start=row["k"], metrics=_metrics_of(row)) for row in rows]
 
     async def active_days(self, scope: Scope, *, timezone: str) -> int:
-        facts = RuntimeFacts(prompts=await self._stats.prompts_in(scope.since, scope.until))
+        # 只用到消息：不带预取时只向运行时取消息。
+        facts = (
+            await self._window_facts(scope)
+            if self._window is not None
+            else RuntimeFacts(prompts=await self._stats.prompts_in(scope.since, scope.until))
+        )
         params = {**_scope_params(scope), **facts.params(), "timezone": timezone}
         async with audit_connection(self._engine) as conn:
             days = (await conn.execute(_ACTIVE_DAYS, params)).scalar_one()
@@ -803,8 +838,17 @@ class PgAuditReports:
 
     async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
         params = {**_scope_params(scope), "limit": limit}
-        conversations = await self._ids(_TOP_SHOT_CONVERSATIONS, params)
-        facts = RuntimeFacts(sessions=await self._stats.sessions_of(conversations))
+        conversations = frozenset(await self._ids(_TOP_SHOT_CONVERSATIONS, params))
+        # 首末消息不看时间窗：预取时要过的会话从预取里读，其余再向运行时取。
+        window = self._window
+        known = window.session_ids if window is not None else frozenset()
+        cached = (
+            [row for row in window.sessions if row.session_id in conversations]
+            if window is not None
+            else []
+        )
+        fetched = await self._stats.sessions_of(conversations - known)
+        facts = RuntimeFacts(sessions=[*cached, *fetched])
         async with audit_connection(self._engine) as conn:
             rows = (await conn.execute(_TOP_SHOTS, {**params, **facts.params()})).mappings()
             return [
