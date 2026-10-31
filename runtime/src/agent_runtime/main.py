@@ -11,7 +11,7 @@ import os
 import uvicorn
 
 from agent_runtime.http.asgi import CONFIG_ENV
-from agent_runtime.http.logging import QUIET_LOGGERS, SERVICE_NAME, configure_logging
+from agent_runtime.http.logging import configure_logging
 
 DEFAULT_PORT = 7790
 
@@ -29,7 +29,7 @@ def main() -> None:
     os.environ[CONFIG_ENV] = args.config
     # 这里先配一遍给监督进程（reload 时 uvicorn 的启动行由它打）；worker 建 app 时再按配置文件的
     # 级别与格式配自己那一份。
-    configure_logging("INFO", "console", service=SERVICE_NAME, quiet=QUIET_LOGGERS)
+    configure_logging("INFO", "console")
     uvicorn.run(
         "agent_runtime.http.asgi:app_from_env",
         factory=True,

@@ -159,4 +159,4 @@ WebSocket 订阅、活动状态和文件变更帧的对外约定见 [contract/co
 
 ## 6. 日志
 
-structlog 与标准库日志的渲染链由后端与运行时服务共用 [agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py) 一份配置，各服务只传自己的服务名与要压低的第三方 logger，后端的在 [app/logging.py](../server/src/iclip/app/logging.py)。console 格式用本机时间，时间后一列是服务名（「后端」或「运行时」）；JSON 格式的时间是 ISO UTC。两种格式都不打探活成功的 `/healthz` 访问行和 websockets 重复的连接行。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。
+structlog 与标准库日志的渲染链在两个文件里，做法相同：后端的 [app/logging.py](../server/src/iclip/app/logging.py) 与运行时服务的 [agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py)，各自定服务名与 `QUIET_LOGGERS`。后端只能引用运行时的形状、报错与客户端库，所以不合成一份。console 格式用本机时间，时间后一列是服务名（「后端」或「运行时」）；JSON 格式的时间是 ISO UTC。两种格式都不打探活成功的 `/healthz` 访问行和 websockets 重复的连接行。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。

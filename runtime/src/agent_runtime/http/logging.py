@@ -1,12 +1,14 @@
-"""运行时服务与后端共用的日志配置：单个 root handler 经 ProcessorFormatter 输出 console 或 JSON，
-contextvars 里的上下文合并进每一条，uvicorn 的日志也走它。各服务只传自己的服务名与要压低的第三方 logger。"""
+"""运行时服务的日志配置：单个 root handler 经 ProcessorFormatter 输出 console 或 JSON，contextvars 里的
+上下文合并进每一条，uvicorn 的日志也走它。
+
+后端的 ``iclip/app/logging.py`` 是做法相同的另一份：后端只能引用运行时的形状、报错与客户端库（见后端
+``tests/unit/architecture/test_architecture.py``），不能引用这里，所以不合并。"""
 
 from __future__ import annotations
 
 import logging
 import sys
 import unicodedata
-from collections.abc import Iterable
 from typing import Literal
 
 import structlog
@@ -19,10 +21,10 @@ SERVICE_NAME = "运行时"
 """console 日志里本服务的服务名列。"""
 
 QUIET_LOGGERS = ("httpx",)
-"""本服务仅保留警告及以上级别的第三方 logger，抑制逐请求 INFO。"""
+"""仅保留警告及以上级别的第三方 logger，抑制逐请求 INFO。"""
 
 _SERVICE_WIDTH = 6
-"""服务名列的显示宽度，放得下「运行时」；同一终端里各服务的后几列因此对齐。"""
+"""服务名列的显示宽度，放得下「运行时」；与后端同宽，同一终端里两个服务的后几列因此对齐。"""
 
 _CONSOLE_LOGGER_NAMES = {"uvicorn.error": "uvicorn"}
 """uvicorn 的普通 INFO 也打在 ``uvicorn.error`` 上，console 里换个名字，免得像出错。"""
@@ -31,11 +33,8 @@ _WEBSOCKETS_LINES = frozenset({"connection open", "connection closed"})
 """websockets 借 uvicorn 传入的 ``uvicorn.error`` 打的两条，与 uvicorn 自己的 ``[accepted]`` 行重复。"""
 
 
-def configure_logging(level: str, fmt: LogFormat, *, service: str, quiet: Iterable[str]) -> None:
-    """整体替换 root 日志配置，重复调用不叠加 handler 与过滤器。
-
-    ``service`` 只在 console 格式里作为时间后的一列；``quiet`` 里的 logger 只保留警告及以上。
-    """
+def configure_logging(level: str, fmt: LogFormat) -> None:
+    """整体替换 root 日志配置，重复调用不叠加 handler 与过滤器。服务名只在 console 格式里作为时间后的一列。"""
 
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -52,7 +51,7 @@ def configure_logging(level: str, fmt: LogFormat, *, service: str, quiet: Iterab
             structlog.processors.JSONRenderer(ensure_ascii=False),
         ]
         if fmt == "json"
-        else [_ConsoleColumns(service), _console_renderer()]
+        else [_ConsoleColumns(SERVICE_NAME), _console_renderer()]
     )
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
@@ -66,7 +65,7 @@ def configure_logging(level: str, fmt: LogFormat, *, service: str, quiet: Iterab
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
-    for name in quiet:
+    for name in QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 
     structlog.configure(

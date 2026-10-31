@@ -1,4 +1,4 @@
-"""共用日志配置：console 的列、时间与 logger 名，两种格式共有的噪音过滤，以及 JSON 的形状。"""
+"""运行时的日志配置：console 的列、时间与 logger 名，两种格式共有的噪音过滤，以及 JSON 的形状。"""
 
 from __future__ import annotations
 
@@ -12,9 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import structlog
 
-from agent_runtime.http.logging import LogFormat, configure_logging
-
-NOISY = "test.noisy.lib"
+from agent_runtime.http.logging import QUIET_LOGGERS, LogFormat, configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -23,13 +21,14 @@ def restore_logging() -> Iterator[None]:
 
     root = logging.getLogger()
     handlers, level = root.handlers[:], root.level
-    noisy_level = logging.getLogger(NOISY).level
+    quiet = {name: logging.getLogger(name).level for name in QUIET_LOGGERS}
     try:
         yield
     finally:
         root.handlers[:] = handlers
         root.setLevel(level)
-        logging.getLogger(NOISY).setLevel(noisy_level)
+        for name, saved in quiet.items():
+            logging.getLogger(name).setLevel(saved)
         structlog.reset_defaults()
         structlog.contextvars.clear_contextvars()
 
@@ -51,10 +50,6 @@ def kolkata_time() -> Iterator[None]:
         time.tzset()
 
 
-def _configure(fmt: LogFormat, service: str = "运行时") -> None:
-    configure_logging("INFO", fmt, service=service, quiet=(NOISY,))
-
-
 def _access(path: str, status: int) -> None:
     """按 uvicorn 访问行的参数形状打一条。"""
 
@@ -64,14 +59,10 @@ def _access(path: str, status: int) -> None:
 
 
 @pytest.mark.usefixtures("kolkata_time")
-@pytest.mark.parametrize(
-    ("service", "column"),
-    [("运行时", "运行时"), ("后端", "后端  ")],
-)
-def test_console_line_starts_with_local_time_and_aligned_service(
-    capsys: pytest.CaptureFixture[str], service: str, column: str
+def test_console_line_starts_with_local_time_and_service(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _configure("console", service)
+    configure_logging("INFO", "console")
 
     before = datetime.now().strftime("%H:%M:%S")
     structlog.stdlib.get_logger("agent_runtime.test").info("生成任务提交失败", job_id="j1")
@@ -81,14 +72,14 @@ def test_console_line_starts_with_local_time_and_aligned_service(
     clock, rest = line[:8], line[9:]
     assert clock in {before, after}
     assert clock[:5] != datetime.now(UTC).strftime("%H:%M")
-    # 「后端」补到与「运行时」一样占 6 格，级别列在两个服务里对齐。
-    assert rest.startswith(f"{column} [info")
+    # 服务名列占 6 格，与后端补齐后的「后端」同宽。
+    assert rest.startswith("运行时 [info")
     # 事件后只隔一个空格就是 logger 列，不按字符数补宽。
     assert "生成任务提交失败 [agent_runtime.test] job_id=j1" in line
 
 
 def test_console_shows_uvicorn_error_as_uvicorn(capsys: pytest.CaptureFixture[str]) -> None:
-    _configure("console")
+    configure_logging("INFO", "console")
 
     logging.getLogger("uvicorn.error").info("Started server process [%d]", 42)
     _access("/v1/sessions", 200)
@@ -103,7 +94,7 @@ def test_console_shows_uvicorn_error_as_uvicorn(capsys: pytest.CaptureFixture[st
 def test_routine_noise_is_dropped_in_both_formats(
     capsys: pytest.CaptureFixture[str], fmt: LogFormat
 ) -> None:
-    _configure(fmt)
+    configure_logging("INFO", fmt)
 
     _access("/healthz", 200)
     _access("/healthz", 503)
@@ -112,8 +103,8 @@ def test_routine_noise_is_dropped_in_both_formats(
     ws.info('%s - "WebSocket %s" [accepted]', "127.0.0.1:50000", "/v1/events")
     ws.info("connection open")
     ws.info("connection closed")
-    logging.getLogger(NOISY).info("每次请求一条")
-    logging.getLogger(NOISY).warning("真出事了")
+    logging.getLogger("httpx").info("每次请求一条")
+    logging.getLogger("httpx").warning("真出事了")
 
     lines = capsys.readouterr().err.splitlines()
     assert len(lines) == 4
@@ -135,8 +126,8 @@ def test_reconfiguring_does_not_stack_handlers_or_filters(
 ) -> None:
     """监督进程与 worker 各配一次。"""
 
-    _configure("console")
-    _configure("json")
+    configure_logging("INFO", "console")
+    configure_logging("INFO", "json")
 
     (handler,) = logging.getLogger().handlers
     assert len(handler.filters) == 1
@@ -150,7 +141,7 @@ def test_reconfiguring_does_not_stack_handlers_or_filters(
 def test_json_lines_keep_iso_utc_and_the_original_logger(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _configure("json")
+    configure_logging("INFO", "json")
 
     logging.getLogger("uvicorn.error").info("Started server process [%d]", 42)
     structlog.stdlib.get_logger("agent_runtime.test").warning("捡回中断的运行", count=2)

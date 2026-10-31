@@ -43,7 +43,7 @@ from agent_runtime.http.admin.skills import create_skills_router
 from agent_runtime.http.agents import create_agents_router
 from agent_runtime.http.auth import build_app_auth
 from agent_runtime.http.errors import install_error_handlers
-from agent_runtime.http.logging import QUIET_LOGGERS, SERVICE_NAME, configure_logging
+from agent_runtime.http.logging import configure_logging
 from agent_runtime.http.sessions import create_sessions_router
 from agent_runtime.http.stats import create_stats_router
 from agent_runtime.http.streams import create_events_router, create_transcript_ws_router
@@ -88,9 +88,7 @@ def create_app(
     ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子。
     """
 
-    configure_logging(
-        settings.log_level, settings.log_format, service=SERVICE_NAME, quiet=QUIET_LOGGERS
-    )
+    configure_logging(settings.log_level, settings.log_format)
 
     owns_engine = engine is None
     # 取连接前先 ping，理由同后端的 build_engine：被取消打断的清理可能把已关的连接留在池里。
