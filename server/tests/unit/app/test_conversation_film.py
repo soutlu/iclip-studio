@@ -88,7 +88,10 @@ class RecordingStore(FakeFileStore):
         if path == self.failing:
             # 当作别人刚改过这个文件：两个文件在这些测试里都已存在，写入都带版本号。
             assert expected_version is not None
-            raise VersionConflict(path, expected=expected_version, actual=expected_version + 1)
+            # 运行时答 409，客户端还原成 Conflict，原话是存储的版本冲突那句。
+            raise Conflict(
+                str(VersionConflict(path, expected=expected_version, actual=expected_version + 1))
+            )
         entry = await super().write(namespace, path, content, expected_version=expected_version)
         self.written.append(path)
         return entry
@@ -129,9 +132,7 @@ async def page(
     await ledger.record(NAMESPACE, [Material(url=url, kind="image") for url in GIVEN_IMAGES])
     repo = InMemoryGenerationRepository(list(jobs))
     generation = film_image_service(repo, image_models=image_models) if with_generation else None
-    adapter = ConversationFilmAdapter(
-        store=store, announcing=store, ledger=ledger, generation=generation
-    )
+    adapter = ConversationFilmAdapter(store=store, ledger=ledger, generation=generation)
     return Page(adapter, store, ledger, repo)
 
 

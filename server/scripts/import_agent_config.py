@@ -4,11 +4,15 @@ skills 目录）写进数据库，并给现有对话开运行时会话。
 用法（在服务器上，与 ``scripts.admin`` 一样经 compose 跑）：
 
     docker compose run --rm server python -m scripts.import_agent_config \\
+        --runtime-config configs/runtime.yaml \\
         --legacy-config configs/config.old.yaml --agents agents/agents.yaml --skills skills [--dry-run]
 
-旧文件直接用 PyYAML 读，不经过新版的配置加载；插件登记表与数据库照常按 ``CONFIG_FILE``（缺省
-``configs/config.yaml``，已删掉 ``models`` 段与 ``title_model``）建出来。写入都经各领域的服务，复用它们的
-校验、试连与发布检查，所以新建密钥会真的连一次模型供应商。
+旧文件直接用 PyYAML 读，不经过新版的配置加载。数据库照常按 ``CONFIG_FILE``（缺省 ``configs/config.yaml``，
+已删掉 ``models`` 段与 ``title_model``）连；技能库、模型供应商与 agent 配置三块服务按运行时服务的同一套装配
+直接建（``CREDENTIAL_ENCRYPTION_KEYS`` 来自环境变量），插件登记表按 ``--runtime-config`` 里的 ``plugins``
+打开插件包得到，与运行时服务启动时同一份。运行时配置里配了 ``shot_video`` 时，插件包打开时要向后端的内部接口
+取接入的图片模型：这一步要后端已经起来、``RUNTIME_INTERNAL_TOKEN`` 与运行时配置里的一致，取不到就拒绝、
+什么都不写。写入都经各领域的服务，复用它们的校验、试连与发布检查，所以新建密钥会真的连一次模型供应商。
 
 检查清单（任何一条不满足就报错停下，什么都不写）：
 
@@ -35,12 +39,13 @@ import sys
 import uuid
 import zipfile
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast, get_args
 
 import yaml
+from agent_runtime.assembly.config_services import ConfigServices, build_config_services
 from agent_runtime.config.agent_config.config import AgentConfig
 from agent_runtime.config.agent_config.models import AGENT_ID_PATTERN, RESERVED_AGENT_IDS
 from agent_runtime.config.agent_config.schemas import (
@@ -60,12 +65,22 @@ from agent_runtime.config.model_providers.schemas import (
 )
 from agent_runtime.config.skills.schemas import SkillPublishIn
 from agent_runtime.errors import DomainError
+from agent_runtime.file_store.pg import PgFileStore
+from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.model_vocab import ThinkingEffort
+from agent_runtime.plugins.base import PluginFactory, PluginHost, PluginRegistry
+from agent_runtime.settings import load_config
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.app.bootstrap import VIDEO_APP_ID, AgentServices, build_app
-from iclip.config import RuntimeConfig, load_runtime_config, resolve_settings
+from iclip.app.bootstrap import VIDEO_APP_ID
+from iclip.config import (
+    CREDENTIAL_ENCRYPTION_KEYS_ENV,
+    CredentialKeysEnv,
+    load_runtime_config,
+    resolve_settings,
+)
 from iclip.platform.db.engine import build_engine
 
 NOTE = "从文件配置切换"
@@ -448,7 +463,7 @@ class OneTransaction:
     """把各仓储的 ``engine.connect()`` / ``engine.begin()`` 都落到同一个连接、同一个外层事务上：``begin`` 开
     一个保存点，块里出错只回滚到保存点（与仓储自己开事务时的语义一致），整体提交或回滚由调用方决定。
 
-    仓储只用这两个入口，所以这里只实现它们；交给 ``build_app`` 时按 ``AsyncEngine`` 传。"""
+    仓储只用这两个入口，所以这里只实现它们；交给 ``build_config_services`` 时按 ``AsyncEngine`` 传。"""
 
     def __init__(self, conn: AsyncConnection) -> None:
         self._conn = conn
@@ -487,7 +502,7 @@ async def _operator(conn: AsyncConnection) -> uuid.UUID:
     return found
 
 
-async def _refuse_if_configured(services: AgentServices) -> None:
+async def _refuse_if_configured(services: ConfigServices) -> None:
     taken = [
         label
         for label, count in (
@@ -540,7 +555,7 @@ def _agent_config(
 
 
 async def apply_plan(
-    plan: ImportPlan, services: AgentServices, conn: AsyncConnection, *, say: Callable[[str], None]
+    plan: ImportPlan, services: ConfigServices, conn: AsyncConnection, *, say: Callable[[str], None]
 ) -> ImportResult:
     """按计划经各领域服务写入，最后给现有对话开会话；调用方负责提交或回滚。"""
 
@@ -655,8 +670,9 @@ async def apply_plan(
 
 async def run_import(
     *,
-    config: RuntimeConfig,
     engine: AsyncEngine,
+    plugins: PluginRegistry,
+    credential_keys: Sequence[str],
     legacy_config: Path,
     agents_file: Path,
     skills_dir: Path,
@@ -665,7 +681,10 @@ async def run_import(
     credential_probe: CredentialProbe | None = None,
     say: Callable[[str], None] = print,
 ) -> ImportResult:
-    """读旧文件定计划，再在一个事务里写；``dry_run`` 时最后整体回滚。检查不过抛 ``ImportRefused``。"""
+    """读旧文件定计划，再在一个事务里写；``dry_run`` 时最后整体回滚。检查不过抛 ``ImportRefused``。
+
+    ``plugins`` 是本部署的插件登记表，agent 发布时按它查插件；``credential_keys`` 是加密密钥机密字段的
+    Fernet key。"""
 
     plan = build_plan(
         legacy_config=legacy_config,
@@ -678,12 +697,13 @@ async def run_import(
         transaction = await conn.begin()
         try:
             # 仓储只用 connect() / begin() 两个入口，OneTransaction 把它们落到这个事务上。
-            app = build_app(
-                config,
-                engine=cast("AsyncEngine", OneTransaction(conn)),
-                credential_probe=credential_probe,
+            services = build_config_services(
+                cast("AsyncEngine", OneTransaction(conn)),
+                credential_keys=credential_keys,
+                plugins=plugins,
+                probe=credential_probe,
             )
-            result = await apply_plan(plan, app.state.agent_services, conn, say=say)
+            result = await apply_plan(plan, services, conn, say=say)
         except BaseException:
             await transaction.rollback()
             raise
@@ -696,9 +716,43 @@ async def run_import(
     return result
 
 
+@asynccontextmanager
+async def deployment_plugins(
+    runtime_config: Path, engine: AsyncEngine
+) -> AsyncGenerator[PluginRegistry]:
+    """按运行时配置的 ``plugins`` 打开插件包，交回与运行时服务启动时同一份插件登记表；没配就是空的。
+
+    插件类绑的工作区与素材台账接这个库，切换只读插件的名字、依赖与参数，不经它们写东西。打开失败（机密的
+    环境变量没设、配了 ``shot_video`` 却取不到后端的图片模型）抛 ``ImportRefused``。"""
+
+    try:
+        config = load_config(runtime_config)
+    except (OSError, ValueError) as exc:
+        raise ImportRefused(f"运行时配置 {runtime_config} 读不了：{exc}") from exc
+    if config.plugins is None:
+        yield {}
+        return
+    factory = cast("PluginFactory", config.plugins.factory)
+    async with AsyncExitStack() as stack:
+        try:
+            bind = await stack.enter_async_context(factory(config.plugins.config))
+        except (RuntimeError, ValidationError) as exc:
+            raise ImportRefused(
+                f"按运行时配置打开插件包失败：{exc}。配了 shot_video 时插件包要向后端取图片模型，"
+                "先把后端起来、RUNTIME_INTERNAL_TOKEN 与运行时配置里的一致，再跑"
+            ) from exc
+        yield bind(PluginHost(files=PgFileStore(engine), ledger=PgMaterialLedger(engine)))
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(
         description="把文件里的模型、agent 与技能配置写进数据库（一次性）"
+    )
+    parser.add_argument(
+        "--runtime-config",
+        type=Path,
+        required=True,
+        help="运行时服务的配置文件，插件登记表按它的 plugins 建",
     )
     parser.add_argument("--legacy-config", type=Path, required=True)
     parser.add_argument("--agents", type=Path, required=True)
@@ -707,19 +761,29 @@ def main(argv: Sequence[str]) -> int:
     args = parser.parse_args(argv)
 
     config = load_runtime_config(Path(os.environ.get("CONFIG_FILE", "configs/config.yaml")))
+    try:
+        keys = CredentialKeysEnv().key_list  # pyright: ignore[reportCallIssue]
+    except ValidationError as exc:
+        print(
+            f"切换没有进行，什么都没写：{CREDENTIAL_ENCRYPTION_KEYS_ENV} 不合法：{exc.errors()[0]['msg']}",
+            file=sys.stderr,
+        )
+        return 1
 
     async def go() -> None:
         engine = build_engine(resolve_settings(config).database_url)
         try:
-            await run_import(
-                config=config,
-                engine=engine,
-                legacy_config=args.legacy_config,
-                agents_file=args.agents,
-                skills_dir=args.skills,
-                env=os.environ,
-                dry_run=args.dry_run,
-            )
+            async with deployment_plugins(args.runtime_config, engine) as plugins:
+                await run_import(
+                    engine=engine,
+                    plugins=plugins,
+                    credential_keys=keys,
+                    legacy_config=args.legacy_config,
+                    agents_file=args.agents,
+                    skills_dir=args.skills,
+                    env=os.environ,
+                    dry_run=args.dry_run,
+                )
         finally:
             await engine.dispose()
 

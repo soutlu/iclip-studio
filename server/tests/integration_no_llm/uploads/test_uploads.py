@@ -26,7 +26,7 @@ from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media, make_music
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected
-from tests.helpers.runtime_backed import build_backed_app
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
 
 OSS_ENVS = {
     "OSS_BUCKET": "iclip-test",
@@ -59,7 +59,7 @@ async def uploads_app(
         object_store=bucket,
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
     )
-    await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+    await seed_agents(config_services_of(built), engine, CONVERSABLE_SEEDS)
     return built
 
 
@@ -342,7 +342,7 @@ async def media_app(
         media_codec=SOFTWARE,
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
     )
-    await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+    await seed_agents(config_services_of(built), engine, CONVERSABLE_SEEDS)
     return built
 
 

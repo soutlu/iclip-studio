@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.assembly.config_services import ConfigServices
 from agent_runtime.config.agent_config.schemas import AgentCreateIn, AgentDraftIn, AgentUpdateIn
 from agent_runtime.config.model_providers.schemas import (
     CredentialUpdateIn,
@@ -31,8 +32,6 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app import bootstrap
-from iclip.app.bootstrap import AgentServices
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from tests.helpers.agents import (
     AgentSeed,
@@ -56,7 +55,7 @@ from tests.helpers.runtime import (
     new_conversation_id,
     submit_text,
 )
-from tests.helpers.runtime_backed import build_backed_app
+from tests.helpers.runtime_backed import agent_runtime_of, build_backed_app, config_services_of
 
 OTHER_MODEL = "other-model"
 TITLE_MODEL = "title-model"
@@ -86,8 +85,8 @@ def models(heard: list[tuple[str, str]]) -> Mapping[str, Model]:
     return {name: _recording(name, heard) for name in (TEST_MODEL_NAME, OTHER_MODEL, TITLE_MODEL)}
 
 
-def services_of(app: FastAPI) -> AgentServices:
-    return app.state.agent_services
+def services_of(app: FastAPI) -> ConfigServices:
+    return config_services_of(app)
 
 
 async def open_conversation(client: httpx.AsyncClient, agent_id: str = AGENT_ID) -> str:
@@ -331,7 +330,6 @@ async def test_a_disabled_model_breaks_only_the_conversations_on_that_version(
 async def test_a_plugin_removed_from_the_code_makes_its_versions_unavailable(
     engine: AsyncEngine,
     pg_url: str,
-    monkeypatch: pytest.MonkeyPatch,
     base_env: None,
     models: Mapping[str, Model],
     tmp_path: Path,
@@ -339,15 +337,12 @@ async def test_a_plugin_removed_from_the_code_makes_its_versions_unavailable(
     """发布时登记表里有的插件，换了部署后不在了：用到它的版本装不起来，不悄悄跳过这个插件。"""
 
     def build(registry: dict[str, Any]) -> FastAPI:
-        def only(**_services: object) -> dict[str, Any]:
-            return registry
-
-        monkeypatch.setattr(bootstrap, "build_plugin_registry", only)
         return build_backed_app(
             make_runtime_config(skill_cache_dir=tmp_path / "skills"),
             engine=engine,
             build_model=model_builder(models),
             credential_probe=KeyCheckingProbe({GOOD_KEY}),
+            plugins=registry,
         )
 
     with_plugin = build(
@@ -415,7 +410,7 @@ async def test_assemblies_are_reused_until_something_they_use_changes(
         ),
     )
     services = services_of(app)
-    runtime = services.runtime
+    runtime = agent_runtime_of(app)
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         conversation_id = await open_conversation(client)
@@ -507,7 +502,7 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
     )
 
     store = PgStepStore(engine)
-    resolved = await services.runtime.for_draft(AGENT_ID)
+    resolved = await agent_runtime_of(app).for_draft(AGENT_ID)
     async with resolved.agent.run_stream_events(
         "试试", conversation_id="draft-1", run_id="draft-run-1"
     ) as events:
@@ -521,7 +516,7 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
     assert "agent_version_id" not in run.metadata
     assert (await services.agent_config.detail(AGENT_ID)).active_version is not None
     with pytest.raises(AgentUnavailable):
-        await services.runtime.for_draft("nobody")
+        await agent_runtime_of(app).for_draft("nobody")
 
 
 # --- 标题 ------------------------------------------------------------------------

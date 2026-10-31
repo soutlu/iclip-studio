@@ -9,7 +9,7 @@
 | 命令 | 用途 |
 |---|---|
 | `make setup` | 安装后端与前端依赖 |
-| `make dev` | 启动后端；环境准备见[本地启动](docs/deploy.md#本地启动) |
+| `make dev` | 启动后端与运行时服务；环境准备见[本地启动](docs/deploy.md#本地启动) |
 | `make db-upgrade` | 执行 Alembic 迁移；服务启动不自动建表 |
 | `make check` | 运行时（`runtime/`）、视频插件（`plugins/video/`）与后端的 lint、格式、类型、依赖边界、常规测试，以及合同与文档对账；CI 已包含这些检查，本地不必跑 |
 | `make web-check` | 前端 `ci:check`；CI 已包含这些检查，本地不必跑 |

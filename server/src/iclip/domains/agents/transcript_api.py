@@ -1,4 +1,8 @@
-"""Transcript REST 端点与多对话 WebSocket。逐对话校验订阅权限，引擎访问通过注入协议完成。
+"""Transcript REST 端点与多对话 WebSocket：逐对话校验权限，transcript 本身经运行时服务的客户端读写与订阅。
+
+REST 端点判完谁看得见、谁能写，再转给运行时服务的会话接口，会话的属主放进 ``X-End-User``。WebSocket 是一条
+转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时的 reset / ops 盖上
+本进程的会话事件水位再发给浏览器；文件订阅与全局帧都在本进程里。
 
 WebSocket 握手不受 CORS 约束且会携带 cookie，必须独立校验 Origin，防止跨站劫持。"""
 
@@ -6,33 +10,27 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import re
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Final, Literal, Protocol
 
 import structlog
+from agent_runtime.app_wire import SessionPromptIn
+from agent_runtime.client import RuntimeClient, RuntimeUnavailable, TranscriptChannel
 from agent_runtime.errors import DomainError
-from agent_runtime.transcript.granularity import (
-    TranscriptGrade,
-    filter_ops_for_grade,
-    grade_for,
-    needs_reset_on_transition,
-)
+from agent_runtime.live.frames import Ack as RuntimeAck
+from agent_runtime.live.frames import TranscriptOpsFrame, TranscriptResetFrame
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
 from agent_runtime.transcript.wire import (
     ApprovalRequest,
     OpsCatchup,
-    OpsPayload,
     PromptQueueOut,
     PromptSubmission,
     RegenerateBody,
-    ResetPayload,
     RunStatusOut,
     SteerRequest,
     Subscribe,
-    SubscribePayload,
     TranscriptOps,
     TranscriptReset,
     Unsubscribe,
@@ -89,6 +87,9 @@ HEARTBEAT_MISS_LIMIT = 2
 MAX_EVENT_BUFFER = 2048
 """多对话共享的连接出站缓冲上限；溢出时断开并要求重连补批，避免阻塞运行。"""
 
+GOING_AWAY: Final = 1001
+"""运行时那一头断了（对话内容流或应用事件流）时关浏览器连接用的关闭码：客户端照常重连、重订、重拉。"""
+
 _CLIENT_FRAME = TypeAdapter[Any](ClientFrame)
 
 
@@ -110,95 +111,6 @@ class TranscriptPage(SessionTranscriptPage):
     """这段对话分叉自哪一段；会话页据此画血缘提示，不是分叉来的为空。"""
     fork_turn: int | None = None
     """分叉自源对话的第几轮，与 ``forked_from`` 同时有值。"""
-
-
-class SubscribedFrames(Protocol):
-    """一次订阅要发的帧与它们所属的实时流。"""
-
-    @property
-    def stream_epoch(self) -> str: ...
-
-    @property
-    def frames(self) -> tuple[ResetPayload | OpsPayload, ...]: ...
-
-
-class Transcripts(Protocol):
-    """供 HTTP 与 WebSocket 使用的 Transcript 入口协议。"""
-
-    async def submit(
-        self,
-        *,
-        prompt_id: str,
-        conversation_id: str,
-        agent_id: str,
-        owner_user_id: uuid.UUID,
-        user_name: str,
-        content: tuple[PromptContent, ...],
-    ) -> Prompt: ...
-
-    async def abort(self, conversation_id: str, prompt_id: str) -> None: ...
-
-    async def regenerate(
-        self,
-        *,
-        conversation_id: str,
-        turn_id: str,
-        prompt_id: str | None = None,
-        content: tuple[PromptContent, ...] | None = None,
-    ) -> Prompt: ...
-
-    async def abort_conversation(self, conversation_id: str) -> None: ...
-
-    async def steer(self, conversation_id: str, prompt_ids: tuple[str, ...]) -> None: ...
-
-    async def approve(
-        self, conversation_id: str, interaction_id: str, *, approved: bool
-    ) -> None: ...
-
-    async def queue_view(self, conversation_id: str) -> PromptQueueOut: ...
-
-    async def run_status(self, conversation_id: str) -> RunStatusOut: ...
-
-    async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
-        """agent 不属于这段对话时抛 NotFound；要在读实时状态之前调。"""
-        ...
-
-    async def page(
-        self,
-        conversation_id: str,
-        *,
-        agent_id: str = MAIN_AGENT_ID,
-        runtime_agent_id: str,
-        before_turn: str | None = None,
-        after_turn: str | None = None,
-        page_size: int = 20,
-    ) -> SessionTranscriptPage: ...
-
-    def catchup(
-        self,
-        conversation_id: str,
-        *,
-        agent_id: str = MAIN_AGENT_ID,
-        since: int,
-        epoch: str | None = None,
-    ) -> OpsCatchup: ...
-
-    def subscribe(
-        self,
-        conversation_id: str,
-        *,
-        agent_id: str = MAIN_AGENT_ID,
-        since: int | None,
-        epoch: str | None = None,
-    ) -> SubscribedFrames: ...
-
-    def listen(self, conversation_id: str, listener: Any, *, agent_id: str) -> None: ...
-
-    def unlisten(self, conversation_id: str, listener: Any, *, agent_id: str) -> None: ...
-
-    def pin(self, conversation_id: str) -> None: ...
-
-    def unpin(self, conversation_id: str) -> None: ...
 
 
 class ImportAttachments(Protocol):
@@ -279,19 +191,8 @@ def _canonical_session_id(session_id: str) -> str | None:
         return None
 
 
-_AGENT_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+AgentId = Annotated[str, Query(pattern=r"^[A-Za-z0-9._-]{1,128}$")]
 """协议的 agent id 形状：主 agent 是 main，子代理是它的 run id。"""
-
-AgentId = Annotated[str, Query(pattern=_AGENT_ID.pattern)]
-
-
-def _subscribed_agents(spec: Mapping[str, TranscriptGrade]) -> tuple[str, ...]:
-    """订阅表里点名的 agent；`*` 只落到主 agent 上，子代理要点名订。"""
-
-    named = [agent_id for agent_id in spec if agent_id != "*"]
-    if "*" in spec and MAIN_AGENT_ID not in named:
-        named.insert(0, MAIN_AGENT_ID)
-    return tuple(named)
 
 
 class LiveConnections:
@@ -313,6 +214,12 @@ class LiveConnections:
 
     def discard(self, connection: _Connection) -> None:
         self._connections.discard(connection)
+
+    def close_all(self, code: int) -> None:
+        """以 ``code`` 关掉此刻的每一条连接；客户端重连后重订、重拉列表对齐。"""
+
+        for connection in tuple(self._connections):
+            connection.drop(code)
 
     def announce_title(self, owner: uuid.UUID, conversation_id: uuid.UUID, title: str) -> None:
         """向属主与治理者的连接广播标题更新。"""
@@ -451,7 +358,7 @@ class LiveConnections:
 
 
 def create_transcript_router(
-    transcripts: Transcripts,
+    runtime: RuntimeClient,
     conversations: Conversations,
     *,
     act_as: ActAs,
@@ -459,8 +366,8 @@ def create_transcript_router(
     live: LiveConnections,
     import_attachments: ImportAttachments | None = None,
 ) -> APIRouter:
-    """挂 transcript 的读写端点与订阅连接。``import_attachments`` 在发消息与带新内容的重新生成
-    受理前转存图片附件；没配对象存储时为 None，不转存。"""
+    """挂 transcript 的读写端点与订阅连接，transcript 经 ``runtime`` 读写与订阅。``import_attachments``
+    在发消息与带新内容的重新生成受理前转存图片附件；没配对象存储时为 None，不转存。"""
 
     # :abort 紧跟对话 id，无法复用带尾部斜杠的前缀；与 /ws 一起挂在外层路由。
     outer = APIRouter(tags=["transcript"])
@@ -502,13 +409,13 @@ def create_transcript_router(
         principal = await act_as(principal, user_name)
         agent_id = await _writable(principal, conversation_id)
         content = await _imported(principal, conversation_id, body.prompt_id, body.content)
-        return await transcripts.submit(
-            prompt_id=body.prompt_id,
-            conversation_id=conversation_id,
-            agent_id=agent_id,
-            owner_user_id=principal.user_id,
-            user_name=user_name,
-            content=content,
+        # 能写的只有属主，换过主体之后的这个人就是会话的属主。
+        return await runtime.submit_prompt(
+            uuid.UUID(conversation_id),
+            SessionPromptIn(
+                prompt_id=body.prompt_id, content=content, user_name=user_name, agent_id=agent_id
+            ),
+            owner=principal.user_id,
         )
 
     @router.get("/prompts", response_model=PromptQueueOut)
@@ -517,7 +424,7 @@ def create_transcript_router(
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> PromptQueueOut:
         await _readable(principal, conversation_id)
-        return await transcripts.queue_view(conversation_id)
+        return await runtime.prompt_queue(uuid.UUID(conversation_id))
 
     @router.get("/status", response_model=RunStatusOut)
     async def run_status(
@@ -527,7 +434,7 @@ def create_transcript_router(
         """这段对话跑没跑完、有没有出错。只读，凭 API key 可单独轮询。"""
 
         await _readable(principal, conversation_id)
-        return await transcripts.run_status(conversation_id)
+        return await runtime.run_status(uuid.UUID(conversation_id))
 
     @router.post("/prompts/{prompt_id}:abort", status_code=204)
     async def abort(
@@ -538,7 +445,7 @@ def create_transcript_router(
         """停掉一条消息。排队的直接撤，在跑的发第一方取消让它自己收尾。"""
 
         await _writable(principal, conversation_id)
-        await transcripts.abort(conversation_id, prompt_id)
+        await runtime.abort_prompt(uuid.UUID(conversation_id), prompt_id)
 
     @router.post("/turns/{turn_id}:regenerate", response_model=Prompt)
     async def regenerate(
@@ -555,18 +462,10 @@ def create_transcript_router(
         """
 
         await _writable(principal, conversation_id)
-        prompt_id = None if body is None else body.prompt_id
-        content = (
-            None
-            if body is None or body.content is None
-            else await _imported(principal, conversation_id, prompt_id, body.content)
-        )
-        return await transcripts.regenerate(
-            conversation_id=conversation_id,
-            turn_id=turn_id,
-            prompt_id=prompt_id,
-            content=content,
-        )
+        if body is not None and body.content is not None:
+            content = await _imported(principal, conversation_id, body.prompt_id, body.content)
+            body = body.model_copy(update={"content": content})
+        return await runtime.regenerate(uuid.UUID(conversation_id), turn_id, body)
 
     @outer.post("/conversations/{conversation_id}:abort", status_code=204)
     async def abort_conversation(
@@ -580,7 +479,7 @@ def create_transcript_router(
         """
 
         await _writable(principal, conversation_id)
-        await transcripts.abort_conversation(conversation_id)
+        await runtime.abort_session(uuid.UUID(conversation_id))
 
     @router.post("/prompts:steer", status_code=204)
     async def steer(
@@ -591,7 +490,7 @@ def create_transcript_router(
         """把排队中的几条插进正在跑的那一轮，不必等它跑完。"""
 
         await _writable(principal, conversation_id)
-        await transcripts.steer(conversation_id, body.prompt_ids)
+        await runtime.steer(uuid.UUID(conversation_id), body)
 
     @router.post("/interactions/{interaction_id}", status_code=204)
     async def approve(
@@ -607,7 +506,7 @@ def create_transcript_router(
         """
 
         await _writable(principal, conversation_id)
-        await transcripts.approve(conversation_id, interaction_id, approved=body.approved)
+        await runtime.approve(uuid.UUID(conversation_id), interaction_id, body)
 
     @router.get("/transcript", response_model=TranscriptPage)
     async def page(
@@ -626,11 +525,11 @@ def create_transcript_router(
         """
 
         header = await conversations.header_of(principal, conversation_id)
-        await transcripts.verify_agent(conversation_id, agent_id)
-        page = await transcripts.page(
-            conversation_id,
-            agent_id=agent_id,
-            runtime_agent_id=header.agent_id,
+        # 子代理流属不属于这段对话由运行时核，不属于是 404。
+        page = await runtime.transcript_page(
+            uuid.UUID(conversation_id),
+            session_agent=header.agent_id,
+            agent=agent_id,
             before_turn=before_turn,
             after_turn=after_turn,
             page_size=page_size,
@@ -658,9 +557,11 @@ def create_transcript_router(
         ``complete`` 为假；不给只按序号判，分不出服务重启后重新编号的批次。"""
 
         await _readable(principal, conversation_id)
-        await transcripts.verify_agent(conversation_id, agent_id)
-        return transcripts.catchup(
-            conversation_id, agent_id=agent_id, since=since_seq, epoch=stream_epoch
+        return await runtime.transcript_ops(
+            uuid.UUID(conversation_id),
+            since_seq=since_seq,
+            agent=agent_id,
+            stream_epoch=stream_epoch,
         )
 
     @outer.websocket("/ws")
@@ -690,16 +591,28 @@ def create_transcript_router(
             _logger.info("订阅连接被拒：没有 agent:run", user_id=principal.user_id)
             await websocket.close(code=1008)
             return
-        await _serve(websocket, transcripts, conversations, principal, live)
+        await _serve(websocket, runtime, conversations, principal, live)
 
     outer.include_router(router)
     return outer
 
 
-class _Connection:
-    """多对话 WebSocket 连接。各对话独立监听，帧通过 session_id 分流。
+class _Drop:
+    """出站队列里的关连接标记：发送泵取到它就以 ``code`` 关掉连接。"""
 
-    同步监听回调仅写入有界出站队列，避免慢客户端阻塞运行；缓冲溢出时断开以便重连补批。
+    def __init__(self, code: int) -> None:
+        self.code = code
+
+
+class _Connection:
+    """多对话 WebSocket 连接，帧通过 session_id 分流。
+
+    transcript 订阅转给这条连接独占的一条运行时对话内容流：``subscribe_v2`` 先在这里核可见性，看不见的
+    就地回 ``not_found``、不转过去，看得见的原样（换成规范写法的 id）转过去，回执由运行时给，一帧一个；
+    ``unsubscribe_v2`` 原样转过去。运行时发来的 reset / ops 盖上这段对话当前的会话事件水位（不发新号）
+    再发出。文件订阅只在这里记。运行时那一头断了就以 1001 关掉这条连接。
+
+    出站经有界队列，回调与转发只往里放、不等发送；缓冲溢出时断开以便重连补批。
 
     帧里的对话 id 两种写法都收，订阅、文件监听与回发的 ``session_id`` 一律用规范写法：客户端按
     ``session_id`` 分流，全局帧与 REST 也只给这一种拼写，多一种会让同一段对话在客户端裂成两份。"""
@@ -707,27 +620,34 @@ class _Connection:
     def __init__(
         self,
         websocket: WebSocket,
-        transcripts: Transcripts,
+        runtime: RuntimeClient,
         conversations: Conversations,
         principal: Principal,
         clock: SessionEventClock,
     ):
         self._ws = websocket
         self._clock = clock
-        self._transcripts = transcripts
+        self._runtime = runtime
         self._conversations = conversations
         self._principal = principal
         self._outbound: asyncio.Queue[Any] = asyncio.Queue(maxsize=MAX_EVENT_BUFFER)
         self._overflowed = False
-        # 监听与档位按 (对话, agent) 分键：一段对话里主流与各子代理流各订各的。
-        self._listeners: dict[tuple[str, str], Callable[[Any], None]] = {}
-        self._grades: dict[tuple[str, str], TranscriptGrade] = {}
         # 文件订阅按对话记录路径与递归标记，独立于 Transcript 订阅。
         self._watches: dict[str, dict[str, bool]] = {}
         self._last_inbound = datetime.now(UTC)
 
     async def serve(self) -> None:
         await self._ws.accept()
+        try:
+            async with self._runtime.connect_transcript() as upstream:
+                await self._serve_with(upstream)
+        except RuntimeUnavailable as exc:
+            # 连不上运行时，或连接在收尾时才报断开：关掉浏览器这一头，客户端照常重连。
+            _logger.warning("对话内容流连不上运行时，关掉这条订阅连接", reason=str(exc))
+            with contextlib.suppress(RuntimeError):
+                await self._ws.close(code=GOING_AWAY)
+
+    async def _serve_with(self, upstream: TranscriptChannel) -> None:
         await self._send(
             ServerHello(
                 timestamp=datetime.now(UTC).isoformat(),
@@ -738,22 +658,24 @@ class _Connection:
                 ),
             )
         )
-        # 显式管理发送与心跳任务，将客户端断开统一作为连接正常结束处理。
-        helpers = (asyncio.create_task(self._pump()), asyncio.create_task(self._heartbeat()))
+        # 显式管理发送、心跳与转发任务，将客户端断开统一作为连接正常结束处理。
+        helpers = (
+            asyncio.create_task(self._pump()),
+            asyncio.create_task(self._heartbeat()),
+            asyncio.create_task(self._relay(upstream)),
+        )
         try:
-            await self._read()
+            await self._read(upstream)
         except (WebSocketDisconnect, ConnectionError):
-            _logger.debug("订阅连接断开", conversations=len(self._listeners))
+            _logger.debug("订阅连接断开", watching=len(self._watches))
         finally:
-            # 先同步放开占着的东西再 await：连接任务被取消时（服务关停、对端断开后宿主取消任务），
-            # finally 里的 await 会被再次取消，排在它后面的清理就不跑了。
-            for conversation_id in {key[0] for key in self._listeners}:
-                self._unlisten(conversation_id)
+            # 这一头没有要放开的实时状态：订阅在运行时那边，随下面关掉对话内容流一起撤掉。先同步取消
+            # 各任务再 await，连接任务被取消时 finally 里的 await 会被再次取消。
             for helper in helpers:
                 helper.cancel()
             await asyncio.gather(*helpers, return_exceptions=True)
 
-    async def _read(self) -> None:
+    async def _read(self, upstream: TranscriptChannel) -> None:
         while True:
             raw = await self._ws.receive_text()
             self._last_inbound = datetime.now(UTC)
@@ -762,16 +684,22 @@ class _Connection:
             except ValidationError:
                 # 忽略未知帧类型，兼容新增协议帧。
                 continue
-            await self._handle(frame)
+            try:
+                await self._handle(frame, upstream)
+            except RuntimeUnavailable as exc:
+                _logger.warning("订阅转不到运行时，关掉这条订阅连接", reason=str(exc))
+                self.drop(GOING_AWAY)
 
-    async def _handle(self, frame: Any) -> None:
+    async def _handle(self, frame: Any, upstream: TranscriptChannel) -> None:
         if isinstance(frame, Subscribe):
-            await self._subscribe(frame)
+            await self._subscribe(frame, upstream)
         elif isinstance(frame, Unsubscribe):
-            # 退订本就幂等，写法不对的 id 记账里必然没有，撤不到什么照样回执。
+            # 退订本就幂等，不核可见性；回执由运行时给。
             raw = frame.payload.session_id
-            self._unlisten(_canonical_session_id(raw) or raw, frame.payload.agent_ids)
-            await self._outbound.put(Ack(id=frame.id))
+            payload = frame.payload.model_copy(
+                update={"session_id": _canonical_session_id(raw) or raw}
+            )
+            await upstream.unsubscribe(frame.model_copy(update={"payload": payload}))
         elif isinstance(frame, WatchFsAdd):
             await self._watch_fs(frame)
         elif isinstance(frame, WatchFsRemove):
@@ -797,6 +725,36 @@ class _Connection:
         except DomainError:
             return None
         return conversation_id
+
+    async def _subscribe(self, frame: Subscribe, upstream: TranscriptChannel) -> None:
+        conversation_id = await self._visible(frame.payload.session_id)
+        if conversation_id is None:
+            # 不泄露不可见对话的存在性，也不影响连接上的其他订阅；不转给运行时，回执就这一个。
+            # 拒了的写法没有规范形式，回执里原样带回客户端问的那个。
+            await self._outbound.put(
+                Ack(
+                    id=frame.id,
+                    payload=SubscribeAckPayload(not_found=(frame.payload.session_id,)),
+                )
+            )
+            return
+        # 档位、水位与子代理流的归属由运行时照同一套规则处理；它回这一帧的回执。
+        payload = frame.payload.model_copy(update={"session_id": conversation_id})
+        await upstream.subscribe(frame.model_copy(update={"payload": payload}))
+
+    async def _relay(self, upstream: TranscriptChannel) -> None:
+        """把运行时发来的回执与 reset / ops 转给浏览器；运行时那一头断了就以 1001 关掉这条连接。"""
+
+        try:
+            while True:
+                frame = await upstream.receive()
+                if isinstance(frame, RuntimeAck):
+                    self.offer(_ack_of(frame))
+                else:
+                    self.offer(self._wrap(frame))
+        except RuntimeUnavailable as exc:
+            _logger.warning("运行时的对话内容流断了，关掉这条订阅连接", reason=str(exc))
+            self.drop(GOING_AWAY)
 
     async def _watch_fs(self, frame: WatchFsAdd) -> None:
         conversation_id = await self._visible(frame.payload.session_id)
@@ -854,71 +812,6 @@ class _Connection:
             )
         )
 
-    async def _subscribe(self, frame: Subscribe) -> None:
-        conversation_id = await self._visible(frame.payload.session_id)
-        if conversation_id is None:
-            # 不泄露不可见对话的存在性，也不影响连接上的其他订阅。
-            # 拒了的写法没有规范形式，回执里原样带回客户端问的那个。
-            await self._outbound.put(
-                Ack(
-                    id=frame.id,
-                    payload=SubscribeAckPayload(not_found=(frame.payload.session_id,)),
-                )
-            )
-            return
-        agent_ids = _subscribed_agents(frame.payload.transcript)
-        for agent_id in agent_ids:
-            # 陌生或不属于这段对话的 agent：整帧不生效，已有订阅保持原样。
-            if not _AGENT_ID.fullmatch(agent_id) or not await self._owns(conversation_id, agent_id):
-                await self._outbound.put(
-                    Ack(id=frame.id, code=404, msg=f"agent not in session: {agent_id}")
-                )
-                return
-        for agent_id in agent_ids:
-            await self._subscribe_agent(conversation_id, agent_id, frame.payload)
-        await self._outbound.put(
-            Ack(id=frame.id, payload=SubscribeAckPayload(accepted=(conversation_id,)))
-        )
-
-    async def _owns(self, conversation_id: str, agent_id: str) -> bool:
-        try:
-            await self._transcripts.verify_agent(conversation_id, agent_id)
-        except DomainError:
-            return False
-        return True
-
-    async def _subscribe_agent(
-        self, conversation_id: str, agent_id: str, payload: SubscribePayload
-    ) -> None:
-        key = (conversation_id, agent_id)
-        grade = grade_for(payload.transcript, agent_id)
-        previous = self._grades.get(key)
-        self._grades[key] = grade
-        since = payload.transcript_since.get(agent_id)
-        epoch = payload.transcript_epoch.get(agent_id)
-        if previous is not None and needs_reset_on_transition(previous, grade):
-            # 提高订阅粒度后缺少此前过滤的操作，必须重置快照，不能沿用旧水位。
-            since = None
-        # 先监听再取快照，避免丢失间隙批次；重复批次可安全重放。
-        if key not in self._listeners:
-            if not self._listening(conversation_id):
-                self._transcripts.pin(conversation_id)
-            listener = self._listener_for(conversation_id, agent_id)
-            self._listeners[key] = listener
-            self._transcripts.listen(conversation_id, listener, agent_id=agent_id)
-        # off 保留订阅，仅停止发送此 Agent 的帧。
-        if grade != "off":
-            subscribed = self._transcripts.subscribe(
-                conversation_id, agent_id=agent_id, since=since, epoch=epoch
-            )
-            for item in subscribed.frames:
-                await self._outbound.put(
-                    self._wrap(conversation_id, self._graded(item, grade), subscribed.stream_epoch)
-                )
-
-    def _listening(self, conversation_id: str) -> bool:
-        return any(key[0] == conversation_id for key in self._listeners)
-
     def receives(self, owner: uuid.UUID) -> bool:
         """全局帧与文件变更帧发给谁：属主自己的连接，和治理者的连接。
 
@@ -934,77 +827,36 @@ class _Connection:
         except asyncio.QueueFull:
             self._overflowed = True
 
-    def _listener_for(self, conversation_id: str, agent_id: str) -> Callable[[Any], None]:
-        """创建绑定一段对话里某个 agent 流的批次监听回调。"""
+    def drop(self, code: int) -> None:
+        """排在已入队的帧后面以 ``code`` 关掉连接；队列满时按溢出以 1013 关。"""
 
-        def on_batch(batch: Any) -> None:
-            grade = self._grades.get((conversation_id, agent_id), "off")
-            ops = filter_ops_for_grade(grade, batch.ops)
-            if not ops:
-                # 空批次不发送；过滤后的操作可重放，重连时重复读取安全。
-                return
-            try:
-                self._outbound.put_nowait(
-                    self._wrap(
-                        conversation_id,
-                        OpsPayload(agent_id=agent_id, ops=ops, seq=batch.seq),
-                        batch.epoch,
-                    )
-                )
-            except asyncio.QueueFull:
-                self._overflowed = True
-
-        return on_batch
-
-    @staticmethod
-    def _graded(
-        payload: ResetPayload | OpsPayload, grade: TranscriptGrade
-    ) -> ResetPayload | OpsPayload:
-        """按订阅粒度过滤补批；reset 的 items 恒为空，直接保留。"""
-
-        if isinstance(payload, ResetPayload):
-            return payload
-        return payload.model_copy(update={"ops": filter_ops_for_grade(grade, payload.ops)})
+        self.offer(_Drop(code))
 
     def _wrap(
-        self, conversation_id: str, payload: ResetPayload | OpsPayload, stream_epoch: str
+        self, frame: TranscriptResetFrame | TranscriptOpsFrame
     ) -> TranscriptReset | TranscriptOps:
-        """封装事件。``stream_epoch`` 与 ``payload.seq`` 是客户端续传用的 Transcript 水位；外层
-        ``epoch`` + ``seq`` 是这段对话当前的会话事件序号，Transcript 帧不另发号（照 Kimi 的易失帧）。"""
+        """运行时的帧盖上信封。``stream_epoch`` 与 ``payload.seq`` 是客户端续传用的 Transcript 水位，原样；
+        外层 ``epoch`` + ``seq`` 是这段对话当前的会话事件序号，Transcript 帧不另发号（照 Kimi 的易失帧）。"""
 
-        seq = self._clock.current(conversation_id)
+        seq = self._clock.current(frame.session_id)
         stamped = datetime.now(UTC).isoformat()
-        if isinstance(payload, ResetPayload):
+        if isinstance(frame, TranscriptResetFrame):
             return TranscriptReset(
                 seq=seq,
                 epoch=self._clock.epoch,
-                session_id=conversation_id,
+                session_id=frame.session_id,
                 timestamp=stamped,
-                stream_epoch=stream_epoch,
-                payload=payload,
+                stream_epoch=frame.stream_epoch,
+                payload=frame.payload,
             )
         return TranscriptOps(
             seq=seq,
             epoch=self._clock.epoch,
-            session_id=conversation_id,
+            session_id=frame.session_id,
             timestamp=stamped,
-            stream_epoch=stream_epoch,
-            payload=payload,
+            stream_epoch=frame.stream_epoch,
+            payload=frame.payload,
         )
-
-    def _unlisten(self, conversation_id: str, agent_ids: Sequence[str] = ()) -> None:
-        """幂等退订；不点名就撤这段对话的全部 agent，最后一个撤掉时放开实时状态的引用。"""
-
-        keys = [
-            key
-            for key in self._listeners
-            if key[0] == conversation_id and (not agent_ids or key[1] in agent_ids)
-        ]
-        for key in keys:
-            self._grades.pop(key, None)
-            self._transcripts.unlisten(conversation_id, self._listeners.pop(key), agent_id=key[1])
-        if keys and not self._listening(conversation_id):
-            self._transcripts.unpin(conversation_id)
 
     async def _pump(self) -> None:
         while True:
@@ -1012,6 +864,9 @@ class _Connection:
             if self._overflowed:
                 # 溢出后流已存在缺口，以 1013 断开，要求客户端重连补批。
                 await self._ws.close(code=1013)
+                return
+            if isinstance(frame, _Drop):
+                await self._ws.close(code=frame.code)
                 return
             await self._send(frame)
 
@@ -1037,14 +892,25 @@ class _Connection:
             raise WebSocketDisconnect(code=1006) from exc
 
 
+def _ack_of(frame: RuntimeAck) -> Ack:
+    """运行时的回执换成浏览器的回执：同一个 id、码与说明，订阅结果原样。"""
+
+    payload = (
+        None
+        if frame.payload is None
+        else SubscribeAckPayload(accepted=frame.payload.accepted, not_found=frame.payload.not_found)
+    )
+    return Ack(id=frame.id, code=frame.code, msg=frame.msg, payload=payload)
+
+
 async def _serve(
     websocket: WebSocket,
-    transcripts: Transcripts,
+    runtime: RuntimeClient,
     conversations: Conversations,
     principal: Principal,
     live: LiveConnections,
 ) -> None:
-    connection = _Connection(websocket, transcripts, conversations, principal, live.clock)
+    connection = _Connection(websocket, runtime, conversations, principal, live.clock)
     live.add(connection)
     try:
         await connection.serve()
@@ -1053,6 +919,7 @@ async def _serve(
 
 
 __all__ = [
+    "GOING_AWAY",
     "HEARTBEAT_MISS_LIMIT",
     "HEARTBEAT_SECONDS",
     "MAX_EVENT_BUFFER",
@@ -1061,6 +928,5 @@ __all__ = [
     "ImportAttachments",
     "LiveConnections",
     "TranscriptPage",
-    "Transcripts",
     "create_transcript_router",
 ]

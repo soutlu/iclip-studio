@@ -55,7 +55,7 @@ from tests.helpers.generation import (
 )
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.render import StubRender
-from tests.helpers.runtime_backed import build_backed_app
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
 from tests.helpers.whole_film import component_clip, draft_document, video_clip
 
 URL = "/conversations"
@@ -100,7 +100,7 @@ async def _app(
         whole_film_render_transport=render.transport(),
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
     )
-    await seed_agents(built.state.agent_services, engine, CONVERSABLE_SEEDS)
+    await seed_agents(config_services_of(built), engine, CONVERSABLE_SEEDS)
     return built
 
 

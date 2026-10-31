@@ -54,7 +54,7 @@ from tests.helpers.media import synthesize_video
 from tests.helpers.media_server import serving
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
-from tests.helpers.runtime_backed import build_backed_app
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
 
 URL = "/conversations"
 AGENT_ID = "storyboard"
@@ -536,7 +536,7 @@ async def media_app(
             media_codec=SOFTWARE,
             credential_probe=KeyCheckingProbe({GOOD_KEY}),
         )
-        await seed_agents(built.state.agent_services, engine, (AgentSeed(AGENT_ID),))
+        await seed_agents(config_services_of(built), engine, (AgentSeed(AGENT_ID),))
         yield built
     finally:
         await engine.dispose()

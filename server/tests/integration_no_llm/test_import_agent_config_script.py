@@ -10,13 +10,17 @@ from typing import Any
 
 import pytest
 import yaml
+from agent_runtime.file_store.pg import PgFileStore
+from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.plugins.base import PluginHost
 from scripts.import_agent_config import ImportRefused, run_import
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tests.helpers.app import make_runtime_config
+from tests.helpers.app import TEST_CREDENTIAL_KEY
 from tests.helpers.model_providers import KeyCheckingProbe
 from tests.helpers.references import plant_user
+from tests.helpers.runtime_backed import standard_plugins
 
 KEY_A = "sk-import-a-0123456789"
 KEY_B = "sk-import-b-0123456789"
@@ -151,8 +155,11 @@ async def importing(
 ) -> list[str]:
     said: list[str] = []
     await run_import(
-        config=make_runtime_config(),
         engine=engine,
+        plugins=standard_plugins(
+            PluginHost(files=PgFileStore(engine), ledger=PgMaterialLedger(engine))
+        ),
+        credential_keys=(TEST_CREDENTIAL_KEY,),
         legacy_config=root / "config.old.yaml",
         agents_file=root / agents_file,
         skills_dir=root / "skills",

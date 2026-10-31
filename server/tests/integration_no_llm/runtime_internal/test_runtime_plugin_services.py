@@ -41,7 +41,7 @@ from iclip_video.video_breakdown.wire import ReferenceBreakdownResult
 from pydantic import TypeAdapter
 
 from iclip.app.errors import install_error_handlers
-from iclip.app.plugin_registry import GenerationsAdapter
+from iclip.app.image_generations import GenerationsAdapter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.app.runtime_internal import (
     RuntimePluginServices,

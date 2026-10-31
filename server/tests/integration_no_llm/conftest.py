@@ -13,6 +13,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from agent_runtime.plugins.base import PluginBinder, PluginRegistry
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
@@ -35,7 +36,14 @@ from tests.helpers.app import (
 )
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
-from tests.helpers.runtime_backed import RUNTIME_APP_KEY, RUNTIME_URL, build_backed_app
+from tests.helpers.runtime_backed import (
+    RUNTIME_APP_KEY,
+    RUNTIME_INTERNAL_TOKEN,
+    RUNTIME_URL,
+    build_backed_app,
+    config_services_of,
+    standard_plugins,
+)
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
 
@@ -90,6 +98,8 @@ def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     # 运行时服务由 build_backed_app 装在进程内，地址只是个名字。
     monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
     monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_APP_KEY)
+    # 开跑检查、运行开始与轮次开始经后端的内部接口回调，令牌两边共用。
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", RUNTIME_INTERNAL_TOKEN)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.delenv("PMS_BASE_URL", raising=False)
     monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)
@@ -132,12 +142,25 @@ def models() -> Mapping[str, Model]:
     return {TEST_MODEL_NAME: TestModel()}
 
 
-def _build_app(config: RuntimeConfig, engine: AsyncEngine, models: Mapping[str, Model]) -> FastAPI:
+@pytest.fixture
+def runtime_plugins() -> PluginRegistry | PluginBinder:
+    """测试可覆写：交给运行时服务的插件登记表（默认是视频插件包始终登记的三个）。"""
+
+    return standard_plugins
+
+
+def _build_app(
+    config: RuntimeConfig,
+    engine: AsyncEngine,
+    models: Mapping[str, Model],
+    plugins: PluginRegistry | PluginBinder,
+) -> FastAPI:
     return build_backed_app(
         config,
         engine=engine,
         build_model=model_builder(models),
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
+        plugins=plugins,
     )
 
 
@@ -147,13 +170,16 @@ async def app(
     engine: AsyncEngine,
     agent_seeds: tuple[AgentSeed, ...],
     models: Mapping[str, Model],
+    runtime_plugins: PluginRegistry | PluginBinder,
     tmp_path: Path,
 ) -> FastAPI:
     """经 ``engine`` 夹具清表：同一个用例里也要 ``engine`` 的，清表一定发生在种 agent 之前。"""
 
-    built = _build_app(make_runtime_config(skill_cache_dir=tmp_path / "skills"), engine, models)
+    built = _build_app(
+        make_runtime_config(skill_cache_dir=tmp_path / "skills"), engine, models, runtime_plugins
+    )
     if agent_seeds:
-        await seed_agents(built.state.agent_services, engine, agent_seeds)
+        await seed_agents(config_services_of(built), engine, agent_seeds)
     return built
 
 
@@ -171,6 +197,7 @@ def ws_agent_app(
     agent_seeds: tuple[AgentSeed, ...],
     models: Mapping[str, Model],
     cors_allow_origins: tuple[str, ...],
+    runtime_plugins: PluginRegistry | PluginBinder,
     tmp_path: Path,
 ) -> Generator[FastAPI]:
     """在 TestClient 事件循环中装配带 agent 的 WS app；种 agent 在另一个事件循环里做完。
@@ -186,9 +213,10 @@ def ws_agent_app(
         ),
         engine,
         models,
+        runtime_plugins,
     )
     if agent_seeds:
-        asyncio.run(seed_agents(built.state.agent_services, engine, agent_seeds))
+        asyncio.run(seed_agents(config_services_of(built), engine, agent_seeds))
     yield built
     asyncio.run(engine.dispose())
 

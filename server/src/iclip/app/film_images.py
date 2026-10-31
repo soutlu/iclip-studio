@@ -1,9 +1,8 @@
-"""工程文件的生图节点与生成域之间的适配：AI 导演的工具和制作页共用。"""
+"""工程文件的生图节点与生成域之间的适配，制作页用。"""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable
 
 from agent_runtime.errors import ValidationFailed
 from iclip_video.iclip_studio.ports import (
@@ -63,25 +62,6 @@ class FilmImagesAdapter:
         return job is not None
 
 
-class RunFilmImagesAdapter:
-    """AI 导演工具用的 ``NodeImages``：每次调用都用 ``resolve_principal`` 按运行属主 id 重建主体，再交给
-    ``FilmImagesAdapter``，它的错误原样抛出。制作页拿着路由上的主体，直接用 ``FilmImagesAdapter``。"""
-
-    def __init__(
-        self,
-        images: FilmImagesAdapter,
-        resolve_principal: Callable[[uuid.UUID], Awaitable[Principal]],
-    ) -> None:
-        self._images = images
-        self._resolve_principal = resolve_principal
-
-    async def submit(self, user_id: uuid.UUID, request: NodeImageRequest) -> NodeImageJob:
-        return await self._images.submit(await self._resolve_principal(user_id), request)
-
-    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> NodeImageJob:
-        return await self._images.get(await self._resolve_principal(user_id), job_id)
-
-
 def _node_job(job: GenerationJob) -> NodeImageJob:
     return NodeImageJob(
         job_id=job.id,
@@ -100,4 +80,4 @@ def _conversation_uuid(conversation_id: str) -> uuid.UUID:
         raise RuntimeError("这次运行的对话 id 不是 UUID——运行状态已损坏。") from exc
 
 
-__all__ = ["FILM_NODE_KEY", "FilmImagesAdapter", "RunFilmImagesAdapter"]
+__all__ = ["FILM_NODE_KEY", "FilmImagesAdapter"]

@@ -10,13 +10,7 @@ from dataclasses import dataclass
 
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import (
-    FileStore,
-    InvalidContent,
-    QuotaExceeded,
-    StoredFile,
-    VersionConflict,
-)
+from agent_runtime.file_store.store import StoredFile
 from agent_runtime.material_ledger.store import Material, MaterialLedger
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
@@ -36,6 +30,7 @@ from iclip_video.iclip_studio.ports import InvalidNodeImageRequest, NodeImageReq
 from pydantic import ValidationError
 
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.domains.generation.schemas import VideoGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal, resolve_user_name
@@ -55,19 +50,17 @@ class _Files:
 class ConversationFilmAdapter:
     """对话域制作页端口的实现。
 
-    ``store`` 用来读，``announcing`` 用来写：写成功后照常发文件变更帧，打开着的页面据此重读。
+    ``store`` 读写工作区：写成功后运行时发文件变更帧，打开着的页面据此重读。
     ``generation`` 为 None 表示没开媒体生成：只认素材台账里的图，认不出生成记录与上传。"""
 
     def __init__(
         self,
         *,
-        store: FileStore,
-        announcing: FileStore,
+        store: WorkspaceFiles,
         ledger: MaterialLedger,
         generation: GenerationService | None,
     ) -> None:
         self._store = store
-        self._announcing = announcing
         self._ledger = ledger
         self._generation = generation
         self._node_images = None if generation is None else FilmImagesAdapter(generation)
@@ -340,12 +333,11 @@ class ConversationFilmAdapter:
         return film
 
     async def _write(self, namespace: str, path: str, content: str, expected: int | None) -> None:
+        # 内容或容量不合规的 ValidationFailed 原样往外抛。
         try:
-            await self._announcing.write(namespace, path, content, expected_version=expected)
-        except VersionConflict as exc:
+            await self._store.write(namespace, path, content, expected_version=expected)
+        except Conflict as exc:
             raise Conflict(_STALE) from exc
-        except (InvalidContent, QuotaExceeded) as exc:
-            raise ValidationFailed(str(exc)) from exc
 
 
 def _require_images(missing: tuple[str, ...]) -> None:

@@ -9,9 +9,14 @@ setup:
 	cd web && pnpm install && pnpm hf:registry
 	cd render && pnpm install
 
-# 后端以可编辑方式依赖 runtime/ 与 plugins/video/，三处的源码改动都触发重载。
+# 起后端（7788）与运行时服务（7790），Ctrl-C 两个一起停。运行时等后端答了健康检查才起：配了 shot_video 时它启动
+# 就向后端取图片模型。两个都用后端的虚拟环境（它可编辑地装着 runtime/ 与 plugins/video/），源码改动各自重载。
 dev:
-	cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir . --reload-dir ../runtime/src --reload-dir ../plugins/video/src
+	@trap 'kill 0' INT TERM EXIT; \
+	(cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir . --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \
+	until curl -sf http://localhost:7788/healthz >/dev/null; do sleep 1; done; \
+	(cd server && uv run --env-file ../.env python -m agent_runtime.main --config configs/runtime.yaml --reload --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \
+	wait
 
 up:
 	bash scripts/dev-up.sh

@@ -14,9 +14,9 @@ from typing import Any, Final
 
 import httpx
 from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import FileStore
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.config import ResolvedIclipStudio
 from iclip.domains.library.repository import LibraryReports
 from iclip.domains.references.repository import ReferenceStore
@@ -225,7 +225,7 @@ class HitCaseTreatments:
     """爆款素材的新片执行方案：素材片所在对话（按对话属主与对话 id 定位）工作区里的 ``treatment.md``。
     只读当前那一份，不存快照。"""
 
-    def __init__(self, store: FileStore) -> None:
+    def __init__(self, store: WorkspaceFiles) -> None:
         self._store = store
 
     async def exists(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:

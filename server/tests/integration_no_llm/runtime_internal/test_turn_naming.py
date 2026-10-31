@@ -16,6 +16,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from tests.helpers.agents import TEST_PROVIDER, AgentSeed
 from tests.helpers.app import TEST_MODEL_NAME, new_conversation
 from tests.helpers.auth import login_as_editor
+from tests.helpers.runtime_backed import config_services_of
 from tests.helpers.ws import AGENT_ID
 
 TOKEN = "runtime-internal-test-token-0123456789"
@@ -55,7 +56,7 @@ def models(title_gate: asyncio.Event) -> Mapping[str, Model]:
 async def test_turn_started_answers_before_the_title_is_generated(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str, title_gate: asyncio.Event
 ) -> None:
-    providers = app.state.agent_services.model_providers
+    providers = config_services_of(app).model_providers
     found = await providers.resolved(TEST_PROVIDER)
     assert found is not None
     await providers.set_default_model(

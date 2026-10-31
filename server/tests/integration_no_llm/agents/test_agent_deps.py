@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from agent_runtime.plugins.base import PluginRegistry
 from agent_runtime.run_deps import AgentRunDeps
 from fastapi import FastAPI
 from pydantic_ai import RunContext
@@ -50,18 +51,11 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
     return (AgentSeed(AGENT_ID, plugins=("identity",)),)
 
 
-@pytest.fixture(autouse=True)
-def registered_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
-    """替换组合根的插件登记表构造函数，使声明可解析测试 identity 插件。"""
+@pytest.fixture
+def runtime_plugins() -> PluginRegistry:
+    """交给运行时服务的插件登记表只有测试 identity 插件。"""
 
-    from agent_runtime.plugins.base import PluginRegistry
-
-    from iclip.app import bootstrap
-
-    def only_identity(**_: object) -> PluginRegistry:
-        return {"identity": FixedPlugin.bind(name="identity", capabilities=identity_capability())}
-
-    monkeypatch.setattr(bootstrap, "build_plugin_registry", only_identity)
+    return {"identity": FixedPlugin.bind(name="identity", capabilities=identity_capability())}
 
 
 async def tools_said(

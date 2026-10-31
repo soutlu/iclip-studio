@@ -4,29 +4,22 @@ from __future__ import annotations
 
 import uuid
 
-from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.errors import ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.pg import PgFileStore
-from agent_runtime.file_store.store import (
-    FileStore,
-    InvalidContent,
-    InvalidPath,
-    QuotaExceeded,
-    VersionConflict,
-    normalize_path,
-)
+from agent_runtime.file_store.store import InvalidPath, normalize_path
 from iclip_video.iclip_studio.film.checks import check_project_content, check_run_content
 from iclip_video.shot_document import validate_shots_document
 
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.domains.conversations.service import DerivedFile, DerivedFileContent
 
 
 class ConversationWorkspace:
-    """在组合根将属主与对话 id 转换为工作区命名空间，隔离两侧领域知识。"""
+    """在组合根将属主与对话 id 转换为工作区命名空间，隔离两侧领域知识。写入成功后的文件变更帧由运行时
+    在应用事件流上发出。"""
 
-    def __init__(self, store: PgFileStore, announcing: FileStore) -> None:
+    def __init__(self, store: WorkspaceFiles) -> None:
         self._store = store
-        self._announcing = announcing
 
     async def list_files(
         self, owner: uuid.UUID, conversation_id: uuid.UUID
@@ -64,23 +57,21 @@ class ConversationWorkspace:
         content: str,
         expected_version: int,
     ) -> DerivedFileContent:
-        """按期望版本覆盖文件，冲突返回 409。
+        """按期望版本覆盖文件，冲突返回 409（``Conflict``），路径、内容或容量不合规 422。
 
         仅接受规范路径，避免存储层归一化后的路径绕过按原始路径匹配的文档校验。"""
 
         try:
             if normalize_path(path) != path:
                 raise ValidationFailed(f"路径 {path!r} 不是规范形式，按工作区文件列表里的写法给")
-            entry = await self._announcing.write(
-                namespace_for(owner, str(conversation_id)),
-                path,
-                content,
-                expected_version=expected_version,
-            )
-        except VersionConflict as exc:
-            raise Conflict(str(exc)) from exc
-        except (InvalidPath, InvalidContent, QuotaExceeded) as exc:
+        except InvalidPath as exc:
             raise ValidationFailed(str(exc)) from exc
+        entry = await self._store.write(
+            namespace_for(owner, str(conversation_id)),
+            path,
+            content,
+            expected_version=expected_version,
+        )
         return DerivedFileContent(path=entry.path, content=content, version=entry.version)
 
 

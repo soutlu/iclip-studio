@@ -16,26 +16,9 @@ from agent_runtime.assembly.agents import (
     ModelBuilder,
     build_runtime_model,
 )
-from agent_runtime.assembly.directories import (
-    LibrarySkillDirectory,
-    ProviderDirectory,
-    RegistryPluginDirectory,
-)
+from agent_runtime.assembly.config_services import build_config_services
 from agent_runtime.assembly.displays import build_display_registry
-from agent_runtime.assembly.models import PydanticAiCredentialProbe, require_known_providers
-from agent_runtime.config.agent_config.public import (
-    AgentConfigService,
-    AgentReferences,
-    SqlAgentStore,
-)
-from agent_runtime.config.model_providers.public import (
-    CredentialCipher,
-    CredentialProbe,
-    ModelProviderService,
-    SqlModelProviderStore,
-    load_declarations,
-)
-from agent_runtime.config.skills.public import SkillsService, SqlSkillStore
+from agent_runtime.config.model_providers.public import CredentialProbe
 from agent_runtime.file_store.announcing import AnnouncingFileStore, FileChange
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.harness.agents import DELEGATE_TOOL
@@ -107,21 +90,6 @@ def create_app(
         else create_async_engine(settings.database_url, pool_pre_ping=True)
     )
 
-    # agent 配置与技能库、模型供应商互相要用：那两边经端口问 agent 表「谁在用」，agent 配置经端口查它们。
-    # 先建 agent 的仓储交给那两边，再用它们的服务装 agent 配置。
-    agent_store = SqlAgentStore(active_engine)
-    agent_references = AgentReferences(agent_store)
-    skills = SkillsService(SqlSkillStore(active_engine), usages=agent_references)
-    declarations = load_declarations()
-    require_known_providers(declarations)
-    model_providers = ModelProviderService(
-        SqlModelProviderStore(active_engine),
-        declarations=declarations,
-        cipher=CredentialCipher(settings.credential_encryption_keys),
-        probe=credential_probe if credential_probe is not None else PydanticAiCredentialProbe(),
-        usages=agent_references,
-    )
-
     # 应用事件流：会话活动与工作区文件变更在写入提交后同步交给集线器，按会话归属的应用分发。
     session_store = PgSessionStore(active_engine)
     session_apps = SessionApps(session_store)
@@ -157,14 +125,17 @@ def create_app(
         else plugins(PluginHost(files=announcing_files, ledger=material_ledger))
     )
 
-    agent_config = AgentConfigService(
-        agent_store,
-        models=ProviderDirectory(model_providers),
-        plugins=RegistryPluginDirectory(registry),
-        skills=LibrarySkillDirectory(skills),
+    config_services = build_config_services(
+        active_engine,
+        credential_keys=settings.credential_encryption_keys,
+        plugins=registry,
+        probe=credential_probe,
     )
+    skills = config_services.skills
+    model_providers = config_services.model_providers
+    agent_config = config_services.agent_config
 
-    # 运行这一侧，与后端组合根同一套：持久化、用量、队列、实时投影、历史、装配、会话、工作区与素材台账。
+    # 运行这一侧：持久化、用量、队列、实时投影、历史、装配、会话、工作区与素材台账。
     step_store = PgStepStore(
         active_engine, max_snapshots_per_run=settings.agent_runs.max_snapshots_per_run
     )
@@ -280,8 +251,11 @@ def create_app(
 
     app = FastAPI(title=TITLE, lifespan=lifespan)
     install_error_handlers(app)
-    # 测试核对连接断开后实时状态有没有放开。
+    # 测试核对连接断开后实时状态有没有放开；经三块配置的服务种 agent、经装配入口核对缓存，与服务自己用的是
+    # 同一份。
     app.state.transcript_store = transcript_store
+    app.state.config_services = config_services
+    app.state.agent_runtime = agent_runtime
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:

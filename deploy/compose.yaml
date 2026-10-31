@@ -1,12 +1,12 @@
-# 单机部署：后端 → nginx 前端，另有只在内网可达的成片渲染服务。数据库迁移由操作者手动执行，部署和服务启动不执行迁移。
-# Postgres 用服务器现有实例，本项目独占一个数据库。
-# 变量与凭证来自同目录的 .env，server 容器也整份加载它；env 文件不进仓库。
+# 单机部署：后端 → nginx 前端，另有只在内网可达的运行时服务与成片渲染服务。数据库迁移由操作者手动执行，部署和服务
+# 启动不执行迁移。Postgres 用服务器现有实例，本项目独占一个数据库，后端与运行时服务连同一个库。
+# 变量与凭证来自同目录的 .env，server 容器整份加载它；运行时服务只拿下面 environment 列出的几项。env 文件不进仓库。
 # 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
 # ACR_NAMESPACE 仓库里的命名空间、IMAGE_TAG 镜像版本（缺省 latest，升级时改它再 up -d）、
 # WEB_PORT 对外端口（缺省 80，改了 SSO_REDIRECT_URL 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务
-# 允许取素材的主机。应用变量见 server/src/iclip/config/models.py。
-# 运行配置不进镜像也不进仓库：同目录的 configs/（config.yaml）只读挂进后端，改了要 up -d。模型、agent
-# 与技能存在数据库里，在配置页里改。成片的组件库也不进镜像：同目录的 components/（catalog.json 与
+# 允许取素材的主机，以及运行时服务那几项（见 runtime 段）。后端的应用变量见 server/src/iclip/config/models.py。
+# 运行配置不进镜像也不进仓库：同目录的 configs/ 只读挂进后端（config.yaml）与运行时服务（runtime.yaml，样例是
+# deploy/runtime.example.yaml），改了要 up -d。模型、agent 与技能存在数据库里，在配置页里改。成片的组件库也不进镜像：同目录的 components/（catalog.json 与
 # <版本号>/）只读挂给 web 与 render，发布新组件库不用重启，步骤见 docs/deploy.md「发布组件库」。
 
 services:
@@ -30,6 +30,35 @@ services:
               capabilities: [gpu, compute, utility, video]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7788/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Agent 运行时服务：消息与运行、transcript、实时通道的上游、工作区文件与素材台账、配置页的管理接口。只在 compose
+  # 网络里可达（后端 RUNTIME_URL=http://runtime:7790），不对外开端口。后端先起：运行时配置了 shot_video 时启动就向
+  # 后端的内部接口取图片模型；后端启动时连不上运行时不影响启动，事件流会自己重连。
+  runtime:
+    image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-runtime:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    command: ["python", "-m", "agent_runtime.main", "--config", "configs/runtime.yaml", "--host", "0.0.0.0", "--port", "7790"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      # 模型供应商密钥的加密钥匙，只有运行时解密。
+      CREDENTIAL_ENCRYPTION_KEYS: ${CREDENTIAL_ENCRYPTION_KEYS}
+      # runtime.yaml 里 apps.video.key_env 与 hooks.token_env、plugins.config.internal_api.token_env 指向的变量，
+      # 与后端用的是同一个值。
+      RUNTIME_APP_KEY: ${RUNTIME_APP_KEY}
+      RUNTIME_INTERNAL_TOKEN: ${RUNTIME_INTERNAL_TOKEN}
+      # runtime.yaml 配了 plugins.config.video 时它的 api_key_env；没配视频理解时留空。
+      VIDEO_UNDERSTANDING_API_KEY: ${VIDEO_UNDERSTANDING_API_KEY:-}
+    volumes:
+      - ./configs:/app/configs:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7790/healthz', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 5
