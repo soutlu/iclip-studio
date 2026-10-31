@@ -2,8 +2,9 @@
 
 握手带 ``Authorization: Bearer <应用密钥>``，认不出是哪个应用就在握手前以 ``1008`` 关闭。两条都是：
 
-- 出站经一条有界队列（``MAX_OUTBOUND`` 帧，按连接算），同步回调只往里放、不等发送；放不下就记溢出，发送
-  方随后以 ``1013`` 关连接，对方重连再对齐。
+- 出站经一条有界队列（``MAX_OUTBOUND`` 帧，按连接算），同步回调与入站帧的回执、补批都只往里放、不等发送；
+  放不下就记溢出，发送方随后以 ``1013`` 关连接，对方重连再对齐。读入站帧的一方从不等出站队列，溢出后照常
+  收到断开、放开占着的东西。
 - 每 ``HEARTBEAT_SECONDS`` 秒发一帧 ``ping``；连着 ``HEARTBEAT_MISS_LIMIT`` 个周期没收到任何入站帧就以
   ``1001`` 关闭。
 
@@ -121,7 +122,9 @@ class _Channel:
         self._last_inbound = asyncio.get_running_loop().time()
 
     def offer(self, frame: Envelope) -> None:
-        """同步放进出站队列；放不下记溢出，发送泵随后以 1013 断开。"""
+        """同步放进出站队列；放不下记溢出，发送泵随后以 1013 断开。
+
+        入站处理也只用它放帧：溢出后发送泵已退出，读循环里等队列空位会一直等下去，连接就结束不了。"""
 
         try:
             self._outbound.put_nowait(frame)
@@ -220,7 +223,7 @@ class _TranscriptConnection(_Channel):
             # 退订本就幂等，写法不对的 id 记账里必然没有，撤不到什么照样回执。
             raw_id = frame.payload.session_id
             self._unlisten(_canonical_session_id(raw_id) or raw_id, frame.payload.agent_ids)
-            await self._outbound.put(Ack(id=frame.id))
+            self.offer(Ack(id=frame.id))
 
     def _release(self) -> None:
         for session_id in {key[0] for key in self._listeners}:
@@ -239,7 +242,7 @@ class _TranscriptConnection(_Channel):
         session_id = await self._owned(frame.payload.session_id)
         if session_id is None:
             # 拒了的写法没有规范形式，回执里原样带回对方问的那个；连接上的其他订阅不动。
-            await self._outbound.put(
+            self.offer(
                 Ack(id=frame.id, payload=SubscribeAckPayload(not_found=(frame.payload.session_id,)))
             )
             return
@@ -248,15 +251,11 @@ class _TranscriptConnection(_Channel):
             # 陌生或不属于这段会话的 agent：整帧不生效，已有订阅保持原样。
             known = _AGENT_ID.fullmatch(agent_id) is not None
             if not known or not await self._owns_agent(session_id, agent_id):
-                await self._outbound.put(
-                    Ack(id=frame.id, code=404, msg=f"agent not in session: {agent_id}")
-                )
+                self.offer(Ack(id=frame.id, code=404, msg=f"agent not in session: {agent_id}"))
                 return
         for agent_id in agent_ids:
-            await self._subscribe_agent(session_id, agent_id, frame.payload)
-        await self._outbound.put(
-            Ack(id=frame.id, payload=SubscribeAckPayload(accepted=(session_id,)))
-        )
+            self._subscribe_agent(session_id, agent_id, frame.payload)
+        self.offer(Ack(id=frame.id, payload=SubscribeAckPayload(accepted=(session_id,))))
 
     async def _owns_agent(self, session_id: str, agent_id: str) -> bool:
         try:
@@ -265,9 +264,7 @@ class _TranscriptConnection(_Channel):
             return False
         return True
 
-    async def _subscribe_agent(
-        self, session_id: str, agent_id: str, payload: SubscribePayload
-    ) -> None:
+    def _subscribe_agent(self, session_id: str, agent_id: str, payload: SubscribePayload) -> None:
         key = (session_id, agent_id)
         grade = grade_for(payload.transcript, agent_id)
         previous = self._grades.get(key)
@@ -293,9 +290,7 @@ class _TranscriptConnection(_Channel):
             )
             for item in subscribed.frames:
                 # 补批帧筛空了也发：它推进对方的水位。
-                await self._outbound.put(
-                    _wrap(session_id, _graded(item, grade), subscribed.stream_epoch)
-                )
+                self.offer(_wrap(session_id, _graded(item, grade), subscribed.stream_epoch))
 
     def _listening(self, session_id: str) -> bool:
         return any(key[0] == session_id for key in self._listeners)

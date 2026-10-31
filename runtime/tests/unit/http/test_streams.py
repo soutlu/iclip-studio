@@ -1,11 +1,13 @@
 """两条 WebSocket 的连接层：认不出应用在握手前以 1008 关闭；事件流送达这个应用的会话活动、出站积压超过上限以
-1013 关闭；对话内容流上订着一段会话的连接收它的文件变化，按订阅登记与注销。
+1013 关闭；对话内容流订阅补批时溢出同样以 1013 关闭，对方断开后放开固定、监听与文件变化登记；订着一段会话的
+连接收它的文件变化，按订阅登记与注销。
 
 只挂两条路由、一个查表的集线器与替身的 transcript 服务和会话服务，不碰库。真实的订阅、档位与写文件见后端
 ``tests/integration_no_llm/runtime_service/test_app_streams.py``。"""
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Collection, Generator
 from contextlib import asynccontextmanager
@@ -18,7 +20,9 @@ from starlette.websockets import WebSocketDisconnect
 
 from agent_runtime.errors import NotFound
 from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import Listener, OpBatch
 from agent_runtime.harness.transcript.subscription import SubscribeFrames
+from agent_runtime.http import streams
 from agent_runtime.http.auth import build_app_auth
 from agent_runtime.http.streams import (
     MAX_OUTBOUND,
@@ -34,7 +38,7 @@ from agent_runtime.live.frames import (
 from agent_runtime.live.hub import AppEventHub, FileChangeSink, SessionFileChanges
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.settings import ResolvedApp
-from agent_runtime.transcript.ops import MAIN_AGENT_ID, TranscriptSnapshot
+from agent_runtime.transcript.ops import MAIN_AGENT_ID, ItemsRemoveOp, TranscriptSnapshot
 from agent_runtime.transcript.wire import ResetPayload, SessionActivityOut
 
 BFF_KEY = "bff-app-key-0123456789-0123456789-ab"
@@ -72,7 +76,13 @@ def wrote(session_id: str, path: str = "notes.md") -> FsChanged:
 
 
 class FakeTranscripts:
-    """只认主流与 ``CHILD``；订阅一律回一帧 reset，不记监听。"""
+    """只认主流与 ``CHILD``；订阅一律回一帧 reset。记着固定次数与监听；取快照前先给刚登记的监听推
+    ``live_during_subscribe`` 条实时批，当作先监听、再取快照两步之间落下的批次。"""
+
+    def __init__(self) -> None:
+        self.pins = 0
+        self.listeners: dict[tuple[str, str], Listener] = {}
+        self.live_during_subscribe = 0
 
     async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
         if agent_id not in (MAIN_AGENT_ID, CHILD):
@@ -81,20 +91,23 @@ class FakeTranscripts:
     def subscribe(
         self, conversation_id: str, *, agent_id: str, since: int | None, epoch: str | None
     ) -> SubscribeFrames:
+        listener = self.listeners[(conversation_id, agent_id)]
+        for seq in range(1, self.live_during_subscribe + 1):
+            listener(OpBatch(seq=seq, ops=(ItemsRemoveOp(ids=("t1",)),), epoch="e1"))
         reset = ResetPayload(agent_id=agent_id, snapshot=TranscriptSnapshot(), seq=0)
         return SubscribeFrames(stream_epoch="e1", frames=(reset,))
 
-    def listen(self, conversation_id: str, listener: object, *, agent_id: str) -> None:
-        pass
+    def listen(self, conversation_id: str, listener: Listener, *, agent_id: str) -> None:
+        self.listeners[(conversation_id, agent_id)] = listener
 
-    def unlisten(self, conversation_id: str, listener: object, *, agent_id: str) -> None:
-        pass
+    def unlisten(self, conversation_id: str, listener: Listener, *, agent_id: str) -> None:
+        del self.listeners[(conversation_id, agent_id)]
 
     def pin(self, conversation_id: str) -> None:
-        pass
+        self.pins += 1
 
     def unpin(self, conversation_id: str) -> None:
-        pass
+        self.pins -= 1
 
 
 class FakeSessions:
@@ -131,7 +144,14 @@ def file_changes() -> RecordingFileChanges:
 
 
 @pytest.fixture
-def client(hub: AppEventHub, file_changes: RecordingFileChanges) -> Generator[TestClient]:
+def transcripts() -> FakeTranscripts:
+    return FakeTranscripts()
+
+
+@pytest.fixture
+def client(
+    hub: AppEventHub, file_changes: RecordingFileChanges, transcripts: FakeTranscripts
+) -> Generator[TestClient]:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await hub.start()
@@ -151,7 +171,7 @@ def client(hub: AppEventHub, file_changes: RecordingFileChanges) -> Generator[Te
     app.include_router(
         create_transcript_ws_router(
             auth.identify,
-            cast(TranscriptService, FakeTranscripts()),
+            cast(TranscriptService, transcripts),
             cast(SessionService, FakeSessions()),
             file_changes,
         )
@@ -253,6 +273,56 @@ def test_overflowing_the_outbound_queue_closes_the_connection(
             ws.receive_json()
 
     assert closed.value.code == 1013
+
+
+# --- 对话内容流 -----------------------------------------------------------------
+
+
+def eventually(check: Callable[[], bool], seconds: float = 2.0) -> bool:
+    """在服务线程里改的状态，限时等它满足 ``check``。"""
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        time.sleep(0.01)
+    return check()
+
+
+@pytest.mark.timeout(10)
+def test_overflowing_during_catchup_closes_and_releases_the_session(
+    client: TestClient,
+    transcripts: FakeTranscripts,
+    file_changes: RecordingFileChanges,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 队列很小，取快照前落下的实时批就把它挤爆；一帧订两个 agent，溢出后还有补批要放。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 2)
+    transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        ws.send_json(
+            {
+                "type": "subscribe_v2",
+                "id": "s1",
+                "payload": {
+                    "session_id": BFF_SESSION,
+                    "transcript": {MAIN_AGENT_ID: "delta", CHILD: "delta"},
+                },
+            }
+        )
+        with pytest.raises(WebSocketDisconnect) as closed:
+            for _ in range(20):
+                ws.receive_json()
+        assert closed.value.code == 1013
+
+        # 对方回关闭帧后服务这一侧收到断开；读循环卡在出站队列上时收不到，固定与监听一直占着。
+        # 要在 with 里看：退出时测试客户端会取消连接任务，卡住的也会被 finally 放开。
+        ws.close()
+        released = eventually(lambda: transcripts.pins == 0 and not transcripts.listeners)
+        assert released, (transcripts.pins, list(transcripts.listeners))
+
+    assert file_changes.log == [("attach", BFF_SESSION), ("detach", BFF_SESSION)]
 
 
 # --- 对话内容流上的文件变化 -------------------------------------------------------
