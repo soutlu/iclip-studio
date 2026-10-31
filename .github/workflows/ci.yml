@@ -249,7 +249,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: agents
+          - group: agents-collections
             tests: >-
               tests/integration_no_llm/agents
               --ignore-glob=tests/integration_no_llm/agents/test_transcript_ws*.py
@@ -258,14 +258,13 @@ jobs:
               tests/integration_no_llm/runtime_calls
               tests/integration_no_llm/runtime_internal
               tests/integration_no_llm/test_job_queue_and_runner.py
+              tests/integration_no_llm/collections
           - group: realtime
             tests: >-
               tests/integration_no_llm/agents/test_transcript_ws*.py
               tests/integration_no_llm/agents/test_transcript_relay.py
           - group: conversations
-            tests: >-
-              tests/integration_no_llm/conversations
-              tests/integration_no_llm/collections
+            tests: tests/integration_no_llm/conversations
           - group: services
             tests: >-
               tests/integration_no_llm/runtime_service
