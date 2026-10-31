@@ -491,11 +491,11 @@ describe('VideoDownload · 高清版', () => {
   })
 
   it.each([
-    { color: 'bg-primary', description: '高清版已生成', state: 'done', status: 'completed' },
-    { color: 'bg-error', description: '高清版生成失败', state: 'failed', status: 'failed' },
+    { description: '高清版已生成', state: 'done', status: 'completed' },
+    { description: '高清版生成失败', state: 'failed', status: 'failed' },
   ] as const)(
-    '自己的 $status：右上角出 $color 的点，没有外圈',
-    async ({ color, description, state, status }) => {
+    '自己的 $status：提示生成结果，没有进行中的外圈',
+    async ({ description, state, status }) => {
       serveTiers([
         {
           job: enhanceJob(status, { outputUrl: status === 'completed' ? HD : null }),
@@ -507,7 +507,6 @@ describe('VideoDownload · 高清版', () => {
 
       expect(button).toHaveAccessibleDescription(description)
       expect(dot(button)).toHaveAttribute('data-enhance-dot', state)
-      expect(dot(button)).toHaveClass(color)
       expect(ring(button)).toBeNull()
     },
   )
@@ -583,36 +582,6 @@ describe('VideoDownload · 高清版', () => {
     const button = screen.getByRole('button', { name: '下载视频' })
     expect(button).not.toHaveAccessibleDescription()
     expect(dot(button)).toBeNull()
-  })
-
-  it('下载中图标转圈与外圈细弧并存：转圈只落在图标上，细弧自己转', async () => {
-    serveTiers([{ job: enhanceJob('submitted'), resolution: '1080p' }])
-    let release: () => void = () => undefined
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    server.use(
-      http.get(CLEAN, async () => {
-        await gate
-        return new HttpResponse(new Uint8Array([1]), { headers: { 'Content-Type': 'video/mp4' } })
-      }),
-      http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
-    )
-    const { user } = await renderEnhanceable()
-    const menu = await openMenu(user)
-
-    await user.click(within(menu).getByRole('menuitem', { name: '下载原片' }))
-
-    const busy = await screen.findByRole('button', { name: '正在准备下载…' })
-    const arc = ring(busy)
-    expect(arc).not.toBeNull()
-    expect(busy).toHaveClass('[&>svg]:animate-spin')
-    // 只有图标是按钮的直接子 svg；细弧是另一个元素，不吃按钮上的转圈。
-    const direct = [...busy.children].filter((child) => child.tagName.toLowerCase() === 'svg')
-    expect(direct).toHaveLength(1)
-    expect(direct).not.toContain(arc)
-    expect(arc).toHaveClass('video-download-ring')
-    release()
   })
 
   it('不给 enhanceSourceId：不读高清版，菜单只有原片与水印版', async () => {

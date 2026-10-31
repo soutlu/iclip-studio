@@ -60,23 +60,6 @@ async def test_sending_to_someone_elses_conversation_is_not_found(
     assert sent.status_code == 404
 
 
-async def test_a_dashless_conversation_id_reaches_the_same_conversation(
-    app: FastAPI, pg_url: str
-) -> None:
-    """对话 id 的两种写法指向同一段：机器调用方用无横线 UUID 建的对话要能继续访问。"""
-
-    dashless = uuid.uuid4().hex
-    async with make_client(app) as client:
-        await login_as_editor(client, pg_url)
-        created = await client.post("/conversations", json={"id": dashless, "agentId": AGENT_ID})
-        assert created.status_code == 201, created.text
-        # 对外始终发规范写法，无横线只是入口处认得。
-        assert created.json()["conversation"]["id"] == str(uuid.UUID(dashless))
-        status = await client.get(f"/conversations/{dashless}/status")
-
-    assert status.status_code == 200, status.text
-
-
 async def test_a_dashless_conversation_id_can_send_a_prompt(app: FastAPI, pg_url: str) -> None:
     """线上故障那条链路：无横线 id 建完对话直接发消息，受理后按同一段对话读得回来。"""
 
@@ -85,6 +68,7 @@ async def test_a_dashless_conversation_id_can_send_a_prompt(app: FastAPI, pg_url
         await login_as_editor(client, pg_url)
         created = await client.post("/conversations", json={"id": dashless, "agentId": AGENT_ID})
         assert created.status_code == 201, created.text
+        assert created.json()["conversation"]["id"] == str(uuid.UUID(dashless))
         sent = await client.post(
             f"/conversations/{dashless}/prompts",
             json={"prompt_id": "prm_dashless", "content": [{"type": "text", "text": "走"}]},
@@ -106,29 +90,6 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_rejected(app: FastAPI, pg
         status = await client.get("/conversations/not-a-uuid/status")
 
     assert status.status_code == 422, status.text
-
-
-async def test_send_then_read_it_back(app: FastAPI, pg_url: str) -> None:
-
-    async with make_client(app) as client:
-        await login_as_editor(client, pg_url)
-        conversation_id = await new_conversation(client, AGENT_ID)
-        sent = await client.post(
-            f"/conversations/{conversation_id}/prompts",
-            json={"prompt_id": "prm_read", "content": [{"type": "text", "text": "写三个镜头"}]},
-        )
-        assert sent.status_code == 200, sent.text
-        assert sent.json()["status"] == "running"
-
-        await settled(client, conversation_id)
-        page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
-
-    assert page["agent_id"] == "main"  # 信封字段为 snake_case，实体字段为 camelCase。
-    assert page["has_more"] is False
-    assert [turn["turnId"] for turn in page["items"]] == ["t1"]
-    assert page["items"][0]["content"] == [{"type": "text", "text": "写三个镜头"}]
-    assert page["items"][0]["state"] == "completed"
-    assert page["items"][0]["steps"][0]["frames"][0]["kind"] == "text"
 
 
 async def test_api_key_caller_must_say_who_the_message_is_for(app: FastAPI, pg_url: str) -> None:

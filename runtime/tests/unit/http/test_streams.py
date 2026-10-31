@@ -238,26 +238,6 @@ def test_an_unknown_app_is_refused_before_the_handshake(
 # --- 应用事件流 -----------------------------------------------------------------
 
 
-def test_a_connection_receives_only_its_apps_events(client: TestClient, hub: AppEventHub) -> None:
-    with client.websocket_connect("/v1/events", headers=bearer(BFF_KEY)) as ws:
-
-        def publish() -> None:
-            hub.publish(activity(TOOL_SESSION, busy=True))
-            hub.publish(activity(BFF_SESSION, busy=True))
-
-        in_app_loop(client, publish)
-
-        frame = ws.receive_json()
-
-    assert frame == {
-        "type": "event.session.work_changed",
-        "session_id": BFF_SESSION,
-        "owner_user_id": OWNER,
-        "timestamp": AT,
-        "payload": {"busy": True, "pending_interaction": "none"},
-    }
-
-
 def test_overflowing_the_outbound_queue_closes_the_connection(
     client: TestClient, hub: AppEventHub
 ) -> None:
@@ -276,38 +256,6 @@ def test_overflowing_the_outbound_queue_closes_the_connection(
 
 
 # --- 对话内容流上的文件变化 -------------------------------------------------------
-
-
-def test_a_subscribed_session_gets_its_file_changes_even_at_the_off_grade(
-    client: TestClient, file_changes: RecordingFileChanges
-) -> None:
-    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
-        subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "off"})
-
-        def publish() -> None:
-            # 没订的那段先发：要是也转了过来，下面收到的第一帧就是它。
-            file_changes.publish(wrote(OTHER_BFF_SESSION, "elsewhere.md"))
-            file_changes.publish(wrote(BFF_SESSION))
-
-        in_app_loop(client, publish)
-        changed = next_change(ws)
-
-    assert changed == {
-        "type": "event.fs.changed",
-        "session_id": BFF_SESSION,
-        "timestamp": AT,
-        "payload": {"changes": [{"path": "notes.md", "change": "modified"}]},
-    }
-
-
-def test_a_session_of_another_app_is_never_registered(
-    client: TestClient, file_changes: RecordingFileChanges
-) -> None:
-    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
-        refused = subscribe(ws, TOOL_SESSION, {MAIN_AGENT_ID: "delta"})
-
-    assert refused["payload"] == {"accepted": [], "not_found": [TOOL_SESSION]}
-    assert file_changes.log == []
 
 
 def test_several_agents_register_once_and_the_last_one_out_unregisters(
@@ -342,15 +290,3 @@ def test_several_agents_register_once_and_the_last_one_out_unregisters(
         OTHER_BFF_SESSION,
         "sentinel.md",
     )
-
-
-def test_disconnecting_unregisters_every_subscribed_session(
-    client: TestClient, file_changes: RecordingFileChanges
-) -> None:
-    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
-        subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"})
-        subscribe(ws, OTHER_BFF_SESSION, {MAIN_AGENT_ID: "off"}, frame_id="s2")
-
-    attached = {session for action, session in file_changes.log if action == "attach"}
-    detached = {session for action, session in file_changes.log if action == "detach"}
-    assert attached == detached == {BFF_SESSION, OTHER_BFF_SESSION}

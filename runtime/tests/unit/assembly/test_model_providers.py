@@ -32,6 +32,7 @@ def test_responses_models_build_with_the_responses_client() -> None:
 
     assert isinstance(built, OpenAIResponsesModel)
     assert built.model_name == "qwen3.8-flash"
+    assert built.base_url.rstrip("/") == FIELDS["base_url"]
     assert thinking_effort_of(built) == "high"
 
 

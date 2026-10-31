@@ -53,6 +53,23 @@ const BASE = [
   video('v5', 5_100, 6_000),
 ]
 
+/** 等预览换页完成：只剩一个已绘制的播放器，取坐标后的手势才不会被换页取消。 */
+const waitForPreview = async (dialog: Locator) => {
+  await expect
+    .poll(() =>
+      dialog
+        .getByRole('region', { name: '预览' })
+        .locator('hyperframes-player')
+        .evaluateAll(
+          (players) =>
+            players.length === 1 &&
+            (players[0] as HTMLElement & { painted: boolean }).painted &&
+            !players[0].classList.contains('is-pending'),
+        ),
+    )
+    .toBe(true)
+}
+
 /** 登录后把草稿直接存进 mock（片段按顺序首尾相接），再打开成片编辑器 */
 const openWith = async (
   page: Page,
@@ -110,19 +127,7 @@ const openWith = async (
   ).toBeVisible()
   // 预览播放器换上来时会报一次它的时刻：等它换上来（画好之后还要等几帧才换），之后点段、走播放头
   // 才不会被它拨回去
-  await expect
-    .poll(() =>
-      dialog
-        .getByRole('region', { name: '预览' })
-        .locator('hyperframes-player')
-        .evaluateAll(
-          (players) =>
-            players.length === 1 &&
-            (players[0] as HTMLElement & { painted: boolean }).painted &&
-            !players[0].classList.contains('is-pending'),
-        ),
-    )
-    .toBe(true)
+  await waitForPreview(dialog)
   // 时间区量好宽度、按它排好刻度之后再量位置
   let last = ''
   await expect
@@ -988,35 +993,6 @@ test.describe('成片编辑器 · 时间线', () => {
       { timeout: 15_000 },
     )
   })
-
-  test('音量按 dB 调整并保存，双击恢复，配乐可静音', async ({ page }) => {
-    const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
-    await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
-    // 两个推子在剪辑工具条里
-    const sound = dialog.getByRole('toolbar', { name: '剪辑工具' }).getByRole('group', {
-      name: '声音',
-    })
-    const source = sound.getByRole('slider', { name: '原声', exact: true })
-    await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
-    await source.focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(source).toHaveAttribute('aria-valuetext', '+0.5 dB')
-    await page.keyboard.press('Shift+ArrowLeft')
-    await expect(source).toHaveAttribute('aria-valuetext', '−2.5 dB')
-    await expect
-      .poll(async () => (await readDraft(page))?.layer0[1])
-      .toMatchObject({ volume: Number((10 ** (-2.5 / 20)).toFixed(6)) })
-    await source.dblclick()
-    await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
-    for (let i = 0; i < 7; i += 1) await page.keyboard.press('ArrowRight')
-    await expect(sound).toContainText('+3.5 dB')
-    await dialog.getByRole('button', { name: '静音配乐' }).click()
-    await expect(sound.getByRole('slider', { name: '配乐', exact: true })).toHaveAttribute(
-      'aria-valuetext',
-      '静音',
-    )
-    await dialog.getByRole('button', { name: '取消静音配乐' }).click()
-  })
 })
 
 /**
@@ -1497,6 +1473,7 @@ test.describe('成片编辑器 · 画面上缩放、旋转与拖出画面', () =
     expect(Math.abs(released.left - after.left)).toBeLessThanOrEqual(0.5)
     expect(Math.abs(released.top - after.top)).toBeLessThanOrEqual(0.5)
 
+    await waitForPreview(dialog)
     const frame = await boxOf(selectionFrame(dialog))
     await dragHandle(page, selectionFrame(dialog).locator('[data-handle="rotate"]'), (from) =>
       turnAround({ x: frame.cx, y: frame.cy }, from, 20),

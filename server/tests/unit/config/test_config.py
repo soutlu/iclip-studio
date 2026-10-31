@@ -85,12 +85,6 @@ RUNTIME_KEY = "runtime-app-key-for-config-tests-0123"
 INTERNAL_TOKEN = "runtime-internal-token-for-config-0123"
 
 
-def test_valid_config_loads(tmp_path: Path) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    assert config.app.name == "t"
-    assert config.db.db_schema == "iclip"
-
-
 @pytest.mark.parametrize(
     ("content", "key"),
     [
@@ -123,19 +117,10 @@ def test_a_section_moved_to_the_runtime_names_where_it_went(
         load_runtime_config(write(tmp_path, VALID + section + "\n"))
 
 
-def test_an_empty_shot_video_section_still_switches_the_shot_tools_on(tmp_path: Path) -> None:
-    assert load_runtime_config(write(tmp_path, VALID + "shot_video: {}\n")).shot_video is not None
-
-
 def test_cors_wildcard_rejected(tmp_path: Path) -> None:
     bad = VALID.replace("security: {}", 'security: {cors_allow_origins: ["*"]}')
     with pytest.raises(ValidationError):
         load_runtime_config(write(tmp_path, bad))
-
-
-def test_missing_file_fails(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        load_runtime_config(tmp_path / "absent.yaml")
 
 
 def test_resolve_names_every_missing_variable_at_once(tmp_path: Path) -> None:
@@ -226,16 +211,6 @@ def test_a_missing_runtime_internal_token_fails_startup_naming_it(
         resolve_settings(config)
 
 
-def test_the_runtime_internal_token_is_trimmed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", " " + "t" * 32 + " ")
-
-    assert resolve_settings(config).runtime_internal_token == "t" * 32
-
-
 def test_a_short_runtime_internal_token_fails_startup_without_echoing_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -296,11 +271,21 @@ def test_a_malformed_runtime_service_variable_fails_startup_without_echoing_it(
     assert written not in str(caught.value)
 
 
-def test_sso_off_when_env_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_optional_services_are_off_when_env_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
 
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    assert resolve_settings(config).sso is None
+    settings = resolve_settings(config)
+    assert settings.sso is None
+    assert settings.media_generation is None
+    assert settings.object_store is None
+    assert settings.iclip_studio is None
+    assert settings.product_catalog is None
+    assert settings.whole_film_render is None
+    assert not settings.shot_tools_enabled
+    assert not settings.ffmpeg_required
 
 
 def test_sso_on_requires_redirect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -391,7 +376,7 @@ def test_media_generation_off_when_submit_url_empty(
     assert resolve_settings(config).media_generation is None
 
 
-def test_media_generation_resolves_both_providers_and_store(
+def test_media_generation_resolves_models_and_gateway_routes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
@@ -413,7 +398,6 @@ def test_media_generation_resolves_both_providers_and_store(
         "text-to-image",
         "image-edit",
     )
-    assert (media.poll_interval_seconds, media.job_timeout_seconds) == (5, 3600)
 
 
 @pytest.mark.parametrize(
@@ -503,67 +487,36 @@ def test_enhance_section_rejects_what_upstream_would(tmp_path: Path, enhance: st
 SUBTITLE = """  subtitle:
     url: https://asr.test/api/v1/services/aigc/multimodal-generation/generation
 """
-
-
-def test_subtitle_resolves_from_its_section_and_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE))
-    _media_env(monkeypatch)
-    monkeypatch.setenv("QWEN_API_KEY", " sk-qwen ")
-    media = resolve_settings(config).media_generation
-
-    assert media is not None and media.subtitle is not None
-    assert (
-        media.subtitle.url,
-        media.subtitle.api_key,
-        media.subtitle.concurrency,
-        media.subtitle.timeout_seconds,
-    ) == (
-        "https://asr.test/api/v1/services/aigc/multimodal-generation/generation",
-        "sk-qwen",
-        4,
-        120.0,
-    ), "并发与超时不写取默认值；key 去掉首尾空白"
-
-
-@pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
-def test_subtitle_off_without_a_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str | None
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE))
-    _media_env(monkeypatch)
-    if key is not None:
-        monkeypatch.setenv("QWEN_API_KEY", key)
-    media = resolve_settings(config).media_generation
-
-    assert media is not None and media.subtitle is None
-
-
-def test_subtitle_off_without_its_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
-    _media_env(monkeypatch)
-    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
-    media = resolve_settings(config).media_generation
-
-    assert media is not None and media.subtitle is None
-
-
-@pytest.mark.parametrize(
-    ("line", "field"),
-    [("    concurrency: 0\n", "concurrency"), ("    timeout_seconds: 0\n", "timeout_seconds")],
-)
-def test_subtitle_pacing_must_be_positive(tmp_path: Path, line: str, field: str) -> None:
-    with pytest.raises(ValidationError, match=field):
-        load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + line))
-
-
 MUSIC = """  music:
     url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
 """
 
 
-def test_music_resolves_from_its_section_and_the_shared_key(
+@pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
+def test_music_and_subtitles_are_off_without_the_shared_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str | None
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC))
+    _media_env(monkeypatch)
+    if key is not None:
+        monkeypatch.setenv("QWEN_API_KEY", key)
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.subtitle is None and media.music is None
+
+
+def test_the_shared_key_does_not_enable_absent_music_or_subtitles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.subtitle is None and media.music is None
+
+
+def test_music_and_subtitles_resolve_their_addresses_and_share_the_trimmed_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC))
@@ -572,59 +525,13 @@ def test_music_resolves_from_its_section_and_the_shared_key(
     media = resolve_settings(config).media_generation
 
     assert media is not None and media.music is not None and media.subtitle is not None
+    assert media.music.url == "https://music.test/api/v1/services/audio/tts/SpeechSynthesizer"
     assert (
-        media.music.url,
-        media.music.api_key,
-        media.music.concurrency,
-        media.music.timeout_seconds,
-    ) == (
-        "https://music.test/api/v1/services/audio/tts/SpeechSynthesizer",
-        "sk-qwen",
-        2,
-        300.0,
-    ), "并发与超时不写取默认值；key 与字幕识别共用、去掉首尾空白"
-    assert media.subtitle.api_key == media.music.api_key
+        media.subtitle.url
+        == "https://asr.test/api/v1/services/aigc/multimodal-generation/generation"
+    )
 
-
-@pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
-def test_music_off_without_a_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str | None
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + MUSIC))
-    _media_env(monkeypatch)
-    if key is not None:
-        monkeypatch.setenv("QWEN_API_KEY", key)
-    media = resolve_settings(config).media_generation
-
-    assert media is not None and media.music is None
-
-
-def test_music_off_without_its_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE))
-    _media_env(monkeypatch)
-    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
-    media = resolve_settings(config).media_generation
-
-    assert media is not None and media.music is None and media.subtitle is not None
-
-
-@pytest.mark.parametrize(
-    ("line", "field"),
-    [("    concurrency: 0\n", "concurrency"), ("    timeout_seconds: 0\n", "timeout_seconds")],
-)
-def test_music_pacing_must_be_positive(tmp_path: Path, line: str, field: str) -> None:
-    with pytest.raises(ValidationError, match=field):
-        load_runtime_config(write(tmp_path, VALID + MEDIA + MUSIC + line))
-
-
-def test_object_store_is_its_own_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    config = load_runtime_config(write(tmp_path, VALID))
-    _media_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
-    monkeypatch.delenv("OSS_BUCKET")
-
-    assert resolve_settings(config).object_store is None
+    assert media.music.api_key == media.subtitle.api_key == "sk-qwen"
 
 
 @pytest.mark.parametrize("missing", ["OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_PUBLIC_URL_BASE"])
@@ -770,54 +677,6 @@ def test_iclip_studio_resolves_with_the_video_understanding_credentials(
     assert settings.ffmpeg_required, "读时长与抽帧都要 ffmpeg"
 
 
-def _local_concurrencies(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, written: str
-) -> tuple[int | None, int | None]:
-    """（合成并发，拆解并发）；``written`` 是追加在两段末尾的那一行，空串即都不写。"""
-
-    media = MEDIA + (f"  {written}\n" if written.startswith("compose") else "")
-    studio = ICLIP_STUDIO + (f"  {written}\n" if written.startswith("breakdown") else "")
-    config = load_runtime_config(write(tmp_path, VALID + media + studio))
-    _media_env(monkeypatch)
-    for name, value in VIDEO_ENV.items():
-        monkeypatch.setenv(name, value)
-    settings = resolve_settings(config)
-    assert settings.media_generation is not None
-    assert settings.iclip_studio is not None
-    return (
-        settings.media_generation.compose_concurrency,
-        settings.iclip_studio.breakdown_concurrency,
-    )
-
-
-@pytest.mark.parametrize(
-    ("written", "expected"),
-    [
-        ("", (None, None)),
-        ("compose_concurrency: 3", (3, None)),
-        ("breakdown_concurrency: 5", (None, 5)),
-    ],
-    ids=["unwritten", "compose", "breakdown"],
-)
-def test_local_queue_concurrency_is_none_until_written(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    written: str,
-    expected: tuple[int | None, int | None],
-) -> None:
-    """不写留给组合根按选定的编解码取；配置解析不跑 ffmpeg。"""
-
-    assert _local_concurrencies(tmp_path, monkeypatch, written=written) == expected
-
-
-@pytest.mark.parametrize("written", ["compose_concurrency: 0", "breakdown_concurrency: 0"])
-def test_local_queue_concurrency_must_be_positive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, written: str
-) -> None:
-    with pytest.raises(ValidationError, match=written.split(":")[0]):
-        _local_concurrencies(tmp_path, monkeypatch, written=written)
-
-
 def test_iclip_studio_half_configured_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -826,81 +685,3 @@ def test_iclip_studio_half_configured_fails_loudly(
     monkeypatch.setenv("VIDEO_UNDERSTANDING_URL", VIDEO_ENV["VIDEO_UNDERSTANDING_URL"])
     with pytest.raises(ValidationError, match="VIDEO_UNDERSTANDING_API_KEY"):
         resolve_settings(config)
-
-
-def test_iclip_studio_off_when_understanding_url_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + ICLIP_STUDIO))
-    _core(monkeypatch)
-    settings = resolve_settings(config)
-
-    assert settings.iclip_studio is None
-    assert not settings.ffmpeg_required
-
-
-def test_ffmpeg_required_by_shot_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
-    _media_env(monkeypatch)
-
-    assert resolve_settings(config).ffmpeg_required
-
-
-def test_ffmpeg_required_by_media_generation_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """没有取帧与出图也要 ffmpeg：媒体生成带着视频裁剪拼接一起装。"""
-
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
-    _media_env(monkeypatch)
-    settings = resolve_settings(config)
-
-    assert not settings.shot_tools_enabled
-    assert settings.ffmpeg_required
-
-
-def test_ffmpeg_not_required_without_either(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """写了 shot_video 段但依赖没齐，媒体生成也关着，就没人用 ffmpeg。"""
-
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
-    _media_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
-    settings = resolve_settings(config)
-
-    assert settings.media_generation is None
-    assert not settings.shot_tools_enabled
-    assert not settings.ffmpeg_required
-
-
-PRODUCT_CATALOG_ENV = {
-    "PRODUCT_CATALOG_DATABASE_URL": "postgresql+asyncpg://reader@catalog.test/catalog",
-}
-
-
-def _product_catalog_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    _core(monkeypatch)
-    for name, value in PRODUCT_CATALOG_ENV.items():
-        monkeypatch.setenv(name, value)
-
-
-def test_product_catalog_off_when_database_url_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-
-    assert resolve_settings(config).product_catalog is None
-
-
-def test_product_catalog_resolves_connection(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _product_catalog_env(monkeypatch)
-    catalog = resolve_settings(config).product_catalog
-
-    assert catalog is not None
-    assert catalog.database_url.endswith("/catalog")

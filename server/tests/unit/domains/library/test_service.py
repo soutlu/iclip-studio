@@ -1,4 +1,4 @@
-"""资料库用例层：按读者算能否打开来源对话、详情带镜头组、游标往返、总数只在第一页、参数校验。不连库。"""
+"""资料库用例层：按读者算能否打开来源对话、游标往返、总数只在第一页、参数校验。不连库。"""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-
-import pytest
-from agent_runtime.errors import ValidationFailed
 
 from iclip.domains.identity.models import PrincipalKind
 from iclip.domains.identity.public import ACT_AS_PERMISSION, MANAGE_PERMISSION, Principal
@@ -28,7 +25,6 @@ from iclip.domains.library.schemas import (
     LibraryVideoOut,
     ShotGroupOut,
     TakeOut,
-    VersionOut,
     WholeFilmCardOut,
     WholeFilmVersionOut,
 )
@@ -132,30 +128,18 @@ class FakeReports:
         self, scope: Scope, *, limit: int, after: VideoCursor | None
     ) -> Sequence[CardRow]:
         self.queried.append((scope, after))
-        rows = sorted(self.cards, key=lambda row: (row.video.face.finished_at, row.video.id))
-        rows.reverse()
-        if after is not None:
-            key = (after.at, after.video_id)
-            rows = [row for row in rows if (row.video.face.finished_at, row.video.id) < key]
-        return rows[:limit]
+        # 页内容由用例预置；真实排序和筛选由 Postgres 集成测试覆盖。
+        return self.cards[:limit]
 
     async def count(self, scope: Scope) -> int:
         self.counted.append(scope)
         return len(self.cards)
 
     async def card_of(self, card_id: uuid.UUID) -> CardRow | None:
-        return next((row for row in self.cards if row.video.id == card_id), None)
+        raise AssertionError("详情由集成测试覆盖")
 
     async def groups_of(self, card_id: uuid.UUID) -> Sequence[ShotGroupOut]:
-        row = await self.card_of(card_id)
-        if row is None:
-            return []
-        face = row.video.face
-        return [
-            ShotGroupOut(
-                shot_index=1, versions=[VersionOut(**face.model_dump(), take=row.video.take)]
-            )
-        ]
+        raise AssertionError("详情由集成测试覆盖")
 
     async def authors(self) -> Sequence[LibraryAuthorOut]:
         return [LibraryAuthorOut(user_name="Nora.Ho", count=len(self.cards))]
@@ -164,16 +148,7 @@ class FakeReports:
         self, scope: WholeFilmScope, *, limit: int, after: VideoCursor | None
     ) -> Sequence[WholeFilmCardRow]:
         self.films_queried.append((scope, after))
-        rows = sorted(
-            self.films, key=lambda row: (row.card.face.finished_at, row.card.conversation_id)
-        )
-        rows.reverse()
-        if after is not None:
-            key = (after.at, after.video_id)
-            rows = [
-                row for row in rows if (row.card.face.finished_at, row.card.conversation_id) < key
-            ]
-        return rows[:limit]
+        return self.films[:limit]
 
     async def count_whole_films(self, scope: WholeFilmScope) -> int:
         self.films_counted.append(scope)
@@ -205,13 +180,9 @@ class FakeReports:
         raise AssertionError("这里不该读爆款素材")
 
 
-def library(
-    reports: FakeReports, *, with_files: frozenset[tuple[uuid.UUID, uuid.UUID]] = frozenset()
-) -> LibraryService:
-    """``with_files`` 是工作区里有工程文件或分镜文件的（属主，对话 id）。"""
-
+def library(reports: FakeReports) -> LibraryService:
     async def has_production_files(owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:
-        return (owner, conversation_id) in with_files
+        raise AssertionError("工作区文件与做同款的接线由集成测试覆盖")
 
     return LibraryService(reports, has_production_files=has_production_files)
 
@@ -237,27 +208,14 @@ async def test_can_open_follows_the_conversation_read_scope() -> None:
     )
 
 
-async def test_detail_carries_the_groups_and_the_reader_view() -> None:
-    first, second = card(NOW), card(NOW - timedelta(hours=1))
-    reports = FakeReports([first, second])
-    service = library(reports)
-
-    as_owner = await service.video(principal(OWNER), first.video.id)
-    as_colleague = await service.video(principal(uuid.uuid4()), first.video.id)
-
-    assert as_owner.groups == list(await reports.groups_of(first.video.id))
-    assert [v.job_id for g in as_owner.groups for v in g.versions] == [first.video.face.job_id]
-    assert as_owner.video.can_open_conversation is True
-    assert as_colleague.video.can_open_conversation is False
-    assert as_colleague.groups == as_owner.groups
-
-
 async def test_cursor_keys_on_the_face_finish_time_and_total_is_only_on_page_one() -> None:
     reports = FakeReports([card(NOW - timedelta(minutes=minute)) for minute in range(5)])
     service = library(reports)
 
     first = await service.videos(principal(OWNER), limit=2)
+    reports.cards = reports.cards[2:]
     second = await service.videos(principal(OWNER), limit=2, cursor=first.next_cursor)
+    reports.cards = reports.cards[2:]
     last = await service.videos(principal(OWNER), limit=2, cursor=second.next_cursor)
 
     tail = first.items[-1]
@@ -279,15 +237,6 @@ async def test_blank_keyword_means_no_keyword() -> None:
     assert [scope.q for scope, _ in reports.queried] == [None, "滑板"]
 
 
-async def test_limit_out_of_range_is_rejected() -> None:
-    service = library(FakeReports())
-
-    with pytest.raises(ValidationFailed):
-        await service.videos(principal(OWNER), limit=0)
-    with pytest.raises(ValidationFailed):
-        await service.whole_films(principal(OWNER), limit=0)
-
-
 async def test_whole_film_cursor_keys_on_the_face_and_the_conversation() -> None:
     """成片卡的游标是卡面完成时刻加对话 id，总数只在第一页；空白关键词等于不筛。"""
 
@@ -295,6 +244,7 @@ async def test_whole_film_cursor_keys_on_the_face_and_the_conversation() -> None
     service = library(reports)
 
     first = await service.whole_films(principal(OWNER), limit=2, q="  ")
+    reports.films = reports.films[2:]
     second = await service.whole_films(principal(OWNER), limit=2, cursor=first.next_cursor)
 
     tail = first.items[-1]

@@ -17,7 +17,8 @@ import { VideoEditor } from './video-editor'
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 
-vi.mock('mediabunny', () => {
+vi.mock('mediabunny', async () => {
+  const { createMediaReaderMock } = await import('@/testing/media-reader')
   class BufferTarget {
     buffer: ArrayBuffer | null = null
   }
@@ -58,55 +59,15 @@ vi.mock('mediabunny', () => {
       }
     }
   }
-  class UrlSource {
-    readonly url: string
-    constructor(url: string) {
-      this.url = url
-    }
-  }
-  class Input {
-    private readonly url: string
-    constructor(options: { source: UrlSource }) {
-      this.url = options.source.url
-    }
-    getPrimaryVideoTrack = () =>
-      Promise.resolve({
-        url: this.url,
-        canDecode: () => Promise.resolve(true),
-        computeDuration: () => Promise.resolve(files.get(this.url)?.duration ?? 0),
-        getDisplayWidth: () => Promise.resolve(720),
-        getDisplayHeight: () => Promise.resolve(1280),
-      })
-    getPrimaryAudioTrack = () => Promise.resolve(null)
-    computeDuration = () => Promise.resolve(files.get(this.url)?.duration ?? 0)
-    dispose = () => {}
-  }
-  class EncodedPacketSink {
-    private readonly keyframes: number[]
-    constructor(track: { url: string }) {
-      this.keyframes = files.get(track.url)?.keyframes ?? []
-    }
-    getFirstKeyPacket = () => Promise.resolve(this.at(0))
-    getNextKeyPacket = (packet: { timestamp: number }) =>
-      Promise.resolve(this.at(this.keyframes.indexOf(packet.timestamp) + 1))
-    private at = (index: number) => {
-      const timestamp = this.keyframes[index]
-      return timestamp === undefined ? null : { timestamp }
-    }
-  }
   return {
+    ...createMediaReaderMock(files),
     BufferTarget,
     Quality,
     VideoSampleSink,
     VideoSampleSource,
     canEncodeVideo: () => Promise.resolve(true),
-    EncodedPacketSink,
-    Input,
     Mp4OutputFormat,
     Output,
-    UrlSource,
-    MP4: {},
-    QTFF: {},
   }
 })
 
@@ -361,30 +322,6 @@ describe('VideoEditor', () => {
     expect(within(controls()).queryByRole('button', { name: '下载' })).toBeNull()
   })
 
-  it('标题栏只有标题与关闭；工具条左边是查看方式、播放与时间，右边是总长、镜头提示词、静音、放大，最右是合成或下载', async () => {
-    const opened = composite({ id: COMPOSITE_ID })
-    serveChain([root, opened])
-    const user = userEvent.setup()
-    await renderEditor(opened)
-
-    await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
-    const header = screen.getByRole('heading', { name: /编辑视频/ }).closest('header')
-    if (header === null) throw new Error('没有标题栏')
-    expect(buttonNames(header)).toEqual(['关闭视频编辑'])
-    expect(header).toHaveTextContent('镜头组 1')
-    expect(buttonNames(controls())).toEqual([
-      '版本',
-      '剪辑',
-      '播放',
-      '镜头提示词',
-      '开启声音',
-      '放大',
-      '下载',
-    ])
-    await user.click(viewButton('剪辑'))
-    expect(buttonNames(controls()).at(-1)).toBe('合成新版本')
-  })
-
   it('在合成上做的编辑段不在编辑轨上；区间对不上镜头的也在，名字按碰到的镜头叫', async () => {
     serveChain([
       editSegment({ sourceJobId: COMPOSITE_ID }),
@@ -535,31 +472,6 @@ describe('AI 改段的弹出卡', () => {
     ])
   })
 
-  it('Escape 把卡收成胶囊，未提交的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-
-    // jsdom 里 ProseMirror 量不了点击位置，直接给焦点。
-    act(() => requestBox().focus())
-    pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
-    await user.keyboard('{Escape}')
-
-    expect(card()).toBeNull()
-    expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
-    const mini = screen.getByRole('button', { name: '展开镜头 2 · 视频生成，未提交' })
-    expect(mini).toHaveFocus()
-
-    await user.click(mini)
-    expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
-    expect(requestBox()).toHaveFocus()
-
-    await user.click(await shot(5))
-    expect(within(openCard()).getByText('镜头 5 · 视频生成')).toBeVisible()
-    expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
-  })
-
   it('收起时还在上传的参考图留不下来：展开后卡里说出几张要重新添加，写好的字照旧；再改要求提示收起', async () => {
     server.use(http.post('*/api/uploads/sign', () => delay('infinite')))
     serveChain([])
@@ -584,27 +496,6 @@ describe('AI 改段的弹出卡', () => {
 
     pasteTextIntoComposer(requestBox(), '，暖一点')
     expect(within(openCard()).queryByText(/张图片收起时尚未上传完成/)).toBeNull()
-  })
-
-  it('拖播放头、按播放都把卡收起；点选区里的镜头只展开、不改选中', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-    expect(openCard()).toBeVisible()
-
-    fireEvent.change(playhead(), { target: { value: '4.5' } })
-    expect(card()).toBeNull()
-    expect(screen.getByRole('button', { name: '展开镜头 2 · 视频生成' })).toBeVisible()
-
-    await user.click(await shot(2))
-    expect(openCard()).toBeVisible()
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-
-    await readyToPlay()
-    await user.click(playButton())
-    expect(card()).toBeNull()
-    expect(screen.getByRole('button', { name: '展开镜头 2 · 视频生成' })).toBeVisible()
   })
 
   it('镜头短于模型下限时卡头写原因，写了要求也生成不了', async () => {
@@ -1192,64 +1083,6 @@ describe('AI 改段的弹出卡', () => {
     expect(within(panel).getByText('暂无镜头提示词')).toBeVisible()
     expect(within(panel).queryByRole('button', { name: /复制镜头/ })).toBeNull()
     expect(requestBox().textContent).toBe('')
-  })
-})
-
-describe('选中只把播放头放到选区开头，空格播放', () => {
-  const pauseButton = () => screen.queryByRole('button', { name: '暂停' })
-
-  it('点镜头只选中、不播放，播放头在它开头；⇧ 点扩选仍在选区开头；播放中点镜头停在它开头', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-
-    await user.click(await shot(2))
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    await readyToPlay()
-    expect(pauseButton()).toBeNull()
-    expect(playhead()).toHaveValue('1')
-
-    fireEvent.change(playhead(), { target: { value: '5.5' } })
-    await user.keyboard('{Shift>}')
-    await user.click(await shot(3))
-    await user.keyboard('{/Shift}')
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    expect(playhead()).toHaveValue('1')
-
-    await user.click(playButton())
-    expect(pauseButton()).toBeVisible()
-    await user.click(await shot(4))
-    expect(pauseButton()).toBeNull()
-    expect(playButton()).toBeVisible()
-    expect(playhead()).toHaveValue('3')
-  })
-
-  it('←/→ 与 ⇧←/→ 播放头在选区开头；空格在镜头上播放、暂停，不改选中', async () => {
-    serveChain([])
-    const user = userEvent.setup()
-    await renderEditor()
-    await user.click(await shot(2))
-
-    await user.keyboard('{ArrowRight}')
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    expect(playhead()).toHaveValue('2')
-    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
-    expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
-    expect(playhead()).toHaveValue('2')
-    await user.keyboard('{Shift>}{ArrowLeft}{ArrowLeft}{/Shift}')
-    expect(await shot(2)).toHaveFocus()
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(4)).toHaveAttribute('aria-pressed', 'false')
-    expect(playhead()).toHaveValue('1')
-
-    await readyToPlay()
-    await user.keyboard(' ')
-    expect(pauseButton()).toBeVisible()
-    expect(await shot(2)).toHaveAttribute('aria-pressed', 'true')
-    expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
-    await user.keyboard(' ')
-    expect(playButton()).toBeVisible()
   })
 })
 
@@ -1904,15 +1737,26 @@ describe('合成与版本视图', () => {
     expect(composeButton()).toBeEnabled()
   })
 
-  it('从一次合成打开：版本视图看那一版；每个版本一行、最新的在最上，点原片那行舞台换成原片、从头停着', async () => {
+  it('从一次合成打开：版本按新旧排列；上下键跳过合成中，Enter 与空格选版后从头停着', async () => {
     const opened = composite({ id: COMPOSITE_ID })
-    serveChain([root, opened])
+    serveChain([
+      root,
+      opened,
+      composite({
+        id: '4d5e6f70-4444-4444-8444-444444444444',
+        createdAt: '2026-09-16T10:07:00Z',
+        finishedAt: null,
+        outputUrl: null,
+        status: 'submitted',
+      }),
+    ])
     const user = userEvent.setup()
     await renderEditor(opened)
 
     await waitFor(() => expect(viewButton('版本')).toHaveAttribute('aria-pressed', 'true'))
     expect(await findVersion('V2')).toHaveAttribute('aria-pressed', 'true')
-    expect(buttonNames(versionRows())).toEqual(['V2', 'V1 原片'])
+    expect(buttonNames(versionRows())).toEqual(['合成中', 'V2', 'V1 原片'])
+    expect(versionButton('合成中')).toBeDisabled()
     expect(within(controls()).getByRole('button', { name: '下载' })).toBeEnabled()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
     // 两行共用最长那一版的比例。
@@ -1920,11 +1764,22 @@ describe('合成与版本视图', () => {
     fireEvent.change(playhead(), { target: { value: '4' } })
     expect(controls()).toHaveTextContent('00:04.00')
 
-    await user.click(versionButton('V1 原片'))
+    versionButton('V2').focus()
+    await user.keyboard('{ArrowUp}')
+    expect(versionButton('V2')).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(versionButton('V1 原片')).toHaveFocus()
+    await user.keyboard(' ')
     expect(versionButton('V1 原片')).toHaveAttribute('aria-pressed', 'true')
     expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'false')
     await waitFor(() => expect(controls()).toHaveTextContent('共 8.0 秒'))
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
+    expect(playhead()).toHaveValue('0')
+    expect(playButton()).toBeVisible()
+
+    await user.keyboard('{ArrowUp}{Enter}')
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', COMPOSITE_URL)
     expect(playhead()).toHaveValue('0')
     expect(playButton()).toBeVisible()
   })

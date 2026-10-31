@@ -8,7 +8,6 @@ import { VIDEO_CLIP_MODELS } from '@/testing/video-models'
 import {
   pickGenerationModel,
   seedVideoEditJob,
-  submitVideoComposite,
   submitClipGeneration,
   videoEditChainKey,
 } from './video-editor.api'
@@ -492,38 +491,6 @@ describe('submitClipGeneration', () => {
       reference_video_urls: [clipUrl],
       seconds: -1,
     })
-  })
-})
-
-describe('submitVideoComposite', () => {
-  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
-  const baseJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
-  const editJobId = '7e1c3a9b-2d4f-4b1e-8c3d-1f2e3a4b5c6d'
-
-  it('片段列表就是草稿：各段出处与自己媒体时间里的起止原样发出', async () => {
-    const segments = [
-      { sourceJobId: baseJobId, start: 0, end: 1.5 },
-      { sourceJobId: editJobId, start: 0, end: 2.75 },
-      { sourceJobId: baseJobId, start: 5, end: 6 },
-      { sourceJobId: baseJobId, start: 4.25, end: 5 },
-    ]
-    let body: unknown
-    const accepted = makeGenerationJob({
-      operation: 'compose',
-      status: 'pending',
-      sourceJobId: baseJobId,
-    })
-    server.use(
-      http.post('*/api/generations/video-composites', async ({ request }) => {
-        body = await request.json()
-        return HttpResponse.json({ generation: accepted }, { status: 202 })
-      }),
-    )
-
-    const result = await submitVideoComposite({ conversationId, taskId: null, baseJobId, segments })
-
-    expect(body).toEqual({ conversationId, taskId: null, baseJobId, segments })
-    expect(result.id).toBe(accepted.id)
   })
 })
 

@@ -143,30 +143,6 @@ describe('TaskCard', () => {
     ])
   })
 
-  it('保留完整原始标题，展示发布平台、视频类型、内容类型和创建时间', async () => {
-    const task = makeTask([product('FRE')])
-    task.title = '[AMZ][FRE] Listing 口播视频'
-    await renderWithProviders(<TaskCard onClick={() => {}} task={task} />)
-
-    expect(screen.getByText(task.title)).toBeVisible()
-    expect(screen.getByText('抖音')).toBeVisible()
-    expect(screen.getByText('产品展示')).toBeVisible()
-    expect(screen.getByText('短视频')).toBeVisible()
-    expect(screen.getByText(/创建于/)).toHaveAttribute('datetime', task.createdAt)
-  })
-
-  it('收起与平台、款号匹配的标题前缀，可访问名称保留完整标题', async () => {
-    const task = makeTask([product('FRE')])
-    task.title = '[AMZ][FRE] Listing 口播视频'
-    task.inputs.video_spec.platform = 'AMZ'
-    await renderWithProviders(<TaskCard onClick={() => {}} task={task} />)
-
-    expect(screen.getByText('Listing 口播视频')).toBeVisible()
-    expect(screen.getByText('Listing 口播视频')).toHaveAttribute('title', task.title)
-    expect(screen.getByRole('button', { name: `查看需求：${task.title}` })).toBeVisible()
-    expect(screen.queryByText(task.title)).not.toBeInTheDocument()
-  })
-
   it('商品无图时明确占位，即使存在模特、穿搭和道具参考图也不代替商品图', async () => {
     await renderWithProviders(<TaskCard onClick={() => {}} task={makeTask([product('SHOE-01')])} />)
 

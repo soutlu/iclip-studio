@@ -280,7 +280,6 @@ CALLS = [submit, get_job, call_boards, call_cut, ensure, list_models]
 CALL_IDS = ["submit", "get", "frame-boards", "grid-cuts", "breakdowns", "image-models"]
 
 
-@pytest.mark.parametrize("call", CALLS, ids=CALL_IDS)
 @pytest.mark.parametrize(
     ("status", "body"),
     [
@@ -291,30 +290,29 @@ CALL_IDS = ["submit", "get", "frame-boards", "grid-cuts", "breakdowns", "image-m
     ],
 )
 async def test_any_other_status_is_an_internal_api_error_naming_it(
-    call: Callable[[InternalApi], Awaitable[object]], status: int, body: dict[str, str]
+    status: int, body: dict[str, str]
 ) -> None:
     backend = Backend(status=status, body=body)
 
     with pytest.raises(InternalApiError) as raised:
-        await call(backend.api())
+        await HttpImageGenerations(backend.api()).submit(USER, REQUEST)
 
     assert f"答 {status}" in str(raised.value)
     assert body["detail"] in str(raised.value)
 
 
-@pytest.mark.parametrize("call", CALLS, ids=CALL_IDS)
 @pytest.mark.parametrize(
     "error",
     [httpx.ConnectError("connection refused"), httpx.ReadTimeout("timed out")],
     ids=["connect", "timeout"],
 )
 async def test_a_transport_failure_is_an_internal_api_error(
-    call: Callable[[InternalApi], Awaitable[object]], error: httpx.HTTPError
+    error: httpx.HTTPError,
 ) -> None:
     backend = Backend(raises=error)
 
     with pytest.raises(InternalApiError, match=f"连不上（{type(error).__name__}）") as raised:
-        await call(backend.api())
+        await HttpImageGenerations(backend.api()).submit(USER, REQUEST)
 
     assert raised.value.__cause__ is error
 

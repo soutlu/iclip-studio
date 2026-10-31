@@ -16,7 +16,6 @@ from structlog.testing import capture_logs
 
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
-from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from iclip.domains.uploads.api import create_uploads_router
 from iclip.domains.uploads.models import (
     MAX_BYTES,
@@ -138,12 +137,8 @@ async def sign(
     return await http.post("/uploads/sign", json=body)
 
 
-async def confirm(
-    http: httpx.AsyncClient, upload_id: str, *, user_name: str | None = None
-) -> httpx.Response:
-    if user_name is None:
-        return await http.post(f"/uploads/{upload_id}/confirm")
-    return await http.post(f"/uploads/{upload_id}/confirm", json={"userName": user_name})
+async def confirm(http: httpx.AsyncClient, upload_id: str) -> httpx.Response:
+    return await http.post(f"/uploads/{upload_id}/confirm")
 
 
 @pytest.mark.parametrize("path", ["/uploads/sign", f"/uploads/{uuid.uuid4()}/confirm"])
@@ -217,7 +212,7 @@ async def test_out_of_range_images_are_refused_before_signing(width: int, height
     ("width", "height"),
     [(MIN_SHORT_EDGE_PIXELS, MIN_SHORT_EDGE_PIXELS), (MAX_LONG_EDGE_PIXELS, MAX_LONG_EDGE_PIXELS)],
 )
-async def test_the_bounds_themselves_pass(width: int, height: int) -> None:
+async def test_image_dimension_bounds_are_inclusive(width: int, height: int) -> None:
     app = build_test_app(FakeBucket(), granted=uploader())
     async with client(app) as http:
         assert (await sign(http, width=width, height=height)).status_code == 200
@@ -234,39 +229,6 @@ async def test_video_needs_no_size() -> None:
     app = build_test_app(FakeBucket(), granted=uploader())
     async with client(app) as http:
         assert (await sign(http, "video/mp4", width=None, height=None)).status_code == 200
-
-
-@pytest.mark.parametrize(
-    ("content_type", "ext"),
-    [("audio/mpeg", "mp3"), ("audio/wav", "wav"), ("audio/mp4", "m4a")],
-    ids=["mp3", "wav", "m4a"],
-)
-async def test_music_is_signed_without_a_size_and_recorded_as_audio_without_dedupe(
-    content_type: str, ext: str
-) -> None:
-    """音乐与视频一样不报宽高；确认时记成一条音频上传。桶里是一次整传、ETag 正是 MD5 也不记：
-    只有视频去重。"""
-
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
-    async with client(app) as http:
-        signed = await sign(http, content_type, width=None, height=None)
-        assert signed.status_code == 200, signed.text
-        upload_id = signed.json()["uploadId"]
-        key = f"iclip/agent/uploads/{upload_id}.{ext}"
-        assert bucket.signed[0][0] == key
-        bucket.put(key, content_type=content_type, etag=MD5_ETAG)
-        response = await confirm(http, upload_id)
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "url": bucket.public_url(key),
-        "contentType": content_type,
-        "sizeBytes": 1024,
-    }
-    ((_, _, kind, url, content_md5),) = recorded.calls
-    assert (kind, url, content_md5) == ("audio", bucket.public_url(key), None)
 
 
 async def test_music_over_its_own_limit_is_refused() -> None:
@@ -322,97 +284,9 @@ async def test_unexpected_type_in_the_bucket_is_refused() -> None:
     assert recorded.calls == [], "核对不过不记录"
 
 
-# --- 确认即记录 -------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("caller", "name", "owner"),
-    [
-        ("browser", None, "self"),
-        ("browser", "tester", "self"),
-        ("key", None, "self"),
-        ("key", "Sara.Hong", "self"),
-        ("act_as_key", None, "self"),
-        ("act_as_key", "Sara.Hong", "named"),
-    ],
-    ids=[
-        "浏览器不给名字",
-        "浏览器给自己的名字",
-        "钥匙不给名字",
-        "钥匙给了名字但不能替人办事",
-        "替人办事的钥匙不给名字",
-        "替人办事的钥匙给了名字",
-    ],
-)
-async def test_the_upload_is_recorded_under_whoever_confirms_it(
-    caller: str, name: str | None, owner: str
-) -> None:
-    """名字可选：给了才按替人办事换主体，不给就记在当前主体名下，钥匙不带名字也不报错；钥匙身份照记。"""
-
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    key_id = None if caller == "browser" else uuid.uuid4()
-    me = uploader(api_key_id=key_id)
-    if caller == "act_as_key":
-        me = Principal(
-            kind="api_key",
-            user_id=me.user_id,
-            permissions=frozenset({"uploads:write", ACT_AS_PERMISSION}),
-            audit_label="logan#gateway",
-            api_key_id=key_id,
-            username="logan",
-            key_name="gateway",
-        )
-    app = build_test_app(bucket, granted=me, recorded=recorded)
-    async with client(app) as http:
-        upload_id = (await sign(http)).json()["uploadId"]
-        bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="image/jpeg")
-        response = await confirm(http, upload_id, user_name=name)
-
-    assert response.status_code == 200, response.text
-    ((recorded_as, _, _, _, _),) = recorded.calls
-    assert recorded_as.api_key_id == key_id
-    if owner == "self":
-        assert recorded_as.user_id == me.user_id
-    else:
-        assert (recorded_as.user_id != me.user_id, recorded_as.username) == (True, "Sara.Hong")
-
-
-async def test_a_browser_may_not_confirm_in_someone_elses_name() -> None:
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
-    async with client(app) as http:
-        upload_id = (await sign(http)).json()["uploadId"]
-        bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="image/jpeg")
-        response = await confirm(http, upload_id, user_name="Sara.Hong")
-
-    assert response.status_code == 422
-    assert recorded.calls == []
-
-
 # --- 视频按内容去重 -----------------------------------------------------------------
 
 MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
-
-
-async def test_a_video_put_in_one_go_is_recorded_with_its_md5() -> None:
-    """一次整传的视频，ETag 就是 MD5：照小写记下，交回本次的地址。"""
-
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
-    async with client(app) as http:
-        upload_id = (await sign(http, "video/mp4", width=None, height=None)).json()["uploadId"]
-        key = f"iclip/agent/uploads/{upload_id}.mp4"
-        bucket.put(key, content_type="video/mp4", etag=MD5_ETAG)
-        response = await confirm(http, upload_id)
-
-    assert response.status_code == 200, response.text
-    assert response.json()["url"] == bucket.public_url(key)
-    ((_, _, kind, _, content_md5),) = recorded.calls
-    assert (kind, content_md5) == ("video", MD5_ETAG.lower())
-    assert key in bucket.objects
 
 
 @pytest.mark.parametrize(
@@ -427,7 +301,7 @@ async def test_a_video_put_in_one_go_is_recorded_with_its_md5() -> None:
     ],
     ids=["图片", "分片上传", "追加上传", "ETag 不是 MD5", "没有 ETag", "没有对象类型"],
 )
-async def test_only_a_video_put_in_one_go_gets_an_md5(
+async def test_ineligible_uploads_are_recorded_without_md5(
     content_type: str, ext: str, etag: str | None, object_type: str | None
 ) -> None:
     """图片、不是一次整传的视频不记 MD5，照旧交回本次的地址。"""

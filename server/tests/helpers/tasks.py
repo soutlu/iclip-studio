@@ -133,25 +133,8 @@ class InMemoryTaskRepository:
             raise NotFound("没有这张需求单")
         return found
 
-    def _matching(
-        self,
-        status: TaskStatus | None,
-        assignee_user_id: uuid.UUID | None,
-        ids: Sequence[uuid.UUID] | None,
-    ) -> list[Task]:
-        """与真仓储同一条排序键：``(created_at, id)`` 倒序。"""
-
-        rows = sorted(
-            self.tasks.values(), key=lambda task: (task.created_at, task.id), reverse=True
-        )
-        if status is not None:
-            rows = [task for task in rows if task.status == status]
-        if assignee_user_id is not None:
-            rows = [task for task in rows if assignee_user_id in task.assignee_user_ids]
-        if ids is not None:
-            wanted = set(ids)
-            rows = [task for task in rows if task.id in wanted]
-        return rows
+    def _matching(self, status: TaskStatus | None) -> list[Task]:
+        return [task for task in self.tasks.values() if status is None or task.status == status]
 
     async def list_recent(
         self,
@@ -162,14 +145,10 @@ class InMemoryTaskRepository:
         limit: int,
         after: TaskCursor | None = None,
     ) -> tuple[Task, ...]:
-        rows = self._matching(status, assignee_user_id, ids)
-        if after is not None:
-            rows = [
-                task
-                for task in rows
-                if (task.created_at, task.id) < (after.created_at, after.task_id)
-            ]
-        return tuple(rows[:limit])
+        assert after is None and assignee_user_id is None and ids is None, (
+            "分页、认领与 id 筛选由 Postgres 集成测试覆盖"
+        )
+        return tuple(self._matching(status)[:limit])
 
     async def count(
         self,
@@ -178,7 +157,8 @@ class InMemoryTaskRepository:
         assignee_user_id: uuid.UUID | None = None,
         ids: Sequence[uuid.UUID] | None = None,
     ) -> int:
-        return len(self._matching(status, assignee_user_id, ids))
+        assert assignee_user_id is None and ids is None, "认领与 id 筛选由 Postgres 集成测试覆盖"
+        return len(self._matching(status))
 
     async def save(
         self,

@@ -14,7 +14,6 @@ export { useRecordOpenedConversation } from './conversations.unread'
 export { conversationStatus } from './conversation-status'
 export {
   conversationListStateSchema,
-  conversationsQueryKeys,
   refreshConversationLists,
   useStartConversation,
   useConversationAgents,

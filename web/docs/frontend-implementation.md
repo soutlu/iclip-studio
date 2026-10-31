@@ -67,6 +67,8 @@
 
 组件测试样例见 [login-form.test.tsx](../src/features/auth/components/login-form.test.tsx)。单测与被测源码同目录，使用 `*.test.ts[x]`；同一校验规则的多个分支用 `it.each` 表达。
 
+Vitest 按目录分为 Node 与 jsdom 两组，归组见 [Vitest 配置](../vitest.config.ts)。Node 组验证不依赖浏览器的纯逻辑与构建脚本；只有 jsdom 组加载组件替身和 MSW。
+
 - 按角色、可访问名或必要的 `data-testid` 定位，不依赖样式类；不把 className、style 或哈希类名作为行为断言。
 - 不写读取 Provider / Hook 内部状态再投射成 DOM 的探针组件。测试所需浏览器边界使用现有测试适配器或 `vi.stubGlobal`。
 - HTTP 使用 MSW，不手写 `fetch` stub。组件对外的回调 prop 可以用 `toHaveBeenCalledWith` / `toHaveBeenCalledTimes` 断言入参与次数；不对内部模块、Hook 或同仓函数做 spy；`toHaveBeenCalled*` 另用于剪贴板、`window.open` 等真实系统边界。

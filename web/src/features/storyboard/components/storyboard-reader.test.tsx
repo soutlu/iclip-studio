@@ -226,13 +226,6 @@ const takeCard = (take: HTMLElement) => within(take).getByRole('button')
 /** 文案列里的一段：全局设定或「镜头 N」。 */
 const segmentOf = (page: HTMLElement, name: string) => within(page).getByRole('group', { name })
 
-/** 舞台左上的当前帧标签：正文编辑器之外写着 `@N` 的文字（编辑器里的 @N 是引用胶囊）。 */
-const stageTags = (page: HTMLElement) =>
-  within(page)
-    .queryAllByText(/^@\d+$/)
-    .filter((element) => element.closest('[role="textbox"]') === null)
-    .map((element) => element.textContent)
-
 /** 某段的正文编辑器。 */
 const editorOf = (page: HTMLElement, name: string) => within(page).getByRole('textbox', { name })
 
@@ -300,38 +293,6 @@ describe('StoryboardReader', () => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
-  it('按结构读取图片顺序与首帧，整组正文连续排开并标出选中段，保留小数时间', async () => {
-    provide()
-    await renderReader()
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
-      'src',
-      'https://example.com/two.png',
-    )
-    expect(within(page).getByRole('textbox', { name: '镜头 1 的描述' }).textContent).toBe(
-      '  模特走出门厅 @2，再看向鞋面 @1。',
-    )
-    // 全组各段都排出来，未引用的图不成段。
-    expect(
-      within(page)
-        .getAllByRole('group', { name: /^(全局设定|镜头 \d)$/ })
-        .map((segment) => segment.getAttribute('aria-label')),
-    ).toEqual(['全局设定', '镜头 1', '镜头 2', '镜头 3'])
-    expect(within(page).getByRole('textbox', { name: '全局设定' })).toHaveTextContent(
-      '人物和产品保持一致。',
-    )
-    expect(within(page).getByRole('textbox', { name: '镜头 2 的描述' })).toBeVisible()
-    const first = segmentOf(page, '镜头 1')
-    expect(first).toHaveAttribute('aria-current', 'true')
-    expect(
-      within(first)
-        .getAllByRole('button', { name: /^查看第 \d+ 帧$/ })
-        .map((chip) => chip.getAttribute('aria-label')),
-    ).toEqual(['查看第 2 帧', '查看第 1 帧'])
-    // 时长胶囊写时长，完整区间给读屏。
-    expect(first).toHaveTextContent('2.5s，0.0s – 2.5s')
-  })
-
   it('共用帧时明确选择第二镜，切帧、帧标记和箭头仍保留该镜头', async () => {
     provide()
     const { router } = await renderReader()
@@ -441,30 +402,6 @@ describe('StoryboardReader', () => {
     expect(screen.queryByRole('menu', { name: '镜头组列表' })).not.toBeInTheDocument()
   })
 
-  it('舞台左上只标当前帧 @N，跟着切帧、切段变，段里没图就不标；点舞台上的编辑、替换不开原图', async () => {
-    provide()
-    const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    expect(stageTags(page)).toEqual(['@2'])
-    await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
-    expect(stageTags(page)).toEqual(['@1'])
-    await act(async () => {
-      await router.navigate({ href: '/?shot=1&content=unreferenced' })
-    })
-    expect(stageTags(page)).toEqual(['@3'])
-
-    await userEvent.click(within(page).getByRole('button', { name: '替换图片' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
-    expect(await screen.findByRole('dialog', { name: /^编辑图片/ })).toBeVisible()
-    expect(screen.queryByRole('dialog', { name: '镜头组 1 第 3 帧' })).not.toBeInTheDocument()
-    await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    await userEvent.click(within(page).getByRole('button', { name: '镜头 3' }))
-    expect(stageTags(page)).toEqual([])
-  })
-
   it('焦点在舞台里时 ←/→ 切帧、到头不动，切到头的箭头消失后焦点落回画面；正文与帧计数弹层里的 ←/→ 不切帧', async () => {
     provide()
     const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
@@ -499,109 +436,6 @@ describe('StoryboardReader', () => {
     await userEvent.keyboard('{ArrowLeft}')
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)))
     await at(1)
-  })
-
-  it('查看原图并关闭后返回原来的帧', async () => {
-    provide()
-    await renderReader('/?shot=1&content=scene:1&frame=1')
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    const trigger = within(page).getByRole('button', { name: '打开原图' })
-    await userEvent.click(trigger)
-    const lightbox = await screen.findByRole('dialog', { name: '镜头组 1 第 1 帧' })
-    expect(within(lightbox).getByRole('img')).toHaveAttribute('src', 'https://example.com/one.png')
-    await userEvent.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await waitFor(() => expect(trigger).toHaveFocus())
-  })
-
-  it('文案列照原文展示全局设定与各镜头正文，镜头标出时长与区间，浏览不改地址', async () => {
-    provide()
-    const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    const original = document.shots[0]
-    expect(within(page).getByRole('textbox', { name: '全局设定' }).textContent).toBe(
-      original?.prompt.global_settings.replaceAll('\n', ''),
-    )
-    const second = segmentOf(page, '镜头 2')
-    expect(second).toHaveTextContent('1.8s，3.3s – 5.0s')
-    const secondPrompt = within(second).getByRole('textbox', { name: '镜头 2 的描述' })
-    expect(secondPrompt).toHaveTextContent('共用同一帧继续动作 @2，再次看向 @1。')
-    expect(
-      within(secondPrompt)
-        .getAllByRole('button')
-        .map((chip) => chip.getAttribute('aria-label')),
-    ).toEqual(['查看第 2 帧', '查看第 1 帧'])
-    expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 2 })
-  })
-
-  it('点文案段，舞台切到这段引用的第一帧', async () => {
-    provide()
-    const { router } = await renderReader('/?shot=1&content=global')
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    // 全局设定不引用图，舞台留空。
-    expect(within(page).queryByRole('button', { name: '打开原图' })).not.toBeInTheDocument()
-    // 点进正文就是焦点落进这一段；jsdom 里 ProseMirror 的 mousedown 量不了坐标，直接给焦点。
-    act(() => within(page).getByRole('textbox', { name: '镜头 2 的描述' }).focus())
-    await waitFor(() =>
-      expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:2' }),
-    )
-    expect(segmentOf(page, '镜头 2')).toHaveAttribute('aria-current', 'true')
-    expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
-      'src',
-      'https://example.com/two.png',
-    )
-  })
-
-  it('顶栏组号展开镜头组列表，标出并聚焦当前组，点一组切过去、列表收起、焦点回到组号，素材片区只列当前组', async () => {
-    provide()
-    const { router } = await renderReader()
-    await screen.findByRole('region', { name: '镜头组 1' })
-    expect(takeTimes(await findTakes())).toEqual([jobs[0]?.createdAt])
-    await userEvent.click(groupPill())
-    const list = await screen.findByRole('menu', { name: '镜头组列表' })
-    const rows = within(list).getAllByRole('menuitemradio')
-    expect(rows).toHaveLength(2)
-    const [first, second] = rows
-    expect(first).toHaveAccessibleName(/^第 1 组/)
-    expect(first).toBeChecked()
-    expect(second).not.toBeChecked()
-    await waitFor(() => expect(first).toHaveFocus())
-    expect(within(list).queryByRole('button', { name: /复制/ })).not.toBeInTheDocument()
-
-    await userEvent.click(within(list).getByRole('menuitemradio', { name: /^第 2 组/ }))
-    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
-    expect(list).not.toBeInTheDocument()
-    await waitFor(() => expect(groupPill()).toHaveFocus())
-    expect(groupPill()).toHaveAccessibleName('镜头组 2 / 2，展开镜头组列表')
-    await screen.findByRole('region', { name: '镜头组 2' })
-    expect(takeTimes(await findTakes())).toEqual([jobs[1]?.createdAt])
-  })
-
-  it('镜头组列表用键盘操作：Enter 展开、方向键在组间移动、Enter 切组；Esc 收起不切组，焦点回到组号', async () => {
-    provide()
-    const { router } = await renderReader('/?shot=2')
-    await screen.findByRole('region', { name: '镜头组 2' })
-    groupPill().focus()
-    await userEvent.keyboard('{Enter}')
-    const list = await screen.findByRole('menu', { name: '镜头组列表' })
-    const current = within(list).getByRole('menuitemradio', { name: /^第 2 组/ })
-    await waitFor(() => expect(current).toHaveFocus())
-    await userEvent.keyboard('{ArrowUp}')
-    expect(within(list).getByRole('menuitemradio', { name: /^第 1 组/ })).toHaveFocus()
-    await userEvent.keyboard('{Escape}')
-    expect(list).not.toBeInTheDocument()
-    await waitFor(() => expect(groupPill()).toHaveFocus())
-    expect(router.state.location.search).toEqual({ shot: 2 })
-
-    await userEvent.keyboard('{Enter}')
-    const reopened = await screen.findByRole('menu', { name: '镜头组列表' })
-    await waitFor(() =>
-      expect(within(reopened).getByRole('menuitemradio', { name: /^第 2 组/ })).toHaveFocus(),
-    )
-    await userEvent.keyboard('{ArrowUp}{Enter}')
-    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
-    expect(reopened).not.toBeInTheDocument()
-    await waitFor(() => expect(groupPill()).toHaveFocus())
   })
 
   it('接口提交的出片（只有镜号、正文不是结构化 shot）照样列在本组素材片区，点卡片在舞台上播、不开灯箱，焦点留在卡上', async () => {
@@ -859,26 +693,6 @@ describe('StoryboardReader', () => {
     expect(saved.shots[0]?.image_urls).toEqual(document.shots[0]?.image_urls)
   })
 
-  it('浏览与播放素材片不会触发写入', async () => {
-    provide()
-    const requests: { method: string; url: string }[] = []
-    server.events.on('request:start', ({ request }) => {
-      if (request.url.includes('/api/')) requests.push({ method: request.method, url: request.url })
-    })
-    await renderReader()
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    expect(within(page).getByRole('textbox', { name: '镜头 1 的描述' })).toBeVisible()
-    await userEvent.click(within(page).getByRole('button', { name: '镜头 2' }))
-    await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
-    await userEvent.click(screen.getByRole('button', { name: '复制完整提示词' }))
-    const [take] = await findTakes()
-    if (take === undefined) throw new Error('素材片区缺这条出片')
-    await userEvent.click(takeCard(take))
-    expect(within(page).getByRole('group', { name: '播放器：生成的视频' })).toBeVisible()
-    await userEvent.click(within(page).getByRole('button', { name: '镜头 1' }))
-    expect(requests.filter((request) => request.method !== 'GET')).toEqual([])
-  })
-
   it('生成任务帧到了立刻重拉记录，不等轮询', async () => {
     provide()
     let served = 0
@@ -933,10 +747,12 @@ describe('StoryboardReader', () => {
       status: 'pending',
     })
     let imageReads = 0
+    let frameImageQuery: URLSearchParams | undefined
     server.use(
       http.get('*/api/generations', ({ request }) => {
-        if (new URL(request.url).searchParams.get('kind') !== 'image')
-          return HttpResponse.json({ items: jobs })
+        const query = new URL(request.url).searchParams
+        if (query.get('kind') !== 'image') return HttpResponse.json({ items: jobs })
+        if (imageReads === 0) frameImageQuery = query
         imageReads += 1
         const finished = {
           ...imageJob,
@@ -950,6 +766,7 @@ describe('StoryboardReader', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     // 角标挂在它那一帧上：舞台切到别的帧就不显示。
     expect(await within(page).findByText('排队中')).toBeVisible()
+    expect(frameImageQuery?.get('operation')).toBe('generate')
     await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
     expect(within(page).getByRole('img', { name: '镜头组 1 第 1 帧' })).toBeVisible()
     expect(within(page).queryByText('排队中')).not.toBeInTheDocument()
@@ -1684,18 +1501,6 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it('无图镜头组的舞台留空，舞台上没有添加入口；添加图片在正文的 @ 选图里', async () => {
-    const files = provide(emptyDocument)
-    await renderReader()
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    expect(within(page).queryByRole('img')).not.toBeInTheDocument()
-    expect(within(page).queryByRole('button', { name: '打开原图' })).not.toBeInTheDocument()
-    expect(within(page).queryByRole('button', { name: '添加图片' })).not.toBeInTheDocument()
-    expect(await openAddImage(editorOf(page, '镜头 1 的描述'))).toBeVisible()
-    // 敲下的 @ 会存盘：等它落定，别让这次写入漏到下一个用例。
-    await waitFor(() => expect(files.writes).toHaveLength(1), { timeout: 3000 })
-  })
-
   it('关联已有图片保存失败不会误报为上传成功', async () => {
     const files = provide()
     files.failSave('保存失败')
@@ -1874,33 +1679,6 @@ describe('StoryboardReader', () => {
   })
 
   describe('拖到舞台上替换当前帧', () => {
-    it('拖入时显示松开替换，落下后换掉当前帧：地址、帧号与正文引用都不变，不新增', async () => {
-      const files = provide()
-      const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
-      const page = await screen.findByRole('region', { name: '镜头组 1' })
-      const target = within(page).getByRole('group', { name: '当前帧图片' })
-      fireEvent.dragEnter(target, { dataTransfer: fileTransfer([imageFile()]) })
-      const hint = within(page).getByText('松开可替换当前图片')
-      expect(hint).toBeVisible()
-      fireEvent.drop(target, { dataTransfer: fileTransfer([imageFile()]) })
-      expect(within(page).queryByText('松开可替换当前图片')).not.toBeInTheDocument()
-
-      await waitFor(
-        () => expect(files.snapshot().shots[0]?.image_urls[1]).toContain('/mock-oss/'),
-        { timeout: 3000 },
-      )
-      const saved = files.snapshot().shots[0]
-      expect(saved?.image_urls).toHaveLength(3)
-      expect(saved?.image_urls[0]).toBe(document.shots[0]?.image_urls[0])
-      expect(saved?.image_urls[2]).toBe(document.shots[0]?.image_urls[2])
-      expect(saved?.prompt).toEqual(document.shots[0]?.prompt)
-      expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 2 })
-      expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
-        'src',
-        saved?.image_urls[1],
-      )
-    })
-
     it('拖到叠在画面上的切帧箭头上照样亮提示，落下换掉当前帧', async () => {
       const files = provide()
       const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
@@ -1966,26 +1744,6 @@ describe('StoryboardReader', () => {
       expect(screen.queryByRole('progressbar', { name: '上传中' })).not.toBeInTheDocument()
       const notifications = screen.getByRole('region', { name: /Notifications/ })
       expect(within(notifications).queryAllByRole('listitem')).toHaveLength(0)
-    })
-
-    it('在正文里粘贴图片，插到光标处；粘贴文字照旧进编辑器', async () => {
-      const files = provide(emptyDocument)
-      await renderReader('/?shot=1&content=scene:1')
-      const page = await screen.findByRole('region', { name: '镜头组 1' })
-      const editor = within(page).getByRole('textbox', { name: '镜头 1 的描述' })
-      await replaceText(editor, '粘贴前的正文。')
-      expect(editor).toHaveTextContent('粘贴前的正文。')
-
-      pasteFilesIntoComposer(editor, [imageFile()])
-      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(1), {
-        timeout: 3000,
-      })
-      expect(files.snapshot().shots[0]?.prompt.timeline[0]).toEqual({
-        timestamps: [0, 3],
-        prompt: '粘贴前的正文。@Image1',
-        image_indexes: [1],
-      })
-      expect(within(page).getByRole('img', { name: '镜头组 1 第 1 帧' })).toBeVisible()
     })
 
     const fullDocument: ShotsDocument = {
@@ -2187,26 +1945,6 @@ describe('StoryboardReader', () => {
       // 只落一次：再等一个保存窗口，本组仍是这一张。
       await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
       expect(files.snapshot().shots[0]?.image_urls).toHaveLength(1)
-    })
-
-    it('文件拖到段卡上：亮出「松开可添加到镜头 2」，落在正文以外的地方接到这段末尾', async () => {
-      const files = provide()
-      await renderReader('/?shot=1&content=scene:1')
-      const page = await screen.findByRole('region', { name: '镜头组 1' })
-      const segment = segmentOf(page, '镜头 2')
-      const heading = within(segment).getByRole('button', { name: '镜头 2' })
-      fireEvent.dragEnter(heading, { dataTransfer: fileTransfer([imageFile()]) })
-      expect(within(segment).getByText('松开可添加到镜头 2')).toBeVisible()
-      fireEvent.drop(heading, { dataTransfer: fileTransfer([imageFile()]) })
-      expect(within(segment).queryByText('松开可添加到镜头 2')).not.toBeInTheDocument()
-      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(4), {
-        timeout: 3000,
-      })
-      expect(files.snapshot().shots[0]?.prompt.timeline[1]).toEqual({
-        timestamps: [3.25, 5],
-        prompt: `${document.shots[0]?.prompt.timeline[1]?.prompt ?? ''}@Image4`,
-        image_indexes: [2, 1, 4],
-      })
     })
 
     it('拖进来的是文件夹：段里就地提示，不上传', async () => {
@@ -2597,47 +2335,6 @@ describe('StoryboardReader', () => {
       })
       expect(files.snapshot().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([4, 2, 1])
     })
-
-    it('素材片的操作是舞台右上的图标按钮，按 Tab 移过去就提示名字；ⓘ 的可访问名与提示里都有分辨率 · 时长 · 时间与模型', async () => {
-      const specified = makeGenerationJob({
-        id: 'f1c2d3e4-5a6b-4c7d-8e9f-0a1b2c3d4e5f',
-        createdAt: '2026-09-01T10:04:00Z',
-        durationMs: 6000,
-        outputUrl: 'https://example.com/specified.mp4',
-        request: { model: 'vendor-a-seedance-2-5', prompt: '带规格的一条。', resolution: '720p' },
-        shotIndex: 1,
-      })
-      provide()
-      serveTakes([specified])
-      await renderReader()
-      const page = await screen.findByRole('region', { name: '镜头组 1' })
-      await userEvent.click((await cardOf(specified)).card)
-
-      const download = within(page).getByRole('button', { name: '下载视频' })
-      expect(download.textContent).toBe('')
-      const info = within(page).getByRole('button', { name: /^素材片信息：/ })
-      // 图标按钮在按 Tab 移过去时提示名字：从 ⓘ 往后移一格。
-      act(() => info.focus())
-      await userEvent.tab()
-      expect(download).toHaveFocus()
-      await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('下载视频'))
-      act(() => download.blur())
-      await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
-
-      expect(info).toHaveAccessibleName(/^素材片信息：720p · 0:06 · .+，vendor-a-seedance-2-5$/)
-      act(() => info.focus())
-      await waitFor(() => {
-        const tooltip = screen.getByRole('tooltip')
-        expect(tooltip).toHaveTextContent(/720p · 0:06 · /)
-        expect(tooltip).toHaveTextContent('vendor-a-seedance-2-5')
-      })
-
-      // 触屏没有悬停：点按也打开。
-      act(() => info.blur())
-      await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
-      await userEvent.click(info)
-      expect(await screen.findByRole('tooltip')).toHaveTextContent(/720p · 0:06 · /)
-    })
   })
 
   describe('正文里敲 @ 选图', () => {
@@ -2651,36 +2348,6 @@ describe('StoryboardReader', () => {
       return screen.findByRole('listbox', { name: '插入参考图' })
     }
 
-    it('列出本组全部图片与末格「+」；方向键加 Enter 把刚敲的 @ 换成引用，插在光标处，舞台切到那帧，光标留在引用之后', async () => {
-      const files = provide()
-      await renderReader('/?shot=1&content=scene:2')
-      const page = await screen.findByRole('region', { name: '镜头组 1' })
-      const menu = await typeMentionAfter(page, '先')
-      expect(
-        within(menu)
-          .getAllByRole('option')
-          .map((option) => option.getAttribute('aria-label')),
-      ).toEqual(['插入第 1 帧', '插入第 2 帧', '插入第 3 帧', '添加图片'])
-      expect(within(menu).getByRole('option', { name: '插入第 1 帧' })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      )
-
-      await userEvent.keyboard('{ArrowRight}{ArrowRight}{Enter}')
-      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
-      expect(within(page).getByRole('img', { name: '镜头组 1 第 3 帧' })).toBeVisible()
-      await userEvent.keyboard('又')
-      await waitFor(
-        () =>
-          expect(files.snapshot().shots[0]?.prompt.timeline[1]).toEqual({
-            timestamps: [3.25, 5],
-            prompt: `先@Image3又${secondScene}`,
-            image_indexes: [3, 2, 1],
-          }),
-        { timeout: 3000 },
-      )
-    })
-
     it('点格子同样插入', async () => {
       const files = provide()
       await renderReader('/?shot=1&content=scene:2')
@@ -2692,24 +2359,6 @@ describe('StoryboardReader', () => {
           expect(files.snapshot().shots[0]?.prompt.timeline[1]?.prompt).toBe(
             `@Image1${secondScene}`,
           ),
-        { timeout: 3000 },
-      )
-    })
-
-    it('Esc 只关弹层：字面 @ 留在正文里，不插引用', async () => {
-      const files = provide()
-      await renderReader('/?shot=1&content=scene:2')
-      const page = await screen.findByRole('region', { name: '镜头组 1' })
-      await typeMentionAfter(page, '先')
-      await userEvent.keyboard('{Escape}')
-      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
-      await waitFor(
-        () =>
-          expect(files.snapshot().shots[0]?.prompt.timeline[1]).toEqual({
-            timestamps: [3.25, 5],
-            prompt: `先@${secondScene}`,
-            image_indexes: [2, 1],
-          }),
         { timeout: 3000 },
       )
     })

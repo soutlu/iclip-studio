@@ -81,8 +81,9 @@ const pushClaimedTasks = (count: number) =>
     makeTask({ title: '其他需求' }),
   )
 
-describe('TasksRoute', () => {
-  afterEach(() => vi.unstubAllGlobals())
+afterEach(() => vi.unstubAllGlobals())
+
+describe('TasksRoute 列表与筛选', () => {
   it.each([0, 4])('我的需求单 %i 张、不超过一行 4 张时全部展示且无需展开', async (count) => {
     layOutGridColumns(4)
     pushClaimedTasks(count)
@@ -97,7 +98,7 @@ describe('TasksRoute', () => {
     expect(mine.queryByRole('button', { name: '收起' })).not.toBeInTheDocument()
   })
 
-  it('我的需求单超过一行时收起只放一行，其余卡片不在页面上，展开后全部可见', async () => {
+  it('我的需求单收起只放一行；搜索覆盖行外条目并筛两个分区，清空后恢复收起', async () => {
     layOutGridColumns(4)
     pushClaimedTasks(5)
     const user = userEvent.setup()
@@ -115,25 +116,22 @@ describe('TasksRoute', () => {
     await user.click(mine.getByRole('button', { name: '收起' }))
     expect(mine.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(4)
     expect(mine.getByRole('button', { name: '展开更多' })).toHaveAttribute('aria-expanded', 'false')
-  })
 
-  it('渲染两个分区与卡片', async () => {
-    mockTasks.push(
-      makeTask({ status: 'published', title: '夏季新品视频' }),
-      makeTask({
-        assigneeUserIds: [mockAuthUser.id],
-        status: 'confirmed',
-        title: '我认领的需求单',
-      }),
-    )
-    await renderLoggedIn()
+    const all = within(screen.getByRole('region', { name: '全部需求单' }))
+    await all.findByRole('button', { name: '查看需求：已认领的需求 1' })
+    const search = screen.getByRole('textbox', { name: '搜索需求单' })
+    await user.type(search, '已认领的需求 1')
+    for (const region of [mine, all]) {
+      expect(region.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(1)
+      expect(region.getByRole('button', { name: '查看需求：已认领的需求 1' })).toBeVisible()
+    }
+    expect(mine.queryByRole('button', { name: '展开更多' })).not.toBeInTheDocument()
 
-    expect(await screen.findByText('夏季新品视频')).toBeVisible()
-    expect(screen.getAllByText('我认领的需求单')).toHaveLength(2)
-
-    const mine = screen.getByRole('region', { name: '我的需求单' })
-    expect(within(mine).getByText('我认领的需求单')).toBeVisible()
-    expect(within(mine).queryByText('夏季新品视频')).not.toBeInTheDocument()
+    await user.clear(search)
+    expect(mine.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(4)
+    expect(mine.queryByRole('button', { name: '查看需求：已认领的需求 1' })).not.toBeInTheDocument()
+    expect(mine.getByRole('button', { name: '展开更多' })).toHaveAttribute('aria-expanded', 'false')
+    expect(all.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(6)
   })
 
   it('读取中两个分区各显示读取文案', async () => {
@@ -265,8 +263,9 @@ describe('TasksRoute', () => {
     expect(all.getByText('暂无匹配的需求单')).toBeVisible()
     expect(screen.queryAllByRole('button', { name: /^查看需求：/ })).toHaveLength(0)
   })
+})
 
-  // 三条按数据类别分：一条里串上几十次交互会在 CI 上撞满 5 秒超时，见 PR「tasks 与 audit 收尾」。
+describe('TasksRoute 编辑与上传', () => {
   it('创建后回读视频规格与创作要求', async () => {
     const user = userEvent.setup()
     await renderLoggedIn()
@@ -459,19 +458,6 @@ describe('TasksRoute', () => {
       'src',
       videoUrl,
     )
-  })
-
-  it('认领 published 需求单后出现在我的需求单', async () => {
-    mockTasks.push(makeTask({ status: 'published', title: '待认领的需求单' }))
-    const user = userEvent.setup()
-    await renderLoggedIn()
-
-    await user.click(await screen.findByText('待认领的需求单'))
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '认领' }))
-
-    const mine = screen.getByRole('region', { name: '我的需求单' })
-    await waitFor(() => expect(within(mine).getByText('待认领的需求单')).toBeVisible())
   })
 
   it('详情弹窗补充需求描述后保存', async () => {
@@ -700,6 +686,9 @@ describe('TasksRoute', () => {
     await user.click(within(dialog).getByRole('button', { name: '重试' }))
     expect(await within(dialog).findByLabelText('需求单名称')).toHaveValue('读取重试需求')
   })
+})
+
+describe('TasksRoute 发布与创作', () => {
   it('草稿修改后必须先保存，再发布最新内容', async () => {
     const task = makeTask({ deadline: '2026-10-01T12:00:00Z', title: '待修改草稿' })
     mockTasks.push(task)

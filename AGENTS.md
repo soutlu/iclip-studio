@@ -117,5 +117,5 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 | [design-system.html](design-system.html) | 修改 token 或界面样式前 | 基础 token 变化时更新 |
 | [web/README.md](web/README.md) | 启动前端前 | 前端启动参数变化时更新 |
 | [web/docs/frontend-implementation.md](web/docs/frontend-implementation.md) | 写或改前端组件与测试前 | 前端实现与测试约定变化时更新 |
-| [docs/test-design.md](docs/test-design.md) | 写或改后端测试前 | 后端测试分层、边界和环境变化时更新 |
+| [docs/test-design.md](docs/test-design.md) | 调整测试分层、分组或 Python 测试前 | 模块验证责任、测试分层、夹具与环境变化时更新 |
 | [docs/tool-design.md](docs/tool-design.md) | 改 Agent 工具的名称、描述、参数前 | Agent 工具面向模型的接口与文字规范变化时更新 |

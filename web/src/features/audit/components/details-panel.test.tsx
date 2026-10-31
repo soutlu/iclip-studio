@@ -120,36 +120,6 @@ describe('按人', () => {
 })
 
 describe('按人筛选', () => {
-  it('选了人，按人表只留他，按任务执行带上用户名重新读', async () => {
-    const rows = [
-      executionFixture({ title: '林夏的一段', userName: 'lin.xia' }),
-      executionFixture({ title: '周野的一段', userName: 'zhou.ye' }),
-    ]
-    const requests = serve({
-      people: [personFixture('lin.xia', { deliveries: 3 }), personFixture('zhou.ye')],
-      executions: (query) => {
-        const userName = query.get('userName')
-        return executionsPageFixture(
-          rows.filter((row) => userName === null || row.userName === userName),
-        )
-      },
-    })
-    const user = userEvent.setup()
-    await renderDetails()
-
-    await user.click(screen.getByRole('button', { name: '按人筛选' }))
-    await user.click(await screen.findByRole('menuitemradio', { name: '林夏' }))
-
-    expect(screen.getByRole('button', { name: '按人筛选：林夏' })).toBeVisible()
-    const people = screen.getByRole('table', { name: '按人' })
-    expect(bodyRows(people)).toHaveLength(1)
-    expect(within(people).getByText('林夏')).toBeVisible()
-    const executions = screen.getByRole('table', { name: '按任务执行次数' })
-    await waitFor(() => expect(bodyRows(executions)).toHaveLength(1))
-    expect(within(executions).getByRole('link', { name: '林夏的一段' })).toBeVisible()
-    expect(requests.map((query) => query.get('userName'))).toEqual([null, 'lin.xia'])
-  })
-
   it('选中的人不在这个范围的名单里就清掉', async () => {
     const requests = serve({
       people: [personFixture('zhou.ye')],

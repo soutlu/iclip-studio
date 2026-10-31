@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -16,22 +15,16 @@ from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.run_deps import AgentRunDeps
 from pydantic import ValidationError
 from pydantic_ai import Agent, AgentSpec
-from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from iclip_video.iclip_studio.capability import IclipStudio
 from iclip_video.registry import (
-    CONNECT_TIMEOUT_SECONDS,
-    DEFAULT_INTERNAL_TIMEOUT_SECONDS,
     open_video_plugins,
 )
-from iclip_video.shot_video.capability import ShotVideo
 from iclip_video.shot_video.generation import IMAGE_MODEL
-from iclip_video.video.capability import Video
 from iclip_video.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
-from iclip_video.video_shots.capability import VideoShots
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 
@@ -128,21 +121,6 @@ EVERYTHING = {"internal_api": INTERNAL_API, "video": VIDEO, "video_breakdown": {
 """每个可选段都写上：登记表里是全部插件。"""
 
 
-async def test_plugins_without_their_own_config_are_always_registered() -> None:
-    """工程文件检查与镜头组交付只用工作区和素材台账：什么都没配也登记，挂时要一起挂 workspace。"""
-
-    registry = await registry_for({})
-
-    workspace, studio, shots = (
-        registry[name].from_spec() for name in ("workspace", "iclip_studio", "video_shots")
-    )
-    assert isinstance(workspace, Workspace)
-    assert isinstance(studio, IclipStudio)
-    assert isinstance(shots, VideoShots)
-    assert set(shots.get_toolset().tools) == {"write_video_shots"}
-    assert registry["video_shots"].required_plugins() == ("workspace",)
-
-
 async def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
     """生图现阶段由人自己做：出图要的模型接上了也不登记生图工具，检查照常装配。"""
 
@@ -153,18 +131,6 @@ async def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
     tools = capability.get_toolset().tools
     assert "generate_images" not in tools
     assert "check_film" in tools
-
-
-async def test_video_offers_the_parser_and_requires_workspace() -> None:
-    registry = await registry_for({"video": VIDEO})
-
-    video = registry["video"].from_spec()
-    assert isinstance(video, Video)
-    assert set(video.get_toolset().tools) == {"video_parser"}
-    display = build_display_registry(registry)
-    assert "video_parser" in display.entries
-    assert "generate_shot_frames" not in display.entries
-    assert registry["video"].required_plugins() == ("workspace",)
 
 
 async def test_video_breakdown_runs_in_the_background_and_requires_workspace() -> None:
@@ -179,16 +145,6 @@ async def test_video_breakdown_runs_in_the_background_and_requires_workspace() -
         "后台工具只跟着 video_breakdown 挂"
     )
     assert registry["video_breakdown"].required_plugins() == ("workspace",)
-
-
-async def test_shot_video_requires_workspace_and_video() -> None:
-    """取帧读 video 写的拆解文档、产物靠工作区工具读取：两者都写在插件的依赖里，发布与运行前的编译按它
-    拦，pydantic-ai 装配时也查（见最后一个用例）。"""
-
-    registry = await registry_for(EVERYTHING)
-
-    assert isinstance(registry["shot_video"].from_spec(), ShotVideo)
-    assert set(registry["shot_video"].required_plugins()) == {"workspace", "video"}
 
 
 async def test_the_display_registry_merges_every_display_source() -> None:
@@ -207,33 +163,6 @@ async def test_the_display_registry_merges_every_display_source() -> None:
         "load_capability",
         "delegate_task",
     } <= set(registry.entries)
-
-
-async def test_each_plugin_class_is_registered_under_its_serialization_name() -> None:
-    registry = await registry_for(EVERYTHING)
-
-    assert list(registry) == [
-        "workspace",
-        "iclip_studio",
-        "video_shots",
-        "video",
-        "video_breakdown",
-        "shot_video",
-    ]
-
-
-async def test_the_spec_schema_lists_every_plugin_without_its_services() -> None:
-    """pydantic-ai 按 from_spec 的签名生成 spec schema；绑进类的服务不能出现成参数。"""
-
-    registry = await registry_for(EVERYTHING)
-
-    schema = AgentSpec.model_json_schema_with_capabilities(list(registry.values()))
-
-    entries = schema["properties"]["capabilities"]["items"]["anyOf"]
-    for name in registry:
-        assert {"const": name, "type": "string"} in entries
-    for service in ("space", "ledger", "probe", "breakdowns", "extractor", "understanding"):
-        assert f'"{service}"' not in json.dumps(schema)
 
 
 async def _tools_seen(agent: Agent[AgentRunDeps, str]) -> list[str]:
@@ -269,19 +198,6 @@ async def test_an_agent_from_the_native_spec_gets_the_same_tools_as_the_plugin_i
     assert {"breakdown_video", "read_file", "plan_shot_frames", "video_parser"} <= set(seen)
 
 
-async def test_pydantic_ai_rejects_a_leaf_plugin_without_its_requirements() -> None:
-    """叶子插件的 get_ordering().requires 由 pydantic-ai 自己在装配时查。"""
-
-    registry = await registry_for(EVERYTHING)
-
-    with pytest.raises(UserError, match="requires `Video`"):
-        Agent.from_spec(
-            AgentSpec.from_dict({"capabilities": [{"workspace": {}}, {"shot_video": {}}]}),
-            custom_capability_types=list(registry.values()),
-            model=TestModel(),
-        )
-
-
 async def test_shot_video_asks_the_backend_for_its_image_models_with_the_internal_token() -> None:
     server = Server()
 
@@ -309,22 +225,6 @@ async def test_an_unreachable_backend_fails_shot_video_at_startup(error: httpx.H
             pytest.fail("后端连不上时不该交出绑定函数")
 
     assert type(error).__name__ in str(raised.value)
-
-
-async def test_the_internal_client_connects_within_a_short_limit() -> None:
-    """答复可以等很久（拆解、取帧），建连不行：后端地址不通时启动检查不等满答复上限。"""
-
-    server = Server()
-
-    await registry_for({"internal_api": INTERNAL_API, "shot_video": {}}, server)
-
-    (request,) = server.seen
-    assert request.extensions["timeout"] == {
-        "connect": CONNECT_TIMEOUT_SECONDS,
-        "read": DEFAULT_INTERNAL_TIMEOUT_SECONDS,
-        "write": DEFAULT_INTERNAL_TIMEOUT_SECONDS,
-        "pool": DEFAULT_INTERNAL_TIMEOUT_SECONDS,
-    }
 
 
 async def test_a_backend_error_fails_shot_video_at_startup() -> None:

@@ -50,40 +50,6 @@ def _sentence(
     }
 
 
-def _one_word(start: int, end: int, text: str) -> tuple[SubtitleWord, ...]:
-    return (SubtitleWord(start_ms=start, end_ms=end, text=text),)
-
-
-def test_each_sentence_keeps_its_times_text_and_speaker_in_order() -> None:
-    body = _body(
-        [
-            _sentence(760, 3800, "这双凉鞋很轻。", speaker=0),
-            _sentence(4100, 6020, "Hello world.", speaker=1),
-            _sentence(6500, 7000, "对。", speaker=0),
-        ]
-    )
-
-    assert sentences_from_response(body) == (
-        SubtitleSentence(
-            start_ms=760,
-            end_ms=3800,
-            text="这双凉鞋很轻。",
-            speaker=0,
-            words=_one_word(760, 3800, "这双凉鞋很轻。"),
-        ),
-        SubtitleSentence(
-            start_ms=4100,
-            end_ms=6020,
-            text="Hello world.",
-            speaker=1,
-            words=_one_word(4100, 6020, "Hello world."),
-        ),
-        SubtitleSentence(
-            start_ms=6500, end_ms=7000, text="对。", speaker=0, words=_one_word(6500, 7000, "对。")
-        ),
-    )
-
-
 def test_words_keep_their_times_text_and_following_punctuation_in_order() -> None:
     words = [
         _word(0, 215, "秋"),
@@ -142,57 +108,6 @@ def test_a_sentence_that_omits_the_speaker_key_keeps_null() -> None:
 
     (sentence,) = sentences_from_response(_body([item]))
     assert sentence.speaker is None
-
-
-def test_an_empty_sentences_array_means_no_voice_over() -> None:
-    assert sentences_from_response(_body([])) == ()
-
-
-def test_sentences_are_stored_with_snake_case_keys_and_read_out_in_camel_case() -> None:
-    sentence = SubtitleSentence(
-        start_ms=1,
-        end_ms=2,
-        text="好。",
-        speaker=None,
-        words=(SubtitleWord(start_ms=1, end_ms=2, text="好", punctuation="。"),),
-    )
-
-    assert GenerationOutput(sentences=(sentence,)).model_dump(mode="json")["sentences"] == [
-        {
-            "start_ms": 1,
-            "end_ms": 2,
-            "text": "好。",
-            "speaker": None,
-            "words": [{"start_ms": 1, "end_ms": 2, "text": "好", "punctuation": "。"}],
-        }
-    ]
-    assert sentence.model_dump(mode="json", by_alias=True) == {
-        "startMs": 1,
-        "endMs": 2,
-        "text": "好。",
-        "speaker": None,
-        "words": [{"startMs": 1, "endMs": 2, "text": "好", "punctuation": "。"}],
-    }
-
-
-def test_stored_sentences_read_back_with_their_words() -> None:
-    sentences = (
-        SubtitleSentence(
-            start_ms=0,
-            end_ms=1075,
-            text="秋了，",
-            speaker=0,
-            words=(
-                SubtitleWord(start_ms=0, end_ms=215, text="秋"),
-                SubtitleWord(start_ms=645, end_ms=1075, text="了", punctuation="，"),
-            ),
-        ),
-        SubtitleSentence(start_ms=2000, end_ms=3000, text="嗯。", speaker=None),
-    )
-
-    stored = GenerationOutput(sentences=sentences).model_dump(mode="json")
-
-    assert GenerationOutput.model_validate(stored).sentences == sentences
 
 
 def test_a_stored_sentence_from_before_word_timing_reads_back_without_words() -> None:

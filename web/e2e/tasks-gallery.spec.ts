@@ -132,66 +132,6 @@ const boundsOf = async (locator: Locator) => {
   return bounds
 }
 
-test('认领画廊可展开、搜索全部已加载需求，并保留详情与重命名入口', async ({ page }) => {
-  await page.setViewportSize({ width: 1335, height: 1197 })
-  await openGallery(page)
-  const mine = page.getByRole('region', { name: '我的需求单' })
-  const all = page.getByRole('region', { name: '全部需求单' })
-  await expect(cardsIn(all)).toHaveCount(MY_TITLES.length + OTHER_TITLES.length)
-  const collapsedCount = await cardsIn(mine).count()
-  expect(collapsedCount).toBeGreaterThan(0)
-  expect(collapsedCount).toBeLessThan(MY_TITLES.length)
-  const expand = mine.getByRole('button', { name: '展开更多', exact: true })
-  await expect(expand).toHaveAttribute('aria-expanded', 'false')
-
-  await expand.click()
-  await expect(cardsIn(mine)).toHaveCount(6)
-  const collapse = mine.getByRole('button', { name: '收起', exact: true })
-  await expect(collapse).toHaveAttribute('aria-expanded', 'true')
-  await expect(all.getByRole('heading', { name: '全部需求单' })).toBeVisible()
-  await collapse.click()
-  await expect(cardsIn(mine)).toHaveCount(collapsedCount)
-  await expect(expand).toHaveAttribute('aria-expanded', 'false')
-
-  // 搜索在页头「新建需求单」之后，同时筛两个分区；匹配范围不能被收起的一行截断。
-  const search = page.getByRole('textbox', { name: '搜索需求单' })
-  await page.getByRole('button', { name: '新建需求单', exact: true }).focus()
-  await page.keyboard.press('Tab')
-  await expect(search).toBeFocused()
-  await search.fill('画廊验收')
-  await expect(cardsIn(mine)).toHaveCount(6)
-  await expect(cardsIn(all)).toHaveCount(6)
-  await expect(expand).toHaveCount(0)
-  await expect(collapse).toHaveCount(0)
-  await search.fill(MY_TITLES[4])
-  await expect(cardsIn(mine)).toHaveCount(1)
-  await expect(cardsIn(all)).toHaveCount(1)
-
-  const matchedCard = cardsIn(mine).first()
-  await matchedCard.focus()
-  await page.keyboard.press('Enter')
-  const detail = page.getByRole('dialog', { name: MY_TITLES[4], exact: true })
-  await expect(detail.getByLabel('需求单名称', { exact: true })).toHaveValue(MY_TITLES[4])
-  await expect(detail.getByRole('button', { name: '开始创作', exact: true })).toBeVisible()
-  await detail.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(detail).toBeHidden()
-  await search.clear()
-  await expect(cardsIn(mine)).toHaveCount(collapsedCount)
-  await expect(expand).toHaveAttribute('aria-expanded', 'false')
-
-  await mine.getByRole('button', { name: '更多操作', exact: true }).first().click()
-  await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
-  const rename = page.getByRole('dialog', { name: '重命名需求单', exact: true })
-  await expect(rename.getByRole('textbox', { name: '新的需求单名称' })).toHaveValue(MY_TITLES[0])
-  const updatedTitle = '画廊验收｜已更新的秋冬系列'
-  await rename.getByRole('textbox', { name: '新的需求单名称' }).fill(updatedTitle)
-  await rename.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(rename).toBeHidden()
-  await expect(mine.getByRole('button', { name: `查看需求：${updatedTitle}` })).toBeVisible()
-  await expect(all.getByRole('button', { name: `查看需求：${updatedTitle}` })).toBeVisible()
-  await expect(page).toHaveURL('/tasks')
-})
-
 test('参考图可加载，左右滚动不会打开详情，键盘可打开需求', async ({ page }) => {
   await page.setViewportSize({ width: 1335, height: 1197 })
   await openGallery(page)

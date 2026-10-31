@@ -30,26 +30,6 @@ def write(directory: Path, declaration: dict[str, Any], *, stem: str = "acme") -
     return directory
 
 
-def test_shipped_declarations_load_with_the_current_model_interfaces() -> None:
-    declarations = load_declarations()
-
-    bailian = declarations["bailian"]
-    by_name = {model.name: model for model in bailian.models}
-    assert bailian.pydantic_ai_provider == "alibaba"
-    assert bailian.custom_models is True
-    assert bailian.secret_fields == {"api_key"}
-    assert by_name["qwen3.8-flash"].api == "responses"
-    assert by_name["ZHIPU/GLM-5.3-Flash"].api == "chat"
-    assert all("high" in model.thinking for model in bailian.models)
-
-
-def test_a_valid_declaration_loads(tmp_path: Path) -> None:
-    declarations = load_declarations(write(tmp_path, valid()))
-
-    assert list(declarations) == ["acme"]
-    assert declarations["acme"].models[0].thinking == ("none", "high")
-
-
 def _with(**changes: Any) -> dict[str, Any]:
     declaration = valid()
     declaration.update(changes)

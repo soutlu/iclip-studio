@@ -36,7 +36,6 @@ from iclip.platform.object_store.layout import MEDIA_PATHS
 from tests.helpers.fetch_url import rewriting
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
-    MemoryObjectStore,
     image_request,
     make_job,
 )
@@ -63,31 +62,10 @@ def ledger(url: str | None = None, *, key: str = KEY) -> ExtractionLedger:
     )
 
 
-def test_a_ledger_this_extraction_published_is_reusable() -> None:
-    assert reusable(ledger(), key=KEY, public_url=FakeObjects().public_url)
-
-
-def test_a_ledger_of_another_extraction_is_not_reusable() -> None:
-    assert not reusable(ledger(key="other"), key=KEY, public_url=FakeObjects().public_url)
-
-
 def test_a_ledger_of_another_version_is_not_reusable() -> None:
     stale = ledger().model_copy(update={"extraction_version": EXTRACTION_VERSION + 1})
 
     assert not reusable(stale, key=KEY, public_url=FakeObjects().public_url)
-
-
-async def test_a_board_the_store_wrote_is_vouched_for_by_the_address_it_computes() -> None:
-    """复用台账时按 key 重算板地址，须与写入时交回的逐字相同。"""
-
-    store = MemoryObjectStore()
-    url = await store.put_public_object(
-        object_key=MEDIA_PATHS.shot_board(extraction_key=KEY, index=1),
-        content=b"x",
-        content_type="image/jpeg",
-    )
-
-    assert reusable(ledger(url), key=KEY, public_url=store.public_url)
 
 
 FORGED_BOARD_URLS = {

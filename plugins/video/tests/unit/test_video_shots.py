@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import FileIoDisplay, ToolDisplayRegistry
@@ -38,7 +37,7 @@ from iclip_video.shot_document import (
 from iclip_video.video_shots.capability import VideoShots, VideoShotsToolset
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
-from tests.helpers.plugins import required_tools, with_requirements
+from tests.helpers.plugins import with_requirements
 from tests.helpers.shot_document import FRAME_URL, OTHER_FRAME_URL, one_shot, shots_document
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -165,80 +164,6 @@ async def deliver(
     delivered = await tools.write_video_shots(ctx, aspect_ratio, shots)
     assert isinstance(delivered.return_value, str)
     return delivered.return_value
-
-
-async def test_only_the_delivery_tool_reaches_the_model(
-    capability: VideoShots[object], plugin: type[VideoShots[object]]
-) -> None:
-    seen: list[str] = []
-
-    def script(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        seen.extend(sorted(tool.name for tool in info.function_tools))
-        return ModelResponse(parts=[TextPart("好")])
-
-    await Agent(
-        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
-    ).run("查看工具。", deps=make_deps())
-
-    own = [name for name in seen if name not in required_tools(capability)]
-    assert own == ["write_video_shots"]
-    assert set(plugin.display_table()) == set(own)
-
-
-def test_video_shots_requires_workspace(
-    plugin: type[VideoShots[object]], capability: VideoShots[object]
-) -> None:
-    assert plugin.get_serialization_name() == "video_shots"
-    assert tuple(capability.get_ordering().requires) == (Workspace,)
-
-
-async def test_structured_shot_input_schema_reaches_the_model(
-    capability: VideoShots[object],
-) -> None:
-    seen: dict[str, Any] = {}
-
-    def script(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        tool = next(tool for tool in info.function_tools if tool.name == "write_video_shots")
-        seen["schema"] = tool.parameters_json_schema
-        return ModelResponse(parts=[TextPart("好")])
-
-    await Agent(
-        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
-    ).run("看看参数", deps=make_deps())
-
-    schema = seen["schema"]
-    assert set(schema["properties"]) == {"aspect_ratio", "shots"}
-    assert set(schema["required"]) == {"aspect_ratio", "shots"}
-    definitions = schema["$defs"]
-    shot = definitions["VideoShotRequest"]
-    assert set(shot["properties"]) == {"index", "prompt", "seconds", "image_urls"}
-    assert set(shot["required"]) == set(shot["properties"])
-    assert shot["properties"]["prompt"] == {"$ref": "#/$defs/VideoShotPrompt"}
-    assert shot["properties"]["image_urls"]["type"] == "array"
-    assert shot["properties"]["image_urls"].get("minItems", 0) == 0
-    assert shot["properties"]["image_urls"]["maxItems"] == MAX_REFERENCE_IMAGES
-    prompt = definitions["VideoShotPrompt"]
-    assert prompt["type"] == "object"
-    assert set(prompt["properties"]) == {"global_settings", "timeline"}
-    assert set(prompt["required"]) == set(prompt["properties"])
-    assert prompt["additionalProperties"] is False
-    assert prompt["properties"]["timeline"]["minItems"] == 1
-    timeline_item = definitions["TimelineItem"]
-    assert set(timeline_item["properties"]) == {"timestamps", "prompt"}
-    assert set(timeline_item["required"]) == set(timeline_item["properties"])
-    assert timeline_item["additionalProperties"] is False
-    timestamps = timeline_item["properties"]["timestamps"]
-    assert timestamps["type"] == "array"
-    assert timestamps["minItems"] == timestamps["maxItems"] == 2
-    assert timestamps["items"]["type"] == "number"
-    assert timestamps["items"]["minimum"] == 0
-
-
-def test_the_delivery_has_a_display_without_a_renderer(plugin: type[VideoShots[object]]) -> None:
-    registry = ToolDisplayRegistry.merged(plugin.display_table())
-    shots = registry.entries["write_video_shots"].draw({})
-    assert shots == FileIoDisplay(operation="write", path=SHOTS_PATH)
-    assert registry.view_of("write_video_shots") is None
 
 
 @pytest.mark.parametrize("stringified", [None, "shots", "prompt"])

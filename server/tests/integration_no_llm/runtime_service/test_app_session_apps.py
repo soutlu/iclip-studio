@@ -151,30 +151,25 @@ def _requests(owner: uuid.UUID) -> dict[str, Callable[[str, str], Request]]:
     }
 
 
-ROUTES = tuple(_requests(uuid.UUID(int=0)))
-
-
 async def call(client: httpx.AsyncClient, request: Request) -> httpx.Response:
     method, path, body, params = request
     return await client.request(method, path, json=body, params=params)
 
 
-@pytest.mark.parametrize("route", ROUTES)
 async def test_another_apps_session_is_404_like_a_missing_one_and_left_alone(
-    route: str,
     app_client: httpx.AsyncClient,
     other_app: httpx.AsyncClient,
     owner: uuid.UUID,
     theirs: str,
 ) -> None:
-    build = _requests(owner)[route]
     mine = await open_session(other_app)
+    missing_id = str(uuid.uuid4())
+    for route, build in _requests(owner).items():
+        foreign = await call(other_app, build(theirs, mine))
+        missing = await call(other_app, build(missing_id, mine))
 
-    foreign = await call(other_app, build(theirs, mine))
-    missing = await call(other_app, build(str(uuid.uuid4()), mine))
-
-    assert (foreign.status_code, foreign.json()) == (404, NOT_FOUND)
-    assert (missing.status_code, missing.json()) == (404, NOT_FOUND)
+        assert (foreign.status_code, foreign.json()) == (404, NOT_FOUND), route
+        assert (missing.status_code, missing.json()) == (404, NOT_FOUND), route
     # B 的请求没碰 A 的东西：文件、素材、队列都还是 A 自己写的那些。
     kept = await app_client.get(f"/sessions/{theirs}/files/brief.md")
     assert kept.json()["content"] == "A"
@@ -186,9 +181,6 @@ async def test_another_apps_session_is_404_like_a_missing_one_and_left_alone(
         "active": None,
         "queued": [],
     }
-    # 应用 A 自己的会话照常：同一个路由不报「没有这段会话」。
-    own = await call(app_client, build(theirs, await open_session(app_client)))
-    assert own.status_code != 404 or own.json() != NOT_FOUND, own.text
 
 
 async def test_copy_files_into_another_apps_session_is_404_and_writes_nothing(

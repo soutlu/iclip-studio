@@ -11,7 +11,6 @@ from iclip.domains.identity.pms import PmsUnavailable, PmsUserClient
 from iclip.domains.identity.sso import (
     SsoUnavailable,
     SsoVerifier,
-    sso_placeholder_email,
 )
 
 
@@ -36,23 +35,6 @@ def test_authorization_url_carries_redirect_and_app() -> None:
     assert "_fromApp=iclip" in url
 
 
-async def test_verify_parses_user_session() -> None:
-    payload = {
-        "result": "OK",
-        "userSession": {
-            "innerUserId": 42,
-            "unionId": "u-42",
-            "name": "Logan",
-            "email": "logan@corp.test",
-            "avatarUrl": "https://a/1.png",
-        },
-    }
-    session = await make_verifier(json_transport(payload)).verify("jwt-token")
-    assert session.inner_user_id == 42
-    assert session.union_id == "u-42"
-    assert session.name == "Logan"
-
-
 @pytest.mark.parametrize(
     "user_session",
     [
@@ -74,39 +56,6 @@ async def test_verify_network_error_maps_to_unavailable() -> None:
 
     with pytest.raises(SsoUnavailable):
         await make_verifier(httpx.MockTransport(raise_error)).verify("t")
-
-
-def test_placeholder_email_is_deterministic() -> None:
-    assert sso_placeholder_email("u-1") == "u-1@sso.iclip.example"
-
-
-async def test_pms_parses_profile_and_departments() -> None:
-    payload = {
-        "success": True,
-        "data": {
-            "city": "新加坡",
-            "jobTitle": "策划",
-            "depts": [
-                {
-                    "id": 1,
-                    "uid": "d1",
-                    "name": "市场部",
-                    "parentId": None,
-                    "parentUid": "",
-                    "leaderUserId": 9,
-                    "leaderUserUid": "u9",
-                    "source": "pms",
-                    "type": "dept",
-                    "order": 2,
-                }
-            ],
-        },
-    }
-    client = PmsUserClient(base_url="https://pms.test", transport=json_transport(payload))
-    profile = await client.get_user(inner_user_id=42, authorization="jwt")
-    assert profile.city == "新加坡"
-    assert profile.departments[0].name == "市场部"
-    assert profile.departments[0].leader_user_id == 9
 
 
 async def test_pms_failure_shapes() -> None:

@@ -229,9 +229,6 @@ HOST_TABLE_IN_SQL = re.compile(
     rf"\b(from|join|into|update|table|references)\s+{HOST_SCHEMA}\.", re.IGNORECASE
 )
 
-HOST_SCHEMA_ALLOWLIST: dict[str, str] = {}
-"""源码里还能写宿主 schema 的文件。运行时只读写自己 schema 里的表，宿主的数据经应用的接口拿。"""
-
 
 def _code_strings(tree: ast.AST) -> list[ast.Constant]:
     """源码里的字符串常量，不含文档字符串（单独成句的字符串）；f-string 的字面部分也算。"""
@@ -256,8 +253,6 @@ def test_runtime_never_names_the_host_schema() -> None:
     violations: list[str] = []
     for path in _python_files(SRC):
         rel = path.relative_to(SRC).as_posix()
-        if rel in HOST_SCHEMA_ALLOWLIST:
-            continue
         for node in _code_strings(ast.parse(path.read_text(encoding="utf-8"))):
             value = str(node.value)
             if value == HOST_SCHEMA or HOST_TABLE_IN_SQL.search(value):

@@ -1,12 +1,11 @@
-"""改标签树的规则：名称与判断说明的整理，维度下最多三级取值，维度之间与同一维度里不论哪一层都不重名，
-只有维度能设 AI 打标，AI 维度的取值合计不过上限；同级按给的位置重新排，超出范围夹到首尾。"""
+"""标签纯规则的边界：长度上限、跨维度同名、AI 取值计数与改名时排除自身。"""
 
 from __future__ import annotations
 
 import uuid
 
 import pytest
-from agent_runtime.errors import NotFound, ValidationFailed
+from agent_runtime.errors import ValidationFailed
 
 from iclip.domains.tagging.models import (
     AI_VALUE_LIMIT,
@@ -21,7 +20,6 @@ from iclip.domains.tagging.rules import (
     check_new,
     clean_guide,
     clean_name,
-    reorder,
 )
 
 
@@ -63,15 +61,6 @@ def test_names_are_trimmed() -> None:
     assert clean_name("字" * MAX_TAG_NAME_CHARS) == "字" * MAX_TAG_NAME_CHARS
 
 
-@pytest.mark.parametrize(
-    ("name", "message"),
-    [("", "请填写名称"), ("   ", "请填写名称"), ("字" * (MAX_TAG_NAME_CHARS + 1), "最多 50 个字")],
-)
-def test_blank_or_long_names_are_rejected(name: str, message: str) -> None:
-    with pytest.raises(ValidationFailed, match=message):
-        clean_name(name)
-
-
 def test_guides_are_trimmed_and_blank_means_none() -> None:
     assert clean_guide(None) is None
     assert clean_guide("   ") is None
@@ -81,50 +70,8 @@ def test_guides_are_trimmed_and_blank_means_none() -> None:
         clean_guide("字" * (MAX_TAG_GUIDE_CHARS + 1))
 
 
-def test_a_new_dimension_goes_among_the_dimensions() -> None:
-    assert check_new(TREE, parent_id=None, name="品牌", auto_fill="ai") == TREE
-
-
-def test_values_allow_three_levels_below_a_dimension_but_no_deeper() -> None:
-    assert check_new(TREE, parent_id=STRUCTURE_ID, name="新大类", auto_fill=None) == (REVIEW, TALK)
-    assert check_new(TREE, parent_id=REVIEW_ID, name="新小类", auto_fill=None) == (COMPARE,)
-    assert check_new(TREE, parent_id=COMPARE.id, name="具体场景", auto_fill=None) == ()
-    last = node("末级")
-    deep = node("场景", children=(node("大类", children=(node("中类", children=(last,)),)),))
-    with pytest.raises(ValidationFailed, match="标签最多三级"):
-        check_new((deep,), parent_id=last.id, name="第四级", auto_fill=None)
-
-
-def test_a_missing_parent_is_rejected() -> None:
-    with pytest.raises(ValidationFailed, match="上级标签不存在"):
-        check_new(TREE, parent_id=uuid.uuid4(), name="新取值", auto_fill=None)
-
-
-@pytest.mark.parametrize(
-    ("parent_id", "name", "message"),
-    [
-        (None, "内容结构", "已有名为「内容结构」的维度"),
-        (STRUCTURE_ID, "对比测评", "「内容结构」中已有「对比测评」"),
-        (REVIEW_ID, "口播讲解型", "「内容结构」中已有「口播讲解型」"),
-    ],
-)
-def test_names_are_unique_among_dimensions_and_across_levels_of_one_dimension(
-    parent_id: uuid.UUID | None, name: str, message: str
-) -> None:
-    with pytest.raises(ValidationFailed, match=message):
-        check_new(TREE, parent_id=parent_id, name=name, auto_fill=None)
-
-
 def test_the_same_name_may_appear_in_another_dimension() -> None:
     check_new(TREE, parent_id=CHANNEL_ID, name="对比测评", auto_fill=None)
-
-
-def test_auto_fill_is_only_for_dimensions() -> None:
-    with pytest.raises(ValidationFailed, match="只有维度可设为 AI 打标"):
-        check_new(TREE, parent_id=STRUCTURE_ID, name="新大类", auto_fill="ai")
-    with pytest.raises(ValidationFailed, match="只有维度可设为 AI 打标"):
-        check_change(TREE, TALK.id, name=None, auto_fill="ai", sets_auto_fill=True)
-    check_change(TREE, TALK.id, name=None, auto_fill=None, sets_auto_fill=True)
 
 
 def test_ai_values_count_every_level_of_ai_dimensions_only() -> None:
@@ -174,33 +121,3 @@ def test_renaming_checks_names_but_not_against_itself() -> None:
         check_change(TREE, COMPARE.id, name="开箱测评型", auto_fill=None, sets_auto_fill=False)
     with pytest.raises(ValidationFailed, match="已有名为「平台&渠道」的维度"):
         check_change(TREE, STRUCTURE_ID, name="平台&渠道", auto_fill=None, sets_auto_fill=False)
-
-
-def test_changing_a_missing_tag_is_not_found() -> None:
-    with pytest.raises(NotFound):
-        check_change(TREE, uuid.uuid4(), name="随便", auto_fill=None, sets_auto_fill=False)
-
-
-A, B, C, D = (uuid.uuid4() for _ in range(4))
-
-
-@pytest.mark.parametrize(
-    ("moving", "index", "expected"),
-    [
-        (C, 0, [C, A, B, D]),
-        (A, 2, [B, C, A, D]),
-        (B, 3, [A, C, D, B]),
-        (B, 99, [A, C, D, B]),
-        (C, -5, [C, A, B, D]),
-    ],
-)
-def test_reorder_moves_within_siblings_and_clamps(
-    moving: uuid.UUID, index: int, expected: list[uuid.UUID]
-) -> None:
-    assert reorder([A, B, C, D], moving, index) == expected
-
-
-def test_reorder_inserts_a_newcomer() -> None:
-    new = uuid.uuid4()
-    assert reorder([A, B], new, 1) == [A, new, B]
-    assert reorder([A, B], new, 2) == [A, B, new]

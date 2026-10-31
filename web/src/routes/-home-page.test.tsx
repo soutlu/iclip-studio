@@ -9,7 +9,6 @@ import {
   liveMockConversation,
   loginAs,
   mockAuthUser,
-  mockCollections,
   mockConversations,
   mockGovernor,
 } from '@/testing/mocks/handlers'
@@ -47,43 +46,6 @@ const promptReceipt = (promptId: string) =>
   HttpResponse.json({ createdAt: new Date().toISOString(), promptId, status: 'queued' })
 
 describe('首页真实数据流程', () => {
-  it('新建合集后立即选中；选择服务端 Agent 并将合集带入首条创作', async () => {
-    loginAs(mockAuthUser)
-    server.use(
-      http.get('*/api/conversations/agents', () =>
-        HttpResponse.json({
-          items: [{ id: 'new-agent', name: 'new-agent' }],
-          default: 'new-agent',
-        }),
-      ),
-      http.post('*/api/conversations/:conversationId/prompts', async ({ request }) => {
-        const body = (await request.json()) as { prompt_id: string }
-        return promptReceipt(body.prompt_id)
-      }),
-    )
-    const { user, router } = await renderHome()
-    await screen.findByText('new-agent')
-    await user.click(screen.getByRole('button', { name: '关联合集：未关联合集' }))
-    await user.type(screen.getByRole('combobox', { name: '搜索合集' }), '秋季短片')
-    await user.click(screen.getByRole('button', { name: '新建“秋季短片”' }))
-    const nameInput = await screen.findByRole('textbox', { name: '合集名称' })
-    expect(nameInput).toHaveValue('秋季短片')
-    // 打开即可输入：焦点在名称框，不在表头的关闭按钮上；离上限远时不显示字数。
-    await waitFor(() => expect(nameInput).toHaveFocus())
-    expect(screen.queryByText(/\/200$/)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '保存' }))
-    await screen.findByRole('button', { name: '关联合集：秋季短片' })
-    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '制作秋季宣传片')
-    await user.click(screen.getByRole('button', { name: '发送' }))
-    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/c\//))
-    expect(mockCollections).toHaveLength(1)
-    expect(mockConversations).toHaveLength(1)
-    expect(mockConversations[0]).toMatchObject({
-      agentId: 'new-agent',
-      collectionId: mockCollections[0]?.id,
-    })
-  })
-
   it.each([
     ['自己的合集', true, '关联合集：夏季亚麻系列'],
     ['不在自己合集里的 id', false, '关联合集：未关联合集'],

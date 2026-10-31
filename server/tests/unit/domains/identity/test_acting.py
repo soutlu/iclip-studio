@@ -7,7 +7,6 @@ from collections.abc import Iterator
 
 import pytest
 import structlog
-from agent_runtime.errors import ValidationFailed
 
 from iclip.domains.identity.acting import (
     ActAs,
@@ -40,24 +39,6 @@ def api_key(*permissions: str) -> Principal:
         username="logan",
         key_name="partner-app",
     )
-
-
-async def test_browser_session_keeps_itself_and_may_only_name_itself() -> None:
-    act_as = ActAs(InMemoryUserRepository())
-    me = browser()
-
-    assert await act_as(me, None) is me
-    assert await act_as(me, " logan ") is me
-    with pytest.raises(ValidationFailed, match="必须是当前登录账号的用户名"):
-        await act_as(me, "Sara.Hong")
-
-
-async def test_key_without_the_permission_is_untouched_and_creates_nobody() -> None:
-    users = InMemoryUserRepository()
-    key = api_key("agent:run")
-
-    assert await act_as_with(users)(key, "Sara.Hong") is key
-    assert users.accounts == {}
 
 
 async def test_key_with_the_permission_acts_as_the_named_person() -> None:

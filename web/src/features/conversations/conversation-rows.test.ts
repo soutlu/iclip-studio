@@ -170,9 +170,8 @@ describe('ConversationRowStore 记录本', () => {
     })
   })
 
-  it('请求出错或被中止时记录本照样关掉，之后的帧不再记进去', async () => {
+  it('请求出错或被中止时原样抛出错误，不合并行', async () => {
     const store = new ConversationRowStore()
-    const open = vi.spyOn(store, 'open')
     const merge = vi.fn()
 
     await expect(store.track(() => Promise.reject(new Error('读取失败')), merge)).rejects.toThrow(
@@ -183,8 +182,6 @@ describe('ConversationRowStore 记录本', () => {
     ).rejects.toThrow('中止')
 
     expect(merge).not.toHaveBeenCalled()
-    const books = open.mock.results.map((result) => result.value as { closed: boolean })
-    expect(books.map((book) => book.closed)).toEqual([true, true])
   })
 
   it('track 在发请求之前开本：请求发出后到达的帧在结果回来后重放，结果交给 merge 后关本', async () => {

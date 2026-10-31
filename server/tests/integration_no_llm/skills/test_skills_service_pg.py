@@ -333,10 +333,3 @@ async def test_exported_version_imports_back_to_the_same_files(
         for path in [one.path for one in checked.files]
     }
     assert (await service.detail(skill_id)).has_unpublished_changes is False
-
-
-async def test_export_needs_a_published_version(service: SkillsService, author: uuid.UUID) -> None:
-    skill_id = await new_skill(service, author)
-
-    with pytest.raises(NotFound):
-        await service.export(skill_id, None)

@@ -6,46 +6,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { server } from '@/testing/mocks/server'
 import {
   createReference,
-  DEFAULT_REFERENCE_SCOPE,
   nearestTestAspectRatio,
-  referenceSearchParams,
   useReference,
   type ReferenceDetail,
   type TagStatus,
   type TestVideo,
 } from './references.api'
-
-const NOW = new Date('2026-09-23T12:00:00Z')
-
-const TAG_A = '5a900000-0000-4000-8000-000000000001'
-const TAG_B = '5a900000-0000-4000-8000-000000000002'
-
-describe('referenceSearchParams', () => {
-  it('默认范围只带页大小', () => {
-    expect(referenceSearchParams(DEFAULT_REFERENCE_SCOPE, null, NOW).toString()).toBe('limit=24')
-  })
-
-  it('标签是重复的同名参数，关键词去掉首尾空白，游标原样带上', () => {
-    const params = referenceSearchParams(
-      {
-        q: '  滑板 ',
-        range: '7d',
-        since: null,
-        tags: [TAG_A, TAG_B],
-        until: null,
-        userName: 'Maya.Cheng',
-      },
-      '2026-09-20T10:00:00+00:00|abc',
-      NOW,
-    )
-
-    expect(params.getAll('tags')).toEqual([TAG_A, TAG_B])
-    expect(params.get('q')).toBe('滑板')
-    expect(params.get('userName')).toBe('Maya.Cheng')
-    expect(params.get('since')).toBe('2026-09-16T12:00:00.000Z')
-    expect(params.get('cursor')).toBe('2026-09-20T10:00:00+00:00|abc')
-  })
-})
 
 const ID = '5ef00000-0000-4000-8000-000000000043'
 

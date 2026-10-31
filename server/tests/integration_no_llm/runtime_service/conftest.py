@@ -1,8 +1,7 @@
 """运行时服务的夹具：经 ``httpx.ASGITransport`` 挂上运行时服务，接迁移好的测试库。
 
-配置表现在仍有指向 ``iclip.users`` 的外键、建表也在后端的迁移里，所以这些用例放在后端的集成层；
-``X-End-User`` 用的是种进库里的真实用户。插件登记表默认只有一个测试插件 ``limited``，模型按名字换成
-集成层 ``models`` 夹具给的替身。
+迁移与 Postgres 夹具由后端测试层提供；运行时不依赖宿主用户表，``X-End-User`` 只需调用方提供的 UUID。
+插件登记表默认只有一个测试插件 ``limited``，模型按名字换成集成层 ``models`` 夹具给的替身。
 
 ``ASGITransport`` 不跑 lifespan：要让消息真跑起来的用例另取 ``running``，它起停运行驱动。WebSocket 与回调
 的用例取 ``live``：同步 ``TestClient`` 跑着 lifespan，另有一份不跨事件循环的 engine。
@@ -37,7 +36,6 @@ from tests.helpers.agents import model_builder
 from tests.helpers.app import TEST_CREDENTIAL_KEY, TEST_MODEL_NAME
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
-from tests.helpers.references import plant_user
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
     READER_KEY,
@@ -104,17 +102,17 @@ async def running(runtime_app: FastAPI) -> AsyncGenerator[None]:
 
 
 @pytest.fixture
-async def actor(engine: AsyncEngine) -> uuid.UUID:
-    """代办用户：库里的一个真实账号，作者列有外键指向它。"""
+def actor() -> uuid.UUID:
+    """调用方代办的用户标识；运行时只记录它，不查询宿主账号。"""
 
-    return await plant_user(engine, "runtime-admin")
+    return uuid.uuid4()
 
 
 @pytest.fixture
-async def owner(engine: AsyncEngine) -> uuid.UUID:
-    """会话的属主：库里的另一个真实账号。"""
+def owner() -> uuid.UUID:
+    """调用方给出的会话属主标识。"""
 
-    return await plant_user(engine, "session-owner")
+    return uuid.uuid4()
 
 
 LIVE_AGENT = "director"
@@ -151,7 +149,7 @@ def live(
 ) -> Generator[LiveRuntime]:
     """跑着 lifespan 的运行时服务，给同步 ``TestClient`` 用（WebSocket 只能这样测）。
 
-    ``TestClient`` 有自己的事件循环：engine 用 NullPool，种用户、接供应商、发布 agent 都在进它之前的另一个
+    ``TestClient`` 有自己的事件循环：engine 用 NullPool，接供应商、发布 agent 都在进它之前的另一个
     事件循环里做完，不跨循环复用连接。回调经 ``hook_recorder`` 接住。"""
 
     asyncio.run(_reset(migrated_pg))
@@ -168,7 +166,7 @@ def live(
         build_model=model_builder(models),
         hook_transport=httpx.MockTransport(hook_recorder),
     )
-    owner = asyncio.run(_seed_live(app, engine, live_agent_plugins))
+    owner = asyncio.run(_seed_live(app, live_agent_plugins))
     try:
         with TestClient(app) as tc:
             yield LiveRuntime(tc=tc, app=app, owner=owner, agent=LIVE_AGENT)
@@ -181,9 +179,8 @@ async def _reset(url: str) -> None:
         await reset_database(conn)
 
 
-async def _seed_live(app: FastAPI, engine: AsyncEngine, plugins: tuple[str, ...]) -> uuid.UUID:
-    actor = await plant_user(engine, "runtime-admin")
-    owner = await plant_user(engine, "session-owner")
+async def _seed_live(app: FastAPI, plugins: tuple[str, ...]) -> uuid.UUID:
+    actor, owner = uuid.uuid4(), uuid.uuid4()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://runtime.test/v1/admin",

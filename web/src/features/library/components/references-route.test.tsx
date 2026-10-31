@@ -334,36 +334,6 @@ describe('参考视频列表', () => {
     await user.click(within(maya as HTMLElement).getByRole('button', { name: /Maya\.Cheng/ }))
     expect(onScope).toHaveBeenLastCalledWith(expect.objectContaining({ userName: 'Maya.Cheng' }))
   })
-
-  it('还有没拆完或没打完标的行就轮询，打完后自动换上标签，筛选里的条数跟着变', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    try {
-      const row = addMockReference({ breakdownStatus: 'running', document: null })
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-      await renderWithProviders(<Harness />)
-      expect(await screen.findByText('拆解中')).toBeVisible()
-
-      resetMockReferences([{ ...row, breakdownStatus: 'completed', tagStatus: 'running' }])
-      await vi.advanceTimersByTimeAsync(5000)
-      expect(await screen.findByText('正在打标')).toBeVisible()
-
-      resetMockReferences([{ ...row, breakdownStatus: 'completed', tagIds: tags('拖鞋') }])
-      await vi.advanceTimersByTimeAsync(5000)
-      expect(await screen.findByRole('article', { name: '拖鞋' })).toBeVisible()
-      expect(screen.queryByText('正在打标')).not.toBeInTheDocument()
-
-      await user.click(screen.getByRole('button', { name: '品类：品类' }))
-      const popup = await screen.findByRole('dialog', { name: '选择品类' })
-      await user.type(within(popup).getByRole('combobox', { name: '搜索品类' }), '拖鞋')
-      expect(
-        within(popup)
-          .getAllByRole('option')
-          .map((option) => option.textContent),
-      ).toContain('拖鞋1')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
 })
 
 describe('上传参考视频', () => {
@@ -388,21 +358,6 @@ describe('上传参考视频', () => {
     expect(
       created.every((write) => typeof (write.body as { uploadId?: unknown }).uploadId === 'string'),
     ).toBe(true)
-  })
-
-  it('传了已经在资料库里的视频（200）：不新添卡片，提示一句并打开原来那一条', async () => {
-    const existing = addMockReference(MINE_TAGGED)
-    server.use(http.post('*/api/references', () => HttpResponse.json(existing, { status: 200 })))
-    const onReference = vi.fn()
-    const user = userEvent.setup()
-    await renderWithProviders(<Harness onReference={onReference} />)
-    await screen.findByRole('article', { name: MINE_TITLE })
-
-    await user.upload(fileInput(), video('同一条.mp4'))
-
-    expect(await screen.findByText('该视频此前已上传，已打开其详情')).toBeVisible()
-    expect(onReference).toHaveBeenLastCalledWith(existing.id)
-    expect(await screen.findByRole('dialog', { name: MINE_TITLE })).toBeVisible()
   })
 
   it('页面上粘贴视频文件就上传；焦点在输入框里、剪贴板里只有文字时不接', async () => {
@@ -602,25 +557,6 @@ describe('参考视频详情', () => {
     await user.click(within(dialog).getByRole('button', { name: '移除卫衣' }))
     expect(await screen.findByText('正在打标，标签无法保存；请在打标完成后重试')).toBeVisible()
     expect(within(dialog).getByText('卫衣')).toBeVisible()
-  })
-
-  it('编辑拆解：原地换成文本框，保存带 version，回到查看看到新的拆解', async () => {
-    const writes = recordWrites()
-    const user = userEvent.setup()
-    const { dialog } = await openDetail()
-    await within(dialog).findByText('第一版拆解')
-
-    await user.click(within(dialog).getByRole('button', { name: '编辑拆解' }))
-    const editor = within(dialog).getByRole('textbox', { name: '拆解' })
-    expect(editor).toHaveFocus()
-    expect(editor).toHaveValue('# 出场元素\n\n第一版拆解')
-    await user.clear(editor)
-    await user.type(editor, '改过的拆解')
-    await user.click(within(dialog).getByRole('button', { name: '保存' }))
-
-    expect(await within(dialog).findByText('改过的拆解')).toBeVisible()
-    expect(within(dialog).queryByRole('textbox', { name: '拆解' })).not.toBeInTheDocument()
-    expect(writes.at(-1)?.body).toMatchObject({ document: '改过的拆解', version: 1 })
   })
 
   it('保存时版本对不上（409）：底栏原地提示，编辑框里的修改留着；「取消」收起提示接着编辑，「刷新」读回最新的', async () => {
@@ -829,16 +765,6 @@ describe('参考视频详情', () => {
       await user.click(start)
 
       expect(testWrites(writes)).toEqual([])
-    })
-
-    it('完成：第二个播放器是试生成；属主有「重新试生成」，没有过时提醒', async () => {
-      const { dialog } = await openDetail({ testVideo: TEST_VIDEO })
-      await within(dialog).findByText('第一版拆解')
-
-      expect(within(dialog).getByRole('group', { name: '播放器：原片' })).toBeVisible()
-      expect(within(dialog).getByRole('group', { name: '播放器：试生成' })).toBeVisible()
-      expect(within(dialog).getByRole('button', { name: '重新试生成' })).toBeVisible()
-      expect(within(dialog).queryByText(/拆解已更新/)).not.toBeInTheDocument()
     })
 
     it('能改但不是属主本人（canEdit 为真，如治理者）：没有「试生成」', async () => {

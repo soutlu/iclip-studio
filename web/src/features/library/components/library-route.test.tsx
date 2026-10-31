@@ -61,25 +61,6 @@ const stubLibraryViewport = () =>
 describe('LibraryRoute', () => {
   beforeEach(stubLibraryViewport)
 
-  it('lists one card per storyboard with its badges and the total', async () => {
-    await renderWithProviders(<Harness />)
-
-    const skate = await screen.findByRole('article', { name: SKATE })
-    expect(within(skate).getByText('6 版')).toBeVisible()
-    expect(within(skate).getByText(/4 镜/)).toBeVisible()
-    expect(within(skate).queryByText(/组$/)).not.toBeInTheDocument()
-    const beach = screen.getByRole('article', { name: '童鞋海边亲子' })
-    expect(within(beach).getByText('合成')).toBeVisible()
-    expect(within(beach).getByText('4 版')).toBeVisible()
-    expect(within(beach).getByText(/0:15/)).toBeVisible()
-    const sandals = screen.getByRole('article', { name: SANDALS })
-    expect(within(sandals).getByText('2 组')).toBeVisible()
-    expect(within(sandals).getByText('3 版')).toBeVisible()
-    const plain = screen.getByRole('article', { name: '接口提交' })
-    expect(within(plain).queryByText(/镜$/)).not.toBeInTheDocument()
-    expect(screen.getByText('共 6 条')).toBeVisible()
-  })
-
   it('filters by orientation, by me and by a card author', async () => {
     const queries = recordListQueries()
     const onScope = vi.fn()

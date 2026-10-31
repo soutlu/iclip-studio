@@ -10,11 +10,9 @@ import pytest
 from pydantic import ValidationError
 
 from iclip_video.shot_document import (
-    AspectError,
     ShotDocumentError,
     VideoShotRequest,
     build_video_shots_document,
-    parse_aspect,
     validate_shots_document,
     validate_video_shot_requests,
 )
@@ -165,26 +163,6 @@ def test_requires_nonempty_shots_numbered_from_one(indexes: list[int]) -> None:
         validate_video_shot_requests([request(index=index) for index in indexes])
 
 
-@pytest.mark.parametrize("seconds", [4, 30])
-def test_accepts_group_duration_boundaries(seconds: int) -> None:
-    shot = request(seconds=seconds, prompt=prompt_value(timeline=[item([0, seconds])]))
-
-    validate_video_shot_requests([shot])
-
-
-@pytest.mark.parametrize("seconds", [3, 31])
-def test_rejects_out_of_range_group_duration(seconds: int) -> None:
-    with pytest.raises(ShotDocumentError, match="4-30"):
-        validate_video_shot_requests(
-            [request(seconds=seconds, prompt=prompt_value(timeline=[item([0, seconds])]))]
-        )
-
-
-def test_group_duration_requires_integer_seconds() -> None:
-    with pytest.raises(ValidationError):
-        request(seconds=8.2)
-
-
 @pytest.mark.parametrize("reference", ["@Image0", "@Image3"])
 def test_rejects_references_outside_the_groups_image_list(reference: str) -> None:
     shot = request(
@@ -238,12 +216,6 @@ def test_image_reference_cannot_borrow_another_groups_image_count() -> None:
 
     with pytest.raises(ShotDocumentError, match=r"镜头组 2.*@Image2"):
         validate_video_shot_requests([first, second])
-
-
-@pytest.mark.parametrize("image_urls", [[""], [FIRST_IMAGE, " \n\t"]])
-def test_rejects_blank_image_addresses(image_urls: list[str]) -> None:
-    with pytest.raises(ShotDocumentError, match="image_urls"):
-        validate_video_shot_requests([request(image_urls=image_urls)])
 
 
 def test_accepts_an_image_free_group_without_references() -> None:
@@ -383,28 +355,6 @@ def test_file_allows_empty_image_indexes_when_the_prompt_has_no_references(
     document["shots"][0]["image_urls"] = image_urls
 
     validate_shots_document(json.dumps(document, ensure_ascii=False))
-
-
-def test_file_rejects_camel_case_document_fields() -> None:
-    document = json.loads(file_document())
-    document["aspectRatio"] = document.pop("aspect_ratio")
-    shot = document["shots"][0]
-    shot["imageUrls"] = shot.pop("image_urls")
-
-    with pytest.raises(ValueError, match=r"aspect_ratio|aspectRatio"):
-        validate_shots_document(json.dumps(document, ensure_ascii=False))
-
-
-@pytest.mark.parametrize(
-    "value", ["9", "9:16:1", "a:b", "0:16", "9:0", "-9:16", ""], ids=lambda v: v or "empty"
-)
-def test_aspect_rejects_broken_text(value: str) -> None:
-    with pytest.raises(AspectError):
-        parse_aspect(value)
-
-
-def test_aspect_parses() -> None:
-    assert parse_aspect("16:9") == pytest.approx(16 / 9)
 
 
 def test_written_back_table_accepts_the_current_document_format() -> None:

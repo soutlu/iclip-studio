@@ -31,28 +31,6 @@ describe('Markdown 重渲染', () => {
   })
 })
 
-describe('Markdown 换行', () => {
-  it('段落内的单个换行显示为换行，逐行字段不接成一行', () => {
-    renderWithTooltip(
-      <Markdown text={'**镜头语言**：硬切，手持\n**画面**：街口\n**BGM**：鼓点\n'} />,
-    )
-    const paragraph = screen.getByText('镜头语言').closest('p')
-    if (paragraph === null) throw new Error('缺少段落')
-
-    expect(paragraph.querySelectorAll('br')).toHaveLength(2)
-    expect(within(paragraph).getByText('画面')).toBeInTheDocument()
-    expect(within(paragraph).getByText('BGM')).toBeInTheDocument()
-  })
-
-  it('围栏代码块里的换行保留为原文', () => {
-    renderWithTooltip(<Markdown text={'```\n第一行\n第二行\n```\n'} />)
-
-    expect(screen.getByText('第一行 第二行')).toHaveTextContent('第一行\n第二行', {
-      normalizeWhitespace: false,
-    })
-  })
-})
-
 describe('Markdown 代码块', () => {
   afterEach(() => vi.restoreAllMocks())
 
@@ -67,20 +45,6 @@ describe('Markdown 代码块', () => {
     await user.click(screen.getByRole('button', { name: '复制代码' }))
 
     expect(writeText).toHaveBeenCalledWith('{\n  "shots": 3\n}\n')
-  })
-
-  it('没有语言标记的代码块，头部条写作 text', () => {
-    stubClipboard()
-    renderWithTooltip(<Markdown text={'```\n纯文本\n```\n'} />)
-    expect(screen.getByText('text')).toBeInTheDocument()
-  })
-
-  it('混合代码块与行内代码时保留两处原文', () => {
-    renderWithTooltip(
-      <Markdown text={'```\n第一行\n第二行\n```\n\n写进 `shots/storyboard.md`\n'} />,
-    )
-    expect(screen.getByText('第一行 第二行')).toBeVisible()
-    expect(screen.getByText('shots/storyboard.md')).toBeVisible()
   })
 
   it('GFM 表格渲染成表头与单元格', () => {

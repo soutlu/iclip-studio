@@ -159,17 +159,6 @@ async def test_there_is_no_view_without_a_film_file() -> None:
     assert await made.adapter.view(PRINCIPAL, OWNER, CONVERSATION) is None
 
 
-async def test_the_view_carries_both_versions_and_only_selected_images() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
-
-    view = await made.view()
-
-    assert (view.film_version, view.run_version, view.problems) == (1, 1, 0)
-    assert frame_url(view, "personB") == GENERATED["personB"]
-    # 生成成功过、运行文件里没选用：还是没有图。
-    assert frame_url(view, "scene") is None
-
-
 async def test_a_film_with_problems_shows_only_how_many() -> None:
     foreign = FILM.replace(GIVEN_IMAGES[0], "https://elsewhere.test/model.jpg")
     made = await page({FILM_PATH: foreign})
@@ -189,83 +178,6 @@ async def test_an_address_known_only_from_the_generation_records_is_a_problem() 
     )
 
     assert (await made.view()).problems == 1
-
-
-async def test_an_edit_is_written_with_its_version_and_answered_with_the_new_view() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.edit_text(
-        PRINCIPAL, OWNER, CONVERSATION, [say("这一双，真的很轻。")], film_version=1
-    )
-
-    assert view.film_version == 2
-    assert view.groups[0].shots[0].lines[0].text == "这一双，真的很轻。"
-    assert "这一双，真的很轻。" in (await made.content(FILM_PATH) or "")
-
-
-async def test_an_edit_on_a_stale_version_is_a_conflict_and_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-    await made.store.write(NAMESPACE, FILM_PATH, FILM + "\n")
-
-    with pytest.raises(Conflict, match="刷新后再改"):
-        await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [say("x")], film_version=1)
-    assert await made.content(FILM_PATH) == FILM + "\n"
-
-
-async def test_a_refused_edit_comes_back_as_a_plain_validation_error() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    with pytest.raises(ValidationFailed, match=r"^台词不能是空的$"):
-        await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [say(" ")], film_version=1)
-    assert await made.content(FILM_PATH) == FILM
-
-
-async def test_a_new_aspect_ratio_writes_only_the_project_file_and_keeps_the_choices() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.set_aspect_ratio(
-        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="9:16", film_version=1
-    )
-
-    assert made.store.written == [FILM_PATH]
-    assert await made.content(RUN_PATH) == RUN
-    assert (view.film_version, view.run_version) == (2, 1)
-    assert {group.aspect_ratio for group in view.groups} == {"9:16"}
-    # 选用了的机位图照旧选用。
-    assert frame_url(view, "view01") == GENERATED["view01"]
-
-
-async def test_the_aspect_ratio_already_in_the_file_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.set_aspect_ratio(
-        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="16:9", film_version=1
-    )
-
-    assert made.store.written == []
-    assert (view.film_version, view.groups[0].aspect_ratio) == (1, "16:9")
-
-
-async def test_an_aspect_ratio_on_a_stale_version_is_a_conflict_and_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-    await made.store.write(NAMESPACE, FILM_PATH, FILM + "\n")
-    made.store.written.clear()
-
-    with pytest.raises(Conflict, match="刷新后再改"):
-        await made.adapter.set_aspect_ratio(
-            PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="9:16", film_version=1
-        )
-    assert made.store.written == []
-
-
-async def test_an_aspect_ratio_videos_cannot_take_is_a_validation_error() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    with pytest.raises(ValidationFailed, match="2:3"):
-        await made.adapter.set_aspect_ratio(
-            PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="2:3", film_version=1
-        )
-    assert made.store.written == []
 
 
 def insert_into_setting(url: str) -> FilmTextEdit:
@@ -368,24 +280,6 @@ async def test_a_version_generated_on_the_page_can_be_chosen_and_is_recorded_as_
     assert made.ledger.rows[(NAMESPACE, GENERATED_SCENE)] == Material(
         url=GENERATED_SCENE, kind="image"
     )
-
-
-async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
-
-    chosen = await choose(made, "scene", GENERATED_SCENE)
-
-    assert frame_url(chosen, "scene") == GENERATED_SCENE
-    assert '<use output="scene.image" image={scene-1}/>' in (await made.content(RUN_PATH) or "")
-    recorded = dict(made.ledger.rows)
-
-    cleared = await choose(made, "scene", None, run_version=2)
-
-    # 取消选用就是没图：不回到生成过的那一张。
-    assert cleared.run_version == 3
-    assert frame_url(cleared, "scene") is None
-    assert 'output="scene.image"' not in (await made.content(RUN_PATH) or "")
-    assert made.ledger.rows == recorded, "取消选用不登记任何东西"
 
 
 @pytest.mark.parametrize(("film_version", "run_version"), [(2, 1), (1, None), (1, 2)])

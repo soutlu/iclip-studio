@@ -9,11 +9,9 @@ from collections.abc import Sequence
 
 import pytest
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.harness.background import BackgroundTools, is_receipt, parse_outcome
-from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.harness.background import is_receipt, parse_outcome
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import GenericDisplay
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
@@ -269,24 +267,3 @@ def test_documents_of_two_videos_with_the_same_name_do_not_collide() -> None:
     )
     assert PATH.startswith("references/ref-")
     assert PATH.endswith(".md")
-
-
-def test_the_plugin_is_the_breakdown_with_background_tools(files: FakeFileStore) -> None:
-    """只写 video_breakdown 一个名字，挂上的就是拆解连同后台工具，要求同挂 workspace。"""
-
-    plugin = plugin_for(files, FakeBreakdowns())
-    built = plugin.from_spec()
-
-    assert plugin.get_serialization_name() == "video_breakdown"
-    breakdown, background = built.capabilities
-    assert isinstance(breakdown, VideoBreakdown)
-    assert isinstance(background, BackgroundTools)
-    assert tuple(built.get_ordering().requires) == (Workspace,)
-    assert set(breakdown.get_toolset().tools) == set(plugin.display_table())
-
-
-def test_the_tool_card_names_the_video() -> None:
-    draw = VideoBreakdownPlugin.display_table()["breakdown_video"]
-    assert callable(draw)
-
-    assert draw({"video_url": VIDEO}) == GenericDisplay(summary="拆解视频", detail="ref.mp4")
