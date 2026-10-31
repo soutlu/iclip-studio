@@ -2,8 +2,9 @@
 
 握手带 ``Authorization: Bearer <应用密钥>``，认不出是哪个应用就在握手前以 ``1008`` 关闭。两条都是：
 
-- 出站经一条有界队列（``MAX_OUTBOUND`` 帧，按连接算），同步回调只往里放、不等发送；放不下就记溢出，发送
-  方随后以 ``1013`` 关连接，对方重连再对齐。
+- 出站经一条有界队列（``MAX_OUTBOUND`` 帧，按连接算），同步回调与入站帧的回执、补批都只往里放、不等发送；
+  放不下就记溢出，发送方随后以 ``1013`` 关连接，对方重连再对齐。读入站帧的一方从不等出站队列，溢出后照常
+  收到断开、放开占着的东西。
 - 每 ``HEARTBEAT_SECONDS`` 秒发一帧 ``ping``；连着 ``HEARTBEAT_MISS_LIMIT`` 个周期没收到任何入站帧就以
   ``1001`` 关闭。
 
@@ -11,9 +12,10 @@
 
 对话内容流：照后端浏览器那条连接的 transcript 一半，每段会话发一帧 ``subscribe_v2``，规则相同（档位、
 先监听再取快照、补批帧筛空了也发、实时批筛空了不发、升档先 reset、子代理流要能回溯到这段会话）。
-会话不归调用方应用与不存在一样答 ``not_found``。订着一段会话（任何档位，含
-``off``）的连接还收它的工作区文件变化 ``event.fs.changed``。连接断开时撤掉它的全部监听，最后一个撤掉时
-放开这段会话的实时状态、不再收它的文件变化。
+补批放进出站队列后，若给不了同一帧里后面每个 agent 一格、再给回执一格，就改发 reset。会话不归调用方应用
+与不存在一样答 ``not_found``。订着一段会话（任何档位，含 ``off``）的连接还收它的工作区文件变化
+``event.fs.changed``。连接断开时撤掉它的全部监听，最后一个撤掉时放开这段会话的实时状态、不再收它的文件
+变化。
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from collections.abc import Callable, Mapping, Sequence
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
+from starlette.websockets import WebSocketState
 
 from agent_runtime.errors import DomainError
 from agent_runtime.harness.transcript.service import TranscriptService
@@ -121,7 +124,9 @@ class _Channel:
         self._last_inbound = asyncio.get_running_loop().time()
 
     def offer(self, frame: Envelope) -> None:
-        """同步放进出站队列；放不下记溢出，发送泵随后以 1013 断开。"""
+        """同步放进出站队列；放不下记溢出，发送泵随后以 1013 断开。
+
+        入站处理也只用它放帧：溢出后发送泵已退出，读循环里等队列空位会一直等下去，连接就结束不了。"""
 
         try:
             self._outbound.put_nowait(frame)
@@ -151,7 +156,14 @@ class _Channel:
 
     async def _read(self) -> None:
         while True:
-            raw = await self._ws.receive_text()
+            try:
+                raw = await self._ws.receive_text()
+            except RuntimeError as exc:
+                if self._ws.application_state is not WebSocketState.DISCONNECTED:
+                    raise
+                # 读循环还在处理上一帧时，发送泵（1013）或心跳（1001）已关了连接，Starlette 不让再读，
+                # 当作断开。
+                raise WebSocketDisconnect(code=1006) from exc
             self._last_inbound = asyncio.get_running_loop().time()
             await self._handle(raw)
 
@@ -220,7 +232,7 @@ class _TranscriptConnection(_Channel):
             # 退订本就幂等，写法不对的 id 记账里必然没有，撤不到什么照样回执。
             raw_id = frame.payload.session_id
             self._unlisten(_canonical_session_id(raw_id) or raw_id, frame.payload.agent_ids)
-            await self._outbound.put(Ack(id=frame.id))
+            self.offer(Ack(id=frame.id))
 
     def _release(self) -> None:
         for session_id in {key[0] for key in self._listeners}:
@@ -239,7 +251,7 @@ class _TranscriptConnection(_Channel):
         session_id = await self._owned(frame.payload.session_id)
         if session_id is None:
             # 拒了的写法没有规范形式，回执里原样带回对方问的那个；连接上的其他订阅不动。
-            await self._outbound.put(
+            self.offer(
                 Ack(id=frame.id, payload=SubscribeAckPayload(not_found=(frame.payload.session_id,)))
             )
             return
@@ -248,15 +260,13 @@ class _TranscriptConnection(_Channel):
             # 陌生或不属于这段会话的 agent：整帧不生效，已有订阅保持原样。
             known = _AGENT_ID.fullmatch(agent_id) is not None
             if not known or not await self._owns_agent(session_id, agent_id):
-                await self._outbound.put(
-                    Ack(id=frame.id, code=404, msg=f"agent not in session: {agent_id}")
-                )
+                self.offer(Ack(id=frame.id, code=404, msg=f"agent not in session: {agent_id}"))
                 return
-        for agent_id in agent_ids:
-            await self._subscribe_agent(session_id, agent_id, frame.payload)
-        await self._outbound.put(
-            Ack(id=frame.id, payload=SubscribeAckPayload(accepted=(session_id,)))
-        )
+        for index, agent_id in enumerate(agent_ids):
+            # 后面每个 agent 最少也要发一帧 reset，再加订阅回执一格。
+            reserve = len(agent_ids) - index
+            self._subscribe_agent(session_id, agent_id, frame.payload, reserve=reserve)
+        self.offer(Ack(id=frame.id, payload=SubscribeAckPayload(accepted=(session_id,))))
 
     async def _owns_agent(self, session_id: str, agent_id: str) -> bool:
         try:
@@ -265,9 +275,11 @@ class _TranscriptConnection(_Channel):
             return False
         return True
 
-    async def _subscribe_agent(
-        self, session_id: str, agent_id: str, payload: SubscribePayload
+    def _subscribe_agent(
+        self, session_id: str, agent_id: str, payload: SubscribePayload, *, reserve: int
     ) -> None:
+        """订一个 agent 并放它的补批；``reserve`` 是出站队列要给这帧订阅后面的帧留的格数。"""
+
         key = (session_id, agent_id)
         grade = grade_for(payload.transcript, agent_id)
         previous = self._grades.get(key)
@@ -291,11 +303,17 @@ class _TranscriptConnection(_Channel):
             subscribed = self._transcripts.subscribe(
                 session_id, agent_id=agent_id, since=since, epoch=epoch
             )
+            # 补批一口气放不下就会溢出断开，对方水位没动、重连又是同样的补批；改发 reset 让对方覆盖水位、
+            # 重取历史。余量要给后面的帧留出 ``reserve`` 格，它们放不下同样断开。监听已先登记，取 reset
+            # 不漏批次。
+            room = self._outbound.maxsize - self._outbound.qsize()
+            if len(subscribed.frames) > room - reserve:
+                subscribed = self._transcripts.subscribe(
+                    session_id, agent_id=agent_id, since=None, epoch=None
+                )
             for item in subscribed.frames:
                 # 补批帧筛空了也发：它推进对方的水位。
-                await self._outbound.put(
-                    _wrap(session_id, _graded(item, grade), subscribed.stream_epoch)
-                )
+                self.offer(_wrap(session_id, _graded(item, grade), subscribed.stream_epoch))
 
     def _listening(self, session_id: str) -> bool:
         return any(key[0] == session_id for key in self._listeners)

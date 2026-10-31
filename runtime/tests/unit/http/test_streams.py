@@ -1,11 +1,15 @@
 """两条 WebSocket 的连接层：认不出应用在握手前以 1008 关闭；事件流送达这个应用的会话活动、出站积压超过上限以
-1013 关闭；对话内容流上订着一段会话的连接收它的文件变化，按订阅登记与注销。
+1013 关闭；对话内容流订阅补批时实时批挤爆队列同样以 1013 关闭，对方断开后、或读循环还在处理上一帧时自己收尾，
+都放开固定、监听与文件变化登记；补批放不进余量改发 reset、连接不断；订着一段会话的连接收它的文件变化，按订阅
+登记与注销。
 
 只挂两条路由、一个查表的集线器与替身的 transcript 服务和会话服务，不碰库。真实的订阅、档位与写文件见后端
 ``tests/integration_no_llm/runtime_service/test_app_streams.py``。"""
 
 from __future__ import annotations
 
+import asyncio
+import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Collection, Generator
 from contextlib import asynccontextmanager
@@ -18,7 +22,9 @@ from starlette.websockets import WebSocketDisconnect
 
 from agent_runtime.errors import NotFound
 from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import Listener, OpBatch
 from agent_runtime.harness.transcript.subscription import SubscribeFrames
+from agent_runtime.http import streams
 from agent_runtime.http.auth import build_app_auth
 from agent_runtime.http.streams import (
     MAX_OUTBOUND,
@@ -34,8 +40,8 @@ from agent_runtime.live.frames import (
 from agent_runtime.live.hub import AppEventHub, FileChangeSink, SessionFileChanges
 from agent_runtime.service.sessions import SessionService
 from agent_runtime.settings import ResolvedApp
-from agent_runtime.transcript.ops import MAIN_AGENT_ID, TranscriptSnapshot
-from agent_runtime.transcript.wire import ResetPayload, SessionActivityOut
+from agent_runtime.transcript.ops import MAIN_AGENT_ID, ItemsRemoveOp, TranscriptSnapshot
+from agent_runtime.transcript.wire import OpsPayload, ResetPayload, SessionActivityOut
 
 BFF_KEY = "bff-app-key-0123456789-0123456789-ab"
 TOOL_KEY = "tool-app-key-0123456789-0123456789-a"
@@ -45,6 +51,8 @@ TOOL_SESSION = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 OWNER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
 CHILD = "run-child"
 """替身 transcript 服务认作属于每段会话的子代理流。"""
+OTHER_CHILD = "run-child-2"
+"""同上，第二个子代理。"""
 AT = "2026-10-30T08:00:00+00:00"
 
 APPS = {BFF_SESSION: "bff", OTHER_BFF_SESSION: "bff", TOOL_SESSION: "tool"}
@@ -72,35 +80,60 @@ def wrote(session_id: str, path: str = "notes.md") -> FsChanged:
 
 
 class FakeTranscripts:
-    """只认主流与 ``CHILD``；订阅一律回一帧 reset，不记监听。"""
+    """只认主流、``CHILD`` 与 ``OTHER_CHILD``；带水位订阅回 ``catchup`` 里给这个 agent 的那么多条补批，没有
+    补批或不带水位回一帧 reset。记着固定次数与监听；取快照前先给刚登记的监听推 ``live_during_subscribe`` 条
+    实时批，当作先监听、再取快照两步之间落下的批次。"""
+
+    def __init__(self) -> None:
+        self.pins = 0
+        self.listeners: dict[tuple[str, str], Listener] = {}
+        self.live_during_subscribe = 0
+        self.catchup: dict[str, int] = {}
 
     async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
-        if agent_id not in (MAIN_AGENT_ID, CHILD):
+        if agent_id not in (MAIN_AGENT_ID, CHILD, OTHER_CHILD):
             raise NotFound(f"agent not in session: {agent_id}")
 
     def subscribe(
         self, conversation_id: str, *, agent_id: str, since: int | None, epoch: str | None
     ) -> SubscribeFrames:
+        listener = self.listeners[(conversation_id, agent_id)]
+        for seq in range(1, self.live_during_subscribe + 1):
+            listener(OpBatch(seq=seq, ops=(ItemsRemoveOp(ids=("t1",)),), epoch="e1"))
+        catchup = self.catchup.get(agent_id, 0)
+        if since is not None and catchup:
+            batches = tuple(
+                OpsPayload(agent_id=agent_id, ops=(ItemsRemoveOp(ids=("t1",)),), seq=since + offset)
+                for offset in range(1, catchup + 1)
+            )
+            return SubscribeFrames(stream_epoch="e1", frames=batches)
         reset = ResetPayload(agent_id=agent_id, snapshot=TranscriptSnapshot(), seq=0)
         return SubscribeFrames(stream_epoch="e1", frames=(reset,))
 
-    def listen(self, conversation_id: str, listener: object, *, agent_id: str) -> None:
-        pass
+    def listen(self, conversation_id: str, listener: Listener, *, agent_id: str) -> None:
+        self.listeners[(conversation_id, agent_id)] = listener
 
-    def unlisten(self, conversation_id: str, listener: object, *, agent_id: str) -> None:
-        pass
+    def unlisten(self, conversation_id: str, listener: Listener, *, agent_id: str) -> None:
+        del self.listeners[(conversation_id, agent_id)]
 
     def pin(self, conversation_id: str) -> None:
-        pass
+        self.pins += 1
 
     def unpin(self, conversation_id: str) -> None:
-        pass
+        self.pins -= 1
 
 
 class FakeSessions:
+    """按 ``APPS`` 核归属；``delay`` 秒后才答，当作真去查库。"""
+
+    def __init__(self) -> None:
+        self.delay = 0.0
+
     async def owned(
         self, session_ids: Collection[uuid.UUID], *, app_id: str
     ) -> frozenset[uuid.UUID]:
+        if self.delay:
+            await asyncio.sleep(self.delay)
         return frozenset(sid for sid in session_ids if APPS.get(str(sid)) == app_id)
 
 
@@ -131,7 +164,22 @@ def file_changes() -> RecordingFileChanges:
 
 
 @pytest.fixture
-def client(hub: AppEventHub, file_changes: RecordingFileChanges) -> Generator[TestClient]:
+def transcripts() -> FakeTranscripts:
+    return FakeTranscripts()
+
+
+@pytest.fixture
+def sessions() -> FakeSessions:
+    return FakeSessions()
+
+
+@pytest.fixture
+def client(
+    hub: AppEventHub,
+    file_changes: RecordingFileChanges,
+    transcripts: FakeTranscripts,
+    sessions: FakeSessions,
+) -> Generator[TestClient]:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await hub.start()
@@ -151,8 +199,8 @@ def client(hub: AppEventHub, file_changes: RecordingFileChanges) -> Generator[Te
     app.include_router(
         create_transcript_ws_router(
             auth.identify,
-            cast(TranscriptService, FakeTranscripts()),
-            cast(SessionService, FakeSessions()),
+            cast(TranscriptService, transcripts),
+            cast(SessionService, sessions),
             file_changes,
         )
     )
@@ -172,18 +220,29 @@ def in_app_loop(client: TestClient, action: Callable[[], None]) -> None:
     portal.call(action)
 
 
+def send_subscribe(
+    ws: Any,
+    session_id: str,
+    transcript: dict[str, str],
+    *,
+    frame_id: str = "s1",
+    since: dict[str, int] | None = None,
+) -> None:
+    """发一帧 subscribe_v2；带水位时 epoch 一律是替身的 ``e1``。"""
+
+    payload: dict[str, Any] = {"session_id": session_id, "transcript": transcript}
+    if since is not None:
+        payload["transcript_since"] = since
+        payload["transcript_epoch"] = dict.fromkeys(since, "e1")
+    ws.send_json({"type": "subscribe_v2", "id": frame_id, "payload": payload})
+
+
 def subscribe(
     ws: Any, session_id: str, transcript: dict[str, str], *, frame_id: str = "s1"
 ) -> dict[str, Any]:
     """发一帧 subscribe_v2，等到它的回执交回（其间的 reset 跳过）。"""
 
-    ws.send_json(
-        {
-            "type": "subscribe_v2",
-            "id": frame_id,
-            "payload": {"session_id": session_id, "transcript": transcript},
-        }
-    )
+    send_subscribe(ws, session_id, transcript, frame_id=frame_id)
     return until_ack(ws, frame_id)
 
 
@@ -253,6 +312,127 @@ def test_overflowing_the_outbound_queue_closes_the_connection(
             ws.receive_json()
 
     assert closed.value.code == 1013
+
+
+# --- 对话内容流 -----------------------------------------------------------------
+
+
+def eventually(check: Callable[[], bool], seconds: float = 2.0) -> bool:
+    """在服务线程里改的状态，限时等它满足 ``check``。"""
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        time.sleep(0.01)
+    return check()
+
+
+@pytest.mark.timeout(10)
+def test_overflowing_during_catchup_closes_and_releases_the_session(
+    client: TestClient,
+    transcripts: FakeTranscripts,
+    file_changes: RecordingFileChanges,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 队列很小，取快照前落下的实时批就把它挤爆；一帧订两个 agent，溢出后还有补批要放。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 2)
+    transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta", CHILD: "delta"})
+        with pytest.raises(WebSocketDisconnect) as closed:
+            for _ in range(20):
+                ws.receive_json()
+        assert closed.value.code == 1013
+
+        # 对方回关闭帧后服务这一侧收到断开；读循环卡在出站队列上时收不到，固定与监听一直占着。
+        # 要在 with 里看：退出时测试客户端会取消连接任务，卡住的也会被 finally 放开。
+        ws.close()
+        released = eventually(lambda: transcripts.pins == 0 and not transcripts.listeners)
+        assert released, (transcripts.pins, list(transcripts.listeners))
+
+    assert file_changes.log == [("attach", BFF_SESSION), ("detach", BFF_SESSION)]
+
+
+@pytest.mark.timeout(10)
+def test_a_close_while_handling_a_frame_ends_the_connection_quietly(
+    client: TestClient,
+    transcripts: FakeTranscripts,
+    sessions: FakeSessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 第一帧的实时批挤爆队列；第二帧核归属要等一会儿，发送泵趁这时以 1013 关了连接，读循环处理完
+    # 这一帧再去读，应用侧已断开。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 2)
+    transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
+    sessions.delay = 0.05
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"})
+        send_subscribe(ws, OTHER_BFF_SESSION, {MAIN_AGENT_ID: "delta"}, frame_id="s2")
+        with pytest.raises(WebSocketDisconnect) as closed:
+            for _ in range(20):
+                ws.receive_json()
+        assert closed.value.code == 1013
+
+        # 不等对方回关闭帧，连接自己收尾；退出 with 时连接任务不带着异常结束。
+        released = eventually(lambda: transcripts.pins == 0 and not transcripts.listeners)
+        assert released, (transcripts.pins, list(transcripts.listeners))
+
+
+@pytest.mark.timeout(10)
+def test_catchup_that_does_not_fit_falls_back_to_a_reset(
+    client: TestClient, transcripts: FakeTranscripts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 补批刚好占满余量，回执就放不下了：改发 reset，连接不断，对方覆盖水位后重取历史。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 4)
+    transcripts.catchup = {MAIN_AGENT_ID: streams.MAX_OUTBOUND}
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"}, since={MAIN_AGENT_ID: 7})
+        reset, ack = ws.receive_json(), ws.receive_json()
+        # 再来回一趟，证明连接还开着。
+        unsubscribe(ws, BFF_SESSION)
+
+    assert (reset["type"], reset["payload"]["agent_id"]) == ("transcript.reset", MAIN_AGENT_ID)
+    assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", "s1", [BFF_SESSION])
+
+
+@pytest.mark.timeout(10)
+def test_catchup_leaves_room_for_the_agents_after_it_in_the_same_frame(
+    client: TestClient, transcripts: FakeTranscripts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 队列 8 格。main 补 4 帧后剩 4；CHILD 的 3 帧放进去只剩 1 格，不够 OTHER_CHILD 一帧加回执一格，
+    # 改发 reset，剩 3；OTHER_CHILD 的 2 帧正好留出回执那一格。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 8)
+    transcripts.catchup = {MAIN_AGENT_ID: 4, CHILD: 3, OTHER_CHILD: 2}
+    agents = (MAIN_AGENT_ID, CHILD, OTHER_CHILD)
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(
+            ws,
+            BFF_SESSION,
+            dict.fromkeys(agents, "delta"),
+            since=dict.fromkeys(agents, 7),
+        )
+        received: list[tuple[str, str]] = []
+        frame: dict[str, Any] = {}
+        for _ in range(20):
+            frame = ws.receive_json()
+            if frame["type"] == "ack":
+                break
+            received.append((frame["payload"]["agent_id"], frame["type"]))
+        # 再来回一趟，证明连接还开着。
+        unsubscribe(ws, BFF_SESSION)
+
+    assert received == [
+        *[(MAIN_AGENT_ID, "transcript.ops")] * 4,
+        (CHILD, "transcript.reset"),
+        *[(OTHER_CHILD, "transcript.ops")] * 2,
+    ]
+    ack = frame
+    assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", "s1", [BFF_SESSION])
 
 
 # --- 对话内容流上的文件变化 -------------------------------------------------------
