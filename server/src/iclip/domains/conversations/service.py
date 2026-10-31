@@ -23,6 +23,8 @@ from iclip.domains.conversations.models import (
     WholeFilmExport,
 )
 from iclip.domains.conversations.repository import (
+    MISSING_COLLECTION,
+    MISSING_TASK,
     AuditFilter,
     ConversationRepository,
     DeletedFilter,
@@ -93,7 +95,8 @@ class RuntimeSessions(Protocol):
         """从源对话的第 ``turn`` 轮分叉：开会话、拷工作区文件与整份素材台账、写种子快照。
 
         ``agent_id`` 为 None 照抄源会话的版本，否则按 ``open`` 固定那个 agent 并照它抛错。源有没跑完的
-        消息、或数完轮数后又跑了一轮是 ``Conflict``；源没跑过或 ``turn`` 超出轮数是 ``ValidationFailed``。"""
+        消息、或数完轮数后轮数又变了是 ``Conflict``；源没跑过或 ``turn`` 超出轮数是 ``ValidationFailed``。
+        这些拒绝都在写任何东西之前。"""
         ...
 
     async def copy_files(
@@ -179,6 +182,12 @@ class ListCollections(Protocol):
 
 ClaimTask = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 """对话挂上需求单就是有人在做了：以 (需求单 id, 对话属主) 认领它。实现由组合根注入。"""
+
+TaskExists = Callable[[uuid.UUID], Awaitable[bool]]
+"""有没有这张需求单，不看状态与创建者，与对话行上的外键同一口径。实现由组合根注入。"""
+
+CollectionExists = Callable[[uuid.UUID], Awaitable[bool]]
+"""有没有这个合集，不看属主，与对话行上的外键同一口径。实现由组合根注入。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,6 +452,8 @@ class ConversationService:
         runtime: RuntimeSessions,
         list_collections: ListCollections,
         claim_task: ClaimTask,
+        task_exists: TaskExists,
+        collection_exists: CollectionExists,
         list_derived_files: ListDerivedFiles,
         read_derived_file: ReadDerivedFile,
         write_derived_file: WriteDerivedFile,
@@ -472,6 +483,8 @@ class ConversationService:
         self._announce_row = announce_row
         self._announce_deleted = announce_deleted
         self._claim_task = claim_task
+        self._task_exists = task_exists
+        self._collection_exists = collection_exists
         self._activities_of = activities_of
         self._busy_conversation_ids = busy_conversation_ids
         self._latest_master_urls = latest_master_urls
@@ -809,27 +822,34 @@ class ConversationService:
         collection_id: uuid.UUID | None = None,
         same_as: uuid.UUID | None = None,
     ) -> tuple[Conversation, bool]:
-        """创建一段对话，返回它与「本次是否新建」；可选归属是否存在由外键约束校验。
+        """创建一段对话，返回它与「本次是否新建」。
 
         ``conversation_id`` 由调用方铸时按它幂等：重发同一个 id 返回已有那一段。
         落库的那一段挂着需求单，就以它的属主认领那张单，重发也认领一次。
 
+        新建时先查给的需求单与合集在不在，不在抛 ``ValidationFailed``，运行时什么都不写；外键约束仍兜底。
+        再在运行时开会话、固定 agent 此刻的当前版本，agent 不能开对话时按 ``RuntimeSessions.open``
+        抛错、不落行。这个 id 已有对话行（重发）时这些都不再做。
+
         给了 ``same_as`` 就是做同款：先把那张资料库卡挂着的对话的制作文件与素材台账拷进来，再落
         对话行。调用者没有 ``generation:read``、或 ``same_as`` 不是挂着对话的资料库卡抛
-        ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
-        这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。
-
-        新建时先在运行时开会话、固定 agent 此刻的当前版本，agent 不能开对话时按 ``RuntimeSessions.open``
-        抛错、不落行；这个 id 已有对话行（重发）时不再开。"""
+        ``NotFound``，在开会话之前；源没有工程文件或分镜文件抛 ``ValidationFailed``，那时会话已经开了。
+        两种都不落行；这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。"""
 
         now = datetime.now(UTC)
         new_id = conversation_id or uuid.uuid4()
         # 调用方铸的 id 在答复之前就可能被拿去改这段对话，created 帧与其他整行帧同样要按提交顺序广播。
         async with self._row_lock(new_id):
             if not (conversation_id is not None and await self._id_taken(conversation_id)):
+                await self._require_attribution(task_id=task_id, collection_id=collection_id)
+                source_owner = (
+                    None if same_as is None else await self._same_as_owner(principal, same_as)
+                )
                 await self._runtime.open(new_id, agent_id=agent_id)
-                if same_as is not None:
-                    await self._copy_same_as(principal, source_id=same_as, target_id=new_id)
+                if same_as is not None and source_owner is not None:
+                    await self._copy_same_as(
+                        principal, source_id=same_as, source_owner=source_owner, target_id=new_id
+                    )
             conversation, created = await self._repo.create_if_absent(
                 Conversation(
                     id=new_id,
@@ -862,20 +882,40 @@ class ConversationService:
             return False
         return True
 
-    async def _copy_same_as(
-        self, principal: Principal, *, source_id: uuid.UUID, target_id: uuid.UUID
+    async def _require_attribution(
+        self, *, task_id: uuid.UUID | None, collection_id: uuid.UUID | None
     ) -> None:
-        """做同款的拷贝：源按资料库认，看得到资料库、源是挂着对话的卡就能拷，不看那段对话调用者
-        读不读得到、删没删，在跑也照拷。
+        """新对话要挂的需求单、合集得在；口径同外键，挂别人的合集也不拦，与 ``set_collection`` 一样。"""
 
-        先拷文件与素材、对话行由调用方最后落，与分叉同一个顺序：中途失败只留下寻址不到的数据，
-        agent 也不会在拷到一半的工作区里开跑。"""
+        if task_id is not None and not await self._task_exists(task_id):
+            raise ValidationFailed(MISSING_TASK)
+        if collection_id is not None and not await self._collection_exists(collection_id):
+            raise ValidationFailed(MISSING_COLLECTION)
+
+    async def _same_as_owner(self, principal: Principal, source_id: uuid.UUID) -> uuid.UUID:
+        """做同款认源，交回源对话的属主：源按资料库认，看得到资料库、源是挂着对话的卡就行，不看那段
+        对话调用者读不读得到、删没删，在跑也照拷。只读不写，开会话之前做。"""
 
         if not principal.has("generation:read"):
             raise NotFound("资料库里没有这条视频")
         source_owner = await self._same_style_source(source_id)
         if source_owner is None:
             raise NotFound("资料库里没有这条视频")
+        return source_owner
+
+    async def _copy_same_as(
+        self,
+        principal: Principal,
+        *,
+        source_id: uuid.UUID,
+        source_owner: uuid.UUID,
+        target_id: uuid.UUID,
+    ) -> None:
+        """做同款的拷贝，源已由 ``_same_as_owner`` 认过。
+
+        先拷文件与素材、对话行由调用方最后落，与分叉同一个顺序：中途失败只留下寻址不到的数据，
+        agent 也不会在拷到一半的工作区里开跑。"""
+
         same_style = self._same_style_files
         if not await self._runtime.copy_files(
             source_id=source_id,
@@ -906,13 +946,15 @@ class ConversationService:
 
         会话、工作区、素材与种子快照由运行时的分叉写，对话行在它之后由这里写，各自独立提交。
         中途失败的副本进不了任何对话列表，也读不出 transcript。没跑完、没跑过、轮号越界与数完轮数后
-        源又跑了一轮都按 ``RuntimeSessions.fork`` 抛错，不落行。
+        源的轮数又变了都按 ``RuntimeSessions.fork`` 抛错，不落行。给的合集不在按 ``create`` 的口径抛错，
+        在调运行时之前。
 
         副本的会话照抄源会话的 agent 版本；换了 ``agent_id`` 就按新对话的规矩固定那个 agent 此刻的
         当前版本，不能开对话时按 ``RuntimeSessions.open`` 抛错。
         """
 
         source = await self._readable(principal, source_id)
+        await self._require_attribution(task_id=None, collection_id=collection_id)
         target_id = uuid.uuid4()
         now = datetime.now(UTC)
         await self._runtime.fork(
@@ -1254,6 +1296,7 @@ __all__ = [
     "AuditPage",
     "BusyConversationIds",
     "ClaimTask",
+    "CollectionExists",
     "CollectionInfo",
     "ConversationFilm",
     "ConversationService",
@@ -1270,6 +1313,7 @@ __all__ = [
     "SameStyleFiles",
     "Sidebar",
     "SidebarGroup",
+    "TaskExists",
     "VideoProgressOf",
     "WholeFilmDraftReferences",
     "WholeFilmExports",

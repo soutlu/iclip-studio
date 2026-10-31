@@ -211,7 +211,7 @@ def _untouched(*_: object, **__: object) -> NoReturn:
 
 
 class StartMovedUnderUs:
-    """运行时会话的替身：分叉写到种子快照时报源变了；开会话与拷文件用不到。"""
+    """运行时会话的替身：分叉规划种子快照时报源变了；开会话与拷文件用不到。"""
 
     def __init__(self) -> None:
         self.targets: list[uuid.UUID] = []
@@ -408,11 +408,10 @@ async def test_source_with_an_unfinished_prompt_is_409(
 async def test_start_moving_between_counting_and_seeding_voids_the_fork(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """数完轮数到写种子快照之间源变了，运行时的分叉报冲突：这次分叉作废，对话行不落库。
+    """数完轮数到规划种子快照之间源变了，运行时的分叉报冲突：这次分叉作废，对话行不落库。
 
     HTTP 层造不出这个间隙，直接装配用例：仓储用真的，运行时会话用一个报「源变了」的替身，
-    分叉用不到的端口一碰就报错。冲突本身由运行时判，见运行时会话服务的单元测试；中途失败只留下
-    寻址不到的副本数据，见 architecture.md §4 对话分叉。
+    分叉用不到的端口一碰就报错。冲突本身由运行时判、在它写任何东西之前，见运行时会话服务的单元测试。
     """
 
     owner = await login_as(client, pg_url, username="logan")
@@ -426,6 +425,8 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             runtime=start,
             list_collections=_untouched,
             claim_task=_untouched,
+            task_exists=_untouched,
+            collection_exists=_untouched,
             list_derived_files=_untouched,
             read_derived_file=_untouched,
             write_derived_file=_untouched,

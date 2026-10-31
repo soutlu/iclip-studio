@@ -528,6 +528,13 @@ def build_app(
             CollectionInfo(id=item.id, name=item.name, updated_at=item.updated_at) for item in found
         )
 
+    async def collection_exists(collection_id: uuid.UUID) -> bool:
+        try:
+            await collection_repo.get(collection_id, owner=None)
+        except NotFound:
+            return False
+        return True
+
     async def video_progress_of(owner: uuid.UUID | None) -> Mapping[uuid.UUID, InFlightPhase]:
         if generation is None:
             return {}
@@ -559,6 +566,14 @@ def build_app(
         return identity.service.principal_for_user(await identity.service.get_account(user_id))
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
+
+    async def task_exists(task_id: uuid.UUID) -> bool:
+        try:
+            await tasks.service.get(task_id)
+        except NotFound:
+            return False
+        return True
+
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     # 配置页的三组管理接口转给运行时服务。
     skills = build_skills_module(runtime_client)
@@ -580,6 +595,8 @@ def build_app(
         runtime=runtime_ports,
         list_collections=list_owner_collections,
         claim_task=tasks.service.claim,
+        task_exists=task_exists,
+        collection_exists=collection_exists,
         list_derived_files=conversation_workspace.list_files,
         read_derived_file=conversation_workspace.read_file,
         write_derived_file=conversation_workspace.write_file,

@@ -212,6 +212,10 @@ async def _idle(ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, ConversationActi
     return {}
 
 
+async def _exists(_: uuid.UUID) -> bool:
+    return True
+
+
 async def _until(ready: Callable[[], bool]) -> None:
     """让出事件循环，直到别的任务走到 ``ready`` 成立的那一步。"""
 
@@ -242,6 +246,8 @@ def build(
         runtime=OpensSessions(),
         list_collections=_untouched,
         claim_task=claim_task,
+        task_exists=_exists,
+        collection_exists=_exists,
         list_derived_files=_untouched,
         read_derived_file=_untouched,
         write_derived_file=_untouched,

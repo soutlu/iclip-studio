@@ -16,7 +16,11 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord,
 from sqlalchemy import text
 
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
-from iclip.domains.conversations.repository import AuditFilter
+from iclip.domains.conversations.repository import (
+    MISSING_COLLECTION,
+    MISSING_TASK,
+    AuditFilter,
+)
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_client
@@ -200,8 +204,9 @@ async def test_missing_attribution_is_still_reported_as_such(
     assert bad_task.status_code == 422, bad_task.text
     assert bad_collection.status_code == 422, bad_collection.text
     # 报文仍是领域语言，不是主键冲突，也不是驱动错误。
-    for response, minted in ((bad_task, task_minted), (bad_collection, collection_minted)):
-        assert "不存在" in response.json()["detail"], response.text
+    assert bad_task.json()["detail"] == MISSING_TASK
+    assert bad_collection.json()["detail"] == MISSING_COLLECTION
+    for minted in (task_minted, collection_minted):
         corrected = await create(client, id=minted)
         assert corrected.status_code == 201, corrected.text
         assert corrected.json()["conversation"]["id"] == minted

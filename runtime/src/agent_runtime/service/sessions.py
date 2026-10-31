@@ -141,8 +141,11 @@ class SessionService:
         源不归 ``app_id`` 是 ``NotFound``，最先查，报错同会话不存在。``agent_id`` 为 None 照抄源会话的
         版本，否则按 ``open`` 固定那个 agent 的当前版本、照它抛错；目标 id 已归别的应用是 ``Conflict``。
         源有没跑完或排着队的消息是 ``Conflict``：排队的那条一旦起跑就会写新快照，轮号跟着变。源没跑过、
-        或 ``turn`` 超出它的轮数是 ``ValidationFailed``，都在拷任何东西之前。数完轮数之后源又跑了一轮，
-        写种子快照时是 ``Conflict``，那时会话、文件与素材已经写了。
+        或 ``turn`` 超出它的轮数是 ``ValidationFailed``。数完轮数之后源的轮数又变了、规划不出种子快照
+        也是 ``Conflict``。这些都在写任何东西之前。
+
+        种子快照先规划好再拷：它只是截下来的那几轮消息，提交时不再读源，所以拷完之后提交不会再冲突。
+        之后某一步存储出错，已经写下的照样留着，没有回滚。
 
         种子快照里的 run_id 照抄源会话：新会话靠它们回源查每轮的终态与子代理，不另存运行记录。"""
 
@@ -156,6 +159,12 @@ class SessionService:
             raise ValidationFailed("这段对话还没跑过，没有可分叉的轮次")
         if turn > turns:
             raise ValidationFailed(f"这段对话只有 {turns} 轮，分不出第 {turn} 轮")
+        seed = await self._history.plan_fork(
+            str(source_id), ordinal=turn, target_conversation_id=str(target_id)
+        )
+        if seed is None:
+            # 刚数过轮数，这一步却越界：期间源的轮数变少了（末轮被重新生成截掉）。
+            raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
         if agent_id is None:
             if not await self._sessions.copy(source_id, target_id, app_id=app_id):
                 raise Conflict(SESSION_ID_TAKEN)
@@ -170,12 +179,6 @@ class SessionService:
                 raise RuntimeError(f"工作区列出了 {entry.path} 却读不出来，这段对话的文件存坏了")
             await self._files.write(target, entry.path, found.content)
         await self._copy_ledger(source, target)
-        seed = await self._history.plan_fork(
-            str(source_id), ordinal=turn, target_conversation_id=str(target_id)
-        )
-        if seed is None:
-            # 先数过轮数才动手拷的，走到这儿说明源在这期间又跑了一轮。
-            raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
         await seed.commit()
 
     async def copy_files(

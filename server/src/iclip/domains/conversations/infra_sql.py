@@ -39,6 +39,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.conversations.models import Conversation, WholeFilmDraft
 from iclip.domains.conversations.repository import (
+    MISSING_COLLECTION,
+    MISSING_TASK,
     AuditFilter,
     CollectionConversations,
     DeletedFilter,
@@ -237,9 +239,9 @@ def _reject_missing_reference(error: IntegrityError) -> ValidationFailed:
     constraint = getattr(getattr(error, "orig", None), "diag", None)
     name = getattr(constraint, "constraint_name", None) or ""
     if "task" in name:
-        return ValidationFailed("没有这张需求单")
+        return ValidationFailed(MISSING_TASK)
     if "collection" in name:
-        return ValidationFailed("没有这个合集")
+        return ValidationFailed(MISSING_COLLECTION)
     return ValidationFailed("指定的需求单或合集不存在")
 
 

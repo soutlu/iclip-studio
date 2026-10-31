@@ -6,9 +6,13 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Final, Literal, Protocol
 
 from iclip.domains.conversations.models import Conversation, WholeFilmDraft
+
+# 对话挂的需求单、合集不存在时的报错：用例落行前先查，外键兜底，两处说法一样。
+MISSING_TASK: Final = "没有这张需求单"
+MISSING_COLLECTION: Final = "没有这个合集"
 
 
 @dataclass(frozen=True, slots=True)
