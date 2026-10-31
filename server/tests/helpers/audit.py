@@ -1,17 +1,55 @@
-"""审计报表集成测试的种子：原生 SQL 直插，时间戳都由调用方给（业务仓储用数据库时钟，控不住时刻）。"""
+"""审计报表集成测试的种子与装配：原生 SQL 直插，时间戳都由调用方给（业务仓储用数据库时钟，控不住时刻）；
+报表经进程内的运行时服务取运行时的事实行。
+
+运行时的统计接口只答应用 ``video`` 的会话：种对话时同时给它开一个归 ``video`` 的会话（``open_session``），
+与生产上建对话先开会话一致。"""
 
 from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from typing import Final
 
+import httpx
+from agent_runtime.client import RuntimeClient
+from agent_runtime.http import create_app
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from iclip.app.bootstrap import VIDEO_APP_ID
+from iclip.domains.audit.reports_pg import PgAuditReports
+from iclip.domains.audit.runtime_facts import RuntimeStats
 from iclip.domains.generation.models import STATUS_COMPLETED
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_GENERATE
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
+from tests.helpers.app import make_runtime_config
+from tests.helpers.runtime_backed import RUNTIME_APP_KEY, RUNTIME_URL, runtime_settings
+
+EVER: Final = datetime(2000, 1, 1, tzinfo=UTC)
+"""比任何种子都早的起点：报表的筛选范围一定有起点，要看全部数据的用例从这里起。"""
+
+
+async def open_session(conn: AsyncConnection, conversation_id: uuid.UUID) -> None:
+    """给这段对话开一个归应用 ``video`` 的运行时会话。"""
+
+    await conn.execute(
+        text("INSERT INTO agent_runtime.sessions (id, app_id) VALUES (:id, :app_id)"),
+        {"id": conversation_id, "app_id": VIDEO_APP_ID},
+    )
+
+
+@asynccontextmanager
+async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[PgAuditReports]:
+    """报表连同它调的运行时服务：运行时 app 接同一个测试库，客户端经 ASGI 传输层直达，不出网。"""
+
+    runtime = create_app(runtime_settings(make_runtime_config(), engine), plugins={}, engine=engine)
+    async with RuntimeClient(
+        RUNTIME_URL, RUNTIME_APP_KEY, transport=httpx.ASGITransport(app=runtime)
+    ) as client:
+        yield PgAuditReports(engine, RuntimeStats(client))
 
 
 class Plant:
@@ -79,6 +117,7 @@ class Plant:
                 "fork_turn": None if forked_from is None else 1,
             },
         )
+        await open_session(self._conn, conversation_id)
         return conversation_id
 
     async def prompt(self, conversation_id: uuid.UUID, *, user_name: str, at: datetime) -> str:
@@ -224,4 +263,4 @@ class Plant:
         )
 
 
-__all__ = ["Plant"]
+__all__ = ["EVER", "Plant", "audit_reports", "open_session"]

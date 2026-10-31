@@ -33,6 +33,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
 from iclip.platform.db.engine import build_engine
+from tests.helpers.audit import EVER, open_session
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"
@@ -115,6 +116,7 @@ class Seed:
                         "deleted_at": deleted_at,
                     },
                 )
+                await open_session(conn, conversation_id)
 
             async def agent_job(
                 conversation_id: uuid.UUID, *, user_name: str, at: datetime
@@ -500,16 +502,6 @@ async def seed(engine: AsyncEngine) -> Seed:
     return planted
 
 
-@pytest.fixture
-def reports(engine: AsyncEngine) -> PgAuditReports:
-    return PgAuditReports(engine)
-
-
-@pytest.fixture
-def service(reports: PgAuditReports) -> AuditService:
-    return AuditService(reports)
-
-
 async def executions_by_id(service: AuditService) -> dict[uuid.UUID, ExecutionOut]:
     """近三天的全部任务执行（种子全在里面），按对话 id 取。"""
 
@@ -523,7 +515,7 @@ async def test_overall_counts_every_metric_on_its_own_anchor(
     """出片件数按「需求单一件、无单对话一件」；镜只算成功过的、次数只数成功的，失败与悬在上游的
     都不计，成了又重出的不算一次通过；运行含已删对话的；周期缺运行时从对话创建起算。"""
 
-    overall = await reports.overall(Scope())
+    overall = await reports.overall(Scope(since=EVER))
 
     assert overall.completed_videos == 6
     assert (overall.delivered_tasks, overall.delivered_orphan_conversations) == (1, 1)
@@ -565,7 +557,7 @@ async def test_window_applies_to_each_metric_anchor(reports: PgAuditReports, see
 
 
 async def test_empty_scope_is_all_zeros(reports: PgAuditReports, seed: Seed) -> None:
-    nothing = await reports.overall(Scope(user_name="Nobody"))
+    nothing = await reports.overall(Scope(since=EVER, user_name="Nobody"))
 
     assert nothing.completed_videos == 0
     assert nothing.deliveries == 0
@@ -579,10 +571,10 @@ async def test_attempt_distribution_buckets_shots_by_their_attempt_count(
     """四个镜分两档：两个一次的、两个两次的。次数只数成功的，失败的不计，悬在上游的那镜还没成过、
     不算镜；窗口与筛选跟镜同锚点，看该镜第一条成功生成的完成时刻。"""
 
-    everything = await reports.attempt_distribution(Scope())
+    everything = await reports.attempt_distribution(Scope(since=EVER))
     recent = await reports.attempt_distribution(Scope(since=ago(hours=2)))
-    by_derek = await reports.attempt_distribution(Scope(user_name=DEREK))
-    nobody = await reports.attempt_distribution(Scope(user_name="Nobody"))
+    by_derek = await reports.attempt_distribution(Scope(since=EVER, user_name=DEREK))
+    nobody = await reports.attempt_distribution(Scope(since=EVER, user_name="Nobody"))
 
     assert [(row.attempts, row.shots) for row in everything] == [(1, 2), (2, 2)]
     assert [(row.attempts, row.shots) for row in recent] == [(2, 2)]
@@ -596,7 +588,7 @@ async def test_by_user_attributes_videos_by_owner_and_conversations_by_latest_ru
     """视频归属主的用户名，不看请求里的 ``user_name``；对话归最近一轮运行的人，没跑过就归最近
     一条视频的属主；运行归发起人，只跑过没出片的人也占一行。"""
 
-    rows = await reports.by_user(Scope())
+    rows = await reports.by_user(Scope(since=EVER))
 
     assert set(rows) == {SARA, DEREK, EVA}
     sara, derek, eva = rows[SARA], rows[DEREK], rows[EVA]
@@ -618,7 +610,9 @@ async def test_by_user_attributes_videos_by_owner_and_conversations_by_latest_ru
 async def test_by_period_buckets_in_the_given_timezone(reports: PgAuditReports, seed: Seed) -> None:
     singapore = ZoneInfo("Asia/Singapore")
 
-    rows = await reports.by_period(Scope(), bucket="day", timezone="Asia/Singapore")
+    rows = await reports.by_period(
+        Scope(since=ago(days=3)), bucket="day", timezone="Asia/Singapore"
+    )
 
     assert rows and all(row.period_start.astimezone(singapore).hour == 0 for row in rows)
     assert [row.period_start for row in rows] == sorted(row.period_start for row in rows)
@@ -632,7 +626,7 @@ async def test_by_period_buckets_in_the_given_timezone(reports: PgAuditReports, 
 async def test_by_period_fills_every_bucket_of_a_bounded_window(
     reports: PgAuditReports, seed: Seed
 ) -> None:
-    """有界时间窗内每一期都占一行，没动静的期计数为 0、分布为空；不限时间只列有数据的期。"""
+    """时间窗内每一期都占一行，没动静的期计数为 0、分布为空。"""
 
     singapore = ZoneInfo("Asia/Singapore")
     since = ago(days=3)
@@ -647,17 +641,6 @@ async def test_by_period_fills_every_bucket_of_a_bounded_window(
     assert sum(row.metrics.runs for row in rows) == 4
     quiet = [row.metrics for row in rows if row.metrics.completed_videos == 0]
     assert all(m.cycle_seconds is None and m.upstream_seconds is None for m in quiet)
-
-    sparse = await reports.by_period(Scope(), bucket="day", timezone="Asia/Singapore")
-
-    assert len(sparse) <= len(rows)
-    assert all(
-        row.metrics.completed_videos
-        or row.metrics.shots
-        or row.metrics.runs
-        or row.metrics.usage.requests
-        for row in sparse
-    )
 
 
 async def test_executions_carry_whole_conversation_detail(
@@ -717,7 +700,7 @@ async def test_effective_shots_are_downloaded_shots(
     """有效镜是下载过的镜，下载素材片算它原作所在的镜，同一镜下载几次都只算一镜；还没成过的镜
     （C2 镜 2 悬在上游）不算镜、不进分母；分母为零的有效率是空。四个维度同一口径。"""
 
-    overall = await reports.overall(Scope())
+    overall = await reports.overall(Scope(since=EVER))
     assert (overall.shots, overall.effective_shots) == (4, 2)
     assert overall.effective_rate == 0.5
 
@@ -725,7 +708,7 @@ async def test_effective_shots_are_downloaded_shots(
     assert (recent.shots, recent.effective_shots) == (2, 2)
     assert recent.effective_rate == 1
 
-    by_user = await reports.by_user(Scope())
+    by_user = await reports.by_user(Scope(since=EVER))
     assert (by_user[SARA].shots, by_user[SARA].effective_shots) == (3, 2)
     derek = by_user[DEREK]
     assert (derek.shots, derek.effective_shots) == (1, 0)
@@ -753,7 +736,7 @@ async def test_forks_do_not_count_toward_any_metric(
     """副本继承的出片记在源对话名下、源那边已经数过；副本自己跑的是试验数据，一律不计，也不算
     任务执行。下载副本自己出的片也不让任何一镜变有效。"""
 
-    before = await reports.overall(Scope())
+    before = await reports.overall(Scope(since=EVER))
     before_executions = await executions_by_id(service)
     fork_id, fork_video = uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
@@ -766,6 +749,7 @@ async def test_forks_do_not_count_toward_any_metric(
             ),
             {"id": fork_id, "owner": seed.sara, "task_id": seed.task, "at": at, "source": seed.c1},
         )
+        await open_session(conn, fork_id)
         await conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, shot_index,"
@@ -823,7 +807,7 @@ async def test_forks_do_not_count_toward_any_metric(
             },
         )
 
-    after = await reports.overall(Scope())
+    after = await reports.overall(Scope(since=EVER))
     assert after == before
     assert await executions_by_id(service) == before_executions
 
@@ -834,8 +818,8 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
     """属主没有用户名（SSO 显示名撞名时留空）的视频计入总览，但不归任何人：不占分人的行、不计
     出片人数，它所在的任务执行上人为空；请求里的标签不拿来顶替。"""
 
-    before = await reports.overall(Scope())
-    before_users = set(await reports.by_user(Scope()))
+    before = await reports.overall(Scope(since=EVER))
+    before_users = set(await reports.by_user(Scope(since=EVER)))
     bare, conversation_id, unmarked = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
     async with engine.begin() as conn:
@@ -856,6 +840,7 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
             ),
             {"id": conversation_id, "owner": bare, "at": at},
         )
+        await open_session(conn, conversation_id)
         for video_id, shot in ((uuid.uuid4(), 1), (unmarked, None)):
             await conn.execute(
                 text(
@@ -879,8 +864,8 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
                 },
             )
 
-    after = await reports.overall(Scope())
-    rows = await reports.by_user(Scope())
+    after = await reports.overall(Scope(since=EVER))
+    rows = await reports.by_user(Scope(since=EVER))
     executions = await executions_by_id(service)
 
     assert after.completed_videos == before.completed_videos + 1
@@ -897,8 +882,8 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
     """上传与切图不是出片：一条不挂对话的视频上传、挂在对话上的一张宫格切出的格子，总览、分人与
     任务执行都不变。"""
 
-    before = await reports.overall(Scope())
-    before_users = await reports.by_user(Scope())
+    before = await reports.overall(Scope(since=EVER))
+    before_users = await reports.by_user(Scope(since=EVER))
     before_executions = await executions_by_id(service)
     grid, cell, upload = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
@@ -931,8 +916,8 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
                 },
             )
 
-    assert await reports.overall(Scope()) == before
-    assert await reports.by_user(Scope()) == before_users
+    assert await reports.overall(Scope(since=EVER)) == before
+    assert await reports.by_user(Scope(since=EVER)) == before_users
     assert await executions_by_id(service) == before_executions
 
 
@@ -941,8 +926,8 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
 ) -> None:
     """字幕记录不是出片：挂在对话上的一条完成、一条失败、一条还在跑，总览、分人与任务执行都不变。"""
 
-    before = await reports.overall(Scope())
-    before_users = await reports.by_user(Scope())
+    before = await reports.overall(Scope(since=EVER))
+    before_users = await reports.by_user(Scope(since=EVER))
     before_executions = await executions_by_id(service)
     at = ago(hours=1)
     async with engine.begin() as conn:
@@ -975,8 +960,8 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
                 },
             )
 
-    assert await reports.overall(Scope()) == before
-    assert await reports.by_user(Scope()) == before_users
+    assert await reports.overall(Scope(since=EVER)) == before
+    assert await reports.by_user(Scope(since=EVER)) == before_users
     assert await executions_by_id(service) == before_executions
 
 
@@ -1003,6 +988,7 @@ async def plant_conversation(
             "fork_turn": None if forked_from is None else 1,
         },
     )
+    await open_session(conn, conversation_id)
     return conversation_id
 
 
@@ -1102,7 +1088,7 @@ async def test_a_composite_downloaded_in_a_fork_counts_toward_the_ancestors_shot
     镜 1 上剪了合成，自己也出了一条。两条都被下载，源对话只有镜 1 成有效镜；副本自己出的那条不让
     任何一镜变有效，副本也不成任务执行。"""
 
-    before = await reports.overall(Scope())
+    before = await reports.overall(Scope(since=EVER))
     at = ago(minutes=30)
     async with engine.begin() as conn:
         source = await plant_conversation(conn, owner=seed.sara, at=ago(hours=1))
@@ -1118,7 +1104,7 @@ async def test_a_composite_downloaded_in_a_fork_counts_toward_the_ancestors_shot
         await plant_download(conn, composite, user_id=seed.derek)
         await plant_download(conn, own, user_id=seed.derek)
 
-    overall = await reports.overall(Scope())
+    overall = await reports.overall(Scope(since=EVER))
     assert (overall.shots, overall.effective_shots) == (
         before.shots + 3,
         before.effective_shots + 1,
@@ -1138,8 +1124,8 @@ async def test_audio_records_do_not_count_toward_any_metric(
     """音频记录不是出片：挂在对话上的背景音乐一条完成、一条失败、一条还在跑，外加一条上传的音乐，
     总览、分人与任务执行都不变。"""
 
-    before = await reports.overall(Scope())
-    before_users = await reports.by_user(Scope())
+    before = await reports.overall(Scope(since=EVER))
+    before_users = await reports.by_user(Scope(since=EVER))
     before_executions = await executions_by_id(service)
     at = ago(hours=1)
     rows: list[dict[str, Any]] = [
@@ -1179,8 +1165,8 @@ async def test_audio_records_do_not_count_toward_any_metric(
                 {"id": uuid.uuid4(), "owner": seed.sara, "kind": KIND_AUDIO, "at": at, **row},
             )
 
-    assert await reports.overall(Scope()) == before
-    assert await reports.by_user(Scope()) == before_users
+    assert await reports.overall(Scope(since=EVER)) == before
+    assert await reports.by_user(Scope(since=EVER)) == before_users
     assert await executions_by_id(service) == before_executions
 
 

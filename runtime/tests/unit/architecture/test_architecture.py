@@ -1,8 +1,10 @@
-"""验证 tach 依赖图之外的约束：不依赖宿主、框架引用边界、配置模块的引用边界与纯度和异常处理。"""
+"""验证 tach 依赖图之外的约束：不依赖宿主、不写宿主 schema 的表、框架引用边界、配置模块的引用边界与纯度和
+异常处理。"""
 
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[3]
@@ -38,6 +40,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "harness/jobs.py",
         # 运行时会话（对话固定的 agent 版本），同样在 agent_runtime schema。
         "harness/sessions.py",
+        # 运行统计的只读查询：按应用读上面几张表。
+        "harness/stats_pg.py",
         # 三块配置各自的表。
         "config/skills/infra_sql.py",
         "config/model_providers/infra_sql.py",
@@ -217,6 +221,53 @@ def test_models_and_commands_are_pure() -> None:
                 ):
                     violations.append(f"{rel}: {module}")
     assert not violations, "\n".join(violations)
+
+
+HOST_SCHEMA = "iclip"
+# 写在 SQL 里的宿主表：表名前带 schema 的那几种位置。
+HOST_TABLE_IN_SQL = re.compile(
+    rf"\b(from|join|into|update|table|references)\s+{HOST_SCHEMA}\.", re.IGNORECASE
+)
+
+HOST_SCHEMA_ALLOWLIST: dict[str, str] = {
+    # 三块配置的表还在宿主的 schema 里；表挪进 agent_runtime 之后这三行一并删掉，名单回到空。
+    "config/agent_config/infra_sql.py": "agent 配置的表还在 iclip schema",
+    "config/model_providers/infra_sql.py": "模型供应商的表还在 iclip schema",
+    "config/skills/infra_sql.py": "技能库的表还在 iclip schema",
+}
+"""源码里还能写宿主 schema 的文件。运行时只读写自己 schema 里的表，宿主的数据经应用的接口拿。"""
+
+
+def _code_strings(tree: ast.AST) -> list[ast.Constant]:
+    """源码里的字符串常量，不含文档字符串（单独成句的字符串）；f-string 的字面部分也算。"""
+
+    docstrings = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+    }
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
+def test_runtime_never_names_the_host_schema() -> None:
+    """SQL 里的 ``iclip.<表>`` 与 schema 名 ``"iclip"`` 本身（``MetaData(schema=…)``、外键前缀）都算。"""
+
+    violations: list[str] = []
+    for path in _python_files(SRC):
+        rel = path.relative_to(SRC).as_posix()
+        if rel in HOST_SCHEMA_ALLOWLIST:
+            continue
+        for node in _code_strings(ast.parse(path.read_text(encoding="utf-8"))):
+            value = str(node.value)
+            if value == HOST_SCHEMA or HOST_TABLE_IN_SQL.search(value):
+                violations.append(f"{rel}:{node.lineno} {value.strip()[:80]!r}")
+    assert not violations, "运行时写了宿主 schema 的表:\n" + "\n".join(violations)
 
 
 def test_no_silent_exception_fallbacks() -> None:

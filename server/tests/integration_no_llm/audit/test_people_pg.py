@@ -6,10 +6,8 @@ import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_FAILED
 from tests.helpers.audit import Plant
@@ -25,11 +23,6 @@ FELIX = "Felix.Quan"
 
 def local(day: int, hour: int = 0, minute: int = 0) -> datetime:
     return datetime.combine(DAY0 + timedelta(days=day), time(hour, minute), tzinfo=SINGAPORE)
-
-
-@pytest.fixture
-def service(engine: AsyncEngine) -> AuditService:
-    return AuditService(PgAuditReports(engine))
 
 
 async def plant_people(engine: AsyncEngine) -> None:

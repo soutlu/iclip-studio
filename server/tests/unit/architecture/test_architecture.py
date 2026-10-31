@@ -207,6 +207,44 @@ def test_the_server_imports_only_the_runtime_shapes_and_client() -> None:
     assert not violations, "后端引用了运行时的内部模块:\n" + "\n".join(violations)
 
 
+RUNTIME_SCHEMA = "agent_runtime"
+RUNTIME_SCHEMA_ALLOWLIST: dict[str, str] = {}
+"""源码里还能写运行时 schema 的文件；应当为空。迁移与切换命令（``migrations/``、``scripts/``）不在 src 里。"""
+
+
+def _code_strings(tree: ast.AST) -> list[ast.Constant]:
+    """源码里的字符串常量，不含文档字符串（单独成句的字符串）；f-string 的字面部分也算。"""
+
+    docstrings = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+    }
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
+def test_the_server_never_names_runtime_tables() -> None:
+    """运行时的表只经它的接口读写：字符串里的 ``agent_runtime.<名字>`` 与 schema 名本身都算。import 不是
+    字符串，不在此列。"""
+
+    violations: list[str] = []
+    for path in _python_files():
+        rel = _rel(path)
+        if rel in RUNTIME_SCHEMA_ALLOWLIST:
+            continue
+        for node in _code_strings(ast.parse(path.read_text(encoding="utf-8"))):
+            value = str(node.value)
+            if value == RUNTIME_SCHEMA or f"{RUNTIME_SCHEMA}." in value:
+                violations.append(f"{rel}:{node.lineno} {value.strip()[:80]!r}")
+    assert not violations, "后端写了运行时 schema 的表:\n" + "\n".join(violations)
+
+
 def test_config_only_consumed_by_app() -> None:
 
     violations: list[str] = []

@@ -39,11 +39,6 @@ def ago(**delta: float) -> datetime:
 SINCE = ago(days=2)
 
 
-@pytest.fixture
-def service(engine: AsyncEngine) -> AuditService:
-    return AuditService(PgAuditReports(engine))
-
-
 def by_id(page: AuditExecutionsOut) -> dict[uuid.UUID, ExecutionOut]:
     return {item.conversation_id: item for item in page.items}
 
@@ -52,7 +47,7 @@ def by_id(page: AuditExecutionsOut) -> dict[uuid.UUID, ExecutionOut]:
 
 
 async def test_conversation_belongs_to_latest_run_else_latest_video_owner(
-    engine: AsyncEngine, service: AuditService
+    engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
     """A 没跑过：Derek 先出片、Sara 后出片，归 Sara。B 先 Derek 后 Eva 各跑一轮，Sara 的出片
     还在最后：有运行就以最近一轮为准，归 Eva。视频本身仍归属主；交付周期与用量跟对话归属人走。"""
@@ -82,7 +77,7 @@ async def test_conversation_belongs_to_latest_run_else_latest_video_owner(
         await plant.usage(b, tokens=700, last_at=ago(minutes=30))
 
     rows = by_id(await service.executions(since=SINCE))
-    people = await PgAuditReports(engine).by_user(Scope())
+    people = await reports.by_user(Scope(since=SINCE))
 
     assert (rows[a].user_name, rows[b].user_name) == (SARA, EVA)
     assert (people[DEREK].completed_videos, people[DEREK].delivered_conversations) == (1, 0)

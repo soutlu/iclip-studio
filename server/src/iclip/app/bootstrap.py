@@ -71,6 +71,7 @@ from iclip.domains.agents.transcript_api import (
 )
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
+from iclip.domains.audit.runtime_facts import RuntimeStats
 from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
@@ -572,7 +573,8 @@ def build_app(
     model_providers = build_model_providers_module(runtime_client)
     agent_config = build_agent_config_module(runtime_client)
 
-    audit = build_audit_module(PgAuditReports(active_engine))
+    # 审计报表读运行时的数据只经它的统计接口。
+    audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))
     library = build_library_module(
         library_reports,
         has_production_files=ProductionFilesProbe(workspace_files).has_production_files,

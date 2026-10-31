@@ -1,4 +1,8 @@
-"""审计报表的 Postgres 查询：跨 ``iclip.*`` 与 ``agent_runtime.*`` 九张表只读聚合，不建表、不写入。
+"""审计报表的 Postgres 查询：``iclip`` 的五张表，加上经运行时统计接口取回的事实行，只读聚合，不建表、不写入。
+
+运行时的表不直接读：消息、运行、用量与会话首末消息由 ``RuntimeStats`` 取回，作为参数化的伪表
+（``FACTS_CTE``）接进同一条 SQL。每条查询先按 ``iclip`` 的数据圈出要整段取的会话（有出片的对话、
+窗内建立的对话、排在前面的镜所在的对话），再连同时间窗里的行一起取，取多了也由 SQL 自己筛。
 
 同一份指标 SQL 服务全体、人、时段、对话四个维度，差别只在六段 CTE 各自的分组键表达式
 （``_DIMENSIONS``）——各指标的时间锚点不同，键要在各自的 CTE 里算。任务执行清单另有一条头查询，
@@ -10,7 +14,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, Final
 
@@ -26,6 +30,7 @@ from iclip.domains.audit.executions import (
 )
 from iclip.domains.audit.models import ExecutionSort, OverviewBucket, Scope, SortOrder
 from iclip.domains.audit.repository import ExecutionPage
+from iclip.domains.audit.runtime_facts import FACTS_CTE, RuntimeFacts, RuntimeStats, merge_runs
 from iclip.domains.audit.schemas import (
     EMPTY_METRICS,
     AttemptBucketOut,
@@ -50,9 +55,8 @@ from iclip.domains.audit.schemas import (
 # 其余口径都从它们派生。
 # SQL 里的 'video' / 'generate' / 'completed' / 'submitted' 镜像生成域的 KIND_VIDEO /
 # OPERATION_GENERATE / STATUS_COMPLETED / STATUS_SUBMITTED，'video.downloaded' 镜像埋点的
-# VIDEO_DOWNLOADED，'run_started' / 'run_completed' / 'run_failed' 镜像官方运行持久化的
-# 事件词表（报表按表名直接查，不 import 业务模块与引擎）；集成测试的种子取自那些常量或真跑
-# 运行驱动，改词这里的用例就红。
+# VIDEO_DOWNLOADED（报表按表名直接查，不 import 业务模块）；集成测试的种子取自那些常量，改词这里的
+# 用例就红。运行的开始与终态由运行时的统计接口判定。
 # ---------------------------------------------------------------------------
 
 _VIDEOS: Final = """
@@ -82,7 +86,8 @@ videos AS (
 )"""
 
 # 每段对话最近一条出片的属主先对整个 videos 排一次序取出来再左连：videos 是物化的 CTE，逐行
-# 取最近一条会对它每段对话全扫一遍。最近一轮运行走 agent_jobs 的（对话，建立时刻）索引，逐行无妨。
+# 取最近一条会对它每段对话全扫一遍。最近一条消息的人与首条消息的时刻来自 session_facts，同样左连；
+# 只有调用方取过首末消息的对话才对得上，其余按没跑过算，引用 person 的查询只读取过的那些。
 _PERSON: Final = """
 latest_video_owner AS (
     SELECT DISTINCT ON (v.conversation_id) v.conversation_id, v.user_name
@@ -92,13 +97,10 @@ latest_video_owner AS (
 person AS (
     SELECT c.id AS conversation_id, c.title, c.owner_user_id, c.task_id,
            c.created_at, c.updated_at, c.deleted_at,
-           COALESCE(
-               (SELECT j.user_name FROM agent_runtime.agent_jobs j
-                WHERE j.conversation_id = c.id::text
-                ORDER BY j.created_at DESC LIMIT 1),
-               o.user_name
-           ) AS user_name
+           COALESCE(sf.latest_user_name, o.user_name) AS user_name,
+           sf.first_prompt_at
     FROM iclip.conversations c
+    LEFT JOIN session_facts sf ON sf.conversation_id = c.id
     LEFT JOIN latest_video_owner o ON o.conversation_id = c.id
     WHERE c.forked_from IS NULL
 )"""
@@ -123,42 +125,28 @@ shots AS (
 _RUNS: Final = """
 runs AS (
     SELECT j.created_at, j.user_name, c.id AS conversation_id, c.task_id
-    FROM agent_runtime.agent_jobs j
-    JOIN iclip.conversations c ON c.id::text = j.conversation_id
+    FROM prompt_facts j
+    JOIN iclip.conversations c ON c.id = j.conversation_id
     WHERE c.forked_from IS NULL
 )"""
 
-# 一轮 agent 运行：同一 run_id 从 run_started 到第一条 run_completed / run_failed，没有终态的
-# 不计。只认 agent_job_runs 里登记的 run_id——那是运行驱动发放的顶层运行；子代理的内部运行
-# 另有自己的 run_id（带 parent_run_id），不在那张表里。人与需求单同 runs：发起人、对话挂的单。
+# 一轮 agent 运行：运行驱动发放的顶层运行，从开始到第一条终态（完成或失败），没有终态的不计，
+# 由运行时的统计接口判定（run_facts）。人与需求单同 runs：发起人、对话挂的单。
 _AGENT_RUNS: Final = """
 agent_runs AS (
-    SELECT j.user_name, c.id AS conversation_id, c.task_id,
-           min(e.timestamp) FILTER (WHERE e.kind = 'run_started') AS started_at,
-           min(e.timestamp) FILTER (WHERE e.kind IN ('run_completed', 'run_failed')) AS ended_at
-    FROM agent_runtime.agent_job_runs r
-    JOIN agent_runtime.agent_jobs j ON j.prompt_id = r.prompt_id
-    JOIN iclip.conversations c ON c.id::text = j.conversation_id
-    JOIN agent_runtime.events e ON e.run_id = r.run_id
+    SELECT a.user_name, c.id AS conversation_id, c.task_id, a.started_at, a.ended_at
+    FROM run_facts a
+    JOIN iclip.conversations c ON c.id = a.conversation_id
     WHERE c.forked_from IS NULL
-      AND e.kind IN ('run_started', 'run_completed', 'run_failed')
-    GROUP BY r.run_id, j.user_name, c.id, c.task_id
-    HAVING bool_or(e.kind = 'run_started')
-       AND bool_or(e.kind IN ('run_completed', 'run_failed'))
 )"""
 
-# 一段对话的起点：首次运行，没有运行就是对话建立时刻。交付周期与任务执行的开始都用它。
-_STARTED_AT: Final = """COALESCE(
-               (SELECT min(j.created_at) FROM agent_runtime.agent_jobs j
-                WHERE j.conversation_id = {conversation}::text),
-               {created}
-           )"""
+# 一段对话的起点：首次运行，没有运行就是对话建立时刻。交付周期与任务执行的开始都用它，取自 person。
+_STARTED_AT: Final = "COALESCE(p.first_prompt_at, p.created_at)"
 
 _CYCLES: Final = f"""
 cycles AS (
     SELECT d.conversation_id, p.user_name, p.task_id, d.delivered_at,
-           {_STARTED_AT.format(conversation="d.conversation_id", created="p.created_at")}
-               AS started_at
+           {_STARTED_AT} AS started_at
     FROM (
         SELECT v.conversation_id, max(v.finished_at) AS delivered_at
         FROM videos v
@@ -229,8 +217,8 @@ usage_rows AS (
     SELECT c.id AS conversation_id, p.user_name, p.task_id, u.model_name,
            u.requests, u.input_tokens, u.cache_read_tokens, u.cache_write_tokens,
            u.output_tokens, u.last_at
-    FROM agent_runtime.conversation_usage u
-    JOIN iclip.conversations c ON c.id::text = u.conversation_id
+    FROM usage_facts u
+    JOIN iclip.conversations c ON c.id = u.conversation_id
     JOIN person p ON p.conversation_id = c.id
 )"""
 
@@ -256,8 +244,8 @@ def _spread_columns(alias: str, prefix: str) -> str:
     return ", ".join(f"{alias}.{prefix}_{name}" for name in ("avg", "median", "p90", "count"))
 
 
-# 时段维度把有界时间窗内的每一期都列进 keys，没数据的期计数为 0、分布为 NULL；
-# 不限时间没有起点，只列有数据的期。上界减一微秒，until 恰在期首时不多出一期。
+# 时段维度把时间窗内的每一期都列进 keys，没数据的期计数为 0、分布为 NULL；没有上界时铺到此刻。
+# 上界减一微秒，until 恰在期首时不多出一期。
 _PERIOD_AXIS: Final = """
     UNION SELECT axis FROM generate_series(
         date_trunc(CAST(:bucket AS text), CAST(:since AS timestamptz), CAST(:timezone AS text)),
@@ -268,8 +256,8 @@ _PERIOD_AXIS: Final = """
         CAST(:timezone AS text)) AS axis"""
 
 _METRICS: Final = f"""
-WITH {_VIDEOS}, {_PERSON}, {_SHOTS}, {_RUNS}, {_AGENT_RUNS}, {_CYCLES}, {_ACTIVE_CYCLES},
-{_TAKES}, {_USAGE},
+WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_RUNS}, {_AGENT_RUNS}, {_CYCLES},
+{_ACTIVE_CYCLES}, {_TAKES}, {_USAGE},
 completed AS (
     SELECT {{k_video}} AS k,
            count(*) AS completed_videos,
@@ -435,7 +423,7 @@ ORDER BY s.attempts
 
 # 活跃日：时间窗里有人发起运行的本地日，锚点同运行次数，只看窗内的运行。
 _ACTIVE_DAYS: Final = text(f"""
-WITH {_RUNS}
+WITH {FACTS_CTE}, {_RUNS}
 SELECT count(DISTINCT date_trunc('day', r.created_at, CAST(:timezone AS text))) AS days
 FROM runs r
 WHERE TRUE
@@ -471,17 +459,50 @@ GROUP BY 1, 2
 """)
 
 # 成功生成次数最多的镜，同数按最后一条成功生成的完成时刻；标题与人取对话的，已删的对话照列。
-# 锚点同镜。
+# 锚点同镜。排序与条数不看 person（它对 videos 里的对话都有一行，连接不丢行），所以先不连 person
+# 圈出这几镜的对话（_TOP_SHOT_CONVERSATIONS），取回它们的首末消息再查一遍。
+_TOP_ORDER: Final = "{t}.attempts DESC, {t}.last_at DESC, {t}.conversation_id, {t}.shot"
+_TOP: Final = f"""
+top AS (
+    SELECT s.*
+    FROM shots s
+    WHERE TRUE
+    {_WINDOW.format(anchor="s.first_at")}
+    {_FILTERS.format(t="s")}
+    ORDER BY {_TOP_ORDER.format(t="s")}
+    LIMIT :limit
+)"""
+
+_TOP_SHOT_CONVERSATIONS: Final = text(f"""
+WITH {_VIDEOS}, {_SHOTS}, {_TOP}
+SELECT DISTINCT t.conversation_id FROM top t
+""")
+
 _TOP_SHOTS: Final = text(f"""
-WITH {_VIDEOS}, {_PERSON}, {_SHOTS}
-SELECT s.conversation_id, s.shot, s.attempts, p.title, p.user_name
-FROM shots s
-JOIN person p ON p.conversation_id = s.conversation_id
-WHERE TRUE
-{_WINDOW.format(anchor="s.first_at")}
-{_FILTERS.format(t="s")}
-ORDER BY s.attempts DESC, s.last_at DESC, s.conversation_id, s.shot
-LIMIT :limit
+WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_TOP}
+SELECT t.conversation_id, t.shot, t.attempts, p.title, p.user_name
+FROM top t
+JOIN person p ON p.conversation_id = t.conversation_id
+ORDER BY {_TOP_ORDER.format(t="t")}
+""")
+
+# 指标 SQL 里交付周期的样本：最后一条出片落在时间窗里的对话。它们的运行与首末消息要整段取。
+_CYCLE_CONVERSATIONS: Final = text(f"""
+WITH {_VIDEOS}
+SELECT v.conversation_id
+FROM videos v
+WHERE v.delivered
+GROUP BY v.conversation_id
+HAVING TRUE
+{_WINDOW.format(anchor="max(v.finished_at)")}
+""")
+
+# 任务执行圈定的对话都在这里面：建立时刻落在时间窗里的非副本对话。
+_CREATED_CONVERSATIONS: Final = text("""
+SELECT c.id FROM iclip.conversations c
+WHERE c.forked_from IS NULL
+  AND c.created_at >= CAST(:since AS timestamptz)
+  AND c.created_at < CAST(:until AS timestamptz)
 """)
 
 # ---------------------------------------------------------------------------
@@ -494,17 +515,16 @@ LIMIT :limit
 # ---------------------------------------------------------------------------
 
 _EXECUTIONS: Final = f"""
-WITH {_VIDEOS}, {_PERSON}, {_SHOTS}, {_AGENT_RUNS}, {_CYCLES}, {_ACTIVE_CYCLES},
+WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_AGENT_RUNS}, {_CYCLES}, {_ACTIVE_CYCLES},
 executions AS (
     SELECT p.conversation_id, p.title, p.user_name, p.task_id, p.created_at, p.deleted_at,
-           {_STARTED_AT.format(conversation="p.conversation_id", created="p.created_at")}
-               AS started_at
+           {_STARTED_AT} AS started_at
     FROM person p
     WHERE p.created_at >= CAST(:since AS timestamptz)
       AND p.created_at < CAST(:until AS timestamptz)
-      -- 对 videos 用不相关的 IN：整个集合哈希一次；逐行 EXISTS 会对物化的 CTE 每行全扫一遍。
-      AND (EXISTS (SELECT 1 FROM agent_runtime.agent_jobs j
-                   WHERE j.conversation_id = p.conversation_id::text)
+      -- 跑过（有首条消息）或有出片。对 videos 用不相关的 IN：整个集合哈希一次；逐行 EXISTS 会对
+      -- 物化的 CTE 每行全扫一遍。
+      AND (p.first_prompt_at IS NOT NULL
            OR p.conversation_id IN (SELECT v.conversation_id FROM videos v))
 ),
 -- 没有成功镜的对话不在这里，每镜重试为空、也不标反复重试。
@@ -520,8 +540,8 @@ token_totals AS (
     SELECT c.id AS conversation_id,
            sum(u.input_tokens + u.cache_read_tokens + u.cache_write_tokens + u.output_tokens)::bigint
                AS tokens
-    FROM agent_runtime.conversation_usage u
-    JOIN iclip.conversations c ON c.id::text = u.conversation_id
+    FROM usage_facts u
+    JOIN iclip.conversations c ON c.id = u.conversation_id
     WHERE c.id IN (SELECT e.conversation_id FROM executions e)
     GROUP BY c.id
 ),
@@ -611,24 +631,23 @@ WHERE s.conversation_id = ANY(CAST(:ids AS uuid[]))
 ORDER BY s.conversation_id, s.shot
 """)
 
-_USAGE_OF: Final = text("""
+_USAGE_OF: Final = text(f"""
+WITH {FACTS_CTE}
 SELECT c.id AS conversation_id, u.model_name, u.requests, u.input_tokens,
        u.cache_read_tokens, u.cache_write_tokens, u.output_tokens
-FROM agent_runtime.conversation_usage u
-JOIN iclip.conversations c ON c.id::text = u.conversation_id
+FROM usage_facts u
+JOIN iclip.conversations c ON c.id = u.conversation_id
 WHERE c.id = ANY(CAST(:ids AS uuid[]))
 ORDER BY c.id, u.model_name
 """)
 
 
-def _scope_params(
-    scope: Scope, *, conversation_ids: Sequence[uuid.UUID] | None = None
-) -> dict[str, Any]:
+def _scope_params(scope: Scope) -> dict[str, Any]:
     return {
         "since": scope.since,
         "until": scope.until,
         "user_name": scope.user_name,
-        "conversation_ids": list(conversation_ids) if conversation_ids is not None else None,
+        "conversation_ids": None,
     }
 
 
@@ -705,40 +724,57 @@ async def audit_connection(engine: AsyncEngine) -> AsyncGenerator[AsyncConnectio
 
 
 class PgAuditReports:
-    """``AuditReports`` 的 Postgres 实现。每个方法一个连接、只读，都经 ``audit_connection``。"""
+    """``AuditReports`` 的 Postgres 实现。每个方法先按 ``iclip`` 的数据圈出要整段取的会话，经
+    ``RuntimeStats`` 取回事实行，再开只读连接查询，连接都经 ``audit_connection``；取事实行时不占连接。
+    运行时答不上抛 ``RuntimeUnavailable``。"""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, stats: RuntimeStats) -> None:
         self._engine = engine
+        self._stats = stats
 
-    async def _metrics(
-        self, dimension: str, params: dict[str, Any], *, conn: AsyncConnection | None = None
-    ) -> Sequence[RowMapping]:
-        statement = _METRICS_SQL[dimension]
-        if conn is not None:
-            return (await conn.execute(statement, params)).mappings().all()
-        async with audit_connection(self._engine) as fresh:
-            return (await fresh.execute(statement, params)).mappings().all()
+    async def _ids(self, statement: TextClause, params: dict[str, Any]) -> list[uuid.UUID]:
+        async with audit_connection(self._engine) as conn:
+            return list((await conn.execute(statement, params)).scalars().all())
+
+    async def _window_facts(self, scope: Scope) -> RuntimeFacts:
+        """指标 SQL 按时间窗要的事实行：窗内的消息、运行与用量，交付周期样本（最后一条出片在窗内的
+        对话）的全部运行；交付周期样本与窗内有用量的对话再取首末消息定人与起点。"""
+
+        cycles = await self._ids(_CYCLE_CONVERSATIONS, {"since": scope.since, "until": scope.until})
+        usage = await self._stats.usage_in(scope.since, scope.until)
+        prompts = await self._stats.prompts_in(scope.since, scope.until)
+        runs = merge_runs(
+            await self._stats.runs_in(scope.since, scope.until),
+            await self._stats.runs_of(cycles),
+        )
+        sessions = await self._stats.sessions_of({*cycles, *(row.session_id for row in usage)})
+        return RuntimeFacts(prompts=prompts, runs=runs, usage=usage, sessions=sessions)
+
+    async def _metrics(self, dimension: str, scope: Scope, **extra: Any) -> Sequence[RowMapping]:
+        facts = await self._window_facts(scope)
+        params = {**_scope_params(scope), **facts.params(), **extra}
+        async with audit_connection(self._engine) as conn:
+            return (await conn.execute(_METRICS_SQL[dimension], params)).mappings().all()
 
     async def overall(self, scope: Scope) -> MetricsOut:
-        rows = await self._metrics("overall", _scope_params(scope))
+        rows = await self._metrics("overall", scope)
         return _metrics_of(rows[0]) if rows else EMPTY_METRICS
 
     async def by_user(self, scope: Scope) -> Mapping[str, MetricsOut]:
-        rows = await self._metrics("user", _scope_params(scope))
+        rows = await self._metrics("user", scope)
         return {str(row["k"]): _metrics_of(row) for row in rows}
 
     async def by_period(
         self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Sequence[PeriodMetricsOut]:
-        params = {**_scope_params(scope), "bucket": bucket, "timezone": timezone}
-        rows = await self._metrics("period", params)
+        rows = await self._metrics("period", scope, bucket=bucket, timezone=timezone)
         return [PeriodMetricsOut(period_start=row["k"], metrics=_metrics_of(row)) for row in rows]
 
     async def active_days(self, scope: Scope, *, timezone: str) -> int:
+        facts = RuntimeFacts(prompts=await self._stats.prompts_in(scope.since, scope.until))
+        params = {**_scope_params(scope), **facts.params(), "timezone": timezone}
         async with audit_connection(self._engine) as conn:
-            days = (
-                await conn.execute(_ACTIVE_DAYS, {**_scope_params(scope), "timezone": timezone})
-            ).scalar_one()
+            days = (await conn.execute(_ACTIVE_DAYS, params)).scalar_one()
         return int(days)
 
     async def delivery_units(
@@ -766,10 +802,11 @@ class PgAuditReports:
         return found
 
     async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
+        params = {**_scope_params(scope), "limit": limit}
+        conversations = await self._ids(_TOP_SHOT_CONVERSATIONS, params)
+        facts = RuntimeFacts(sessions=await self._stats.sessions_of(conversations))
         async with audit_connection(self._engine) as conn:
-            rows = (
-                await conn.execute(_TOP_SHOTS, {**_scope_params(scope), "limit": limit})
-            ).mappings()
+            rows = (await conn.execute(_TOP_SHOTS, {**params, **facts.params()})).mappings()
             return [
                 TopShotOut(
                     conversation_id=row["conversation_id"],
@@ -812,11 +849,28 @@ class PgAuditReports:
             "after_id": after.conversation_id if after else None,
             "limit": limit,
         }
+        # 圈定的对话都在窗内建立的这些里面：它们的首末消息、运行与用量整段取，一页的明细也从这份里读。
+        created = await self._ids(
+            _CREATED_CONVERSATIONS, {"since": scope.since, "until": scope.until}
+        )
+        facts = RuntimeFacts(
+            runs=await self._stats.runs_of(created),
+            usage=await self._stats.usage_of(created),
+            sessions=await self._stats.sessions_of(created),
+        )
         async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_EXECUTIONS_SQL[(sort, order)], params)).mappings().all()
-            heads = [row for row in rows if row["conversation_id"] is not None]
-            ids = [head["conversation_id"] for head in heads]
-            metrics, shots, usage = await self._details(conn, ids) if ids else ({}, {}, {})
+            rows = (
+                (await conn.execute(_EXECUTIONS_SQL[(sort, order)], {**params, **facts.params()}))
+                .mappings()
+                .all()
+            )
+        heads = [row for row in rows if row["conversation_id"] is not None]
+        ids = [head["conversation_id"] for head in heads]
+        metrics, shots, usage = (
+            await self._details(ids, replace(facts, prompts=await self._stats.prompts_of(ids)))
+            if ids
+            else ({}, {}, {})
+        )
 
         items = [
             ExecutionOut(
@@ -851,19 +905,32 @@ class PgAuditReports:
         )
 
     async def _details(
-        self, conn: AsyncConnection, ids: Sequence[uuid.UUID]
+        self, ids: Sequence[uuid.UUID], facts: RuntimeFacts
     ) -> tuple[
         dict[uuid.UUID, MetricsOut],
         dict[uuid.UUID, list[ExecutionShotOut]],
         dict[uuid.UUID, list[ModelUsageOut]],
     ]:
-        """一页对话的全量指标、镜与按模型用量；不带时间窗，用维度键圈定这一页的对话。"""
+        """一页对话的全量指标、镜与按模型用量；不带时间窗，用维度键圈定这一页的对话。``facts`` 要有
+        这几段对话的全部消息、运行、用量与首末消息。"""
 
-        metric_rows = await self._metrics(
-            "conversation", _scope_params(Scope(), conversation_ids=ids), conn=conn
-        )
-        shot_rows = (await conn.execute(_SHOTS_OF, {"ids": list(ids)})).mappings().all()
-        usage_rows = (await conn.execute(_USAGE_OF, {"ids": list(ids)})).mappings().all()
+        scoped = {
+            "since": None,
+            "until": None,
+            "user_name": None,
+            "conversation_ids": list(ids),
+            **facts.params(),
+        }
+        async with audit_connection(self._engine) as conn:
+            metric_rows = (
+                (await conn.execute(_METRICS_SQL["conversation"], scoped)).mappings().all()
+            )
+            shot_rows = (await conn.execute(_SHOTS_OF, {"ids": list(ids)})).mappings().all()
+            usage_rows = (
+                (await conn.execute(_USAGE_OF, {"ids": list(ids), **facts.params()}))
+                .mappings()
+                .all()
+            )
 
         shots: dict[uuid.UUID, list[ExecutionShotOut]] = {}
         for row in shot_rows:

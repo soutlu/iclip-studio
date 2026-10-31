@@ -2775,6 +2775,55 @@
         "title": "PromptQueueOut",
         "type": "object"
       },
+      "PromptStatOut": {
+        "additionalProperties": false,
+        "description": "一条消息；时间窗看 ``created_at``。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "prompt_id": {
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "user_name": {
+            "title": "User Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "prompt_id",
+          "user_name",
+          "created_at"
+        ],
+        "title": "PromptStatOut",
+        "type": "object"
+      },
+      "PromptStatsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromptStatOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PromptStatsOut",
+        "type": "object"
+      },
       "PromptUpsertOp": {
         "additionalProperties": false,
         "properties": {
@@ -2939,6 +2988,61 @@
           }
         },
         "title": "RegenerateBody",
+        "type": "object"
+      },
+      "RunStatOut": {
+        "additionalProperties": false,
+        "description": "一次跑到终态的顶层运行：运行驱动登记过的运行，有开始事件也有第一条终态事件（完成或失败）；\n子代理的内部运行与没有终态的运行不在里面。时间窗看 ``started_at``。",
+        "properties": {
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "user_name": {
+            "title": "User Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "run_id",
+          "user_name",
+          "started_at",
+          "ended_at"
+        ],
+        "title": "RunStatOut",
+        "type": "object"
+      },
+      "RunStatsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunStatOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RunStatsOut",
         "type": "object"
       },
       "RunStatusOut": {
@@ -3125,6 +3229,50 @@
           "agent_id"
         ],
         "title": "SessionPromptIn",
+        "type": "object"
+      },
+      "SessionStatOut": {
+        "additionalProperties": false,
+        "description": "一段跑过的会话：第一条消息的时刻与最近一条消息的 ``user_name``（同一时刻按 ``prompt_id`` 大的算）。",
+        "properties": {
+          "first_prompt_at": {
+            "format": "date-time",
+            "title": "First Prompt At",
+            "type": "string"
+          },
+          "latest_user_name": {
+            "title": "Latest User Name",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "first_prompt_at",
+          "latest_user_name"
+        ],
+        "title": "SessionStatOut",
+        "type": "object"
+      },
+      "SessionStatsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionStatOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SessionStatsOut",
         "type": "object"
       },
       "SkillCreateIn": {
@@ -3657,6 +3805,75 @@
           "items"
         ],
         "title": "SkillsOut",
+        "type": "object"
+      },
+      "StatsQueryIn": {
+        "additionalProperties": false,
+        "description": "按时间窗或按会话取统计行，二选一：给 ``since``（``until`` 可省）按各行自己的时刻落在\n``[since, until)`` 里取，给 ``session_ids`` 取这几段会话的全部行；都给或都不给是 422。",
+        "properties": {
+          "session_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Ids"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "title": "StatsQueryIn",
+        "type": "object"
+      },
+      "StatsSessionsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "session_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_ids"
+        ],
+        "title": "StatsSessionsIn",
         "type": "object"
       },
       "SteerRequest": {
@@ -5007,6 +5224,75 @@
           }
         },
         "title": "TurnUsage",
+        "type": "object"
+      },
+      "UsageStatOut": {
+        "additionalProperties": false,
+        "description": "一段会话在一个模型上的累计用量；时间窗看 ``last_at``。",
+        "properties": {
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "last_at": {
+            "format": "date-time",
+            "title": "Last At",
+            "type": "string"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "model_name",
+          "requests",
+          "input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "output_tokens",
+          "last_at"
+        ],
+        "title": "UsageStatOut",
+        "type": "object"
+      },
+      "UsageStatsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UsageStatOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "UsageStatsOut",
         "type": "object"
       },
       "VideoContent": {
@@ -9011,6 +9297,194 @@
         "summary": "Busy",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/v1/stats/prompts": {
+      "post": {
+        "description": "消息；时间窗看发起时刻。按会话、发起时刻、``prompt_id`` 排。",
+        "operationId": "prompts_v1_stats_prompts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatsQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Prompts",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/v1/stats/runs": {
+      "post": {
+        "description": "跑到终态的顶层运行；时间窗看开始事件的时刻。按会话、开始时刻、``run_id`` 排。",
+        "operationId": "runs_v1_stats_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatsQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Runs",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/v1/stats/sessions": {
+      "post": {
+        "description": "这几段会话里跑过的：第一条消息的时刻、最近一条消息的 ``user_name``。按会话排。",
+        "operationId": "sessions_v1_stats_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatsSessionsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Sessions",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/v1/stats/usage": {
+      "post": {
+        "description": "按（会话，模型）的累计用量；时间窗看最后一次累加的时刻。按会话、模型名排。",
+        "operationId": "usage_v1_stats_usage_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatsQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Usage",
+        "tags": [
+          "stats"
         ]
       }
     },
