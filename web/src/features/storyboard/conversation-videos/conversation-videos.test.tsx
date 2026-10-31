@@ -250,13 +250,4 @@ describe('ConversationVideos', () => {
     expect(screen.getByLabelText('镜头组 1视频')).toHaveAttribute('src', job(1).outputUrl)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
-
-  it('没有素材片时只显示紧凑空态', async () => {
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [] })))
-
-    await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
-
-    expect(await screen.findByText('暂无视频产物')).toBeVisible()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-  })
 })

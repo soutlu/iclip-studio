@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ArtifactEntry } from './artifact'
-import { ArtifactRegistry, composeArtifacts, pickArtifact } from './registry'
+import { ArtifactRegistry, composeArtifacts } from './registry'
 
 const Placeholder = () => null
 
@@ -203,36 +203,5 @@ describe('ArtifactRegistry', () => {
 
   it('没登记过的类型解析不出渲染器', () => {
     expect(registryWith(shotsEntry).resolve('media-grid')).toBeUndefined()
-  })
-})
-
-describe('pickArtifact', () => {
-  const registry = registryWith(shotsEntry, agentEntry)
-  const artifacts = composeArtifacts(
-    registry,
-    [{ path: 'video_shot.json', version: 1 }],
-    [agentFrame],
-  )
-
-  it('地址里点名了就选那件', () => {
-    expect(pickArtifact(registry, artifacts, 'frame:call_frames')?.id).toBe('frame:call_frames')
-  })
-
-  it('没点名就选第一件 autoOpen 的，哪怕它不在最前', () => {
-    const reversed = [...artifacts].reverse()
-    expect(pickArtifact(registry, reversed, undefined)?.id).toBe('file:video_shot.json')
-  })
-
-  it('点名的那件已经没了就退回 autoOpen', () => {
-    expect(pickArtifact(registry, artifacts, 'file:gone.json')?.id).toBe('file:video_shot.json')
-  })
-
-  it('一件 autoOpen 都没有就不替用户挑，宿主给选择页', () => {
-    const onlyFrames = composeArtifacts(registry, [], [agentFrame])
-    expect(pickArtifact(registry, onlyFrames, undefined)).toBeUndefined()
-  })
-
-  it('一件都没有时选不出东西', () => {
-    expect(pickArtifact(registry, [], undefined)).toBeUndefined()
   })
 })

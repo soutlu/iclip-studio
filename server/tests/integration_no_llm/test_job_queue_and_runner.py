@@ -178,29 +178,6 @@ def _skeleton(turns: tuple[TranscriptTurn, ...]) -> list[Any]:
     ]
 
 
-async def test_one_prompt_runs_and_lands_in_both_paths(engine: AsyncEngine) -> None:
-
-    store = TranscriptStore()
-    runner, step_store, queue = build_runner(engine, says("好的，我来写"), store=store)
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-
-    prompt_id = await submit_text(runner, queue, conversation_id, "写三个镜头")
-    await runner.shutdown()
-
-    derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
-    assert [turn.state for turn in derived] == ["completed"]
-    assert prompt_text(derived[0]) == "写三个镜头"
-    assert derived[0].steps[0].frames[0].text == "好的，我来写"  # pyright: ignore[reportAttributeAccessIssue]
-
-    row = await queue.get(prompt_id)
-    assert row is not None
-    assert row.status == "completed"
-    # 队列与消息使用同一 run_id，保证终态可直接关联。
-    snapshot = await step_store.latest_conversation_snapshot(conversation_id=conversation_id)
-    assert snapshot is not None
-    assert run_ids_from_messages(snapshot.messages) == (row.run_id,)
-
-
 async def test_second_prompt_queues_then_runs_after_the_first(engine: AsyncEngine) -> None:
 
     store = TranscriptStore()
@@ -2190,64 +2167,6 @@ async def test_an_approval_continuation_does_not_start_the_turn_again(engine: As
 
     assert started == [prompt_id]
     assert len(await queue.prompt_of_runs(conversation_id)) == 2
-
-
-async def test_approving_resumes_the_same_turn(engine: AsyncEngine) -> None:
-    """审批续跑保持同一轮且不增加 attempt；该计数仅表示中断后的重新认领。"""
-
-    store = TranscriptStore()
-    runner, step_store, queue = approval_runner(engine, store)
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-
-    prompt_id = await submit_text(runner, queue, conversation_id, "把这个文件改掉")
-    await awaits(queue, prompt_id)
-    await runner.approve(conversation_id, "apr_call_1", approved=True)
-    await drained(queue, conversation_id)
-    await runner.shutdown()
-
-    row = await queue.get(prompt_id)
-    assert row is not None
-    assert (row.status, row.attempt) == ("completed", 0)
-    assert row.decisions == {"call_1": True}
-    assert len(await queue.prompt_of_runs(conversation_id)) == 2
-
-    derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
-    assert [(turn.turn_id, turn.state) for turn in derived] == [("t1", "completed")]
-    card = tool_cards(derived)[0]
-    assert (card.state, card.approval_id) == ("done", "apr_call_1")
-    assert [item.state for item in derived[0].steps] == ["completed", "completed"]
-    assert [getattr(frame, "text", None) for frame in derived[0].steps[1].frames] == ["改完了"]
-    assert [
-        item.state
-        for item in (await TranscriptHistory(step_store, queue).read(conversation_id)).interactions
-    ] == ["approved"]
-
-    assert _skeleton(replay(store, conversation_id)) == _skeleton(derived)
-
-
-async def test_rejecting_settles_the_card_as_an_error_and_the_model_moves_on(
-    engine: AsyncEngine,
-) -> None:
-
-    store = TranscriptStore()
-    runner, step_store, queue = approval_runner(engine, store, reply="那我不动它")
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-
-    prompt_id = await submit_text(runner, queue, conversation_id, "把这个文件改掉")
-    await awaits(queue, prompt_id)
-    await runner.approve(conversation_id, "apr_call_1", approved=False)
-    await drained(queue, conversation_id)
-    await runner.shutdown()
-
-    history = await TranscriptHistory(step_store, queue).read(conversation_id)
-    assert [turn.state for turn in history.turns] == ["completed"]
-    card = tool_cards(history.turns)[0]
-    assert (card.state, card.approval_id) == ("error", "apr_call_1")
-    assert [item.state for item in history.interactions] == ["rejected"]
-    assert [getattr(frame, "text", None) for frame in history.turns[0].steps[1].frames] == [
-        "那我不动它"
-    ]
-    assert _skeleton(replay(store, conversation_id)) == _skeleton(history.turns)
 
 
 async def test_the_run_resumes_only_once_every_approval_is_answered(

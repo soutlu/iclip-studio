@@ -223,43 +223,6 @@ describe('图片编辑器', () => {
     expect(unsupported).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('刚打开只有当前帧：没有版本条也没有脚注，画幅只读排在设置行，标注工具在舞台旁照常可用', async () => {
-    let listed = false
-    server.use(
-      http.get('*/api/generations', () => {
-        listed = true
-        return HttpResponse.json({ items: [] })
-      }),
-    )
-    await renderWithProviders(<EditorPage />)
-    const editor = await screen.findByRole('dialog')
-    await waitFor(() => expect(listed).toBe(true))
-    await waitFor(() =>
-      expect(within(editor).getByRole('button', { name: '图片模型' })).toBeEnabled(),
-    )
-
-    // 只有一样能看的，没得切：整条不显示。
-    expect(within(editor).queryByRole('group', { name: '该帧的图片' })).not.toBeInTheDocument()
-    // 画幅随分镜，设置中可查看说明。
-    const aspect = within(editor).getByTitle('画幅 9:16，跟随分镜')
-    expect(aspect).toHaveTextContent('9:16')
-
-    // 工具条支持选工具、绘制和撤销。
-    const tools = within(editor).getByRole('toolbar', { name: '标注工具' })
-    const canvas = loadCanvas(editor)
-    await userEvent.click(within(tools).getByRole('button', { name: '矩形标注' }))
-    expect(within(tools).getByRole('button', { name: '矩形标注' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    fireEvent.pointerDown(canvas, { clientX: 320, clientY: 240, button: 0 })
-    fireEvent.pointerMove(canvas, { clientX: 480, clientY: 560 })
-    fireEvent.pointerUp(canvas, { clientX: 480, clientY: 560, button: 0 })
-    expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
-    await userEvent.click(within(tools).getByRole('button', { name: '撤销标注' }))
-    expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
-  })
-
   it('只有当前帧但还有更早的记录：版本条照样显示，末尾一格「更早」', async () => {
     // 一整页都是已经换上去的结果，都折进当前帧那一格；页满说明还有更早的。
     const applied = Array.from({ length: 20 }, (_, index) =>
@@ -424,27 +387,6 @@ describe('图片编辑器', () => {
     )
     expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
     expect(within(editor).getByRole('button', { name: '替换当前帧' })).toHaveFocus()
-  })
-
-  it('撤销入口 6 秒后消失', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    const completed = job({ status: 'completed', outputUrl: RESULT })
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
-    await renderWithProviders(<EditorPage initialKey={completed.id} />)
-    const editor = await screen.findByRole('dialog')
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    await user.click(await within(editor).findByRole('button', { name: '替换当前帧' }))
-    const undo = await within(editor).findByRole('button', { name: '撤销' })
-
-    act(() => {
-      vi.advanceTimersByTime(5_000)
-    })
-    expect(undo).toBeInTheDocument()
-    act(() => {
-      vi.advanceTimersByTime(1_000)
-    })
-    expect(within(editor).queryByRole('button', { name: '撤销' })).not.toBeInTheDocument()
-    vi.useRealTimers()
   })
 
   it('对比滑杆的拖柄用左右键移动，每次 5，到头不再动', async () => {

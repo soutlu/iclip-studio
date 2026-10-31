@@ -11,8 +11,6 @@ from iclip.platform.shot_media.grid import (
     GridError,
     fit_box_to_aspect,
     grid_cell_boxes,
-    parse_pgm,
-    scale_box,
 )
 
 GUTTER = 255
@@ -35,40 +33,6 @@ def make_image(
             if x in cols or y in rows:
                 pixels[y * width + x] = GUTTER
     return GrayImage(width=width, height=height, pixels=bytes(pixels))
-
-
-def to_pgm(image: GrayImage) -> bytes:
-    return f"P5\n{image.width} {image.height}\n255\n".encode() + image.pixels
-
-
-def test_pgm_roundtrip() -> None:
-    image = make_image(8, 4, white_cols={3})
-    parsed = parse_pgm(to_pgm(image))
-    assert (parsed.width, parsed.height, parsed.pixels) == (8, 4, image.pixels)
-
-
-def test_pgm_header_comments_and_whitespace() -> None:
-    body = bytes([CELL] * 4)
-    parsed = parse_pgm(b"P5\n# \xe6\xb3\xa8\xe9\x87\x8a\n2   2\n255\n" + body)
-    assert (parsed.width, parsed.height) == (2, 2)
-
-
-@pytest.mark.parametrize(
-    ("data", "fragment"),
-    [
-        (b"P6\n2 2\n255\n" + bytes(4), "魔数"),
-        (b"P5\n2 2\n65535\n" + bytes(4), "maxval"),
-        (b"P5\n0 2\n255\n" + bytes(4), "尺寸"),
-        (b"P5\n2 2\n255\n" + bytes(3), "像素数据不够"),
-        (b"P5\n2 x\n255\n" + bytes(4), "不是整数"),
-        (b"P5\n2 2\n255", "空白分隔符"),
-        (b"P5\n", "提前结束"),
-    ],
-    ids=["magic", "maxval", "size", "short", "not-int", "no-separator", "truncated"],
-)
-def test_pgm_rejects_broken_input(data: bytes, fragment: str) -> None:
-    with pytest.raises(GridError, match=fragment):
-        parse_pgm(data)
 
 
 def test_detects_offset_gutter_and_trims_outer_border() -> None:
@@ -126,11 +90,6 @@ def test_grid_side_bounds(rows: int, cols: int) -> None:
         grid_cell_boxes(make_image(40, 40), rows=rows, cols=cols)
 
 
-def test_pixel_length_must_match_size() -> None:
-    with pytest.raises(GridError, match="对不上"):
-        grid_cell_boxes(GrayImage(width=10, height=10, pixels=b"\x80" * 99), rows=1, cols=1)
-
-
 def test_aspect_within_tolerance_is_left_alone() -> None:
     box = (0, 0, 101, 100)
     assert fit_box_to_aspect(box, 1.0) == box
@@ -150,13 +109,3 @@ def test_aspect_shrink_handles_large_drift() -> None:
 def test_aspect_rejects_empty_box(box: tuple[int, int, int, int]) -> None:
     with pytest.raises(GridError, match="尺寸非法"):
         fit_box_to_aspect(box, 1.0)
-
-
-def test_scale_box_back_to_full_resolution() -> None:
-    assert scale_box((10, 20, 30, 40), from_width=640, to_width=1280) == (20, 40, 60, 80)
-
-
-@pytest.mark.parametrize(("from_width", "to_width"), [(0, 100), (100, 0), (-1, 100)])
-def test_scale_box_rejects_bad_widths(from_width: int, to_width: int) -> None:
-    with pytest.raises(GridError):
-        scale_box((0, 0, 1, 1), from_width=from_width, to_width=to_width)

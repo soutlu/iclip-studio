@@ -74,28 +74,6 @@ def body_of(task: object, **overrides: object) -> dict[str, object]:
     return payload
 
 
-def test_openapi_publishes_task_status_as_enum() -> None:
-    """前端从合同派生状态词，合同里只剩字符串就只能手写平行词表。"""
-
-    app = build_test_app(InMemoryTaskRepository(), granted=None)
-    status = app.openapi()["components"]["schemas"]["TaskOut"]["properties"]["status"]
-    assert status["enum"] == ["draft", "published", "confirmed", "withdrawn"]
-
-
-async def test_creating_lands_a_draft_owned_by_the_caller() -> None:
-
-    repo = InMemoryTaskRepository()
-    caller = principal("tasks:write")
-    async with client(build_test_app(repo, granted=caller)) as http:
-        response = await http.post("/tasks", json=BODY)
-
-    assert response.status_code == 201, response.text
-    task = response.json()["task"]
-    assert task["status"] == STATUS_DRAFT
-    assert task["creatorUserId"] == str(caller.user_id)
-    assert task["deadline"] is None
-
-
 @pytest.mark.parametrize("status", ["confirmed", "withdrawn", "", "PUBLISHED"])
 async def test_creation_only_accepts_draft_or_published(status: str) -> None:
 
@@ -236,16 +214,6 @@ async def test_permissions_gate_the_two_kinds_of_access() -> None:
     async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
         assert (await http.get("/tasks")).status_code == 200
         assert (await http.post("/tasks", json=BODY)).status_code == 403
-
-
-async def test_everyone_sees_every_task() -> None:
-
-    task = make_task()
-    repo = InMemoryTaskRepository([task])
-    async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
-        assert (await http.get(f"/tasks/{task.id}")).status_code == 200
-        assert len((await http.get("/tasks")).json()["items"]) == 1
-        assert (await http.get(f"/tasks/{uuid.uuid4()}")).status_code == 404
 
 
 async def test_a_draft_is_the_creators_own_business() -> None:

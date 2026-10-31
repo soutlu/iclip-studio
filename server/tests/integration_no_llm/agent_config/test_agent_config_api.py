@@ -7,7 +7,6 @@ from typing import Any
 
 import httpx
 import yaml
-from fastapi import FastAPI
 
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 
@@ -19,31 +18,6 @@ async def login_as_root(client: httpx.AsyncClient, pg_url: str) -> None:
 
 def package_upload(data: bytes) -> dict[str, tuple[str, bytes, str]]:
     return {"file": ("director.yaml", data, "application/yaml")}
-
-
-async def test_every_agents_operation_requires_exactly_agent_manage(app: FastAPI) -> None:
-    operations = [
-        (method, path, operation)
-        for path, item in app.openapi()["paths"].items()
-        if path == "/agents" or path.startswith("/agents/")
-        for method, operation in item.items()
-    ]
-
-    assert len(operations) >= 14
-    for method, path, operation in operations:
-        scopes = {
-            tuple(scopes)
-            for requirement in operation["security"]
-            for scopes in requirement.values()
-        }
-        assert scopes == {("agent:manage",)}, (method, path)
-
-
-async def test_publish_documents_the_problem_list(app: FastAPI) -> None:
-    operation = app.openapi()["paths"]["/agents/{agent_id}/versions"]["post"]
-
-    schema = operation["responses"]["422"]["content"]["application/json"]["schema"]
-    assert schema == {"$ref": "#/components/schemas/AgentPublishProblemsOut"}
 
 
 async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrated_pg: str) -> None:

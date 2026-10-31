@@ -8,7 +8,7 @@
 - 轮头部和用户文本帧使用 `content` 保存原始消息 part，代替上游的 `prompt` 与 `attachmentIds`；类型、schema 与 [ops/apply.ts](ops/apply.ts) 的相等判断共同维护这一扩展。上游的 `triggerPromptId` 保留在 [model/turn.ts](model/turn.ts)、schema 与相等判断里，乐观气泡按它认领。
 - 未引入上游 `history/`。历史投影由[后端 transcript](../../../../../runtime/src/agent_runtime/harness/transcript/from_messages.py)生成，相关上游 history 测试未保留。
 - 未引入上游用户文本帧的 `origin`（技能激活与 `clientMetadata`）、[消息记录](model/prompt.ts)的 `clientMetadata` 和 `contract/origin.ts`。
-- [测试目录](__tests__/)使用相对导入，并按本仓的消息形状调整测试数据。
+- [测试目录](__tests__/)验证本仓的消息 `content`、工具 `metadata` 扩展与协议输入边界；跨端消息解析与回放见[金样测试](../golden.test.ts)。
 
 ## 维护边界
 

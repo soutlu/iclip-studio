@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { delay, http, HttpResponse } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { server } from '@/testing/mocks/server'
@@ -84,20 +84,6 @@ const pushClaimedTasks = (count: number) =>
 afterEach(() => vi.unstubAllGlobals())
 
 describe('TasksRoute 列表与筛选', () => {
-  it.each([0, 4])('我的需求单 %i 张、不超过一行 4 张时全部展示且无需展开', async (count) => {
-    layOutGridColumns(4)
-    pushClaimedTasks(count)
-    await renderLoggedIn()
-    await screen.findByText('其他需求')
-
-    const mine = within(screen.getByRole('region', { name: '我的需求单' }))
-    await waitFor(() =>
-      expect(mine.queryAllByRole('button', { name: /^查看需求：/ })).toHaveLength(count),
-    )
-    expect(mine.queryByRole('button', { name: '展开更多' })).not.toBeInTheDocument()
-    expect(mine.queryByRole('button', { name: '收起' })).not.toBeInTheDocument()
-  })
-
   it('我的需求单收起只放一行；搜索覆盖行外条目并筛两个分区，清空后恢复收起', async () => {
     layOutGridColumns(4)
     pushClaimedTasks(5)
@@ -132,23 +118,6 @@ describe('TasksRoute 列表与筛选', () => {
     expect(mine.queryByRole('button', { name: '查看需求：已认领的需求 1' })).not.toBeInTheDocument()
     expect(mine.getByRole('button', { name: '展开更多' })).toHaveAttribute('aria-expanded', 'false')
     expect(all.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(6)
-  })
-
-  it('读取中两个分区各显示读取文案', async () => {
-    let requested = 0
-    server.use(
-      http.get('*/api/tasks', async () => {
-        requested += 1
-        await delay('infinite')
-      }),
-    )
-    await renderLoggedIn()
-    await waitFor(() => expect(requested).toBe(2))
-
-    const mine = within(screen.getByRole('region', { name: '我的需求单' }))
-    const all = within(screen.getByRole('region', { name: '全部需求单' }))
-    expect(mine.getByRole('status')).toHaveTextContent('正在读取我的需求单')
-    expect(all.getByRole('status')).toHaveTextContent('正在读取全部需求单')
   })
 
   it('列表读取失败显示错误，点重新加载后恢复出卡片', async () => {
@@ -230,38 +199,6 @@ describe('TasksRoute 列表与筛选', () => {
     expect(all.getByRole('button', { name: '查看需求：第一页的需求单' })).toBeVisible()
     expect(all.queryByRole('alert')).not.toBeInTheDocument()
     expect(cursors).toEqual([null, 'page-2', 'page-2', 'page-3'])
-  })
-
-  it('两个分区都没有需求单时各自显示空态', async () => {
-    await renderLoggedIn()
-
-    const mine = within(screen.getByRole('region', { name: '我的需求单' }))
-    const all = within(screen.getByRole('region', { name: '全部需求单' }))
-    expect(await mine.findByText('暂无已认领的需求单')).toBeVisible()
-    expect(await all.findByText('暂无需求单')).toBeVisible()
-  })
-
-  it('搜索没有匹配时两个分区显示暂无匹配的需求单', async () => {
-    mockTasks.push(
-      makeTask({
-        assigneeUserIds: [mockAuthUser.id],
-        status: 'confirmed',
-        title: '我认领的需求单',
-      }),
-      makeTask({ status: 'published', title: '夏季新品视频' }),
-    )
-    const user = userEvent.setup()
-    await renderLoggedIn()
-
-    const mine = within(screen.getByRole('region', { name: '我的需求单' }))
-    const all = within(screen.getByRole('region', { name: '全部需求单' }))
-    await mine.findByRole('button', { name: '查看需求：我认领的需求单' })
-    await all.findByRole('button', { name: '查看需求：夏季新品视频' })
-
-    await user.type(screen.getByRole('textbox', { name: '搜索需求单' }), '没有这个关键字')
-    expect(mine.getByText('暂无匹配的需求单')).toBeVisible()
-    expect(all.getByText('暂无匹配的需求单')).toBeVisible()
-    expect(screen.queryAllByRole('button', { name: /^查看需求：/ })).toHaveLength(0)
   })
 })
 

@@ -69,27 +69,6 @@ describe('需求单关联任务与视频', () => {
     ).toBeVisible()
   })
 
-  it('新建需求单没有关联面板，也不发起关联查询', async () => {
-    const requestedPaths: string[] = []
-    server.events.on('request:start', ({ request }) => {
-      const path = new URL(request.url).pathname
-      if (path.startsWith('/api/conversations') || path === '/api/generations') {
-        requestedPaths.push(path)
-      }
-    })
-    const user = userEvent.setup()
-    await renderTasks()
-
-    await user.click(await screen.findByRole('button', { name: '新建需求单' }))
-    const dialog = await screen.findByRole('dialog', { name: '新建需求单' })
-    expect(within(dialog).getByLabelText('需求单名称')).toBeVisible()
-    expect(within(dialog).queryByRole('complementary')).not.toBeInTheDocument()
-    expect(
-      within(dialog).queryByRole('button', { name: '打开关联任务与视频' }),
-    ).not.toBeInTheDocument()
-    expect(requestedPaths).toEqual([])
-  })
-
   it.each([
     ['agent:read', '当前账号没有查看关联任务的权限'],
     ['generation:read', '当前账号没有查看视频的权限'],

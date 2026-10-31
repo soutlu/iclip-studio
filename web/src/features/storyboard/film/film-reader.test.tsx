@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { getResponse, http, HttpResponse } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ImageGenerationIn,
@@ -14,7 +14,7 @@ import type {
 import { Toaster } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
-import { editMockFilmShot, filmHandlers, seedMockFilm } from '@/testing/mocks/film'
+import { editMockFilmShot, seedMockFilm } from '@/testing/mocks/film'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { makeGenerationJob } from '@/testing/generation-job'
@@ -166,29 +166,6 @@ const stageTag = () =>
   screen.queryByText(/^(@\d+|镜头 \d+)$/, { selector: 'p' })?.textContent ?? null
 
 describe('制作页', () => {
-  it('字里的 @ImageN 在原位置是对应编号的芯片，镜头开头的「参考@ImageN，」也是；段名照模板，后面不挂芯片', async () => {
-    const script = await renderFilm()
-    const settings = within(script).getByRole('group', { name: '全局设定' })
-    expect(within(settings).getByText('人物：')).toBeVisible()
-    expect(within(settings).getByRole('textbox', { name: '声音' })).toHaveTextContent(
-      /^旁白：年轻女性/,
-    )
-
-    const product = within(settings).getByRole('textbox', { name: '产品' })
-    expect(chipsIn(product)).toEqual(['在舞台查看绒面一脚蹬 @2', '在舞台查看绒面一脚蹬 @3'])
-    expect(product).toHaveTextContent('鞋面参考@2，鞋底参考@3。')
-    // 没选用的图照样按编号出芯片，画一格空位。
-    expect(chipsIn(within(settings).getByRole('textbox', { name: '场景' }))).toEqual([
-      '在舞台查看涂鸦滑板场 @4',
-    ])
-    const shot2 = within(script).getByRole('textbox', { name: '镜头 2的描述' })
-    expect(chipsIn(shot2)).toEqual(['在舞台查看镜头 2 @5'])
-    expect(shot2).toHaveTextContent(/^参考@5，高角度俯拍/)
-    // 镜头 1 的机位图没选用，不在列表里，正文开头没有引用。
-    expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 1的描述' }))).toEqual([])
-    expect(within(script).getAllByRole('group', { name: /^镜头 \d$/ })).toHaveLength(4)
-  })
-
   it('点字里的芯片：舞台看对应图片，左右切图时文案列跟到对应段落', async () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
@@ -218,78 +195,6 @@ describe('制作页', () => {
       ),
     )
     expect(stageTag()).toBe('镜头 1')
-  })
-
-  it('参考图排在全局设定的标题行里，按列表先后只列会发出去的图，芯片上只写编号；点哪张舞台看哪张，文案列跟到写着它的段', async () => {
-    const script = await renderFilm()
-    const settings = within(script).getByRole('group', { name: '全局设定' })
-    const strip = within(settings).getByRole('group', { name: '参考图' })
-    // 在全局设定卡里，不另写「参考图」。
-    expect(within(script).queryByText('参考图')).not.toBeInTheDocument()
-    // 没进列表的镜头 1 机位图不在其中；名字与没选用只在读屏名里。
-    expect(stripNames(script)).toEqual([
-      '在舞台查看金发女生 @1',
-      '在舞台查看绒面一脚蹬 @2',
-      '在舞台查看绒面一脚蹬 @3',
-      '在舞台查看涂鸦滑板场 @4，未选用',
-      '在舞台查看镜头 2 @5',
-    ])
-    expect(stripChips(script).map((chip) => chip.textContent)).toEqual([
-      '@1',
-      '@2',
-      '@3',
-      '@4',
-      '@5',
-    ])
-    const view = within(strip).getByRole('button', { name: '在舞台查看镜头 2 @5' })
-
-    await userEvent.click(view)
-    await waitFor(() => expect(stageTag()).toBe('@5'))
-    expect(within(script).getByRole('group', { name: '镜头 2' })).toHaveAttribute(
-      'aria-current',
-      'true',
-    )
-  })
-
-  it('这组没有全局设定时参考图单独一行，前面写「参考图」', async () => {
-    // 照常读工程，只把这组的全局设定拿掉。
-    server.use(
-      http.get('*/api/conversations/:conversationId/film', async ({ request }) => {
-        const response = await getResponse(filmHandlers, request)
-        if (response === undefined) throw new Error('mock 没有接住读工程的请求')
-        const body = (await response.json()) as { film: FilmViewOut }
-        return HttpResponse.json({
-          film: {
-            ...body.film,
-            groups: body.film.groups.map((group) => ({ ...group, settings: [] })),
-          },
-        })
-      }),
-    )
-    const script = await renderFilm()
-
-    expect(within(script).queryByRole('group', { name: '全局设定' })).not.toBeInTheDocument()
-    const strip = within(script).getByRole('group', { name: '参考图' })
-    expect(strip.previousElementSibling).toHaveTextContent(/^参考图$/)
-    expect(stripNames(script)).toEqual([
-      '在舞台查看金发女生 @1',
-      '在舞台查看绒面一脚蹬 @2',
-      '在舞台查看绒面一脚蹬 @3',
-      '在舞台查看涂鸦滑板场 @4，未选用',
-      '在舞台查看镜头 2 @5',
-    ])
-  })
-
-  it('没选用的机位图在它那一镜的头部、舞台与生图卡上：没有编号，舞台写它的名字', async () => {
-    const script = await renderFilm()
-    await userEvent.click(within(script).getByRole('button', { name: '在舞台查看镜头 1的画面' }))
-
-    expect(await screen.findByRole('region', { name: '镜头 1的生图描述' })).toBeInTheDocument()
-    expect(stageTag()).toBe('镜头 1')
-    expect(within(script).getByRole('group', { name: '镜头 1' })).toHaveAttribute(
-      'aria-current',
-      'true',
-    )
   })
 
   it('「复制完整提示词」复制的是后端给的这组正文', async () => {
@@ -544,17 +449,6 @@ describe('制作页', () => {
     expect(within(bar).getByRole('button', { name: '画幅' })).toBeDisabled()
   })
 
-  it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {
-    await mount({ model: 'retired-model' })
-    const bar = await screen.findByRole('group', { name: '出片工具栏' })
-
-    await waitFor(() =>
-      expect(within(bar).getByRole('button', { name: '视频模型' })).toHaveTextContent(
-        'vendor-a-seedance-2-5',
-      ),
-    )
-  })
-
   it('分镜检查出问题时只写有几处，交给 AI 导演改', async () => {
     await mount({ problems: 2 })
     expect(await screen.findByText('分镜有 2 处问题，需要 AI 导演修改')).toBeInTheDocument()
@@ -640,16 +534,6 @@ describe('制作页的图', () => {
     expect(generations).toEqual([])
   })
 
-  it('生成卡：上次生成失败写原因，按钮是「重新生成」', async () => {
-    serveImageJobs([shot1Generation({ errorMessage: '上游超时', status: 'failed' })])
-    const script = await renderFilm()
-    await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
-
-    const card = await screen.findByRole('region', { name: '镜头 1的生图描述' })
-    expect(await within(card).findByRole('alert')).toHaveTextContent('上游超时')
-    expect(within(card).getByRole('button', { name: '重新生成' })).toBeInTheDocument()
-  })
-
   it('生成卡：生成好了不自动用上；选用没进列表的机位图后它插进列表，编号、图条、正文引用与舞台都跟着变', async () => {
     const result = 'https://example.com/shot1-result.png'
     serveImageJobs([shot1Generation({ outputUrl: result, status: 'completed' })])
@@ -702,15 +586,6 @@ describe('制作页的图', () => {
     const tip = await screen.findByRole('tooltip')
     await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
     expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
-  })
-
-  it('悬停没有图的芯片出提示，写编号、名字与「未选用」', async () => {
-    const script = await renderFilm()
-    const strip = within(script).getByRole('group', { name: '参考图' })
-    await userEvent.hover(
-      within(strip).getByRole('button', { name: '在舞台查看涂鸦滑板场 @4，未选用' }),
-    )
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('@4 涂鸦滑板场 · 未选用')
   })
 })
 

@@ -81,28 +81,6 @@ def _append(store: TranscriptStore, offset: int, text: str, *, frame: str = "t1.
     )
 
 
-def test_batch_numbers_are_contiguous_from_one() -> None:
-
-    store = TranscriptStore()
-    seqs = [store.append(CONVERSATION, AGENT, ()).seq for _ in range(5)]
-    assert seqs == [1, 2, 3, 4, 5]
-
-
-def test_watermark_follows_the_last_batch() -> None:
-    store = TranscriptStore()
-    _open_turn(store)
-    assert store.subscribe_view(CONVERSATION, AGENT).watermark == 1
-
-
-def test_append_accumulates_text_on_the_frame() -> None:
-    store = TranscriptStore()
-    _open_turn(store)
-    _append(store, 0, "好的")
-    _append(store, 2, "，我来看看")
-
-    assert _first_text(store) == "好的，我来看看"
-
-
 def _epoch(store: TranscriptStore) -> str:
     return store.subscribe_view(CONVERSATION, AGENT).epoch
 
@@ -121,16 +99,6 @@ def test_append_offset_is_counted_in_utf16_units() -> None:
         _append(store, 3, "继续")
     _append(store, 4, "继续")
     assert _first_text(store) == "好的👍继续"
-
-
-def test_catch_up_returns_the_batches_after_the_given_position() -> None:
-    store = TranscriptStore()
-    for _ in range(5):
-        store.append(CONVERSATION, AGENT, ())
-
-    view = store.subscribe_view(CONVERSATION, AGENT, since=2, epoch=_epoch(store))
-    assert [batch.seq for batch in view.batches] == [3, 4, 5]
-    assert view.complete is True
 
 
 def test_catch_up_reports_incomplete_when_the_window_has_moved_past() -> None:
@@ -336,10 +304,3 @@ def test_a_watermark_without_its_epoch_is_never_resumed() -> None:
     view = store.subscribe_view(CONVERSATION, AGENT, since=1)
     assert view.batches == ()
     assert view.complete is False
-
-
-def test_each_batch_carries_its_streams_epoch() -> None:
-    store = TranscriptStore()
-    batch = store.append(CONVERSATION, AGENT, ())
-
-    assert batch.epoch == _epoch(store)

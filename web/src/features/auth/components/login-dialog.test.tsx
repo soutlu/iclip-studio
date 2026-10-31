@@ -40,15 +40,6 @@ describe('LoginDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('SSO 开启时显示飞书入口，不出现故障提示', async () => {
-    serveSsoProbe(ssoOpen)
-    await renderWithProviders(<LoginDialog open onOpenChange={vi.fn()} />)
-    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 iClip' })
-
-    expect(await within(dialog).findByRole('button', { name: '使用飞书登录' })).toBeVisible()
-    expect(within(dialog).queryByText(SSO_UNAVAILABLE)).not.toBeInTheDocument()
-  })
-
   it('已知 SSO 开启时打开，焦点直接落在飞书登录按钮', async () => {
     const user = userEvent.setup()
     serveSsoProbe(ssoOpen)

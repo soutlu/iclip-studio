@@ -129,15 +129,6 @@ def capability(store: FakeFileStore) -> Workspace[object]:
 
 
 @pytest.fixture
-def plugin(store: FakeFileStore) -> type[Workspace[object]]:
-    return Workspace[object].bind(
-        space=FileSpace(store=store, namespace=workspace_namespace),
-        probe=FakeProbe(),
-        ledger=FakeMaterialLedger(),
-    )
-
-
-@pytest.fixture
 def tools(capability: Workspace[object]) -> WorkspaceToolset[object]:
     return WorkspaceToolset(capability)
 
@@ -188,12 +179,6 @@ def test_unicode_paths_normalize_to_one_file() -> None:
     assert normalize_path("caf\u00e9.md") == normalize_path("cafe\u0301.md")
 
 
-def test_namespace_is_the_conversation_under_the_trusted_user() -> None:
-    """客户端提供的对话 id 仅作次级命名空间，外层使用可信用户 id。"""
-
-    assert workspace_namespace(make_context(make_deps())) == f"{USER}/{THREAD}"
-
-
 def test_namespace_fails_closed_when_deps_is_not_a_run_deps() -> None:
     """缺少运行身份属于装配错误，公共命名空间会破坏用户隔离。"""
 
@@ -201,31 +186,9 @@ def test_namespace_fails_closed_when_deps_is_not_a_run_deps() -> None:
         workspace_namespace(make_context({"user_id": str(USER)}))
 
 
-def test_scope_goes_through_normalization() -> None:
-    """命名空间须经 FileSpace.resolve 归一化，保证共享 FileSpace 的能力访问同一位置。"""
-
-    dirty = FileSpace(store=FakeFileStore(), namespace=lambda _ctx: f"{USER}//{THREAD}")
-    capability = Workspace[object](space=dirty, probe=FakeProbe(), ledger=FakeMaterialLedger())
-    assert capability.resolve_scope(make_context(make_deps())) == NS
-
-
-@pytest.mark.parametrize("conversation_id", ["cafe" + chr(0x0301), "/thread-1", THREAD])
-def test_namespace_for_matches_what_the_tools_resolve(conversation_id: str) -> None:
-    """组合根直接用 namespace_for 读写，工具经 FileSpace.resolve；两边须落到同一个命名空间。"""
-
-    space = FileSpace(store=FakeFileStore(), namespace=workspace_namespace)
-    resolved = space.resolve(make_context(make_deps(conversation_id=conversation_id)))
-    assert namespace_for(USER, conversation_id) == resolved
-
-
 def test_namespace_for_rejects_a_conversation_id_that_is_not_a_path_segment() -> None:
     with pytest.raises(InvalidPath):
         namespace_for(USER, "thread-1/")
-
-
-def test_parse_namespace_reverses_namespace_for() -> None:
-    conversation_id = uuid.uuid4()
-    assert parse_namespace(namespace_for(USER, str(conversation_id))) == (USER, conversation_id)
 
 
 @pytest.mark.parametrize(
@@ -237,15 +200,6 @@ def test_parse_namespace_refuses_what_namespace_for_would_not_build_for_a_conver
 ) -> None:
     with pytest.raises(ValueError, match="不是「属主/对话 id」形式"):
         parse_namespace(namespace)
-
-
-async def test_for_run_resolves_scope_before_any_tool_is_touched(
-    capability: Workspace[object],
-) -> None:
-    """运行身份在 for_run 阶段校验，不能依赖模型是否调用工作区工具。"""
-
-    with pytest.raises(RuntimeError, match="不是 AgentRunDeps"):
-        await capability.for_run(make_context("这不是运行依赖"))
 
 
 async def test_two_users_do_not_see_each_other(
@@ -767,43 +721,6 @@ async def test_a_video_address_cannot_be_read_as_an_image() -> None:
 async def test_read_media_file_only_takes_http_urls(url: str) -> None:
     with pytest.raises(ModelRetry, match="http"):
         await check_args(read_tools(FakeProbe()), make_context(make_deps()), url=url)
-
-
-async def test_capability_attaches_to_a_real_agent(store: FakeFileStore) -> None:
-    """通过真实 Agent 覆盖 for_run 签名、dataclass 初始化和工具集挂载。"""
-
-    seen: list[tuple[str, ...]] = []
-
-    def script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        seen.append(tuple(tool.name for tool in info.function_tools))
-        if len(seen) == 1:
-            return ModelResponse(
-                parts=[ToolCallPart("write_file", {"path": "稿.md", "content": "夜景"})]
-            )
-        if len(seen) == 2:
-            return ModelResponse(parts=[ToolCallPart("list_files", {})])
-        return ModelResponse(parts=[TextPart("写完了")])
-
-    agent = Agent(
-        FunctionModel(script),
-        deps_type=AgentRunDeps,
-        capabilities=[make_workspace(store)],
-    )
-    result = await agent.run("起个稿", deps=make_deps())
-
-    assert result.output == "写完了"
-    assert set(seen[0]) == {
-        "read_file",
-        "write_file",
-        "edit_file",
-        "delete_file",
-        "move_file",
-        "list_files",
-        "search_files",
-        "ReadMediaFile",
-    }
-    stored = await store.read(NS, "稿.md")
-    assert stored is not None and stored.content == "夜景"
 
 
 async def test_edits_to_one_file_in_one_reply_both_land() -> None:

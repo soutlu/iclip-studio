@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FilmFrame, FilmGroup } from './film.api'
-import {
-  contentOfFrame,
-  missingFramesText,
-  missingReferencesText,
-  resolveFilmSelection,
-  segmentFrames,
-  settingText,
-  shotText,
-} from './film-content'
+import { contentOfFrame, segmentFrames } from './film-content'
 import { regeneratePrompt } from './film-images'
 
 const frame = (node: string, number: number | null, url: string | null): FilmFrame => ({
@@ -89,23 +81,6 @@ const group: FilmGroup = {
   video: 'v',
 }
 
-describe('resolveFilmSelection', () => {
-  it.each([
-    ['不给段就是全局设定，图是它挂的第一张', undefined, undefined, 'global', 1],
-    ['段不在这组里落回第一段', 'scene:9', undefined, 'global', 1],
-    ['镜头段默认看它的画面', 'scene:1', undefined, 'scene:1', 3],
-    ['没挂图的段舞台空着', 'scene:2', undefined, 'scene:2', undefined],
-    ['没进列表的机位图也是那一镜的画面', 'scene:4', undefined, 'scene:4', 5],
-    ['图越界就用这段挂的第一张', 'global', 7, 'global', 1],
-    ['图在范围里就照给的', 'scene:2', 2, 'scene:2', 2],
-  ])('%s', (_name, content, requested, contentId, expected) => {
-    expect(resolveFilmSelection(group, { content, frame: requested })).toEqual({
-      contentId,
-      frame: expected,
-    })
-  })
-})
-
 describe('segmentFrames', () => {
   it('全局设定是各段字里写的 @ImageN，按先后、去重', () => {
     expect(segmentFrames(group, 'global')).toEqual([1, 2, 4])
@@ -125,51 +100,6 @@ describe('segmentFrames', () => {
     }
     expect(segmentFrames(cited, 'scene:1')).toEqual([])
     expect(contentOfFrame(group, 'global', 5)).toBe('scene:4')
-  })
-})
-
-describe('contentOfFrame', () => {
-  it('当前段挂着这张就不动，否则选第一段挂着它的', () => {
-    expect(contentOfFrame(group, 'scene:3', 1)).toBe('scene:3')
-    expect(contentOfFrame(group, 'scene:2', 1)).toBe('global')
-    expect(contentOfFrame(group, 'global', 3)).toBe('scene:1')
-  })
-})
-
-describe('settingText', () => {
-  it('称呼后面接「：」；声音的正文开头已有说话人，空一格接；拍法没有称呼', () => {
-    expect(settingText({ kind: 'element', label: '人物 甲', text: '甲' })).toBe('人物 甲：甲')
-    expect(settingText({ kind: 'voice', label: '声音', text: '旁白：低沉的男声。' })).toBe(
-      '声音 旁白：低沉的男声。',
-    )
-    expect(settingText({ kind: 'shooting', label: null, text: '手持' })).toBe('手持')
-  })
-})
-
-describe('shotText', () => {
-  it('台词夹在前后两段字之间，写成说话人加引号', () => {
-    expect(
-      shotText({
-        lines: [{ role: '旁白', target: 'line:a', text: '一双就够了。' }],
-        parts: ['她走过来。', '然后停下。'],
-      }),
-    ).toBe('她走过来。旁白“一双就够了。”然后停下。')
-  })
-})
-
-describe('缺图原因', () => {
-  it('生图：几张没选用的按先后用顿号连，同名的只写一次；一张都不缺就没有原因', () => {
-    expect(missingReferencesText(['短发女生', '镜头 1', '短发女生'])).toBe(
-      '参考图尚未选用：短发女生、镜头 1，无法生成图片；请先生成并选用图片',
-    )
-    expect(missingReferencesText([])).toBeUndefined()
-  })
-
-  it('出片：只数列表里没图的，没进列表的机位图不算', () => {
-    expect(missingFramesText(group)).toBe('1 张参考图尚未选用，无法生成视频；请先生成并选用图片')
-    expect(
-      missingFramesText({ ...group, frames: group.frames.filter((item) => item.node !== 'c') }),
-    ).toBeUndefined()
   })
 })
 

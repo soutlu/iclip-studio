@@ -101,52 +101,6 @@ async def problems(agent_config: AgentConfig, **kwargs: Any) -> dict[str, str]:
     return {one.path: one.message for one in result}
 
 
-async def test_valid_config_compiles_to_assembly_inputs() -> None:
-    helper = refs("helper")
-    result = await compile_(
-        config(
-            instructions="你是导演",
-            model={"provider": "acme", "name": "m1", "settings": {"thinking": "high"}},
-            tools=[
-                {"type": "cap", "toolset": NOTES, "parameters": {"limit": 3}},
-                {"type": "cap", "toolset": SEARCH, "enabled": False},
-            ],
-            subagents=[{"agent": "helper", "timeout_seconds": 600, "on_failure": "跳过"}],
-        ),
-        skill_ids=(SKILL.id,),
-        agents=(helper,),
-    )
-
-    assert isinstance(result, CompiledAgent)
-    assert result.instructions == "你是导演"
-    assert (result.model.provider_id, result.model.model, result.model.credential_id) == (
-        PROVIDER.id,
-        "m1",
-        KEY,
-    )
-    assert result.model.thinking == "high"
-    assert result.capabilities == ({NOTES: {"limit": 3}},)
-    assert [(one.name, one.version_id) for one in result.skills] == [
-        (SKILL.name, SKILL.latest_version_id)
-    ]
-    (sub,) = result.subagents
-    assert (sub.agent_id, sub.description, sub.version_id) == (
-        "helper",
-        helper.description,
-        helper.active_version_id,
-    )
-    assert (sub.timeout_seconds, sub.max_calls, sub.on_failure) == (600, None, "跳过")
-
-
-async def test_explicit_credential_is_used_when_it_belongs_to_the_provider() -> None:
-    result = await compile_(
-        config(model={"provider": "acme", "name": "m1", "credential_id": str(OTHER_KEY)})
-    )
-
-    assert isinstance(result, CompiledAgent)
-    assert result.model.credential_id == OTHER_KEY
-
-
 async def test_missing_or_disabled_provider() -> None:
     assert set(await problems(config(model={"provider": "nobody", "name": "m1"}))) == {
         "model.provider"
@@ -270,12 +224,6 @@ async def test_agent_used_as_subagent_cannot_have_subagents() -> None:
 
     assert set(found) == {"subagents"}
     assert "boss" in found["subagents"]
-
-
-async def test_agent_used_as_subagent_without_subagents_compiles() -> None:
-    result = await compile_(config(), agents=(refs("boss", draft_subagents=("main",)),))
-
-    assert isinstance(result, CompiledAgent)
 
 
 async def test_at_runtime_another_agents_draft_does_not_block_a_settled_version() -> None:

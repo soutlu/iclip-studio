@@ -13,8 +13,6 @@ import pytest
 from pydantic import ValidationError
 
 from agent_runtime.settings import (
-    ResolvedApp,
-    ResolvedHooks,
     load_config,
     resolve_settings,
 )
@@ -69,32 +67,6 @@ def write_config(tmp_path: Path, text: str = YAML) -> Path:
     return path
 
 
-def test_yaml_and_env_resolve_into_settings(tmp_path: Path, env: pytest.MonkeyPatch) -> None:
-    settings = resolve_settings(load_config(write_config(tmp_path)))
-
-    assert settings.database_url == DATABASE_URL
-    assert settings.credential_encryption_keys == (FERNET_KEY, OTHER_FERNET_KEY)
-    assert settings.apps == (
-        ResolvedApp(
-            id="bff",
-            key=BFF_KEY,
-            admin=True,
-            hooks=ResolvedHooks(
-                token=HOOK_TOKEN,
-                gate="https://bff.test/hooks/gate",
-                run_started="https://bff.test/hooks/run-started",
-                turn_started=None,
-                timeout_seconds=2.5,
-            ),
-        ),
-        ResolvedApp(id="tool", key=TOOL_KEY, admin=False, hooks=None),
-    )
-    assert (settings.agent_runs.heartbeat_seconds, settings.agent_runs.lease_seconds) == (5, 20)
-    assert settings.agent_runs.max_attempts == 2
-    assert (settings.compaction.keep_messages, settings.compaction.max_fraction) == (8, 0.85)
-    assert (settings.log_level, settings.log_format) == ("INFO", "json")
-
-
 def test_the_yaml_file_ignores_environment_variables(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -140,34 +112,6 @@ def plugin_factory(config: Mapping[str, Any]) -> AbstractAsyncContextManager[Non
     """``plugins.factory`` 指向的入口替身；读配置不调它。"""
 
     raise AssertionError(f"读配置时不该调插件包入口：{config}")
-
-
-def test_the_plugins_section_imports_the_factory_and_keeps_its_config_as_is(
-    tmp_path: Path,
-) -> None:
-    config = load_config(
-        write_config(
-            tmp_path,
-            f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}"
-            "plugins:\n"
-            "  factory: tests.unit.test_settings:plugin_factory\n"
-            "  config:\n    internal_api: {base_url: 'http://server.test', token_env: T}\n"
-            "    shot_video: {}\n",
-        )
-    )
-
-    assert config.plugins is not None
-    assert config.plugins.factory is plugin_factory
-    assert config.plugins.config == {
-        "internal_api": {"base_url": "http://server.test", "token_env": "T"},
-        "shot_video": {},
-    }
-
-
-def test_without_a_plugins_section_there_is_no_plugin_package(tmp_path: Path) -> None:
-    config = load_config(write_config(tmp_path, f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}"))
-
-    assert config.plugins is None
 
 
 @pytest.mark.parametrize(

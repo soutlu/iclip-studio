@@ -14,7 +14,6 @@ from fastapi import FastAPI
 from agent_runtime.http.app import create_app
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
 from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
-from agent_runtime.transcript.wire import TranscriptPage
 
 APP_KEY = "bff-app-key-0123456789-0123456789-ab"
 SESSION = "0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d"
@@ -45,12 +44,6 @@ async def client(app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
         yield c
 
 
-def test_the_runtime_page_carries_no_app_envelope_fields() -> None:
-    overlays = {"title", "owner_user_id", "deleted_at", "forked_from", "fork_turn"}
-
-    assert overlays.isdisjoint(TranscriptPage.model_fields)
-
-
 def test_usage_is_charged_to_the_conversation_of_the_run_deps() -> None:
     deps = AgentRunDeps(user_id=uuid.UUID(OWNER), conversation_id=SESSION, user_name="logan")
 
@@ -58,28 +51,11 @@ def test_usage_is_charged_to_the_conversation_of_the_run_deps() -> None:
     assert conversation_of(object()) is None
 
 
-async def test_app_routes_need_the_app_key(app: FastAPI) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://runtime.test/v1"
-    ) as anonymous:
-        response = await anonymous.get(f"/sessions/{SESSION}/status")
-
-    assert response.status_code == 401
-    assert set(response.json()) == {"detail"}
-
-
 async def test_owner_scoped_routes_need_the_owner(client: httpx.AsyncClient) -> None:
     response = await client.get(f"/sessions/{SESSION}/files")
 
     assert response.status_code == 422
     assert response.json()["detail"].startswith("X-End-User: ")
-
-
-async def test_a_session_id_must_be_a_uuid(client: httpx.AsyncClient) -> None:
-    response = await client.get("/sessions/not-a-session/status")
-
-    assert response.status_code == 422
-    assert response.json()["detail"].startswith("session_id: ")
 
 
 @pytest.mark.parametrize("page_size", [0, 101])

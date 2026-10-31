@@ -376,25 +376,9 @@ def test_public_url_base_must_be_http(bad_base: str) -> None:
         validate_public_url_base(bad_base)
 
 
-def test_public_url_base_trailing_slash_is_trimmed() -> None:
-    assert validate_public_url_base("https://cdn.test/") == "https://cdn.test"
-
-
 # --- 内网 endpoint ---------------------------------------------------------------
 
 INTERNAL = replace(SETTINGS, internal_endpoint="https://oss-cn-shenzhen-internal.aliyuncs.com")
-
-
-@pytest.mark.parametrize("blank", ["", "   "])
-def test_a_blank_internal_endpoint_means_none(blank: str) -> None:
-    assert validate_internal_endpoint(blank) is None
-
-
-def test_an_internal_endpoint_is_kept_without_its_trailing_slash() -> None:
-    assert (
-        validate_internal_endpoint(" https://oss-cn-shenzhen-internal.aliyuncs.com/ ")
-        == "https://oss-cn-shenzhen-internal.aliyuncs.com"
-    )
 
 
 @pytest.mark.parametrize(

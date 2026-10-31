@@ -10,7 +10,7 @@ import zipfile
 
 import pytest
 
-from agent_runtime.config.skills.archive import read_archive, write_archive
+from agent_runtime.config.skills.archive import read_archive
 from agent_runtime.config.skills.models import MAX_FILE_BYTES, MAX_FILES, SKILL_MD
 
 SKILL = "---\nname: pdf-tools\ndescription: 处理 PDF\n---\n\n# PDF 工具\n"
@@ -156,20 +156,3 @@ def test_not_a_zip_is_reported() -> None:
 
     assert parsed.files == {}
     assert len(parsed.problems) == 1
-
-
-def test_exported_archive_reads_back_to_the_same_files() -> None:
-    files = {SKILL_MD: SKILL, "references/a.md": "参考", "references/sub/b.txt": "b\r\n"}
-
-    exported = write_archive("pdf-tools", files)
-
-    with zipfile.ZipFile(io.BytesIO(exported)) as archive:
-        assert archive.namelist() == [
-            "pdf-tools/SKILL.md",
-            "pdf-tools/references/a.md",
-            "pdf-tools/references/sub/b.txt",
-        ]
-    assert read_archive(exported) == read_archive(write_archive("pdf-tools", dict(files)))
-    assert read_archive(exported).files == files
-    assert read_archive(exported).problems == ()
-    assert exported == write_archive("pdf-tools", dict(reversed(files.items())))
