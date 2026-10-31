@@ -193,14 +193,14 @@ class SessionService:
 
         源与目标都要是 ``app_id`` 的会话（目标由应用先开好），任一不是都是 ``NotFound``，报错同会话不存在，
         在读写任何东西之前。``files`` 是（源路径，目标路径），源里没有的跳过。``require_any`` 里的源路径一个都不在时什么都
-        不写、回 ``False``；不在 ``files`` 里的路径算不在。台账整份跟着拷：拷过去的文件引用的地址都登记在
-        台账里，目标会话靠它认得这些地址。"""
+        不写、回 ``False``；不在 ``files`` 里的路径算不在；``require_any`` 为空即没有这个前提，照拷。台账
+        整份跟着拷：拷过去的文件引用的地址都登记在台账里，目标会话靠它认得这些地址。"""
 
         await self.require_owned(source_id, app_id=app_id)
         await self.require_owned(target_id, app_id=app_id)
         source = namespace_for(source_user, str(source_id))
         found = {path: await self._files.read(source, path) for path, _ in files}
-        if all(found.get(path) is None for path in require_any):
+        if require_any and all(found.get(path) is None for path in require_any):
             return False
         target = namespace_for(target_user, str(target_id))
         for path, renamed in files:

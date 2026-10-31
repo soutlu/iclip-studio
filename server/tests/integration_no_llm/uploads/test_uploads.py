@@ -16,7 +16,6 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.platform.db.engine import build_engine
@@ -27,6 +26,7 @@ from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media, make_music
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected
+from tests.helpers.runtime_backed import build_backed_app
 
 OSS_ENVS = {
     "OSS_BUCKET": "iclip-test",
@@ -53,7 +53,7 @@ async def uploads_app(
 
     for name, value in OSS_ENVS.items():
         monkeypatch.setenv(name, value)
-    built = build_app(
+    built = build_backed_app(
         make_runtime_config(),
         engine=engine,
         object_store=bucket,
@@ -334,7 +334,7 @@ async def media_app(
 
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
-    built = build_app(
+    built = build_backed_app(
         config_with_media(),
         engine=engine,
         object_store=bucket,
@@ -485,7 +485,7 @@ async def test_viewer_cannot_sign(client: httpx.AsyncClient) -> None:
 async def test_routes_are_absent_without_a_bucket(base_env: None, migrated_pg: str) -> None:
     engine = build_engine(migrated_pg)
     try:
-        app = build_app(make_runtime_config(), engine=engine)
+        app = build_backed_app(make_runtime_config(), engine=engine)
         async with make_client(app) as http:
             assert (
                 await http.post("/uploads/sign", json={"contentType": "image/jpeg"})

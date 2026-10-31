@@ -34,7 +34,11 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.errors import install_error_handlers
-from iclip.app.runtime_internal import RuntimePluginServices, create_runtime_internal_router
+from iclip.app.runtime_internal import (
+    RuntimePluginServices,
+    TurnNaming,
+    create_runtime_internal_router,
+)
 from iclip.app.shot_media import FrameBoardsAdapter
 from iclip.domains.conversations.service import ConversationService
 from iclip.platform.media.codec import SOFTWARE
@@ -140,11 +144,13 @@ def backend_app(boards: FrameBoardsAdapter) -> FastAPI:
 
     app = FastAPI()
     install_error_handlers(app)
+    conversations = cast("ConversationService", object())
     app.include_router(
         create_runtime_internal_router(
             token=TOKEN,
             user_principal=FakePrincipals(),
-            conversations=cast("ConversationService", object()),
+            conversations=conversations,
+            naming=TurnNaming(conversations),
             video_generation_of=_no_video,
             plugins=RuntimePluginServices(
                 generations=None,

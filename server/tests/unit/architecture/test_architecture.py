@@ -31,6 +31,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "domains/uploads/api.py",
         "domains/model_providers/api.py",
         "domains/agent_config/api.py",
+        # 管理接口转给运行时服务时把它的答复原样做成 Response，上面三组路由共用。
+        "platform/runtime_admin.py",
         "domains/identity/middleware.py",
         "domains/identity/accounts.py",
         "main.py",

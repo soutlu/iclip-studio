@@ -28,6 +28,11 @@ depends_on = ["iclip.common"]
 path = "iclip.platform.outbound"
 depends_on = []
 
+# 配置页三组管理接口转给运行时服务的那一层，技能库、模型供应商与 agent 配置的路由共用。
+[[modules]]
+path = "iclip.platform.runtime_admin"
+depends_on = []
+
 # 取帧拼板与宫格切格的像素处理，取帧台账、存储与切图记录在组合根的适配器里。
 [[modules]]
 path = "iclip.platform.shot_media"
@@ -134,18 +139,18 @@ depends_on = [
 path = "iclip.domains.brand_templates"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
 
-# 技能库、模型供应商与 agent 配置的业务在运行时（agent_runtime.config），这里只留接口路由。
+# 技能库、模型供应商与 agent 配置的业务在运行时服务，这里只留转给它的接口路由。
 [[modules]]
 path = "iclip.domains.model_providers"
-depends_on = ["iclip.domains.identity"]
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
 
 [[modules]]
 path = "iclip.domains.skills"
-depends_on = ["iclip.domains.identity"]
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
 
 [[modules]]
 path = "iclip.domains.agent_config"
-depends_on = ["iclip.domains.identity"]
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
 
 [[modules]]
 path = "iclip.domains.products"

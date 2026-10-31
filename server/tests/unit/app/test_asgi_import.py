@@ -30,6 +30,8 @@ def test_importing_the_asgi_app_touches_no_database(tmp_path: Path) -> None:
         **{name: value for name, value in os.environ.items() if name not in PLACEHOLDER_ENV},
         "AUTH_SECRET": PLACEHOLDER_ENV["AUTH_SECRET"],
         "CREDENTIAL_ENCRYPTION_KEYS": PLACEHOLDER_ENV["CREDENTIAL_ENCRYPTION_KEYS"],
+        "RUNTIME_URL": PLACEHOLDER_ENV["RUNTIME_URL"],
+        "RUNTIME_APP_KEY": PLACEHOLDER_ENV["RUNTIME_APP_KEY"],
         "DATABASE_URL": UNREACHABLE_DATABASE,
         "CONFIG_FILE": str(config),
     }

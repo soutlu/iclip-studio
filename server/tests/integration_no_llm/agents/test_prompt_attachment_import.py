@@ -16,7 +16,6 @@ from PIL import Image
 from pydantic_ai.models import Model
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
 from iclip.platform.outbound.guard import FetchFailed
 from tests.helpers.agents import AgentSeed, model_builder, seed_agents
@@ -25,6 +24,7 @@ from tests.helpers.auth import login_as_editor
 from tests.helpers.generation import MemoryObjectStore
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
+from tests.helpers.runtime_backed import build_backed_app
 
 AGENT_ID = "storyboard"
 BUCKET_BASE = "https://iclip-test.oss-ap-southeast-1.aliyuncs.com"
@@ -94,7 +94,7 @@ async def oss_app(
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
-        built = build_app(
+        built = build_backed_app(
             make_runtime_config(skill_cache_dir=tmp_path / "skills"),
             engine=engine,
             build_model=model_builder(models),

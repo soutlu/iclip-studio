@@ -22,7 +22,6 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
-from iclip.app.bootstrap import build_app
 from iclip.config import RuntimeConfig
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
@@ -36,6 +35,7 @@ from tests.helpers.app import (
 )
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
+from tests.helpers.runtime_backed import RUNTIME_APP_KEY, RUNTIME_URL, build_backed_app
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
 
@@ -87,6 +87,9 @@ def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.setenv("DATABASE_URL", migrated_pg)
     monkeypatch.setenv("AUTH_SECRET", TEST_SECRET)
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
+    # 运行时服务由 build_backed_app 装在进程内，地址只是个名字。
+    monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
+    monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_APP_KEY)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.delenv("PMS_BASE_URL", raising=False)
     monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)
@@ -130,7 +133,7 @@ def models() -> Mapping[str, Model]:
 
 
 def _build_app(config: RuntimeConfig, engine: AsyncEngine, models: Mapping[str, Model]) -> FastAPI:
-    return build_app(
+    return build_backed_app(
         config,
         engine=engine,
         build_model=model_builder(models),
@@ -239,7 +242,7 @@ async def sso_app(
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(
+        yield build_backed_app(
             make_runtime_config(),
             engine=engine,
             sso_verifier=verifier,

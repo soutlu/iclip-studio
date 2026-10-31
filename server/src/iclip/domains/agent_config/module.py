@@ -5,13 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_runtime.config.agent_config.repository import (
-    AgentStore,
-    ModelDirectory,
-    PluginDirectory,
-    SkillDirectory,
-)
-from agent_runtime.config.agent_config.service import AgentConfigService
+from agent_runtime.client import RuntimeClient
 
 from iclip.domains.agent_config.api import create_agent_config_router
 
@@ -21,18 +15,11 @@ class AgentConfigModule:
     routers: tuple[Any, ...]
     """使用 Any 隔离 Web 框架类型。"""
 
-    service: AgentConfigService
 
+def build_agent_config_module(runtime: RuntimeClient) -> AgentConfigModule:
+    """端点都转给运行时服务，``runtime`` 是组合根建的那一个客户端。"""
 
-def build_agent_config_module(
-    store: AgentStore,
-    *,
-    models: ModelDirectory,
-    plugins: PluginDirectory,
-    skills: SkillDirectory,
-) -> AgentConfigModule:
-    service = AgentConfigService(store, models=models, plugins=plugins, skills=skills)
-    return AgentConfigModule(routers=(create_agent_config_router(service),), service=service)
+    return AgentConfigModule(routers=(create_agent_config_router(runtime),))
 
 
 __all__ = ["AgentConfigModule", "build_agent_config_module"]

@@ -14,7 +14,6 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
@@ -29,6 +28,7 @@ from tests.helpers.references import (
     plant_reference,
     upload_video,
 )
+from tests.helpers.runtime_backed import build_backed_app
 from tests.helpers.tagging import plant_entry, tag_id
 
 PASSWORD = "password-123"
@@ -53,7 +53,7 @@ async def studio_app(
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
     try:
-        yield build_app(
+        yield build_backed_app(
             config_with_studio(),
             engine=engine,
             object_store=bucket,
@@ -256,7 +256,7 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
     try:
-        app = build_app(
+        app = build_backed_app(
             config_with_studio(),
             engine=engine,
             queue_connector=InMemoryConnector(),
@@ -290,7 +290,7 @@ async def test_without_breakdown_configured_only_reads_are_mounted(
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
-        app = build_app(make_runtime_config(), engine=engine)
+        app = build_backed_app(make_runtime_config(), engine=engine)
         async with make_client(app) as client:
             await register_and_login(client, username="maya", email="maya@example.com")
             await set_roles_in_db(migrated_pg, "maya@example.com", ["editor"])

@@ -22,6 +22,7 @@ from agent_runtime.assembly.directories import (
 )
 from agent_runtime.assembly.displays import build_display_registry
 from agent_runtime.assembly.models import PydanticAiCredentialProbe, require_known_providers
+from agent_runtime.client import RuntimeClient
 from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
 from agent_runtime.config.agent_config.public import AgentConfigService, AgentReferences
 from agent_runtime.config.model_providers.catalog import load_declarations
@@ -53,7 +54,6 @@ from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.harness.usage_ledger_pg import PgConversationUsage
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
-from agent_runtime.service.sessions import SessionService
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
@@ -88,8 +88,10 @@ from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_refe
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.runtime_internal import (
     RuntimePluginServices,
+    TurnNaming,
     create_runtime_internal_router,
 )
+from iclip.app.runtime_ports import RuntimeServicePorts
 from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
 from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
@@ -117,8 +119,6 @@ from iclip.domains.conversations.infra_sql import (
 )
 from iclip.domains.conversations.module import build_conversations_module
 from iclip.domains.conversations.service import (
-    AgentDirectory,
-    AgentEntry,
     CollectionInfo,
     ConversationActivity,
 )
@@ -257,58 +257,8 @@ class AnnouncingFileStore:
 
 
 VIDEO_APP_ID: Final = "video"
-"""后端在运行时里的应用标识：后端开的会话都归它，迁移 0044 给已有会话回填的也是它。"""
-
-
-class VideoAppSessions:
-    """对话域的 ``RuntimeSessions``：经运行时的会话服务开会话、分叉与拷文件，都以 ``VIDEO_APP_ID`` 的
-    身份。"""
-
-    def __init__(self, service: SessionService) -> None:
-        self._service = service
-
-    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
-        await self._service.open(session_id, app_id=VIDEO_APP_ID, agent_id=agent_id)
-
-    async def fork(
-        self,
-        *,
-        source_id: uuid.UUID,
-        source_user: uuid.UUID,
-        target_id: uuid.UUID,
-        target_user: uuid.UUID,
-        turn: int,
-        agent_id: str | None,
-    ) -> None:
-        await self._service.fork(
-            app_id=VIDEO_APP_ID,
-            source_id=source_id,
-            source_user=source_user,
-            target_id=target_id,
-            target_user=target_user,
-            turn=turn,
-            agent_id=agent_id,
-        )
-
-    async def copy_files(
-        self,
-        *,
-        source_id: uuid.UUID,
-        source_user: uuid.UUID,
-        target_id: uuid.UUID,
-        target_user: uuid.UUID,
-        files: Sequence[tuple[str, str]],
-        require_any: frozenset[str],
-    ) -> bool:
-        return await self._service.copy_files(
-            app_id=VIDEO_APP_ID,
-            source_id=source_id,
-            source_user=source_user,
-            target_id=target_id,
-            target_user=target_user,
-            files=files,
-            require_any=require_any,
-        )
+"""后端在运行时里的应用标识：后端经运行时服务开的会话都归它（服务按 ``RUNTIME_APP_KEY`` 认出它），迁移
+0044 与切换命令给已有对话补的会话也是它。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -447,14 +397,23 @@ def build_app(
     credential_probe: CredentialProbe | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
+    runtime_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """按运行配置装出整个应用；只建对象、不连库，连接与后台循环都留给 lifespan。agent 不在这里装配，
-    每次运行按对话固定的版本从库里装。``build_model`` 是测试换模型替身的口子。"""
+    每次运行按对话固定的版本从库里装。``build_model`` 是测试换模型替身的口子，``runtime_transport`` 是
+    测试把运行时服务的客户端接到进程内运行时 app 上的口子。"""
 
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
     configure_logging(settings.log_level, settings.log_format)
+    # 一个客户端：配置页的管理接口、开会话与分叉、首页名册、起标题与对话活动都经它；lifespan 结束时关。
+    runtime_client = RuntimeClient(
+        settings.runtime_service.url,
+        settings.runtime_service.app_key,
+        transport=runtime_transport,
+    )
+    runtime_ports = RuntimeServicePorts(runtime_client)
 
     owns_engine = engine is None
     active_engine = engine if engine is not None else build_engine(settings.database_url)
@@ -693,20 +652,19 @@ def build_app(
     async def activities_of(
         conversation_ids: Sequence[uuid.UUID],
     ) -> Mapping[uuid.UUID, ConversationActivity]:
-        states = await job_queue.activities([str(one) for one in conversation_ids])
+        states = await runtime_ports.activities(conversation_ids)
         videos = await video_generations(conversation_ids)
-        return {
-            one: ConversationActivity(
-                busy=state.busy,
-                pending_interaction=state.pending_interaction,
-                last_turn_reason=state.last_turn_reason,
+        activities: dict[uuid.UUID, ConversationActivity] = {}
+        for one in conversation_ids:
+            state = states.get(one)
+            # 运行时只答有会话的对话；没有会话就没跑过，与队列里查不到时一样是空闲，出片阶段照样补上。
+            activities[one] = ConversationActivity(
+                busy=state is not None and state.busy,
+                pending_interaction="none" if state is None else state.pending_interaction,
+                last_turn_reason=None if state is None else state.last_turn_reason,
                 video_generation=videos.get(one, "none"),
             )
-            for one, state in ((one, states[str(one)]) for one in conversation_ids)
-        }
-
-    async def busy_conversation_ids(owner: uuid.UUID | None) -> frozenset[uuid.UUID]:
-        return frozenset(uuid.UUID(one) for one in await job_queue.busy_conversation_ids(owner))
+        return activities
 
     async def latest_master_urls(conversation_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         if generation is None:
@@ -741,31 +699,36 @@ def build_app(
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
+    # 配置页的三组管理接口转给运行时服务；进程内的三块配置服务只给进程内的运行驱动装配 agent，以及
+    # app.state.agent_services。
+    skills = build_skills_module(runtime_client)
+    model_providers = build_model_providers_module(runtime_client)
+    agent_config = build_agent_config_module(runtime_client)
     # agent 配置与技能库、模型供应商互相要用：那两边经端口问 agent 表「谁在用」，agent 配置经端口查它们。
     # 先建 agent 的仓储交给那两边，再用它们的服务装 agent 配置。
     agent_store = SqlAgentStore(active_engine)
     agent_references = AgentReferences(agent_store)
-    skills = build_skills_module(SqlSkillStore(active_engine), usages=agent_references)
+    skills_service = SkillsService(SqlSkillStore(active_engine), usages=agent_references)
     provider_declarations = load_declarations()
     require_known_providers(provider_declarations)
-    model_providers = build_model_providers_module(
+    model_providers_service = ModelProviderService(
         SqlModelProviderStore(active_engine),
         declarations=provider_declarations,
         cipher=CredentialCipher(settings.credential_encryption_keys),
         probe=credential_probe if credential_probe is not None else PydanticAiCredentialProbe(),
         usages=agent_references,
     )
-    agent_config = build_agent_config_module(
+    agent_config_service = AgentConfigService(
         agent_store,
-        models=ProviderDirectory(model_providers.service),
+        models=ProviderDirectory(model_providers_service),
         plugins=RegistryPluginDirectory(plugins),
-        skills=LibrarySkillDirectory(skills.service),
+        skills=LibrarySkillDirectory(skills_service),
     )
     sessions = PgSessionStore(active_engine)
     agent_runtime = AgentRuntime(
-        agent_config=agent_config.service,
-        skills=skills.service,
-        model_providers=model_providers.service,
+        agent_config=agent_config_service,
+        skills=skills_service,
+        model_providers=model_providers_service,
         sessions=sessions,
         settings=AssemblySettings(
             plugins=plugins,
@@ -779,23 +742,6 @@ def build_app(
         ),
     )
 
-    async def list_agents() -> AgentDirectory:
-        found = await agent_runtime.directory()
-        return AgentDirectory(
-            items=tuple(AgentEntry(id=item.id, name=item.name) for item in found.items),
-            default=found.default,
-        )
-
-    # 拷进新对话的文件不走发帧的那一层：新对话的行还没落库，这一刻没人订阅得了它。
-    session_service = SessionService(
-        sessions=sessions,
-        version_for_new_session=agent_config.service.version_for_new_session,
-        queue=job_queue,
-        history=transcript_history,
-        files=workspace_store,
-        ledger=material_ledger,
-    )
-
     audit = build_audit_module(PgAuditReports(active_engine))
     library = build_library_module(
         library_reports,
@@ -806,8 +752,8 @@ def build_app(
     conversations = build_conversations_module(
         conversation_repo,
         act_as=identity.act_as,
-        list_agents=list_agents,
-        runtime=VideoAppSessions(session_service),
+        list_agents=runtime_ports.list_agents,
+        runtime=runtime_ports,
         list_collections=list_owner_collections,
         claim_task=tasks.service.claim,
         list_derived_files=conversation_workspace.list_files,
@@ -833,13 +779,13 @@ def build_app(
         else WholeFilmExportAdapter(
             generation=generation.service, generations=generation_repo, render=render_client
         ),
-        generate_title=agent_runtime.generate_title,
+        generate_title=runtime_ports.generate_title,
         announce_title=live_connections.announce_title,
         event_watermark=live_connections.clock.snapshot,
         announce_row=live_connections.announce_session_row,
         announce_deleted=live_connections.announce_session_deleted,
         activities_of=activities_of,
-        busy_conversation_ids=busy_conversation_ids,
+        busy_conversation_ids=runtime_ports.busy,
         latest_master_urls=latest_master_urls,
         same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
@@ -913,6 +859,10 @@ def build_app(
         ),
     )
 
+    turn_naming = (
+        None if settings.runtime_internal_token is None else TurnNaming(conversations.service)
+    )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await transcripts.runner.start()
@@ -936,6 +886,10 @@ def build_app(
             if connector is not None:
                 await connector.close_async()
             await transcripts.runner.shutdown()
+            # 后台起名要经运行时服务起标题：先收掉它们，再关客户端。
+            if turn_naming is not None:
+                await turn_naming.aclose()
+            await runtime_client.aclose()
             await http_client.aclose()
             if render_client is not None:
                 await render_client.aclose()
@@ -951,6 +905,8 @@ def build_app(
     install_error_handlers(app)
     # 测试核对连接断开后实时状态有没有放开。
     app.state.transcript_store = transcript_store
+    # 测试等轮次开始回调交出的后台起名跑完；没挂内部接口时为 None。
+    app.state.turn_naming = turn_naming
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
@@ -1003,7 +959,7 @@ def build_app(
             ),
         )
     )
-    if settings.runtime_internal_token is None:
+    if settings.runtime_internal_token is None or turn_naming is None:
         _logger.info("运行时内部接口未挂上", requires=RUNTIME_INTERNAL_TOKEN_ENV)
     else:
         # 插件服务与进程内绑进插件类的是同一套适配器，挂不挂的条件也同 build_plugin_registry。
@@ -1031,6 +987,7 @@ def build_app(
                 token=settings.runtime_internal_token,
                 user_principal=user_principal,
                 conversations=conversations.service,
+                naming=turn_naming,
                 video_generation_of=video_generation_of,
                 plugins=RuntimePluginServices(
                     generations=image_port,
@@ -1060,15 +1017,17 @@ def build_app(
         )
 
     app.state.agent_services = AgentServices(
-        skills=skills.service,
-        model_providers=model_providers.service,
-        agent_config=agent_config.service,
+        skills=skills_service,
+        model_providers=model_providers_service,
+        agent_config=agent_config_service,
         sessions=sessions,
         runtime=agent_runtime,
     )
+    # 测试把同一份登记表交给同库的运行时服务，管理接口校验插件与进程内装配看的是同一套插件。
+    app.state.plugin_registry = plugins
     # 集成测试经它直接调生成队列的任务协程，不起 worker。
     app.state.generation = generation
     return app
 
 
-__all__ = ["VIDEO_APP_ID", "AgentServices", "VideoAppSessions", "build_app"]
+__all__ = ["VIDEO_APP_ID", "AgentServices", "build_app"]

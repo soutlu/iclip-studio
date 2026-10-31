@@ -10,11 +10,11 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_runtime_config
 from tests.helpers.pdm import recreate_pdm_styles
 from tests.helpers.pg import reset_database
+from tests.helpers.runtime_backed import build_backed_app
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ async def app(
     """启用爆款视频查询的 app。"""
 
     monkeypatch.setenv("PRODUCT_CATALOG_DATABASE_URL", migrated_pg)
-    yield build_app(
+    yield build_backed_app(
         make_runtime_config(),
         engine=business_engine,
         product_catalog_engine=catalog_engine,
@@ -66,4 +66,4 @@ async def app_without_catalog(
 ) -> AsyncGenerator[FastAPI]:
     """未配置产品资料库的 app：接口照常挂载，但降级整级失效。"""
 
-    yield build_app(make_runtime_config(), engine=business_engine)
+    yield build_backed_app(make_runtime_config(), engine=business_engine)

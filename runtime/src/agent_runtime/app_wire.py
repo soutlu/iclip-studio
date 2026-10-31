@@ -56,7 +56,7 @@ class FilesCopyIn(Envelope):
     files: tuple[tuple[str, str], ...]
     """（源路径，目标路径）；源里没有的跳过。"""
     require_any: tuple[str, ...] = ()
-    """这些源路径一个都不在时什么都不写，答 ``copied: false``。"""
+    """这些源路径一个都不在时什么都不写，答 ``copied: false``；空着即没有这个前提，照拷。"""
 
 
 class FilesCopyOut(Envelope):

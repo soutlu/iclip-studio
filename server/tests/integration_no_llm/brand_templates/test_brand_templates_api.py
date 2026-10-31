@@ -17,7 +17,6 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_app
 from iclip.domains.brand_templates.service import UNREADABLE_FONT
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
@@ -27,6 +26,7 @@ from tests.helpers.app import make_client
 from tests.helpers.auth import set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 from tests.helpers.pg import reset_database
+from tests.helpers.runtime_backed import build_backed_app
 
 PASSWORD = "password-123"
 
@@ -70,7 +70,7 @@ async def media_app(
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
-        yield build_app(
+        yield build_backed_app(
             config_with_media(),
             engine=engine,
             object_store=bucket,

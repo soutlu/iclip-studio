@@ -10,6 +10,7 @@
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
    - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步。
+   - `RUNTIME_URL` 与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：配置页、开对话、首页名册、起标题与对话活动都经运行时服务。`RUNTIME_URL` 是运行时服务的根地址（服务见[后端架构](architecture.md#1-模块职责)，连同一个开发库），`RUNTIME_APP_KEY` 与运行时配置里应用 `video` 的 `key_env` 指向的值相同，不少于 32 个字符，这个应用要有管理权限。
 3. 把一份 `server/configs/config.yaml` 放到本机，它不进仓库，改了要重启后端。模型、agent 与技能存在数据库里，不在文件里。
 4. 迁移数据库并启动后端：
 
