@@ -21,6 +21,9 @@ class FakeMaterialLedger:
     async def lookup(self, namespace: str, url: str) -> Material | None:
         return self.rows.get((namespace, url))
 
+    async def lookup_many(self, namespace: str, urls: Sequence[str]) -> dict[str, Material]:
+        return {url: self.rows[namespace, url] for url in urls if (namespace, url) in self.rows}
+
     async def list_all(self, namespace: str) -> tuple[Material, ...]:
         return tuple(material for (space, _), material in self.rows.items() if space == namespace)
 

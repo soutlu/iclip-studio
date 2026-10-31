@@ -33,6 +33,8 @@ from agent_runtime.app_wire import (
     FilesOut,
     FileWriteIn,
     MaterialsIn,
+    MaterialsLookupIn,
+    MaterialsLookupOut,
     PromptStatsOut,
     RunStatsOut,
     SessionForkIn,
@@ -363,6 +365,16 @@ class RuntimeClient:
             "GET", f"/v1/sessions/{session_id}/materials", owner=owner, params={"url": url}
         )
         return _parse(response, _MATERIAL.validate_json)
+
+    async def lookup_materials(
+        self, session_id: uuid.UUID, body: MaterialsLookupIn, *, owner: uuid.UUID
+    ) -> MaterialsLookupOut:
+        """``POST /v1/sessions/{id}/materials:lookup``：一次查一批，只答登记过的那些。"""
+
+        response = await self._call(
+            "POST", f"/v1/sessions/{session_id}/materials:lookup", owner=owner, body=body
+        )
+        return _parse(response, MaterialsLookupOut.model_validate_json)
 
     # --- agent 名册与起标题 --------------------------------------------------------
 

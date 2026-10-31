@@ -14,7 +14,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from agent_runtime.app_wire import FileWriteIn, MaterialsIn
+from agent_runtime.app_wire import (
+    MAX_MATERIAL_LOOKUP_URLS,
+    FileWriteIn,
+    MaterialsIn,
+    MaterialsLookupIn,
+)
 from agent_runtime.client import RuntimeClient
 from agent_runtime.errors import NotFound
 from agent_runtime.file_store.namespace import parse_namespace
@@ -88,6 +93,20 @@ class RuntimeMaterials:
             return await self._client.lookup_material(conversation_id, url, owner=owner)
         except NotFound:
             return None
+
+    async def lookup_many(self, namespace: str, urls: Sequence[str]) -> dict[str, Material]:
+        """一次调用查完；超过接口单次上限的按上限分批。"""
+
+        wanted = list(dict.fromkeys(urls))
+        if not wanted:
+            return {}
+        owner, conversation_id = parse_namespace(namespace)
+        found: dict[str, Material] = {}
+        for start in range(0, len(wanted), MAX_MATERIAL_LOOKUP_URLS):
+            batch = MaterialsLookupIn(urls=tuple(wanted[start : start + MAX_MATERIAL_LOOKUP_URLS]))
+            answer = await self._client.lookup_materials(conversation_id, batch, owner=owner)
+            found.update((material.url, material) for material in answer.materials)
+        return found
 
 
 __all__ = ["RuntimeFiles", "RuntimeMaterials", "WorkspaceFiles"]

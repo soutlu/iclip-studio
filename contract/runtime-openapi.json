@@ -2214,6 +2214,43 @@
         "title": "MaterialsIn",
         "type": "object"
       },
+      "MaterialsLookupIn": {
+        "additionalProperties": false,
+        "properties": {
+          "urls": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Urls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "title": "MaterialsLookupIn",
+        "type": "object"
+      },
+      "MaterialsLookupOut": {
+        "additionalProperties": false,
+        "properties": {
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/Material"
+            },
+            "title": "Materials",
+            "type": "array"
+          }
+        },
+        "required": [
+          "materials"
+        ],
+        "title": "MaterialsLookupOut",
+        "type": "object"
+      },
       "MetaMergeOp": {
         "additionalProperties": false,
         "properties": {
@@ -8530,6 +8567,76 @@
           }
         ],
         "summary": "Record Materials",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/materials:lookup": {
+      "post": {
+        "operationId": "lookup_materials_v1_sessions__session_id__materials_lookup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialsLookupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialsLookupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Lookup Materials",
         "tags": [
           "workspace"
         ]

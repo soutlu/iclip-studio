@@ -88,6 +88,26 @@ async def test_lookup_is_scoped_to_the_namespace(ledger: PgMaterialLedger, names
     assert await ledger.lookup(str(uuid.uuid4()), VIDEO) is None
 
 
+async def test_lookup_many_answers_only_this_namespaces_rows(
+    ledger: PgMaterialLedger, namespace: str
+) -> None:
+    elsewhere = "https://cdn.test/elsewhere.png"
+    await ledger.record(
+        namespace, [Material(url=VIDEO, kind="video"), Material(url=IMAGE, kind="image")]
+    )
+    await ledger.record(str(uuid.uuid4()), [Material(url=elsewhere, kind="image")])
+
+    found = await ledger.lookup_many(
+        namespace, [IMAGE, "https://cdn.test/ref", VIDEO, elsewhere, IMAGE]
+    )
+
+    assert found == {
+        IMAGE: Material(url=IMAGE, kind="image"),
+        VIDEO: Material(url=VIDEO, kind="video"),
+    }
+    assert await ledger.lookup_many(namespace, []) == {}
+
+
 async def test_recording_nothing_is_a_no_op(ledger: PgMaterialLedger, namespace: str) -> None:
     """空素材列表必须跳过 INSERT，避免生成缺少 VALUES 的无效语句。"""
 

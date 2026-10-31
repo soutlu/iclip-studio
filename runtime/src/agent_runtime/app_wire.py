@@ -112,6 +112,23 @@ class MaterialsIn(Envelope):
     """同一地址重复登记保留首条。"""
 
 
+MAX_MATERIAL_LOOKUP_URLS: Final = 1000
+"""一次批量查素材最多带多少个地址；更多的由应用分批查。"""
+
+
+class MaterialsLookupIn(Envelope):
+    urls: Annotated[
+        tuple[Annotated[str, Field(min_length=1)], ...],
+        Field(min_length=1, max_length=MAX_MATERIAL_LOOKUP_URLS),
+    ]
+    """素材地址，按原始字符串精确匹配；可以重复。"""
+
+
+class MaterialsLookupOut(Envelope):
+    materials: tuple[Material, ...]
+    """登记过的那些，每个地址一条；没登记过的不在里面。"""
+
+
 # --- agent 名册与起标题 ----------------------------------------------------------
 
 

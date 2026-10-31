@@ -14,10 +14,12 @@ import uuid
 import httpx
 import pytest
 from agent_runtime.app_wire import (
+    MAX_MATERIAL_LOOKUP_URLS,
     SessionOpenIn,
     SessionPromptIn,
 )
 from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed
+from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import AttachmentSource, ImageContent, TextContent, TurnUpsertOp
@@ -26,6 +28,7 @@ from fastapi import FastAPI
 from httpx_ws.transport import ASGIWebSocketTransport
 from pydantic_ai.models import Model
 
+from iclip.app.runtime_workspace import RuntimeMaterials
 from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.runtime import says
 from tests.helpers.runtime_service import (
@@ -112,6 +115,22 @@ async def test_a_session_runs_and_reads_back(
         # 附件在受理时登记进了素材台账。
         found = await reader.lookup_material(session_id, IMAGE, owner=owner)
         assert found == Material(url=IMAGE, kind="image")
+
+
+async def test_the_ledger_adapter_looks_up_more_than_one_request_holds_in_batches(
+    published: None, runtime_app: FastAPI, owner: uuid.UUID
+) -> None:
+    urls = [f"https://cdn.test/{index}.png" for index in range(MAX_MATERIAL_LOOKUP_URLS + 2)]
+
+    async with connect(runtime_app) as reader:
+        session_id = await _open(reader)
+        ledger = RuntimeMaterials(reader)
+        namespace = namespace_for(owner, str(session_id))
+        await ledger.record(namespace, [Material(url=url, kind="image") for url in urls[1:]])
+
+        found = await ledger.lookup_many(namespace, urls)
+
+    assert set(found) == set(urls[1:])
 
 
 async def test_app_refusals_are_app_rejected(runtime_app: FastAPI, actor: uuid.UUID) -> None:

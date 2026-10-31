@@ -4,6 +4,7 @@ AI 导演的工具和制作页都从这里拿到同一个 ``Film``。"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from agent_runtime.material_ledger.store import MaterialLedger
@@ -25,6 +26,12 @@ class ConversationImages:
         recorded = await self.ledger.lookup(self.namespace, url)
         return recorded is not None and recorded.kind == "image"
 
+    async def known_all(self, urls: Sequence[str]) -> frozenset[str]:
+        """这批地址里哪些是这段对话素材台账里的图片；一次查完。"""
+
+        recorded = await self.ledger.lookup_many(self.namespace, urls)
+        return frozenset(url for url, material in recorded.items() if material.kind == "image")
+
 
 async def load_film(
     project_source: str,
@@ -39,8 +46,10 @@ async def load_film(
         return film
     if film.errors:
         return film.errors
-    for document, node in film.given_images():
-        if not await images.known(node.attrs["src"]):
+    given = film.given_images()
+    known = await images.known_all(list(dict.fromkeys(node.attrs["src"] for _, node in given)))
+    for document, node in given:
+        if node.attrs["src"] not in known:
             # 不回显地址：没被认可的地址不通过报错进模型上下文。
             document.error(node, "src 不在这段对话的素材里；只能写对话素材里的图片地址")
             if document is not film.project:
