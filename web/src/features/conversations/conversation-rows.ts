@@ -2,53 +2,42 @@
  * 对话行池：照 Kimi 的 `kimi.sessions`，一段对话在浏览器里只有一份行，侧栏、更多分页、搜索、全部对话页与
  * 需求单面板的查询只管成员、游标与计数，渲染时按 id 从这里取行。
  *
- * 合并规则见合同 §5「全局帧」：
- * - 字段分组记水位：标题、收尾标记、轮次活动（busy / 待处理 / 结局）、其余事实字段。
- * - 事件帧在提交后发号；HTTP 行的 `lastSeq` 是读库之前的水位。HTTP 行只盖过水位不大于 `lastSeq` 的分组。
- * - `created` / `updated` 帧：事实字段（标题、收尾、其余）按信封序号记水位；活动按行内 `lastSeq` 与 HTTP 行同一口径。
- * - 序号只在同一 epoch 内可比。epoch 按本池第一次见到的先后排：没见过的视为最新，整行收下并把水位重置到它；
- *   比这一行当前 epoch 更早的来源一律丢弃。
+ * 帧上没有序号，按到达先后生效（合同 §5「全局帧」）。HTTP 行可能读在途中到达的帧之前，所以用记录本对齐：
+ * - 每次拉 HTTP 行，发请求之前开一本（`track` 或 `open`），结果回来合并完就关；出错或中止也关。
+ * - 帧到了立刻生效，同时记进所有开着的记录本。记标题、忙闲与新建 / 修改帧；删除帧到达就记墓碑，不必重放。
+ * - 结果回来先整行替换，再按到达顺序把这本记录本里这些 id 的帧重放一遍：读期间到达的帧盖得住稍旧的结果。
+ * - 新建 / 修改帧只换 `activity` 以外的字段：帧里的活动是后端写库时读的，可能比随后从运行时来的
+ *   `work_changed` 旧。这一行池里还没有时整行收下，活动一起收。
+ * - 行不在池里时的标题帧、忙闲帧：有请求在途就只记进记录本，等结果回来重放；没有就丢掉，下次拉列表会读到。
+ * - 开跑的忙闲帧顺带把收尾标记清成空（服务端开跑抹标记，帧里不另带）。
  * - 删除记墓碑：之后 `deletedAt` 为空的行一律不再收（对话 id 不复用），带 `deletedAt` 的墓碑行（治理者复盘）照收。
  */
 
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { zConversationOut } from '@/shared/api/generated/zod.gen'
-import type { SessionEventMark, SessionRow } from '@/shared/transcript/connection'
+import type { SessionRow } from '@/shared/transcript/connection'
 
 type Row = SessionRow
 type Turn = Pick<Row['activity'], 'busy' | 'lastTurnReason' | 'pendingInteraction'>
 
-const GROUPS = ['title', 'completed', 'turn', 'facts'] as const
-type Group = (typeof GROUPS)[number]
-type Marks = Record<Group, number>
+/** 记进记录本、结果回来时重放的帧。 */
+type Frame =
+  | { kind: 'title'; conversationId: string; title: string }
+  | { kind: 'activity'; conversationId: string; turn: Turn }
+  | { kind: 'row'; conversationId: string; row: Row }
 
-/** 帧带来的、行还没到时先记下的各组取值。 */
-interface Pending {
-  title?: string
-  completedAt?: string | null
-  turn?: Turn
-}
-
-interface Entry {
-  epoch: string
-  marks: Marks
-  /** 还没有任何 HTTP 行或整行帧时为 null，帧值先记在 pending 里。 */
-  row: Row | null
-  pending: Pending
+/** 一次 HTTP 读取的记录本：开着期间到达的帧按先后记下，由 `mergeRows` 重放。 */
+export interface RowBook {
+  readonly closed: boolean
+  /** 不再记帧；关几次都一样。 */
+  close(): void
 }
 
 const ROW_KEYS = Object.keys(zConversationOut.shape) as (keyof Row)[]
 
 /** 池里只存 ConversationOut 的字段；全部对话页行上的额外字段留在查询里，由 resolve 拼回去。 */
 const pickRow = (row: Row): Row => Object.fromEntries(ROW_KEYS.map((key) => [key, row[key]])) as Row
-
-const marksAt = (seq: number): Marks => ({
-  completed: seq,
-  facts: seq,
-  title: seq,
-  turn: seq,
-})
 
 const turnOf = (row: Row): Turn => ({
   busy: row.activity.busy,
@@ -70,24 +59,29 @@ const sameRow = (left: Row, right: Row): boolean => {
   )
 }
 
-/** 由各组来源拼出一行：facts 给底，其余组各取自己那份。 */
-const compose = (
-  facts: Row,
-  sources: { title: string; completedAt: string | null; turn: Turn },
-  lastSeq: number,
-): Row => ({
-  ...facts,
-  activity: { ...facts.activity, ...sources.turn },
-  completedAt: sources.completedAt,
-  lastSeq,
-  title: sources.title,
-})
+/** 一帧落到池里已有的一行上；新建 / 修改帧保留这一行的活动。 */
+const applyTo = (row: Row, frame: Frame): Row => {
+  switch (frame.kind) {
+    case 'title':
+      return { ...row, title: frame.title }
+    case 'activity':
+      return {
+        ...row,
+        activity: { ...row.activity, ...frame.turn },
+        completedAt: frame.turn.busy ? null : row.completedAt,
+      }
+    case 'row':
+      return { ...pickRow(frame.row), activity: row.activity }
+  }
+}
 
 export class ConversationRowStore {
-  private readonly entries = new Map<string, Entry>()
+  private readonly rows = new Map<string, Row>()
   private readonly tombstones = new Set<string>()
-  /** epoch 第一次被见到的次序，越大越新。 */
-  private readonly epochs = new Map<string, number>()
+  /** 开着的记录本。 */
+  private readonly books = new Set<RowBook>()
+  /** 每本记录本开着期间到达的帧。 */
+  private readonly recorded = new WeakMap<RowBook, Frame[]>()
   private readonly listeners = new Set<() => void>()
   private version = 0
   private batching = 0
@@ -100,7 +94,7 @@ export class ConversationRowStore {
   // --- 读 -------------------------------------------------------------------
 
   get(conversationId: string): Row | undefined {
-    return this.entries.get(conversationId)?.row ?? undefined
+    return this.rows.get(conversationId)
   }
 
   isDeleted(conversationId: string): boolean {
@@ -110,8 +104,8 @@ export class ConversationRowStore {
   /** 视图用：传入查询里的行，换成池里的当前行；删掉的活行返回 null。带额外字段的行保留那些字段。 */
   resolve<T extends Row>(row: T): T | null {
     if (row.deletedAt === null && this.tombstones.has(row.id)) return null
-    const current = this.entries.get(row.id)?.row
-    if (current === undefined || current === null || current === row) return row
+    const current = this.rows.get(row.id)
+    if (current === undefined || current === row) return row
     if (Object.keys(row).length === Object.keys(current).length) return current as T
     let byInput = this.resolved.get(current)
     if (byInput === undefined) {
@@ -170,52 +164,71 @@ export class ConversationRowStore {
     }
   }
 
+  /** 开一本记录本；要在发 HTTP 请求之前开，合并完、出错或中止时都要关。 */
+  open(): RowBook {
+    const books = this.books
+    const book: RowBook = {
+      get closed() {
+        return !books.has(book)
+      },
+      close: () => void books.delete(book),
+    }
+    books.add(book)
+    this.recorded.set(book, [])
+    return book
+  }
+
+  /**
+   * 开着记录本读一次 HTTP 行：`read` 发请求，`merge` 拿结果与这本记录本调 `mergeRows`。
+   * 不论成败都在返回前关掉记录本。
+   */
+  async track<T, R>(read: () => Promise<T>, merge: (result: T, book: RowBook) => R): Promise<R> {
+    const book = this.open()
+    try {
+      return merge(await read(), book)
+    } finally {
+      book.close()
+    }
+  }
+
   /**
    * HTTP 行进池，返回合并后的行（保留调用方行上的额外字段），删掉的活行被滤掉。
-   * 照 Kimi `setSessionsPreservingLiveUsage`：只盖过水位不大于这一行 `lastSeq` 的分组。
+   * 先整行替换，再把 `book` 里这些 id 的帧按到达顺序重放。不关记录本：一次结果可以分几次合并。
    */
-  mergeRows<T extends Row>(rows: readonly T[]): T[] {
+  mergeRows<T extends Row>(rows: readonly T[], book: RowBook): T[] {
+    const frames = this.recorded.get(book) ?? []
     return this.batch(() =>
       rows.flatMap((row) => {
         if (row.deletedAt === null && this.tombstones.has(row.id)) return []
-        this.mergeRow(row)
+        let next = pickRow(row)
+        for (const frame of frames) {
+          if (frame.conversationId !== row.id || this.revives(frame)) continue
+          next = applyTo(next, frame)
+        }
+        this.commit(row.id, next)
         const resolved = this.resolve(row)
         return resolved === null ? [] : [resolved]
       }),
     )
   }
 
-  applyTitle(conversationId: string, title: string, mark: SessionEventMark): void {
-    this.applyFields(conversationId, mark, { title })
+  applyTitle(conversationId: string, title: string): void {
+    this.receive({ conversationId, kind: 'title', title })
   }
 
-  /** 开跑与收尾互斥：busy 帧顺带把收尾标记记成空，水位同这一帧（服务端开跑抹标记不另发帧）。 */
-  applyActivity(conversationId: string, turn: Turn, mark: SessionEventMark): void {
-    this.applyFields(conversationId, mark, turn.busy ? { completedAt: null, turn } : { turn })
+  applyActivity(conversationId: string, turn: Turn): void {
+    this.receive({ conversationId, kind: 'activity', turn })
   }
 
-  /** `created` / `updated`：事实字段按信封序号，活动按行内 `lastSeq`。 */
-  applyRow(row: Row, mark: SessionEventMark): void {
-    this.batch(() => {
-      if (this.tombstones.has(row.id) && row.deletedAt === null) return
-      const entry = this.entryFor(row.id, mark.epoch)
-      if (entry === null) return
-      const facts = mark.seq > entry.marks.facts || entry.row === null ? row : entry.row
-      const title = mark.seq > entry.marks.title ? row.title : this.titleOf(entry, row)
-      const completedAt =
-        mark.seq > entry.marks.completed ? row.completedAt : this.completedOf(entry, row)
-      const turn = entry.marks.turn <= row.lastSeq ? turnOf(row) : this.turnOfEntry(entry, row)
-      const next = compose(facts, { completedAt, title, turn }, row.lastSeq)
-      for (const group of ['facts', 'title', 'completed'] as const) {
-        entry.marks[group] = Math.max(entry.marks[group], mark.seq)
-      }
-      entry.marks.turn = Math.max(entry.marks.turn, row.lastSeq)
-      entry.pending = {}
-      this.commit(entry, next)
-    })
+  /** `created` / `updated` 带来的整行。 */
+  applyRow(row: Row): void {
+    this.receive({ conversationId: row.id, kind: 'row', row })
   }
 
-  /** 删除：记墓碑，视图里的活行随即消失。 */
+  /**
+   * 删除：记墓碑，视图里的活行随即消失。不进记录本：墓碑一直在，结果回来合并时照墓碑规则滤掉，
+   * 重放它不会再改什么。
+   */
   applyDeleted(conversationId: string): void {
     if (this.tombstones.has(conversationId)) return
     this.tombstones.add(conversationId)
@@ -224,114 +237,35 @@ export class ConversationRowStore {
 
   // --- 内部 -----------------------------------------------------------------
 
-  private rankOf(epoch: string): number {
-    let rank = this.epochs.get(epoch)
-    if (rank === undefined) {
-      rank = this.epochs.size
-      this.epochs.set(epoch, rank)
-    }
-    return rank
-  }
-
-  /**
-   * 取或建这一行的条目，并处理 epoch：同 epoch 原样返回；来源更新（含没见过的）就把水位清零、改记新 epoch；
-   * 来源更旧返回 null，调用方丢弃。
-   */
-  private entryFor(conversationId: string, epoch: string): Entry | null {
-    const entry = this.entries.get(conversationId)
-    if (entry === undefined) {
-      this.rankOf(epoch)
-      const created: Entry = { epoch, marks: marksAt(0), pending: {}, row: null }
-      this.entries.set(conversationId, created)
-      return created
-    }
-    if (entry.epoch === epoch) return entry
-    if (this.rankOf(epoch) < this.rankOf(entry.epoch)) return null
-    entry.epoch = epoch
-    entry.marks = marksAt(0)
-    entry.pending = {}
-    return entry
-  }
-
-  private mergeRow(row: Row): void {
-    const known = this.entries.get(row.id)
-    const fresh = known === undefined || known.row === null
-    const entry = this.entryFor(row.id, row.eventEpoch)
-    if (entry === null) return
-    const lastSeq = row.lastSeq
-    const takes = (group: Group) => fresh || entry.marks[group] <= lastSeq
-    const facts = takes('facts') || entry.row === null ? pickRow(row) : entry.row
-    const title = entry.marks.title <= lastSeq ? row.title : this.titleOf(entry, row)
-    const completedAt =
-      entry.marks.completed <= lastSeq ? row.completedAt : this.completedOf(entry, row)
-    const turn = entry.marks.turn <= lastSeq ? turnOf(row) : this.turnOfEntry(entry, row)
-    const next = compose(
-      facts,
-      { completedAt, title, turn },
-      Math.max(lastSeq, entry.row?.lastSeq ?? 0),
-    )
-    for (const group of GROUPS) entry.marks[group] = Math.max(entry.marks[group], lastSeq)
-    entry.pending = {}
-    this.commit(entry, next)
-  }
-
-  /** 帧带来的字段：序号大于这一组水位才落，行还没到就先记在 pending。 */
-  private applyFields(
-    conversationId: string,
-    mark: SessionEventMark,
-    fields: { title?: string; completedAt?: string | null; turn?: Turn },
-  ): void {
+  /** 帧到了：记进每一本开着的记录本，再落到池里。 */
+  private receive(frame: Frame): void {
+    for (const book of this.books) this.recorded.get(book)?.push(frame)
     this.batch(() => {
-      const entry = this.entryFor(conversationId, mark.epoch)
-      if (entry === null) return
-      const pending: Pending = { ...entry.pending }
-      if (fields.title !== undefined && mark.seq > entry.marks.title) {
-        pending.title = fields.title
-        entry.marks.title = mark.seq
-      }
-      if (fields.completedAt !== undefined && mark.seq > entry.marks.completed) {
-        pending.completedAt = fields.completedAt
-        entry.marks.completed = mark.seq
-      }
-      if (fields.turn !== undefined && mark.seq > entry.marks.turn) {
-        pending.turn = fields.turn
-        entry.marks.turn = mark.seq
-      }
-      if (entry.row === null) {
-        entry.pending = pending
+      const id = frame.conversationId
+      const current = this.rows.get(id)
+      if (frame.kind === 'row') {
+        if (this.revives(frame)) return
+        this.commit(id, current === undefined ? pickRow(frame.row) : applyTo(current, frame))
         return
       }
-      const row = entry.row
-      const next = compose(
-        row,
-        {
-          completedAt: 'completedAt' in pending ? (pending.completedAt ?? null) : row.completedAt,
-          title: pending.title ?? row.title,
-          turn: pending.turn ?? turnOf(row),
-        },
-        row.lastSeq,
-      )
-      entry.pending = {}
-      this.commit(entry, next)
+      // 行还不在池里：标题与活动没处落，在途的请求结果回来时从记录本重放。
+      if (current !== undefined) this.commit(id, applyTo(current, frame))
     })
   }
 
-  private titleOf(entry: Entry, fallback: Row): string {
-    return entry.pending.title ?? entry.row?.title ?? fallback.title
+  /** 删掉以后来的活行（`deletedAt` 为空的整行帧）不收：到达时与重放时都按墓碑挡掉。 */
+  private revives(frame: Frame): boolean {
+    return (
+      frame.kind === 'row' &&
+      frame.row.deletedAt === null &&
+      this.tombstones.has(frame.conversationId)
+    )
   }
 
-  private completedOf(entry: Entry, fallback: Row): string | null {
-    if ('completedAt' in entry.pending) return entry.pending.completedAt ?? null
-    return entry.row === null ? fallback.completedAt : entry.row.completedAt
-  }
-
-  private turnOfEntry(entry: Entry, fallback: Row): Turn {
-    return entry.pending.turn ?? (entry.row === null ? turnOf(fallback) : turnOf(entry.row))
-  }
-
-  private commit(entry: Entry, next: Row): void {
-    if (entry.row !== null && sameRow(entry.row, next)) return
-    entry.row = next
+  private commit(conversationId: string, next: Row): void {
+    const current = this.rows.get(conversationId)
+    if (current !== undefined && sameRow(current, next)) return
+    this.rows.set(conversationId, next)
     this.touch()
   }
 

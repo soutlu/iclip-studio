@@ -2,12 +2,7 @@
 
 import { http, HttpResponse, ws } from 'msw'
 import { mockAuthUser } from './auth-user'
-import {
-  MOCK_EVENT_EPOCH,
-  type MockConversation,
-  mockConversationOwner,
-  mockSessionEnvelope,
-} from './conversations'
+import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
 import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
 
 const HISTORY_TURNS = 2
@@ -632,13 +627,12 @@ export const transcriptHandlers = [
     setTimeout(() => {
       for (const conversation of justFinished) {
         // 照服务端：开跑记录运行发 updated 带出新的 lastRunId，收场再发活动帧。
-        const before = conversation.lastSeq
         conversation.lastRunId = crypto.randomUUID()
         conversation.completedAt = null
         client.send(
           JSON.stringify({
             ...mockSessionEnvelope(conversation.id),
-            payload: { ...conversation, lastSeq: before },
+            payload: { ...conversation },
             session_id: conversation.id,
             type: 'event.session.updated',
           }),
@@ -807,15 +801,11 @@ export const transcriptHandlers = [
     })
 
     // 生成帧是全局帧，不看这条连接订了哪段对话；mock 里同一浏览器只有一个登录用户，不按属主过滤。
-    // 没挂对话的记录（超分记录）信封上没有 session_id 与 seq，属主就是这个登录用户。
+    // 没挂对话的记录（超分记录）信封上没有 session_id，属主就是这个登录用户。
     const unwatchGenerations = watchMockGenerations(({ conversationId, ...payload }) => {
       const envelope =
         conversationId === null
-          ? {
-              epoch: MOCK_EVENT_EPOCH,
-              owner_user_id: mockAuthUser.id,
-              timestamp: new Date().toISOString(),
-            }
+          ? { owner_user_id: mockAuthUser.id, timestamp: new Date().toISOString() }
           : { ...mockSessionEnvelope(conversationId), session_id: conversationId }
       client.send(JSON.stringify({ ...envelope, payload, type: 'event.generation.changed' }))
     })

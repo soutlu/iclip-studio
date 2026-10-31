@@ -10,7 +10,7 @@ import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
 import { mintUuid } from '@/shared/lib/uuid'
-import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
+import { conversationRowsOf, type ConversationRowStore, type RowBook } from './conversation-rows'
 import type { ComposerPart } from '@/shared/ui/composer'
 import {
   zApproveConversationsConversationIdInteractionsInteractionIdPostResponse,
@@ -137,28 +137,32 @@ export const searchConversations = async (
 const mergeTopology = (
   store: ConversationRowStore,
   topology: SidebarTopology,
+  book: RowBook,
 ): SidebarTopology => ({
   ...topology,
   collections: topology.collections.map((collection) => ({
     ...collection,
-    page: { ...collection.page, items: store.mergeRows(collection.page.items) },
+    page: { ...collection.page, items: store.mergeRows(collection.page.items, book) },
   })),
-  ungrouped: { ...topology.ungrouped, items: store.mergeRows(topology.ungrouped.items) },
+  ungrouped: { ...topology.ungrouped, items: store.mergeRows(topology.ungrouped.items, book) },
 })
 
 /** 分组、计数和首页数据来自同一服务端拓扑，避免不同查询时间点造成不一致。 */
 export const useSidebarTopology = (enabled: boolean, state: ConversationListState) =>
   useQuery({
     enabled,
-    queryFn: async ({ client, signal }) =>
-      mergeTopology(
-        conversationRowsOf(client),
-        await apiFetch(`/conversations?state=${state}`, zSidebarOut, {
-          signal,
-          cache: 'no-store',
-          fallbackErrorMessage: '读取任务列表失败',
-        }),
-      ),
+    queryFn: ({ client, signal }) => {
+      const store = conversationRowsOf(client)
+      return store.track(
+        () =>
+          apiFetch(`/conversations?state=${state}`, zSidebarOut, {
+            signal,
+            cache: 'no-store',
+            fallbackErrorMessage: '读取任务列表失败',
+          }),
+        (topology, book) => mergeTopology(store, topology, book),
+      )
+    },
     queryKey: conversationsQueryKeys.sidebar(state),
   })
 
@@ -213,8 +217,9 @@ const rowReadsOf = (store: ConversationRowStore): Map<string, AbortController> =
 }
 
 /**
- * 取一段对话的整行并合进行池，跟上 `lastRunId` 等帧上没有的字段；404 按删除处理。
- * 新的一次中止在途那次，只有最后一次的结果进池；已记墓碑的对话照样读。读取失败只记警告，行保持原值。
+ * 取一段对话的整行并经记录本合进行池，跟上 `lastRunId` 等帧上没有的字段；404 按删除处理。
+ * 新的一次中止在途那次，只有最后一次的结果进池，被中止的那次只关掉自己的记录本；已记墓碑的对话照样读。
+ * 读取失败只记警告，行保持原值。
  */
 export const refreshConversationRow = async (
   queryClient: QueryClient,
@@ -227,12 +232,17 @@ export const refreshConversationRow = async (
   reads.set(conversationId, controller)
   const current = () => reads.get(conversationId) === controller
   try {
-    const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
-      cache: 'no-store',
-      fallbackErrorMessage: '读取任务失败',
-      signal: controller.signal,
-    })
-    if (current()) store.mergeRows([row])
+    await store.track(
+      () =>
+        apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
+          cache: 'no-store',
+          fallbackErrorMessage: '读取任务失败',
+          signal: controller.signal,
+        }),
+      (row, book) => {
+        if (current()) store.mergeRows([row], book)
+      },
+    )
   } catch (error) {
     if (!current()) return
     if (error instanceof ApiError && error.status === 404) {
@@ -443,30 +453,35 @@ export const useSetConversationMembership = (
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ collectionId, conversationId, taskId }: Membership) => {
+      const rows = conversationRowsOf(queryClient)
       if (collectionId !== undefined) {
-        const updated = await apiFetch(
-          `/conversations/${conversationId}/collection`,
-          conversationEnvelopeSchema,
-          {
-            body: { collectionId },
-            fallbackErrorMessage: '移动任务失败',
-            method: 'PUT',
+        const updated = await rows.track(
+          () =>
+            apiFetch(`/conversations/${conversationId}/collection`, conversationEnvelopeSchema, {
+              body: { collectionId },
+              fallbackErrorMessage: '移动任务失败',
+              method: 'PUT',
+            }),
+          (row, book) => {
+            rows.mergeRows([row], book)
+            return row
           },
         )
-        conversationRowsOf(queryClient).mergeRows([updated])
         onUpdated?.(updated)
       }
       if (taskId !== undefined) {
-        const updated = await apiFetch(
-          `/conversations/${conversationId}/task`,
-          conversationEnvelopeSchema,
-          {
-            body: { taskId },
-            fallbackErrorMessage: '关联需求单失败',
-            method: 'PUT',
+        const updated = await rows.track(
+          () =>
+            apiFetch(`/conversations/${conversationId}/task`, conversationEnvelopeSchema, {
+              body: { taskId },
+              fallbackErrorMessage: '关联需求单失败',
+              method: 'PUT',
+            }),
+          (row, book) => {
+            rows.mergeRows([row], book)
+            return row
           },
         )
-        conversationRowsOf(queryClient).mergeRows([updated])
         onUpdated?.(updated)
       }
     },
@@ -507,20 +522,25 @@ export const useForkConversation = (onForked: (conversationId: string) => void) 
   return { isPending: mutation.isPending, start }
 }
 
-/** 改名；成功后自己刷新对话列表。 */
+/** 改名；成功后自己刷新对话列表。答复的行在写请求之前开的记录本里合并。 */
 export const useRenameConversation = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ conversationId, title }: { conversationId: string; title: string }) =>
-      apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
-        body: { title },
-        fallbackErrorMessage: '重命名失败',
-        method: 'PATCH',
-      }),
-    onSuccess: (renamed) => {
-      conversationRowsOf(queryClient).mergeRows([renamed])
-      return refreshConversationLists(queryClient)
+    mutationFn: ({ conversationId, title }: { conversationId: string; title: string }) => {
+      const rows = conversationRowsOf(queryClient)
+      return rows.track(
+        () =>
+          apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
+            body: { title },
+            fallbackErrorMessage: '重命名失败',
+            method: 'PATCH',
+          }),
+        (renamed, book) => {
+          rows.mergeRows([renamed], book)
+        },
+      )
     },
+    onSuccess: () => refreshConversationLists(queryClient),
   })
 }
 
@@ -528,16 +548,21 @@ export const useRenameConversation = () => {
 export const useSetConversationCompletion = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ completed, conversationId }: { completed: boolean; conversationId: string }) =>
-      apiFetch(`/conversations/${conversationId}/completion`, conversationEnvelopeSchema, {
-        body: { completed },
-        fallbackErrorMessage: '标记完成失败',
-        method: 'PUT',
-      }),
-    onSuccess: (updated) => {
-      conversationRowsOf(queryClient).mergeRows([updated])
-      return refreshConversationLists(queryClient)
+    mutationFn: ({ completed, conversationId }: { completed: boolean; conversationId: string }) => {
+      const rows = conversationRowsOf(queryClient)
+      return rows.track(
+        () =>
+          apiFetch(`/conversations/${conversationId}/completion`, conversationEnvelopeSchema, {
+            body: { completed },
+            fallbackErrorMessage: '标记完成失败',
+            method: 'PUT',
+          }),
+        (updated, book) => {
+          rows.mergeRows([updated], book)
+        },
+      )
     },
+    onSuccess: () => refreshConversationLists(queryClient),
   })
 }
 

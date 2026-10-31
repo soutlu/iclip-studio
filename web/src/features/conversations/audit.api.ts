@@ -84,9 +84,12 @@ export const useAuditConversations = (filters: AuditFilters, enabled: boolean) =
   useInfiniteQuery({
     enabled,
     gcTime: 30 * 60_000,
-    queryFn: async ({ client, pageParam, signal }) => {
-      const page = await fetchAuditPage(filters, pageParam, signal)
-      return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
+    queryFn: ({ client, pageParam, signal }) => {
+      const rows = conversationRowsOf(client)
+      return rows.track(
+        () => fetchAuditPage(filters, pageParam, signal),
+        (page, book) => ({ ...page, items: rows.mergeRows(page.items, book) }),
+      )
     },
     initialPageParam: null as string | null,
     getNextPageParam: (last: AuditPage) => last.nextCursor,

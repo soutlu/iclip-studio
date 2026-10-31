@@ -603,7 +603,6 @@ def build_app(
         ),
         generate_title=runtime_ports.generate_title,
         announce_title=live_connections.announce_title,
-        event_watermark=live_connections.clock.snapshot,
         announce_row=live_connections.announce_session_row,
         announce_deleted=live_connections.announce_session_deleted,
         activities_of=activities_of,

@@ -53,7 +53,7 @@ from agent_runtime.live.frames import (
     FsChanged,
     FsChangeEntry,
     FsChangesPayload,
-    SessionActivity,
+    SessionWorkChanged,
     timestamp_now,
 )
 from agent_runtime.live.hub import AppEventHub, SessionFileChanges
@@ -107,7 +107,7 @@ def create_app(
 
     def on_activity(session_id: str, owner: uuid.UUID, state: ActivityState) -> None:
         event_hub.publish(
-            SessionActivity(
+            SessionWorkChanged(
                 session_id=session_id,
                 owner_user_id=str(owner),
                 timestamp=timestamp_now(),

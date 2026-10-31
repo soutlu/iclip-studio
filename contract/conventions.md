@@ -57,7 +57,6 @@ agent 对话的 Transcript 协议参考 kimi code 的同名协议，按本项目
 | 连接层的扩展 | 原因 |
 |---|---|
 | 帧上的 `stream_epoch` 与订阅里的 `transcript_epoch` | 运行时单独部署，重启或实时状态被淘汰后重建，批次号都会从头编；只比批次号会把新流的批次接到旧内容上 |
-| 全局帧与 Transcript 帧外层的会话事件水位 `epoch` + `seq` | 客户端按它合并 HTTP 行与帧，见「全局帧」 |
 | 全局帧的 `owner_user_id` | 多用户：后端据此发给属主与治理者，客户端据此分清是不是自己的对话 |
 | `event.fs.changed` | 文件由插件、人工保存与生成落地写入，界面要推送 |
 | `event.generation.changed`、`event.session.updated` | 视频业务与对话行的变化 |
@@ -130,7 +129,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 订阅
 
-`WS /ws` 一条连接订阅多段对话，经过同源代理时使用 `/api/ws`。WebSocket 帧不在 OpenAPI 中：标准 Transcript 实体与操作消费 [vendor](../web/src/shared/transcript/vendor/README.md)，本项目的连接帧 schema 位于 [connection.ts](../web/src/shared/transcript/connection.ts)。后端实际发出的帧序列与 REST 一页存成金样 [transcript/](transcript/)，覆盖 `transcript.reset` / `transcript.ops`，两端形状对不上会在其中一边先红，生成与解析见[测试规范](../docs/test-design.md#1-按行为选择测试层)；全局帧与文件变化帧没有金样，前端 schema 照后端 [frames.py](../server/src/iclip/platform/live/frames.py) 与运行时 [live/frames.py](../runtime/src/agent_runtime/live/frames.py) 手写（文件变化、回执与心跳是运行时的帧，后端原样转发）。
+`WS /ws` 一条连接订阅多段对话，经过同源代理时使用 `/api/ws`。WebSocket 帧不在 OpenAPI 中：标准 Transcript 实体与操作消费 [vendor](../web/src/shared/transcript/vendor/README.md)，本项目的连接帧 schema 位于 [connection.ts](../web/src/shared/transcript/connection.ts)。后端实际发出的帧序列与 REST 一页存成金样 [transcript/](transcript/)，覆盖 `transcript.reset` / `transcript.ops`，两端形状对不上会在其中一边先红，生成与解析见[测试规范](../docs/test-design.md#1-按行为选择测试层)；全局帧与文件变化帧没有金样，前端 schema 照后端 [frames.py](../server/src/iclip/platform/live/frames.py) 与运行时 [live/frames.py](../runtime/src/agent_runtime/live/frames.py) 手写（会话活动、文件变化、回执与心跳是运行时的帧，后端原样转发）。
 
 - 每帧外层是 `{type, session_id, timestamp, payload}`，`timestamp` 是出帧时刻（ISO 8601 UTC）；回执 `ack` 不带 `timestamp`，连接级的帧不带 `session_id`。
 - 握手：服务端先发 `server_hello`，`payload` 是 `{ws_connection_id, protocol_version, heartbeat_ms, capabilities}`（客户端只取 `heartbeat_ms`），客户端**每段对话各发一帧**
@@ -155,8 +154,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   后批次号从 1 重来，靠的就是这条。
 - 给了 `transcript_since` 却没给 `transcript_epoch`、epoch 对不上、或要的批次出了窗口，服务端只回一帧 reset，
   不拿另一条流的批次接旧水位：批次号单调却不跨流可比，只看序号会在重启后把新流的批次接到旧内容上。
-- Transcript 帧信封带 `timestamp` 与 `stream_epoch`（这批属于哪条流），另带这段对话的会话事件水位 `epoch` 与 `seq`
-  （见「全局帧」）：它们是对话当前的事件序号，Transcript 帧不另发号；与 `payload.seq` 不是一回事。
+- Transcript 帧是运行时的帧，后端原样转发：信封带 `timestamp` 与 `stream_epoch`（这批属于哪条流）。
   `payload` 带与外层相同的 `type`，本身就是一个完整的 transcript 事件，客户端直接交给事件 schema。
 - 不在显式允许列表中的跨域升级请求关闭（`1008`）；浏览器同源请求通过，机器端无 Origin 的请求仍须认证。
 - 服务端积压超过上限会关连接（`1013`），重连补批即可。积压上限按连接算，不按对话。
@@ -184,7 +182,8 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 #### 全局帧
 
 这几帧**都不看订阅**：发给属主当时连着的每一条连接，一段都没订也收得到；治理者的连接收全平台每一段对话的这几帧。
-每帧信封上带 `owner_user_id`（这段对话的属主，治理者的连接据此分清别人的对话）、出帧时刻 `timestamp`，以及会话事件水位 `epoch` + `seq`（没有对话的生成任务帧不带 `seq`）。
+
+- **帧的形状**：`{type, session_id, owner_user_id, timestamp, payload}`。`owner_user_id` 是这段对话的属主，治理者的连接据此分清别人的对话；`timestamp` 是出帧时刻。没有来源对话的生成帧不带 `session_id`，删除帧没有 `payload`。
 
 | 帧 | 体 | 什么时候发 |
 |---|---|---|
@@ -198,18 +197,9 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **发给属主和治理者**，不是见者有份：连接归谁由它握手时的主体定；持 `users:manage` 的连接收全平台的帧。权限按握手时快照，吊销后要重连才生效。
 - `event.session.work_changed` 的 `last_turn_reason` 只在 `busy: false` 的那几帧上有：帧一律
   `exclude_none`，没有结局时那一项整个不出现（列表行上是 `null`，见 §6）。
-- **会话事件水位**：`seq` 按对话从 1 连续递增，`epoch` 标出服务进程，进程重启后序号从头编、`epoch` 换新，`epoch` 不同的序号不可比。
-  事件帧（标题、活动、生成任务、会话生命周期）都在写入提交之后各发一个新号；
-  Transcript 帧带当前序号、不发新号；文件变化帧（见「文件变化」）不带会话事件水位。
-  `event.session.created` / `updated` 里整行的 `lastSeq` 是写入之前的水位，比信封 `seq` 小。
-  列表行上的 `lastSeq` 是读这一行之前的水位（§6）：序号不大于 `lastSeq` 的事件，行里已经有了；大于的，以帧上的值为准。
-  客户端按字段记最后应用的事件序号，合并规则：
-  - **事件帧**：`work_changed` 以信封 `seq` 记 `activity` 的水位；`session.meta.updated` 以信封 `seq` 记 `title` 的水位。
-  - **`created` / `updated` 帧**：行内事实字段（`activity` 以外的字段，如 `title`、`collectionId`、`taskId`、`completedAt`）以**信封 `seq`** 记水位；
-    `activity` 按行内 `lastSeq`，与 HTTP 行同一口径。
-  - **HTTP 行**：只盖过水位不大于它 `lastSeq` 的字段。写入之前读库的旧行，`lastSeq` 小于随后 `updated` 帧的信封 `seq`，晚到也盖不掉那一帧的事实；
-    帧里可能稍旧的 `activity` 也盖不掉序号更大的 `work_changed`。
-- **都是易失通知**，客户端据此更新列表；断线期间的变化不补发，重连后须重拉列表，按上面的水位规则合并，从 `ConversationOut` 对齐当前事实。
+- **服务端的保证**：帧在写入提交之后才发出；同一段对话、同一来源的帧，在一条连接上按提交先后到达。后端发的整行帧与标题帧靠这段对话的行锁按提交先后广播，删除之后晚到的整行帧由客户端的墓碑挡掉；运行时发的忙闲帧靠运行时按序分发。不同来源之间（后端的整行帧和运行时的忙闲帧）不保证先后。
+- **客户端的用法**：帧到了就生效；拉列表或单行期间收到的帧，在结果回来后重放；整行帧不改 `activity`，除非这一行本地还没有（帧里的 `activity` 是后端写库时读的，可能比随后的 `work_changed` 旧）。
+- **都是易失通知**，客户端据此更新列表；断线期间的变化不补发，重连后须重拉列表，按上面的用法合并，从 `ConversationOut` 对齐当前事实。
 - `event.generation.changed` 不带结果地址，只说哪条任务跳到了哪个状态；收到就重拉 §11 的列表。`kind`、`operation` 与 `status` 的词汇同 `GenerationOut`，列表接口是事实源，客户端保留轮询兜底。视频进度（§6）也靠它推动：帧上没有汇总值，收到本对话的视频帧（出片、编辑段、合成都算）就重拉视频进度。
 - 一条跑完接着起下一条会先发 idle 再发 busy。
 
@@ -238,7 +228,6 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /conversations/search?q=` 按标题搜自己的对话，返回扁平列表；`GET /conversations/by-task/{taskId}` 列自己在这张单下的尝试，最后一次排在最前。两者都按 §3 的排序规则。
 - `lastRunId` 只标识最近一次运行，不能作为续读地址；刷新与重连按对话 ID 和 Transcript 水位恢复（§5）。
 - `GET /conversations/{id}` 读一段对话的整行，可见范围同其他读路径：属主读自己活着的，替人办事的钥匙读得到活着的，治理者连墓碑也读得到；其余是 `404`。列表在轮次状态变化后用它单独刷新一行。
-- 每行带 `lastSeq` 与 `eventEpoch`：读这一行之前，这段对话已发出的最大会话事件序号与它所属的服务进程；与全局帧信封的 `seq`、`epoch` 同一套，合并规则见 §5「全局帧」。
 - `activity` 只有运行时给的轮次事实：`busy`、`pendingInteraction` 与 `lastTurnReason`，领域语义见 [CONTEXT.md](../docs/CONTEXT.md)，变化通过 §5 的全局帧通知。
 - `GET /conversations/video-progress` 是视频进度：`{ "conversations": { "<对话 id>": "queued" | "running" } }`，只列至少有一条视频记录还没跑完的对话，没列出的就是没有。出片、编辑段与合成都算，字幕、音频、成片与超分记录不算，没挂对话的不算；排队、提交中、等结果算没跑完，完成与失败不算。至少一条已不在排队（提交中或等结果）就是 `running`，全在排队是 `queued`。范围按记录的属主：普通用户只看自己的，替人办事的钥匙与治理者看全平台。客户端收到本对话的视频帧就重拉它（§5「全局帧」）。
 - **标题服务端自动起，只成功写入一次**：设了 `llm` 的默认模型（§18「默认模型」）时用它起名，没设就不起；每轮开始时按这一轮的消息尝试起名，与这一轮并行，
@@ -717,7 +706,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 - 两条都在握手时带 `Authorization: Bearer <应用密钥>`，认不出是哪个应用就在握手前以 `1008` 关闭。
 - 服务端每 10 秒发一帧 `ping`（`{type, timestamp, payload: {nonce}}`），应用回一帧 `pong`；连着 20 秒没收到任何入站帧就以 `1001` 关闭。
 - 出站积压按连接算，超过 2048 帧以 `1013` 关闭，重连后对齐。
-- 帧的形状同 §5 浏览器收到的帧：外层 `{type, session_id, timestamp, payload}`，`timestamp` 是运行时出帧的时刻（ISO 8601 UTC），回执不带 `timestamp`；应用原样转给浏览器，只在会话活动与 Transcript 帧上加会话事件水位。
+- 帧的形状同 §5 浏览器收到的帧：外层 `{type, session_id, timestamp, payload}`，`timestamp` 是运行时出帧的时刻（ISO 8601 UTC），回执不带 `timestamp`；应用原样转给浏览器。
 - 信封字段 snake_case，嵌套的 transcript 实体与操作 camelCase（同 §5）；值为空的字段省略。
 
 ### 应用事件流 `/v1/events`
@@ -737,7 +726,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 - 会话不归调用方应用、不存在、id 不是 UUID，一律在回执 `payload.not_found` 里带上，连接上的其他订阅不动。
 - 没有 `server_hello`。
-- Transcript 帧是 `{type: "transcript.reset" | "transcript.ops", session_id, timestamp, stream_epoch, payload}`，`payload` 同 §5，带与外层相同的 `type`；信封上没有会话事件的 `epoch` / `seq`，应用转给浏览器时自己盖。回执是 `{type: "ack", id, code, msg, payload?: {accepted, not_found}}`。
+- Transcript 帧是 `{type: "transcript.reset" | "transcript.ops", session_id, timestamp, stream_epoch, payload}`，`payload` 同 §5，带与外层相同的 `type`；应用原样转给浏览器。回执是 `{type: "ack", id, code, msg, payload?: {accepted, not_found}}`。
 - 文件变化帧 `event.fs.changed` 同 §5「文件变化」：订着一段会话（任何档位，含 `off`）的连接收它的工作区变化，退订或断开后不再收。插件写或删会话工作区里的文件、`PUT /v1/sessions/{id}/files/{path}` 写成功都发；分叉与 `files:copy` 拷进来的不发。
 - 连接断开时撤掉它的全部订阅；一段会话最后一个订阅撤掉时，运行时放开这段会话的实时状态。
 

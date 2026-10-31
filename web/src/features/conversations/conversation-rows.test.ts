@@ -11,12 +11,10 @@ const row = (overrides: Partial<SessionRow> = {}): SessionRow => ({
   completedAt: null,
   createdAt: '2026-10-01T00:00:00Z',
   deletedAt: null,
-  eventEpoch: 'e1',
   forkTurn: null,
   forkedFrom: null,
   id: ID,
   lastRunId: null,
-  lastSeq: 0,
   ownerUserId: '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002',
   taskId: null,
   title: '原名',
@@ -24,150 +22,254 @@ const row = (overrides: Partial<SessionRow> = {}): SessionRow => ({
   ...overrides,
 })
 
-const mark = (seq: number, epoch = 'e1') => ({ epoch, ownerUserId: 'u1', seq })
 const busy = { busy: true, lastTurnReason: null, pendingInteraction: 'none' } as const
 const idle = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' } as const
 
-describe('ConversationRowStore 合并规则（合同 §5 水位）', () => {
-  it('帧序号大于行的 lastSeq 才算新：读库早于帧的行晚到，盖不掉帧上的活动', () => {
+/** 一次已经读完的 HTTP 请求：开本、合并、关本。 */
+const read = <T extends SessionRow>(store: ConversationRowStore, rows: T[]): T[] => {
+  const book = store.open()
+  const merged = store.mergeRows(rows, book)
+  book.close()
+  return merged
+}
+
+/** 一次在途的请求：本子已开，`settle` 交回结果。 */
+const inFlight = (store: ConversationRowStore) => {
+  const book = store.open()
+  return {
+    settle: (rows: SessionRow[]) => {
+      const merged = store.mergeRows(rows, book)
+      book.close()
+      return merged
+    },
+  }
+}
+
+describe('ConversationRowStore 记录本', () => {
+  it('拉列表期间到达的帧：结果晚回来、行里还是旧值，也盖不掉它', () => {
     const store = new ConversationRowStore()
-    store.mergeRows([row({ lastSeq: 3 })])
+    read(store, [row()])
+    const listing = inFlight(store)
 
-    store.applyActivity(ID, busy, mark(5))
-    expect(store.get(ID)?.activity.busy).toBe(true)
+    store.applyActivity(ID, busy)
+    store.applyTitle(ID, '帧上的名字')
+    expect(store.get(ID)).toMatchObject({ activity: busy, title: '帧上的名字' })
 
-    // 这一行读库时这段对话只发到 4，不含第 5 帧。
-    store.mergeRows([row({ lastSeq: 4, title: '读库时的名字' })])
-    expect(store.get(ID)?.activity.busy).toBe(true)
-    // 别的分组水位不高于 4，照收。
-    expect(store.get(ID)?.title).toBe('读库时的名字')
+    // 这一页读库早于两帧。
+    listing.settle([row({ title: '读库时的名字', updatedAt: '2026-10-01T00:05:00Z' })])
+
+    expect(store.get(ID)).toMatchObject({
+      activity: busy,
+      title: '帧上的名字',
+      updatedAt: '2026-10-01T00:05:00Z',
+    })
   })
 
-  it('行的 lastSeq 等于帧序号：读库晚于这一帧，行里已经有它，行说了算', () => {
+  it('结果回来、记录本关掉以后，新到的帧照常生效，下一次的结果整行替换', () => {
     const store = new ConversationRowStore()
-    store.mergeRows([row({ lastSeq: 3 })])
-    store.applyActivity(ID, busy, mark(5))
+    const listing = inFlight(store)
+    store.applyTitle(ID, '在途时的名字')
+    listing.settle([row()])
+    expect(store.get(ID)?.title).toBe('在途时的名字')
 
-    store.mergeRows([row({ activity: { ...row().activity, ...idle }, lastSeq: 5 })])
+    store.applyActivity(ID, busy)
+    expect(store.get(ID)?.activity).toMatchObject(busy)
 
-    expect(store.get(ID)?.activity).toMatchObject(idle)
+    read(store, [row({ activity: { ...row().activity, ...idle }, title: '库里的名字' })])
+    expect(store.get(ID)).toMatchObject({ activity: idle, title: '库里的名字' })
   })
 
-  it('写入前读库的行晚于 updated 帧到达：事实字段不回退', () => {
+  it('两个请求同时在途：各自只重放自己开本以后到达的帧，先关的不影响另一本', () => {
     const store = new ConversationRowStore()
-    store.mergeRows([row({ lastSeq: 2 })])
-    // 换合集：写入前水位 2，提交后为这一帧发号 3。
-    store.applyRow(row({ collectionId: 'c-new', lastSeq: 2 }), mark(3))
-    expect(store.get(ID)?.collectionId).toBe('c-new')
+    read(store, [row()])
+    const first = inFlight(store)
+    store.applyTitle(ID, '甲')
+    const second = inFlight(store)
+    store.applyActivity(ID, busy)
 
-    store.mergeRows([row({ collectionId: null, lastSeq: 2 })])
+    // 第一本记着两帧：读库早于它们的结果回来，两帧都重放。
+    first.settle([row()])
+    expect(store.get(ID)).toMatchObject({ activity: busy, title: '甲' })
 
-    expect(store.get(ID)?.collectionId).toBe('c-new')
+    // 第一本已关，第二本还开着：之后的帧只进第二本。
+    store.applyTitle(ID, '乙')
+    // 第二本开在「甲」之后：它的结果里已经是「甲」，不重放「甲」，只重放忙与「乙」。
+    second.settle([row({ title: '甲' })])
+    expect(store.get(ID)).toMatchObject({ activity: busy, title: '乙' })
   })
 
-  it('updated 帧里内嵌的活动比之前的 work_changed 旧：轮次活动不回退，事实字段照收', () => {
+  it('第二本不重放开本之前的帧：结果里已经有它，以结果为准', () => {
     const store = new ConversationRowStore()
-    store.mergeRows([row({ lastSeq: 4 })])
-    store.applyActivity(ID, busy, mark(6))
+    read(store, [row()])
+    store.applyTitle(ID, '旧帧')
+    const listing = inFlight(store)
 
-    // 行内 lastSeq 5 早于第 6 帧，内嵌活动还是闲着。
-    store.applyRow(row({ completedAt: '2026-10-01T01:00:00Z', lastSeq: 5, title: '改名' }), mark(7))
+    listing.settle([row({ title: '库里更新的名字' })])
 
-    expect(store.get(ID)?.activity.busy).toBe(true)
-    expect(store.get(ID)?.title).toBe('改名')
-    expect(store.get(ID)?.completedAt).toBe('2026-10-01T01:00:00Z')
+    expect(store.get(ID)?.title).toBe('库里更新的名字')
   })
 
-  it('开跑帧把收尾标记记成空，水位同这一帧：开跑前读库的行带着旧标记晚到也不复原', () => {
+  it('新建 / 修改帧换掉活动以外的字段，不改活动；行不在池里时整行收下', () => {
     const store = new ConversationRowStore()
-    store.mergeRows([row({ completedAt: '2026-10-01T01:00:00Z', lastSeq: 2 })])
+    store.applyRow(row({ activity: { ...row().activity, ...busy }, title: '新建' }))
+    expect(store.get(ID)).toMatchObject({ activity: busy, title: '新建' })
 
-    store.applyActivity(ID, busy, mark(4))
-    store.mergeRows([row({ completedAt: '2026-10-01T01:00:00Z', lastSeq: 3 })])
+    store.applyActivity(ID, idle)
+    // 帧里的活动是写库时读的，比刚到的 work_changed 旧。
+    store.applyRow(
+      row({
+        activity: { ...row().activity, ...busy },
+        collectionId: 'c-new',
+        completedAt: '2026-10-01T01:00:00Z',
+        title: '改名',
+      }),
+    )
 
-    expect(store.get(ID)?.completedAt).toBeNull()
+    expect(store.get(ID)).toMatchObject({
+      activity: idle,
+      collectionId: 'c-new',
+      completedAt: '2026-10-01T01:00:00Z',
+      title: '改名',
+    })
   })
 
-  it('行还没到先来了帧：先记下，读库早于帧的行到了也保留帧值', () => {
+  it('读期间到达的修改帧在结果回来后重放：事实字段不回退，活动以结果为准', () => {
     const store = new ConversationRowStore()
-    store.applyTitle(ID, '帧上的名字', mark(2))
+    read(store, [row()])
+    const listing = inFlight(store)
+
+    store.applyRow(row({ activity: { ...row().activity, ...busy }, collectionId: 'c-new' }))
+    listing.settle([row({ activity: { ...row().activity, ...idle }, collectionId: null })])
+
+    expect(store.get(ID)).toMatchObject({ activity: idle, collectionId: 'c-new' })
+  })
+
+  it('行不在池里：有请求在途时标题帧与忙闲帧记下，结果回来后重放', () => {
+    const store = new ConversationRowStore()
+    const listing = inFlight(store)
+
+    store.applyTitle(ID, '帧上的名字')
+    store.applyActivity(ID, busy)
     expect(store.get(ID)).toBeUndefined()
 
-    store.mergeRows([row({ lastSeq: 1 })])
-    expect(store.get(ID)?.title).toBe('帧上的名字')
+    listing.settle([row()])
+    expect(store.get(ID)).toMatchObject({ activity: busy, title: '帧上的名字' })
+  })
 
-    store.mergeRows([row({ lastSeq: 2, title: '库里的名字' })])
-    expect(store.get(ID)?.title).toBe('库里的名字')
+  it('行不在池里、又没有请求在途：标题帧与忙闲帧丢掉，下一次的结果是准的', () => {
+    const store = new ConversationRowStore()
+
+    store.applyTitle(ID, '没人接的名字')
+    store.applyActivity(ID, busy)
+    expect(store.get(ID)).toBeUndefined()
+
+    read(store, [row({ title: '库里的名字' })])
+    expect(store.get(ID)).toMatchObject({
+      activity: { busy: false },
+      title: '库里的名字',
+    })
+  })
+
+  it('请求出错或被中止时记录本照样关掉，之后的帧不再记进去', async () => {
+    const store = new ConversationRowStore()
+    const open = vi.spyOn(store, 'open')
+    const merge = vi.fn()
+
+    await expect(store.track(() => Promise.reject(new Error('读取失败')), merge)).rejects.toThrow(
+      '读取失败',
+    )
+    await expect(
+      store.track(() => Promise.reject(new DOMException('中止', 'AbortError')), merge),
+    ).rejects.toThrow('中止')
+
+    expect(merge).not.toHaveBeenCalled()
+    const books = open.mock.results.map((result) => result.value as { closed: boolean })
+    expect(books.map((book) => book.closed)).toEqual([true, true])
+  })
+
+  it('track 在发请求之前开本：请求发出后到达的帧在结果回来后重放，结果交给 merge 后关本', async () => {
+    const store = new ConversationRowStore()
+    read(store, [row()])
+    let respond: (rows: SessionRow[]) => void = () => {}
+    const reading = store.track(
+      () => new Promise<SessionRow[]>((resolve) => (respond = resolve)),
+      (rows, book) => ({ book, merged: store.mergeRows(rows, book) }),
+    )
+
+    store.applyTitle(ID, '在途时改的名字')
+    respond([row()])
+    const { book, merged } = await reading
+
+    expect(merged[0]?.title).toBe('在途时改的名字')
+    expect(book.closed).toBe(true)
   })
 
   it('删除记墓碑：活行不再收、视图里消失；带 deletedAt 的墓碑行（治理者复盘）照收', () => {
     const store = new ConversationRowStore()
-    const live = row({ lastSeq: 1 })
-    store.mergeRows([live])
+    const live = row()
+    read(store, [live])
 
     store.applyDeleted(ID)
 
-    expect(store.mergeRows([row({ lastSeq: 1 })])).toEqual([])
+    expect(read(store, [row()])).toEqual([])
     expect(store.resolve(live)).toBeNull()
-    const tomb = row({ deletedAt: '2026-10-01T02:00:00Z', lastSeq: 3 })
-    expect(store.mergeRows([tomb])).toHaveLength(1)
+    store.applyRow(row({ title: '删后晚到的整行帧' }))
+    expect(store.resolve(live)).toBeNull()
+    const tomb = row({ deletedAt: '2026-10-01T02:00:00Z' })
+    expect(read(store, [tomb])).toHaveLength(1)
     expect(store.resolveAll([live], true)).toEqual([live])
   })
 
-  describe('epoch 按本池第一次见到的先后排', () => {
-    it('没见过的 epoch 视为更新：整行收下，水位从它重新算', () => {
-      const store = new ConversationRowStore()
-      store.mergeRows([row({ lastSeq: 2 })])
-      store.applyActivity(ID, busy, mark(9))
+  it('读期间先来整行帧、再来删除：墓碑行回来时不被重放的活行带回去', () => {
+    const store = new ConversationRowStore()
+    read(store, [row()])
+    const audit = inFlight(store)
 
-      // 服务重启：新进程序号从头编，行上 lastSeq 只有 1，但它更新。
-      store.mergeRows([
-        row({ activity: { ...row().activity, ...idle }, eventEpoch: 'e2', lastSeq: 1 }),
-      ])
+    store.applyRow(row({ title: '删之前改的名字' }))
+    store.applyDeleted(ID)
+    audit.settle([row({ deletedAt: '2026-10-01T02:00:00Z' })])
 
-      expect(store.get(ID)?.activity).toMatchObject(idle)
-      store.applyActivity(ID, busy, mark(2, 'e2'))
-      expect(store.get(ID)?.activity.busy).toBe(true)
-    })
+    expect(store.get(ID)?.deletedAt).toBe('2026-10-01T02:00:00Z')
+  })
 
-    it('比这一行当前 epoch 更早的来源一律丢弃，行与帧都是', () => {
-      const store = new ConversationRowStore()
-      store.mergeRows([row({ lastSeq: 1 })])
-      store.mergeRows([row({ eventEpoch: 'e2', lastSeq: 1, title: '新进程' })])
+  it('开跑帧把收尾标记清成空：开跑前读库的行带着旧标记晚到也不复原', () => {
+    const store = new ConversationRowStore()
+    read(store, [row({ completedAt: '2026-10-01T01:00:00Z' })])
+    const listing = inFlight(store)
 
-      store.mergeRows([row({ lastSeq: 50, title: '旧进程晚到的行' })])
-      store.applyTitle(ID, '旧进程晚到的帧', mark(60))
+    store.applyActivity(ID, busy)
+    expect(store.get(ID)?.completedAt).toBeNull()
+    listing.settle([row({ completedAt: '2026-10-01T01:00:00Z' })])
 
-      expect(store.get(ID)?.title).toBe('新进程')
-    })
+    expect(store.get(ID)?.completedAt).toBeNull()
   })
 
   it('没有变化不换引用，一批写入只通知一次', () => {
     const store = new ConversationRowStore()
-    const [first] = store.mergeRows([row({ lastSeq: 1 })])
+    const [first] = read(store, [row()])
     const listener = vi.fn()
     store.subscribe(listener)
 
-    const [again] = store.mergeRows([row({ lastSeq: 1 })])
+    const [again] = read(store, [row()])
     expect(again).toBe(first)
     expect(listener).not.toHaveBeenCalled()
 
-    const input = [row({ lastSeq: 1 })]
+    const input = [row()]
     expect(store.resolveAll(input, false)).toBe(store.resolveAll(input, false))
 
     store.batch(() => {
-      store.applyTitle(ID, '甲', mark(2))
-      store.applyActivity(ID, busy, mark(3))
+      store.applyTitle(ID, '甲')
+      store.applyActivity(ID, busy)
     })
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
   it('带额外字段的行（全部对话页的素材片地址）解析后保留这些字段，池里只存对话行本身', () => {
     const store = new ConversationRowStore()
-    const audit = { ...row({ lastSeq: 1 }), latestMasterUrl: 'https://cdn.example/a.mp4' }
+    const audit = { ...row(), latestMasterUrl: 'https://cdn.example/a.mp4' }
 
-    const [merged] = store.mergeRows([audit])
-    store.applyTitle(ID, '改名', mark(2))
+    const [merged] = read(store, [audit])
+    store.applyTitle(ID, '改名')
 
     expect(merged?.latestMasterUrl).toBe('https://cdn.example/a.mp4')
     expect(store.get(ID)).not.toHaveProperty('latestMasterUrl')

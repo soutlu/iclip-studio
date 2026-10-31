@@ -1,8 +1,8 @@
 """Transcript REST 端点与多对话 WebSocket：逐对话校验权限，transcript 本身经运行时服务的客户端读写与订阅。
 
 REST 端点判完谁看得见、谁能写，再转给运行时服务的会话接口，会话的属主放进 ``X-End-User``。WebSocket 是一条
-转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时的回执与文件变化原样
-发给浏览器，reset / ops 盖上本进程的会话事件水位再发；全局帧在本进程里。
+转发：每条浏览器连接对应一条运行时的对话内容流，订阅在这里核可见性后才转过去，运行时发来的帧原样发给浏览器；
+全局帧在本进程里。
 
 WebSocket 握手不受 CORS 约束且会携带 cookie，必须独立校验 Origin，防止跨站劫持。"""
 
@@ -21,13 +21,10 @@ from agent_runtime.client import RuntimeClient, RuntimeUnavailable, TranscriptCh
 from agent_runtime.errors import DomainError
 from agent_runtime.live.frames import (
     Ack,
-    FsChanged,
     Ping,
     PingPayload,
-    SessionActivity,
+    SessionWorkChanged,
     SubscribeAckPayload,
-    TranscriptOpsFrame,
-    TranscriptResetFrame,
     timestamp_now,
 )
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
@@ -40,8 +37,6 @@ from agent_runtime.transcript.wire import (
     RunStatusOut,
     SteerRequest,
     Subscribe,
-    TranscriptOps,
-    TranscriptReset,
     Unsubscribe,
 )
 from agent_runtime.transcript.wire import TranscriptPage as SessionTranscriptPage
@@ -69,9 +64,7 @@ from iclip.platform.live.frames import (
     SessionMetaPayload,
     SessionMetaUpdated,
     SessionUpdated,
-    SessionWorkChanged,
 )
-from iclip.platform.live.session_events import SessionEventClock
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -193,18 +186,17 @@ AgentId = Annotated[str, Query(pattern=r"^[A-Za-z0-9._-]{1,128}$")]
 
 
 class LiveConnections:
-    """当前进程的 WebSocket 连接集合与会话事件时钟。
+    """当前进程的 WebSocket 连接集合。
 
     标题、活动、生成任务与会话生命周期广播不依赖对话订阅，发给属主的连接和治理者的连接，范围由
     握手主体定。每一帧带属主，客户端据此分清自己的对话与别人的对话。
     多 worker 各自持有连接集合，未收到广播的客户端需重新读取数据库状态。
 
-    事件序号由 ``clock`` 发：所有 ``announce_*`` 都在写入提交之后调用，发号与入队之间不 await，
-    所以同一段对话的帧在每条连接上按序号递增送达。"""
+    帧上没有序号，客户端按到达先后生效：所有 ``announce_*`` 都在写入提交之后调用，同步入队、不 await，
+    调用的先后就是每条连接上的到达先后。"""
 
-    def __init__(self, clock: SessionEventClock | None = None) -> None:
+    def __init__(self) -> None:
         self._connections: set[_Connection] = set()
-        self.clock = clock or SessionEventClock()
 
     def add(self, connection: _Connection) -> None:
         self._connections.add(connection)
@@ -224,8 +216,6 @@ class LiveConnections:
         self._announce(
             owner,
             SessionMetaUpdated(
-                seq=self.clock.tick(conversation_id),
-                epoch=self.clock.epoch,
                 session_id=str(conversation_id),
                 owner_user_id=str(owner),
                 timestamp=timestamp_now(),
@@ -233,21 +223,10 @@ class LiveConnections:
             ),
         )
 
-    def announce_activity(self, frame: SessionActivity) -> None:
-        """把运行时的活动帧原样发给属主与治理者的连接，只加上这段对话的新事件号；``timestamp`` 用运行时的。"""
+    def announce_activity(self, frame: SessionWorkChanged) -> None:
+        """把运行时的活动帧原样发给属主与治理者的连接。"""
 
-        owner = uuid.UUID(frame.owner_user_id)
-        self._announce(
-            owner,
-            SessionWorkChanged(
-                seq=self.clock.tick(uuid.UUID(frame.session_id)),
-                epoch=self.clock.epoch,
-                session_id=frame.session_id,
-                owner_user_id=frame.owner_user_id,
-                timestamp=frame.timestamp,
-                payload=frame.payload,
-            ),
-        )
+        self._announce(uuid.UUID(frame.owner_user_id), frame)
 
     def announce_generation_changed(
         self,
@@ -266,8 +245,6 @@ class LiveConnections:
         self._announce(
             owner,
             GenerationChanged(
-                seq=None if conversation_id is None else self.clock.tick(conversation_id),
-                epoch=self.clock.epoch,
                 session_id=None if conversation_id is None else str(conversation_id),
                 owner_user_id=str(owner),
                 timestamp=timestamp_now(),
@@ -291,18 +268,13 @@ class LiveConnections:
     ) -> None:
         """广播新出现或变化了的整行 ``ConversationOut``（camelCase 字典）。
 
-        照 Kimi 的 ``event.session.updated``，这是一帧事件：提交之后发新号作信封 ``seq``。行里的
-        ``lastSeq`` 是调用方在写入之前取的水位，比信封序号小。客户端拿信封序号记行内事实字段
-        （标题、归属、收尾标记等）的水位，拿 ``lastSeq`` 按 HTTP 行的口径合并 ``activity``：
-        写入之前读库的旧行晚到也盖不掉这一帧带来的事实，帧里可能稍旧的活动也盖不掉序号更大的
-        ``work_changed``。"""
+        照 Kimi 的 ``event.session.created`` / ``updated``。调用方在提交之后、按提交先后调用：帧按到达先后
+        生效，同一段对话的整行帧晚发的就是新的。"""
 
         frame_type = SessionCreated if kind == "created" else SessionUpdated
         self._announce(
             owner,
             frame_type(
-                seq=self.clock.tick(conversation_id),
-                epoch=self.clock.epoch,
                 session_id=str(conversation_id),
                 owner_user_id=str(owner),
                 timestamp=timestamp_now(),
@@ -311,13 +283,11 @@ class LiveConnections:
         )
 
     def announce_session_deleted(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> None:
-        """广播属主删掉了一段对话；事件帧，发新序号。"""
+        """广播属主删掉了一段对话。"""
 
         self._announce(
             owner,
             SessionDeleted(
-                seq=self.clock.tick(conversation_id),
-                epoch=self.clock.epoch,
                 session_id=str(conversation_id),
                 owner_user_id=str(owner),
                 timestamp=timestamp_now(),
@@ -583,8 +553,8 @@ class _Connection:
 
     transcript 订阅转给这条连接独占的一条运行时对话内容流：``subscribe_v2`` 先在这里核可见性，看不见的
     就地回 ``not_found``、不转过去，看得见的原样（换成规范写法的 id）转过去，回执由运行时给，一帧一个；
-    ``unsubscribe_v2`` 原样转过去。运行时发来的回执与订着的对话的文件变化原样发出，reset / ops 盖上这段
-    对话当前的会话事件水位（不发新号）再发出。运行时那一头断了就以 1001 关掉这条连接。
+    ``unsubscribe_v2`` 原样转过去。运行时发来的回执、reset / ops 与订着的对话的文件变化原样发出。运行时那一头
+    断了就以 1001 关掉这条连接。
 
     出站经有界队列，回调与转发只往里放、不等发送；缓冲溢出时断开以便重连补批。
 
@@ -597,10 +567,8 @@ class _Connection:
         runtime: RuntimeClient,
         conversations: Conversations,
         principal: Principal,
-        clock: SessionEventClock,
     ):
         self._ws = websocket
-        self._clock = clock
         self._runtime = runtime
         self._conversations = conversations
         self._principal = principal
@@ -703,16 +671,12 @@ class _Connection:
         await upstream.subscribe(frame.model_copy(update={"payload": payload}))
 
     async def _relay(self, upstream: TranscriptChannel) -> None:
-        """把运行时发来的帧转给浏览器：回执与文件变化原样，reset / ops 盖上会话事件水位；运行时那一头断了
-        就以 1001 关掉这条连接。文件变化只在这条上游订着的对话上才有，订阅前已经核过可见性。"""
+        """把运行时发来的帧原样转给浏览器；运行时那一头断了就以 1001 关掉这条连接。对话的帧只来自这条上游
+        订着的对话，订阅前已经核过可见性。"""
 
         try:
             while True:
-                frame = await upstream.receive()
-                if isinstance(frame, Ack | FsChanged):
-                    self.offer(frame)
-                else:
-                    self.offer(self._wrap(frame))
+                self.offer(await upstream.receive())
         except RuntimeUnavailable as exc:
             _logger.warning("运行时的对话内容流断了，关掉这条订阅连接", reason=str(exc))
             self.drop(GOING_AWAY)
@@ -736,32 +700,6 @@ class _Connection:
         """排在已入队的帧后面以 ``code`` 关掉连接；队列满时按溢出以 1013 关。"""
 
         self.offer(_Drop(code))
-
-    def _wrap(
-        self, frame: TranscriptResetFrame | TranscriptOpsFrame
-    ) -> TranscriptReset | TranscriptOps:
-        """运行时的帧只加上外层 ``epoch`` + ``seq``：这段对话当前的会话事件序号，Transcript 帧不另发号（照
-        Kimi 的易失帧）。其余原样：``stream_epoch`` 与 ``payload.seq`` 是客户端续传用的 Transcript 水位，
-        ``timestamp`` 是运行时出帧的时刻。"""
-
-        seq = self._clock.current(frame.session_id)
-        if isinstance(frame, TranscriptResetFrame):
-            return TranscriptReset(
-                seq=seq,
-                epoch=self._clock.epoch,
-                session_id=frame.session_id,
-                timestamp=frame.timestamp,
-                stream_epoch=frame.stream_epoch,
-                payload=frame.payload,
-            )
-        return TranscriptOps(
-            seq=seq,
-            epoch=self._clock.epoch,
-            session_id=frame.session_id,
-            timestamp=frame.timestamp,
-            stream_epoch=frame.stream_epoch,
-            payload=frame.payload,
-        )
 
     async def _pump(self) -> None:
         while True:
@@ -806,7 +744,7 @@ async def _serve(
     principal: Principal,
     live: LiveConnections,
 ) -> None:
-    connection = _Connection(websocket, runtime, conversations, principal, live.clock)
+    connection = _Connection(websocket, runtime, conversations, principal)
     live.add(connection)
     try:
         await connection.serve()

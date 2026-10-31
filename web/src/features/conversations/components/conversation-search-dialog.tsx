@@ -56,8 +56,13 @@ function SearchPanel({
 
   const results = useQuery({
     enabled: submitted.length > 0,
-    queryFn: async ({ client, signal }) =>
-      conversationRowsOf(client).mergeRows(await searchConversations(submitted, signal)),
+    queryFn: ({ client, signal }) => {
+      const rows = conversationRowsOf(client)
+      return rows.track(
+        () => searchConversations(submitted, signal),
+        (found, book) => rows.mergeRows(found, book),
+      )
+    },
     queryKey: conversationsQueryKeys.search(submitted),
   })
 

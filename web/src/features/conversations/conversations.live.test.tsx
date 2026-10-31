@@ -44,8 +44,17 @@ const conversationRow = (overrides: Partial<Conversation> = {}): Conversation =>
   return row
 }
 
+/** 照一次读完的 HTTP 请求把行放进池：开本、合并、关本。 */
+const mergeRead = (queryClient: QueryClient, rows: Conversation[]): Conversation[] => {
+  const store = conversationRowsOf(queryClient)
+  const book = store.open()
+  const merged = store.mergeRows(rows, book)
+  book.close()
+  return merged
+}
+
 const seedCaches = (queryClient: QueryClient, row: Conversation) => {
-  conversationRowsOf(queryClient).mergeRows([{ ...row }])
+  mergeRead(queryClient, [{ ...row }])
   queryClient.setQueryData(AUDIT_KEY, {
     pageParams: [null],
     pages: [{ items: [row], nextCursor: null, runningTotal: 0, total: 1 }],
@@ -110,16 +119,12 @@ const rowFrame = (
   kind: 'created' | 'updated',
   row: Conversation,
   owner?: string,
-): Record<string, unknown> => {
-  const before = row.lastSeq
-  const envelope = sessionEnvelope(row.id, owner)
-  return {
-    ...envelope,
-    payload: { ...row, lastSeq: before },
-    session_id: row.id,
-    type: `event.session.${kind}`,
-  }
-}
+): Record<string, unknown> => ({
+  ...sessionEnvelope(row.id, owner),
+  payload: { ...row },
+  session_id: row.id,
+  type: `event.session.${kind}`,
+})
 
 const deletedFrame = (conversationId: string) => ({
   ...sessionEnvelope(conversationId),
@@ -267,22 +272,29 @@ describe('useLiveConversations', () => {
     expect(reads).toEqual([])
   })
 
-  it('开跑的 updated 帧带出新的 lastRunId 与空收尾标记，窗口期读出的旧行盖不掉', async () => {
+  it('开跑的 updated 帧带出新的 lastRunId 与空收尾标记，读期间到达的帧盖得住晚回来的旧行', async () => {
     const row = conversationRow()
     server.use(http.get('*/api/conversations/:conversationId', () => new Promise<never>(() => {})))
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, row)
+    // 一次列表请求在途：读库早于下面两帧。
+    const rows = conversationRowsOf(queryClient)
+    const book = rows.open()
+    const stale = { ...row }
 
     row.activity = { ...row.activity, busy: true }
     socket.deliver(activityFrame(row.id, { busy: true }))
-    const stale = { ...row, lastSeq: row.lastSeq }
-    const before = row.lastSeq
     Object.assign(row, { completedAt: null, lastRunId: 'run-9' })
-    socket.deliver({ ...rowFrame('updated', row), payload: { ...row, lastSeq: before } })
+    socket.deliver(rowFrame('updated', row))
     await settle()
-    conversationRowsOf(queryClient).mergeRows([stale])
+    rows.mergeRows([stale], book)
+    book.close()
 
-    expect(poolRow(queryClient, row.id)).toMatchObject({ completedAt: null, lastRunId: 'run-9' })
+    expect(poolRow(queryClient, row.id)).toMatchObject({
+      activity: { busy: true },
+      completedAt: null,
+      lastRunId: 'run-9',
+    })
   })
 
   it('改名帧只换标题，不动分页也不重拉任何列表', async () => {
@@ -341,7 +353,7 @@ describe('useLiveConversations', () => {
     const unlisted = conversationRow({ title: '没在全部对话页里的片' })
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, listed)
-    conversationRowsOf(queryClient).mergeRows([{ ...unlisted }])
+    mergeRead(queryClient, [{ ...unlisted }])
 
     socket.deliver(generationFrame(unlisted.id, 'video', { status: 'completed' }))
     await settle()
@@ -473,7 +485,7 @@ describe('useLiveConversations', () => {
 
       const rows = conversationRowsOf(queryClient)
       expect(rows.isDeleted(row.id)).toBe(true)
-      expect(rows.mergeRows([{ ...row }])).toEqual([])
+      expect(mergeRead(queryClient, [{ ...row }])).toEqual([])
       expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(true)
     })
   })

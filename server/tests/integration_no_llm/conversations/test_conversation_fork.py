@@ -35,7 +35,6 @@ from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
 from iclip.platform.db.engine import build_engine
-from iclip.platform.live.session_events import SessionEventClock
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.agents import AgentSeed, seed_agents
@@ -443,7 +442,6 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             video_progress_of=_untouched,
             same_style_files=SAME_STYLE,
             same_style_source=_untouched,
-            event_watermark=SessionEventClock().snapshot,
             announce_row=_untouched,
             announce_deleted=_untouched,
         )

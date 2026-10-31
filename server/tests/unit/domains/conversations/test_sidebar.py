@@ -27,7 +27,6 @@ from iclip.domains.conversations.service import (
     SameStyleFiles,
 )
 from iclip.domains.identity.public import Principal
-from iclip.platform.live.session_events import SessionEventClock
 from tests.helpers.film import UnusedFilmPage
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
@@ -163,7 +162,6 @@ def build(
         video_progress_of=_untouched,
         same_style_files=SameStyleFiles(files=(), require_any=frozenset()),
         same_style_source=_untouched,
-        event_watermark=SessionEventClock().snapshot,
         announce_row=_untouched,
         announce_deleted=_untouched,
     )

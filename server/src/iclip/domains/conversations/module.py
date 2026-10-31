@@ -17,7 +17,6 @@ from iclip.domains.conversations.service import (
     ClaimTask,
     ConversationFilm,
     ConversationService,
-    EventWatermarkOf,
     GenerateTitle,
     LatestMasterUrls,
     ListAgents,
@@ -68,7 +67,6 @@ def build_conversations_module(
     video_progress_of: VideoProgressOf,
     same_style_files: SameStyleFiles,
     same_style_source: SameStyleSource,
-    event_watermark: EventWatermarkOf,
     announce_row: AnnounceConversationRow,
     announce_deleted: AnnounceConversationDeleted,
 ) -> ConversationsModule:
@@ -95,7 +93,6 @@ def build_conversations_module(
         video_progress_of=video_progress_of,
         same_style_files=same_style_files,
         same_style_source=same_style_source,
-        event_watermark=event_watermark,
         announce_row=announce_row,
         announce_deleted=announce_deleted,
     )

@@ -2390,10 +2390,6 @@
             ],
             "title": "Deletedat"
           },
-          "eventEpoch": {
-            "title": "Eventepoch",
-            "type": "string"
-          },
           "forkTurn": {
             "anyOf": [
               {
@@ -2432,10 +2428,6 @@
               }
             ],
             "title": "Lastrunid"
-          },
-          "lastSeq": {
-            "title": "Lastseq",
-            "type": "integer"
           },
           "ownerUserId": {
             "format": "uuid",
@@ -2478,9 +2470,7 @@
           "completedAt",
           "forkedFrom",
           "forkTurn",
-          "activity",
-          "lastSeq",
-          "eventEpoch"
+          "activity"
         ],
         "title": "ConversationOut",
         "type": "object"
@@ -2631,10 +2621,6 @@
             ],
             "title": "Deletedat"
           },
-          "eventEpoch": {
-            "title": "Eventepoch",
-            "type": "string"
-          },
           "forkTurn": {
             "anyOf": [
               {
@@ -2673,10 +2659,6 @@
               }
             ],
             "title": "Lastrunid"
-          },
-          "lastSeq": {
-            "title": "Lastseq",
-            "type": "integer"
           },
           "latestMasterUrl": {
             "anyOf": [
@@ -2731,8 +2713,6 @@
           "forkedFrom",
           "forkTurn",
           "activity",
-          "lastSeq",
-          "eventEpoch",
           "latestMasterUrl"
         ],
         "title": "ConversationsAuditItemOut",
@@ -16130,7 +16110,7 @@
         ]
       },
       "get": {
-        "description": "读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。\n\n可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，\n看不见与不存在一样是 404。``lastSeq`` 是读这一行之前的事件水位。",
+        "description": "读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。\n\n可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，\n看不见与不存在一样是 404。",
         "operationId": "read_conversation_conversations__conversation_id__get",
         "parameters": [
           {

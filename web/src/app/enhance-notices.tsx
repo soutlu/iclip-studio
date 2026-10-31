@@ -90,8 +90,7 @@ export function EnhanceNotices() {
     if (update.kind !== 'generation' || update.operation !== 'enhance') return
     void queryClient.invalidateQueries({ queryKey: videoEnhancementsKeys.all })
     const settled = update.status === 'completed' || update.status === 'failed'
-    if (!settled || user === null || user === undefined || update.mark.ownerUserId !== user.id)
-      return
+    if (!settled || user === null || user === undefined || update.ownerUserId !== user.id) return
     announce(update.jobId).catch((error: unknown) => {
       console.warn('高清版提示没弹出', { error, jobId: update.jobId })
     })

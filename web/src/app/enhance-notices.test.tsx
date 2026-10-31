@@ -20,16 +20,16 @@ const OTHER_USER = '22222222-2222-4222-8222-222222222222'
 
 type Record = Parameters<typeof makeGenerationJob>[0]
 
-/** 一帧超分记录的状态跳转：不挂对话，信封上只有属主与 epoch。 */
+/** 一帧超分记录的状态跳转：不挂对话，信封上没有 session_id。 */
 const enhanceFrame = (
   status: string,
   owner = mockAuthUser.id,
   operation = 'enhance',
   id = ENHANCED,
 ) => ({
-  epoch: 'e1',
   owner_user_id: owner,
   payload: { id, kind: 'video', operation, status },
+  timestamp: '2026-10-30T08:00:00+00:00',
   type: 'event.generation.changed',
 })
 

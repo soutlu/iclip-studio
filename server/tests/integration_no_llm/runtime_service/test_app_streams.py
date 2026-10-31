@@ -50,7 +50,7 @@ def test_subscribing_then_running_delivers_a_reset_then_ops(live: LiveRuntime) -
             "msg": "",
             "payload": {"accepted": [session], "not_found": []},
         }
-        # 运行时帧上只有会话、时刻与实时流，没有会话事件序号；载荷带与外层相同的 type。
+        # 运行时帧上只有会话、时刻与实时流；载荷带与外层相同的 type。
         assert set(reset) == {"type", "session_id", "timestamp", "stream_epoch", "payload"}
         assert reset["session_id"] == session
         assert (reset["payload"]["type"], reset["payload"]["agent_id"]) == (
