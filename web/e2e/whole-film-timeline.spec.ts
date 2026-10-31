@@ -53,6 +53,23 @@ const BASE = [
   video('v5', 5_100, 6_000),
 ]
 
+/** 等预览换页完成：只剩一个已绘制的播放器，取坐标后的手势才不会被换页取消。 */
+const waitForPreview = async (dialog: Locator) => {
+  await expect
+    .poll(() =>
+      dialog
+        .getByRole('region', { name: '预览' })
+        .locator('hyperframes-player')
+        .evaluateAll(
+          (players) =>
+            players.length === 1 &&
+            (players[0] as HTMLElement & { painted: boolean }).painted &&
+            !players[0].classList.contains('is-pending'),
+        ),
+    )
+    .toBe(true)
+}
+
 /** 登录后把草稿直接存进 mock（片段按顺序首尾相接），再打开成片编辑器 */
 const openWith = async (
   page: Page,
@@ -110,19 +127,7 @@ const openWith = async (
   ).toBeVisible()
   // 预览播放器换上来时会报一次它的时刻：等它换上来（画好之后还要等几帧才换），之后点段、走播放头
   // 才不会被它拨回去
-  await expect
-    .poll(() =>
-      dialog
-        .getByRole('region', { name: '预览' })
-        .locator('hyperframes-player')
-        .evaluateAll(
-          (players) =>
-            players.length === 1 &&
-            (players[0] as HTMLElement & { painted: boolean }).painted &&
-            !players[0].classList.contains('is-pending'),
-        ),
-    )
-    .toBe(true)
+  await waitForPreview(dialog)
   // 时间区量好宽度、按它排好刻度之后再量位置
   let last = ''
   await expect
@@ -1468,6 +1473,7 @@ test.describe('成片编辑器 · 画面上缩放、旋转与拖出画面', () =
     expect(Math.abs(released.left - after.left)).toBeLessThanOrEqual(0.5)
     expect(Math.abs(released.top - after.top)).toBeLessThanOrEqual(0.5)
 
+    await waitForPreview(dialog)
     const frame = await boxOf(selectionFrame(dialog))
     await dragHandle(page, selectionFrame(dialog).locator('[data-handle="rotate"]'), (from) =>
       turnAround({ x: frame.cx, y: frame.cy }, from, 20),

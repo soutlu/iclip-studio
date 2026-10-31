@@ -81,8 +81,9 @@ const pushClaimedTasks = (count: number) =>
     makeTask({ title: '其他需求' }),
   )
 
-describe('TasksRoute', () => {
-  afterEach(() => vi.unstubAllGlobals())
+afterEach(() => vi.unstubAllGlobals())
+
+describe('TasksRoute 列表与筛选', () => {
   it.each([0, 4])('我的需求单 %i 张、不超过一行 4 张时全部展示且无需展开', async (count) => {
     layOutGridColumns(4)
     pushClaimedTasks(count)
@@ -262,8 +263,9 @@ describe('TasksRoute', () => {
     expect(all.getByText('暂无匹配的需求单')).toBeVisible()
     expect(screen.queryAllByRole('button', { name: /^查看需求：/ })).toHaveLength(0)
   })
+})
 
-  // 三条按数据类别分：一条里串上几十次交互会在 CI 上撞满 5 秒超时，见 PR「tasks 与 audit 收尾」。
+describe('TasksRoute 编辑与上传', () => {
   it('创建后回读视频规格与创作要求', async () => {
     const user = userEvent.setup()
     await renderLoggedIn()
@@ -684,6 +686,9 @@ describe('TasksRoute', () => {
     await user.click(within(dialog).getByRole('button', { name: '重试' }))
     expect(await within(dialog).findByLabelText('需求单名称')).toHaveValue('读取重试需求')
   })
+})
+
+describe('TasksRoute 发布与创作', () => {
   it('草稿修改后必须先保存，再发布最新内容', async () => {
     const task = makeTask({ deadline: '2026-10-01T12:00:00Z', title: '待修改草稿' })
     mockTasks.push(task)

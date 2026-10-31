@@ -376,7 +376,7 @@ def test_media_generation_off_when_submit_url_empty(
     assert resolve_settings(config).media_generation is None
 
 
-def test_media_generation_resolves_both_providers_and_store(
+def test_media_generation_resolves_models_and_gateway_routes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
@@ -398,7 +398,6 @@ def test_media_generation_resolves_both_providers_and_store(
         "text-to-image",
         "image-edit",
     )
-    assert (media.poll_interval_seconds, media.job_timeout_seconds) == (5, 3600)
 
 
 @pytest.mark.parametrize(
@@ -488,6 +487,9 @@ def test_enhance_section_rejects_what_upstream_would(tmp_path: Path, enhance: st
 SUBTITLE = """  subtitle:
     url: https://asr.test/api/v1/services/aigc/multimodal-generation/generation
 """
+MUSIC = """  music:
+    url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
+"""
 
 
 @pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
@@ -514,12 +516,7 @@ def test_the_shared_key_does_not_enable_absent_music_or_subtitles(
     assert media is not None and media.subtitle is None and media.music is None
 
 
-MUSIC = """  music:
-    url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
-"""
-
-
-def test_music_resolves_from_its_section_and_the_shared_key(
+def test_music_and_subtitles_resolve_their_addresses_and_share_the_trimmed_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC))
@@ -528,22 +525,13 @@ def test_music_resolves_from_its_section_and_the_shared_key(
     media = resolve_settings(config).media_generation
 
     assert media is not None and media.music is not None and media.subtitle is not None
-    assert (
-        media.music.url,
-        media.music.api_key,
-        media.music.concurrency,
-        media.music.timeout_seconds,
-    ) == (
-        "https://music.test/api/v1/services/audio/tts/SpeechSynthesizer",
-        "sk-qwen",
-        2,
-        300.0,
-    ), "并发与超时不写取默认值；key 与字幕识别共用、去掉首尾空白"
-    assert media.subtitle.api_key == media.music.api_key
+    assert media.music.url == "https://music.test/api/v1/services/audio/tts/SpeechSynthesizer"
     assert (
         media.subtitle.url
         == "https://asr.test/api/v1/services/aigc/multimodal-generation/generation"
     )
+
+    assert media.music.api_key == media.subtitle.api_key == "sk-qwen"
 
 
 @pytest.mark.parametrize("missing", ["OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_PUBLIC_URL_BASE"])

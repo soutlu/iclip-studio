@@ -8,6 +8,7 @@ const nodeTests = [
   'src/features/audit/overview-*.test.ts',
   'src/features/tasks/task-*.test.ts',
   'src/features/workspace/*.test.ts',
+  'src/features/storyboard/{film,video-editor}/!(*.api).test.ts',
   'src/features/storyboard/whole-film/{editing,vendor}/**/*.test.ts',
   'src/shared/transcript/vendor/**/*.test.ts',
 ]

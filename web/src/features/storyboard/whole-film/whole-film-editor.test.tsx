@@ -26,43 +26,10 @@ import { wholeFilmQueryKeys } from './whole-film.api'
 // jsdom 读不了真文件：mediabunny 换成按地址给关键帧表、时长与画面尺寸的替身；没有原声轨。
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 
-vi.mock('mediabunny', () => {
-  class UrlSource {
-    readonly url: string
-    constructor(url: string) {
-      this.url = url
-    }
-  }
-  class Input {
-    private readonly url: string
-    constructor(options: { source: UrlSource }) {
-      this.url = options.source.url
-    }
-    getPrimaryVideoTrack = () =>
-      Promise.resolve({
-        url: this.url,
-        getDisplayWidth: () => Promise.resolve(720),
-        getDisplayHeight: () => Promise.resolve(1280),
-      })
-    getPrimaryAudioTrack = () => Promise.resolve(null)
-    computeDuration = () => Promise.resolve(files.get(this.url)?.duration ?? 0)
-    dispose = () => {}
-  }
-  class EncodedPacketSink {
-    private readonly keyframes: number[]
-    constructor(track: { url: string }) {
-      this.keyframes = files.get(track.url)?.keyframes ?? []
-    }
-    getFirstKeyPacket = () => Promise.resolve(this.at(0))
-    getNextKeyPacket = (packet: { timestamp: number }) =>
-      Promise.resolve(this.at(this.keyframes.indexOf(packet.timestamp) + 1))
-    private at = (index: number) => {
-      const timestamp = this.keyframes[index]
-      return timestamp === undefined ? null : { timestamp }
-    }
-  }
+vi.mock('mediabunny', async () => {
+  const { createMediaReaderMock } = await import('@/testing/editor')
   class AudioSampleSink {}
-  return { AudioSampleSink, EncodedPacketSink, Input, MP4: {}, QTFF: {}, UrlSource }
+  return { ...createMediaReaderMock(files), AudioSampleSink }
 })
 
 const CONVERSATION = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'

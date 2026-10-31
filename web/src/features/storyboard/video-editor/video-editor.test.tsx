@@ -17,7 +17,8 @@ import { VideoEditor } from './video-editor'
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 
-vi.mock('mediabunny', () => {
+vi.mock('mediabunny', async () => {
+  const { createMediaReaderMock } = await import('@/testing/editor')
   class BufferTarget {
     buffer: ArrayBuffer | null = null
   }
@@ -58,55 +59,15 @@ vi.mock('mediabunny', () => {
       }
     }
   }
-  class UrlSource {
-    readonly url: string
-    constructor(url: string) {
-      this.url = url
-    }
-  }
-  class Input {
-    private readonly url: string
-    constructor(options: { source: UrlSource }) {
-      this.url = options.source.url
-    }
-    getPrimaryVideoTrack = () =>
-      Promise.resolve({
-        url: this.url,
-        canDecode: () => Promise.resolve(true),
-        computeDuration: () => Promise.resolve(files.get(this.url)?.duration ?? 0),
-        getDisplayWidth: () => Promise.resolve(720),
-        getDisplayHeight: () => Promise.resolve(1280),
-      })
-    getPrimaryAudioTrack = () => Promise.resolve(null)
-    computeDuration = () => Promise.resolve(files.get(this.url)?.duration ?? 0)
-    dispose = () => {}
-  }
-  class EncodedPacketSink {
-    private readonly keyframes: number[]
-    constructor(track: { url: string }) {
-      this.keyframes = files.get(track.url)?.keyframes ?? []
-    }
-    getFirstKeyPacket = () => Promise.resolve(this.at(0))
-    getNextKeyPacket = (packet: { timestamp: number }) =>
-      Promise.resolve(this.at(this.keyframes.indexOf(packet.timestamp) + 1))
-    private at = (index: number) => {
-      const timestamp = this.keyframes[index]
-      return timestamp === undefined ? null : { timestamp }
-    }
-  }
   return {
+    ...createMediaReaderMock(files),
     BufferTarget,
     Quality,
     VideoSampleSink,
     VideoSampleSource,
     canEncodeVideo: () => Promise.resolve(true),
-    EncodedPacketSink,
-    Input,
     Mp4OutputFormat,
     Output,
-    UrlSource,
-    MP4: {},
-    QTFF: {},
   }
 })
 

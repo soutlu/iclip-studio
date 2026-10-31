@@ -212,7 +212,7 @@ async def test_out_of_range_images_are_refused_before_signing(width: int, height
     ("width", "height"),
     [(MIN_SHORT_EDGE_PIXELS, MIN_SHORT_EDGE_PIXELS), (MAX_LONG_EDGE_PIXELS, MAX_LONG_EDGE_PIXELS)],
 )
-async def test_the_bounds_themselves_pass(width: int, height: int) -> None:
+async def test_image_dimension_bounds_are_inclusive(width: int, height: int) -> None:
     app = build_test_app(FakeBucket(), granted=uploader())
     async with client(app) as http:
         assert (await sign(http, width=width, height=height)).status_code == 200
@@ -301,7 +301,7 @@ MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
     ],
     ids=["图片", "分片上传", "追加上传", "ETag 不是 MD5", "没有 ETag", "没有对象类型"],
 )
-async def test_only_a_video_put_in_one_go_gets_an_md5(
+async def test_ineligible_uploads_are_recorded_without_md5(
     content_type: str, ext: str, etag: str | None, object_type: str | None
 ) -> None:
     """图片、不是一次整传的视频不记 MD5，照旧交回本次的地址。"""

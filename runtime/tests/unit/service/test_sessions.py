@@ -8,18 +8,20 @@ from __future__ import annotations
 import uuid
 from collections.abc import Collection
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
 import pytest
 
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import StoredFile
-from agent_runtime.harness.job_status import JobStatus
-from agent_runtime.harness.jobs import JobQueueView, JobRow
+from agent_runtime.harness.jobs import JobQueueView
 from agent_runtime.material_ledger.store import Material
-from agent_runtime.service.sessions import SESSION_ID_TAKEN, SESSION_NOT_FOUND, SessionService
-from agent_runtime.transcript.ops import TextContent
+from agent_runtime.service.sessions import (
+    SESSION_ID_TAKEN,
+    SESSION_NOT_FOUND,
+    SessionQueue,
+    SessionService,
+)
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 
@@ -37,25 +39,21 @@ REF = Material(url="https://example.test/ref.mp4", kind="video")
 
 @dataclass
 class RecordingSessions:
-    """会话表替身：``apps`` 是已有会话归哪个应用（源与目标默认归 ``APP``），开与照抄按真实表的规矩认归属。"""
+    """返回已知归属与目标占用结果，只记录是否产生写入。"""
 
     apps: dict[uuid.UUID, str] = field(default_factory=lambda: {SOURCE: APP, TARGET: APP})
-    opened: dict[uuid.UUID, uuid.UUID | None] = field(default_factory=dict)
-    copied: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
+    target_taken: bool = False
+    written: bool = False
 
     async def open(
         self, session_id: uuid.UUID, *, app_id: str, agent_version_id: uuid.UUID | None
     ) -> bool:
-        if self.apps.setdefault(session_id, app_id) != app_id:
-            return False
-        self.opened[session_id] = agent_version_id
-        return True
+        self.written = not self.target_taken
+        return self.written
 
     async def copy(self, source_id: uuid.UUID, target_id: uuid.UUID, *, app_id: str) -> bool:
-        if self.apps.setdefault(target_id, app_id) != app_id:
-            return False
-        self.copied.append((source_id, target_id))
-        return True
+        self.written = not self.target_taken
+        return self.written
 
     async def owned(
         self, session_ids: Collection[uuid.UUID], *, app_id: str
@@ -69,72 +67,33 @@ async def current_version(agent_id: str) -> uuid.UUID:
     return ASSISTANT_VERSION
 
 
-def _row(status: JobStatus) -> JobRow:
-    return JobRow(
-        prompt_id=f"prm_{uuid.uuid4().hex[:16]}",
-        conversation_id=str(SOURCE),
-        agent_id="storyboard",
-        owner_user_id=SOURCE_USER,
-        user_name="logan",
-        content=(TextContent(text="写三个镜头"),),
-        status=status,
-        run_id=None,
-        created_at=datetime.now(UTC),
-        finished_at=None,
-        steered_at=None,
-        locked_by=None,
-        heartbeat_at=None,
-        interrupt_reason=None,
-        attempt=0,
-        decisions={},
-    )
-
-
-@dataclass
-class FixedQueue:
-    view_of: JobQueueView = field(default_factory=lambda: JobQueueView(active=None, queued=()))
-
+class IdleQueue:
     async def view(self, conversation_id: str) -> JobQueueView:
         assert conversation_id == str(SOURCE)
-        return self.view_of
+        return JobQueueView(active=None, queued=())
 
 
 @dataclass
-class RecordingSeed:
-    committed: list[str]
-    target: str
+class MovedHistory:
+    """数完两轮后源又变化，无法规划可提交的分叉起点。"""
 
-    async def commit(self) -> None:
-        self.committed.append(self.target)
-
-
-@dataclass
-class ScriptedHistory:
-    """源有 ``turns`` 轮；``moved`` 时规划分叉报源变了（数完轮数之后又跑了一轮）。"""
-
-    turns: int = 2
-    moved: bool = False
     planned: list[tuple[str, int, str]] = field(default_factory=list)
-    committed: list[str] = field(default_factory=list)
 
     async def turn_count(self, conversation_id: str) -> int:
         assert conversation_id == str(SOURCE)
-        return self.turns
+        return 2
 
     async def plan_fork(
         self, conversation_id: str, *, ordinal: int, target_conversation_id: str
-    ) -> RecordingSeed | None:
+    ) -> None:
         self.planned.append((conversation_id, ordinal, target_conversation_id))
-        if self.moved:
-            return None
-        return RecordingSeed(committed=self.committed, target=target_conversation_id)
 
 
 @dataclass
 class Runtime:
     sessions: RecordingSessions = field(default_factory=RecordingSessions)
-    queue: FixedQueue = field(default_factory=FixedQueue)
-    history: ScriptedHistory = field(default_factory=ScriptedHistory)
+    queue: SessionQueue = field(default_factory=IdleQueue)
+    history: MovedHistory = field(default_factory=MovedHistory)
     files: FakeFileStore = field(default_factory=FakeFileStore)
     ledger: FakeMaterialLedger = field(default_factory=FakeMaterialLedger)
 
@@ -163,11 +122,9 @@ class Runtime:
 
     async def nothing_written(self) -> bool:
         return (
-            not self.sessions.opened
-            and not self.sessions.copied
+            not self.sessions.written
             and not await self.files.entries(TARGET_SPACE)
             and not self.ledger.urls(TARGET_SPACE)
-            and not self.history.committed
         )
 
 
@@ -184,7 +141,7 @@ async def fork(runtime: Runtime, *, turn: int = 1, agent_id: str | None = None) 
 
 
 async def test_a_source_that_moved_before_the_seed_is_a_conflict_and_nothing_is_seeded() -> None:
-    runtime = Runtime(history=ScriptedHistory(moved=True))
+    runtime = Runtime()
     await runtime.seed_source({"video_shot.json": "{}"})
 
     with pytest.raises(Conflict) as raised:
@@ -192,7 +149,6 @@ async def test_a_source_that_moved_before_the_seed_is_a_conflict_and_nothing_is_
 
     assert str(raised.value) == "这段对话刚刚又跑了一轮，重新挑一个分叉点"
     assert runtime.history.planned == [(str(SOURCE), 1, str(TARGET))]
-    assert not runtime.history.committed
 
 
 async def test_an_agent_that_cannot_open_fails_the_fork_before_any_file_is_copied() -> None:
@@ -203,7 +159,6 @@ async def test_an_agent_that_cannot_open_fails_the_fork_before_any_file_is_copie
         await fork(runtime, agent_id="gone")
 
     assert not await runtime.files.entries(TARGET_SPACE)
-    assert not runtime.history.committed
 
 
 FILES = (("film.icml", "old_film.icml"), ("treatment.md", "treatment.md"))
@@ -233,35 +188,22 @@ async def test_copy_files_without_a_precondition_copies_what_the_source_has() ->
     assert runtime.ledger.urls(TARGET_SPACE) == {REF.url}
 
 
-class AlwaysBusyQueue:
-    """一问就说源在忙：归属没认过就问到队列，别的应用会从 409 里看出这个会话存在。"""
+class UnreadableQueue:
+    """归属未确认时不得读取队列，避免向其他应用泄露会话信息。"""
 
     async def view(self, conversation_id: str) -> JobQueueView:
-        return JobQueueView(active=_row("running"), queued=())
+        raise AssertionError("归属校验失败前不应读取队列")
 
 
 async def test_a_fork_from_another_apps_session_is_not_found_before_anything_else() -> None:
-    runtime = Runtime(sessions=RecordingSessions(apps={SOURCE: OTHER_APP}))
-    await runtime.seed_source({"video_shot.json": "{}"})
-    service = SessionService(
-        sessions=runtime.sessions,
-        version_for_new_session=current_version,
-        queue=AlwaysBusyQueue(),
-        history=runtime.history,
-        files=runtime.files,
-        ledger=runtime.ledger,
+    runtime = Runtime(
+        sessions=RecordingSessions(apps={SOURCE: OTHER_APP}),
+        queue=UnreadableQueue(),
     )
+    await runtime.seed_source({"video_shot.json": "{}"})
 
     with pytest.raises(NotFound) as raised:
-        await service.fork(
-            app_id=APP,
-            source_id=SOURCE,
-            source_user=SOURCE_USER,
-            target_id=TARGET,
-            target_user=TARGET_USER,
-            turn=1,
-            agent_id=None,
-        )
+        await fork(runtime)
 
     assert str(raised.value) == SESSION_NOT_FOUND
     assert await runtime.nothing_written()
@@ -271,7 +213,7 @@ async def test_a_fork_from_another_apps_session_is_not_found_before_anything_els
 async def test_a_fork_onto_an_id_another_app_holds_is_a_conflict_before_any_file_is_copied(
     agent_id: str | None,
 ) -> None:
-    runtime = Runtime(sessions=RecordingSessions(apps={SOURCE: APP, TARGET: OTHER_APP}))
+    runtime = Runtime(sessions=RecordingSessions(target_taken=True))
     await runtime.seed_source({"video_shot.json": "{}"})
 
     with pytest.raises(Conflict) as raised:

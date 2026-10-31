@@ -16,6 +16,7 @@ from iclip.domains.tasks.models import (
     STATUS_DRAFT,
     STATUS_PUBLISHED,
     STATUS_WITHDRAWN,
+    TaskStatus,
 )
 from iclip.domains.tasks.service import TaskService
 from tests.helpers.app import app_with_principal
@@ -334,21 +335,23 @@ async def test_published_task_may_have_no_deadline() -> None:
 @pytest.mark.parametrize(
     ("status", "action", "expected"),
     [
-        (STATUS_DRAFT, "confirm", 409),
-        (STATUS_DRAFT, "withdraw", 409),
-        (STATUS_PUBLISHED, "publish", 409),
-        (STATUS_CONFIRMED, "confirm", 200),
-        (STATUS_CONFIRMED, "publish", 409),
-        (STATUS_WITHDRAWN, "confirm", 409),
-        (STATUS_WITHDRAWN, "withdraw", 409),
-        (STATUS_PUBLISHED, "confirm", 200),
-        (STATUS_PUBLISHED, "withdraw", 200),
-        (STATUS_CONFIRMED, "withdraw", 200),
+        pytest.param(STATUS_DRAFT, "confirm", 409, id="draft-confirm-conflict"),
+        pytest.param(STATUS_DRAFT, "withdraw", 409, id="draft-withdraw-conflict"),
+        pytest.param(STATUS_PUBLISHED, "publish", 409, id="published-publish-conflict"),
+        pytest.param(STATUS_CONFIRMED, "confirm", 200, id="confirmed-confirm-idempotent"),
+        pytest.param(STATUS_CONFIRMED, "publish", 409, id="confirmed-publish-conflict"),
+        pytest.param(STATUS_WITHDRAWN, "confirm", 409, id="withdrawn-confirm-conflict"),
+        pytest.param(STATUS_WITHDRAWN, "withdraw", 409, id="withdrawn-withdraw-conflict"),
+        pytest.param(STATUS_PUBLISHED, "confirm", 200, id="published-confirm"),
+        pytest.param(STATUS_PUBLISHED, "withdraw", 200, id="published-withdraw"),
+        pytest.param(STATUS_CONFIRMED, "withdraw", 200, id="confirmed-withdraw"),
     ],
 )
-async def test_illegal_transitions_are_conflicts(status: str, action: str, expected: int) -> None:
+async def test_current_state_determines_the_action_result(
+    status: TaskStatus, action: str, expected: int
+) -> None:
 
-    task = make_task(status=status, deadline=future())  # type: ignore[arg-type]
+    task = make_task(status=status, deadline=future())
     repo = InMemoryTaskRepository([task])
     caller = editor(task.creator_user_id)
     async with client(build_test_app(repo, granted=caller)) as http:
@@ -356,10 +359,10 @@ async def test_illegal_transitions_are_conflicts(status: str, action: str, expec
 
 
 @pytest.mark.parametrize("status", [STATUS_PUBLISHED, STATUS_CONFIRMED, STATUS_WITHDRAWN])
-async def test_only_drafts_can_be_deleted(status: str) -> None:
+async def test_only_drafts_can_be_deleted(status: TaskStatus) -> None:
     """已发布需求单通过撤回留痕，不能直接删除。"""
 
-    task = make_task(status=status, deadline=future())  # type: ignore[arg-type]
+    task = make_task(status=status, deadline=future())
     repo = InMemoryTaskRepository([task])
     caller = editor(task.creator_user_id, "users:manage")
     async with client(build_test_app(repo, granted=caller)) as http:
