@@ -51,6 +51,8 @@ TOOL_SESSION = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 OWNER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
 CHILD = "run-child"
 """替身 transcript 服务认作属于每段会话的子代理流。"""
+OTHER_CHILD = "run-child-2"
+"""同上，第二个子代理。"""
 AT = "2026-10-30T08:00:00+00:00"
 
 APPS = {BFF_SESSION: "bff", OTHER_BFF_SESSION: "bff", TOOL_SESSION: "tool"}
@@ -78,18 +80,18 @@ def wrote(session_id: str, path: str = "notes.md") -> FsChanged:
 
 
 class FakeTranscripts:
-    """只认主流与 ``CHILD``；带水位订阅回 ``catchup`` 条补批，没有补批或不带水位回一帧 reset。记着固定次数
-    与监听；取快照前先给刚登记的监听推 ``live_during_subscribe`` 条实时批，当作先监听、再取快照两步之间落下的
-    批次。"""
+    """只认主流、``CHILD`` 与 ``OTHER_CHILD``；带水位订阅回 ``catchup`` 里给这个 agent 的那么多条补批，没有
+    补批或不带水位回一帧 reset。记着固定次数与监听；取快照前先给刚登记的监听推 ``live_during_subscribe`` 条
+    实时批，当作先监听、再取快照两步之间落下的批次。"""
 
     def __init__(self) -> None:
         self.pins = 0
         self.listeners: dict[tuple[str, str], Listener] = {}
         self.live_during_subscribe = 0
-        self.catchup = 0
+        self.catchup: dict[str, int] = {}
 
     async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
-        if agent_id not in (MAIN_AGENT_ID, CHILD):
+        if agent_id not in (MAIN_AGENT_ID, CHILD, OTHER_CHILD):
             raise NotFound(f"agent not in session: {agent_id}")
 
     def subscribe(
@@ -98,10 +100,11 @@ class FakeTranscripts:
         listener = self.listeners[(conversation_id, agent_id)]
         for seq in range(1, self.live_during_subscribe + 1):
             listener(OpBatch(seq=seq, ops=(ItemsRemoveOp(ids=("t1",)),), epoch="e1"))
-        if since is not None and self.catchup:
+        catchup = self.catchup.get(agent_id, 0)
+        if since is not None and catchup:
             batches = tuple(
                 OpsPayload(agent_id=agent_id, ops=(ItemsRemoveOp(ids=("t1",)),), seq=since + offset)
-                for offset in range(1, self.catchup + 1)
+                for offset in range(1, catchup + 1)
             )
             return SubscribeFrames(stream_epoch="e1", frames=batches)
         reset = ResetPayload(agent_id=agent_id, snapshot=TranscriptSnapshot(), seq=0)
@@ -384,7 +387,7 @@ def test_catchup_that_does_not_fit_falls_back_to_a_reset(
 ) -> None:
     # 补批刚好占满余量，回执就放不下了：改发 reset，连接不断，对方覆盖水位后重取历史。
     monkeypatch.setattr(streams, "MAX_OUTBOUND", 4)
-    transcripts.catchup = streams.MAX_OUTBOUND
+    transcripts.catchup = {MAIN_AGENT_ID: streams.MAX_OUTBOUND}
 
     with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
         send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"}, since={MAIN_AGENT_ID: 7})
@@ -393,6 +396,42 @@ def test_catchup_that_does_not_fit_falls_back_to_a_reset(
         unsubscribe(ws, BFF_SESSION)
 
     assert (reset["type"], reset["payload"]["agent_id"]) == ("transcript.reset", MAIN_AGENT_ID)
+    assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", "s1", [BFF_SESSION])
+
+
+@pytest.mark.timeout(10)
+def test_catchup_leaves_room_for_the_agents_after_it_in_the_same_frame(
+    client: TestClient, transcripts: FakeTranscripts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 队列 8 格。main 补 4 帧后剩 4；CHILD 的 3 帧放进去只剩 1 格，不够 OTHER_CHILD 一帧加回执一格，
+    # 改发 reset，剩 3；OTHER_CHILD 的 2 帧正好留出回执那一格。
+    monkeypatch.setattr(streams, "MAX_OUTBOUND", 8)
+    transcripts.catchup = {MAIN_AGENT_ID: 4, CHILD: 3, OTHER_CHILD: 2}
+    agents = (MAIN_AGENT_ID, CHILD, OTHER_CHILD)
+
+    with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
+        send_subscribe(
+            ws,
+            BFF_SESSION,
+            dict.fromkeys(agents, "delta"),
+            since=dict.fromkeys(agents, 7),
+        )
+        received: list[tuple[str, str]] = []
+        frame: dict[str, Any] = {}
+        for _ in range(20):
+            frame = ws.receive_json()
+            if frame["type"] == "ack":
+                break
+            received.append((frame["payload"]["agent_id"], frame["type"]))
+        # 再来回一趟，证明连接还开着。
+        unsubscribe(ws, BFF_SESSION)
+
+    assert received == [
+        *[(MAIN_AGENT_ID, "transcript.ops")] * 4,
+        (CHILD, "transcript.reset"),
+        *[(OTHER_CHILD, "transcript.ops")] * 2,
+    ]
+    ack = frame
     assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", "s1", [BFF_SESSION])
 
 

@@ -12,9 +12,10 @@
 
 对话内容流：照后端浏览器那条连接的 transcript 一半，每段会话发一帧 ``subscribe_v2``，规则相同（档位、
 先监听再取快照、补批帧筛空了也发、实时批筛空了不发、升档先 reset、子代理流要能回溯到这段会话）。
-补批连同回执放不进出站队列的余量时改发 reset。会话不归调用方应用与不存在一样答 ``not_found``。订着一段
-会话（任何档位，含 ``off``）的连接还收它的工作区文件变化 ``event.fs.changed``。连接断开时撤掉它的全部
-监听，最后一个撤掉时放开这段会话的实时状态、不再收它的文件变化。
+补批放进出站队列后，若给不了同一帧里后面每个 agent 一格、再给回执一格，就改发 reset。会话不归调用方应用
+与不存在一样答 ``not_found``。订着一段会话（任何档位，含 ``off``）的连接还收它的工作区文件变化
+``event.fs.changed``。连接断开时撤掉它的全部监听，最后一个撤掉时放开这段会话的实时状态、不再收它的文件
+变化。
 """
 
 from __future__ import annotations
@@ -261,8 +262,10 @@ class _TranscriptConnection(_Channel):
             if not known or not await self._owns_agent(session_id, agent_id):
                 self.offer(Ack(id=frame.id, code=404, msg=f"agent not in session: {agent_id}"))
                 return
-        for agent_id in agent_ids:
-            self._subscribe_agent(session_id, agent_id, frame.payload)
+        for index, agent_id in enumerate(agent_ids):
+            # 后面每个 agent 最少也要发一帧 reset，再加订阅回执一格。
+            reserve = len(agent_ids) - index
+            self._subscribe_agent(session_id, agent_id, frame.payload, reserve=reserve)
         self.offer(Ack(id=frame.id, payload=SubscribeAckPayload(accepted=(session_id,))))
 
     async def _owns_agent(self, session_id: str, agent_id: str) -> bool:
@@ -272,7 +275,11 @@ class _TranscriptConnection(_Channel):
             return False
         return True
 
-    def _subscribe_agent(self, session_id: str, agent_id: str, payload: SubscribePayload) -> None:
+    def _subscribe_agent(
+        self, session_id: str, agent_id: str, payload: SubscribePayload, *, reserve: int
+    ) -> None:
+        """订一个 agent 并放它的补批；``reserve`` 是出站队列要给这帧订阅后面的帧留的格数。"""
+
         key = (session_id, agent_id)
         grade = grade_for(payload.transcript, agent_id)
         previous = self._grades.get(key)
@@ -297,8 +304,10 @@ class _TranscriptConnection(_Channel):
                 session_id, agent_id=agent_id, since=since, epoch=epoch
             )
             # 补批一口气放不下就会溢出断开，对方水位没动、重连又是同样的补批；改发 reset 让对方覆盖水位、
-            # 重取历史。余量留一格给订阅回执，回执放不下同样断开。监听已先登记，取 reset 不漏批次。
-            if len(subscribed.frames) >= self._outbound.maxsize - self._outbound.qsize():
+            # 重取历史。余量要给后面的帧留出 ``reserve`` 格，它们放不下同样断开。监听已先登记，取 reset
+            # 不漏批次。
+            room = self._outbound.maxsize - self._outbound.qsize()
+            if len(subscribed.frames) > room - reserve:
                 subscribed = self._transcripts.subscribe(
                     session_id, agent_id=agent_id, since=None, epoch=None
                 )
