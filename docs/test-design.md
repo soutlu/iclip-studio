@@ -14,6 +14,8 @@
 | `e2e_full/` | 依赖真实外部服务的全链路 |
 | `helpers/` | 共用测试基建，不放测试用例 |
 
+后端集成层的 app 由 [runtime_backed.py](../server/tests/helpers/runtime_backed.py) 连同运行时服务一起装：两边接同一个测试库，后端的运行时客户端与运行时的回调各经 ASGI 传输层直达对方；运行时的插件登记表默认是视频插件包始终登记的三个，要替身插件的用例覆写 `runtime_plugins` 夹具。不跑 lifespan 时消息照样跑完，两条 WebSocket 只在 `TestClient` 跑着组合 lifespan（先运行时、后后端）时才通。
+
 marker 由 [tests/conftest.py](../server/tests/conftest.py) 按目录注入；测试树和私有符号导入由 [集合契约测试](../server/tests/unit/architecture/test_collection_contract.py) 检查。新增顶层测试层时同时更新这些入口和 [pyproject.toml](../server/pyproject.toml)，普通子目录不需要修改分层契约。
 
 transcript 按场景测：[场景测试](../server/tests/integration_no_llm/agents/test_transcript_scenarios.py)用假模型跑真实运行，断言实时重放出的页与冷启动重建的页逐字相等，并把三个场景存成 `contract/transcript/` 下的金样（`UPDATE_GOLDEN=1` 重生成），前端 [golden 测试](../web/src/shared/transcript/golden.test.ts)用 vendored schema 解析同一份。只有历史才会遇到的规则留在 [历史重建单测](../runtime/tests/unit/harness/test_transcript_from_messages.py)，手工事件或官方模型解析协议流才能造出的形状留在 [投影器单测](../runtime/tests/unit/harness/test_transcript_projector.py)；新场景先进场景文件，不另开对照测试。

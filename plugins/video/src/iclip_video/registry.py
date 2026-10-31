@@ -1,8 +1,7 @@
 """视频插件包给运行时服务的入口：运行时配置写 ``plugins.factory: iclip_video.registry:open_video_plugins``，
 ``plugins.config`` 按 ``VideoPluginsConfig`` 校验。
 
-登记的插件与登记条件同后端进程内的插件登记表（``iclip.app.plugin_registry``）：``workspace``、
-``iclip_studio`` 与 ``video_shots`` 总是登记，``video``、``video_breakdown`` 与 ``shot_video`` 各按自己的配置段
+视频业务的插件类只在这里列出：``workspace``、``iclip_studio`` 与 ``video_shots`` 总是登记，``video``、``video_breakdown`` 与 ``shot_video`` 各按自己的配置段
 登记。要后端服务的端口经内部接口（``internal_api``）的 HTTP 客户端；``iclip_studio`` 不接生图（后端不开放这
 条接口），生图工具照旧不登记。
 """

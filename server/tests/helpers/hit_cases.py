@@ -36,6 +36,11 @@ async def plant_conversation(
             ),
             {"id": conversation_id, "owner": owner, "title": title},
         )
+        # 每段对话在运行时都有会话（建对话时开），工作区文件经运行时读。
+        await conn.execute(
+            text("INSERT INTO agent_runtime.sessions (id, app_id) VALUES (:id, 'video')"),
+            {"id": conversation_id},
+        )
     return conversation_id
 
 

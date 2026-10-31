@@ -7,20 +7,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 import pytest
 from agent_runtime.assembly.directories import RegistryPluginDirectory
 from agent_runtime.config.agent_config.public import Problem
-from agent_runtime.plugins.base import CapPlugin, PluginRegistry
+from agent_runtime.plugins.base import CapPlugin, PluginHost, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
+from iclip_video.registry import open_video_plugins
 from pydantic_ai.capabilities import Capability
 
-from iclip.app.plugin_registry import build_plugin_registry
-from iclip.config import ResolvedVideo
-from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.identity import FakePrincipals
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 
@@ -45,21 +41,22 @@ class LimitedPlugin(CapPlugin[Any]):
 
 
 @pytest.fixture
-def registry() -> PluginRegistry:
-    built = build_plugin_registry(
-        workspace_store=FakeFileStore(),
-        material_ledger=FakeMaterialLedger(),
-        http_client=httpx.AsyncClient(),
-        fetch_url=as_is,
-        resolve_principal=FakePrincipals(),
-        video=ResolvedVideo(
-            understanding_url="https://vision.test/responses",
-            understanding_api_key="ark",
-            understanding_model="seed-vision",
-            understanding_thinking="medium",
-            understanding_fps=5,
-        ),
-    )
+async def registry(monkeypatch: pytest.MonkeyPatch) -> PluginRegistry:
+    """视频插件包配了视频理解时登记的插件，加上带参数的测试插件。"""
+
+    monkeypatch.setenv("VIDEO_UNDERSTANDING_API_KEY", "ark")
+    async with open_video_plugins(
+        {
+            "video": {
+                "understanding_url": "https://vision.test/responses",
+                "api_key_env": "VIDEO_UNDERSTANDING_API_KEY",
+                "model": "seed-vision",
+                "thinking": "medium",
+                "fps": 5,
+            }
+        }
+    ) as bind:
+        built = bind(PluginHost(files=FakeFileStore(), ledger=FakeMaterialLedger()))
     return {**built, "limited": LimitedPlugin}
 
 

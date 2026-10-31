@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent_runtime.assembly.agents import ModelBuilder
+from agent_runtime.assembly.config_services import ConfigServices
 from agent_runtime.config.agent_config.config import AgentConfig
 from agent_runtime.config.agent_config.schemas import (
     AgentCreateIn,
@@ -29,7 +30,6 @@ from agent_runtime.model_vocab import ThinkingEffort
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import AgentServices
 from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.model_providers import GOOD_KEY
 from tests.helpers.references import plant_user
@@ -100,7 +100,7 @@ def model_builder(models: Mapping[str, Model]) -> ModelBuilder:
 
 
 async def seed_provider(
-    services: AgentServices,
+    services: ConfigServices,
     engine: AsyncEngine,
     *,
     models: Sequence[str] = (TEST_MODEL_NAME,),
@@ -133,7 +133,7 @@ async def seed_provider(
     return Seeded(author=author, provider_id=provider.id)
 
 
-async def seed_skill(services: AgentServices, seeded: Seeded, skill: SkillSeed) -> uuid.UUID:
+async def seed_skill(services: ConfigServices, seeded: Seeded, skill: SkillSeed) -> uuid.UUID:
     """建一个技能、写好正文与参考文件并发布，交回技能 id；同名的已种过就直接用。"""
 
     if skill.name in seeded.skills:
@@ -192,7 +192,7 @@ def agent_config(seed: AgentSeed) -> AgentConfig:
 
 
 async def save_and_publish(
-    services: AgentServices,
+    services: ConfigServices,
     seeded: Seeded,
     agent_id: str,
     config: AgentConfig,
@@ -217,7 +217,7 @@ async def save_and_publish(
     return version.id
 
 
-async def seed_agent(services: AgentServices, seeded: Seeded, seed: AgentSeed) -> uuid.UUID:
+async def seed_agent(services: ConfigServices, seeded: Seeded, seed: AgentSeed) -> uuid.UUID:
     """建 agent、存草稿、发布 v1，``listed`` 照种子设；交回 v1 的 id。"""
 
     agents = services.agent_config
@@ -236,7 +236,7 @@ async def seed_agent(services: AgentServices, seeded: Seeded, seed: AgentSeed) -
 
 
 async def seed_agents(
-    services: AgentServices, engine: AsyncEngine, seeds: Sequence[AgentSeed]
+    services: ConfigServices, engine: AsyncEngine, seeds: Sequence[AgentSeed]
 ) -> Seeded:
     """接入测试供应商（种子用到的模型都加上）并依次种下 ``seeds``；子 agent 要排在用它的 agent 前面。"""
 

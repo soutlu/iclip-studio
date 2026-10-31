@@ -9,10 +9,10 @@ import uuid
 from typing import Final
 
 from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import FileStore
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip_video.shot_document import SHOTS_PATH
 
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.domains.conversations.service import SameStyleFiles
 from iclip.domains.library.repository import LibraryReports
 
@@ -39,7 +39,7 @@ SAME_STYLE: Final = SameStyleFiles(files=SAME_STYLE_FILES, require_any=_PRODUCTI
 class ProductionFilesProbe:
     """给资料库判断一段对话做不做得了同款，与对话域做同款同一个口径。"""
 
-    def __init__(self, store: FileStore) -> None:
+    def __init__(self, store: WorkspaceFiles) -> None:
         self._store = store
 
     async def has_production_files(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:

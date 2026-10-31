@@ -1,0 +1,44 @@
+# 运行时服务（agent_runtime）的配置样例：复制成部署目录的 configs/runtime.yaml（本地是 server/configs/runtime.yaml），
+# 按部署改地址与要开的插件段。形状以 runtime/src/agent_runtime/settings.py 与视频插件包的
+# plugins/video/src/iclip_video/registry.py（VideoPluginsConfig）为准，步骤见 docs/deploy.md。
+# 机密只写放它的环境变量名；DATABASE_URL 与 CREDENTIAL_ENCRYPTION_KEYS 也来自环境变量。
+
+apps:
+  # 视频后端。应用标识必须是 video：后端经它开的会话与迁移 0044 回填的会话都归它。
+  video:
+    # 与后端的 RUNTIME_APP_KEY 是同一个值（不少于 32 个字符）。
+    key_env: RUNTIME_APP_KEY
+    # 配置页的技能库、模型供应商与 agent 配置经运行时的 /v1/admin。
+    admin: true
+    hooks:
+      # 与后端的 RUNTIME_INTERNAL_TOKEN 是同一个值（不少于 32 个字符）。
+      token_env: RUNTIME_INTERNAL_TOKEN
+      # 后端的内部接口（conventions §21）。本地 make dev：http://localhost:7788；compose：http://server:7788。
+      gate: http://server:7788/internal/runtime/hooks/gate
+      run_started: http://server:7788/internal/runtime/hooks/run-started
+      turn_started: http://server:7788/internal/runtime/hooks/turn-started
+
+plugins:
+  factory: iclip_video.registry:open_video_plugins
+  config:
+    # 拆解与取帧出图经后端干活；地址同上，令牌同 hooks.token_env。
+    internal_api:
+      base_url: http://server:7788
+      token_env: RUNTIME_INTERNAL_TOKEN
+    # 查图片信息前把本桶的公网地址换成内网地址；服务器不在 OSS 同地域内网时删掉这一段。
+    # oss:
+    #   public_url_base: https://<OSS_BUCKET>.oss-cn-shenzhen.aliyuncs.com
+    #   internal_url_base: https://<OSS_BUCKET>.oss-cn-shenzhen-internal.aliyuncs.com
+    # 视频理解（video 插件）；不用就删掉这一段。
+    # video:
+    #   understanding_url: https://ark.cn-beijing.volces.com/api/v3/responses
+    #   api_key_env: VIDEO_UNDERSTANDING_API_KEY
+    #   model: <方舟视频理解模型>
+    # 写了就登记 video_breakdown：拆解交给后端的参考视频（后端要配 iclip_studio 段）。
+    # video_breakdown: {}
+    # 写了就登记 shot_video：启动时向后端取接入的图片模型，所以后端要先起来（后端要开 shot_video 段与媒体生成）。
+    # shot_video: {}
+
+ops:
+  log_level: INFO
+  log_format: json

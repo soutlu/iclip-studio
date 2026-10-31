@@ -14,6 +14,7 @@ from tests.helpers.agents import CONVERSABLE_SEEDS, SEEDER, AgentSeed, seed_agen
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
+from tests.helpers.runtime_backed import config_services_of
 from tests.helpers.tasks import INPUTS
 
 
@@ -213,7 +214,7 @@ class TestSsoAdoptsThePlaceholder:
     ) -> None:
         engine = build_engine(migrated_pg)
         try:
-            await seed_agents(sso_app.state.agent_services, engine, CONVERSABLE_SEEDS)
+            await seed_agents(config_services_of(sso_app), engine, CONVERSABLE_SEEDS)
         finally:
             await engine.dispose()
         async with make_client(sso_app) as root:

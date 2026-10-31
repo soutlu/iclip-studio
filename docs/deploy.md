@@ -9,15 +9,18 @@
    - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
-   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步。
-   - `RUNTIME_URL` 与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：配置页、开对话、首页名册、起标题与对话活动都经运行时服务。`RUNTIME_URL` 是运行时服务的根地址（服务见[后端架构](architecture.md#1-模块职责)，连同一个开发库），`RUNTIME_APP_KEY` 与运行时配置里应用 `video` 的 `key_env` 指向的值相同，不少于 32 个字符，这个应用要有管理权限。
-3. 把一份 `server/configs/config.yaml` 放到本机，它不进仓库，改了要重启后端。模型、agent 与技能存在数据库里，不在文件里。
-4. 迁移数据库并启动后端：
+   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥。
+   - `RUNTIME_URL`（本地是 `http://localhost:7790`）与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：消息、transcript、实时推送、工作区文件、配置页、开对话与首页名册都经运行时服务（见[后端架构](architecture.md#1-模块职责)）。`RUNTIME_APP_KEY` 不少于 32 个字符，运行时配置里应用 `video` 的 `key_env` 指向它。
+   - `RUNTIME_INTERNAL_TOKEN` 必填，不少于 32 个字符：运行时回调后端（开跑检查、运行开始、轮次开始）与插件调后端都带它，没设时后端不挂内部接口、运行时配了回调却读不到令牌起不来。
+3. 把一份 `server/configs/config.yaml` 放到本机，再把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `server/configs/runtime.yaml`，里面的 `http://server:7788` 都换成 `http://localhost:7788`，按要用的插件打开对应的段。两份都不进仓库，改了要重启。模型、agent 与技能存在数据库里，不在文件里。
+4. 迁移数据库并启动后端与运行时服务：
 
    ```bash
    make db-upgrade   # 已有数据的库先备份
-   make dev          # http://localhost:7788，健康检查 /healthz
+   make dev          # 后端 http://localhost:7788，运行时 http://localhost:7790，健康检查都是 /healthz
    ```
+
+   - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 时启动就向后端取图片模型）；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
 
    - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到 agent 配置入库的版本](#升级到-agent-配置入库的版本)第 4–6 步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
    - 带取帧、出图或视频理解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
@@ -40,7 +43,7 @@
 
 ## 服务器部署
 
-单机部署用 [deploy/compose.yaml](../deploy/compose.yaml)，起后端、前端与成片渲染服务三个容器，镜像从 ACR 拉取。
+单机部署用 [deploy/compose.yaml](../deploy/compose.yaml)，起后端、运行时服务、前端与成片渲染服务四个容器，镜像从 ACR 拉取。运行时服务的镜像 `iclip-runtime` 由 [runtime/Dockerfile](../runtime/Dockerfile) 以仓库根为上下文构建，装的是运行时与视频插件包。
 
 1. 安装 NVIDIA 驱动与 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)。后端与渲染服务的容器都要申请显卡，申请不到就起不来。
    - 没有显卡：删掉 compose.yaml 里 `server` 与 `render` 的 `deploy` 段，改用软件编解码与软件渲染。
@@ -56,7 +59,15 @@
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
    - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥的 Fernet key，必填，缺失或格式不对后端起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
-   - `configs/`（`config.yaml`）：后端只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
+   - `configs/`：只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
+     - `config.yaml`：后端的运行配置
+     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，接入的应用必须叫 `video`；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开，后端那边要有对应的配置段，见[配置与装配](architecture.md#2-配置与装配)
+   - `.env` 里运行时服务那几项（compose 只把这几项交给运行时容器）：
+     - `RUNTIME_URL=http://runtime:7790`，后端用
+     - `RUNTIME_APP_KEY`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `apps.video.key_env`）
+     - `RUNTIME_INTERNAL_TOKEN`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `hooks.token_env` 与 `plugins.config.internal_api.token_env`）
+     - `DATABASE_URL` 与 `CREDENTIAL_ENCRYPTION_KEYS` 两个服务共用
+     - `VIDEO_UNDERSTANDING_API_KEY`：`runtime.yaml` 打开了 `video` 段时它的 `api_key_env`
    - `components/`：成片的组件库，web 与渲染服务只读挂载，镜像里没有；按[发布组件库](#发布组件库)放好，没有它编辑器读不到组件目录、导出失败
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
    - 高清版（超分）：在 `.env` 把 `VIDEO_ENHANCE_SUBMIT_URL` 设为上游超分接口的完整提交地址（与 `VIDEO_SUBMIT_URL` 同一台服务，查询地址与 key 共用），并在 `configs/config.yaml` 的 `media_generation.video` 下写 `enhance` 段（`model`、从高到低的 `resolutions`、`fps`，取值见[配置模型](../server/src/iclip/config/models.py)）；不设地址则高清版没有开通，设了地址却没写这一段启动报错。
@@ -70,11 +81,13 @@
    curl http://localhost/api/healthz
    ```
 
+   - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 时启动就向后端取图片模型，取不到起不来（原因在 `docker compose logs runtime`）。后端日志里先有几条「运行时事件流断了」是正常的，运行时起来后出现「运行时事件流已连上」。
+
 6. 设置首个管理员：
    - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。
    - 用密码注册：执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
 
-后端只跑 1 个 worker。实时订阅存在进程内存里，增加 worker 前先看[运行、记录与订阅](architecture.md#5-运行记录与订阅)。
+后端与运行时服务各只跑 1 个 worker。实时投影、事件分发与浏览器订阅都存在进程内存里，增加 worker 前先看[运行、记录与订阅](architecture.md#5-运行记录与订阅)。
 
 ### 成片渲染服务
 
@@ -132,11 +145,11 @@
 2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
 3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`）。
 4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`（`config.old.yaml` 不动）。
-5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）：
+5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 段时，插件包打开时要向后端取图片模型，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
 
    ```bash
    docker compose run --rm -v ./agents:/app/agents:ro -v ./skills:/app/skills:ro server \
-     python -m scripts.import_agent_config \
+     python -m scripts.import_agent_config --runtime-config configs/runtime.yaml \
      --legacy-config configs/config.old.yaml --agents agents/agents.yaml --skills skills --dry-run
    ```
 

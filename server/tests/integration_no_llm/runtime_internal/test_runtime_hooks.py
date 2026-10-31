@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.assembly.config_services import ConfigServices
 from agent_runtime.config.model_providers.schemas import DefaultModelIn
 from fastapi import FastAPI
 from pydantic_ai.models import Model
@@ -19,11 +20,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.testclient import TestClient
 
-from iclip.app.bootstrap import AgentServices
 from tests.helpers.agents import TEST_PROVIDER, AgentSeed
 from tests.helpers.app import TEST_MODEL_NAME, new_conversation
 from tests.helpers.auth import login_as_editor
 from tests.helpers.references import plant_user
+from tests.helpers.runtime_backed import config_services_of
 from tests.helpers.ws import AGENT_ID, open_conversation, sign_in, until
 
 TOKEN = "runtime-internal-test-token-0123456789"
@@ -191,7 +192,7 @@ async def test_run_started_on_a_deleted_conversation_is_404(
     assert started.status_code == 404
 
 
-async def set_default_llm(services: AgentServices) -> None:
+async def set_default_llm(services: ConfigServices) -> None:
     providers = services.model_providers
     found = await providers.resolved(TEST_PROVIDER)
     assert found is not None
@@ -203,7 +204,7 @@ async def set_default_llm(services: AgentServices) -> None:
 async def test_turn_started_names_the_conversation_once(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    await set_default_llm(app.state.agent_services)
+    await set_default_llm(config_services_of(app))
     await login_as_editor(client, pg_url)
     conversation_id = await new_conversation(client, AGENT_ID)
     body = {"session_id": conversation_id, "text": "给新款连衣裙做一条 15 秒的短视频"}

@@ -164,6 +164,47 @@ def test_no_silent_exception_fallbacks() -> None:
     assert not violations, "\n".join(violations)
 
 
+RUNTIME_ALLOWLIST: dict[str, str] = {
+    "agent_runtime.client": "运行时服务的客户端库：HTTP 接口、两条 WebSocket、报错还原",
+    "agent_runtime.errors": "领域错误分类，两边同一套，客户端库按它还原运行时的 4xx",
+    "agent_runtime.urls": "地址形状判定",
+    "agent_runtime.app_wire": "会话接口的请求体与答复体",
+    "agent_runtime.hooks": "运行时回调后端的请求体",
+    "agent_runtime.live.frames": "两条 WebSocket 上运行时发的帧",
+    "agent_runtime.transcript.wire": "transcript 的消息请求体、读页信封与帧的信封基类",
+    "agent_runtime.transcript.ops": "transcript 实体：消息内容、主 agent 的 id",
+    "agent_runtime.file_store.store": "工作区文件的形状与路径规则",
+    "agent_runtime.file_store.namespace": "工作区与素材台账的命名空间规则",
+    "agent_runtime.material_ledger.store": "素材的形状",
+    # 配置页三组管理接口的路由声明在后端，合同照它导出：请求体模型与上限照用运行时的。
+    "agent_runtime.config.skills.schemas": "技能库管理接口的请求体",
+    "agent_runtime.config.skills.models": "技能导入包的大小上限",
+    "agent_runtime.config.model_providers.schemas": "模型供应商管理接口的请求体",
+    "agent_runtime.config.model_providers.models": "模型类型的词表",
+    "agent_runtime.config.agent_config.schemas": "agent 配置管理接口的请求体",
+    "agent_runtime.config.agent_config.package": "agent 导出包的大小上限",
+}
+"""后端源码能引用的运行时模块：接口与帧的形状、报错与客户端库。运行时的引擎、装配、服务、配置的用例与存储、
+插件、HTTP 路由都在运行时服务里，后端只经客户端库调它。"""
+
+
+def test_the_server_imports_only_the_runtime_shapes_and_client() -> None:
+    violations: list[str] = []
+    for path in _python_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                modules = [node.module]
+            elif isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            else:
+                continue
+            for module in modules:
+                if module.split(".")[0] == "agent_runtime" and module not in RUNTIME_ALLOWLIST:
+                    violations.append(f"{_rel(path)}: {module}")
+    assert not violations, "后端引用了运行时的内部模块:\n" + "\n".join(violations)
+
+
 def test_config_only_consumed_by_app() -> None:
 
     violations: list[str] = []

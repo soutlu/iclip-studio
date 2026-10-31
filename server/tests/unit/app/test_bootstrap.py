@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import uuid
-from typing import Literal
-
 import httpx
 import pytest
 from pydantic import ValidationError
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
-from iclip.app.bootstrap import AgentServices, AnnouncingFileStore, build_app
+from iclip.app.bootstrap import build_app
 from iclip.config import (
     AppSection,
     DbSection,
@@ -25,14 +22,11 @@ from iclip.config import (
     SsoSection,
     SubtitleSection,
     VideoGenerationSection,
-    VideoSection,
 )
 from iclip.config.models import IclipStudioSection
-from iclip.domains.agents.transcript_api import LiveConnections
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.app import TEST_CREDENTIAL_KEY
-from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import MemoryObjectStore
 
 
@@ -312,67 +306,3 @@ def test_nothing_is_probed_when_no_feature_needs_ffmpeg(
     monkeypatch.setattr("iclip.app.bootstrap.detect_codec", probe)
 
     build_app(minimal_config(), engine=engine())
-
-
-class _RecordingConnections(LiveConnections):
-    """记录文件变更帧，不创建 WS 连接。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.announced: list[tuple[uuid.UUID, uuid.UUID, str, str]] = []
-
-    def announce_fs_changed(
-        self,
-        owner: uuid.UUID,
-        conversation_id: uuid.UUID,
-        *,
-        path: str,
-        change: Literal["created", "modified", "deleted"] = "modified",
-    ) -> None:
-        self.announced.append((owner, conversation_id, path, change))
-
-
-async def test_tool_writes_announce_created_then_modified_then_deleted() -> None:
-
-    live = _RecordingConnections()
-    owner, conversation_id = uuid.uuid4(), uuid.uuid4()
-    store = AnnouncingFileStore(FakeFileStore(), live)
-
-    await store.write(f"{owner}/{conversation_id}", "video_shot.json", "{}")
-    await store.write(f"{owner}/{conversation_id}", "video_shot.json", "{ }")
-    await store.delete(f"{owner}/{conversation_id}", "video_shot.json")
-
-    assert live.announced == [
-        (owner, conversation_id, "video_shot.json", "created"),
-        (owner, conversation_id, "video_shot.json", "modified"),
-        (owner, conversation_id, "video_shot.json", "deleted"),
-    ]
-
-
-async def test_a_namespace_without_a_conversation_id_announces_nothing() -> None:
-    """无法解析对话 id 的命名空间不发送会话事件，但写入仍须成功。"""
-
-    live = _RecordingConnections()
-    store = AnnouncingFileStore(FakeFileStore(), live)
-
-    written = await store.write("logan/thread-1", "提纲.md", "三幕")
-
-    assert written.version == 1, "文件照样写下去了"
-    assert live.announced == []
-
-
-def test_the_video_plugin_registers_without_generation_oss_or_ffmpeg(
-    base_env: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("OSS_BUCKET", "")
-    monkeypatch.setenv("VIDEO_SUBMIT_URL", "")
-    monkeypatch.setenv("VIDEO_UNDERSTANDING_URL", "https://vision.test/responses")
-    monkeypatch.setenv("VIDEO_UNDERSTANDING_API_KEY", "test-key")
-    monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: False)
-    config = minimal_config().model_copy(
-        update={"video": VideoSection(understanding_model="vision")}
-    )
-    app = build_app(config, engine=engine())
-    services: AgentServices = app.state.agent_services
-    plugins = {plugin.name for plugin in services.agent_config.plugins().items}
-    assert {"workspace", "video"} <= plugins

@@ -24,7 +24,7 @@ from tests.helpers.auth import login_as_editor
 from tests.helpers.generation import MemoryObjectStore
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
-from tests.helpers.runtime_backed import build_backed_app
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
 
 AGENT_ID = "storyboard"
 BUCKET_BASE = "https://iclip-test.oss-ap-southeast-1.aliyuncs.com"
@@ -102,7 +102,7 @@ async def oss_app(
             object_store=bucket,
             image_fetcher=fetch,
         )
-        await seed_agents(built.state.agent_services, engine, agent_seeds)
+        await seed_agents(config_services_of(built), engine, agent_seeds)
         yield built
     finally:
         await engine.dispose()

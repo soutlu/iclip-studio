@@ -1,0 +1,110 @@
+"""运行时应用事件流的消费者：每个后端进程一条 ``/v1/events``，把会话活动与工作区文件变更转成浏览器的全局帧。
+
+事件按到达的先后逐个处理（发号、按今天的规则投递都在这一个任务里），所以同一段对话的帧在每条浏览器连接上
+仍按序号递增。事件流断了（运行时重启、网络中断、还没起来）先记日志，再以 1001 关掉此刻全部浏览器连接——
+断线期间的事件不补发，客户端重连后重订、重拉列表对齐——然后按封顶的退避重连。后端启动时运行时可能还没起来
+（它启动时要向后端取图片模型），所以第一次连接也走这条重连路。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import uuid
+from typing import Final
+
+import structlog
+from agent_runtime.client import AppEventFrame, RuntimeClient, RuntimeUnavailable
+from agent_runtime.live.frames import SessionActivity
+
+from iclip.domains.agents.transcript_api import GOING_AWAY, LiveConnections
+
+_logger = structlog.stdlib.get_logger(__name__)
+
+FIRST_RETRY_SECONDS: Final = 0.5
+MAX_RETRY_SECONDS: Final = 10.0
+"""重连的等待从 ``FIRST_RETRY_SECONDS`` 起每次翻倍，最多等这么久；连上一次就从头算。"""
+
+
+class RuntimeEvents:
+    """事件流的消费任务；``start`` / ``stop`` 随后端的 lifespan 起停。"""
+
+    def __init__(
+        self,
+        client: RuntimeClient,
+        live: LiveConnections,
+        *,
+        first_retry_seconds: float = FIRST_RETRY_SECONDS,
+        max_retry_seconds: float = MAX_RETRY_SECONDS,
+    ) -> None:
+        self._client = client
+        self._live = live
+        self._first_retry = first_retry_seconds
+        self._max_retry = max_retry_seconds
+        self._task: asyncio.Task[None] | None = None
+        self._connected = asyncio.Event()
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._consume())
+
+    async def stop(self) -> None:
+        """停掉消费任务，等它退出事件流的连接。"""
+
+        if self._task is None:
+            return
+        self._task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._task
+        self._task = None
+
+    async def wait_connected(self) -> None:
+        """等事件流连上；测试在开始发消息前经它确认不会漏掉活动。"""
+
+        await self._connected.wait()
+
+    async def _consume(self) -> None:
+        wait = self._first_retry
+        while True:
+            try:
+                async with self._client.connect_events() as events:
+                    self._connected.set()
+                    wait = self._first_retry
+                    _logger.info("运行时事件流已连上")
+                    async for event in events:
+                        self._handle(event)
+            except RuntimeUnavailable as exc:
+                self._connected.clear()
+                _logger.warning(
+                    "运行时事件流断了，关掉全部订阅连接后重连",
+                    reason=str(exc),
+                    retry_seconds=wait,
+                )
+            except Exception:
+                # 处理某一帧出了错：不让消费任务就此停掉、之后的活动全都发不出去，按断线处理重连。
+                self._connected.clear()
+                _logger.exception("处理运行时事件出错，关掉全部订阅连接后重连", retry_seconds=wait)
+            # 连上过又断的、一次都没连上的，一样关：浏览器重连后经 HTTP 重拉，补上断线期间的变化。
+            self._live.close_all(GOING_AWAY)
+            await asyncio.sleep(wait)
+            wait = min(wait * 2, self._max_retry)
+
+    def _handle(self, event: AppEventFrame) -> None:
+        owner = uuid.UUID(event.owner_user_id)
+        conversation_id = uuid.UUID(event.session_id)
+        if isinstance(event, SessionActivity):
+            activity = event.activity
+            self._live.announce_activity(
+                owner,
+                conversation_id,
+                busy=activity.busy,
+                pending_interaction=activity.pending_interaction,
+                last_turn_reason=activity.last_turn_reason,
+            )
+        else:
+            for entry in event.entries:
+                self._live.announce_fs_changed(
+                    owner, conversation_id, path=entry.path, change=entry.change
+                )
+
+
+__all__ = ["FIRST_RETRY_SECONDS", "MAX_RETRY_SECONDS", "RuntimeEvents"]
