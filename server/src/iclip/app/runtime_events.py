@@ -1,5 +1,6 @@
 """运行时应用事件流的消费者：每个后端进程一条 ``/v1/events``，把会话活动转成浏览器的全局帧。浏览器收到的
-就是运行时的 ``event.session.work_changed``（运行时多加的字段不转）；认不出类型的帧记日志后跳过。
+就是运行时发来的 ``event.session.work_changed`` 原文（运行时新加的字段一并到达），后端只按解析出的属主决定
+发给谁；认不出类型的帧不知道该发给谁，记日志后跳过。
 
 事件按到达的先后在这一个任务里逐个投递，所以同一段对话的帧在每条浏览器连接上仍按运行时发出的先后到达。
 事件流断了（运行时重启、网络中断、还没起来）先记日志，再以 1001 关掉此刻全部浏览器连接，然后按封顶的退避
@@ -15,8 +16,7 @@ import contextlib
 from typing import Final
 
 import structlog
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable
-from agent_runtime.live.frames import SessionWorkChanged
+from agent_runtime.client import RuntimeClient, RuntimeUnavailable, WorkChangedFrame
 
 from iclip.domains.agents.transcript_api import GOING_AWAY, LiveConnections
 
@@ -75,7 +75,7 @@ class RuntimeEvents:
                     wait = self._first_retry
                     _logger.info("运行时事件流已连上")
                     async for event in events:
-                        if isinstance(event, SessionWorkChanged):
+                        if isinstance(event, WorkChangedFrame):
                             self._live.announce_activity(event)
                         else:
                             _logger.info("运行时事件流上有认不出的帧，跳过", frame_type=event.type)

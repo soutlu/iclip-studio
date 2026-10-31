@@ -17,13 +17,18 @@ from typing import Annotated, Any, Final, Literal, Protocol
 
 import structlog
 from agent_runtime.app_wire import SessionPromptIn
-from agent_runtime.client import RawFrame, RuntimeClient, RuntimeUnavailable, TranscriptChannel
+from agent_runtime.client import (
+    RawFrame,
+    RuntimeClient,
+    RuntimeUnavailable,
+    TranscriptChannel,
+    WorkChangedFrame,
+)
 from agent_runtime.errors import DomainError
 from agent_runtime.live.frames import (
     Ack,
     Ping,
     PingPayload,
-    SessionWorkChanged,
     SubscribeAckPayload,
     timestamp_now,
 )
@@ -224,10 +229,12 @@ class LiveConnections:
             ),
         )
 
-    def announce_activity(self, frame: SessionWorkChanged) -> None:
-        """把运行时的活动帧原样发给属主与治理者的连接。"""
+    def announce_activity(self, frame: WorkChangedFrame) -> None:
+        """把运行时的活动帧发给属主与治理者的连接：按解析出的属主找连接，发的是运行时的原文。"""
 
-        self._announce(uuid.UUID(frame.owner_user_id), frame)
+        self._announce(
+            uuid.UUID(frame.event.owner_user_id), RawFrame(type=frame.event.type, text=frame.text)
+        )
 
     def announce_generation_changed(
         self,

@@ -4,8 +4,8 @@
 ``nonce`` 的 ``pong``、不交给调用方。所以只有调用方一直在收，连接才算活着：连着 20 秒不收，运行时以
 ``1001`` 关闭。
 
-对话内容流的帧不逐帧校验，交出帧头里的 ``type`` 与原文，应用原样转给浏览器；事件流上认得的事件解析成
-类型（多出的字段忽略），认不出的 ``type`` 交出原文，由调用方决定怎么办。两边都容忍运行时先于应用加字段、
+对话内容流的帧不逐帧校验，交出帧头里的 ``type`` 与原文，应用原样转给浏览器；事件流上认得的事件交出解析
+结果（多出的字段忽略）与原文，认不出的 ``type`` 只交出原文，由调用方决定怎么办。两边都容忍运行时先于应用加字段、
 加帧，两个服务不必严格同版本上线。
 
 运行时关连接、网络中断都抛 ``StreamClosed``（带关闭码），不以迭代结束收场；帧不是带 ``type`` 的 JSON、
@@ -39,8 +39,17 @@ class RawFrame:
     text: str
 
 
-AppEventFrame = SessionWorkChanged | RawFrame
-"""应用事件流上交给调用方的帧：会话活动解析成类型，认不出的 ``type`` 是原文（心跳已经回掉了）。"""
+@dataclass(frozen=True, slots=True)
+class WorkChangedFrame:
+    """事件流上的一帧会话活动：``event`` 是解析出的事件（多出的字段忽略），供应用找该通知的人；``text`` 是
+    运行时发来的原文，转发时原样发出，运行时新加的字段也就带到了浏览器。"""
+
+    event: SessionWorkChanged
+    text: str
+
+
+AppEventFrame = WorkChangedFrame | RawFrame
+"""应用事件流上交给调用方的帧：会话活动带着解析结果与原文，认不出的 ``type`` 只有原文（心跳已经回掉了）。"""
 
 
 class _FrameHead(BaseModel):
@@ -135,8 +144,8 @@ class EventStream:
     async def __anext__(self) -> AppEventFrame:
         frame = await self._socket.receive()
         if frame.type == _WORK_CHANGED:
-            return _parsed(SessionWorkChanged, frame.text)
+            return WorkChangedFrame(event=_parsed(SessionWorkChanged, frame.text), text=frame.text)
         return frame
 
 
-__all__ = ["AppEventFrame", "EventStream", "RawFrame", "TranscriptChannel"]
+__all__ = ["AppEventFrame", "EventStream", "RawFrame", "TranscriptChannel", "WorkChangedFrame"]

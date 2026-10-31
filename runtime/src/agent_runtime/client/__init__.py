@@ -16,6 +16,7 @@ from agent_runtime.client.streams import (
     EventStream,
     RawFrame,
     TranscriptChannel,
+    WorkChangedFrame,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "RuntimeUnavailable",
     "StreamClosed",
     "TranscriptChannel",
+    "WorkChangedFrame",
 ]

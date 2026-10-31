@@ -18,14 +18,9 @@ from agent_runtime.app_wire import (
     SessionOpenIn,
     SessionPromptIn,
 )
-from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed
+from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed, WorkChangedFrame
 from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.live.frames import (
-    Ack,
-    SessionWorkChanged,
-    TranscriptOpsFrame,
-    TranscriptResetFrame,
-)
+from agent_runtime.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import AttachmentSource, ImageContent, TextContent, TurnUpsertOp
 from agent_runtime.transcript.wire import Subscribe, SubscribePayload
@@ -196,8 +191,9 @@ async def test_event_stream_delivers_activity_during_a_run(
         session_id = await _open(reader)
         async with reader.connect_events() as events, asyncio.timeout(WAIT):
             await reader.submit_prompt(session_id, _prompt("prm_events"), owner=owner)
-            async for event in events:
-                assert isinstance(event, SessionWorkChanged)
+            async for frame in events:
+                assert isinstance(frame, WorkChangedFrame)
+                event = frame.event
                 if event.session_id == str(session_id):
                     assert event.owner_user_id == str(owner)
                     seen.append((event.payload.busy, event.payload.last_turn_reason))

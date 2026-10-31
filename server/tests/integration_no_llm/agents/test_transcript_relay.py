@@ -20,6 +20,7 @@ from agent_runtime.client import (
     RuntimeClient,
     StreamClosed,
     TranscriptChannel,
+    WorkChangedFrame,
 )
 from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.live.frames import Ping, PingPayload, timestamp_now
@@ -76,13 +77,20 @@ def _send(tc: TestClient, conversation_id: str, prompt_id: str) -> None:
 def _frames_until_turn_and_idle(ws: Any, conversation_id: str) -> list[dict[str, Any]]:
     """收这段对话的帧，直到这一轮在 transcript 上收了尾、活动也回到空闲。"""
 
-    frames: list[dict[str, Any]] = []
+    return [json.loads(raw) for raw in _texts_until_turn_and_idle(ws, conversation_id)]
+
+
+def _texts_until_turn_and_idle(ws: Any, conversation_id: str) -> list[str]:
+    """同 ``_frames_until_turn_and_idle``，交回浏览器收到的原文。"""
+
+    texts: list[str] = []
     turn_ended = idle = False
     for _ in range(200):
-        frame: dict[str, Any] = ws.receive_json()
+        raw: str = ws.receive_text()
+        frame: dict[str, Any] = json.loads(raw)
         if frame.get("session_id") != conversation_id:
             continue
-        frames.append(frame)
+        texts.append(raw)
         if frame["type"] == "transcript.ops" and any(
             op["op"] == "turn.upsert" and op["turn"]["state"] != "running"
             for op in frame["payload"]["ops"]
@@ -91,7 +99,7 @@ def _frames_until_turn_and_idle(ws: Any, conversation_id: str) -> list[dict[str,
         if frame["type"] == "event.session.work_changed" and not frame["payload"]["busy"]:
             idle = True
         if turn_ended and idle:
-            return frames
+            return texts
     raise AssertionError("没等到这一轮收尾与空闲两帧")
 
 
@@ -176,7 +184,7 @@ def _wire(frame: Any) -> dict[str, Any]:
 
     raw = (
         frame.text
-        if isinstance(frame, RawFrame)
+        if isinstance(frame, RawFrame | WorkChangedFrame)
         else frame.model_dump_json(exclude_none=True, by_alias=True)
     )
     sent: dict[str, Any] = json.loads(raw)
@@ -331,14 +339,17 @@ def test_runtime_frames_with_unknown_fields_reach_the_browser_verbatim(
 def test_added_event_fields_and_types_do_not_close_browser_connections(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """事件流上的活动多了字段、还多了后端不认识的帧：认得的照常转成全局帧，认不出的跳过，不当成断线去关
-    浏览器连接。"""
+    """事件流上的活动多了字段、还多了后端不认识的帧：活动按属主发出，浏览器收到的就是运行时发的那段原文；
+    认不出的不知道该发给谁，跳过，也不当成断线去关浏览器连接。"""
+
+    sent: list[str] = []
 
     def extend(wire: dict[str, Any]) -> tuple[str, ...] | None:
         if wire["type"] != "event.session.work_changed":
             return None
         novel = {"type": "event.session.something_new", "session_id": wire["session_id"]}
-        return (json.dumps(novel), _extended(wire))
+        sent.append(_extended(wire))
+        return (json.dumps(novel), sent[-1])
 
     _rewrite_runtime_frames(monkeypatch, extend)
     with TestClient(ws_agent_app) as tc:
@@ -349,13 +360,19 @@ def test_added_event_fields_and_types_do_not_close_browser_connections(
             subscribe(ws, conversation_id)
             until(ws, "transcript.reset")
             _send(tc, conversation_id, "prm_events_extended")
-            frames = _frames_until_turn_and_idle(ws, conversation_id)
+            texts = _texts_until_turn_and_idle(ws, conversation_id)
             subscribe(ws, str(uuid.uuid4()), frame_id="probe")
             _ack(ws, "probe")
         settled(tc, conversation_id)
 
-    work = [frame for frame in frames if frame["type"] == "event.session.work_changed"]
-    assert (work[0]["payload"]["busy"], work[-1]["payload"]["busy"]) == (True, False)
+    frames = [json.loads(raw) for raw in texts]
+    work = [raw for raw in texts if json.loads(raw)["type"] == "event.session.work_changed"]
+    mine = [raw for raw in sent if json.loads(raw)["session_id"] == conversation_id]
+    assert work == mine[: len(work)]
+    assert (json.loads(work[0])["payload"]["busy"], json.loads(work[-1])["payload"]["busy"]) == (
+        True,
+        False,
+    )
     assert not any(frame["type"] == "event.session.something_new" for frame in frames)
 
 

@@ -24,6 +24,7 @@ from agent_runtime.client import (
     RuntimeClient,
     RuntimeUnavailable,
     StreamClosed,
+    WorkChangedFrame,
 )
 from agent_runtime.live.frames import (
     Ack,
@@ -308,11 +309,13 @@ async def test_a_frame_without_a_readable_type_is_runtime_unavailable(
 async def test_events_tolerate_added_fields_and_hand_back_unknown_types_raw(
     fake: FakeRuntime,
 ) -> None:
-    """认得的事件多出字段照样解析（多的忽略），带多余字段的心跳照样回，认不出的类型原文交出、不断流。"""
+    """认得的事件多出字段照样解析（多的忽略）、原文一字不差地跟着交出，带多余字段的心跳照样回，认不出的
+    类型原文交出、不断流。"""
 
     novel = '{"type": "event.session.something_new", "session_id": "x"}'
+    extended = _with_extra(ACTIVITY)
     fake.script = [
-        Send(_with_extra(ACTIVITY)),
+        Send(extended),
         Send(_with_extra(Ping(timestamp=AT, payload=PingPayload(nonce="n3")))),
         Expect(),
         Send(novel),
@@ -326,7 +329,11 @@ async def test_events_tolerate_added_fields_and_hand_back_unknown_types_raw(
             async for event in events:
                 received.append(event)
 
-    assert received == [ACTIVITY, RawFrame(type="event.session.something_new", text=novel), IDLE]
+    assert received == [
+        WorkChangedFrame(event=ACTIVITY, text=extended),
+        RawFrame(type="event.session.something_new", text=novel),
+        WorkChangedFrame(event=IDLE, text=_text(IDLE)),
+    ]
     assert fake.inbound == [{"type": "pong", "payload": {"nonce": "n3"}}]
 
 
@@ -357,7 +364,7 @@ async def test_events_arrive_in_order_with_pings_answered_until_the_close(
             async for event in events:
                 received.append(event)
 
-    assert received == [ACTIVITY, IDLE]
+    assert [event.event for event in received] == [ACTIVITY, IDLE]
     assert fake.inbound == [{"type": "pong", "payload": {"nonce": "n2"}}]
     assert raised.value.code == 1001
 
