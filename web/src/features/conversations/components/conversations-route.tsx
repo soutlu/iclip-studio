@@ -17,6 +17,7 @@ import { useConversationRows } from '../conversation-rows'
 import { auditCoverUrl } from '../audit-cover'
 import { conversationStatus } from '../conversation-status'
 import { taskCellOf } from '../task-cell'
+import { useVideoProgress, videoPhaseOf, type VideoPhase } from '../video-progress.api'
 import { AuditFiltersBar } from './audit-filters'
 import type { PickerSource } from '@/shared/ui/search-picker'
 
@@ -51,6 +52,7 @@ export function ConversationsRoute({
   const rows = useConversationRows(query.data?.pages.flatMap((page) => page.items) ?? [], {
     keepDeleted: filters.deleted !== 'live',
   })
+  const videoProgress = useVideoProgress()
   const latest = query.data?.pages.at(-1)
   const totals =
     latest === undefined ? undefined : { runningTotal: latest.runningTotal, total: latest.total }
@@ -110,6 +112,7 @@ export function ConversationsRoute({
                     taskLabel={
                       conversation.taskId === null ? undefined : taskLabels.get(conversation.taskId)
                     }
+                    video={videoPhaseOf(videoProgress.data, conversation.id)}
                   />
                 ))}
               </ul>
@@ -174,6 +177,7 @@ type AuditRowProps = {
   taskLabel: string | undefined
   taskPreview: TaskPreview | undefined
   taskPreviewState: TaskPreviewState
+  video: VideoPhase
 }
 
 function AuditRow({
@@ -183,6 +187,7 @@ function AuditRow({
   taskLabel,
   taskPreview,
   taskPreviewState,
+  video,
 }: AuditRowProps) {
   const owner = ownerName ?? '未知用户'
   const status = conversationStatus(conversation.activity)
@@ -275,12 +280,8 @@ function AuditRow({
             ) : (
               <StatusBadge appearance="label" kind="conversation" status={status} />
             )}
-            {conversation.activity.videoGeneration === 'none' ? null : (
-              <StatusBadge
-                appearance="label"
-                kind="video"
-                status={conversation.activity.videoGeneration}
-              />
+            {video === 'none' ? null : (
+              <StatusBadge appearance="label" kind="video" status={video} />
             )}
             {conversation.completedAt === null ? null : <Tag variant="soft">属主已收尾</Tag>}
           </span>

@@ -18,6 +18,7 @@ import {
   type Conversation,
 } from '../conversations.api'
 import { useSeenRun } from '../conversations.unread'
+import { useVideoPhase } from '../video-progress.api'
 import {
   SIDEBAR_ROW_ACTIVE,
   SIDEBAR_ROW_CLASS,
@@ -72,7 +73,7 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
   const unread = useUnread(conversation, active)
   const status = conversationStatus(conversation.activity)
   const showUnread = unread && status === 'completed'
-  const video = conversation.activity.videoGeneration
+  const video = useVideoPhase(conversation.id)
   const videoLabel = video === 'none' ? undefined : `视频${mediaStatusLabel(video)}`
   const statusLabels = [
     ...(needsAttention(status) ? [conversationStatusLabel(status)] : []),

@@ -49,12 +49,13 @@ class ConversationActivity:
     pending_interaction: Literal["none", "approval", "question"] = "none"
     last_turn_reason: Literal["completed", "failed", "aborted"] | None = None
     """最近结束轮次的结果；从未完成轮次时为 None。"""
-    video_generation: Literal["none", "queued", "running"] = "none"
-    """这段对话下还没跑完的视频出片到哪一步；跑完与失败在分镜页看，这里不记。"""
 
 
 IDLE_ACTIVITY = ConversationActivity()
 """无运行记录或活动信息时使用的空闲状态。"""
+
+VideoPhase = Literal["queued", "running"]
+"""一段对话下还没跑完的视频记录到哪一步：至少一条已离开排队就是 running，全在排队是 queued。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +122,7 @@ __all__ = [
     "ConversationActivity",
     "EventWatermark",
     "TitleKind",
+    "VideoPhase",
     "WholeFilmDraft",
     "WholeFilmExport",
     "WholeFilmExportError",

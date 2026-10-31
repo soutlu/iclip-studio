@@ -17,12 +17,7 @@ function LiveFrames() {
 }
 
 const conversation: Conversation = {
-  activity: {
-    busy: false,
-    lastTurnReason: null,
-    pendingInteraction: 'none',
-    videoGeneration: 'none',
-  },
+  activity: { busy: false, lastTurnReason: null, pendingInteraction: 'none' },
   agentId: 'storyboard',
   collectionId: null,
   completedAt: null,

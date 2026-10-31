@@ -33,6 +33,9 @@ export const mockConversations: MockConversation[] = []
 /** 按对话 id 记它自己最新一条素材片的地址；只有审计列表带这一项，没记的为 null。 */
 export const mockLatestMasterUrls = new Map<string, string>()
 
+/** 视频进度（合同 §6）：按对话 id 记还没跑完的视频到哪一步，没记的就是没有。 */
+export const mockVideoProgress = new Map<string, 'queued' | 'running'>()
+
 /** 审计列表里的一行：对话本身加上它最新一条素材片的地址。 */
 export const mockAuditRow = (
   conversation: MockConversation,
@@ -57,7 +60,6 @@ export const addMockConversation = (
       busy: false,
       lastTurnReason: null,
       pendingInteraction: 'none',
-      videoGeneration: 'none',
     },
     agentId: 'storyboard',
     collectionId: null,
@@ -91,6 +93,7 @@ export const mockConversationOwner = (conversationId: string): string =>
 export const resetMockConversations = () => {
   mockConversations.length = 0
   mockLatestMasterUrls.clear()
+  mockVideoProgress.clear()
   mockEventSeqs.clear()
   mockCollections.length = 0
 }

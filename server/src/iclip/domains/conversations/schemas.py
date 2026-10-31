@@ -25,6 +25,7 @@ from iclip.domains.conversations.models import (
     Conversation,
     ConversationActivity,
     EventWatermark,
+    VideoPhase,
 )
 
 MAX_TITLE_CHARS: Final = 200
@@ -139,8 +140,6 @@ class ConversationActivityOut(CamelModel):
     busy: bool
     pending_interaction: Literal["none", "approval", "question"]
     last_turn_reason: Literal["completed", "failed", "aborted"] | None = None
-    video_generation: Literal["none", "queued", "running"]
-    """还没跑完的视频出片到哪一步；与轮次是否在跑互不蕴含。"""
 
 
 class ConversationOut(CamelModel):
@@ -232,6 +231,15 @@ class ConversationsAuditOut(CamelModel):
     next_cursor: str | None
     total: int
     running_total: int
+
+
+class ConversationVideoProgressOut(CamelModel):
+    """看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。
+
+    单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。
+    """
+
+    conversations: dict[uuid.UUID, VideoPhase]
 
 
 class ConversationFileOut(CamelModel):
@@ -602,7 +610,6 @@ def conversation_out(
             busy=activity.busy,
             pending_interaction=activity.pending_interaction,
             last_turn_reason=activity.last_turn_reason,
-            video_generation=activity.video_generation,
         ),
         last_seq=events.seq_of(conversation.id),
         event_epoch=events.epoch,
@@ -642,6 +649,7 @@ __all__ = [
     "ConversationPageOut",
     "ConversationRename",
     "ConversationTaskIn",
+    "ConversationVideoProgressOut",
     "ConversationsAuditItemOut",
     "ConversationsAuditOut",
     "ConversationsPageOut",

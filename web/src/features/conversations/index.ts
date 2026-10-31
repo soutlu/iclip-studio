@@ -8,6 +8,7 @@ export {
 export { useLiveConversations } from './conversations.live'
 export { useConversationRows } from './conversation-rows'
 export { useTaskConversations } from './task-conversations.api'
+export { useVideoPhase } from './video-progress.api'
 export { useLiveTaskConversations } from './task-conversations.live'
 export { useRecordOpenedConversation } from './conversations.unread'
 export { conversationStatus } from './conversation-status'

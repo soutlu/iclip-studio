@@ -5,6 +5,7 @@ import {
   useLiveTaskConversations,
   useTaskConversations,
   useConversationRows,
+  useVideoPhase,
   type Conversation,
 } from '@/features/conversations'
 import { ConversationVideos } from '@/features/storyboard'
@@ -98,7 +99,7 @@ function RelatedConversation({
   canReadVideos: boolean
 }) {
   const status = conversationStatus(conversation.activity)
-  const videoStatus = conversation.activity.videoGeneration
+  const videoStatus = useVideoPhase(conversation.id)
   return (
     <section aria-label={conversation.title} className="min-w-0 py-5 first:pt-2">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-2">

@@ -1975,21 +1975,11 @@
             ],
             "title": "Pendinginteraction",
             "type": "string"
-          },
-          "videoGeneration": {
-            "enum": [
-              "none",
-              "queued",
-              "running"
-            ],
-            "title": "Videogeneration",
-            "type": "string"
           }
         },
         "required": [
           "busy",
-          "pendingInteraction",
-          "videoGeneration"
+          "pendingInteraction"
         ],
         "title": "ConversationActivityOut",
         "type": "object"
@@ -2562,6 +2552,31 @@
           "taskId"
         ],
         "title": "ConversationTaskIn",
+        "type": "object"
+      },
+      "ConversationVideoProgressOut": {
+        "additionalProperties": false,
+        "description": "看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。\n\n单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。",
+        "properties": {
+          "conversations": {
+            "additionalProperties": {
+              "enum": [
+                "queued",
+                "running"
+              ],
+              "type": "string"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Conversations",
+            "type": "object"
+          }
+        },
+        "required": [
+          "conversations"
+        ],
+        "title": "ConversationVideoProgressOut",
         "type": "object"
       },
       "ConversationsAuditItemOut": {
@@ -16028,6 +16043,40 @@
           }
         ],
         "summary": "List Ungrouped",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/video-progress": {
+      "get": {
+        "description": "还有视频记录没跑完的对话各到哪一步；没列出的就是没有。\n\n出片、编辑段与合成都算，至少一条已离开排队就是 ``running``；字幕、音频、成片与超分记录不算。\n范围按记录的属主：普通用户只看自己的，治理者与替人办事的钥匙看全平台。收到本对话的视频帧\n就重拉这一份。",
+        "operationId": "read_video_progress_conversations_video_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationVideoProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Video Progress",
         "tags": [
           "conversations"
         ]

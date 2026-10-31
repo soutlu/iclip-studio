@@ -1130,10 +1130,6 @@ export type ConversationActivityOut = {
    * Pendinginteraction
    */
   pendingInteraction: 'none' | 'approval' | 'question'
-  /**
-   * Videogeneration
-   */
-  videoGeneration: 'none' | 'queued' | 'running'
 }
 
 /**
@@ -1453,6 +1449,22 @@ export type ConversationTaskIn = {
    * Taskid
    */
   taskId: string | null
+}
+
+/**
+ * ConversationVideoProgressOut
+ *
+ * 看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。
+ *
+ * 单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。
+ */
+export type ConversationVideoProgressOut = {
+  /**
+   * Conversations
+   */
+  conversations: {
+    [key: string]: 'queued' | 'running'
+  }
 }
 
 /**
@@ -8454,6 +8466,23 @@ export type ListUngroupedConversationsUngroupedGetResponses = {
 
 export type ListUngroupedConversationsUngroupedGetResponse =
   ListUngroupedConversationsUngroupedGetResponses[keyof ListUngroupedConversationsUngroupedGetResponses]
+
+export type ReadVideoProgressConversationsVideoProgressGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/conversations/video-progress'
+}
+
+export type ReadVideoProgressConversationsVideoProgressGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ConversationVideoProgressOut
+}
+
+export type ReadVideoProgressConversationsVideoProgressGetResponse =
+  ReadVideoProgressConversationsVideoProgressGetResponses[keyof ReadVideoProgressConversationsVideoProgressGetResponses]
 
 export type DeleteConversationConversationsConversationIdDeleteData = {
   body?: never

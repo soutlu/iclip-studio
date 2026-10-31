@@ -12,7 +12,7 @@ import hmac
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 import structlog
 from agent_runtime.errors import (
@@ -56,9 +56,6 @@ RUNTIME_INTERNAL_PREFIX: Final = "/internal/runtime"
 
 ResolvePrincipal = Callable[[uuid.UUID], Awaitable[Principal]]
 """按用户 id 重建用户主体；账号不存在抛 ``NotFound``，已停用抛 ``AuthenticationFailed``。"""
-
-VideoGenerationOf = Callable[[uuid.UUID], Awaitable[Literal["none", "queued", "running"]]]
-"""一段对话下还没跑完的视频出片到哪一步，同对话行上的 ``activity.videoGeneration``。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,13 +147,11 @@ def create_runtime_internal_router(
     user_principal: ResolvePrincipal,
     conversations: ConversationService,
     naming: TurnNaming,
-    video_generation_of: VideoGenerationOf,
     plugins: RuntimePluginServices,
 ) -> APIRouter:
     """建内部接口的路由，每条都要 ``Authorization: Bearer <token>``（定长比较），缺了或不对答 401。
 
-    开跑检查经 ``user_principal`` 重建属主主体；轮次开始交给 ``naming`` 在后台起名；
-    ``video_generation_of`` 补上运行开始回调里没有的视频出片阶段。"""
+    开跑检查经 ``user_principal`` 重建属主主体；轮次开始交给 ``naming`` 在后台起名。"""
 
     router = APIRouter(
         prefix=RUNTIME_INTERNAL_PREFIX,
@@ -184,7 +179,6 @@ def create_runtime_internal_router(
                 busy=reported.busy,
                 pending_interaction=reported.pending_interaction,
                 last_turn_reason=reported.last_turn_reason,
-                video_generation=await video_generation_of(payload.session_id),
             ),
         )
         return Response(status_code=204)
@@ -274,6 +268,5 @@ __all__ = [
     "ResolvePrincipal",
     "RuntimePluginServices",
     "TurnNaming",
-    "VideoGenerationOf",
     "create_runtime_internal_router",
 ]

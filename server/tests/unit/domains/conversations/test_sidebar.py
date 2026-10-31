@@ -160,6 +160,7 @@ def build(
         activities_of=activities,
         busy_conversation_ids=busy,
         latest_master_urls=_untouched,
+        video_progress_of=_untouched,
         same_style_files=SameStyleFiles(files=(), require_any=frozenset()),
         same_style_source=_untouched,
         event_watermark=SessionEventClock().snapshot,

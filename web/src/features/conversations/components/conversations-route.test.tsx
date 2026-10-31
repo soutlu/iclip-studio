@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TaskPreview, TaskPreviewState } from '@/shared/lib/task-preview'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
-import { mockLatestMasterUrls } from '@/testing/mocks/conversations'
+import { mockLatestMasterUrls, mockVideoProgress } from '@/testing/mocks/conversations'
 import {
   addMockConversation,
   addMockTask,
@@ -26,18 +26,8 @@ function LiveFrames() {
   return null
 }
 
-const RUNNING = {
-  busy: true,
-  lastTurnReason: null,
-  pendingInteraction: 'none',
-  videoGeneration: 'none',
-} as const
-const COMPLETED = {
-  busy: false,
-  lastTurnReason: 'completed',
-  pendingInteraction: 'none',
-  videoGeneration: 'none',
-} as const
+const RUNNING = { busy: true, lastTurnReason: null, pendingInteraction: 'none' } as const
+const COMPLETED = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' } as const
 
 /** session_id 位于信封；运行帧省略 last_turn_reason。 */
 const workChanged = (
@@ -146,6 +136,22 @@ describe('ConversationsRoute', () => {
     expect(await rowOf('我的片')).toHaveTextContent('测试用户')
     expect(await rowOf('跑完的片')).toHaveTextContent('已完成')
     expect(await rowOf('跑完的片')).toHaveTextContent('属主已收尾')
+  })
+
+  it('状态列的视频角标读视频进度：出现在里面的行才标，视频帧到了跟着变', async () => {
+    const { task, theirs } = seedThree()
+    mockVideoProgress.set(theirs.id, 'queued')
+    const { socket } = await render([{ id: task.id, label: task.title }])
+
+    expect(await within(await rowOf('小王的秋季片')).findByText('排队中')).toBeVisible()
+    expect(await rowOf('我的片')).not.toHaveTextContent(/排队中|生成中/)
+
+    mockVideoProgress.set(theirs.id, 'running')
+    socket.deliver(videoCompleted(theirs.id))
+    await waitFor(
+      () => expect(screen.getByRole('link', { name: /小王的秋季片/ })).toHaveTextContent('生成中'),
+      AUDIT_REFRESH_TIMEOUT,
+    )
   })
 
   it('已关联的需求单标题挂在行上', async () => {

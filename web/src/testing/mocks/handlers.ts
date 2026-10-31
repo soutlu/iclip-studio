@@ -22,6 +22,7 @@ import {
   mockAuditRow,
   mockCollections,
   mockConversations,
+  mockVideoProgress,
   resetMockConversations,
   type MockConversation,
 } from './conversations'
@@ -41,6 +42,7 @@ export {
   mockCollections,
   mockConversations,
   mockGovernor,
+  mockVideoProgress,
   resetMockConversations,
 }
 
@@ -203,6 +205,20 @@ export const handlers = [
       ...pageByCreated(rows.map(mockAuditRow), query.get('cursor'), limit),
       runningTotal: scoped.filter((item) => item.activity.busy).length,
       total: rows.length,
+    })
+  }),
+
+  // 范围按属主：治理者看全平台，其余只看自己的（合同 §6）。原型里按对话的属主近似记录的属主。
+  http.get('*/api/conversations/video-progress', () => {
+    const user = currentUser ?? mockAuthUser
+    const everyone = user.permissions.includes(PERMISSION.usersManage)
+    const owners = new Map(mockConversations.map((item) => [item.id, item.ownerUserId]))
+    return HttpResponse.json({
+      conversations: Object.fromEntries(
+        [...mockVideoProgress].filter(
+          ([conversationId]) => everyone || owners.get(conversationId) === user.id,
+        ),
+      ),
     })
   }),
 

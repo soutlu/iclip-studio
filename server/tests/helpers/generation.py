@@ -626,7 +626,7 @@ class InMemoryGenerationRepository:
         return self._replace(job_id, provider_status=provider_status)
 
     async def in_flight_by_conversation(
-        self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
         """在途汇总的优先级规则只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
 

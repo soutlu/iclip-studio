@@ -167,10 +167,10 @@ class GenerationRepository(Protocol):
         ...
 
     async def in_flight_by_conversation(
-        self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        """这些对话下还没跑完的某类任务各到哪一步；一条都没有的对话不在结果里。不按属主过滤，
-        调用方给的对话本来就是它能看的。"""
+        """挂着对话、还没跑完的某类任务按对话汇总到哪一步；一条都没有的对话不在结果里。
+        ``owner`` 按任务的属主过滤，为 None 不限属主。"""
         ...
 
     async def latest_master_by_conversation(
