@@ -28,7 +28,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import {
   CDN_HOST_PATTERN,
   CJK_FONT,
@@ -38,6 +38,7 @@ import {
   IntegrityError,
   RUNTIME,
   SyncError,
+  WEB_ROOT,
   checkCatalogFonts,
   cjkTwinFaces,
   compositionTarget,
@@ -69,6 +70,7 @@ const tarballArg = option('--tarball')
 const smokeDir = option('--smoke')
 const libraryDir = resolve(option('--library') ?? FIXTURES_DIR)
 const outDir = resolve(option('--out') ?? DEFAULT_OUT)
+const displayPath = (path) => relative(WEB_ROOT, path)
 
 /** 在 temp 里组装出完整的组件库；返回用到的 npm 包 tgz 摘要与全部文件。`lock` 为 null 时重新取摘要。 */
 async function assemble(temp, catalog, lock) {
@@ -373,7 +375,7 @@ async function main() {
     await rm(smokeDir, { recursive: true, force: true })
     await mkdir(smokeDir, { recursive: true })
     const { files } = await assemble(smokeDir, catalog, lock)
-    console.log(`冒烟筛选用的组件库：${smokeDir}（${files.length} 个文件）`)
+    console.log(`冒烟筛选用的组件库：${displayPath(smokeDir)}（${files.length} 个文件）`)
     return
   }
   await mkdir(outDir, { recursive: true })
@@ -386,7 +388,7 @@ async function main() {
       Object.entries(npmLock).sort(([a], [b]) => a.localeCompare(b)),
     )
     await writeFile(lockPath, `${JSON.stringify({ npm: sorted }, null, 2)}\n`)
-    console.log(`锁文件已更新：${lockPath}`)
+    console.log(`锁文件已更新：${displayPath(lockPath)}`)
     const version = await libraryVersion(libraryDir)
     if (existsSync(join(outDir, version))) await rm(scratch, { recursive: true, force: true })
     else await rename(scratch, join(outDir, version))
@@ -398,10 +400,10 @@ async function main() {
   const version = await libraryVersion(libraryDir)
   const versionDir = join(outDir, version)
   if (existsSync(versionDir)) {
-    console.log(`组件库 ${version} 已组装过，跳过：${versionDir}`)
+    console.log(`组件库 ${version} 已组装过，跳过：${displayPath(versionDir)}`)
   } else {
     const { files } = await assembleInto(versionDir, catalog, await readJson(lockPath))
-    console.log(`组件库已组装：${versionDir}（${files.length} 个文件）`)
+    console.log(`组件库已组装：${displayPath(versionDir)}（${files.length} 个文件）`)
   }
   await publishCatalog(catalog, version)
 }
@@ -416,7 +418,7 @@ async function publishCatalog(catalog, version) {
     readFile(join(versionDir, src), 'utf8'),
   )
   await writeAtomic(join(outDir, 'catalog.json'), `${JSON.stringify(published, null, 2)}\n`)
-  console.log(`组件目录已写入：${join(outDir, 'catalog.json')}（version ${version}）`)
+  console.log(`组件目录已写入：${displayPath(join(outDir, 'catalog.json'))}（version ${version}）`)
 }
 
 try {
