@@ -35,7 +35,7 @@ async def root(
 async def all_fields(engine: AsyncEngine) -> list[dict[str, str]]:
     async with engine.connect() as conn:
         rows = await conn.execute(
-            text("SELECT fields FROM iclip.provider_credentials ORDER BY name")
+            text("SELECT fields FROM agent_runtime.provider_credentials ORDER BY name")
         )
         return [dict(row[0]) for row in rows]
 

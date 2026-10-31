@@ -39,20 +39,6 @@ APP_TABLES = (
     "iclip.library_entry_tags",
     "iclip.brand_templates",
     "iclip.brand_profiles",
-    "iclip.skills",
-    "iclip.skill_draft_files",
-    "iclip.skill_versions",
-    "iclip.skill_version_files",
-    "iclip.model_providers",
-    "iclip.provider_credentials",
-    "iclip.provider_models",
-    "iclip.default_models",
-    "iclip.agents",
-    "iclip.agent_drafts",
-    "iclip.agent_versions",
-    "iclip.agent_revisions",
-    "iclip.agent_skill_bindings",
-    "iclip.agent_version_skills",
 )
 """iclip 里每个用例自己造数据的表。``library_tags`` 不在里面：预置的标签树由迁移写入，用例共用；自己
 加的标签由用例自己删掉。"""
@@ -71,6 +57,20 @@ AGENT_RUNTIME_TABLES = (
     "agent_runtime.materials",
     "agent_runtime.workspace_files",
     "agent_runtime.sessions",
+    "agent_runtime.skills",
+    "agent_runtime.skill_draft_files",
+    "agent_runtime.skill_versions",
+    "agent_runtime.skill_version_files",
+    "agent_runtime.model_providers",
+    "agent_runtime.provider_credentials",
+    "agent_runtime.provider_models",
+    "agent_runtime.default_models",
+    "agent_runtime.agents",
+    "agent_runtime.agent_drafts",
+    "agent_runtime.agent_versions",
+    "agent_runtime.agent_revisions",
+    "agent_runtime.agent_skill_bindings",
+    "agent_runtime.agent_version_skills",
 )
 
 LOCK_TIMEOUT = "10s"

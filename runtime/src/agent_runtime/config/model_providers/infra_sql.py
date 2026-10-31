@@ -44,7 +44,7 @@ from agent_runtime.config.model_providers.models import (
 )
 from agent_runtime.errors import NotFound, ValidationFailed
 
-DB_SCHEMA: Final = "iclip"
+DB_SCHEMA: Final = "agent_runtime"
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
@@ -74,7 +74,7 @@ provider_credentials_table = Table(
     ),
     Column("name", Text, nullable=False),
     Column("fields", JSONB, nullable=False),
-    Column("created_by", Uuid, ForeignKey(f"{DB_SCHEMA}.users.id"), nullable=False),
+    Column("created_by", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     UniqueConstraint("provider_id", "name", name="uq_provider_credentials_provider_name"),

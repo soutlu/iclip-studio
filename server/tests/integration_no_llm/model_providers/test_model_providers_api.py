@@ -72,7 +72,7 @@ async def stored_fields(engine: AsyncEngine, credential_id: str) -> dict[str, st
     async with engine.connect() as conn:
         raw = (
             await conn.execute(
-                text("SELECT fields FROM iclip.provider_credentials WHERE id = :id"),
+                text("SELECT fields FROM agent_runtime.provider_credentials WHERE id = :id"),
                 {"id": uuid.UUID(credential_id)},
             )
         ).scalar_one()

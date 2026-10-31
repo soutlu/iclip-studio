@@ -1,7 +1,7 @@
-"""比较 Alembic head 与 iclip schema 的 ORM 表、列集合，生成记录表另逐项比到可空性、外键名与
-索引定义，并确认在 head 上重复升级不出错。
+"""比较 Alembic head 与 ``iclip``、``agent_runtime`` 两个 schema 的表定义的表、列集合，生成记录表另
+逐项比到可空性、外键名与索引定义，并确认在 head 上重复升级不出错。
 
-_MODULE_METADATA 必须包含所有自有表模块的元数据，确保迁移对账完整。
+_MODULE_METADATA 必须包含两个 schema 里所有表模块的元数据，确保迁移对账完整。
 """
 
 from __future__ import annotations
@@ -12,6 +12,12 @@ from typing import Any
 from agent_runtime.config.agent_config.infra_sql import metadata_obj as agent_config_metadata
 from agent_runtime.config.model_providers.infra_sql import metadata_obj as model_providers_metadata
 from agent_runtime.config.skills.infra_sql import metadata_obj as skills_metadata
+from agent_runtime.file_store.pg import metadata_obj as file_store_metadata
+from agent_runtime.harness.jobs import metadata_obj as jobs_metadata
+from agent_runtime.harness.sessions import metadata_obj as sessions_metadata
+from agent_runtime.harness.step_store_pg import metadata_obj as step_store_metadata
+from agent_runtime.harness.usage_ledger_pg import metadata_obj as usage_ledger_metadata
+from agent_runtime.material_ledger.pg import metadata_obj as material_ledger_metadata
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import Column, MetaData, inspect, text
@@ -43,28 +49,39 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     skills_metadata,
     model_providers_metadata,
     agent_config_metadata,
+    step_store_metadata,
+    jobs_metadata,
+    sessions_metadata,
+    usage_ledger_metadata,
+    material_ledger_metadata,
+    file_store_metadata,
 )
+
+_SCHEMAS = (DB_SCHEMA, "agent_runtime")
+
+
+def _columns_in_db(sync_conn: Any) -> dict[str, set[str]]:
+    inspector = inspect(sync_conn)
+    return {
+        f"{schema}.{table}": {
+            column["name"] for column in inspector.get_columns(table, schema=schema)
+        }
+        for schema in _SCHEMAS
+        for table in inspector.get_table_names(schema=schema)
+        if table != "alembic_version"
+    }
 
 
 async def test_alembic_head_matches_orm_metadata(migrated_pg: str) -> None:
     engine = build_engine(migrated_pg)
     try:
         async with engine.connect() as conn:
-            actual: dict[str, set[str]] = await conn.run_sync(
-                lambda sync_conn: {
-                    table: {
-                        column["name"]
-                        for column in inspect(sync_conn).get_columns(table, schema=DB_SCHEMA)
-                    }
-                    for table in inspect(sync_conn).get_table_names(schema=DB_SCHEMA)
-                    if table != "alembic_version"
-                }
-            )
+            actual = await conn.run_sync(_columns_in_db)
     finally:
         await engine.dispose()
 
     expected = {
-        table.name: {column.name for column in table.columns}
+        table.fullname: {column.name for column in table.columns}
         for metadata in _MODULE_METADATA
         for table in metadata.tables.values()
     }

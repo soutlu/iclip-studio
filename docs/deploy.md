@@ -143,7 +143,7 @@
 
 1. 停服务（`docker compose stop server`），备份数据库；把部署目录的 `configs/`、`agents/`、`skills/` 另存一份，并把 `configs/config.yaml` 复制成 `configs/config.old.yaml`。
 2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
-3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`）。
+3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`，0045 把技能库、模型供应商与 agent 配置的表挪进 `agent_runtime`；第 5、6 步的切换命令要在它们之后跑）。
 4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`（`config.old.yaml` 不动）。
 5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 段时，插件包打开时要向后端取图片模型，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
 
