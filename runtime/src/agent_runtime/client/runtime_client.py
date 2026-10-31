@@ -71,6 +71,10 @@ from agent_runtime.transcript.wire import (
 DEFAULT_TIMEOUT: Final = httpx.Timeout(60.0, connect=5.0)
 """起标题要等模型、发消息要先装一次 agent，读写各给 60 秒；连接 5 秒连不上就算运行时不在。"""
 
+_CONNECTION_LIMITS: Final = httpx.Limits(max_connections=None, max_keepalive_connections=20)
+"""自建客户端的连接上限：总数不封顶，空闲保留数照 httpx 默认的 20。每条 WebSocket 独占一条连接直到断开，
+上游连接与浏览器连接一一对应，不能被请求池封顶，否则连满后普通请求也排不上；请求的并发由应用自己约束。"""
+
 _FILE_ENTRY = TypeAdapter(FileEntry)
 _STORED_FILE = TypeAdapter(StoredFile)
 _MATERIAL = TypeAdapter(Material)
@@ -119,7 +123,7 @@ class RuntimeClient:
     """运行时服务 ``/v1`` 的客户端，给应用的服务端（BFF）用。
 
     ``base_url`` 是运行时服务的根地址（不含 ``/v1``），``app_key`` 是这个应用的密钥。``http`` 给了就用它
-    发请求、由调用方负责关，不给就自己建一个（``transport`` 是给它的传输层，测试用来接
+    发请求、连接上限与关闭都归调用方，不给就自己建一个（``transport`` 是给它的传输层，测试用来接
     ``httpx.ASGITransport`` 或 ``httpx_ws.transport.ASGIWebSocketTransport``）。``timeout`` 用在每个请求
     与 WebSocket 握手上。
 
@@ -142,7 +146,11 @@ class RuntimeClient:
         self._key = app_key
         self._timeout = timeout
         self._owns_http = http is None
-        self._http = http if http is not None else httpx.AsyncClient(transport=transport)
+        self._http = (
+            http
+            if http is not None
+            else httpx.AsyncClient(transport=transport, limits=_CONNECTION_LIMITS)
+        )
 
     async def __aenter__(self) -> Self:
         if self._owns_http:
