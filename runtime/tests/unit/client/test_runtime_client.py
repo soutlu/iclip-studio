@@ -1,5 +1,6 @@
 """客户端库的 HTTP 一半：每个带类型方法发出的请求（方法、路径、查询、请求头、请求体）与答复解析，报错还原成
-领域错误或 ``RuntimeUnavailable``，管理接口原样透传。经 ``httpx.MockTransport`` 接住请求，不连服务。"""
+领域错误或 ``RuntimeUnavailable``（401、403 是 ``AppRejected``），管理接口除 401、403 外原样透传。经
+``httpx.MockTransport`` 接住请求，不连服务。"""
 
 from __future__ import annotations
 
@@ -30,14 +31,12 @@ from agent_runtime.app_wire import (
     TitleIn,
     TitleOut,
 )
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable
+from agent_runtime.client import AppRejected, RuntimeClient, RuntimeUnavailable
 from agent_runtime.errors import (
     AgentUnavailable,
-    AuthenticationFailed,
     Conflict,
     DomainError,
     NotFound,
-    PermissionDenied,
     ValidationFailed,
 )
 from agent_runtime.file_store.store import FileEntry, StoredFile
@@ -493,8 +492,6 @@ async def test_dot_segments_in_a_file_path_stay_inside_the_files_route(
 @pytest.mark.parametrize(
     ("status", "envelope", "error_type", "code"),
     [
-        (401, {"detail": "应用密钥无效"}, AuthenticationFailed, None),
-        (403, {"detail": "这个应用没有管理权限"}, PermissionDenied, None),
         (404, {"detail": "这段对话里没有这个文件"}, NotFound, None),
         (409, {"detail": "只能重新生成最后一轮"}, Conflict, None),
         (
@@ -528,6 +525,40 @@ async def test_error_envelopes_come_back_as_the_same_domain_error(
     assert type(raised.value) is error_type
     assert str(raised.value) == envelope["detail"]
     assert raised.value.code == code
+
+
+APP_REFUSALS = [
+    (401, {"detail": "应用密钥无效"}, "应用密钥无效"),
+    (403, {"detail": "这个应用没有管理权限"}, "这个应用没有管理权限"),
+    (401, "<html>401 Authorization Required</html>", ""),
+]
+APP_REFUSAL_IDS = ["401", "403", "401-not-an-envelope"]
+
+
+def _refusal(status: int, body: dict[str, str] | str) -> Callable[[httpx.Request], httpx.Response]:
+    if isinstance(body, str):
+        return lambda _r: httpx.Response(status, text=body)
+    return lambda _r: httpx.Response(status, json=body)
+
+
+@pytest.mark.parametrize(("status", "body", "detail"), APP_REFUSALS, ids=APP_REFUSAL_IDS)
+async def test_app_refusals_are_runtime_unavailable_not_domain_errors(
+    client: RuntimeClient,
+    recorder: Recorder,
+    status: int,
+    body: dict[str, str] | str,
+    detail: str,
+) -> None:
+    recorder.reply = _refusal(status, body)
+
+    with pytest.raises(AppRejected) as raised:
+        await client.run_status(SESSION)
+
+    assert isinstance(raised.value, RuntimeUnavailable)
+    assert not isinstance(raised.value, DomainError)
+    assert (raised.value.status, raised.value.detail) == (status, detail)
+    assert KEY not in str(raised.value)
+    assert KEY not in repr(raised.value)
 
 
 def _refuse(_request: httpx.Request) -> httpx.Response:
@@ -644,6 +675,24 @@ async def test_admin_errors_pass_through_untouched(
     assert request.headers["x-end-user"] == str(OWNER)
     assert request.headers["accept-language"] == "zh"
     assert json.loads(request.content) == {"lockVersion": 1}
+
+
+@pytest.mark.parametrize(("status", "body", "detail"), APP_REFUSALS, ids=APP_REFUSAL_IDS)
+async def test_admin_app_refusals_are_raised_not_passed_through(
+    client: RuntimeClient,
+    recorder: Recorder,
+    status: int,
+    body: dict[str, str] | str,
+    detail: str,
+) -> None:
+    recorder.reply = _refusal(status, body)
+
+    with pytest.raises(AppRejected) as raised:
+        await client.admin_request("POST", "skills", end_user=OWNER, json={})
+
+    assert (raised.value.status, raised.value.detail) == (status, detail)
+    assert KEY not in str(raised.value)
+    assert KEY not in repr(raised.value)
 
 
 async def test_admin_downloads_come_back_as_raw_bytes(

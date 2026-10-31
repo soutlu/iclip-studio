@@ -1,5 +1,5 @@
 """客户端库的两条 WebSocket：帧解析成 ``live.frames`` 的类型、``ping`` 自动回同 ``nonce`` 的 ``pong``、运行时
-关连接抛带关闭码的 ``StreamClosed``、帧解析不了是 ``RuntimeUnavailable``。
+关连接抛带关闭码的 ``StreamClosed``、认不出应用是 ``AppRejected``、帧解析不了是 ``RuntimeUnavailable``。
 
 对面是测试里的一个小 Starlette 应用，按脚本发帧、收帧、关连接，经 ``ASGIWebSocketTransport`` 接上，不碰库。
 """
@@ -10,13 +10,14 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 import pytest
 from httpx_ws.transport import ASGIWebSocketTransport
 from starlette.applications import Starlette
 from starlette.routing import WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable, StreamClosed
+from agent_runtime.client import AppRejected, RuntimeClient, RuntimeUnavailable, StreamClosed
 from agent_runtime.live.frames import (
     Ack,
     FsChanged,
@@ -188,13 +189,41 @@ async def test_a_server_close_raises_with_its_close_code(fake: FakeRuntime) -> N
 
 
 async def test_an_unknown_app_key_is_refused_before_the_handshake(fake: FakeRuntime) -> None:
-    with pytest.raises(StreamClosed) as raised:
+    with pytest.raises(AppRejected) as raised:
         async with _client(fake, key="not-this-app") as client:
             async with client.connect_events():
                 pass
 
-    assert raised.value.code == 1008
+    assert not isinstance(raised.value, StreamClosed)
+    assert raised.value.status is None
     assert "not-this-app" not in str(raised.value)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_a_handshake_answered_with_an_app_refusal_status_is_app_rejected(
+    status: int,
+) -> None:
+    """ASGI 服务器替握手前就关的连接代答 HTTP 403，经它连时看到的是这个，不是 1008。"""
+
+    transport = httpx.MockTransport(lambda _r: httpx.Response(status))
+    async with RuntimeClient("http://runtime.test", KEY, transport=transport) as client:
+        with pytest.raises(AppRejected) as raised:
+            async with client.connect_transcript():
+                pass
+
+    assert raised.value.status == status
+    assert KEY not in str(raised.value)
+
+
+async def test_a_handshake_answered_with_another_status_is_plain_runtime_unavailable() -> None:
+    transport = httpx.MockTransport(lambda _r: httpx.Response(502))
+    async with RuntimeClient("http://runtime.test", KEY, transport=transport) as client:
+        with pytest.raises(RuntimeUnavailable) as raised:
+            async with client.connect_transcript():
+                pass
+
+    assert not isinstance(raised.value, AppRejected)
+    assert raised.value.status == 502
 
 
 async def test_an_unparseable_frame_is_runtime_unavailable(fake: FakeRuntime) -> None:

@@ -1,6 +1,8 @@
-"""客户端库的报错：运行时答了约定的 4xx 就还原成同类的领域错误，答不上来是 ``RuntimeUnavailable``。
+"""客户端库的报错：运行时答了约定的 404、409、422 就还原成同类的领域错误，答不上来是 ``RuntimeUnavailable``。
 
 领域错误照原样带着运行时信封里的 ``detail`` 与 ``code``，应用按自己的错误映射答出时与进程内调用同一个信封。
+运行时的 401、403 只说调用的应用（密钥不对、没有管理权限），不说应用替谁操作，是部署配错了，抛
+``AppRejected``，也按答不上处理。
 """
 
 from __future__ import annotations
@@ -12,11 +14,9 @@ from pydantic import BaseModel, ValidationError
 
 from agent_runtime.errors import (
     AgentUnavailable,
-    AuthenticationFailed,
     Conflict,
     DomainError,
     NotFound,
-    PermissionDenied,
     ValidationFailed,
 )
 
@@ -34,11 +34,24 @@ class RuntimeUnavailable(Exception):
         """运行时答的状态码；没答上（连不上、超时）为空。"""
 
 
+class AppRejected(RuntimeUnavailable):
+    """运行时不认这个应用：密钥缺了或不对（401；WebSocket 握手前以 ``1008`` 关），或这个应用没有管理权限
+    （403）。
+
+    说的是应用的密钥与运行时的应用配置，不是应用替哪个用户操作，所以不还原成领域错误，按服务不可用处理。
+    ``detail`` 是运行时给的原因（信封里的 ``detail`` 或关闭原因，取不到为空），不含密钥。
+    """
+
+    def __init__(self, detail: str, *, status: int | None) -> None:
+        super().__init__("运行时拒绝了这个应用" + (f"：{detail}" if detail else ""), status=status)
+        self.detail = detail
+
+
 class StreamClosed(RuntimeUnavailable):
     """WebSocket 连接被关了，应用重连后按 §20 对齐。
 
-    ``code`` 是关闭码：运行时以 ``1001`` 关（心跳超时）、``1013`` 关（出站积压溢出）、握手前 ``1008``
-    （认不出应用）；网络中断、往已关的连接上发帧是 ``1006``。
+    ``code`` 是关闭码：运行时以 ``1001`` 关（心跳超时）、``1013`` 关（出站积压溢出）；网络中断、往已关的连接
+    上发帧是 ``1006``。握手前以 ``1008`` 关（认不出应用）不是这个，是 ``AppRejected``。
     """
 
     def __init__(self, code: int, detail: str = "") -> None:
@@ -52,14 +65,15 @@ class _ErrorEnvelope(BaseModel):
     code: str | None = None
 
 
+APP_REJECTION_STATUSES: Final = frozenset({401, 403})
+"""运行时只在认应用时答的状态码：401 是密钥缺了或不对，403 是这个应用没有管理权限。"""
+
 _DOMAIN_BY_STATUS: Final[dict[int, type[DomainError]]] = {
-    401: AuthenticationFailed,
-    403: PermissionDenied,
     404: NotFound,
     409: Conflict,
     422: ValidationFailed,
 }
-"""与运行时服务 ``http/errors.py`` 的状态码表逐条对应。"""
+"""与运行时服务 ``http/errors.py`` 的状态码表逐条对应，401、403 除外（见 ``APP_REJECTION_STATUSES``）。"""
 
 
 def transport_failure(exc: httpx.HTTPError) -> RuntimeUnavailable:
@@ -71,10 +85,22 @@ def transport_failure(exc: httpx.HTTPError) -> RuntimeUnavailable:
     )
 
 
+def app_rejection(response: httpx.Response) -> AppRejected:
+    """把一条 401 或 403 答复变成 ``AppRejected``；正文不是运行时的信封（比如中间的代理答的）时原因为空。"""
+
+    try:
+        detail = _ErrorEnvelope.model_validate_json(response.content).detail
+    except ValidationError:
+        detail = ""
+    return AppRejected(detail, status=response.status_code)
+
+
 def error_for(response: httpx.Response) -> DomainError | RuntimeUnavailable:
     """把一条非 2xx 答复还原成要抛的错误。"""
 
     status = response.status_code
+    if status in APP_REJECTION_STATUSES:
+        return app_rejection(response)
     domain = _DOMAIN_BY_STATUS.get(status)
     if domain is None:
         reason = "运行时服务出错" if status >= 500 else "运行时答了约定之外的状态码"
@@ -91,4 +117,12 @@ def error_for(response: httpx.Response) -> DomainError | RuntimeUnavailable:
     return error
 
 
-__all__ = ["RuntimeUnavailable", "StreamClosed", "error_for", "transport_failure"]
+__all__ = [
+    "APP_REJECTION_STATUSES",
+    "AppRejected",
+    "RuntimeUnavailable",
+    "StreamClosed",
+    "app_rejection",
+    "error_for",
+    "transport_failure",
+]

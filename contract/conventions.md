@@ -689,7 +689,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 ## 20. 运行时服务的实时通道与回调
 
-运行时服务给应用的服务端用，不直达浏览器。HTTP 接口以 [`runtime-openapi.json`](runtime-openapi.json) 为准；本节是它表达不了的两条 WebSocket 与三个回调。帧的模型在 [live/frames.py](../runtime/src/agent_runtime/live/frames.py)，回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)，应用照它们解析。Python 应用调 HTTP 接口与连两条 WebSocket 用运行时的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，报错与重试规则见[后端架构](../docs/architecture.md#1-模块职责)。
+运行时服务给应用的服务端用，不直达浏览器。HTTP 接口以 [`runtime-openapi.json`](runtime-openapi.json) 为准；本节是它表达不了的两条 WebSocket 与三个回调。帧的模型在 [live/frames.py](../runtime/src/agent_runtime/live/frames.py)，回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)，应用照它们解析。Python 应用调 HTTP 接口与连两条 WebSocket 用运行时的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，报错与重试规则见[后端架构](../docs/architecture.md#1-模块职责)。运行时答的 401、403（含 WebSocket 握手前的 `1008`）只说调用的应用（密钥缺了或不对、没有管理权限），从不说应用替哪个用户操作；客户端库把它们当成应用级拒绝、按运行时不可用抛出，应用不能转成自己用户的登录失效或无权限。
 
 ### 连接
 
