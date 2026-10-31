@@ -45,6 +45,7 @@ from iclip.app.image_generations import GenerationsAdapter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.app.runtime_internal import (
     RuntimePluginServices,
+    ShotServices,
     TurnNaming,
     create_runtime_internal_router,
 )
@@ -91,6 +92,10 @@ def internal_app(plugins: RuntimePluginServices) -> FastAPI:
     return app
 
 
+UNUSED = object()
+"""用例不经过的端口占位。"""
+
+
 def services(
     *,
     generations: ImageGenerations | None = None,
@@ -99,13 +104,21 @@ def services(
     breakdowns: ReferenceBreakdowns | None = None,
     image_models: frozenset[str] = frozenset(),
 ) -> RuntimePluginServices:
-    return RuntimePluginServices(
-        generations=generations,
-        boards=boards,
-        cuts=cuts,
-        breakdowns=breakdowns,
-        image_models=image_models,
+    """给了出图、取帧或切格任一个就挂上 ``shot_video``，没给的那几个用占位。"""
+
+    shot = (
+        ShotServices(
+            generations=(
+                generations if generations is not None else cast("ImageGenerations", UNUSED)
+            ),
+            boards=boards if boards is not None else cast("FrameBoards", UNUSED),
+            cuts=cuts if cuts is not None else cast("GridCuts", UNUSED),
+            image_models=image_models,
+        )
+        if any(port is not None for port in (generations, boards, cuts))
+        else None
     )
+    return RuntimePluginServices(shot_video=shot, breakdowns=breakdowns)
 
 
 def client_for(app: FastAPI) -> httpx.AsyncClient:
@@ -443,20 +456,49 @@ async def test_a_reference_breakdown_answers_the_document_or_the_failure() -> No
     ]
 
 
-async def test_image_models_list_the_configured_models_sorted() -> None:
-    app = internal_app(services(image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"})))
-
-    async with client_for(app) as client:
-        answered = await client.get("/internal/runtime/plugins/image-models")
-
-    assert answered.json() == {"models": ["gpt-image-2.5", "nano_banana_pro"]}
+SHOT_ROUTES = ("generations", "frame-boards", "grid-cuts")
+BREAKDOWN_ROUTES = ("reference-breakdowns",)
 
 
-async def test_services_that_are_not_configured_are_not_mounted() -> None:
-    async with client_for(internal_app(services())) as client:
-        answers = [
-            await client.post(f"/internal/runtime/plugins/{name}", json={})
-            for name in ("generations", "frame-boards", "grid-cuts", "reference-breakdowns")
-        ]
+@pytest.mark.parametrize(
+    ("plugins", "answer", "mounted"),
+    [
+        (services(), {"shot_video": None, "video_breakdown": False}, ()),
+        (
+            services(
+                generations=cast("ImageGenerations", UNUSED),
+                boards=cast("FrameBoards", UNUSED),
+                cuts=cast("GridCuts", UNUSED),
+                image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
+            ),
+            {
+                "shot_video": {"image_models": ["gpt-image-2.5", "nano_banana_pro"]},
+                "video_breakdown": False,
+            },
+            SHOT_ROUTES,
+        ),
+        (
+            services(breakdowns=cast("ReferenceBreakdowns", UNUSED)),
+            {"shot_video": None, "video_breakdown": True},
+            BREAKDOWN_ROUTES,
+        ),
+    ],
+    ids=["none", "shot_video", "video_breakdown"],
+)
+async def test_the_services_answer_matches_the_mounted_routes(
+    plugins: RuntimePluginServices, answer: dict[str, object], mounted: tuple[str, ...]
+) -> None:
+    """运行时启动时照这份核对：说开了的那组路由挂着（空请求体答 422），没开的答 404。"""
 
-    assert [answer.status_code for answer in answers] == [404, 404, 404, 404]
+    async with client_for(internal_app(plugins)) as client:
+        answered = await client.get("/internal/runtime/plugins/services")
+        statuses = {
+            name: (await client.post(f"/internal/runtime/plugins/{name}", json={})).status_code
+            for name in (*SHOT_ROUTES, *BREAKDOWN_ROUTES)
+        }
+
+    assert answered.status_code == 200
+    assert answered.json() == answer
+    assert statuses == {
+        name: 422 if name in mounted else 404 for name in (*SHOT_ROUTES, *BREAKDOWN_ROUTES)
+    }

@@ -1,14 +1,15 @@
-"""使用内存替身验证取帧与出图工具、生成重试、端口错误的转换与能力装配；抽帧拼板与切格的媒体处理
-在宿主服务里，由那边的测试覆盖。"""
+"""使用内存替身验证取帧与出图工具、生成重试、端口错误的转换与能力装配；查任务时后端不可达的两条经内部
+接口的 HTTP 客户端走一趟。抽帧拼板与切格的媒体处理在宿主服务里，由那边的测试覆盖。"""
 
 from __future__ import annotations
 
 import inspect
 import json
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
+import httpx
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
@@ -29,6 +30,7 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 from structlog.testing import capture_logs
 
+from iclip_video.internal_api import HttpImageGenerations, InternalApi, InternalApiError
 from iclip_video.shot_video.capability import (
     GenerationPolicy,
     ShotVideo,
@@ -685,6 +687,89 @@ async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
     assert "TOOL_WAIT_TIMEOUT" in result.message
     assert logs[-1]["error_code"] == "TOOL_WAIT_TIMEOUT"
     assert logs[-1]["job_id"] == str(generations.job_ids[0])
+
+
+HTTP_JOB = uuid.UUID("44444444-4444-4444-4444-444444444444")
+
+
+@dataclass
+class PollingBackend:
+    """经内部接口出图的后端替身：受理一次出图答 pending；查询按 ``polls`` 依次答或在传输层抛，
+    用完后答完成。"""
+
+    polls: list[httpx.Response | httpx.HTTPError]
+    submissions: int = 0
+    queries: int = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        job: dict[str, Any] = {"job_id": str(HTTP_JOB), "channel": "dev"}
+        if request.method == "POST":
+            self.submissions += 1
+            return httpx.Response(200, json={**job, "status": "pending"})
+        self.queries += 1
+        if self.polls:
+            answer = self.polls.pop(0)
+            if isinstance(answer, httpx.HTTPError):
+                raise answer
+            return answer
+        return httpx.Response(200, json={**job, "status": "completed", "output_url": GRID})
+
+    def tools(self, files: FakeFileStore, cuts: FakeCuts) -> ShotVideoToolset[object]:
+        api = InternalApi(
+            httpx.AsyncClient(transport=httpx.MockTransport(self), base_url="http://server.test")
+        )
+        toolset = mount_shot_video(
+            space=FileSpace(store=files, namespace=workspace_namespace),
+            ledger=FakeMaterialLedger(),
+            generations=HttpImageGenerations(api),
+            boards=FakeBoards(),
+            cuts=cuts,
+            policy=FAST,
+        ).get_toolset()
+        assert isinstance(toolset, ShotVideoToolset)
+        return toolset
+
+
+async def test_generate_keeps_polling_while_the_backend_restarts(
+    ctx: RunContext[object], files: FakeFileStore, cuts: FakeCuts
+) -> None:
+    """查任务时后端重启（502/503、连不上）：已付费的任务还在跑，接着查到它完成，工具照常交回结果。"""
+
+    backend = PollingBackend(
+        polls=[
+            httpx.Response(503, json={"detail": "Service Unavailable"}),
+            httpx.ConnectError("connection refused"),
+            httpx.Response(502, text="Bad Gateway"),
+        ]
+    )
+    await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
+
+    with capture_logs() as logs:
+        result = await backend.tools(files, cuts).generate_shot_frames(
+            ctx, [FrameRequest(no="S1-1", prompt="猫")], [], "全局参考", "9:16"
+        )
+
+    assert result.return_value == {"frames": [{"no": "S1-1", "url": cut_url(HTTP_JOB, "S1-1")}]}
+    assert (backend.submissions, backend.queries) == (1, 4)
+    assert [log["job_id"] for log in logs if log["event"] == "查出图任务暂时失败"] == [
+        str(HTTP_JOB)
+    ] * 3
+
+
+async def test_generate_reports_a_deterministic_poll_failure(
+    ctx: RunContext[object], files: FakeFileStore, cuts: FakeCuts
+) -> None:
+    """查任务答 404 之类不是暂时的：照旧报错，不接着等，也不另起一张。"""
+
+    backend = PollingBackend(polls=[httpx.Response(404, json={"detail": "Not Found"})])
+    await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
+
+    with pytest.raises(InternalApiError, match="答 404"):
+        await backend.tools(files, cuts).generate_shot_frames(
+            ctx, [FrameRequest(no="S1-1", prompt="猫")], [], "全局参考", "9:16"
+        )
+
+    assert (backend.submissions, backend.queries) == (1, 1)
 
 
 @pytest.mark.parametrize(

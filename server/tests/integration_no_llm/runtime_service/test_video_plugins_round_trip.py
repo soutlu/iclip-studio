@@ -27,6 +27,7 @@ from fastapi import FastAPI
 from iclip_video.registry import open_video_plugins
 from iclip_video.shot_video.extraction import EXTRACTION_PATH
 from iclip_video.shot_video.generation import IMAGE_MODEL
+from iclip_video.shot_video.ports import GridCuts, ImageGenerations
 from iclip_video.video_document import video_doc_path
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
@@ -36,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from iclip.app.errors import install_error_handlers
 from iclip.app.runtime_internal import (
     RuntimePluginServices,
+    ShotServices,
     TurnNaming,
     create_runtime_internal_router,
 )
@@ -135,6 +137,10 @@ def objects() -> FakeObjects:
     return FakeObjects()
 
 
+UNUSED = object()
+"""这次只取帧：出图与切格的端口用占位。"""
+
+
 def backend_app(boards: FrameBoardsAdapter) -> FastAPI:
     """后端的内部接口：真实的取帧拼板适配器与接入的图片模型，回调用不到对话服务。"""
 
@@ -148,11 +154,13 @@ def backend_app(boards: FrameBoardsAdapter) -> FastAPI:
             conversations=conversations,
             naming=TurnNaming(conversations),
             plugins=RuntimePluginServices(
-                generations=None,
-                boards=boards,
-                cuts=None,
+                shot_video=ShotServices(
+                    generations=cast("ImageGenerations", UNUSED),
+                    boards=boards,
+                    cuts=cast("GridCuts", UNUSED),
+                    image_models=frozenset({IMAGE_MODEL}),
+                ),
                 breakdowns=None,
-                image_models=frozenset({IMAGE_MODEL}),
             ),
         )
     )

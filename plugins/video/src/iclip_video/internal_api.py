@@ -3,7 +3,9 @@
 路径、请求、答复与状态码见 contract/conventions.md §21；请求与答复用各插件包 ``wire.py`` 里的模型，与后端
 那一侧共用。后端答的 422 还原成端口声明的错误、原话不变，工具照进程内那样处理。其余失败（连不上、超时、
 令牌不对、404、5xx、答复形状不对）抛 ``InternalApiError``：与进程内适配器的意外错误一样，工具不接，
-这次工具调用失败，不翻成让模型改参数的错误。
+这次工具调用失败，不翻成让模型改参数的错误。其中后端暂时不可达（传输错误、超时与 502/503/504）是它的子类
+``InternalApiUnavailable``；只有查出图任务把它还原成端口的 ``ImageJobUnavailable``，让轮询接着等，
+提交不是幂等的，照旧失败即报。
 """
 
 from __future__ import annotations
@@ -16,12 +18,14 @@ from typing import Any, Final
 import httpx
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
+from iclip_video.plugin_services import PluginServices
 from iclip_video.shot_video.ports import (
     AnchorSheets,
     BoardsResult,
     ExtractionLedger,
     GridCutFailed,
     ImageJob,
+    ImageJobUnavailable,
     ImageRequest,
     InvalidImageRequest,
     ShotCells,
@@ -33,7 +37,6 @@ from iclip_video.shot_video.wire import (
     GridCutCall,
     GridCutFailure,
     GridCutResult,
-    ImageModels,
     ImageSubmission,
 )
 from iclip_video.video_breakdown.ports import FailedBreakdown
@@ -42,17 +45,31 @@ from iclip_video.video_breakdown.wire import ReferenceBreakdownCall, ReferenceBr
 PLUGINS_PATH: Final = "/internal/runtime/plugins"
 """插件服务在后端的路径前缀；客户端的 ``base_url`` 是后端的根地址。"""
 
+CONNECT_TIMEOUT_SECONDS: Final = 10.0
+"""连后端内部接口建连的上限。"""
+
+POLL_TIMEOUT: Final = httpx.Timeout(30.0, connect=CONNECT_TIMEOUT_SECONDS)
+"""查一次出图任务的上限。共用客户端的答复上限要等最慢的拆解与取帧，用在轮询上，总时限只在两次查询之间
+检查，就形同虚设。"""
+
+_UNAVAILABLE_STATUSES: Final = frozenset({502, 503, 504})
+"""网关或后端暂时答不了：后端重启、过载或网关超时。"""
+
 _EXCERPT_LIMIT: Final = 300
 
 _IMAGE_JOB: Final = TypeAdapter(ImageJob)
 _BOARDS_RESULT: Final = TypeAdapter(BoardsResult)
 _GRID_CUT_RESULT: Final = TypeAdapter(GridCutResult)
 _BREAKDOWN_RESULT: Final = TypeAdapter(ReferenceBreakdownResult)
-_IMAGE_MODELS: Final = TypeAdapter(ImageModels)
+_PLUGIN_SERVICES: Final = TypeAdapter(PluginServices)
 
 
 class InternalApiError(RuntimeError):
     """后端内部接口没给出约定的答复。消息带方法、路径与状态码或连接错误的类名，不带令牌。"""
+
+
+class InternalApiUnavailable(InternalApiError):
+    """后端暂时不可达：传输错误、超时，或答 502/503/504。请求可能到了后端，也可能没到。"""
 
 
 class _Envelope(BaseModel):
@@ -77,21 +94,30 @@ class InternalApi:
         *,
         body: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
+        timeout: httpx.Timeout | None = None,
     ) -> httpx.Response:
-        """发一次请求交回答复，不看状态码。
+        """发一次请求交回答复，不看状态码。``timeout`` 不给就用客户端的上限。
 
         Raises:
-            InternalApiError: 连不上、超时等传输错误。
+            InternalApiUnavailable: 连不上、超时等传输错误。
+            InternalApiError: 其余请求错误。
         """
 
+        where = f"{method} {PLUGINS_PATH}{path}"
         try:
             return await self._client.request(
-                method, f"{PLUGINS_PATH}{path}", json=body, params=params
+                method,
+                f"{PLUGINS_PATH}{path}",
+                json=body,
+                params=params,
+                timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT,
             )
-        except httpx.HTTPError as exc:
-            raise InternalApiError(
-                f"后端内部接口 {method} {PLUGINS_PATH}{path} 连不上（{type(exc).__name__}）"
+        except httpx.TransportError as exc:
+            raise InternalApiUnavailable(
+                f"后端内部接口 {where} 连不上（{type(exc).__name__}）"
             ) from exc
+        except httpx.HTTPError as exc:
+            raise InternalApiError(f"后端内部接口 {where} 没发成（{type(exc).__name__}）") from exc
 
     def answer[T](self, response: httpx.Response, adapter: TypeAdapter[T]) -> T:
         """2xx 的答复按 ``adapter`` 读出来。
@@ -140,11 +166,17 @@ class InternalApi:
 
     @staticmethod
     def unexpected(response: httpx.Response, *, why: str | None = None) -> InternalApiError:
-        """把一个不合约定的答复写成 ``InternalApiError``：状态码加答复开头一段。"""
+        """把一个不合约定的答复写成 ``InternalApiError``：状态码加答复开头一段；502/503/504 写成
+        ``InternalApiUnavailable``。"""
 
         request = response.request
         reason = f"，{why}" if why is not None else ""
-        return InternalApiError(
+        kind = (
+            InternalApiUnavailable
+            if response.status_code in _UNAVAILABLE_STATUSES
+            else InternalApiError
+        )
+        return kind(
             f"后端内部接口 {request.method} {request.url.path} 答 {response.status_code}{reason}："
             f"{response.text[:_EXCERPT_LIMIT]}"
         )
@@ -164,10 +196,18 @@ class HttpImageGenerations:
         return self._api.answer(response, _IMAGE_JOB)
 
     async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
-        response = await self._api.send(
-            "GET", f"/generations/{job_id}", params={"user_id": str(user_id)}
-        )
-        return self._api.answer(response, _IMAGE_JOB)
+        """查一次任务，上限 ``POLL_TIMEOUT``；后端暂时不可达还原成 ``ImageJobUnavailable``。"""
+
+        try:
+            response = await self._api.send(
+                "GET",
+                f"/generations/{job_id}",
+                params={"user_id": str(user_id)},
+                timeout=POLL_TIMEOUT,
+            )
+            return self._api.answer(response, _IMAGE_JOB)
+        except InternalApiUnavailable as exc:
+            raise ImageJobUnavailable(str(exc)) from exc
 
 
 class HttpFrameBoards:
@@ -232,24 +272,27 @@ class HttpReferenceBreakdowns:
         return self._api.answer(response, _BREAKDOWN_RESULT).outcome()
 
 
-async def image_models(api: InternalApi) -> frozenset[str]:
-    """后端接入的图片模型名，经 ``/plugins/image-models``。
+async def plugin_services(api: InternalApi) -> PluginServices:
+    """后端开了哪些插件服务，经 ``/plugins/services``。
 
     Raises:
         InternalApiError: 后端连不上或没给出约定的答复。
     """
 
-    response = await api.send("GET", "/image-models")
-    return frozenset(api.answer(response, _IMAGE_MODELS).models)
+    response = await api.send("GET", "/services")
+    return api.answer(response, _PLUGIN_SERVICES)
 
 
 __all__ = [
+    "CONNECT_TIMEOUT_SECONDS",
     "PLUGINS_PATH",
+    "POLL_TIMEOUT",
     "HttpFrameBoards",
     "HttpGridCuts",
     "HttpImageGenerations",
     "HttpReferenceBreakdowns",
     "InternalApi",
     "InternalApiError",
-    "image_models",
+    "InternalApiUnavailable",
+    "plugin_services",
 ]

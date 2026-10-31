@@ -1,5 +1,6 @@
 """四个端口的 HTTP 客户端：请求的路径与请求体照 conventions §21，答复读回端口的值；422 还原成端口声明的
-错误、原话不变；连不上、超时、其他状态码与形状不对的答复都抛 ``InternalApiError``。"""
+错误、原话不变；连不上、超时、其他状态码与形状不对的答复都抛 ``InternalApiError``，其中后端暂时不可达是
+``InternalApiUnavailable``，查出图任务时还原成 ``ImageJobUnavailable``。"""
 
 from __future__ import annotations
 
@@ -20,8 +21,10 @@ from iclip_video.internal_api import (
     HttpReferenceBreakdowns,
     InternalApi,
     InternalApiError,
-    image_models,
+    InternalApiUnavailable,
+    plugin_services,
 )
+from iclip_video.plugin_services import PluginServices, ShotVideoServices
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
     AnchorSheets,
@@ -32,6 +35,7 @@ from iclip_video.shot_video.ports import (
     FrameBoardsFailed,
     GridCutFailed,
     ImageJob,
+    ImageJobUnavailable,
     ImageRequest,
     InvalidImageRequest,
     LedgerBoard,
@@ -124,6 +128,7 @@ async def test_an_image_job_is_read_back_for_its_owner() -> None:
     )
     assert request.url.params["user_id"] == str(USER)
     assert job == ImageJob(job_id=JOB, status="pending", channel="dev")
+    assert request.extensions["timeout"]["read"] == 30.0, "查一次任务用短上限，不用客户端的整段上限"
 
 
 async def test_a_refused_image_request_is_an_invalid_image_request_in_the_same_words() -> None:
@@ -250,14 +255,18 @@ async def test_a_reference_breakdown_comes_back_as_the_document_or_the_failure()
     assert failure == FailedBreakdown(reason="video_unreadable")
 
 
-async def test_image_models_are_read_as_a_set() -> None:
-    backend = Backend(body={"models": ["gpt-image-2.5", "nano_banana_pro"]})
+async def test_plugin_services_are_read_back() -> None:
+    backend = Backend(
+        body={"shot_video": {"image_models": ["gpt-image-2.5"]}, "video_breakdown": False}
+    )
 
-    models = await image_models(backend.api())
+    services = await plugin_services(backend.api())
 
     (request,) = backend.seen
-    assert (request.method, request.url.path) == ("GET", "/internal/runtime/plugins/image-models")
-    assert models == frozenset({"gpt-image-2.5", "nano_banana_pro"})
+    assert (request.method, request.url.path) == ("GET", "/internal/runtime/plugins/services")
+    assert services == PluginServices(
+        shot_video=ShotVideoServices(image_models=("gpt-image-2.5",)), video_breakdown=False
+    )
 
 
 async def submit(api: InternalApi) -> object:
@@ -272,12 +281,12 @@ async def ensure(api: InternalApi) -> object:
     return await HttpReferenceBreakdowns(api).ensure(USER, "https://cdn.test/ok.mp4")
 
 
-async def list_models(api: InternalApi) -> object:
-    return await image_models(api)
+async def list_services(api: InternalApi) -> object:
+    return await plugin_services(api)
 
 
-CALLS = [submit, get_job, call_boards, call_cut, ensure, list_models]
-CALL_IDS = ["submit", "get", "frame-boards", "grid-cuts", "breakdowns", "image-models"]
+CALLS = [submit, get_job, call_boards, call_cut, ensure, list_services]
+CALL_IDS = ["submit", "get", "frame-boards", "grid-cuts", "breakdowns", "services"]
 
 
 @pytest.mark.parametrize(
@@ -289,29 +298,55 @@ CALL_IDS = ["submit", "get", "frame-boards", "grid-cuts", "breakdowns", "image-m
         (500, {"detail": "Internal Server Error"}),
     ],
 )
+@pytest.mark.parametrize("call", [submit, get_job], ids=["submit", "get"])
 async def test_any_other_status_is_an_internal_api_error_naming_it(
-    status: int, body: dict[str, str]
+    call: Callable[[InternalApi], Awaitable[object]], status: int, body: dict[str, str]
 ) -> None:
+    """确定性的失败不当成暂时不可达：查任务时也照样报，不让轮询接着等。"""
+
     backend = Backend(status=status, body=body)
 
     with pytest.raises(InternalApiError) as raised:
-        await HttpImageGenerations(backend.api()).submit(USER, REQUEST)
+        await call(backend.api())
 
+    assert not isinstance(raised.value, InternalApiUnavailable)
     assert f"答 {status}" in str(raised.value)
     assert body["detail"] in str(raised.value)
 
 
-@pytest.mark.parametrize(
-    "error",
-    [httpx.ConnectError("connection refused"), httpx.ReadTimeout("timed out")],
-    ids=["connect", "timeout"],
-)
-async def test_a_transport_failure_is_an_internal_api_error(
-    error: httpx.HTTPError,
+UNAVAILABLE: list[Callable[[], Backend]] = [
+    lambda: Backend(raises=httpx.ConnectError("connection refused")),
+    lambda: Backend(raises=httpx.ReadTimeout("timed out")),
+    lambda: Backend(status=502, body={"detail": "Bad Gateway"}),
+    lambda: Backend(status=503, body={"detail": "Service Unavailable"}),
+    lambda: Backend(status=504, body={"detail": "Gateway Timeout"}),
+]
+UNAVAILABLE_IDS = ["connect", "timeout", "502", "503", "504"]
+
+
+@pytest.mark.parametrize("backend", UNAVAILABLE, ids=UNAVAILABLE_IDS)
+async def test_an_unreachable_backend_is_unavailable_and_the_submission_fails(
+    backend: Callable[[], Backend],
 ) -> None:
+    """提交不是幂等的：后端暂时不可达也照样失败即报，不在端口上翻成可以接着等的错误。"""
+
+    with pytest.raises(InternalApiUnavailable):
+        await submit(backend().api())
+
+
+@pytest.mark.parametrize("backend", UNAVAILABLE, ids=UNAVAILABLE_IDS)
+async def test_an_unreachable_backend_while_polling_is_an_image_job_unavailable(
+    backend: Callable[[], Backend],
+) -> None:
+    with pytest.raises(ImageJobUnavailable):
+        await get_job(backend().api())
+
+
+async def test_a_transport_failure_names_its_cause() -> None:
+    error = httpx.ConnectError("connection refused")
     backend = Backend(raises=error)
 
-    with pytest.raises(InternalApiError, match=f"连不上（{type(error).__name__}）") as raised:
+    with pytest.raises(InternalApiError, match="连不上（ConnectError）") as raised:
         await HttpImageGenerations(backend.api()).submit(USER, REQUEST)
 
     assert raised.value.__cause__ is error

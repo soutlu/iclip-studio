@@ -25,6 +25,7 @@ from agent_runtime.hooks import GatePayload, RunStartedPayload, TurnStartedPaylo
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from iclip_video.plugin_services import PluginServices, ShotVideoServices
 from iclip_video.shot_video.ports import (
     BoardsResult,
     FrameBoards,
@@ -41,7 +42,6 @@ from iclip_video.shot_video.wire import (
     GridCutCall,
     GridCutFailure,
     GridCutResult,
-    ImageModels,
     ImageSubmission,
 )
 from iclip_video.video_breakdown.ports import ReferenceBreakdowns
@@ -59,16 +59,33 @@ ResolvePrincipal = Callable[[uuid.UUID], Awaitable[Principal]]
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimePluginServices:
-    """插件端口在后端的实现，经内部接口给运行时服务用；为 None 的那组路由不挂。
+class ShotServices:
+    """``shot_video`` 插件要的三个端口与接入的图片模型名，一起挂或一起不挂。"""
 
-    ``image_models`` 是接入的图片模型名，没开媒体生成时为空。"""
-
-    generations: ImageGenerations | None
-    boards: FrameBoards | None
-    cuts: GridCuts | None
-    breakdowns: ReferenceBreakdowns | None
+    generations: ImageGenerations
+    boards: FrameBoards
+    cuts: GridCuts
     image_models: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimePluginServices:
+    """插件端口在后端的实现，经内部接口给运行时服务用；为 None 的那组路由不挂，
+    ``/plugins/services`` 照同一份如实回答挂了哪些。"""
+
+    shot_video: ShotServices | None
+    breakdowns: ReferenceBreakdowns | None
+
+    def answer(self) -> PluginServices:
+        shot = self.shot_video
+        return PluginServices(
+            shot_video=(
+                ShotVideoServices(image_models=tuple(sorted(shot.image_models)))
+                if shot is not None
+                else None
+            ),
+            video_breakdown=self.breakdowns is not None,
+        )
 
 
 class _BadToken(AuthenticationFailed):
@@ -190,16 +207,18 @@ def create_runtime_internal_router(
         naming.start(payload.session_id, payload.text)
         return Response(status_code=204)
 
-    @router.get("/plugins/image-models")
-    async def image_models() -> ImageModels:
-        return ImageModels(models=tuple(sorted(plugins.image_models)))
+    answer = plugins.answer()
 
-    if plugins.generations is not None:
-        _image_routes(router, plugins.generations)
-    if plugins.boards is not None:
-        _boards_route(router, plugins.boards)
-    if plugins.cuts is not None:
-        _cuts_route(router, plugins.cuts)
+    @router.get("/plugins/services")
+    async def plugin_services() -> PluginServices:
+        """挂了哪些插件服务；运行时启动时照它核对配了的插件。"""
+
+        return answer
+
+    if plugins.shot_video is not None:
+        _image_routes(router, plugins.shot_video.generations)
+        _boards_route(router, plugins.shot_video.boards)
+        _cuts_route(router, plugins.shot_video.cuts)
     if plugins.breakdowns is not None:
         _breakdown_route(router, plugins.breakdowns)
     return router
@@ -267,6 +286,7 @@ __all__ = [
     "RUNTIME_INTERNAL_PREFIX",
     "ResolvePrincipal",
     "RuntimePluginServices",
+    "ShotServices",
     "TurnNaming",
     "create_runtime_internal_router",
 ]

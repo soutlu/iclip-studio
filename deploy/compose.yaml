@@ -36,8 +36,8 @@ services:
       start_period: 20s
 
   # Agent 运行时服务：消息与运行、transcript、实时通道的上游、工作区文件与素材台账、配置页的管理接口。只在 compose
-  # 网络里可达（后端 RUNTIME_URL=http://runtime:7790），不对外开端口。后端先起：运行时配置了 shot_video 时启动就向
-  # 后端的内部接口取图片模型；后端启动时连不上运行时不影响启动，事件流会自己重连。
+  # 网络里可达（后端 RUNTIME_URL=http://runtime:7790），不对外开端口。后端先起：运行时配置了 shot_video 或
+  # video_breakdown 时启动就向后端的内部接口核对插件服务；后端启动时连不上运行时不影响启动，事件流会自己重连。
   runtime:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-runtime:${IMAGE_TAG:-latest}
     restart: unless-stopped

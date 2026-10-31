@@ -1,4 +1,5 @@
-"""运行时服务的插件入口：配置校验、各配置段登记哪些插件、出图要的模型在启动时核对，内部令牌只发给后端。"""
+"""运行时服务的插件入口：配置校验、各配置段登记哪些插件、启动时核对后端开了配了的插件服务与出图要的模型，
+内部令牌只发给后端。"""
 
 from __future__ import annotations
 
@@ -39,18 +40,27 @@ def secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VIDEO_UNDERSTANDING_API_KEY", ARK_KEY)
 
 
+SERVICES_PATH = "/internal/runtime/plugins/services"
+
+
 @dataclass
 class Server:
-    """后端与外部服务的替身：记下每个请求，图片模型名按 ``models`` 答，OSS 图片信息答一张图。"""
+    """后端与外部服务的替身：记下每个请求；插件服务默认都开，``models`` 是接入的图片模型名，``shot_video``
+    或 ``video_breakdown`` 为假就答没开；OSS 图片信息答一张图。"""
 
     models: tuple[str, ...] = (IMAGE_MODEL,)
+    shot_video: bool = True
+    video_breakdown: bool = True
     status: int = 200
     seen: list[httpx.Request] = field(default_factory=list[httpx.Request])
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.seen.append(request)
-        if request.url.path == "/internal/runtime/plugins/image-models":
-            return httpx.Response(self.status, json={"models": list(self.models)})
+        if request.url.path == SERVICES_PATH:
+            shot = {"image_models": list(self.models)} if self.shot_video else None
+            return httpx.Response(
+                self.status, json={"shot_video": shot, "video_breakdown": self.video_breakdown}
+            )
         return httpx.Response(
             200,
             json={
@@ -140,14 +150,49 @@ async def test_video_breakdown_runs_in_the_background_and_requires_workspace() -
     assert registry["video_breakdown"].required_plugins() == ("workspace",)
 
 
-async def test_shot_video_asks_the_backend_for_its_image_models_with_the_internal_token() -> None:
+@pytest.mark.parametrize(
+    "section", ["shot_video", "video_breakdown"], ids=["shot_video", "video_breakdown"]
+)
+async def test_a_plugin_that_needs_the_backend_asks_it_for_its_services_with_the_token(
+    section: str,
+) -> None:
     server = Server()
 
-    await registry_for({"internal_api": INTERNAL_API, "shot_video": {}}, server)
+    await registry_for({"internal_api": INTERNAL_API, section: {}}, server)
 
     (request,) = server.seen
-    assert str(request.url) == "http://server.test/internal/runtime/plugins/image-models"
+    assert str(request.url) == f"http://server.test{SERVICES_PATH}"
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize(
+    ("section", "backend", "fix"),
+    [
+        ("shot_video", Server(shot_video=False), "后端 config.yaml 要写 shot_video: {}"),
+        ("video_breakdown", Server(video_breakdown=False), "后端 config.yaml 要写 iclip_studio 段"),
+    ],
+    ids=["shot_video", "video_breakdown"],
+)
+async def test_a_plugin_whose_backend_service_is_off_fails_at_startup_naming_the_fix(
+    section: str, backend: Server, fix: str
+) -> None:
+    """后端没开对应服务时运行时起不来：带着注定 404 的工具跑，每次调用都让整次运行失败。"""
+
+    with pytest.raises(RuntimeError, match=f"配了 {section}") as raised:
+        await registry_for({"internal_api": INTERNAL_API, section: {}}, backend)
+
+    assert fix in str(raised.value)
+
+
+async def test_both_missing_services_are_named_together() -> None:
+    with pytest.raises(RuntimeError) as raised:
+        await registry_for(
+            {"internal_api": INTERNAL_API, "shot_video": {}, "video_breakdown": {}},
+            Server(shot_video=False, video_breakdown=False),
+        )
+
+    assert "shot_video: {}" in str(raised.value)
+    assert "iclip_studio" in str(raised.value)
 
 
 @pytest.mark.parametrize(
@@ -159,7 +204,9 @@ async def test_an_unreachable_backend_fails_shot_video_at_startup(error: httpx.H
     def unreachable(_request: httpx.Request) -> httpx.Response:
         raise error
 
-    with pytest.raises(RuntimeError, match="shot_video 启动时要向后端取接入的图片模型") as raised:
+    with pytest.raises(
+        RuntimeError, match="shot_video 启动时要向后端取它开了哪些插件服务"
+    ) as raised:
         async with open_video_plugins(
             {"internal_api": INTERNAL_API, "shot_video": {}},
             internal_transport=httpx.MockTransport(unreachable),

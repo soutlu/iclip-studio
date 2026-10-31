@@ -67,9 +67,9 @@ async def test_a_missing_or_wrong_bearer_is_401_in_the_error_envelope(
     owner = await plant_user(engine, "logan")
 
     gate = await client.post("/internal/runtime/hooks/gate", json=gate_body(owner), headers=headers)
-    models = await client.get("/internal/runtime/plugins/image-models", headers=headers)
+    services = await client.get("/internal/runtime/plugins/services", headers=headers)
 
-    assert (gate.status_code, models.status_code) == (401, 401)
+    assert (gate.status_code, services.status_code) == (401, 401)
     assert gate.json() == {"detail": "运行时内部接口的令牌不对"}
 
 
