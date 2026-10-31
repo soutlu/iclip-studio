@@ -20,9 +20,10 @@ ExecutionAnomalyKind = Literal["retry", "stuck", "spend", "task_stuck"]
 
 @dataclass(frozen=True, slots=True)
 class Scope:
-    """一次查询的筛选范围。时间窗 ``[since, until)`` 作用在各指标自己的锚点上，见各查询。"""
+    """一次查询的筛选范围。时间窗 ``[since, until)`` 作用在各指标自己的锚点上，见各查询；一定有起点，
+    ``until`` 为空不设上界。"""
 
-    since: datetime | None = None
+    since: datetime
     until: datetime | None = None
     user_name: str | None = None
 

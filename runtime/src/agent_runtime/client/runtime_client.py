@@ -33,11 +33,17 @@ from agent_runtime.app_wire import (
     FilesOut,
     FileWriteIn,
     MaterialsIn,
+    PromptStatsOut,
+    RunStatsOut,
     SessionForkIn,
     SessionOpenIn,
     SessionPromptIn,
+    SessionStatsOut,
+    StatsQueryIn,
+    StatsSessionsIn,
     TitleIn,
     TitleOut,
+    UsageStatsOut,
 )
 from agent_runtime.client.errors import (
     APP_REJECTION_STATUSES,
@@ -363,6 +369,32 @@ class RuntimeClient:
 
         response = await self._call("POST", "/v1/titles", body=body)
         return _parse(response, TitleOut.model_validate_json)
+
+    # --- 运行统计 --------------------------------------------------------------
+
+    async def stats_prompts(self, body: StatsQueryIn) -> PromptStatsOut:
+        """``POST /v1/stats/prompts``：本应用会话的消息，按时间窗或按会话取。"""
+
+        response = await self._call("POST", "/v1/stats/prompts", body=body)
+        return _parse(response, PromptStatsOut.model_validate_json)
+
+    async def stats_runs(self, body: StatsQueryIn) -> RunStatsOut:
+        """``POST /v1/stats/runs``：本应用会话里跑到终态的顶层运行。"""
+
+        response = await self._call("POST", "/v1/stats/runs", body=body)
+        return _parse(response, RunStatsOut.model_validate_json)
+
+    async def stats_usage(self, body: StatsQueryIn) -> UsageStatsOut:
+        """``POST /v1/stats/usage``：本应用会话按模型的累计用量。"""
+
+        response = await self._call("POST", "/v1/stats/usage", body=body)
+        return _parse(response, UsageStatsOut.model_validate_json)
+
+    async def stats_sessions(self, body: StatsSessionsIn) -> SessionStatsOut:
+        """``POST /v1/stats/sessions``：这几段会话里跑过的那些的首末消息。"""
+
+        response = await self._call("POST", "/v1/stats/sessions", body=body)
+        return _parse(response, SessionStatsOut.model_validate_json)
 
     # --- 管理接口透传 ------------------------------------------------------------
 

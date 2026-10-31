@@ -24,6 +24,7 @@ from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.harness.agents import DELEGATE_TOOL
 from agent_runtime.harness.jobs import JobQueue, JobRow
 from agent_runtime.harness.sessions import PgSessionStore, SessionApps
+from agent_runtime.harness.stats_pg import PgRunStats
 from agent_runtime.harness.step_store_pg import PgStepStore
 from agent_runtime.harness.transcript.activity import ActivityState
 from agent_runtime.harness.transcript.history import TranscriptHistory
@@ -44,6 +45,7 @@ from agent_runtime.http.auth import build_app_auth
 from agent_runtime.http.errors import install_error_handlers
 from agent_runtime.http.logging import configure_logging
 from agent_runtime.http.sessions import create_sessions_router
+from agent_runtime.http.stats import create_stats_router
 from agent_runtime.http.streams import create_events_router, create_transcript_ws_router
 from agent_runtime.http.transcript import create_transcript_router
 from agent_runtime.http.workspace import create_workspace_router
@@ -276,6 +278,7 @@ def create_app(
         create_workspace_router(announcing_files, material_ledger, sessions, auth.calling_app)
     )
     v1.include_router(create_agents_router(agent_runtime))
+    v1.include_router(create_stats_router(PgRunStats(active_engine), auth.calling_app))
     app.include_router(v1)
     # WebSocket 不在 v1 的路由组里：组上的 Bearer 依赖只在 HTTP 请求上跑，两条连接自己认应用。
     app.include_router(create_events_router(auth.identify, event_hub))

@@ -1,4 +1,4 @@
-"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区与素材台账、agent 名册与起标题。
+"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区与素材台账、agent 名册与起标题、运行统计。
 
 路由（``agent_runtime.http``）与应用用的客户端库（``agent_runtime.client``）共用这一份，只依赖 pydantic
 与 transcript、文件存储、素材台账的形状，不碰 Web 框架。transcript 的消息与读页信封在
@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Final
+from datetime import datetime
+from typing import Annotated, Final, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from agent_runtime.file_store.store import FileEntry
 from agent_runtime.material_ledger.store import Material
@@ -137,9 +138,100 @@ class TitleOut(Envelope):
     """没设默认对话模型、建不出模型或模型没给出标题时为空，应用照旧用默认名。"""
 
 
+# --- 运行统计 -------------------------------------------------------------------
+
+MAX_STATS_SESSIONS: Final = 1000
+"""统计接口一次按会话取时最多列多少段会话；更多的由应用分批取。"""
+
+StatsSessionIds = Annotated[
+    tuple[uuid.UUID, ...], Field(min_length=1, max_length=MAX_STATS_SESSIONS)
+]
+
+
+class StatsQueryIn(Envelope):
+    """按时间窗或按会话取统计行，二选一：给 ``since``（``until`` 可省）按各行自己的时刻落在
+    ``[since, until)`` 里取，给 ``session_ids`` 取这几段会话的全部行；都给或都不给是 422。"""
+
+    since: datetime | None = None
+    until: datetime | None = None
+    session_ids: StatsSessionIds | None = None
+
+    @model_validator(mode="after")
+    def _one_mode(self) -> Self:
+        if self.session_ids is not None and (self.since is not None or self.until is not None):
+            raise ValueError("按时间窗或按会话取，二选一")
+        if self.session_ids is None and self.since is None:
+            raise ValueError("按时间窗取要给 since，否则给 session_ids")
+        return self
+
+
+class StatsSessionsIn(Envelope):
+    session_ids: StatsSessionIds
+
+
+class PromptStatOut(Envelope):
+    """一条消息；时间窗看 ``created_at``。"""
+
+    session_id: uuid.UUID
+    prompt_id: str
+    user_name: str
+    created_at: datetime
+
+
+class RunStatOut(Envelope):
+    """一次跑到终态的顶层运行：运行驱动登记过的运行，有开始事件也有第一条终态事件（完成或失败）；
+    子代理的内部运行与没有终态的运行不在里面。时间窗看 ``started_at``。"""
+
+    session_id: uuid.UUID
+    run_id: str
+    user_name: str
+    """这次运行所属消息的 ``user_name``。"""
+    started_at: datetime
+    ended_at: datetime
+
+
+class UsageStatOut(Envelope):
+    """一段会话在一个模型上的累计用量；时间窗看 ``last_at``。"""
+
+    session_id: uuid.UUID
+    model_name: str
+    requests: int
+    input_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    output_tokens: int
+    last_at: datetime
+
+
+class SessionStatOut(Envelope):
+    """一段跑过的会话：第一条消息的时刻与最近一条消息的 ``user_name``（同一时刻按 ``prompt_id`` 大的算）。"""
+
+    session_id: uuid.UUID
+    first_prompt_at: datetime
+    latest_user_name: str
+
+
+class PromptStatsOut(Envelope):
+    items: tuple[PromptStatOut, ...]
+
+
+class RunStatsOut(Envelope):
+    items: tuple[RunStatOut, ...]
+
+
+class UsageStatsOut(Envelope):
+    items: tuple[UsageStatOut, ...]
+
+
+class SessionStatsOut(Envelope):
+    items: tuple[SessionStatOut, ...]
+    """只有跑过的会话；没有消息的不在里面。"""
+
+
 __all__ = [
     "END_USER_HEADER",
     "MAX_AGENT_ID_CHARS",
+    "MAX_STATS_SESSIONS",
     "ActivitiesIn",
     "ActivitiesOut",
     "AgentDirectoryOut",
@@ -151,9 +243,20 @@ __all__ = [
     "FilesCopyOut",
     "FilesOut",
     "MaterialsIn",
+    "PromptStatOut",
+    "PromptStatsOut",
+    "RunStatOut",
+    "RunStatsOut",
     "SessionForkIn",
     "SessionOpenIn",
     "SessionPromptIn",
+    "SessionStatOut",
+    "SessionStatsOut",
+    "StatsQueryIn",
+    "StatsSessionIds",
+    "StatsSessionsIn",
     "TitleIn",
     "TitleOut",
+    "UsageStatOut",
+    "UsageStatsOut",
 ]

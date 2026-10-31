@@ -24,7 +24,7 @@ from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.schemas import MetricsOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
-from tests.helpers.audit import Plant
+from tests.helpers.audit import EVER, Plant
 from tests.helpers.runtime import (
     AGENT_ID,
     build_runner,
@@ -52,16 +52,6 @@ def minutes(count: float) -> datetime:
 
 def local(day: date, hour: int = 0, minute: int = 0) -> datetime:
     return datetime.combine(day, time(hour, minute), tzinfo=SINGAPORE).astimezone(UTC)
-
-
-@pytest.fixture
-def reports(engine: AsyncEngine) -> PgAuditReports:
-    return PgAuditReports(engine)
-
-
-@pytest.fixture
-def service(reports: PgAuditReports) -> AuditService:
-    return AuditService(reports)
 
 
 # --- agent 运行时长：真跑运行驱动 ------------------------------------------------
@@ -140,7 +130,7 @@ async def test_run_seconds_count_top_level_runs_that_reached_an_end(
         (True, True, ("run_started", "run_failed")),
     ]
 
-    overall = await reports.overall(Scope())
+    overall = await reports.overall(Scope(since=EVER))
 
     assert overall.runs == 3
     assert overall.agent_run_seconds is not None
@@ -207,7 +197,7 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
         z: 5400,
     }
 
-    overall = await reports.overall(Scope())
+    overall = await reports.overall(Scope(since=EVER))
 
     assert overall.active_cycle_seconds is not None and overall.cycle_seconds is not None
     assert (overall.active_cycle_seconds.count, overall.active_cycle_seconds.median) == (3, 2940)
@@ -257,10 +247,10 @@ async def test_length_counts_only_known_durations_and_discards_all_but_the_last_
         )
         await plant.video(unknown, owner=derek, shot=1, created_at=T0, finished_at=minutes(15))
 
-    everything = await reports.overall(Scope())
+    everything = await reports.overall(Scope(since=EVER))
     later = await reports.overall(Scope(since=minutes(25)))
-    earlier = await reports.overall(Scope(until=minutes(25)))
-    by_user = await reports.by_user(Scope())
+    earlier = await reports.overall(Scope(since=EVER, until=minutes(25)))
+    by_user = await reports.by_user(Scope(since=EVER))
     by_conversation = {
         row.conversation_id: row.metrics
         for row in (await service.executions(since=minutes(-1), limit=10)).items
@@ -461,7 +451,7 @@ async def test_a_shot_lands_on_its_first_success_and_belongs_to_its_owner(
         (shot.conversation_id, shot.shot, shot.attempts)
         for shot in await reports.top_shots(second_day, limit=3)
     ] == [(conversation_id, 1, 2)]
-    people = await reports.by_user(Scope())
+    people = await reports.by_user(Scope(since=EVER))
     assert (people[DEREK].shots, people[DEREK].attempts) == (1, 2)
     assert (people[SARA].shots, people[SARA].attempts) == (0, 0)
 
