@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 import structlog
 
 from agent_runtime.agent_usage import AgentUsage, in_use_message, usages_out
+from agent_runtime.config.mcp_servers.index import McpServerIndex
 from agent_runtime.config.mcp_servers.models import (
     McpEndpoint,
     McpHeader,
@@ -73,7 +74,8 @@ async def rotate_mcp_header_keys(store: McpServerStore, *, cipher: CredentialCip
 
 class McpServerService:
     """``probe`` 由组合根接上，每次调用都是一次真实的连接；``usages`` 由组合根接到 agent 配置域，回答哪些
-    agent 挂着哪个服务。"""
+    agent 挂着哪个服务。``index`` 是组合根建的服务名册，本服务是它唯一的写入方：``load_index`` 整份读一次，
+    之后建、改、删、试连在写入提交之后跟着换。"""
 
     def __init__(
         self,
@@ -82,11 +84,18 @@ class McpServerService:
         cipher: CredentialCipher,
         probe: McpProbe,
         usages: McpUsages,
+        index: McpServerIndex,
     ) -> None:
         self._store = store
         self._cipher = cipher
         self._probe = probe
         self._usages = usages
+        self._index = index
+
+    async def load_index(self) -> None:
+        """从库里整份读一次服务名册，运行时服务启动时调。"""
+
+        self._index.replace(await self._store.list())
 
     async def list(self) -> McpServersOut:
         """全部服务，按建立时刻从新到旧，带打码的请求头、上一次试连、发现的工具与挂着它的 agent。"""
@@ -118,6 +127,7 @@ class McpServerService:
             enabled=body.enabled,
             by=by,
         )
+        await self._refresh_index(server_id)
         return await self.get(server_id)
 
     async def update(
@@ -153,6 +163,7 @@ class McpServerService:
                 clear_check=(url, transport) != (record.url, record.transport),
                 by=by,
             )
+        await self._refresh_index(server_id)
         return await self.get(server_id)
 
     async def delete(self, server_id: str) -> None:
@@ -161,6 +172,7 @@ class McpServerService:
         async with self._store.edit(server_id) as editor:
             await self._require_unused(editor.record)
             await editor.delete()
+        self._index.remove(server_id)
 
     async def check(self, server_id: str) -> McpCheckOut:
         """按已保存的配置连一次，列出工具，记下结果：通了换掉发现的工具，没通只记原因、发现的工具不动。"""
@@ -176,6 +188,7 @@ class McpServerService:
         )
         if not recorded:
             raise NotFound("MCP 服务不存在")
+        await self._refresh_index(server_id)
         return _check_out(result)
 
     async def check_unsaved(self, body: McpCheckIn) -> McpCheckOut:
@@ -217,6 +230,14 @@ class McpServerService:
         if not result.ok:
             _logger.info("MCP 服务试连没通过", server_id=server_id, reason=result.reason)
         return result
+
+    async def _refresh_index(self, server_id: str) -> None:
+        # 写入已提交，按库里此刻的那一行换名册；读到时已被并发删掉就从名册里去掉。
+        record = await self._store.get(server_id)
+        if record is None:
+            self._index.remove(server_id)
+        else:
+            self._index.put(record)
 
     async def _require(self, server_id: str) -> McpServerRecord:
         record = await self._store.get(server_id)

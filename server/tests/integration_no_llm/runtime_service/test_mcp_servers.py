@@ -1,6 +1,7 @@
 """运行时服务的 MCP 服务：请求头加密存、只给打码值、改的时候没给值就沿用；试连记下结果与发现的工具，没保存的
 配置试连什么都不存；发布时查服务与选的工具；被 agent 挂着时不能停用、不能删；换钥连请求头一起换；运行时
-agent 真去调本地 MCP 服务的工具，工具名带服务前缀、只放选了的工具，连不上时这次运行失败并写明是哪个服务。
+agent 真去调本地 MCP 服务的工具，工具名带服务前缀、只放选了的工具，工具卡写服务名称与工具说明（名册启动时从库里读），连不上时
+这次运行失败并写明是哪个服务。
 
 MCP 服务是进程内的本地服务（``tests.helpers.mcp``），不出网。"""
 
@@ -14,10 +15,12 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.assembly.config_services import ConfigServices
 from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
 from agent_runtime.config.mcp_servers.service import rotate_mcp_header_keys
 from agent_runtime.secrets import CredentialCipher
 from cryptography.fernet import Fernet
+from fastapi import FastAPI
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -471,9 +474,34 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     ]
     assert returned.tool_name == "mcp_calc_add"
     assert "5" in str(returned.content)
+    # 卡头是服务的名称与这件工具的说明，不是工具名与标识。
     (card,) = tool_frames(await only_turn(app_client, session))
     assert (card["name"], card["state"]) == ("mcp_calc_add", "done")
-    assert card["display"] == {"kind": "generic", "summary": "add", "detail": "calc"}
+    assert card["display"] == {"kind": "generic", "summary": "计算器", "detail": "Add two integers"}
+
+    # 历史每次读都按名册当下的内容重画：改了服务名称，已跑完的这一轮跟着换。
+    renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术"})
+    assert renamed.status_code == 200, renamed.text
+    (card,) = tool_frames(await only_turn(app_client, session))
+    assert card["display"] == {"kind": "generic", "summary": "算术", "detail": "Add two integers"}
+
+
+async def test_startup_reads_the_server_index_from_the_database(
+    admin: httpx.AsyncClient, runtime_app: FastAPI, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    services: ConfigServices = runtime_app.state.config_services
+    index = services.mcp_index
+    # 当作刚重启：名册是空的，库里有这个服务。
+    index.remove("calc")
+
+    async with runtime_app.router.lifespan_context(runtime_app):
+        found = index.get("calc")
+
+    assert found is not None
+    assert found.name == "计算器"
+    assert found.tools["add"] == "Add two integers."
 
 
 async def test_a_failing_mcp_tool_goes_back_to_the_model(

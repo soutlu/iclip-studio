@@ -156,7 +156,7 @@ def create_app(
         store=PgConversationUsage(active_engine), conversation_of=conversation_of
     )
     job_queue = JobQueue(active_engine, on_activity=on_activity)
-    tool_displays = build_display_registry(registry)
+    tool_displays = build_display_registry(registry, config_services.mcp_index)
     transcript_store = TranscriptStore()
     transcript_history = TranscriptHistory(step_store, job_queue, tool_displays, DELEGATE_TOOL)
     agent_runtime = AgentRuntime(
@@ -263,7 +263,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-        # 分发先起：运行驱动启动时的清扫就可能改活动。
+        # MCP 服务的名册先读好，运行驱动一起来工具卡就按它画。分发先起：运行驱动启动时的清扫就可能改活动。
+        await mcp_servers.load_index()
         await event_hub.start()
         await transcripts.runner.start()
         try:

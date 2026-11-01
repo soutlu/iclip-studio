@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from agent_runtime.config.mcp_servers.index import IndexedMcpServer, McpServerIndex
 from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
 from agent_runtime.config.mcp_servers.models import (
     McpEndpoint,
@@ -23,12 +24,14 @@ from agent_runtime.config.mcp_servers.schemas import (
 from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_header_keys
 
 __all__ = [
+    "IndexedMcpServer",
     "McpCheckIn",
     "McpCheckOut",
     "McpEndpoint",
     "McpProbe",
     "McpProbeResult",
     "McpServerCreateIn",
+    "McpServerIndex",
     "McpServerOut",
     "McpServerRecord",
     "McpServerService",
