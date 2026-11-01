@@ -636,6 +636,8 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - **文件**：一个技能只收 `SKILL.md` 与 `references/` 下的文件，路径是相对的 posix 路径（不许绝对路径、`..`、反斜杠、空段），只收不含 NUL 的 UTF-8 文本；单个文件按 UTF-8 编码不超过 1 MB，全部文件合计不超过 5 MB、最多 200 个。端点路径里的 `{path}` 就是这个路径，斜杠原样带上（如 `…/draft/files/references/sub/a.md`）。`size` 是 UTF-8 字节数，`hash` 是内容按 UTF-8 编码后的 sha256（十六进制）。
 - **改草稿**：`PUT /skills/{id}/draft/files/{path}` 体是 `{ content, baseHash }`。新建文件时 `baseHash` 给 `null`，文件已存在是 `409`；改已有文件时给读到的 `hash`，与库里的对不上或文件已被删掉是 `409`，客户端重新读取后再改。`DELETE /skills/{id}/draft/files/{path}?baseHash=` 删一个文件，`204`；`baseHash` 走 query 参数，对不上是 `409`。`SKILL.md` 不能删，是 `422`。路径、内容或写完后的文件数与总大小不合格是 `422`；`SKILL.md` 的 frontmatter 只在发布时查。
+- **改名**：`POST /skills/{id}/draft/files/rename` 体是 `{ from, to, baseHash }`，一次写完，内容与 `hash` 不变，答复新路径上的文件（同读文件）。`baseHash` 是 `from` 读到的 `hash`，对不上是 `409`；`to` 已有文件是 `409`；`from` 不存在是 `404`；`from` 是 `SKILL.md`、`to` 不合上面的路径规则、两者相同都是 `422`。合法路径只有 `SKILL.md` 与 `references/` 下的，所以这个固定路径不会与 `…/draft/files/{path}` 撞名。
+- **操作人**：技能的 `createdBy` 与版本的 `createdBy` 旁边带 `createdByName`，是那个人给人看的名字（显示名，没有就用用户名，再没有用邮箱）；本系统里已没有这个人时为 `null`。
 - **未发布的修改**：`hasUnpublishedChanges` 比较草稿清单的 hash 与最新版的 `contentHash`，没发布过恒为 `true`。`description` 取最新版 `SKILL.md` 的 frontmatter，没发布过时跟着草稿里的走（frontmatter 不合格时不变）。
 - **发布**：`POST /skills/{id}/versions` 体是 `{ note? }`，`201` 答复新版本。草稿不合格是 `422`，`detail` 列出全部问题：除上面的文件规则，`SKILL.md` 的 frontmatter 要有 `name`（等于技能的标识）和非空、不超过 1024 个字符的 `description`。内容（`contentHash`）与最新版相同是 `422`「没有可发布的改动」。版本号在每个技能内从 1 起递增，版本发布后不再改。
 - **恢复**：`POST /skills/{id}/versions/{versionId}/restore` 把这一版的文件整份抄回草稿，替换草稿里的全部文件，不发布，答复技能详情。
@@ -656,7 +658,9 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **默认密钥**：供应商的第一把密钥自动成为 `defaultCredentialId`；删默认密钥是 `409`，先用 `PATCH /model-providers/{id}` 的 `defaultCredentialId` 换成本供应商的另一把（别的供应商的或不存在的是 `422`）。
 - **模型**：模型在供应商里按（名字，类型）认，路径是 `…/models/{type}/{name}`，名字放在最后，可以带斜杠（如 `…/models/llm/ZHIPU/GLM-5.3-Flash`）。`source` 为 `declared` 的只能改 `enabled`，改属性或删除是 `422`；`custom` 的能改 `api`、`contextSize`、`thinking`（给 `null` 即清掉）、`enabled` 与删除，属性按声明里模型的同一套规则校验：`llm` 必须有 `api`，别的类型不能有 `api` 与 `thinking`，`thinking` 不能重复。声明不允许自己加模型（`customModels` 为假）、和已有模型同名同类型都是 `422`。
 - **默认模型**：`PUT /default-models/{type}` 体是 `{ providerId, modelName }`，供应商不存在、没有这个类型的这个模型、模型已停用都是 `422`；停用或删除当前的默认模型是 `409`，先把默认换掉。
-- **谁在用**：供应商列表里每个模型与每把密钥带 `usedBy`，形状与引用规则见 §19「被引用时拦住」。模型的 `usedBy` 是写着这个模型的 agent，只有 `llm` 会有；密钥的是在 `model.credential_id` 里显式写着这把的 agent（没写的用默认密钥，默认密钥本来就不能删）。在用时停用或删除模型、删除密钥都是 `409`；`PATCH /model-providers/{id}` 把供应商停用时，只要有 agent 写着这个供应商也是 `409`。
+- **删除供应商**：`DELETE /model-providers/{id}` 连同它的密钥与模型设置一起删，`204`；有 agent 写着这个供应商（见下面「谁在用」）、或某个类型的默认模型是它的，都是 `409`，什么都不删。
+- **给 agent 选模型**：`GET /agents/model-options` 只要 `agent:manage`，形状与规则见 §19「选模型」。
+- **谁在用**：供应商列表里每个模型与每把密钥带 `usedBy`，形状与引用规则见 §19「被引用时拦住」。模型的 `usedBy` 是写着这个模型的 agent，只有 `llm` 会有；密钥的是在 `model.credential_id` 里显式写着这把的 agent（没写的用默认密钥，默认密钥本来就不能删）。在用时停用或删除模型、删除密钥都是 `409`；`PATCH /model-providers/{id}` 把供应商停用、`DELETE /model-providers/{id}` 删掉供应商时，只要有 agent 写着这个供应商也是 `409`。
 
 ## 19. Agent 配置 (Agents)
 
@@ -664,8 +668,10 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 - **配置文档**：草稿、版本与导出包里的 `config` 是同一份格式，字段照文档本身写（snake_case，是 §3 的例外）：`schema_version`（现在是 `1`）、`instructions`、`model { provider, name, credential_id?, settings { thinking? } }`（草稿里可以是 `null`）、`tools`、`subagents [{ agent, timeout_seconds?, max_calls?, on_failure? }]`。`tools` 的每一项按 `type` 区分，现在只有 `cap`：`{ type: "cap", toolset, enabled, parameters }`，`toolset` 是插件名，`parameters` 按那个插件自己的参数校验；以后加来源只加 `type`。同一个 `toolset`、同一个子 agent 只能写一次。技能不写在 `config` 里，是旁边的 `skillIds`，按先后排。不认识的字段都是 `422`。
 - **可挂的插件**：`GET /agents/plugins` 给本部署插件登记表里的全部插件，按登记先后，每项 `{ name, label, description, requires, parameters }`：`name` 就是 `tools[].toolset` 写的插件名，`requires` 是要求同一 agent 一起启用的插件名，`parameters` 是 `tools[].parameters` 的 JSON Schema（没有参数的插件是不收任何键的空对象）。
-- **列表**：`GET /agents` 含已归档的，按 `sortOrder` 从小到大、同序按 `createdAt` 倒序，是 §3 的例外。每项带 `activeVersion`（`{ id, version, publishedAt }`，没发布过为 `null`）与 `hasUnpublishedChanges`（草稿的 `config` 或 `skillIds` 与当前版本不同；没发布过恒为 `true`）。`PUT /agents/order` 体是 `{ ids }`，要正好是全部 agent 的标识、各一次，否则 `422`；新建的排在最后。
-- **元信息**：`POST /agents` 体是 `{ id, name, description? }`，标识不合规矩（含用了保留词 `plugins`、`order`、`import`，它们是 `/agents/` 下的固定路径）是 `422`、已被占用是 `409`，草稿是没有模型的空配置，`listed` 为 `false`。`PATCH /agents/{id}` 改 `name`、`description`、`listed`，不给的不动；`description` 不进版本，改了立即生效。
+- **选模型**：`GET /agents/model-options` 只读，只要 `agent:manage`（不要 `model:manage`），答复 `{ providers }`：只列启用的供应商，按接入时刻从新到旧，每项 `{ id, name, label, models, credentials }`。`name` 写进 `model.provider`；`models` 只有启用的 `llm` 模型，每项 `{ name, contextSize, thinking }`，`name` 写进 `model.name`，`thinking` 是允许设的档位（空就是不能设）；`credentials` 新的在前，每项 `{ id, name, fields, isDefault }`，`id` 写进 `model.credential_id`，`fields` 同 §18 只给打码值，`isDefault` 标出供应商的默认密钥（不写密钥时用它）。不带「谁在用」。
+- **操作人**：agent 的 `createdBy`、草稿的 `updatedBy`、版本的 `createdBy` 旁边各带 `createdByName` / `updatedByName`，取名规则同 §17「操作人」，本系统里已没有这个人时为 `null`。
+- **列表**：`GET /agents` 含已归档的，按 `sortOrder` 从小到大、同序按 `createdAt` 倒序，是 §3 的例外。每项带 `activeVersion`（`{ id, version, publishedAt }`，没发布过为 `null`）、`hasUnpublishedChanges`（草稿的 `config` 或 `skillIds` 与当前版本不同；没发布过恒为 `true`），以及选子 agent 用的两个标记：`hasSubagents` 是它自己的草稿或当前版本里写着子 agent（这时不能被选作别人的子 agent），`isSubagent` 是别的 agent 的草稿或当前版本把它当作子 agent（这时它自己不能有子 agent）；详情也带这两个。`PUT /agents/order` 体是 `{ ids }`，要正好是全部 agent 的标识、各一次，否则 `422`；新建的排在最后。
+- **元信息**：`POST /agents` 体是 `{ id, name, description?, listed? }`，标识不合规矩（含用了保留词 `plugins`、`order`、`import`、`model-options`，它们是 `/agents/` 下的固定路径）是 `422`、已被占用是 `409`，草稿是没有模型的空配置，`listed` 不给就是 `false`。`PATCH /agents/{id}` 改 `name`、`description`、`listed`，不给的不动；`description` 不进版本，改了立即生效。
 - **lockVersion**：详情的 `draft.lockVersion` 是草稿的乐观锁。`PUT /agents/{id}/draft`（体 `{ config, skillIds, lockVersion }`，整份覆盖）、`POST /agents/{id}/versions`（发布）、`POST …/versions/{versionId}/restore`（体 `{ lockVersion }`）都要带上读到的值，对不上是 `409`，客户端重新读详情后再操作。保存草稿、恢复与覆盖导入让它加一，发布不改它。保存只查结构：`config` 不合格、`skillIds` 重复或有不存在的技能是 `422`；引用的供应商、模型、插件、技能能不能用、子 agent 合不合规矩都留到发布时查，草稿允许暂时不完整。
 - **发布**：`POST /agents/{id}/versions` 体是 `{ note?, lockVersion }`，`201` 答复新版本，版本号在每个 agent 内从 1 起递增，发布后不再改；草稿的 `baseVersionId` 随之指到新版本。编译检查不过是 `422`，信封是 `{ detail, problems }`：`problems` 是 `[{ path, message }]`，一次列全，`detail` 是把它们拼成的一句话。`path` 指到草稿里的字段，写法是 `model`、`model.provider`、`model.name`、`model.credential_id`、`model.settings.thinking`、`tools[2]`、`tools[0].parameters.limit`、`skills[1]`（`skillIds` 的第 2 个）、`subagents[0].agent`、`subagents`（整组）；客户端按它跳到对应字段。检查的规则见 [CONTEXT.md「发布」](../docs/CONTEXT.md#术语)。检查通过、但 `config` 与 `skillIds` 都和当前版本相同是 `422`「没有可发布的改动」，这时没有 `problems`。
 - **版本与恢复**：`GET /agents/{id}/versions` 版本号从大到小；单个版本带 `config` 与 `skillIds`。恢复把这一版的 `config` 与 `skillIds` 抄回草稿（`baseVersionId` 指到这一版），不发布，答复详情。
@@ -693,7 +699,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
   | `POST /skills/{id}/archive` | 绑定了这个技能 |
   | 停用或删除模型 | `model.provider` 与 `model.name` 是它 |
   | 删除密钥 | `model.credential_id` 是它 |
-  | 把供应商停用 | `model.provider` 是它 |
+  | 把供应商停用、删除供应商 | `model.provider` 是它 |
   | `POST /agents/{id}/archive` | `subagents` 里有它 |
 
   同一份引用也在读的时候给出：技能详情、供应商列表里的模型与密钥、agent 详情都带 `usedBy`，每项 `{ agentId, agentName, inDraft, inActiveVersion }`，同一个 agent 只有一项，按标识排。

@@ -217,6 +217,19 @@ def agent_runtime_of(app: FastAPI) -> AgentRuntime:
     return app.state.runtime_service.state.agent_runtime
 
 
+@asynccontextmanager
+async def runtime_admin(app: FastAPI, *, end_user: str) -> AsyncGenerator[httpx.AsyncClient]:
+    """绕过后端、以应用 ``video`` 的身份代 ``end_user`` 直接问运行时的管理接口；路径相对 ``/v1/admin``。
+    用来造出操作人是本系统里没有的人的记录。"""
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app.state.runtime_service),
+        base_url=f"{RUNTIME_URL}/v1/admin",
+        headers={"Authorization": f"Bearer {RUNTIME_APP_KEY}", "X-End-User": end_user},
+    ) as client:
+        yield client
+
+
 __all__ = [
     "RUNTIME_APP_KEY",
     "RUNTIME_INTERNAL_TOKEN",
@@ -227,6 +240,7 @@ __all__ = [
     "agent_runtime_of",
     "build_backed_app",
     "config_services_of",
+    "runtime_admin",
     "runtime_settings",
     "standard_plugins",
 ]

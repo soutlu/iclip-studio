@@ -55,6 +55,7 @@ from agent_runtime.config.model_providers.rules import (
 from agent_runtime.config.model_providers.schemas import (
     CredentialCreateIn,
     CredentialFieldOut,
+    CredentialOptionOut,
     CredentialOut,
     CredentialTestIn,
     CredentialUpdateIn,
@@ -65,6 +66,8 @@ from agent_runtime.config.model_providers.schemas import (
     DefaultModelIn,
     DefaultModelOut,
     DefaultModelsOut,
+    ModelOptionOut,
+    ModelOptionsOut,
     ModelProviderCreateIn,
     ModelProviderOut,
     ModelProvidersOut,
@@ -72,6 +75,7 @@ from agent_runtime.config.model_providers.schemas import (
     ModelUpdateIn,
     ProbeOut,
     ProviderModelOut,
+    ProviderOptionOut,
 )
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 
@@ -243,6 +247,45 @@ class ModelProviderService:
             ]
         )
 
+    async def model_options(self) -> ModelOptionsOut:
+        """agent 编辑页选模型用：启用的供应商，各带启用的 ``llm`` 模型与打码的密钥，不带「谁在用」。"""
+
+        options: list[ProviderOptionOut] = []
+        for state in await self._store.states():
+            provider = state.provider
+            if not provider.enabled:
+                continue
+            declaration = self._declaration_of(provider)
+            options.append(
+                ProviderOptionOut(
+                    id=provider.id,
+                    name=provider.name,
+                    label=provider.label,
+                    models=[
+                        ModelOptionOut(
+                            name=model.name,
+                            context_size=model.properties.context_size,
+                            thinking=list(model.properties.thinking),
+                        )
+                        for model in merge_models(declaration, state.settings)
+                        if model.type == "llm" and model.enabled
+                    ],
+                    credentials=[
+                        CredentialOptionOut(
+                            id=credential.id,
+                            name=credential.name,
+                            fields=masked_fields(
+                                declaration,
+                                decrypt_fields(declaration, credential.fields, self._cipher),
+                            ),
+                            is_default=credential.id == provider.default_credential_id,
+                        )
+                        for credential in state.credentials
+                    ],
+                )
+            )
+        return ModelOptionsOut(providers=options)
+
     async def resolved(self, name: str) -> ResolvedProvider | None:
         """按引用名找接入的供应商，带密钥 id 与合并后的模型列表；没有给 ``None``。供别的模块查引用。"""
 
@@ -339,6 +382,20 @@ class ModelProviderService:
                 default_credential_id=default_credential_id,
             )
         return await self._provider_out_by_id(provider_id)
+
+    async def delete(self, provider_id: uuid.UUID) -> None:
+        """删一个供应商连同它的密钥与模型设置。某个 agent 的草稿或当前版本还写着这个供应商（含它的模型与
+        密钥）、或某个类型的默认模型是它的，都是 ``Conflict``。"""
+
+        async with self._store.edit(provider_id) as editor:
+            provider = editor.state.provider
+            users = _provider_users(await self._usages.model_references(), provider)
+            if users:
+                raise Conflict(in_use_message(f"供应商 {provider.name} ", users))
+            if editor.defaults:
+                names = "、".join(one.model_name for one in editor.defaults)
+                raise Conflict(f"{names} 是默认模型，先把默认模型换成别的供应商的再删")
+            await editor.delete_provider()
 
     async def create_credential(
         self, provider_id: uuid.UUID, body: CredentialCreateIn, *, created_by: uuid.UUID

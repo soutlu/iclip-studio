@@ -39,6 +39,29 @@ async def set_roles_in_db(pg_url: str, email: str, roles: list[str]) -> None:
         )
 
 
+async def set_display_name_in_db(pg_url: str, email: str, display_name: str) -> None:
+    """测试内直接写一个人的显示名（生产路径是 SSO 登录时同步）。"""
+
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text("UPDATE iclip.users SET display_name = :name WHERE email = :email"),
+            {"name": display_name, "email": email},
+        )
+
+
+async def set_direct_permissions_in_db(pg_url: str, email: str, permissions: list[str]) -> None:
+    """测试内直接写一个人的直接授权（生产路径是用户管理接口）。"""
+
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "UPDATE iclip.users SET direct_permissions = CAST(:permissions AS jsonb)"
+                " WHERE email = :email"
+            ),
+            {"permissions": json.dumps(permissions), "email": email},
+        )
+
+
 async def login_as_editor(
     client: httpx.AsyncClient, pg_url: str, *, username: str = "logan"
 ) -> str:
@@ -50,4 +73,10 @@ async def login_as_editor(
     return user_id
 
 
-__all__ = ["login_as_editor", "register_and_login", "set_roles_in_db"]
+__all__ = [
+    "login_as_editor",
+    "register_and_login",
+    "set_direct_permissions_in_db",
+    "set_display_name_in_db",
+    "set_roles_in_db",
+]

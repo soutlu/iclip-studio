@@ -42,6 +42,10 @@ class SkillWriter(Protocol):
 
     async def delete_file(self, path: str) -> None: ...
 
+    async def move_file(self, source: str, target: str, *, by: uuid.UUID) -> None:
+        """把 ``source`` 改到 ``target``，内容不变；调用方先确认 ``source`` 在、``target`` 不在。"""
+        ...
+
     async def replace_draft(self, files: Mapping[str, str], *, by: uuid.UUID) -> None:
         """删掉草稿的全部文件，换成 ``files``。"""
         ...

@@ -24,7 +24,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.helpers.app import TEST_CREDENTIAL_KEY, make_client
-from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.auth import (
+    login_as_editor,
+    register_and_login,
+    set_direct_permissions_in_db,
+    set_roles_in_db,
+)
 from tests.helpers.model_providers import (
     BAD_KEY,
     GOOD_KEY,
@@ -84,6 +89,7 @@ ENDPOINTS: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/model-providers", None),
     ("POST", "/model-providers", {"name": "x", "provider": "bailian", "label": "x"}),
     ("PATCH", "/model-providers/{pid}", {"label": "x"}),
+    ("DELETE", "/model-providers/{pid}", None),
     ("POST", "/model-providers/{pid}/credentials", {"name": "x", "fields": {"api_key": GOOD_KEY}}),
     ("POST", "/model-providers/{pid}/credentials/test", {"fields": {"api_key": GOOD_KEY}}),
     ("PATCH", "/model-providers/{pid}/credentials/{cid}", {"name": "x"}),
@@ -480,6 +486,148 @@ async def test_provider_updates_keep_what_was_not_sent(root: httpx.AsyncClient) 
     assert (
         await root.patch(f"/model-providers/{uuid.uuid4()}", json={"label": "x"})
     ).status_code == 404
+
+
+async def provider_rows(engine: AsyncEngine, provider_id: str) -> tuple[int, int, int]:
+    """库里这个供应商自己、它的密钥与模型设置各有几行。"""
+
+    async with engine.connect() as conn:
+        counts = [
+            (
+                await conn.execute(
+                    text(f"SELECT count(*) FROM agent_runtime.{table} WHERE {column} = :id"),
+                    {"id": uuid.UUID(provider_id)},
+                )
+            ).scalar_one()
+            for table, column in (
+                ("model_providers", "id"),
+                ("provider_credentials", "provider_id"),
+                ("provider_models", "provider_id"),
+            )
+        ]
+    return counts[0], counts[1], counts[2]
+
+
+async def save_agent_model(root: httpx.AsyncClient, model: dict[str, Any] | None) -> None:
+    """把 agent ``user`` 的草稿模型换成 ``model``（没有这个 agent 先建一个）。"""
+
+    detail = await root.get("/agents/user")
+    if detail.status_code == 404:
+        detail = await root.post("/agents", json={"id": "user", "name": "用户"})
+    assert detail.status_code in {200, 201}, detail.text
+    saved = await root.put(
+        "/agents/user/draft",
+        json={
+            "config": {"schema_version": 1, "model": model},
+            "skillIds": [],
+            "lockVersion": detail.json()["draft"]["lockVersion"],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+
+async def test_deleting_a_provider_takes_its_credentials_and_models_with_it(
+    root: httpx.AsyncClient, engine: AsyncEngine
+) -> None:
+    """有 agent 的草稿写着它、或它有默认模型时是 409，都清掉后连同密钥与模型设置一起删掉。"""
+
+    provider = await connect_bailian(root)
+    other = await connect_bailian(root, name="bailian-spare")
+    base = f"/model-providers/{provider['id']}"
+    credential = await add_credential(root, provider["id"])
+    added = await root.post(
+        f"{base}/models", json={"name": "qwen-max", "type": "llm", "api": "chat"}
+    )
+    assert added.status_code == 201, added.text
+    await root.patch(f"{base}/models/llm/ZHIPU/GLM-5.3-Flash", json={"enabled": False})
+    assert await provider_rows(engine, provider["id"]) == (1, 1, 2)
+
+    await save_agent_model(
+        root,
+        {"provider": "bailian-main", "name": "qwen-max", "credential_id": credential["id"]},
+    )
+    used = await root.delete(base)
+    assert used.status_code == 409, used.text
+    assert "user" in used.json()["detail"]
+
+    await save_agent_model(root, None)
+    await root.put(
+        "/default-models/llm", json={"providerId": provider["id"], "modelName": "qwen-max"}
+    )
+    default = await root.delete(base)
+    assert default.status_code == 409, default.text
+    assert "默认模型" in default.json()["detail"]
+    assert await provider_rows(engine, provider["id"]) == (1, 1, 2)
+
+    moved = await root.put(
+        "/default-models/llm", json={"providerId": other["id"], "modelName": "qwen3.8-flash"}
+    )
+    assert moved.status_code == 200, moved.text
+    deleted = await root.delete(base)
+
+    assert deleted.status_code == 204, deleted.text
+    assert await provider_rows(engine, provider["id"]) == (0, 0, 0)
+    listed = await root.get("/model-providers")
+    assert [one["name"] for one in listed.json()["providers"]] == ["bailian-spare"]
+    assert (await root.delete(base)).status_code == 404
+
+
+async def test_agent_managers_read_model_options_without_model_manage(
+    app: FastAPI, root: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """只列启用的供应商与它们启用的对话模型，密钥只给打码值并标出默认的那把；``model:manage`` 的端点照样
+    403。"""
+
+    provider = await connect_bailian(root)
+    paused = await connect_bailian(root, name="bailian-paused")
+    base = f"/model-providers/{provider['id']}"
+    main = await add_credential(root, provider["id"])
+    spare = await add_credential(root, provider["id"], name="备用", api_key=OTHER_KEY)
+    await root.patch(f"{base}/models/llm/ZHIPU/GLM-5.3-Flash", json={"enabled": False})
+    await root.post(f"{base}/models", json={"name": "text-embed", "type": "embedding"})
+    await root.patch(f"/model-providers/{paused['id']}", json={"enabled": False})
+
+    async with make_client(app) as agent_manager:
+        await register_and_login(agent_manager, username="amy", email="amy@example.com")
+        await set_roles_in_db(migrated_pg, "amy@example.com", ["editor"])
+        await set_direct_permissions_in_db(migrated_pg, "amy@example.com", ["agent:manage"])
+
+        options = await agent_manager.get("/agents/model-options")
+        assert (await agent_manager.get("/model-providers")).status_code == 403
+        assert (await agent_manager.get("/model-providers/declarations")).status_code == 403
+
+    assert options.status_code == 200, options.text
+    assert_no_plaintext(options)
+    assert options.json() == {
+        "providers": [
+            {
+                "id": provider["id"],
+                "name": "bailian-main",
+                "label": "百炼",
+                "models": [
+                    {
+                        "name": "qwen3.8-flash",
+                        "contextSize": 1048576,
+                        "thinking": ["none", "low", "medium", "high"],
+                    }
+                ],
+                "credentials": [
+                    {
+                        "id": spare["id"],
+                        "name": "备用",
+                        "fields": {"api_key": "••••wxyz", "base_url": DEFAULT_BASE_URL},
+                        "isDefault": False,
+                    },
+                    {
+                        "id": main["id"],
+                        "name": "主账号",
+                        "fields": {"api_key": "••••abcd", "base_url": DEFAULT_BASE_URL},
+                        "isDefault": True,
+                    },
+                ],
+            }
+        ]
+    }
 
 
 async def test_declaration_without_custom_models_refuses_them(engine: AsyncEngine) -> None:

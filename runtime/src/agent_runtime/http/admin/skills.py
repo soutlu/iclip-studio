@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Query, Response, UploadFile
 from agent_runtime.config.skills.public import (
     MAX_ARCHIVE_BYTES,
     DraftFileOut,
+    DraftFileRenameIn,
     DraftFileWriteIn,
     SkillCreateIn,
     SkillDetailOut,
@@ -66,6 +67,15 @@ def create_skills_router(service: SkillsService) -> APIRouter:
         """改显示名；标识不能改。"""
 
         return await service.rename(skill_id, body)
+
+    # 合法的草稿路径只有 SKILL.md 与 references/ 下的，rename 不会与 {path} 撞名；照样登记在它前面。
+    @router.post("/{skill_id}/draft/files/rename", response_model=DraftFileOut)
+    async def rename_draft_file(
+        skill_id: uuid.UUID, body: DraftFileRenameIn, actor: EndUser
+    ) -> DraftFileOut:
+        """把草稿里的一个文件改到新路径，内容不变；``baseHash`` 对不上或新路径已有文件是 409。"""
+
+        return await service.move_file(skill_id, body, by=actor)
 
     @router.get("/{skill_id}/draft/files/{path:path}", response_model=DraftFileOut)
     async def read_draft_file(skill_id: uuid.UUID, path: str) -> DraftFileOut:

@@ -13,6 +13,7 @@ from agent_runtime.agent_usage import in_use_message, usages_out
 from agent_runtime.config.agent_config.compile import compile_agent
 from agent_runtime.config.agent_config.config import (
     AgentConfig,
+    agent_refs,
     dump_config,
     empty_config,
     load_config,
@@ -21,6 +22,7 @@ from agent_runtime.config.agent_config.config import (
 from agent_runtime.config.agent_config.models import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
+    AgentRefs,
     AgentState,
     AgentStatus,
     AgentVersion,
@@ -96,7 +98,9 @@ def _problem_out(problem: Problem) -> AgentProblemOut:
     return AgentProblemOut(path=problem.path, message=problem.message)
 
 
-def _agent_out(state: AgentState) -> AgentOut:
+def _agent_out(state: AgentState, agents: Sequence[AgentRefs]) -> AgentOut:
+    """``agents`` 是全部 agent 的引用，用来判断它是不是别人的子 agent。"""
+
     agent = state.agent
     active = state.active
     return AgentOut(
@@ -112,6 +116,8 @@ def _agent_out(state: AgentState) -> AgentOut:
         if active is not None
         else None,
         has_unpublished_changes=state.has_unpublished_changes,
+        has_subagents=bool(agent_refs(state).subagents),
+        is_subagent=bool(subagent_users(agents, agent.id)),
         created_by=agent.created_by,
         created_at=agent.created_at,
         updated_at=agent.updated_at,
@@ -166,7 +172,11 @@ class AgentConfigService:
         self._skills = skills
 
     async def list(self) -> AgentsOut:
-        return AgentsOut(items=[_agent_out(state) for state in await self._store.list()])
+        """全部 agent；子 agent 的两个标记从同一次读出的全部 agent 里算，不再另查。"""
+
+        states = await self._store.list()
+        agents = tuple(agent_refs(state) for state in states)
+        return AgentsOut(items=[_agent_out(state, agents) for state in states])
 
     def plugins(self) -> AgentPluginsOut:
         """本部署插件登记表里的全部插件，配置页列出来供选择。"""
@@ -189,9 +199,10 @@ class AgentConfigService:
 
         state = await self._require(agent_id)
         draft = state.draft
-        users = subagent_users(await self._store.references(), agent_id)
+        agents = await self._store.references()
+        users = subagent_users(agents, agent_id)
         return AgentDetailOut(
-            **_agent_out(state).model_dump(),
+            **_agent_out(state, agents).model_dump(),
             draft=AgentDraftOut(
                 config=load_config(draft.config),
                 skill_ids=list(draft.skill_ids),
@@ -204,14 +215,15 @@ class AgentConfigService:
         )
 
     async def create(self, body: AgentCreateIn, *, by: uuid.UUID) -> AgentDetailOut:
-        """建一个 agent：草稿是空配置（没有模型），不上菜单，排在最后。标识不合规矩、名称为空或超长是
-        ``ValidationFailed``，标识已被占用是 ``Conflict``。"""
+        """建一个 agent：草稿是空配置（没有模型），按 ``listed`` 上不上菜单，排在最后。标识不合规矩、名称
+        为空或超长是 ``ValidationFailed``，标识已被占用是 ``Conflict``。"""
 
         agent_id = check_agent_id(body.id)
         await self._store.create(
             agent_id,
             name=clean_name(body.name),
             description=clean_description(body.description),
+            listed=body.listed,
             config=dump_config(empty_config()),
             by=by,
         )

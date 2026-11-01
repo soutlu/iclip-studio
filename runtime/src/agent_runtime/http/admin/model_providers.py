@@ -61,6 +61,13 @@ def create_model_providers_router(service: ModelProviderService) -> APIRouter:
 
         return await service.update(provider_id, body)
 
+    @router.delete("/{provider_id}", status_code=204)
+    async def delete_model_provider(provider_id: uuid.UUID, _actor: EndUser) -> Response:
+        """删一个供应商连同它的密钥与模型；有 agent 写着它、或它有默认模型是 409。"""
+
+        await service.delete(provider_id)
+        return Response(status_code=204)
+
     @router.post("/{provider_id}/credentials", response_model=CredentialOut, status_code=201)
     async def create_provider_credential(
         provider_id: uuid.UUID, body: CredentialCreateIn, actor: EndUser

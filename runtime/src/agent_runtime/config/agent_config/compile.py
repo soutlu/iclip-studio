@@ -198,9 +198,7 @@ def _compile_subagents(
     subagents_of = _active_subagents_of if runtime else _subagents_of
     if subagents and not runtime:
         referrers = sorted(
-            one.agent_id
-            for one in agents
-            if one.agent_id != agent_id and agent_id in _subagents_of(one)
+            one.agent_id for one in agents if one.agent_id != agent_id and agent_id in one.subagents
         )
         if referrers:
             problems.append(
@@ -239,10 +237,7 @@ def _compile_subagents(
 
 
 def _subagents_of(refs: AgentRefs) -> frozenset[str]:
-    """草稿与当前版本里写的子 agent 合在一起。"""
-
-    active = refs.active.subagents if refs.active is not None else ()
-    return frozenset((*refs.draft.subagents, *active))
+    return refs.subagents
 
 
 def _active_subagents_of(refs: AgentRefs) -> frozenset[str]:

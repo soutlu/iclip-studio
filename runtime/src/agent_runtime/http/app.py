@@ -277,7 +277,7 @@ def create_app(
     admin.include_router(create_skills_router(skills))
     admin.include_router(create_model_providers_router(model_providers))
     admin.include_router(create_default_models_router(model_providers))
-    admin.include_router(create_agent_config_router(agent_config))
+    admin.include_router(create_agent_config_router(agent_config, model_providers))
 
     v1 = APIRouter(prefix="/v1", dependencies=[Depends(auth.calling_app)])
     v1.include_router(admin)

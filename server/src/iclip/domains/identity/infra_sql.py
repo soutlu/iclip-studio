@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
+from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
@@ -166,6 +167,25 @@ class SqlUserRepository:
         async with self._sessions() as session:
             row = await session.get(User, user_id)
             return account_from_row(row) if row is not None else None
+
+    async def display_names(self, user_ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """一次查出这些用户各自给人看的名字：显示名，没有就用用户名，再没有用邮箱；不存在的 id 不在结果里。
+        配置页给操作人补名字用。"""
+
+        if not user_ids:
+            return {}
+        # fastapi-users 把 id 与 email 标成普通类型，按列查走表上的列。
+        users = User.__table__.c
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(users.id, users.display_name, users.username, users.email).where(
+                    users.id.in_(list(user_ids))
+                )
+            )
+            return {
+                user_id: display_name or username or email
+                for user_id, display_name, username, email in rows.tuples()
+            }
 
     async def list_page(self, *, offset: int, limit: int) -> tuple[tuple[UserAccount, ...], int]:
         async with self._sessions() as session:

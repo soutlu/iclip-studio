@@ -86,7 +86,7 @@ async def test_admin_manages_an_agent_end_to_end(
     assert (
         await admin.post("/agents", json={"id": "director", "name": "又一个"})
     ).status_code == 409
-    for reserved in ("plugins", "order", "import"):
+    for reserved in ("plugins", "order", "import", "model-options"):
         assert (
             await admin.post("/agents", json={"id": reserved, "name": "x"})
         ).status_code == 422, reserved

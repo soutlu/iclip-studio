@@ -82,6 +82,20 @@ def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
             body=body,
         )
 
+    @router.delete("/{provider_id}", status_code=204)
+    async def delete_model_provider(
+        provider_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission(_MANAGE)],
+    ) -> Response:
+        """删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。"""
+
+        return await relay(
+            runtime,
+            "DELETE",
+            admin_path("model-providers", str(provider_id)),
+            actor=principal.user_id,
+        )
+
     @router.post("/{provider_id}/credentials", response_model=CredentialOut, status_code=201)
     async def create_provider_credential(
         provider_id: uuid.UUID,

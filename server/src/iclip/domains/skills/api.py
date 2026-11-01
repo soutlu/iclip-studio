@@ -1,7 +1,8 @@
 """技能库 HTTP 端点，全部要求 ``agent:manage``。术语见 docs/CONTEXT.md「技能库」。
 
-业务在运行时服务：每个端点验完权限与请求体，按同一个子路径转给它的 ``/v1/admin/skills``，答复原样交回
-（见 ``iclip.platform.runtime_admin``）。请求与答复的声明照旧写在这里，合同由它们导出。
+业务在运行时服务：每个端点验完权限与请求体，按同一个子路径转给它的 ``/v1/admin/skills``（见
+``iclip.platform.runtime_admin``）。答复里带操作人 id 的端点补上操作人的显示名，其余原样交回。请求与答复的
+声明照旧写在这里，合同由它们导出。
 """
 
 from __future__ import annotations
@@ -13,28 +14,45 @@ from agent_runtime.client import RuntimeClient
 from agent_runtime.config.skills.models import MAX_ARCHIVE_BYTES
 from agent_runtime.config.skills.schemas import (
     DraftFileOut,
+    DraftFileRenameIn,
     DraftFileWriteIn,
     SkillCreateIn,
-    SkillDetailOut,
     SkillImportOut,
     SkillPublishIn,
-    SkillsOut,
     SkillUpdateIn,
-    SkillVersionDetailOut,
     SkillVersionFileOut,
+)
+from fastapi import APIRouter, File, Query, Response, UploadFile
+from pydantic import BaseModel
+
+from iclip.domains.identity.public import Principal, require_permission
+from iclip.domains.skills.schemas import (
+    SkillDetailOut,
+    SkillsOut,
+    SkillVersionDetailOut,
     SkillVersionOut,
     SkillVersionsOut,
 )
-from fastapi import APIRouter, File, Query, Response, UploadFile
-
-from iclip.domains.identity.public import Principal, require_permission
-from iclip.platform.runtime_admin import admin_path, relay, upload_of
+from iclip.platform.runtime_admin import UserNames, admin_path, relay, relay_named, upload_of
 
 _MANAGE = "agent:manage"
 
 
-def create_skills_router(runtime: RuntimeClient) -> APIRouter:
+def create_skills_router(runtime: RuntimeClient, user_names: UserNames) -> APIRouter:
+    """``user_names`` 给答复里的操作人补显示名。"""
+
     router = APIRouter(prefix="/skills", tags=["skills"])
+
+    async def named(
+        out: type[BaseModel],
+        method: str,
+        path: str,
+        principal: Principal,
+        body: BaseModel | None = None,
+    ) -> Response:
+        return await relay_named(
+            runtime, user_names, out, method, path, actor=principal.user_id, body=body
+        )
 
     @router.get("", response_model=SkillsOut)
     async def list_skills(
@@ -42,7 +60,7 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """全部技能，含已归档的，每个带有没有未发布的修改。"""
 
-        return await relay(runtime, "GET", "skills", actor=principal.user_id)
+        return await named(SkillsOut, "GET", "skills", principal)
 
     @router.post("", response_model=SkillDetailOut, status_code=201)
     async def create_skill(
@@ -51,7 +69,7 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """新建一个技能，草稿里生成一份带 frontmatter 的 ``SKILL.md``；标识已被占用是 409。"""
 
-        return await relay(runtime, "POST", "skills", actor=principal.user_id, body=body)
+        return await named(SkillDetailOut, "POST", "skills", principal, body)
 
     @router.post("/import", response_model=SkillImportOut)
     async def import_skill(
@@ -78,9 +96,7 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """一个技能连同草稿的文件清单。"""
 
-        return await relay(
-            runtime, "GET", admin_path("skills", str(skill_id)), actor=principal.user_id
-        )
+        return await named(SkillDetailOut, "GET", admin_path("skills", str(skill_id)), principal)
 
     @router.patch("/{skill_id}", response_model=SkillDetailOut)
     async def update_skill(
@@ -90,10 +106,24 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """改显示名；标识不能改。"""
 
+        return await named(
+            SkillDetailOut, "PATCH", admin_path("skills", str(skill_id)), principal, body
+        )
+
+    # 合法的草稿路径只有 SKILL.md 与 references/ 下的，rename 不会与 {path} 撞名；照样登记在它前面。
+    @router.post("/{skill_id}/draft/files/rename", response_model=DraftFileOut)
+    async def rename_draft_file(
+        skill_id: uuid.UUID,
+        body: DraftFileRenameIn,
+        principal: Annotated[Principal, require_permission(_MANAGE)],
+    ) -> Response:
+        """把草稿里的一个文件改到新路径，内容不变，一次写完：``baseHash`` 对不上或新路径已有文件是 409，
+        ``SKILL.md`` 不能改名、新路径不合格是 422。"""
+
         return await relay(
             runtime,
-            "PATCH",
-            admin_path("skills", str(skill_id)),
+            "POST",
+            admin_path("skills", str(skill_id), "draft/files/rename"),
             actor=principal.user_id,
             body=body,
         )
@@ -155,12 +185,12 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """把草稿发布成新版本；草稿不合格或与最新版相同是 422。"""
 
-        return await relay(
-            runtime,
+        return await named(
+            SkillVersionOut,
             "POST",
             admin_path("skills", str(skill_id), "versions"),
-            actor=principal.user_id,
-            body=body,
+            principal,
+            body,
         )
 
     @router.get("/{skill_id}/versions", response_model=SkillVersionsOut)
@@ -168,8 +198,8 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
         skill_id: uuid.UUID,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        return await relay(
-            runtime, "GET", admin_path("skills", str(skill_id), "versions"), actor=principal.user_id
+        return await named(
+            SkillVersionsOut, "GET", admin_path("skills", str(skill_id), "versions"), principal
         )
 
     @router.get("/{skill_id}/versions/{version_id}", response_model=SkillVersionDetailOut)
@@ -180,11 +210,11 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """一个版本连同它的文件清单。"""
 
-        return await relay(
-            runtime,
+        return await named(
+            SkillVersionDetailOut,
             "GET",
             admin_path("skills", str(skill_id), "versions", str(version_id)),
-            actor=principal.user_id,
+            principal,
         )
 
     @router.get(
@@ -212,11 +242,11 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
     ) -> Response:
         """把这个版本的文件整份抄回草稿，替换草稿里的全部文件；不发布。"""
 
-        return await relay(
-            runtime,
+        return await named(
+            SkillDetailOut,
             "POST",
             admin_path("skills", str(skill_id), "versions", str(version_id), "restore"),
-            actor=principal.user_id,
+            principal,
         )
 
     @router.post("/{skill_id}/archive", response_model=SkillDetailOut)
@@ -224,8 +254,8 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
         skill_id: uuid.UUID,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        return await relay(
-            runtime, "POST", admin_path("skills", str(skill_id), "archive"), actor=principal.user_id
+        return await named(
+            SkillDetailOut, "POST", admin_path("skills", str(skill_id), "archive"), principal
         )
 
     @router.post("/{skill_id}/unarchive", response_model=SkillDetailOut)
@@ -233,11 +263,8 @@ def create_skills_router(runtime: RuntimeClient) -> APIRouter:
         skill_id: uuid.UUID,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        return await relay(
-            runtime,
-            "POST",
-            admin_path("skills", str(skill_id), "unarchive"),
-            actor=principal.user_id,
+        return await named(
+            SkillDetailOut, "POST", admin_path("skills", str(skill_id), "unarchive"), principal
         )
 
     @router.get(

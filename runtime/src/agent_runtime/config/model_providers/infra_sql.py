@@ -355,6 +355,18 @@ class _SqlProviderEditor:
             .on_conflict_do_update(index_elements=[_defaults.type], set_=values)
         )
 
+    async def delete_provider(self) -> None:
+        # 密钥与模型设置在表上是级联删除，这里照样显式删，不靠库的约束替我们做。
+        await self._conn.execute(
+            delete(provider_credentials_table).where(_credentials.provider_id == self._provider_id)
+        )
+        await self._conn.execute(
+            delete(provider_models_table).where(_models.provider_id == self._provider_id)
+        )
+        await self._conn.execute(
+            delete(model_providers_table).where(_providers.id == self._provider_id)
+        )
+
 
 class SqlModelProviderStore:
     """``ModelProviderStore`` 的 Postgres 实现。"""

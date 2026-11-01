@@ -26,7 +26,7 @@ RevisionOperation = Literal["create", "publish", "restore", "import", "archive",
 AGENT_ID_PATTERN: Final = re.compile(r"[a-z][a-z0-9-]{0,39}")
 """Agent 标识：小写字母开头，后面是小写字母、数字或连字符，最多 40 个字符，创建后不能改。"""
 
-RESERVED_AGENT_IDS: Final = frozenset({"plugins", "order", "import"})
+RESERVED_AGENT_IDS: Final = frozenset({"plugins", "order", "import", "model-options"})
 """不能用作新 agent 标识的词：它们是 ``/agents/`` 下的固定路径，用作标识会和 ``/agents/{id}`` 撞名。
 ``/agents/`` 下每加一个固定路径，就在这里补上那一段。"""
 
@@ -121,6 +121,13 @@ class AgentRefs:
     active_version_id: uuid.UUID | None
     draft: ConfigRefs
     active: ConfigRefs | None
+
+    @property
+    def subagents(self) -> frozenset[str]:
+        """草稿与当前版本里写的子 agent 合在一起。"""
+
+        active = self.active.subagents if self.active is not None else ()
+        return frozenset((*self.draft.subagents, *active))
 
 
 @dataclass(frozen=True, slots=True)
