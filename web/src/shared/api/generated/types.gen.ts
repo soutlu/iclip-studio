@@ -46,7 +46,7 @@ export type AgentConfig = {
   /**
    * Tools
    */
-  tools?: Array<CapToolConfig>
+  tools?: Array<CapToolConfig | McpToolConfig>
 }
 
 /**
@@ -3323,6 +3323,294 @@ export type LibraryVideosOut = {
    * Total
    */
   total: number | null
+}
+
+/**
+ * McpCheckIn
+ *
+ * 试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``value`` 的请求头取那个已保存的服务
+ * 里同名请求头的值；没给 ``serverId`` 时每个请求头都要给 ``value``。
+ */
+export type McpCheckIn = {
+  /**
+   * Headers
+   */
+  headers?: Array<McpHeaderIn>
+  /**
+   * Serverid
+   */
+  serverId?: string | null
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds?: number
+  /**
+   * Transport
+   */
+  transport: 'streamable_http' | 'sse'
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * McpCheckOut
+ *
+ * 一次试连。没通也是 ``200``，看 ``ok``。
+ */
+export type McpCheckOut = {
+  /**
+   * Elapsedms
+   */
+  elapsedMs: number
+  /**
+   * Ok
+   */
+  ok: boolean
+  /**
+   * Reason
+   */
+  reason: string | null
+  /**
+   * Tools
+   */
+  tools: Array<McpToolOut> | null
+}
+
+/**
+ * McpHeaderIn
+ *
+ * 一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。
+ */
+export type McpHeaderIn = {
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Value
+   */
+  value?: string | null
+}
+
+/**
+ * McpHeaderOut
+ */
+export type McpHeaderOut = {
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Value
+   */
+  value: string
+}
+
+/**
+ * McpLastCheckOut
+ */
+export type McpLastCheckOut = {
+  /**
+   * Checkedat
+   */
+  checkedAt: string
+  /**
+   * Elapsedms
+   */
+  elapsedMs: number
+  /**
+   * Ok
+   */
+  ok: boolean
+  /**
+   * Reason
+   */
+  reason: string | null
+}
+
+/**
+ * McpServerCreateIn
+ */
+export type McpServerCreateIn = {
+  /**
+   * Description
+   */
+  description?: string
+  /**
+   * Enabled
+   */
+  enabled?: boolean
+  /**
+   * Headers
+   */
+  headers?: Array<McpHeaderIn>
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds?: number
+  /**
+   * Transport
+   */
+  transport: 'streamable_http' | 'sse'
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * McpServerOut
+ */
+export type McpServerOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Enabled
+   */
+  enabled: boolean
+  /**
+   * Headers
+   */
+  headers: Array<McpHeaderOut>
+  /**
+   * Id
+   */
+  id: string
+  lastCheck: McpLastCheckOut | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds: number
+  /**
+   * Tools
+   */
+  tools: Array<McpToolOut> | null
+  /**
+   * Transport
+   */
+  transport: 'streamable_http' | 'sse'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Updatedby
+   */
+  updatedBy: string
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * McpServerUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。给了 ``headers`` 就整份替换请求头，其中没给 ``value`` 的沿用同名请求头
+ * 原来的值。
+ */
+export type McpServerUpdateIn = {
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Enabled
+   */
+  enabled?: boolean | null
+  /**
+   * Headers
+   */
+  headers?: Array<McpHeaderIn> | null
+  /**
+   * Name
+   */
+  name?: string | null
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds?: number | null
+  /**
+   * Transport
+   */
+  transport?: 'streamable_http' | 'sse' | null
+  /**
+   * Url
+   */
+  url?: string | null
+}
+
+/**
+ * McpServersOut
+ */
+export type McpServersOut = {
+  /**
+   * Items
+   */
+  items: Array<McpServerOut>
+}
+
+/**
+ * McpToolConfig
+ *
+ * 挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
+ * 是全部。
+ */
+export type McpToolConfig = {
+  /**
+   * Server
+   */
+  server: string
+  /**
+   * Tools
+   */
+  tools?: Array<string> | null
+  /**
+   * Type
+   */
+  type: 'mcp'
+}
+
+/**
+ * McpToolOut
+ */
+export type McpToolOut = {
+  /**
+   * Description
+   */
+  description: string | null
+  /**
+   * Name
+   */
+  name: string
 }
 
 /**
@@ -10807,6 +11095,205 @@ export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
 
 export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
   WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
+
+export type McpServersMcpServersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/mcp-servers'
+}
+
+export type McpServersMcpServersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpServersOut
+}
+
+export type McpServersMcpServersGetResponse =
+  McpServersMcpServersGetResponses[keyof McpServersMcpServersGetResponses]
+
+export type CreateMcpServerMcpServersPostData = {
+  body: McpServerCreateIn
+  path?: never
+  query?: never
+  url: '/mcp-servers'
+}
+
+export type CreateMcpServerMcpServersPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateMcpServerMcpServersPostError =
+  CreateMcpServerMcpServersPostErrors[keyof CreateMcpServerMcpServersPostErrors]
+
+export type CreateMcpServerMcpServersPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: McpServerOut
+}
+
+export type CreateMcpServerMcpServersPostResponse =
+  CreateMcpServerMcpServersPostResponses[keyof CreateMcpServerMcpServersPostResponses]
+
+export type CheckUnsavedMcpServerMcpServersCheckPostData = {
+  body: McpCheckIn
+  path?: never
+  query?: never
+  url: '/mcp-servers/check'
+}
+
+export type CheckUnsavedMcpServerMcpServersCheckPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CheckUnsavedMcpServerMcpServersCheckPostError =
+  CheckUnsavedMcpServerMcpServersCheckPostErrors[keyof CheckUnsavedMcpServerMcpServersCheckPostErrors]
+
+export type CheckUnsavedMcpServerMcpServersCheckPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpCheckOut
+}
+
+export type CheckUnsavedMcpServerMcpServersCheckPostResponse =
+  CheckUnsavedMcpServerMcpServersCheckPostResponses[keyof CheckUnsavedMcpServerMcpServersCheckPostResponses]
+
+export type DeleteMcpServerMcpServersServerIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}'
+}
+
+export type DeleteMcpServerMcpServersServerIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteMcpServerMcpServersServerIdDeleteError =
+  DeleteMcpServerMcpServersServerIdDeleteErrors[keyof DeleteMcpServerMcpServersServerIdDeleteErrors]
+
+export type DeleteMcpServerMcpServersServerIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteMcpServerMcpServersServerIdDeleteResponse =
+  DeleteMcpServerMcpServersServerIdDeleteResponses[keyof DeleteMcpServerMcpServersServerIdDeleteResponses]
+
+export type McpServerMcpServersServerIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}'
+}
+
+export type McpServerMcpServersServerIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type McpServerMcpServersServerIdGetError =
+  McpServerMcpServersServerIdGetErrors[keyof McpServerMcpServersServerIdGetErrors]
+
+export type McpServerMcpServersServerIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpServerOut
+}
+
+export type McpServerMcpServersServerIdGetResponse =
+  McpServerMcpServersServerIdGetResponses[keyof McpServerMcpServersServerIdGetResponses]
+
+export type UpdateMcpServerMcpServersServerIdPatchData = {
+  body: McpServerUpdateIn
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}'
+}
+
+export type UpdateMcpServerMcpServersServerIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateMcpServerMcpServersServerIdPatchError =
+  UpdateMcpServerMcpServersServerIdPatchErrors[keyof UpdateMcpServerMcpServersServerIdPatchErrors]
+
+export type UpdateMcpServerMcpServersServerIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpServerOut
+}
+
+export type UpdateMcpServerMcpServersServerIdPatchResponse =
+  UpdateMcpServerMcpServersServerIdPatchResponses[keyof UpdateMcpServerMcpServersServerIdPatchResponses]
+
+export type CheckMcpServerMcpServersServerIdCheckPostData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}/check'
+}
+
+export type CheckMcpServerMcpServersServerIdCheckPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CheckMcpServerMcpServersServerIdCheckPostError =
+  CheckMcpServerMcpServersServerIdCheckPostErrors[keyof CheckMcpServerMcpServersServerIdCheckPostErrors]
+
+export type CheckMcpServerMcpServersServerIdCheckPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpCheckOut
+}
+
+export type CheckMcpServerMcpServersServerIdCheckPostResponse =
+  CheckMcpServerMcpServersServerIdCheckPostResponses[keyof CheckMcpServerMcpServersServerIdCheckPostResponses]
 
 export type ModelProvidersModelProvidersGetData = {
   body?: never

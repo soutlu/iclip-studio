@@ -1,4 +1,5 @@
-"""Agent 配置的端口：自有六张表的仓储，以及由组合根接上的三个查询（模型供应商、插件登记表、技能库）。"""
+"""Agent 配置的端口：自有六张表的仓储，以及由组合根接上的四个查询（模型供应商、插件登记表、MCP 服务、
+技能库）。"""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from agent_runtime.config.agent_config.models import (
     AgentState,
     AgentStatus,
     AgentVersion,
+    McpServerFacts,
     PluginFacts,
     Problem,
     ProviderFacts,
@@ -172,6 +174,14 @@ class PluginDirectory(Protocol):
         ...
 
 
+class McpDirectory(Protocol):
+    """查 MCP 服务，由组合根接到 MCP 服务域。"""
+
+    async def server(self, server_id: str) -> McpServerFacts | None:
+        """按标识找 MCP 服务；没有给 ``None``。"""
+        ...
+
+
 class SkillDirectory(Protocol):
     """查技能库，由组合根接到技能库域。"""
 
@@ -184,6 +194,7 @@ __all__ = [
     "AgentStore",
     "AgentWriter",
     "ImportedAgent",
+    "McpDirectory",
     "ModelDirectory",
     "PluginDirectory",
     "SkillDirectory",

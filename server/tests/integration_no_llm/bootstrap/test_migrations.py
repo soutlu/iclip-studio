@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent_runtime.config.agent_config.infra_sql import metadata_obj as agent_config_metadata
+from agent_runtime.config.mcp_servers.infra_sql import metadata_obj as mcp_servers_metadata
 from agent_runtime.config.model_providers.infra_sql import metadata_obj as model_providers_metadata
 from agent_runtime.config.skills.infra_sql import metadata_obj as skills_metadata
 from agent_runtime.file_store.pg import metadata_obj as file_store_metadata
@@ -45,6 +46,7 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     brand_templates_metadata,
     skills_metadata,
     model_providers_metadata,
+    mcp_servers_metadata,
     agent_config_metadata,
     step_store_metadata,
     jobs_metadata,

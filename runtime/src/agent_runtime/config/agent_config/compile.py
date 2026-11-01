@@ -1,8 +1,8 @@
 """把一份配置编译成装配 agent 要用的 ``CompiledAgent``，或者一张问题清单。
 
-先查完全部引用再给结果，不在半路停：模型、插件、技能、子 agent 各自的问题都列出来，每条带 ``path``。
-跨领域的事实都经端口查（见 ``repository``）；子 agent 用的是本领域自己的 ``AgentRefs``。结果直接对应
-pydantic-ai 的装配：``capabilities`` 是原生 AgentSpec 的条目，技能与子 agent 单独带着。"""
+先查完全部引用再给结果，不在半路停：模型、插件、MCP 服务、技能、子 agent 各自的问题都列出来，每条带
+``path``。跨领域的事实都经端口查（见 ``repository``）；子 agent 用的是本领域自己的 ``AgentRefs``。结果直接
+对应 pydantic-ai 的装配：``capabilities`` 是原生 AgentSpec 的条目，MCP 服务、技能与子 agent 单独带着。"""
 
 from __future__ import annotations
 
@@ -14,20 +14,30 @@ from agent_runtime.config.agent_config.config import (
     AgentConfig,
     AgentModelRef,
     CapToolConfig,
+    McpToolConfig,
     SubagentConfig,
     ToolConfig,
 )
 from agent_runtime.config.agent_config.models import (
+    MCP_TOOL_NAME_PATTERN,
     STATUS_ARCHIVED,
     AgentRefs,
     CompiledAgent,
+    CompiledMcpServer,
     CompiledModel,
     CompiledSkill,
     CompiledSubagent,
+    McpServerFacts,
     Problem,
     SkillFacts,
+    mcp_tool_name,
+    mcp_tool_prefix,
 )
-from agent_runtime.config.agent_config.repository import ModelDirectory, PluginDirectory
+from agent_runtime.config.agent_config.repository import (
+    McpDirectory,
+    ModelDirectory,
+    PluginDirectory,
+)
 
 
 async def compile_agent(
@@ -37,6 +47,7 @@ async def compile_agent(
     *,
     models: ModelDirectory,
     plugins: PluginDirectory,
+    mcp: McpDirectory,
     skills: Sequence[SkillFacts],
     agents: Sequence[AgentRefs],
     runtime: bool = False,
@@ -45,11 +56,14 @@ async def compile_agent(
 
     ``runtime`` 为真是运行前装配一个已定下的配置（对话固定的版本，或草稿）：子 agent 只有一层的规则只看
     各 agent 的当前版本，不看草稿，也不查「自己正被别人当作子 agent」——别人草稿里的改动不该让已经定下的
-    版本跑不起来。其余规则与发布一样。"""
+    版本跑不起来；MCP 服务只查在不在、启没启用，不拿最后一次发现的工具对照（见 ``_compile_mcp``）。其余规则
+    与发布一样。"""
 
     problems: list[Problem] = []
     model = await _compile_model(config.model, models, problems)
-    capabilities = _compile_tools(config.tools, plugins, problems)
+    capabilities, mcp_servers = await _compile_tools(
+        config.tools, plugins, mcp, problems, runtime=runtime
+    )
     compiled_skills = _compile_skills(skill_ids, skills, problems)
     subagents = _compile_subagents(agent_id, config.subagents, agents, problems, runtime=runtime)
     if problems or model is None:
@@ -59,6 +73,7 @@ async def compile_agent(
         instructions=config.instructions,
         model=model,
         capabilities=capabilities,
+        mcp_servers=mcp_servers,
         skills=compiled_skills,
         subagents=subagents,
     )
@@ -117,18 +132,92 @@ async def _compile_model(
     )
 
 
-def _compile_tools(
-    tools: Sequence[ToolConfig], plugins: PluginDirectory, problems: list[Problem]
-) -> tuple[Mapping[str, Mapping[str, Any]], ...]:
-    enabled = {tool.toolset for tool in tools if tool.enabled}
+async def _compile_tools(
+    tools: Sequence[ToolConfig],
+    plugins: PluginDirectory,
+    mcp: McpDirectory,
+    problems: list[Problem],
+    *,
+    runtime: bool,
+) -> tuple[tuple[Mapping[str, Mapping[str, Any]], ...], tuple[CompiledMcpServer, ...]]:
+    enabled = {tool.toolset for tool in tools if isinstance(tool, CapToolConfig) and tool.enabled}
     entries: list[Mapping[str, Mapping[str, Any]]] = []
+    servers: list[CompiledMcpServer] = []
     for index, tool in enumerate(tools):
+        if isinstance(tool, McpToolConfig):
+            server = await _compile_mcp(index, tool, mcp, problems, runtime=runtime)
+            if server is not None:
+                servers.append(server)
+            continue
         if not tool.enabled:
             continue
         entry = _compile_cap(index, tool, enabled, plugins, problems)
         if entry is not None:
             entries.append(entry)
-    return tuple(entries)
+    return tuple(entries), tuple(servers)
+
+
+async def _compile_mcp(
+    index: int,
+    tool: McpToolConfig,
+    mcp: McpDirectory,
+    problems: list[Problem],
+    *,
+    runtime: bool,
+) -> CompiledMcpServer | None:
+    """MCP 服务要在、要启用；发布时另查选的工具都在最后一次发现的工具里、加上前缀后模型收得下。运行时只查
+    前两条：工具的增减以服务当下交出的为准，原生的 ``allowed_tools`` 只放行写了的那几个。"""
+
+    path = f"tools[{index}]"
+    server = await mcp.server(tool.server)
+    if server is None:
+        problems.append(Problem(f"{path}.server", f"没有标识为 {tool.server} 的 MCP 服务"))
+        return None
+    found = len(problems)
+    if not server.enabled:
+        problems.append(Problem(f"{path}.server", f"MCP 服务 {server.name} 已停用"))
+    if not runtime:
+        _check_mcp_tools(path, tool, server, problems)
+    if len(problems) > found:
+        return None
+    return CompiledMcpServer(
+        server_id=server.id, tools=tool.tools, tool_prefix=mcp_tool_prefix(server.id)
+    )
+
+
+def _check_mcp_tools(
+    path: str, tool: McpToolConfig, server: McpServerFacts, problems: list[Problem]
+) -> None:
+    discovered = server.tools
+    if discovered is None:
+        problems.append(
+            Problem(f"{path}.server", f"MCP 服务 {server.name} 还没有连通过，先测试连接再发布")
+        )
+        return
+    if tool.tools is None:
+        for name in discovered:
+            if (message := _exposed_name_problem(server.id, name)) is not None:
+                problems.append(Problem(path, message))
+        return
+    for position, name in enumerate(tool.tools):
+        tool_path = f"{path}.tools[{position}]"
+        if name not in discovered:
+            problems.append(Problem(tool_path, f"MCP 服务 {server.name} 没有工具 {name}"))
+        elif (message := _exposed_name_problem(server.id, name)) is not None:
+            problems.append(Problem(tool_path, message))
+
+
+def _exposed_name_problem(server_id: str, tool: str) -> str | None:
+    """模型看到的工具名不合写法时给人看的原因，合格给 ``None``。"""
+
+    exposed = mcp_tool_name(server_id, tool)
+    if MCP_TOOL_NAME_PATTERN.fullmatch(exposed) is not None:
+        return None
+    return (
+        f"工具 {tool} 在 agent 里叫 {exposed}，模型只收字母、数字、下划线与连字符，最多 64 个字符；"
+        f"「mcp_」、服务标识、「_」与工具名合起来超了或含有别的字符，换一个短一些的服务标识，"
+        "或不选这个工具"
+    )
 
 
 def _compile_cap(

@@ -1,14 +1,14 @@
-"""「谁在用」：按每个 agent 的草稿与当前版本里写的引用，回答某个技能、模型、密钥或 agent 被谁用着。
+"""「谁在用」：按每个 agent 的草稿与当前版本里写的引用，回答某个技能、模型、密钥、MCP 服务或 agent 被谁用着。
 
-规则见 ``agent_runtime.agent_usage``：草稿或当前版本还在引用就算在用，只被旧版本用到的不算。技能库与模型供应商
-经它们自己声明的端口问这里，由组合根把 ``AgentReferences`` 接过去。"""
+规则见 ``agent_runtime.agent_usage``：草稿或当前版本还在引用就算在用，只被旧版本用到的不算。技能库、模型供应商
+与 MCP 服务经它们自己声明的端口问这里，由组合根把 ``AgentReferences`` 接过去。"""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
 
-from agent_runtime.agent_usage import AgentUsage, ModelReference
+from agent_runtime.agent_usage import AgentUsage, ModelReference, merge_usages
 from agent_runtime.config.agent_config.models import AgentRefs, ConfigRefs
 from agent_runtime.config.agent_config.repository import AgentStore
 
@@ -49,6 +49,21 @@ def skill_users(agents: Sequence[AgentRefs], skill_id: uuid.UUID) -> tuple[Agent
         for refs in agents
     )
     return tuple(one for one in found if one is not None)
+
+
+def mcp_server_users(agents: Sequence[AgentRefs]) -> dict[str, tuple[AgentUsage, ...]]:
+    """服务标识到挂着它的 agent，同一 agent 合成一条、按标识排；没人挂的服务不在里面。"""
+
+    found: dict[str, list[AgentUsage]] = {}
+    for refs in agents:
+        active = refs.active.mcp_servers if refs.active is not None else ()
+        for server_id in {*refs.draft.mcp_servers, *active}:
+            usage = _usage(
+                refs, in_draft=server_id in refs.draft.mcp_servers, in_active=server_id in active
+            )
+            if usage is not None:
+                found.setdefault(server_id, []).append(usage)
+    return {server_id: merge_usages(usages) for server_id, usages in found.items()}
 
 
 def model_references(agents: Sequence[AgentRefs]) -> tuple[ModelReference, ...]:
@@ -93,5 +108,14 @@ class AgentReferences:
     async def model_references(self) -> tuple[ModelReference, ...]:
         return model_references(await self._store.references())
 
+    async def mcp_server_users(self) -> dict[str, tuple[AgentUsage, ...]]:
+        return mcp_server_users(await self._store.references())
 
-__all__ = ["AgentReferences", "model_references", "skill_users", "subagent_users"]
+
+__all__ = [
+    "AgentReferences",
+    "mcp_server_users",
+    "model_references",
+    "skill_users",
+    "subagent_users",
+]

@@ -20,8 +20,12 @@ LogFormat = Literal["console", "json"]
 SERVICE_NAME = "运行时"
 """console 日志里本服务的服务名列。"""
 
-QUIET_LOGGERS = ("httpx",)
-"""仅保留警告及以上级别的第三方 logger，抑制逐请求 INFO。"""
+QUIET_LOGGERS = ("httpx", "httpx2")
+"""仅保留警告及以上级别的第三方 logger，抑制逐请求 INFO。``httpx2`` 是 MCP 客户端底下的那一份。"""
+
+_SELF_HANDLED_LOGGERS = ("fastmcp",)
+"""import 时自己挂 handler、不往 root 传的第三方 logger（FastMCP 挂的是 rich）：拿掉它们的 handler，交回
+root，跟别的日志同一个格式。"""
 
 _SERVICE_WIDTH = 6
 """服务名列的显示宽度，放得下「运行时」；与后端同宽，同一终端里两个服务的后几列因此对齐。"""
@@ -67,6 +71,10 @@ def configure_logging(level: str, fmt: LogFormat) -> None:
     root.setLevel(level)
     for name in QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+    for name in _SELF_HANDLED_LOGGERS:
+        own = logging.getLogger(name)
+        own.handlers = []
+        own.propagate = True
 
     structlog.configure(
         processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],

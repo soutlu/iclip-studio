@@ -115,6 +115,7 @@ from iclip.domains.inspirations.module import build_inspirations_module
 from iclip.domains.inspirations.service import NoStyleDirectory
 from iclip.domains.library.module import build_library_module
 from iclip.domains.library.reports_pg import PgLibraryReports
+from iclip.domains.mcp_servers.module import build_mcp_servers_module
 from iclip.domains.model_providers.module import build_model_providers_module
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
@@ -576,9 +577,10 @@ def build_app(
         return True
 
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
-    # 配置页的三组管理接口转给运行时服务；技能库与 agent 配置的答复里的操作人由 identity 补上显示名。
+    # 配置页的四组管理接口转给运行时服务；技能库与 agent 配置的答复里的操作人由 identity 补上显示名。
     skills = build_skills_module(runtime_client, identity.users.display_names)
     model_providers = build_model_providers_module(runtime_client)
+    mcp_servers = build_mcp_servers_module(runtime_client)
     agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 
     # 审计报表读运行时的数据只经它的统计接口。
@@ -733,6 +735,8 @@ def build_app(
     for router in skills.routers:
         app.include_router(router)
     for router in model_providers.routers:
+        app.include_router(router)
+    for router in mcp_servers.routers:
         app.include_router(router)
     for router in agent_config.routers:
         app.include_router(router)

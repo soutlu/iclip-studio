@@ -1,9 +1,9 @@
 """运行时从库里装配 agent：对话固定的版本（或某个 agent 的草稿）→ 编译 → 按版本号取缓存或装配。
 
 每次运行先读出装配用到的全部东西的版本，拼成缓存键：agent 版本（草稿是它的 ``lock_version``）、各技能
-最新版的内容 hash、子 agent 的当前版本与描述（连同它们的技能）、用到的供应商与密钥的修改时刻和模型本身。
-键命中就复用装好的 Agent，没命中就装配后放进 LRU。发布 agent、发布技能、改密钥或模型之后，下一次运行
-自然换成新的，不用通知，多个进程各自如此。
+最新版的内容 hash、子 agent 的当前版本与描述（连同它们的技能）、用到的供应商与密钥的修改时刻和模型本身、
+挂的 MCP 服务的修改时刻。键命中就复用装好的 Agent，没命中就装配后放进 LRU。发布 agent、发布技能、改密钥、
+模型或 MCP 服务之后，下一次运行自然换成新的，不用通知，多个进程各自如此。
 
 编译沿用发布时的检查（``compile_agent`` 的运行时模式），引用的模型被停用、插件已从代码里删掉、技能被
 归档等装不起来的情况都报 ``AgentUnavailable``，只影响用到这个版本的对话。
@@ -22,14 +22,17 @@ from typing import Any
 
 import structlog
 
+from agent_runtime.assembly.mcp import mcp_connection
 from agent_runtime.assembly.models import build_provider_model
 from agent_runtime.config.agent_config.public import (
     AgentConfig,
     AgentConfigService,
     CompiledAgent,
+    CompiledMcpServer,
     CompiledSubagent,
     load_config,
 )
+from agent_runtime.config.mcp_servers.public import McpServerService, RuntimeMcpServer
 from agent_runtime.config.model_providers.public import ModelProviderService, RuntimeModel
 from agent_runtime.config.skills.public import Skill, SkillsService
 from agent_runtime.errors import AgentUnavailable, ValidationFailed
@@ -41,6 +44,7 @@ from agent_runtime.harness.agents import (
     profile_metadata,
     subagent_profile,
 )
+from agent_runtime.harness.mcp import mcp_capability
 from agent_runtime.harness.models import BuiltModel
 from agent_runtime.harness.sessions import PgSessionStore
 from agent_runtime.harness.skills import (
@@ -103,12 +107,14 @@ class AssemblySettings:
 
 @dataclass(frozen=True, slots=True)
 class _Prepared:
-    """一个 agent 装配前读齐的全部：编译结果、模型、技能（名字、最新版 id 与内容 hash）与子 agent。
+    """一个 agent 装配前读齐的全部：编译结果、模型、MCP 服务（连同明文的连接参数）、技能（名字、最新版 id 与
+    内容 hash）与子 agent。
 
     ``source`` 写明配置从哪来（版本或草稿），原样进运行记录的 metadata，也进缓存键。"""
 
     compiled: CompiledAgent
     model: RuntimeModel
+    mcp_servers: tuple[tuple[CompiledMcpServer, RuntimeMcpServer], ...]
     skills: tuple[Skill, ...]
     subagents: tuple[tuple[CompiledSubagent, _Prepared], ...]
     source: Mapping[str, str]
@@ -133,6 +139,16 @@ class _Prepared:
                 "model": repr(model.model),
                 "thinking": self.compiled.model.thinking,
             },
+            # 服务的修改时刻随地址、请求头、时限与启停一起变。
+            "mcp_servers": [
+                {
+                    "server": server.id,
+                    "updated_at": server.updated_at.isoformat(),
+                    "tools": list(compiled.tools) if compiled.tools is not None else None,
+                    "tool_prefix": compiled.tool_prefix,
+                }
+                for compiled, server in self.mcp_servers
+            ],
             "skills": [_skill_tag(skill) for skill in self.skills],
             "subagents": [
                 {
@@ -176,12 +192,14 @@ class AgentRuntime:
         agent_config: AgentConfigService,
         skills: SkillsService,
         model_providers: ModelProviderService,
+        mcp_servers: McpServerService,
         sessions: PgSessionStore,
         settings: AssemblySettings,
     ) -> None:
         self._agent_config = agent_config
         self._skills = skills
         self._model_providers = model_providers
+        self._mcp_servers = mcp_servers
         self._sessions = sessions
         self._settings = settings
         self._cache: OrderedDict[str, _Built] = OrderedDict()
@@ -256,6 +274,12 @@ class AgentRuntime:
         )
         if model is None:
             raise AgentUnavailable(f"模型 {ref.provider}/{ref.model} 或它的密钥已不在")
+        mcp_servers: list[tuple[CompiledMcpServer, RuntimeMcpServer]] = []
+        for compiled_server in compiled.mcp_servers:
+            server = await self._mcp_servers.runtime_server(compiled_server.server_id)
+            if server is None:
+                raise AgentUnavailable(f"MCP 服务 {compiled_server.server_id} 已不在")
+            mcp_servers.append((compiled_server, server))
         catalog = {skill.id: skill for skill in await self._skills.catalog()}
         skills: list[Skill] = []
         for one in compiled.skills:
@@ -279,6 +303,7 @@ class AgentRuntime:
         return _Prepared(
             compiled=compiled,
             model=model,
+            mcp_servers=tuple(mcp_servers),
             skills=tuple(skills),
             subagents=tuple(subagents),
             source=source,
@@ -322,6 +347,16 @@ class AgentRuntime:
                     )
                 )
             extra = [
+                *(
+                    mcp_capability(
+                        server_id=server.id,
+                        server_name=server.name,
+                        connection=mcp_connection(server.endpoint),
+                        tools=compiled_server.tools,
+                        tool_prefix=compiled_server.tool_prefix,
+                    )
+                    for compiled_server, server in prepared.mcp_servers
+                ),
                 *(
                     build_skill_capabilities(
                         settings.skill_cache_dir, self._cached_skills(prepared.skills)

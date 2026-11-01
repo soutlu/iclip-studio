@@ -30,8 +30,9 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "domains/tracking/api.py",
         "domains/uploads/api.py",
         "domains/model_providers/api.py",
+        "domains/mcp_servers/api.py",
         "domains/agent_config/api.py",
-        # 管理接口转给运行时服务时把它的答复原样做成 Response，上面三组路由共用。
+        # 管理接口转给运行时服务时把它的答复原样做成 Response，上面四组路由共用。
         "platform/runtime_admin.py",
         "domains/identity/middleware.py",
         "domains/identity/accounts.py",
@@ -178,11 +179,12 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.file_store.store": "工作区文件的形状与路径规则",
     "agent_runtime.file_store.namespace": "工作区与素材台账的命名空间规则",
     "agent_runtime.material_ledger.store": "素材的形状",
-    # 配置页三组管理接口的路由声明在后端，合同照它导出：请求体模型与上限照用运行时的。
+    # 配置页四组管理接口的路由声明在后端，合同照它导出：请求体模型与上限照用运行时的。
     "agent_runtime.config.skills.schemas": "技能库管理接口的请求体",
     "agent_runtime.config.skills.models": "技能导入包的大小上限",
     "agent_runtime.config.model_providers.schemas": "模型供应商管理接口的请求体",
     "agent_runtime.config.model_providers.models": "模型类型的词表",
+    "agent_runtime.config.mcp_servers.schemas": "MCP 服务管理接口的请求体",
     "agent_runtime.config.agent_config.schemas": "agent 配置管理接口的请求体",
     "agent_runtime.agent_usage": "管理接口答复里「谁在用」的形状，后端补名字的答复照用",
     "agent_runtime.config.agent_config.package": "agent 导出包的大小上限",

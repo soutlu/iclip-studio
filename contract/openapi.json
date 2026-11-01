@@ -65,13 +65,17 @@
             "items": {
               "discriminator": {
                 "mapping": {
-                  "cap": "#/components/schemas/CapToolConfig"
+                  "cap": "#/components/schemas/CapToolConfig",
+                  "mcp": "#/components/schemas/McpToolConfig"
                 },
                 "propertyName": "type"
               },
               "oneOf": [
                 {
                   "$ref": "#/components/schemas/CapToolConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/McpToolConfig"
                 }
               ]
             },
@@ -6061,6 +6065,527 @@
           "total"
         ],
         "title": "LibraryVideosOut",
+        "type": "object"
+      },
+      "McpCheckIn": {
+        "additionalProperties": false,
+        "description": "试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``value`` 的请求头取那个已保存的服务\n里同名请求头的值；没给 ``serverId`` 时每个请求头都要给 ``value``。",
+        "properties": {
+          "headers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpHeaderIn"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "timeoutSeconds": {
+            "default": 30,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "transport": {
+            "enum": [
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "transport"
+        ],
+        "title": "McpCheckIn",
+        "type": "object"
+      },
+      "McpCheckOut": {
+        "additionalProperties": false,
+        "description": "一次试连。没通也是 ``200``，看 ``ok``。",
+        "properties": {
+          "elapsedMs": {
+            "title": "Elapsedms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpToolOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "required": [
+          "ok",
+          "elapsedMs",
+          "reason",
+          "tools"
+        ],
+        "title": "McpCheckOut",
+        "type": "object"
+      },
+      "McpHeaderIn": {
+        "additionalProperties": false,
+        "description": "一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpHeaderIn",
+        "type": "object"
+      },
+      "McpHeaderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "McpHeaderOut",
+        "type": "object"
+      },
+      "McpLastCheckOut": {
+        "additionalProperties": false,
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "title": "Checkedat",
+            "type": "string"
+          },
+          "elapsedMs": {
+            "title": "Elapsedms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "ok",
+          "elapsedMs",
+          "reason",
+          "checkedAt"
+        ],
+        "title": "McpLastCheckOut",
+        "type": "object"
+      },
+      "McpServerCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "headers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpHeaderIn"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "timeoutSeconds": {
+            "default": 30,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "transport": {
+            "enum": [
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "transport"
+        ],
+        "title": "McpServerCreateIn",
+        "type": "object"
+      },
+      "McpServerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/McpHeaderOut"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lastCheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpLastCheckOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "timeoutSeconds": {
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpToolOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "transport": {
+            "enum": [
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "updatedBy": {
+            "format": "uuid",
+            "title": "Updatedby",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "usedBy": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsageOut"
+            },
+            "title": "Usedby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "url",
+          "transport",
+          "timeoutSeconds",
+          "headers",
+          "enabled",
+          "lastCheck",
+          "tools",
+          "usedBy",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "McpServerOut",
+        "type": "object"
+      },
+      "McpServerUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动。给了 ``headers`` 就整份替换请求头，其中没给 ``value`` 的沿用同名请求头\n原来的值。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpHeaderIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streamable_http",
+                  "sse"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "McpServerUpdateIn",
+        "type": "object"
+      },
+      "McpServersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpServerOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "McpServersOut",
+        "type": "object"
+      },
+      "McpToolConfig": {
+        "additionalProperties": false,
+        "description": "挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``\n是全部。",
+        "properties": {
+          "server": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Server",
+            "type": "string"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "type": {
+            "const": "mcp",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "server"
+        ],
+        "title": "McpToolConfig",
+        "type": "object"
+      },
+      "McpToolOut": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "McpToolOut",
         "type": "object"
       },
       "MetaMergeOp": {
@@ -20670,6 +21195,365 @@
         "summary": "Whole Film Authors",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/mcp-servers": {
+      "get": {
+        "description": "全部 MCP 服务，带打码的请求头、上一次试连、发现的工具与挂着它的 agent。",
+        "operationId": "mcp_servers_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Mcp Servers",
+        "tags": [
+          "mcp-servers"
+        ]
+      },
+      "post": {
+        "description": "建一个 MCP 服务，不连它。",
+        "operationId": "create_mcp_server_mcp_servers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Create Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers/check": {
+      "post": {
+        "description": "按一份还没保存的配置试连，什么都不存；没通也是 200。",
+        "operationId": "check_unsaved_mcp_server_mcp_servers_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Check Unsaved Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers/{server_id}": {
+      "delete": {
+        "description": "删一个 MCP 服务；有 agent 挂着时不能删。",
+        "operationId": "delete_mcp_server_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      },
+      "get": {
+        "description": "一个 MCP 服务。",
+        "operationId": "mcp_server_mcp_servers__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      },
+      "patch": {
+        "description": "改给了的项，不连它；有 agent 挂着时不能停用。",
+        "operationId": "update_mcp_server_mcp_servers__server_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Update Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers/{server_id}/check": {
+      "post": {
+        "description": "按已保存的配置试连，记下结果；通了换掉发现的工具。没通也是 200。",
+        "operationId": "check_mcp_server_mcp_servers__server_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Check Mcp Server",
+        "tags": [
+          "mcp-servers"
         ]
       }
     },

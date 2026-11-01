@@ -8,7 +8,6 @@ from collections.abc import Mapping, Sequence
 from pydantic import ValidationError
 
 from agent_runtime.config.model_providers.catalog import ModelDeclaration, ProviderDeclaration
-from agent_runtime.config.model_providers.cipher import CredentialCipher
 from agent_runtime.config.model_providers.models import (
     MAX_CREDENTIAL_NAME_CHARS,
     MAX_FIELD_VALUE_CHARS,
@@ -19,10 +18,10 @@ from agent_runtime.config.model_providers.models import (
     ModelSetting,
     ModelType,
     ProviderModel,
-    mask_secret,
 )
 from agent_runtime.errors import ValidationFailed
 from agent_runtime.model_vocab import ModelApi, ThinkingEffort
+from agent_runtime.secrets import CredentialCipher, mask_secret
 
 
 def check_provider_name(name: str) -> str:

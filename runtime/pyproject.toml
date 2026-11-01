@@ -7,7 +7,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.52",
     "pydantic>=2.13.5",
     "structlog>=26.1.0",
-    "pydantic-ai-slim[openai]>=2.62.0",  # OpenAI 兼容端点（含百炼）
+    "pydantic-ai-slim[openai,mcp]>=2.62.0",  # OpenAI 兼容端点（含百炼）；MCP 服务的客户端
     # 0.x 的 minor 版本可能破坏 API；导入边界见 tests/unit/architecture/test_architecture.py
     "pydantic-ai-harness>=0.62.0",
     "pyyaml>=6",  # 供应商声明、技能 frontmatter 与 agent 导出包

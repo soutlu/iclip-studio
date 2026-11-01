@@ -1,7 +1,7 @@
 """Agent 配置的格式：草稿与版本存的都是这一份，导出包里也是它（去掉密钥）。
 
-只管结构：字段、类型、同一工具集与同一子 agent 不重复。引用的供应商、模型、插件、技能与子 agent 存不存在、
-能不能用，由 ``compile`` 在发布时查。"""
+只管结构：字段、类型、同一工具集、同一 MCP 服务与同一子 agent 不重复。引用的供应商、模型、插件、MCP 服务、
+技能与子 agent 存不存在、能不能用，由 ``compile`` 在发布时查。"""
 
 from __future__ import annotations
 
@@ -56,8 +56,42 @@ class CapToolConfig(_Strict):
     parameters: dict[str, Any] = Field(default_factory=dict[str, Any])
 
 
-ToolConfig = Annotated[CapToolConfig, Field(discriminator="type")]
-"""按 ``type`` 区分的工具条目；以后加一种来源（如 ``mcp``）就在这里加一个分支。"""
+class McpToolConfig(_Strict):
+    """挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
+    是全部。"""
+
+    type: Literal["mcp"]
+    server: _Name
+    tools: tuple[_Name, ...] | None = None
+
+    @field_validator("tools")
+    @classmethod
+    def _some_distinct_tools(cls, tools: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if tools is None:
+            return None
+        if not tools:
+            raise ValueError("至少选一个工具；要全部工具就写 null")
+        if (index := _first_repeat(tools)) is not None:
+            raise ValueError(f"第 {index + 1} 项与前面的重复：工具 {tools[index]} 只能写一次")
+        return tools
+
+
+ToolConfig = Annotated[CapToolConfig | McpToolConfig, Field(discriminator="type")]
+"""按 ``type`` 区分的工具条目：``cap`` 是插件，``mcp`` 是 MCP 服务；以后加一种来源就在这里加一个分支。"""
+
+
+def _tool_key(tool: CapToolConfig | McpToolConfig) -> str:
+    """同一个来源只能挂一次：插件按插件名，MCP 服务按服务标识。"""
+
+    return f"cap:{tool.toolset}" if isinstance(tool, CapToolConfig) else f"mcp:{tool.server}"
+
+
+def _tool_label(tool: CapToolConfig | McpToolConfig) -> str:
+    return (
+        f"同一个工具集 {tool.toolset}"
+        if isinstance(tool, CapToolConfig)
+        else f"同一个 MCP 服务 {tool.server}"
+    )
 
 
 class SubagentConfig(_Strict):
@@ -82,10 +116,12 @@ class AgentConfig(_Strict):
 
     @field_validator("tools")
     @classmethod
-    def _distinct_toolsets(cls, tools: tuple[CapToolConfig, ...]) -> tuple[CapToolConfig, ...]:
-        if (index := _first_repeat([tool.toolset for tool in tools])) is not None:
+    def _distinct_sources(
+        cls, tools: tuple[CapToolConfig | McpToolConfig, ...]
+    ) -> tuple[CapToolConfig | McpToolConfig, ...]:
+        if (index := _first_repeat([_tool_key(tool) for tool in tools])) is not None:
             raise ValueError(
-                f"第 {index + 1} 项与前面的重复：同一个工具集 {tools[index].toolset} 只能挂一次"
+                f"第 {index + 1} 项与前面的重复：{_tool_label(tools[index])} 只能挂一次"
             )
         return tools
 
@@ -222,6 +258,7 @@ def config_refs(stored: Mapping[str, Any], skill_ids: Sequence[uuid.UUID]) -> Co
         credential_id=config.model.credential_id if config.model is not None else None,
         skill_ids=tuple(skill_ids),
         subagents=tuple(sub.agent for sub in config.subagents),
+        mcp_servers=tuple(tool.server for tool in config.tools if isinstance(tool, McpToolConfig)),
     )
 
 
@@ -248,6 +285,7 @@ __all__ = [
     "AgentModelRef",
     "AgentModelSettings",
     "CapToolConfig",
+    "McpToolConfig",
     "SubagentConfig",
     "ToolConfig",
     "agent_refs",

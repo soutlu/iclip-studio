@@ -95,6 +95,9 @@ ToolDisplay = (
 DisplayFn = Callable[[Any], ToolDisplay | None]
 """由调用参数计算 display；返回 None 时注册表使用 generic。"""
 
+NamedDisplayFn = Callable[[str, Any], ToolDisplay | None]
+"""名字不固定的工具（如 MCP 服务的工具）按工具名与调用参数计算 display；返回 None 时使用 generic。"""
+
 
 # --- 结果渲染器与 metadata 形状 ------------------------------------------------
 #
@@ -228,6 +231,8 @@ class ToolDisplayRegistry:
     """实时与历史投影共享的工具 display 注册表。"""
 
     entries: Mapping[str, ToolDisplayEntry]
+    unlisted: NamedDisplayFn | None = None
+    """没登记的工具名交给它画；不给、或它给不出就用 generic。"""
 
     EMPTY: ClassVar[ToolDisplayRegistry]
     """供测试使用的空注册表；生产投影须使用已装配的注册表。"""
@@ -240,6 +245,10 @@ class ToolDisplayRegistry:
             display = entry.draw(_as_mapping(args))
             if display is not None:
                 return display
+        elif self.unlisted is not None:
+            display = self.unlisted(name, _as_mapping(args))
+            if display is not None:
+                return display
         return GenericDisplay(summary=name)
 
     def view_of(self, name: str) -> str | None:
@@ -249,8 +258,10 @@ class ToolDisplayRegistry:
         return None if entry is None else entry.view
 
     @staticmethod
-    def merged(*tables: Mapping[str, DisplayFn | ToolDisplayEntry]) -> ToolDisplayRegistry:
-        """合并插件、技能与委派工具的 display 表；重复工具名报错，渲染器可省略。"""
+    def merged(
+        *tables: Mapping[str, DisplayFn | ToolDisplayEntry], unlisted: NamedDisplayFn | None = None
+    ) -> ToolDisplayRegistry:
+        """合并插件、技能与委派工具的 display 表；重复工具名报错，渲染器可省略。``unlisted`` 见同名字段。"""
 
         entries: dict[str, ToolDisplayEntry] = {}
         for table in tables:
@@ -262,7 +273,7 @@ class ToolDisplayRegistry:
                     if isinstance(registered, ToolDisplayEntry)
                     else ToolDisplayEntry(draw=registered)
                 )
-        return ToolDisplayRegistry(entries)
+        return ToolDisplayRegistry(entries, unlisted)
 
 
 ToolDisplayRegistry.EMPTY = ToolDisplayRegistry({})
@@ -279,6 +290,7 @@ __all__ = [
     "GenericDisplay",
     "MediaGridItem",
     "MediaGridItems",
+    "NamedDisplayFn",
     "SearchDisplay",
     "SearchMatch",
     "SearchResultsMeta",
