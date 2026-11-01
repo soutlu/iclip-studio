@@ -20,7 +20,7 @@ type AgentConfigPageProps = {
 type Scoped<T> = { agentId: string | null; value: T }
 
 /**
- * Agent 配置页：顶部是配置导航（这一版有「Agent」「插件」）与「新建 Agent」，下面左右各半，
+ * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」）与「新建 Agent」，下面左右各半，
  * 左边编辑 agent，右边是打开的配置面板；不开弹窗，细节编辑都替换右栏。
  */
 export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps) {
@@ -70,7 +70,10 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
     requestAnimationFrame(() => createRef.current?.focus({ preventScroll: true }))
   }
 
-  const tab = !creating && panel?.type === 'plugins' ? 'plugins' : 'agent'
+  const tab =
+    !creating && (panel?.type === 'plugins' || panel?.type === 'skills') ? panel.type : 'agent'
+  // 编辑技能时正文通常很长：右栏从一半加宽到 3/5，左栏照常可用，一页里改完。
+  const wideRight = panel?.type === 'skills' && panel.view.kind === 'editor'
 
   return (
     <main aria-label="Agent 配置" className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -84,6 +87,7 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
           className="flex min-w-0 flex-1"
           onValueChange={(value) => {
             if (value === 'plugins') setPanel({ type: 'plugins' })
+            else if (value === 'skills') setPanel({ type: 'skills', view: { kind: 'library' } })
             else if (creating) cancelCreating()
             else setPanel(null)
           }}
@@ -91,6 +95,16 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
         >
           <TabsList aria-label="配置管理">
             <TabsTrigger value="agent">Agent</TabsTrigger>
+            <TabsTrigger
+              disabled={creating || currentId === null}
+              // 编辑器、选技能也算在这一页下面：已选中时再点回到技能库（Radix 对已选中的页签不发 onValueChange）。
+              onClick={() => {
+                if (tab === 'skills') setPanel({ type: 'skills', view: { kind: 'library' } })
+              }}
+              value="skills"
+            >
+              技能库
+            </TabsTrigger>
             <TabsTrigger disabled={creating || currentId === null} value="plugins">
               插件
             </TabsTrigger>
@@ -109,7 +123,14 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
         </Button>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
+      <div
+        className={cn(
+          'grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns] ui-motion-m motion-reduce:transition-none',
+          wideRight
+            ? 'md:grid-cols-[minmax(420px,2fr)_minmax(0,3fr)]'
+            : 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]',
+        )}
+      >
         {creating ? (
           <CreateAgentPage onCancel={cancelCreating} onCreated={selectAgent} />
         ) : agents.isPending ? (

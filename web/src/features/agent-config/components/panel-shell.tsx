@@ -11,6 +11,8 @@ type PanelShellProps = {
   footer?: ReactNode
   /** 内容区自己管滚动（编辑器）时传 false。 */
   scroll?: boolean
+  /** 标题栏右侧的小件（版本、移除）。 */
+  actions?: ReactNode
 } & Omit<ComponentPropsWithoutRef<'section'>, 'children' | 'title'>
 
 /**
@@ -18,6 +20,7 @@ type PanelShellProps = {
  * 面板里弹出的菜单挂在 body 上，它们的 Esc 只关自己，不连带关面板。
  */
 export function PanelShell({
+  actions,
   children,
   className,
   footer,
@@ -50,6 +53,9 @@ export function PanelShell({
         >
           {title}
         </h2>
+        {actions === undefined ? null : (
+          <div className="flex shrink-0 items-center gap-1">{actions}</div>
+        )}
       </header>
       <div
         className={cn(

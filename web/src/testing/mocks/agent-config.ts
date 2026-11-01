@@ -1,6 +1,6 @@
 /**
  * Agent 配置的 mock：几个 agent（含一个长名字、一个没发布过、一个已归档）、带发布人的版本、本部署的插件、
- * 可选的模型与技能，形状照合同 §17–§19。草稿、发布与恢复改内存里的数据，lockVersion 与发布检查照合同做，
+ * 可选的模型（技能在 ./skills），形状照合同 §18–§19。草稿、发布与恢复改内存里的数据，lockVersion 与发布检查照合同做，
  * 发布检查只做页面用得到的那几条（模型、插件依赖、技能、子 agent）。每例由 `resetMockAgentConfig` 放回预置数据。
  */
 
@@ -18,8 +18,8 @@ import type {
   AgentUpdateIn,
   AgentVersionDetailOut,
   ModelOptionsOut,
-  SkillOut,
 } from '@/shared/api/generated/types.gen'
+import { findMockSkill, mockSkillId } from './skills'
 
 type Actor = { id: string; name: string }
 
@@ -118,47 +118,8 @@ export const mockModelOptions: ModelOptionsOut = {
   ],
 }
 
-const skill = (
-  n: number,
-  name: string,
-  displayName: string,
-  description: string,
-  latestVersion: number | null,
-): SkillOut => ({
-  createdAt: ago(60 * 24 * 30),
-  createdBy: PEOPLE.chen.id,
-  createdByName: PEOPLE.chen.name,
-  description,
-  displayName,
-  hasUnpublishedChanges: latestVersion === null,
-  id: uuid(4, n),
-  latestVersion,
-  latestVersionId: latestVersion === null ? null : uuid(5, n),
-  name,
-  status: 'active',
-  updatedAt: ago(60 * 24),
-})
-
-const SKILLS: SkillOut[] = [
-  skill(1, 'director', '照参考片做新视频', '从需求理解、参考片拆解，到新片执行方案与工程。', 4),
-  skill(2, 'storyboard-workflow', '分镜创作', '把素材和创作要求转化为结构完整的镜头组。', 7),
-  skill(
-    3,
-    'viral-script-remix',
-    '爆款脚本拆解与二次创作方法论',
-    '拆出爆款脚本的钩子、节奏与转化结构，改写成自家产品的版本。',
-    2,
-  ),
-  skill(4, 'exact-replica-workflow', '参考视频复刻', '保留参考片的镜头与节奏，替换产品和场景。', 3),
-  skill(5, 'selling-points', '商品卖点提炼', '从商品详情和用户评论中提炼卖点与使用场景。', 5),
-  skill(6, 'platform-adapt', '多平台尺寸适配', '把成片方案改成各平台的画幅和时长。', null),
-]
-
-export const mockSkillId = (name: string): string => {
-  const found = SKILLS.find((item) => item.name === name)
-  if (found === undefined) throw new Error(`mock 里没有技能 ${name}`)
-  return found.id
-}
+// 技能由技能库的 mock 管（./skills），这里只按 id 查它发没发布过。
+export { mockSkillId }
 
 const DIRECTOR_PROMPT = [
   '## 角色',
@@ -485,7 +446,7 @@ const publishProblems = (item: MockAgent): AgentProblemOut[] => {
     }
   })
   skillIds.forEach((id, index) => {
-    const found = SKILLS.find((s) => s.id === id)
+    const found = findMockSkill(id)
     if (found === undefined || found.latestVersion === null)
       problems.push({
         message: `技能「${found?.displayName ?? id}」还没有发布`,
@@ -658,6 +619,4 @@ export const agentConfigHandlers = (actor: () => Actor) => [
     }
     return HttpResponse.json(toDetail(item))
   }),
-
-  http.get('*/api/skills', () => HttpResponse.json({ items: SKILLS })),
 ]
