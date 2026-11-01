@@ -9,7 +9,6 @@ from agent_runtime.config.model_providers.catalog import (
     ProviderDeclaration,
     load_declarations,
 )
-from agent_runtime.config.model_providers.cipher import CredentialCipher
 from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
 from agent_runtime.config.model_providers.models import (
     ModelType,
@@ -46,7 +45,6 @@ from agent_runtime.config.model_providers.service import (
 __all__ = [
     "API_KEY_FIELD",
     "BASE_URL_FIELD",
-    "CredentialCipher",
     "CredentialCreateIn",
     "CredentialOut",
     "CredentialProbe",

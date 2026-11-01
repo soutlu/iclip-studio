@@ -1,4 +1,4 @@
-"""模型供应商的领域形状：表里的行、合并后的模型、试连结果与机密字段的打码。
+"""模型供应商的领域形状：表里的行、合并后的模型与试连结果。
 
 术语见 docs/CONTEXT.md「供应商」「密钥」「模型声明」「默认模型」。"""
 
@@ -37,18 +37,6 @@ MAX_LABEL_CHARS: Final = 50
 MAX_CREDENTIAL_NAME_CHARS: Final = 50
 MAX_MODEL_NAME_CHARS: Final = 200
 MAX_FIELD_VALUE_CHARS: Final = 2000
-
-MASK: Final = "••••"
-MASK_MIN_CHARS: Final = 8
-"""原值不足这么多位时只给 ``MASK``，不露末 4 位。"""
-
-
-def mask_secret(value: str) -> str:
-    """机密字段返回给人看的样子：``••••`` 加末 4 位；原值不足 8 位只给 ``••••``。"""
-
-    if len(value) < MASK_MIN_CHARS:
-        return MASK
-    return MASK + value[-4:]
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,8 +154,6 @@ class ProbeResult:
 
 __all__ = [
     "FIELD_SECRET",
-    "MASK",
-    "MASK_MIN_CHARS",
     "MAX_CREDENTIAL_NAME_CHARS",
     "MAX_FIELD_VALUE_CHARS",
     "MAX_LABEL_CHARS",
@@ -188,5 +174,4 @@ __all__ = [
     "ProviderState",
     "ResolvedProvider",
     "RuntimeModel",
-    "mask_secret",
 ]

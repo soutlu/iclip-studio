@@ -666,14 +666,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Agent 标识」等词条](../docs/CONTEXT.md#术语)。端点都在 `/agents` 下，权限看 `openapi.json`。没有这个 agent 或版本是 `404`。首页列哪些 agent、开对话固定哪一版见 §6；运行时按对话固定的版本装配，见 §5「发消息」。
 
-- **配置文档**：草稿、版本与导出包里的 `config` 是同一份格式，字段照文档本身写（snake_case，是 §3 的例外）：`schema_version`（现在是 `1`）、`instructions`、`model { provider, name, credential_id?, settings { thinking? } }`（草稿里可以是 `null`）、`tools`、`subagents [{ agent, timeout_seconds?, max_calls?, on_failure? }]`。`tools` 的每一项按 `type` 区分，现在只有 `cap`：`{ type: "cap", toolset, enabled, parameters }`，`toolset` 是插件名，`parameters` 按那个插件自己的参数校验；以后加来源只加 `type`。同一个 `toolset`、同一个子 agent 只能写一次。技能不写在 `config` 里，是旁边的 `skillIds`，按先后排。不认识的字段都是 `422`。
+- **配置文档**：草稿、版本与导出包里的 `config` 是同一份格式，字段照文档本身写（snake_case，是 §3 的例外）：`schema_version`（现在是 `1`）、`instructions`、`model { provider, name, credential_id?, settings { thinking? } }`（草稿里可以是 `null`）、`tools`、`subagents [{ agent, timeout_seconds?, max_calls?, on_failure? }]`。`tools` 的每一项按 `type` 区分：`{ type: "cap", toolset, enabled, parameters }` 挂一个插件，`toolset` 是插件名，`parameters` 按那个插件自己的参数校验；`{ type: "mcp", server, tools }` 挂一个 MCP 服务（§22），`server` 是服务标识，`tools` 是放给模型的工具名（服务自己给的名字，至少一个、不重复），`null` 是全部。以后加来源只加 `type`。同一个 `toolset`、同一个 MCP 服务、同一个子 agent 只能写一次。技能不写在 `config` 里，是旁边的 `skillIds`，按先后排。不认识的字段都是 `422`。
 - **可挂的插件**：`GET /agents/plugins` 给本部署插件登记表里的全部插件，按登记先后，每项 `{ name, label, description, requires, parameters }`：`name` 就是 `tools[].toolset` 写的插件名，`requires` 是要求同一 agent 一起启用的插件名，`parameters` 是 `tools[].parameters` 的 JSON Schema（没有参数的插件是不收任何键的空对象）。
 - **选模型**：`GET /agents/model-options` 只读，只要 `agent:manage`（不要 `model:manage`），答复 `{ providers }`：只列启用的供应商，按接入时刻从新到旧，每项 `{ id, name, label, models, credentials }`。`name` 写进 `model.provider`；`models` 只有启用的 `llm` 模型，每项 `{ name, contextSize, thinking }`，`name` 写进 `model.name`，`thinking` 是允许设的档位（空就是不能设）；`credentials` 新的在前，每项 `{ id, name, fields, isDefault }`，`id` 写进 `model.credential_id`，`fields` 同 §18 只给打码值，`isDefault` 标出供应商的默认密钥（不写密钥时用它）。不带「谁在用」。
 - **操作人**：agent 的 `createdBy`、草稿的 `updatedBy`、版本的 `createdBy` 旁边各带 `createdByName` / `updatedByName`，取名规则同 §17「操作人」，本系统里已没有这个人时为 `null`。
 - **列表**：`GET /agents` 含已归档的，按 `sortOrder` 从小到大、同序按 `createdAt` 倒序，是 §3 的例外。每项带 `activeVersion`（`{ id, version, publishedAt }`，没发布过为 `null`）、`hasUnpublishedChanges`（草稿的 `config` 或 `skillIds` 与当前版本不同；没发布过恒为 `true`），以及选子 agent 用的两个标记：`hasSubagents` 是它自己的草稿或当前版本里写着子 agent（这时不能被选作别人的子 agent），`isSubagent` 是别的 agent 的草稿或当前版本把它当作子 agent（这时它自己不能有子 agent）；详情也带这两个。`PUT /agents/order` 体是 `{ ids }`，要正好是全部 agent 的标识、各一次，否则 `422`；新建的排在最后。
 - **元信息**：`POST /agents` 体是 `{ id, name, description?, listed? }`，标识不合规矩（含用了保留词 `plugins`、`order`、`import`、`model-options`，它们是 `/agents/` 下的固定路径）是 `422`、已被占用是 `409`，草稿是没有模型的空配置，`listed` 不给就是 `false`。`PATCH /agents/{id}` 改 `name`、`description`、`listed`，不给的不动；`description` 不进版本，改了立即生效。
 - **lockVersion**：详情的 `draft.lockVersion` 是草稿的乐观锁。`PUT /agents/{id}/draft`（体 `{ config, skillIds, lockVersion }`，整份覆盖）、`POST /agents/{id}/versions`（发布）、`POST …/versions/{versionId}/restore`（体 `{ lockVersion }`）都要带上读到的值，对不上是 `409`，客户端重新读详情后再操作。保存草稿、恢复与覆盖导入让它加一，发布不改它。保存只查结构：`config` 不合格、`skillIds` 重复或有不存在的技能是 `422`；引用的供应商、模型、插件、技能能不能用、子 agent 合不合规矩都留到发布时查，草稿允许暂时不完整。
-- **发布**：`POST /agents/{id}/versions` 体是 `{ note?, lockVersion }`，`201` 答复新版本，版本号在每个 agent 内从 1 起递增，发布后不再改；草稿的 `baseVersionId` 随之指到新版本。编译检查不过是 `422`，信封是 `{ detail, problems }`：`problems` 是 `[{ path, message }]`，一次列全，`detail` 是把它们拼成的一句话。`path` 指到草稿里的字段，写法是 `model`、`model.provider`、`model.name`、`model.credential_id`、`model.settings.thinking`、`tools[2]`、`tools[0].parameters.limit`、`skills[1]`（`skillIds` 的第 2 个）、`subagents[0].agent`、`subagents`（整组）；客户端按它跳到对应字段。检查的规则见 [CONTEXT.md「发布」](../docs/CONTEXT.md#术语)。检查通过、但 `config` 与 `skillIds` 都和当前版本相同是 `422`「没有可发布的改动」，这时没有 `problems`。
+- **发布**：`POST /agents/{id}/versions` 体是 `{ note?, lockVersion }`，`201` 答复新版本，版本号在每个 agent 内从 1 起递增，发布后不再改；草稿的 `baseVersionId` 随之指到新版本。编译检查不过是 `422`，信封是 `{ detail, problems }`：`problems` 是 `[{ path, message }]`，一次列全，`detail` 是把它们拼成的一句话。`path` 指到草稿里的字段，写法是 `model`、`model.provider`、`model.name`、`model.credential_id`、`model.settings.thinking`、`tools[2]`、`tools[0].parameters.limit`、`tools[1].server`、`tools[1].tools[0]`、`skills[1]`（`skillIds` 的第 2 个）、`subagents[0].agent`、`subagents`（整组）；客户端按它跳到对应字段。检查的规则见 [CONTEXT.md「发布」](../docs/CONTEXT.md#术语)。检查通过、但 `config` 与 `skillIds` 都和当前版本相同是 `422`「没有可发布的改动」，这时没有 `problems`。
 - **版本与恢复**：`GET /agents/{id}/versions` 版本号从大到小；单个版本带 `config` 与 `skillIds`。恢复把这一版的 `config` 与 `skillIds` 抄回草稿（`baseVersionId` 指到这一版），不发布，答复详情。
 - **归档**：`POST /agents/{id}/archive` 与 `…/unarchive`，答复详情；已在那个状态的原样不动。归档的 agent 不能再被选作子 agent，发布时引用它是问题；别的 agent 的草稿或当前版本还把它当作子 agent 时归档是 `409`。详情的 `usedBy` 就是这些引用方。
 - **导出**：`GET /agents/{id}/export` 给 `application/yaml`，下载文件名是 `<id>-v<N>.yaml`。包里是这个 agent 与它当前版本里写的子 agent，各取自己的当前版本，入口在最前；它没发布过是 `404`。包的格式：
@@ -689,10 +689,10 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
   `config` 里去掉 `model.credential_id`（密钥只属于本环境），技能按标识写。
 - **导入**分两步，都是 `POST /agents/import`、multipart 字段 `file`，提交同一个 YAML，最大 1 MB：
   - `dryRun=true` 只检查不写，答复 `{ entry, agents, problems, warnings }`。`agents` 按包里的先后，每项 `{ agentId, name, action, problems, warnings }`：`action` 是 `create`（会新建）或 `overwrite`（会覆盖同标识 agent 的草稿）；这里的 `problems` 与 `warnings` 都是 `[{ path, message }]`，`path` 相对包里这个 agent（如 `config.model.name`、`skills[1]`、`name`）。顶层的 `problems`（`path` 相对整个包，如 `format_version`、`entry`）与 `warnings`（字符串）说的是整个包。
-  - 问题：读不出 YAML、超过大小、外层结构或 `config` 格式不对、格式版本不收、入口不在包里、标识不合规矩（会新建的 agent 用了保留词也算）、引用的技能在本环境不存在、引用的供应商不存在或它没有这个对话模型、子 agent 既不在包里也不在本环境。提醒（不拦导入、发布前要处理）：技能已归档或没发布过、供应商或模型已停用，以及格式版本的次版本比本系统旧。
+  - 问题：读不出 YAML、超过大小、外层结构或 `config` 格式不对、格式版本不收、入口不在包里、标识不合规矩（会新建的 agent 用了保留词也算）、引用的技能在本环境不存在、引用的供应商不存在或它没有这个对话模型、引用的 MCP 服务在本环境不存在、子 agent 既不在包里也不在本环境。提醒（不拦导入、发布前要处理）：技能已归档或没发布过、供应商、模型或 MCP 服务已停用，以及格式版本的次版本比本系统旧。
   - 不带 `dryRun` 是正式导入，答复同一形状；任何一处有问题就是 `422`，`detail` 列出全部问题，什么都不写。否则在一个事务里写完：已有的 agent 只覆盖草稿（`config`、`skillIds`，`lockVersion` 加一，`baseVersionId` 置空），名称、描述与 `listed` 不动；没有的新建（只有草稿，名称、描述、`listed` 取包里的）；都不发布。
   - 格式版本按语义版本比较，本系统现在是 `1.0.0`：包比本系统新、或主版本比本系统旧都是问题，不保留旧格式的兼容；只是次版本旧的照收，带一条提醒。
-- **被引用时拦住**：技能、模型、密钥、供应商与 agent 被某个 agent 的草稿或当前版本引用时，下面的操作是 `409`，`detail` 列出在用的 agent（名称、标识，以及在草稿还是当前版本里）；只被旧版本用到的不拦。已归档 agent 的草稿与当前版本也算。
+- **被引用时拦住**：技能、模型、密钥、供应商、MCP 服务与 agent 被某个 agent 的草稿或当前版本引用时，下面的操作是 `409`，`detail` 列出在用的 agent（名称、标识，以及在草稿还是当前版本里）；只被旧版本用到的不拦。已归档 agent 的草稿与当前版本也算。
 
   | 操作 | 怎样算引用 |
   |---|---|
@@ -700,9 +700,10 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
   | 停用或删除模型 | `model.provider` 与 `model.name` 是它 |
   | 删除密钥 | `model.credential_id` 是它 |
   | 把供应商停用、删除供应商 | `model.provider` 是它 |
+  | 把 MCP 服务停用、删除 MCP 服务 | `tools` 里有 `server` 是它的一项 |
   | `POST /agents/{id}/archive` | `subagents` 里有它 |
 
-  同一份引用也在读的时候给出：技能详情、供应商列表里的模型与密钥、agent 详情都带 `usedBy`，每项 `{ agentId, agentName, inDraft, inActiveVersion }`，同一个 agent 只有一项，按标识排。
+  同一份引用也在读的时候给出：技能详情、供应商列表里的模型与密钥、MCP 服务、agent 详情都带 `usedBy`，每项 `{ agentId, agentName, inDraft, inActiveVersion }`，同一个 agent 只有一项，按标识排。
 
 ### 测试预览
 
@@ -799,3 +800,16 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 - 运行时配了 `shot_video` 或 `video_breakdown` 就在启动时取插件服务清单，后端没开对应服务就起不来；答复模型在 [plugin_services.py](../plugins/video/src/iclip_video/plugin_services.py)。
 - 切格时每格存到哪个对象 key 由后端定，插件只给帧号或序号。
 - 调用方是视频插件包的 HTTP 客户端（[internal_api.py](../plugins/video/src/iclip_video/internal_api.py)）：上表的 `422` 还原成端口声明的同一个错误、`detail` 原话不变（取帧拼板与切格按 `code` 认，没带 `code` 的 `422` 是请求结构不对，不算端口的失败），其余状态码、连不上与超时都当作调用失败，不让模型改参数重试。例外是查出图任务：连不上、超时与 `502` / `503` / `504` 算后端暂时不可达，出图工具接着轮询到总时限；单次查询上限 30 秒。提交不是幂等的，照旧失败即报。
+
+## 22. MCP 服务 (MCP Servers)
+
+语义见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#术语)。端点在 `/mcp-servers` 下，权限看 `openapi.json`。没有这个服务是 `404`；下面不合格的都是 `422`，`detail` 是给人看的一句话，从不带请求头的值。列表按 §3 的排序规则。
+
+- **字段**：`id` 的规矩同 agent 标识（§19），创建后不能改，已被占用是 `409`。`url` 只收带主机的 `http://` 或 `https://` 地址。`transport` 是 `streamable_http` 或 `sse`，按它选连接方式、不按地址猜；没有 stdio，运行时不起子进程。`timeoutSeconds` 在 1 到 300 之间，默认 30，是连接与每次请求（含工具调用）等答复的上限。`headers` 最多 20 个，名字按 HTTP 的 token 字符、不分大小写不能重复，值不能为空、不能换行。新建与修改都不连服务。
+- **请求头只给打码值**：每个请求头的值都按机密存，用 `CREDENTIAL_ENCRYPTION_KEYS` 加密，任何答复都只给 `••••` 加末 4 位（原值不足 8 位只给 `••••`）。`PATCH` 给了 `headers` 就整份替换，其中没给 `value` 的沿用同名（不分大小写）请求头原来的值，原来没有这个名字是 `422`；把打码值原样传回会被当成新值。换钥见[部署](../docs/deploy.md#换密钥加密钥匙)。
+- **试连**：`POST /mcp-servers/{id}/check` 按已保存的配置连一次、列出工具，答复 `{ ok, elapsedMs, reason, tools }`，没通也是 `200`。结果记在服务上（`lastCheck`）：通了 `tools` 换成这次发现的工具，没通只记原因，`tools` 还是上一次通时的那份。`POST /mcp-servers/check` 试一份没保存的配置，体是 `{ serverId?, url, transport, timeoutSeconds, headers }`，答复同上，什么都不存；给了 `serverId` 时没给 `value` 的请求头取那个服务里同名请求头的原值，没给时每个都要给值。`reason` 不带请求头的值。改了 `url` 或 `transport` 时 `lastCheck` 与 `tools` 一起清成 `null`，改别的项不清。
+- **发布时查**：`config.tools` 里每一项 `type: "mcp"` 的服务要存在、启用，且试连成功过（`tools` 不为 `null`）；选了工具时每个都要在 `tools` 里；模型看到的工具名要合下一条的写法。问题的 `path` 是 `tools[i].server` 与 `tools[i].tools[j]`，`tools` 为 `null` 时名字不合写法报在 `tools[i]`。运行前装配只查服务在不在、启没启用，不对照记下的工具：服务后来多了或少了工具以它当下交出的为准，模型只看得到写了的那几个。
+- **工具名**：模型看到的是 `mcp_<服务标识>_<服务自己给的工具名>`，要满足 `^[A-Za-z0-9_-]{1,64}$`（我们接的模型接口只收这些）。服务标识里没有下划线、插件的工具名不以 `mcp_` 开头，所以 MCP 工具不会和插件工具或别的服务的工具撞名。服务标识 40 个字符时工具名最多剩 19 个字符。工具卡的 `display` 是 generic，`summary` 是服务自己给的工具名，`detail` 是服务标识。
+- **谁在用**：每个服务带 `usedBy`，形状同 §19；在用时停用或删除是 `409`，见 §19「被引用时拦住」。
+- **运行**：一次运行开跑时连上它挂的每个 MCP 服务并列出工具；连不上、被拒或超时，这次运行失败，轮次的 `error` 写明「MCP 服务 <名称>（<标识>）连不上：<原因>」，不跳过这个服务接着跑。单次工具调用出的错照 MCP 客户端的原生做法作为这次调用的结果交回模型。服务给的 instructions 不并进提示词。
+- **地址不设防**：地址只有持 `agent:manage` 的人能配，运行时从部署网络里直接连，不拦内网地址（没有 SSRF 防护）。

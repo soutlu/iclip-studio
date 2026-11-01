@@ -13,6 +13,7 @@ from agent_runtime.agent_usage import in_use_message, usages_out
 from agent_runtime.config.agent_config.compile import compile_agent
 from agent_runtime.config.agent_config.config import (
     AgentConfig,
+    McpToolConfig,
     agent_refs,
     dump_config,
     empty_config,
@@ -41,6 +42,7 @@ from agent_runtime.config.agent_config.repository import (
     AgentStore,
     AgentWriter,
     ImportedAgent,
+    McpDirectory,
     ModelDirectory,
     PluginDirectory,
     SkillDirectory,
@@ -156,7 +158,7 @@ def _check_skill_ids(skill_ids: Sequence[uuid.UUID], skills: Sequence[SkillFacts
 
 
 class AgentConfigService:
-    """``models``、``plugins``、``skills`` 由组合根接到模型供应商、插件登记表与技能库上。"""
+    """``models``、``plugins``、``mcp``、``skills`` 由组合根接到模型供应商、插件登记表、MCP 服务与技能库上。"""
 
     def __init__(
         self,
@@ -164,11 +166,13 @@ class AgentConfigService:
         *,
         models: ModelDirectory,
         plugins: PluginDirectory,
+        mcp: McpDirectory,
         skills: SkillDirectory,
     ) -> None:
         self._store = store
         self._models = models
         self._plugins = plugins
+        self._mcp = mcp
         self._skills = skills
 
     async def list(self) -> AgentsOut:
@@ -281,6 +285,7 @@ class AgentConfigService:
             skill_ids,
             models=self._models,
             plugins=self._plugins,
+            mcp=self._mcp,
             skills=await self._skills.skills(),
             agents=await self._store.references(),
             runtime=runtime,
@@ -503,6 +508,7 @@ class AgentConfigService:
         else:
             config = parsed
             await self._check_imported_model(config, problems, warnings)
+            await self._check_imported_mcp(config, problems, warnings)
             for index, sub in enumerate(config.subagents):
                 if sub.agent not in known_agents:
                     problems.append(
@@ -561,6 +567,19 @@ class AgentConfigService:
             )
         elif not model.enabled:
             warnings.append(Problem("config.model.name", f"模型 {ref.name} 已停用"))
+
+    async def _check_imported_mcp(
+        self, config: AgentConfig, problems: list[Problem], warnings: list[Problem]
+    ) -> None:
+        for index, tool in enumerate(config.tools):
+            if not isinstance(tool, McpToolConfig):
+                continue
+            path = f"config.tools[{index}].server"
+            server = await self._mcp.server(tool.server)
+            if server is None:
+                problems.append(Problem(path, f"本环境没有 MCP 服务 {tool.server}"))
+            elif not server.enabled:
+                warnings.append(Problem(path, f"MCP 服务 {server.name} 已停用"))
 
     def _exported(self, state: AgentState, skill_names: Mapping[uuid.UUID, str]) -> ExportedAgent:
         active = state.active

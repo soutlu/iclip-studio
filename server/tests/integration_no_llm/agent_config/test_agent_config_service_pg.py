@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 import yaml
-from agent_runtime.assembly.directories import LibrarySkillDirectory, ProviderDirectory
+from agent_runtime.assembly.directories import (
+    LibrarySkillDirectory,
+    McpServerDirectory,
+    ProviderDirectory,
+)
+from agent_runtime.assembly.mcp import HarnessMcpProbe
 from agent_runtime.config.agent_config.config import AgentConfig
 from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
 from agent_runtime.config.agent_config.public import AgentReferences
@@ -26,8 +31,9 @@ from agent_runtime.config.agent_config.schemas import (
     AgentUpdateIn,
 )
 from agent_runtime.config.agent_config.service import AgentConfigService, AgentPublishBlocked
+from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
+from agent_runtime.config.mcp_servers.service import McpServerService
 from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.cipher import CredentialCipher
 from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
 from agent_runtime.config.model_providers.schemas import (
     CredentialCreateIn,
@@ -41,6 +47,7 @@ from agent_runtime.config.skills.infra_sql import SqlSkillStore
 from agent_runtime.config.skills.schemas import SkillCreateIn, SkillPublishIn
 from agent_runtime.config.skills.service import SkillsService
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.secrets import CredentialCipher
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -88,10 +95,17 @@ async def world(engine: AsyncEngine) -> World:
         probe=KeyCheckingProbe({GOOD_KEY, OTHER_KEY}),
         usages=references,
     )
+    mcp_servers = McpServerService(
+        SqlMcpServerStore(engine),
+        cipher=CredentialCipher([TEST_CREDENTIAL_KEY]),
+        probe=HarnessMcpProbe(),
+        usages=references,
+    )
     agents = AgentConfigService(
         agent_store,
         models=ProviderDirectory(providers),
         plugins=FakePlugins(),
+        mcp=McpServerDirectory(mcp_servers),
         skills=LibrarySkillDirectory(skills),
     )
     provider = await providers.create(

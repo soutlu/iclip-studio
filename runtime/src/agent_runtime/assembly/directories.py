@@ -1,4 +1,4 @@
-"""Agent 配置的三个查询端口接到模型供应商、插件登记表与技能库。
+"""Agent 配置的四个查询端口接到模型供应商、插件登记表、MCP 服务与技能库。
 
 插件只从组合根的登记表读：哪些名字可用、要求同挂哪些、参数按插件类 ``from_spec`` 的签名校验；这里不另列插件。"""
 
@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from agent_runtime.config.agent_config.public import (
+    McpServerFacts,
     ModelFacts,
     PluginFacts,
     Problem,
@@ -17,6 +18,7 @@ from agent_runtime.config.agent_config.public import (
     SkillFacts,
     problems_from_errors,
 )
+from agent_runtime.config.mcp_servers.public import McpServerService
 from agent_runtime.config.model_providers.public import ModelProviderService
 from agent_runtime.config.skills.public import STATUS_ARCHIVED, SkillsService
 from agent_runtime.plugins.base import PluginRegistry
@@ -86,6 +88,24 @@ class RegistryPluginDirectory:
         )
 
 
+class McpServerDirectory:
+    """``McpDirectory`` 的实现：按标识读 MCP 服务域里的服务，只给名称、启停与发现的工具名。"""
+
+    def __init__(self, service: McpServerService) -> None:
+        self._service = service
+
+    async def server(self, server_id: str) -> McpServerFacts | None:
+        found = await self._service.record(server_id)
+        if found is None:
+            return None
+        return McpServerFacts(
+            id=found.id,
+            name=found.name,
+            enabled=found.enabled,
+            tools=None if found.tools is None else tuple(tool.name for tool in found.tools),
+        )
+
+
 class LibrarySkillDirectory:
     """``SkillDirectory`` 的实现：读技能库。"""
 
@@ -104,4 +124,9 @@ class LibrarySkillDirectory:
         )
 
 
-__all__ = ["LibrarySkillDirectory", "ProviderDirectory", "RegistryPluginDirectory"]
+__all__ = [
+    "LibrarySkillDirectory",
+    "McpServerDirectory",
+    "ProviderDirectory",
+    "RegistryPluginDirectory",
+]

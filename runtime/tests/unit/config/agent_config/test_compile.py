@@ -12,7 +12,9 @@ from agent_runtime.config.agent_config.config import AgentConfig
 from agent_runtime.config.agent_config.models import (
     AgentRefs,
     CompiledAgent,
+    CompiledMcpServer,
     ConfigRefs,
+    McpServerFacts,
     ModelFacts,
     Problem,
     ProviderFacts,
@@ -37,12 +39,23 @@ PROVIDER = ProviderFacts(
 SKILL = SkillFacts(id=uuid.uuid4(), name="pdf", archived=False, latest_version_id=uuid.uuid4())
 
 
+CALC = McpServerFacts(id="calc", name="计算器", enabled=True, tools=("add", "divide"))
+
+
 class FakeModels:
     def __init__(self, *providers: ProviderFacts) -> None:
         self._providers = {one.name: one for one in providers}
 
     async def provider(self, name: str) -> ProviderFacts | None:
         return self._providers.get(name)
+
+
+class FakeMcp:
+    def __init__(self, *servers: McpServerFacts) -> None:
+        self._servers = {one.id: one for one in servers}
+
+    async def server(self, server_id: str) -> McpServerFacts | None:
+        return self._servers.get(server_id)
 
 
 def refs(
@@ -54,7 +67,12 @@ def refs(
 ) -> AgentRefs:
     def config_refs(subagents: tuple[str, ...]) -> ConfigRefs:
         return ConfigRefs(
-            provider=None, model=None, credential_id=None, skill_ids=(), subagents=subagents
+            provider=None,
+            model=None,
+            credential_id=None,
+            skill_ids=(),
+            subagents=subagents,
+            mcp_servers=(),
         )
 
     return AgentRefs(
@@ -81,6 +99,7 @@ async def compile_(
     skills: tuple[SkillFacts, ...] = (SKILL,),
     agents: tuple[AgentRefs, ...] = (),
     providers: tuple[ProviderFacts, ...] = (PROVIDER,),
+    mcp_servers: tuple[McpServerFacts, ...] = (CALC,),
     runtime: bool = False,
 ) -> CompiledAgent | tuple[Problem, ...]:
     return await compile_agent(
@@ -89,6 +108,7 @@ async def compile_(
         skill_ids,
         models=FakeModels(*providers),
         plugins=FakePlugins(),
+        mcp=FakeMcp(*mcp_servers),
         skills=skills,
         agents=(refs("main"), *agents),
         runtime=runtime,
@@ -259,6 +279,79 @@ async def test_at_runtime_a_subagents_draft_does_not_count() -> None:
     assert {one.path for one in published} == {"subagents[0].agent"}
     assert isinstance(running, CompiledAgent)
     assert not isinstance(nested, CompiledAgent), "当前版本里有子 agent 运行时也拦"
+
+
+async def test_mcp_server_compiles_to_allowed_tools_and_a_prefix() -> None:
+    result = await compile_(
+        config(
+            tools=[
+                {"type": "cap", "toolset": NOTES},
+                {"type": "mcp", "server": "calc", "tools": ["add"]},
+            ]
+        )
+    )
+
+    assert isinstance(result, CompiledAgent)
+    assert result.capabilities == ({NOTES: {}},)
+    assert result.mcp_servers == (
+        CompiledMcpServer(server_id="calc", tools=("add",), tool_prefix="mcp_calc"),
+    )
+
+
+async def test_mcp_server_must_exist_be_enabled_and_have_been_reached() -> None:
+    entry = {"type": "mcp", "server": "calc", "tools": None}
+
+    missing = await problems(config(tools=[entry]), mcp_servers=())
+    assert set(missing) == {"tools[0].server"}
+    disabled = await problems(config(tools=[entry]), mcp_servers=(replace(CALC, enabled=False),))
+    assert "已停用" in disabled["tools[0].server"]
+    never_reached = await problems(config(tools=[entry]), mcp_servers=(replace(CALC, tools=None),))
+    assert "测试连接" in never_reached["tools[0].server"]
+
+
+async def test_listed_mcp_tools_must_be_among_the_discovered_ones() -> None:
+    found = await problems(
+        config(tools=[{"type": "mcp", "server": "calc", "tools": ["add", "sqrt", "divide"]}])
+    )
+
+    assert set(found) == {"tools[0].tools[1]"}
+    assert "sqrt" in found["tools[0].tools[1]"]
+
+
+async def test_exposed_mcp_tool_names_must_fit_the_model_rules() -> None:
+    long_id = "a" * 40
+    server = McpServerFacts(
+        id=long_id, name="长", enabled=True, tools=("short", "x" * 20, "has.dot")
+    )
+
+    listed = await problems(
+        config(tools=[{"type": "mcp", "server": long_id, "tools": ["short", "x" * 20]}]),
+        mcp_servers=(server,),
+    )
+    assert set(listed) == {"tools[0].tools[1]"}
+    assert "64" in listed["tools[0].tools[1]"]
+
+    everything = await compile_(
+        config(tools=[{"type": "mcp", "server": long_id, "tools": None}]), mcp_servers=(server,)
+    )
+    assert not isinstance(everything, CompiledAgent)
+    assert [one.path for one in everything] == ["tools[0]", "tools[0]"]
+
+
+async def test_at_runtime_mcp_tools_are_not_checked_against_the_last_discovery() -> None:
+    entry = {"type": "mcp", "server": "calc", "tools": ["sqrt"]}
+    reached_once = replace(CALC, tools=None)
+
+    running = await compile_(config(tools=[entry]), mcp_servers=(reached_once,), runtime=True)
+    assert isinstance(running, CompiledAgent)
+    assert running.mcp_servers[0].tools == ("sqrt",)
+
+    gone = await compile_(config(tools=[entry]), mcp_servers=(), runtime=True)
+    disabled = await compile_(
+        config(tools=[entry]), mcp_servers=(replace(CALC, enabled=False),), runtime=True
+    )
+    assert not isinstance(gone, CompiledAgent)
+    assert not isinstance(disabled, CompiledAgent)
 
 
 async def test_all_problems_are_listed_together() -> None:

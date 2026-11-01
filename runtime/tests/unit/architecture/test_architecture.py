@@ -19,6 +19,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("pydantic_ai",): ("harness/", "plugins/"),
     ("pydantic_ai_harness",): ("harness/",),
     ("openai",): ("harness/models.py",),
+    # MCP 客户端只在连 MCP 服务的那一处。
+    ("fastmcp", "mcp"): ("harness/mcp.py",),
     # Web 框架只在运行时服务的 HTTP 入口里出现，引擎、配置与插件都不碰它。
     ("fastapi", "starlette"): ("http/",),
     ("uvicorn",): ("main.py",),
@@ -42,9 +44,10 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "harness/sessions.py",
         # 运行统计的只读查询：按应用读上面几张表。
         "harness/stats_pg.py",
-        # 三块配置各自的表。
+        # 四块配置各自的表。
         "config/skills/infra_sql.py",
         "config/model_providers/infra_sql.py",
+        "config/mcp_servers/infra_sql.py",
         "config/agent_config/infra_sql.py",
     ),
 }
@@ -60,6 +63,7 @@ LEAF_MODULES = frozenset(
         "agent_runtime.model_vocab",
         "agent_runtime.agent_usage",
         "agent_runtime.tool_args",
+        "agent_runtime.secrets",
     }
 )
 

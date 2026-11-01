@@ -17,7 +17,6 @@ from agent_runtime.agent_usage import (
     usages_out,
 )
 from agent_runtime.config.model_providers.catalog import Declarations, ProviderDeclaration
-from agent_runtime.config.model_providers.cipher import CredentialCipher
 from agent_runtime.config.model_providers.models import (
     SOURCE_CUSTOM,
     SOURCE_DECLARED,
@@ -78,6 +77,7 @@ from agent_runtime.config.model_providers.schemas import (
     ProviderOptionOut,
 )
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.secrets import CredentialCipher
 
 _logger = structlog.stdlib.get_logger(__name__)
 

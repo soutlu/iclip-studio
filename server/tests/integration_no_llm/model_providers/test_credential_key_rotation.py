@@ -7,9 +7,9 @@ from collections.abc import AsyncGenerator
 import httpx
 import pytest
 from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.cipher import CredentialCipher
 from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
 from agent_runtime.config.model_providers.service import rotate_credential_keys
+from agent_runtime.secrets import CredentialCipher
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from sqlalchemy import text

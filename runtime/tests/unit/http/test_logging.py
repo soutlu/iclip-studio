@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
@@ -12,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import structlog
 
-from agent_runtime.http.logging import QUIET_LOGGERS, LogFormat, configure_logging
+from agent_runtime.http.logging import QUIET_LOGGERS, SERVICE_NAME, LogFormat, configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -119,6 +120,21 @@ def test_routine_noise_is_dropped_in_both_formats(
     assert "connection closed" not in err
     assert "每次请求一条" not in err
     assert "真出事了" in err
+
+
+def test_mcp_client_logs_use_the_service_format(capsys: pytest.CaptureFixture[str]) -> None:
+    """FastMCP 在 import 时给自己挂 rich 的 handler、不往 root 传；配置后它与 httpx2 都走 root。"""
+
+    importlib.import_module("agent_runtime.harness.mcp")
+
+    configure_logging("INFO", "console")
+
+    logging.getLogger("fastmcp.client").warning("MCP 客户端的提醒")
+    logging.getLogger("httpx2").info("每次请求一条")
+
+    (line,) = capsys.readouterr().err.splitlines()
+    assert SERVICE_NAME in line
+    assert line.rstrip().endswith("[fastmcp.client]")
 
 
 def test_reconfiguring_does_not_stack_handlers_or_filters(

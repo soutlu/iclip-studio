@@ -35,6 +35,7 @@ from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.harness.usage_ledger_pg import PgConversationUsage
 from agent_runtime.hooks import AppHooks, GatePayload, RunStartedPayload, TurnStartedPayload
 from agent_runtime.http.admin.agents import create_agent_config_router
+from agent_runtime.http.admin.mcp_servers import create_mcp_servers_router
 from agent_runtime.http.admin.model_providers import (
     create_default_models_router,
     create_model_providers_router,
@@ -144,6 +145,7 @@ def create_app(
     )
     skills = config_services.skills
     model_providers = config_services.model_providers
+    mcp_servers = config_services.mcp_servers
     agent_config = config_services.agent_config
 
     # 运行这一侧：持久化、用量、队列、实时投影、历史、装配、会话、工作区与素材台账。
@@ -161,6 +163,7 @@ def create_app(
         agent_config=agent_config,
         skills=skills,
         model_providers=model_providers,
+        mcp_servers=mcp_servers,
         sessions=session_store,
         settings=AssemblySettings(
             plugins=registry,
@@ -289,6 +292,7 @@ def create_app(
     admin.include_router(create_skills_router(skills))
     admin.include_router(create_model_providers_router(model_providers))
     admin.include_router(create_default_models_router(model_providers))
+    admin.include_router(create_mcp_servers_router(mcp_servers))
     admin.include_router(create_agent_config_router(agent_config, model_providers))
 
     v1 = APIRouter(prefix="/v1", dependencies=[Depends(auth.calling_app)])

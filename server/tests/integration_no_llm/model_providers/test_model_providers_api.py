@@ -14,11 +14,11 @@ import pytest
 from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
 from agent_runtime.config.agent_config.public import AgentReferences
 from agent_runtime.config.model_providers.catalog import Declarations, load_declarations
-from agent_runtime.config.model_providers.cipher import CredentialCipher
 from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
 from agent_runtime.config.model_providers.schemas import CustomModelCreateIn, ModelProviderCreateIn
 from agent_runtime.config.model_providers.service import ModelProviderService
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.secrets import CredentialCipher
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine

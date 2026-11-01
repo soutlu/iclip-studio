@@ -34,6 +34,37 @@ MAX_NAME_CHARS: Final = 50
 MAX_DESCRIPTION_CHARS: Final = 1024
 """``description`` 在这个 agent 被当作子 agent 时给主 agent 看。"""
 
+MCP_TOOL_NAME_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]{1,64}")
+"""模型看到的工具名要满足的写法：我们接的模型接口（OpenAI 兼容）只收这些字符，最多 64 个。"""
+
+_MCP_TOOL_PREFIX: Final = "mcp_"
+
+
+def mcp_tool_prefix(server_id: str) -> str:
+    """一个 MCP 服务的工具在 agent 里的前缀 ``mcp_<服务标识>``；工具名是前缀加 ``_`` 加服务自己给的名字。
+
+    插件的工具名不以 ``mcp_`` 开头，服务标识里没有下划线，所以 MCP 工具既不会和插件工具撞名，也不会在两个
+    服务之间撞名，还能从工具名拆回服务与工具。"""
+
+    return f"{_MCP_TOOL_PREFIX}{server_id}"
+
+
+def mcp_tool_name(server_id: str, tool: str) -> str:
+    """模型看到的工具名：``mcp_<服务标识>_<工具名>``。"""
+
+    return f"{mcp_tool_prefix(server_id)}_{tool}"
+
+
+def split_mcp_tool_name(name: str) -> tuple[str, str] | None:
+    """把模型看到的工具名拆回（服务标识，服务自己给的工具名）；不是 MCP 工具给 ``None``。"""
+
+    if not name.startswith(_MCP_TOOL_PREFIX):
+        return None
+    server_id, separator, tool = name.removeprefix(_MCP_TOOL_PREFIX).partition("_")
+    if not separator or not server_id or not tool:
+        return None
+    return server_id, tool
+
 
 @dataclass(frozen=True, slots=True)
 class Agent:
@@ -101,13 +132,14 @@ class AgentState:
 
 @dataclass(frozen=True, slots=True)
 class ConfigRefs:
-    """一份配置引用了什么：模型（没写为 ``None``）、技能、子 agent。"""
+    """一份配置引用了什么：模型（没写为 ``None``）、技能、子 agent 与 MCP 服务。"""
 
     provider: str | None
     model: str | None
     credential_id: uuid.UUID | None
     skill_ids: tuple[uuid.UUID, ...]
     subagents: tuple[str, ...]
+    mcp_servers: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,16 +205,27 @@ class CompiledSubagent:
 
 
 @dataclass(frozen=True, slots=True)
+class CompiledMcpServer:
+    """挂一个 MCP 服务：``tools`` 是放给模型的工具（服务自己给的名字），``None`` 是全部；``tool_prefix``
+    见 ``mcp_tool_prefix``。连接参数与请求头装配时再取，不进编译结果。"""
+
+    server_id: str
+    tools: tuple[str, ...] | None
+    tool_prefix: str
+
+
+@dataclass(frozen=True, slots=True)
 class CompiledAgent:
     """一份配置编译通过的结果，不可变。
 
     ``capabilities`` 是原生 AgentSpec 的 capabilities 条目，每项 ``{spec 名: 参数}``，停用的工具已去掉；
-    技能与子 agent 不进 spec，单独带着。"""
+    MCP 服务、技能与子 agent 不进 spec，单独带着。"""
 
     agent_id: str
     instructions: str
     model: CompiledModel
     capabilities: tuple[Mapping[str, Mapping[str, Any]], ...]
+    mcp_servers: tuple[CompiledMcpServer, ...]
     skills: tuple[CompiledSkill, ...]
     subagents: tuple[CompiledSubagent, ...]
 
@@ -220,6 +263,16 @@ class PluginFacts:
 
 
 @dataclass(frozen=True, slots=True)
+class McpServerFacts:
+    """一个 MCP 服务：名称、启没启用与最后一次试连成功时发现的工具名（从没成功过为 ``None``）。"""
+
+    id: str
+    name: str
+    enabled: bool
+    tools: tuple[str, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
 class SkillFacts:
     """技能库里的一个技能：标识、归没归档与最新版（没发布过为 ``None``）。"""
 
@@ -233,6 +286,7 @@ __all__ = [
     "AGENT_ID_PATTERN",
     "MAX_DESCRIPTION_CHARS",
     "MAX_NAME_CHARS",
+    "MCP_TOOL_NAME_PATTERN",
     "RESERVED_AGENT_IDS",
     "STATUS_ACTIVE",
     "STATUS_ARCHIVED",
@@ -243,14 +297,19 @@ __all__ = [
     "AgentStatus",
     "AgentVersion",
     "CompiledAgent",
+    "CompiledMcpServer",
     "CompiledModel",
     "CompiledSkill",
     "CompiledSubagent",
     "ConfigRefs",
+    "McpServerFacts",
     "ModelFacts",
     "PluginFacts",
     "Problem",
     "ProviderFacts",
     "RevisionOperation",
     "SkillFacts",
+    "mcp_tool_name",
+    "mcp_tool_prefix",
+    "split_mcp_tool_name",
 ]

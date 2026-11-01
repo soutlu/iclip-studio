@@ -1397,6 +1397,138 @@ export const zLibraryTagUpdateIn = z.object({
 })
 
 /**
+ * McpHeaderIn
+ *
+ * 一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。
+ */
+export const zMcpHeaderIn = z.object({
+  name: z.string(),
+  value: z.string().nullish(),
+})
+
+/**
+ * McpCheckIn
+ *
+ * 试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``value`` 的请求头取那个已保存的服务
+ * 里同名请求头的值；没给 ``serverId`` 时每个请求头都要给 ``value``。
+ */
+export const zMcpCheckIn = z.object({
+  headers: z.array(zMcpHeaderIn).optional().default([]),
+  serverId: z.string().nullish(),
+  timeoutSeconds: z.int().optional().default(30),
+  transport: z.enum(['streamable_http', 'sse']),
+  url: z.string(),
+})
+
+/**
+ * McpHeaderOut
+ */
+export const zMcpHeaderOut = z.object({
+  name: z.string(),
+  value: z.string(),
+})
+
+/**
+ * McpLastCheckOut
+ */
+export const zMcpLastCheckOut = z.object({
+  checkedAt: z.iso.datetime(),
+  elapsedMs: z.int(),
+  ok: z.boolean(),
+  reason: z.string().nullable(),
+})
+
+/**
+ * McpServerCreateIn
+ */
+export const zMcpServerCreateIn = z.object({
+  description: z.string().optional().default(''),
+  enabled: z.boolean().optional().default(true),
+  headers: z.array(zMcpHeaderIn).optional().default([]),
+  id: z.string(),
+  name: z.string(),
+  timeoutSeconds: z.int().optional().default(30),
+  transport: z.enum(['streamable_http', 'sse']),
+  url: z.string(),
+})
+
+/**
+ * McpServerUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。给了 ``headers`` 就整份替换请求头，其中没给 ``value`` 的沿用同名请求头
+ * 原来的值。
+ */
+export const zMcpServerUpdateIn = z.object({
+  description: z.string().nullish(),
+  enabled: z.boolean().nullish(),
+  headers: z.array(zMcpHeaderIn).nullish(),
+  name: z.string().nullish(),
+  timeoutSeconds: z.int().nullish(),
+  transport: z.enum(['streamable_http', 'sse']).nullish(),
+  url: z.string().nullish(),
+})
+
+/**
+ * McpToolConfig
+ *
+ * 挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
+ * 是全部。
+ */
+export const zMcpToolConfig = z.object({
+  server: z.string().min(1).max(200),
+  tools: z.array(z.string().min(1).max(200)).nullish(),
+  type: z.literal('mcp'),
+})
+
+/**
+ * McpToolOut
+ */
+export const zMcpToolOut = z.object({
+  description: z.string().nullable(),
+  name: z.string(),
+})
+
+/**
+ * McpCheckOut
+ *
+ * 一次试连。没通也是 ``200``，看 ``ok``。
+ */
+export const zMcpCheckOut = z.object({
+  elapsedMs: z.int(),
+  ok: z.boolean(),
+  reason: z.string().nullable(),
+  tools: z.array(zMcpToolOut).nullable(),
+})
+
+/**
+ * McpServerOut
+ */
+export const zMcpServerOut = z.object({
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  description: z.string(),
+  enabled: z.boolean(),
+  headers: z.array(zMcpHeaderOut),
+  id: z.string(),
+  lastCheck: zMcpLastCheckOut.nullable(),
+  name: z.string(),
+  timeoutSeconds: z.int(),
+  tools: z.array(zMcpToolOut).nullable(),
+  transport: z.enum(['streamable_http', 'sse']),
+  updatedAt: z.iso.datetime(),
+  updatedBy: z.uuid(),
+  url: z.string(),
+  usedBy: z.array(zAgentUsageOut),
+})
+
+/**
+ * McpServersOut
+ */
+export const zMcpServersOut = z.object({
+  items: z.array(zMcpServerOut),
+})
+
+/**
  * MetricFiltersIn
  *
  * 表现下限，全部可选；省略的维度不设限。
@@ -2012,7 +2144,10 @@ export const zAgentConfig = z.object({
   model: zAgentModelRef.nullish(),
   schema_version: z.literal(1),
   subagents: z.array(zSubagentConfig).optional().default([]),
-  tools: z.array(zCapToolConfig).optional().default([]),
+  tools: z
+    .array(z.union([zCapToolConfig, zMcpToolConfig]))
+    .optional()
+    .default([]),
 })
 
 /**
@@ -4693,6 +4828,63 @@ export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
  * Successful Response
  */
 export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
+
+/**
+ * Successful Response
+ */
+export const zMcpServersMcpServersGetResponse = zMcpServersOut
+
+export const zCreateMcpServerMcpServersPostBody = zMcpServerCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateMcpServerMcpServersPostResponse = zMcpServerOut
+
+export const zCheckUnsavedMcpServerMcpServersCheckPostBody = zMcpCheckIn
+
+/**
+ * Successful Response
+ */
+export const zCheckUnsavedMcpServerMcpServersCheckPostResponse = zMcpCheckOut
+
+export const zDeleteMcpServerMcpServersServerIdDeletePath = z.object({
+  server_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDeleteMcpServerMcpServersServerIdDeleteResponse = z.void()
+
+export const zMcpServerMcpServersServerIdGetPath = z.object({
+  server_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zMcpServerMcpServersServerIdGetResponse = zMcpServerOut
+
+export const zUpdateMcpServerMcpServersServerIdPatchBody = zMcpServerUpdateIn
+
+export const zUpdateMcpServerMcpServersServerIdPatchPath = z.object({
+  server_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateMcpServerMcpServersServerIdPatchResponse = zMcpServerOut
+
+export const zCheckMcpServerMcpServersServerIdCheckPostPath = z.object({
+  server_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zCheckMcpServerMcpServersServerIdCheckPostResponse = zMcpCheckOut
 
 /**
  * Successful Response
