@@ -22,7 +22,7 @@
 
    - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务），后端 60 秒内没答就连同后端一起退出，原因在上面后端的报错里；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
 
-   - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到 agent 配置入库的版本](#升级到-agent-配置入库的版本)第 4–6 步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
+   - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)的「改后端配置」与「切换配置」两步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
    - 带取帧、出图或视频理解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
 
 5. 另开一个终端启动前端：
@@ -131,28 +131,70 @@
 
 ### 升级
 
+从 v0.15 升级时不走下面的步骤，按[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)做。
+
 1. 新版本有表结构变化时，先执行该版本的数据库迁移。
 2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤时补做。compose.yaml 新挂载了部署目录里的目录时，先把目录放好再启动：第一次升级到挂载 `components/` 的版本前，先按[发布组件库](#发布组件库)放好组件库。
 3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
 4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[运行时的持久化](architecture.md#运行时的持久化)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
 5. 升级到生成记录把产出并进 `output` 的版本（迁移 0039）时，先停后端再执行迁移：旧版本的代码读不了新的表结构。迁移完成后，在同一停机窗口里在库里执行 `VACUUM FULL iclip.generation_jobs`（期间锁表），回收迁移整表更新留下的旧行，实测每百万行十几秒；再按第 3 步启动新版本。
-6. 升级到 agent 改在运行时服务里跑的版本时，启动前先改 `configs/config.yaml`，还留着下面这些段后端启动失败，报错点名那一段和它在运行时配置里的位置：
-   - 按[服务器部署](#服务器部署)第 3 步从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 建好 `configs/runtime.yaml`，下面搬过去的值写进这份文件。
-   - 删掉 `agent_runs` 段，改过的值写进 `configs/runtime.yaml` 的 `agent_runs`（字段同名）。
-   - 删掉 `conversations` 段，`conversations.compaction` 的值写进 `configs/runtime.yaml` 的 `compaction`（字段同名）。
-   - 删掉 `video` 段，视频理解改在 `configs/runtime.yaml` 的 `plugins.config.video` 配：`understanding_model` → `model`，`understanding_thinking` → `thinking`，`understanding_fps` → `fps`，再写上 `understanding_url`（原来 `VIDEO_UNDERSTANDING_URL` 的值）与 `api_key_env: VIDEO_UNDERSTANDING_API_KEY`。`.env` 的 `VIDEO_UNDERSTANDING_*` 留着，后端的 `iclip_studio` 拆解还用。
-   - `shot_video` 段只留 `shot_video: {}`，出图重试策略（`poll_interval_seconds`、`dev_attempts`、`pro_attempts`、`backoff_seconds`、`backoff_factor`、`job_timeout_seconds`）写进 `configs/runtime.yaml` 的 `plugins.config.shot_video`（字段同名）。
-   - `.env` 里补上运行时服务那几项（`RUNTIME_URL`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN` 等，见[服务器部署](#服务器部署)第 3 步），缺了后端起不来。
+### 升级到运行时独立部署的版本
 
-### 升级到 agent 配置入库的版本
+适用于 v0.15 的部署（数据库在迁移 0039）。这个版本起 agent 在运行时服务（`runtime` 容器）里跑；模型、agent 与技能存在数据库里、在配置页里改，部署目录的 `agents/`、`skills/` 不再挂载。后端与运行时之间的内部接口一起变了形状，两个镜像必须同一版本，compose 用同一个 `IMAGE_TAG` 拉取它们。下面的步骤在一个停机窗口里按顺序做完，命令都在部署目录执行；先在生产库的副本上演练一遍，记下「迁移数据库」那一步的耗时。
 
-这个版本起，模型、agent 与技能存在数据库里，运行时从库里装配，`config.yaml` 的 `models` 段与 `conversations.title_model` 不再认（还留着就启动失败），`agents/`、`skills/` 不再挂载。切换要停服，按顺序做：
+1. **停服务、备份**：
 
-1. 停服务（`docker compose stop server`），备份数据库；把部署目录的 `configs/`、`agents/`、`skills/` 另存一份，并把 `configs/config.yaml` 复制成 `configs/config.old.yaml`。
-2. 确认 `.env` 里有 `CREDENTIAL_ENCRYPTION_KEYS`（生成方法见[服务器部署](#服务器部署)第 3 步），旧 `models` 段各项 `api_key_env` 指向的变量也都还在 `.env` 里。
-3. 换上新版本的 `compose.yaml`，把 `.env` 的 `IMAGE_TAG` 改成新版本并 `docker compose pull`，执行新版本的数据库迁移（迁移 0043 建 `agent_runtime.sessions`，0045 把技能库、模型供应商与 agent 配置的表挪进 `agent_runtime`；第 5、6 步的切换命令要在它们之后跑）。
-4. 从 `configs/config.yaml` 删掉 `models` 段与 `conversations.title_model`，并按[升级](#升级)第 6 步建好 `configs/runtime.yaml`、改好搬到运行时配置的那几段、在 `.env` 补上运行时服务那几项（`config.old.yaml` 不动）：下一步的命令也按 `configs/config.yaml` 读后端配置。
-5. 先试一遍（新 compose 不再挂 `agents/`、`skills/`，这里临时挂进去；新建密钥会真的连一次模型供应商，服务器要连得上它）。插件登记表按 `configs/runtime.yaml`（[服务器部署](#服务器部署)第 3 步）建，与运行时服务启动时同一份；它写了 `shot_video` 或 `video_breakdown` 段时，插件包打开时要向后端核对插件服务，先 `docker compose up -d server` 只起新版本的后端再跑，否则命令以「按运行时配置打开插件包失败」拒绝、什么都不写：
+   ```bash
+   docker compose stop
+   pg_dump --format=custom --file=<备份目录>/iclip.dump --dbname='postgresql://iclip:<密码>@<库主机>:<端口>/iclip'
+   cp -a compose.yaml .env configs agents skills <备份目录>/
+   cp configs/config.yaml configs/config.old.yaml
+   ```
+
+   - 连接串是 `.env` 的 `DATABASE_URL` 去掉 `+asyncpg`，主机写宿主机连得上的地址；`pg_dump` 的版本不低于库的版本。
+   - `configs/config.old.yaml` 留给「切换配置」那一步读旧的 `models` 段与 `conversations.title_model`，之后只改 `configs/config.yaml`。
+2. **换 compose 与镜像**：换上新版本的 [compose.yaml](../deploy/compose.yaml)（多了 `runtime` 服务，`server` 不再挂 `agents/`、`skills/`），把 `.env` 的 `IMAGE_TAG` 改成新版本，执行 `docker compose pull`。这时报运行时那几项 `variable is not set` 不要紧，下一步补上。
+3. **补 `.env`**：先补运行时服务那几项，再生成加密钥匙，后者的命令用新镜像：
+   - `RUNTIME_URL=http://runtime:7790`。
+   - `RUNTIME_APP_KEY` 与 `RUNTIME_INTERNAL_TOKEN`：各用 `openssl rand -hex 32` 生成一个，两个取不同的值；不少于 32 个字符，后端与运行时都从这里读。
+   - `CREDENTIAL_ENCRYPTION_KEYS`：用[服务器部署](#服务器部署)第 3 步的命令生成，与数据库备份分开保管。
+   - `VIDEO_UNDERSTANDING_URL` 与 `VIDEO_UNDERSTANDING_API_KEY` 留着：后端的 `iclip_studio` 拆解两个都用，运行时的视频理解用 key，URL 下面写进 `runtime.yaml`。
+   - 旧 `models` 段各项 `api_key_env` 指向的变量留着，「切换配置」要读；切换后这些密钥加密存在库里。
+
+   补完执行 `docker compose config -q`，不再报 `variable is not set` 就齐了。
+4. **迁移数据库**：
+
+   ```bash
+   docker compose run --rm server alembic upgrade head
+   docker compose run --rm server alembic current   # 输出带 (head)
+   ```
+
+   - 用 `.env` 的 `DATABASE_URL` 连库，本项目的账号是库的属主，有 DDL 权限。
+   - 迁移 0046 在事务里给 `agent_runtime` 的 `events`、`agent_jobs`、`conversation_usage` 建索引，建的时候这几张表的写入要等，耗时随 `events` 的行数增长，所以只在停机窗口里跑。
+   - 现有对话的运行时会话由「切换配置」写入，迁移不回填。
+5. **改后端配置**：从 `configs/config.yaml` 删掉 `models`、`conversations`（整段，`compaction` 与 `title_model` 都在里面）、`agent_runs`、`video` 四段，`shot_video` 段只留 `shot_video: {}`（原来没有这一段就不加），其余段不动。还留着这些时后端启动失败。删掉的值在 `config.old.yaml` 里，下一步搬进运行时配置，`models` 与 `title_model` 由「切换配置」写进库。
+6. **建运行时配置**：把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `configs/runtime.yaml`。`apps.video`（`admin: true`，三个回调指向 `http://server:7788`）与 `plugins.config.internal_api` 照样例不改，再按旧配置填下表；旧配置里没有的就不写，形状以样例开头列的两个文件为准。
+
+   | 旧配置（`config.old.yaml` 与 `.env`） | 写进 `configs/runtime.yaml` |
+   |---|---|
+   | `agent_runs` 段 | `agent_runs`，字段同名 |
+   | `conversations.compaction` | `compaction`，字段同名 |
+   | `video` 段 | `plugins.config.video`：`understanding_model` → `model`，`understanding_thinking` → `thinking`，`understanding_fps` → `fps`；另写 `understanding_url`（`.env` 的 `VIDEO_UNDERSTANDING_URL`）与 `api_key_env: VIDEO_UNDERSTANDING_API_KEY` |
+   | `iclip_studio` 段，且 `.env` 设了 `VIDEO_UNDERSTANDING_URL` | `plugins.config.video_breakdown: {}` |
+   | `shot_video` 段 | `plugins.config.shot_video`：出图重试的字段（`poll_interval_seconds`、`dev_attempts`、`pro_attempts`、`backoff_seconds`、`backoff_factor`、`job_timeout_seconds`）同名，没改过就写 `{}` |
+   | `.env` 设了 `OSS_INTERNAL_ENDPOINT` | `plugins.config.oss`：`public_url_base` 是 `OSS_PUBLIC_URL_BASE` 的值，`internal_url_base` 是 `<内网 endpoint 的协议>://<OSS_BUCKET>.<内网 endpoint 的 host>` |
+
+   agent 用到的插件这里没登记时，「切换配置」的发布检查会点名。
+7. **只起后端**：
+
+   ```bash
+   docker compose up -d server
+   docker compose ps server   # STATUS 带 (healthy)
+   ```
+
+   - 配置写错时原因在 `docker compose logs server`。
+   - 运行时这时还没起：日志先有一条「运行时还没起来，起来后自动连上事件流」，60 秒后每次重连失败记一条「运行时事件流自启动起一直连不上，关掉全部订阅连接后重连」，到「起全部服务」为止都是正常的。
+8. **切换配置**：先试一遍。新 compose 不挂 `agents/`、`skills/`，这里临时挂进去：
 
    ```bash
    docker compose run --rm -v ./agents:/app/agents:ro -v ./skills:/app/skills:ro server \
@@ -160,12 +202,53 @@
      --legacy-config configs/config.old.yaml --agents agents/agents.yaml --skills skills --dry-run
    ```
 
-   它打印会写入的供应商、密钥、模型、默认模型、技能、agent 与对话会话数，最后一行是「--dry-run：以上内容没有写入」。有问题时打印「切换没有进行，什么都没写」和原因（检查清单见 [import_agent_config.py](../server/scripts/import_agent_config.py) 的文件头），改好文件再试。
-6. 去掉 `--dry-run` 正式运行，最后一行是「已写入」。全部在一个事务里，失败就整体回滚。
-7. `docker compose up -d` 启动服务，核对：首页列着原来的三个 agent；每个 agent 各开一段对话发一条消息；运行记录里的版本号（`agent_runtime.runs.metadata` 的 `agent_version_id`）是各 agent 的 v1；切换前就有的对话能接着聊。
-8. 删掉部署目录里的 `agents/`、`skills/` 与 `configs/config.old.yaml`。
+   - 它把旧的 `models` 段与 `conversations.title_model`（`--legacy-config`）、`agents.yaml`（`--agents`）与技能目录（`--skills`）写进库，每个 agent 与技能发布成 v1，再给每段现有对话开一个固定在它的 agent 的 v1 上的会话。插件登记表按 `--runtime-config` 建，与运行时服务启动时同一份；连库与后端配置照常读 `.env` 与 `configs/config.yaml`。
+   - 打印会写入的供应商、密钥、模型、默认模型、技能、agent 与对话会话数，最后一行是「--dry-run：以上内容没有写入」。新建密钥会真的连一次模型供应商，服务器要连得上它们。
+   - 有问题时打印「切换没有进行，什么都没写：」和原因，改好再试，检查清单见 [import_agent_config.py](../server/scripts/import_agent_config.py) 的文件头。库里要有一个在用的 root 账号，记为这些配置的操作人，没有就先用 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor` 设一个；报「按运行时配置打开插件包失败」时，查后端是否 healthy、`RUNTIME_INTERNAL_TOKEN` 与 `runtime.yaml` 里的是否一致。
+   - 记下「对话会话 N 个，其中 agent 已不在、不可用的 M 个」：这 M 段对话的 agent 已不在 `agents.yaml` 里，切换后能读历史，发消息答 409。
 
-回滚：停服务，恢复第 1 步的数据库备份、旧版本的 `compose.yaml` 与 `IMAGE_TAG`、另存的 `configs/`、`agents/`、`skills/`，再启动。
+   去掉 `--dry-run` 正式运行，最后一行是「已写入」。全部在一个事务里，失败整体回滚，改好可以重跑。
+9. **起全部服务**：
+
+   ```bash
+   docker compose up -d
+   curl http://localhost/api/healthz
+   ```
+
+   - 后端日志出现「运行时事件流已连上」；运行时起不来时原因在 `docker compose logs runtime`。
+   - 还开着旧页面的浏览器标签要刷新一次：页面与后端的接口和实时推送一起变了。
+10. **核对**：
+    - 首页列着原来上首页的 agent。
+    - 每个 agent 各开一段新对话发一条消息，能答复，标题自动起好。
+    - 切换前就有的对话能看到历史、能接着聊；agent 已不在的那 M 段发消息答 409，是预期的。
+    - 运行固定在 v1：在库里执行下面的查询，切换后的运行 `version` 都是 `1`。
+
+      ```sql
+      SELECT r.started_at, r.metadata::jsonb ->> 'agent_id' AS agent, v.version
+      FROM agent_runtime.runs r
+      JOIN agent_runtime.agent_versions v ON v.id = (r.metadata::jsonb ->> 'agent_version_id')::uuid
+      WHERE r.started_at > now() - interval '1 hour'
+      ORDER BY r.started_at DESC;
+      ```
+
+    - 用 root 账号打开配置页：技能库、模型供应商与 agent 列着切换进来的内容；MCP 服务是空的，切换不建。
+    - 在配置页对一个 agent 开测试预览发一条消息：能答复，对话列表里没有这段预览。
+    - 挂了取帧出图（`shot_video`）或拆解（`video_breakdown`）的 agent，各让它调一次对应的工具。
+11. **清理**：核对无误后删掉部署目录里的 `agents/`、`skills/` 与 `configs/config.old.yaml`。备份目录留到不再回滚为止。
+
+回滚：备份之后写进库的内容（新对话、生成记录等）都会丢，只在这个窗口里或刚切换后用。先用新版本的 compose 执行 `docker compose down`（连运行时容器一起删掉），再把备份目录里的 `compose.yaml`、`.env`、`configs/`、`agents/`、`skills/` 放回部署目录。然后以管理员身份重建库：
+
+```sql
+DROP DATABASE iclip;
+CREATE DATABASE iclip OWNER iclip;
+```
+
+再恢复备份并启动旧版本，浏览器标签再刷新一次：
+
+```bash
+pg_restore --dbname='postgresql://iclip:<密码>@<库主机>:<端口>/iclip' <备份目录>/iclip.dump
+docker compose up -d
+```
 
 ### 改配置
 

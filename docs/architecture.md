@@ -190,7 +190,7 @@ import [asgi.py](../server/src/iclip/asgi.py) 只建各个服务与运行时服�
 
 后端的 lifespan 进入运行时服务的客户端、启动事件流消费者、已启用的生成队列、参考视频的拆解队列与资料库的打标队列；关停时先停队列，再停事件流消费者、以 `1001` 关掉浏览器连接、取消没跑完的后台起名，退出客户端，最后关闭 HTTP 客户端和本应用持有的连接池。启动不建表，迁移单独执行。
 
-从旧的文件配置切换用一次性命令 [scripts/import_agent_config.py](../server/scripts/import_agent_config.py)：读旧 `config.yaml` 的 `models` 段与 `title_model`、`agents.yaml` 与技能目录，经各领域的服务写入（复用校验、试连与发布检查），并给现有对话开会话；全部在一个事务里，步骤见[部署](deploy.md#升级到-agent-配置入库的版本)。三块服务按运行时的同一套装配直接建，加密钥匙按运行时的设置读，插件登记表按运行时配置（`--runtime-config`）打开插件包得到，与运行时服务启动时同一份。
+从旧的文件配置切换用一次性命令 [scripts/import_agent_config.py](../server/scripts/import_agent_config.py)：读旧 `config.yaml` 的 `models` 段与 `title_model`、`agents.yaml` 与技能目录，经各领域的服务写入（复用校验、试连与发布检查），并给现有对话开会话；全部在一个事务里，步骤见[部署](deploy.md#升级到运行时独立部署的版本)。三块服务按运行时的同一套装配直接建，加密钥匙按运行时的设置读，插件登记表按运行时配置（`--runtime-config`）打开插件包得到，与运行时服务启动时同一份。
 
 ### 调运行时
 
