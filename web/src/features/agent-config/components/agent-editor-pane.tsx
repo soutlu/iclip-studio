@@ -13,6 +13,7 @@ import {
 } from '../agent-draft'
 import type { Agent, AgentPlugin, Skill } from '../agents.api'
 import { pluginIcon } from '../plugin-icons'
+import { McpCards } from './mcp-cards'
 import type { Panel } from './panel'
 import { AddCard, AlertGlyph, CardBadge, EmptyDash, ResourceCard } from './resource-card'
 
@@ -81,7 +82,7 @@ type AgentEditorPaneProps = {
   onOpenPanel: (panel: Panel) => void
 }
 
-/** 左栏的配置摘要：指令（模型与提示词）、技能、插件、子 Agent；细节都在右侧面板里改。 */
+/** 左栏的配置摘要：指令（模型与提示词）、技能、插件、MCP 服务、子 Agent；细节都在右侧面板里改。 */
 export function AgentEditorPane({
   agents,
   current,
@@ -106,7 +107,7 @@ export function AgentEditorPane({
 
   // 发布被拦下时滚到第一处出问题的那一节。
   const firstProblem = (
-    ['general', 'instructions', 'skills', 'plugins', 'subagents'] as const
+    ['general', 'instructions', 'skills', 'plugins', 'mcp', 'subagents'] as const
   ).find((section) => problems[section] !== undefined)
   useEffect(() => {
     if (firstProblem === undefined) return
@@ -249,6 +250,24 @@ export function AgentEditorPane({
               })}
             </div>
           )}
+        </Section>
+
+        <Section
+          actions={
+            readOnly ? undefined : (
+              <IconButton
+                label="管理 MCP 服务"
+                name="manage"
+                onClick={() => onOpenPanel({ type: 'mcp-select' })}
+                size="sm"
+              />
+            )
+          }
+          problems={problems.mcp}
+          section="mcp"
+          title="MCP 服务"
+        >
+          <McpCards config={config} onOpenPanel={onOpenPanel} panel={panel} readOnly={readOnly} />
         </Section>
 
         <Section

@@ -132,9 +132,9 @@ export const setCredential = (config: AgentConfig, credentialId: string | null):
     : { ...config, model: { ...config.model, credential_id: credentialId } }
 
 /** 编辑页上的几节；发布问题按 `path` 落到其中一节，认不出的放在最上面。 */
-export type EditorSection = 'instructions' | 'skills' | 'plugins' | 'subagents' | 'general'
+export type EditorSection = 'instructions' | 'skills' | 'plugins' | 'mcp' | 'subagents' | 'general'
 
-/** `path` 写法见合同 §19「发布」；`tools[i]` 按草稿里那一项的种类分：插件归插件一节，MCP 这一版没有对应的节。 */
+/** `path` 写法见合同 §19「发布」；`tools[i]`（含 `tools[i].server`、`tools[i].tools[j]`）按草稿里那一项的种类归插件或 MCP 服务一节。 */
 export const sectionOfProblem = (problem: AgentProblem, config: AgentConfig): EditorSection => {
   const { path } = problem
   if (path === 'model' || path.startsWith('model.')) return 'instructions'
@@ -143,7 +143,8 @@ export const sectionOfProblem = (problem: AgentProblem, config: AgentConfig): Ed
   const tool = /^tools\[(\d+)\]/.exec(path)
   if (tool !== null) {
     const entry = (config.tools ?? [])[Number(tool[1])]
-    return entry !== undefined && isCap(entry) ? 'plugins' : 'general'
+    if (entry === undefined) return 'general'
+    return isCap(entry) ? 'plugins' : 'mcp'
   }
   return 'general'
 }

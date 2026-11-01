@@ -8,13 +8,14 @@ import {
   type zTaskOut,
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
-import { agentConfigHandlers } from './agent-config'
+import { agentConfigHandlers, mockMcpServerUsage } from './agent-config'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
 import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
+import { mcpServerHandlers } from './mcp-servers'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
   addMockCollection,
@@ -507,4 +508,5 @@ export const handlers = [
     const user = currentUser ?? mockAuthUser
     return { id: user.id, name: user.displayName }
   }),
+  ...mcpServerHandlers(mockMcpServerUsage),
 ]

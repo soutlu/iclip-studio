@@ -7,11 +7,11 @@ type PanelShellProps = {
   title: string
   onClose: () => void
   children: ReactNode
-  /** 底栏按钮；不给就是一个「完成」。 */
+  /** 底栏按钮；不给就是一个「完成」，给 false 就没有底栏（动作写在内容里的表单）。 */
   footer?: ReactNode
   /** 内容区自己管滚动（编辑器）时传 false。 */
   scroll?: boolean
-  /** 标题栏右侧的小件（版本、移除）。 */
+  /** 标题栏右侧的小件（版本、移除、删除）。 */
   actions?: ReactNode
 } & Omit<ComponentPropsWithoutRef<'section'>, 'children' | 'title'>
 
@@ -65,13 +65,15 @@ export function PanelShell({
       >
         {children}
       </div>
-      <footer className="flex h-16 shrink-0 items-center justify-end gap-2 border-t border-hairline px-6">
-        {footer ?? (
-          <Button onClick={onClose} size="md">
-            完成
-          </Button>
-        )}
-      </footer>
+      {footer === false ? null : (
+        <footer className="flex h-16 shrink-0 items-center justify-end gap-2 border-t border-hairline px-6">
+          {footer ?? (
+            <Button onClick={onClose} size="md">
+              完成
+            </Button>
+          )}
+        </footer>
+      )}
     </section>
   )
 }

@@ -1,7 +1,7 @@
 /**
  * Agent 配置的 mock：几个 agent（含一个长名字、一个没发布过、一个已归档）、带发布人的版本、本部署的插件、
  * 可选的模型（技能在 ./skills），形状照合同 §18–§19。草稿、发布与恢复改内存里的数据，lockVersion 与发布检查照合同做，
- * 发布检查只做页面用得到的那几条（模型、插件依赖、技能、子 agent）。每例由 `resetMockAgentConfig` 放回预置数据。
+ * 发布检查只做页面用得到的那几条（模型、插件依赖、MCP 服务、技能、子 agent）。每例由 `resetMockAgentConfig` 放回预置数据。
  */
 
 import { http, HttpResponse } from 'msw'
@@ -16,10 +16,12 @@ import type {
   AgentPublishIn,
   AgentRestoreIn,
   AgentUpdateIn,
+  AgentUsageOut,
   AgentVersionDetailOut,
   ModelOptionsOut,
 } from '@/shared/api/generated/types.gen'
 import { findMockSkill, mockSkillId } from './skills'
+import { mockMcpServer } from './mcp-servers'
 
 type Actor = { id: string; name: string }
 
@@ -144,7 +146,7 @@ const directorConfig = (thinking: 'low' | 'medium', tools: string[]): AgentConfi
   model: { name: 'qwen3.8-flash', provider: 'bailian', settings: { thinking } },
   schema_version: 1,
   subagents: [{ agent: 'breakdown-helper', max_calls: 3, timeout_seconds: 300 }],
-  // 挂着一个 MCP 服务：这一版页面不管它，保存草稿也要原样带上。
+  // 挂着一个 MCP 服务（见 mcp-servers.ts 的 feishu-docs），只放出其中两个工具。
   tools: [...tools.map(cap), { server: 'feishu-docs', tools: ['search', 'read'], type: 'mcp' }],
 })
 
@@ -396,6 +398,19 @@ const toDetail = (item: MockAgent): AgentDetailOut => ({
     }),
 })
 
+const mcpServerIdsOf = (config: AgentConfig | undefined) =>
+  (config?.tools ?? []).flatMap((tool) => (tool.type === 'mcp' ? [tool.server] : []))
+
+/** 哪些 agent 的草稿或当前版本挂着这个 MCP 服务，形状同合同 §19 的 `usedBy`；MCP 服务的 mock 用它答「谁在用」。 */
+export const mockMcpServerUsage = (serverId: string): AgentUsageOut[] =>
+  agents.flatMap((item) => {
+    const inDraft = mcpServerIdsOf(item.draft.config).includes(serverId)
+    const inActiveVersion = mcpServerIdsOf(activeOf(item)?.config).includes(serverId)
+    return inDraft || inActiveVersion
+      ? [{ agentId: item.id, agentName: item.name, inActiveVersion, inDraft }]
+      : []
+  })
+
 const notFound = () => HttpResponse.json({ detail: '没有这个 agent' }, { status: 404 })
 const stale = () =>
   HttpResponse.json({ detail: '草稿已被别人修改，请重新读取后再操作' }, { status: 409 })
@@ -444,6 +459,35 @@ const publishProblems = (item: MockAgent): AgentProblemOut[] => {
         path: `tools[${index}]`,
       })
     }
+  })
+  // MCP 服务照运行时的发布检查：在、启用、连通过（发现过工具），选的工具都在发现的工具里。
+  ;(config.tools ?? []).forEach((tool, index) => {
+    if (tool.type !== 'mcp') return
+    const path = `tools[${index}]`
+    const found = mockMcpServer(tool.server)
+    if (found === undefined) {
+      problems.push({ message: `没有标识为 ${tool.server} 的 MCP 服务`, path: `${path}.server` })
+      return
+    }
+    if (!found.enabled) {
+      problems.push({ message: `MCP 服务 ${found.name} 已停用`, path: `${path}.server` })
+      return
+    }
+    if (found.tools === null) {
+      problems.push({
+        message: `MCP 服务 ${found.name} 还没有连通过，先测试连接再发布`,
+        path: `${path}.server`,
+      })
+      return
+    }
+    const discovered = found.tools.map((item) => item.name)
+    ;(tool.tools ?? []).forEach((name, position) => {
+      if (!discovered.includes(name))
+        problems.push({
+          message: `MCP 服务 ${found.name} 没有工具 ${name}`,
+          path: `${path}.tools[${position}]`,
+        })
+    })
   })
   skillIds.forEach((id, index) => {
     const found = findMockSkill(id)
