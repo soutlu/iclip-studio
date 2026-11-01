@@ -8,6 +8,7 @@ import {
   type zTaskOut,
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
+import { agentConfigHandlers } from './agent-config'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
@@ -496,4 +497,9 @@ export const handlers = [
       forgetMockHitCaseTags(ids)
     },
   ),
+
+  ...agentConfigHandlers(() => {
+    const user = currentUser ?? mockAuthUser
+    return { id: user.id, name: user.displayName }
+  }),
 ]

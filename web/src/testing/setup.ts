@@ -7,6 +7,7 @@ import {
   resetMockTasks,
   resetMockUsers,
 } from './mocks/handlers'
+import { resetMockAgentConfig } from './mocks/agent-config'
 import { resetMockEnhancements } from './mocks/enhancements'
 import { resetMockFilm } from './mocks/film'
 import { resetMockHitCases } from './mocks/hit-cases'
@@ -107,6 +108,7 @@ beforeAll(() => {
 afterEach(() => {
   server.resetHandlers()
   server.events.removeAllListeners()
+  resetMockAgentConfig()
   resetMockClock()
   resetMockConversations()
   resetMockEnhancements()

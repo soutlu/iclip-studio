@@ -11,6 +11,7 @@ import {
   loginAs,
   mockAuthUser,
   mockCollections,
+  mockGovernor,
 } from '@/testing/mocks/handlers'
 import { renderWithProviders } from '@/testing/render'
 import { stubSidebarViewport } from '@/testing/scroll-viewport'
@@ -276,6 +277,41 @@ describe('AppSidebar', () => {
 
     await user.click(await screen.findByRole('button', { name: '审计' }))
     expect(router.state.location.pathname).toBe('/audit')
+  })
+
+  it('带 agent:manage 的账号在「治理」组看得到「Agent 配置」，去 /agents；只有它时组里只有这一项', async () => {
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'agent:manage'] })
+    const user = userEvent.setup()
+    const { router } = await renderSidebar()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+    const govern = screen.getByRole('group', { name: '治理' })
+    expect(
+      within(govern)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Agent 配置'])
+
+    await user.click(within(govern).getByRole('button', { name: 'Agent 配置' }))
+    expect(router.state.location.pathname).toBe('/agents')
+    expect(within(govern).getByRole('button', { name: 'Agent 配置' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  it('治理者三项都看得到', async () => {
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderSidebar()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+    const govern = screen.getByRole('group', { name: '治理' })
+    expect(
+      within(govern)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['全部任务', '审计', 'Agent 配置'])
   })
 })
 

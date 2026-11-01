@@ -89,6 +89,15 @@ describe('apiFetch 失败形态', () => {
     expect(error.status).toBe(status)
     expect(error.message).toBe(message)
   })
+
+  it('HTTP 失败的 JSON 正文原样留在 body，信封外的字段由调用方再校验；正文不是 JSON 时 body 为空', async () => {
+    const envelope = { detail: '发布被拦下', problems: [{ path: 'model', message: '请选择模型' }] }
+    server.use(http.get('*/api/probe', () => HttpResponse.json(envelope, { status: 422 })))
+    expect((await rejectionOf(readProbe())).body).toEqual(envelope)
+
+    server.use(http.get('*/api/probe', () => new HttpResponse('Bad Gateway', { status: 502 })))
+    expect((await rejectionOf(readProbe())).body).toBeUndefined()
+  })
 })
 
 describe('errorMessageOf', () => {

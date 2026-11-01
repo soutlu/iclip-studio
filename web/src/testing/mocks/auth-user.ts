@@ -33,13 +33,19 @@ export const mockAuthUser = {
   username: 'tester',
 }
 
-/** 治理者账号：用 governor 登录 mock 就是它，可以复盘全部对话、管理用户与标签。 */
+/** 治理者账号：用 governor 登录 mock 就是它，可以复盘全部对话、管理用户、标签、agent 与模型。 */
 export const mockGovernor = {
   ...mockAuthUser,
   displayName: '治理者',
   email: 'governor@example.com',
   id: '4b9d2e7a-1c3f-4a5b-8d6e-2f7a9c1b3d5e',
-  permissions: [...mockAuthUser.permissions, PERMISSION.usersManage, PERMISSION.libraryTagsManage],
+  permissions: [
+    ...mockAuthUser.permissions,
+    PERMISSION.usersManage,
+    PERMISSION.libraryTagsManage,
+    PERMISSION.agentManage,
+    PERMISSION.modelManage,
+  ],
   roles: ['root'],
   username: 'governor',
 }

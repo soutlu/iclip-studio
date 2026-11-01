@@ -870,34 +870,6 @@
   border-radius: var(--radius-full);
 }
 
-.wf-switch {
-  position: relative;
-  width: 30px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  background: var(--color-disabled-container);
-}
-
-.wf-switch i {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-full);
-  background: var(--color-top-layer);
-  box-shadow: var(--shadow-1);
-  transition: left var(--dur-s) var(--ease-decel);
-}
-
-.wf-switch[aria-checked='true'] {
-  background: var(--color-on-surface);
-}
-
-.wf-switch[aria-checked='true'] i {
-  left: 14px;
-}
-
 /* ---- 导出 ---- */
 
 .wf-export {

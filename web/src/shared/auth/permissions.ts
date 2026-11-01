@@ -3,6 +3,7 @@
 import type { Permission as ContractPermission } from '@/shared/api/generated/types.gen'
 
 export const PERMISSION = {
+  agentManage: 'agent:manage',
   agentRead: 'agent:read',
   agentRun: 'agent:run',
   collectionsRead: 'collections:read',
@@ -11,6 +12,7 @@ export const PERMISSION = {
   generationSubmit: 'generation:submit',
   inspirationsRead: 'inspirations:read',
   libraryTagsManage: 'library_tags:manage',
+  modelManage: 'model:manage',
   tasksRead: 'tasks:read',
   tasksWrite: 'tasks:write',
   uploadsWrite: 'uploads:write',
