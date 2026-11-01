@@ -320,6 +320,7 @@ __all__ = [
     "AgentRunsSection",
     "AppSection",
     "CompactionSection",
+    "CredentialKeysEnv",
     "HooksSection",
     "OpsSection",
     "PluginsSection",

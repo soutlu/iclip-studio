@@ -55,7 +55,7 @@ class ShotVideo(CapPlugin[AgentDepsT]):
         return ShotVideoToolset(self)
 
     def get_instructions(self) -> AgentInstructions[AgentDepsT] | None:
-        # 不注入指令：这几件工具怎么接力是流程知识，归 skill（architecture.md §5）。
+        # 不注入指令：这几件工具怎么接力是流程知识，归 skill（docs/tool-design.md）。
         return None
 
     @classmethod

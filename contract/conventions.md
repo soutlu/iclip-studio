@@ -1,6 +1,6 @@
 # 跨端合同约定 (API Conventions)
 
-> HTTP 端点、端点权限与数据形状以 [`openapi.json`](openapi.json) 为准，生成流程见 [开发约定](../AGENTS.md)。本文补充跨端消费语义、认证、动态错误与 WebSocket 约定；领域术语和不变量见 [CONTEXT.md](../docs/CONTEXT.md)。运行时服务的接口只供后端调用，以 [`runtime-openapi.json`](runtime-openapi.json) 为准，鉴权见[后端架构](../docs/architecture.md#1-模块职责)，错误信封同 §4。
+> HTTP 端点、端点权限与数据形状以 [`openapi.json`](openapi.json) 为准，生成流程见 [开发约定](../AGENTS.md)。本文补充跨端消费语义、认证、动态错误与 WebSocket 约定；领域术语和不变量见 [CONTEXT.md](../docs/CONTEXT.md)。运行时服务的接口只供接入它的应用的服务端调用，以 [`runtime-openapi.json`](runtime-openapi.json) 为准，鉴权与会话归属见 §20，错误信封同 §4。
 
 ## 1. 部署与路由路径
 
@@ -718,9 +718,20 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 - 预览里工具出的图（经 §21 的 `/plugins/generations`）记成开它的人的一条生成记录、不挂对话，从这张宫格切出的图同样不挂，所以按对话列记录与 `event.generation.changed` 里都不会出现预览 id；预览里拆解的参考视频照常进全站共享的灵感库（§14），与在对话里拆解的一样。
 - `DELETE /agents/{id}/previews/{previewId}` 答 `204`，只删自己的：不是自己的、不是这个 agent 的、没有这一段都是 `404`。删掉后这个 id 在哪个端点上都是 `404`；运行时那边的会话与运行记录留着，再也寻址不到。
 
-## 20. 运行时服务的实时通道与回调
+## 20. 运行时服务 (Agent Runtime)
 
-运行时服务给应用的服务端用，不直达浏览器。HTTP 接口以 [`runtime-openapi.json`](runtime-openapi.json) 为准；本节是它表达不了的两条 WebSocket 与三个回调。帧的模型在 [live/frames.py](../runtime/src/agent_runtime/live/frames.py)，回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)，应用照它们解析。Python 应用调 HTTP 接口与连两条 WebSocket 用运行时的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，报错与重试规则见[后端架构](../docs/architecture.md#1-模块职责)。`POST /v1/stats/{prompts,runs,usage,sessions}` 给应用的报表取事实行，只答调用方应用的会话，按时间窗或按会话（一次至多 1000 段）二选一，各行的时间锚点与筛选规则见 `runtime-openapi.json`。运行时答的 401、403（含 WebSocket 握手前的 `1008`）只说调用的应用（密钥缺了或不对、没有管理权限），从不说应用替哪个用户操作；客户端库把它们当成应用级拒绝、按运行时不可用抛出，应用不能转成自己用户的登录失效或无权限。
+运行时服务给应用的服务端用，不直达浏览器。HTTP 接口以 [`runtime-openapi.json`](runtime-openapi.json) 为准；本节是它表达不了的鉴权与会话归属、两条 WebSocket 与三个回调。帧的模型在 [live/frames.py](../runtime/src/agent_runtime/live/frames.py)，回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)，应用照它们解析。Python 应用调 HTTP 接口与连两条 WebSocket 用运行时的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，报错与重试规则见[架构](../docs/architecture.md#客户端库)。接入一个新应用的步骤见[新应用接入运行时](../docs/runtime-apps.md)。
+
+### 鉴权与会话归属
+
+- 每个请求带 `Authorization: Bearer <应用密钥>`，认不出是哪个应用答 `401`。应用、密钥、管理权限与回调在运行时配置的 `apps` 里登记。
+- 运行时答的 401、403（含 WebSocket 握手前的 `1008`）只说调用的应用（密钥缺了或不对、没有管理权限），从不说应用替哪个用户操作；客户端库把它们当成应用级拒绝、按运行时不可用抛出，应用不能转成自己用户的登录失效或无权限。
+- `/v1/admin` 是技能库、模型供应商与默认模型、MCP 服务、agent 配置的管理接口，子路径、请求与答复同后端 §17–§19、§22 那几组端点，要求应用有管理权限（否则 `403`）。写操作在 `X-End-User` 头里给代办的用户 id，运行时把它记作操作人，原样记下、不核对也不解释；答复里只有操作人的 id。
+- 会话接口（`/v1/sessions…`、`/v1/agents`、`/v1/titles`）不要管理权限。运行时不认识应用的用户与对话，谁看得见、谁能写由应用判完再转发；所以会话接口里的 `X-End-User` 是会话的属主，不是看的人：工作区与素材台账的命名空间、新消息的属主都按它算，分叉与拷文件时它是目标会话的属主，只在用得到它的路由上必填。
+- 会话归开它的应用，分叉出来的归发起分叉的应用：带会话 id 的路由先认归属，别的应用的会话与不存在的会话一样答 `404`，分叉与拷文件的源、拷文件的目标也要是调用方自己的；会话 id 由应用铸，撞上别的应用已有的 id 开会话或分叉答 `409`；按会话读活动只答调用方自己的会话（不存在的与别的应用的都不在答复里），此刻占着执行位的会话也只列自己的。
+- agent 名册、起标题与管理接口不分应用，agent 配置目前所有应用共用一份。
+- 一页 transcript 只有 transcript 本身，标题、属主这些字段由应用在自己的答复上加。
+- `POST /v1/stats/{prompts,runs,usage,sessions}` 给应用的报表取事实行，只答调用方应用的会话，按时间窗或按会话（一次至多 1000 段）二选一，各行的时间锚点与筛选规则见 `runtime-openapi.json`。
 
 ### 连接
 

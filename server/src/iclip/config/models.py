@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Annotated, Any, Final, Literal
 from urllib.parse import urlsplit
 
-from cryptography.fernet import Fernet
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -49,8 +48,6 @@ PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
 
-CREDENTIAL_ENCRYPTION_KEYS_ENV: Final = "CREDENTIAL_ENCRYPTION_KEYS"
-
 RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
 
 RUNTIME_URL_ENV: Final = "RUNTIME_URL"
@@ -91,35 +88,6 @@ class CoreEnv(EnvSettings):
         if len(value) < _MIN_SECRET_LENGTH:
             raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
         return value
-
-
-class CredentialKeysEnv(EnvSettings):
-    """模型供应商密钥里机密字段的加密钥匙：逗号分隔的 Fernet key，第一个加密，全部用来解密。
-
-    后端运行不读它（解密在运行时服务里），只有切换命令 ``scripts/import_agent_config.py`` 用。"""
-
-    keys: RequiredEnv = Field(validation_alias=CREDENTIAL_ENCRYPTION_KEYS_ENV)
-
-    @field_validator("keys")
-    @classmethod
-    def _fernet_keys(cls, value: str) -> str:
-        parts = [part.strip() for part in value.split(",")]
-        for position, part in enumerate(parts, start=1):
-            if not part:
-                raise ValueError(f"第 {position} 个 key 是空的")
-            try:
-                Fernet(part)
-            except ValueError:
-                # 报错不带 key 本身：它是机密。
-                raise ValueError(
-                    f"第 {position} 个 key 不是合法的 Fernet key（32 字节的 urlsafe base64），"
-                    "用 Fernet.generate_key() 生成"
-                ) from None
-        return ",".join(parts)
-
-    @property
-    def key_list(self) -> tuple[str, ...]:
-        return tuple(self.keys.split(","))
 
 
 class SsoEnv(EnvSettings):
