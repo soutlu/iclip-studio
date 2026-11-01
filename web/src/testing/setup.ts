@@ -100,9 +100,20 @@ if (!('animate' in Element.prototype)) {
   })
 }
 
-// 未声明 handler 的请求直接报错，避免访问真实后端。
+const unhandledRequests: string[] = []
+
+// 未声明 handler 的请求一律拦下并让当前用例失败，避免访问真实网络。不用字符串 'error'：它放行
+// 看着像静态资源的地址（.mp4、.png、.json 等）去真实网络；回调里的 print.error() 也只打印、
+// 照样放行，所以要自己抛错（请求不出进程，MSW 回 500），再在 afterEach 里按记下的地址判失败，
+// 免得页面吞掉 500 后用例照样通过。
 beforeAll(() => {
-  server.listen({ onUnhandledRequest: 'error' })
+  server.listen({
+    onUnhandledRequest(request, print) {
+      unhandledRequests.push(`${request.method} ${request.url}`)
+      print.error()
+      throw new Error(`未声明 handler 的请求：${request.method} ${request.url}`)
+    },
+  })
 })
 
 afterEach(() => {
@@ -124,6 +135,11 @@ afterEach(() => {
   resetMockWholeFilm()
   resetMockWorkspace()
   cleanup()
+  // 放在 cleanup 之后，卸载时发出的请求也算在本用例上。
+  if (unhandledRequests.length > 0) {
+    const requests = unhandledRequests.splice(0)
+    throw new Error(`用例发出了未声明 handler 的请求：\n${requests.join('\n')}`)
+  }
 })
 
 afterAll(() => {

@@ -167,6 +167,8 @@ describe('成片编辑器', () => {
         )
         return undefined
       }),
+      // 上传的音乐没记时长，编辑器会下载它量时长与波形；对象存储返回刚传上去的内容。
+      http.get(MUSIC_URL, () => HttpResponse.arrayBuffer(new TextEncoder().encode('wav').buffer)),
     )
     await openEditor(records)
     await screen.findByText('暂无音乐')
