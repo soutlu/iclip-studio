@@ -4,7 +4,7 @@
  * 每次调用只按自己的协议状态画：成功不画图标，失败红 ×，被拒绝灰 × 加「已拒绝」，转入后台的写「已转入后台」，不看前后调用。
  */
 
-import { useState, type ReactNode } from 'react'
+import { use, useState, type ReactNode } from 'react'
 import type { ToolCallFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { baseName } from '@/shared/lib/file-kind'
@@ -32,6 +32,7 @@ import {
   type ToolOutcome,
   type ToolPanel,
 } from './tool-display'
+import { WorkbenchLinksContext } from './workbench-links'
 
 type ToolLineProps = {
   frame: ToolCallFrame
@@ -52,9 +53,11 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
   const [mounted, setMounted] = useState(false)
   const [preview, setPreview] = useState<LightboxMedia | null>(null)
   const link = useWorkspaceFileLink()
+  const linked = use(WorkbenchLinksContext)
   const { detail: name, file } = card
-  // 被拒绝的那一步没动过文件，文件名只写字。
-  const openFile = file === undefined || outcome === 'denied' ? undefined : () => link.open(file)
+  // 被拒绝的那一步没动过文件，文件名只写字；没有工作台时也只写字。
+  const openFile =
+    file === undefined || outcome === 'denied' || !linked ? undefined : () => link.open(file)
 
   const subject =
     name === undefined ? null : openFile === undefined ? (
@@ -66,7 +69,7 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
 
   return (
     <div className="flex flex-col">
-      {delegated ? (
+      {delegated && linked ? (
         <DelegatedHead
           icon={card.icon}
           label={card.label}
@@ -299,6 +302,7 @@ function MatchesBody({
 
 function MatchRow({ match }: { match: SearchMatch }) {
   const link = useWorkspaceFileLink()
+  const linked = use(WorkbenchLinksContext)
   const path = workspacePathOf(match.file)
   const content = (
     <>
@@ -310,7 +314,8 @@ function MatchRow({ match }: { match: SearchMatch }) {
       </span>
     </>
   )
-  if (path === undefined) return <div className="flex items-baseline gap-2">{content}</div>
+  if (path === undefined || !linked)
+    return <div className="flex items-baseline gap-2">{content}</div>
   return (
     <button
       className="group/match flex w-full cursor-pointer items-baseline gap-2 rounded-xs text-left ui-focus"

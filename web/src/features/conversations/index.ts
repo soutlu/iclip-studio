@@ -25,6 +25,8 @@ export { ConversationsRoute } from './components/conversations-route'
 export { ConversationDeleteDialog } from './components/conversation-delete-dialog'
 export { ConversationMembershipDialog } from './components/conversation-membership-dialog'
 export { ConversationRoute } from './components/conversation-route'
+export { ConversationTimeline } from './components/conversation-timeline'
+export { RunTrace } from './components/run-trace'
 export { ConversationSearchDialog } from './components/conversation-search-dialog'
 export { SidebarConversationRow } from './components/sidebar-conversation-row'
 export {

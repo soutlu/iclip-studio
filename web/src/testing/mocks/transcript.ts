@@ -122,6 +122,18 @@ export const markMockShowcase = (conversationId: string, showcase: MockShowcase)
   showcases.set(conversationId, showcase)
 }
 
+/**
+ * 自定义的演示运行：给出这一轮各步的批次（每拍一批），代替默认的演示内容；开场（消息转 running、轮开始、忙）
+ * 与收尾（轮完成、消息完成、闲）照常由 playTurn 补上，停止与排队也照常。
+ */
+export type MockScript = (turn: { turnId: string }) => Lazy[]
+
+const scripts = new Map<string, MockScript>()
+
+export const markMockScript = (conversationId: string, script: MockScript) => {
+  scripts.set(conversationId, script)
+}
+
 /** 连接后照服务端发开跑的 updated（带新 lastRunId）与结束事件，模拟未读运行。 */
 export const markMockJustFinished = (conversation: MockConversation) => {
   justFinished.add(conversation)
@@ -148,6 +160,7 @@ export const resetMockTranscript = () => {
   awaitingApproval.clear()
   justFinished.clear()
   showcases.clear()
+  scripts.clear()
   decisions.clear()
 }
 
@@ -912,6 +925,8 @@ const stopTurn = (conversationId: string) => {
         status: 'aborted',
       },
     },
+    // 自定义演示运行开跑时标了忙，停下要标回闲；默认演示没标过，这一条对它不起作用。
+    { meta: { activity: 'idle' }, op: 'meta.merge' },
   ])
   drain(conversationId)
 }
@@ -1094,6 +1109,44 @@ const playTurn = (conversationId: string, prompt: Prompt) => {
         : {}),
     },
   })
+  const finished = () => {
+    timers.delete(conversationId)
+    running.delete(conversationId)
+    drain(conversationId)
+  }
+
+  const script = scripts.get(conversationId)
+  if (script !== undefined) {
+    broadcast(conversationId, [
+      {
+        op: 'prompt.upsert',
+        prompt: { createdAt: now, promptId: prompt.promptId, status: 'running' },
+      },
+      turnHeader('running'),
+      { meta: { activity: 'turn' }, op: 'meta.merge' },
+    ])
+    schedule(
+      conversationId,
+      [
+        ...script({ turnId }),
+        () => [
+          turnHeader('completed'),
+          {
+            op: 'prompt.upsert',
+            prompt: {
+              createdAt: now,
+              finishedAt: new Date().toISOString(),
+              promptId: prompt.promptId,
+              status: 'completed',
+            },
+          },
+          { meta: { activity: 'idle' }, op: 'meta.merge' },
+        ],
+      ],
+      finished,
+    )
+    return
+  }
 
   // 演示运行派一个子代理：它那条流边跑边填，面板打开时能看到进度。
   const childId = `${turnId}-child`
@@ -1264,10 +1317,6 @@ const playTurn = (conversationId: string, prompt: Prompt) => {
         },
       ],
     ],
-    () => {
-      timers.delete(conversationId)
-      running.delete(conversationId)
-      drain(conversationId)
-    },
+    finished,
   )
 }

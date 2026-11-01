@@ -45,9 +45,15 @@ const useSubject = () => use(SubjectContext)
 export const renderWithProviders = async (
   ui: ReactNode,
   {
+    createSocket,
     initialPath = '/',
     registry = new ArtifactRegistry(),
-  }: { initialPath?: string; registry?: ArtifactRegistry } = {},
+  }: {
+    /** 换成按订阅语义应答的假服务端（如 FakeTranscriptServer.createSocket）；给了就由它握手，返回的 socket 不再接线。 */
+    createSocket?: () => WebSocket
+    initialPath?: string
+    registry?: ArtifactRegistry
+  } = {},
 ) => {
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -67,7 +73,7 @@ export const renderWithProviders = async (
 
   const tree = (subject: ReactNode) => (
     <QueryClientProvider client={queryClient}>
-      <TranscriptProvider createSocket={() => socket as unknown as WebSocket}>
+      <TranscriptProvider createSocket={createSocket ?? (() => socket as unknown as WebSocket)}>
         <WorkbenchRegistryProvider registry={registry}>
           <WorkbenchOpenRequestProvider>
             <TooltipProvider>
@@ -83,7 +89,7 @@ export const renderWithProviders = async (
   const result = render(tree(ui))
   // Provider 在微任务里建连，等它建好再握手。
   await act(async () => {})
-  socket.deliver(SERVER_HELLO)
+  if (createSocket === undefined) socket.deliver(SERVER_HELLO)
 
   return {
     ...result,

@@ -7,6 +7,7 @@ import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { mockSkillFile, mockSkillId } from '@/testing/mocks/skills'
 import { renderWithProviders } from '@/testing/render'
+import { AgentPreviewConversation } from '@/routes/-agent-preview-conversation'
 import { readDescription, skillBody } from '../skill-files'
 import { AgentConfigPage } from './agent-config-page'
 
@@ -15,7 +16,13 @@ type Sent = { method: string; path: string; search: URLSearchParams; body: Body 
 
 function Harness() {
   const [agentId, setAgentId] = useState<string | undefined>('director')
-  return <AgentConfigPage agentId={agentId} onAgentChange={setAgentId} />
+  return (
+    <AgentConfigPage
+      agentId={agentId}
+      onAgentChange={setAgentId}
+      PreviewConversation={AgentPreviewConversation}
+    />
+  )
 }
 
 const renderPage = async () => {
@@ -204,7 +211,13 @@ describe('技能库与添加技能', () => {
     const user = userEvent.setup()
     function Empty() {
       const [agentId, setAgentId] = useState<string | undefined>('breakdown-helper')
-      return <AgentConfigPage agentId={agentId} onAgentChange={setAgentId} />
+      return (
+        <AgentConfigPage
+          agentId={agentId}
+          onAgentChange={setAgentId}
+          PreviewConversation={AgentPreviewConversation}
+        />
+      )
     }
     await renderWithProviders(<Empty />)
     await screen.findByRole('button', { name: /^切换 Agent，当前：/ })

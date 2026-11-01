@@ -23,6 +23,10 @@ type ConversationComposerProps = {
   /** 修改态替换编辑器内容；退出时由调用方清除 editing。 */
   editing?: ComposerEditing | undefined
   onCancelEdit?: (() => void) | undefined
+  /** 空输入框的提示；等审批时总是提示先确认。 */
+  placeholder?: string | undefined
+  /** 发送失败怎么告诉用户；不给就弹一条 toast。输入内容照样恢复。 */
+  onSendError?: ((error: unknown) => void) | undefined
 }
 
 const submissionOf = (parts: readonly ComposerPart[]): ComposerSubmission => ({
@@ -39,7 +43,9 @@ export function ConversationComposer({
   maxContextTokens,
   onCancelEdit,
   onSend,
+  onSendError,
   onStop,
+  placeholder = '继续输入…',
 }: ConversationComposerProps) {
   const composerRef = useRef<ComposerHandle>(null)
   const [sending, setSending] = useState(false)
@@ -63,7 +69,8 @@ export function ConversationComposer({
       await onSend(submission.parts)
     } catch (error) {
       composerRef.current?.restore(submission)
-      toast.error(errorMessageOf(error, '发送失败'))
+      if (onSendError === undefined) toast.error(errorMessageOf(error, '发送失败'))
+      else onSendError(error)
     } finally {
       setSending(false)
     }
@@ -89,7 +96,7 @@ export function ConversationComposer({
         dense
         onStop={onStop}
         onSubmit={(submission) => void send(submission)}
-        placeholder={awaitingApproval ? '请先确认上方的步骤' : '继续输入…'}
+        placeholder={awaitingApproval ? '请先确认上方的步骤' : placeholder}
         ref={composerRef}
         sending={sending}
         trailing={

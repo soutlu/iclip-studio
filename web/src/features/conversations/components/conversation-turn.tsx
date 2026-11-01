@@ -1,6 +1,6 @@
 /** 按 turn → step → frame 顺序渲染，连续活动由 activity-group 分组并收进活动卡，单块由 turn-frame 渲染。 */
 
-import { memo } from 'react'
+import { memo, use } from 'react'
 import type {
   TranscriptInteraction,
   TranscriptTask,
@@ -14,6 +14,7 @@ import { TurnActions } from './turn-actions'
 import { TurnResultList } from './turn-result-list'
 import { turnResults } from './turn-results'
 import { UserBubble } from './user-bubble'
+import { WorkbenchLinksContext } from './workbench-links'
 
 type ConversationTurnProps = {
   turn: TranscriptTurn
@@ -49,6 +50,7 @@ export const ConversationTurn = memo(function ConversationTurn({
   toolTasks,
   turn,
 }: ConversationTurnProps) {
+  const linked = use(WorkbenchLinksContext)
   const settled = isSettled(turn)
   const entries = turn.steps.flatMap((step) => step.frames.map((frame) => ({ frame, step })))
   // 复制从最后一句用户插话之后算起；后台任务的完成通知（带 taskId）不是用户说的话，不算边界。
@@ -109,7 +111,7 @@ export const ConversationTurn = memo(function ConversationTurn({
           </ActivityCard>
         ),
       )}
-      {results.length === 0 ? null : <TurnResultList results={results} />}
+      {results.length === 0 || !linked ? null : <TurnResultList results={results} />}
       {settled && copyText !== '' ? (
         <TurnActions
           // 最新一轮常驻、占位；历史轮悬停才露出，不占位，叠在与下一轮之间的空隙里，

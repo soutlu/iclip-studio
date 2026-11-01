@@ -35,7 +35,8 @@ export interface LocalTurnState {
   pending: number
 }
 
-const EMPTY: LocalPrompts = Object.freeze({
+/** 没有任何本地发送记录；还没开的会话也用它。 */
+export const NO_LOCAL_PROMPTS: LocalPrompts = Object.freeze({
   generation: 0,
   inFlightPromptId: null,
   pending: Object.freeze([]),
@@ -73,7 +74,7 @@ export class LocalPromptStore {
 
   /** 同一段对话在两次变化之间返回同一个对象，满足 useSyncExternalStore 的快照稳定要求。 */
   get(conversationId: string): LocalPrompts {
-    return this.states.get(conversationId) ?? EMPTY
+    return this.states.get(conversationId) ?? NO_LOCAL_PROMPTS
   }
 
   subscribe(listener: () => void): () => void {
