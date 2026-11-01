@@ -1,6 +1,6 @@
 /**
- * Agent 配置的 mock：几个 agent（含一个长名字、一个没发布过、一个已归档）、带发布人的版本、本部署的插件、
- * 可选的模型（技能在 ./skills），形状照合同 §18–§19。草稿、发布与恢复改内存里的数据，lockVersion 与发布检查照合同做，
+ * Agent 配置的 mock：几个 agent（含一个长名字、一个没发布过、一个已归档）、带发布人的版本、本部署的插件
+ * （技能在 ./skills，可选的模型由 ./model-providers 现算），形状照合同 §18–§19。草稿、发布与恢复改内存里的数据，lockVersion 与发布检查照合同做，
  * 发布检查只做页面用得到的那几条（模型、插件依赖、MCP 服务、技能、子 agent）。每例由 `resetMockAgentConfig` 放回预置数据。
  */
 
@@ -10,6 +10,7 @@ import type {
   AgentCreateIn,
   AgentDetailOut,
   AgentDraftIn,
+  AgentModelRef,
   AgentOut,
   AgentPluginOut,
   AgentProblemOut,
@@ -18,8 +19,8 @@ import type {
   AgentUpdateIn,
   AgentUsageOut,
   AgentVersionDetailOut,
-  ModelOptionsOut,
 } from '@/shared/api/generated/types.gen'
+import { mockModelOptions } from './model-providers'
 import { findMockSkill, mockSkillId } from './skills'
 import { mockMcpServer } from './mcp-servers'
 
@@ -79,46 +80,6 @@ export const mockAgentPlugins: AgentPluginOut[] = [
     requires: ['workspace'],
   },
 ]
-
-export const mockModelOptions: ModelOptionsOut = {
-  providers: [
-    {
-      credentials: [
-        { fields: { api_key: '••••DEMO' }, id: uuid(2, 1), isDefault: true, name: '主账号' },
-        { fields: { api_key: '••••7F2A' }, id: uuid(2, 2), isDefault: false, name: '创作团队' },
-      ],
-      id: uuid(3, 1),
-      label: '阿里云百炼',
-      models: [
-        {
-          contextSize: 1_048_576,
-          name: 'qwen3.8-flash',
-          thinking: ['none', 'low', 'medium', 'high'],
-        },
-        { contextSize: 262_144, name: 'qwen3.8-plus', thinking: ['none', 'low', 'medium', 'high'] },
-        { contextSize: 262_144, name: 'qwen3.8-max', thinking: ['low', 'medium', 'high'] },
-      ],
-      name: 'bailian',
-    },
-    {
-      credentials: [
-        {
-          fields: { api_key: '••••K9QM', base_url: 'https://models.example/v1' },
-          id: uuid(2, 3),
-          isDefault: true,
-          name: '团队服务',
-        },
-      ],
-      id: uuid(3, 2),
-      label: '团队模型服务',
-      models: [
-        { contextSize: 131_072, name: 'studio-chat', thinking: [] },
-        { contextSize: 1_048_576, name: 'studio-chat-long', thinking: ['minimal', 'xhigh'] },
-      ],
-      name: 'team-models',
-    },
-  ],
-}
 
 // 技能由技能库的 mock 管（./skills），这里只按 id 查它发没发布过。
 export { mockSkillId }
@@ -411,6 +372,20 @@ export const mockMcpServerUsage = (serverId: string): AgentUsageOut[] =>
       : []
   })
 
+/** 哪些 agent 的草稿或当前版本里的模型引用合 `match`，形状同合同 §19 的 `usedBy`；模型供应商的 mock 用它答「谁在用」。 */
+export const mockModelUsage = (match: (model: AgentModelRef) => boolean): AgentUsageOut[] =>
+  agents
+    .flatMap((item) => {
+      const uses = (config: AgentConfig | undefined) =>
+        config?.model !== null && config?.model !== undefined && match(config.model)
+      const inDraft = uses(item.draft.config)
+      const inActiveVersion = uses(activeOf(item)?.config)
+      return inDraft || inActiveVersion
+        ? [{ agentId: item.id, agentName: item.name, inActiveVersion, inDraft }]
+        : []
+    })
+    .sort((a, b) => (a.agentId < b.agentId ? -1 : 1))
+
 const notFound = () => HttpResponse.json({ detail: '没有这个 agent' }, { status: 404 })
 const stale = () =>
   HttpResponse.json({ detail: '草稿已被别人修改，请重新读取后再操作' }, { status: 409 })
@@ -426,7 +401,7 @@ const publishProblems = (item: MockAgent): AgentProblemOut[] => {
   if (model === null || model === undefined) {
     problems.push({ message: '请选择模型', path: 'model' })
   } else {
-    const provider = mockModelOptions.providers.find((p) => p.name === model.provider)
+    const provider = mockModelOptions().providers.find((p) => p.name === model.provider)
     const option = provider?.models.find((m) => m.name === model.name)
     if (provider === undefined)
       problems.push({ message: '供应商不存在或已停用', path: 'model.provider' })
@@ -560,7 +535,7 @@ export const agentConfigHandlers = (actor: () => Actor) => [
     return HttpResponse.json(toDetail(created), { status: 201 })
   }),
 
-  http.get('*/api/agents/model-options', () => HttpResponse.json(mockModelOptions)),
+  http.get('*/api/agents/model-options', () => HttpResponse.json(mockModelOptions())),
   http.get('*/api/agents/plugins', () => HttpResponse.json({ items: mockAgentPlugins })),
 
   http.get('*/api/agents/:agentId', ({ params }) => {

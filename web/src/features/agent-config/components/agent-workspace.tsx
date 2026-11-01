@@ -33,6 +33,7 @@ import { ModelPanel } from './model-panel'
 import type { Panel } from './panel'
 import { PluginPanel } from './plugin-panel'
 import { PromptPanel } from './prompt-panel'
+import { ProviderPanel } from './provider-panel'
 import { SkillPanel } from './skill-panel'
 import { SubagentPanel } from './subagent-panel'
 
@@ -350,6 +351,8 @@ export function AgentWorkspace({
             onOpenPanel={onPanelChange}
             serverId={panel.server}
           />
+        ) : panel.type === 'providers' ? (
+          <ProviderPanel onClose={closePanel} />
         ) : (
           <AgentDefinitionPanel agent={agent} key={agent.updatedAt} onClose={closePanel} />
         )}

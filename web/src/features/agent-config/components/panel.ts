@@ -21,6 +21,8 @@ export type Panel =
       back: 'mcp-library' | 'mcp-select' | null
       checkError?: string | undefined
     }
+  /** 模型与供应商（顶部导航，要 `model:manage`）：供应商、密钥、模型与默认模型，不改当前 agent 的草稿。 */
+  | { type: 'providers' }
 
 /** 技能面板里的哪一页：技能库、给当前 Agent 选技能、新建技能、编辑一个技能。`back` 是返回时回到哪一页，null 是收起面板。 */
 export type SkillView =

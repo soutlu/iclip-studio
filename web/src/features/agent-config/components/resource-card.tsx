@@ -7,7 +7,7 @@ const CARD_CLASS =
   'flex h-12 min-w-0 items-center gap-2.5 rounded-md bg-surface-container-low px-2.5 text-left text-body text-on-surface'
 
 /** 摘要卡片左侧的图标块。 */
-export function CardGlyph({ name, className }: { name: IconName; className?: string }) {
+export function CardGlyph({ name, className }: { name: IconName; className?: string | undefined }) {
   return (
     <span
       aria-hidden
@@ -55,6 +55,8 @@ type ResourceCardProps = {
   onOpen?: (() => void) | undefined
   /** 点开后右侧打开的是这一张。 */
   active?: boolean
+  /** 停用了的（如供应商）：图标与名字变淡，卡片照常可点。 */
+  muted?: boolean
   label?: string
 }
 
@@ -63,16 +65,18 @@ export function ResourceCard({
   active = false,
   icon,
   label,
+  muted = false,
   name,
   onOpen,
   tip,
   trailing,
 }: ResourceCardProps) {
   const { rootProps, triggerProps } = useTabTooltip()
+  const fade = muted ? 'opacity-(--state-disabled-content)' : undefined
   const body = (
     <>
-      <CardGlyph name={icon} />
-      <span className={cn('min-w-0 flex-1 truncate', active && 'font-medium')}>{name}</span>
+      <CardGlyph className={fade} name={icon} />
+      <span className={cn('min-w-0 flex-1 truncate', active && 'font-medium', fade)}>{name}</span>
       {trailing === undefined ? null : (
         <span className="flex shrink-0 items-center gap-1">{trailing}</span>
       )}
