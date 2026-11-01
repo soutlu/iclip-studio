@@ -17,6 +17,22 @@ import type { GenerationJob } from '../storyboard.api'
 import { StoryboardReader } from './storyboard-reader'
 import { sessionEnvelope } from '@/testing/ws'
 
+// jsdom 读不了真文件，MSW 又把 .mp4 当静态资源放行、会真去请求外网：编辑器读的关键帧与时长换成按地址给的替身。
+const files = vi.hoisted(
+  () =>
+    new Map([
+      ['https://example.com/take.mp4', { keyframes: [0], duration: 8 }],
+      ['https://example.com/history.mp4', { keyframes: [0, 2.5], duration: 6 }],
+      ['https://example.com/v2.mp4', { keyframes: [0], duration: 7 }],
+    ]),
+)
+
+vi.mock('mediabunny', async () => {
+  const { createMediaReaderMock } = await import('@/testing/media-reader')
+  class AudioSampleSink {}
+  return { ...createMediaReaderMock(files), AudioSampleSink }
+})
+
 const CONVERSATION_ID = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
 const PATH = 'video_shot.json'
 const artifact: ArtifactRendererProps['artifact'] = {
@@ -142,7 +158,11 @@ const provide = (content: ShotsDocument | string = document, version = 1) => {
       storedVersion += 1
       return HttpResponse.json({ file: { content: stored, path: PATH, version: storedVersion } })
     }),
-    http.get('*/api/generations', () => HttpResponse.json({ items: jobs })),
+    // 按 kind 筛：成片编辑器读音乐（kind=audio）时不能把出片当成音乐去下载。
+    http.get('*/api/generations', ({ request }) => {
+      const kind = new URL(request.url).searchParams.get('kind')
+      return HttpResponse.json({ items: jobs.filter((job) => kind === null || job.kind === kind) })
+    }),
   )
   return {
     writes,
