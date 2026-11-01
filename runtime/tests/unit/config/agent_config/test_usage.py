@@ -17,7 +17,12 @@ def refs(
 ) -> AgentRefs:
     def config_refs(subagents: tuple[str, ...]) -> ConfigRefs:
         return ConfigRefs(
-            provider=None, model=None, credential_id=None, skill_ids=(), subagents=subagents
+            provider=None,
+            model=None,
+            credential_id=None,
+            skill_ids=(),
+            subagents=subagents,
+            mcp_servers=(),
         )
 
     return AgentRefs(
