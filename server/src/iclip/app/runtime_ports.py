@@ -1,4 +1,4 @@
-"""对话域的几个运行时端口经运行时服务的 HTTP 接口实现：开会话、分叉与按清单拷文件（``RuntimeSessions``），
+"""对话域的几个运行时端口经运行时服务的 HTTP 接口实现：开会话与预览会话、分叉与按清单拷文件（``RuntimeSessions``），
 首页名册、起标题、按对话读活动与此刻在跑的对话。
 
 应用身份由客户端的密钥定（后端是应用 ``video``），分叉与拷文件的 ``X-End-User`` 是目标对话的属主。运行时
@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from agent_runtime.app_wire import (
     ActivitiesIn,
     FilesCopyIn,
+    PreviewTargetIn,
     SessionForkIn,
     SessionOpenIn,
     TitleIn,
@@ -33,6 +34,15 @@ class RuntimeServicePorts:
 
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         await self._client.open_session(SessionOpenIn(id=session_id, agent_id=agent_id))
+
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        await self._client.open_session(
+            SessionOpenIn(
+                id=session_id, preview=PreviewTargetIn(agent_id=agent_id, version_id=version_id)
+            )
+        )
 
     async def fork(
         self,

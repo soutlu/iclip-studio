@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Literal, Protocol
 
-from iclip.domains.conversations.models import Conversation, WholeFilmDraft
+from iclip.domains.conversations.models import AgentPreview, Conversation, WholeFilmDraft
 
 # 对话挂的需求单、合集不存在时的报错：用例落行前先查，外键兜底，两处说法一样。
 MISSING_TASK: Final = "没有这张需求单"
@@ -217,4 +217,33 @@ class WholeFilmDraftStore(Protocol):
         ...
 
 
-__all__ = ["CollectionConversations", "ConversationRepository", "PageCursor", "WholeFilmDraftStore"]
+class AgentPreviewStore(Protocol):
+    """``iclip.agent_previews`` 的数据访问。不判权限，调用方先判属主与 ``agent:manage``。"""
+
+    async def create(
+        self,
+        preview_id: uuid.UUID,
+        *,
+        owner: uuid.UUID,
+        agent_id: str,
+        version_id: uuid.UUID | None,
+    ) -> AgentPreview:
+        """落一行预览，交回落库后的整行（建立时刻是数据库时钟）。"""
+        ...
+
+    async def get(self, preview_id: uuid.UUID) -> AgentPreview | None:
+        """按 id 读一行；没有给 ``None``。"""
+        ...
+
+    async def delete(self, preview_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str) -> bool:
+        """删掉 ``owner`` 的、预览 ``agent_id`` 的这一行；没有这样一行就什么都不删、回 ``False``。"""
+        ...
+
+
+__all__ = [
+    "AgentPreviewStore",
+    "CollectionConversations",
+    "ConversationRepository",
+    "PageCursor",
+    "WholeFilmDraftStore",
+]

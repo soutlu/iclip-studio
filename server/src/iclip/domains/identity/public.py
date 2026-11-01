@@ -12,6 +12,7 @@ from iclip.domains.identity.middleware import (
 from iclip.domains.identity.models import Principal, UserAccount
 from iclip.domains.identity.rbac import (
     ACT_AS_PERMISSION,
+    AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
     PERMISSIONS,
     ROLES,
@@ -22,6 +23,7 @@ from iclip.domains.identity.visibility import visible_owner, visible_owner_incl_
 
 __all__ = [
     "ACT_AS_PERMISSION",
+    "AGENT_MANAGE_PERMISSION",
     "MANAGE_PERMISSION",
     "PERMISSIONS",
     "ROLES",

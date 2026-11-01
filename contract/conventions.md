@@ -46,7 +46,7 @@
 
 ## 5. Agent 对话 (Transcript)
 
-agent 对话的 Transcript 协议参考 kimi code 的同名协议，按本项目需要取舍字段（例如用户消息是按原样保存的 `content` part 列表），不与 Kimi 客户端兼容。HTTP 端点挂在对话下面，各端点的权限见 [`openapi.json`](openapi.json) 的 `security`（§2）；WebSocket 建连需 `agent:run`。写入限属主，治理者可读取其他用户的对话。
+agent 对话的 Transcript 协议参考 kimi code 的同名协议，按本项目需要取舍字段（例如用户消息是按原样保存的 `content` part 列表），不与 Kimi 客户端兼容。HTTP 端点挂在对话下面，各端点的权限见 [`openapi.json`](openapi.json) 的 `security`（§2）；WebSocket 建连需 `agent:run`。写入限属主，治理者可读取其他用户的对话。测试预览的 id 也能用在本节的端点与订阅上，只认开它的人，治理者也不例外（§19「测试预览」）。
 
 ### 与 Kimi 协议的关系
 
@@ -195,7 +195,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 | `event.session.deleted` | `session_id` 在信封上，没有 payload | 属主删掉了这段对话 |
 | `event.generation.changed` | `session_id` 在信封上（任务没有来源对话时省略），payload `{id, kind, operation, status, shot_index, metadata}`；`shot_index` 是视频的镜头组编号（同 `GenerationOut.shotIndex`），`metadata` 是调用方自带的标签原样带出，两者为空时省略 | 生成任务的业务状态每跳一格：`pending` / `submitting` / `submitted` / `completed` / `failed`；切图与上传落库即完成，只发一帧 `completed`；上传只有挂了对话的音乐带 `session_id` |
 
-- **发给属主和治理者**，不是见者有份：连接归谁由它握手时的主体定；持 `users:manage` 的连接收全平台的帧。权限按握手时快照，吊销后要重连才生效。
+- **发给属主和治理者**，不是见者有份：连接归谁由它握手时的主体定；持 `users:manage` 的连接收全平台的帧。权限按握手时快照，吊销后要重连才生效。测试预览的 `event.session.work_changed` 谁都不发（§19「测试预览」）。
 - `event.session.work_changed` 的 `last_turn_reason` 只在 `busy: false` 的那几帧上有：帧一律
   `exclude_none`，没有结局时那一项整个不出现（列表行上是 `null`，见 §6）。
 - **服务端的保证**：帧在写入提交之后才发出；同一段对话、同一来源的帧，在一条连接上按提交先后到达。后端发的整行帧与标题帧靠这段对话的行锁按提交先后广播，删除之后晚到的整行帧由客户端的墓碑挡掉；运行时发的忙闲帧靠运行时按序分发。不同来源之间（后端的整行帧和运行时的忙闲帧）不保证先后。
@@ -704,6 +704,19 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
   同一份引用也在读的时候给出：技能详情、供应商列表里的模型与密钥、agent 详情都带 `usedBy`，每项 `{ agentId, agentName, inDraft, inActiveVersion }`，同一个 agent 只有一项，按标识排。
 
+### 测试预览
+
+语义见 [CONTEXT.md「测试预览」](../docs/CONTEXT.md#术语)。没有列表端点。
+
+- `POST /agents/{id}/previews` 体是 `{ versionId? }`（可以不带体），`201` 答复 `{ id, agentId, versionId, createdAt }`。不给 `versionId` 试草稿：每次运行都按那一刻的草稿装配，`versionId` 答复为 `null`；给了试那一版。不看上不上首页菜单、在不在用、发没发布过。没有这个 agent 是 `404`，`versionId` 不是它的版本是 `422`。
+- `id` 当对话 id 用在 §5 的全部端点（发消息、停止、插话、审批、重新生成、读一页、补批、排程、状态）与订阅上，以及 §6 的 `GET .../workspace/files` 与 `GET .../workspace/file`；对话的其余端点（读整行、改名、写文件、制作页、成片、分叉、做同款等）对它都是 `404`。
+- **只认开它的人，且他此刻持 `agent:manage`**：别人（含另一位管理员与治理者）在上面这些端点上一律 `404`，订阅进回执的 `not_found`，不区分它是不是预览；属主不再持 `agent:manage` 后同样 `404`，排着的消息开跑时被开跑检查拦下、记为 `failed`（§21）。这是「治理者可读取其他用户的对话」的例外。
+- 读一页时 `title` 固定是「测试预览」，`owner_user_id` 是开它的人，`deleted_at`、`forked_from`、`fork_turn` 为空；不自动起标题，不进对话列表、侧栏与审计，开跑也不改任何对话行。`event.session.work_changed` 不发给任何连接（§5「全局帧」），预览页的忙闲看它订着的 transcript（`meta.activity`）或 `GET .../status`。
+- 草稿此刻装配不起来（还没选模型、技能已归档、插件已删等）时发消息是 `409`、`code: "agent_unavailable"`（§5「发消息」），读一页照常，只是没有用量仪表；这是预览草稿的正常结果，不是故障。
+- 已知限制：草稿预览里的技能取各自最新发布的版本、子 agent 取各自当前版本，技能草稿里还没发布的修改试不到。
+- 预览里工具出的图（经 §21 的 `/plugins/generations`）记成开它的人的一条生成记录、不挂对话，从这张宫格切出的图同样不挂，所以按对话列记录与 `event.generation.changed` 里都不会出现预览 id；预览里拆解的参考视频照常进全站共享的灵感库（§14），与在对话里拆解的一样。
+- `DELETE /agents/{id}/previews/{previewId}` 答 `204`，只删自己的：不是自己的、不是这个 agent 的、没有这一段都是 `404`。删掉后这个 id 在哪个端点上都是 `404`；运行时那边的会话与运行记录留着，再也寻址不到。
+
 ## 20. 运行时服务的实时通道与回调
 
 运行时服务给应用的服务端用，不直达浏览器。HTTP 接口以 [`runtime-openapi.json`](runtime-openapi.json) 为准；本节是它表达不了的两条 WebSocket 与三个回调。帧的模型在 [live/frames.py](../runtime/src/agent_runtime/live/frames.py)，回调请求体的模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)，应用照它们解析。Python 应用调 HTTP 接口与连两条 WebSocket 用运行时的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，报错与重试规则见[后端架构](../docs/architecture.md#1-模块职责)。`POST /v1/stats/{prompts,runs,usage,sessions}` 给应用的报表取事实行，只答调用方应用的会话，按时间窗或按会话（一次至多 1000 段）二选一，各行的时间锚点与筛选规则见 `runtime-openapi.json`。运行时答的 401、403（含 WebSocket 握手前的 `1008`）只说调用的应用（密钥缺了或不对、没有管理权限），从不说应用替哪个用户操作；客户端库把它们当成应用级拒绝、按运行时不可用抛出，应用不能转成自己用户的登录失效或无权限。
@@ -722,8 +735,9 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 | 帧 | 体 | 什么时候发 |
 |---|---|---|
-| `event.session.work_changed` | `{type, session_id, owner_user_id, timestamp, payload}`；`payload` 同 `POST /v1/sessions:activities` 每一项 | 会话活动变了 |
+| `event.session.work_changed` | `{type, session_id, owner_user_id, preview, timestamp, payload}`；`payload` 同 `POST /v1/sessions:activities` 每一项 | 会话活动变了 |
 
+- `preview` 为真是预览会话（`POST /v1/sessions` 给 `preview` 开的那种，见 `runtime-openapi.json`），应用据此筛掉，不必回查；别的会话为假。
 - 每帧在写入提交之后发出，同一条连接上按提交的先后到达：一条跑完接着起下一条时先 idle 后 busy。
 - 易失：没有连接时不缓存，断线期间的不补；重连后经 `POST /v1/sessions:activities` 对齐。
 
@@ -734,7 +748,7 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 - 会话不归调用方应用、不存在、id 不是 UUID，一律在回执 `payload.not_found` 里带上，连接上的其他订阅不动。
 - 没有 `server_hello`。
 - Transcript 帧是 `{type: "transcript.reset" | "transcript.ops", session_id, timestamp, stream_epoch, payload}`，`payload` 同 §5，带与外层相同的 `type`；应用原样转给浏览器。回执是 `{type: "ack", id, code, msg, payload?: {accepted, not_found}}`。
-- 文件变化帧 `event.fs.changed` 同 §5「文件变化」：订着一段会话（任何档位，含 `off`）的连接收它的工作区变化，退订或断开后不再收。插件写或删会话工作区里的文件、`PUT /v1/sessions/{id}/files/{path}` 写成功都发；分叉与 `files:copy` 拷进来的不发。
+- 文件变化帧 `event.fs.changed` 同 §5「文件变化」：订着一段会话（任何档位，含 `off`）的连接收它的工作区变化，退订或断开后不再收。插件写或删会话工作区里的文件、`PUT /v1/sessions/{id}/files/{path}` 写成功都发；分叉与 `files:copy` 拷进来的不发。它只发给订着这段会话的连接，应用订阅前已判过谁能看，所以不带 `preview`。
 - 连接断开时撤掉它的全部订阅；一段会话最后一个订阅撤掉时，运行时放开这段会话的实时状态。
 
 ### 回调
@@ -743,10 +757,11 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 | 回调 | 请求体 | 什么时候调 | 失败（非 2xx、超时、连不上） |
 |---|---|---|---|
-| `gate` | `{session_id, owner_user_id, user_name, prompt_id, run_id}`；`run_id` 是这条消息上次挂上的运行，审批或崩溃续跑时有值，首次开跑为 `null` | 每次运行（含续跑）调模型之前，等它答完 | 超时、连不上或答 `502`/`503`/`504` 算应用暂时不在，按封顶的退避重试约 30 秒；还没放行、或答了别的非 2xx（含 `4xx`、`500`）就不再试：这次运行失败，消息记 `failed`，原因（没有答复，或答了哪个状态码）记在运行时的消息行上，运行时记带回调名、应用与状态码的 warning 日志 |
-| `run_started` | `{session_id, run_id, activity}`；`run_id` 是新运行，`activity` 是会话此刻的活动 | 每次顶层运行挂上租约后，等它答完再往下跑，在这次运行的第一批 transcript 操作之前 | 只记日志 |
-| `turn_started` | `{session_id, text}`；`text` 是这一轮用户消息的文本部分，按换行连接 | 每一轮首次开跑时在后台调一次，审批与崩溃续跑不调；与运行并行，服务关停时没答完的取消 | 只记日志 |
+| `gate` | `{session_id, owner_user_id, user_name, prompt_id, run_id, preview}`；`run_id` 是这条消息上次挂上的运行，审批或崩溃续跑时有值，首次开跑为 `null` | 每次运行（含续跑）调模型之前，等它答完 | 超时、连不上或答 `502`/`503`/`504` 算应用暂时不在，按封顶的退避重试约 30 秒；还没放行、或答了别的非 2xx（含 `4xx`、`500`）就不再试：这次运行失败，消息记 `failed`，原因（没有答复，或答了哪个状态码）记在运行时的消息行上，运行时记带回调名、应用与状态码的 warning 日志 |
+| `run_started` | `{session_id, run_id, activity, preview}`；`run_id` 是新运行，`activity` 是会话此刻的活动 | 每次顶层运行挂上租约后，等它答完再往下跑，在这次运行的第一批 transcript 操作之前 | 只记日志 |
+| `turn_started` | `{session_id, text, preview}`；`text` 是这一轮用户消息的文本部分，按换行连接 | 每一轮首次开跑时在后台调一次，审批与崩溃续跑不调；与运行并行，服务关停时没答完的取消 | 只记日志 |
 
+- 三个请求体的 `preview` 同事件流上的那一项：为真是预览会话，应用据此决定怎么处理，不必回查。
 - 顺序：运行开始与轮次开始都发在开跑检查之前，检查不放行时这两个也已经调过。
 - `gate` 与 `run_started` 卡着运行，处理器要快答。
 - 起标题由应用收到 `turn_started` 后自己调 `POST /v1/titles`。
@@ -763,9 +778,9 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 
 | 路径 | 请求体 | 成功 | 失败 |
 |---|---|---|---|
-| `POST /internal/runtime/hooks/gate` | `GatePayload` | `204` | 属主不存在 `404`，已停用 `403` |
-| `POST /internal/runtime/hooks/run-started` | `RunStartedPayload` | `204`：对话行记下 `lastRunId`、刷新 `updatedAt`、抹掉收尾标记，再广播 `event.session.updated`（§5「全局帧」）；行里的 `activity` 用请求体那份 | 对话不存在或已删 `404` |
-| `POST /internal/runtime/hooks/turn-started` | `TurnStartedPayload` | `204`，不等起名：对话还是默认标题就在后台按 `text` 起一个（经运行时的 `POST /v1/titles`），对话已删就不起；后端关停时没起完的取消 | — |
+| `POST /internal/runtime/hooks/gate` | `GatePayload` | `204` | 属主不存在 `404`，已停用 `403`；预览会话的属主此刻不持 `agent:manage` 也是 `403`（`预览的属主已不能管理 agent`） |
+| `POST /internal/runtime/hooks/run-started` | `RunStartedPayload` | `204`：对话行记下 `lastRunId`、刷新 `updatedAt`、抹掉收尾标记，再广播 `event.session.updated`（§5「全局帧」）；行里的 `activity` 用请求体那份。预览会话什么都不做 | 对话不存在或已删 `404` |
+| `POST /internal/runtime/hooks/turn-started` | `TurnStartedPayload` | `204`，不等起名：对话还是默认标题就在后台按 `text` 起一个（经运行时的 `POST /v1/titles`），对话已删就不起；预览会话不起；后端关停时没起完的取消 | — |
 
 - 运行开始的请求体只有会话 id，属主与 agent 取对话行自己的。
 

@@ -26,6 +26,7 @@ from sqlalchemy import text
 from iclip.app.conversation_same_style import SAME_STYLE
 from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
+    SqlAgentPreviewStore,
     SqlConversationRepository,
     SqlWholeFilmDraftStore,
 )
@@ -217,6 +218,11 @@ class StartMovedUnderUs:
         self.targets: list[uuid.UUID] = []
 
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        _untouched()
+
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
         _untouched()
 
     async def fork(
@@ -422,6 +428,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
         repo = SqlConversationRepository(engine)
         service = ConversationService(
             repo,
+            previews=SqlAgentPreviewStore(engine),
             runtime=start,
             list_collections=_untouched,
             claim_task=_untouched,

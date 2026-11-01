@@ -1,8 +1,8 @@
 """运行统计的只读查询：按应用取消息、跑到终态的顶层运行、按模型的累计用量与每段会话的首末消息。
 
-每条查询都经 ``agent_runtime.sessions`` 只认 ``app_id`` 这个应用的会话。取法二选一：按时间窗（各行自己的
-时刻落在 ``[since, until)`` 里，``until`` 为空不设上界）或按会话 id 取这几段会话的全部行。只返回事实行，
-不做聚合；行按（会话，时刻，id）排好。
+每条查询都经 ``agent_runtime.sessions`` 只认 ``app_id`` 这个应用的会话，预览会话不算（它们不是应用的对话，
+报表不该数到）。取法二选一：按时间窗（各行自己的时刻落在 ``[since, until)`` 里，``until`` 为空不设上界）
+或按会话 id 取这几段会话的全部行。只返回事实行，不做聚合；行按（会话，时刻，id）排好。
 """
 
 from __future__ import annotations
@@ -88,6 +88,7 @@ SELECT s.id AS session_id, j.prompt_id, j.user_name, j.created_at
 FROM agent_runtime.agent_jobs j
 JOIN agent_runtime.sessions s ON s.id::text = j.conversation_id
 WHERE s.app_id = :app_id
+  AND s.preview_agent_id IS NULL
 {scope}
 ORDER BY j.conversation_id, j.created_at, j.prompt_id
 """,
@@ -114,6 +115,7 @@ JOIN agent_runtime.agent_jobs j ON j.prompt_id = r.prompt_id
 JOIN agent_runtime.sessions s ON s.id::text = j.conversation_id
 JOIN agent_runtime.events e ON e.run_id = r.run_id
 WHERE s.app_id = :app_id
+  AND s.preview_agent_id IS NULL
   AND e.kind IN ('run_started', 'run_completed', 'run_failed')
   {inner}
 GROUP BY r.run_id, s.id, j.user_name
@@ -144,6 +146,7 @@ SELECT s.id AS session_id, u.model_name, u.requests, u.input_tokens,
 FROM agent_runtime.conversation_usage u
 JOIN agent_runtime.sessions s ON s.id::text = u.conversation_id
 WHERE s.app_id = :app_id
+  AND s.preview_agent_id IS NULL
 {scope}
 ORDER BY u.conversation_id, u.model_name
 """,
@@ -160,6 +163,7 @@ SELECT DISTINCT ON (j.conversation_id)
 FROM agent_runtime.agent_jobs j
 JOIN agent_runtime.sessions s ON s.id::text = j.conversation_id
 WHERE s.app_id = :app_id
+  AND s.preview_agent_id IS NULL
 {_BY_SESSIONS.format(session="j.conversation_id")}
 ORDER BY j.conversation_id, j.created_at DESC, j.prompt_id DESC
 """)

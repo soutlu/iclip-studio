@@ -72,6 +72,42 @@ async def test_stats_answer_only_the_calling_apps_sessions(
     assert [row["session_id"] for row in sessions] == [str(mine)]
 
 
+async def test_stats_leave_out_preview_sessions(
+    engine: AsyncEngine, admin: httpx.AsyncClient, app_client: httpx.AsyncClient
+) -> None:
+    """预览会话（试 agent 草稿或某一版用的）不是应用的对话，四个统计接口都不算它。"""
+
+    created = await admin.post("/agents", json={"id": "tester", "name": "测试"})
+    assert created.status_code == 201, created.text
+    async with engine.begin() as conn:
+        plant = Plant(conn)
+        normal = await open_session(conn, "reader")
+        preview = uuid.uuid4()
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.sessions (id, app_id, preview_agent_id)"
+                " VALUES (:id, 'reader', 'tester')"
+            ),
+            {"id": preview},
+        )
+        for session_id in (normal, preview):
+            prompt = await plant.prompt(session_id, user_name="Sara.Hong", at=ago(hours=2))
+            await plant.run(prompt, started_at=ago(hours=2), ended_at=ago(hours=1))
+            await plant.usage(session_id, tokens=10, last_at=ago(hours=1))
+
+    window = {"since": iso(ago(days=1))}
+    both = {"session_ids": [str(normal), str(preview)]}
+    for path in ("/stats/prompts", "/stats/runs", "/stats/usage"):
+        assert {row["session_id"] for row in await post(app_client, path, window)} == {
+            str(normal)
+        }, path
+        assert {row["session_id"] for row in await post(app_client, path, both)} == {str(normal)}, (
+            path
+        )
+    sessions = await post(app_client, "/stats/sessions", both)
+    assert [row["session_id"] for row in sessions] == [str(normal)]
+
+
 async def test_window_falls_on_each_rows_own_time_and_sessions_take_everything(
     engine: AsyncEngine, app_client: httpx.AsyncClient
 ) -> None:

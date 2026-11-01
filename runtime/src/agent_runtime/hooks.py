@@ -36,6 +36,8 @@ class GatePayload(Envelope):
     prompt_id: str
     run_id: str | None = None
     """这条消息上次挂上的运行（审批或崩溃后续跑时）；首次开跑为空。"""
+    preview: bool = False
+    """这段会话是不是预览会话；应用据此不必回查。"""
 
 
 class RunStartedPayload(Envelope):
@@ -44,6 +46,8 @@ class RunStartedPayload(Envelope):
     session_id: uuid.UUID
     run_id: str
     activity: SessionActivityOut
+    preview: bool = False
+    """这段会话是不是预览会话；预览不是应用的对话，应用据此跳过记运行。"""
 
 
 class TurnStartedPayload(Envelope):
@@ -51,6 +55,8 @@ class TurnStartedPayload(Envelope):
 
     session_id: uuid.UUID
     text: str
+    preview: bool = False
+    """这段会话是不是预览会话；预览没有标题，应用据此跳过起名。"""
 
 
 FIRST_RETRY_SECONDS: Final = 0.5

@@ -32,7 +32,7 @@ from agent_runtime.config.agent_config.public import (
 )
 from agent_runtime.config.model_providers.public import ModelProviderService, RuntimeModel
 from agent_runtime.config.skills.public import Skill, SkillsService
-from agent_runtime.errors import AgentUnavailable
+from agent_runtime.errors import AgentUnavailable, ValidationFailed
 from agent_runtime.harness.agents import (
     SubAgentProfile,
     SubAgentSlot,
@@ -191,9 +191,18 @@ class AgentRuntime:
 
     async def for_conversation(self, conversation_id: str, agent_id: str) -> RunAgent:
         """``RunAgents`` 的实现：按会话固定的版本装配。会话不在、版本为空或不是这个 agent 的都是
-        ``AgentUnavailable``。"""
+        ``AgentUnavailable``。
 
-        version_id = await self._sessions.agent_version(uuid.UUID(conversation_id))
+        预览会话只跑它预览的那个 agent，给了别的是 ``ValidationFailed``：版本为空就装这个 agent 当下的
+        草稿（``for_draft``，缓存键带草稿的 ``lock_version``，改了草稿下一次运行就换），否则装固定的那一版。"""
+
+        target = await self._sessions.target(uuid.UUID(conversation_id))
+        if target is not None and target.preview_agent_id is not None:
+            if agent_id != target.preview_agent_id:
+                raise ValidationFailed(f"这段预览只能跑 {target.preview_agent_id}")
+            if target.agent_version_id is None:
+                return await self.for_draft(agent_id)
+        version_id = None if target is None else target.agent_version_id
         if version_id is None:
             raise AgentUnavailable("这段对话没有可用的 agent 版本，请新开一段对话")
         version = await self._agent_config.runtime_version(agent_id, version_id)
@@ -208,8 +217,8 @@ class AgentRuntime:
         return self._assembled("top", prepared).run
 
     async def for_draft(self, agent_id: str) -> RunAgent:
-        """按这个 agent 当前的草稿装配，给以后的预览用；运行记录标明是草稿。没有这个 agent 或草稿装不
-        起来是 ``AgentUnavailable``。"""
+        """按这个 agent 当前的草稿装配，草稿预览会话每次运行都走这里；运行记录标明是草稿。没有这个 agent
+        或草稿装不起来是 ``AgentUnavailable``。"""
 
         state = await self._agent_config.runtime_state(agent_id)
         if state is None:

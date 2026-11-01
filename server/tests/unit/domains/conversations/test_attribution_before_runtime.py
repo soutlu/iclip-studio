@@ -18,6 +18,7 @@ from iclip.domains.conversations.models import Conversation
 from iclip.domains.conversations.repository import (
     MISSING_COLLECTION,
     MISSING_TASK,
+    AgentPreviewStore,
     ConversationRepository,
     WholeFilmDraftStore,
 )
@@ -67,6 +68,11 @@ class UntouchedRuntime:
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         raise AssertionError("前置校验没过，不该在运行时开会话")
 
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        raise AssertionError("这里不开预览")
+
     async def fork(
         self,
         *,
@@ -107,6 +113,7 @@ async def _no_card(card_id: uuid.UUID) -> uuid.UUID | None:
 def build(*, task_present: bool = True, collection_present: bool = True) -> ConversationService:
     return ConversationService(
         cast("ConversationRepository", SourceOnlyRepo()),
+        previews=cast("AgentPreviewStore", object()),
         runtime=UntouchedRuntime(),
         list_collections=_untouched,
         claim_task=_untouched,

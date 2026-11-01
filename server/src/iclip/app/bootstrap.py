@@ -78,6 +78,7 @@ from iclip.domains.brand_templates.module import BrandTemplatesModule, build_bra
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.infra_sql import (
+    SqlAgentPreviewStore,
     SqlConversationRepository,
     SqlWholeFilmDraftStore,
 )
@@ -590,6 +591,7 @@ def build_app(
     )
     conversations = build_conversations_module(
         conversation_repo,
+        previews=SqlAgentPreviewStore(active_engine),
         act_as=identity.act_as,
         list_agents=runtime_ports.list_agents,
         runtime=runtime_ports,

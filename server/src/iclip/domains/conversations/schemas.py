@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from pydantic.alias_generators import to_camel
 
 from iclip.domains.conversations.models import (
+    AgentPreview,
     Conversation,
     ConversationActivity,
     VideoPhase,
@@ -605,6 +606,32 @@ def conversation_out(conversation: Conversation, activity: ConversationActivity)
     )
 
 
+class AgentPreviewIn(CamelModel):
+    """开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。"""
+
+    version_id: uuid.UUID | None = None
+
+
+class AgentPreviewOut(CamelModel):
+    """一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它
+    的人、且他此刻持 ``agent:manage`` 时认得。"""
+
+    id: uuid.UUID
+    agent_id: str
+    version_id: uuid.UUID | None
+    """为空即试的是草稿：每次运行装 agent 当下的草稿。"""
+    created_at: datetime
+
+
+def agent_preview_out(preview: AgentPreview) -> AgentPreviewOut:
+    return AgentPreviewOut(
+        id=preview.id,
+        agent_id=preview.agent_id,
+        version_id=preview.version_id,
+        created_at=preview.created_at,
+    )
+
+
 def audit_item_out(
     conversation: Conversation, activity: ConversationActivity, latest_master_url: str | None
 ) -> ConversationsAuditItemOut:
@@ -620,6 +647,8 @@ __all__ = [
     "DEFAULT_TITLE",
     "MAX_AGENT_ID_CHARS",
     "MAX_TITLE_CHARS",
+    "AgentPreviewIn",
+    "AgentPreviewOut",
     "ConversationActivityOut",
     "ConversationAgentsOut",
     "ConversationCollectionIn",
@@ -641,6 +670,7 @@ __all__ = [
     "ConversationsPageOut",
     "SidebarCollectionOut",
     "SidebarOut",
+    "agent_preview_out",
     "audit_item_out",
     "conversation_out",
 ]

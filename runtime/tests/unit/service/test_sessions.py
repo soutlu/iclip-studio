@@ -1,6 +1,6 @@
 """会话服务中需要替身控制的竞争与失败边界；正常分叉、文件拷贝与应用隔离由真实 PG / HTTP 测试覆盖。
 
-保留源在规划前变化、无效 agent、无前置条件拷贝，以及归属校验早于其他读取和写入的断言。
+保留源在规划前变化、无效 agent、无前置条件拷贝，以及归属与预览会话的校验早于其他读取和写入的断言。
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from agent_runtime.file_store.store import StoredFile
 from agent_runtime.harness.jobs import JobQueueView
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.service.sessions import (
+    PREVIEW_NOT_FORKABLE,
     SESSION_ID_TAKEN,
     SESSION_NOT_FOUND,
     SessionQueue,
@@ -42,11 +43,17 @@ class RecordingSessions:
     """返回已知归属与目标占用结果，只记录是否产生写入。"""
 
     apps: dict[uuid.UUID, str] = field(default_factory=lambda: {SOURCE: APP, TARGET: APP})
+    preview_ids: frozenset[uuid.UUID] = frozenset()
     target_taken: bool = False
     written: bool = False
 
     async def open(
-        self, session_id: uuid.UUID, *, app_id: str, agent_version_id: uuid.UUID | None
+        self,
+        session_id: uuid.UUID,
+        *,
+        app_id: str,
+        agent_version_id: uuid.UUID | None,
+        preview_agent_id: str | None = None,
     ) -> bool:
         self.written = not self.target_taken
         return self.written
@@ -60,11 +67,19 @@ class RecordingSessions:
     ) -> frozenset[uuid.UUID]:
         return frozenset(one for one in session_ids if self.apps.get(one) == app_id)
 
+    async def previews(self, session_ids: Collection[uuid.UUID]) -> frozenset[uuid.UUID]:
+        return frozenset(session_ids) & self.preview_ids
+
 
 async def current_version(agent_id: str) -> uuid.UUID:
     if agent_id != "assistant":
         raise ValidationFailed(f"没有标识为 {agent_id} 的 agent")
     return ASSISTANT_VERSION
+
+
+async def check_preview_target(agent_id: str, version_id: uuid.UUID | None) -> None:
+    if agent_id != "assistant":
+        raise NotFound(f"没有标识为 {agent_id} 的 agent")
 
 
 class IdleQueue:
@@ -112,6 +127,7 @@ class Runtime:
         return SessionService(
             sessions=self.sessions,
             version_for_new_session=current_version,
+            check_preview_target=check_preview_target,
             queue=self.queue,
             history=self.history,
             files=self.files,
@@ -232,6 +248,37 @@ async def test_a_fork_onto_an_id_another_app_holds_is_a_conflict_before_any_file
         await fork(runtime, agent_id=agent_id)
 
     assert str(raised.value) == SESSION_ID_TAKEN
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize("preview", [SOURCE, TARGET], ids=["source-preview", "target-preview"])
+async def test_a_fork_touching_a_preview_session_is_refused_before_anything_else(
+    preview: uuid.UUID,
+) -> None:
+    runtime = Runtime(
+        sessions=RecordingSessions(preview_ids=frozenset({preview})), queue=UnreadableQueue()
+    )
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(ValidationFailed) as raised:
+        await fork(runtime)
+
+    assert str(raised.value) == PREVIEW_NOT_FORKABLE
+    assert runtime.history.planned == []
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize("preview", [SOURCE, TARGET], ids=["source-preview", "target-preview"])
+async def test_copy_files_touching_a_preview_session_is_refused_before_any_write(
+    preview: uuid.UUID,
+) -> None:
+    runtime = Runtime(sessions=RecordingSessions(preview_ids=frozenset({preview})))
+    await runtime.seed_source({"film.icml": "<film/>"})
+
+    with pytest.raises(ValidationFailed) as raised:
+        await copy_files(runtime)
+
+    assert str(raised.value) == PREVIEW_NOT_FORKABLE
     assert await runtime.nothing_written()
 
 

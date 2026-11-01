@@ -41,9 +41,20 @@ def create_sessions_router(
     @router.post("/sessions", status_code=204)
     async def open_session(body: SessionOpenIn, app: CallingApp = caller) -> None:
         """给调用方应用开会话。没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过是 409；这个 id
-        已有本应用的会话就按这次的版本改写，已归别的应用是 409。"""
+        已有本应用的同一种会话就按这次的版本改写，已归别的应用、或已有的那一行一个是预览一个不是是 409。
 
-        await sessions.open(body.id, app_id=app.id, agent_id=body.agent_id)
+        给 ``preview`` 开预览会话：不看上不上菜单、在不在用、发没发布过；没有这个 agent 是 404，版本不是它的
+        是 422。预览会话不能分叉、不能拷文件进出，``/v1/stats`` 不算它们。"""
+
+        if body.preview is not None:
+            await sessions.open_preview(
+                body.id,
+                app_id=app.id,
+                agent_id=body.preview.agent_id,
+                version_id=body.preview.version_id,
+            )
+        elif body.agent_id is not None:
+            await sessions.open(body.id, app_id=app.id, agent_id=body.agent_id)
 
     @router.post("/sessions/{session_id}:fork", status_code=204)
     async def fork_session(
@@ -51,7 +62,7 @@ def create_sessions_router(
     ) -> None:
         """从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件与整份素材台账、写种子快照。
 
-        源不是调用方应用的会话是 404，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，
+        源不是调用方应用的会话是 404，源或目标是预览会话是 422，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，
         源没跑过、轮号越界是 422；数完轮数后源的轮数又变了是 409。这些都在写任何东西之前。"""
 
         await sessions.fork(
@@ -69,7 +80,7 @@ def create_sessions_router(
         session_id: uuid.UUID, body: FilesCopyIn, end_user: SessionOwner, app: CallingApp = caller
     ) -> FilesCopyOut:
         """按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用
-        的会话（目标先开好），任一不是答 404。"""
+        的会话（目标先开好），任一不是答 404；任一是预览会话答 422。"""
 
         copied = await sessions.copy_files(
             app_id=app.id,

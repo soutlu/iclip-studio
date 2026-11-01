@@ -6,8 +6,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from iclip.domains.conversations.api import create_conversations_router
-from iclip.domains.conversations.repository import ConversationRepository, WholeFilmDraftStore
+from iclip.domains.conversations.api import create_conversations_router, create_previews_router
+from iclip.domains.conversations.repository import (
+    AgentPreviewStore,
+    ConversationRepository,
+    WholeFilmDraftStore,
+)
 from iclip.domains.conversations.service import (
     ActivitiesOf,
     AnnounceConversationDeleted,
@@ -48,6 +52,7 @@ class ConversationsModule:
 def build_conversations_module(
     repo: ConversationRepository,
     *,
+    previews: AgentPreviewStore,
     act_as: ActAs,
     list_agents: ListAgents,
     runtime: RuntimeSessions,
@@ -78,6 +83,7 @@ def build_conversations_module(
 
     service = ConversationService(
         repo,
+        previews=previews,
         runtime=runtime,
         list_collections=list_collections,
         claim_task=claim_task,
@@ -103,7 +109,10 @@ def build_conversations_module(
         announce_deleted=announce_deleted,
     )
     return ConversationsModule(
-        routers=(create_conversations_router(service, agents=list_agents, act_as=act_as),),
+        routers=(
+            create_conversations_router(service, agents=list_agents, act_as=act_as),
+            create_previews_router(service),
+        ),
         service=service,
     )
 

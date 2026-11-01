@@ -1,7 +1,7 @@
 """对话的 Postgres 仓储。使用数据库时钟，避免实例钟差影响排序与游标。
 
 删除只标记 ``deleted_at``：行留着占住 id。除治理者的审计列表与 ``include_deleted`` 直读，
-每条读写都只看活着的行。"""
+每条读写都只看活着的行。agent 测试预览另一张表 ``agent_previews``，删就是真删。"""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from sqlalchemy import (
     Text,
     Uuid,
     and_,
+    delete,
     false,
     func,
     literal,
@@ -37,7 +38,7 @@ from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.conversations.models import Conversation, WholeFilmDraft
+from iclip.domains.conversations.models import AgentPreview, Conversation, WholeFilmDraft
 from iclip.domains.conversations.repository import (
     MISSING_COLLECTION,
     MISSING_TASK,
@@ -156,6 +157,24 @@ whole_film_drafts_table = Table(
 )
 
 _DRAFTS = whole_film_drafts_table.c
+
+agent_previews_table = Table(
+    "agent_previews",
+    metadata_obj,
+    # 就是运行时的会话 id；两个 schema 之间不加外键，agent 与版本只是记下来的值。
+    Column("id", Uuid, primary_key=True),
+    Column(
+        "owner_user_id",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_agent_previews_owner", ondelete="cascade"),
+        nullable=False,
+    ),
+    Column("agent_id", Text, nullable=False),
+    Column("version_id", Uuid, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+_PREVIEWS = agent_previews_table.c
 
 
 def _row(mapping: RowMapping) -> Conversation:
@@ -654,10 +673,64 @@ class SqlWholeFilmDraftStore:
         return None if row is None else _draft(row)
 
 
+def _preview(mapping: RowMapping) -> AgentPreview:
+    return AgentPreview(
+        id=mapping["id"],
+        owner_user_id=mapping["owner_user_id"],
+        agent_id=mapping["agent_id"],
+        version_id=mapping["version_id"],
+        created_at=mapping["created_at"],
+    )
+
+
+class SqlAgentPreviewStore:
+    """``AgentPreviewStore`` 的 Postgres 实现；建立时刻用数据库时钟。"""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def create(
+        self,
+        preview_id: uuid.UUID,
+        *,
+        owner: uuid.UUID,
+        agent_id: str,
+        version_id: uuid.UUID | None,
+    ) -> AgentPreview:
+        statement = (
+            pg_insert(agent_previews_table)
+            .values(id=preview_id, owner_user_id=owner, agent_id=agent_id, version_id=version_id)
+            .returning(*agent_previews_table.c)
+        )
+        async with self._engine.begin() as conn:
+            return _preview((await conn.execute(statement)).mappings().one())
+
+    async def get(self, preview_id: uuid.UUID) -> AgentPreview | None:
+        statement = select(agent_previews_table).where(_PREVIEWS.id == preview_id)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        return None if row is None else _preview(row)
+
+    async def delete(self, preview_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str) -> bool:
+        statement = (
+            delete(agent_previews_table)
+            .where(
+                _PREVIEWS.id == preview_id,
+                _PREVIEWS.owner_user_id == owner,
+                _PREVIEWS.agent_id == agent_id,
+            )
+            .returning(_PREVIEWS.id)
+        )
+        async with self._engine.begin() as conn:
+            return (await conn.execute(statement)).first() is not None
+
+
 __all__ = [
     "DB_SCHEMA",
+    "SqlAgentPreviewStore",
     "SqlConversationRepository",
     "SqlWholeFilmDraftStore",
+    "agent_previews_table",
     "conversations_table",
     "metadata_obj",
     "whole_film_drafts_table",

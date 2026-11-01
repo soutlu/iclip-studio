@@ -211,7 +211,7 @@ async def test_an_id_another_app_holds_cannot_be_opened_and_stays_theirs(
     taken = await other_app.post("/sessions", json={"id": theirs, "agent_id": AGENT})
 
     assert taken.status_code == 409
-    assert taken.json() == {"detail": "这个会话 id 已经被别的应用用了，换一个"}
+    assert taken.json() == {"detail": "这个会话 id 已经被用了，换一个"}
     assert (await app_client.get(f"/sessions/{theirs}/status")).status_code == 200
     assert (await other_app.get(f"/sessions/{theirs}/status")).json() == NOT_FOUND
     # 同一个应用重开自己的 id 照旧可以。

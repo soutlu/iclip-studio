@@ -240,7 +240,15 @@ def test_session_activity_arrives_busy_then_idle_and_only_to_its_app(live: LiveR
         {"busy": False, "pending_interaction": "none", "last_turn_reason": "completed"},
     ]
     assert {frame["owner_user_id"] for frame in seen} == {str(live.owner)}
-    assert set(seen[0]) == {"type", "session_id", "owner_user_id", "timestamp", "payload"}
+    assert set(seen[0]) == {
+        "type",
+        "session_id",
+        "owner_user_id",
+        "preview",
+        "timestamp",
+        "payload",
+    }
+    assert {frame["preview"] for frame in seen} == {False}
     assert (first_of_other["type"], first_of_other["session_id"]) == (
         "event.session.work_changed",
         other_session,

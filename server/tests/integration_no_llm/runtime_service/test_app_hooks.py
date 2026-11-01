@@ -54,6 +54,7 @@ def test_the_gate_is_called_with_the_prompt_and_lets_the_run_through(
             "user_name": "logan",
             "prompt_id": "prm_gate",
             "run_id": None,
+            "preview": False,
         }
     ]
     assert set(hook_recorder.tokens) == {f"Bearer {HOOK_TOKEN}"}
@@ -232,7 +233,9 @@ class TestTurnStarted:
         hook_recorder.waits_for("turn-started", 1)
         # 审批续跑是同一轮的第二次运行：运行开始调两次，轮次开始只调一次。
         assert len(hook_recorder.named("run-started")) == 2
-        assert hook_recorder.named("turn-started") == [{"session_id": session, "text": "第一问"}]
+        assert hook_recorder.named("turn-started") == [
+            {"session_id": session, "text": "第一问", "preview": False}
+        ]
 
         live.send(session, "prm_second", text="第二问")
         live.settled(session)

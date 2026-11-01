@@ -100,6 +100,28 @@ export const zAgentPluginsOut = z.object({
 })
 
 /**
+ * AgentPreviewIn
+ *
+ * 开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。
+ */
+export const zAgentPreviewIn = z.object({
+  versionId: z.uuid().nullish(),
+})
+
+/**
+ * AgentPreviewOut
+ *
+ * 一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它
+ * 的人、且他此刻持 ``agent:manage`` 时认得。
+ */
+export const zAgentPreviewOut = z.object({
+  agentId: z.string(),
+  createdAt: z.iso.datetime(),
+  id: z.uuid(),
+  versionId: z.uuid().nullable(),
+})
+
+/**
  * AgentProblemOut
  */
 export const zAgentProblemOut = z.object({
@@ -3677,6 +3699,30 @@ export const zSaveAgentDraftAgentsAgentIdDraftPutResponse = zAgentDetailOut
 export const zExportAgentAgentsAgentIdExportGetPath = z.object({
   agent_id: z.string(),
 })
+
+/**
+ * Body
+ */
+export const zOpenPreviewAgentsAgentIdPreviewsPostBody = zAgentPreviewIn.nullable()
+
+export const zOpenPreviewAgentsAgentIdPreviewsPostPath = z.object({
+  agent_id: z.string().min(1).max(128),
+})
+
+/**
+ * Successful Response
+ */
+export const zOpenPreviewAgentsAgentIdPreviewsPostResponse = zAgentPreviewOut
+
+export const zDeletePreviewAgentsAgentIdPreviewsPreviewIdDeletePath = z.object({
+  agent_id: z.string().min(1).max(128),
+  preview_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponse = z.void()
 
 export const zUnarchiveAgentAgentsAgentIdUnarchivePostPath = z.object({
   agent_id: z.string(),

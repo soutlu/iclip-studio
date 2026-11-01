@@ -1,7 +1,7 @@
 """内部接口上的插件服务：请求与答复照 ``iclip_video`` 的 wire 模型走一趟，进程内的端口适配器照常干活，
 端口的失败按约定的状态码与 ``code`` 答出，客户端能还原成同一个错误。
 
-只挂内部接口的路由与错误信封；回调用不到对话服务。"""
+只挂内部接口的路由与错误信封；对话服务只在出图入口问一句是不是测试预览，用替身答「不是」。"""
 
 from __future__ import annotations
 
@@ -76,10 +76,18 @@ LEDGER = ExtractionLedger(
 GRID_URL = "https://cdn.test/grid.png"
 
 
+class NoPreviews:
+    """对话服务的替身：出图入口只问它这个 id 是不是测试预览；这里的都不是（预览见
+    ``test_preview_generations.py``）。"""
+
+    async def is_preview(self, session_id: str) -> bool:
+        return False
+
+
 def internal_app(plugins: RuntimePluginServices) -> FastAPI:
     app = FastAPI()
     install_error_handlers(app)
-    conversations = cast("ConversationService", object())
+    conversations = cast("ConversationService", NoPreviews())
     app.include_router(
         create_runtime_internal_router(
             token=TOKEN,

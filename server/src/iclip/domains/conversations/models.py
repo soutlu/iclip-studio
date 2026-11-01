@@ -42,6 +42,35 @@ class Conversation:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentPreview:
+    """一段 agent 测试预览：管理员拿某个 agent 的草稿（``version_id`` 为空）或它的某一版试聊。不是对话：
+    不进对话列表、侧栏、审计与统计，没有标题。``id`` 就是运行时的会话 id，transcript、工作区与订阅都按它
+    寻址，只有属主本人、且他此刻持 ``agent:manage`` 时读写得到。"""
+
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    agent_id: str
+    version_id: uuid.UUID | None
+    created_at: datetime
+
+
+PREVIEW_TITLE = "测试预览"
+"""预览会话页首屏的固定标题；预览没有标题，不查也不起名。"""
+
+
+@dataclass(frozen=True, slots=True)
+class PreviewHeader:
+    """预览会话页首屏贴在信封顶层的几项，形状同对话的那几项。"""
+
+    agent_id: str
+    owner_user_id: uuid.UUID
+    title: str = PREVIEW_TITLE
+    deleted_at: datetime | None = None
+    forked_from: uuid.UUID | None = None
+    fork_turn: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ConversationActivity:
     """对话活动投影。各字段独立，等待审批或回答时 busy 仍为真。"""
 
@@ -103,8 +132,11 @@ class WholeFilmExport:
 
 __all__ = [
     "IDLE_ACTIVITY",
+    "PREVIEW_TITLE",
+    "AgentPreview",
     "Conversation",
     "ConversationActivity",
+    "PreviewHeader",
     "TitleKind",
     "VideoPhase",
     "WholeFilmDraft",
