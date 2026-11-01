@@ -20,7 +20,7 @@ type AgentConfigPageProps = {
 type Scoped<T> = { agentId: string | null; value: T }
 
 /**
- * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」）与「新建 Agent」，下面左右各半，
+ * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」「MCP 服务」）与「新建 Agent」，下面左右各半，
  * 左边编辑 agent，右边是打开的配置面板；不开弹窗，细节编辑都替换右栏。
  */
 export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps) {
@@ -71,7 +71,13 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
   }
 
   const tab =
-    !creating && (panel?.type === 'plugins' || panel?.type === 'skills') ? panel.type : 'agent'
+    creating || panel === null
+      ? 'agent'
+      : panel.type === 'plugins' || panel.type === 'skills'
+        ? panel.type
+        : panel.type.startsWith('mcp-')
+          ? 'mcp'
+          : 'agent'
   // 编辑技能时正文通常很长：右栏从一半加宽到 3/5，左栏照常可用，一页里改完。
   const wideRight = panel?.type === 'skills' && panel.view.kind === 'editor'
 
@@ -88,6 +94,7 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
           onValueChange={(value) => {
             if (value === 'plugins') setPanel({ type: 'plugins' })
             else if (value === 'skills') setPanel({ type: 'skills', view: { kind: 'library' } })
+            else if (value === 'mcp') setPanel({ type: 'mcp-library' })
             else if (creating) cancelCreating()
             else setPanel(null)
           }}
@@ -107,6 +114,16 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
             </TabsTrigger>
             <TabsTrigger disabled={creating || currentId === null} value="plugins">
               插件
+            </TabsTrigger>
+            <TabsTrigger
+              disabled={creating || currentId === null}
+              // 在管理列表或某个服务的配置里时这一项已经选中，再点回到服务库。
+              onClick={() => {
+                if (panel?.type !== 'mcp-library') setPanel({ type: 'mcp-library' })
+              }}
+              value="mcp"
+            >
+              MCP 服务
             </TabsTrigger>
           </TabsList>
         </TabsRoot>

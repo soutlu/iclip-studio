@@ -108,6 +108,7 @@ import {
   Timer,
   RotateCcw,
   Wrench,
+  Plug,
   ScanEye,
   KeyRound,
   Heading2,
@@ -311,6 +312,8 @@ const ICONS = {
   credential: KeyRound,
   /** 插件：没有专属图标的插件用 plugin */
   plugin: Wrench,
+  /** MCP 服务（Agent 配置） */
+  'mcp-server': Plug,
   'video-understanding': ScanEye,
   'shot-list': ListTree,
   /** 富文本工具栏 */

@@ -53,7 +53,7 @@ const openPlugins = async (user: ReturnType<typeof userEvent.setup>) => {
 }
 
 describe('AgentConfigPage 保存草稿', () => {
-  it('整份覆盖草稿：带读到的 lockVersion，页面不管的 MCP 项与插件参数原样带回', async () => {
+  it('整份覆盖草稿：带读到的 lockVersion，没动过的 MCP 项与插件参数原样带回', async () => {
     const user = await renderPage()
     const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
     const save = within(editor()).getByRole('button', { name: '保存草稿' })

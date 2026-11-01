@@ -12,6 +12,7 @@ import { resetMockEnhancements } from './mocks/enhancements'
 import { resetMockFilm } from './mocks/film'
 import { resetMockHitCases } from './mocks/hit-cases'
 import { resetMockLibraryTags } from './mocks/library-tags'
+import { resetMockMcpServers } from './mocks/mcp-servers'
 import { resetMockClock } from './mocks/paging'
 import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
@@ -121,6 +122,7 @@ afterEach(() => {
   server.resetHandlers()
   server.events.removeAllListeners()
   resetMockAgentConfig()
+  resetMockMcpServers()
   resetMockClock()
   resetMockConversations()
   resetMockEnhancements()

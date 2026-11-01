@@ -28,6 +28,8 @@ import {
 import { AgentDefinitionPanel } from './agent-definition-form'
 import { AgentEditorPane, type SectionProblems } from './agent-editor-pane'
 import { AgentHeader } from './agent-header'
+import { McpListPanel } from './mcp-list-panel'
+import { McpServerPanel } from './mcp-server-panel'
 import { ModelPanel } from './model-panel'
 import type { Panel } from './panel'
 import { PluginPanel } from './plugin-panel'
@@ -339,6 +341,25 @@ export function AgentWorkspace({
             skillIds={draft.skillIds}
             skills={skills.data ?? []}
             view={panel.view}
+          />
+        ) : panel.type === 'mcp-library' || panel.type === 'mcp-select' ? (
+          <McpListPanel
+            config={draft.config}
+            key={panel.type}
+            mode={panel.type}
+            onChange={changeConfig}
+            onClose={closePanel}
+            onOpenPanel={onPanelChange}
+          />
+        ) : panel.type === 'mcp-server' ? (
+          <McpServerPanel
+            back={panel.back}
+            checkError={panel.checkError}
+            config={draft.config}
+            key={panel.server ?? ''}
+            onChange={changeConfig}
+            onOpenPanel={onPanelChange}
+            serverId={panel.server}
           />
         ) : (
           <AgentDefinitionPanel agent={agent} key={agent.updatedAt} onClose={closePanel} />
