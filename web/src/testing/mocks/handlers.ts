@@ -30,6 +30,7 @@ import {
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { libraryTagHandlers } from './library-tags'
 import { forgetMockReferenceTags, mockReferenceTagSets, referenceHandlers } from './references'
+import { skillHandlers } from './skills'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
 import { wholeFilmHandlers } from './whole-film'
@@ -499,6 +500,10 @@ export const handlers = [
   ),
 
   ...agentConfigHandlers(() => {
+    const user = currentUser ?? mockAuthUser
+    return { id: user.id, name: user.displayName }
+  }),
+  ...skillHandlers(() => {
     const user = currentUser ?? mockAuthUser
     return { id: user.id, name: user.displayName }
   }),

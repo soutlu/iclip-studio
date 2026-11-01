@@ -32,6 +32,7 @@ import { ModelPanel } from './model-panel'
 import type { Panel } from './panel'
 import { PluginPanel } from './plugin-panel'
 import { PromptPanel } from './prompt-panel'
+import { SkillPanel } from './skill-panel'
 import { SubagentPanel } from './subagent-panel'
 
 const STALE_NOTICE = '草稿已被别人修改，已读取最新的草稿；刚才没保存的修改已丢弃，请重新修改后保存'
@@ -325,6 +326,19 @@ export function AgentWorkspace({
             key={panel.focus ?? ''}
             onChange={changeConfig}
             onClose={closePanel}
+          />
+        ) : panel.type === 'skills' ? (
+          <SkillPanel
+            onClose={closePanel}
+            onNavigate={(view) => onPanelChange({ type: 'skills', view })}
+            onSkillIdsChange={(skillIds) => {
+              onEditChange({ ...draft, skillIds })
+              setProblems([])
+              setNotice(null)
+            }}
+            skillIds={draft.skillIds}
+            skills={skills.data ?? []}
+            view={panel.view}
           />
         ) : (
           <AgentDefinitionPanel agent={agent} key={agent.updatedAt} onClose={closePanel} />

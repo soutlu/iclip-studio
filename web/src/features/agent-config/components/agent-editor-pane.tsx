@@ -148,9 +148,32 @@ export function AgentEditorPane({
           />
         </Section>
 
-        <Section problems={problems.skills} section="skills" title="技能">
+        <Section
+          actions={
+            readOnly ? undefined : (
+              <IconButton
+                label="添加技能"
+                name="add"
+                onClick={() => onOpenPanel({ type: 'skills', view: { kind: 'catalog' } })}
+                size="sm"
+              />
+            )
+          }
+          problems={problems.skills}
+          section="skills"
+          title="技能"
+        >
           {value.skillIds.length === 0 ? (
-            <EmptyDash />
+            readOnly ? (
+              <EmptyDash />
+            ) : (
+              <div className={GRID}>
+                <AddCard
+                  label="添加技能"
+                  onClick={() => onOpenPanel({ type: 'skills', view: { kind: 'catalog' } })}
+                />
+              </div>
+            )
           ) : (
             <div className={GRID}>
               {value.skillIds.map((id) => {
@@ -158,9 +181,19 @@ export function AgentEditorPane({
                 const name = skill?.displayName ?? id
                 return (
                   <ResourceCard
+                    active={
+                      panel?.type === 'skills' &&
+                      panel.view.kind === 'editor' &&
+                      panel.view.skillId === id
+                    }
                     icon="skill"
                     key={id}
+                    label={`编辑技能：${name}`}
                     name={name}
+                    onOpen={open({
+                      type: 'skills',
+                      view: { back: null, kind: 'editor', skillId: id },
+                    })}
                     tip={skill === undefined ? name : `${name}\n${skill.description}`}
                     trailing={
                       skill?.latestVersion === null || skill === undefined ? undefined : (

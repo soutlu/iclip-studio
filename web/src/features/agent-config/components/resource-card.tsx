@@ -51,7 +51,7 @@ type ResourceCardProps = {
   /** 名字被截断时，悬停看全名与说明。 */
   tip: string
   trailing?: ReactNode
-  /** 不给就是不可点的静态卡片（技能、插件）。 */
+  /** 不给就是不可点的静态卡片（插件、查看历史版本时）。 */
   onOpen?: (() => void) | undefined
   /** 点开后右侧打开的是这一张。 */
   active?: boolean

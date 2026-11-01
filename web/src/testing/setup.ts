@@ -15,6 +15,7 @@ import { resetMockLibraryTags } from './mocks/library-tags'
 import { resetMockClock } from './mocks/paging'
 import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
+import { resetMockSkills } from './mocks/skills'
 import { resetMockTranscript } from './mocks/transcript'
 import { resetMockWholeFilm } from './mocks/whole-film'
 import { resetMockWorkspace } from './mocks/workspace'
@@ -129,6 +130,7 @@ afterEach(() => {
   resetMockHitCases()
   resetMockReferences()
   resetMockSession()
+  resetMockSkills()
   resetMockTasks()
   resetMockTranscript()
   resetMockUsers()
