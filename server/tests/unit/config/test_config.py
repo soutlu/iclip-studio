@@ -8,11 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
 from iclip.config import (
-    CredentialKeysEnv,
     load_runtime_config,
     resolve_settings,
 )
@@ -22,7 +20,6 @@ DB_URL = "postgresql+asyncpg://x"
 MANIFEST = (
     "DATABASE_URL",
     "AUTH_SECRET",
-    "CREDENTIAL_ENCRYPTION_KEYS",
     "SSO_BASE_URL",
     "SSO_REDIRECT_URL",
     "PMS_BASE_URL",
@@ -113,35 +110,6 @@ def test_resolve_names_every_missing_variable_at_once(tmp_path: Path) -> None:
     message = str(caught.value)
     assert "DATABASE_URL" in message
     assert "AUTH_SECRET" in message
-
-
-def test_missing_credential_keys_name_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """后端运行不要这把钥匙；切换命令读它时缺了照样点名。"""
-
-    with pytest.raises(ValidationError, match="CREDENTIAL_ENCRYPTION_KEYS"):
-        CredentialKeysEnv()  # pyright: ignore[reportCallIssue]
-
-
-@pytest.mark.parametrize(
-    ("value", "reason"),
-    [
-        ("not-a-fernet-key", "第 1 个 key 不是合法的 Fernet key"),
-        (f"{Fernet.generate_key().decode()},short", "第 2 个 key 不是合法的 Fernet key"),
-        (f"{Fernet.generate_key().decode()},,", "第 2 个 key 是空的"),
-    ],
-)
-def test_malformed_credential_keys_are_refused_without_echoing_them(
-    monkeypatch: pytest.MonkeyPatch, value: str, reason: str
-) -> None:
-    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", value)
-
-    with pytest.raises(ValidationError) as caught:
-        CredentialKeysEnv()  # pyright: ignore[reportCallIssue]
-
-    assert reason in str(caught.value.errors()[0]["msg"])
-    printed = str(caught.value)
-    for key in filter(None, value.split(",")):
-        assert key not in printed
 
 
 def test_resolve_rejects_non_asyncpg_url_without_echoing_it(

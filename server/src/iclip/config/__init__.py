@@ -1,5 +1,4 @@
 from iclip.config.models import (
-    CREDENTIAL_ENCRYPTION_KEYS_ENV,
     OSS_BUCKET_ENV,
     QWEN_API_KEY_ENV,
     RUNTIME_APP_KEY_ENV,
@@ -8,7 +7,6 @@ from iclip.config.models import (
     VIDEO_ENHANCE_SUBMIT_URL_ENV,
     VIDEO_SUBMIT_URL_ENV,
     AppSection,
-    CredentialKeysEnv,
     DbSection,
     ImageGenerationSection,
     ImageModelSection,
@@ -37,7 +35,6 @@ from iclip.config.models import (
 )
 
 __all__ = [
-    "CREDENTIAL_ENCRYPTION_KEYS_ENV",
     "OSS_BUCKET_ENV",
     "QWEN_API_KEY_ENV",
     "RUNTIME_APP_KEY_ENV",
@@ -46,7 +43,6 @@ __all__ = [
     "VIDEO_ENHANCE_SUBMIT_URL_ENV",
     "VIDEO_SUBMIT_URL_ENV",
     "AppSection",
-    "CredentialKeysEnv",
     "DbSection",
     "ImageGenerationSection",
     "ImageModelSection",

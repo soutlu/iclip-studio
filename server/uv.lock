@@ -1093,7 +1093,6 @@ dependencies = [
     { name = "agent-runtime" },
     { name = "alembic" },
     { name = "asyncpg" },
-    { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastapi-users", extra = ["sqlalchemy"] },
     { name = "fonttools" },
@@ -1113,6 +1112,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "cryptography" },
     { name = "pre-commit" },
     { name = "pydantic-ai-harness" },
     { name = "pydantic-ai-slim", extra = ["openai"] },
@@ -1130,7 +1130,6 @@ requires-dist = [
     { name = "agent-runtime", editable = "../runtime" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.30" },
-    { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14" },
     { name = "fonttools", specifier = ">=4.67.0" },
@@ -1150,6 +1149,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "cryptography", specifier = ">=50.0.1" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pydantic-ai-harness", specifier = ">=0.62" },
     { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.62" },

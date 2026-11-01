@@ -146,12 +146,21 @@ def test_database_url_must_be_asyncpg_and_the_error_hides_it(
     assert "hunter2" not in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        ("not-a-secret-key", "第 1 个 key 不是合法的 Fernet key"),
+        (f"{FERNET_KEY},not-a-secret-key", "第 2 个 key 不是合法的 Fernet key"),
+        (f"{FERNET_KEY},,", "第 2 个 key 是空的"),
+    ],
+    ids=["first-malformed", "second-malformed", "empty"],
+)
 def test_credential_keys_must_be_fernet_keys_and_the_error_hides_them(
-    tmp_path: Path, env: pytest.MonkeyPatch
+    tmp_path: Path, env: pytest.MonkeyPatch, value: str, reason: str
 ) -> None:
-    env.setenv("CREDENTIAL_ENCRYPTION_KEYS", f"{FERNET_KEY},not-a-secret-key")
+    env.setenv("CREDENTIAL_ENCRYPTION_KEYS", value)
 
-    with pytest.raises(ValidationError, match="第 2 个 key") as caught:
+    with pytest.raises(ValidationError, match=reason) as caught:
         resolve_settings(load_config(write_config(tmp_path)))
     assert "not-a-secret-key" not in str(caught.value)
 

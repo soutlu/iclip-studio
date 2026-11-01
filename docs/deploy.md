@@ -8,9 +8,9 @@
    - 版本以 [server/pyproject.toml](../server/pyproject.toml)、[web/package.json](../web/package.json) 与各自的 lockfile 为准。
    - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
-   - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
+   - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[后端的配置与装配](architecture.md#后端的配置与装配)；缺少变量时，启动会列出变量名。
    - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥，后端运行不读它。
-   - `RUNTIME_URL`（本地是 `http://localhost:7790`）与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：消息、transcript、实时推送、工作区文件、配置页、开对话与首页名册都经运行时服务（见[后端架构](architecture.md#1-模块职责)）。`RUNTIME_APP_KEY` 不少于 32 个字符，运行时配置里应用 `video` 的 `key_env` 指向它。
+   - `RUNTIME_URL`（本地是 `http://localhost:7790`）与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：消息、transcript、实时推送、工作区文件、配置页、开对话与首页名册都经运行时服务（见[调运行时](architecture.md#调运行时)）。`RUNTIME_APP_KEY` 不少于 32 个字符，运行时配置里应用 `video` 的 `key_env` 指向它。
    - `RUNTIME_INTERNAL_TOKEN` 必填，不少于 32 个字符，缺了后端与运行时都起不来：运行时回调后端（开跑检查、运行开始、轮次开始）与插件调后端都带它。
 3. 把一份 `server/configs/config.yaml` 放到本机，再把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `server/configs/runtime.yaml`，里面的 `http://server:7788` 都换成 `http://localhost:7788`，按要用的插件打开对应的段。两份都不进仓库，改了要重启。模型、agent 与技能存在数据库里，不在文件里。
 4. 迁移数据库并启动后端与运行时服务：
@@ -61,7 +61,7 @@
    - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥与 MCP 服务请求头的 Fernet key，必填，缺失或格式不对运行时服务起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥与请求头都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
    - `configs/`：只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
      - `config.yaml`：后端的运行配置
-     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，接入的应用必须叫 `video`；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video` 只在运行时这边配，见[配置与装配](architecture.md#2-配置与装配)
+     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，视频后端这个应用必须叫 `video`（再接别的应用见[新应用接入运行时](runtime-apps.md)）；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video` 只在运行时这边配，见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)
    - `.env` 里运行时服务那几项（compose 只把这几项交给运行时容器）：
      - `RUNTIME_URL=http://runtime:7790`，后端用
      - `RUNTIME_APP_KEY`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `apps.video.key_env`）
@@ -87,11 +87,11 @@
    - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。
    - 用密码注册：执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
 
-后端与运行时服务各只跑 1 个 worker。实时投影、事件分发与浏览器订阅都存在进程内存里，增加 worker 前先看[运行、记录与订阅](architecture.md#5-运行记录与订阅)。
+后端与运行时服务各只跑 1 个 worker。实时投影、事件分发与浏览器订阅都存在进程内存里，增加 worker 前先看[两个服务](architecture.md#1-两个服务)。
 
 ### 成片渲染服务
 
-`render` 容器只在 compose 网络里监听 8080，不对外开端口，后端经 `WHOLE_FILM_RENDER_URL=http://render:8080` 调它（职责见[架构](architecture.md#3-身份与模块协作)）。
+`render` 容器只在 compose 网络里监听 8080，不对外开端口，后端经 `WHOLE_FILM_RENDER_URL=http://render:8080` 调它（职责见[架构](architecture.md#成片渲染服务)）。
 
 - **素材主机**：`.env` 里的 `RENDER_ALLOWED_MEDIA_HOSTS`（逗号分隔，带端口就写上端口）由 compose 传给它，取值见上面第 3 步。不设时容器启动即退出，日志是「配置不完整」；导出请求里的素材主机不在名单里答 400 `media-host-not-allowed`。
 - **显卡**：compose 给它申请 `gpu, compute, utility, video, graphics` 五项能力，Chrome 用显卡渲染要 `graphics`，NVENC 编码要 `video`。确认用上了显卡：`docker compose exec render node -e "fetch('http://127.0.0.1:8080/health').then(r=>r.text()).then(console.log)"` 的 `gpu` 为 `hardware`，启动日志「渲染环境」那一条的 `gpu` 为 `hardware`、`videoEncoder` 为 `nvenc`。是 `software` 时另有一条 warning「浏览器使用软件渲染」，渲染照常，只是更慢。
@@ -134,7 +134,7 @@
 1. 新版本有表结构变化时，先执行该版本的数据库迁移。
 2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤时补做。compose.yaml 新挂载了部署目录里的目录时，先把目录放好再启动：第一次升级到挂载 `components/` 的版本前，先按[发布组件库](#发布组件库)放好组件库。
 3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
-4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[持久化与迁移](architecture.md#4-持久化与迁移)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
+4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[运行时的持久化](architecture.md#运行时的持久化)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
 5. 升级到生成记录把产出并进 `output` 的版本（迁移 0039）时，先停后端再执行迁移：旧版本的代码读不了新的表结构。迁移完成后，在同一停机窗口里在库里执行 `VACUUM FULL iclip.generation_jobs`（期间锁表），回收迁移整表更新留下的旧行，实测每百万行十几秒；再按第 3 步启动新版本。
 6. 升级到 agent 改在运行时服务里跑的版本时，启动前先改 `configs/config.yaml`，还留着下面这些段后端启动失败，报错点名那一段和它在运行时配置里的位置：
    - 按[服务器部署](#服务器部署)第 3 步从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 建好 `configs/runtime.yaml`，下面搬过去的值写进这份文件。
@@ -169,7 +169,7 @@
 
 ### 改配置
 
-- 模型、agent 与技能在配置页里改：发布 agent、发布技能、改密钥或模型后，下一次运行自动用上新的，不用重启；已有的对话固定在开对话时的 agent 版本上，见[配置与装配](architecture.md#2-配置与装配)。
+- 模型、agent 与技能在配置页里改：发布 agent、发布技能、改密钥或模型后，下一次运行自动用上新的，不用重启；已有的对话固定在开对话时的 agent 版本上，见[对话固定版本与每次运行装配](architecture.md#对话固定版本与每次运行装配)。
 - `configs/config.yaml` 与 `.env` 改了要执行 `docker compose up -d`（`restart` 不会重读 `.env`），配置写错时原因在 `docker compose logs server`。
 
 ### 换密钥加密钥匙

@@ -69,18 +69,13 @@ from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.model_vocab import ThinkingEffort
 from agent_runtime.plugins.base import PluginFactory, PluginHost, PluginRegistry
-from agent_runtime.settings import load_config
+from agent_runtime.settings import CREDENTIAL_ENCRYPTION_KEYS_ENV, CredentialKeysEnv, load_config
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.app.bootstrap import VIDEO_APP_ID
-from iclip.config import (
-    CREDENTIAL_ENCRYPTION_KEYS_ENV,
-    CredentialKeysEnv,
-    load_runtime_config,
-    resolve_settings,
-)
+from iclip.config import load_runtime_config, resolve_settings
 from iclip.platform.db.engine import build_engine
 
 NOTE = "从文件配置切换"

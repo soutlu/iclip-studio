@@ -1,6 +1,6 @@
 # AGENTS.md — 开发约定
 
-先读本文与 [docs/CONTEXT.md](docs/CONTEXT.md)。修改后端时查 [docs/architecture.md](docs/architecture.md)，修改前端时再读 [web/AGENTS.md](web/AGENTS.md)。按任务查阅专项文档，入口见[文档地图](#文档地图)。
+先读本文与 [docs/CONTEXT.md](docs/CONTEXT.md)。修改后端、运行时或视频插件时查 [docs/architecture.md](docs/architecture.md)，修改前端时再读 [web/AGENTS.md](web/AGENTS.md)。按任务查阅专项文档，入口见[文档地图](#文档地图)。
 
 ## 1. 命令与验证
 
@@ -109,7 +109,8 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 | [AGENTS.md](AGENTS.md) | 任何改动前 | 全仓操作与开发规则变化时更新 |
 | [web/AGENTS.md](web/AGENTS.md) | 修改前端时 | 前端命令、目录职责、边界、验证要求变化时更新 |
 | [docs/CONTEXT.md](docs/CONTEXT.md) | 任何改动前 | 两端共用的领域术语、不变量和禁止逻辑变化时更新 |
-| [docs/architecture.md](docs/architecture.md) | 修改后端时 | 后端分层、职责和装配机制变化时更新 |
+| [docs/architecture.md](docs/architecture.md) | 修改后端、运行时或视频插件时 | 两个服务的分工与通道，各自的分层、职责和装配机制变化时更新 |
+| [docs/runtime-apps.md](docs/runtime-apps.md) | 给运行时接入新应用，或改应用与运行时之间的接法前 | 应用要登记什么、回调怎么答、调哪些接口、转发浏览器的要求与现有限制变化时更新 |
 | [docs/adr/](docs/adr/) | 新增或修改 ADR 前 | 已接受的架构决策与取舍，编写规则见目录内 README；决策变化时新增一篇并标明取代关系 |
 | [docs/deploy.md](docs/deploy.md) | 本地启动、部署或升级服务器前 | 本地启动、服务器部署、升级与改配置步骤变化时更新 |
 | [docs/release.md](docs/release.md) | 发版、热修、热修回流或修改镜像流水线前 | 发版与热修步骤、版本号规则、镜像构建与上传流水线、仓库配置变化时更新 |
