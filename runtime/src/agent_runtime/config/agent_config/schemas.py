@@ -50,6 +50,10 @@ class AgentOut(CamelModel):
     """没发布过为 ``null``。"""
     has_unpublished_changes: bool
     """草稿的配置或技能名单与当前版本不同；没发布过恒为 ``true``。"""
+    has_subagents: bool
+    """它的草稿或当前版本里写着子 agent；这时它不能被选作别人的子 agent。"""
+    is_subagent: bool
+    """别的 agent 的草稿或当前版本把它当作子 agent；这时它自己不能有子 agent。"""
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
@@ -97,6 +101,8 @@ class AgentCreateIn(CamelModel):
     id: str
     name: str
     description: str = ""
+    listed: bool = False
+    """上不上首页菜单。"""
 
 
 class AgentUpdateIn(CamelModel):

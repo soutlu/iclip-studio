@@ -7,6 +7,7 @@ from agent_runtime.config.skills.models import MAX_ARCHIVE_BYTES, STATUS_ARCHIVE
 from agent_runtime.config.skills.repository import SkillUsages
 from agent_runtime.config.skills.schemas import (
     DraftFileOut,
+    DraftFileRenameIn,
     DraftFileWriteIn,
     SkillCreateIn,
     SkillDetailOut,
@@ -25,6 +26,7 @@ __all__ = [
     "MAX_ARCHIVE_BYTES",
     "STATUS_ARCHIVED",
     "DraftFileOut",
+    "DraftFileRenameIn",
     "DraftFileWriteIn",
     "Skill",
     "SkillCreateIn",

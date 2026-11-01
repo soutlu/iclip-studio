@@ -43,6 +43,7 @@ from agent_runtime.config.skills.rules import (
 from agent_runtime.config.skills.schemas import (
     DraftFileInfoOut,
     DraftFileOut,
+    DraftFileRenameIn,
     DraftFileWriteIn,
     SkillCreateIn,
     SkillDetailOut,
@@ -252,6 +253,30 @@ class SkillsService:
             if current.hash != base_hash:
                 raise Conflict("文件已被改动，请读取最新内容后再删")
             await writer.delete_file(path)
+
+    async def move_file(
+        self, skill_id: uuid.UUID, body: DraftFileRenameIn, *, by: uuid.UUID
+    ) -> DraftFileOut:
+        """把草稿里的一个文件改到新路径，内容不变，一次写完。``SKILL.md`` 不能改名、新路径不合格或与原路径
+        相同是 ``ValidationFailed``；原文件不存在是 ``NotFound``；``base_hash`` 与库里的不一致、新路径已有
+        文件是 ``Conflict``。"""
+
+        if body.source == SKILL_MD:
+            raise ValidationFailed(f"{SKILL_MD} 不能改名")
+        _check_draft_path(body.target)
+        if body.target == body.source:
+            raise ValidationFailed("新路径与原路径相同")
+        async with self._store.edit(skill_id) as writer:
+            draft = {info.path: info for info in await writer.draft()}
+            current = draft.get(body.source)
+            if current is None:
+                raise NotFound("文件不存在")
+            if current.hash != body.base_hash:
+                raise Conflict("文件已被改动，请读取最新内容后再改名")
+            if body.target in draft:
+                raise Conflict(f"{body.target} 已存在")
+            await writer.move_file(body.source, body.target, by=by)
+        return await self.read_file(skill_id, body.target)
 
     async def publish(
         self, skill_id: uuid.UUID, body: SkillPublishIn, *, by: uuid.UUID

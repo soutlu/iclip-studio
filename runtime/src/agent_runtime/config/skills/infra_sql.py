@@ -137,6 +137,10 @@ SET content = EXCLUDED.content, size = EXCLUDED.size, hash = EXCLUDED.hash,
 _DELETE_FILE: Final = text("""
 DELETE FROM agent_runtime.skill_draft_files WHERE skill_id = :skill_id AND path = :path""")
 
+_MOVE_FILE: Final = text("""
+UPDATE agent_runtime.skill_draft_files SET path = :target, updated_by = :by, updated_at = now()
+WHERE skill_id = :skill_id AND path = :source""")
+
 _CLEAR_DRAFT: Final = text("DELETE FROM agent_runtime.skill_draft_files WHERE skill_id = :skill_id")
 
 _TOUCH: Final = text("UPDATE agent_runtime.skills SET updated_at = now() WHERE id = :id")
@@ -266,6 +270,12 @@ class _SqlSkillWriter:
 
     async def delete_file(self, path: str) -> None:
         await self._conn.execute(_DELETE_FILE, {"skill_id": self._skill.id, "path": path})
+        await self._touch()
+
+    async def move_file(self, source: str, target: str, *, by: uuid.UUID) -> None:
+        await self._conn.execute(
+            _MOVE_FILE, {"skill_id": self._skill.id, "source": source, "target": target, "by": by}
+        )
         await self._touch()
 
     async def replace_draft(self, files: Mapping[str, str], *, by: uuid.UUID) -> None:

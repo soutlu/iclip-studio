@@ -97,6 +97,11 @@
             "title": "Id",
             "type": "string"
           },
+          "listed": {
+            "default": false,
+            "title": "Listed",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -206,12 +211,27 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "description": {
             "title": "Description",
             "type": "string"
           },
           "draft": {
             "$ref": "#/components/schemas/AgentDraftOut"
+          },
+          "hasSubagents": {
+            "title": "Hassubagents",
+            "type": "boolean"
           },
           "hasUnpublishedChanges": {
             "title": "Hasunpublishedchanges",
@@ -220,6 +240,10 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "isSubagent": {
+            "title": "Issubagent",
+            "type": "boolean"
           },
           "listed": {
             "title": "Listed",
@@ -255,6 +279,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "name",
           "description",
@@ -263,6 +288,8 @@
           "sortOrder",
           "activeVersion",
           "hasUnpublishedChanges",
+          "hasSubagents",
+          "isSubagent",
           "createdBy",
           "createdAt",
           "updatedAt",
@@ -338,9 +365,21 @@
             "format": "uuid",
             "title": "Updatedby",
             "type": "string"
+          },
+          "updatedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedbyname"
           }
         },
         "required": [
+          "updatedByName",
           "config",
           "skillIds",
           "baseVersionId",
@@ -548,9 +587,24 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "description": {
             "title": "Description",
             "type": "string"
+          },
+          "hasSubagents": {
+            "title": "Hassubagents",
+            "type": "boolean"
           },
           "hasUnpublishedChanges": {
             "title": "Hasunpublishedchanges",
@@ -559,6 +613,10 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "isSubagent": {
+            "title": "Issubagent",
+            "type": "boolean"
           },
           "listed": {
             "title": "Listed",
@@ -587,6 +645,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "name",
           "description",
@@ -595,6 +654,8 @@
           "sortOrder",
           "activeVersion",
           "hasUnpublishedChanges",
+          "hasSubagents",
+          "isSubagent",
           "createdBy",
           "createdAt",
           "updatedAt"
@@ -897,6 +958,17 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -927,6 +999,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "version",
           "note",
@@ -951,6 +1024,17 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -973,6 +1057,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "version",
           "note",
@@ -2843,6 +2928,40 @@
         "title": "CredentialFieldOut",
         "type": "object"
       },
+      "CredentialOptionOut": {
+        "additionalProperties": false,
+        "description": "agent 能选的一把密钥。",
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "fields",
+          "isDefault"
+        ],
+        "title": "CredentialOptionOut",
+        "type": "object"
+      },
       "CredentialOut": {
         "additionalProperties": false,
         "properties": {
@@ -3373,6 +3492,31 @@
           "updatedAt"
         ],
         "title": "DraftFileOut",
+        "type": "object"
+      },
+      "DraftFileRenameIn": {
+        "additionalProperties": false,
+        "description": "把草稿里的一个文件改到新路径，内容不变。",
+        "properties": {
+          "baseHash": {
+            "title": "Basehash",
+            "type": "string"
+          },
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "baseHash"
+        ],
+        "title": "DraftFileRenameIn",
         "type": "object"
       },
       "DraftFileWriteIn": {
@@ -6139,6 +6283,68 @@
         "title": "MetricsOut",
         "type": "object"
       },
+      "ModelOptionOut": {
+        "additionalProperties": false,
+        "description": "agent 能选的一个对话模型。",
+        "properties": {
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thinking": {
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "contextSize",
+          "thinking"
+        ],
+        "title": "ModelOptionOut",
+        "type": "object"
+      },
+      "ModelOptionsOut": {
+        "additionalProperties": false,
+        "description": "agent 编辑页选模型用：只读，只列启用的供应商。",
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderOptionOut"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "ModelOptionsOut",
+        "type": "object"
+      },
       "ModelProviderCreateIn": {
         "additionalProperties": false,
         "properties": {
@@ -7260,6 +7466,48 @@
         "title": "ProviderModelOut",
         "type": "object"
       },
+      "ProviderOptionOut": {
+        "additionalProperties": false,
+        "description": "agent 能选的一个供应商。",
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialOptionOut"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelOptionOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "models",
+          "credentials"
+        ],
+        "title": "ProviderOptionOut",
+        "type": "object"
+      },
       "ReferenceCreateIn": {
         "additionalProperties": false,
         "properties": {
@@ -7924,6 +8172,17 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -7997,6 +8256,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "name",
           "displayName",
@@ -8143,6 +8403,17 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -8202,6 +8473,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "name",
           "displayName",
@@ -8266,6 +8538,17 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "files": {
             "items": {
               "$ref": "#/components/schemas/SkillFileOut"
@@ -8295,6 +8578,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "version",
           "note",
@@ -8352,6 +8636,17 @@
             "title": "Createdby",
             "type": "string"
           },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -8374,6 +8669,7 @@
           }
         },
         "required": [
+          "createdByName",
           "id",
           "version",
           "note",
@@ -13301,7 +13597,7 @@
   "paths": {
     "/agents": {
       "get": {
-        "description": "全部 agent，含已归档的，每个带当前版本摘要与有没有未发布的修改。",
+        "description": "全部 agent，含已归档的，每个带当前版本摘要、有没有未发布的修改与子 agent 的两个标记。",
         "operationId": "list_agents_agents_get",
         "responses": {
           "200": {
@@ -13333,7 +13629,7 @@
         ]
       },
       "post": {
-        "description": "新建一个 agent，草稿是空配置；标识已被占用是 409。",
+        "description": "新建一个 agent，草稿是空配置；``listed`` 不给就不上首页菜单。标识已被占用是 409。",
         "operationId": "create_agent_agents_post",
         "requestBody": {
           "content": {
@@ -13446,6 +13742,40 @@
           }
         ],
         "summary": "Import Agents",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/model-options": {
+      "get": {
+        "description": "agent 能选的模型：启用的供应商，各带启用的对话模型与打码的密钥。只读，不要 ``model:manage``。",
+        "operationId": "agent_model_options_agents_model_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelOptionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Agent Model Options",
         "tags": [
           "agents"
         ]
@@ -20270,6 +20600,53 @@
       }
     },
     "/model-providers/{provider_id}": {
+      "delete": {
+        "description": "删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。",
+        "operationId": "delete_model_provider_model_providers__provider_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Model Provider",
+        "tags": [
+          "model-providers"
+        ]
+      },
       "patch": {
         "description": "改显示名、启停或默认密钥。",
         "operationId": "update_model_provider_model_providers__provider_id__patch",
@@ -21812,6 +22189,72 @@
           }
         ],
         "summary": "Archive Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/draft/files/rename": {
+      "post": {
+        "description": "把草稿里的一个文件改到新路径，内容不变，一次写完：``baseHash`` 对不上或新路径已有文件是 409，\n``SKILL.md`` 不能改名、新路径不合格是 422。",
+        "operationId": "rename_draft_file_skills__skill_id__draft_files_rename_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftFileRenameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Rename Draft File",
         "tags": [
           "skills"
         ]

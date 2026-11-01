@@ -121,11 +121,12 @@ class AgentStore(Protocol):
         *,
         name: str,
         description: str,
+        listed: bool,
         config: Mapping[str, Any],
         by: uuid.UUID,
     ) -> None:
-        """建一个在用、不上菜单的 agent，排在最后，连同空草稿与一条 create 操作记录，同一个事务；标识已被
-        占用是 ``Conflict``。"""
+        """建一个在用的 agent，排在最后，连同空草稿与一条 create 操作记录，同一个事务；标识已被占用是
+        ``Conflict``。"""
         ...
 
     async def reorder(self, agent_ids: Sequence[str]) -> None:

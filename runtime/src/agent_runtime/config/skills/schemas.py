@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from agent_runtime.agent_usage import AgentUsageOut
@@ -90,6 +90,17 @@ class DraftFileWriteIn(CamelModel):
     """写之前读到的 ``hash``；新建文件给 ``null``。与库里对不上是 409。"""
 
 
+class DraftFileRenameIn(CamelModel):
+    """把草稿里的一个文件改到新路径，内容不变。"""
+
+    source: str = Field(alias="from")
+    """现在的路径；``SKILL.md`` 不能改名。"""
+    target: str = Field(alias="to")
+    """新路径，规则同写文件；已有文件是 409。"""
+    base_hash: str
+    """读到的 ``hash``；与库里对不上是 409。"""
+
+
 class SkillPublishIn(CamelModel):
     note: str | None = None
 
@@ -142,6 +153,7 @@ class SkillImportOut(CamelModel):
 __all__ = [
     "DraftFileInfoOut",
     "DraftFileOut",
+    "DraftFileRenameIn",
     "DraftFileWriteIn",
     "SkillCreateIn",
     "SkillDetailOut",

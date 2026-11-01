@@ -184,9 +184,52 @@ class DefaultModelIn(CamelModel):
     model_name: str
 
 
+class ModelOptionOut(CamelModel):
+    """agent 能选的一个对话模型。"""
+
+    name: str
+    """写进 agent 配置的 ``model.name``。"""
+    context_size: int | None
+    thinking: list[ThinkingEffort]
+    """允许设的思考档位；空就是不能设档位。"""
+
+
+class CredentialOptionOut(CamelModel):
+    """agent 能选的一把密钥。"""
+
+    id: uuid.UUID
+    """写进 agent 配置的 ``model.credential_id``。"""
+    name: str
+    fields: dict[str, str]
+    """同 ``CredentialOut.fields``：机密字段只给打码后的值。"""
+    is_default: bool
+    """是供应商的默认密钥；agent 不写密钥时用它。"""
+
+
+class ProviderOptionOut(CamelModel):
+    """agent 能选的一个供应商。"""
+
+    id: uuid.UUID
+    name: str
+    """引用名，写进 agent 配置的 ``model.provider``。"""
+    label: str
+    models: list[ModelOptionOut]
+    """启用的 ``llm`` 模型，顺序同供应商列表。"""
+    credentials: list[CredentialOptionOut]
+    """新的在前。"""
+
+
+class ModelOptionsOut(CamelModel):
+    """agent 编辑页选模型用：只读，只列启用的供应商。"""
+
+    providers: list[ProviderOptionOut]
+    """按接入时刻从新到旧。"""
+
+
 __all__ = [
     "CredentialCreateIn",
     "CredentialFieldOut",
+    "CredentialOptionOut",
     "CredentialOut",
     "CredentialTestIn",
     "CredentialUpdateIn",
@@ -197,6 +240,8 @@ __all__ = [
     "DefaultModelIn",
     "DefaultModelOut",
     "DefaultModelsOut",
+    "ModelOptionOut",
+    "ModelOptionsOut",
     "ModelProviderCreateIn",
     "ModelProviderOut",
     "ModelProviderUpdateIn",
@@ -204,4 +249,5 @@ __all__ = [
     "ModelUpdateIn",
     "ProbeOut",
     "ProviderModelOut",
+    "ProviderOptionOut",
 ]

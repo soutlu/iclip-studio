@@ -19,6 +19,7 @@ export const zActiveVersionOut = z.object({
 export const zAgentCreateIn = z.object({
   description: z.string().optional().default(''),
   id: z.string(),
+  listed: z.boolean().optional().default(false),
   name: z.string(),
 })
 
@@ -67,9 +68,12 @@ export const zAgentOut = z.object({
   activeVersion: zActiveVersionOut.nullable(),
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   description: z.string(),
+  hasSubagents: z.boolean(),
   hasUnpublishedChanges: z.boolean(),
   id: z.string(),
+  isSubagent: z.boolean(),
   listed: z.boolean(),
   name: z.string(),
   sortOrder: z.int(),
@@ -197,6 +201,7 @@ export const zAgentUsageOut = z.object({
 export const zAgentVersionOut = z.object({
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   id: z.uuid(),
   note: z.string().nullable(),
   version: z.int(),
@@ -730,6 +735,18 @@ export const zCredentialFieldOut = z.object({
 })
 
 /**
+ * CredentialOptionOut
+ *
+ * agent 能选的一把密钥。
+ */
+export const zCredentialOptionOut = z.object({
+  fields: z.record(z.string(), z.string()),
+  id: z.uuid(),
+  isDefault: z.boolean(),
+  name: z.string(),
+})
+
+/**
  * CredentialOut
  */
 export const zCredentialOut = z.object({
@@ -869,6 +886,17 @@ export const zDraftFileOut = z.object({
   path: z.string(),
   size: z.int(),
   updatedAt: z.iso.datetime(),
+})
+
+/**
+ * DraftFileRenameIn
+ *
+ * 把草稿里的一个文件改到新路径，内容不变。
+ */
+export const zDraftFileRenameIn = z.object({
+  baseHash: z.string(),
+  from: z.string(),
+  to: z.string(),
 })
 
 /**
@@ -1364,6 +1392,17 @@ export const zMetricFiltersIn = z.object({
 })
 
 /**
+ * ModelOptionOut
+ *
+ * agent 能选的一个对话模型。
+ */
+export const zModelOptionOut = z.object({
+  contextSize: z.int().nullable(),
+  name: z.string(),
+  thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
+})
+
+/**
  * ModelProviderCreateIn
  */
 export const zModelProviderCreateIn = z.object({
@@ -1569,6 +1608,28 @@ export const zModelProvidersOut = z.object({
 })
 
 /**
+ * ProviderOptionOut
+ *
+ * agent 能选的一个供应商。
+ */
+export const zProviderOptionOut = z.object({
+  credentials: z.array(zCredentialOptionOut),
+  id: z.uuid(),
+  label: z.string(),
+  models: z.array(zModelOptionOut),
+  name: z.string(),
+})
+
+/**
+ * ModelOptionsOut
+ *
+ * agent 编辑页选模型用：只读，只列启用的供应商。
+ */
+export const zModelOptionsOut = z.object({
+  providers: z.array(zProviderOptionOut),
+})
+
+/**
  * ReferenceCreateIn
  */
 export const zReferenceCreateIn = z.object({
@@ -1712,6 +1773,7 @@ export const zSkillCreateIn = z.object({
 export const zSkillDetailOut = z.object({
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   description: z.string(),
   displayName: z.string(),
   draftFiles: z.array(zDraftFileInfoOut),
@@ -1757,6 +1819,7 @@ export const zSkillImportOut = z.object({
 export const zSkillOut = z.object({
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   description: z.string(),
   displayName: z.string(),
   hasUnpublishedChanges: z.boolean(),
@@ -1789,6 +1852,7 @@ export const zSkillVersionDetailOut = z.object({
   contentHash: z.string(),
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   files: z.array(zSkillFileOut),
   id: z.uuid(),
   note: z.string().nullable(),
@@ -1812,6 +1876,7 @@ export const zSkillVersionOut = z.object({
   contentHash: z.string(),
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   id: z.uuid(),
   note: z.string().nullable(),
   version: z.int(),
@@ -1947,6 +2012,7 @@ export const zAgentDraftOut = z.object({
   skillIds: z.array(z.uuid()),
   updatedAt: z.iso.datetime(),
   updatedBy: z.uuid(),
+  updatedByName: z.string().nullable(),
 })
 
 /**
@@ -1956,10 +2022,13 @@ export const zAgentDetailOut = z.object({
   activeVersion: zActiveVersionOut.nullable(),
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   description: z.string(),
   draft: zAgentDraftOut,
+  hasSubagents: z.boolean(),
   hasUnpublishedChanges: z.boolean(),
   id: z.string(),
+  isSubagent: z.boolean(),
   listed: z.boolean(),
   name: z.string(),
   sortOrder: z.int(),
@@ -1975,6 +2044,7 @@ export const zAgentVersionDetailOut = z.object({
   config: zAgentConfig,
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
+  createdByName: z.string().nullable(),
   id: z.uuid(),
   note: z.string().nullable(),
   skillIds: z.array(z.uuid()),
@@ -3547,6 +3617,11 @@ export const zImportAgentsAgentsImportPostQuery = z.object({
  */
 export const zImportAgentsAgentsImportPostResponse = zAgentImportOut
 
+/**
+ * Successful Response
+ */
+export const zAgentModelOptionsAgentsModelOptionsGetResponse = zModelOptionsOut
+
 export const zReorderAgentsAgentsOrderPutBody = zAgentOrderIn
 
 /**
@@ -4590,6 +4665,15 @@ export const zCreateModelProviderModelProvidersPostResponse = zModelProviderOut
  */
 export const zModelProviderDeclarationsModelProvidersDeclarationsGetResponse = zDeclarationsOut
 
+export const zDeleteModelProviderModelProvidersProviderIdDeletePath = z.object({
+  provider_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDeleteModelProviderModelProvidersProviderIdDeleteResponse = z.void()
+
 export const zUpdateModelProviderModelProvidersProviderIdPatchBody = zModelProviderUpdateIn
 
 export const zUpdateModelProviderModelProvidersProviderIdPatchPath = z.object({
@@ -4841,6 +4925,17 @@ export const zArchiveSkillSkillsSkillIdArchivePostPath = z.object({
  * Successful Response
  */
 export const zArchiveSkillSkillsSkillIdArchivePostResponse = zSkillDetailOut
+
+export const zRenameDraftFileSkillsSkillIdDraftFilesRenamePostBody = zDraftFileRenameIn
+
+export const zRenameDraftFileSkillsSkillIdDraftFilesRenamePostPath = z.object({
+  skill_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRenameDraftFileSkillsSkillIdDraftFilesRenamePostResponse = zDraftFileOut
 
 export const zDeleteDraftFileSkillsSkillIdDraftFilesPathDeletePath = z.object({
   skill_id: z.uuid(),

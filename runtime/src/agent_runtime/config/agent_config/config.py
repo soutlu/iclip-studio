@@ -19,7 +19,7 @@ from pydantic import (
 )
 from pydantic_core import ErrorDetails
 
-from agent_runtime.config.agent_config.models import ConfigRefs, Problem
+from agent_runtime.config.agent_config.models import AgentRefs, AgentState, ConfigRefs, Problem
 from agent_runtime.model_vocab import ThinkingEffort
 
 SCHEMA_VERSION: Final = 1
@@ -225,6 +225,23 @@ def config_refs(stored: Mapping[str, Any], skill_ids: Sequence[uuid.UUID]) -> Co
     )
 
 
+def agent_refs(state: AgentState) -> AgentRefs:
+    """一个 agent 的草稿与当前版本各引用了什么。"""
+
+    agent = state.agent
+    return AgentRefs(
+        agent_id=agent.id,
+        name=agent.name,
+        description=agent.description,
+        status=agent.status,
+        active_version_id=agent.active_version_id,
+        draft=config_refs(state.draft.config, state.draft.skill_ids),
+        active=config_refs(state.active.config, state.active.skill_ids)
+        if state.active is not None
+        else None,
+    )
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "AgentConfig",
@@ -233,6 +250,7 @@ __all__ = [
     "CapToolConfig",
     "SubagentConfig",
     "ToolConfig",
+    "agent_refs",
     "config_refs",
     "dump_config",
     "empty_config",

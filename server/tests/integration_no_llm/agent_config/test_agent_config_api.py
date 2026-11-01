@@ -3,12 +3,15 @@ lockVersion 对不上 409，导出给 YAML、导入用 multipart 分两步。"""
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import httpx
 import yaml
+from fastapi import FastAPI
 
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.runtime_backed import runtime_admin
 
 
 async def login_as_root(client: httpx.AsyncClient, pg_url: str) -> None:
@@ -26,6 +29,7 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
     calls: tuple[tuple[str, str, dict[str, Any]], ...] = (
         ("GET", "/agents", {}),
         ("GET", "/agents/plugins", {}),
+        ("GET", "/agents/model-options", {}),
         ("POST", "/agents", {"json": {"id": "director", "name": "导演"}}),
         ("PUT", "/agents/order", {"json": {"ids": []}}),
         ("GET", "/agents/director", {}),
@@ -136,3 +140,81 @@ async def test_root_manages_an_agent_end_to_end(
 
     archived = await client.post("/agents/helper/archive")
     assert archived.status_code == 200 and archived.json()["status"] == "archived"
+
+
+async def save_subagents(client: httpx.AsyncClient, agent_id: str, subagents: list[str]) -> None:
+    detail = (await client.get(f"/agents/{agent_id}")).json()
+    saved = await client.put(
+        f"/agents/{agent_id}/draft",
+        json={
+            "config": {"schema_version": 1, "subagents": [{"agent": one} for one in subagents]},
+            "skillIds": [],
+            "lockVersion": detail["draft"]["lockVersion"],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+
+async def test_agents_can_start_listed_and_show_their_subagent_roles(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """``listed`` 在建的时候就能给；列表每项说它有没有子 agent、是不是别人的子 agent，详情也一样。"""
+
+    await login_as_root(client, migrated_pg)
+    listed = await client.post("/agents", json={"id": "helper", "name": "帮手", "listed": True})
+    assert listed.status_code == 201, listed.text
+    assert listed.json()["listed"] is True
+    for agent_id in ("director", "loner"):
+        assert (
+            await client.post("/agents", json={"id": agent_id, "name": agent_id})
+        ).status_code == 201
+    assert (await client.get("/agents/loner")).json()["listed"] is False
+    assert (
+        await client.post("/agents", json={"id": "model-options", "name": "x"})
+    ).status_code == 422
+
+    await save_subagents(client, "director", ["helper"])
+
+    items = {one["id"]: one for one in (await client.get("/agents")).json()["items"]}
+    assert {key: (one["hasSubagents"], one["isSubagent"]) for key, one in items.items()} == {
+        "director": (True, False),
+        "helper": (False, True),
+        "loner": (False, False),
+    }
+    assert items["helper"]["listed"] is True
+    helper = (await client.get("/agents/helper")).json()
+    assert (helper["hasSubagents"], helper["isSubagent"]) == (False, True)
+
+    await save_subagents(client, "director", [])
+    items = {one["id"]: one for one in (await client.get("/agents")).json()["items"]}
+    assert (items["director"]["hasSubagents"], items["helper"]["isSubagent"]) == (False, False)
+
+
+async def test_agent_answers_name_the_people_behind_the_ids(
+    app: FastAPI, client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """建的人与改草稿的人都带显示名（没设显示名时用用户名）；运行时记下的人在本系统里没有时为 null。"""
+
+    author = await register_and_login(client, username="root", email="root@example.com")
+    await set_roles_in_db(migrated_pg, "root@example.com", ["root"])
+    stranger = str(uuid.uuid4())
+    async with runtime_admin(app, end_user=stranger) as direct:
+        ghost = await direct.post("/agents", json={"id": "ghost-made", "name": "无主"})
+        assert ghost.status_code == 201, ghost.text
+
+    created = await client.post("/agents", json={"id": "director", "name": "导演"})
+
+    assert created.status_code == 201, created.text
+    assert (created.json()["createdBy"], created.json()["createdByName"]) == (author, "root")
+    assert created.json()["draft"]["updatedByName"] == "root"
+    await save_subagents(client, "ghost-made", [])
+    edited = (await client.get("/agents/ghost-made")).json()
+    assert (edited["createdBy"], edited["createdByName"]) == (stranger, None)
+    assert (edited["draft"]["updatedBy"], edited["draft"]["updatedByName"]) == (author, "root")
+    items = {one["id"]: one for one in (await client.get("/agents")).json()["items"]}
+    assert (items["director"]["createdByName"], items["ghost-made"]["createdByName"]) == (
+        "root",
+        None,
+    )
+    versions = await client.get("/agents/director/versions")
+    assert versions.status_code == 200 and versions.json() == {"items": []}

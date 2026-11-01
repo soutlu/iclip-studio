@@ -30,7 +30,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from agent_runtime.config.agent_config.config import config_refs
+from agent_runtime.config.agent_config.config import agent_refs
 from agent_runtime.config.agent_config.models import (
     STATUS_ACTIVE,
     Agent,
@@ -521,23 +521,7 @@ class SqlAgentStore:
     async def references(self) -> tuple[AgentRefs, ...]:
         states = await self.list()
         return tuple(
-            sorted(
-                (
-                    AgentRefs(
-                        agent_id=state.agent.id,
-                        name=state.agent.name,
-                        description=state.agent.description,
-                        status=state.agent.status,
-                        active_version_id=state.agent.active_version_id,
-                        draft=config_refs(state.draft.config, state.draft.skill_ids),
-                        active=config_refs(state.active.config, state.active.skill_ids)
-                        if state.active is not None
-                        else None,
-                    )
-                    for state in states
-                ),
-                key=lambda refs: refs.agent_id,
-            )
+            sorted((agent_refs(state) for state in states), key=lambda refs: refs.agent_id)
         )
 
     async def create(
@@ -546,6 +530,7 @@ class SqlAgentStore:
         *,
         name: str,
         description: str,
+        listed: bool,
         config: Mapping[str, Any],
         by: uuid.UUID,
     ) -> None:
@@ -556,7 +541,7 @@ class SqlAgentStore:
                     agent_id,
                     name=name,
                     description=description,
-                    listed=False,
+                    listed=listed,
                     config=config,
                     skill_ids=(),
                     by=by,

@@ -575,10 +575,10 @@ def build_app(
         return True
 
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
-    # 配置页的三组管理接口转给运行时服务。
-    skills = build_skills_module(runtime_client)
+    # 配置页的三组管理接口转给运行时服务；技能库与 agent 配置的答复里的操作人由 identity 补上显示名。
+    skills = build_skills_module(runtime_client, identity.users.display_names)
     model_providers = build_model_providers_module(runtime_client)
-    agent_config = build_agent_config_module(runtime_client)
+    agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 
     # 审计报表读运行时的数据只经它的统计接口。
     audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))

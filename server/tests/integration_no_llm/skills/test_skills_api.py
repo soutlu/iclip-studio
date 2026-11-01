@@ -4,12 +4,20 @@
 from __future__ import annotations
 
 import io
+import uuid
 import zipfile
 from typing import Any
 
 import httpx
+from fastapi import FastAPI
 
-from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.auth import (
+    login_as_editor,
+    register_and_login,
+    set_display_name_in_db,
+    set_roles_in_db,
+)
+from tests.helpers.runtime_backed import runtime_admin
 
 SKILL_MD = "---\nname: pdf-tools\ndescription: 处理 PDF\n---\n\n# PDF 工具\n"
 
@@ -36,6 +44,11 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
             "PUT",
             f"/skills/{some}/draft/files/references/a.md",
             {"json": {"content": "x", "baseHash": None}},
+        ),
+        (
+            "POST",
+            f"/skills/{some}/draft/files/rename",
+            {"json": {"from": "references/a.md", "to": "references/b.md", "baseHash": "x"}},
         ),
         ("POST", f"/skills/{some}/versions", {"json": {}}),
         ("GET", f"/skills/{some}/export", {}),
@@ -167,3 +180,88 @@ async def test_import_creates_a_draft_only_skill(
         "/skills/import", params={"dryRun": "false"}, files=zip_upload(b"not a zip")
     )
     assert broken.status_code == 422
+
+
+async def test_renaming_a_draft_file_moves_it_in_one_step(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """内容与 hash 不变、旧路径没了；hash 对不上、新路径已有文件是 409，SKILL.md、范围外的新路径与原地
+    改名是 422，原文件不在是 404。被拒的改名什么都不动。"""
+
+    await login_as_root(client, migrated_pg)
+    created = await client.post(
+        "/skills", json={"name": "pdf-tools", "displayName": "PDF 工具", "description": "处理 PDF"}
+    )
+    base = f"/skills/{created.json()['id']}"
+    files = f"{base}/draft/files"
+    first = (
+        await client.put(f"{files}/references/a.md", json={"content": "甲", "baseHash": None})
+    ).json()
+    await client.put(f"{files}/references/b.md", json={"content": "乙", "baseHash": None})
+    skill_md = (await client.get(f"{files}/SKILL.md")).json()
+
+    async def rename(source: str, target: str, base_hash: str) -> httpx.Response:
+        return await client.post(
+            f"{files}/rename", json={"from": source, "to": target, "baseHash": base_hash}
+        )
+
+    refusals = (
+        (("references/a.md", "references/c.md", "0" * 64), 409),
+        (("references/a.md", "references/b.md", first["hash"]), 409),
+        (("SKILL.md", "references/SKILL.md", skill_md["hash"]), 422),
+        (("references/a.md", "scripts/a.md", first["hash"]), 422),
+        (("references/a.md", "references/a.md", first["hash"]), 422),
+        (("references/ghost.md", "references/c.md", first["hash"]), 404),
+    )
+    for args, status in refusals:
+        refused = await rename(*args)
+        assert refused.status_code == status, (args, refused.text)
+    unchanged = (await client.get(base)).json()["draftFiles"]
+    assert [one["path"] for one in unchanged] == ["SKILL.md", "references/a.md", "references/b.md"]
+
+    moved = await rename("references/a.md", "references/sub/c.md", first["hash"])
+
+    assert moved.status_code == 200, moved.text
+    assert (moved.json()["path"], moved.json()["content"], moved.json()["hash"]) == (
+        "references/sub/c.md",
+        "甲",
+        first["hash"],
+    )
+    assert (await client.get(f"{files}/references/a.md")).status_code == 404
+    after = (await client.get(base)).json()["draftFiles"]
+    assert [one["path"] for one in after] == ["SKILL.md", "references/b.md", "references/sub/c.md"]
+
+
+async def test_skill_answers_name_the_people_behind_the_ids(
+    app: FastAPI, client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """列表、详情、版本都带操作人的显示名；运行时记下的人在本系统里没有时为 null。"""
+
+    author = await login_as_root(client, migrated_pg)
+    await set_display_name_in_db(migrated_pg, "root@example.com", "管理员")
+    created = await client.post(
+        "/skills", json={"name": "pdf-tools", "displayName": "PDF 工具", "description": "处理 PDF"}
+    )
+    base = f"/skills/{created.json()['id']}"
+    published = await client.post(f"{base}/versions", json={})
+    version_id = published.json()["id"]
+    stranger = str(uuid.uuid4())
+    async with runtime_admin(app, end_user=stranger) as direct:
+        ghost = await direct.post(
+            "/skills", json={"name": "ghost-made", "displayName": "无主", "description": "x"}
+        )
+        assert ghost.status_code == 201, ghost.text
+
+    assert (created.json()["createdBy"], created.json()["createdByName"]) == (author, "管理员")
+    assert published.json()["createdByName"] == "管理员"
+    listed = {one["name"]: one for one in (await client.get("/skills")).json()["items"]}
+    assert (listed["pdf-tools"]["createdByName"], listed["ghost-made"]["createdBy"]) == (
+        "管理员",
+        stranger,
+    )
+    assert listed["ghost-made"]["createdByName"] is None
+    versions = (await client.get(f"{base}/versions")).json()["items"]
+    assert [one["createdByName"] for one in versions] == ["管理员"]
+    version = (await client.get(f"{base}/versions/{version_id}")).json()
+    assert version["createdByName"] == "管理员"
+    assert (await client.get(f"/skills/{ghost.json()['id']}")).json()["createdByName"] is None

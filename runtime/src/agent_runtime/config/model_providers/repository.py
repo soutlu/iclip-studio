@@ -72,6 +72,10 @@ class ProviderEditor(Protocol):
         """这个类型的默认模型改成本供应商的 ``model_name``，没有就建。"""
         ...
 
+    async def delete_provider(self) -> None:
+        """删掉这个供应商连同它的密钥与模型设置；调用方先确认没有指向它的默认模型。"""
+        ...
+
 
 class ModelProviderStore(Protocol):
     """``model_providers``、``provider_credentials``、``provider_models``、``default_models`` 的数据访问。"""

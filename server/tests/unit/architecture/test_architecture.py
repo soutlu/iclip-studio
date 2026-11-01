@@ -184,6 +184,7 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.config.model_providers.schemas": "模型供应商管理接口的请求体",
     "agent_runtime.config.model_providers.models": "模型类型的词表",
     "agent_runtime.config.agent_config.schemas": "agent 配置管理接口的请求体",
+    "agent_runtime.agent_usage": "管理接口答复里「谁在用」的形状，后端补名字的答复照用",
     "agent_runtime.config.agent_config.package": "agent 导出包的大小上限",
 }
 """后端源码能引用的运行时模块：接口与帧的形状、报错与客户端库。运行时的引擎、装配、服务、配置的用例与存储、

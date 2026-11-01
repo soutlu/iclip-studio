@@ -62,6 +62,10 @@ export type AgentCreateIn = {
    */
   id: string
   /**
+   * Listed
+   */
+  listed?: boolean
+  /**
    * Name
    */
   name: string
@@ -111,10 +115,18 @@ export type AgentDetailOut = {
    */
   createdBy: string
   /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
    * Description
    */
   description: string
   draft: AgentDraftOut
+  /**
+   * Hassubagents
+   */
+  hasSubagents: boolean
   /**
    * Hasunpublishedchanges
    */
@@ -123,6 +135,10 @@ export type AgentDetailOut = {
    * Id
    */
   id: string
+  /**
+   * Issubagent
+   */
+  isSubagent: boolean
   /**
    * Listed
    */
@@ -189,6 +205,10 @@ export type AgentDraftOut = {
    * Updatedby
    */
   updatedBy: string
+  /**
+   * Updatedbyname
+   */
+  updatedByName: string | null
 }
 
 /**
@@ -296,9 +316,17 @@ export type AgentOut = {
    */
   createdBy: string
   /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
    * Description
    */
   description: string
+  /**
+   * Hassubagents
+   */
+  hasSubagents: boolean
   /**
    * Hasunpublishedchanges
    */
@@ -307,6 +335,10 @@ export type AgentOut = {
    * Id
    */
   id: string
+  /**
+   * Issubagent
+   */
+  isSubagent: boolean
   /**
    * Listed
    */
@@ -511,6 +543,10 @@ export type AgentVersionDetailOut = {
    */
   createdBy: string
   /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
    * Id
    */
   id: string
@@ -540,6 +576,10 @@ export type AgentVersionOut = {
    * Createdby
    */
   createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
   /**
    * Id
    */
@@ -1609,6 +1649,32 @@ export type CredentialFieldOut = {
 }
 
 /**
+ * CredentialOptionOut
+ *
+ * agent 能选的一把密钥。
+ */
+export type CredentialOptionOut = {
+  /**
+   * Fields
+   */
+  fields: {
+    [key: string]: string
+  }
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Isdefault
+   */
+  isDefault: boolean
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
  * CredentialOut
  */
 export type CredentialOut = {
@@ -1910,6 +1976,26 @@ export type DraftFileOut = {
    * Updatedat
    */
   updatedAt: string
+}
+
+/**
+ * DraftFileRenameIn
+ *
+ * 把草稿里的一个文件改到新路径，内容不变。
+ */
+export type DraftFileRenameIn = {
+  /**
+   * Basehash
+   */
+  baseHash: string
+  /**
+   * From
+   */
+  from: string
+  /**
+   * To
+   */
+  to: string
 }
 
 /**
@@ -3339,6 +3425,38 @@ export type MetricsOut = {
 }
 
 /**
+ * ModelOptionOut
+ *
+ * agent 能选的一个对话模型。
+ */
+export type ModelOptionOut = {
+  /**
+   * Contextsize
+   */
+  contextSize: number | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Thinking
+   */
+  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+}
+
+/**
+ * ModelOptionsOut
+ *
+ * agent 编辑页选模型用：只读，只列启用的供应商。
+ */
+export type ModelOptionsOut = {
+  /**
+   * Providers
+   */
+  providers: Array<ProviderOptionOut>
+}
+
+/**
  * ModelProviderCreateIn
  */
 export type ModelProviderCreateIn = {
@@ -3910,6 +4028,34 @@ export type ProviderModelOut = {
 }
 
 /**
+ * ProviderOptionOut
+ *
+ * agent 能选的一个供应商。
+ */
+export type ProviderOptionOut = {
+  /**
+   * Credentials
+   */
+  credentials: Array<CredentialOptionOut>
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Models
+   */
+  models: Array<ModelOptionOut>
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
  * ReferenceCreateIn
  */
 export type ReferenceCreateIn = {
@@ -4265,6 +4411,10 @@ export type SkillDetailOut = {
    */
   createdBy: string
   /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
    * Description
    */
   description: string
@@ -4379,6 +4529,10 @@ export type SkillOut = {
    */
   createdBy: string
   /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
    * Description
    */
   description: string
@@ -4453,6 +4607,10 @@ export type SkillVersionDetailOut = {
    */
   createdBy: string
   /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
    * Files
    */
   files: Array<SkillFileOut>
@@ -4508,6 +4666,10 @@ export type SkillVersionOut = {
    * Createdby
    */
   createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
   /**
    * Id
    */
@@ -7124,6 +7286,23 @@ export type ImportAgentsAgentsImportPostResponses = {
 
 export type ImportAgentsAgentsImportPostResponse =
   ImportAgentsAgentsImportPostResponses[keyof ImportAgentsAgentsImportPostResponses]
+
+export type AgentModelOptionsAgentsModelOptionsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/agents/model-options'
+}
+
+export type AgentModelOptionsAgentsModelOptionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelOptionsOut
+}
+
+export type AgentModelOptionsAgentsModelOptionsGetResponse =
+  AgentModelOptionsAgentsModelOptionsGetResponses[keyof AgentModelOptionsAgentsModelOptionsGetResponses]
 
 export type ReorderAgentsAgentsOrderPutData = {
   body: AgentOrderIn
@@ -10582,6 +10761,38 @@ export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponses = {
 export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponse =
   ModelProviderDeclarationsModelProvidersDeclarationsGetResponses[keyof ModelProviderDeclarationsModelProvidersDeclarationsGetResponses]
 
+export type DeleteModelProviderModelProvidersProviderIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}'
+}
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteError =
+  DeleteModelProviderModelProvidersProviderIdDeleteErrors[keyof DeleteModelProviderModelProvidersProviderIdDeleteErrors]
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteResponse =
+  DeleteModelProviderModelProvidersProviderIdDeleteResponses[keyof DeleteModelProviderModelProvidersProviderIdDeleteResponses]
+
 export type UpdateModelProviderModelProvidersProviderIdPatchData = {
   body: ModelProviderUpdateIn
   path: {
@@ -11359,6 +11570,38 @@ export type ArchiveSkillSkillsSkillIdArchivePostResponses = {
 
 export type ArchiveSkillSkillsSkillIdArchivePostResponse =
   ArchiveSkillSkillsSkillIdArchivePostResponses[keyof ArchiveSkillSkillsSkillIdArchivePostResponses]
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostData = {
+  body: DraftFileRenameIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/draft/files/rename'
+}
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostError =
+  RenameDraftFileSkillsSkillIdDraftFilesRenamePostErrors[keyof RenameDraftFileSkillsSkillIdDraftFilesRenamePostErrors]
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: DraftFileOut
+}
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponse =
+  RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponses[keyof RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponses]
 
 export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteData = {
   body?: never

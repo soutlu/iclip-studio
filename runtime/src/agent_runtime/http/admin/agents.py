@@ -28,10 +28,15 @@ from agent_runtime.config.agent_config.public import (
     AgentVersionOut,
     AgentVersionsOut,
 )
+from agent_runtime.config.model_providers.public import ModelOptionsOut, ModelProviderService
 from agent_runtime.http.auth import EndUser
 
 
-def create_agent_config_router(service: AgentConfigService) -> APIRouter:
+def create_agent_config_router(
+    service: AgentConfigService, model_providers: ModelProviderService
+) -> APIRouter:
+    """``model_providers`` 只用来给 agent 编辑页列能选的模型。"""
+
     router = APIRouter(prefix="/agents", tags=["agents"])
 
     @router.get("", response_model=AgentsOut)
@@ -52,13 +57,19 @@ def create_agent_config_router(service: AgentConfigService) -> APIRouter:
 
         return await service.reorder(body)
 
-    # 要登记在 /{agent_id} 之前，不然 plugins 会被当成 agent 标识。
+    # 要登记在 /{agent_id} 之前，不然 plugins、model-options 会被当成 agent 标识。
     @router.get("/plugins", response_model=AgentPluginsOut)
     async def list_agent_plugins() -> AgentPluginsOut:
         """装配本服务时交给它的插件登记表里的全部插件：插件名、名字、说明、要求一起启用的插件与参数的
         JSON Schema。"""
 
         return service.plugins()
+
+    @router.get("/model-options", response_model=ModelOptionsOut)
+    async def agent_model_options() -> ModelOptionsOut:
+        """agent 能选的模型：启用的供应商，各带启用的对话模型与打码的密钥。"""
+
+        return await model_providers.model_options()
 
     @router.post("/import", response_model=AgentImportOut)
     async def import_agents(
