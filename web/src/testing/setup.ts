@@ -13,6 +13,7 @@ import { resetMockFilm } from './mocks/film'
 import { resetMockHitCases } from './mocks/hit-cases'
 import { resetMockLibraryTags } from './mocks/library-tags'
 import { resetMockMcpServers } from './mocks/mcp-servers'
+import { resetMockModelProviders } from './mocks/model-providers'
 import { resetMockClock } from './mocks/paging'
 import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
@@ -130,6 +131,7 @@ afterEach(() => {
   // 先放回预置的树，演示行的标签按名字取 id。
   resetMockLibraryTags()
   resetMockHitCases()
+  resetMockModelProviders()
   resetMockReferences()
   resetMockSession()
   resetMockSkills()

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ComponentType } from 'react'
+import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
 import { Button } from '@/shared/ui/button'
@@ -23,8 +24,9 @@ type AgentConfigPageProps = {
 type Scoped<T> = { agentId: string | null; value: T }
 
 /**
- * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」「MCP 服务」）与「新建 Agent」，下面左右各半，
- * 左边编辑 agent，右边默认是测试预览，打开配置面板时面板替换它（预览留着，只是看不见）；不开弹窗。
+ * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」「MCP 服务」，持 `model:manage` 时另有「模型与供应商」）
+ * 与「新建 Agent」，下面左右各半，左边编辑 agent，右边默认是测试预览，打开配置面板时面板替换它（预览留着，只是看不见）；
+ * 不开弹窗。
  */
 export function AgentConfigPage({
   agentId,
@@ -32,6 +34,7 @@ export function AgentConfigPage({
   PreviewConversation,
 }: AgentConfigPageProps) {
   const agents = useAgents()
+  const canManageModels = hasPermission(useUser().data, PERMISSION.modelManage)
   const { sidebarOverlay } = useShellChrome()
   const [creating, setCreating] = useState(false)
   const [edits, setEdits] = useState<Record<string, DraftValue>>({})
@@ -84,7 +87,7 @@ export function AgentConfigPage({
   const tab =
     creating || panel === null
       ? 'agent'
-      : panel.type === 'plugins' || panel.type === 'skills'
+      : panel.type === 'plugins' || panel.type === 'skills' || panel.type === 'providers'
         ? panel.type
         : panel.type.startsWith('mcp-')
           ? 'mcp'
@@ -106,6 +109,7 @@ export function AgentConfigPage({
             if (value === 'plugins') setPanel({ type: 'plugins' })
             else if (value === 'skills') setPanel({ type: 'skills', view: { kind: 'library' } })
             else if (value === 'mcp') setPanel({ type: 'mcp-library' })
+            else if (value === 'providers') setPanel({ type: 'providers' })
             else if (creating) cancelCreating()
             else setPanel(null)
           }}
@@ -136,6 +140,11 @@ export function AgentConfigPage({
             >
               MCP 服务
             </TabsTrigger>
+            {canManageModels ? (
+              <TabsTrigger disabled={creating || currentId === null} value="providers">
+                模型与供应商
+              </TabsTrigger>
+            ) : null}
           </TabsList>
         </TabsRoot>
         <Button

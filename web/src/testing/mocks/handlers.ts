@@ -8,7 +8,7 @@ import {
   type zTaskOut,
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
-import { agentConfigHandlers, mockMcpServerUsage } from './agent-config'
+import { agentConfigHandlers, mockMcpServerUsage, mockModelUsage } from './agent-config'
 import { agentPreviewHandlers } from './agent-previews'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
@@ -17,6 +17,7 @@ import { filmHandlers } from './film'
 import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
 import { mcpServerHandlers } from './mcp-servers'
+import { modelProviderHandlers } from './model-providers'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
   addMockCollection,
@@ -511,4 +512,5 @@ export const handlers = [
   }),
   ...mcpServerHandlers(mockMcpServerUsage),
   ...agentPreviewHandlers,
+  ...modelProviderHandlers(mockModelUsage),
 ]

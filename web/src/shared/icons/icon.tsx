@@ -111,6 +111,9 @@ import {
   Plug,
   ScanEye,
   KeyRound,
+  Cpu,
+  Link2,
+  Star,
   Heading2,
   Bold,
   Italic,
@@ -310,6 +313,10 @@ const ICONS = {
   restore: RotateCcw,
   skill: BookOpen,
   credential: KeyRound,
+  /** 模型与供应商：模型数、接口地址、设为默认 */
+  model: Cpu,
+  link: Link2,
+  'make-default': Star,
   /** 插件：没有专属图标的插件用 plugin */
   plugin: Wrench,
   /** MCP 服务（Agent 配置） */
