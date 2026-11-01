@@ -1,7 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { ListError, ListPending } from '@/shared/ui/list-state'
@@ -283,23 +282,13 @@ export function AgentWorkspace({
         </footer>
       </section>
 
+      {/* 没开面板时右栏是页面上的测试预览（PreviewHost），这一栏不占位。 */}
       <section
-        aria-label={panel === null ? 'Agent 预览' : '配置调整'}
-        className={cn('flex min-h-0 min-w-0 flex-col', panel === null && 'max-md:hidden')}
+        aria-label="配置调整"
+        className="flex min-h-0 min-w-0 flex-col"
+        hidden={panel === null}
       >
-        {panel === null ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-on-surface-variant">
-            <span
-              aria-hidden
-              className="grid size-10 place-items-center rounded-md bg-surface-container-high"
-            >
-              <Icon decorative name="agent" size="lg" />
-            </span>
-            <p className="max-w-full truncate text-title font-semibold text-on-surface">
-              {agent.name}
-            </p>
-          </div>
-        ) : panel.type === 'prompt' ? (
+        {panel === null ? null : panel.type === 'prompt' ? (
           <PromptPanel
             onChange={(instructions) => changeConfig({ ...draft.config, instructions })}
             onClose={closePanel}

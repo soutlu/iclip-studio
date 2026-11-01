@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
 import { agentConfigHandlers, mockMcpServerUsage } from './agent-config'
+import { agentPreviewHandlers } from './agent-previews'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
@@ -509,4 +510,5 @@ export const handlers = [
     return { id: user.id, name: user.displayName }
   }),
   ...mcpServerHandlers(mockMcpServerUsage),
+  ...agentPreviewHandlers,
 ]

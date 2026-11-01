@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { AgentPreviewConversation } from '@/routes/-agent-preview-conversation'
 import { AgentConfigPage } from './agent-config-page'
 
 type Body = Record<string, unknown>
@@ -13,7 +14,13 @@ type User = ReturnType<typeof userEvent.setup>
 
 function Harness() {
   const [agentId, setAgentId] = useState<string | undefined>(undefined)
-  return <AgentConfigPage agentId={agentId} onAgentChange={setAgentId} />
+  return (
+    <AgentConfigPage
+      agentId={agentId}
+      onAgentChange={setAgentId}
+      PreviewConversation={AgentPreviewConversation}
+    />
+  )
 }
 
 const renderPage = async () => {

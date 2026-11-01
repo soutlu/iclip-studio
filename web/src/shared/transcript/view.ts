@@ -30,6 +30,9 @@ const EMPTY_DATA: ChannelData = {
 
 export const LOADING_VIEW: TranscriptView = { ...EMPTY_DATA, status: 'loading' }
 
+/** 还没有会话（例如测试预览在第一条消息发出前还没开）：没有内容，也不用等基线。 */
+export const NO_SESSION_VIEW: TranscriptView = { ...EMPTY_DATA, status: 'ready' }
+
 export const errorView = (error: string): TranscriptView => ({
   ...EMPTY_DATA,
   error,

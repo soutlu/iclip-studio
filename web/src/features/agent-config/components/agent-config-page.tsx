@@ -1,19 +1,22 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
 import { Button } from '@/shared/ui/button'
 import { ListEmpty, ListError, ListPending } from '@/shared/ui/list-state'
 import { TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import type { DraftValue } from '../agent-draft'
-import { useAgents } from '../agents.api'
+import { useAgent, useAgents, useAgentVersions } from '../agents.api'
 import { CreateAgentPage } from './agent-definition-form'
 import { AgentWorkspace } from './agent-workspace'
 import type { Panel } from './panel'
+import { PreviewHost, type PreviewConversationProps } from './preview-host'
 
 type AgentConfigPageProps = {
   /** 地址栏里选中的 agent；不给或不存在时选第一个在用的。 */
   agentId: string | undefined
   onAgentChange: (id: string) => void
+  /** 右栏测试预览里的对话与运行过程；对话组件属于对话模块，由路由层接进来。 */
+  PreviewConversation: ComponentType<PreviewConversationProps>
 }
 
 /** 按 agent 记的界面状态：换了 agent 就各自从头（不开面板、看草稿）。 */
@@ -21,9 +24,13 @@ type Scoped<T> = { agentId: string | null; value: T }
 
 /**
  * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」「MCP 服务」）与「新建 Agent」，下面左右各半，
- * 左边编辑 agent，右边是打开的配置面板；不开弹窗，细节编辑都替换右栏。
+ * 左边编辑 agent，右边默认是测试预览，打开配置面板时面板替换它（预览留着，只是看不见）；不开弹窗。
  */
-export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps) {
+export function AgentConfigPage({
+  agentId,
+  onAgentChange,
+  PreviewConversation,
+}: AgentConfigPageProps) {
   const agents = useAgents()
   const { sidebarOverlay } = useShellChrome()
   const [creating, setCreating] = useState(false)
@@ -43,6 +50,10 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
     null
   const panel = panelState.agentId === currentId ? panelState.value : null
   const viewingVersionId = versionState.agentId === currentId ? versionState.value : null
+  // 编辑区与版本菜单读的是同一份，这里不另起请求。
+  const currentDetail = useAgent(currentId)
+  const versions = useAgentVersions(currentId)
+  const viewingVersionNumber = versions.data?.find((item) => item.id === viewingVersionId)?.version
 
   const setPanel = (next: Panel | null) => {
     if (next !== null && panel === null && document.activeElement instanceof HTMLElement)
@@ -142,7 +153,8 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
 
       <div
         className={cn(
-          'grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns] ui-motion-m motion-reduce:transition-none',
+          // relative：测试预览（PreviewHost）绝对定位在右半栏。
+          'relative grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns] ui-motion-m motion-reduce:transition-none',
           wideRight
             ? 'md:grid-cols-[minmax(420px,2fr)_minmax(0,3fr)]'
             : 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]',
@@ -182,6 +194,15 @@ export function AgentConfigPage({ agentId, onAgentChange }: AgentConfigPageProps
             }}
             panel={panel}
             viewingVersionId={viewingVersionId}
+          />
+        )}
+        {currentId === null ? null : (
+          <PreviewHost
+            agentId={currentId}
+            hidden={creating || panel !== null || !currentDetail.isSuccess}
+            Conversation={PreviewConversation}
+            versionId={viewingVersionId}
+            versionNumber={viewingVersionNumber}
           />
         )}
       </div>
