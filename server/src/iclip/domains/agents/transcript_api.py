@@ -148,7 +148,7 @@ class ConversationHeader(Protocol):
 
 
 class Conversations(Protocol):
-    """对话可见性与 Agent 绑定查询协议。"""
+    """对话可见性与 Agent 绑定查询协议。agent 测试预览的 id 也在这里认，谁认得由实现一处判。"""
 
     async def agent_of(self, principal: Principal, conversation_id: str, *, writing: bool) -> str:
         """读取可见对话的 Agent id；writing=True 时仅允许属主，不可见时抛 NotFound。"""
@@ -230,8 +230,13 @@ class LiveConnections:
         )
 
     def announce_activity(self, frame: WorkChangedFrame) -> None:
-        """把运行时的活动帧发给属主与治理者的连接：按解析出的属主找连接，发的是运行时的原文。"""
+        """把运行时的活动帧发给属主与治理者的连接：按解析出的属主找连接，发的是运行时的原文。
 
+        预览会话的活动谁都不发：它不是对话，侧栏、列表与「在忙」都不该看到它；预览页的忙闲看它自己订着的
+        transcript。"""
+
+        if frame.event.preview:
+            return
         self._announce(
             uuid.UUID(frame.event.owner_user_id), RawFrame(type=frame.event.type, text=frame.text)
         )

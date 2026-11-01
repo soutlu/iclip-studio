@@ -20,7 +20,7 @@ Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproje
 
 浏览器那条 WebSocket（`/ws`）是一条转发：每条浏览器连接对应一条运行时的对话内容流，连上浏览器后就连它。`subscribe_v2` 先在后端核这段对话的可见性，看不见的、不存在的与写法不对的就地回 `not_found`、不转过去；看得见的换成规范写法的 id 原样转过去，档位、水位、补批与子代理流的归属由运行时照同一套规则处理，回执也由它给，所以每帧只有一个回执。`unsubscribe_v2` 原样转过去。运行时发来的回执、reset / ops、文件变化与它新加的帧不解析，原文转给浏览器。会话活动由应用事件流送来，后端原样发给属主与治理者的连接；其余全局帧只在后端。浏览器这一段的心跳照旧，运行时那一段的心跳由客户端库自动回。对话内容流断了（运行时关连接、网络中断）就以 `1001` 关掉浏览器连接，客户端照常重连、重订。连接结束时退出对话内容流，运行时撤掉它的全部订阅并放开实时状态。
 
-会话活动经运行时的应用事件流到后端：每个后端进程一个消费者（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)），随 lifespan 起停，逐个处理事件，按解析出的属主把运行时的 `event.session.work_changed` 原文发给属主与治理者（运行时新加的字段一并到达），认不出类型的帧记日志后跳过。事件流断了（含后端启动时运行时还没起来）先记日志（从没连上过时只在第一次失败记一条 info「运行时还没起来」，自启动起超过 60 秒仍没连上才每次记 warning；连上过再断，每次失败都记 warning），再以 `1001` 关掉此刻全部浏览器连接（断线期间的事件不补发，客户端重连后重拉列表对齐），然后按封顶 10 秒的退避重连；每次连上时也以 `1001` 关掉此刻全部浏览器连接，因为浏览器的重连退避与这里不同，可能在断线期间就已重连、重拉过，之后到事件流连上为止的活动它收不到。活动与轮次收尾分走两条上游，两者之间不保证先后；前端收到活动变化就按 id 补读一行，读的期间到达的帧在结果回来后重放，收到空闲那一帧之后读到的行已经是空闲。
+会话活动经运行时的应用事件流到后端：每个后端进程一个消费者（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)），随 lifespan 起停，逐个处理事件，按解析出的属主把运行时的 `event.session.work_changed` 原文发给属主与治理者（运行时新加的字段一并到达；标着 `preview` 的谁都不发），认不出类型的帧记日志后跳过。事件流断了（含后端启动时运行时还没起来）先记日志（从没连上过时只在第一次失败记一条 info「运行时还没起来」，自启动起超过 60 秒仍没连上才每次记 warning；连上过再断，每次失败都记 warning），再以 `1001` 关掉此刻全部浏览器连接（断线期间的事件不补发，客户端重连后重拉列表对齐），然后按封顶 10 秒的退避重连；每次连上时也以 `1001` 关掉此刻全部浏览器连接，因为浏览器的重连退避与这里不同，可能在断线期间就已重连、重拉过，之后到事件流连上为止的活动它收不到。活动与轮次收尾分走两条上游，两者之间不保证先后；前端收到活动变化就按 id 补读一行，读的期间到达的帧在结果回来后重放，收到空闲那一帧之后读到的行已经是空闲。
 
 视频业务的 agent 插件是另一个单独的 Python 项目 [plugins/video/](../plugins/video/pyproject.toml)（包 `iclip_video`，现有 `iclip_studio`、`video`、`video_shots`、`video_breakdown`、`shot_video` 五个插件包，以及镜头组规则、出片正文的拼装与反拆、镜头组表、拆解文档与视频拆解协议、制作页视图的形状这些视频格式代码）；它只依赖运行时，后端依赖它，运行时不依赖它，它也绝不引用后端，边界以 [plugins/video/tach.toml](../plugins/video/tach.toml) 和 [视频插件架构测试](../plugins/video/tests/unit/architecture/test_architecture.py) 为准。插件不做 ffmpeg、图片合成、媒体下载与对象存储写入：`shot_video` 的取帧拼板与宫格切格是插件声明的两个粗粒度端口（`FrameBoards`、`GridCuts`），由后端的 [app/shot_media.py](../server/src/iclip/app/shot_media.py) 实现；切格时插件只说要留哪几格（出图按帧号、设定图按序号），每格存到哪个对象 key 由后端按存储布局定。
 
@@ -68,7 +68,9 @@ Agent 运行时是仓库里单独的 Python 项目 [runtime/](../runtime/pyproje
 4. 装配：`Agent.from_spec(AgentSpec(capabilities=编译出的插件条目), custom_capability_types=插件登记表, model=…, instructions=…, capabilities=[StepPersistence, 用量台账, 技能, 子代理])`（[harness/agents.py](../runtime/src/agent_runtime/harness/agents.py)）。模型由 [assembly/models.py](../runtime/src/agent_runtime/assembly/models.py) 的 `build_provider_model` 按「声明 + 模型 + 解密后的密钥字段 + 思考档位」建出。工具参数纠错 3 次；审批只挂顶层；子代理用 `SubAgents`，每个按它自己的当前版本经同一套缓存装配，名字是它的 agent 标识，描述取 agent 的描述，transcript 镜像共享给子运行。顶层运行的落库 metadata 记 `agent_id`、`agent_version_id`（按草稿装配时是 `agent_draft_lock_version` 与 `agent_draft: "true"`）、`model`、`thinking_effort` 与 `skills`（`name:content_hash`，逗号分隔）；子运行记 `agent_name`、`model`、`thinking_effort` 三个键，实时任务卡与历史按它们读。
 5. 上下文窗口取这次所用模型的 `context_size`，没有就不压缩、不报用量；读历史页时的用量仪表取同一个值。
 
-`AgentRuntime.for_draft` 按某个 agent 当前的草稿装配，留给以后的预览用，没有接到 HTTP 上。对话标题用 `llm` 的默认模型起，没设就不起。
+**测试预览。** 预览会话是 `agent_runtime.sessions` 里 `preview_agent_id` 有值的那些，开法是 `POST /v1/sessions` 给 `preview`（不看上不上菜单、在不在用、发没发布过）。`RunAgents` 照上面第 1 步按会话取：预览会话只跑它预览的 agent，版本为空就经 `AgentRuntime.for_draft` 装那个 agent 当下的草稿（缓存键带草稿的 `lock_version`，改了草稿下一次运行就换），否则装固定的那一版。是不是预览开了就不再变，`SessionApps` 连同归属一起记住它，填进事件流的活动帧与三个回调的请求体（`preview`）；预览会话不能分叉、不能当拷文件的源或目标，`/v1/stats` 不算它们。后端在 `iclip.agent_previews` 记每段预览归谁（对话域的 `ConversationService`，端点 `/agents/{id}/previews` 也挂在对话域），transcript、发消息、订阅与读工作区文件认不认预览 id 都只在对话服务的同一处判（属主本人且此刻持 `agent:manage`）；运行开始与轮次开始的回调遇到预览什么都不做，事件流消费者不转发预览的活动，开跑检查另要属主持 `agent:manage`。
+
+对话标题用 `llm` 的默认模型起，没设就不起。
 
 **技能缓存。** 技能的一个版本按内容 hash 写进本机目录，即运行时配置的 `agent_runs.skill_cache_dir`（不写时是系统临时目录下的 `agent-runtime-skills`）：`<目录>/<content_hash>/<name>/SKILL.md` 与 `references/`，目录已在就跳过，多个进程同时写时各写临时目录再改名。Harness 的 `Skills` 以缓存目录为工作区、按 hash 目录列出这次挂的技能；`get_skill_reference` 也从这里读。
 
@@ -112,7 +114,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份；`/internal/run
 | `iclip` 成片草稿 | `domains/conversations/infra_sql.py`；一段对话一行，保存按版本号带条件写。端点与权限在对话域，引用的生成记录由对话域声明的端口经组合根的 [app/whole_film_drafts.py](../server/src/iclip/app/whole_film_drafts.py) 接到生成仓储核对，媒体生成没开也照样核对 |
 | `agent_runtime` 运行历史与快照 | `runtime/src/agent_runtime/` 下的 `harness/step_store_pg.py`，实现官方 StepStore 协议。快照消息的存法同官方 PostgresStepStore：每条消息按 sha256 在 `snapshot_messages` 只存一份，快照行只记引用；整段历史内联的旧行照常读。被修剪快照用过的消息与外置媒体一样不回收 |
 | `agent_runtime` prompt 队列、运行关联与审批记录 | `runtime/src/agent_runtime/` 下的 `harness/jobs.py` |
-| `agent_runtime` 运行时会话 | `runtime/src/agent_runtime/` 下的 `harness/sessions.py`；一段对话一行，id 等于对话 id，`agent_version_id` 是它固定的 agent 版本（外键指向同一 schema 的 `agent_versions`，可空）；不加指向对话表与用户表的外键 |
+| `agent_runtime` 运行时会话 | `runtime/src/agent_runtime/` 下的 `harness/sessions.py`；一段对话一行，id 等于对话 id，`agent_version_id` 是它固定的 agent 版本（外键指向同一 schema 的 `agent_versions`，可空）；`preview_agent_id` 有值的是测试预览（外键指向 `agents`），见上文「测试预览」；不加指向对话表与用户表的外键 |
 | `agent_runtime` 工作区与对话素材台账 | `runtime/src/agent_runtime/` 下的 `file_store/pg.py`、`material_ledger/pg.py` |
 | `agent_runtime` 对话用量台账 | `runtime/src/agent_runtime/` 下的 `harness/usage_ledger_pg.py`；`harness/usage_ledger.py` 的 capability 挂在每个 Agent 上，模型每答一次按（对话，模型）累加 token |
 | `public` 生成任务调度表 | procrastinate；DDL 随 Alembic 迁移维护；版本在 pyproject 精确 pin，升级时把它新增的迁移脚本抄成一个新 revision |

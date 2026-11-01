@@ -102,7 +102,7 @@ def create_app(
     # 登记的对话内容流连接，跟着订阅走。
     session_store = PgSessionStore(active_engine)
     session_apps = SessionApps(session_store)
-    event_hub = AppEventHub(session_apps.app_of)
+    event_hub = AppEventHub(session_apps.info_of)
     file_changes = SessionFileChanges()
 
     def on_activity(session_id: str, owner: uuid.UUID, state: ActivityState) -> None:
@@ -176,6 +176,7 @@ def create_app(
     sessions = SessionService(
         sessions=session_store,
         version_for_new_session=agent_config.version_for_new_session,
+        check_preview_target=agent_config.check_preview_target,
         queue=job_queue,
         history=transcript_history,
         files=file_store,
@@ -190,6 +191,11 @@ def create_app(
         client=hook_client,
     )
 
+    async def is_preview(session_id: str) -> bool:
+        # 查不到会话行就按普通会话报：开跑检查自己会因找不到会话而不放行。
+        found = await session_apps.info_of(session_id)
+        return found is not None and found.preview
+
     async def deps_for(row: JobRow) -> AgentRunDeps:
         # 开跑检查：应用不放行就抛，这次运行记为失败。
         await hooks.gate(
@@ -199,6 +205,7 @@ def create_app(
                 user_name=row.user_name,
                 prompt_id=row.prompt_id,
                 run_id=row.run_id,
+                preview=await is_preview(row.conversation_id),
             )
         )
         return AgentRunDeps(
@@ -214,12 +221,17 @@ def create_app(
                 session_id=uuid.UUID(row.conversation_id),
                 run_id=run_id,
                 activity=_activity_out(states[row.conversation_id]),
+                preview=await is_preview(row.conversation_id),
             )
         )
 
     async def turn_started(row: JobRow) -> None:
         await hooks.turn_started(
-            TurnStartedPayload(session_id=uuid.UUID(row.conversation_id), text=row.text)
+            TurnStartedPayload(
+                session_id=uuid.UUID(row.conversation_id),
+                text=row.text,
+                preview=await is_preview(row.conversation_id),
+            )
         )
 
     transcripts = TranscriptService(

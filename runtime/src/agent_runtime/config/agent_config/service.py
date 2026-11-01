@@ -314,6 +314,15 @@ class AgentConfigService:
             raise ValidationFailed(f"{state.agent.name} 不在首页菜单上，不能直接开对话")
         return state.active.id
 
+    async def check_preview_target(self, agent_id: str, version_id: uuid.UUID | None) -> None:
+        """预览会话要试的 agent 与版本（为空即草稿）在不在：没有这个 agent 是 ``NotFound``，版本不是它的是
+        ``ValidationFailed``。不看上不上菜单、在不在用、发没发布过：预览本来就是发布前试草稿。"""
+
+        if await self._store.get(agent_id) is None:
+            raise NotFound(f"没有标识为 {agent_id} 的 agent")
+        if version_id is not None and await self._store.version(agent_id, version_id) is None:
+            raise ValidationFailed(f"这个版本不是 {agent_id} 的")
+
     async def runtime_version(self, agent_id: str, version_id: uuid.UUID) -> AgentVersion | None:
         """这个 agent 的这个版本；不属于它给 ``None``。"""
 

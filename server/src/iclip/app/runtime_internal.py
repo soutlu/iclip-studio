@@ -11,7 +11,7 @@ import asyncio
 import hmac
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 import structlog
@@ -48,7 +48,7 @@ from iclip_video.video_breakdown.ports import ReferenceBreakdowns
 from iclip_video.video_breakdown.wire import ReferenceBreakdownCall, ReferenceBreakdownResult
 
 from iclip.domains.conversations.service import ConversationActivity, ConversationService
-from iclip.domains.identity.public import Principal
+from iclip.domains.identity.public import AGENT_MANAGE_PERMISSION, Principal
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -179,15 +179,21 @@ def create_runtime_internal_router(
 
     @router.post("/hooks/gate", status_code=204)
     async def gate(payload: GatePayload) -> Response:
-        """属主账号还在、没停用才放行；不在 404，停用 403。"""
+        """属主账号还在、没停用才放行；不在 404，停用 403。预览会话另要属主此刻持 ``agent:manage``，
+        没有是 403：预览只给持它的属主本人用，排着的消息也不例外。"""
 
-        await user_principal(payload.owner_user_id)
+        owner = await user_principal(payload.owner_user_id)
+        if payload.preview and not owner.has(AGENT_MANAGE_PERMISSION):
+            raise PermissionDenied("预览的属主已不能管理 agent")
         return Response(status_code=204)
 
     @router.post("/hooks/run-started", status_code=204)
     async def run_started(payload: RunStartedPayload) -> Response:
-        """记录运行并广播整行，行里的活动用回调带来的那份；对话不存在或已删 404。"""
+        """记录运行并广播整行，行里的活动用回调带来的那份；对话不存在或已删 404。预览会话不是对话，
+        什么都不做。"""
 
+        if payload.preview:
+            return Response(status_code=204)
         reported = payload.activity
         await conversations.begin_reported_run(
             payload.session_id,
@@ -202,9 +208,10 @@ def create_runtime_internal_router(
 
     @router.post("/hooks/turn-started", status_code=204)
     async def turn_started(payload: TurnStartedPayload) -> Response:
-        """按这一轮的用户文本在后台起标题，不等它起完就答 204。"""
+        """按这一轮的用户文本在后台起标题，不等它起完就答 204。预览没有标题，不起。"""
 
-        naming.start(payload.session_id, payload.text)
+        if not payload.preview:
+            naming.start(payload.session_id, payload.text)
         return Response(status_code=204)
 
     answer = plugins.answer()
@@ -216,7 +223,7 @@ def create_runtime_internal_router(
         return answer
 
     if plugins.shot_video is not None:
-        _image_routes(router, plugins.shot_video.generations)
+        _image_routes(router, plugins.shot_video.generations, conversations)
         _boards_route(router, plugins.shot_video.boards)
         _cuts_route(router, plugins.shot_video.cuts)
     if plugins.breakdowns is not None:
@@ -224,13 +231,23 @@ def create_runtime_internal_router(
     return router
 
 
-def _image_routes(router: APIRouter, generations: ImageGenerations) -> None:
+def _image_routes(
+    router: APIRouter, generations: ImageGenerations, conversations: ConversationService
+) -> None:
     @router.post("/plugins/generations")
     async def submit_image(body: ImageSubmission) -> ImageJob:
-        """提交出图；请求不合法 422，原话同进程内交给工具的那句。"""
+        """提交出图；请求不合法 422，原话同进程内交给工具的那句。
 
+        测试预览里出的图不挂对话：照常是属主的一条生成记录（同上传），``iclip`` 里不留按预览 id 记的东西，
+        按对话列记录与生成帧也就带不出预览。从这张宫格切出的图沿用它的对话，一样不挂。"""
+
+        request = body.request
+        if request.conversation_id is not None and await conversations.is_preview(
+            request.conversation_id
+        ):
+            request = replace(request, conversation_id=None)
         try:
-            return await generations.submit(body.user_id, body.request)
+            return await generations.submit(body.user_id, request)
         except InvalidImageRequest as exc:
             raise ValidationFailed(str(exc)) from exc
 

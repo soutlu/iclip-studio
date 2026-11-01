@@ -400,6 +400,43 @@ export type AgentPluginsOut = {
 }
 
 /**
+ * AgentPreviewIn
+ *
+ * 开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。
+ */
+export type AgentPreviewIn = {
+  /**
+   * Versionid
+   */
+  versionId?: string | null
+}
+
+/**
+ * AgentPreviewOut
+ *
+ * 一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它
+ * 的人、且他此刻持 ``agent:manage`` 时认得。
+ */
+export type AgentPreviewOut = {
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Versionid
+   */
+  versionId: string | null
+}
+
+/**
  * AgentProblemOut
  */
 export type AgentProblemOut = {
@@ -7504,6 +7541,77 @@ export type ExportAgentAgentsAgentIdExportGetResponses = {
    */
   200: unknown
 }
+
+export type OpenPreviewAgentsAgentIdPreviewsPostData = {
+  /**
+   * Body
+   */
+  body?: AgentPreviewIn | null
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/previews'
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostError =
+  OpenPreviewAgentsAgentIdPreviewsPostErrors[keyof OpenPreviewAgentsAgentIdPreviewsPostErrors]
+
+export type OpenPreviewAgentsAgentIdPreviewsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: AgentPreviewOut
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostResponse =
+  OpenPreviewAgentsAgentIdPreviewsPostResponses[keyof OpenPreviewAgentsAgentIdPreviewsPostResponses]
+
+export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+    /**
+     * Preview Id
+     */
+    preview_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/previews/{preview_id}'
+}
+
+export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteError =
+  DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteErrors[keyof DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteErrors]
+
+export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponse =
+  DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponses[keyof DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponses]
 
 export type UnarchiveAgentAgentsAgentIdUnarchivePostData = {
   body?: never

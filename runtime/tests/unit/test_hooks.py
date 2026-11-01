@@ -113,6 +113,7 @@ async def test_the_gate_posts_the_payload_with_the_token(
         "user_name": "logan",
         "prompt_id": "prm_1",
         "run_id": None,
+        "preview": False,
     }
 
 
@@ -214,15 +215,20 @@ async def test_run_started_posts_the_activity(hooks: AppHooks, recorder: Recorde
         "session_id": str(SESSION),
         "run_id": "director-1a2b3c4d",
         "activity": {"busy": True, "pending_interaction": "none", "last_turn_reason": None},
+        "preview": False,
     }
 
 
 async def test_turn_started_posts_the_text(hooks: AppHooks, recorder: Recorder) -> None:
-    await hooks.turn_started(TurnStartedPayload(session_id=SESSION, text="第一问"))
+    await hooks.turn_started(TurnStartedPayload(session_id=SESSION, text="第一问", preview=True))
 
     (request,) = recorder.requests
     assert str(request.url) == BFF_HOOKS.turn_started
-    assert json.loads(request.content) == {"session_id": str(SESSION), "text": "第一问"}
+    assert json.loads(request.content) == {
+        "session_id": str(SESSION),
+        "text": "第一问",
+        "preview": True,
+    }
 
 
 def server_error(_request: httpx.Request) -> httpx.Response:

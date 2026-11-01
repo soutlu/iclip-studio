@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Mapping
 from datetime import datetime
@@ -103,6 +104,37 @@ async def test_the_gate_refuses_a_deactivated_owner_with_403(
     assert gate.json() == {"detail": "账号已停用"}
 
 
+async def grant(engine: AsyncEngine, user_id: uuid.UUID, permissions: list[str]) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.users SET direct_permissions = CAST(:p AS jsonb) WHERE id = :id"),
+            {"p": json.dumps(permissions), "id": user_id},
+        )
+
+
+@pytest.mark.parametrize(
+    ("permissions", "status"),
+    [(["agent:manage"], 204), ([], 403)],
+    ids=["manager", "lost-agent-manage"],
+)
+async def test_the_gate_lets_a_preview_through_only_while_its_owner_manages_agents(
+    client: httpx.AsyncClient, engine: AsyncEngine, permissions: list[str], status: int
+) -> None:
+    owner = await plant_user(engine, "logan")
+    await grant(engine, owner, permissions)
+
+    preview = await client.post(
+        "/internal/runtime/hooks/gate",
+        json={**gate_body(owner), "preview": True},
+        headers=AUTHORIZED,
+    )
+    plain = await client.post(
+        "/internal/runtime/hooks/gate", json=gate_body(owner), headers=AUTHORIZED
+    )
+
+    assert (preview.status_code, plain.status_code) == (status, 204), preview.text
+
+
 async def test_the_gate_refuses_an_unknown_owner_with_404(client: httpx.AsyncClient) -> None:
     gate = await client.post(
         "/internal/runtime/hooks/gate", json=gate_body(uuid.uuid4()), headers=AUTHORIZED
@@ -168,6 +200,19 @@ async def test_run_started_on_a_deleted_conversation_is_404(
     assert started.status_code == 404
 
 
+async def test_run_started_on_a_preview_records_nothing(client: httpx.AsyncClient) -> None:
+    """预览会话不是对话：同一个没有对话行的 id，不标预览是 404，标了预览是什么都不做的 204。"""
+
+    body = {"session_id": str(uuid.uuid4()), "run_id": "run-preview", "activity": IDLE}
+
+    plain = await client.post("/internal/runtime/hooks/run-started", json=body, headers=AUTHORIZED)
+    preview = await client.post(
+        "/internal/runtime/hooks/run-started", json={**body, "preview": True}, headers=AUTHORIZED
+    )
+
+    assert (plain.status_code, preview.status_code) == (404, 204)
+
+
 async def set_default_llm(services: ConfigServices) -> None:
     providers = services.model_providers
     found = await providers.resolved(TEST_PROVIDER)
@@ -199,6 +244,27 @@ async def test_turn_started_names_the_conversation_once(
     assert (first.status_code, second.status_code) == (204, 204)
     assert named["title"] == "连衣裙短视频"
     assert kept["title"] == "我改的"
+
+
+async def test_turn_started_flagged_preview_does_not_name(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """标了预览的轮次开始不起名；拿一段默认标题的对话 id 来发，起了名就看得出来。"""
+
+    await set_default_llm(config_services_of(app))
+    await login_as_editor(client, pg_url)
+    conversation_id = await new_conversation(client, AGENT_ID)
+
+    turned = await client.post(
+        "/internal/runtime/hooks/turn-started",
+        json={"session_id": conversation_id, "text": "给新款连衣裙做一条短视频", "preview": True},
+        headers=AUTHORIZED,
+    )
+    await app.state.turn_naming.wait()
+    row = (await client.get(f"/conversations/{conversation_id}")).json()["conversation"]
+
+    assert turned.status_code == 204, turned.text
+    assert row["title"] == "新对话"
 
 
 async def test_turn_started_on_a_deleted_conversation_is_still_204(

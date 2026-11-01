@@ -718,6 +718,66 @@
         "title": "AgentPluginsOut",
         "type": "object"
       },
+      "AgentPreviewIn": {
+        "additionalProperties": false,
+        "description": "开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。",
+        "properties": {
+          "versionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionid"
+          }
+        },
+        "title": "AgentPreviewIn",
+        "type": "object"
+      },
+      "AgentPreviewOut": {
+        "additionalProperties": false,
+        "description": "一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它\n的人、且他此刻持 ``agent:manage`` 时认得。",
+        "properties": {
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "versionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionid"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "versionId",
+          "createdAt"
+        ],
+        "title": "AgentPreviewOut",
+        "type": "object"
+      },
       "AgentProblemOut": {
         "additionalProperties": false,
         "properties": {
@@ -14153,6 +14213,140 @@
           }
         ],
         "summary": "Export Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/previews": {
+      "post": {
+        "description": "给调用者开一段测试预览：不给 ``versionId`` 试这个 agent 当下的草稿（每次发消息都按那一刻的草稿\n装配），给了试它的那一版。不看上不上菜单、在不在用、发没发布过。没有这个 agent 是 404，版本不是它的\n是 422。",
+        "operationId": "open_preview_agents__agent_id__previews_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentPreviewIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Open Preview",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/previews/{preview_id}": {
+      "delete": {
+        "description": "删掉自己的一段预览；之后这个 id 在哪个端点上都是 404。不是自己的、不是这个 agent 的、没有这一段\n都是 404。",
+        "operationId": "delete_preview_agents__agent_id__previews__preview_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "preview_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Preview Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Preview",
         "tags": [
           "agents"
         ]

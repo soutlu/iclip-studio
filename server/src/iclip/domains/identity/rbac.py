@@ -37,6 +37,9 @@ MANAGE_PERMISSION: Permission = "users:manage"
 ACT_AS_PERMISSION: Permission = "users:act_as"
 """钥匙可以替 ``user_name`` 那个人提交。能替任何人写，也就能读任何人的记录。"""
 
+AGENT_MANAGE_PERMISSION: Permission = "agent:manage"
+"""管理 agent、技能与 agent 测试预览；预览只认属主本人此刻持有它。"""
+
 _VIEWER = frozenset(
     {
         "collections:read",
@@ -84,6 +87,7 @@ def is_known_role(role: str) -> bool:
 
 __all__ = [
     "ACT_AS_PERMISSION",
+    "AGENT_MANAGE_PERMISSION",
     "MANAGE_PERMISSION",
     "PERMISSIONS",
     "ROLES",

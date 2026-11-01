@@ -1,0 +1,272 @@
+"""agent 测试预览：开与删要 ``agent:manage``；预览 id 当对话 id 用在 transcript、发消息、状态、队列、读工作区
+文件与订阅上，只认属主本人、且他此刻持 ``agent:manage``，治理者也不例外；预览不是对话，不进列表、不起名，
+活动帧谁都不发。
+
+几个人：属主与另一位管理员是 editor 外加直接授的 ``agent:manage``，治理者是 editor 外加 ``users:manage``。"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+import uuid
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
+
+import httpx
+import pytest
+from fastapi import FastAPI
+from sqlalchemy import text
+from starlette.testclient import TestClient
+
+from tests.helpers.agents import AgentSeed
+from tests.helpers.app import make_client, new_conversation, settled
+from tests.helpers.auth import register_and_login
+from tests.helpers.pg import connected
+from tests.helpers.ws import AGENT_ID, open_conversation, sign_in_as, until
+
+PROMPT = {"prompt_id": "prm_preview", "content": [{"type": "text", "text": "试一下"}]}
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
+
+
+async def grant(pg_url: str, username: str, permissions: list[str]) -> None:
+    """``username`` 是 editor，另直接授 ``permissions``（替换原有的直接授权）。"""
+
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "UPDATE iclip.users SET roles = '[\"editor\"]'::jsonb,"
+                " direct_permissions = CAST(:p AS jsonb) WHERE username = :u"
+            ),
+            {"p": json.dumps(permissions), "u": username},
+        )
+
+
+ROLES: dict[str, list[str]] = {
+    "owner": ["agent:manage"],
+    "other_admin": ["agent:manage"],
+    "governor": ["users:manage"],
+    "plain": [],
+}
+
+
+@pytest.fixture
+async def people(app: FastAPI, pg_url: str) -> AsyncGenerator[dict[str, httpx.AsyncClient]]:
+    """每人一个登录好的客户端。"""
+
+    clients: dict[str, httpx.AsyncClient] = {}
+    try:
+        for name, permissions in ROLES.items():
+            client = make_client(app)
+            await client.__aenter__()
+            clients[name] = client
+            await register_and_login(client, username=name, email=f"{name}@example.com")
+            await grant(pg_url, name, permissions)
+        yield clients
+    finally:
+        for client in clients.values():
+            await client.__aexit__(None, None, None)
+
+
+async def open_preview(
+    client: httpx.AsyncClient, agent_id: str = AGENT_ID, body: dict[str, Any] | None = None
+) -> httpx.Response:
+    return await client.post(f"/agents/{agent_id}/previews", json=body)
+
+
+async def a_preview(client: httpx.AsyncClient) -> str:
+    opened = await open_preview(client)
+    assert opened.status_code == 201, opened.text
+    return str(opened.json()["id"])
+
+
+async def test_opening_a_preview_needs_agent_manage(people: dict[str, httpx.AsyncClient]) -> None:
+    for name in ("governor", "plain"):
+        refused = await open_preview(people[name])
+        assert refused.status_code == 403, name
+
+
+async def test_a_preview_of_the_draft_or_of_a_version_of_an_existing_agent(
+    people: dict[str, httpx.AsyncClient],
+) -> None:
+    owner = people["owner"]
+    version_id = (await owner.get(f"/agents/{AGENT_ID}")).json()["activeVersion"]["id"]
+
+    draft = await open_preview(owner)
+    pinned = await open_preview(owner, body={"versionId": version_id})
+    missing = await open_preview(owner, "nobody")
+    foreign = await open_preview(owner, body={"versionId": str(uuid.uuid4())})
+
+    assert draft.status_code == 201, draft.text
+    assert set(draft.json()) == {"id", "agentId", "versionId", "createdAt"}
+    assert (draft.json()["agentId"], draft.json()["versionId"]) == (AGENT_ID, None)
+    assert (pinned.status_code, pinned.json()["versionId"]) == (201, version_id)
+    assert missing.status_code == 404
+    assert (foreign.status_code, foreign.json()) == (
+        422,
+        {"detail": f"这个版本不是 {AGENT_ID} 的"},
+    )
+
+
+Route = Callable[[str], tuple[str, str, dict[str, Any] | None]]
+"""按会话 id 拼出（方法，路径，请求体）。"""
+
+ROUTES: dict[str, Route] = {
+    "transcript": lambda s: ("GET", f"/conversations/{s}/transcript", None),
+    "ops": lambda s: ("GET", f"/conversations/{s}/transcript/ops?since_seq=0", None),
+    "status": lambda s: ("GET", f"/conversations/{s}/status", None),
+    "queue": lambda s: ("GET", f"/conversations/{s}/prompts", None),
+    "files": lambda s: ("GET", f"/conversations/{s}/workspace/files", None),
+    "send": lambda s: (
+        "POST",
+        f"/conversations/{s}/prompts",
+        {"prompt_id": f"prm_{uuid.uuid4().hex[:8]}", "content": PROMPT["content"]},
+    ),
+    "abort": lambda s: ("POST", f"/conversations/{s}:abort", None),
+}
+
+
+async def call(client: httpx.AsyncClient, route: Route, session_id: str) -> int:
+    method, path, body = route(session_id)
+    answer = await client.request(method, path, json=body)
+    return answer.status_code
+
+
+async def statuses(client: httpx.AsyncClient, session_id: str) -> dict[str, int]:
+    """每个路由各调一次的状态码；发得出消息就等它收完尾，免得下一位撞上在跑的那条。"""
+
+    found = {name: await call(client, route, session_id) for name, route in ROUTES.items()}
+    if found["send"] == 200:
+        await settled(client, session_id)
+    return found
+
+
+ALL_OK = dict.fromkeys(ROUTES, 200) | {"abort": 204}
+ALL_HIDDEN = dict.fromkeys(ROUTES, 404)
+
+
+async def test_only_the_owner_holding_agent_manage_reaches_a_preview(
+    people: dict[str, httpx.AsyncClient], pg_url: str
+) -> None:
+    owner = people["owner"]
+    preview = await a_preview(owner)
+    conversation = await new_conversation(owner, AGENT_ID)
+
+    assert await statuses(owner, preview) == ALL_OK
+    for name in ("other_admin", "governor", "plain"):
+        assert await statuses(people[name], preview) == ALL_HIDDEN, name
+    # 对话照原来的口径：治理者读得到别人的对话、写不了，别的管理员读不到。
+    governor_on_conversation = await statuses(people["governor"], conversation)
+    assert {k: governor_on_conversation[k] for k in ("transcript", "status", "files")} == {
+        "transcript": 200,
+        "status": 200,
+        "files": 200,
+    }
+    assert governor_on_conversation["send"] == 404
+    assert await statuses(people["other_admin"], conversation) == ALL_HIDDEN
+
+    # 属主不再持 agent:manage：预览就此认不得，自己的对话照旧。
+    await grant(pg_url, "owner", [])
+    assert await statuses(owner, preview) == ALL_HIDDEN
+    assert await statuses(owner, conversation) == ALL_OK
+
+
+async def test_a_preview_runs_with_a_fixed_title_and_stays_out_of_the_conversation_list(
+    people: dict[str, httpx.AsyncClient],
+) -> None:
+    owner = people["owner"]
+    preview = await a_preview(owner)
+
+    sent = await owner.post(f"/conversations/{preview}/prompts", json=PROMPT)
+    assert sent.status_code == 200, sent.text
+    await settled(owner, preview)
+    page = (await owner.get(f"/conversations/{preview}/transcript")).json()
+    row = await owner.get(f"/conversations/{preview}")
+    sidebar = (await owner.get("/conversations")).json()
+
+    assert [turn["turnId"] for turn in page["items"]] == ["t1"]
+    assert (await owner.get(f"/conversations/{preview}/status")).json() == {"status": "completed"}
+    assert page["title"] == "测试预览"
+    assert page["owner_user_id"] == (await owner.get("/users/me")).json()["user"]["id"]
+    assert (page["deleted_at"], page["forked_from"]) == (None, None)
+    assert row.status_code == 404
+    assert sidebar["ungroupedCount"] == 0
+
+
+async def test_deleting_a_preview_is_for_its_owner_and_hides_it_everywhere(
+    people: dict[str, httpx.AsyncClient],
+) -> None:
+    owner = people["owner"]
+    preview = await a_preview(owner)
+
+    by_other = await people["other_admin"].delete(f"/agents/{AGENT_ID}/previews/{preview}")
+    wrong_agent = await owner.delete(f"/agents/director/previews/{preview}")
+    deleted = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+    again = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+
+    assert (by_other.status_code, wrong_agent.status_code) == (404, 404)
+    assert (deleted.status_code, again.status_code) == (204, 404)
+    assert await statuses(owner, preview) == ALL_HIDDEN
+
+
+# --- 订阅与活动帧 ------------------------------------------------------------------
+
+
+def _grant_sync(pg_url: str, username: str, permissions: list[str]) -> None:
+    asyncio.run(grant(pg_url, username, permissions))
+
+
+def test_subscribing_to_a_preview_is_for_its_owner_and_its_activity_reaches_nobody(
+    ws_agent_app: FastAPI, pg_url: str
+) -> None:
+    with TestClient(ws_agent_app) as tc:
+        owner = sign_in_as(tc, pg_url, username="owner", roles=("editor",))
+        governor = sign_in_as(tc, pg_url, username="governor", roles=("editor",))
+        _grant_sync(pg_url, "owner", ["agent:manage"])
+        _grant_sync(pg_url, "governor", ["users:manage"])
+        opened = tc.post(f"/agents/{AGENT_ID}/previews", headers=owner)
+        assert opened.status_code == 201, opened.text
+        preview = opened.json()["id"]
+        conversation = open_conversation(tc, headers=owner)
+
+        with (
+            tc.websocket_connect("/ws", headers=owner) as mine,
+            tc.websocket_connect("/ws", headers=governor) as theirs,
+        ):
+            for ws in (mine, theirs):
+                assert ws.receive_json()["type"] == "server_hello"
+                ws.send_json(
+                    {
+                        "type": "subscribe_v2",
+                        "id": "s1",
+                        "payload": {"session_id": preview, "transcript": {"main": "off"}},
+                    }
+                )
+            assert until(mine, "ack")["payload"]["accepted"] == [preview]
+            assert until(theirs, "ack")["payload"]["not_found"] == [preview]
+
+            # 先跑预览、再跑对话：两条连接上第一帧活动都该是对话的，预览的一帧都没有。
+            for session_id, prompt_id in ((preview, "prm_p"), (conversation, "prm_c")):
+                sent = tc.post(
+                    f"/conversations/{session_id}/prompts",
+                    json={"prompt_id": prompt_id, "content": PROMPT["content"]},
+                    headers=owner,
+                )
+                assert sent.status_code == 200, sent.text
+                _settled(tc, session_id, owner)
+            for ws in (mine, theirs):
+                first = until(ws, "event.session.work_changed")
+                assert first["session_id"] == conversation
+
+
+def _settled(tc: TestClient, session_id: str, headers: dict[str, str], tries: int = 200) -> None:
+    for _ in range(tries):
+        queue = tc.get(f"/conversations/{session_id}/prompts", headers=headers).json()
+        if queue["active"] is None and not queue["queued"]:
+            return
+        time.sleep(0.02)
+    raise AssertionError("没跑完")

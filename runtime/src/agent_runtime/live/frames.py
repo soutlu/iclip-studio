@@ -40,6 +40,8 @@ class SessionWorkChanged(Envelope):
     session_id: str
     owner_user_id: str
     """会话的属主，应用据此找该通知的人，不必回查。"""
+    preview: bool = False
+    """这段会话是不是预览会话，由分发时按会话填上；应用据此不必回查。"""
     timestamp: str
     payload: SessionActivityOut
 

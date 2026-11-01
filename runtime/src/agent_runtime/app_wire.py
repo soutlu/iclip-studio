@@ -29,11 +29,26 @@ AgentIdField = Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)
 # --- 会话 ---------------------------------------------------------------------
 
 
+class PreviewTargetIn(Envelope):
+    """预览会话试的是哪个 agent 的哪一份：``version_id`` 为空是它当下的草稿（每次运行重读），否则是它的那一版。"""
+
+    agent_id: AgentIdField
+    version_id: uuid.UUID | None = None
+
+
 class SessionOpenIn(Envelope):
-    """开一个会话：固定这个 agent 此刻的当前版本。"""
+    """开一个会话，``agent_id`` 与 ``preview`` 恰好给一个：给 ``agent_id`` 固定这个 agent 此刻的当前版本；
+    给 ``preview`` 开预览会话（不看上不上菜单、在不在用、发没发布过）。"""
 
     id: uuid.UUID
-    agent_id: AgentIdField
+    agent_id: AgentIdField | None = None
+    preview: PreviewTargetIn | None = None
+
+    @model_validator(mode="after")
+    def _one_target(self) -> Self:
+        if (self.agent_id is None) == (self.preview is None):
+            raise ValueError("agent_id 与 preview 恰好给一个")
+        return self
 
 
 class SessionForkIn(Envelope):
@@ -260,6 +275,7 @@ __all__ = [
     "FilesCopyOut",
     "FilesOut",
     "MaterialsIn",
+    "PreviewTargetIn",
     "PromptStatOut",
     "PromptStatsOut",
     "RunStatOut",

@@ -16,8 +16,10 @@ from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
+    AgentPreview,
     Conversation,
     ConversationActivity,
+    PreviewHeader,
     VideoPhase,
     WholeFilmDraft,
     WholeFilmExport,
@@ -25,6 +27,7 @@ from iclip.domains.conversations.models import (
 from iclip.domains.conversations.repository import (
     MISSING_COLLECTION,
     MISSING_TASK,
+    AgentPreviewStore,
     AuditFilter,
     ConversationRepository,
     DeletedFilter,
@@ -35,6 +38,7 @@ from iclip.domains.conversations.repository import (
 from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
 from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument
 from iclip.domains.identity.public import (
+    AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
     Principal,
     visible_owner_incl_act_as,
@@ -80,6 +84,13 @@ class RuntimeSessions(Protocol):
         """给新对话开会话，固定这个 agent 此刻的当前版本。
 
         没有这个 agent、或它不上首页菜单是 ``ValidationFailed``；已归档、还没发布过是 ``Conflict``。"""
+        ...
+
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        """开一段预览会话：``version_id`` 为空每次运行装这个 agent 当下的草稿，否则固定那一版；不看上不上
+        菜单、在不在用、发没发布过。没有这个 agent 是 ``NotFound``，版本不是它的是 ``ValidationFailed``。"""
         ...
 
     async def fork(
@@ -449,6 +460,7 @@ class ConversationService:
         self,
         repo: ConversationRepository,
         *,
+        previews: AgentPreviewStore,
         runtime: RuntimeSessions,
         list_collections: ListCollections,
         claim_task: ClaimTask,
@@ -474,6 +486,7 @@ class ConversationService:
         announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
+        self._previews = previews
         self._runtime = runtime
         self._drafts = drafts
         self._draft_references = draft_references
@@ -551,21 +564,44 @@ class ConversationService:
             return False
         return True
 
+    async def _session(
+        self, principal: Principal, conversation_id: uuid.UUID, *, writing: bool
+    ) -> Conversation | AgentPreview:
+        """transcript、订阅与读工作区文件认的那段会话：对话，或 agent 测试预览。谁能用都只在这里判。
+
+        对话照原来的口径：读按 ``_readable``，写只限属主活着的对话。不是看得见的对话时再认预览：只有它的
+        属主本人、且此刻持 ``agent:manage`` 才认，读写一样，治理者也不例外；其余一律 ``NotFound``，不泄露
+        这个 id 是对话还是预览。"""
+
+        try:
+            if writing:
+                return await self._repo.get(conversation_id, owner=principal.user_id)
+            return await self._readable(principal, conversation_id)
+        except NotFound:
+            preview = await self._previews.get(conversation_id)
+            if (
+                preview is None
+                or preview.owner_user_id != principal.user_id
+                or not principal.has(AGENT_MANAGE_PERMISSION)
+            ):
+                raise
+            return preview
+
     async def files(
         self, principal: Principal, conversation_id: uuid.UUID
     ) -> Sequence[DerivedFile]:
-        """列出可见对话的工作区文件；治理者可跨属主读取。"""
+        """列出可见对话的工作区文件；治理者可跨属主读取。预览的工作区只有它的属主读得到（见 ``_session``）。"""
 
-        conversation = await self._readable(principal, conversation_id)
-        return await self._list_derived_files(conversation.owner_user_id, conversation.id)
+        session = await self._session(principal, conversation_id, writing=False)
+        return await self._list_derived_files(session.owner_user_id, session.id)
 
     async def file(
         self, principal: Principal, conversation_id: uuid.UUID, *, path: str
     ) -> DerivedFileContent:
-        """读取工作区文件；不可见对话或不存在的文件均返回 404。"""
+        """读取工作区文件；不可见对话或不存在的文件均返回 404。预览同 ``files``。"""
 
-        conversation = await self._readable(principal, conversation_id)
-        found = await self._read_derived_file(conversation.owner_user_id, conversation.id, path)
+        session = await self._session(principal, conversation_id, writing=False)
+        found = await self._read_derived_file(session.owner_user_id, session.id, path)
         if found is None:
             raise NotFound("这段对话里没有这个文件")
         return found
@@ -1264,23 +1300,64 @@ class ConversationService:
     async def agent_of(self, principal: Principal, conversation_id: str, *, writing: bool) -> str:
         """从可见对话中读取 Agent，拒绝由调用方指定 Agent 绕过对话绑定。
 
-        读取允许治理者跨属主访问，含已删的墓碑；写入始终限定属主活着的对话。"""
+        读取允许治理者跨属主访问，含已删的墓碑；写入始终限定属主活着的对话。也认 agent 测试预览，
+        口径见 ``_session``。"""
 
         parsed = _as_conversation_id(conversation_id)
-        if writing:
-            return (await self._repo.get(parsed, owner=principal.user_id)).agent_id
-        return (await self._readable(principal, parsed)).agent_id
+        return (await self._session(principal, parsed, writing=writing)).agent_id
 
     async def get(self, principal: Principal, conversation_id: uuid.UUID) -> Conversation:
         """按 id 读一段对话的整行，可见范围同其他读路径：治理者含墓碑，其余人只见自己活着的。"""
 
         return await self._readable(principal, conversation_id)
 
-    async def header_of(self, principal: Principal, conversation_id: str) -> Conversation:
+    async def header_of(
+        self, principal: Principal, conversation_id: str
+    ) -> Conversation | PreviewHeader:
         """读取可见对话的整行，可见范围同 ``agent_of(writing=False)``。会话页首屏用它贴标题、属主与
-        删除时刻并取 Agent，一行只读一次；后续改名经 session.meta.updated 推送。"""
+        删除时刻并取 Agent，一行只读一次；后续改名经 session.meta.updated 推送。预览给固定标题，不查不起。"""
 
-        return await self._readable(principal, _as_conversation_id(conversation_id))
+        session = await self._session(
+            principal, _as_conversation_id(conversation_id), writing=False
+        )
+        if isinstance(session, AgentPreview):
+            return PreviewHeader(agent_id=session.agent_id, owner_user_id=session.owner_user_id)
+        return session
+
+    # --- agent 测试预览 -----------------------------------------------------------
+
+    async def open_preview(
+        self, principal: Principal, agent_id: str, *, version_id: uuid.UUID | None
+    ) -> AgentPreview:
+        """给调用者开一段 agent 测试预览：``version_id`` 为空试这个 agent 当下的草稿，否则试它的那一版。
+
+        运行时那边先开预览会话，再落行；没有这个 agent 是 ``NotFound``，版本不是它的是 ``ValidationFailed``。
+        中途失败只留下寻址不到的运行时会话。端点已核 ``agent:manage``。"""
+
+        preview_id = uuid.uuid4()
+        await self._runtime.open_preview(preview_id, agent_id=agent_id, version_id=version_id)
+        return await self._previews.create(
+            preview_id, owner=principal.user_id, agent_id=agent_id, version_id=version_id
+        )
+
+    async def is_preview(self, session_id: str) -> bool:
+        """这个 id 是不是一段 agent 测试预览（只按主键查，不判谁能用）；不是 UUID 的算不是。给要把预览
+        与对话分开记账的内部入口用。"""
+
+        try:
+            parsed = uuid.UUID(session_id)
+        except ValueError:
+            return False
+        return await self._previews.get(parsed) is not None
+
+    async def delete_preview(
+        self, principal: Principal, agent_id: str, preview_id: uuid.UUID
+    ) -> None:
+        """删掉调用者自己的一段预览；只删这一行，运行时的会话与它的记录留着、再也寻址不到。不是他的、
+        不是这个 agent 的、没有这一段都是 ``NotFound``。"""
+
+        if not await self._previews.delete(preview_id, owner=principal.user_id, agent_id=agent_id):
+            raise NotFound("没有这段预览")
 
 
 __all__ = [

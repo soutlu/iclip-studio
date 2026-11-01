@@ -13,6 +13,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Collection, Generator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
@@ -58,8 +59,15 @@ AT = "2026-10-30T08:00:00+00:00"
 APPS = {BFF_SESSION: "bff", OTHER_BFF_SESSION: "bff", TOOL_SESSION: "tool"}
 
 
-async def app_of(session_id: str) -> str | None:
-    return APPS.get(session_id)
+@dataclass(frozen=True)
+class Route:
+    app_id: str
+    preview: bool = False
+
+
+async def route_of(session_id: str) -> Route | None:
+    found = APPS.get(session_id)
+    return None if found is None else Route(found)
 
 
 def activity(session_id: str, *, busy: bool) -> SessionWorkChanged:
@@ -155,7 +163,7 @@ class RecordingFileChanges(SessionFileChanges):
 
 @pytest.fixture
 def hub() -> AppEventHub:
-    return AppEventHub(app_of)
+    return AppEventHub(route_of)
 
 
 @pytest.fixture

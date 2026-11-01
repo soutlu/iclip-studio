@@ -2800,6 +2800,35 @@
         "title": "OpsCatchup",
         "type": "object"
       },
+      "PreviewTargetIn": {
+        "additionalProperties": false,
+        "description": "预览会话试的是哪个 agent 的哪一份：``version_id`` 为空是它当下的草稿（每次运行重读），否则是它的那一版。",
+        "properties": {
+          "agent_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "PreviewTargetIn",
+        "type": "object"
+      },
       "ProbeOut": {
         "additionalProperties": false,
         "properties": {
@@ -3377,23 +3406,39 @@
       },
       "SessionOpenIn": {
         "additionalProperties": false,
-        "description": "开一个会话：固定这个 agent 此刻的当前版本。",
+        "description": "开一个会话，``agent_id`` 与 ``preview`` 恰好给一个：给 ``agent_id`` 固定这个 agent 此刻的当前版本；\n给 ``preview`` 开预览会话（不看上不上菜单、在不在用、发没发布过）。",
         "properties": {
           "agent_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Agent Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreviewTargetIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
-          "id",
-          "agent_id"
+          "id"
         ],
         "title": "SessionOpenIn",
         "type": "object"
@@ -8387,7 +8432,7 @@
     },
     "/v1/sessions": {
       "post": {
-        "description": "给调用方应用开会话。没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过是 409；这个 id\n已有本应用的会话就按这次的版本改写，已归别的应用是 409。",
+        "description": "给调用方应用开会话。没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过是 409；这个 id\n已有本应用的同一种会话就按这次的版本改写，已归别的应用、或已有的那一行一个是预览一个不是是 409。\n\n给 ``preview`` 开预览会话：不看上不上菜单、在不在用、发没发布过；没有这个 agent 是 404，版本不是它的\n是 422。预览会话不能分叉、不能拷文件进出，``/v1/stats`` 不算它们。",
         "operationId": "open_session_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -8646,7 +8691,7 @@
     },
     "/v1/sessions/{session_id}/files:copy": {
       "post": {
-        "description": "按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用\n的会话（目标先开好），任一不是答 404。",
+        "description": "按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用\n的会话（目标先开好），任一不是答 404；任一是预览会话答 422。",
         "operationId": "copy_files_v1_sessions__session_id__files_copy_post",
         "parameters": [
           {
@@ -9578,7 +9623,7 @@
     },
     "/v1/sessions/{session_id}:fork": {
       "post": {
-        "description": "从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件与整份素材台账、写种子快照。\n\n源不是调用方应用的会话是 404，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，\n源没跑过、轮号越界是 422；数完轮数后源的轮数又变了是 409。这些都在写任何东西之前。",
+        "description": "从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件与整份素材台账、写种子快照。\n\n源不是调用方应用的会话是 404，源或目标是预览会话是 422，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，\n源没跑过、轮号越界是 422；数完轮数后源的轮数又变了是 409。这些都在写任何东西之前。",
         "operationId": "fork_session_v1_sessions__session_id__fork_post",
         "parameters": [
           {

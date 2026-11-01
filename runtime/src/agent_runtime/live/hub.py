@@ -1,8 +1,8 @@
 """两条实时通道的分发：会话活动按应用发到应用事件流，工作区文件变化按会话发到订着它的对话内容流连接。
 
 会话活动在写入提交之后由 ``AppEventHub.publish`` 同步收下（不 await），按收下的先后排进一条队列；一个分发任务
-依次按会话找到它归哪个应用，再交给这个应用的每条连接。查归属可能要读库，整条路只有这一个消费者，所以每条
-连接上事件的先后与收下的先后一致。
+依次按会话找到它归哪个应用，再交给这个应用的每条连接；预览会话的活动在这一步标上 ``preview``。查归属可能要
+读库，整条路只有这一个消费者，所以每条连接上事件的先后与收下的先后一致。
 
 文件变化由 ``SessionFileChanges.publish`` 同步交给登记了这段会话的连接，不查归属：连接订阅时已经核过会话归
 它的应用。
@@ -23,8 +23,19 @@ from agent_runtime.live.frames import AppEvent, FsChanged
 
 _logger = structlog.stdlib.get_logger(__name__)
 
-AppOf = Callable[[str], Awaitable[str | None]]
-"""按会话 id 查它归哪个应用；没有这个会话给 ``None``。"""
+
+class SessionRoute(Protocol):
+    """分发一条会话活动要知道的：会话归哪个应用、是不是预览会话。"""
+
+    @property
+    def app_id(self) -> str: ...
+
+    @property
+    def preview(self) -> bool: ...
+
+
+RouteOf = Callable[[str], Awaitable[SessionRoute | None]]
+"""按会话 id 查它归哪个应用、是不是预览；没有这个会话给 ``None``。"""
 
 
 class EventSink(Protocol):
@@ -42,8 +53,8 @@ class FileChangeSink(Protocol):
 class AppEventHub:
     """各应用的事件流连接与按序分发事件的那个任务；任务随服务的 lifespan 起停。"""
 
-    def __init__(self, app_of: AppOf) -> None:
-        self._app_of = app_of
+    def __init__(self, route_of: RouteOf) -> None:
+        self._route_of = route_of
         self._sinks: dict[str, set[EventSink]] = {}
         self._pending: asyncio.Queue[AppEvent] = asyncio.Queue()
         self._dispatcher: asyncio.Task[None] | None = None
@@ -83,14 +94,16 @@ class AppEventHub:
         while True:
             event = await self._pending.get()
             try:
-                app_id = await self._app_of(event.session_id)
+                route = await self._route_of(event.session_id)
             except Exception:
                 _logger.exception("查不到会话归哪个应用，这条事件不发", session_id=event.session_id)
                 continue
-            if app_id is None:
+            if route is None:
                 continue
+            if route.preview:
+                event = event.model_copy(update={"preview": True})
             # 连接可能在 offer 里因积压溢出被摘掉，遍历副本。
-            for sink in tuple(self._sinks.get(app_id, ())):
+            for sink in tuple(self._sinks.get(route.app_id, ())):
                 sink.offer(event)
 
 
@@ -121,4 +134,11 @@ class SessionFileChanges:
             sink.offer(frame)
 
 
-__all__ = ["AppEventHub", "AppOf", "EventSink", "FileChangeSink", "SessionFileChanges"]
+__all__ = [
+    "AppEventHub",
+    "EventSink",
+    "FileChangeSink",
+    "RouteOf",
+    "SessionFileChanges",
+    "SessionRoute",
+]

@@ -10,10 +10,13 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Response
 
 from iclip.domains.conversations.models import Conversation, ConversationActivity
 from iclip.domains.conversations.schemas import (
+    MAX_AGENT_ID_CHARS,
+    AgentPreviewIn,
+    AgentPreviewOut,
     ConversationAgentOut,
     ConversationAgentsOut,
     ConversationCollectionIn,
@@ -42,6 +45,7 @@ from iclip.domains.conversations.schemas import (
     FilmViewEnvelope,
     SidebarCollectionOut,
     SidebarOut,
+    agent_preview_out,
     audit_item_out,
     conversation_out,
     film_image_prompt,
@@ -66,6 +70,7 @@ from iclip.domains.conversations.whole_film_schemas import (
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
+    AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
     ActAs,
     Principal,
@@ -610,4 +615,44 @@ def create_conversations_router(
     return router
 
 
-__all__ = ["create_conversations_router"]
+PreviewAgentId = Annotated[str, Path(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
+
+
+def create_previews_router(service: ConversationService) -> APIRouter:
+    """agent 测试预览：开一段、删一段，都要 ``agent:manage``；约定见合同「Agent 配置」一节。
+
+    预览的 transcript、发消息、订阅与读工作区文件走对话的那几个端点，预览 id 当对话 id 用；谁能用由对话服务
+    一处判（只有开它的人、且他此刻持 ``agent:manage``）。没有列表端点。"""
+
+    router = APIRouter(prefix="/agents/{agent_id}/previews", tags=["agents"])
+
+    @router.post("", response_model=AgentPreviewOut, status_code=201)
+    async def open_preview(
+        agent_id: PreviewAgentId,
+        principal: Annotated[Principal, require_permission(AGENT_MANAGE_PERMISSION)],
+        body: AgentPreviewIn | None = None,
+    ) -> AgentPreviewOut:
+        """给调用者开一段测试预览：不给 ``versionId`` 试这个 agent 当下的草稿（每次发消息都按那一刻的草稿
+        装配），给了试它的那一版。不看上不上菜单、在不在用、发没发布过。没有这个 agent 是 404，版本不是它的
+        是 422。"""
+
+        preview = await service.open_preview(
+            principal, agent_id, version_id=None if body is None else body.version_id
+        )
+        return agent_preview_out(preview)
+
+    @router.delete("/{preview_id}", status_code=204)
+    async def delete_preview(
+        agent_id: PreviewAgentId,
+        preview_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission(AGENT_MANAGE_PERMISSION)],
+    ) -> None:
+        """删掉自己的一段预览；之后这个 id 在哪个端点上都是 404。不是自己的、不是这个 agent 的、没有这一段
+        都是 404。"""
+
+        await service.delete_preview(principal, agent_id, preview_id)
+
+    return router
+
+
+__all__ = ["create_conversations_router", "create_previews_router"]

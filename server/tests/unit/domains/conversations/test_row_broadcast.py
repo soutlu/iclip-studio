@@ -17,7 +17,11 @@ import pytest
 from agent_runtime.errors import NotFound
 
 from iclip.domains.conversations.models import Conversation, ConversationActivity, TitleKind
-from iclip.domains.conversations.repository import ConversationRepository, WholeFilmDraftStore
+from iclip.domains.conversations.repository import (
+    AgentPreviewStore,
+    ConversationRepository,
+    WholeFilmDraftStore,
+)
 from iclip.domains.conversations.service import (
     ActivitiesOf,
     ClaimTask,
@@ -183,6 +187,11 @@ class OpensSessions:
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         return None
 
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        _untouched()
+
     async def fork(
         self,
         *,
@@ -243,6 +252,7 @@ def build(
 ) -> ConversationService:
     return ConversationService(
         cast("ConversationRepository", repo),
+        previews=cast("AgentPreviewStore", object()),
         runtime=OpensSessions(),
         list_collections=_untouched,
         claim_task=claim_task,

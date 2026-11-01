@@ -2,7 +2,8 @@
 
 会话 id 等于应用那一侧的对话 id；工作区与素材台账的命名空间是「属主/会话 id」，所以两端的属主都要给。
 会话归开它的应用（``app_id`` 是接入应用的标识）：别的应用问到它与问到不存在的会话一样是 ``NotFound``，
-同一个 id 也不能被别的应用开走。
+同一个 id 也不能被别的应用开走。预览会话（管理员试 agent 草稿或某一版用的）也在这里开，它不能分叉、不能
+当拷文件的源或目标。
 几处写入各开各的事务，没有统一回滚：应用在这些都写完之后才落自己的记录，中途失败只留下寻址不到的数据。
 
 拷进新会话的文件走 ``FileStore`` 的写入口：容量上限与路径校验照旧生效。给它的存储不能是会发文件变更帧
@@ -24,30 +25,46 @@ from agent_runtime.material_ledger.store import Material
 SESSION_NOT_FOUND: Final = "没有这段会话"
 """会话不在、或归别的应用时的报错：两种说法一样，不让别的应用看出这个 id 有人用。"""
 
-SESSION_ID_TAKEN: Final = "这个会话 id 已经被别的应用用了，换一个"
+SESSION_ID_TAKEN: Final = "这个会话 id 已经被用了，换一个"
+"""开会话撞上已有的一行：它归别的应用，或它与这次一个是预览会话一个不是。id 由应用铸，换一个就行。"""
+
+PREVIEW_NOT_FORKABLE: Final = "预览会话不能分叉，也不能拷文件进出"
 
 
 class SessionStore(Protocol):
-    """会话表：会话归哪个应用、固定的 agent 版本。"""
+    """会话表：会话归哪个应用、固定的 agent 版本、是不是预览。"""
 
     async def open(
-        self, session_id: uuid.UUID, *, app_id: str, agent_version_id: uuid.UUID | None
+        self,
+        session_id: uuid.UUID,
+        *,
+        app_id: str,
+        agent_version_id: uuid.UUID | None,
+        preview_agent_id: str | None = None,
     ) -> bool:
-        """开会话；这个 id 已归别的应用时什么都不写、回 ``False``。"""
+        """开会话；这个 id 已归别的应用、或已有的那一行与这次不是同一种时什么都不写、回 ``False``。"""
         ...
 
     async def copy(self, source_id: uuid.UUID, target_id: uuid.UUID, *, app_id: str) -> bool:
-        """照抄源的版本开会话；目标 id 已归别的应用时什么都不写、回 ``False``。"""
+        """照抄源的版本开会话；目标 id 已归别的应用或是预览时什么都不写、回 ``False``。"""
         ...
 
     async def owned(
         self, session_ids: Collection[uuid.UUID], *, app_id: str
     ) -> frozenset[uuid.UUID]: ...
 
+    async def previews(self, session_ids: Collection[uuid.UUID]) -> frozenset[uuid.UUID]:
+        """``session_ids`` 里是预览会话的那些。"""
+        ...
+
 
 VersionForNewSession = Callable[[str], Awaitable[uuid.UUID]]
 """新会话要固定的版本：这个 agent 的当前版本。没有这个 agent 或它不上菜单是 ``ValidationFailed``，
 已归档或还没发布过是 ``Conflict``。"""
+
+CheckPreviewTarget = Callable[[str, uuid.UUID | None], Awaitable[None]]
+"""预览会话要试的 agent 与版本（为空即草稿）：没有这个 agent 是 ``NotFound``，版本不是它的是
+``ValidationFailed``。"""
 
 
 class SessionQueue(Protocol):
@@ -88,6 +105,7 @@ class SessionService:
         *,
         sessions: SessionStore,
         version_for_new_session: VersionForNewSession,
+        check_preview_target: CheckPreviewTarget,
         queue: SessionQueue,
         history: ForkHistory,
         files: FileStore,
@@ -95,6 +113,7 @@ class SessionService:
     ) -> None:
         self._sessions = sessions
         self._version_for_new_session = version_for_new_session
+        self._check_preview_target = check_preview_target
         self._queue = queue
         self._history = history
         self._files = files
@@ -124,6 +143,25 @@ class SessionService:
         if not await self._sessions.open(session_id, app_id=app_id, agent_version_id=version_id):
             raise Conflict(SESSION_ID_TAKEN)
 
+    async def open_preview(
+        self, session_id: uuid.UUID, *, app_id: str, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        """给 ``app_id`` 开一个预览会话：``version_id`` 为空就是每次运行装这个 agent 当下的草稿，否则固定
+        那一版。不看上不上菜单、在不在用、发没发布过。
+
+        没有这个 agent 是 ``NotFound``，版本不是它的是 ``ValidationFailed``；这个 id 已归别的应用、或已是
+        普通会话、或预览的是别的 agent 都是 ``Conflict``。同一应用、同一 agent 的预览会话按这次的版本改写。"""
+
+        await self._check_preview_target(agent_id, version_id)
+        if not await self._sessions.open(
+            session_id, app_id=app_id, agent_version_id=version_id, preview_agent_id=agent_id
+        ):
+            raise Conflict(SESSION_ID_TAKEN)
+
+    async def _refuse_previews(self, *session_ids: uuid.UUID) -> None:
+        if await self._sessions.previews(session_ids):
+            raise ValidationFailed(PREVIEW_NOT_FORKABLE)
+
     async def fork(
         self,
         *,
@@ -138,7 +176,8 @@ class SessionService:
         """从源会话的第 ``turn`` 轮分叉出归 ``app_id`` 的新会话：固定版本、拷工作区文件与整份素材台账、
         写种子快照。
 
-        源不归 ``app_id`` 是 ``NotFound``，最先查，报错同会话不存在。``agent_id`` 为 None 照抄源会话的
+        源不归 ``app_id`` 是 ``NotFound``，最先查，报错同会话不存在；源或目标是预览会话是
+        ``ValidationFailed``。``agent_id`` 为 None 照抄源会话的
         版本，否则按 ``open`` 固定那个 agent 的当前版本、照它抛错；目标 id 已归别的应用是 ``Conflict``。
         源有没跑完或排着队的消息是 ``Conflict``：排队的那条一旦起跑就会写新快照，轮号跟着变。源没跑过、
         或 ``turn`` 超出它的轮数是 ``ValidationFailed``。数完轮数之后源的轮数又变了、规划不出种子快照
@@ -151,6 +190,7 @@ class SessionService:
 
         # 先认归属：别的应用不该从「在忙」「只有几轮」这些报错里看出这个会话存在。
         await self.require_owned(source_id, app_id=app_id)
+        await self._refuse_previews(source_id, target_id)
         view = await self._queue.view(str(source_id))
         if view.active is not None or view.queued:
             raise Conflict("这段对话还有没跑完的消息，等它收完尾再分叉")
@@ -194,13 +234,15 @@ class SessionService:
     ) -> bool:
         """按清单把源会话工作区里的几份文件拷进目标会话，连同整份素材台账。
 
-        源与目标都要是 ``app_id`` 的会话（目标由应用先开好），任一不是都是 ``NotFound``，报错同会话不存在，
-        在读写任何东西之前。``files`` 是（源路径，目标路径），源里没有的跳过。``require_any`` 里的源路径一个都不在时什么都
-        不写、回 ``False``；不在 ``files`` 里的路径算不在；``require_any`` 为空即没有这个前提，照拷。台账
-        整份跟着拷：拷过去的文件引用的地址都登记在台账里，目标会话靠它认得这些地址。"""
+        源与目标都要是 ``app_id`` 的会话（目标由应用先开好），任一不是都是 ``NotFound``，报错同会话不存在；
+        任一是预览会话是 ``ValidationFailed``；都在读写任何东西之前。``files`` 是（源路径，目标路径），
+        源里没有的跳过。``require_any`` 里的源路径一个都不在时什么都不写、回 ``False``；不在 ``files``
+        里的路径算不在；``require_any`` 为空即没有这个前提，照拷。台账整份跟着拷：拷过去的文件引用的地址
+        都登记在台账里，目标会话靠它认得这些地址。"""
 
         await self.require_owned(source_id, app_id=app_id)
         await self.require_owned(target_id, app_id=app_id)
+        await self._refuse_previews(source_id, target_id)
         source = namespace_for(source_user, str(source_id))
         found = {path: await self._files.read(source, path) for path, _ in files}
         if require_any and all(found.get(path) is None for path in require_any):
@@ -218,8 +260,10 @@ class SessionService:
 
 
 __all__ = [
+    "PREVIEW_NOT_FORKABLE",
     "SESSION_ID_TAKEN",
     "SESSION_NOT_FOUND",
+    "CheckPreviewTarget",
     "ForkHistory",
     "SeedPlan",
     "SessionQueue",
