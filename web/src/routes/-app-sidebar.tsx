@@ -60,6 +60,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   const canReadTasks = hasPermission(user, PERMISSION.tasksRead)
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const canGovern = canAuditAll(user)
+  const canManageAgents = hasPermission(user, PERMISSION.agentManage)
   const governLabelId = useId()
   // 全局帧订阅挂在侧边栏顶层，全部对话页与会话页共用同一份列表缓存。
   useLiveConversations(canRead)
@@ -243,7 +244,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                 onClick={user ? () => navigate({ to: '/library' }) : requireLogin}
               />
             </div>
-            {canGovern ? (
+            {canGovern || canManageAgents ? (
               <div aria-labelledby={governLabelId} className="mt-3 px-2" role="group">
                 <p
                   className={cn(
@@ -255,20 +256,33 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                   治理
                 </p>
                 <div className="flex flex-col gap-0.5">
-                  <SidebarAction
-                    compact={rail}
-                    active={pathname === '/conversations'}
-                    icon="preview"
-                    label="全部任务"
-                    onClick={() => void navigate({ to: '/conversations' })}
-                  />
-                  <SidebarAction
-                    compact={rail}
-                    active={pathname === '/audit'}
-                    icon="chart"
-                    label="审计"
-                    onClick={() => void navigate({ to: '/audit' })}
-                  />
+                  {canGovern ? (
+                    <>
+                      <SidebarAction
+                        compact={rail}
+                        active={pathname === '/conversations'}
+                        icon="preview"
+                        label="全部任务"
+                        onClick={() => void navigate({ to: '/conversations' })}
+                      />
+                      <SidebarAction
+                        compact={rail}
+                        active={pathname === '/audit'}
+                        icon="chart"
+                        label="审计"
+                        onClick={() => void navigate({ to: '/audit' })}
+                      />
+                    </>
+                  ) : null}
+                  {canManageAgents ? (
+                    <SidebarAction
+                      compact={rail}
+                      active={pathname === '/agents'}
+                      icon="agent"
+                      label="Agent 配置"
+                      onClick={() => void navigate({ to: '/agents' })}
+                    />
+                  ) : null}
                 </div>
               </div>
             ) : null}

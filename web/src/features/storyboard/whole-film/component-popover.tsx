@@ -11,6 +11,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { Switch } from '@/shared/ui/switch'
 import {
   fontLabel,
   fontOptions,
@@ -235,16 +236,7 @@ function VariableField({ variable, values, fonts, onChange }: FieldProps) {
     case 'boolean':
       input = (
         <span>
-          <button
-            aria-checked={value === true}
-            className="wf-switch ui-focus"
-            id={id}
-            onClick={() => onChange(value !== true)}
-            role="switch"
-            type="button"
-          >
-            <i />
-          </button>
+          <Switch checked={value === true} id={id} onCheckedChange={onChange} />
         </span>
       )
       break

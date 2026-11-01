@@ -1,0 +1,115 @@
+/* Markdown 编辑器与预览共用的排版：正文 24px 行高，标题与段落间距收紧，行内代码是唯一用等宽字体的地方。 */
+/* 字色随容器：编辑区是正文色，摘要预览可以整体压淡。 */
+.md-content {
+  font-size: var(--text-body);
+  line-height: 24px;
+  overflow-wrap: anywhere;
+}
+
+.md-content p,
+.md-content ul,
+.md-content ol,
+.md-content blockquote,
+.md-content pre {
+  margin: 0 0 12px;
+}
+
+.md-content ul,
+.md-content ol {
+  padding-left: 22px;
+}
+
+.md-content ul {
+  list-style: disc;
+}
+
+.md-content ol {
+  list-style: decimal;
+}
+
+.md-content li > p {
+  margin: 0;
+}
+
+.md-content li + li {
+  margin-top: 2px;
+}
+
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4,
+.md-content h5,
+.md-content h6 {
+  margin: 20px 0 8px;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.md-content h1 {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+}
+
+.md-content > :first-child {
+  margin-top: 0;
+}
+
+.md-content > :last-child {
+  margin-bottom: 0;
+}
+
+.md-content strong {
+  font-weight: 600;
+}
+
+.md-content a {
+  text-decoration: underline;
+  text-decoration-color: var(--color-outline-variant);
+  text-underline-offset: 3px;
+}
+
+.md-content blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--color-hairline);
+  color: var(--color-on-surface-variant);
+}
+
+.md-content code {
+  padding: 1px 4px;
+  border-radius: var(--radius-xs);
+  background: var(--color-state-active);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+}
+
+.md-content pre code {
+  display: block;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+}
+
+.md-content hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--color-hairline);
+}
+
+/* 可编辑区：撑满容器，底部留白；焦点不画框，光标就是指示（同 composer 输入区）。 */
+.md-editable {
+  min-height: 100%;
+  padding: 4px 0 24px;
+  white-space: pre-wrap;
+}
+
+.md-editable:focus-visible {
+  outline: none;
+}
+
+.md-editable[data-empty]::before {
+  position: absolute;
+  color: var(--color-on-surface-faint);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}

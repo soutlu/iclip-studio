@@ -103,6 +103,19 @@ import {
   Film,
   Layers,
   RotateCw,
+  SlidersHorizontal,
+  Cloud,
+  Timer,
+  RotateCcw,
+  Wrench,
+  ScanEye,
+  KeyRound,
+  Heading2,
+  Bold,
+  Italic,
+  List,
+  ListOrdered,
+  ListTree,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -288,6 +301,24 @@ const ICONS = {
   layers: Layers,
   /** 成片画面上的旋转把手 */
   rotate: RotateCw,
+  /** Agent 配置：管理一组开关（插件）、供应商、子 agent 的时限与次数、恢复版本、密钥 */
+  manage: SlidersHorizontal,
+  provider: Cloud,
+  timeout: Timer,
+  'max-calls': Repeat,
+  restore: RotateCcw,
+  skill: BookOpen,
+  credential: KeyRound,
+  /** 插件：没有专属图标的插件用 plugin */
+  plugin: Wrench,
+  'video-understanding': ScanEye,
+  'shot-list': ListTree,
+  /** 富文本工具栏 */
+  heading: Heading2,
+  bold: Bold,
+  italic: Italic,
+  'bullet-list': List,
+  'ordered-list': ListOrdered,
 } as const
 
 export type IconName = keyof typeof ICONS

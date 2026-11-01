@@ -12,14 +12,19 @@ export class UserFacingError extends Error {
   }
 }
 
-/** apiFetch 除取消外的唯一失败形态：status 为 HTTP 状态码，断网或响应无法解析、校验不过时为 0，原始错误放在 cause。 */
+/**
+ * apiFetch 除取消外的唯一失败形态：status 为 HTTP 状态码，断网或响应无法解析、校验不过时为 0，原始错误放在 cause。
+ * body 是 HTTP 错误响应解析出的 JSON（解析不了或没有响应时为 undefined），信封里带额外字段（如发布的 `problems`）时由调用方用合同 zod 再校验。
+ */
 export class ApiError extends UserFacingError {
   readonly status: number
+  readonly body: unknown
 
-  constructor(status: number, message: string, options?: ErrorOptions) {
+  constructor(status: number, message: string, options?: ErrorOptions & { body?: unknown }) {
     super(message, options)
     this.name = 'ApiError'
     this.status = status
+    this.body = options?.body
   }
 }
 
@@ -55,16 +60,22 @@ export interface ApiFetchResult<T> {
 }
 
 /** 只认合同的 `{ detail: string }` 信封；其余正文（网关 HTML、纯文本、别的 JSON 形状）与状态码都不外露，只给前缀。 */
-const readApiErrorMessage = async (response: Response, fallbackMessage: string) => {
+const readApiError = async (response: Response, fallbackMessage: string) => {
   const responseText = await response.text().catch(() => '')
-  let detail: unknown
+  let body: unknown
   try {
-    detail = (JSON.parse(responseText) as { detail?: unknown } | null)?.detail
+    body = JSON.parse(responseText) as unknown
   } catch {
-    detail = undefined
+    body = undefined
   }
+  const detail =
+    typeof body === 'object' && body !== null ? (body as { detail?: unknown }).detail : undefined
   const message = typeof detail === 'string' ? detail.trim() : ''
-  return message ? `${fallbackMessage}：${message}` : fallbackMessage
+  return new ApiError(
+    response.status,
+    message ? `${fallbackMessage}：${message}` : fallbackMessage,
+    { body },
+  )
 }
 
 /** 断网时拼在调用方前缀后的文案；OSS 直传沿用同一句。 */
@@ -125,7 +136,7 @@ export const apiFetchWithResponse = async <T>(
       onForbidden?.()
     }
 
-    throw new ApiError(response.status, await readApiErrorMessage(response, fallbackErrorMessage))
+    throw await readApiError(response, fallbackErrorMessage)
   }
 
   let responseText: string
