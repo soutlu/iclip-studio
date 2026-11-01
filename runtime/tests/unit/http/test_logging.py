@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
@@ -124,7 +125,7 @@ def test_routine_noise_is_dropped_in_both_formats(
 def test_mcp_client_logs_use_the_service_format(capsys: pytest.CaptureFixture[str]) -> None:
     """FastMCP 在 import 时给自己挂 rich 的 handler、不往 root 传；配置后它与 httpx2 都走 root。"""
 
-    import agent_runtime.harness.mcp  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    importlib.import_module("agent_runtime.harness.mcp")
 
     configure_logging("INFO", "console")
 
