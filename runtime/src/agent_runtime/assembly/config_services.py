@@ -20,7 +20,11 @@ from agent_runtime.config.agent_config.public import (
     AgentReferences,
     SqlAgentStore,
 )
-from agent_runtime.config.mcp_servers.public import McpServerService, SqlMcpServerStore
+from agent_runtime.config.mcp_servers.public import (
+    McpServerIndex,
+    McpServerService,
+    SqlMcpServerStore,
+)
 from agent_runtime.config.model_providers.public import (
     CredentialProbe,
     ModelProviderService,
@@ -34,11 +38,12 @@ from agent_runtime.secrets import CredentialCipher
 
 @dataclass(frozen=True, slots=True)
 class ConfigServices:
-    """四块配置的服务，读写同一个库。"""
+    """四块配置的服务，读写同一个库；``mcp_index`` 是 MCP 服务的名册，由 ``mcp_servers`` 维护，给工具卡读。"""
 
     skills: SkillsService
     model_providers: ModelProviderService
     mcp_servers: McpServerService
+    mcp_index: McpServerIndex
     agent_config: AgentConfigService
 
 
@@ -72,11 +77,13 @@ def build_config_services(
         probe=probe if probe is not None else PydanticAiCredentialProbe(),
         usages=references,
     )
+    mcp_index = McpServerIndex()
     mcp_servers = McpServerService(
         SqlMcpServerStore(engine),
         cipher=cipher,
         probe=HarnessMcpProbe(),
         usages=references,
+        index=mcp_index,
     )
     agent_config = AgentConfigService(
         agent_store,
@@ -89,6 +96,7 @@ def build_config_services(
         skills=skills,
         model_providers=model_providers,
         mcp_servers=mcp_servers,
+        mcp_index=mcp_index,
         agent_config=agent_config,
     )
 

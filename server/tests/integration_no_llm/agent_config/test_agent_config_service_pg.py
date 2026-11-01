@@ -31,6 +31,7 @@ from agent_runtime.config.agent_config.schemas import (
     AgentUpdateIn,
 )
 from agent_runtime.config.agent_config.service import AgentConfigService, AgentPublishBlocked
+from agent_runtime.config.mcp_servers.index import McpServerIndex
 from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
 from agent_runtime.config.mcp_servers.service import McpServerService
 from agent_runtime.config.model_providers.catalog import load_declarations
@@ -100,6 +101,7 @@ async def world(engine: AsyncEngine) -> World:
         cipher=CredentialCipher([TEST_CREDENTIAL_KEY]),
         probe=HarnessMcpProbe(),
         usages=references,
+        index=McpServerIndex(),
     )
     agents = AgentConfigService(
         agent_store,
