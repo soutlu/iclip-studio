@@ -236,7 +236,7 @@ def _image_routes(router: APIRouter, generations: ImageGenerations) -> None:
     async def submit_image(body: ImageSubmission) -> ImageJob:
         """提交出图；请求不合法 422，原话同进程内交给工具的那句。
 
-        插件按运行时会话类型给出归属：测试预览的 ``conversation_id`` 为空，删除预览后的在途请求也一样。
+        插件按运行时会话类型给出归属：测试预览的 ``conversation_id`` 为空，预览被换掉后的在途请求也一样。
         从这张宫格切出的图沿用它的对话归属。"""
 
         try:

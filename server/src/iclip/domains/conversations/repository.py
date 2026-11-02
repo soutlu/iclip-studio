@@ -218,9 +218,18 @@ class WholeFilmDraftStore(Protocol):
 
 
 class AgentPreviewStore(Protocol):
-    """``iclip.agent_previews`` 的数据访问。不判权限，调用方先判属主与 ``agent:manage``。"""
+    """``iclip.agent_previews`` 的数据访问：每人每个 agent 至多一行，就是他在这个 agent 上的当前预览。不判
+    权限，调用方先判属主与 ``agent:manage``。"""
 
-    async def create(
+    async def current(self, *, owner: uuid.UUID, agent_id: str) -> AgentPreview | None:
+        """``owner`` 在 ``agent_id`` 上的当前预览；没有给 ``None``。"""
+        ...
+
+    async def get(self, preview_id: uuid.UUID) -> AgentPreview | None:
+        """按 id 读一行；没有（含已被换掉的）给 ``None``。"""
+        ...
+
+    async def replace(
         self,
         preview_id: uuid.UUID,
         *,
@@ -228,15 +237,8 @@ class AgentPreviewStore(Protocol):
         agent_id: str,
         version_id: uuid.UUID | None,
     ) -> AgentPreview:
-        """落一行预览，交回落库后的整行（建立时刻是数据库时钟）。"""
-        ...
-
-    async def get(self, preview_id: uuid.UUID) -> AgentPreview | None:
-        """按 id 读一行；没有给 ``None``。"""
-        ...
-
-    async def delete(self, preview_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str) -> bool:
-        """删掉 ``owner`` 的、预览 ``agent_id`` 的这一行；没有这样一行就什么都不删、回 ``False``。"""
+        """把 ``owner`` 在 ``agent_id`` 上的当前预览换成这一段（还没有就落一行），交回落库后的整行（建立时刻是
+        数据库时钟）。一条语句写完；并发的几次替换都成功，最后只留后写的那一行。"""
         ...
 
 

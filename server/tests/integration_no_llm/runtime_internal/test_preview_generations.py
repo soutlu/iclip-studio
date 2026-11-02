@@ -1,4 +1,4 @@
-"""测试预览里出的图不挂对话：工具按运行依赖构造不带对话的请求，预览删除后才到达内部接口也保持隔离。
+"""测试预览里出的图不挂对话：工具按运行依赖构造不带对话的请求，预览被换掉后才到达内部接口也保持隔离。
 普通对话照旧挂着，所以治理者按预览 id 列不出记录，生成帧也不带预览 id；从这张宫格切出的图同样不挂。
 
 装的是开着取帧与出图的后端（媒体生成、对象存储、``shot_video`` 段与本机 ffmpeg）；队列不跑，记录停在受理。"""
@@ -209,7 +209,7 @@ def _generation_frames_until(ws: Any, session_id: str, *, tries: int = 40) -> li
     raise AssertionError(f"没收到挂着 {session_id} 的生成帧")
 
 
-def test_images_arriving_after_preview_deletion_are_recorded_without_a_conversation(
+def test_images_arriving_after_the_preview_is_replaced_are_recorded_without_a_conversation(
     shot_app: FastAPI, migrated_pg: str
 ) -> None:
     with TestClient(shot_app) as tc:
@@ -225,8 +225,8 @@ def test_images_arriving_after_preview_deletion_are_recorded_without_a_conversat
 
         preview_request = asyncio.run(_tool_request(owner_id, preview, preview=True))
         conversation_request = asyncio.run(_tool_request(owner_id, conversation, preview=False))
-        deleted = tc.delete(f"/agents/{AGENT_ID}/previews/{preview}", headers=owner)
-        assert deleted.status_code == 204, deleted.text
+        replaced = tc.post(f"/agents/{AGENT_ID}/previews", headers=owner)
+        assert replaced.status_code == 201, replaced.text
         assert tc.get(f"/conversations/{preview}/status", headers=owner).status_code == 404
 
         with tc.websocket_connect("/ws", headers=governor) as ws:

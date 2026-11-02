@@ -1,6 +1,6 @@
-"""agent 测试预览：开与删要 ``agent:manage``；预览 id 当对话 id 用在 transcript、发消息、状态、队列、读工作区
-文件与订阅上，只认属主本人、且他此刻持 ``agent:manage``，治理者也不例外；预览不是对话，不进列表、不起名，
-活动帧谁都不发。
+"""agent 测试预览：开预览要 ``agent:manage``，每人每个 agent 只有一段当前预览，开新的先中断、再换掉旧的；
+预览 id 当对话 id 用在 transcript、发消息、状态、队列、读工作区文件与订阅上，只认属主本人、且他此刻持
+``agent:manage``，治理者也不例外，换掉的那段对谁都是 404；预览不是对话，不进列表、不起名，活动帧谁都不发。
 
 几个人：属主与另一位管理员是 editor 外加直接授的 ``agent:manage``，治理者是 editor 外加 ``users:manage``。"""
 
@@ -34,11 +34,12 @@ from tests.helpers.plugins import FixedPlugin
 from tests.helpers.ws import AGENT_ID, open_conversation, sign_in_as, until
 
 PROMPT = {"prompt_id": "prm_preview", "content": [{"type": "text", "text": "试一下"}]}
+OTHER_AGENT = "director"
 
 
 @pytest.fixture
 def agent_seeds() -> tuple[AgentSeed, ...]:
-    return (AgentSeed(AGENT_ID),)
+    return (AgentSeed(AGENT_ID), AgentSeed(OTHER_AGENT))
 
 
 async def grant(pg_url: str, username: str, permissions: list[str]) -> None:
@@ -86,8 +87,8 @@ async def open_preview(
     return await client.post(f"/agents/{agent_id}/previews", json=body)
 
 
-async def a_preview(client: httpx.AsyncClient) -> str:
-    opened = await open_preview(client)
+async def a_preview(client: httpx.AsyncClient, agent_id: str = AGENT_ID) -> str:
+    opened = await open_preview(client, agent_id)
     assert opened.status_code == 201, opened.text
     return str(opened.json()["id"])
 
@@ -205,42 +206,98 @@ async def test_a_preview_runs_with_a_fixed_title_and_stays_out_of_the_conversati
     assert sidebar["ungroupedCount"] == 0
 
 
-async def test_deleting_a_preview_is_for_its_owner_and_hides_it_everywhere(
-    people: dict[str, httpx.AsyncClient],
+async def test_opening_again_replaces_the_current_preview_and_the_old_one_is_gone(
+    people: dict[str, httpx.AsyncClient], pg_url: str
 ) -> None:
     owner = people["owner"]
-    preview = await a_preview(owner)
+    old = await a_preview(owner)
+    new = await a_preview(owner)
 
-    by_other = await people["other_admin"].delete(f"/agents/{AGENT_ID}/previews/{preview}")
-    wrong_agent = await owner.delete(f"/agents/director/previews/{preview}")
-    deleted = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
-    again = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
-
-    assert (by_other.status_code, wrong_agent.status_code) == (404, 404)
-    assert (deleted.status_code, again.status_code) == (204, 404)
-    assert await statuses(owner, preview) == ALL_HIDDEN
+    assert new != old
+    assert await _preview_rows(pg_url) == {(new, "owner", AGENT_ID, None)}
+    assert await statuses(owner, old) == ALL_HIDDEN
+    assert await statuses(owner, new) == ALL_OK
+    # 换掉的那段在运行时那边的会话留着，只是再也寻址不到。
+    assert {old, new} <= await _preview_sessions(pg_url)
 
 
-async def test_a_failed_runtime_stop_keeps_the_preview_available(
-    people: dict[str, httpx.AsyncClient], monkeypatch: pytest.MonkeyPatch
+async def test_a_version_preview_replaces_the_draft_preview(
+    people: dict[str, httpx.AsyncClient], pg_url: str
 ) -> None:
     owner = people["owner"]
-    preview = await a_preview(owner)
+    version_id = (await owner.get(f"/agents/{AGENT_ID}")).json()["activeVersion"]["id"]
+    draft = await a_preview(owner)
+
+    pinned = await open_preview(owner, body={"versionId": version_id})
+
+    assert pinned.status_code == 201, pinned.text
+    assert await _preview_rows(pg_url) == {(pinned.json()["id"], "owner", AGENT_ID, version_id)}
+    assert (await owner.get(f"/conversations/{draft}/status")).status_code == 404
+
+
+async def test_each_person_has_one_current_preview_per_agent(
+    people: dict[str, httpx.AsyncClient], pg_url: str
+) -> None:
+    owner, other = people["owner"], people["other_admin"]
+    mine = await a_preview(owner)
+    theirs = await a_preview(other)
+    mine_elsewhere = await a_preview(owner, OTHER_AGENT)
+
+    assert await _preview_rows(pg_url) == {
+        (mine, "owner", AGENT_ID, None),
+        (theirs, "other_admin", AGENT_ID, None),
+        (mine_elsewhere, "owner", OTHER_AGENT, None),
+    }
+    for client, preview in ((owner, mine), (other, theirs), (owner, mine_elsewhere)):
+        assert (await client.get(f"/conversations/{preview}/status")).status_code == 200
+
+
+async def test_a_failed_abort_keeps_the_current_preview(
+    people: dict[str, httpx.AsyncClient], pg_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = people["owner"]
+    current = await a_preview(owner)
+    rows = await _preview_rows(pg_url)
+    sessions = await _preview_sessions(pg_url)
 
     async def unavailable(_self: RuntimeClient, _session_id: uuid.UUID) -> None:
         raise RuntimeUnavailable("运行时暂时不可用")
 
     with monkeypatch.context() as patch:
         patch.setattr(RuntimeClient, "abort_session", unavailable)
-        refused = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+        refused = await open_preview(owner)
 
     assert refused.status_code == 503, refused.text
-    assert (await owner.get(f"/conversations/{preview}/status")).status_code == 200
-    retried = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
-    assert retried.status_code == 204, retried.text
+    assert await _preview_rows(pg_url) == rows
+    assert (await owner.get(f"/conversations/{current}/status")).status_code == 200
+    # 中断之前开好的那段没有行指着它，谁都寻址不到。
+    (leftover,) = await _preview_sessions(pg_url) - sessions
+    assert leftover not in {row[0] for row in rows}
+    assert (await owner.get(f"/conversations/{leftover}/status")).status_code == 404
+    retried = await open_preview(owner)
+    assert retried.status_code == 201, retried.text
+    assert await _preview_rows(pg_url) == {(retried.json()["id"], "owner", AGENT_ID, None)}
 
 
-class TestDeletingAnActivePreview:
+async def test_concurrent_opens_leave_exactly_one_current_preview(
+    people: dict[str, httpx.AsyncClient], pg_url: str
+) -> None:
+    owner = people["owner"]
+    # 第一轮还没有当前预览，两次都是新落行；第二轮两次都要先中断同一段再换掉它。
+    for _ in range(2):
+        first, second = await asyncio.gather(open_preview(owner), open_preview(owner))
+
+        assert (first.status_code, second.status_code) == (201, 201), (first.text, second.text)
+        opened = {str(first.json()["id"]), str(second.json()["id"])}
+        rows = await _preview_rows(pg_url)
+        assert len(rows) == 1
+        ((kept, _, _, _),) = rows
+        (lost,) = opened - {kept}
+        assert (await owner.get(f"/conversations/{lost}/status")).status_code == 404
+        assert (await owner.get(f"/conversations/{kept}/status")).status_code == 200
+
+
+class TestReplacingAnActivePreview:
     @pytest.fixture
     def model_entered(self) -> asyncio.Event:
         return asyncio.Event()
@@ -261,7 +318,7 @@ class TestDeletingAnActivePreview:
 
         return {TEST_MODEL_NAME: FunctionModel(stream_function=respond)}
 
-    async def test_deleting_stops_the_active_prompt_and_discards_the_queue(
+    async def test_replacing_stops_the_active_prompt_and_discards_the_queue(
         self,
         people: dict[str, httpx.AsyncClient],
         pg_url: str,
@@ -284,17 +341,17 @@ class TestDeletingAnActivePreview:
                 "prm_queued": "queued",
             }
 
-            # 拒绝的删除不能打断属主正在运行的预览，也不能清掉它的队列。
-            for client, agent_id in ((people["other_admin"], AGENT_ID), (owner, "director")):
-                refused = await client.delete(f"/agents/{agent_id}/previews/{preview}")
-                assert refused.status_code == 404, refused.text
+            # 别人在同一个 agent 上开、属主在别的 agent 上开：都不换掉这一段，也不打断它。
+            for client, agent_id in ((people["other_admin"], AGENT_ID), (owner, OTHER_AGENT)):
+                elsewhere = await open_preview(client, agent_id)
+                assert elsewhere.status_code == 201, elsewhere.text
                 assert await _prompt_states(pg_url, preview) == {
                     "prm_preview": "running",
                     "prm_queued": "queued",
                 }
 
-            deleted = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
-            assert deleted.status_code == 204, deleted.text
+            replaced = await open_preview(owner)
+            assert replaced.status_code == 201, replaced.text
             await _wait_for_prompt_states(
                 pg_url, preview, {"prm_preview": "aborted", "prm_queued": "aborted"}
             )
@@ -302,8 +359,40 @@ class TestDeletingAnActivePreview:
         finally:
             model_released.set()
 
+    async def test_a_target_refused_by_the_runtime_leaves_the_current_preview_running(
+        self,
+        people: dict[str, httpx.AsyncClient],
+        pg_url: str,
+        model_entered: asyncio.Event,
+        model_released: asyncio.Event,
+    ) -> None:
+        owner = people["owner"]
+        preview = await a_preview(owner)
+        try:
+            sent = await owner.post(f"/conversations/{preview}/prompts", json=PROMPT)
+            assert sent.status_code == 200, sent.text
+            await asyncio.wait_for(model_entered.wait(), timeout=5)
+            queued = await owner.post(
+                f"/conversations/{preview}/prompts",
+                json={**PROMPT, "prompt_id": "prm_queued"},
+            )
+            assert queued.status_code == 200, queued.text
+            rows = await _preview_rows(pg_url)
 
-class TestDeletingAnAwaitingPreview:
+            foreign = await open_preview(owner, body={"versionId": str(uuid.uuid4())})
+
+            assert foreign.status_code == 422, foreign.text
+            assert await _preview_rows(pg_url) == rows
+            assert await _prompt_states(pg_url, preview) == {
+                "prm_preview": "running",
+                "prm_queued": "queued",
+            }
+            assert (await owner.get(f"/conversations/{preview}/status")).status_code == 200
+        finally:
+            model_released.set()
+
+
+class TestReplacingAnAwaitingPreview:
     @pytest.fixture
     def agent_seeds(self) -> tuple[AgentSeed, ...]:
         return (AgentSeed(AGENT_ID, plugins=("approval",)),)
@@ -318,7 +407,7 @@ class TestDeletingAnAwaitingPreview:
         )
         return {"approval": FixedPlugin.bind(name="approval", capabilities=(capability,))}
 
-    async def test_deleting_cancels_the_pending_approval_and_discards_the_queue(
+    async def test_replacing_cancels_the_pending_approval_and_discards_the_queue(
         self, people: dict[str, httpx.AsyncClient], pg_url: str, app: FastAPI
     ) -> None:
         owner = people["owner"]
@@ -332,14 +421,45 @@ class TestDeletingAnAwaitingPreview:
         assert queued.status_code == 200, queued.text
         assert app.state.transcript_store.pending_interactions(preview, MAIN_AGENT_ID)
 
-        deleted = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+        replaced = await open_preview(owner)
 
-        assert deleted.status_code == 204, deleted.text
+        assert replaced.status_code == 201, replaced.text
         await _wait_for_prompt_states(
             pg_url, preview, {"prm_preview": "aborted", "prm_queued": "aborted"}
         )
         assert app.state.transcript_store.pending_interactions(preview, MAIN_AGENT_ID) == ()
         assert (await owner.get(f"/conversations/{preview}/status")).status_code == 404
+
+
+async def _preview_rows(pg_url: str) -> set[tuple[str, str, str, str | None]]:
+    """``iclip.agent_previews`` 的每一行：（预览 id，属主用户名，agent，版本 id）。"""
+
+    async with connected(pg_url) as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT p.id, u.username, p.agent_id, p.version_id FROM iclip.agent_previews p"
+                " JOIN iclip.users u ON u.id = p.owner_user_id"
+            )
+        )
+        return {
+            (
+                str(row.id),
+                row.username,
+                row.agent_id,
+                None if row.version_id is None else str(row.version_id),
+            )
+            for row in rows
+        }
+
+
+async def _preview_sessions(pg_url: str) -> set[str]:
+    """运行时那边全部预览会话的 id。"""
+
+    async with connected(pg_url) as conn:
+        rows = await conn.execute(
+            text("SELECT id FROM agent_runtime.sessions WHERE preview_agent_id IS NOT NULL")
+        )
+        return {str(row.id) for row in rows}
 
 
 async def _wait_for_prompt_states(pg_url: str, preview: str, expected: dict[str, str]) -> None:
@@ -412,6 +532,31 @@ def test_subscribing_to_a_preview_is_for_its_owner_and_its_activity_reaches_nobo
             for ws in (mine, theirs):
                 first = until(ws, "event.session.work_changed")
                 assert first["session_id"] == conversation
+
+
+def test_a_replaced_preview_can_no_longer_be_subscribed(ws_agent_app: FastAPI, pg_url: str) -> None:
+    with TestClient(ws_agent_app) as tc:
+        owner = sign_in_as(tc, pg_url, username="owner", roles=("editor",))
+        _grant_sync(pg_url, "owner", ["agent:manage"])
+        opened = [tc.post(f"/agents/{AGENT_ID}/previews", headers=owner) for _ in range(2)]
+        assert [answer.status_code for answer in opened] == [201, 201]
+        old, new = (answer.json()["id"] for answer in opened)
+
+        with tc.websocket_connect("/ws", headers=owner) as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+            acks: list[dict[str, Any]] = []
+            for frame_id, session_id in (("s1", old), ("s2", new)):
+                ws.send_json(
+                    {
+                        "type": "subscribe_v2",
+                        "id": frame_id,
+                        "payload": {"session_id": session_id, "transcript": {"main": "off"}},
+                    }
+                )
+                acks.append(until(ws, "ack")["payload"])
+
+        found = [(ack.get("accepted", []), ack.get("not_found", [])) for ack in acks]
+        assert found == [([], [old]), ([new], [])]
 
 
 def _settled(tc: TestClient, session_id: str, headers: dict[str, str], tries: int = 200) -> None:

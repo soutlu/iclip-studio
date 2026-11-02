@@ -36,7 +36,6 @@ const REPLY = '可以，先拍网面细节。'
 const setup = () => {
   const fake = new FakeTranscriptServer()
   const opened: { agentId: string; body: unknown; id: string }[] = []
-  const deleted: { agentId: string; previewId: string }[] = []
   const prompts: { conversationId: string; body: PromptBody }[] = []
   const aborts: string[] = []
   const state: { reply: 'finish' | 'hold' | 'unavailable' } = { reply: 'finish' }
@@ -123,10 +122,6 @@ const setup = () => {
       const versionId = (body as { versionId?: string } | null)?.versionId ?? null
       return HttpResponse.json({ agentId, createdAt: at(0), id, versionId }, { status: 201 })
     }),
-    http.delete('*/api/agents/:agentId/previews/:previewId', ({ params }) => {
-      deleted.push({ agentId: String(params['agentId']), previewId: String(params['previewId']) })
-      return new HttpResponse(null, { status: 204 })
-    }),
     http.post('*/api/conversations/:conversationId/prompts', async ({ params, request }) => {
       const conversationId = String(params['conversationId'])
       const body = (await request.json()) as PromptBody
@@ -144,7 +139,7 @@ const setup = () => {
       return new HttpResponse(null, { status: 204 })
     }),
   )
-  return { aborts, deleted, fake, opened, prompts, state }
+  return { aborts, fake, opened, prompts, state }
 }
 
 function Harness() {
@@ -217,28 +212,55 @@ describe('Agent 配置页的测试预览', () => {
     expect(backend.opened).toHaveLength(1)
   })
 
-  it('看历史版本时试的是那一版：占位写版本号，开预览带版本 id；回到草稿是另一段', async () => {
+  it('看历史版本时试的是那一版：占位写版本号，开预览带版本 id；换了要试的就是一段没开的新试聊', async () => {
     const backend = setup()
     const user = await renderPage(backend.fake)
     const versions = (await (
       await fetch('http://localhost/api/agents/director/versions')
     ).json()) as { items: { id: string; version: number }[] }
     const v5 = versions.items.find((item) => item.version === 5)
-
-    await user.click(within(editor()).getByRole('button', { name: '查看版本，当前：草稿' }))
-    await user.click(await screen.findByRole('menuitemradio', { name: /^v5，/ }))
-    await waitFor(() => expect(placeholder()).toBe('用 v5 测试…'))
-    await send(user, '试一下 v5')
-
+    const pickVersion = async (name: RegExp) => {
+      await user.click(within(editor()).getByRole('button', { name: /^查看版本，当前：/ }))
+      await user.click(await screen.findByRole('menuitemradio', { name }))
+    }
+    await send(user, '草稿这边试一条')
     await waitFor(() => expect(shown(REPLY)).toHaveLength(1))
-    expect(backend.opened).toEqual([
-      { agentId: 'director', body: { versionId: v5?.id }, id: backend.opened[0]?.id },
-    ])
 
-    await user.click(within(editor()).getByRole('button', { name: '返回草稿' }))
-    await waitFor(() => expect(placeholder()).toBe('输入需求，或添加参考素材…'))
+    await pickVersion(/^v5，/)
+    await waitFor(() => expect(placeholder()).toBe('用 v5 测试…'))
+    expect(shown('草稿这边试一条')).toHaveLength(0)
     expect(shown(REPLY)).toHaveLength(0)
     expect(resetButton()).toHaveAttribute('aria-disabled', 'true')
+    await send(user, '试一下 v5')
+    await waitFor(() => expect(shown(REPLY)).toHaveLength(1))
+    expect(backend.opened.map((item) => item.body)).toEqual([{}, { versionId: v5?.id }])
+
+    // 一版换到另一版：同样是新的一段。
+    await pickVersion(/^v4，/)
+    await waitFor(() => expect(placeholder()).toBe('用 v4 测试…'))
+    expect(shown('试一下 v5')).toHaveLength(0)
+    expect(shown(REPLY)).toHaveLength(0)
+
+    // 回到草稿不再是原来那段草稿试聊；再看 v5 也不是原来那段。
+    await user.click(within(editor()).getByRole('button', { name: '返回草稿' }))
+    await waitFor(() => expect(placeholder()).toBe('输入需求，或添加参考素材…'))
+    expect(shown('草稿这边试一条')).toHaveLength(0)
+    expect(shown(REPLY)).toHaveLength(0)
+    await pickVersion(/^v5，/)
+    await waitFor(() => expect(placeholder()).toBe('用 v5 测试…'))
+    expect(shown('试一下 v5')).toHaveLength(0)
+    expect(shown(REPLY)).toHaveLength(0)
+    expect(backend.opened).toHaveLength(2)
+
+    backend.state.reply = 'hold'
+    await send(user, '再试 v5')
+    await waitFor(() => expect(backend.prompts).toHaveLength(3))
+    expect(backend.opened.map((item) => item.body)).toEqual([
+      {},
+      { versionId: v5?.id },
+      { versionId: v5?.id },
+    ])
+    expect(backend.prompts[2]?.conversationId).toBe(backend.opened[2]?.id)
   })
 
   it('每个 agent 各有一段预览：切走再切回来还是原来那段，不重开', async () => {
@@ -265,25 +287,33 @@ describe('Agent 配置页的测试预览', () => {
     )
   })
 
-  it('新建测试对话删掉这段预览，下一条消息开一段新的', async () => {
+  it('新建测试对话只换成一段没开的试聊、不发请求，下一条消息才开新的预览', async () => {
     const backend = setup()
     const user = await renderPage(backend.fake)
     expect(resetButton()).toHaveAttribute('aria-disabled', 'true')
     await send(user, '第一段')
     await waitFor(() => expect(shown(REPLY)).toHaveLength(1))
+    const requests: string[] = []
+    const record = ({ request }: { request: Request }) => {
+      requests.push(`${request.method} ${new URL(request.url).pathname}`)
+    }
+    server.events.on('request:start', record)
 
     await user.click(resetButton())
 
-    await waitFor(() =>
-      expect(backend.deleted).toEqual([{ agentId: 'director', previewId: backend.opened[0]?.id }]),
-    )
     await waitFor(() => expect(shown(REPLY)).toHaveLength(0))
     expect(shown('第一段')).toHaveLength(0)
     expect(resetButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(requests.filter((line) => line.includes('/previews'))).toEqual([])
+    expect(backend.opened).toHaveLength(1)
 
     backend.state.reply = 'hold'
     await send(user, '第二段')
     await waitFor(() => expect(backend.prompts).toHaveLength(2))
+    server.events.removeListener('request:start', record)
+    expect(requests.filter((line) => line.includes('/previews'))).toEqual([
+      'POST /api/agents/director/previews',
+    ])
     expect(backend.opened).toHaveLength(2)
     expect(backend.opened[1]?.id).not.toBe(backend.opened[0]?.id)
     expect(backend.prompts[1]?.conversationId).toBe(backend.opened[1]?.id)

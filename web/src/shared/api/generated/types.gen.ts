@@ -7865,42 +7865,6 @@ export type OpenPreviewAgentsAgentIdPreviewsPostResponses = {
 export type OpenPreviewAgentsAgentIdPreviewsPostResponse =
   OpenPreviewAgentsAgentIdPreviewsPostResponses[keyof OpenPreviewAgentsAgentIdPreviewsPostResponses]
 
-export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteData = {
-  body?: never
-  path: {
-    /**
-     * Agent Id
-     */
-    agent_id: string
-    /**
-     * Preview Id
-     */
-    preview_id: string
-  }
-  query?: never
-  url: '/agents/{agent_id}/previews/{preview_id}'
-}
-
-export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteError =
-  DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteErrors[keyof DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteErrors]
-
-export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponses = {
-  /**
-   * Successful Response
-   */
-  204: void
-}
-
-export type DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponse =
-  DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponses[keyof DeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponses]
-
 export type UnarchiveAgentAgentsAgentIdUnarchivePostData = {
   body?: never
   path: {

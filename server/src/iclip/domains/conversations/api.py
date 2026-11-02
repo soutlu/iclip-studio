@@ -619,7 +619,8 @@ PreviewAgentId = Annotated[str, Path(min_length=1, max_length=MAX_AGENT_ID_CHARS
 
 
 def create_previews_router(service: ConversationService) -> APIRouter:
-    """agent 测试预览：开一段、删一段，都要 ``agent:manage``；约定见合同「Agent 配置」一节。
+    """agent 测试预览：开一段新的、换掉自己在这个 agent 上的当前预览，要 ``agent:manage``；约定见合同「Agent 配置」
+    一节。
 
     预览的 transcript、发消息、订阅与读工作区文件走对话的那几个端点，预览 id 当对话 id 用；谁能用由对话服务
     一处判（只有开它的人、且他此刻持 ``agent:manage``）。没有列表端点。"""
@@ -632,25 +633,16 @@ def create_previews_router(service: ConversationService) -> APIRouter:
         principal: Annotated[Principal, require_permission(AGENT_MANAGE_PERMISSION)],
         body: AgentPreviewIn | None = None,
     ) -> AgentPreviewOut:
-        """给调用者开一段测试预览：不给 ``versionId`` 试这个 agent 当下的草稿（每次发消息都按那一刻的草稿
-        装配），给了试它的那一版。不看上不上菜单、在不在用、发没发布过。没有这个 agent 是 404，版本不是它的
-        是 422。"""
+        """给调用者开一段新的测试预览，换掉他在这个 agent 上的当前预览：不给 ``versionId`` 试这个 agent 当下的
+        草稿（每次发消息都按那一刻的草稿装配），给了试它的那一版。不看上不上菜单、在不在用、发没发布过。
+
+        没有这个 agent 是 404，版本不是它的是 422，这时当前那段不动。换掉之前先中断当前那段，中断不成就返回错误、
+        不换；换掉的那段 id 在哪个端点上都是 404。"""
 
         preview = await service.open_preview(
             principal, agent_id, version_id=None if body is None else body.version_id
         )
         return agent_preview_out(preview)
-
-    @router.delete("/{preview_id}", status_code=204)
-    async def delete_preview(
-        agent_id: PreviewAgentId,
-        preview_id: uuid.UUID,
-        principal: Annotated[Principal, require_permission(AGENT_MANAGE_PERMISSION)],
-    ) -> None:
-        """删掉自己的一段预览；之后这个 id 在哪个端点上都是 404。不是自己的、不是这个 agent 的、没有这一段
-        都是 404。"""
-
-        await service.delete_preview(principal, agent_id, preview_id)
 
     return router
 

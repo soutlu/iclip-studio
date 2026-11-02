@@ -3849,16 +3849,6 @@ export const zOpenPreviewAgentsAgentIdPreviewsPostPath = z.object({
  */
 export const zOpenPreviewAgentsAgentIdPreviewsPostResponse = zAgentPreviewOut
 
-export const zDeletePreviewAgentsAgentIdPreviewsPreviewIdDeletePath = z.object({
-  agent_id: z.string().min(1).max(128),
-  preview_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zDeletePreviewAgentsAgentIdPreviewsPreviewIdDeleteResponse = z.void()
-
 export const zUnarchiveAgentAgentsAgentIdUnarchivePostPath = z.object({
   agent_id: z.string(),
 })
