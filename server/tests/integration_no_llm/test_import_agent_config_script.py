@@ -380,9 +380,11 @@ async def test_a_failure_halfway_rolls_everything_back(
     """一个插件不在本部署的登记表里：发布被拦下时前面写的供应商、技能都回滚掉。"""
 
     await plant_root(engine)
-    _rewrite(files, "agents/agents.yaml", {"agent.director.capabilities": ["workspace", "video"]})
+    _rewrite(
+        files, "agents/agents.yaml", {"agent.director.capabilities": ["workspace", "shot_video"]}
+    )
 
-    with pytest.raises(Exception, match="video"):
+    with pytest.raises(Exception, match="shot_video"):
         await importing(engine, files)
     assert set((await counts(engine)).values()) == {0}
 

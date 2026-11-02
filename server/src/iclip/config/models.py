@@ -55,9 +55,13 @@ RUNTIME_APP_KEY_ENV: Final = "RUNTIME_APP_KEY"
 _MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
     "agent_runs": "agent_runs",
     "conversations": "compaction（原 conversations.compaction）",
-    "video": "plugins.config.video",
 }
 """后端不再认、搬到运行时配置（``configs/runtime.yaml``）的段：后端的段名 → 运行时配置里的位置。"""
+
+_RETIRED_SECTIONS: Final[Mapping[str, str]] = {
+    "video": "视频理解在运行时总是登记，模型写在代码里，连接用配置页的火山方舟",
+}
+"""后端不再认、也没有新位置的段：段名 → 为什么不用了。"""
 
 
 class ConfigSection(BaseModel):
@@ -329,6 +333,9 @@ class RuntimeConfig(BaseSettings):
                     f"{name} 段已搬到运行时服务的配置（configs/runtime.yaml 的 {moved_to}），"
                     "从后端的配置文件里删掉它"
                 )
+        for name, why in _RETIRED_SECTIONS.items():
+            if name in sections:
+                raise ValueError(f"{name} 段已不用（{why}），从后端的配置文件里删掉它")
         shot_video = sections.get("shot_video")
         if isinstance(shot_video, Mapping) and shot_video:
             raise ValueError(

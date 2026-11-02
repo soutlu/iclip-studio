@@ -521,6 +521,13 @@ def test_the_iclip_studio_section_alone_turns_breakdown_on(
     assert settings.iclip_studio.breakdown_concurrency == concurrency
 
 
+def test_an_old_video_section_says_to_delete_it(tmp_path: Path) -> None:
+    path = write(tmp_path, VALID + "video:\n  understanding_model: seed-vision\n")
+
+    with pytest.raises(ValidationError, match=r"video 段已不用.*从后端的配置文件里删掉它"):
+        load_runtime_config(path)
+
+
 def test_the_breakdown_model_is_no_longer_configured(tmp_path: Path) -> None:
     path = write(tmp_path, VALID + "iclip_studio:\n  breakdown_model: seed-omni\n")
 

@@ -1,8 +1,8 @@
 """视频插件包给运行时服务的入口：运行时配置写 ``plugins.factory: iclip_video.registry:open_video_plugins``，
 ``plugins.config`` 按 ``VideoPluginsConfig`` 校验。
 
-视频业务的插件类只在这里列出：``workspace``、``iclip_studio`` 与 ``video_shots`` 总是登记，``video``、``video_breakdown`` 与 ``shot_video`` 各按自己的配置段
-登记。要后端服务的端口经内部接口（``internal_api``）的 HTTP 客户端；``iclip_studio`` 不接生图（后端不开放这
+视频业务的插件类只在这里列出：``workspace``、``iclip_studio``、``video_shots`` 与 ``video`` 总是登记（``video`` 的模型
+写定在代码里，连接每次调用时经宿主现查），``video_breakdown`` 与 ``shot_video`` 各按自己的配置段登记。要后端服务的端口经内部接口（``internal_api``）的 HTTP 客户端；``iclip_studio`` 不接生图（后端不开放这
 条接口），生图工具照旧不登记。
 """
 
@@ -69,11 +69,6 @@ class OssSection(_Section):
     internal_url_base: HttpUrl
 
 
-class VideoSection(_Section):
-    """写了就登记 ``video``（视频理解）。没有字段：模型写定在 ``video_understanding``，连接每次调用时从配置页
-    的模型供应商里现查。"""
-
-
 class VideoBreakdownSection(_Section):
     """写了就登记 ``video_breakdown``：拆解经内部接口交给后端的参考视频，与资料库共用一份。"""
 
@@ -96,9 +91,20 @@ class VideoPluginsConfig(_Section):
     """挂 ``video_breakdown`` 或 ``shot_video`` 时必填。"""
 
     oss: OssSection | None = None
-    video: VideoSection | None = None
     video_breakdown: VideoBreakdownSection | None = None
     shot_video: ShotVideoSection | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_video_section(cls, data: Any) -> Any:
+        """旧的 ``video`` 段还写着时说清怎么改；不然只有一句「Extra inputs are not permitted」。"""
+
+        if isinstance(data, Mapping) and "video" in data:
+            raise ValueError(
+                "video 段已去掉：视频理解总是登记，模型写在代码里，连接用配置页的火山方舟；"
+                "从 plugins.config 里删掉它"
+            )
+        return data
 
     @model_validator(mode="after")
     def _internal_api_when_needed(self) -> Self:
@@ -187,10 +193,12 @@ def _registry(
         ),
         IclipStudio.bind(space=space, ledger=host.ledger, images=None),
         VideoShots.bind(space=space, ledger=host.ledger),
+        Video.bind(
+            space=space,
+            ledger=host.ledger,
+            understanding=ArkVideoUnderstanding(outbound, connection=host.model_connection),
+        ),
     ]
-    if settings.video is not None:
-        understanding = ArkVideoUnderstanding(outbound, connection=host.model_connection)
-        plugins.append(Video.bind(space=space, ledger=host.ledger, understanding=understanding))
     if settings.video_breakdown is not None:
         plugins.append(
             VideoBreakdownPlugin.bind(
@@ -290,6 +298,5 @@ __all__ = [
     "ShotVideoSection",
     "VideoBreakdownSection",
     "VideoPluginsConfig",
-    "VideoSection",
     "open_video_plugins",
 ]

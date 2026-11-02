@@ -29,9 +29,6 @@ plugins:
     # oss:
     #   public_url_base: https://<OSS_BUCKET>.oss-cn-shenzhen.aliyuncs.com
     #   internal_url_base: https://<OSS_BUCKET>.oss-cn-shenzhen-internal.aliyuncs.com
-    # 写了就登记 video（视频理解）。模型写定在代码里（doubao-seed-2-0-lite-260428），连接用配置页的火山方舟：
-    # 那里要有启用的供应商、默认密钥，并加上、启用这个模型。
-    # video: {}
     # 写了就登记 video_breakdown：拆解交给后端的参考视频。启动时向后端核对，后端要先起来，且 config.yaml 要写
     # iclip_studio 段，否则运行时起不来。
     # video_breakdown: {}

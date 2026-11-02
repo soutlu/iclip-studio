@@ -73,7 +73,6 @@ DOCUMENT = (
 )
 PLUGINS_CONFIG: dict[str, Any] = {
     "internal_api": {"base_url": "http://iclip.test", "token_env": "RUNTIME_INTERNAL_TOKEN"},
-    "video": {},
     "shot_video": {},
 }
 

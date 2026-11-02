@@ -28,8 +28,7 @@ from tests.helpers.model_connections import FakeModelConnections
 
 TOKEN = "runtime-internal-test-token-0123456789"
 INTERNAL_API = {"base_url": "http://server.test", "token_env": "RUNTIME_INTERNAL_TOKEN"}
-VIDEO: dict[str, Any] = {}
-ALWAYS = {"workspace", "iclip_studio", "video_shots"}
+ALWAYS = {"workspace", "iclip_studio", "video_shots", "video"}
 IMAGE_URL = "https://bucket.oss-ap-southeast-1.aliyuncs.com/style.jpg"
 ARK = ModelConnection(responses_url="https://relay.example/api/v3/responses", api_key="sk-test-ark")
 
@@ -102,15 +101,14 @@ async def test_without_optional_sections_only_the_always_on_plugins_are_register
 @pytest.mark.parametrize(
     ("config", "extra"),
     [
-        ({"video": VIDEO}, {"video"}),
         ({"internal_api": INTERNAL_API, "video_breakdown": {}}, {"video_breakdown"}),
         ({"internal_api": INTERNAL_API, "shot_video": {}}, {"shot_video"}),
         (
-            {"internal_api": INTERNAL_API, "video": VIDEO, "video_breakdown": {}, "shot_video": {}},
-            {"video", "video_breakdown", "shot_video"},
+            {"internal_api": INTERNAL_API, "video_breakdown": {}, "shot_video": {}},
+            {"video_breakdown", "shot_video"},
         ),
     ],
-    ids=["video", "video_breakdown", "shot_video", "all"],
+    ids=["video_breakdown", "shot_video", "all"],
 )
 async def test_each_optional_section_registers_its_plugin(
     config: dict[str, Any], extra: set[str]
@@ -123,7 +121,7 @@ async def test_each_optional_section_registers_its_plugin(
         plugin.from_spec()
 
 
-EVERYTHING = {"internal_api": INTERNAL_API, "video": VIDEO, "video_breakdown": {}, "shot_video": {}}
+EVERYTHING = {"internal_api": INTERNAL_API, "video_breakdown": {}, "shot_video": {}}
 """每个可选段都写上：登记表里是全部插件。"""
 
 
@@ -272,31 +270,25 @@ async def test_the_clients_are_closed_on_exit() -> None:
         ({"unknown": {}}, "unknown"),
         ({"internal_api": {**INTERNAL_API, "token_env": "lower_case"}}, "token_env"),
         ({"shot_video": {"dev_attempts": 0}, "internal_api": INTERNAL_API}, "dev_attempts"),
-        # 视频理解的连接与模型不再写在配置里，旧字段一概不收。
-        ({"video": {"understanding_url": "https://relay.example/responses"}}, "understanding_url"),
-        ({"video": {"api_key_env": "ARK_KEY"}}, "api_key_env"),
-        ({"video": {"model": "seed-vision"}}, "model"),
-        ({"video": {"thinking": "medium"}}, "thinking"),
-        ({"video": {"fps": 5}}, "fps"),
-        ({"video": {"timeout_seconds": 60}}, "timeout_seconds"),
     ],
-    ids=[
-        "shot-without-api",
-        "breakdown-without-api",
-        "unknown-key",
-        "env-name",
-        "attempts",
-        "video-url",
-        "video-key",
-        "video-model",
-        "video-thinking",
-        "video-fps",
-        "video-timeout",
-    ],
+    ids=["shot-without-api", "breakdown-without-api", "unknown-key", "env-name", "attempts"],
 )
 async def test_a_malformed_config_fails_on_entry(config: dict[str, Any], where: str) -> None:
     with pytest.raises(ValidationError, match=where):
         async with open_video_plugins(config):
+            pytest.fail("配置不对时不该交出绑定函数")
+
+
+@pytest.mark.parametrize(
+    "section",
+    [{}, {"understanding_url": "https://relay.example/responses", "model": "seed-vision"}],
+    ids=["empty", "old-fields"],
+)
+async def test_a_video_section_is_rejected_with_how_to_fix_it(section: dict[str, Any]) -> None:
+    """视频理解不再有配置段：写了就起不来，报错说清删掉它。"""
+
+    with pytest.raises(ValidationError, match=r"video 段已去掉.*从 plugins\.config 里删掉它"):
+        async with open_video_plugins({"video": section}):
             pytest.fail("配置不对时不该交出绑定函数")
 
 
@@ -309,7 +301,8 @@ async def test_a_missing_secret_names_its_variable(monkeypatch: pytest.MonkeyPat
 
 
 async def test_video_parses_through_the_hosts_connection_at_call_time() -> None:
-    """``video`` 段是空的：登记不查连接，工具调用时才经宿主查写定的模型，用查到的地址与密钥调。"""
+    """``plugins.config`` 是空的也登记 ``video``：登记不查连接，工具调用时才经宿主查写定的模型，用查到的地址
+    与密钥调。"""
 
     seen: list[httpx.Request] = []
 
@@ -324,9 +317,7 @@ async def test_video_parses_through_the_hosts_connection_at_call_time() -> None:
         )
 
     connections = FakeModelConnections()
-    async with open_video_plugins(
-        {"video": VIDEO}, outbound_transport=httpx.MockTransport(ark)
-    ) as bind:
+    async with open_video_plugins({}, outbound_transport=httpx.MockTransport(ark)) as bind:
         video = cast("Video[Any]", bind(host(connections))["video"].from_spec())
         assert connections.asked == [], "登记时不查连接"
         connections.connections[(DECLARATION, MODEL)] = ARK

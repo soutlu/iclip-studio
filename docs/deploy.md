@@ -23,7 +23,7 @@
    - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务），后端 60 秒内没答就连同后端一起退出，原因在上面后端的报错里；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
 
    - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)的「改后端配置」与「切换配置」两步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
-   - 带取帧、出图或视频理解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
+   - 带取帧、出图或拆解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
    - 视频理解、参考视频拆解与资料库打标调的方舟模型，要按[服务器部署](#服务器部署)的「接入火山方舟」一步在配置页里接好。
 
 5. 另开一个终端启动前端：
@@ -62,7 +62,7 @@
    - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥与 MCP 服务地址、请求头的 Fernet key，必填，缺失或格式不对运行时服务起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥与 MCP 服务的地址、请求头都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
    - `configs/`：只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
      - `config.yaml`：后端的运行配置
-     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，视频后端这个应用必须叫 `video`（再接别的应用见[新应用接入运行时](runtime-apps.md)）；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video` 只在运行时这边配，见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)
+     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，视频后端这个应用必须叫 `video`（再接别的应用见[新应用接入运行时](runtime-apps.md)）；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video`（视频理解）不用配、总是登记，见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)
    - `.env` 里运行时服务那几项（compose 只把这几项交给运行时容器）：
      - `RUNTIME_URL=http://runtime:7790`，后端用
      - `RUNTIME_APP_KEY`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `apps.video.key_env`）
@@ -186,7 +186,7 @@
    |---|---|
    | `agent_runs` 段 | `agent_runs`，字段同名 |
    | `conversations.compaction` | `compaction`，字段同名 |
-   | `video` 段 | `plugins.config.video: {}`：模型、思考档位与帧率写定在代码里，连接在「接入火山方舟」那一步接 |
+   | `video` 段 | 不写，整段删掉：视频理解总是登记，模型、思考档位与帧率写定在代码里，连接在「接入火山方舟」那一步接；`runtime.yaml` 写了 `video` 运行时起不来 |
    | `iclip_studio` 段，且 `.env` 设了 `VIDEO_UNDERSTANDING_URL` | `plugins.config.video_breakdown: {}` |
    | `shot_video` 段 | `plugins.config.shot_video`：出图重试的字段（`poll_interval_seconds`、`dev_attempts`、`pro_attempts`、`backoff_seconds`、`backoff_factor`、`job_timeout_seconds`）同名，没改过就写 `{}` |
    | `.env` 设了 `OSS_INTERNAL_ENDPOINT` | `plugins.config.oss`：`public_url_base` 是 `OSS_PUBLIC_URL_BASE` 的值，`internal_url_base` 是 `<内网 endpoint 的协议>://<OSS_BUCKET>.<内网 endpoint 的 host>` |
@@ -224,7 +224,7 @@
 
    - 后端日志出现「运行时事件流已连上」；运行时起不来时原因在 `docker compose logs runtime`。
    - 还开着旧页面的浏览器标签要刷新一次：页面与后端的接口和实时推送一起变了。
-10. **接入火山方舟**：原来开着视频理解（`video` 段）或拆解（`iclip_studio` 段）时，按[服务器部署](#服务器部署)第 7 步在配置页里接：密钥填记下的 `VIDEO_UNDERSTANDING_API_KEY`；记下的 `VIDEO_UNDERSTANDING_URL` 去掉末尾的 `/responses` 后不是默认地址时，把它填进接口地址。
+10. **接入火山方舟**：原来开着视频理解（旧配置的 `video` 段）或拆解（`iclip_studio` 段）时，按[服务器部署](#服务器部署)第 7 步在配置页里接：密钥填记下的 `VIDEO_UNDERSTANDING_API_KEY`；记下的 `VIDEO_UNDERSTANDING_URL` 去掉末尾的 `/responses` 后不是默认地址时，把它填进接口地址。
 11. **核对**：
     - 首页列着原来上首页的 agent。
     - 每个 agent 各开一段新对话发一条消息，能答复，标题自动起好。
