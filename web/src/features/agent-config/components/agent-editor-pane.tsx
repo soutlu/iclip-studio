@@ -3,7 +3,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MarkdownPreview } from '@/shared/ui/markdown-editor'
-import { ThinkingEmoji, thinkingLabel } from '@/shared/ui/thinking-level'
+import { thinkingLabel } from '@/shared/ui/thinking-level'
 import {
   enabledPluginNames,
   missingRequiresReason,
@@ -39,14 +39,14 @@ function Section({
   return (
     <section aria-label={title} className="scroll-mt-4" data-section={section}>
       <div className="mb-2.5 flex min-h-8 items-center justify-between gap-3">
-        <h2 className="flex items-center gap-1.5 text-body font-semibold text-on-surface">
+        <h2 className="flex shrink-0 items-center gap-1.5 text-body font-semibold text-on-surface">
           {title}
           {problems === undefined ? null : (
             <Icon className="text-error" decorative name="alert" size="sm" />
           )}
         </h2>
         {actions === undefined ? null : (
-          <div className="-mr-1 flex items-center gap-1">{actions}</div>
+          <div className="-mr-1 flex min-w-0 items-center gap-1">{actions}</div>
         )}
       </div>
       {problems === undefined ? null : <ProblemList problems={problems} />}
@@ -337,7 +337,7 @@ export function AgentEditorPane({
   )
 }
 
-/** 模型胶囊：思考档位 emoji + 模型名 + 箭头；不给 onClick 是只读的（看历史版本）。 */
+/** 模型胶囊：模型名、次级思考档位与箭头；不给 onClick 是只读的（看历史版本）。 */
 function ModelPill({
   active = false,
   model,
@@ -350,7 +350,7 @@ function ModelPill({
   onClick?: () => void
 }) {
   const className = cn(
-    'inline-flex h-7.5 max-w-80 shrink-0 items-center gap-1.5 rounded-full bg-surface-container-low pr-2 pl-2.5 text-on-surface',
+    'inline-flex h-7.5 max-w-80 min-w-0 items-center gap-2 rounded-full bg-surface-container-low pr-2 pl-2.5 text-on-surface',
     active && 'bg-surface-container',
   )
   const label =
@@ -359,7 +359,6 @@ function ModelPill({
       : `模型设置：${model}${thinking === null ? '' : `，思考：${thinkingLabel(thinking)}`}`
   const content = (
     <>
-      {thinking === null ? null : <ThinkingEmoji level={thinking} />}
       <span
         className={cn(
           'min-w-0 truncate text-label font-medium tabular-nums',
@@ -368,6 +367,15 @@ function ModelPill({
       >
         {model ?? '选择模型'}
       </span>
+      {model === null ? null : (
+        <span className="shrink-0 border-l border-hairline pl-2 text-caption whitespace-nowrap text-on-surface-muted">
+          {thinking === null
+            ? '默认思考'
+            : thinking === 'none'
+              ? '不思考'
+              : `思考 · ${thinkingLabel(thinking)}`}
+        </span>
+      )}
       {onClick === undefined ? null : (
         <Icon className="shrink-0 text-on-surface-faint" decorative name="disclosure" size="sm" />
       )}
