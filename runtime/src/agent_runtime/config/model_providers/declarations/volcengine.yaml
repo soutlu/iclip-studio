@@ -7,4 +7,6 @@ credential_fields:
   - {name: api_key, label: API Key, type: secret, required: true}
   - {name: base_url, label: 接口地址, type: text, required: true, default: "https://ark.cn-beijing.volces.com/api/v3"}
 custom_models: true
-models: []
+models:
+  - {name: doubao-seed-2-0-lite-260428, type: llm, api: responses, context_size: 262144, thinking: [none, low, medium, high]}
+  - {name: doubao-seed-2-1-lite-260915, type: llm, api: responses, context_size: 1048576, thinking: [none, low, medium, high]}

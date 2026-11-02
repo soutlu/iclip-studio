@@ -89,7 +89,7 @@
    - 其他管理用户、但不用 Agent 配置页的人设为 admin：`docker compose run --rm server python -m scripts.admin set-roles <账号> admin`。`set-roles` 整份替换这个账号的角色。
 7. 接入火山方舟：运行时的 `video` 插件（视频理解）与后端的 `iclip_studio`（参考视频拆解、资料库打标）调的方舟模型写定在代码里，地址与密钥用配置页里接的火山方舟，运行时按调用现查。没接好时视频理解的工具答「要管理员启用这个模型」，拆解记为「没启用拆解模型」，打标记为「没启用打标模型」。用 root 账号在配置页的模型供应商里：
    - 接入一个火山方舟，建一把密钥（方舟的 API Key；接口地址不填用默认的 `https://ark.cn-beijing.volces.com/api/v3`，走中转时填中转的地址，不带 `/responses`），它就是默认密钥；
-   - 加上两个模型并保持启用，类型 `llm`、接口 `responses`：视频理解用的 `doubao-seed-2-0-lite-260428`，拆解与打标用的 `doubao-seed-2-1-lite-260915`。
+   - 确认两个内置模型保持启用：视频理解用的 `doubao-seed-2-0-lite-260428`，拆解与打标用的 `doubao-seed-2-1-lite-260915`。
    - 接了几个火山方舟时，用最早接入的那个启用了这个模型、又有默认密钥的。
 
 运行时服务直接连模型供应商：接 Google Gemini 或 OpenRouter 时，服务器要能直连 Google 或 OpenRouter 的官方地址，否则在密钥里填一个服务器连得上的接口地址；Gemini 的接口地址要讲 Gemini 原生接口，OpenAI 兼容的中转不行。

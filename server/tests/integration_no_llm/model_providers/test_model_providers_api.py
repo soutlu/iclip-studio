@@ -162,6 +162,7 @@ async def test_declarations_describe_the_credential_form_and_models(
     assert {model["name"]: model["api"] for model in bailian["models"]} == {
         "qwen3.8-flash": "responses",
         "ZHIPU/GLM-5.3-Flash": "chat",
+        "deepseek-v4.1-flash-1017": "responses",
     }
     assert "pydanticAiProvider" not in bailian
 
@@ -171,7 +172,7 @@ async def test_connecting_checks_the_name_and_the_declaration(root: httpx.AsyncC
     assert provider["enabled"] is True
     assert provider["credentials"] == []
     assert provider["defaultCredentialId"] is None
-    assert [model["enabled"] for model in provider["models"]] == [True, True]
+    assert [model["enabled"] for model in provider["models"]] == [True, True, True]
 
     for body in (
         {"name": "Bailian", "provider": "bailian", "label": "x"},
@@ -347,7 +348,8 @@ async def test_probe_needs_an_enabled_llm_model_but_saving_does_not(
 ) -> None:
     provider = await connect_bailian(root)
     base = f"/model-providers/{provider['id']}"
-    for name in ("qwen3.8-flash", "ZHIPU/GLM-5.3-Flash"):
+    for model in provider["models"]:
+        name = model["name"]
         response = await root.patch(f"{base}/models/llm/{name}", json={"enabled": False})
         assert response.status_code == 200, response.text
 
@@ -494,6 +496,7 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
     assert names == [
         ("qwen3.8-flash", "llm"),
         ("ZHIPU/GLM-5.3-Flash", "llm"),
+        ("deepseek-v4.1-flash-1017", "llm"),
         ("qwen-max", "embedding"),
     ]
 
@@ -701,7 +704,12 @@ async def test_agent_managers_read_model_options_without_model_manage(
                         "name": "qwen3.8-flash",
                         "contextSize": 1048576,
                         "thinking": ["none", "low", "medium", "high"],
-                    }
+                    },
+                    {
+                        "name": "deepseek-v4.1-flash-1017",
+                        "contextSize": 1000000,
+                        "thinking": ["none", "low", "high", "max"],
+                    },
                 ],
                 "credentials": [
                     {

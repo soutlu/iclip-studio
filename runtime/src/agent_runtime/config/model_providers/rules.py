@@ -128,13 +128,10 @@ def masked_fields(declaration: ProviderDeclaration, plain: Mapping[str, str]) ->
 def merge_models(
     declaration: ProviderDeclaration, settings: Sequence[ModelSetting]
 ) -> tuple[ProviderModel, ...]:
-    """模型列表：声明里的模型（默认启用，表里记了停用的显示为停用）在前，自己加的在后。"""
+    """声明模型在前，自定义模型在后。同名同类型采用声明属性，保留已有记录的启停状态。"""
 
-    disabled = {
-        (setting.name, setting.type)
-        for setting in settings
-        if setting.source == SOURCE_DECLARED and not setting.enabled
-    }
+    disabled = {(setting.name, setting.type) for setting in settings if not setting.enabled}
+    declared_keys = {(model.name, model.type) for model in declaration.models}
     declared = tuple(
         ProviderModel(
             name=model.name,
@@ -147,7 +144,7 @@ def merge_models(
     )
     custom: list[ProviderModel] = []
     for setting in settings:
-        if setting.source != SOURCE_CUSTOM:
+        if setting.source != SOURCE_CUSTOM or (setting.name, setting.type) in declared_keys:
             continue
         if setting.properties is None:
             raise RuntimeError(f"自己加的模型 {setting.name} 在表里没有属性")

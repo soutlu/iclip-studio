@@ -127,7 +127,7 @@ def test_shipped_declarations_load_with_their_apis_and_address_field() -> None:
         # 没有官方地址，要自己填。
         "openai-compatible": (True, None),
     }
-    for name in ("gemini", "openrouter", "volcengine", "openai-compatible"):
+    for name in ("gemini", "openrouter", "openai-compatible"):
         assert declarations[name].custom_models is True
         assert declarations[name].models == ()
 
