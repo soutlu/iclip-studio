@@ -13,8 +13,9 @@ import html
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Final, Literal
+from typing import Final, Literal, get_args
 
+from pydantic_ai.framing import DataTag
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
@@ -30,8 +31,13 @@ _OPEN_TAG: Final = re.compile(
     r'(?P<failed> outcome="failed")?>\n'
 )
 _CLOSE_TAG: Final = "\n</tool_result>"
-_ESCAPED_CLOSING_TAG: Final = re.compile(r"&lt;(?=\s*/\s*tool_result(?=[\s/>]))", re.IGNORECASE)
-"""harness 把正文里闭合标签的 ``<`` 转成 ``&lt;``，防正文提前收掉标签；解析时按同一规则换回。"""
+_FRAMING_TAG_NAMES: Final = "|".join(re.escape(tag) for tag in ("system", *get_args(DataTag)))
+_NEUTRALIZED_TAG: Final = re.compile(
+    rf"&lt;(?=\s*(?:/\s*)?(?:{_FRAMING_TAG_NAMES})(?=[\s/>]|$))", re.IGNORECASE
+)
+"""harness 把正文里每个框架标签（``system`` 与 ``DataTag`` 各标签）开、闭标签的 ``<`` 转成 ``&lt;``，
+防正文收掉或伪造标签；解析时按同一规则换回。规则照抄框架 ``neutralize_tags`` 的匹配方式，框架没有
+公开的反转义，升级 harness 时须复核。"""
 
 INTERRUPTED_RECEIPT: Final = "interrupted_background_receipt"
 """被中断的回执在 ``ToolReturnPart.metadata`` 里的标记键；metadata 不发给模型，随历史落库。"""
@@ -86,7 +92,7 @@ def parse_outcome(part: UserPromptPart) -> BackgroundOutcome | None:
         tool_call_id=html.unescape(opened["id"]),
         tool_name=html.unescape(opened["name"]),
         state="done" if opened["failed"] is None else "error",
-        text=_ESCAPED_CLOSING_TAG.sub("<", body if closed < 0 else body[:closed]),
+        text=_NEUTRALIZED_TAG.sub("<", body if closed < 0 else body[:closed]),
     )
 
 

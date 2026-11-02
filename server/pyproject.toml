@@ -41,8 +41,8 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest-timeout>=2.4.0",
     # 后端源码不直接引用 pydantic-ai（经 agent-runtime 间接安装），测试里用它的测试模型与运行工具。
-    "pydantic-ai-slim[openai]>=2.62",
-    "pydantic-ai-harness>=0.62",
+    "pydantic-ai-slim[openai]>=2.63",
+    "pydantic-ai-harness>=0.63",
     # 后端源码不直接加解密（归运行时），测试里用 Fernet 造换钥用的 key。
     "cryptography>=50.0.1",
 ]

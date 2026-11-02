@@ -6,7 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "agent-runtime",
     "pydantic>=2.13.5",
-    "pydantic-ai-slim>=2.62.0",
+    "pydantic-ai-slim>=2.63.0",
     "httpx>=0.28.1",  # 视频理解的方舟适配器
     "structlog>=26.1.0",
 ]
