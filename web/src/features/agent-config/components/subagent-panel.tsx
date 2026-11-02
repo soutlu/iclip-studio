@@ -67,11 +67,7 @@ export function SubagentPanel({
                   type="button"
                 >
                   <CardGlyph
-                    className={cn(
-                      'size-9',
-                      open ? 'bg-top-layer' : 'bg-surface-container-low',
-                      !selected && reason !== undefined && 'opacity-55',
-                    )}
+                    className={cn('size-9', !selected && reason !== undefined && 'opacity-55')}
                     name="agent"
                   />
                   <span

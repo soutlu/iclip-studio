@@ -237,6 +237,14 @@
         --color-accent-6: #e35d8c;
         --color-accent-7: #2a9fb0;
         --color-accent-8: #5c6bd6;
+        /* 配置资源分类色：只给资源图标与其浅色底块，不表达运行状态或选中态。 */
+        --color-resource-agent: #5d60b1;
+        --color-resource-skill: #8061b2;
+        --color-resource-workspace: #a57527;
+        --color-resource-video: #b65e47;
+        --color-resource-project: #5074ac;
+        --color-resource-connection: #2e887d;
+        --color-resource-provider: #527b96;
         /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线 */
         --color-code-key: #2e5aa6;
         --color-code-string: #8a4a8f;
@@ -494,6 +502,13 @@
         --color-accent-6: #ff8eb1;
         --color-accent-7: #54bfd0;
         --color-accent-8: #a0abff;
+        --color-resource-agent: #b8baff;
+        --color-resource-skill: #c8ace8;
+        --color-resource-workspace: #e6c58f;
+        --color-resource-video: #e9ab98;
+        --color-resource-project: #a6bfe8;
+        --color-resource-connection: #8acec1;
+        --color-resource-provider: #abc7d9;
         --color-code-key: #8fb3ef;
         --color-code-string: #d4a2d7;
         --color-code-literal: #62c3d3;
@@ -630,6 +645,14 @@
             <li>
               <strong>点缀色的用法</strong>
               色段与短色签都用 <code>accent-N</code> 实色，面积小且固定；序号本身用中性字色。不做浅色底块或彩色徽标，也不画随正文变长的整条色带。
+            </li>
+            <li>
+              <strong>配置资源图标</strong>
+              <code>resource-agent / skill / workspace / video / project / connection / provider</code>
+              区分 Agent、技能、文件、视频、工程、连接与供应商；只用于资源图标及 10% 浓度的小底块。图形统一 24px 画布、圆角线条与局部浅填充，文字、卡片与选中态保持中性。参考
+              <a href="https://phosphoricons.com/">Phosphor 的双层图形</a>、
+              <a href="https://lucide.dev/contribute/icons/specification">Lucide 图标规范</a>与
+              <a href="https://atlassian.design/foundations/color/accents">Atlassian 分类点缀色</a>。
             </li>
           </ul>
         </div>

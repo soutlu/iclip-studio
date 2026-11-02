@@ -123,6 +123,19 @@ import {
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import {
+  ResourceAgentGlyph,
+  ResourceFrameGlyph,
+  ResourceMcpGlyph,
+  ResourcePluginGlyph,
+  ResourceProjectGlyph,
+  ResourceProviderGlyph,
+  ResourceShotsGlyph,
+  ResourceSkillGlyph,
+  ResourceUnderstandingGlyph,
+  ResourceVideoGlyph,
+  ResourceWorkspaceGlyph,
+} from './resource-glyphs'
 
 /** 参考 Kimi ui-spinner；图形包含轨道与圆弧，旋转由调用方 animate-spin 控制。 */
 const LoadingGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
@@ -181,6 +194,17 @@ const CreditGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
 
 // 图标键按语义用途命名，底层图形集中替换。
 const ICONS = {
+  'resource-agent': ResourceAgentGlyph,
+  'resource-skill': ResourceSkillGlyph,
+  'resource-workspace': ResourceWorkspaceGlyph,
+  'resource-video': ResourceVideoGlyph,
+  'resource-project': ResourceProjectGlyph,
+  'resource-mcp': ResourceMcpGlyph,
+  'resource-provider': ResourceProviderGlyph,
+  'resource-plugin': ResourcePluginGlyph,
+  'resource-shots': ResourceShotsGlyph,
+  'resource-understanding': ResourceUnderstandingGlyph,
+  'resource-frame': ResourceFrameGlyph,
   add: Plus,
   arrow: ArrowUpRight,
   ellipse: Circle,

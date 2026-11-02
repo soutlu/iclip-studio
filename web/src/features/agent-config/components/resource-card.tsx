@@ -6,17 +6,52 @@ import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/sh
 const CARD_CLASS =
   'flex h-12 min-w-0 items-center gap-2.5 rounded-md bg-surface-container-low px-2.5 text-left text-body text-on-surface'
 
-/** 摘要卡片左侧的图标块。 */
+// 同一资源在摘要、列表与页头使用同一图形与分类色；操作图标沿用中性线条。
+const RESOURCE_GLYPHS: Partial<Record<IconName, { icon: IconName; className: string }>> = {
+  agent: { icon: 'resource-agent', className: 'bg-resource-agent/10 text-resource-agent' },
+  skill: { icon: 'resource-skill', className: 'bg-resource-skill/10 text-resource-skill' },
+  folder: {
+    icon: 'resource-workspace',
+    className: 'bg-resource-workspace/10 text-resource-workspace',
+  },
+  film: { icon: 'resource-video', className: 'bg-resource-video/10 text-resource-video' },
+  layers: { icon: 'resource-project', className: 'bg-resource-project/10 text-resource-project' },
+  'mcp-server': {
+    icon: 'resource-mcp',
+    className: 'bg-resource-connection/10 text-resource-connection',
+  },
+  provider: {
+    icon: 'resource-provider',
+    className: 'bg-resource-provider/10 text-resource-provider',
+  },
+  plugin: {
+    icon: 'resource-plugin',
+    className: 'bg-resource-connection/10 text-resource-connection',
+  },
+  'shot-list': {
+    icon: 'resource-shots',
+    className: 'bg-resource-project/10 text-resource-project',
+  },
+  'video-understanding': {
+    icon: 'resource-understanding',
+    className: 'bg-resource-video/10 text-resource-video',
+  },
+  'video-type': { icon: 'resource-frame', className: 'bg-resource-video/10 text-resource-video' },
+}
+
+/** 资源图标块；较大的列表入口可由 className 调整容器尺寸。 */
 export function CardGlyph({ name, className }: { name: IconName; className?: string | undefined }) {
+  const resource = RESOURCE_GLYPHS[name]
   return (
     <span
       aria-hidden
       className={cn(
-        'grid size-7 shrink-0 place-items-center rounded-sm bg-top-layer text-on-surface-variant',
+        'grid size-8 shrink-0 place-items-center rounded-sm bg-top-layer text-on-surface-variant',
+        resource?.className,
         className,
       )}
     >
-      <Icon decorative name={name} size="md" />
+      <Icon decorative name={resource?.icon ?? name} size={resource === undefined ? 'md' : 'lg'} />
     </span>
   )
 }

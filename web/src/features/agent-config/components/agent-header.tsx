@@ -1,8 +1,10 @@
+import { useRef, type RefObject } from 'react'
 import { Icon } from '@/shared/icons'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import {
+  MenuItem,
   MenuRadioGroup,
   MenuRadioItem,
   MenuRoot,
@@ -11,6 +13,7 @@ import {
   MenuTrigger,
 } from '@/shared/ui/menu'
 import type { Agent, AgentVersion } from '../agents.api'
+import { CardGlyph } from './resource-card'
 
 const DRAFT = 'draft'
 
@@ -32,7 +35,9 @@ function DraftDot() {
 
 type AgentHeaderProps = {
   agents: readonly Agent[]
+  agentEntryRef: RefObject<HTMLButtonElement | null>
   current: { id: string; name: string; activeVersionId: string | null }
+  onCreateAgent: () => void
   onSelectAgent: (id: string) => void
   definitionOpen: boolean
   onEditDefinition: () => void
@@ -45,11 +50,13 @@ type AgentHeaderProps = {
   unpublished: boolean
 }
 
-/** 左栏头部：切换 agent、改定义、看版本。归档的 agent 不进切换菜单。 */
+/** 左栏头部：切换或新建 agent、改定义、看版本。归档的 agent 不进切换菜单。 */
 export function AgentHeader({
   agents,
+  agentEntryRef,
   current,
   definitionOpen,
+  onCreateAgent,
   onEditDefinition,
   onSelectAgent,
   onViewVersion,
@@ -57,6 +64,7 @@ export function AgentHeader({
   versions,
   viewingVersionId,
 }: AgentHeaderProps) {
+  const creatingRef = useRef(false)
   const viewing = versions?.find((item) => item.id === viewingVersionId)
   const switchable = agents.filter((agent) => agent.status === 'active' || agent.id === current.id)
   return (
@@ -65,17 +73,21 @@ export function AgentHeader({
         <MenuTrigger
           aria-label={`切换 Agent，当前：${current.name}`}
           className="flex h-10 max-w-[min(420px,100%)] min-w-0 ui-state cursor-pointer items-center gap-2.5 rounded-sm pr-2 pl-1 text-left text-on-surface ui-focus data-[state=open]:bg-state-active"
+          ref={agentEntryRef}
         >
-          <span
-            aria-hidden
-            className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-container-high text-on-surface-variant"
-          >
-            <Icon decorative name="agent" size="md" />
-          </span>
+          <CardGlyph className="size-9" name="agent" />
           <span className="min-w-0 truncate text-title font-semibold">{current.name}</span>
           <Icon className="shrink-0 text-on-surface-faint" decorative name="expand" size="sm" />
         </MenuTrigger>
-        <MenuSurface align="start" className="max-w-[min(420px,calc(100vw-32px))] min-w-60">
+        <MenuSurface
+          align="start"
+          className="max-w-[min(420px,calc(100vw-32px))] min-w-60"
+          onCloseAutoFocus={(event) => {
+            if (!creatingRef.current) return
+            creatingRef.current = false
+            event.preventDefault()
+          }}
+        >
           <MenuRadioGroup onValueChange={onSelectAgent} value={current.id}>
             {switchable.map((agent) => (
               <MenuRadioItem key={agent.id} value={agent.id}>
@@ -91,6 +103,16 @@ export function AgentHeader({
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
+          <MenuSeparator />
+          <MenuItem
+            icon="add"
+            onSelect={() => {
+              creatingRef.current = true
+              onCreateAgent()
+            }}
+          >
+            新建 Agent
+          </MenuItem>
         </MenuSurface>
       </MenuRoot>
       <IconButton
