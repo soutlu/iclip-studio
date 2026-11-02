@@ -38,8 +38,8 @@ class McpServerCreateIn(CamelModel):
 
 
 class McpServerUpdateIn(CamelModel):
-    """不给或给 ``null`` 的项不动。给了 ``headers`` 就整份替换请求头，其中没给 ``value`` 的沿用同名请求头
-    原来的值。"""
+    """不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中
+    没给 ``value`` 的沿用同名请求头原来的值。"""
 
     name: str | None = None
     description: str | None = None
@@ -51,11 +51,12 @@ class McpServerUpdateIn(CamelModel):
 
 
 class McpCheckIn(CamelModel):
-    """试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``value`` 的请求头取那个已保存的服务
-    里同名请求头的值；没给 ``serverId`` 时每个请求头都要给 ``value``。"""
+    """试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，
+    没给 ``value`` 的请求头取它里面同名请求头的值；没给 ``serverId`` 时 ``url`` 与每个请求头的 ``value``
+    都要给。"""
 
     server_id: str | None = None
-    url: str
+    url: str | None = None
     transport: McpTransport
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     headers: list[McpHeaderIn] = []
@@ -86,6 +87,7 @@ class McpServerOut(CamelModel):
     name: str
     description: str
     url: str
+    """完整的地址（库里加密存，这里解密后原样给）。"""
     transport: McpTransport
     timeout_seconds: int
     headers: list[McpHeaderOut]

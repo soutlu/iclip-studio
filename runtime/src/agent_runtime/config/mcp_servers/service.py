@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 import structlog
 
@@ -29,6 +30,7 @@ from agent_runtime.config.mcp_servers.rules import (
     encrypt_headers,
     masked_headers,
     plain_headers,
+    url_hash,
 )
 from agent_runtime.config.mcp_servers.schemas import (
     McpCheckIn,
@@ -41,7 +43,7 @@ from agent_runtime.config.mcp_servers.schemas import (
     McpServerUpdateIn,
     McpToolOut,
 )
-from agent_runtime.errors import Conflict, NotFound
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.secrets import CredentialCipher
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -62,12 +64,17 @@ def _check_out(result: McpProbeResult) -> McpCheckOut:
     )
 
 
-async def rotate_mcp_header_keys(store: McpServerStore, *, cipher: CredentialCipher) -> int:
-    """把全部 MCP 服务请求头的值改用第一个 key 重新加密，交回改了几个服务。供 ``agent_runtime.admin`` 换钥用。"""
+async def rotate_mcp_server_keys(store: McpServerStore, *, cipher: CredentialCipher) -> int:
+    """把全部 MCP 服务的地址与请求头的值改用第一个 key 重新加密，交回改了几个服务。供 ``agent_runtime.admin``
+    换钥用。"""
 
-    return await store.rewrite_headers(
-        lambda record: tuple(
-            McpHeader(name=one.name, value=cipher.rotate(one.value)) for one in record.headers
+    return await store.rewrite_secrets(
+        lambda record: replace(
+            record,
+            url=cipher.rotate(record.url),
+            headers=tuple(
+                McpHeader(name=one.name, value=cipher.rotate(one.value)) for one in record.headers
+            ),
         )
     )
 
@@ -112,15 +119,17 @@ class McpServerService:
         return self._out(record, (await self._usages.mcp_server_users()).get(server_id, ()))
 
     async def create(self, body: McpServerCreateIn, *, by: uuid.UUID) -> McpServerOut:
-        """建一个服务，不连它。标识、名称、地址、时限或请求头不合格是 ``ValidationFailed``，标识已被占用是
-        ``Conflict``。"""
+        """建一个服务，不连它；地址与请求头的值加密存。标识、名称、地址、时限或请求头不合格是
+        ``ValidationFailed``，标识已被占用、地址或名称与已有的服务重复是 ``Conflict``。"""
 
         server_id = check_server_id(body.id)
+        url = check_url(body.url)
         await self._store.insert(
             server_id,
             name=clean_name(body.name),
             description=clean_description(body.description),
-            url=check_url(body.url),
+            url=self._cipher.encrypt(url),
+            url_hash=url_hash(url),
             transport=body.transport,
             timeout_seconds=check_timeout(body.timeout_seconds),
             headers=encrypt_headers(plain_headers(body.headers), self._cipher),
@@ -133,16 +142,19 @@ class McpServerService:
     async def update(
         self, server_id: str, body: McpServerUpdateIn, *, by: uuid.UUID
     ) -> McpServerOut:
-        """改给了的项，不连它。给了请求头就整份替换，没给值的沿用同名请求头原来的值。换了地址或连接方式时，
-        上一次试连与发现的工具一起清掉（那是另一个服务的了）。某个 agent 的草稿或当前版本还挂着它时停用是
-        ``Conflict``。"""
+        """改给了的项，不连它。没给地址沿用原来的，给了就重新加密。给了请求头就整份替换，没给值的沿用同名
+        请求头原来的值。换了地址或连接方式时，上一次试连与发现的工具一起清掉（那是另一个服务的了）。某个
+        agent 的草稿或当前版本还挂着它时停用、地址或名称与别的服务重复是 ``Conflict``。"""
 
         async with self._store.edit(server_id) as editor:
             record = editor.record
             enabled = record.enabled if body.enabled is None else body.enabled
             if record.enabled and not enabled:
                 await self._require_unused(record)
-            url = record.url if body.url is None else check_url(body.url)
+            url, hashed = record.url, record.url_hash
+            if body.url is not None:
+                plain_url = check_url(body.url)
+                url, hashed = self._cipher.encrypt(plain_url), url_hash(plain_url)
             transport = record.transport if body.transport is None else body.transport
             headers = record.headers
             if body.headers is not None:
@@ -154,13 +166,14 @@ class McpServerService:
                 if body.description is None
                 else clean_description(body.description),
                 url=url,
+                url_hash=hashed,
                 transport=transport,
                 timeout_seconds=record.timeout_seconds
                 if body.timeout_seconds is None
                 else check_timeout(body.timeout_seconds),
                 headers=headers,
                 enabled=enabled,
-                clear_check=(url, transport) != (record.url, record.transport),
+                clear_check=(hashed, transport) != (record.url_hash, record.transport),
                 by=by,
             )
         await self._refresh_index(server_id)
@@ -192,14 +205,23 @@ class McpServerService:
         return _check_out(result)
 
     async def check_unsaved(self, body: McpCheckIn) -> McpCheckOut:
-        """按一份还没保存的配置连一次，什么都不存。给了 ``serverId`` 时没给值的请求头取那个服务里同名的原值。"""
+        """按一份还没保存的配置连一次，什么都不存。给了 ``serverId`` 时没给地址就用那个服务的地址，没给值的
+        请求头取那个服务里同名的原值；没给 ``serverId`` 又没给地址是 ``ValidationFailed``。"""
 
         current: Mapping[str, str] | None = None
+        saved_url: str | None = None
         if body.server_id is not None:
             record = await self._require(body.server_id)
             current = {one.name: one.value for one in self._plain(record)}
+            saved_url = self._cipher.decrypt(record.url)
+        if body.url is not None:
+            url = check_url(body.url)
+        elif saved_url is not None:
+            url = saved_url
+        else:
+            raise ValidationFailed("请填写地址")
         endpoint = McpEndpoint(
-            url=check_url(body.url),
+            url=url,
             transport=body.transport,
             timeout_seconds=check_timeout(body.timeout_seconds),
             headers={one.name: one.value for one in plain_headers(body.headers, current)},
@@ -207,7 +229,7 @@ class McpServerService:
         return _check_out(await self._run_probe(body.server_id, endpoint))
 
     async def runtime_server(self, server_id: str) -> RuntimeMcpServer | None:
-        """运行时挂一个服务要的东西，请求头解密成明文；没有这个服务给 ``None``。启没启用不在这里判（agent
+        """运行时挂一个服务要的东西，地址与请求头解密成明文；没有这个服务给 ``None``。启没启用不在这里判（agent
         编译时已查）。"""
 
         record = await self._store.get(server_id)
@@ -221,7 +243,7 @@ class McpServerService:
         )
 
     async def record(self, server_id: str) -> McpServerRecord | None:
-        """一个服务的存储形态（请求头仍是密文），供 agent 配置查引用；没有给 ``None``。"""
+        """一个服务的存储形态（地址与请求头仍是密文），供 agent 配置查引用；没有给 ``None``。"""
 
         return await self._store.get(server_id)
 
@@ -255,7 +277,7 @@ class McpServerService:
 
     def _endpoint(self, record: McpServerRecord) -> McpEndpoint:
         return McpEndpoint(
-            url=record.url,
+            url=self._cipher.decrypt(record.url),
             transport=record.transport,
             timeout_seconds=record.timeout_seconds,
             headers={one.name: one.value for one in self._plain(record)},
@@ -267,7 +289,7 @@ class McpServerService:
             id=record.id,
             name=record.name,
             description=record.description,
-            url=record.url,
+            url=self._cipher.decrypt(record.url),
             transport=record.transport,
             timeout_seconds=record.timeout_seconds,
             headers=[
@@ -292,4 +314,4 @@ class McpServerService:
         )
 
 
-__all__ = ["McpServerService", "rotate_mcp_header_keys"]
+__all__ = ["McpServerService", "rotate_mcp_server_keys"]

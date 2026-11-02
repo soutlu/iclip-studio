@@ -45,7 +45,7 @@ class McpToolInfo:
 
 @dataclass(frozen=True, slots=True)
 class McpProbeOutcome:
-    """一次试连：通了带工具，没通带原因；原因里不带请求头的值。"""
+    """一次试连：通了带工具，没通带原因；原因里不带地址与请求头的值。"""
 
     ok: bool
     elapsed_ms: int
@@ -148,13 +148,14 @@ class _NamedServer(WrapperToolset[Any]):
 
 
 def failure_reason(exc: BaseException, connection: McpConnection) -> str:
-    """连接失败给人看的一句话：超时换成中文，其余给 MCP 客户端报错原文的第一行；里面出现的请求头值一律抹掉。"""
+    """连接失败给人看的一句话：超时换成中文，其余给 MCP 客户端报错原文的第一行；里面出现的服务地址与请求头值
+    一律换成 ``MASK``（这句话会写进对话用户看得到的轮次 ``error``）。"""
 
     if any(isinstance(one, TimeoutError) for one in _chain(exc)):
         return f"{connection.timeout_seconds} 秒内没有答复"
     lines = str(exc).strip().splitlines()
     reason = lines[0] if lines else type(exc).__name__
-    for value in connection.headers.values():
+    for value in (connection.url, *connection.headers.values()):
         reason = reason.replace(value, MASK)
     return reason
 

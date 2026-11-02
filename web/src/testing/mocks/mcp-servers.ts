@@ -209,6 +209,16 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
     usedBy: usage(item.id),
   })
   const find = (id: unknown) => servers.find((item) => item.id === String(id))
+  /** 地址或名称与 `self` 以外的服务重复时的 409，写明撞的是哪个服务。 */
+  const duplicate = (self: MockServer | undefined, url: string, name: string) => {
+    const others = servers.filter((item) => item !== self)
+    const sameUrl = others.find((item) => item.url === url.trim())
+    if (sameUrl !== undefined)
+      return HttpResponse.json({ detail: `这个地址已经登记过：${sameUrl.name}` }, { status: 409 })
+    if (others.some((item) => item.name === name.trim()))
+      return HttpResponse.json({ detail: `这个名称已经有了：${name.trim()}` }, { status: 409 })
+    return undefined
+  }
   return [
     http.get('*/api/mcp-servers', () => HttpResponse.json({ items: servers.map(toOut) })),
 
@@ -218,10 +228,13 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
         body.serverId === null || body.serverId === undefined ? undefined : find(body.serverId)
       if (body.serverId !== null && body.serverId !== undefined && known === undefined)
         return notFound()
-      if (!checkUrl(body.url)) return invalid('地址要以 http:// 或 https:// 开头并带主机')
+      // 带 serverId 不给地址就用那个服务的地址。
+      const url = body.url ?? known?.url
+      if (url === undefined) return invalid('请填写地址')
+      if (!checkUrl(url)) return invalid('地址要以 http:// 或 https:// 开头并带主机')
       const headers = resolveHeaders(body.headers ?? [], known?.headers ?? null)
       if (typeof headers === 'string') return invalid(headers)
-      return HttpResponse.json(probe(body.url, known))
+      return HttpResponse.json(probe(url, known))
     }),
 
     http.post('*/api/mcp-servers', async ({ request }) => {
@@ -230,6 +243,8 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
       if (find(body.id) !== undefined)
         return HttpResponse.json({ detail: `标识「${body.id}」已被占用` }, { status: 409 })
       if (!checkUrl(body.url)) return invalid('地址要以 http:// 或 https:// 开头并带主机')
+      const duplicated = duplicate(undefined, body.url, body.name)
+      if (duplicated !== undefined) return duplicated
       const headers = resolveHeaders(body.headers ?? [], null)
       if (typeof headers === 'string') return invalid(headers)
       const created: MockServer = {
@@ -265,6 +280,8 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
       const body = (await request.json()) as McpServerUpdateIn
       if (body.url !== null && body.url !== undefined && !checkUrl(body.url))
         return invalid('地址要以 http:// 或 https:// 开头并带主机')
+      const duplicated = duplicate(item, body.url ?? item.url, body.name ?? item.name)
+      if (duplicated !== undefined) return duplicated
       if (body.enabled === false && usage(item.id).length > 0)
         return HttpResponse.json({ detail: inUseMessage(item, usage(item.id)) }, { status: 409 })
       if (body.headers !== null && body.headers !== undefined) {

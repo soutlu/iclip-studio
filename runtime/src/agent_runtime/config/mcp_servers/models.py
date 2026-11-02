@@ -58,13 +58,15 @@ class McpCheck:
 
 @dataclass(frozen=True, slots=True)
 class McpServerRecord:
-    """``mcp_servers`` 的一行。``headers`` 是存储形态（值是密文）；``tools`` 是最后一次试连成功时发现的
-    工具，从没成功过为 ``None``；``check`` 是最后一次试连，从没试过为 ``None``。"""
+    """``mcp_servers`` 的一行。``url`` 与 ``headers`` 是存储形态（地址与请求头的值是密文），``url_hash``
+    是明文地址的 sha256；``tools`` 是最后一次试连成功时发现的工具，从没成功过为 ``None``；``check`` 是最后
+    一次试连，从没试过为 ``None``。"""
 
     id: str
     name: str
     description: str
     url: str
+    url_hash: str
     transport: McpTransport
     timeout_seconds: int
     headers: tuple[McpHeader, ...]
@@ -89,7 +91,7 @@ class McpEndpoint:
 
 @dataclass(frozen=True, slots=True)
 class McpProbeResult:
-    """一次试连的结果：通了带发现的工具，没通带原因。原因里不带请求头的值。"""
+    """一次试连的结果：通了带发现的工具，没通带原因。原因里不带地址与请求头的值。"""
 
     ok: bool
     elapsed_ms: int

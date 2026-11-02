@@ -1,8 +1,9 @@
-"""MCP 服务的纯规则：标识、名称、描述、地址、时限与请求头的整理，请求头的加解密与打码。不合格是
+"""MCP 服务的纯规则：标识、名称、描述、地址、时限与请求头的整理，地址的哈希，请求头的加解密与打码。不合格是
 ``ValidationFailed``，消息直接给人看，从不带请求头的值。"""
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -61,6 +62,12 @@ def check_url(url: str) -> str:
     if parts.scheme not in {"http", "https"} or not host:
         raise ValidationFailed("地址要以 http:// 或 https:// 开头，并写明主机")
     return cleaned
+
+
+def url_hash(url: str) -> str:
+    """``check_url`` 收下的地址的 sha256（十六进制），表上按它判地址不重复。"""
+
+    return hashlib.sha256(url.encode()).hexdigest()
 
 
 def check_timeout(seconds: int) -> int:
@@ -132,4 +139,5 @@ __all__ = [
     "encrypt_headers",
     "masked_headers",
     "plain_headers",
+    "url_hash",
 ]

@@ -21,7 +21,7 @@ from agent_runtime.config.mcp_servers.schemas import (
     McpServersOut,
     McpServerUpdateIn,
 )
-from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_header_keys
+from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
 
 __all__ = [
     "IndexedMcpServer",
@@ -42,5 +42,5 @@ __all__ = [
     "McpUsages",
     "RuntimeMcpServer",
     "SqlMcpServerStore",
-    "rotate_mcp_header_keys",
+    "rotate_mcp_server_keys",
 ]

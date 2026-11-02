@@ -1,5 +1,6 @@
-"""运行时服务的 MCP 服务：请求头加密存、只给打码值、改的时候没给值就沿用；试连记下结果与发现的工具，没保存的
-配置试连什么都不存；发布时查服务与选的工具；被 agent 挂着时不能停用、不能删；换钥连请求头一起换；运行时
+"""运行时服务的 MCP 服务：请求头加密存、只给打码值、改的时候没给值就沿用；地址加密存、原样返回、改的时候
+没给就沿用，地址与名称都不能和已有的服务重复；试连记下结果与发现的工具，没保存的配置试连什么都不存；发布时查
+服务与选的工具；被 agent 挂着时不能停用、不能删；换钥连地址与请求头一起换；运行时
 agent 真去调本地 MCP 服务的工具，工具名带服务前缀、只放选了的工具，工具卡写服务名称与工具说明（名册启动时从库里读），连不上时
 这次运行失败并写明是哪个服务。
 
@@ -7,17 +8,21 @@ MCP 服务是进程内的本地服务（``tests.helpers.mcp``），不出网。"
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.agent_usage import AgentUsage
 from agent_runtime.assembly.config_services import ConfigServices
+from agent_runtime.assembly.mcp import HarnessMcpProbe
+from agent_runtime.config.mcp_servers.index import McpServerIndex
 from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
-from agent_runtime.config.mcp_servers.service import rotate_mcp_header_keys
+from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
 from agent_runtime.secrets import CredentialCipher
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
@@ -114,6 +119,19 @@ async def stored_headers(engine: AsyncEngine, server_id: str = "calc") -> list[d
             )
         ).scalar_one()
     return raw if isinstance(raw, list) else json.loads(raw)
+
+
+async def stored_url(engine: AsyncEngine, server_id: str = "calc") -> tuple[str, str]:
+    """库里这个服务的 ``url``（密文）与 ``url_hash``。"""
+
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT url, url_hash FROM agent_runtime.mcp_servers WHERE id = :id"),
+                {"id": server_id},
+            )
+        ).one()
+    return row.url, row.url_hash
 
 
 def plain(headers: list[dict[str, str]], cipher: CredentialCipher) -> dict[str, str]:
@@ -236,6 +254,82 @@ async def test_headers_are_encrypted_masked_and_kept_when_omitted(
     assert await stored_headers(engine) == []
 
 
+async def test_the_url_is_encrypted_and_returned_in_full(
+    admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    cipher = CredentialCipher([TEST_CREDENTIAL_KEY])
+    created = await create_server(admin, mcp, url=f"  {mcp.http_url}  ")
+
+    assert created["url"] == mcp.http_url
+    assert (await read(admin))["url"] == mcp.http_url
+    (listed,) = (await admin.get("/mcp-servers")).json()["items"]
+    assert listed["url"] == mcp.http_url
+    url, url_hash = await stored_url(engine)
+    assert mcp.http_url not in url
+    assert cipher.decrypt(url) == mcp.http_url
+    # 哈希按去掉首尾空白后的地址算。
+    assert url_hash == hashlib.sha256(mcp.http_url.encode()).hexdigest()
+
+
+async def test_a_repeated_url_or_name_is_refused_naming_the_server(
+    admin: httpx.AsyncClient, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+
+    same_url = await admin.post(
+        "/mcp-servers", json=server_body(mcp, id="calc-2", name="另一个", url=f" {mcp.http_url} ")
+    )
+    assert same_url.status_code == 409, same_url.text
+    assert same_url.json()["detail"] == "这个地址已经登记过：计算器"
+    same_name = await admin.post(
+        "/mcp-servers", json=server_body(mcp, id="calc-2", url=mcp.sse_url, transport="sse")
+    )
+    assert same_name.status_code == 409, same_name.text
+    assert same_name.json()["detail"] == "这个名称已经有了：计算器"
+
+    await create_server(admin, mcp, id="spare", name="备用", url=mcp.sse_url, transport="sse")
+    moved = await admin.patch("/mcp-servers/spare", json={"url": mcp.http_url})
+    assert moved.status_code == 409, moved.text
+    assert moved.json()["detail"] == "这个地址已经登记过：计算器"
+    renamed = await admin.patch("/mcp-servers/spare", json={"name": "计算器"})
+    assert renamed.status_code == 409, renamed.text
+    assert renamed.json()["detail"] == "这个名称已经有了：计算器"
+    spare = await read(admin, "spare")
+    assert (spare["name"], spare["url"]) == ("备用", mcp.sse_url)
+    # 改自己时交回原来的地址与名称不算重复。
+    kept = await admin.patch("/mcp-servers/spare", json={"name": "备用", "url": mcp.sse_url})
+    assert kept.status_code == 200, kept.text
+
+
+async def test_update_keeps_the_url_when_omitted_and_clears_the_check_only_when_it_changes(
+    admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    cipher = CredentialCipher([TEST_CREDENTIAL_KEY])
+    await create_server(admin, mcp)
+    await check(admin)
+
+    renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术", "url": None})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["url"] == mcp.http_url
+    assert renamed.json()["lastCheck"]["ok"] is True
+    assert [tool["name"] for tool in renamed.json()["tools"]] == list(TOOLS)
+    assert cipher.decrypt((await stored_url(engine))[0]) == mcp.http_url
+
+    resubmitted = await admin.patch("/mcp-servers/calc", json={"url": mcp.http_url})
+    assert resubmitted.status_code == 200, resubmitted.text
+    assert resubmitted.json()["lastCheck"] is not None
+    assert resubmitted.json()["tools"] is not None
+
+    elsewhere = f"http://127.0.0.1:{free_port()}/mcp"
+    moved = await admin.patch("/mcp-servers/calc", json={"url": elsewhere})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["url"] == elsewhere
+    assert (moved.json()["lastCheck"], moved.json()["tools"]) == (None, None)
+    url, url_hash = await stored_url(engine)
+    assert cipher.decrypt(url) == elsewhere
+    assert url_hash == hashlib.sha256(elsewhere.encode()).hexdigest()
+
+
 async def test_create_checks_the_fields(admin: httpx.AsyncClient, mcp: LocalMcp) -> None:
     for fields in (
         {"id": "Calc"},
@@ -305,6 +399,14 @@ async def test_unsaved_check_stores_nothing_and_can_reuse_saved_header_values(
     assert [tool["name"] for tool in passed.json()["tools"]] == list(TOOLS)
     without_token = await admin.post("/mcp-servers/check", json={**form, "headers": []})
     assert without_token.json()["ok"] is False
+    # SSE 被拒时客户端的报错原文带着地址；原因里只留 ``••••``，不露地址。
+    refused = await admin.post(
+        "/mcp-servers/check", json={**form, "url": mcp.sse_url, "transport": "sse", "headers": []}
+    )
+    assert refused.json()["ok"] is False
+    assert "401" in refused.json()["reason"]
+    assert mcp.sse_url not in refused.json()["reason"]
+    assert "••••" in refused.json()["reason"]
 
     await create_server(admin, mcp)
     reused = await admin.post(
@@ -314,6 +416,17 @@ async def test_unsaved_check_stores_nothing_and_can_reuse_saved_header_values(
     assert reused.status_code == 200, reused.text
     assert reused.json()["ok"] is True
     assert (await read(admin))["lastCheck"] is None
+    # 带 serverId 不给地址：连那个服务存着的地址。
+    without_url = {k: v for k, v in form.items() if k != "url"}
+    stored = await admin.post(
+        "/mcp-servers/check",
+        json={**without_url, "serverId": "calc", "headers": [{"name": "Authorization"}]},
+    )
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["ok"] is True
+    assert [tool["name"] for tool in stored.json()["tools"]] == list(TOOLS)
+    no_url = await admin.post("/mcp-servers/check", json=without_url)
+    assert no_url.status_code == 422, no_url.text
 
     no_value = await admin.post("/mcp-servers/check", json={**form, "headers": [{"name": "A"}]})
     assert no_value.status_code == 422
@@ -353,7 +466,10 @@ async def test_publish_checks_the_server_and_the_chosen_tools(
     assert (await publish(admin, lock)).status_code == 201
 
     disabled = await admin.post(
-        "/mcp-servers", json=server_body(mcp, id="spare", name="备用", enabled=False)
+        "/mcp-servers",
+        json=server_body(
+            mcp, id="spare", name="备用", url=mcp.sse_url, transport="sse", enabled=False
+        ),
     )
     assert disabled.status_code == 201, disabled.text
     lock = await save_draft(admin, mcp_tool(tools=["add"]), mcp_tool("spare"))
@@ -391,22 +507,45 @@ async def test_a_server_in_use_cannot_be_disabled_or_deleted(
     assert (await admin.get("/mcp-servers/calc")).status_code == 404
 
 
-async def test_rotation_reencrypts_the_header_values(
+class NoUsages:
+    async def mcp_server_users(self) -> Mapping[str, tuple[AgentUsage, ...]]:
+        return {}
+
+
+async def test_rotation_reencrypts_the_url_and_the_header_values(
     admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
 ) -> None:
     await create_server(admin, mcp)
-    await create_server(admin, mcp, id="spare", headers=[])
+    await create_server(
+        admin, mcp, id="spare", name="备用", url=mcp.sse_url, transport="sse", headers=[]
+    )
     new_key = Fernet.generate_key().decode()
 
-    rotated = await rotate_mcp_header_keys(
+    rotated = await rotate_mcp_server_keys(
         SqlMcpServerStore(engine), cipher=CredentialCipher([new_key, TEST_CREDENTIAL_KEY])
     )
 
     assert rotated == 2
+    only_new = CredentialCipher([new_key])
     (stored,) = await stored_headers(engine)
-    assert CredentialCipher([new_key]).decrypt(stored["value"]) == TOKEN
+    assert only_new.decrypt(stored["value"]) == TOKEN
     with pytest.raises(RuntimeError):
         CredentialCipher([TEST_CREDENTIAL_KEY]).decrypt(stored["value"])
+    for server_id, plain_url in (("calc", mcp.http_url), ("spare", mcp.sse_url)):
+        url, _ = await stored_url(engine, server_id)
+        assert only_new.decrypt(url) == plain_url
+        with pytest.raises(RuntimeError):
+            CredentialCipher([TEST_CREDENTIAL_KEY]).decrypt(url)
+    # 旧 key 去掉之后照样连得上：试连用的是解开的新密文。
+    service = McpServerService(
+        SqlMcpServerStore(engine),
+        cipher=only_new,
+        probe=HarnessMcpProbe(),
+        usages=NoUsages(),
+        index=McpServerIndex(),
+    )
+    assert (await service.check("calc")).ok is True
+    assert (await service.get("calc")).url == mcp.http_url
 
 
 async def test_importing_a_package_checks_the_mcp_servers_it_names(
@@ -450,6 +589,7 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     running: None,
     admin: httpx.AsyncClient,
     app_client: httpx.AsyncClient,
+    engine: AsyncEngine,
     mcp: LocalMcp,
     provider: None,
     script: Script,
@@ -462,6 +602,8 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     session = await open_and_prompt(app_client)
 
     assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "completed"}
+    # 库里只有地址的密文，运行装配解开它才连得上。
+    assert mcp.http_url not in (await stored_url(engine))[0]
     assert mcp.calls == [("add", {"a": 2, "b": 3})]
     # 只放选了的工具，名字带上服务的前缀。
     assert script.offered[0] == ["mcp_calc_add"]

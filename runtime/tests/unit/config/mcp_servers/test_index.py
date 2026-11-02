@@ -24,6 +24,7 @@ from agent_runtime.config.mcp_servers.models import (
     McpTool,
     McpTransport,
 )
+from agent_runtime.config.mcp_servers.rules import url_hash
 from agent_runtime.config.mcp_servers.schemas import McpServerCreateIn, McpServerUpdateIn
 from agent_runtime.config.mcp_servers.service import McpServerService
 from agent_runtime.errors import Conflict, NotFound
@@ -32,6 +33,7 @@ from agent_runtime.secrets import CredentialCipher
 BY = uuid.uuid4()
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 URL = "https://mcp.example.com/mcp"
+CIPHER = CredentialCipher([Fernet.generate_key().decode()])
 TOOLS = (McpTool(name="search", description="搜索云文档。"), McpTool(name="read", description=None))
 
 
@@ -46,7 +48,8 @@ def record(
         id=server_id,
         name=name,
         description="",
-        url=URL,
+        url=CIPHER.encrypt(URL),
+        url_hash=url_hash(URL),
         transport="streamable_http",
         timeout_seconds=30,
         headers=(),
@@ -79,6 +82,7 @@ class FakeStore:
         name: str,
         description: str,
         url: str,
+        url_hash: str,
         transport: McpTransport,
         timeout_seconds: int,
         headers: Sequence[McpHeader],
@@ -91,6 +95,7 @@ class FakeStore:
             record(server_id, name, enabled=enabled),
             description=description,
             url=url,
+            url_hash=url_hash,
             transport=transport,
             timeout_seconds=timeout_seconds,
             headers=tuple(headers),
@@ -128,9 +133,7 @@ class FakeStore:
         )
         return True
 
-    async def rewrite_headers(
-        self, rewrite: Callable[[McpServerRecord], Sequence[McpHeader]]
-    ) -> int:
+    async def rewrite_secrets(self, rewrite: Callable[[McpServerRecord], McpServerRecord]) -> int:
         raise NotImplementedError
 
 
@@ -146,6 +149,7 @@ class FakeEditor:
         name: str,
         description: str,
         url: str,
+        url_hash: str,
         transport: McpTransport,
         timeout_seconds: int,
         headers: Sequence[McpHeader],
@@ -158,6 +162,7 @@ class FakeEditor:
             name=name,
             description=description,
             url=url,
+            url_hash=url_hash,
             transport=transport,
             timeout_seconds=timeout_seconds,
             headers=tuple(headers),
@@ -207,7 +212,7 @@ def setup() -> Setup:
     index = McpServerIndex()
     service = McpServerService(
         store,
-        cipher=CredentialCipher([Fernet.generate_key().decode()]),
+        cipher=CIPHER,
         probe=probe,
         usages=usages,
         index=index,

@@ -9,7 +9,7 @@
    - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[后端的配置与装配](architecture.md#后端的配置与装配)；缺少变量时，启动会列出变量名。
-   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥，后端运行不读它。
+   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥与 MCP 服务的地址、请求头，后端运行不读它。
    - `RUNTIME_URL`（本地是 `http://localhost:7790`）与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：消息、transcript、实时推送、工作区文件、配置页、开对话与首页名册都经运行时服务（见[调运行时](architecture.md#调运行时)）。`RUNTIME_APP_KEY` 不少于 32 个字符，运行时配置里应用 `video` 的 `key_env` 指向它。
    - `RUNTIME_INTERNAL_TOKEN` 必填，不少于 32 个字符，缺了后端与运行时都起不来：运行时回调后端（开跑检查、运行开始、轮次开始）与插件调后端都带它。
 3. 把一份 `server/configs/config.yaml` 放到本机，再把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `server/configs/runtime.yaml`，里面的 `http://server:7788` 都换成 `http://localhost:7788`，按要用的插件打开对应的段。两份都不进仓库，改了要重启。模型、agent 与技能存在数据库里，不在文件里。
@@ -58,7 +58,7 @@
 3. 在服务器上建一个部署目录，放入：
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
-   - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥与 MCP 服务请求头的 Fernet key，必填，缺失或格式不对运行时服务起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥与请求头都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
+   - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥与 MCP 服务地址、请求头的 Fernet key，必填，缺失或格式不对运行时服务起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥与 MCP 服务的地址、请求头都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
    - `configs/`：只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
      - `config.yaml`：后端的运行配置
      - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，视频后端这个应用必须叫 `video`（再接别的应用见[新应用接入运行时](runtime-apps.md)）；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video`、`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video` 只在运行时这边配，见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)
@@ -260,5 +260,5 @@ docker compose up -d
 `CREDENTIAL_ENCRYPTION_KEYS` 是逗号分隔的多个 Fernet key：第一个用来加密，全部用来解密。换钥不停服：
 
 1. 生成一个新 key（命令见[服务器部署](#服务器部署)第 3 步），加在 `.env` 里这个变量的最前面，执行 `docker compose up -d`。此后新存的密钥用新 key，旧的照读。
-2. 执行 `docker compose run --rm runtime python -m agent_runtime.admin rotate-credential-keys`，把库里全部密钥的机密字段与全部 MCP 服务的请求头改用新 key 加密，命令会分别打印改了几把密钥、几个 MCP 服务。
+2. 执行 `docker compose run --rm runtime python -m agent_runtime.admin rotate-credential-keys`，把库里全部密钥的机密字段与全部 MCP 服务的地址、请求头改用新 key 加密，命令会分别打印改了几把密钥、几个 MCP 服务。
 3. 从变量里去掉旧 key，再执行 `docker compose up -d`。

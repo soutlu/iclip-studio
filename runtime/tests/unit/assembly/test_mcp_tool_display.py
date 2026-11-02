@@ -25,7 +25,9 @@ def server(name: str, *tools: McpTool, server_id: str = "docs") -> McpServerReco
         id=server_id,
         name=name,
         description="",
-        url="https://mcp.example.com/mcp",
+        # 名册只看名称与工具，地址的密文与哈希用不到。
+        url="ciphertext",
+        url_hash="url-hash",
         transport="streamable_http",
         timeout_seconds=30,
         headers=(),

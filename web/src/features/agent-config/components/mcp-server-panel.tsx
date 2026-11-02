@@ -322,16 +322,22 @@ function McpServerForm({
     setErrors(found)
     if (Object.keys(found).length > 0 || !canSave) return
     setFormError(null)
+    const { url, ...connection } = checkInput()
     const fields = {
-      ...checkInput(),
+      ...connection,
       description: values.description.trim(),
       name: values.name.trim(),
     }
     try {
       const saved = await save.mutateAsync(
         server === undefined
-          ? { body: { ...fields, id: values.id.trim() }, kind: 'create' }
-          : { body: fields, id: server.id, kind: 'update' },
+          ? { body: { ...fields, id: values.id.trim(), url }, kind: 'create' }
+          : // 地址没改就不带，沿用原来的（合同 §22），改了才带上。
+            {
+              body: url === server.url ? fields : { ...fields, url },
+              id: server.id,
+              kind: 'update',
+            },
       )
       const { check: after } = saved
       if (after.kind === 'checked' && after.result.ok) toast.success('MCP 配置已保存')
@@ -355,8 +361,9 @@ function McpServerForm({
       )
     } catch (error) {
       const message = errorMessageOf(error, '保存失败，请重试保存')
-      // 新建时标识被占用是 409，写在标识下面。
-      if (creating && error instanceof ApiError && error.status === 409) setErrors({ id: message })
+      // 新建时标识被占用的 409 写在标识下面；地址或名称重复的 409 与别的错误一样写在表单下面。
+      if (creating && error instanceof ApiError && error.status === 409 && message.includes('标识'))
+        setErrors({ id: message })
       else setFormError(message)
     }
   }
