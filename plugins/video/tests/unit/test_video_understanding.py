@@ -1,4 +1,5 @@
-"""验证方舟视频拆解适配器的请求形状、响应校验与拆解文档路径。"""
+"""验证方舟视频拆解适配器的请求形状（写定的模型、思考档位与帧率，每次现查的连接）、模型没启用、响应校验与
+拆解文档路径。"""
 
 from __future__ import annotations
 
@@ -8,13 +9,18 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.model_connections import ModelConnection
 
 from iclip_video.video_document import video_doc_path
 from iclip_video.video_understanding import (
+    DECLARATION,
+    MODEL,
     SYSTEM_PROMPT,
     ArkVideoUnderstanding,
     VideoUnderstandingError,
+    VideoUnderstandingUnavailable,
 )
+from tests.helpers.model_connections import FakeModelConnections
 
 VIDEO = "https://cdn.test/ref.mp4"
 
@@ -24,19 +30,18 @@ def test_document_path_survives_two_videos_of_the_same_name() -> None:
     assert video_doc_path("https://a.test/ref.mp4") != video_doc_path("https://b.test/ref.mp4")
 
 
+RELAY = ModelConnection(
+    responses_url="https://relay.example/api/v3/responses", api_key="sk-test-ark"
+)
+
+
 def ark(
     handler: Callable[[httpx.Request], httpx.Response],
-    *,
-    thinking: str | None = None,
-    fps: float | None = None,
+    connections: FakeModelConnections | None = None,
 ) -> ArkVideoUnderstanding:
     return ArkVideoUnderstanding(
         httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-        url="https://vision.test/responses",
-        api_key="ark",
-        model="seed-vision",
-        thinking=thinking,
-        fps=fps,
+        connection=connections or FakeModelConnections({(DECLARATION, MODEL): RELAY}),
     )
 
 
@@ -86,42 +91,54 @@ async def test_parser_refuses_a_non_json_body() -> None:
         await understanding.parse(VIDEO)
 
 
-async def test_parser_sends_the_video_as_a_native_part() -> None:
-
-    seen: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(json.loads(request.content))
-        assert request.headers["Authorization"] == "Bearer ark"
-        return httpx.Response(200, json=responses_body())
-
-    await ark(handler).parse(VIDEO)
-    roles = [message["role"] for message in seen["input"]]
-    assert roles == ["system", "user"]
-    assert seen["input"][0]["content"][0]["text"] == SYSTEM_PROMPT
-    assert seen["input"][1]["content"][0] == {"type": "input_video", "video_url": VIDEO}
-    assert seen["model"] == "seed-vision"
-    assert "reasoning" not in seen, "没配思考强度就不发这个参数，交给对方默认档"
-
-
-async def test_parser_sends_the_configured_reasoning_effort() -> None:
-    seen: dict[str, Any] = {}
+async def test_parser_sends_the_written_model_thinking_and_fps_to_the_resolved_connection() -> None:
+    sent: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(json.loads(request.content))
+        sent.append(request)
         return httpx.Response(200, json=responses_body())
 
-    await ark(handler, thinking="medium").parse(VIDEO)
-    assert seen["reasoning"] == {"effort": "medium"}
+    connections = FakeModelConnections({(DECLARATION, MODEL): RELAY})
+    await ark(handler, connections).parse(VIDEO)
+
+    assert connections.asked == [("volcengine", "doubao-seed-2-0-lite-260428")]
+    (request,) = sent
+    assert str(request.url) == RELAY.responses_url
+    assert request.headers["Authorization"] == "Bearer sk-test-ark"
+    body = json.loads(request.content)
+    assert body["model"] == "doubao-seed-2-0-lite-260428"
+    assert body["reasoning"] == {"effort": "medium"}
+    assert [message["role"] for message in body["input"]] == ["system", "user"]
+    assert body["input"][0]["content"][0]["text"] == SYSTEM_PROMPT
+    assert body["input"][1]["content"][0] == {"type": "input_video", "video_url": VIDEO, "fps": 5}
 
 
-async def test_parser_sends_the_configured_fps_on_the_video_part() -> None:
+async def test_the_connection_is_looked_up_on_every_call() -> None:
+    """配置页里改了连接，下一次拆解就用新的；不在启动时记下一份。"""
 
-    seen: dict[str, Any] = {}
+    urls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(json.loads(request.content))
+        urls.append(str(request.url))
         return httpx.Response(200, json=responses_body())
 
-    await ark(handler, fps=5).parse(VIDEO)
-    assert seen["input"][1]["content"][0] == {"type": "input_video", "video_url": VIDEO, "fps": 5}
+    connections = FakeModelConnections({(DECLARATION, MODEL): RELAY})
+    understanding = ark(handler, connections)
+    await understanding.parse(VIDEO)
+    moved = ModelConnection(responses_url="https://relay2.example/responses", api_key="sk-test-2")
+    connections.connections[(DECLARATION, MODEL)] = moved
+    await understanding.parse(VIDEO)
+
+    assert urls == [RELAY.responses_url, moved.responses_url]
+
+
+async def test_an_unavailable_model_is_its_own_failure_and_nothing_is_sent() -> None:
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json=responses_body())
+
+    with pytest.raises(VideoUnderstandingUnavailable, match=MODEL):
+        await ark(handler, FakeModelConnections()).parse(VIDEO)
+    assert sent == []

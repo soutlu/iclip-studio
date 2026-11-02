@@ -16,6 +16,7 @@ from agent_runtime.errors import (
     AgentUnavailable,
     Conflict,
     DomainError,
+    ModelUnavailable,
     NotFound,
     ValidationFailed,
 )
@@ -45,6 +46,11 @@ class AppRejected(RuntimeUnavailable):
     def __init__(self, detail: str, *, status: int | None) -> None:
         super().__init__("运行时拒绝了这个应用" + (f"：{detail}" if detail else ""), status=status)
         self.detail = detail
+
+
+class ModelCallTimedOut(RuntimeUnavailable):
+    """一次模型调用等满了上限：运行时等上游超时（504，code ``upstream_timeout``），或应用等运行时超时。
+    都无法确认上游执行过没有，付费调用不该接着重发。"""
 
 
 class StreamClosed(RuntimeUnavailable):
@@ -95,6 +101,15 @@ def app_rejection(response: httpx.Response) -> AppRejected:
     return AppRejected(detail, status=response.status_code)
 
 
+def envelope_code(response: httpx.Response) -> str | None:
+    """答复是运行时的错误信封时它的 ``code``；不是信封（比如转回来的上游正文）或没有 code 时为空。"""
+
+    try:
+        return _ErrorEnvelope.model_validate_json(response.content).code
+    except ValidationError:
+        return None
+
+
 def error_for(response: httpx.Response) -> DomainError | RuntimeUnavailable:
     """把一条非 2xx 答复还原成要抛的错误。"""
 
@@ -111,6 +126,8 @@ def error_for(response: httpx.Response) -> DomainError | RuntimeUnavailable:
         return RuntimeUnavailable("运行时的报错答复解析不了", status=status)
     if domain is Conflict and envelope.code == AgentUnavailable.code:
         return AgentUnavailable(envelope.detail)
+    if domain is Conflict and envelope.code == ModelUnavailable.code:
+        return ModelUnavailable(envelope.detail)
     error = domain(envelope.detail)
     if envelope.code is not None:
         error.code = envelope.code
@@ -120,9 +137,11 @@ def error_for(response: httpx.Response) -> DomainError | RuntimeUnavailable:
 __all__ = [
     "APP_REJECTION_STATUSES",
     "AppRejected",
+    "ModelCallTimedOut",
     "RuntimeUnavailable",
     "StreamClosed",
     "app_rejection",
+    "envelope_code",
     "error_for",
     "transport_failure",
 ]

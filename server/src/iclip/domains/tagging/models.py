@@ -28,14 +28,18 @@ STATUS_COMPLETED: Final = "completed"
 STATUS_FAILED: Final = "failed"
 BUSY_STATUSES: Final = frozenset({STATUS_PENDING, STATUS_RUNNING})
 
-TagErrorCode = Literal["no_source_text", "model_call_failed", "model_failed", "timeout"]
+TagErrorCode = Literal[
+    "no_source_text", "model_call_failed", "model_failed", "model_unavailable", "timeout"
+]
 """最近一次打标失败的原因。``no_source_text`` 取不到打标用的文字；``model_call_failed`` 模型调用
 失败（限流、服务端错、连不上、答得不完整，或没排上队），再试可能就好；``model_failed`` 请求被拒、
-等满了总超时或答的不合格式；``timeout`` 打标中超过 ``TAGGING_TIMEOUT_SECONDS`` 没结束。"""
+等满了总超时或答的不合格式；``model_unavailable`` 配置页里没有启用打标模型，要管理员启用；
+``timeout`` 打标中超过 ``TAGGING_TIMEOUT_SECONDS`` 没结束。"""
 
 ERROR_NO_SOURCE_TEXT: Final = "no_source_text"
 ERROR_MODEL_CALL_FAILED: Final = "model_call_failed"
 ERROR_MODEL_FAILED: Final = "model_failed"
+ERROR_MODEL_UNAVAILABLE: Final = "model_unavailable"
 ERROR_TIMEOUT: Final = "timeout"
 
 TAGGING_TIMEOUT_SECONDS: Final = 10 * 60
@@ -113,6 +117,7 @@ __all__ = [
     "ENTRY_KINDS",
     "ERROR_MODEL_CALL_FAILED",
     "ERROR_MODEL_FAILED",
+    "ERROR_MODEL_UNAVAILABLE",
     "ERROR_NO_SOURCE_TEXT",
     "ERROR_TIMEOUT",
     "KIND_HIT_CASE",

@@ -5,7 +5,8 @@
 <应用密钥>``；会话接口里要属主的方法收 ``owner``，放进 ``X-End-User``。
 
 报错：约定的 404、409、422 还原成同类领域错误（``detail`` 与 ``code`` 原样），401、403 是运行时不认这个
-应用（``AppRejected``），其余都是 ``RuntimeUnavailable``，见 ``agent_runtime.client.errors``。任何请求都不重试：写操作重发可能重复生效，要不要重来由调用方决定。
+应用（``AppRejected``），其余都是 ``RuntimeUnavailable``，见 ``agent_runtime.client.errors``；模型调用把上游的
+答复原样交回，只有运行时自己的失败才抛，见 ``model_call``。任何请求都不重试：写操作重发可能重复生效，要不要重来由调用方决定。
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from agent_runtime.app_wire import (
     END_USER_HEADER,
+    UPSTREAM_TIMEOUT_CODE,
+    UPSTREAM_UNREACHABLE_CODE,
     ActivitiesIn,
     ActivitiesOut,
     AgentDirectoryOut,
@@ -35,6 +38,7 @@ from agent_runtime.app_wire import (
     MaterialsIn,
     MaterialsLookupIn,
     MaterialsLookupOut,
+    ModelCallIn,
     PromptStatsOut,
     RunStatsOut,
     SessionForkIn,
@@ -50,13 +54,16 @@ from agent_runtime.app_wire import (
 from agent_runtime.client.errors import (
     APP_REJECTION_STATUSES,
     AppRejected,
+    ModelCallTimedOut,
     RuntimeUnavailable,
     StreamClosed,
     app_rejection,
+    envelope_code,
     error_for,
     transport_failure,
 )
 from agent_runtime.client.streams import EventStream, TranscriptChannel
+from agent_runtime.errors import ModelUnavailable
 from agent_runtime.file_store.store import FileEntry, StoredFile
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt
@@ -96,6 +103,15 @@ class AdminResponse:
     content: bytes
     content_type: str | None
     content_disposition: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCallResponse:
+    """模型调用里上游的原样答复：状态码、内容类型与正文。"""
+
+    status_code: int
+    content: bytes
+    content_type: str | None
 
 
 def _segment(value: str) -> str:
@@ -390,6 +406,50 @@ class RuntimeClient:
         response = await self._call("POST", "/v1/titles", body=body)
         return _parse(response, TitleOut.model_validate_json)
 
+    # --- 模型调用 --------------------------------------------------------------
+
+    async def model_call(self, body: ModelCallIn, *, timeout: httpx.Timeout) -> ModelCallResponse:
+        """``POST /v1/model-calls/responses``：经运行时调一个代码里写定的模型，上游的答复原样交回。
+
+        ``timeout`` 只用在这一个请求上，要比运行时等上游的上限（``MODEL_CALL_TIMEOUT_SECONDS``）长，才收得到
+        运行时自己报的超时；默认的超时太短。
+
+        上游答了什么（任何状态码）都放进 ``ModelCallResponse``。运行时自己的失败抛：409 ``model_unavailable``
+        是 ``ModelUnavailable``；运行时等上游超时（504 ``upstream_timeout``）与这里等运行时超时是
+        ``ModelCallTimedOut``；运行时连不上上游（502 ``upstream_unreachable``）与这里连不上运行时是
+        ``RuntimeUnavailable``；401、403 是 ``AppRejected``。
+        """
+
+        headers = self._auth_headers(None)
+        headers["Content-Type"] = "application/json"
+        try:
+            response = await self._http.request(
+                "POST",
+                f"{self._base}/v1/model-calls/responses",
+                content=body.model_dump_json(),
+                headers=headers,
+                timeout=timeout,
+            )
+        except httpx.TimeoutException as exc:
+            raise ModelCallTimedOut(f"等运行时答复超时：{type(exc).__name__}") from exc
+        except httpx.HTTPError as exc:
+            raise transport_failure(exc) from exc
+        status = response.status_code
+        if status in APP_REJECTION_STATUSES:
+            raise app_rejection(response)
+        code = envelope_code(response)
+        if status == 409 and code == ModelUnavailable.code:
+            raise error_for(response)
+        if status == 504 and code == UPSTREAM_TIMEOUT_CODE:
+            raise ModelCallTimedOut("运行时等上游答复超时", status=status)
+        if status == 502 and code == UPSTREAM_UNREACHABLE_CODE:
+            raise RuntimeUnavailable("运行时连不上上游", status=status)
+        return ModelCallResponse(
+            status_code=status,
+            content=response.content,
+            content_type=response.headers.get("content-type"),
+        )
+
     # --- 运行统计 --------------------------------------------------------------
 
     async def stats_prompts(self, body: StatsQueryIn) -> PromptStatsOut:
@@ -578,4 +638,4 @@ class RuntimeClient:
         raise error_for(response)
 
 
-__all__ = ["DEFAULT_TIMEOUT", "AdminFiles", "AdminResponse", "RuntimeClient"]
+__all__ = ["DEFAULT_TIMEOUT", "AdminFiles", "AdminResponse", "ModelCallResponse", "RuntimeClient"]

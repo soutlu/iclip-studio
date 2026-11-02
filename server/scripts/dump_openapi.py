@@ -37,8 +37,6 @@ PLACEHOLDER_ENV = {
     "VIDEO_ENHANCE_SUBMIT_URL": "https://placeholder.invalid/video/enhance",
     "VIDEO_STATUS_BASE_URL": "https://placeholder.invalid/video/status",
     "VIDEO_SUBMIT_URL": "https://placeholder.invalid/video/submit",
-    "VIDEO_UNDERSTANDING_API_KEY": "openapi-dump-placeholder",
-    "VIDEO_UNDERSTANDING_URL": "https://placeholder.invalid/video/understanding",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

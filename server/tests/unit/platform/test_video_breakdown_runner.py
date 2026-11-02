@@ -7,13 +7,20 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.client import RuntimeClient
 
 from iclip.platform.media.errors import MediaError
-from iclip.platform.video_breakdown.model import ArkBreakdownModel
-from iclip.platform.video_breakdown.ports import BreakdownError, SampledVideo
+from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import (
+    BreakdownError,
+    BreakdownModelUnavailable,
+    SampledVideo,
+)
 from iclip.platform.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
 from iclip.platform.video_breakdown.service import BreakdownRunner
 
+RUNTIME = "http://runtime.test"
+APP_KEY = "app-key-test-0123456789-0123456789"
 VIDEO = "https://cdn.test/ref.mp4"
 DOCUMENT = "# 出场元素\n……\n# 时间线\n……\n# 整片分析\n……"
 
@@ -38,14 +45,19 @@ class FakeSampler:
 
 
 class Upstream:
-    """方舟接口的替身：记下收到的请求体，按设定的响应作答。"""
+    """运行时模型调用接口的替身：记下发给它的请求，把设定的方舟答复原样交回。``requests`` 是要转给方舟的
+    请求体。"""
 
     def __init__(self) -> None:
-        self.requests: list[dict[str, Any]] = []
+        self.calls: list[httpx.Request] = []
         self.response = httpx.Response(200, json=responses_body())
 
+    @property
+    def requests(self) -> list[dict[str, Any]]:
+        return [json.loads(call.content)["payload"] for call in self.calls]
+
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(json.loads(request.content))
+        self.calls.append(request)
         return self.response
 
 
@@ -70,13 +82,28 @@ def breakdown_with(
     *,
     transport: httpx.MockTransport | None = None,
 ) -> BreakdownRunner:
-    model = ArkBreakdownModel(
-        httpx.AsyncClient(transport=transport or httpx.MockTransport(upstream or Upstream())),
-        url="https://vision.test/responses",
-        api_key="ark",
-        model="seed-vision",
+    runtime = RuntimeClient(
+        RUNTIME,
+        APP_KEY,
+        transport=transport or httpx.MockTransport(upstream or Upstream()),
     )
+    model = ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL)
     return BreakdownRunner(model=model, sampler=sampler)
+
+
+async def test_the_call_goes_through_the_runtimes_model_call_with_a_longer_wait(
+    upstream: Upstream,
+) -> None:
+    """密钥不出运行时：后端只带应用密钥，说要哪家声明的哪个模型；等运行时比它等方舟的 900 秒更久。"""
+
+    await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+
+    (call,) = upstream.calls
+    assert str(call.url) == f"{RUNTIME}/v1/model-calls/responses"
+    assert call.headers["Authorization"] == f"Bearer {APP_KEY}"
+    body = json.loads(call.content)
+    assert (body["declaration"], body["model"]) == ("volcengine", "doubao-seed-2-1-lite-260915")
+    assert call.extensions["timeout"]["read"] > 900
 
 
 def user_content(upstream: Upstream) -> list[dict[str, Any]]:
@@ -92,7 +119,7 @@ async def test_short_video_is_sent_frame_by_frame_with_timestamps_then_audio(
     assert await breakdown.run(VIDEO) == DOCUMENT, "模型写的原文原样交回"
 
     (request,) = upstream.requests
-    assert request["model"] == "seed-vision"
+    assert request["model"] == "doubao-seed-2-1-lite-260915"
     assert request["reasoning"] == {"effort": "high"}
     assert request["max_output_tokens"] == 65_536
     assert request["input"][0]["content"] == [{"type": "input_text", "text": SYSTEM_PROMPT}]
@@ -140,6 +167,8 @@ RETRYABLE = [
     httpx.Response(500, text="upstream exploded"),
     httpx.Response(429, text="slow down"),
     httpx.Response(200, text="not json"),
+    # 运行时连不上方舟：再拆可能就好。
+    httpx.Response(502, json={"detail": "连不上上游", "code": "upstream_unreachable"}),
 ]
 
 
@@ -176,6 +205,43 @@ async def test_a_timeout_is_not_worth_another_breakdown() -> None:
         await breakdown.run(VIDEO)
 
     assert not raised.value.retryable
+
+
+async def test_the_runtime_timing_out_on_ark_is_not_worth_another_breakdown(
+    upstream: Upstream,
+) -> None:
+    upstream.response = httpx.Response(504, json={"detail": "超时", "code": "upstream_timeout"})
+
+    with pytest.raises(BreakdownError) as raised:
+        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+
+    assert not raised.value.retryable
+    assert not isinstance(raised.value, BreakdownModelUnavailable)
+
+
+async def test_an_unreachable_runtime_is_worth_another_breakdown() -> None:
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    breakdown = breakdown_with(FakeSampler(seconds=5), transport=httpx.MockTransport(refuse))
+
+    with pytest.raises(BreakdownError) as raised:
+        await breakdown.run(VIDEO)
+
+    assert raised.value.retryable
+
+
+async def test_a_model_not_enabled_on_the_config_page_is_its_own_final_failure(
+    upstream: Upstream,
+) -> None:
+    reason = "配置页的火山方舟里没有启用的模型 doubao-seed-2-1-lite-260915（或没有默认密钥）"
+    upstream.response = httpx.Response(409, json={"detail": reason, "code": "model_unavailable"})
+
+    with pytest.raises(BreakdownModelUnavailable, match=r"没有启用的模型") as raised:
+        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+
+    assert not raised.value.retryable
+    assert str(raised.value) == reason
 
 
 async def test_a_video_that_cannot_be_read_fails_before_the_model_is_called(

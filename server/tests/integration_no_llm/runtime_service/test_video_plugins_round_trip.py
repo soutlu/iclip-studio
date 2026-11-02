@@ -73,11 +73,6 @@ DOCUMENT = (
 )
 PLUGINS_CONFIG: dict[str, Any] = {
     "internal_api": {"base_url": "http://iclip.test", "token_env": "RUNTIME_INTERNAL_TOKEN"},
-    "video": {
-        "understanding_url": "https://ark.test/responses",
-        "api_key_env": "VIDEO_UNDERSTANDING_API_KEY",
-        "model": "seed-vision",
-    },
     "shot_video": {},
 }
 
@@ -179,7 +174,6 @@ async def runtime_app(
     """覆写夹具里的运行时服务：插件登记表由视频插件包按配置建，内部接口进程内连到后端。"""
 
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", TOKEN)
-    monkeypatch.setenv("VIDEO_UNDERSTANDING_API_KEY", "ark-test-key")
     clip = make_clip_mp4(tmp_path / "clip.mp4")
 
     def outside(request: httpx.Request) -> httpx.Response:

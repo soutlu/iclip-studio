@@ -5084,6 +5084,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -5175,6 +5176,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -8255,6 +8257,7 @@
                   "video_unreadable",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -8277,6 +8280,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -8395,6 +8399,7 @@
                   "video_unreadable",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -8417,6 +8422,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"

@@ -42,8 +42,6 @@ VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
 
 QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 
-VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
-
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
@@ -57,9 +55,13 @@ RUNTIME_APP_KEY_ENV: Final = "RUNTIME_APP_KEY"
 _MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
     "agent_runs": "agent_runs",
     "conversations": "compaction（原 conversations.compaction）",
-    "video": "plugins.config.video",
 }
 """后端不再认、搬到运行时配置（``configs/runtime.yaml``）的段：后端的段名 → 运行时配置里的位置。"""
+
+_RETIRED_SECTIONS: Final[Mapping[str, str]] = {
+    "video": "视频理解在运行时总是登记，模型写在代码里，连接用配置页的火山方舟",
+}
+"""后端不再认、也没有新位置的段：段名 → 为什么不用了。"""
 
 
 class ConfigSection(BaseModel):
@@ -119,11 +121,6 @@ class MediaGenerationEnv(EnvSettings):
 
 class QwenEnv(EnvSettings):
     api_key: RequiredEnv = Field(validation_alias=QWEN_API_KEY_ENV)
-
-
-class VideoUnderstandingEnv(EnvSettings):
-    url: RequiredEnv = Field(validation_alias=VIDEO_UNDERSTANDING_URL_ENV)
-    api_key: RequiredEnv = Field(validation_alias="VIDEO_UNDERSTANDING_API_KEY")
 
 
 class ProductCatalogEnv(EnvSettings):
@@ -295,7 +292,8 @@ class MediaGenerationSection(ConfigSection):
 
 
 class IclipStudioSection(ConfigSection):
-    breakdown_model: str
+    """写了就开参考视频的拆解与资料库的打标。模型写定在代码里，经运行时服务调，连接在配置页的模型供应商里。"""
+
     breakdown_concurrency: int | None = Field(default=None, ge=1)
 
 
@@ -335,6 +333,9 @@ class RuntimeConfig(BaseSettings):
                     f"{name} 段已搬到运行时服务的配置（configs/runtime.yaml 的 {moved_to}），"
                     "从后端的配置文件里删掉它"
                 )
+        for name, why in _RETIRED_SECTIONS.items():
+            if name in sections:
+                raise ValueError(f"{name} 段已不用（{why}），从后端的配置文件里删掉它")
         shot_video = sections.get("shot_video")
         if isinstance(shot_video, Mapping) and shot_video:
             raise ValueError(
@@ -431,9 +432,6 @@ class ResolvedMediaGeneration:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedIclipStudio:
-    breakdown_url: str
-    breakdown_api_key: str
-    breakdown_model: str
     breakdown_concurrency: int | None
 
 
@@ -588,15 +586,9 @@ def _resolve_qwen_service(section: QwenServiceSection | None) -> ResolvedQwenSer
 
 
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
-    if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
+    if section is None:
         return None
-    env = _from_env(VideoUnderstandingEnv)
-    return ResolvedIclipStudio(
-        breakdown_url=env.url,
-        breakdown_api_key=env.api_key,
-        breakdown_model=section.breakdown_model,
-        breakdown_concurrency=section.breakdown_concurrency,
-    )
+    return ResolvedIclipStudio(breakdown_concurrency=section.breakdown_concurrency)
 
 
 def _resolve_product_catalog() -> ResolvedProductCatalog | None:

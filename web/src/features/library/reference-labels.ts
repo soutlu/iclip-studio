@@ -32,6 +32,7 @@ export const referenceTitleOf = (
 const FAILURE_HINTS: Record<BreakdownError, string> = {
   model_call_failed: '拆解服务连接失败，请稍后点击「重新拆解」重试。',
   model_failed: '模型未能拆解该视频，请稍后点击「重新拆解」重试。',
+  model_unavailable: '没启用拆解模型，请联系管理员启用后点击「重新拆解」重试。',
   timeout: '拆解超时，请稍后点击「重新拆解」重试。',
   video_unreadable: '视频读取失败，请上传其他视频。',
 }
@@ -49,6 +50,10 @@ export const failureMessageOf = (
 const TAG_FAILURES: Record<TagError, { reason: string; retry: string }> = {
   model_call_failed: { reason: '打标服务连接失败', retry: '请稍后点击「重新打标」重试' },
   model_failed: { reason: '模型未能完成打标', retry: '请稍后点击「重新打标」重试' },
+  model_unavailable: {
+    reason: '没启用打标模型',
+    retry: '请联系管理员启用后点击「重新打标」重试',
+  },
   no_source_text: { reason: '暂无可读的拆解，无法打标', retry: '请点击「重新打标」重试' },
   timeout: { reason: '打标超时', retry: '请稍后点击「重新打标」重试' },
 }

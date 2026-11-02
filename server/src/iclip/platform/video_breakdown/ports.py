@@ -1,4 +1,5 @@
-"""视频拆解的协议与错误：抽帧端口由 ffmpeg 实现，模型适配器失败抛 ``BreakdownError``。"""
+"""视频拆解的协议与错误：抽帧端口由 ffmpeg 实现，模型适配器失败抛 ``BreakdownError``，模型没启用另抛它的
+子类 ``BreakdownModelUnavailable``。"""
 
 from __future__ import annotations
 
@@ -13,6 +14,14 @@ class BreakdownError(RuntimeError):
         super().__init__(message)
         self.retryable = retryable
         """再调一次有没有可能成功：对方临时出错或答得不完整是 True，请求被拒或等到超时是 False。"""
+
+
+class BreakdownModelUnavailable(BreakdownError):
+    """配置页里没有启用这个模型（或那家供应商没有默认密钥）；要管理员去启用，再调也一样。消息是运行时给的
+    原因，说清去哪里改。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, retryable=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +49,7 @@ class VideoSampler(Protocol):
 
 __all__ = [
     "BreakdownError",
+    "BreakdownModelUnavailable",
     "SampledVideo",
     "VideoSampler",
 ]

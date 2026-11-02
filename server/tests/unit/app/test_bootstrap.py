@@ -52,7 +52,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
     monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
     monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
-    for name in (*MEDIA_ENVS, *STUDIO_ENVS, "QWEN_API_KEY"):
+    for name in (*MEDIA_ENVS, "QWEN_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -123,12 +123,6 @@ def test_media_generation_without_ffmpeg_fails_at_startup(
         build_app(config_with_media(), engine=engine(), object_store=MemoryObjectStore())
 
 
-STUDIO_ENVS = {
-    "VIDEO_UNDERSTANDING_URL": "https://vision.test/responses",
-    "VIDEO_UNDERSTANDING_API_KEY": "test-key",
-}
-
-
 def _keep_logging(_level: str, _fmt: str) -> None:
     """替换 ``configure_logging``：不动 structlog 的配置，``capture_logs`` 才截得到。"""
 
@@ -140,7 +134,7 @@ def local_media_env(base_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
     unit 门禁的机器不一定装 ffmpeg，这里只看装配。``configure_logging`` 会整个换掉 structlog
     的配置，要先让它不动，才截得到启动日志。"""
 
-    for name, value in {**MEDIA_ENVS, **STUDIO_ENVS}.items():
+    for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
     monkeypatch.setattr("iclip.app.bootstrap.configure_logging", _keep_logging)
@@ -161,9 +155,7 @@ def build_local_media(
             "media_generation": config.media_generation.model_copy(
                 update={"compose_concurrency": compose}
             ),
-            "iclip_studio": IclipStudioSection(
-                breakdown_model="seed", breakdown_concurrency=breakdown
-            ),
+            "iclip_studio": IclipStudioSection(breakdown_concurrency=breakdown),
         }
     )
     with capture_logs() as logs:
@@ -272,7 +264,7 @@ def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig
     return config.model_copy(
         update={
             "shot_video": ShotVideoSection() if shot_video else None,
-            "iclip_studio": IclipStudioSection(breakdown_model="seed") if studio else None,
+            "iclip_studio": IclipStudioSection() if studio else None,
         }
     )
 

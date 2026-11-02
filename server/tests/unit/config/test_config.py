@@ -35,8 +35,6 @@ MANIFEST = (
     "OSS_ACCESS_KEY_SECRET",
     "OSS_PUBLIC_URL_BASE",
     "OSS_INTERNAL_ENDPOINT",
-    "VIDEO_UNDERSTANDING_URL",
-    "VIDEO_UNDERSTANDING_API_KEY",
     "PRODUCT_CATALOG_DATABASE_URL",
     "QWEN_API_KEY",
     "T_QWEN_KEY",
@@ -475,11 +473,6 @@ SHOT_VIDEO = """
 shot_video: {}
 """
 
-VIDEO_ENV = {
-    "VIDEO_UNDERSTANDING_URL": "https://vision.test/responses",
-    "VIDEO_UNDERSTANDING_API_KEY": "ark",
-}
-
 
 def test_shot_video_without_media_generation_names_what_it_lacks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -509,17 +502,34 @@ def test_shot_video_section_absent_means_off(
     assert not settings.shot_tools_enabled
 
 
-ICLIP_STUDIO = """
-iclip_studio:
-  breakdown_model: seed-omni
-"""
-
-
-def test_iclip_studio_half_configured_fails_loudly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("section", "concurrency"),
+    [("iclip_studio: {}\n", None), ("iclip_studio:\n  breakdown_concurrency: 3\n", 3)],
+    ids=["empty", "concurrency"],
+)
+def test_the_iclip_studio_section_alone_turns_breakdown_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, section: str, concurrency: int | None
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + ICLIP_STUDIO))
+    """模型写定在代码里、连接在运行时的配置页里：这一段写了就开，不要别的环境变量。"""
+
+    config = load_runtime_config(write(tmp_path, VALID + section))
     _core(monkeypatch)
-    monkeypatch.setenv("VIDEO_UNDERSTANDING_URL", VIDEO_ENV["VIDEO_UNDERSTANDING_URL"])
-    with pytest.raises(ValidationError, match="VIDEO_UNDERSTANDING_API_KEY"):
-        resolve_settings(config)
+
+    settings = resolve_settings(config)
+
+    assert settings.iclip_studio is not None
+    assert settings.iclip_studio.breakdown_concurrency == concurrency
+
+
+def test_an_old_video_section_says_to_delete_it(tmp_path: Path) -> None:
+    path = write(tmp_path, VALID + "video:\n  understanding_model: seed-vision\n")
+
+    with pytest.raises(ValidationError, match=r"video 段已不用.*从后端的配置文件里删掉它"):
+        load_runtime_config(path)
+
+
+def test_the_breakdown_model_is_no_longer_configured(tmp_path: Path) -> None:
+    path = write(tmp_path, VALID + "iclip_studio:\n  breakdown_model: seed-omni\n")
+
+    with pytest.raises(ValidationError, match="breakdown_model"):
+        load_runtime_config(path)

@@ -6,10 +6,12 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-BreakdownFailureReason = Literal["video_unreadable", "model_call_failed", "model_failed", "timeout"]
+BreakdownFailureReason = Literal[
+    "video_unreadable", "model_call_failed", "model_failed", "model_unavailable", "timeout"
+]
 """一次拆解为什么没拿到文档。``video_unreadable`` 视频取不到或解不开；``model_call_failed`` 模型调用
 失败（限流、服务端错、连不上、答得不完整），再拆可能就好；``model_failed`` 请求被拒或等满了总超时；
-``timeout`` 等满了上限还没拆完。"""
+``model_unavailable`` 配置页里没有启用拆解模型，要管理员启用；``timeout`` 等满了上限还没拆完。"""
 
 
 @dataclass(frozen=True, slots=True)

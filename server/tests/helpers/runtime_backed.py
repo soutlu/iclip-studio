@@ -42,7 +42,9 @@ from fastapi import FastAPI
 from httpx_ws.transport import ASGIWebSocketTransport
 from iclip_video.iclip_studio.capability import IclipStudio
 from iclip_video.oss_media import OssMediaProbe
+from iclip_video.video.capability import Video
 from iclip_video.video_shots.capability import VideoShots
+from iclip_video.video_understanding import ArkVideoUnderstanding
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app import bootstrap
@@ -107,9 +109,9 @@ class OneUpgradeAtATime(ASGIWebSocketTransport):
 
 
 def standard_plugins(host: PluginHost) -> PluginRegistry:
-    """视频插件包在运行时配置没写任何可选段时登记的三个插件，绑上运行时服务的工作区与素材台账。
+    """视频插件包在运行时配置没写任何可选段时登记的四个插件，绑上运行时服务的工作区、素材台账与模型连接的查找。
 
-    查图片信息不出网：替身客户端一律答 404。"""
+    查图片信息与调方舟都不出网：替身客户端一律答 404。"""
 
     space = FileSpace(store=host.files, namespace=workspace_namespace)
     offline = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(404)))
@@ -119,6 +121,11 @@ def standard_plugins(host: PluginHost) -> PluginRegistry:
         ),
         IclipStudio.bind(space=space, ledger=host.ledger, images=None),
         VideoShots.bind(space=space, ledger=host.ledger),
+        Video.bind(
+            space=space,
+            ledger=host.ledger,
+            understanding=ArkVideoUnderstanding(offline, connection=host.model_connection),
+        ),
     )
     return {plugin.get_serialization_name(): plugin for plugin in plugins}
 

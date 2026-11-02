@@ -46,6 +46,7 @@ DONE = f"视频拆解完毕，文档在 {PATH}。"
 UNREADABLE = "拆解失败，视频无法打开，不要重试，告诉用户换一条视频。"
 CALL_AGAIN = "拆解失败，再调用一次。"
 TRY_LATER = "拆解失败，不要重试，告诉用户稍后再试。"
+ASK_AN_ADMIN = "拆解失败，拆解模型没有启用，不要重试，告诉用户需要管理员在配置页启用这个模型。"
 
 
 class FakeBreakdowns:
@@ -135,6 +136,7 @@ async def test_the_breakdown_is_asked_for_the_run_owner_and_written_as_is(
         ("video_unreadable", ToolFailed, UNREADABLE),
         ("model_call_failed", ModelRetry, CALL_AGAIN),
         ("model_failed", ToolFailed, TRY_LATER),
+        ("model_unavailable", ToolFailed, ASK_AN_ADMIN),
         ("timeout", ToolFailed, TRY_LATER),
     ],
 )

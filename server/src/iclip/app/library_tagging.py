@@ -1,4 +1,4 @@
-"""资料库打标的组合根适配：把 tagging 声明的两个端口接到方舟 Responses 接口与各库的文字上。
+"""资料库打标的组合根适配：把 tagging 声明的两个端口接到方舟 Responses 接口（经运行时服务）与各库的文字上。
 
 打标是一次纯文本调用。输出约束按当前标签树里 ``auto_fill = ai`` 的维度现拼：每个维度是字段
 ``d1…dn``，名字与说明放在 JSON Schema 中；有下级的维度按树组织选项，其余维度直接选名字。
@@ -12,24 +12,27 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-import httpx
+from agent_runtime.client import RuntimeClient
 from agent_runtime.file_store.namespace import namespace_for
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
 from iclip.app.runtime_workspace import WorkspaceFiles
-from iclip.config import ResolvedIclipStudio
 from iclip.domains.library.repository import LibraryReports
 from iclip.domains.references.repository import ReferenceStore
 from iclip.domains.tagging.models import (
     ERROR_MODEL_CALL_FAILED,
     ERROR_MODEL_FAILED,
+    ERROR_MODEL_UNAVAILABLE,
     KIND_REFERENCE,
     EntryKey,
     TaggingFailed,
     TagNode,
 )
 from iclip.platform.video_breakdown.model import ArkBreakdownModel
-from iclip.platform.video_breakdown.ports import BreakdownError
+from iclip.platform.video_breakdown.ports import BreakdownError, BreakdownModelUnavailable
+
+TAG_MODEL: Final = "doubao-seed-2-1-lite-260915"
+"""打标的方舟模型，与拆解同一个；配置页的火山方舟里要加上并启用它。"""
 
 TAG_REASONING_EFFORT: Final = "low"
 
@@ -214,6 +217,8 @@ class ArkTagger:
                 text_format=request.text_format,
                 timeout=TAG_TIMEOUT_SECONDS,
             )
+        except BreakdownModelUnavailable as exc:
+            raise TaggingFailed(str(exc), code=ERROR_MODEL_UNAVAILABLE) from exc
         except BreakdownError as exc:
             # 可重试的（限流、服务端错、连不上、答得不完整）再打可能就好；被拒与等满总超时不会。
             code = ERROR_MODEL_CALL_FAILED if exc.retryable else ERROR_MODEL_FAILED
@@ -270,21 +275,15 @@ class LibrarySourceText:
         return await self._treatments.text(source.conversation_owner, source.conversation_id)
 
 
-def build_library_tagger(settings: ResolvedIclipStudio, client: httpx.AsyncClient) -> ArkTagger:
-    """按 ``iclip_studio`` 的配置建打标；HTTP 连接池与组合根共用，模型与拆解是同一个。"""
+def build_library_tagger(runtime: RuntimeClient) -> ArkTagger:
+    """建打标：模型经运行时服务的 ``runtime`` 调，与拆解走同一个适配器。"""
 
-    return ArkTagger(
-        ArkBreakdownModel(
-            client,
-            url=settings.breakdown_url,
-            api_key=settings.breakdown_api_key,
-            model=settings.breakdown_model,
-        )
-    )
+    return ArkTagger(ArkBreakdownModel(runtime, model=TAG_MODEL))
 
 
 __all__ = [
     "TAG_MAX_OUTPUT_TOKENS",
+    "TAG_MODEL",
     "TAG_REASONING_EFFORT",
     "TAG_TIMEOUT_SECONDS",
     "ArkTagger",

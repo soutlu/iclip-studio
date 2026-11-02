@@ -50,6 +50,7 @@ from agent_runtime.config.model_providers.rules import (
     merged_fields,
     new_fields,
     probe_model,
+    responses_connection,
 )
 from agent_runtime.config.model_providers.schemas import (
     CredentialCreateIn,
@@ -77,7 +78,8 @@ from agent_runtime.config.model_providers.schemas import (
     ProviderModelOut,
     ProviderOptionOut,
 )
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.errors import Conflict, ModelUnavailable, NotFound, ValidationFailed
+from agent_runtime.model_connections import ModelConnection
 from agent_runtime.secrets import CredentialCipher
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -332,6 +334,27 @@ class ModelProviderService:
         found = self._runtime_model(state, default.model_name, credential_id)
         if found is None or not found.model.enabled:
             return None
+        return found
+
+    async def responses_connection(self, declaration_name: str, model_name: str) -> ModelConnection:
+        """代码里写定的模型（声明名 + 模型名）此刻的 Responses 连接，挑法见 ``rules.responses_connection``。
+        每次都现查现解密，配置页改了下一次调用就生效。
+
+        Raises:
+            ModelUnavailable: 配置页里没有能用的：没有启用的这家供应商启用了这个模型，或它没有默认密钥。
+            RuntimeError: 代码里写的声明名不存在。
+        """
+
+        declaration = self._declarations.get(declaration_name)
+        if declaration is None:
+            raise RuntimeError(f"代码里写定的供应商声明 {declaration_name} 不存在")
+        found = responses_connection(
+            declaration, await self._store.states(), model_name, self._cipher
+        )
+        if found is None:
+            raise ModelUnavailable(
+                f"配置页的{declaration.label}里没有启用的模型 {model_name}（或没有默认密钥）"
+            )
         return found
 
     def _runtime_model(

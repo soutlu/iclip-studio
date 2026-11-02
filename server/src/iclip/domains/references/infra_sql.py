@@ -76,10 +76,6 @@ reference_videos_table = Table(
         "breakdown_status IN ('pending', 'running', 'completed', 'failed')",
         name="ck_reference_videos_status",
     ),
-    CheckConstraint(
-        "error_code IN ('video_unreadable', 'model_call_failed', 'model_failed', 'timeout')",
-        name="ck_reference_videos_error_code",
-    ),
     Index(
         "ix_reference_videos_listed",
         text("created_at DESC"),

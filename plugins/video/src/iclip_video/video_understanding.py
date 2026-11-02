@@ -5,11 +5,24 @@ from __future__ import annotations
 from typing import Any, Final, Protocol
 
 import httpx
+from agent_runtime.errors import ModelUnavailable
+from agent_runtime.model_connections import ModelConnectionLookup
 
 from iclip_video.video_document import SHOT_TIMECODE_SHAPE
 
 TIMEOUT_SECONDS: Final = 600.0
 """付费视频拆解的默认总超时；超时无法确认上游执行结果，不自动重试。"""
+
+DECLARATION: Final = "volcengine"
+"""连接取自配置页里用火山方舟声明的供应商。"""
+
+MODEL: Final = "doubao-seed-2-0-lite-260428"
+"""视频理解的方舟模型；配置页的火山方舟里要加上并启用它。"""
+
+THINKING: Final = "medium"
+
+FPS: Final = 5
+"""让对方每秒看几帧；方舟最多收 5。"""
 
 _USER_TEXT: Final = "请对随附视频做参考片拆解。"
 
@@ -103,49 +116,51 @@ SYSTEM_PROMPT: Final = (
 
 
 class ArkVideoUnderstanding:
-    """方舟视频拆解适配器，HTTP 客户端由组合根注入；``timeout_seconds`` 是一次拆解请求的总超时。"""
+    """方舟视频拆解适配器：HTTP 客户端与连接的查找由组合根注入，模型、思考档位与帧率写定在上面。每次拆解都
+    现查连接，配置页里改了下一次就生效；``timeout_seconds`` 是一次拆解请求的总超时。"""
 
     def __init__(
         self,
         client: httpx.AsyncClient,
         *,
-        url: str,
-        api_key: str,
-        model: str,
-        thinking: str | None = None,
-        fps: float | None = None,
+        connection: ModelConnectionLookup,
         timeout_seconds: float = TIMEOUT_SECONDS,
     ) -> None:
         self._client = client
-        self._url = url
-        self._api_key = api_key
-        self._model = model
-        self._thinking = thinking
-        self._fps = fps
+        self._connection = connection
         self._timeout_seconds = timeout_seconds
 
     async def parse(self, video_url: str) -> str:
+        """交回这段视频的拆解文档。
 
-        video: dict[str, Any] = {"type": "input_video", "video_url": video_url}
-        if self._fps is not None:
-            video["fps"] = self._fps
+        Raises:
+            VideoUnderstandingUnavailable: 配置页里没有启用这个模型（或那家供应商没有默认密钥）。
+            VideoUnderstandingError: 调用失败或答复不能用。
+        """
+
+        try:
+            connection = await self._connection(DECLARATION, MODEL)
+        except ModelUnavailable as exc:
+            raise VideoUnderstandingUnavailable(str(exc)) from exc
         payload: dict[str, Any] = {
-            "model": self._model,
+            "model": MODEL,
+            "reasoning": {"effort": THINKING},
             "input": [
                 {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT}]},
                 {
                     "role": "user",
-                    "content": [video, {"type": "input_text", "text": _USER_TEXT}],
+                    "content": [
+                        {"type": "input_video", "video_url": video_url, "fps": FPS},
+                        {"type": "input_text", "text": _USER_TEXT},
+                    ],
                 },
             ],
         }
-        if self._thinking is not None:
-            payload["reasoning"] = {"effort": self._thinking}
         try:
             response = await self._client.post(
-                self._url,
+                connection.responses_url,
                 json=payload,
-                headers={"Authorization": f"Bearer {self._api_key}"},
+                headers={"Authorization": f"Bearer {connection.api_key}"},
                 timeout=self._timeout_seconds,
             )
             response.raise_for_status()
@@ -163,6 +178,10 @@ class ArkVideoUnderstanding:
 
 class VideoUnderstandingError(RuntimeError):
     """视频拆解调用失败。"""
+
+
+class VideoUnderstandingUnavailable(VideoUnderstandingError):
+    """配置页里没有能用的视频理解模型；消息说清去配置页改哪里。再调也一样，等管理员启用。"""
 
 
 def _markdown(body: object) -> str:
@@ -204,9 +223,14 @@ class VideoUnderstanding(Protocol):
 
 
 __all__ = [
+    "DECLARATION",
+    "FPS",
+    "MODEL",
     "SYSTEM_PROMPT",
+    "THINKING",
     "TIMEOUT_SECONDS",
     "ArkVideoUnderstanding",
     "VideoUnderstanding",
     "VideoUnderstandingError",
+    "VideoUnderstandingUnavailable",
 ]

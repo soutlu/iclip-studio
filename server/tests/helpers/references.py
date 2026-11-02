@@ -11,10 +11,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 
 import httpx
+from agent_runtime.client import RuntimeClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.library_tagging import ArkTagger
+from iclip.app.library_tagging import ArkTagger, build_library_tagger
 from iclip.app.reference_breakdown import ArkVideoBreakdowns
 from iclip.app.reference_test_video import TEST_VIDEO_MODEL
 from iclip.config import RuntimeConfig, VideoGenerationSection
@@ -23,7 +24,7 @@ from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import TestVideoJob
 from iclip.domains.references.test_prompt import TestPrompt
 from iclip.platform.media.errors import MediaError
-from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel
 from iclip.platform.video_breakdown.ports import SampledVideo
 from iclip.platform.video_breakdown.service import BreakdownRunner
 from tests.helpers.app import make_runtime_config
@@ -35,8 +36,6 @@ STUDIO_ENVS = {
     "OSS_ACCESS_KEY_ID": "ak",
     "OSS_ACCESS_KEY_SECRET": "sk",
     "OSS_PUBLIC_URL_BASE": "https://cdn.example.test",
-    "VIDEO_UNDERSTANDING_URL": "https://ark.test/responses",
-    "VIDEO_UNDERSTANDING_API_KEY": "ark",
 }
 """拆解配好、媒体生成没开要的环境变量；地址都是替身，装配期不外呼。"""
 
@@ -44,9 +43,7 @@ STUDIO_ENVS = {
 def config_with_studio() -> RuntimeConfig:
     """测试运行配置外加 ``iclip_studio`` 段，不带媒体生成段。"""
 
-    return make_runtime_config().model_copy(
-        update={"iclip_studio": IclipStudioSection(breakdown_model="seed-vision")}
-    )
+    return make_runtime_config().model_copy(update={"iclip_studio": IclipStudioSection()})
 
 
 STUDIO_MEDIA_ENVS = STUDIO_ENVS | MEDIA_ENVS
@@ -61,7 +58,7 @@ def config_with_studio_and_media() -> RuntimeConfig:
     video = VideoGenerationSection(model="seedance", allowed_models=("seedance", TEST_VIDEO_MODEL))
     return media.model_copy(
         update={
-            "iclip_studio": IclipStudioSection(breakdown_model="seed-vision"),
+            "iclip_studio": IclipStudioSection(),
             "media_generation": media.media_generation.model_copy(update={"video": video}),
         }
     )
@@ -147,16 +144,35 @@ def breakdown_answer(document: str = DOCUMENT) -> httpx.Response:
     return httpx.Response(200, json=responses_body(document))
 
 
+def model_unavailable() -> httpx.Response:
+    """运行时答的「配置页里没启用这个模型」。"""
+
+    return httpx.Response(
+        409,
+        json={
+            "detail": "配置页的火山方舟里没有启用的模型 doubao-seed-2-1-lite-260915（或没有默认密钥）",
+            "code": "model_unavailable",
+        },
+    )
+
+
 class FakeArk:
-    """方舟接口替身：带 ``text.format`` 的请求是打标，其余是拆解；各自按给定的回答答。"""
+    """运行时模型调用接口连同后面方舟的替身：带 ``text.format`` 的请求是打标，其余是拆解；各自按给定的回答答。
+    ``requests`` 是要转给方舟的请求体，``calls`` 是发给运行时的整个请求体外加这次等答复的上限
+    （``read_timeout``）。"""
 
     def __init__(self, *, breakdown: Answer | None = None, tag: Answer | None = None) -> None:
         self.breakdown: Answer = breakdown if breakdown is not None else breakdown_answer()
         self.tag: Answer = tag if tag is not None else tag_answer()
         self.requests: list[dict[str, Any]] = []
+        self.calls: list[dict[str, Any]] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
+        assert request.url.path == "/v1/model-calls/responses"
+        call = json.loads(request.content)
+        call["read_timeout"] = request.extensions["timeout"]["read"]
+        self.calls.append(call)
+        payload = call["payload"]
         self.requests.append(payload)
         answer = self.tag if "text" in payload else self.breakdown
         if isinstance(answer, Exception):
@@ -190,16 +206,15 @@ class FakeSampler:
 def ark_pipeline(
     ark: FakeArk, *, sampler: FakeSampler | None = None
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
-    """真的拆解与打标适配器，共用一个方舟模型，HTTP 与抽帧都是替身。"""
+    """真的拆解与打标适配器，按生产的写法各建一份（经运行时客户端调写定的模型）；运行时与抽帧都是替身。"""
 
-    model = ArkBreakdownModel(
-        httpx.AsyncClient(transport=httpx.MockTransport(ark)),
-        url="https://ark.test/responses",
-        api_key="ark",
-        model="seed-vision",
+    runtime = RuntimeClient(
+        "http://runtime.test", "app-key-test-0123456789", transport=httpx.MockTransport(ark)
     )
-    breakdown = BreakdownRunner(model=model, sampler=sampler or FakeSampler())
-    return ArkVideoBreakdowns(breakdown), ArkTagger(model)
+    breakdown = BreakdownRunner(
+        model=ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL), sampler=sampler or FakeSampler()
+    )
+    return ArkVideoBreakdowns(breakdown), build_library_tagger(runtime)
 
 
 async def plant_user(engine: AsyncEngine, name: str) -> uuid.UUID:
@@ -286,6 +301,7 @@ __all__ = [
     "breakdown_answer",
     "config_with_studio",
     "config_with_studio_and_media",
+    "model_unavailable",
     "plant_reference",
     "plant_user",
     "reference_row",

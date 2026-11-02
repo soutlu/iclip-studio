@@ -36,6 +36,7 @@ from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
     ark_pipeline,
+    model_unavailable,
     plant_reference,
     plant_user,
     tag_answer,
@@ -165,6 +166,7 @@ async def test_the_request_only_offers_the_ai_dimensions_of_the_current_tree(
         pytest.param(httpx.Response(500, text="boom"), "model_call_failed", id="call-failed"),
         pytest.param(httpx.Response(400, text="rejected"), "model_failed", id="rejected"),
         pytest.param(tag_answer({"d1": ["人字拖"], "d2": [], "d3": []}), "model_failed", id="bad"),
+        pytest.param(model_unavailable(), "model_unavailable", id="model-unavailable"),
     ],
 )
 async def test_a_failure_records_its_reason_and_clears_only_ai_dimensions(

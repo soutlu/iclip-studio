@@ -61,6 +61,7 @@ LEAF_MODULES = frozenset(
         "agent_runtime.errors",
         "agent_runtime.urls",
         "agent_runtime.model_vocab",
+        "agent_runtime.model_connections",
         "agent_runtime.agent_usage",
         "agent_runtime.tool_args",
         "agent_runtime.secrets",

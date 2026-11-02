@@ -283,9 +283,8 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
 
 
 async def test_without_breakdown_configured_only_reads_are_mounted(
-    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
+    base_env: None, migrated_pg: str
 ) -> None:
-    monkeypatch.delenv("VIDEO_UNDERSTANDING_URL", raising=False)
     engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)

@@ -2900,6 +2900,34 @@
         "title": "MetaMergeOp",
         "type": "object"
       },
+      "ModelCallIn": {
+        "additionalProperties": false,
+        "description": "经运行时调一个代码里写定的模型：按（``declaration``，``model``）在配置页里找连接，``payload`` 是\n上游接口的请求体，运行时只把它的 ``model`` 换成这个模型名，别的原样转发。",
+        "properties": {
+          "declaration": {
+            "minLength": 1,
+            "title": "Declaration",
+            "type": "string"
+          },
+          "model": {
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "declaration",
+          "model",
+          "payload"
+        ],
+        "title": "ModelCallIn",
+        "type": "object"
+      },
       "ModelOptionOut": {
         "additionalProperties": false,
         "description": "agent 能选的一个对话模型。",
@@ -9457,6 +9485,64 @@
         "summary": "Directory",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/v1/model-calls/responses": {
+      "post": {
+        "operationId": "responses_v1_model_calls_responses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCallIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {},
+            "description": "上游的答复：状态码、内容类型与正文都原样"
+          },
+          "409": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "code 为 model_unavailable：配置页里没有能用的连接"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "code 为 upstream_unreachable：连不上上游"
+          },
+          "504": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "code 为 upstream_timeout：等上游超时"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Responses",
+        "tags": [
+          "model-calls"
         ]
       }
     },
