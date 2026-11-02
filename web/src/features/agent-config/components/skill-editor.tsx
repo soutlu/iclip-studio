@@ -291,12 +291,12 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     setErrors(problems)
     // 按标题区自上而下，聚焦第一个有错的框。
     const invalid =
-      problems.title !== undefined
-        ? titleRef
-        : problems.description !== undefined
-          ? descriptionRef
-          : problems.name !== undefined
-            ? nameRef
+      problems.name !== undefined
+        ? nameRef
+        : problems.title !== undefined
+          ? titleRef
+          : problems.description !== undefined
+            ? descriptionRef
             : null
     if (invalid !== null) {
       invalid.current?.focus()
@@ -464,7 +464,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
 
   const inlineClass =
     'w-full rounded-sm bg-transparent px-2 py-0.5 ui-motion-s transition-colors placeholder:text-on-surface-faint hover:bg-state-hover focus:bg-state-hover focus-visible:outline-0 disabled:cursor-default aria-invalid:ring-1 aria-invalid:ring-error aria-invalid:ring-inset'
-  const fieldError = errors.title ?? errors.description ?? errors.name
+  const fieldError = errors.name ?? errors.title ?? errors.description
 
   return (
     <PanelShell

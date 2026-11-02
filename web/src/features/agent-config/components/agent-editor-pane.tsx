@@ -418,8 +418,8 @@ function PromptCard({
   const preview = empty ? (
     <span className="text-on-surface-faint">{onOpen === undefined ? '—' : '添加系统提示词'}</span>
   ) : (
-    // 摘要只读：正文里的链接、代码块按钮不单独接收焦点与点击，整张卡片就是一个按钮。
-    <div className="pointer-events-none" inert>
+    // 摘要只读：正文里的链接、代码块按钮不单独接收焦点与点击。
+    <div inert>
       <Markdown
         className="max-h-30 overflow-hidden mask-b-from-60% text-on-surface-variant [&_:is(strong,h3,h4,h5)]:text-on-surface"
         text={markdown}
@@ -428,23 +428,25 @@ function PromptCard({
   )
   if (onOpen === undefined) return <div className={className}>{preview}</div>
   return (
-    <button
-      aria-label="编辑系统提示词"
-      aria-pressed={active}
-      className={cn(className, 'ui-state cursor-pointer ui-focus')}
-      onClick={onOpen}
-      type="button"
-    >
+    <div className={cn(className, 'ui-state')}>
       {preview}
+      {/* 按钮铺满整张卡片，摘要放在按钮外面：正文的代码块、图片自带按钮，按钮里不能再套按钮。 */}
+      <button
+        aria-label="编辑系统提示词"
+        aria-pressed={active}
+        className="peer absolute inset-0 cursor-pointer rounded-md ui-focus"
+        onClick={onOpen}
+        type="button"
+      />
       <span
         aria-hidden
         className={cn(
-          'absolute top-3 right-3 grid size-6 place-items-center text-on-surface-variant opacity-0 transition-opacity ui-motion-s group-hover:opacity-100 group-focus-visible:opacity-100',
+          'pointer-events-none absolute top-3 right-3 grid size-6 place-items-center text-on-surface-variant opacity-0 transition-opacity ui-motion-s group-hover:opacity-100 peer-focus-visible:opacity-100',
           active && 'opacity-100',
         )}
       >
         <Icon decorative name="edit" size="sm" />
       </span>
-    </button>
+    </div>
   )
 }

@@ -21,7 +21,8 @@ test('Agent 配置：从侧栏进入，改系统提示词、保存草稿、发�
   await page.keyboard.press('Enter')
   await page.keyboard.type('回复先给结论，再说理由。')
   await main.getByRole('region', { name: '配置调整' }).getByRole('button', { name: '完成' }).click()
-  await expect(editor.getByRole('button', { name: '编辑系统提示词' })).toContainText(
+  // 摘要在按钮外面、同一张卡片里。
+  await expect(editor.getByRole('button', { name: '编辑系统提示词' }).locator('..')).toContainText(
     '回复先给结论，再说理由。',
   )
 
