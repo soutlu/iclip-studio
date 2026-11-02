@@ -92,7 +92,7 @@ Agent 引擎使用 PydanticAI 与 Pydantic AI Harness。以下路径均相对 `r
 
 1. 按会话取版本；没有会话或版本为空就是装不起来。
 2. 读出这一版的配置与技能名单，按发布时的检查编译（`compile_agent` 的运行时模式：子 agent 只有一层的规则只看各 agent 的当前版本，不看草稿，也不查「自己正被别人当作子 agent」，别人草稿里的改动不让已定下的版本跑不起来）。编译不过、引用的模型或密钥已不在、装配本身出错都抛 `AgentUnavailable`（`409`，信封带 `code: "agent_unavailable"`，见 [conventions §4](../contract/conventions.md#4-错误处理与响应信封)）。受理消息时先装一次，装不起来不入队；受理后开跑前才装不起来的，这一轮记失败，原因写进消息行的 `interrupt_reason`。
-3. 拼缓存键：版本 id（草稿是它的 `lock_version`）、用到的供应商与密钥的修改时刻和合并后的模型本身（自己加的模型没有修改时刻）、思考档位、挂的 MCP 服务的修改时刻与选的工具、各技能最新版的 `name:content_hash`、各子 agent 的标识、描述、三个控制项与它自己的同一份键。命中就复用装好的 Agent，没命中就装配并放进每个进程一份的 LRU，条数是运行时配置的 `agent_runs.assembly_cache_size`。发布 agent、发布技能、改密钥或模型、改子 agent 描述后，下一次运行自然换成新的，不需要通知，多个进程各自如此。
+3. 拼缓存键：版本 id（草稿是它的 `lock_version`）、用到的供应商与密钥的修改时刻和合并后的模型本身（自己加的模型没有修改时刻）、思考档位、挂的 MCP 服务的修改时刻与选的工具、各技能最新版的 `name:content_hash`、各子 agent 的标识、描述、三个控制项与它自己的同一份键。命中就复用装好的 Agent，没命中就装配并放进每个进程一份的 LRU，条数是运行时配置的 `agent_runs.assembly_cache_size`。发布 agent、发布技能或改它的标识、改密钥或模型、改子 agent 描述后，下一次运行自然换成新的，不需要通知，多个进程各自如此。
 4. 装配：`Agent.from_spec(AgentSpec(capabilities=编译出的插件条目), custom_capability_types=插件登记表, model=…, instructions=…, capabilities=[StepPersistence, 用量台账, MCP 服务, 技能, 子代理])`（[harness/agents.py](../runtime/src/agent_runtime/harness/agents.py)）。模型由 [assembly/models.py](../runtime/src/agent_runtime/assembly/models.py) 的 `build_provider_model` 按「声明 + 模型 + 解密后的密钥字段 + 思考档位」建出。工具参数纠错 3 次；审批只挂顶层；子代理用 `SubAgents`，每个按它自己的当前版本经同一套缓存装配，名字是它的 agent 标识，描述取 agent 的描述，transcript 镜像共享给子运行。顶层运行的落库 metadata 记 `agent_id`、`agent_version_id`（按草稿装配时是 `agent_draft_lock_version` 与 `agent_draft: "true"`）、`model`、`thinking_effort` 与 `skills`（`name:content_hash`，逗号分隔）；子运行记 `agent_name`、`model`、`thinking_effort` 三个键，实时任务卡与历史按它们读。
 5. 上下文窗口取这次所用模型的 `context_size`，没有就不压缩、不报用量；读历史页时的用量仪表取同一个值。
 
@@ -100,7 +100,7 @@ Agent 引擎使用 PydanticAI 与 Pydantic AI Harness。以下路径均相对 `r
 
 对话标题（`POST /v1/titles`）用 `llm` 的默认模型起，没设就不起。
 
-**技能缓存。** 技能的一个版本按内容 hash 写进本机目录，即运行时配置的 `agent_runs.skill_cache_dir`（不写时是系统临时目录下的 `agent-runtime-skills`）：`<目录>/<content_hash>/<name>/SKILL.md` 与 `references/`，目录已在就跳过，多个进程同时写时各写临时目录再改名。Harness 的 `Skills` 以缓存目录为工作区、按 hash 目录列出这次挂的技能；`get_skill_reference` 也从这里读。
+**技能缓存。** 技能最新版的文件写进本机目录，即运行时配置的 `agent_runs.skill_cache_dir`（不写时是系统临时目录下的 `agent-runtime-skills`）：`<目录>/<key>/<name>/SKILL.md` 与 `references/`。`<name>` 是技能当前的标识，`SKILL.md` 里的 `name` 写入前换成它；`<key>` 是最新版内容 hash 与当前标识合起来的 sha256，发布新版或改标识都换一个目录，旧目录留着。目录已在就跳过，多个进程同时写时各写临时目录再改名。Harness 的 `Skills` 以缓存目录为工作区、按 key 目录列出这次挂的技能；`get_skill_reference` 也从这里读。
 
 ### 工具、插件与 MCP 服务
 

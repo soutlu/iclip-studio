@@ -2011,9 +2011,12 @@ export const zSkillPublishIn = z.object({
 
 /**
  * SkillUpdateIn
+ *
+ * 改显示名或标识，不给的项不动，至少给一项；都不进版本，保存即生效。
  */
 export const zSkillUpdateIn = z.object({
-  displayName: z.string(),
+  displayName: z.string().nullish(),
+  name: z.string().nullish(),
 })
 
 /**

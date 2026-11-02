@@ -36,7 +36,8 @@ class DraftFileInfoOut(SkillFileOut):
 class SkillOut(CamelModel):
     id: uuid.UUID
     name: str
-    """标识，创建后不能改。"""
+    """标识，不能与别的技能重复；可以改，保存即生效、不进版本。版本里 ``SKILL.md`` 写的 ``name`` 不作数，
+    运行与导出都换成它。"""
     display_name: str
     description: str
     """发布时取这一版 ``SKILL.md`` 的 ``description``；还没发布过时取草稿里的。"""
@@ -73,7 +74,11 @@ class SkillCreateIn(CamelModel):
 
 
 class SkillUpdateIn(CamelModel):
-    display_name: str
+    """改显示名或标识，不给的项不动，至少给一项；都不进版本，保存即生效。"""
+
+    display_name: str | None = None
+    name: str | None = None
+    """新标识，规矩同新建；已被别的技能占用是 409。"""
 
 
 class DraftFileOut(CamelModel):
@@ -142,7 +147,7 @@ class SkillImportOut(CamelModel):
     """覆盖时是那个技能；新建的检查时为 ``null``，导入后是新技能。"""
     name: str | None
     display_name: str | None
-    """``SKILL.md`` 第一个 ``# `` 标题，没有就用 ``name``。"""
+    """取 ``name``。"""
     description: str | None
     files: list[SkillFileOut]
     """读出来的合格文件，按 ``path`` 排。"""

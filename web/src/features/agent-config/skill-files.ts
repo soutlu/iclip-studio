@@ -1,11 +1,20 @@
 /**
- * 技能文件的纯逻辑：`SKILL.md` 的 frontmatter 读写、编辑器里显示的正文、参考文件的路径规则。
+ * 技能文件的纯逻辑：技能标识的规则、`SKILL.md` 的 frontmatter 读写、编辑器里显示的正文、参考文件的路径规则。
  * 编辑器不显示 frontmatter：说明在标题下面改，改了只重写 frontmatter 里的 `description`，别的键原样留着。
  * 文件规则见合同 §17「文件」。
  */
 
 export const SKILL_MD = 'SKILL.md'
 const REFERENCES = 'references/'
+
+// 技能标识按 Agent Skills 规范（合同 §17、CONTEXT「技能库」），上限与后端一致。
+const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+export const MAX_NAME = 64
+export const NAME_RULE = `标识只能用小写字母、数字和连字符，不以连字符开头或结尾、不连用，最多 ${MAX_NAME} 个字符`
+
+/** 标识合不合规矩；不论空不空。 */
+export const isValidName = (name: string): boolean =>
+  name.length <= MAX_NAME && NAME_PATTERN.test(name)
 
 type Frontmatter = {
   /** `---` 之间的 YAML，不含两条分隔线。 */
@@ -112,7 +121,7 @@ export const readDescription = (source: string): string | null => {
 
 /**
  * 把说明写进 `SKILL.md` 的 frontmatter：只换 `description` 这一项（写成双引号字符串，JSON 的写法也是合法的 YAML），
- * 别的键、正文都原样留着。没有 frontmatter 时补一份，带上技能标识 `name`（发布时要求有）。
+ * 别的键、正文都原样留着。没有 frontmatter 时补一份，带上技能现在的标识 `name`。
  */
 export const withDescription = (source: string, description: string, name: string): string => {
   const field = `description: ${JSON.stringify(description)}`

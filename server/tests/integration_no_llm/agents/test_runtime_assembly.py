@@ -20,7 +20,7 @@ from agent_runtime.config.model_providers.schemas import (
     DefaultModelIn,
     ModelUpdateIn,
 )
-from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillPublishIn
+from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillPublishIn, SkillUpdateIn
 from agent_runtime.errors import AgentUnavailable
 from agent_runtime.harness.step_store_pg import PgStepStore
 from agent_runtime.harness.transcript.store import TranscriptStore
@@ -466,6 +466,63 @@ async def test_assemblies_are_reused_until_something_they_use_changes(
         await run_once(client, conversation_id)
     (run,) = await run_metadata(pg_url, conversation_id)
     assert run["skills"] == f"{SKILL}:{skill_hashes[SKILL]}"
+
+
+async def test_a_renamed_skill_is_written_again_under_a_new_key(
+    app: FastAPI, engine: AsyncEngine, pg_url: str, heard: list[tuple[str, str]], tmp_path: Path
+) -> None:
+    """改技能标识后下一次运行重新装配：按新标识写进新的缓存目录，``SKILL.md`` 的 name 换成新标识，模型
+    看到的是新标识，旧目录留着；同一内容、同一标识不再写；发布新版本又换一个目录。"""
+
+    seeded = await seed(
+        app, engine, AgentSeed(AGENT_ID, skills=(SkillSeed(SKILL, references={"spec.md": "规范"}),))
+    )
+    services = services_of(app)
+    skill_id = seeded.skills[SKILL]
+    cache = tmp_path / "skills"
+
+    def keys() -> set[str]:
+        return {path.name for path in cache.iterdir()}
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await open_conversation(client)
+        await run_once(client, conversation_id)
+        (old_key,) = keys()
+
+        await services.skills.rename(skill_id, SkillUpdateIn(name="storyboard-kit"))
+        # 技能清单在一段对话里只在开头写一次，之后的变化另发；看清单要开一段新对话。
+        renamed_conversation = await open_conversation(client)
+        await run_once(client, renamed_conversation)
+        await run_once(client, conversation_id)
+        (new_key,) = keys() - {old_key}
+
+        current = await services.skills.read_file(skill_id, "references/spec.md")
+        await services.skills.write_file(
+            skill_id,
+            "references/spec.md",
+            DraftFileWriteIn(content="第二版", base_hash=current.hash),
+            by=seeded.author,
+        )
+        await services.skills.publish(skill_id, SkillPublishIn(), by=seeded.author)
+        await run_once(client, conversation_id)
+
+    assert len(keys() - {old_key, new_key}) == 1, "发布新版本换一个目录"
+    old_md = (cache / old_key / SKILL / "SKILL.md").read_text(encoding="utf-8")
+    new_md = (cache / new_key / "storyboard-kit" / "SKILL.md").read_text(encoding="utf-8")
+    assert "name: storyboard-rules\n" in old_md
+    assert "name: storyboard-kit\n" in new_md
+    assert (cache / new_key / "storyboard-kit" / "references" / "spec.md").is_file()
+    # 改名后开的对话挂的是新标识：加载器认得改过 name 的 SKILL.md。
+    _model, renamed_words = heard[1]
+    assert "storyboard-kit" in renamed_words
+    assert SKILL not in renamed_words
+    runs = await run_metadata(pg_url, conversation_id)
+    assert [run["skills"].split(":")[0] for run in runs] == [
+        SKILL,
+        "storyboard-kit",
+        "storyboard-kit",
+    ]
 
 
 async def test_publishing_an_agent_is_picked_up_by_new_conversations_without_a_restart(

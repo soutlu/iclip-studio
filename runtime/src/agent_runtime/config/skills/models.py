@@ -72,7 +72,8 @@ class DraftFile:
 class Skill:
     id: uuid.UUID
     name: str
-    """标识，创建后不能改。"""
+    """标识，不能与别的技能重复；可以改，保存即生效、不进版本。版本里 ``SKILL.md`` 写的 ``name`` 不作数，
+    运行与导出都换成它。"""
     display_name: str
     description: str
     """发布时取这一版 ``SKILL.md`` 的 ``description``；还没发布过时取草稿里的。"""

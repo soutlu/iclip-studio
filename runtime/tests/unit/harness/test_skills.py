@@ -18,6 +18,8 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from agent_runtime.config.skills.rules import with_frontmatter_name
+from agent_runtime.harness import skills as skills_module
 from agent_runtime.harness.skills import (
     MAX_REFERENCE_CHARS,
     TRUNCATION_MARKER,
@@ -39,12 +41,12 @@ def skill_files(name: str, references: dict[str, str] | None = None) -> dict[str
 
 
 def make_skill(root: Path, name: str, *, references: dict[str, str] | None = None) -> CachedSkill:
-    """按内容 hash 写进缓存；测试里 hash 只要每个技能各不相同。"""
+    """按 key 写进缓存；测试里 key 只要每个技能各不相同。"""
 
     return materialize_skill(
         root,
         name=name,
-        content_hash=f"hash-{len(name)}-{name}",
+        key=f"hash-{len(name)}-{name}",
         files=skill_files(name, references),
     )
 
@@ -73,39 +75,77 @@ async def read_reference(
     return parts[0]
 
 
-def test_a_skill_version_is_written_once_under_its_content_hash(tmp_path: Path) -> None:
-    """同一个 hash 已经在缓存里就不再写：第二次给的文件被忽略，内容仍是第一次那份。"""
+def test_a_skill_is_written_once_under_its_key(tmp_path: Path) -> None:
+    """同一个 key 已经在缓存里就不再写：第二次给的文件被忽略，内容仍是第一次那份。"""
 
-    assert cached_skill(tmp_path, name=SKILL, content_hash="h1") is None
+    assert cached_skill(tmp_path, name=SKILL, key="h1") is None
 
-    first = materialize_skill(tmp_path, name=SKILL, content_hash="h1", files=skill_files(SKILL))
-    again = materialize_skill(
-        tmp_path, name=SKILL, content_hash="h1", files={"SKILL.md": "不该写进去"}
-    )
+    first = materialize_skill(tmp_path, name=SKILL, key="h1", files=skill_files(SKILL))
+    again = materialize_skill(tmp_path, name=SKILL, key="h1", files={"SKILL.md": "不该写进去"})
 
     assert first == again == CachedSkill(name=SKILL, library="h1")
-    assert cached_skill(tmp_path, name=SKILL, content_hash="h1") == first
+    assert cached_skill(tmp_path, name=SKILL, key="h1") == first
     assert "照着" in (tmp_path / "h1" / SKILL / "SKILL.md").read_text(encoding="utf-8")
     assert [path.name for path in tmp_path.iterdir()] == ["h1"], "临时目录不留在缓存里"
 
 
 def test_a_new_version_lands_next_to_the_old_one(tmp_path: Path) -> None:
-    materialize_skill(tmp_path, name=SKILL, content_hash="h1", files=skill_files(SKILL))
-    materialize_skill(
-        tmp_path, name=SKILL, content_hash="h2", files=skill_files(SKILL, {"新.md": "新"})
-    )
+    materialize_skill(tmp_path, name=SKILL, key="h1", files=skill_files(SKILL))
+    materialize_skill(tmp_path, name=SKILL, key="h2", files=skill_files(SKILL, {"新.md": "新"}))
 
     assert (tmp_path / "h1" / SKILL / "SKILL.md").is_file()
     assert (tmp_path / "h2" / SKILL / "references" / "新.md").read_text(encoding="utf-8") == "新"
 
 
+def test_a_key_written_by_someone_else_in_between_is_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """查的时候还没有、改名时目标目录已被别的进程写好：不报错，用别人写好的那份，临时目录不留。"""
+
+    first = materialize_skill(tmp_path, name=SKILL, key="h1", files=skill_files(SKILL))
+    real = skills_module.cached_skill
+    calls: list[str] = []
+
+    def missing_once(root: Path, *, name: str, key: str) -> CachedSkill | None:
+        calls.append(key)
+        return None if len(calls) == 1 else real(root, name=name, key=key)
+
+    monkeypatch.setattr(skills_module, "cached_skill", missing_once)
+    again = materialize_skill(tmp_path, name=SKILL, key="h1", files={"SKILL.md": "后到的"})
+
+    assert again == first
+    assert len(calls) == 2, "改名失败后再查一次"
+    assert "照着" in (tmp_path / "h1" / SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert [path.name for path in tmp_path.iterdir()] == ["h1"]
+
+
+async def test_a_renamed_skill_loads_under_its_new_name(tmp_path: Path) -> None:
+    """版本里写的是旧标识，SKILL.md 的 name 换成新标识再写进新标识的目录：加载器认得它（name 要等于
+    目录名），参考文件也读得到。"""
+
+    files = skill_files("old-name", {"规范.md": "规范正文"})
+    files["SKILL.md"] = with_frontmatter_name(files["SKILL.md"], "new-name")
+    cached = materialize_skill(tmp_path, name="new-name", key="k2", files=files)
+    seen: list[str] = []
+
+    async def peek(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(info.instructions or "")
+        return ModelResponse(parts=[TextPart("看完了")])
+
+    await Agent(
+        FunctionModel(peek), capabilities=list(build_skill_capabilities(tmp_path, [cached]))
+    ).run("有哪些技能")
+    part = await read_reference(tmp_path, [cached], skill="new-name", name="规范.md")
+
+    assert "new-name" in seen[0]
+    assert (part.outcome, part.content) == ("success", "规范正文")
+
+
 @pytest.mark.parametrize("path", ["../逃出去.md", "/etc/passwd", "references/../../x.md"])
 def test_files_outside_the_skill_directory_are_refused(tmp_path: Path, path: str) -> None:
     with pytest.raises(ValueError, match="越界"):
-        materialize_skill(
-            tmp_path, name=SKILL, content_hash="h1", files={**skill_files(SKILL), path: "x"}
-        )
-    assert cached_skill(tmp_path, name=SKILL, content_hash="h1") is None
+        materialize_skill(tmp_path, name=SKILL, key="h1", files={**skill_files(SKILL), path: "x"})
+    assert cached_skill(tmp_path, name=SKILL, key="h1") is None
 
 
 async def test_skills_from_different_versions_load_together(tmp_path: Path) -> None:

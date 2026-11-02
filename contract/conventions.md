@@ -639,15 +639,16 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **改草稿**：`PUT /skills/{id}/draft/files/{path}` 体是 `{ content, baseHash }`。新建文件时 `baseHash` 给 `null`，文件已存在是 `409`；改已有文件时给读到的 `hash`，与库里的对不上或文件已被删掉是 `409`，客户端重新读取后再改。`DELETE /skills/{id}/draft/files/{path}?baseHash=` 删一个文件，`204`；`baseHash` 走 query 参数，对不上是 `409`。`SKILL.md` 不能删，是 `422`。路径、内容或写完后的文件数与总大小不合格是 `422`；`SKILL.md` 的 frontmatter 只在发布时查。
 - **改名**：`POST /skills/{id}/draft/files/rename` 体是 `{ from, to, baseHash }`，一次写完，内容与 `hash` 不变，答复新路径上的文件（同读文件）。`baseHash` 是 `from` 读到的 `hash`，对不上是 `409`；`to` 已有文件是 `409`；`from` 不存在是 `404`；`from` 是 `SKILL.md`、`to` 不合上面的路径规则、两者相同都是 `422`。合法路径只有 `SKILL.md` 与 `references/` 下的，所以这个固定路径不会与 `…/draft/files/{path}` 撞名。
 - **操作人**：技能的 `createdBy` 与版本的 `createdBy` 旁边带 `createdByName`，是那个人给人看的名字（显示名，没有就用用户名，再没有用邮箱）；本系统里已没有这个人时为 `null`。
+- **改显示名与标识**：`PATCH /skills/{id}` 体是 `{ displayName?, name? }`，不给的项不动，答复技能详情；两项都没给是 `422`。显示名的规则同新建；`name` 按新建时的标识规则查，已被别的技能占用是 `409`，`detail` 是「标识 <name> 已被技能「<显示名>」占用」，什么都不改。两项都不进版本，保存即生效，草稿与版本不动；版本里 `SKILL.md` 写的 `name` 原样保留、不作数。
 - **未发布的修改**：`hasUnpublishedChanges` 比较草稿清单的 hash 与最新版的 `contentHash`，没发布过恒为 `true`。`description` 取最新版 `SKILL.md` 的 frontmatter，没发布过时跟着草稿里的走（frontmatter 不合格时不变）。
-- **发布**：`POST /skills/{id}/versions` 体是 `{ note? }`，`201` 答复新版本。草稿不合格是 `422`，`detail` 列出全部问题：除上面的文件规则，`SKILL.md` 的 frontmatter 要有 `name`（等于技能的标识）和非空、不超过 1024 个字符的 `description`。内容（`contentHash`）与最新版相同是 `422`「没有可发布的改动」。版本号在每个技能内从 1 起递增，版本发布后不再改。
+- **发布**：`POST /skills/{id}/versions` 体是 `{ note? }`，`201` 答复新版本。草稿不合格是 `422`，`detail` 列出全部问题：除上面的文件规则，`SKILL.md` 要有 frontmatter，里面有非空、不超过 1024 个字符的 `description`；`name` 不查。内容（`contentHash`）与最新版相同是 `422`「没有可发布的改动」。版本号在每个技能内从 1 起递增，版本发布后不再改。
 - **恢复**：`POST /skills/{id}/versions/{versionId}/restore` 把这一版的文件整份抄回草稿，替换草稿里的全部文件，不发布，答复技能详情。
 - **谁在用**：技能详情的 `usedBy` 列出草稿或当前版本绑定了这个技能的 agent，形状与引用规则见 §19「被引用时拦住」。`POST /skills/{id}/archive` 在 `usedBy` 不为空时是 `409`。
 - **导入**分两步，都是 `POST /skills/import`、multipart 字段 `file`，提交同一个 zip：
-  - `dryRun=true` 只检查不写，答复 `{ action, skillId, name, displayName, description, files, problems }`。`action` 是 `create`（会新建技能）或 `overwrite`（会覆盖同名技能的草稿，`skillId` 是那个技能），读不出合格的 `name` 时 `action`、`name` 为 `null`；`displayName` 取 `SKILL.md` 第一个 `# ` 标题，没有就用 `name`；`files` 是读出来的合格文件 `[{ path, size, hash }]`，按路径排；`problems` 是字符串数组，每条写明哪个文件、为什么不行，空数组即可以导入。
-  - 不带 `dryRun`（或 `dryRun=false`）是正式导入，答复同一形状；`problems` 不为空就是 `422`，`detail` 列出全部问题，什么都不写。正式导入只写草稿、不发布：新建一个技能，或整份替换同名技能的草稿，覆盖时不改显示名。
+  - `dryRun=true` 只检查不写，答复 `{ action, skillId, name, displayName, description, files, problems }`。`action` 是 `create`（会新建技能）或 `overwrite`（会覆盖同名技能的草稿，`skillId` 是那个技能），读不出合格的 `name` 时 `action`、`name` 为 `null`；`displayName` 取 `name`；`files` 是读出来的合格文件 `[{ path, size, hash }]`，按路径排；`problems` 是字符串数组，每条写明哪个文件、为什么不行，空数组即可以导入。
+  - 不带 `dryRun`（或 `dryRun=false`）是正式导入，答复同一形状；`problems` 不为空就是 `422`，`detail` 列出全部问题，什么都不写。正式导入只写草稿、不发布：新建一个技能，或整份替换同名技能（按技能现在的标识匹配）的草稿，覆盖时不改显示名。
   - zip 里 `SKILL.md` 在根目录，或在唯一的顶层目录里（压缩一个文件夹时常见），顶层目录会去掉；`__MACOSX/` 与 `.DS_Store` 直接跳过。符号链接、`..`、绝对路径、重复路径、范围外与非文本文件都记进 `problems`；文件规则同上，压缩包本身最多 6 MB，解压后超过上限在解压前就拒绝。
-- **导出**：`GET /skills/{id}/export?versionId=` 给 `application/zip`，不带 `versionId` 是最新版，从没发布过是 `404`。下载文件名是 `<name>-v<N>.zip`，zip 里的文件都在顶层目录 `<name>/` 下；导出的包再导入得到同样的文件。
+- **导出**：`GET /skills/{id}/export?versionId=` 给 `application/zip`，不带 `versionId` 是最新版，从没发布过是 `404`。下载文件名是 `<name>-v<N>.zip`，zip 里的文件都在顶层目录 `<name>/` 下，`<name>` 是技能当前的标识，`SKILL.md` frontmatter 里的 `name` 也换成它（导出旧版也一样），别的文件原样；导出的包再导入，覆盖的是这个技能的草稿，草稿就是包里的文件。
 
 ## 18. 模型供应商 (Model Providers)
 

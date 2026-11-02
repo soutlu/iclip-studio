@@ -104,7 +104,7 @@ def create_skills_router(runtime: RuntimeClient, user_names: UserNames) -> APIRo
         body: SkillUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """改显示名；标识不能改。"""
+        """改显示名或标识，不进版本，保存即生效；两项都没给是 422，标识已被别的技能占用是 409。"""
 
         return await named(
             SkillDetailOut, "PATCH", admin_path("skills", str(skill_id)), principal, body
@@ -277,7 +277,8 @@ def create_skills_router(runtime: RuntimeClient, user_names: UserNames) -> APIRo
         principal: Annotated[Principal, require_permission(_MANAGE)],
         version_id: Annotated[uuid.UUID | None, Query(alias="versionId")] = None,
     ) -> Response:
-        """把一个版本（不给就是最新版）打成 zip，顶层目录是技能标识；没发布过是 404。"""
+        """把一个版本（不给就是最新版）打成 zip，顶层目录、文件名与 ``SKILL.md`` 的 ``name`` 都用技能
+        当前的标识；没发布过是 404。"""
 
         return await relay(
             runtime,

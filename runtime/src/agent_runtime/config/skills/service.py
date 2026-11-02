@@ -29,7 +29,6 @@ from agent_runtime.config.skills.rules import (
     clean_note,
     content_hash,
     content_problem,
-    default_display_name,
     file_entry,
     format_problems,
     frontmatter_description,
@@ -39,6 +38,7 @@ from agent_runtime.config.skills.rules import (
     limit_problems,
     manifest,
     path_problem,
+    with_frontmatter_name,
 )
 from agent_runtime.config.skills.schemas import (
     DraftFileInfoOut,
@@ -192,11 +192,20 @@ class SkillsService:
         return await self.detail(skill_id)
 
     async def rename(self, skill_id: uuid.UUID, body: SkillUpdateIn) -> SkillDetailOut:
-        """改显示名；标识不能改。"""
+        """改显示名或标识，都不进版本，草稿与版本不动。两项都没给、显示名为空或超长、标识不合规矩是
+        ``ValidationFailed``；标识已被别的技能占用是 ``Conflict``，什么都不写。"""
 
-        display_name = clean_display_name(body.display_name)
+        if body.display_name is None and body.name is None:
+            raise ValidationFailed("请给出要改的显示名或标识")
+        display_name = None if body.display_name is None else clean_display_name(body.display_name)
         async with self._store.edit(skill_id) as writer:
-            await writer.update(display_name=display_name)
+            name = None
+            if body.name is not None and body.name != writer.skill.name:
+                name = check_name(body.name)
+                taken = await self._store.by_name(name)
+                if taken is not None:
+                    raise Conflict(f"标识 {name} 已被技能「{taken.display_name}」占用")
+            await writer.update(name=name, display_name=display_name)
         return await self.detail(skill_id)
 
     async def read_file(self, skill_id: uuid.UUID, path: str) -> DraftFileOut:
@@ -288,7 +297,7 @@ class SkillsService:
         version_id = uuid.uuid4()
         async with self._store.edit(skill_id) as writer:
             files = await writer.draft_contents()
-            description = check_publish(files, name=writer.skill.name)
+            description = check_publish(files)
             entries = manifest(files)
             digest = content_hash(entries)
             if digest == writer.skill.latest_content_hash:
@@ -358,40 +367,38 @@ class SkillsService:
         return await self._set_status(skill_id, STATUS_ACTIVE)
 
     async def import_archive(self, data: bytes, *, dry_run: bool, by: uuid.UUID) -> SkillImportOut:
-        """导入一个技能压缩包。``dry_run`` 只读不写：交回读出来的标识、显示名、描述、文件清单、全部问题，
-        以及会新建技能还是覆盖同名技能的草稿。正式导入时有问题是 ``ValidationFailed``，否则新建一个只有
-        草稿的技能，或整份替换同名技能的草稿（显示名不动），都不发布。"""
+        """导入一个技能压缩包。``dry_run`` 只读不写：交回读出来的标识、显示名（取标识）、描述、文件清单、
+        全部问题，以及会新建技能还是覆盖同名技能的草稿（按技能现在的标识匹配）。正式导入时有问题是
+        ``ValidationFailed``，否则新建一个只有草稿的技能，或整份替换同名技能的草稿（显示名不动），都不发布。"""
 
         parsed = read_archive(data)
         problems = list(parsed.problems)
         skill_md = parsed.files.get(SKILL_MD)
-        name = description = display_name = None
+        name = description = None
         if skill_md is not None:
-            problems += frontmatter_problems(skill_md, expected_name=None)
+            problems += frontmatter_problems(skill_md, require_name=True)
             name = frontmatter_name(skill_md)
             description = frontmatter_description(skill_md)
-            if name is not None:
-                display_name = default_display_name(skill_md, name)
         existing = await self._store.by_name(name) if name is not None else None
         result = SkillImportOut(
             action=None if name is None else ("overwrite" if existing is not None else "create"),
             skill_id=existing.id if existing is not None else None,
             name=name,
-            display_name=display_name,
+            display_name=name,
             description=description,
             files=[_file_out(entry) for entry in manifest(parsed.files)],
             problems=problems,
         )
         if dry_run:
             return result
-        if problems or name is None or description is None or display_name is None:
+        if problems or name is None or description is None:
             raise ValidationFailed(format_problems(problems) or "压缩包里的技能不完整")
         if existing is None:
             skill_id = uuid.uuid4()
             await self._store.create(
                 skill_id,
                 name=name,
-                display_name=display_name,
+                display_name=name,
                 description=description,
                 files=parsed.files,
                 by=by,
@@ -403,8 +410,8 @@ class SkillsService:
         return result
 
     async def export(self, skill_id: uuid.UUID, version_id: uuid.UUID | None) -> SkillArchive:
-        """把一个版本（不给就是最新版）打成 zip，顶层目录是 ``<name>/``。没发布过、没有这个技能或版本
-        是 ``NotFound``。"""
+        """把一个版本（不给就是最新版）打成 zip：顶层目录与文件名用技能当前的标识，``SKILL.md`` 里的
+        ``name`` 也换成它。没发布过、没有这个技能或版本是 ``NotFound``。"""
 
         skill = await self._require(skill_id)
         if version_id is None:
@@ -413,6 +420,7 @@ class SkillsService:
             version_id = skill.latest_version_id
         version = await self._require_version(skill_id, version_id)
         files = await self._store.version_files(version.id)
+        files[SKILL_MD] = with_frontmatter_name(files[SKILL_MD], skill.name)
         return SkillArchive(
             filename=f"{skill.name}-v{version.version}.zip",
             content=write_archive(skill.name, files),

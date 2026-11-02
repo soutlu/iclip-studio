@@ -1,7 +1,7 @@
 """技能的本机缓存，以及按需加载的 skill 指令与 reference 读取工具。
 
-技能的一个版本按内容 hash 写进缓存目录：``<root>/<content_hash>/<name>/SKILL.md`` 与 ``references/``。
-同一个 hash 的内容不会变，目录已经在就不再写；多个进程同时写时各写各的临时目录再改名，后到的丢掉自己的。
+技能写进缓存目录 ``<root>/<key>/<name>/SKILL.md`` 与 ``references/``；``key`` 由调用方按内容与标识算出，
+同一个 key 的内容不会变，目录已经在就不再写；多个进程同时写时各写各的临时目录再改名，后到的丢掉自己的。
 官方 Skills 仅加载 SKILL.md；references 保持独立，由配套工具按需读取。
 """
 
@@ -42,32 +42,30 @@ TRUNCATION_MARKER = "\n\n[... 已截断，超出单次读取上限 ...]"
 
 @dataclass(frozen=True, slots=True)
 class CachedSkill:
-    """缓存里的一个技能：名字与它所在的库目录（``<root>/<content_hash>``，相对 ``root`` 写）。"""
+    """缓存里的一个技能：名字与它所在的库目录（``<root>/<key>``，相对 ``root`` 写）。"""
 
     name: str
     library: str
 
 
-def cached_skill(root: Path, *, name: str, content_hash: str) -> CachedSkill | None:
-    """这个技能的这份内容已在缓存里就交回它的位置，不在给 ``None``。"""
+def cached_skill(root: Path, *, name: str, key: str) -> CachedSkill | None:
+    """这个 key 的技能已在缓存里就交回它的位置，不在给 ``None``。"""
 
-    if (root / content_hash / name / SKILL_FILENAME).is_file():
-        return CachedSkill(name=name, library=content_hash)
+    if (root / key / name / SKILL_FILENAME).is_file():
+        return CachedSkill(name=name, library=key)
     return None
 
 
-def materialize_skill(
-    root: Path, *, name: str, content_hash: str, files: Mapping[str, str]
-) -> CachedSkill:
-    """把一个技能版本的文件写进缓存（已在就跳过），交回它在缓存里的位置。
+def materialize_skill(root: Path, *, name: str, key: str, files: Mapping[str, str]) -> CachedSkill:
+    """把一个技能的文件原样写进缓存的 ``<root>/<key>/<name>/``（已在就跳过），交回它在缓存里的位置。
 
     ``files`` 的路径是技能里的相对 posix 路径（发布时已校验过形状）；这里仍拒绝越出技能目录的路径。
     """
 
-    library = root / content_hash
-    if cached_skill(root, name=name, content_hash=content_hash) is None:
+    library = root / key
+    if cached_skill(root, name=name, key=key) is None:
         root.mkdir(parents=True, exist_ok=True)
-        staging = Path(tempfile.mkdtemp(prefix=f".{content_hash}-", dir=root))
+        staging = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
         try:
             skill_dir = staging / name
             for relative, content in files.items():
@@ -80,12 +78,12 @@ def materialize_skill(
             try:
                 staging.rename(library)
             except OSError:
-                # 别的进程先写好了同一个 hash：内容相同，用它的。
-                if cached_skill(root, name=name, content_hash=content_hash) is None:
+                # 别的进程先写好了同一个 key：内容相同，用它的。
+                if cached_skill(root, name=name, key=key) is None:
                     raise
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-    return CachedSkill(name=name, library=content_hash)
+    return CachedSkill(name=name, library=key)
 
 
 def build_skill_capabilities(

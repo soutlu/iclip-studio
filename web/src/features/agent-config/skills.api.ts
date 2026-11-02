@@ -1,9 +1,9 @@
-/** 技能库的读写：技能详情、草稿文件、改显示名、新建与发布。合同见 contract/conventions.md §17。 */
+/** 技能库的读写：技能详情、草稿文件、改显示名与标识、新建与发布。合同见 contract/conventions.md §17。 */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
-import type { SkillCreateIn } from '@/shared/api/generated/types.gen'
+import type { SkillCreateIn, SkillUpdateIn } from '@/shared/api/generated/types.gen'
 import { zDraftFileOut, zSkillDetailOut, zSkillVersionOut } from '@/shared/api/generated/zod.gen'
 import { agentQueryKeys } from './agents.api'
 
@@ -66,11 +66,11 @@ export const useCreateSkill = () => {
   })
 }
 
-/** 改显示名；不进版本，立即生效。 */
-export const updateSkillDisplayName = (id: string, displayName: string) =>
+/** 改显示名或标识，只带要改的项；不进版本，立即生效。标识已被别的技能占用是 409。 */
+export const updateSkill = (id: string, body: SkillUpdateIn) =>
   apiFetch(skillPath(id), zSkillDetailOut, {
-    body: { displayName },
-    fallbackErrorMessage: '保存技能名称失败',
+    body,
+    fallbackErrorMessage: '保存技能失败',
     method: 'PATCH',
   })
 
