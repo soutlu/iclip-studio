@@ -2854,7 +2854,8 @@ export type HitCaseEntryOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -2899,7 +2900,8 @@ export type HitCaseOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -4474,7 +4476,13 @@ export type ReferenceVideoItemOut = {
   /**
    * Errorcode
    */
-  errorCode: 'video_unreadable' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  errorCode:
+    | 'video_unreadable'
+    | 'model_call_failed'
+    | 'model_failed'
+    | 'model_unavailable'
+    | 'timeout'
+    | null
   /**
    * Id
    */
@@ -4482,7 +4490,8 @@ export type ReferenceVideoItemOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -4534,7 +4543,13 @@ export type ReferenceVideoOut = {
   /**
    * Errorcode
    */
-  errorCode: 'video_unreadable' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  errorCode:
+    | 'video_unreadable'
+    | 'model_call_failed'
+    | 'model_failed'
+    | 'model_unavailable'
+    | 'timeout'
+    | null
   /**
    * Id
    */
@@ -4542,7 +4557,8 @@ export type ReferenceVideoOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */

@@ -1,4 +1,4 @@
-"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区与素材台账、agent 名册与起标题、运行统计。
+"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区与素材台账、agent 名册与起标题、模型调用、运行统计。
 
 路由（``agent_runtime.http``）与应用用的客户端库（``agent_runtime.client``）共用这一份，只依赖 pydantic
 与 transcript、文件存储、素材台账的形状，不碰 Web 框架。transcript 的消息与读页信封在
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Final, Self
+from typing import Annotated, Any, Final, Self
 
 from pydantic import Field, model_validator
 
@@ -170,6 +170,30 @@ class TitleOut(Envelope):
     """没设默认对话模型、建不出模型或模型没给出标题时为空，应用照旧用默认名。"""
 
 
+# --- 模型调用 -------------------------------------------------------------------
+
+MODEL_CALL_TIMEOUT_SECONDS: Final = 900.0
+"""运行时等上游答一次模型调用的上限。应用等运行时的上限要比它长，才收得到运行时自己报的超时。"""
+
+UPSTREAM_TIMEOUT_CODE: Final = "upstream_timeout"
+"""运行时等上游等满了上限：无法确认上游执行过没有（504）。"""
+
+UPSTREAM_UNREACHABLE_CODE: Final = "upstream_unreachable"
+"""运行时连不上上游，或没收到完整的答复（502）。"""
+
+
+class ModelCallIn(Envelope):
+    """经运行时调一个代码里写定的模型：按（``declaration``，``model``）在配置页里找连接，``payload`` 是
+    上游接口的请求体，运行时只把它的 ``model`` 换成这个模型名，别的原样转发。"""
+
+    declaration: Annotated[str, Field(min_length=1)]
+    """供应商声明名，如 ``volcengine``。"""
+
+    model: Annotated[str, Field(min_length=1)]
+
+    payload: dict[str, Any]
+
+
 # --- 运行统计 -------------------------------------------------------------------
 
 MAX_STATS_SESSIONS: Final = 1000
@@ -264,6 +288,9 @@ __all__ = [
     "END_USER_HEADER",
     "MAX_AGENT_ID_CHARS",
     "MAX_STATS_SESSIONS",
+    "MODEL_CALL_TIMEOUT_SECONDS",
+    "UPSTREAM_TIMEOUT_CODE",
+    "UPSTREAM_UNREACHABLE_CODE",
     "ActivitiesIn",
     "ActivitiesOut",
     "AgentDirectoryOut",
@@ -275,6 +302,7 @@ __all__ = [
     "FilesCopyOut",
     "FilesOut",
     "MaterialsIn",
+    "ModelCallIn",
     "PreviewTargetIn",
     "PromptStatOut",
     "PromptStatsOut",

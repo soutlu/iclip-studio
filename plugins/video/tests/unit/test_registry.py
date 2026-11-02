@@ -9,6 +9,7 @@ from typing import Any, cast
 import httpx
 import pytest
 from agent_runtime.harness.background import BackgroundTools
+from agent_runtime.model_connections import ModelConnection
 from agent_runtime.plugins.base import PluginHost, PluginRegistry
 from agent_runtime.plugins.workspace.capability import Workspace
 from pydantic import ValidationError
@@ -18,26 +19,24 @@ from iclip_video.registry import (
     open_video_plugins,
 )
 from iclip_video.shot_video.generation import IMAGE_MODEL
+from iclip_video.video.capability import Video
 from iclip_video.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
+from iclip_video.video_understanding import DECLARATION, MODEL
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.model_connections import FakeModelConnections
 
 TOKEN = "runtime-internal-test-token-0123456789"
-ARK_KEY = "ark-test-key"
 INTERNAL_API = {"base_url": "http://server.test", "token_env": "RUNTIME_INTERNAL_TOKEN"}
-VIDEO = {
-    "understanding_url": "https://ark.test/responses",
-    "api_key_env": "VIDEO_UNDERSTANDING_API_KEY",
-    "model": "seed-vision",
-}
+VIDEO: dict[str, Any] = {}
 ALWAYS = {"workspace", "iclip_studio", "video_shots"}
 IMAGE_URL = "https://bucket.oss-ap-southeast-1.aliyuncs.com/style.jpg"
+ARK = ModelConnection(responses_url="https://relay.example/api/v3/responses", api_key="sk-test-ark")
 
 
 @pytest.fixture(autouse=True)
 def secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", TOKEN)
-    monkeypatch.setenv("VIDEO_UNDERSTANDING_API_KEY", ARK_KEY)
 
 
 SERVICES_PATH = "/internal/runtime/plugins/services"
@@ -75,8 +74,12 @@ class Server:
         return httpx.MockTransport(self)
 
 
-def host() -> PluginHost:
-    return PluginHost(files=FakeFileStore(), ledger=FakeMaterialLedger())
+def host(connections: FakeModelConnections | None = None) -> PluginHost:
+    return PluginHost(
+        files=FakeFileStore(),
+        ledger=FakeMaterialLedger(),
+        model_connection=connections or FakeModelConnections(),
+    )
 
 
 async def registry_for(config: dict[str, Any], server: Server | None = None) -> PluginRegistry:
@@ -268,10 +271,28 @@ async def test_the_clients_are_closed_on_exit() -> None:
         ({"video_breakdown": {}}, "internal_api"),
         ({"unknown": {}}, "unknown"),
         ({"internal_api": {**INTERNAL_API, "token_env": "lower_case"}}, "token_env"),
-        ({"video": {**VIDEO, "fps": 30}}, "fps"),
         ({"shot_video": {"dev_attempts": 0}, "internal_api": INTERNAL_API}, "dev_attempts"),
+        # 视频理解的连接与模型不再写在配置里，旧字段一概不收。
+        ({"video": {"understanding_url": "https://relay.example/responses"}}, "understanding_url"),
+        ({"video": {"api_key_env": "ARK_KEY"}}, "api_key_env"),
+        ({"video": {"model": "seed-vision"}}, "model"),
+        ({"video": {"thinking": "medium"}}, "thinking"),
+        ({"video": {"fps": 5}}, "fps"),
+        ({"video": {"timeout_seconds": 60}}, "timeout_seconds"),
     ],
-    ids=["shot-without-api", "breakdown-without-api", "unknown-key", "env-name", "fps", "attempts"],
+    ids=[
+        "shot-without-api",
+        "breakdown-without-api",
+        "unknown-key",
+        "env-name",
+        "attempts",
+        "video-url",
+        "video-key",
+        "video-model",
+        "video-thinking",
+        "video-fps",
+        "video-timeout",
+    ],
 )
 async def test_a_malformed_config_fails_on_entry(config: dict[str, Any], where: str) -> None:
     with pytest.raises(ValidationError, match=where):
@@ -279,21 +300,43 @@ async def test_a_malformed_config_fails_on_entry(config: dict[str, Any], where: 
             pytest.fail("配置不对时不该交出绑定函数")
 
 
-@pytest.mark.parametrize(
-    ("config", "env"),
-    [
-        ({"internal_api": INTERNAL_API}, "RUNTIME_INTERNAL_TOKEN"),
-        ({"video": VIDEO}, "VIDEO_UNDERSTANDING_API_KEY"),
-    ],
-)
-async def test_a_missing_secret_names_its_variable(
-    monkeypatch: pytest.MonkeyPatch, config: dict[str, Any], env: str
-) -> None:
-    monkeypatch.delenv(env)
+async def test_a_missing_secret_names_its_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RUNTIME_INTERNAL_TOKEN")
 
-    with pytest.raises(RuntimeError, match=f"环境变量 {env} 没有设置"):
-        async with open_video_plugins(config):
+    with pytest.raises(RuntimeError, match="环境变量 RUNTIME_INTERNAL_TOKEN 没有设置"):
+        async with open_video_plugins({"internal_api": INTERNAL_API}):
             pytest.fail("缺机密时不该交出绑定函数")
+
+
+async def test_video_parses_through_the_hosts_connection_at_call_time() -> None:
+    """``video`` 段是空的：登记不查连接，工具调用时才经宿主查写定的模型，用查到的地址与密钥调。"""
+
+    seen: list[httpx.Request] = []
+
+    def ark(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [{"content": [{"type": "output_text", "text": "## 拆解"}]}],
+            },
+        )
+
+    connections = FakeModelConnections()
+    async with open_video_plugins(
+        {"video": VIDEO}, outbound_transport=httpx.MockTransport(ark)
+    ) as bind:
+        video = cast("Video[Any]", bind(host(connections))["video"].from_spec())
+        assert connections.asked == [], "登记时不查连接"
+        connections.connections[(DECLARATION, MODEL)] = ARK
+
+        assert await video.understanding.parse("https://cdn.test/ref.mp4") == "## 拆解"
+
+    assert connections.asked == [(DECLARATION, MODEL)]
+    (request,) = seen
+    assert str(request.url) == ARK.responses_url
+    assert request.headers["Authorization"] == "Bearer sk-test-ark"
 
 
 async def test_a_secret_pasted_into_the_config_is_not_echoed() -> None:

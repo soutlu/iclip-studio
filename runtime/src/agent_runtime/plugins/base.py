@@ -10,7 +10,8 @@
 类属性上的子类，插件名不变；``from_spec`` 从类上取服务。登记表收的就是这些绑好服务的类。
 
 运行时服务从配置接插件包：插件包给一个 ``PluginFactory``，服务启动时按配置打开它拿到 ``PluginBinder``，
-再用服务自己的工作区存储与素材台账（``PluginHost``）绑出登记表；关停时退出工厂，插件包借此关掉自己的连接。
+再用服务自己的工作区存储、素材台账与模型连接的查找（``PluginHost``）绑出登记表；关停时退出工厂，插件包借此关掉
+自己的连接。
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from pydantic_ai.tools import AgentDepsT
 
 from agent_runtime.file_store.store import FileStore
 from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.model_connections import ModelConnectionLookup
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 
 
@@ -129,6 +131,10 @@ class PluginHost:
 
     ledger: MaterialLedger
     """对话素材台账。"""
+
+    model_connection: ModelConnectionLookup
+    """按（供应商声明名，模型名）现查配置页里接的连接，给要直接调写定模型的插件用；没有能用的抛
+    ``ModelUnavailable``。"""
 
 
 PluginBinder = Callable[[PluginHost], PluginRegistry]

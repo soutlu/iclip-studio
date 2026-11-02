@@ -13,13 +13,17 @@ from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
-from pydantic_ai import ModelRetry
+from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip_video.video_document import video_doc_path
-from iclip_video.video_understanding import VideoUnderstanding, VideoUnderstandingError
+from iclip_video.video_understanding import (
+    VideoUnderstanding,
+    VideoUnderstandingError,
+    VideoUnderstandingUnavailable,
+)
 
 CAPABILITY_ID: Final = "video"
 
@@ -100,6 +104,10 @@ class VideoToolset(FunctionToolset[AgentDepsT]):
         path = video_doc_path(video_url)
         try:
             content = await self._cap.understanding.parse(video_url)
+        except VideoUnderstandingUnavailable as exc:
+            raise ToolFailed(
+                f"拆解失败：{exc}。不要重试，告诉用户需要管理员在配置页启用这个模型。"
+            ) from exc
         except VideoUnderstandingError as exc:
             raise ModelRetry(f"这段视频没拆解成功：{exc}") from exc
         await write_or_retry(files, namespace, path, content)

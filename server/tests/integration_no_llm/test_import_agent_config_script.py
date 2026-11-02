@@ -12,6 +12,7 @@ import pytest
 import yaml
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.model_connections import ModelConnection
 from agent_runtime.plugins.base import PluginHost
 from scripts.import_agent_config import ImportRefused, run_import
 from sqlalchemy import text
@@ -145,6 +146,10 @@ async def plant_conversation(engine: AsyncEngine, owner: uuid.UUID, agent_id: st
     return conversation_id
 
 
+async def _no_model_calls(declaration: str, model: str) -> ModelConnection:
+    raise AssertionError(f"切换配置不该查模型连接：{declaration}/{model}")
+
+
 async def importing(
     engine: AsyncEngine,
     root: Path,
@@ -157,7 +162,11 @@ async def importing(
     await run_import(
         engine=engine,
         plugins=standard_plugins(
-            PluginHost(files=PgFileStore(engine), ledger=PgMaterialLedger(engine))
+            PluginHost(
+                files=PgFileStore(engine),
+                ledger=PgMaterialLedger(engine),
+                model_connection=_no_model_calls,
+            )
         ),
         credential_keys=(TEST_CREDENTIAL_KEY,),
         legacy_config=root / "config.old.yaml",

@@ -589,7 +589,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 资料库里用户上传的、agent 在对话里拆过的视频，一条视频一行，带当前拆解与标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`；修改、改标签、重拆、重新打标、移除另限属主（替人办事的钥匙与治理者也行），试生成只限属主本人，看得见的别人的那条是 `403`。拆解没配置时只挂读端点与 `PUT /references/{id}/tags`（`POST /references`、`POST /references/{id}/breakdowns` 与 `POST /references/{id}/tagging` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。媒体生成没配置时 `POST /references/{id}/test-generations` 不在。
 
 - **建行**：`POST /references` 体是 `{ uploadId }`，只收调用者本人确认过的视频上传（§10）；别人的、图片的、不存在的 `uploadId` 一律 `404`。新建的行 `201`，排上第一次拆解；同一条视频已在表里就交回那一行、状态码 `200`，不再拆；移除过的那一行回到资料库，属主换成这次上传的人，拆解照旧。
-- **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 不动。客户端按 `errorCode` 出一句话，不展示原始报错。
+- **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`model_unavailable` 配置页里没有启用拆解模型，管理员启用后重拆；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 不动。客户端按 `errorCode` 出一句话，不展示原始报错。
 - **标签**：每条都带 `tagIds`、`tagStatus` 与 `tagError`，含义与打标规则见 §15。拆成（含重拆成功）后自动排一次打标，`tagStatus` 回到 `pending`；拆解自己不动标签，没拆成也不打标。
 - `GET /references` 按 §3 的排序（建立时间倒序），翻页 `limit` 与 `cursor`，规则同 §6。筛选：`tags` 可以重复给，按 §15 的规则匹配，不存在的标签是 `422`；`userName`（属主）；`q` 按字面包含匹配拆解全文，不区分大小写，首尾空白去掉后为空即不筛；`since` / `until` 左闭右开，作用在建立时刻上。移除的不在列表里。列表项不带 `document`，正文在详情里。`total` 只在第一页给，`canUpload` 是这位读者能不能加参考视频（拆解已配置、上传可用且持 `uploads:write`）。
 - `GET /references/filters` 只给 `owners`（名下有参考视频的属主用户名各带条数，多的在前、同数按用户名，是按人筛选的候选），只数没移除的，不受筛选影响。标签的候选与条数在 `GET /library-tags`。
@@ -608,7 +608,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /library-tags` 给整棵树：`dimensions` 是全部维度，每个节点带 `id`、`name`、`guide`（怎么判断，打标输出的 JSON Schema 也带这句说明，可为 `null`）、`position` 与 `children`，同级按 `position` 排好。`autoFill` 只在维度上有值：`ai` 是 AI 打这个维度，`null` 只靠人填；取值上恒为 `null`。维度下的取值最多分三级。`counts` 是带这个标签或它任一下级的条目数，同一条只算一次：`references` 只数没移除的参考视频，`hitCases` 数在库的爆款素材。打标配没配都挂着。
 - **一条的标签**：`tagIds` 是所有维度上的标签，指这棵树里的取值，不会是维度；空就是未标注。顺序不表达含义，按树分组显示。
 - **改标签**：`PUT …/tags` 体是 `{ tagIds }`，整份替换所有维度，重复的去掉，空数组即全部清掉；同时有人删了其中某个标签，那一个跳过。不存在的标签、给了维度本身是 `422`；这一条正在排队或打标是 `409`。
-- **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的文字（参考视频没有拆解，爆款素材所在对话没有新片执行方案或只有空白）；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
+- **打标状态**：`tagStatus` 是 `null`（还没打过标）/ `pending`（排队）/ `running`（打标中）/ `completed`（打完）/ `failed`（最近一次没打成）。`tagError` 是最近一次失败的原因，打成之后清空：`no_source_text` 没有可读的文字（参考视频没有拆解，爆款素材所在对话没有新片执行方案或只有空白）；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再打可能就好；`model_failed` 请求被拒、等满了总超时或答的不合格式；`model_unavailable` 配置页里没有启用打标模型，管理员启用后重新打标；`timeout` 打标中超过 10 分钟没结束。打完只重写 `autoFill` 为 `ai` 的维度，人工维度不动；没打成清空 AI 维度的标签，人工维度保留。打标不自动重试。客户端按 `tagError` 出一句话，不展示原始报错。
 - **重新打标**：`POST …/tagging` 把这一条改回 `pending` 再排队；正在排队或打标是 `409`。
 - **按标签筛选**（列表的 `tags`）：选中的标签按所在维度分组，同一维度里命中任一即算，不同维度都要命中；选了上级也算它的全部下级，选了维度就是这一维度的任一取值。不存在的标签是 `422`。
 - **改树**：`POST /library-tags` 体是 `{ parentId?, name, guide?, autoFill?, position? }`，`parentId` 为空是加维度，`201` 答复新节点（条数为 0、没有下级）；`PATCH /library-tags/{id}` 体是 `{ name?, guide?, autoFill?, position? }`，不给的项不动，`guide` 给 `null` 或空串即清掉，`autoFill` 给 `null` 即改回只靠人填，上级改不了，答复改完的节点；`DELETE /library-tags/{id}` 是 `204`。没有这个标签是 `404`，下面的规则不合格都是 `422`，`detail` 是给人看的一句话：
@@ -735,6 +735,16 @@ agent 的草稿、版本、导出包与引用检查，语义见 [CONTEXT.md「Ag
 - agent 名册、起标题与管理接口不分应用，agent 配置目前所有应用共用一份。
 - 一页 transcript 只有 transcript 本身，标题、属主这些字段由应用在自己的答复上加。
 - `POST /v1/stats/{prompts,runs,usage,sessions}` 给应用的报表取事实行，只答调用方应用的会话，按时间窗或按会话（一次至多 1000 段）二选一，各行的时间锚点与筛选规则见 `runtime-openapi.json`。
+
+### 模型调用
+
+`POST /v1/model-calls/responses` 让应用调代码里写定的模型（[CONTEXT「供应商」](../docs/CONTEXT.md#术语)），不要管理权限、不用 `X-End-User`，所有应用共用配置页里的同一份连接。
+
+- 请求体 `{declaration, model, payload}`：`declaration` 是供应商声明名（如 `volcengine`），`payload` 是上游 Responses 接口的请求体。运行时把 `payload.model` 换成 `model`，带上找到的默认密钥转给 `{接口地址}/responses`，别的字段原样。
+- 上游答了：状态码、`content-type` 与正文原样交回，包括 4xx、5xx 与不是 JSON 的正文，运行时不解析。
+- 运行时自己的失败用 §4 的信封带 `code`，与上游的答复分得开：没有能用的连接 `409` `model_unavailable`（`detail` 说清去配置页改哪里，不调上游）；等上游满 900 秒 `504` `upstream_timeout`（无法确认上游执行过没有）；连不上上游 `502` `upstream_unreachable`。
+- 应用等运行时的上限要长于 900 秒，才收得到运行时的 `504`；客户端库的 `model_call` 收每次调用的上限，把这几种失败还原成 `ModelUnavailable`、`ModelCallTimedOut` 与 `RuntimeUnavailable`。不重试。
+- 密钥只在运行时里用，不出现在答复与日志里；日志不记请求体。
 
 ### 连接
 

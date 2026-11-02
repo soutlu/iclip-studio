@@ -317,7 +317,7 @@ def build_app(
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
     configure_logging(settings.log_level, settings.log_format)
     # 一个客户端：配置页的管理接口、会话与消息、transcript、两条 WebSocket、工作区文件与素材台账、首页名册、
-    # 起标题与对话活动都经它；lifespan 里进入、结束时退出。
+    # 起标题、对话活动与拆解、打标的模型调用都经它；lifespan 里进入、结束时退出。
     runtime_client = RuntimeClient(
         settings.runtime_service.url,
         settings.runtime_service.app_key,
@@ -489,14 +489,12 @@ def build_app(
             raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns
-            or build_reference_breakdown(
-                settings.iclip_studio, http_client, codec, fetch_url=fetch_url
-            ),
+            or build_reference_breakdown(runtime_client, http_client, codec, fetch_url=fetch_url),
             connector=connector,
             concurrency=breakdown_concurrency,
         )
         tagging_setup = TaggingSetup(
-            tagger=library_tagger or build_library_tagger(settings.iclip_studio, http_client),
+            tagger=library_tagger or build_library_tagger(runtime_client),
             connector=connector,
         )
     library_reports = PgLibraryReports(active_engine)

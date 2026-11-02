@@ -1244,7 +1244,9 @@ export const zHttpValidationError = z.object({
 export const zHitCaseEntryOut = z.object({
   addedAt: z.iso.datetime(),
   addedBy: z.string().nullable(),
-  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagError: z
+    .enum(['no_source_text', 'model_call_failed', 'model_failed', 'model_unavailable', 'timeout'])
+    .nullable(),
   tagIds: z.array(z.uuid()),
   tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
 })
@@ -1839,10 +1841,12 @@ export const zReferenceVideoItemOut = z.object({
   canEdit: z.boolean(),
   createdAt: z.iso.datetime(),
   errorCode: z
-    .enum(['video_unreadable', 'model_call_failed', 'model_failed', 'timeout'])
+    .enum(['video_unreadable', 'model_call_failed', 'model_failed', 'model_unavailable', 'timeout'])
     .nullable(),
   id: z.uuid(),
-  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagError: z
+    .enum(['no_source_text', 'model_call_failed', 'model_failed', 'model_unavailable', 'timeout'])
+    .nullable(),
   tagIds: z.array(z.uuid()),
   tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
   updatedAt: z.iso.datetime(),
@@ -2368,7 +2372,9 @@ export const zHitCaseOut = z.object({
   cardId: z.uuid(),
   face: zFaceOut,
   jobId: z.uuid(),
-  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagError: z
+    .enum(['no_source_text', 'model_call_failed', 'model_failed', 'model_unavailable', 'timeout'])
+    .nullable(),
   tagIds: z.array(z.uuid()),
   tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
   take: zTakeOut,
@@ -2619,10 +2625,12 @@ export const zReferenceVideoOut = z.object({
   createdAt: z.iso.datetime(),
   document: z.string().nullable(),
   errorCode: z
-    .enum(['video_unreadable', 'model_call_failed', 'model_failed', 'timeout'])
+    .enum(['video_unreadable', 'model_call_failed', 'model_failed', 'model_unavailable', 'timeout'])
     .nullable(),
   id: z.uuid(),
-  tagError: z.enum(['no_source_text', 'model_call_failed', 'model_failed', 'timeout']).nullable(),
+  tagError: z
+    .enum(['no_source_text', 'model_call_failed', 'model_failed', 'model_unavailable', 'timeout'])
+    .nullable(),
   tagIds: z.array(z.uuid()),
   tagStatus: z.enum(['pending', 'running', 'completed', 'failed']).nullable(),
   testVideo: zTestVideoOut.nullable(),

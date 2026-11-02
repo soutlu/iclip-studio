@@ -25,6 +25,12 @@ path = "agent_runtime.tool_args"
 depends_on = []
 utility = true
 
+# 按代码里写定的模型找连接：模型供应商实现查找，插件与给应用的模型调用接口用它。
+[[modules]]
+path = "agent_runtime.model_connections"
+depends_on = []
+utility = true
+
 # 机密值的加密与打码：模型供应商的密钥与 MCP 服务的请求头共用。
 [[modules]]
 path = "agent_runtime.secrets"

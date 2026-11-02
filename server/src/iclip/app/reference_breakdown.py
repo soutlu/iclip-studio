@@ -8,13 +8,14 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import httpx
+from agent_runtime.client import RuntimeClient
 from iclip_video.video_breakdown.ports import FailedBreakdown
 
-from iclip.config import ResolvedIclipStudio
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
     ERROR_MODEL_CALL_FAILED,
     ERROR_MODEL_FAILED,
+    ERROR_MODEL_UNAVAILABLE,
     ERROR_VIDEO_UNREADABLE,
     BreakdownFailed,
 )
@@ -22,13 +23,13 @@ from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
 from iclip.platform.video_breakdown.media import FfmpegVideoSampler
-from iclip.platform.video_breakdown.model import ArkBreakdownModel
-from iclip.platform.video_breakdown.ports import BreakdownError
+from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import BreakdownError, BreakdownModelUnavailable
 from iclip.platform.video_breakdown.service import BreakdownRunner
 
 
 class ArkVideoBreakdowns:
-    """``VideoBreakdowns`` 的实现：用 ``BreakdownRunner`` 拆，把它的两种失败换成落到行上的原因。"""
+    """``VideoBreakdowns`` 的实现：用 ``BreakdownRunner`` 拆，把它的失败换成落到行上的原因。"""
 
     def __init__(self, breakdown: BreakdownRunner) -> None:
         self._breakdown = breakdown
@@ -38,6 +39,8 @@ class ArkVideoBreakdowns:
             return await self._breakdown.run(video_url)
         except MediaError as exc:
             raise BreakdownFailed(str(exc), code=ERROR_VIDEO_UNREADABLE) from exc
+        except BreakdownModelUnavailable as exc:
+            raise BreakdownFailed(str(exc), code=ERROR_MODEL_UNAVAILABLE) from exc
         except BreakdownError as exc:
             # 可重试的（限流、服务端错、连不上、答得不完整）再拆可能就好；被拒与等满总超时不会。
             code = ERROR_MODEL_CALL_FAILED if exc.retryable else ERROR_MODEL_FAILED
@@ -67,21 +70,16 @@ class ReferenceBreakdownsAdapter:
 
 
 def build_reference_breakdown(
-    settings: ResolvedIclipStudio,
+    runtime: RuntimeClient,
     client: httpx.AsyncClient,
     codec: MediaCodec,
     *,
     fetch_url: Callable[[str], str],
 ) -> ArkVideoBreakdowns:
-    """按 ``iclip_studio`` 的配置建参考视频自己的一份拆解；HTTP 连接池与组合根共用，抽帧解码用启动时
-    选定的 ``codec``，探时长与下载视频前用 ``fetch_url`` 换算地址。"""
+    """建参考视频自己的一份拆解：模型经运行时服务的 ``runtime`` 调；下载视频用的 HTTP 连接池与组合根共用，
+    抽帧解码用启动时选定的 ``codec``，探时长与下载视频前用 ``fetch_url`` 换算地址。"""
 
-    model = ArkBreakdownModel(
-        client,
-        url=settings.breakdown_url,
-        api_key=settings.breakdown_api_key,
-        model=settings.breakdown_model,
-    )
+    model = ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL)
     breakdown = BreakdownRunner(
         model=model, sampler=FfmpegVideoSampler(client, codec, fetch_url=fetch_url)
     )

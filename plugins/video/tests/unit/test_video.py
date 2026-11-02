@@ -10,7 +10,7 @@ from agent_runtime.file_store.store import FileSpace
 from agent_runtime.material_ledger.store import Material
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -25,7 +25,10 @@ from pydantic_ai.usage import RunUsage
 
 from iclip_video.video.capability import Video, VideoToolset
 from iclip_video.video_document import video_doc_path
-from iclip_video.video_understanding import VideoUnderstandingError
+from iclip_video.video_understanding import (
+    VideoUnderstandingError,
+    VideoUnderstandingUnavailable,
+)
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import with_requirements
@@ -199,6 +202,21 @@ async def test_files_land_in_the_normalized_namespace(
 
     await toolset.video_parser(make_context(make_deps()), VIDEO)
     assert await files.read(NAMESPACE, video_doc_path(VIDEO)) is not None
+
+
+async def test_an_unavailable_model_is_final_and_asks_for_an_admin(
+    tools: VideoToolset[object], files: FakeFileStore, understanding: FakeUnderstanding
+) -> None:
+    reason = "配置页的火山方舟里没有启用的模型 doubao-seed-test（或没有默认密钥）"
+    understanding.error = VideoUnderstandingUnavailable(reason)
+
+    with pytest.raises(ToolFailed) as raised:
+        await tools.video_parser(make_context(make_deps()), VIDEO)
+
+    assert raised.value.message == (
+        f"拆解失败：{reason}。不要重试，告诉用户需要管理员在配置页启用这个模型。"
+    )
+    assert await files.read(NAMESPACE, video_doc_path(VIDEO)) is None
 
 
 async def test_missing_run_identity_is_a_bug_not_a_retry(tools: VideoToolset[object]) -> None:

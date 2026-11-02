@@ -14,12 +14,14 @@ import pytest
 
 from agent_runtime.app_wire import (
     FileWriteIn,
+    ModelCallIn,
 )
-from agent_runtime.client import AppRejected, RuntimeClient, RuntimeUnavailable
+from agent_runtime.client import AppRejected, ModelCallTimedOut, RuntimeClient, RuntimeUnavailable
 from agent_runtime.errors import (
     AgentUnavailable,
     Conflict,
     DomainError,
+    ModelUnavailable,
     NotFound,
     ValidationFailed,
 )
@@ -344,3 +346,79 @@ async def test_admin_paths_cannot_leave_the_admin_prefix(
 async def test_admin_takes_one_kind_of_body(client: RuntimeClient) -> None:
     with pytest.raises(ValueError, match="至多"):
         await client.admin_request("POST", "skills", json={}, content=b"x")
+
+
+MODEL_CALL = ModelCallIn(declaration="volcengine", model="m1", payload={"input": "hi"})
+LONG = httpx.Timeout(960.0, connect=5.0)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(200, json={"status": "completed"}),
+        httpx.Response(429, json={"error": {"code": "rate_limited"}}),
+        httpx.Response(400, text="not json at all"),
+        # 上游自己答的 409、502、504 不是运行时的信封，照样原样交回。
+        httpx.Response(409, json={"error": {"code": "conflict"}}),
+        httpx.Response(504, text="gateway timeout"),
+    ],
+    ids=["200", "429", "400-text", "409-upstream", "504-upstream"],
+)
+async def test_model_call_hands_back_whatever_the_upstream_answered(
+    client: RuntimeClient, recorder: Recorder, answer: httpx.Response
+) -> None:
+    recorder.reply = lambda _r: answer
+
+    got = await client.model_call(MODEL_CALL, timeout=LONG)
+
+    assert (got.status_code, got.content) == (answer.status_code, answer.content)
+    assert got.content_type == answer.headers.get("content-type")
+    sent = recorder.last
+    assert (sent.method, sent.url.path) == ("POST", "/v1/model-calls/responses")
+    assert sent.headers["Authorization"] == f"Bearer {KEY}"
+    assert json.loads(sent.content) == MODEL_CALL.model_dump(mode="json")
+    assert sent.extensions["timeout"]["read"] == 960.0
+
+
+async def test_model_call_restores_model_unavailable(
+    client: RuntimeClient, recorder: Recorder
+) -> None:
+    recorder.reply = _answer(409, json={"detail": "配置页里没启用 m1", "code": "model_unavailable"})
+
+    with pytest.raises(ModelUnavailable, match="没启用 m1"):
+        await client.model_call(MODEL_CALL, timeout=LONG)
+
+
+@pytest.mark.parametrize(
+    ("reply", "error"),
+    [
+        (_answer(504, json={"detail": "超时", "code": "upstream_timeout"}), ModelCallTimedOut),
+        (_time_out, ModelCallTimedOut),
+        (
+            _answer(502, json={"detail": "连不上", "code": "upstream_unreachable"}),
+            RuntimeUnavailable,
+        ),
+        (_refuse, RuntimeUnavailable),
+        (_answer(401, json={"detail": "应用密钥无效"}), AppRejected),
+    ],
+    ids=[
+        "runtime-waited-upstream",
+        "client-waited-runtime",
+        "upstream-down",
+        "runtime-down",
+        "401",
+    ],
+)
+async def test_model_call_raises_only_the_runtimes_own_failures(
+    client: RuntimeClient,
+    recorder: Recorder,
+    reply: Callable[[httpx.Request], httpx.Response],
+    error: type[Exception],
+) -> None:
+    recorder.reply = reply
+
+    with pytest.raises(error) as raised:
+        await client.model_call(MODEL_CALL, timeout=LONG)
+
+    if error is RuntimeUnavailable:
+        assert not isinstance(raised.value, ModelCallTimedOut)

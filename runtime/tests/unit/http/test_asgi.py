@@ -18,6 +18,7 @@ from agent_runtime.http.asgi import CONFIG_ENV, PluginsAtStartup, app_from_env
 from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.model_connections import FakeModelConnections
 
 FERNET_KEY = base64.urlsafe_b64encode(b"asgi-test-key-0123456789abcdefgh").decode()
 
@@ -73,7 +74,13 @@ class Steps:
     def build(self, bind: PluginBinder, *, fail: bool = False) -> FastAPI:
         if fail:
             raise RuntimeError("出图工具要的模型后端没接")
-        registry = bind(PluginHost(files=FakeFileStore(), ledger=FakeMaterialLedger()))
+        registry = bind(
+            PluginHost(
+                files=FakeFileStore(),
+                ledger=FakeMaterialLedger(),
+                model_connection=FakeModelConnections(),
+            )
+        )
 
         @asynccontextmanager
         async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:

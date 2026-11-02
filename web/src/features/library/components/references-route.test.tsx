@@ -492,6 +492,19 @@ describe('参考视频详情', () => {
     )
   })
 
+  it('打标模型没启用：请人找管理员启用，不出现原因代码', async () => {
+    const { dialog } = await openDetail({
+      tagError: 'model_unavailable',
+      tagIds: [],
+      tagStatus: 'failed',
+    })
+    await within(dialog).findByText('第一版拆解')
+
+    const alert = within(dialog).getByRole('alert')
+    expect(alert).toHaveTextContent(/没启用打标模型，AI 打的标签已清空；请联系管理员启用/)
+    expect(alert).not.toHaveTextContent('model_unavailable')
+  })
+
   it('打标失败：按原因说一句给人看的话，不出现原因代码；点「重新打标」原地确认后提交，随即显示正在打标', async () => {
     const writes = recordWrites()
     const user = userEvent.setup()
@@ -666,6 +679,7 @@ describe('参考视频详情', () => {
   it.each([
     ['video_unreadable', null, /请上传其他视频/],
     ['model_call_failed', '# 上一次的拆解', /下方仍是上一次的拆解/],
+    ['model_unavailable', null, /没启用拆解模型，请联系管理员启用/],
   ] as const)(
     '拆解失败（%s）：按原因说一句给人看的话，不出现原因代码',
     async (errorCode, document, message) => {

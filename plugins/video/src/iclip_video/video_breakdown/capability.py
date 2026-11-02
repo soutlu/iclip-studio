@@ -164,6 +164,10 @@ def _breakdown_failure(reason: BreakdownFailureReason, *, last_attempt: bool) ->
 
     if reason == "video_unreadable":
         return ToolFailed("拆解失败，视频无法打开，不要重试，告诉用户换一条视频。")
+    if reason == "model_unavailable":
+        return ToolFailed(
+            "拆解失败，拆解模型没有启用，不要重试，告诉用户需要管理员在配置页启用这个模型。"
+        )
     if reason == "model_call_failed" and not last_attempt:
         return ModelRetry("拆解失败，再调用一次。")
     return ToolFailed("拆解失败，不要重试，告诉用户稍后再试。")

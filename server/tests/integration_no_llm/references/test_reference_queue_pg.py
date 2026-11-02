@@ -1,4 +1,4 @@
-"""参考视频的后台拆解：一次任务接手、拆解、写回，拆成再排一次打标；拆解不碰标签；四种失败各落各的
+"""参考视频的后台拆解：一次任务接手、拆解、写回，拆成再排一次打标；拆解不碰标签；各种失败各落各的
 原因并保留原来的拆解；超时收尾；任务抛出后不重投。拆解走真的适配器，HTTP 与抽帧是替身，打标队列
 只记下排了谁。"""
 
@@ -25,6 +25,7 @@ from tests.helpers.references import (
     FakeSampler,
     NoTestVideos,
     ark_pipeline,
+    model_unavailable,
     plant_reference,
     plant_user,
     reference_row,
@@ -192,6 +193,12 @@ async def test_a_breakdown_of_a_row_without_an_entry_creates_one_for_the_owner(
             None,
             "model_failed",
             id="timeout",
+        ),
+        pytest.param(
+            FakeArk(breakdown=model_unavailable()),
+            None,
+            "model_unavailable",
+            id="model-unavailable",
         ),
     ],
 )

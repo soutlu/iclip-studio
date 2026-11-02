@@ -1,5 +1,5 @@
 """模型供应商的纯规则：整理名称、按声明校验与合并密钥字段、加解密与打码、合并模型列表、校验自己加的
-模型。不合格是 ``ValidationFailed``，消息直接给人看，从不带字段的值。"""
+模型、为写定的模型挑连接。不合格是 ``ValidationFailed``，消息直接给人看，从不带字段的值。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,12 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import ValidationError
 
-from agent_runtime.config.model_providers.catalog import ModelDeclaration, ProviderDeclaration
+from agent_runtime.config.model_providers.catalog import (
+    API_KEY_FIELD,
+    BASE_URL_FIELD,
+    ModelDeclaration,
+    ProviderDeclaration,
+)
 from agent_runtime.config.model_providers.models import (
     MAX_CREDENTIAL_NAME_CHARS,
     MAX_FIELD_VALUE_CHARS,
@@ -18,8 +23,10 @@ from agent_runtime.config.model_providers.models import (
     ModelSetting,
     ModelType,
     ProviderModel,
+    ProviderState,
 )
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.model_connections import ModelConnection
 from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 from agent_runtime.secrets import CredentialCipher, mask_secret
 
@@ -162,6 +169,41 @@ def find_model(
     return next((one for one in models if one.name == name and one.type == model_type), None)
 
 
+def responses_connection(
+    declaration: ProviderDeclaration,
+    states: Sequence[ProviderState],
+    model_name: str,
+    cipher: CredentialCipher,
+) -> ModelConnection | None:
+    """用这份声明的供应商里，按接入时刻从早到晚（同一时刻按 id）第一个启用、把 ``model_name`` 当启用的
+    llm、又有默认密钥的那个，交回它的 Responses 地址与默认密钥的明文；一个都没有给 ``None``。"""
+
+    ordered = sorted(states, key=lambda state: (state.provider.created_at, state.provider.id))
+    for state in ordered:
+        provider = state.provider
+        if not provider.enabled or provider.provider != declaration.name:
+            continue
+        model = find_model(merge_models(declaration, state.settings), model_name, "llm")
+        if model is None or not model.enabled:
+            continue
+        credential = next(
+            (one for one in state.credentials if one.id == provider.default_credential_id), None
+        )
+        if credential is None:
+            continue
+        fields = decrypt_fields(declaration, credential.fields, cipher)
+        base_url = fields.get(BASE_URL_FIELD)
+        if base_url is None:
+            # 只有声明里接口地址必填的供应商才能这样直接调；写定的声明不是这种，是代码写错了。
+            raise RuntimeError(
+                f"{declaration.label}的密钥没有接口地址，不能直接调它的 Responses 接口"
+            )
+        return ModelConnection(
+            responses_url=f"{base_url.rstrip('/')}/responses", api_key=fields[API_KEY_FIELD]
+        )
+    return None
+
+
 def probe_model(models: Sequence[ProviderModel]) -> ProviderModel:
     """试连用的模型：第一个启用的 llm 模型。"""
 
@@ -215,4 +257,5 @@ __all__ = [
     "merged_fields",
     "new_fields",
     "probe_model",
+    "responses_connection",
 ]

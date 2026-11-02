@@ -81,9 +81,13 @@ Python 应用用客户端库 [agent_runtime/client/](../runtime/src/agent_runtim
 
 `admin: true` 的应用能用 `/v1/admin`：技能库、模型供应商与默认模型、MCP 服务、agent 配置，子路径同视频后端的那几组端点。写操作在 `X-End-User` 给操作人 id，答复里只有 id，显示名由应用自己补。客户端库用 `admin_request` 原样转发；视频后端的转发在 [platform/runtime_admin.py](../server/src/iclip/platform/runtime_admin.py)。管理权限是整组的，不分哪一块。
 
-## 8. 插件包（可选）
+## 8. 调写定的模型（可选）
 
-应用要给 agent 加自己的工具时写一个插件包：入口是 `PluginFactory`（[plugins/base.py](../runtime/src/agent_runtime/plugins/base.py)），运行时配置的 `plugins.factory` 指向它，`plugins.config` 原样交给它；插件约定见[架构「工具、插件与 MCP 服务」](architecture.md#工具插件与-mcp-服务)。插件要应用自己的服务时，照视频插件包的做法经 HTTP 调应用的内部接口：令牌从环境变量读，启动时核对应用开了哪些服务，见[架构「内部接口与视频插件包」](architecture.md#内部接口与视频插件包)。只用工具、不要应用服务的，可以改用管理员登记的 MCP 服务，不必写插件包。
+应用自己的后台流程要调一个代码里写定的模型、又不想自己保管密钥时，调 `POST /v1/model-calls/responses`，体 `{declaration, model, payload}`：运行时按配置页里接的供应商找连接，换上模型名、带上密钥转给上游的 Responses 接口，上游的答复原样交回。连接没配好时答 409 `model_unavailable`，原因说清去配置页改哪里。客户端库用 `model_call`，每次给一个长于 900 秒的上限；状态码与报错见 [conventions §20「模型调用」](../contract/conventions.md#模型调用)。视频后端的拆解与打标就这样调，见 [platform/video_breakdown/model.py](../server/src/iclip/platform/video_breakdown/model.py)。
+
+## 9. 插件包（可选）
+
+应用要给 agent 加自己的工具时写一个插件包：入口是 `PluginFactory`（[plugins/base.py](../runtime/src/agent_runtime/plugins/base.py)），运行时配置的 `plugins.factory` 指向它，`plugins.config` 原样交给它；插件约定见[架构「工具、插件与 MCP 服务」](architecture.md#工具插件与-mcp-服务)。插件要直接调写定的模型时，用绑定时 `PluginHost.model_connection` 在每次调用时查连接。插件要应用自己的服务时，照视频插件包的做法经 HTTP 调应用的内部接口：令牌从环境变量读，启动时核对应用开了哪些服务，见[架构「内部接口与视频插件包」](architecture.md#内部接口与视频插件包)。只用工具、不要应用服务的，可以改用管理员登记的 MCP 服务，不必写插件包。
 
 ## 现有限制
 

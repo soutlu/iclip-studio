@@ -42,6 +42,14 @@ class AgentUnavailable(Conflict):
     code = "agent_unavailable"
 
 
+class ModelUnavailable(Conflict):
+    """代码里写定的某个模型此刻在配置页里用不了：没有启用的供应商启用了它，或那家供应商没有默认密钥。
+
+    消息是给人看的原因，说清去配置页改哪里。"""
+
+    code = "model_unavailable"
+
+
 class HookRejected(DomainError):
     """开跑检查没放行：应用答了不该重试的非 2xx，或在重试窗口里一直没答复、一直答 502/503/504。
 
@@ -56,6 +64,7 @@ __all__ = [
     "Conflict",
     "DomainError",
     "HookRejected",
+    "ModelUnavailable",
     "NotFound",
     "PermissionDenied",
     "ValidationFailed",

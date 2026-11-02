@@ -16,14 +16,18 @@ STATUS_RUNNING: Final = "running"
 STATUS_COMPLETED: Final = "completed"
 STATUS_FAILED: Final = "failed"
 
-BreakdownErrorCode = Literal["video_unreadable", "model_call_failed", "model_failed", "timeout"]
+BreakdownErrorCode = Literal[
+    "video_unreadable", "model_call_failed", "model_failed", "model_unavailable", "timeout"
+]
 """最近一次拆解失败的原因。``video_unreadable`` 取不到或解不开视频；``model_call_failed`` 模型调用
 失败（限流、服务端错、连不上、答得不完整），再试可能就好；``model_failed`` 请求被拒或等满了总超时；
-``timeout`` 拆解中超过 ``BREAKDOWN_TIMEOUT_SECONDS`` 没结束，被周期任务收尾。"""
+``model_unavailable`` 配置页里没有启用拆解模型，要管理员启用；``timeout`` 拆解中超过
+``BREAKDOWN_TIMEOUT_SECONDS`` 没结束，被周期任务收尾。"""
 
 ERROR_VIDEO_UNREADABLE: Final = "video_unreadable"
 ERROR_MODEL_CALL_FAILED: Final = "model_call_failed"
 ERROR_MODEL_FAILED: Final = "model_failed"
+ERROR_MODEL_UNAVAILABLE: Final = "model_unavailable"
 ERROR_TIMEOUT: Final = "timeout"
 
 BREAKDOWN_TIMEOUT_SECONDS: Final = 20 * 60
@@ -127,6 +131,7 @@ __all__ = [
     "BREAKDOWN_TIMEOUT_SECONDS",
     "ERROR_MODEL_CALL_FAILED",
     "ERROR_MODEL_FAILED",
+    "ERROR_MODEL_UNAVAILABLE",
     "ERROR_TIMEOUT",
     "ERROR_VIDEO_UNREADABLE",
     "STATUS_COMPLETED",

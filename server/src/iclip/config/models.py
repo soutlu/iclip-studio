@@ -42,8 +42,6 @@ VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
 
 QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 
-VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
-
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
@@ -119,11 +117,6 @@ class MediaGenerationEnv(EnvSettings):
 
 class QwenEnv(EnvSettings):
     api_key: RequiredEnv = Field(validation_alias=QWEN_API_KEY_ENV)
-
-
-class VideoUnderstandingEnv(EnvSettings):
-    url: RequiredEnv = Field(validation_alias=VIDEO_UNDERSTANDING_URL_ENV)
-    api_key: RequiredEnv = Field(validation_alias="VIDEO_UNDERSTANDING_API_KEY")
 
 
 class ProductCatalogEnv(EnvSettings):
@@ -295,7 +288,8 @@ class MediaGenerationSection(ConfigSection):
 
 
 class IclipStudioSection(ConfigSection):
-    breakdown_model: str
+    """写了就开参考视频的拆解与资料库的打标。模型写定在代码里，经运行时服务调，连接在配置页的模型供应商里。"""
+
     breakdown_concurrency: int | None = Field(default=None, ge=1)
 
 
@@ -431,9 +425,6 @@ class ResolvedMediaGeneration:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedIclipStudio:
-    breakdown_url: str
-    breakdown_api_key: str
-    breakdown_model: str
     breakdown_concurrency: int | None
 
 
@@ -588,15 +579,9 @@ def _resolve_qwen_service(section: QwenServiceSection | None) -> ResolvedQwenSer
 
 
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
-    if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
+    if section is None:
         return None
-    env = _from_env(VideoUnderstandingEnv)
-    return ResolvedIclipStudio(
-        breakdown_url=env.url,
-        breakdown_api_key=env.api_key,
-        breakdown_model=section.breakdown_model,
-        breakdown_concurrency=section.breakdown_concurrency,
-    )
+    return ResolvedIclipStudio(breakdown_concurrency=section.breakdown_concurrency)
 
 
 def _resolve_product_catalog() -> ResolvedProductCatalog | None:

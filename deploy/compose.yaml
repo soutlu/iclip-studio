@@ -50,8 +50,6 @@ services:
       # 与后端用的是同一个值。
       RUNTIME_APP_KEY: ${RUNTIME_APP_KEY}
       RUNTIME_INTERNAL_TOKEN: ${RUNTIME_INTERNAL_TOKEN}
-      # runtime.yaml 配了 plugins.config.video 时它的 api_key_env；没配视频理解时留空。
-      VIDEO_UNDERSTANDING_API_KEY: ${VIDEO_UNDERSTANDING_API_KEY:-}
     volumes:
       - ./configs:/app/configs:ro
     depends_on:

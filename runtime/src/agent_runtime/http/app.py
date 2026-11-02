@@ -10,6 +10,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from agent_runtime.app_wire import MODEL_CALL_TIMEOUT_SECONDS
 from agent_runtime.assembly.agents import (
     AgentRuntime,
     AssemblySettings,
@@ -45,6 +46,7 @@ from agent_runtime.http.agents import create_agents_router
 from agent_runtime.http.auth import build_app_auth
 from agent_runtime.http.errors import install_error_handlers
 from agent_runtime.http.logging import configure_logging
+from agent_runtime.http.model_calls import create_model_calls_router
 from agent_runtime.http.sessions import create_sessions_router
 from agent_runtime.http.stats import create_stats_router
 from agent_runtime.http.streams import create_events_router, create_transcript_ws_router
@@ -59,6 +61,7 @@ from agent_runtime.live.frames import (
 )
 from agent_runtime.live.hub import AppEventHub, SessionFileChanges
 from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.model_connections import ModelConnection
 from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
 from agent_runtime.service.sessions import SessionService
@@ -66,6 +69,8 @@ from agent_runtime.settings import RuntimeSettings
 from agent_runtime.transcript.wire import SessionActivityOut
 
 TITLE = "agent-runtime"
+
+_MODEL_CALL_CONNECT_SECONDS = 10.0
 
 
 def create_app(
@@ -76,6 +81,7 @@ def create_app(
     engine: AsyncEngine | None = None,
     build_model: ModelBuilder = build_runtime_model,
     hook_transport: httpx.AsyncBaseTransport | None = None,
+    model_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """按设置装出运行时服务。
 
@@ -86,7 +92,9 @@ def create_app(
     同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区或素材台账的插件给
     ``PluginBinder``，用本服务的工作区存储与素材台账绑定，写入才会发给订着这段会话的对话内容流连接。``credential_probe``
     不给就用真实的试连；``engine`` 不给就按 ``settings.database_url`` 自己建，给了由调用方负责关；
-    ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子。
+    ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子，``model_transport``
+    是测试接住模型调用转给上游的请求的口子。插件经 ``PluginHost.model_connection`` 查写定的模型的连接，与给应用的
+    模型调用接口查的是同一份。
     """
 
     configure_logging(settings.log_level, settings.log_format)
@@ -131,10 +139,21 @@ def create_app(
     # 分叉与按清单拷文件用底下这份，副本不算变更；插件与应用经接口写文件用会通知的那份。
     announcing_files = AnnouncingFileStore(file_store, on_file_change)
     material_ledger = PgMaterialLedger(active_engine)
+
+    async def model_connection(declaration: str, model: str) -> ModelConnection:
+        # 登记表要先绑好，下面的配置服务才能按它校验插件；插件只在工具调用时查连接，那时配置服务早已建好。
+        return await config_services.model_providers.responses_connection(declaration, model)
+
     registry = (
         plugins
         if isinstance(plugins, Mapping)
-        else plugins(PluginHost(files=announcing_files, ledger=material_ledger))
+        else plugins(
+            PluginHost(
+                files=announcing_files,
+                ledger=material_ledger,
+                model_connection=model_connection,
+            )
+        )
     )
 
     config_services = build_config_services(
@@ -188,6 +207,11 @@ def create_app(
 
     # 回调按会话归属的应用找地址；没配回调的应用不在表里。
     hook_client = httpx.AsyncClient(transport=hook_transport)
+    # 给应用的模型调用转上游用；建连另有短上限，上游地址不通时不等满整段答复上限。
+    model_call_client = httpx.AsyncClient(
+        transport=model_transport,
+        timeout=httpx.Timeout(MODEL_CALL_TIMEOUT_SECONDS, connect=_MODEL_CALL_CONNECT_SECONDS),
+    )
     hooks = AppHooks(
         hooks={app.id: app.hooks for app in settings.apps if app.hooks is not None},
         app_of=session_apps.app_of,
@@ -275,6 +299,7 @@ def create_app(
             await transcripts.runner.shutdown()
             await event_hub.stop()
             await hook_client.aclose()
+            await model_call_client.aclose()
             if owns_engine:
                 await active_engine.dispose()
 
@@ -306,6 +331,7 @@ def create_app(
         create_workspace_router(announcing_files, material_ledger, sessions, auth.calling_app)
     )
     v1.include_router(create_agents_router(agent_runtime))
+    v1.include_router(create_model_calls_router(model_connection, model_call_client))
     v1.include_router(create_stats_router(PgRunStats(active_engine), auth.calling_app))
     app.include_router(v1)
     # WebSocket 不在 v1 的路由组里：组上的 Bearer 依赖只在 HTTP 请求上跑，两条连接自己认应用。

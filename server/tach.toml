@@ -34,7 +34,7 @@ depends_on = []
 path = "iclip.platform.shot_media"
 depends_on = ["iclip.platform.media"]
 
-# 视频拆解：抽帧取音轨与方舟模型适配器，供参考视频的拆解与资料库打标使用。
+# 视频拆解：抽帧取音轨与方舟模型适配器（经运行时服务的模型调用接口），供参考视频的拆解与资料库打标使用。
 [[modules]]
 path = "iclip.platform.video_breakdown"
 depends_on = ["iclip.platform.media"]

@@ -430,30 +430,32 @@ async def test_a_reference_breakdown_answers_the_document_or_the_failure() -> No
         {
             "https://cdn.test/ok.mp4": Outcome(document="## 拆解文档"),
             "https://cdn.test/bad.mp4": Outcome(document=None, error_code="video_unreadable"),
+            "https://cdn.test/off.mp4": Outcome(document=None, error_code="model_unavailable"),
         }
     )
     adapter = ReferenceBreakdownsAdapter(
         cast("ReferenceService", references), FakePrincipals(OWNER)
     )
+    urls = ("https://cdn.test/ok.mp4", "https://cdn.test/bad.mp4", "https://cdn.test/off.mp4")
 
     async with client_for(internal_app(services(breakdowns=adapter))) as client:
-        done, failed = [
+        done, failed, unavailable = [
             await client.post(
                 "/internal/runtime/plugins/reference-breakdowns",
                 json={"user_id": str(OWNER.user_id), "video_url": url},
             )
-            for url in ("https://cdn.test/ok.mp4", "https://cdn.test/bad.mp4")
+            for url in urls
         ]
 
-    assert (done.status_code, failed.status_code) == (200, 200)
+    assert (done.status_code, failed.status_code, unavailable.status_code) == (200, 200, 200)
     assert ReferenceBreakdownResult.model_validate(done.json()).outcome() == "## 拆解文档"
     assert ReferenceBreakdownResult.model_validate(failed.json()).outcome() == FailedBreakdown(
         reason="video_unreadable"
     )
-    assert references.asked == [
-        (OWNER.user_id, "https://cdn.test/ok.mp4"),
-        (OWNER.user_id, "https://cdn.test/bad.mp4"),
-    ]
+    assert ReferenceBreakdownResult.model_validate(unavailable.json()).outcome() == FailedBreakdown(
+        reason="model_unavailable"
+    )
+    assert references.asked == [(OWNER.user_id, url) for url in urls]
 
 
 SHOT_ROUTES = ("generations", "frame-boards", "grid-cuts")

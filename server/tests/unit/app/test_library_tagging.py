@@ -11,12 +11,14 @@ import pytest
 
 from iclip.app.library_tagging import (
     TAG_MAX_OUTPUT_TOKENS,
+    TAG_MODEL,
     TAG_REASONING_EFFORT,
+    TAG_TIMEOUT_SECONDS,
     build_tag_request,
     parse_tag_answer,
 )
 from iclip.domains.tagging.models import TaggingFailed, TagNode
-from tests.helpers.references import FakeArk, ark_pipeline, tag_answer
+from tests.helpers.references import FakeArk, ark_pipeline, model_unavailable, tag_answer
 
 
 def node(name: str, *children: TagNode, guide: str | None = None) -> TagNode:
@@ -328,6 +330,11 @@ async def test_the_call_sends_the_text_with_the_request_built_for_these_dimensio
 
     assert await tagger.tag("一段拆解", [CATEGORY]) == (ids_of(CATEGORY)["拖鞋"],)
 
+    (call,) = ark.calls
+    assert (call["declaration"], call["model"]) == ("volcengine", TAG_MODEL)
+    assert TAG_MODEL == "doubao-seed-2-1-lite-260915"
+    # 打标比运行时等上游的上限短，照旧只等自己的那么久。
+    assert call["read_timeout"] == TAG_TIMEOUT_SECONDS
     (sent,) = ark.tag_requests
     system, user = sent["input"]
     assert system["role"] == "system"
@@ -343,6 +350,7 @@ async def test_the_call_sends_the_text_with_the_request_built_for_these_dimensio
         pytest.param(httpx.Response(503, text="busy"), "model_call_failed", id="5xx"),
         pytest.param(httpx.ConnectError("refused"), "model_call_failed", id="unreachable"),
         pytest.param(httpx.Response(400, text="rejected"), "model_failed", id="rejected"),
+        pytest.param(model_unavailable(), "model_unavailable", id="model-unavailable"),
     ],
 )
 async def test_call_failures_split_by_whether_another_try_may_help(

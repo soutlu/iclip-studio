@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Annotated, Any, Final, Literal, Self
+from typing import Annotated, Any, Final, Self
 
 import httpx
 from agent_runtime.file_store.store import FileSpace
@@ -36,7 +36,7 @@ from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.video.capability import Video
 from iclip_video.video_breakdown.capability import VideoBreakdownPlugin
 from iclip_video.video_shots.capability import VideoShots
-from iclip_video.video_understanding import TIMEOUT_SECONDS, ArkVideoUnderstanding
+from iclip_video.video_understanding import ArkVideoUnderstanding
 
 DEFAULT_INTERNAL_TIMEOUT_SECONDS: Final = 1800.0
 """调后端内部接口等答复的默认上限。后端最慢的两条都要等：拆解排队后最多等 20 分钟才答，取帧拼板下载视频
@@ -70,16 +70,8 @@ class OssSection(_Section):
 
 
 class VideoSection(_Section):
-    """视频理解（``video`` 插件）用的方舟接口。"""
-
-    understanding_url: HttpUrl
-    api_key_env: EnvName
-    """放方舟 API key 的环境变量名。"""
-
-    model: str = Field(min_length=1)
-    thinking: Literal["minimal", "low", "medium", "high"] | None = None
-    fps: float | None = Field(default=None, ge=0.2, le=5)
-    timeout_seconds: float = Field(default=TIMEOUT_SECONDS, gt=0)
+    """写了就登记 ``video``（视频理解）。没有字段：模型写定在 ``video_understanding``，连接每次调用时从配置页
+    的模型供应商里现查。"""
 
 
 class VideoBreakdownSection(_Section):
@@ -153,20 +145,10 @@ async def open_video_plugins(
             if settings.internal_api is not None
             else None
         )
-        understanding = (
-            _understanding(settings.video, outbound) if settings.video is not None else None
-        )
         models = await _check_backend(api, settings)
 
         def bind(host: PluginHost) -> PluginRegistry:
-            return _registry(
-                host,
-                settings,
-                outbound=outbound,
-                api=api,
-                understanding=understanding,
-                image_models=models,
-            )
+            return _registry(host, settings, outbound=outbound, api=api, image_models=models)
 
         yield bind
 
@@ -187,25 +169,12 @@ def _internal_client(
     )
 
 
-def _understanding(section: VideoSection, client: httpx.AsyncClient) -> ArkVideoUnderstanding:
-    return ArkVideoUnderstanding(
-        client,
-        url=str(section.understanding_url),
-        api_key=_secret(section.api_key_env, "视频理解的 API key"),
-        model=section.model,
-        thinking=section.thinking,
-        fps=section.fps,
-        timeout_seconds=section.timeout_seconds,
-    )
-
-
 def _registry(
     host: PluginHost,
     settings: VideoPluginsConfig,
     *,
     outbound: httpx.AsyncClient,
     api: InternalApi | None,
-    understanding: ArkVideoUnderstanding | None,
     image_models: frozenset[str],
 ) -> PluginRegistry:
     # 文件生产与读取共用 FileSpace，避免命名空间不一致。
@@ -219,7 +188,8 @@ def _registry(
         IclipStudio.bind(space=space, ledger=host.ledger, images=None),
         VideoShots.bind(space=space, ledger=host.ledger),
     ]
-    if understanding is not None:
+    if settings.video is not None:
+        understanding = ArkVideoUnderstanding(outbound, connection=host.model_connection)
         plugins.append(Video.bind(space=space, ledger=host.ledger, understanding=understanding))
     if settings.video_breakdown is not None:
         plugins.append(

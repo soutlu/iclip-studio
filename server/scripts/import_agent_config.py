@@ -67,6 +67,7 @@ from agent_runtime.config.skills.schemas import SkillPublishIn
 from agent_runtime.errors import DomainError
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.material_ledger.pg import PgMaterialLedger
+from agent_runtime.model_connections import ModelConnection
 from agent_runtime.model_vocab import ThinkingEffort
 from agent_runtime.plugins.base import PluginFactory, PluginHost, PluginRegistry
 from agent_runtime.settings import CREDENTIAL_ENCRYPTION_KEYS_ENV, CredentialKeysEnv, load_config
@@ -736,7 +737,19 @@ async def deployment_plugins(
                 f"按运行时配置打开插件包失败：{exc}。配了 shot_video 或 video_breakdown 时插件包要向后端"
                 "核对插件服务，先把后端起来、RUNTIME_INTERNAL_TOKEN 与运行时配置里的一致，再跑"
             ) from exc
-        yield bind(PluginHost(files=PgFileStore(engine), ledger=PgMaterialLedger(engine)))
+        yield bind(
+            PluginHost(
+                files=PgFileStore(engine),
+                ledger=PgMaterialLedger(engine),
+                model_connection=_no_model_calls,
+            )
+        )
+
+
+async def _no_model_calls(declaration: str, model: str) -> ModelConnection:
+    """切换只读插件的名字、依赖与参数，不跑工具，也就不该有插件来查模型连接。"""
+
+    raise RuntimeError(f"切换配置时不调模型，插件却要查 {declaration}/{model} 的连接")
 
 
 def main(argv: Sequence[str]) -> int:
