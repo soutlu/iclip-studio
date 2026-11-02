@@ -58,9 +58,11 @@ _EDITOR = frozenset(PERMISSIONS) - {
     "model:manage",
 }
 _ROOT = frozenset(PERMISSIONS)
+_ADMIN = _ROOT - {AGENT_MANAGE_PERMISSION, "model:manage"}
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "root": _ROOT,
+    "admin": _ADMIN,
     "editor": _EDITOR,
     "viewer": _VIEWER,
 }

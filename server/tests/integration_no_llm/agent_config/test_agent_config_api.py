@@ -49,6 +49,24 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
         assert (await client.request(method, url, **kwargs)).status_code == 403, (method, url)
 
 
+async def test_admin_cannot_reach_the_config_page(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    """admin 有 root 的其余权限，唯独没有 ``agent:manage`` 与 ``model:manage``：配置页的各组端点都是 403。"""
+
+    await register_and_login(client, username="ada", email="ada@example.com")
+    await set_roles_in_db(migrated_pg, "ada@example.com", ["admin"])
+
+    for method, url in (
+        ("GET", "/agents"),
+        ("GET", "/skills"),
+        ("GET", "/mcp-servers"),
+        ("GET", "/model-providers"),
+        ("POST", "/agents/director/previews"),
+    ):
+        assert (await client.request(method, url)).status_code == 403, (method, url)
+
+
 async def test_root_lists_the_plugins_from_the_registry(
     client: httpx.AsyncClient, migrated_pg: str
 ) -> None:

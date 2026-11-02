@@ -83,9 +83,10 @@
 
    - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务，取不到或后端没开对应服务都起不来（原因在 `docker compose logs runtime`）。后端日志里先有一条「运行时还没起来，起来后自动连上事件流」，运行时起来后出现「运行时事件流已连上」；启动 60 秒后仍连不上，后端每次重连失败记一条「运行时事件流自启动起一直连不上」的 warning。
 
-6. 设置首个管理员：
+6. 设置首个 root 账号：
    - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。
    - 用密码注册：执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
+   - 其他管理用户、但不用 Agent 配置页的人设为 admin：`docker compose run --rm server python -m scripts.admin set-roles <账号> admin`。`set-roles` 整份替换这个账号的角色。
 
 后端与运行时服务各只跑 1 个 worker。实时投影、事件分发与浏览器订阅都存在进程内存里，增加 worker 前先看[两个服务](architecture.md#1-两个服务)。
 

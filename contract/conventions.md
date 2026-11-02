@@ -17,6 +17,7 @@
   - 明文仅在成功创建的响应中返回一次；权限语义见 [CONTEXT.md](../docs/CONTEXT.md)。
 - **两种凭证同时出现**：请求带 `Authorization: Bearer` 时只按 Bearer 认证，不看会话 Cookie；Bearer 无效即按未登录处理，不回落到 Cookie。WebSocket 握手同一规则。
 - **端点权限**：每个 HTTP 操作的凭证与权限看 `openapi.json` 里该操作的 `security`。安全方案只有 `SessionCookie`（Cookie `iclip_session`）与 `BearerToken`（HTTP Bearer）；`security` 列出的各项之间是「或」，方案下的 scopes 就是所需权限名，列出多个须同时具备；两个方案都是空数组表示登录即可；没有 `security` 的操作公开；`POST /auth/logout` 只列 `SessionCookie`，只能凭会话登出。权限词汇是合同里的 `Permission` 组件，授予权限的请求字段按它校验，响应里的权限集是字符串数组、不随词表收紧；角色语义见 [CONTEXT.md「角色」](../docs/CONTEXT.md#术语)。条件性权限（如 §7 的 `?scope=all`）、行级归属、WebSocket（§5）与替人办事不在 `security` 里，以本文各节为准。
+- **授权上限**：`PATCH /users/{id}` 改别人的 `roles` 或 `directPermissions`，改完后他会多出调用者自己没有的权限时是 `403`（「不能授予超出自己权限的角色或权限」），什么都不改；规则见 [CONTEXT.md「角色」](../docs/CONTEXT.md#术语)。
 - **替人办事**：持 `users:act_as` 的 API key 在 `POST /conversations`（`userName`）、`POST /tasks`（`userName`）、`POST /conversations/{id}/prompts`（`user_name`）、`POST /generations/*`（`user_name` / `userName`）、`POST /references/{id}/test-generations`（`userName`）与 `POST /uploads/{uploadId}/confirm`（`userName`，可选，见 §10）的请求体里指名，那次请求的属主、创建者、认领人就是那个人，语义见 [CONTEXT.md「API Key」](../docs/CONTEXT.md#术语)。浏览器会话在这些字段里只能写自己的用户名，写别人是 `422`。
 
 ## 3. 数据载荷与格式 (Payload Formatting)
