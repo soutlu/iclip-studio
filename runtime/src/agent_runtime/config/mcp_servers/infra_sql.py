@@ -1,7 +1,7 @@
 """MCP 服务的一张表与它的 Postgres 仓储。
 
-时间统一用数据库时钟。连接方式与请求头、工具的形状只在 Python 里检查，表上不加 CHECK；请求头是 jsonb
-``[{name, value}]``，值是密文。"""
+时间统一用数据库时钟。连接方式与请求头、工具的形状只在 Python 里检查，表上不加 CHECK；``url`` 是密文，
+``url_hash`` 是明文地址的 sha256，地址与名称各有唯一约束；请求头是 jsonb ``[{name, value}]``，值是密文。"""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from sqlalchemy import (
     MetaData,
     Table,
     Text,
+    UniqueConstraint,
     Uuid,
     delete,
     func,
@@ -43,6 +44,10 @@ DB_SCHEMA: Final = "agent_runtime"
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
+_DUPLICATE_ID: Final = "mcp_servers_pkey"
+_DUPLICATE_URL: Final = "uq_mcp_servers_url_hash"
+_DUPLICATE_NAME: Final = "uq_mcp_servers_name"
+
 mcp_servers_table = Table(
     "mcp_servers",
     metadata_obj,
@@ -50,6 +55,7 @@ mcp_servers_table = Table(
     Column("name", Text, nullable=False),
     Column("description", Text, nullable=False),
     Column("url", Text, nullable=False),
+    Column("url_hash", Text, nullable=False),
     Column("transport", Text, nullable=False),
     Column("timeout_seconds", Integer, nullable=False),
     Column("headers", JSONB, nullable=False),
@@ -63,9 +69,9 @@ mcp_servers_table = Table(
     Column("updated_by", Uuid, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    UniqueConstraint("url_hash", name=_DUPLICATE_URL),
+    UniqueConstraint("name", name=_DUPLICATE_NAME),
 )
-
-_DUPLICATE_ID: Final = "mcp_servers_pkey"
 
 _c = mcp_servers_table.c
 
@@ -75,6 +81,25 @@ def _violated_constraint(error: IntegrityError) -> str:
 
     cause = getattr(error.orig, "__cause__", None)
     return getattr(cause, "constraint_name", None) or ""
+
+
+async def _duplicate(
+    engine: AsyncEngine, error: IntegrityError, *, url_hash: str, name: str
+) -> Conflict | None:
+    """地址或名称撞了已有服务时给人看的 ``Conflict``，写明撞的是哪个服务；别的约束交回 ``None``。
+
+    要在出错的事务回滚之后调：另开一个连接按哈希查那个服务的名称。查的时候它已被删掉，就只说地址登记过。"""
+
+    violated = _violated_constraint(error)
+    if violated == _DUPLICATE_NAME:
+        return Conflict(f"这个名称已经有了：{name}")
+    if violated != _DUPLICATE_URL:
+        return None
+    async with engine.connect() as conn:
+        existing = (
+            await conn.execute(select(_c.name).where(_c.url_hash == url_hash))
+        ).scalar_one_or_none()
+    return Conflict("这个地址已经登记过" if existing is None else f"这个地址已经登记过：{existing}")
 
 
 def _headers_json(headers: Sequence[McpHeader]) -> list[dict[str, str]]:
@@ -94,6 +119,7 @@ def _record(row: RowMapping) -> McpServerRecord:
         name=row["name"],
         description=row["description"],
         url=row["url"],
+        url_hash=row["url_hash"],
         transport=cast(McpTransport, row["transport"]),
         timeout_seconds=row["timeout_seconds"],
         headers=tuple(McpHeader(name=one["name"], value=one["value"]) for one in headers),
@@ -129,6 +155,8 @@ class _SqlMcpServerEditor:
     def __init__(self, conn: AsyncConnection, record: McpServerRecord) -> None:
         self._conn = conn
         self._record = record
+        # ``update`` 写下的地址哈希与名称，事务回滚后据此说明撞了哪个服务。
+        self.written: tuple[str, str] | None = None
 
     @property
     def record(self) -> McpServerRecord:
@@ -140,6 +168,7 @@ class _SqlMcpServerEditor:
         name: str,
         description: str,
         url: str,
+        url_hash: str,
         transport: McpTransport,
         timeout_seconds: int,
         headers: Sequence[McpHeader],
@@ -147,6 +176,7 @@ class _SqlMcpServerEditor:
         clear_check: bool,
         by: uuid.UUID,
     ) -> None:
+        self.written = (url_hash, name)
         await self._conn.execute(
             update(mcp_servers_table)
             .where(_c.id == self._record.id)
@@ -154,6 +184,7 @@ class _SqlMcpServerEditor:
                 name=name,
                 description=description,
                 url=url,
+                url_hash=url_hash,
                 transport=transport,
                 timeout_seconds=timeout_seconds,
                 headers=_headers_json(headers),
@@ -195,6 +226,7 @@ class SqlMcpServerStore:
         name: str,
         description: str,
         url: str,
+        url_hash: str,
         transport: McpTransport,
         timeout_seconds: int,
         headers: Sequence[McpHeader],
@@ -209,6 +241,7 @@ class SqlMcpServerStore:
                         name=name,
                         description=description,
                         url=url,
+                        url_hash=url_hash,
                         transport=transport,
                         timeout_seconds=timeout_seconds,
                         headers=_headers_json(headers),
@@ -220,23 +253,38 @@ class SqlMcpServerStore:
         except IntegrityError as exc:
             if _violated_constraint(exc) == _DUPLICATE_ID:
                 raise Conflict(f"已有标识为「{server_id}」的 MCP 服务") from exc
-            raise
+            conflict = await _duplicate(self._engine, exc, url_hash=url_hash, name=name)
+            if conflict is None:
+                raise
+            raise conflict from exc
 
     @asynccontextmanager
     async def edit(self, server_id: str) -> AsyncGenerator[_SqlMcpServerEditor]:
-        async with self._engine.begin() as conn:
-            row = (
-                (
-                    await conn.execute(
-                        select(mcp_servers_table).where(_c.id == server_id).with_for_update()
+        editor: _SqlMcpServerEditor | None = None
+        try:
+            async with self._engine.begin() as conn:
+                row = (
+                    (
+                        await conn.execute(
+                            select(mcp_servers_table).where(_c.id == server_id).with_for_update()
+                        )
                     )
+                    .mappings()
+                    .first()
                 )
-                .mappings()
-                .first()
-            )
-            if row is None:
-                raise NotFound("MCP 服务不存在")
-            yield _SqlMcpServerEditor(conn, _record(row))
+                if row is None:
+                    raise NotFound("MCP 服务不存在")
+                editor = _SqlMcpServerEditor(conn, _record(row))
+                yield editor
+        except IntegrityError as exc:
+            # 事务已回滚，另开连接查撞了哪个服务。
+            if editor is None or editor.written is None:
+                raise
+            url_hash, name = editor.written
+            conflict = await _duplicate(self._engine, exc, url_hash=url_hash, name=name)
+            if conflict is None:
+                raise
+            raise conflict from exc
 
     async def record_check(
         self,
@@ -261,9 +309,7 @@ class SqlMcpServerStore:
             )
             return result.rowcount > 0
 
-    async def rewrite_headers(
-        self, rewrite: Callable[[McpServerRecord], Sequence[McpHeader]]
-    ) -> int:
+    async def rewrite_secrets(self, rewrite: Callable[[McpServerRecord], McpServerRecord]) -> int:
         async with self._engine.begin() as conn:
             rows = (
                 (await conn.execute(select(mcp_servers_table).order_by(_c.id).with_for_update()))
@@ -271,10 +317,11 @@ class SqlMcpServerStore:
                 .all()
             )
             for row in rows:
+                rewritten = rewrite(_record(row))
                 await conn.execute(
                     update(mcp_servers_table)
                     .where(_c.id == row["id"])
-                    .values(headers=_headers_json(rewrite(_record(row))))
+                    .values(url=rewritten.url, headers=_headers_json(rewritten.headers))
                 )
             return len(rows)
 

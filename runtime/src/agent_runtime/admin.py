@@ -1,6 +1,6 @@
 """运行时服务的管理命令，直连数据库：``python -m agent_runtime.admin rotate-credential-keys``。
 
-``rotate-credential-keys`` 把模型供应商全部密钥的机密字段与全部 MCP 服务请求头的值改用
+``rotate-credential-keys`` 把模型供应商全部密钥的机密字段与全部 MCP 服务的地址、请求头的值改用
 ``CREDENTIAL_ENCRYPTION_KEYS`` 的第一个 key 加密，打印各改了几个；连接串取 ``DATABASE_URL``。换钥步骤见
 docs/deploy.md「换密钥加密钥匙」。
 """
@@ -14,7 +14,7 @@ import sys
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agent_runtime.config.mcp_servers.public import SqlMcpServerStore, rotate_mcp_header_keys
+from agent_runtime.config.mcp_servers.public import SqlMcpServerStore, rotate_mcp_server_keys
 from agent_runtime.config.model_providers.public import (
     SqlModelProviderStore,
     load_declarations,
@@ -45,8 +45,8 @@ async def _rotate_credential_keys() -> None:
             SqlModelProviderStore(engine), declarations=load_declarations(), cipher=cipher
         )
         print(f"已把 {credentials} 把密钥的机密字段改用第一个 key 加密")
-        servers = await rotate_mcp_header_keys(SqlMcpServerStore(engine), cipher=cipher)
-        print(f"已把 {servers} 个 MCP 服务的请求头改用第一个 key 加密")
+        servers = await rotate_mcp_server_keys(SqlMcpServerStore(engine), cipher=cipher)
+        print(f"已把 {servers} 个 MCP 服务的地址与请求头改用第一个 key 加密")
     finally:
         await engine.dispose()
 

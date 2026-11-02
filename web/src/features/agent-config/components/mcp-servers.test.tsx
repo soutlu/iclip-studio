@@ -220,6 +220,50 @@ describe('MCP 服务 测试连接', () => {
   })
 })
 
+describe('MCP 服务 地址', () => {
+  it('打开就是完整地址；改了才随保存带上，与别的服务重复时原因写在表单下面', async () => {
+    const user = await renderPage()
+    const patches = recordBodies('PATCH', /\/api\/mcp-servers\/feishu-docs$/)
+    const panel = await openCard(user, '飞书文档')
+    const url = within(panel).getByLabelText('服务地址')
+    expect(url).toHaveValue('https://docs.example/mcp')
+
+    await user.clear(url)
+    await user.type(url, 'https://gallery.example/sse')
+    await user.click(within(panel).getByRole('button', { name: '测试连接' }))
+    await saveWhenTested(user, panel)
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      '这个地址已经登记过：图库检索',
+    )
+    expect(patches.at(-1)?.['url']).toBe('https://gallery.example/sse')
+
+    await user.clear(url)
+    await user.type(url, 'https://docs2.example/mcp')
+    await user.click(within(panel).getByRole('button', { name: '测试连接' }))
+    await saveWhenTested(user, panel)
+    await waitFor(() => expect(patches).toHaveLength(2))
+    expect(patches[1]?.['url']).toBe('https://docs2.example/mcp')
+    await waitFor(() => expect(within(panel).queryByRole('alert')).toBeNull())
+    expect(url).toHaveValue('https://docs2.example/mcp')
+  })
+
+  it('新建时地址已登记过：原因写在表单下面，不写在标识下面', async () => {
+    const user = await renderPage()
+    await user.click(within(await openLibrary(user)).getByRole('button', { name: '添加服务' }))
+    const panel = sidePanel()
+    await user.type(field(panel, '服务名称'), '另一个飞书')
+    await user.type(field(panel, '标识'), 'feishu-docs-2')
+    await user.type(within(panel).getByLabelText('服务地址'), 'https://docs.example/mcp')
+    await user.click(within(panel).getByRole('button', { name: '测试连接' }))
+    await saveWhenTested(user, panel)
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      '这个地址已经登记过：飞书文档',
+    )
+    expect(field(panel, '标识')).not.toHaveAccessibleDescription()
+  })
+})
+
 describe('MCP 服务 请求头', () => {
   it('已保存的请求头只显示打码值；不改就不带值，填了新值才带上', async () => {
     const user = await renderPage()
@@ -244,13 +288,13 @@ describe('MCP 服务 请求头', () => {
       transport: 'streamable_http',
       url: 'https://docs.example/mcp',
     })
+    // 地址没改：保存不带 url，沿用原来的。
     expect(patches[0]).toEqual({
       description: '查阅团队文档与创作资料',
       headers: [{ name: 'Authorization' }],
       name: '飞书文档',
       timeoutSeconds: 60,
       transport: 'streamable_http',
-      url: 'https://docs.example/mcp',
     })
 
     await waitFor(() =>

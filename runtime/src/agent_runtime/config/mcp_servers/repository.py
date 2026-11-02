@@ -32,6 +32,7 @@ class McpServerEditor(Protocol):
         name: str,
         description: str,
         url: str,
+        url_hash: str,
         transport: McpTransport,
         timeout_seconds: int,
         headers: Sequence[McpHeader],
@@ -39,8 +40,9 @@ class McpServerEditor(Protocol):
         clear_check: bool,
         by: uuid.UUID,
     ) -> None:
-        """各项按给的写（``headers`` 是存储形态），更新 ``updated_by`` 与 ``updated_at``；``clear_check``
-        为真时把上一次试连与发现的工具一起清掉。"""
+        """各项按给的写（``url`` 与 ``headers`` 是存储形态），更新 ``updated_by`` 与 ``updated_at``；
+        ``clear_check`` 为真时把上一次试连与发现的工具一起清掉。地址或名称与别的服务重复是 ``Conflict``
+        （在 ``edit`` 块结束、事务回滚之后抛）。"""
         ...
 
     async def delete(self) -> None: ...
@@ -62,13 +64,15 @@ class McpServerStore(Protocol):
         name: str,
         description: str,
         url: str,
+        url_hash: str,
         transport: McpTransport,
         timeout_seconds: int,
         headers: Sequence[McpHeader],
         enabled: bool,
         by: uuid.UUID,
     ) -> None:
-        """建一行，``headers`` 是存储形态；标识已被占用是 ``Conflict``。"""
+        """建一行，``url`` 与 ``headers`` 是存储形态；标识已被占用，或地址、名称与已有的服务重复是
+        ``Conflict``。"""
         ...
 
     def edit(self, server_id: str) -> AbstractAsyncContextManager[McpServerEditor]:
@@ -88,10 +92,9 @@ class McpServerStore(Protocol):
         发现的工具不动。这一行已不在交回 ``False``。不改 ``updated_at``。"""
         ...
 
-    async def rewrite_headers(
-        self, rewrite: Callable[[McpServerRecord], Sequence[McpHeader]]
-    ) -> int:
-        """在一个事务里锁住全部服务，逐个用 ``rewrite`` 算出新的存储形态写回；交回改了几个。"""
+    async def rewrite_secrets(self, rewrite: Callable[[McpServerRecord], McpServerRecord]) -> int:
+        """在一个事务里锁住全部服务，逐个用 ``rewrite`` 算出新的存储形态，只写回其中的 ``url`` 与
+        ``headers``；交回改了几个。"""
         ...
 
 
@@ -99,7 +102,7 @@ class McpProbe(Protocol):
     """连一次 MCP 服务并列出它的工具。每次都是一次真实的连接。"""
 
     async def probe(self, endpoint: McpEndpoint) -> McpProbeResult:
-        """连不上、被拒、超时都放进结果，不抛；结果里不带请求头的值。"""
+        """连不上、被拒、超时都放进结果，不抛；结果里不带地址与请求头的值。"""
         ...
 
 
