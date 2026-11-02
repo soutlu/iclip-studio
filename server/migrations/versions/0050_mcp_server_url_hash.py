@@ -1,7 +1,7 @@
 """agent_runtime：MCP 服务的地址加密存、不能重复，名称不能重复。``mcp_servers`` 加列 ``url_hash``。
 
 Revision ID: 8d1e6b3f5a92
-Revises: 9cde6b3a5040
+Revises: 4f2a9c7e1b30
 Create Date: 2026-11-01 18:00:00.000000
 
 ``url`` 列名不变，改存用 ``CREDENTIAL_ENCRYPTION_KEYS`` 加密的密文；新列 ``url_hash`` 是明文地址的 sha256
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "8d1e6b3f5a92"
-down_revision: str | None = "9cde6b3a5040"
+down_revision: str | None = "4f2a9c7e1b30"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
