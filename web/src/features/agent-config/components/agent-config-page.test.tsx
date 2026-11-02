@@ -258,6 +258,25 @@ describe('AgentConfigPage 新建 Agent', () => {
 })
 
 describe('AgentConfigPage 模型设置', () => {
+  it('恢复默认保存为未指定思考档位，保留当前模型', async () => {
+    const user = await renderPage()
+    const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
+    await user.click(
+      within(section('指令')).getByRole('button', { name: /^模型设置：qwen3.8-flash/ }),
+    )
+    const panel = screen.getByRole('region', { name: '模型设置' })
+    await user.click(within(panel).getByRole('button', { name: '恢复默认思考档位' }))
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
+
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect((puts[0] as { config: Body }).config['model']).toEqual({
+      name: 'qwen3.8-flash',
+      provider: 'bailian',
+      settings: {},
+    })
+  })
+
   it('选模型、思考档位与密钥：换供应商时密钥回到默认，档位只给模型允许的几档', async () => {
     const user = await renderPage()
     const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
@@ -265,29 +284,27 @@ describe('AgentConfigPage 模型设置', () => {
       within(section('指令')).getByRole('button', { name: /^模型设置：qwen3.8-flash/ }),
     )
     const panel = screen.getByRole('region', { name: '模型设置' })
-    const thinking = () => within(panel).getByRole('radiogroup', { name: '思考档位' })
+    const thinking = () => within(panel).getByRole('slider', { name: '思考档位' })
 
     expect(within(panel).getByRole('radio', { name: /qwen3.8-flash/ })).toBeChecked()
-    expect(within(thinking()).getByRole('radio', { name: /中/ })).toBeChecked()
+    expect(thinking()).toHaveAttribute('aria-valuetext', '中')
 
     await user.click(within(panel).getByRole('button', { name: '密钥：默认' }))
     await user.click(await screen.findByRole('menuitemradio', { name: /创作团队/ }))
     expect(within(panel).getByRole('button', { name: '密钥：创作团队' })).toBeVisible()
 
-    // 不能设档位的模型：档位只剩一个不可选的「默认」。
+    // 不能设档位的模型：跟随模型默认值，不显示滑杆。
     await user.click(within(panel).getByRole('radio', { name: /^studio-chat\s?128K$/ }))
-    expect(within(thinking()).getByRole('radio', { name: '默认' })).toBeDisabled()
+    expect(within(panel).queryByRole('slider', { name: '思考档位' })).not.toBeInTheDocument()
     expect(within(panel).getByRole('button', { name: '密钥：默认' })).toBeVisible()
 
     // 新模型不允许原来的档位：取它允许的第一档。
     await user.click(within(panel).getByRole('radio', { name: /^studio-chat-long/ }))
-    expect(
-      within(thinking())
-        .getAllByRole('radio')
-        .map((radio) => radio.textContent),
-    ).toEqual(['🙂极低', '🤯很高'])
-    expect(within(thinking()).getByRole('radio', { name: /极低/ })).toBeChecked()
-    await user.click(within(thinking()).getByRole('radio', { name: /很高/ }))
+    expect(within(panel).getByRole('button', { name: '极低' })).toBeVisible()
+    expect(within(panel).getByRole('button', { name: '很高' })).toBeVisible()
+    expect(within(panel).queryByRole('button', { name: '中' })).not.toBeInTheDocument()
+    expect(thinking()).toHaveAttribute('aria-valuetext', '极低')
+    await user.click(within(panel).getByRole('button', { name: '很高' }))
 
     await user.click(within(panel).getByRole('button', { name: '完成' }))
     expect(

@@ -1,1 +1,1 @@
-export { THINKING_LEVELS, ThinkingEmoji, thinkingLabel, type ThinkingLevel } from './thinking-level'
+export { THINKING_LEVELS, thinkingLabel, type ThinkingLevel } from './thinking-level'

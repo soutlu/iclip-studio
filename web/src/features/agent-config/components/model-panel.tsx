@@ -9,12 +9,7 @@ import {
   MenuSurface,
   MenuTrigger,
 } from '@/shared/ui/menu'
-import {
-  THINKING_LEVELS,
-  ThinkingEmoji,
-  thinkingLabel,
-  type ThinkingLevel,
-} from '@/shared/ui/thinking-level'
+import { THINKING_LEVELS } from '@/shared/ui/thinking-level'
 import {
   chooseModel,
   formatContextSize,
@@ -25,7 +20,7 @@ import {
 import type { AgentConfig, ProviderOption } from '../agents.api'
 import { PanelShell } from './panel-shell'
 import { CardBadge } from './resource-card'
-import { Segmented } from './segmented'
+import { ThinkingFader } from './thinking-controls'
 
 const DEFAULT_CREDENTIAL = 'default'
 
@@ -103,29 +98,12 @@ export function ModelPanel({
       </RadioGroup.Root>
 
       <div className="mt-6 flex flex-col border-t border-hairline">
-        <div className="flex min-h-14 items-center justify-between gap-4 border-b border-hairline px-2.5">
-          <span className="font-medium text-on-surface-variant">思考</span>
-          {levels.length > 0 ? (
-            <Segmented<ThinkingLevel>
-              label="思考档位"
-              onValueChange={(level) => onChange(setThinking(config, level))}
-              options={levels.map((level) => ({
-                icon: <ThinkingEmoji level={level} />,
-                label: thinkingLabel(level),
-                value: level,
-              }))}
-              value={current?.settings?.thinking ?? null}
-            />
-          ) : (
-            // 模型不能设档位（或还没选模型）：按模型自己的默认来。
-            <Segmented
-              disabled
-              label="思考档位"
-              onValueChange={() => {}}
-              options={[{ label: '默认', value: 'default' }]}
-              value="default"
-            />
-          )}
+        <div className="border-b border-hairline px-2.5 py-4">
+          <ThinkingFader
+            levels={levels}
+            onChange={(level) => onChange(setThinking(config, level))}
+            value={current?.settings?.thinking ?? null}
+          />
         </div>
         <div className="flex min-h-14 items-center justify-between gap-4 border-b border-hairline px-2.5">
           <span className="font-medium text-on-surface-variant">密钥</span>

@@ -1,0 +1,165 @@
+.thinking-fader,
+.thinking-level-options {
+  min-width: 0;
+}
+
+.thinking-fader-slider {
+  position: relative;
+  display: flex;
+  height: 36px;
+  align-items: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.thinking-fader-track {
+  position: relative;
+  height: 4px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-highest);
+}
+
+.thinking-fader-range {
+  position: absolute;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.thinking-fader-thumb,
+.thinking-level-keycap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+}
+
+.thinking-fader-thumb {
+  width: 22px;
+  height: 30px;
+  transition:
+    transform var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
+  cursor: grab;
+}
+
+.thinking-fader-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.08);
+}
+
+.thinking-fader-thumb[data-disabled] {
+  cursor: default;
+}
+
+.thinking-fader-grip {
+  width: 3px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+/* Radix 将位置放在握柄的外层 span；仅在释放或点选后缓动，拖动时不增加延迟。 */
+.thinking-fader-slider > span:has(> .thinking-fader-thumb) {
+  transition:
+    left var(--dur-s) var(--ease),
+    right var(--dur-s) var(--ease);
+}
+
+.thinking-fader-range {
+  transition:
+    left var(--dur-s) var(--ease),
+    right var(--dur-s) var(--ease);
+}
+
+.thinking-fader-slider[data-dragging='true'] > span:has(> .thinking-fader-thumb),
+.thinking-fader-slider[data-dragging='true'] .thinking-fader-range {
+  transition: none;
+}
+
+.thinking-fader-labels {
+  position: relative;
+  height: 30px;
+}
+
+.thinking-fader-label {
+  position: absolute;
+  top: 0;
+  min-width: 30px;
+  min-height: 30px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  transition: color var(--dur-s) var(--ease);
+}
+
+.thinking-fader-label::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-outline-variant);
+  content: '';
+  transform: translateX(-50%);
+}
+
+.thinking-fader-label[aria-pressed='true']::before {
+  background: var(--color-primary);
+}
+
+.thinking-level-key {
+  padding-block: 4px;
+}
+
+.thinking-level-keycap {
+  width: min(100%, 34px);
+  height: 28px;
+  margin-inline: auto;
+  background: var(--color-surface-container-low);
+  box-shadow: none;
+  transition:
+    transform var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
+}
+
+.thinking-level-keycap .thinking-fader-grip {
+  width: 2px;
+  height: 10px;
+  background: var(--color-outline-variant);
+}
+
+.thinking-level-key[aria-pressed='true'] .thinking-level-keycap {
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+}
+
+.thinking-level-key[aria-pressed='true'] .thinking-fader-grip {
+  background: var(--color-primary);
+}
+
+.thinking-level-key:not(:disabled):hover .thinking-level-keycap,
+.thinking-fader-thumb:hover {
+  background: var(--color-surface-container-low);
+  transform: translateY(-1px);
+}
+
+.thinking-level-key:not(:disabled):active .thinking-level-keycap {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-fader-slider > span:has(> .thinking-fader-thumb),
+  .thinking-fader-range,
+  .thinking-fader-thumb,
+  .thinking-fader-label,
+  .thinking-level-keycap {
+    transition: none;
+  }
+}
