@@ -206,10 +206,50 @@ describe('AgentConfigPage 历史版本', () => {
 })
 
 describe('AgentConfigPage 新建 Agent', () => {
+  it('从 Agent 切换菜单用键盘新建，取消后保留草稿并把焦点还给切换按钮', async () => {
+    const user = await renderPage()
+    const panel = await openPlugins(user)
+    await user.click(within(panel).getByRole('switch', { name: '镜头组表' }))
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    expect(within(editor()).getByRole('button', { name: '保存草稿' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '新建 Agent' })).not.toBeInTheDocument()
+
+    screen.getByRole('button', { name: '切换 Agent，当前：AI 导演' }).focus()
+    await user.keyboard('{ArrowDown}')
+    expect(await screen.findByRole('menuitem', { name: '新建 Agent' })).toBeVisible()
+    await user.keyboard('{End}{Enter}')
+
+    const page = await screen.findByRole('region', { name: '新建 Agent' })
+    await waitFor(() => expect(within(page).getByRole('textbox', { name: '名称' })).toHaveFocus())
+    await user.keyboard('{Escape}')
+
+    const entry = await screen.findByRole('button', { name: '切换 Agent，当前：AI 导演' })
+    await waitFor(() => expect(entry).toHaveFocus())
+    expect(within(editor()).getByRole('button', { name: '保存草稿' })).toBeEnabled()
+    expect(within(section('插件')).getByText('镜头组表')).toBeVisible()
+  })
+
+  it('没有 Agent 时从空状态新建，取消后焦点返回空状态入口', async () => {
+    server.use(http.get('*/api/agents', () => HttpResponse.json({ items: [] })))
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness initial={undefined} />)
+    await user.click(await screen.findByRole('button', { name: '新建 Agent' }))
+
+    const page = await screen.findByRole('region', { name: '新建 Agent' })
+    await waitFor(() => expect(within(page).getByRole('textbox', { name: '名称' })).toHaveFocus())
+    await user.click(within(page).getByRole('button', { name: '取消' }))
+
+    const entry = await screen.findByRole('button', { name: '新建 Agent' })
+    await waitFor(() => expect(entry).toHaveFocus())
+    expect(screen.queryByRole('region', { name: '新建 Agent' })).not.toBeInTheDocument()
+  })
+
   it('标识只在不合格时提示；后端拦下的保留词写在标识下；创建时带上首页可见，建好后进入它的空配置', async () => {
     const user = await renderPage()
     const creates = recordBodies('POST', /\/api\/agents$/)
-    await user.click(screen.getByRole('button', { name: '新建 Agent' }))
+    await user.click(screen.getByRole('button', { name: /^切换 Agent，当前：/ }))
+    await user.click(await screen.findByRole('menuitem', { name: '新建 Agent' }))
     const page = screen.getByRole('region', { name: '新建 Agent' })
     expect(within(page).queryByText(/标识以小写字母开头/)).toBeNull()
 

@@ -380,6 +380,15 @@
   --color-accent-7: #2a9fb0; /* 青 */
   --color-accent-8: #5c6bd6; /* 靛蓝 */
 
+  /* 配置资源分类色：只给资源图标与其浅色底块，不表达运行状态或选中态。 */
+  --color-resource-agent: #5d60b1;
+  --color-resource-skill: #8061b2;
+  --color-resource-workspace: #a57527;
+  --color-resource-video: #b65e47;
+  --color-resource-project: #5074ac;
+  --color-resource-connection: #2e887d;
+  --color-resource-provider: #527b96;
+
   /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。
      三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线。 */
   --color-code-key: #2e5aa6;
@@ -689,6 +698,13 @@
   --color-accent-6: #ff8eb1;
   --color-accent-7: #54bfd0;
   --color-accent-8: #a0abff;
+  --color-resource-agent: #b8baff;
+  --color-resource-skill: #c8ace8;
+  --color-resource-workspace: #e6c58f;
+  --color-resource-video: #e9ab98;
+  --color-resource-project: #a6bfe8;
+  --color-resource-connection: #8acec1;
+  --color-resource-provider: #abc7d9;
   --color-code-key: #8fb3ef;
   --color-code-string: #d4a2d7;
   --color-code-literal: #62c3d3;

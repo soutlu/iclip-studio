@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, type RefObject } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
@@ -47,6 +47,8 @@ const draftOf = (detail: AgentDetail): DraftValue => ({
 type AgentWorkspaceProps = {
   agentId: string
   agents: readonly Agent[]
+  agentEntryRef: RefObject<HTMLButtonElement | null>
+  onCreateAgent: () => void
   onSelectAgent: (id: string) => void
   /** 这个 agent 还没保存的修改；没有为 undefined。由页面按 agent 保管，切走再切回来还在。 */
   edit: DraftValue | undefined
@@ -64,7 +66,9 @@ type AgentWorkspaceProps = {
 export function AgentWorkspace({
   agentId,
   agents,
+  agentEntryRef,
   edit,
+  onCreateAgent,
   onEditChange,
   onPanelChange,
   onSelectAgent,
@@ -199,6 +203,7 @@ export function AgentWorkspace({
       >
         <header className="flex h-15 shrink-0 items-center gap-2 border-b border-hairline pr-4 pl-5">
           <AgentHeader
+            agentEntryRef={agentEntryRef}
             agents={agents}
             current={{
               activeVersionId: agent.activeVersion?.id ?? null,
@@ -206,6 +211,7 @@ export function AgentWorkspace({
               name: agent.name,
             }}
             definitionOpen={panel?.type === 'definition'}
+            onCreateAgent={onCreateAgent}
             onEditDefinition={() =>
               onPanelChange(panel?.type === 'definition' ? null : { type: 'definition' })
             }

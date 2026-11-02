@@ -91,7 +91,7 @@ export function McpListPanel({
                     }}
                     type="button"
                   >
-                    <CardGlyph className="size-9 bg-surface-container-low" name="mcp-server" />
+                    <CardGlyph className="size-9" name="mcp-server" />
                     <span className={cn('flex min-w-0 flex-1 flex-col', blocked && 'opacity-55')}>
                       <span className="flex min-w-0 items-center gap-1.5 font-medium text-on-surface">
                         <span className="truncate">{server.name}</span>

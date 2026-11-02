@@ -73,7 +73,7 @@ export function SkillListPanel({
                 onClick={() => (opens ? onOpen(skill) : onToggle(skill))}
                 type="button"
               >
-                <CardGlyph className="size-9 bg-surface-container-low" name="skill" />
+                <CardGlyph className="size-9" name="skill" />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium text-on-surface">{skill.displayName}</span>
                   <span className="truncate text-label text-on-surface-faint">

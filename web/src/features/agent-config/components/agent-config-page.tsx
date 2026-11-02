@@ -3,7 +3,7 @@ import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
 import { Button } from '@/shared/ui/button'
-import { ListEmpty, ListError, ListPending } from '@/shared/ui/list-state'
+import { ListError, ListPending } from '@/shared/ui/list-state'
 import { TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import type { DraftValue } from '../agent-draft'
 import { useAgent, useAgents, useAgentVersions } from '../agents.api'
@@ -25,8 +25,8 @@ type Scoped<T> = { agentId: string | null; value: T }
 
 /**
  * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」「MCP 服务」，持 `model:manage` 时另有「模型与供应商」）
- * 与「新建 Agent」，下面左右各半，左边编辑 agent，右边默认是测试预览，打开配置面板时面板替换它（预览留着，只是看不见）；
- * 不开弹窗。
+ * 下面左右各半，左边编辑 agent，右边默认是测试预览，打开配置面板时面板替换它（预览留着，只是看不见）。
+ * 新建入口在 Agent 切换菜单里，打开全宽创建页；不开弹窗。
  */
 export function AgentConfigPage({
   agentId,
@@ -73,15 +73,15 @@ export function AgentConfigPage({
     if (opener?.isConnected === true) opener.focus({ preventScroll: true })
   }, [panel])
 
-  const createRef = useRef<HTMLButtonElement>(null)
+  const agentEntryRef = useRef<HTMLButtonElement>(null)
   const selectAgent = (id: string) => {
     setCreating(false)
     onAgentChange(id)
   }
-  // 取消新建回到原来的编辑区，焦点回到「新建 Agent」。
+  // 创建页会卸载原入口，取消后聚焦重新挂载的切换按钮或空状态新建按钮。
   const cancelCreating = () => {
     setCreating(false)
-    requestAnimationFrame(() => createRef.current?.focus({ preventScroll: true }))
+    requestAnimationFrame(() => agentEntryRef.current?.focus({ preventScroll: true }))
   }
 
   const tab =
@@ -147,17 +147,6 @@ export function AgentConfigPage({
             ) : null}
           </TabsList>
         </TabsRoot>
-        <Button
-          className="self-center"
-          disabled={creating}
-          leadingIcon="add"
-          onClick={() => setCreating(true)}
-          ref={createRef}
-          size="md"
-          variant="ghost"
-        >
-          新建 Agent
-        </Button>
       </div>
 
       <div
@@ -180,15 +169,28 @@ export function AgentConfigPage({
             <ListError message={agents.error.message} onRetry={() => void agents.refetch()} />
           </div>
         ) : currentId === null ? (
-          <div className="col-span-full">
-            <ListEmpty>暂无 Agent，请点击「新建 Agent」创建</ListEmpty>
+          <div className="col-span-full flex flex-col items-center justify-center gap-4 px-6 py-16">
+            <p className="text-body text-on-surface-variant">
+              暂无 Agent，请点击「新建 Agent」创建
+            </p>
+            <Button
+              leadingIcon="add"
+              onClick={() => setCreating(true)}
+              ref={agentEntryRef}
+              size="md"
+              variant="outlined"
+            >
+              新建 Agent
+            </Button>
           </div>
         ) : (
           <AgentWorkspace
+            agentEntryRef={agentEntryRef}
             agentId={currentId}
             agents={list}
             edit={edits[currentId]}
             key={currentId}
+            onCreateAgent={() => setCreating(true)}
             onEditChange={(edit) =>
               setEdits(({ [currentId]: _previous, ...rest }) =>
                 edit === undefined ? rest : { ...rest, [currentId]: edit },

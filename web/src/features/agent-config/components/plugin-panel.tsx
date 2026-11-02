@@ -49,10 +49,7 @@ export function PluginPanel({
               className="flex min-h-15 min-w-0 items-center gap-3 rounded-md p-2.5"
               key={plugin.name}
             >
-              <CardGlyph
-                className="size-9 bg-surface-container-low"
-                name={pluginIcon(plugin.name)}
-              />
+              <CardGlyph className="size-9" name={pluginIcon(plugin.name)} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex min-w-0 items-center gap-1.5 font-medium text-on-surface">
                   <span className="truncate" id={`${id}-name`}>
