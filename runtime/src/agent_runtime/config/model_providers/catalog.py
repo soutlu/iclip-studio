@@ -81,7 +81,7 @@ class ModelDeclaration(_Declaration):
     def _fits_type(self) -> ModelDeclaration:
         if self.type == "llm":
             if self.api is None:
-                raise ValueError(f"llm 模型 {self.name} 要写 api（responses 或 chat）")
+                raise ValueError(f"llm 模型 {self.name} 要写 api")
         else:
             if self.api is not None:
                 raise ValueError(f"只有 llm 模型才有 api，{self.name} 是 {self.type}")
@@ -96,11 +96,13 @@ class ModelDeclaration(_Declaration):
 
 
 class ProviderDeclaration(_Declaration):
-    """一家供应商怎么接。``name`` 与文件名一致；``pydantic_ai_provider`` 是 Agent 引擎认的 provider 名。"""
+    """一家供应商怎么接。``name`` 与文件名一致；``pydantic_ai_provider`` 是 Agent 引擎认的 provider 名；
+    ``apis`` 是它支持的接口，llm 模型（声明里的与自己加的）只能走其中之一，第一个是添加模型时的默认。"""
 
     name: Annotated[str, StringConstraints(pattern=PROVIDER_NAME_PATTERN.pattern)]
     label: Label
     pydantic_ai_provider: Annotated[str, StringConstraints(min_length=1)]
+    apis: tuple[ModelApi, ...] = Field(min_length=1)
     credential_fields: tuple[CredentialFieldDeclaration, ...] = Field(min_length=1)
     custom_models: bool = False
     models: tuple[ModelDeclaration, ...] = ()
@@ -113,9 +115,14 @@ class ProviderDeclaration(_Declaration):
         api_key = self.field(API_KEY_FIELD)
         if api_key is None or api_key.type != FIELD_SECRET or not api_key.required:
             raise ValueError("credential_fields 必须有必填的机密字段 api_key")
+        if len(set(self.apis)) != len(self.apis):
+            raise ValueError("apis 有重复接口")
         keys = [(model.name, model.type) for model in self.models]
         if len(set(keys)) != len(keys):
             raise ValueError("models 里有重名的同类型模型")
+        for model in self.models:
+            if model.api is not None and model.api not in self.apis:
+                raise ValueError(f"模型 {model.name} 的 api {model.api} 不在 apis 里")
         return self
 
     def field(self, name: str) -> CredentialFieldDeclaration | None:

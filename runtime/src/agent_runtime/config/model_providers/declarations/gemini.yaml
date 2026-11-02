@@ -1,0 +1,10 @@
+name: gemini
+label: Google Gemini
+pydantic_ai_provider: google
+apis: [gemini]
+credential_fields:
+  - {name: api_key, label: API Key, type: secret, required: true}
+  # 不填走 Google 官方地址；填的地址要讲 Gemini 原生接口，OpenAI 兼容的中转不行。
+  - {name: base_url, label: 接口地址, type: text}
+custom_models: true
+models: []

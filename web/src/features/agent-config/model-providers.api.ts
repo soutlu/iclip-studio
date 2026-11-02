@@ -10,6 +10,7 @@ import type {
   CustomModelCreateIn,
   ModelProviderCreateIn,
   ModelProviderUpdateIn,
+  ModelTestIn,
   ModelUpdateIn,
 } from '@/shared/api/generated/types.gen'
 import {
@@ -139,7 +140,15 @@ export const testCredential = (providerId: string, body: CredentialTestIn) =>
     method: 'POST',
   })
 
-/** 新建密钥；后端保存前再试连一次，不通是 422。供应商的第一把自动成为默认密钥。 */
+/** 用一把密钥（不给就是默认密钥）测一个模型，不存：没通过也是 200；还没有密钥是 422。 */
+export const testModel = (providerId: string, body: ModelTestIn) =>
+  apiFetch(`${providerPath(providerId)}/models/test`, zProbeOut, {
+    body,
+    fallbackErrorMessage: '没法测试',
+    method: 'POST',
+  })
+
+/** 新建密钥，不试连。供应商的第一把自动成为默认密钥。 */
 export const useCreateCredential = () =>
   useModelWrite(({ providerId, body }: { providerId: string; body: CredentialCreateIn }) =>
     apiFetch(`${providerPath(providerId)}/credentials`, zCredentialOut, {

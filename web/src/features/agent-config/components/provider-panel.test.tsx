@@ -60,6 +60,31 @@ const openProviders = async (user: User) => {
 
 const formNamed = (name: string) => within(within(panel()).getByRole('form', { name }))
 
+/**
+ * 只建供应商：接入方式（null 是默认的第一个）、显示名、引用名；建好后选中它并展开「添加密钥」，交回那张表单。
+ */
+const createProviderFor = async (
+  user: User,
+  declaration: string | null,
+  label: string,
+  name: string,
+) => {
+  await user.click(within(panel()).getByRole('button', { name: '添加供应商' }))
+  const form = formNamed('添加供应商')
+  expect(form.queryByLabelText('API Key')).toBeNull()
+  // 默认是第一份声明。
+  expect(form.getByRole('button', { name: '接入方式：阿里云百炼' })).toBeVisible()
+  if (declaration !== null) {
+    await user.click(form.getByRole('button', { name: /^接入方式：/ }))
+    await user.click(await screen.findByRole('menuitemradio', { name: declaration }))
+    expect(form.getByRole('button', { name: `接入方式：${declaration}` })).toBeVisible()
+  }
+  await user.type(form.getByLabelText('显示名'), label)
+  await user.type(form.getByLabelText('引用名'), name)
+  await user.click(form.getByRole('button', { name: '添加' }))
+  return within(await within(panel()).findByRole('form', { name: '添加密钥' }))
+}
+
 const card = (label: string) => within(panel()).getByRole('button', { name: `供应商：${label}` })
 
 const rowOf = (control: HTMLElement) => {
@@ -93,16 +118,7 @@ describe('模型与供应商 入口', () => {
 })
 
 describe('添加供应商', () => {
-  /** 只建供应商：接入方式、显示名、引用名；建好后选中它并展开「添加密钥」。 */
-  const createProvider = async (user: User) => {
-    await user.click(within(panel()).getByRole('button', { name: '添加供应商' }))
-    const form = formNamed('添加供应商')
-    expect(form.queryByLabelText('API Key')).toBeNull()
-    await user.type(form.getByLabelText('显示名'), '海外模型服务')
-    await user.type(form.getByLabelText('引用名'), 'overseas')
-    await user.click(form.getByRole('button', { name: '添加' }))
-    return within(await within(panel()).findByRole('form', { name: '添加密钥' }))
-  }
+  const createProvider = (user: User) => createProviderFor(user, null, '海外模型服务', 'overseas')
 
   const keyCount = (label: string) =>
     within(card(label))
@@ -153,7 +169,7 @@ describe('添加供应商', () => {
     expect(rowOf(key).getByText('默认')).toBeVisible()
   })
 
-  it('新供应商的密钥试连没通过时不能保存；取消后供应商照样留在列表里，没有密钥', async () => {
+  it('新供应商的密钥试连没通过只是提示，照样能保存；取消后供应商留在列表里，没有密钥', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -162,7 +178,7 @@ describe('添加供应商', () => {
     await user.type(keyForm.getByLabelText('API Key'), 'sk-invalid-9999')
     await user.click(keyForm.getByRole('button', { name: '试连' }))
     expect(await keyForm.findByText('接口返回 401，API Key 无效')).toBeVisible()
-    expect(keyForm.getByRole('button', { name: '保存' })).toBeDisabled()
+    expect(keyForm.getByRole('button', { name: '保存' })).toBeEnabled()
 
     await user.click(keyForm.getByRole('button', { name: '取消' }))
     expect(within(panel()).queryByRole('form')).toBeNull()
@@ -177,7 +193,7 @@ describe('添加供应商', () => {
 })
 
 describe('密钥', () => {
-  it('试连没通过时写出原因，不能保存', async () => {
+  it('试连没通过时写出原因，不拦保存；保存时不试连', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -188,16 +204,20 @@ describe('密钥', () => {
     await user.click(form.getByRole('button', { name: '试连' }))
 
     expect(await form.findByText('接口返回 401，API Key 无效')).toBeVisible()
-    const save = form.getByRole('button', { name: '保存' })
-    expect(save).toBeDisabled()
-    await user.click(save)
-    expect(sent.map(({ path }) => path)).toEqual([expect.stringMatching(/\/credentials\/test$/)])
     // 改了字段，上一次的结果作废。
     await user.type(form.getByLabelText('API Key'), '1')
     expect(form.queryByText('接口返回 401，API Key 无效')).toBeNull()
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
+    expect(sent.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      expect.stringMatching(/^POST .*\/credentials\/test$/),
+      expect.stringMatching(/^POST .*\/credentials$/),
+    ])
+    expect(rowOf(within(panel()).getByText('备用账号')).getByText('••••0001')).toBeVisible()
   })
 
-  it('修改时机密字段留空就是不改：只改名不试连、不带字段；改了接口地址要先试连，只提交这一项', async () => {
+  it('修改时机密字段留空就是不改：只改名不带字段；改了接口地址只提交这一项，不用先试连', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -222,15 +242,11 @@ describe('密钥', () => {
     const url = form.getByLabelText('接口地址')
     await user.clear(url)
     await user.type(url, 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1')
-    expect(form.getByRole('button', { name: '保存' })).toBeDisabled()
-    await user.click(form.getByRole('button', { name: '试连' }))
-    expect(await form.findByText('236 ms')).toBeVisible()
     await user.click(form.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
 
     const fields = { base_url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' }
     expect(sent.slice(1).map(({ body, method }) => ({ body, method }))).toEqual([
-      { body: { credentialId: expect.any(String), fields }, method: 'POST' },
       { body: { fields }, method: 'PATCH' },
     ])
     const row = rowOf(within(panel()).getByText('创作二组'))
@@ -265,6 +281,111 @@ describe('密钥', () => {
 })
 
 describe('模型', () => {
+  it('百炼的添加模型表单可选 responses 与 chat，默认 responses', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    const apis = formNamed('添加模型').getByRole('radiogroup', { name: '模型接口' })
+
+    expect(
+      within(apis)
+        .getAllByRole('radio')
+        .map((node) => node.textContent),
+    ).toEqual(['responses', 'chat'])
+    expect(within(apis).getByRole('radio', { name: 'responses' })).toBeChecked()
+  })
+
+  it('Gemini 只有一种接口：不给选，添加的模型走 gemini；没模型时试连提示先加模型', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const keyForm = await createProviderFor(user, 'Google Gemini', '谷歌', 'google-main')
+    // 接口地址选填，不填走官方地址。
+    expect(keyForm.getByLabelText('接口地址')).toHaveValue('')
+    await user.type(keyForm.getByLabelText('名称'), '主账号')
+    await user.type(keyForm.getByLabelText('API Key'), 'AIza-mock-0001')
+    await user.click(keyForm.getByRole('button', { name: '试连' }))
+    const status = keyForm.getByRole('status')
+    expect(await within(status).findByText('先添加一个模型再试连')).toBeVisible()
+    expect(within(status).getByRole('img', { name: '试连没通过' })).toBeVisible()
+    expect(keyForm.queryByRole('alert')).toBeNull()
+    await user.click(keyForm.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
+
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    const form = formNamed('添加模型')
+    expect(form.queryByRole('radiogroup', { name: '模型接口' })).toBeNull()
+    await user.type(form.getByLabelText('模型名'), 'gemini-3.8-flash')
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    expect(
+      await within(panel()).findByRole('switch', { name: '启用模型 gemini-3.8-flash' }),
+    ).toBeChecked()
+    expect(sent).toEqual([
+      {
+        body: {
+          api: 'gemini',
+          contextSize: null,
+          name: 'gemini-3.8-flash',
+          thinking: [],
+          type: 'llm',
+        },
+        method: 'POST',
+        path: expect.stringMatching(/\/models$/),
+      },
+    ])
+  })
+
+  it('OpenAI 兼容：密钥要填接口地址；添加模型可选 chat 与 responses，默认 chat', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const keyForm = await createProviderFor(user, 'OpenAI 兼容', '自建网关', 'gateway')
+    await user.type(keyForm.getByLabelText('名称'), '主账号')
+    await user.type(keyForm.getByLabelText('API Key'), 'sk-gateway-0001')
+    await user.click(keyForm.getByRole('button', { name: '保存' }))
+    expect(await keyForm.findByText('请填写接口地址')).toBeVisible()
+    await user.click(keyForm.getByRole('button', { name: '取消' }))
+
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    const apis = formNamed('添加模型').getByRole('radiogroup', { name: '模型接口' })
+    expect(
+      within(apis)
+        .getAllByRole('radio')
+        .map((node) => node.textContent),
+    ).toEqual(['chat', 'responses'])
+    expect(within(apis).getByRole('radio', { name: 'chat' })).toBeChecked()
+  })
+
+  it('测试一个模型：用默认密钥请求，结果写在那一行下面；没有密钥时写明原因', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+
+    await user.click(within(panel()).getByRole('button', { name: '测试模型 qwen3.8-flash' }))
+
+    const row = rowOf(within(panel()).getByRole('switch', { name: '启用模型 qwen3.8-flash' }))
+    expect(await row.findByText('236 ms')).toBeVisible()
+    expect(row.getByRole('img', { name: '测试通过' })).toBeVisible()
+    expect(sent).toEqual([
+      {
+        body: { name: 'qwen3.8-flash', type: 'llm' },
+        method: 'POST',
+        path: expect.stringMatching(/^\/api\/model-providers\/[\w-]+\/models\/test$/),
+      },
+    ])
+    // 只有 llm 能测。
+    expect(within(panel()).queryByRole('button', { name: '测试模型 text-embedding-v4' })).toBeNull()
+
+    await createProviderFor(user, null, '新服务', 'fresh')
+    await user.click(within(panel()).getByRole('button', { name: '取消' }))
+    await user.click(within(panel()).getByRole('button', { name: '测试模型 ZHIPU/GLM-5.3-Flash' }))
+    const fresh = rowOf(
+      within(panel()).getByRole('switch', { name: '启用模型 ZHIPU/GLM-5.3-Flash' }),
+    )
+    expect(await fresh.findByText('没法测试：先添加密钥')).toBeVisible()
+    expect(fresh.getByRole('img', { name: '测试没通过' })).toBeVisible()
+  })
+
   it('添加自己的模型，agent 的「模型设置」随之能选到它', async () => {
     const user = await renderPage()
     await openProviders(user)

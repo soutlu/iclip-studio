@@ -2,12 +2,13 @@ import { useId, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { IconButton } from '@/shared/ui/button'
+import { Button, IconButton } from '@/shared/ui/button'
 import { ListError, ListPending } from '@/shared/ui/list-state'
 import { Switch } from '@/shared/ui/switch'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { formatContextSize, maskedCredential } from '../agent-draft'
 import {
+  testModel,
   useDefaultModels,
   useDeleteCredential,
   useDeleteModel,
@@ -28,7 +29,10 @@ import { DefaultModels } from './default-models'
 import { PanelShell } from './panel-shell'
 import { CredentialForm, ModelForm, ProviderCreateForm } from './provider-forms'
 import { CardBadge, ResourceCard } from './resource-card'
+import { TestStatus, type Test } from './test-status'
 import { UsageAvatars } from './usage-avatars'
+
+const IDLE: Test = { kind: 'idle' }
 
 /** 一节的标题行：标题左，图标动作右。 */
 function SectionHeading({ action, id, title }: { id: string; title: string; action?: ReactNode }) {
@@ -65,13 +69,25 @@ function RowAlert({ message }: { message: string }) {
   )
 }
 
-/** 列表里的一行：名字、小件、右侧的动作与开关；动作在悬停或聚焦时出现，触屏上常显。 */
-function Row({ children, error }: { children: ReactNode; error: string | undefined }) {
+/**
+ * 列表里的一行：名字、小件、右侧的动作与开关；动作在悬停或聚焦时出现，触屏上常显。`status` 是这一行
+ * 测试的结果，写在名字那一行下面。
+ */
+function Row({
+  children,
+  error,
+  status,
+}: {
+  children: ReactNode
+  error: string | undefined
+  status?: ReactNode
+}) {
   return (
     <li className="group flex flex-col border-t border-hairline first:border-t-0">
       <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-sm pr-1 pl-2.5">
         {children}
       </div>
+      {status === undefined ? null : <div className="flex px-2.5 pb-2">{status}</div>}
       {error === undefined ? null : <RowAlert message={error} />}
     </li>
   )
@@ -135,6 +151,7 @@ function ProviderDetail({
     addKey ? { credential: null, kind: 'credential' } : null,
   )
   const [rowError, setRowError] = useState<{ key: string; message: string } | null>(null)
+  const [tests, setTests] = useState<Partial<Record<string, Test>>>({})
   const [label, setLabel] = useState<string | null>(null)
 
   const errorFor = (key: string) => (rowError?.key === key ? rowError.message : undefined)
@@ -162,6 +179,21 @@ function ProviderDetail({
       : holdsDefault
         ? '默认模型在这个供应商里，请先在「默认模型」里换掉'
         : undefined
+
+  /** 用默认密钥测一个模型；还没有密钥等被拦下的原因也写成没通过的结果。 */
+  const runModelTest = async (key: string, model: ProviderModel) => {
+    setTests((current) => ({ ...current, [key]: { kind: 'testing' } }))
+    let result: Test
+    try {
+      const outcome = await testModel(provider.id, { name: model.name, type: model.type })
+      result = outcome.ok
+        ? { elapsedMs: outcome.elapsedMs, kind: 'ok' }
+        : { kind: 'failed', reason: outcome.reason ?? '测试没通过' }
+    } catch (error) {
+      result = { kind: 'failed', reason: errorMessageOf(error, '没法测试，请重试') }
+    }
+    setTests((current) => ({ ...current, [key]: result }))
+  }
 
   const commitLabel = () => {
     const next = label?.trim()
@@ -264,8 +296,13 @@ function ProviderDetail({
               updateModel.isPending &&
               updateModel.variables.model.type === model.type &&
               updateModel.variables.model.name === model.name
+            const test = tests[key] ?? IDLE
             return (
-              <Row error={errorFor(key)} key={key}>
+              <Row
+                error={errorFor(key)}
+                key={key}
+                status={test.kind === 'idle' ? undefined : <TestStatus action="测试" test={test} />}
+              >
                 <span
                   className={cn(
                     'min-w-0 truncate text-label text-on-surface tabular-nums',
@@ -281,9 +318,21 @@ function ProviderDetail({
                 {model.source === 'declared' ? <StateGlyph label="内置模型" name="locked" /> : null}
                 <span className="flex-1" />
                 <UsageAvatars users={model.usedBy} />
-                {model.source === 'custom' ? (
+                {model.type === 'llm' || model.source === 'custom' ? (
                   <RowActions>
                     {model.type === 'llm' ? (
+                      <Button
+                        aria-label={`测试模型 ${model.name}`}
+                        className="h-(--control-height-xs) px-2 text-label"
+                        loading={test.kind === 'testing'}
+                        onClick={() => void runModelTest(key, model)}
+                        size="md"
+                        variant="ghost"
+                      >
+                        测试
+                      </Button>
+                    ) : null}
+                    {model.source === 'custom' && model.type === 'llm' ? (
                       <IconButton
                         label={`编辑模型 ${model.name}`}
                         name="edit"
@@ -291,22 +340,24 @@ function ProviderDetail({
                         size="xs"
                       />
                     ) : null}
-                    <IconButton
-                      disabled={blocked !== undefined}
-                      label={`删除模型 ${model.name}`}
-                      name="delete"
-                      onClick={() =>
-                        void run(key, '模型删除失败，请重试', () =>
-                          deleteModel.mutateAsync({ model, providerId: provider.id }),
-                        )
-                      }
-                      size="xs"
-                      tooltip={
-                        blocked === undefined
-                          ? undefined
-                          : `${blocked}，不能删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
-                      }
-                    />
+                    {model.source === 'custom' ? (
+                      <IconButton
+                        disabled={blocked !== undefined}
+                        label={`删除模型 ${model.name}`}
+                        name="delete"
+                        onClick={() =>
+                          void run(key, '模型删除失败，请重试', () =>
+                            deleteModel.mutateAsync({ model, providerId: provider.id }),
+                          )
+                        }
+                        size="xs"
+                        tooltip={
+                          blocked === undefined
+                            ? undefined
+                            : `${blocked}，不能删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
+                        }
+                      />
+                    ) : null}
                   </RowActions>
                 ) : null}
                 <Switch
@@ -332,8 +383,9 @@ function ProviderDetail({
             )
           })}
         </ul>
-        {editor?.kind === 'model' ? (
+        {editor?.kind === 'model' && declaration !== undefined ? (
           <ModelForm
+            declaration={declaration}
             key={editor.model?.name ?? ''}
             model={editor.model}
             onDone={() => setEditor(null)}

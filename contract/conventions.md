@@ -655,9 +655,10 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - **机密字段只给打码值**：密钥的 `fields` 按声明的字段名给值，声明里 `type` 为 `secret` 的字段任何答复都只给 `••••` 加末 4 位（原值不足 8 位只给 `••••`），其余字段原样给。
 - **字段**：新建时没给的字段用声明里的 `default`；值去掉首尾空白，空串当作没填；必填的缺了、声明里没有的字段都是 `422`。`PATCH …/credentials/{id}` 的 `fields` 只放要改的字段，给了就替换，没给的（包括机密字段）保持原值；把打码值原样传回不表示「不改」，它会被当成新值。
-- **试连**：新建密钥、或 `PATCH` 让字段真有变化时，保存前先试连，不通是 `422`、`detail` 以「试连没通过」开头带原因，什么都不存；只改名不试连。`POST …/credentials/test` 只试不存，没通过也是 `200`，看答复的 `ok`、`elapsedMs` 与 `reason`；体里 `credentialId` 与 `fields` 至少给一个，两个都给是把 `fields` 按上面的修改规则叠到已保存的那一把上再试。供应商没有启用的 `llm` 模型时没法试连，新建、修改与试连都是 `422`。
+- **试连**：保存密钥（新建或 `PATCH`）不试连，字段合格就存。`POST …/credentials/test` 只试不存，用供应商第一个启用的 `llm` 模型发一个最小的请求，没通过也是 `200`，看答复的 `ok`、`elapsedMs` 与 `reason`；体里 `credentialId` 与 `fields` 至少给一个，两个都给是把 `fields` 按上面的修改规则叠到已保存的那一把上再试。供应商没有启用的 `llm` 模型时是 `422`「先添加一个模型再试连」。
+- **测试模型**：`POST …/models/test` 体是 `{ name, type, credentialId? }`，用 `credentialId` 那把密钥（不给就是默认密钥）对这个模型发一个最小的请求，不存，答复与没通过时的规则同试连；停用的模型也能测。模型不存在、密钥不是这个供应商的都是 `404`；不是 `llm` 是 `422`，供应商还没有密钥是 `422`「先添加密钥」。
 - **默认密钥**：供应商的第一把密钥自动成为 `defaultCredentialId`；删默认密钥是 `409`，先用 `PATCH /model-providers/{id}` 的 `defaultCredentialId` 换成本供应商的另一把（别的供应商的或不存在的是 `422`）。
-- **模型**：模型在供应商里按（名字，类型）认，路径是 `…/models/{type}/{name}`，名字放在最后，可以带斜杠（如 `…/models/llm/ZHIPU/GLM-5.3-Flash`）。`source` 为 `declared` 的只能改 `enabled`，改属性或删除是 `422`；`custom` 的能改 `api`、`contextSize`、`thinking`（给 `null` 即清掉）、`enabled` 与删除，属性按声明里模型的同一套规则校验：`llm` 必须有 `api`，别的类型不能有 `api` 与 `thinking`，`thinking` 不能重复。声明不允许自己加模型（`customModels` 为假）、和已有模型同名同类型都是 `422`。
+- **模型**：模型在供应商里按（名字，类型）认，路径是 `…/models/{type}/{name}`，名字放在最后，可以带斜杠（如 `…/models/llm/ZHIPU/GLM-5.3-Flash`）。`source` 为 `declared` 的只能改 `enabled`，改属性或删除是 `422`；`custom` 的能改 `api`、`contextSize`、`thinking`（给 `null` 即清掉）、`enabled` 与删除，属性按声明里模型的同一套规则校验：`llm` 必须有 `api`，且是声明的 `apis` 之一（声明列出的顺序里第一个是添加时的默认），别的类型不能有 `api` 与 `thinking`，`thinking` 不能重复。声明不允许自己加模型（`customModels` 为假）、和已有模型同名同类型都是 `422`。
 - **默认模型**：`PUT /default-models/{type}` 体是 `{ providerId, modelName }`，供应商不存在、没有这个类型的这个模型、模型已停用都是 `422`；停用或删除当前的默认模型是 `409`，先把默认换掉。
 - **删除供应商**：`DELETE /model-providers/{id}` 连同它的密钥与模型设置一起删，`204`；有 agent 写着这个供应商（见下面「谁在用」）、或某个类型的默认模型是它的，都是 `409`，什么都不删。
 - **给 agent 选模型**：`GET /agents/model-options` 只要 `agent:manage`，形状与规则见 §19「选模型」。

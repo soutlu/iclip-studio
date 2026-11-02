@@ -1,0 +1,10 @@
+name: volcengine
+label: 火山方舟
+# pydantic-ai 没有火山方舟专属的 provider，按 OpenAI 兼容接口接。
+pydantic_ai_provider: openai
+apis: [chat, responses]
+credential_fields:
+  - {name: api_key, label: API Key, type: secret, required: true}
+  - {name: base_url, label: 接口地址, type: text, required: true, default: "https://ark.cn-beijing.volces.com/api/v3"}
+custom_models: true
+models: []

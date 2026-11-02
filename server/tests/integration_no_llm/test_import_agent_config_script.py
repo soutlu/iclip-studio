@@ -330,7 +330,7 @@ def ask_for_an_undeclared_thinking_level(files: Path) -> None:
 
 
 def use_a_provider_without_a_declaration(files: Path) -> None:
-    _rewrite(files, "config.old.yaml", {"models.flash.provider": "openai"})
+    _rewrite(files, "config.old.yaml", {"models.flash.provider": "mistral"})
 
 
 def rename_the_subagent_folder(files: Path) -> None:
@@ -349,7 +349,7 @@ def rename_the_subagent_folder(files: Path) -> None:
     [
         (give_a_spec_content, "除了注释还有内容"),
         (ask_for_an_undeclared_thinking_level, "不在声明 bailian 给 qwen3.8-flash 允许的档位里"),
-        (use_a_provider_without_a_declaration, "provider openai 没有对应的供应商声明"),
+        (use_a_provider_without_a_declaration, "provider mistral 没有对应的供应商声明"),
         (rename_the_subagent_folder, "Shot_Writer 不合 agent 标识规则"),
     ],
     ids=["spec 有内容", "思考档位不在声明里", "provider 没有对应声明", "子 agent 名不合规矩"],

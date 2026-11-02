@@ -1524,7 +1524,8 @@
               {
                 "enum": [
                   "chat",
-                  "responses"
+                  "responses",
+                  "gemini"
                 ],
                 "type": "string"
               },
@@ -1587,6 +1588,18 @@
         "additionalProperties": false,
         "description": "一家可以接入的供应商。",
         "properties": {
+          "apis": {
+            "items": {
+              "enum": [
+                "chat",
+                "responses",
+                "gemini"
+              ],
+              "type": "string"
+            },
+            "title": "Apis",
+            "type": "array"
+          },
           "credentialFields": {
             "items": {
               "$ref": "#/components/schemas/CredentialFieldOut"
@@ -1617,6 +1630,7 @@
         "required": [
           "name",
           "label",
+          "apis",
           "credentialFields",
           "customModels",
           "models"
@@ -1649,7 +1663,8 @@
               {
                 "enum": [
                   "chat",
-                  "responses"
+                  "responses",
+                  "gemini"
                 ],
                 "type": "string"
               },
@@ -3106,6 +3121,43 @@
         "title": "ModelProvidersOut",
         "type": "object"
       },
+      "ModelTestIn": {
+        "additionalProperties": false,
+        "description": "测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。",
+        "properties": {
+          "credentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentialid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ModelTestIn",
+        "type": "object"
+      },
       "ModelUpdateIn": {
         "additionalProperties": false,
         "description": "不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，\n``contextSize`` 给 ``null`` 即清掉。",
@@ -3115,7 +3167,8 @@
               {
                 "enum": [
                   "chat",
-                  "responses"
+                  "responses",
+                  "gemini"
                 ],
                 "type": "string"
               },
@@ -3595,7 +3648,8 @@
               {
                 "enum": [
                   "chat",
-                  "responses"
+                  "responses",
+                  "gemini"
                 ],
                 "type": "string"
               },
@@ -7738,7 +7792,7 @@
     },
     "/v1/admin/model-providers/{provider_id}/credentials": {
       "post": {
-        "description": "新建一把密钥：先试连，通过才保存；供应商的第一把成为默认密钥。",
+        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。",
         "operationId": "create_provider_credential_v1_admin_model_providers__provider_id__credentials_post",
         "parameters": [
           {
@@ -7942,7 +7996,7 @@
         ]
       },
       "patch": {
-        "description": "改名或改字段；字段有变化时先试连，通过才保存。",
+        "description": "改名或改字段，不试连。",
         "operationId": "update_provider_credential_v1_admin_model_providers__provider_id__credentials__credential_id__patch",
         "parameters": [
           {
@@ -8087,6 +8141,77 @@
           }
         ],
         "summary": "Add Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/v1/admin/model-providers/{provider_id}/models/test": {
+      "post": {
+        "description": "用一把密钥（不给就是默认密钥）测试一个 llm 模型，不保存；结果在答复里，没通过也是 200。",
+        "operationId": "test_provider_model_v1_admin_model_providers__provider_id__models_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "代哪个用户操作：用户 id。管理接口的写操作必填。",
+            "in": "header",
+            "name": "X-End-User",
+            "required": true,
+            "schema": {
+              "description": "代哪个用户操作：用户 id。管理接口的写操作必填。",
+              "format": "uuid",
+              "title": "X-End-User",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AppKey": []
+          }
+        ],
+        "summary": "Test Provider Model",
         "tags": [
           "model-providers"
         ]

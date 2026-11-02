@@ -806,7 +806,7 @@ export const zCredentialUpdateIn = z.object({
  * CustomModelCreateIn
  */
 export const zCustomModelCreateIn = z.object({
-  api: z.enum(['chat', 'responses']).nullish(),
+  api: z.enum(['chat', 'responses', 'gemini']).nullish(),
   contextSize: z.int().nullish(),
   name: z.string(),
   thinking: z
@@ -820,7 +820,7 @@ export const zCustomModelCreateIn = z.object({
  * DeclaredModelOut
  */
 export const zDeclaredModelOut = z.object({
-  api: z.enum(['chat', 'responses']).nullable(),
+  api: z.enum(['chat', 'responses', 'gemini']).nullable(),
   contextSize: z.int().nullable(),
   name: z.string(),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
@@ -833,6 +833,7 @@ export const zDeclaredModelOut = z.object({
  * 一家可以接入的供应商。
  */
 export const zDeclarationOut = z.object({
+  apis: z.array(z.enum(['chat', 'responses', 'gemini'])),
   credentialFields: z.array(zCredentialFieldOut),
   customModels: z.boolean(),
   label: z.string(),
@@ -1578,13 +1579,24 @@ export const zModelProviderUpdateIn = z.object({
 })
 
 /**
+ * ModelTestIn
+ *
+ * 测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。
+ */
+export const zModelTestIn = z.object({
+  credentialId: z.uuid().nullish(),
+  name: z.string(),
+  type: z.enum(['llm', 'embedding', 'rerank']),
+})
+
+/**
  * ModelUpdateIn
  *
  * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
  * ``contextSize`` 给 ``null`` 即清掉。
  */
 export const zModelUpdateIn = z.object({
-  api: z.enum(['chat', 'responses']).nullish(),
+  api: z.enum(['chat', 'responses', 'gemini']).nullish(),
   contextSize: z.int().nullish(),
   enabled: z.boolean().nullish(),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).nullish(),
@@ -1729,7 +1741,7 @@ export const zProbeOut = z.object({
  * 供应商的一个模型：声明里的叠加停用设置，或自己加的。
  */
 export const zProviderModelOut = z.object({
-  api: z.enum(['chat', 'responses']).nullable(),
+  api: z.enum(['chat', 'responses', 'gemini']).nullable(),
   contextSize: z.int().nullable(),
   enabled: z.boolean(),
   name: z.string(),
@@ -4976,6 +4988,17 @@ export const zAddProviderModelModelProvidersProviderIdModelsPostPath = z.object(
  * Successful Response
  */
 export const zAddProviderModelModelProvidersProviderIdModelsPostResponse = zProviderModelOut
+
+export const zTestProviderModelModelProvidersProviderIdModelsTestPostBody = zModelTestIn
+
+export const zTestProviderModelModelProvidersProviderIdModelsTestPostPath = z.object({
+  provider_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zTestProviderModelModelProvidersProviderIdModelsTestPostResponse = zProbeOut
 
 export const zDeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeletePath =
   z.object({

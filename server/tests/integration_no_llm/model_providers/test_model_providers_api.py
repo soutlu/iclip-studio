@@ -1,6 +1,6 @@
-"""模型供应商端点：只有 ``model:manage``（预置角色里只有 root）能用；密钥保存前先试连、机密字段只以打码形式
-返回、没给的机密字段保持原值、默认密钥不能删；声明里的模型默认启用、能停用，自己加的模型按声明规则校验；
-默认模型必须存在且已启用。"""
+"""模型供应商端点：只有 ``model:manage``（预置角色里只有 root）能用；密钥保存不试连、机密字段只以打码形式
+返回、没给的机密字段保持原值、默认密钥不能删；试连与测试模型只答结果、不保存；声明里的模型默认启用、能停用，
+自己加的模型按声明规则校验、接口只能是供应商声明的；默认模型必须存在且已启用。"""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ from tests.helpers.model_providers import (
     KeyCheckingProbe,
     add_credential,
     connect_bailian,
+    connect_provider,
 )
 
 SECRETS = (GOOD_KEY, OTHER_KEY, BAD_KEY)
@@ -95,6 +96,7 @@ ENDPOINTS: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("PATCH", "/model-providers/{pid}/credentials/{cid}", {"name": "x"}),
     ("DELETE", "/model-providers/{pid}/credentials/{cid}", None),
     ("POST", "/model-providers/{pid}/models", {"name": "m", "type": "llm", "api": "chat"}),
+    ("POST", "/model-providers/{pid}/models/test", {"name": "qwen3.8-flash", "type": "llm"}),
     ("PATCH", "/model-providers/{pid}/models/llm/ZHIPU/GLM-5.3-Flash", {"enabled": False}),
     ("DELETE", "/model-providers/{pid}/models/llm/custom-1", None),
     ("GET", "/default-models", None),
@@ -129,8 +131,31 @@ async def test_declarations_describe_the_credential_form_and_models(
     response = await root.get("/model-providers/declarations")
 
     assert response.status_code == 200, response.text
-    (bailian,) = response.json()["declarations"]
-    assert bailian["name"] == "bailian"
+    declarations = {one["name"]: one for one in response.json()["declarations"]}
+    assert list(declarations) == [
+        "bailian",
+        "gemini",
+        "openai-compatible",
+        "openrouter",
+        "volcengine",
+    ]
+    assert {name: one["apis"] for name, one in declarations.items()} == {
+        "bailian": ["responses", "chat"],
+        "gemini": ["gemini"],
+        "openai-compatible": ["chat", "responses"],
+        "openrouter": ["chat"],
+        "volcengine": ["chat", "responses"],
+    }
+    assert declarations["gemini"]["label"] == "Google Gemini"
+    assert declarations["gemini"]["models"] == []
+    assert declarations["gemini"]["credentialFields"][1] == {
+        "name": "base_url",
+        "label": "接口地址",
+        "type": "text",
+        "required": False,
+        "default": None,
+    }
+    bailian = declarations["bailian"]
     assert bailian["customModels"] is True
     assert [field["name"] for field in bailian["credentialFields"]] == ["api_key", "base_url"]
     assert bailian["credentialFields"][1]["default"] == DEFAULT_BASE_URL
@@ -182,20 +207,24 @@ async def test_first_credential_becomes_default_and_secrets_come_back_masked(
     assert [one["name"] for one in view["credentials"]] == ["备用", "主账号"]
 
 
-async def test_failed_probe_saves_nothing(root: httpx.AsyncClient, engine: AsyncEngine) -> None:
+async def test_saving_a_key_does_not_probe(
+    root: httpx.AsyncClient, probe: KeyCheckingProbe
+) -> None:
     provider = await connect_bailian(root)
+    credentials = f"/model-providers/{provider['id']}/credentials"
 
-    response = await root.post(
-        f"/model-providers/{provider['id']}/credentials",
-        json={"name": "主账号", "fields": {"api_key": BAD_KEY}},
+    created = await root.post(credentials, json={"name": "主账号", "fields": {"api_key": BAD_KEY}})
+    assert created.status_code == 201, created.text
+    changed = await root.patch(
+        f"{credentials}/{created.json()['id']}",
+        json={"fields": {"api_key": OTHER_KEY, "base_url": "https://moved.test/v1"}},
     )
 
-    assert response.status_code == 422
-    assert "试连没通过" in response.json()["detail"]
-    assert_no_plaintext(response)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["fields"] == {"api_key": "••••wxyz", "base_url": "https://moved.test/v1"}
+    assert probe.calls == []
     view = await provider_view(root, provider["id"])
-    assert view["credentials"] == []
-    assert view["defaultCredentialId"] is None
+    assert view["defaultCredentialId"] == created.json()["id"]
 
 
 async def test_secret_fields_are_encrypted_at_rest(
@@ -218,7 +247,6 @@ async def test_unsent_secret_fields_keep_their_value(
     credential = await add_credential(root, provider["id"])
     path = f"/model-providers/{provider['id']}/credentials/{credential['id']}"
 
-    # 试连替身只认 GOOD_KEY：改地址时没给 api_key，能通过就说明试连拿到的是原来那把。
     moved = await root.patch(path, json={"fields": {"base_url": "https://moved.test/v1"}})
 
     assert moved.status_code == 200, moved.text
@@ -230,16 +258,6 @@ async def test_unsent_secret_fields_keep_their_value(
     renamed = await root.patch(path, json={"name": "改了名"})
     assert renamed.status_code == 200, renamed.text
     assert renamed.json()["name"] == "改了名"
-
-    rejected = await root.patch(path, json={"fields": {"api_key": BAD_KEY}})
-    assert rejected.status_code == 422
-    assert_no_plaintext(rejected)
-    assert (
-        CredentialCipher([TEST_CREDENTIAL_KEY]).decrypt(
-            (await stored_fields(engine, credential["id"]))["api_key"]
-        )
-        == GOOD_KEY
-    )
 
     replaced = await root.patch(path, json={"fields": {"api_key": OTHER_KEY}})
     assert replaced.status_code == 200, replaced.text
@@ -324,19 +342,71 @@ async def test_probe_endpoint_tries_saved_or_unsaved_fields_without_saving(
     assert view["credentials"][0]["fields"]["base_url"] == DEFAULT_BASE_URL
 
 
-async def test_probe_needs_an_enabled_llm_model(root: httpx.AsyncClient) -> None:
+async def test_probe_needs_an_enabled_llm_model_but_saving_does_not(
+    root: httpx.AsyncClient,
+) -> None:
     provider = await connect_bailian(root)
     base = f"/model-providers/{provider['id']}"
     for name in ("qwen3.8-flash", "ZHIPU/GLM-5.3-Flash"):
         response = await root.patch(f"{base}/models/llm/{name}", json={"enabled": False})
         assert response.status_code == 200, response.text
 
-    response = await root.post(
+    probed = await root.post(f"{base}/credentials/test", json={"fields": {"api_key": GOOD_KEY}})
+    saved = await root.post(
         f"{base}/credentials", json={"name": "a", "fields": {"api_key": GOOD_KEY}}
     )
 
-    assert response.status_code == 422
-    assert "llm" in response.json()["detail"]
+    assert probed.status_code == 422
+    assert probed.json()["detail"] == "先添加一个模型再试连"
+    assert saved.status_code == 201, saved.text
+
+
+async def test_testing_a_model_uses_the_default_or_given_key_without_saving(
+    root: httpx.AsyncClient, probe: KeyCheckingProbe
+) -> None:
+    provider = await connect_bailian(root)
+    path = f"/model-providers/{provider['id']}/models/test"
+    glm = {"name": "ZHIPU/GLM-5.3-Flash", "type": "llm"}
+
+    no_key = await root.post(path, json=glm)
+    assert no_key.status_code == 422
+    assert no_key.json()["detail"] == "先添加密钥"
+
+    await add_credential(root, provider["id"])
+    bad = await add_credential(root, provider["id"], name="坏的", api_key=BAD_KEY)
+    # 停用的模型也能测。
+    disabled = await root.patch(
+        f"/model-providers/{provider['id']}/models/llm/ZHIPU/GLM-5.3-Flash",
+        json={"enabled": False},
+    )
+    assert disabled.status_code == 200, disabled.text
+
+    passed = await root.post(path, json=glm)
+    failed = await root.post(path, json={**glm, "credentialId": bad["id"]})
+
+    assert passed.status_code == 200, passed.text
+    assert passed.json() == {"ok": True, "elapsedMs": 7, "reason": None}
+    assert failed.status_code == 200, failed.text
+    assert failed.json() == {
+        "ok": False,
+        "elapsedMs": 3,
+        "reason": "API Key 无效或没有权限（HTTP 401）",
+    }
+    assert probe.calls == [("ZHIPU/GLM-5.3-Flash", GOOD_KEY), ("ZHIPU/GLM-5.3-Flash", BAD_KEY)]
+    for response in (passed, failed):
+        assert_no_plaintext(response)
+
+    await root.post(
+        f"/model-providers/{provider['id']}/models", json={"name": "emb", "type": "embedding"}
+    )
+    for body, status in (
+        ({"name": "no-such", "type": "llm"}, 404),
+        ({"name": "emb", "type": "embedding"}, 422),
+        ({**glm, "credentialId": str(uuid.uuid4())}, 404),
+    ):
+        response = await root.post(path, json=body)
+        assert response.status_code == status, (body, response.text)
+    assert len(probe.calls) == 2
 
 
 async def test_declared_models_are_enabled_until_disabled(root: httpx.AsyncClient) -> None:
@@ -396,6 +466,7 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
         {"name": "x", "type": "embedding", "api": "chat"},
         {"name": "x", "type": "embedding", "thinking": ["high"]},
         {"name": "qwen-max", "type": "llm", "api": "responses"},
+        {"name": "gemini-x", "type": "llm", "api": "gemini"},
         {"name": "qwen3.8-flash", "type": "llm", "api": "chat"},
     ):
         response = await root.post(models, json=body)
@@ -425,6 +496,27 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
         ("ZHIPU/GLM-5.3-Flash", "llm"),
         ("qwen-max", "embedding"),
     ]
+
+
+async def test_custom_models_only_use_the_providers_apis(root: httpx.AsyncClient) -> None:
+    for declaration, allowed, refused in (
+        ("gemini", "gemini", "chat"),
+        ("openrouter", "chat", "responses"),
+        ("volcengine", "responses", "gemini"),
+        ("openai-compatible", "chat", "gemini"),
+    ):
+        provider = await connect_provider(root, declaration)
+        models = f"/model-providers/{provider['id']}/models"
+
+        added = await root.post(models, json={"name": "m", "type": "llm", "api": allowed})
+        refused_add = await root.post(models, json={"name": "n", "type": "llm", "api": refused})
+        refused_change = await root.patch(f"{models}/llm/m", json={"api": refused})
+
+        assert added.status_code == 201, (declaration, added.text)
+        assert added.json()["api"] == allowed
+        for response in (refused_add, refused_change):
+            assert response.status_code == 422, (declaration, response.text)
+            assert f"不能走 {refused}" in response.json()["detail"]
 
 
 async def test_default_model_must_exist_and_be_enabled(root: httpx.AsyncClient) -> None:

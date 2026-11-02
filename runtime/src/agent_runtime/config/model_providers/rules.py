@@ -167,11 +167,12 @@ def probe_model(models: Sequence[ProviderModel]) -> ProviderModel:
 
     found = next((one for one in models if one.type == "llm" and one.enabled), None)
     if found is None:
-        raise ValidationFailed("这个供应商没有启用的 llm 模型，没法试连")
+        raise ValidationFailed("先添加一个模型再试连")
     return found
 
 
 def custom_model(
+    declaration: ProviderDeclaration,
     *,
     name: str,
     model_type: ModelType,
@@ -179,10 +180,10 @@ def custom_model(
     context_size: int | None,
     thinking: Sequence[ThinkingEffort],
 ) -> ModelDeclaration:
-    """按声明里模型的同一套规则校验一个自己加的模型。"""
+    """按声明里模型的同一套规则校验一个自己加的模型：接口也只能是这家供应商支持的。"""
 
     try:
-        return ModelDeclaration(
+        model = ModelDeclaration(
             name=name,
             type=model_type,
             api=api,
@@ -194,6 +195,11 @@ def custom_model(
         location = ".".join(str(part) for part in first["loc"])
         message = str(first["msg"]).removeprefix("Value error, ")
         raise ValidationFailed(f"{location}: {message}" if location else message) from None
+    if model.api is not None and model.api not in declaration.apis:
+        raise ValidationFailed(
+            f"{declaration.label}的模型只能走 {'、'.join(declaration.apis)} 接口，不能走 {model.api}"
+        )
+    return model
 
 
 __all__ = [
