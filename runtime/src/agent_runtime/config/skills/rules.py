@@ -30,7 +30,8 @@ _NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 """小写字母、数字与单个连字符，不以连字符开头或结尾。"""
 
 _FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(.*?)^---[ \t]*\r?$", re.DOTALL | re.MULTILINE)
-_HEADING = re.compile(r"^# +(.+?)[ \t]*\r?$", re.MULTILINE)
+_NAME_KEY = re.compile(r"name[ \t]*:")
+"""frontmatter 里顶层 ``name`` 键所在的行（从行首起）。"""
 
 
 def _mb(size: int) -> str:
@@ -188,25 +189,26 @@ def _frontmatter(skill_md: str) -> tuple[dict[str, Any] | None, str | None]:
     return loaded, None
 
 
-def frontmatter_problems(skill_md: str, *, expected_name: str | None) -> list[str]:
-    """frontmatter 的问题：要有 ``name``（给了 ``expected_name`` 就必须等于它，否则按标识规则查）与非空、
-    不超长的 ``description``。"""
+def _frontmatter_name_problem(name: object) -> str | None:
+    if name is None:
+        return f"{SKILL_MD} 的 frontmatter 缺少 name"
+    if not isinstance(name, str):
+        return f"{SKILL_MD} 的 frontmatter 里 name 应是文字"
+    if (issue := name_problem(name)) is not None:
+        return f"{SKILL_MD} 的 frontmatter 里 name 不合格：{issue}"
+    return None
+
+
+def frontmatter_problems(skill_md: str, *, require_name: bool) -> list[str]:
+    """frontmatter 的问题：要有非空、不超长的 ``description``；``require_name`` 时另要有合标识规则的
+    ``name``（导入靠它认技能）。发布不查 ``name``：版本里写的 ``name`` 不作数，用时换成技能当前的标识。"""
 
     found, problem = _frontmatter(skill_md)
     if found is None:
         return [problem or f"{SKILL_MD} 的 frontmatter 读不出来"]
     problems: list[str] = []
-    name = found.get("name")
-    if name is None:
-        problems.append(f"{SKILL_MD} 的 frontmatter 缺少 name")
-    elif not isinstance(name, str):
-        problems.append(f"{SKILL_MD} 的 frontmatter 里 name 应是文字")
-    elif expected_name is not None and name != expected_name:
-        problems.append(
-            f"{SKILL_MD} 的 frontmatter 里 name「{name}」与技能标识「{expected_name}」不一致"
-        )
-    elif expected_name is None and (name_issue := name_problem(name)) is not None:
-        problems.append(f"{SKILL_MD} 的 frontmatter 里 name 不合格：{name_issue}")
+    if require_name and (name_issue := _frontmatter_name_problem(found.get("name"))) is not None:
+        problems.append(name_issue)
     description = found.get("description")
     if description is None:
         problems.append(f"{SKILL_MD} 的 frontmatter 缺少 description")
@@ -237,16 +239,34 @@ def frontmatter_description(skill_md: str) -> str | None:
     return description.strip()
 
 
-def default_display_name(skill_md: str, name: str) -> str:
-    """frontmatter 之后第一个 ``# `` 标题（按显示名的规矩整理、截到上限）；没有标题就用 ``name``。"""
+def with_frontmatter_name(skill_md: str, name: str) -> str:
+    """把 ``SKILL.md`` frontmatter 顶层的 ``name`` 换成 ``name``：换掉 ``name:`` 这一行（连同它缩进的
+    续行），没有这个键就插到 frontmatter 第一行；别的键与正文原样留着，已经是这个值就原样交回。
+    没有 frontmatter 是 ``ValueError``：已发布的版本一定有，调用方不该拿到没有的。"""
 
     match = _FRONTMATTER.match(skill_md)
-    body = skill_md[match.end() :] if match is not None else skill_md
-    heading = _HEADING.search(body)
-    if heading is None:
-        return name
-    cleaned = " ".join(heading.group(1).split())[:MAX_DISPLAY_NAME_CHARS].strip()
-    return cleaned or name
+    if match is None:
+        raise ValueError(f"{SKILL_MD} 开头缺少 frontmatter，写不进 name")
+    found, _ = _frontmatter(skill_md)
+    if found is not None and found.get("name") == name:
+        return skill_md
+    start, end = match.span(1)
+    lines = skill_md[start:end].splitlines(keepends=True)
+    eol = "\r\n" if "\r\n" in skill_md[: match.end()] else "\n"
+    # 交给 YAML 写值：像 ``123``、``null`` 这样的标识要加引号才读回文字。
+    field = yaml.safe_dump({"name": name}, width=1_000_000).rstrip("\n") + eol
+    first = next((index for index, line in enumerate(lines) if _NAME_KEY.match(line)), None)
+    if first is None:
+        lines.insert(0, field)
+    else:
+        last = first + 1
+        while last < len(lines) and (lines[last][:1] in (" ", "\t") or not lines[last].strip()):
+            last += 1
+        # 续行末尾的空行不算这个键的，留给后面。
+        while last > first + 1 and not lines[last - 1].strip():
+            last -= 1
+        lines[first:last] = [field]
+    return skill_md[:start] + "".join(lines) + skill_md[end:]
 
 
 def initial_skill_md(*, name: str, display_name: str, description: str) -> str:
@@ -298,13 +318,13 @@ def format_problems(problems: Iterable[str]) -> str:
     return "；".join(problems)
 
 
-def check_publish(files: Mapping[str, str], *, name: str) -> str:
+def check_publish(files: Mapping[str, str]) -> str:
     """一份草稿能不能发布：文件、上限与 frontmatter 都合格时交回 frontmatter 的 ``description``（去掉
-    首尾空白），否则 ``ValidationFailed`` 列出全部问题。"""
+    首尾空白），否则 ``ValidationFailed`` 列出全部问题。``name`` 不查，见 ``frontmatter_problems``。"""
 
     problems = file_problems(files)
     if SKILL_MD in files:
-        problems += frontmatter_problems(files[SKILL_MD], expected_name=name)
+        problems += frontmatter_problems(files[SKILL_MD], require_name=False)
     if problems:
         raise ValidationFailed(format_problems(problems))
     description = frontmatter_description(files[SKILL_MD])
@@ -322,7 +342,6 @@ __all__ = [
     "content_hash",
     "content_problem",
     "decode_text",
-    "default_display_name",
     "file_entry",
     "file_hash",
     "file_problems",
@@ -336,4 +355,5 @@ __all__ = [
     "name_problem",
     "path_problem",
     "path_safety_problem",
+    "with_frontmatter_name",
 ]

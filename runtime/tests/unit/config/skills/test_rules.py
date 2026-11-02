@@ -1,4 +1,4 @@
-"""技能库规则：标识、路径安全与收录范围、文本与大小上限、frontmatter、清单与内容 hash、显示名默认值。"""
+"""技能库规则：标识、路径安全与收录范围、文本与大小上限、frontmatter 与改写其中的 name。"""
 
 from __future__ import annotations
 
@@ -17,10 +17,13 @@ from agent_runtime.config.skills.rules import (
     content_problem,
     decode_text,
     file_problems,
+    frontmatter_description,
+    frontmatter_name,
     frontmatter_problems,
     limit_problems,
     name_problem,
     path_problem,
+    with_frontmatter_name,
 )
 from agent_runtime.errors import ValidationFailed
 
@@ -112,16 +115,14 @@ def test_file_problems_name_every_bad_file_and_a_missing_skill_md() -> None:
 
 
 def test_valid_frontmatter_has_no_problems() -> None:
-    assert frontmatter_problems(GOOD, expected_name="pdf-tools") == []
-    assert frontmatter_problems(GOOD, expected_name=None) == []
+    assert frontmatter_problems(GOOD, require_name=True) == []
+    assert frontmatter_problems(GOOD, require_name=False) == []
 
 
 @pytest.mark.parametrize(
     "content",
     [
         "# 没有 frontmatter\n",
-        skill_md("description: 处理 PDF\n"),
-        skill_md("name: other\ndescription: 处理 PDF\n"),
         skill_md("name: pdf-tools\n"),
         skill_md("name: pdf-tools\ndescription: '   '\n"),
         skill_md(f"name: pdf-tools\ndescription: {'长' * (MAX_DESCRIPTION_CHARS + 1)}\n"),
@@ -131,8 +132,6 @@ def test_valid_frontmatter_has_no_problems() -> None:
     ],
     ids=[
         "no-frontmatter",
-        "missing-name",
-        "name-mismatch",
         "missing-description",
         "blank-description",
         "description-too-long",
@@ -142,24 +141,87 @@ def test_valid_frontmatter_has_no_problems() -> None:
     ],
 )
 def test_bad_frontmatter_is_reported(content: str) -> None:
-    assert len(frontmatter_problems(content, expected_name="pdf-tools")) == 1
+    assert len(frontmatter_problems(content, require_name=True)) == 1
+    assert len(frontmatter_problems(content, require_name=False)) == 1
 
 
 def test_description_at_the_limit_passes() -> None:
     content = skill_md(f"name: pdf-tools\ndescription: {'长' * MAX_DESCRIPTION_CHARS}\n")
-    assert frontmatter_problems(content, expected_name="pdf-tools") == []
+    assert frontmatter_problems(content, require_name=True) == []
 
 
-def test_without_an_expected_name_the_name_itself_must_follow_the_spec() -> None:
-    content = skill_md("name: PDF_Tools\ndescription: 处理 PDF\n")
-    assert len(frontmatter_problems(content, expected_name=None)) == 1
+@pytest.mark.parametrize(
+    "frontmatter",
+    [
+        "description: 处理 PDF\n",
+        "name: PDF_Tools\ndescription: 处理 PDF\n",
+        "name: 1\ndescription: x\n",
+    ],
+    ids=["missing-name", "name-outside-the-spec", "name-not-text"],
+)
+def test_a_required_name_must_be_there_and_follow_the_spec(frontmatter: str) -> None:
+    assert len(frontmatter_problems(skill_md(frontmatter), require_name=True)) == 1
+    assert frontmatter_problems(skill_md(frontmatter), require_name=False) == []
+
+
+@pytest.mark.parametrize(
+    "frontmatter",
+    ["name: other\ndescription: 处理 PDF\n", "description: 处理 PDF\n"],
+    ids=["other-name", "no-name"],
+)
+def test_publishing_does_not_look_at_the_name(frontmatter: str) -> None:
+    assert check_publish({SKILL_MD: skill_md(frontmatter)}) == "处理 PDF"
 
 
 def test_check_publish_lists_every_problem() -> None:
-    files = {SKILL_MD: skill_md("name: other\n"), "scripts/run.py": "x"}
+    files = {SKILL_MD: skill_md("name: pdf-tools\n"), "scripts/run.py": "x"}
 
     with pytest.raises(ValidationFailed) as raised:
-        check_publish(files, name="pdf-tools")
+        check_publish(files)
 
     assert "scripts/run.py" in str(raised.value)
-    assert "other" in str(raised.value)
+    assert "description" in str(raised.value)
+
+
+def test_with_frontmatter_name_replaces_only_the_name_line() -> None:
+    source = skill_md(
+        "title: 工具\nname: old-name\ndescription: 处理 PDF\n", "\n# 正文\nname: 不动\n"
+    )
+
+    assert with_frontmatter_name(source, "new-name") == skill_md(
+        "title: 工具\nname: new-name\ndescription: 处理 PDF\n", "\n# 正文\nname: 不动\n"
+    )
+
+
+def test_with_frontmatter_name_replaces_a_value_spread_over_lines() -> None:
+    source = skill_md("name: >\n  old\n  name\n\ndescription: 处理 PDF\n")
+
+    assert with_frontmatter_name(source, "new-name") == skill_md(
+        "name: new-name\n\ndescription: 处理 PDF\n"
+    )
+
+
+def test_with_frontmatter_name_inserts_a_missing_name_first() -> None:
+    source = "---\r\ndescription: 处理 PDF\r\nx: 1\r\n---\r\n\r\n正文\r\n"
+
+    assert with_frontmatter_name(source, "pdf-tools") == (
+        "---\r\nname: pdf-tools\r\ndescription: 处理 PDF\r\nx: 1\r\n---\r\n\r\n正文\r\n"
+    )
+
+
+def test_with_frontmatter_name_keeps_names_that_yaml_would_misread_as_text() -> None:
+    renamed = with_frontmatter_name(GOOD, "123")
+
+    assert frontmatter_name(renamed) == "123"
+    assert frontmatter_description(renamed) == "处理 PDF"
+
+
+def test_with_frontmatter_name_leaves_an_equal_name_untouched() -> None:
+    source = skill_md("name: 'pdf-tools'\ndescription: 处理 PDF\n")
+
+    assert with_frontmatter_name(source, "pdf-tools") is source
+
+
+def test_with_frontmatter_name_refuses_a_file_without_frontmatter() -> None:
+    with pytest.raises(ValueError, match="frontmatter"):
+        with_frontmatter_name("# 没有 frontmatter\n", "pdf-tools")

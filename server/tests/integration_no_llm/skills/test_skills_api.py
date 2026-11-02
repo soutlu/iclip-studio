@@ -144,6 +144,9 @@ async def test_root_manages_a_skill_end_to_end(client: httpx.AsyncClient, migrat
 
     renamed = await client.patch(base, json={"displayName": "  新的  名字 "})
     assert renamed.json()["displayName"] == "新的 名字"
+    assert (await client.patch(base, json={})).status_code == 422
+    renamed = await client.patch(base, json={"name": "pdf-kit"})
+    assert (renamed.status_code, renamed.json()["name"]) == (200, "pdf-kit")
     archived = await client.post(f"{base}/archive")
     assert archived.json()["status"] == "archived"
     assert (await client.get("/skills")).json()["items"][0]["status"] == "archived"
@@ -168,7 +171,7 @@ async def test_import_creates_a_draft_only_skill(
     assert (body["action"], body["name"], body["displayName"], body["problems"]) == (
         "create",
         "pdf-tools",
-        "PDF 工具",
+        "pdf-tools",
         [],
     )
     skill = (await client.get(f"/skills/{body['skillId']}")).json()

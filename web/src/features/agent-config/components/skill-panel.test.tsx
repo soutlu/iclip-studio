@@ -294,6 +294,72 @@ describe('编辑技能', () => {
     ).toBeInTheDocument()
   })
 
+  it('改标识后保存只 PATCH 新标识，不写文件；存好后标识框是新标识', async () => {
+    const user = await renderPage()
+    const sent = recordWrites()
+    const panel = await openDirectorSkill(user)
+    const name = within(panel).getByRole('textbox', { name: '技能标识' })
+    expect(name).toHaveValue('director')
+
+    await user.clear(name)
+    await user.type(name, 'film-director')
+    expect(
+      within(panel).getByRole('img', { name: '已发布 v4，有未保存的修改' }),
+    ).toBeInTheDocument()
+    await user.click(within(panel).getByRole('button', { name: '保存草稿' }))
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: '保存草稿' })).toBeDisabled(),
+    )
+
+    expect(sent.map((item) => `${item.method} ${item.path}`)).toEqual([
+      `PATCH /api/skills/${mockSkillId('film-director')}`,
+    ])
+    expect(sent[0]?.body).toEqual({ name: 'film-director' })
+    expect(within(panel).getByRole('textbox', { name: '技能标识' })).toHaveValue('film-director')
+    // 标识不进版本：存好后没有未发布的修改。
+    expect(within(panel).getByRole('img', { name: '已发布 v4' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['', '请填写技能标识'],
+    ['Film Director', '标识只能用小写字母、数字和连字符'],
+  ])('标识「%s」不合规矩时不保存，就地提示并聚焦标识框', async (value, message) => {
+    const user = await renderPage()
+    const sent = recordWrites()
+    const panel = await openDirectorSkill(user)
+    const name = within(panel).getByRole('textbox', { name: '技能标识' })
+    await user.clear(name)
+    if (value !== '') await user.type(name, value)
+    await user.click(within(panel).getByRole('button', { name: '保存草稿' }))
+
+    expect(within(panel).getByRole('alert')).toHaveTextContent(message)
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveFocus()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('标识已被别的技能占用（409）：原因写在标识框下面，文件照常保存', async () => {
+    const user = await renderPage()
+    const sent = recordWrites()
+    const panel = await openDirectorSkill(user)
+    await user.type(within(panel).getByRole('textbox', { name: '简短说明' }), '。')
+    const name = within(panel).getByRole('textbox', { name: '技能标识' })
+    await user.clear(name)
+    await user.type(name, 'storyboard-workflow')
+    await user.click(within(panel).getByRole('button', { name: '保存草稿' }))
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      '标识 storyboard-workflow 已被技能「分镜创作」占用',
+    )
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveFocus()
+    expect(name).toHaveValue('storyboard-workflow')
+    expect(sent.map((item) => `${item.method} ${item.path}`)).toEqual([
+      `PUT ${filePath('director', 'SKILL.md')}`,
+      `PATCH /api/skills/${mockSkillId('director')}`,
+    ])
+  })
+
   it('文件已被别人改过（409）：就地说明，丢掉这个文件的改动并读回最新内容', async () => {
     const user = await renderPage()
     const panel = await openDirectorSkill(user)

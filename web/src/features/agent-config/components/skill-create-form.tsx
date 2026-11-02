@@ -2,12 +2,10 @@ import { useId, useRef, useState, type FormEvent } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { Button } from '@/shared/ui/button'
 import { Input, Textarea } from '@/shared/ui/field'
+import { isValidName, MAX_NAME, NAME_RULE } from '../skill-files'
 import { useCreateSkill } from '../skills.api'
 import { PanelShell } from './panel-shell'
 
-// 标识按 Agent Skills 规范（合同 §17、CONTEXT「技能库」），上限与后端一致。
-const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const MAX_NAME = 64
 const MAX_DISPLAY_NAME = 100
 const MAX_DESCRIPTION = 1024
 
@@ -20,8 +18,7 @@ const validate = (values: Record<Field, string>): Errors => {
   const errors: Errors = {}
   if (values.displayName === '') errors.displayName = '请填写名称'
   if (values.name === '') errors.name = '请填写标识'
-  else if (values.name.length > MAX_NAME || !NAME_PATTERN.test(values.name))
-    errors.name = `标识只能用小写字母、数字和连字符，不以连字符开头或结尾、不连用，最多 ${MAX_NAME} 个字符`
+  else if (!isValidName(values.name)) errors.name = NAME_RULE
   if (values.description === '') errors.description = '请填写简短说明'
   return errors
 }

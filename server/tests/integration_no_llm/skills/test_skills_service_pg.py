@@ -1,5 +1,6 @@
 """技能库用例连真实 Postgres：发布是原子的、草稿按 base_hash 防覆盖、内容不变不出新版本、恢复后草稿等于
-那一版、导入检查不写库而正式导入只写草稿、导出再导入得到同样的文件。"""
+那一版、导入检查不写库而正式导入只写草稿、导出再导入得到同样的文件、改标识不动版本与草稿而导出用
+当前标识。"""
 
 from __future__ import annotations
 
@@ -216,7 +217,9 @@ async def test_publish_rejects_an_invalid_draft_and_description_follows_publishi
     service: SkillsService, author: uuid.UUID, engine: AsyncEngine
 ) -> None:
     skill_id = await new_skill(service, author)
-    await put(service, skill_id, author, "SKILL.md", skill_md("other-name", "草稿描述"))
+    await put(service, skill_id, author, "SKILL.md", skill_md("pdf-tools", "草稿描述"))
+    assert (await service.detail(skill_id)).description == "草稿描述"
+    await put(service, skill_id, author, "SKILL.md", "---\nname: pdf-tools\n---\n")
     assert (await service.detail(skill_id)).description == "草稿描述"
     with pytest.raises(ValidationFailed):
         await service.publish(skill_id, SkillPublishIn(), by=author)
@@ -259,9 +262,10 @@ async def test_import_check_writes_nothing_and_import_only_writes_the_draft(
     checked = await service.import_archive(data, dry_run=True, by=author)
 
     assert (checked.action, checked.skill_id, checked.problems) == ("create", None, [])
+    # 显示名取标识，不取正文的标题。
     assert (checked.name, checked.display_name, checked.description) == (
         "pdf-tools",
-        "PDF 工具",
+        "pdf-tools",
         "导入的描述",
     )
     assert [one.path for one in checked.files] == ["SKILL.md", "references/a.md"]
@@ -273,7 +277,7 @@ async def test_import_check_writes_nothing_and_import_only_writes_the_draft(
     assert await draft_contents(service, imported.skill_id) == files
     assert (detail.name, detail.display_name, detail.description) == (
         "pdf-tools",
-        "PDF 工具",
+        "pdf-tools",
         "导入的描述",
     )
     assert (detail.latest_version_id, detail.status) == (None, "active")
@@ -333,3 +337,85 @@ async def test_exported_version_imports_back_to_the_same_files(
         for path in [one.path for one in checked.files]
     }
     assert (await service.detail(skill_id)).has_unpublished_changes is False
+
+
+async def test_renaming_a_published_skill_leaves_versions_and_draft_alone(
+    service: SkillsService, author: uuid.UUID, engine: AsyncEngine
+) -> None:
+    skill_id = await new_skill(service, author)
+    await service.publish(skill_id, SkillPublishIn(), by=author)
+    draft_before = await draft_contents(service, skill_id)
+    counts_before = await row_counts(engine)
+
+    renamed = await service.rename(skill_id, SkillUpdateIn(name="pdf-kit"))
+
+    assert (renamed.name, renamed.display_name) == ("pdf-kit", "PDF 工具")
+    assert (renamed.latest_version, renamed.has_unpublished_changes) == (1, False)
+    assert await draft_contents(service, skill_id) == draft_before
+    assert await row_counts(engine) == counts_before
+    assert (await service.detail(skill_id)).name == "pdf-kit"
+
+
+async def test_a_name_taken_by_another_skill_is_a_conflict_and_changes_nothing(
+    service: SkillsService, author: uuid.UUID
+) -> None:
+    skill_id = await new_skill(service, author)
+    other_id = await new_skill(service, author, name="pdf-kit")
+    before = await service.detail(skill_id)
+
+    with pytest.raises(Conflict, match="标识 pdf-kit 已被技能「PDF 工具」占用"):
+        await service.rename(skill_id, SkillUpdateIn(name="pdf-kit", display_name="新名字"))
+
+    assert await service.detail(skill_id) == before
+    assert (await service.detail(other_id)).name == "pdf-kit"
+
+
+async def test_rename_checks_the_name_and_needs_at_least_one_field(
+    service: SkillsService, author: uuid.UUID
+) -> None:
+    skill_id = await new_skill(service, author)
+
+    with pytest.raises(ValidationFailed):
+        await service.rename(skill_id, SkillUpdateIn())
+    with pytest.raises(ValidationFailed):
+        await service.rename(skill_id, SkillUpdateIn(name="PDF_Kit"))
+    # 只改显示名照常；给的标识与现在相同不算改。
+    renamed = await service.rename(
+        skill_id, SkillUpdateIn(display_name="  新的  名字 ", name="pdf-tools")
+    )
+
+    assert (renamed.name, renamed.display_name) == ("pdf-tools", "新的 名字")
+
+
+async def test_a_renamed_skill_publishes_with_the_old_name_in_its_draft(
+    service: SkillsService, author: uuid.UUID
+) -> None:
+    skill_id = await new_skill(service, author)
+    await service.rename(skill_id, SkillUpdateIn(name="pdf-kit"))
+    assert "name: pdf-tools\n" in (await service.read_file(skill_id, "SKILL.md")).content
+
+    version = await service.publish(skill_id, SkillPublishIn(), by=author)
+
+    assert version.version == 1
+    stored = await service.version_file(skill_id, version.id, "SKILL.md")
+    assert "name: pdf-tools\n" in stored.content, "版本里的文件原样存，不改 name"
+
+
+async def test_export_uses_the_current_name_even_for_an_older_version(
+    service: SkillsService, author: uuid.UUID
+) -> None:
+    skill_id = await new_skill(service, author)
+    first = await service.publish(skill_id, SkillPublishIn(), by=author)
+    await put(service, skill_id, author, "references/a.md", "参考")
+    await service.publish(skill_id, SkillPublishIn(), by=author)
+    await service.rename(skill_id, SkillUpdateIn(name="pdf-kit"))
+
+    exported = await service.export(skill_id, first.id)
+
+    assert exported.filename == "pdf-kit-v1.zip"
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        assert archive.namelist() == ["pdf-kit/SKILL.md"]
+        skill_md_text = archive.read("pdf-kit/SKILL.md").decode()
+    assert skill_md_text == skill_md("pdf-kit", "处理 PDF")
+    checked = await service.import_archive(exported.content, dry_run=True, by=author)
+    assert (checked.action, checked.skill_id, checked.name) == ("overwrite", skill_id, "pdf-kit")

@@ -11,6 +11,9 @@ import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip
 import {
   fileLabel,
   isMarkdownPath,
+  isValidName,
+  MAX_NAME,
+  NAME_RULE,
   readDescription,
   referencePath,
   SKILL_MD,
@@ -23,7 +26,7 @@ import {
   deleteSkillFile,
   renameSkillFile,
   skillQueryKeys,
-  updateSkillDisplayName,
+  updateSkill,
   usePublishSkill,
   useRefreshSkill,
   useSkillDetail,
@@ -54,7 +57,8 @@ type SkillEditorProps = {
 }
 
 /**
- * 编辑一个技能的草稿：标题是显示名，副标题是 `SKILL.md` frontmatter 里的说明，下面是文件页签与编辑器。
+ * 编辑一个技能：标题区依次是显示名、`SKILL.md` frontmatter 里的说明与技能标识，下面是草稿的文件页签与编辑器。
+ * 显示名与标识是技能本身的属性，不进版本，「保存草稿」时一并改、立即生效；说明随 `SKILL.md` 进草稿。
  * 文件内容的改动先留在本地，「保存草稿」时逐个写回并带上读到的 hash；改名、删除与新建页签当场生效
  * （没保存过的新文件只在本地改）。「发布技能」先存上没保存的改动，再发布服务端的草稿。
  */
@@ -67,7 +71,8 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const [active, setActive] = useState(SKILL_MD)
   const [edits, setEdits] = useState<Record<string, Edit>>({})
   const [title, setTitle] = useState<string | null>(null)
-  const [errors, setErrors] = useState<{ title?: string; description?: string }>({})
+  const [name, setName] = useState<string | null>(null)
+  const [errors, setErrors] = useState<{ title?: string; description?: string; name?: string }>({})
   const [notice, setNotice] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [mode, setMode] = useState<FileTabsMode>(null)
@@ -76,6 +81,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const [filePending, setFilePending] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
   const descriptionRef = useRef<HTMLInputElement>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
 
   // 页签行在富文本与纯文本之间切换时会重新挂载，要聚焦的元素记下来，提交后再放焦点。
   const elementsRef = useRef(new Map<string, HTMLElement>())
@@ -134,7 +140,9 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const titleValue = title ?? detail.data?.displayName ?? ''
   const titleDirty =
     title !== null && detail.data !== undefined && title.trim() !== detail.data.displayName
-  const dirty = Object.keys(edits).length > 0 || titleDirty
+  const nameValue = name ?? detail.data?.name ?? ''
+  const nameDirty = name !== null && detail.data !== undefined && name.trim() !== detail.data.name
+  const dirty = Object.keys(edits).length > 0 || titleDirty || nameDirty
   const busy = saving || publish.isPending || filePending
   const unpublished = (detail.data?.hasUnpublishedChanges ?? false) || dirty
 
@@ -238,17 +246,31 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     finishFileAction(SKILL_MD)
   }
 
-  /** 存上没保存的改动：逐个文件写回，最后改显示名。全部成功交回 true。 */
+  /** 存上没保存的改动：逐个文件写回，最后改显示名与标识。全部成功交回 true。 */
   const save = async (): Promise<boolean> => {
     if (detail.data === undefined) return false
-    // 只查这次要存的：显示名改过才查名称，SKILL.md 改过才查说明。
+    // 只查这次要存的：显示名改过才查名称，标识改过才查标识，SKILL.md 改过才查说明。
     const problems: typeof errors = {}
     if (title !== null && title.trim() === '') problems.title = '请填写技能名称'
     if (edits[SKILL_MD] !== undefined && description.trim() === '')
       problems.description = '请填写简短说明'
+    if (name !== null) {
+      const trimmed = name.trim()
+      if (trimmed === '') problems.name = '请填写技能标识'
+      else if (!isValidName(trimmed)) problems.name = NAME_RULE
+    }
     setErrors(problems)
-    if (problems.title !== undefined || problems.description !== undefined) {
-      ;(problems.title !== undefined ? titleRef : descriptionRef).current?.focus()
+    // 按标题区自上而下，聚焦第一个有错的框。
+    const invalid =
+      problems.title !== undefined
+        ? titleRef
+        : problems.description !== undefined
+          ? descriptionRef
+          : problems.name !== undefined
+            ? nameRef
+            : null
+    if (invalid !== null) {
+      invalid.current?.focus()
       return false
     }
     setNotice(null)
@@ -289,14 +311,24 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
         break
       }
     }
-    if (titleDirty) {
+    if (titleDirty || nameDirty) {
       try {
-        const updated = await updateSkillDisplayName(skillId, titleValue.trim())
+        const updated = await updateSkill(skillId, {
+          ...(titleDirty ? { displayName: titleValue.trim() } : {}),
+          ...(nameDirty ? { name: nameValue.trim() } : {}),
+        })
         queryClient.setQueryData(skillQueryKeys.detail(skillId), updated)
         setTitle(null)
+        setName(null)
       } catch (error) {
         ok = false
-        messages.push(errorMessageOf(error, '技能名称保存失败，请重试保存'))
+        if (error instanceof ApiError && error.status === 409) {
+          // 标识已被别的技能占用：原因写在标识框下面。
+          setErrors((current) => ({ ...current, name: errorMessageOf(error, '这个标识已被占用') }))
+          nameRef.current?.focus()
+        } else {
+          messages.push(errorMessageOf(error, '技能名称或标识保存失败，请重试保存'))
+        }
       }
     }
     await refresh(skillId)
@@ -421,7 +453,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
 
   const inlineClass =
     'w-full rounded-sm bg-transparent px-2 py-0.5 ui-motion-s transition-colors placeholder:text-on-surface-faint hover:bg-state-hover focus:bg-state-hover focus-visible:outline-0 disabled:cursor-default aria-invalid:ring-1 aria-invalid:ring-error aria-invalid:ring-inset'
-  const fieldError = errors.title ?? errors.description
+  const fieldError = errors.title ?? errors.description ?? errors.name
 
   return (
     <PanelShell
@@ -517,6 +549,23 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
           placeholder="一句话说明这个技能做什么"
           ref={descriptionRef}
           value={description}
+        />
+        <input
+          aria-describedby={errors.name === undefined ? undefined : `${baseId}-error`}
+          aria-invalid={errors.name !== undefined}
+          aria-label="技能标识"
+          autoCapitalize="none"
+          className={cn(inlineClass, 'text-label text-on-surface-faint tabular-nums')}
+          maxLength={MAX_NAME}
+          onChange={(event) => {
+            setName(event.currentTarget.value)
+            setErrors(({ name: _name, ...rest }) => rest)
+            setNotice(null)
+          }}
+          placeholder="技能标识"
+          ref={nameRef}
+          spellCheck={false}
+          value={nameValue}
         />
         {fieldError === undefined ? null : (
           <p className="px-2 text-label text-error" id={`${baseId}-error`} role="alert">

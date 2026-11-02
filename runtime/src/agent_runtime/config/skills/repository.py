@@ -53,11 +53,12 @@ class SkillWriter(Protocol):
     async def update(
         self,
         *,
+        name: str | None = None,
         display_name: str | None = None,
         description: str | None = None,
         status: SkillStatus | None = None,
     ) -> None:
-        """给了的项照写，``None`` 不动。"""
+        """给了的项照写，``None`` 不动；``name`` 已被别的技能占用是 ``Conflict``。"""
         ...
 
     async def add_version(

@@ -64,7 +64,7 @@ def create_skills_router(service: SkillsService) -> APIRouter:
     async def update_skill(
         skill_id: uuid.UUID, body: SkillUpdateIn, _actor: EndUser
     ) -> SkillDetailOut:
-        """改显示名；标识不能改。"""
+        """改显示名或标识，不进版本，保存即生效；两项都没给是 422，标识已被别的技能占用是 409。"""
 
         return await service.rename(skill_id, body)
 
@@ -155,7 +155,8 @@ def create_skills_router(service: SkillsService) -> APIRouter:
         skill_id: uuid.UUID,
         version_id: Annotated[uuid.UUID | None, Query(alias="versionId")] = None,
     ) -> Response:
-        """把一个版本（不给就是最新版）打成 zip，顶层目录是技能标识；没发布过是 404。"""
+        """把一个版本（不给就是最新版）打成 zip，顶层目录、文件名与 ``SKILL.md`` 的 ``name`` 都用技能
+        当前的标识；没发布过是 404。"""
 
         archive = await service.export(skill_id, version_id)
         return Response(

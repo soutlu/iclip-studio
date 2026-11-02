@@ -9160,15 +9160,31 @@
       },
       "SkillUpdateIn": {
         "additionalProperties": false,
+        "description": "改显示名或标识，不给的项不动，至少给一项；都不进版本，保存即生效。",
         "properties": {
           "displayName": {
-            "title": "Displayname",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           }
         },
-        "required": [
-          "displayName"
-        ],
         "title": "SkillUpdateIn",
         "type": "object"
       },
@@ -23225,7 +23241,7 @@
         ]
       },
       "patch": {
-        "description": "改显示名；标识不能改。",
+        "description": "改显示名或标识，不进版本，保存即生效；两项都没给是 422，标识已被别的技能占用是 409。",
         "operationId": "update_skill_skills__skill_id__patch",
         "parameters": [
           {
@@ -23615,7 +23631,7 @@
     },
     "/skills/{skill_id}/export": {
       "get": {
-        "description": "把一个版本（不给就是最新版）打成 zip，顶层目录是技能标识；没发布过是 404。",
+        "description": "把一个版本（不给就是最新版）打成 zip，顶层目录、文件名与 ``SKILL.md`` 的 ``name`` 都用技能\n当前的标识；没发布过是 404。",
         "operationId": "export_skill_skills__skill_id__export_get",
         "parameters": [
           {

@@ -289,6 +289,7 @@ class _SqlSkillWriter:
     async def update(
         self,
         *,
+        name: str | None = None,
         display_name: str | None = None,
         description: str | None = None,
         status: SkillStatus | None = None,
@@ -296,18 +297,25 @@ class _SqlSkillWriter:
         values: dict[str, Any] = {
             key: value
             for key, value in (
+                ("name", name),
                 ("display_name", display_name),
                 ("description", description),
                 ("status", status),
             )
             if value is not None
         }
-        if values:
+        if not values:
+            return
+        try:
             await self._conn.execute(
                 skills_table.update()
                 .where(skills_table.c.id == self._skill.id)
                 .values(**values, updated_at=text("now()"))
             )
+        except IntegrityError as exc:
+            if _violated_constraint(exc) == _DUPLICATE_NAME:
+                raise Conflict(f"已有标识为「{name}」的技能") from exc
+            raise
 
     async def add_version(
         self,

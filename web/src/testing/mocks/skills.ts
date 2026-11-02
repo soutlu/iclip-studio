@@ -1,6 +1,6 @@
 /**
  * 技能库的 mock：几个技能（含一个从没发布过的），草稿文件与最新版，形状照合同 §17。
- * 改草稿、改名、删除、发布、新建与改显示名都改内存里的数据，hash 冲突、路径规则、上限与发布检查照合同做；
+ * 改草稿、改名、删除、发布、新建与改显示名或标识都改内存里的数据，hash 冲突、路径规则、上限与发布检查照合同做；
  * hash 用简单的 FNV（客户端只把它当不透明的值回传）。每例由 `resetMockSkills` 放回预置数据。
  */
 
@@ -65,7 +65,7 @@ const contentHash = (files: Map<string, MockFile>) =>
       .join('\n'),
   )
 
-/** frontmatter 里一行写的 `name` / `description`；mock 只认本 mock 与页面写出来的两种写法。 */
+/** frontmatter 里一行写的某个键（如 `description`）；mock 只认本 mock 与页面写出来的两种写法。 */
 const frontmatterField = (source: string, key: string): string | null => {
   const header = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source)?.[1]
   const raw =
@@ -276,9 +276,18 @@ export const skillHandlers = (actor: () => Actor) => [
     const item = findSkill(params['skillId'])
     if (item === undefined) return notFound()
     const body = (await request.json()) as SkillUpdateIn
-    const displayName = body.displayName.split(/\s+/).join(' ').trim()
+    if (body.displayName == null && body.name == null) return invalid('请给出要改的显示名或标识')
+    const displayName = body.displayName?.split(/\s+/).join(' ').trim()
     if (displayName === '') return invalid('请填写显示名')
-    item.displayName = displayName
+    const name = body.name ?? item.name
+    if (name !== item.name) {
+      if (!NAME_PATTERN.test(name) || name.length > 64)
+        return invalid(`技能标识「${name}」不合规矩`)
+      const taken = skills.find((other) => other.name === name)
+      if (taken !== undefined) return conflict(`标识 ${name} 已被技能「${taken.displayName}」占用`)
+    }
+    item.name = name
+    if (displayName !== undefined) item.displayName = displayName
     item.updatedAt = new Date().toISOString()
     return HttpResponse.json(toDetail(item))
   }),
@@ -348,9 +357,6 @@ export const skillHandlers = (actor: () => Actor) => [
     if (item === undefined) return notFound()
     const source = item.files.get(SKILL_MD)?.content ?? ''
     const problems: string[] = []
-    const name = frontmatterField(source, 'name')
-    if (name !== item.name)
-      problems.push(`SKILL.md 的 frontmatter 里 name 应是技能标识「${item.name}」`)
     const description = frontmatterField(source, 'description')
     if (!description) problems.push('SKILL.md 的 frontmatter 缺少 description')
     if (problems.length > 0) return invalid(problems.join('；'))

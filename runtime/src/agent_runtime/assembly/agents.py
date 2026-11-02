@@ -1,9 +1,9 @@
 """运行时从库里装配 agent：对话固定的版本（或某个 agent 的草稿）→ 编译 → 按版本号取缓存或装配。
 
 每次运行先读出装配用到的全部东西的版本，拼成缓存键：agent 版本（草稿是它的 ``lock_version``）、各技能
-最新版的内容 hash、子 agent 的当前版本与描述（连同它们的技能）、用到的供应商与密钥的修改时刻和模型本身、
-挂的 MCP 服务的修改时刻。键命中就复用装好的 Agent，没命中就装配后放进 LRU。发布 agent、发布技能、改密钥、
-模型或 MCP 服务之后，下一次运行自然换成新的，不用通知，多个进程各自如此。
+的标识与最新版的内容 hash、子 agent 的当前版本与描述（连同它们的技能）、用到的供应商与密钥的修改时刻和
+模型本身、挂的 MCP 服务的修改时刻。键命中就复用装好的 Agent，没命中就装配后放进 LRU。发布 agent、发布技能
+或改它的标识、改密钥、模型或 MCP 服务之后，下一次运行自然换成新的，不用通知，多个进程各自如此。
 
 编译沿用发布时的检查（``compile_agent`` 的运行时模式），引用的模型被停用、插件已从代码里删掉、技能被
 归档等装不起来的情况都报 ``AgentUnavailable``，只影响用到这个版本的对话。
@@ -34,7 +34,12 @@ from agent_runtime.config.agent_config.public import (
 )
 from agent_runtime.config.mcp_servers.public import McpServerService, RuntimeMcpServer
 from agent_runtime.config.model_providers.public import ModelProviderService, RuntimeModel
-from agent_runtime.config.skills.public import Skill, SkillsService
+from agent_runtime.config.skills.public import (
+    SKILL_MD,
+    Skill,
+    SkillsService,
+    with_frontmatter_name,
+)
 from agent_runtime.errors import AgentUnavailable, ValidationFailed
 from agent_runtime.harness.agents import (
     SubAgentProfile,
@@ -406,23 +411,23 @@ class AgentRuntime:
         root = self._settings.skill_cache_dir
         found: list[CachedSkill] = []
         for skill in skills:
-            cached = cached_skill(root, name=skill.name, content_hash=_hash_of(skill))
+            cached = cached_skill(root, name=skill.name, key=_skill_dir_key(skill))
             if cached is None:
                 raise AgentUnavailable(f"技能 {skill.name} 的文件没有写进本机缓存")
             found.append(cached)
         return found
 
     async def _materialize(self, skill: Skill) -> None:
-        """技能最新版的文件不在本机缓存里就读出来写进去；同一个内容 hash 只写一次。"""
+        """技能最新版的文件不在本机缓存里就读出来写进去，``SKILL.md`` 的 ``name`` 换成技能当前的标识
+        （harness 按目录名认技能，要求两者一致）；同一份内容、同一个标识只写一次。"""
 
         root = self._settings.skill_cache_dir
-        content_hash = _hash_of(skill)
-        if skill.latest_version_id is None or cached_skill(
-            root, name=skill.name, content_hash=content_hash
-        ):
+        key = _skill_dir_key(skill)
+        if skill.latest_version_id is None or cached_skill(root, name=skill.name, key=key):
             return
-        files = await self._skills.version_files(skill.latest_version_id)
-        materialize_skill(root, name=skill.name, content_hash=content_hash, files=files)
+        files = dict(await self._skills.version_files(skill.latest_version_id))
+        files[SKILL_MD] = with_frontmatter_name(files[SKILL_MD], skill.name)
+        materialize_skill(root, name=skill.name, key=key, files=files)
 
     # --- 首页与标题 -------------------------------------------------------------
 
@@ -460,10 +465,12 @@ class AgentRuntime:
         return await title_generator(self._title_model[1])(user_text)
 
 
-def _hash_of(skill: Skill) -> str:
+def _skill_dir_key(skill: Skill) -> str:
+    """技能在本机缓存里的目录名：最新版的内容 hash 与当前标识合起来的 sha256，改了哪个都换新目录。"""
+
     if skill.latest_content_hash is None:
         raise AgentUnavailable(f"技能 {skill.name} 没有发布过的版本")
-    return skill.latest_content_hash
+    return hashlib.sha256(f"{skill.latest_content_hash}\n{skill.name}".encode()).hexdigest()
 
 
 def _run_metadata(prepared: _Prepared, profile: SubAgentProfile) -> dict[str, str]:
