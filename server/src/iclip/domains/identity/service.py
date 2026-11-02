@@ -166,17 +166,34 @@ class IdentityService:
     async def update_user(
         self, principal: Principal, user_id: uuid.UUID, patch: UpdateUser
     ) -> UserAccount:
-        """改他人的角色、直接授权与启用状态；``users:manage`` 由路由声明，这里管不能改自己。"""
+        """改他人的角色、直接授权与启用状态；``users:manage`` 由路由声明，这里管不能改自己与授权上限。
 
+        授权上限同 API key 签发：改完后对方的权限里调用者自己没有的，必须是对方改之前就有的，否则
+        ``PermissionDenied``。于是能收回、能原样保留别人的权限，但不能给出超出自己的。"""
+
+        changes_access = patch.roles is not None or patch.direct_permissions is not None
         if patch.roles is not None:
             unknown_roles = {role for role in patch.roles if not is_known_role(role)}
             if unknown_roles:
                 raise ValidationFailed(f"未知角色: {', '.join(sorted(unknown_roles))}")
         if user_id == principal.user_id:
-            if patch.roles is not None or patch.direct_permissions is not None:
+            if changes_access:
                 raise SelfManagementForbidden("不能修改自己的授权")
             if patch.is_active is False:
                 raise SelfManagementForbidden("不能停用自己")
+        if changes_access:
+            target = await self.get_account(user_id)
+            before = effective_permissions(target.roles, target.direct_permissions)
+            after = effective_permissions(
+                target.roles if patch.roles is None else patch.roles,
+                (
+                    target.direct_permissions
+                    if patch.direct_permissions is None
+                    else patch.direct_permissions
+                ),
+            )
+            if not after - principal.permissions <= before:
+                raise PermissionDenied("不能授予超出自己权限的角色或权限")
         updated = await self._users.update_access_fields(
             user_id,
             roles=patch.roles,

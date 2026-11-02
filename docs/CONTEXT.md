@@ -86,11 +86,11 @@ agent 可以把别的 agent 当作子 agent 派活，按标识引用，可设单
 请求或运行使用的可信身份，区分用户与 API key，包含归属用户、API key 身份（如有）、生效权限集和属主账号的用户名。由宿主建立，下游只消费它。
 
 **API Key**：
-归属某个用户的长期机器凭证，服务端只存哈希与展示前缀。有效权限是显式授予集，签发时不得超出签发者当下权限；签发需 `api_keys:issue`，预置角色中仅 root 持有。传输见 [跨端认证约定](../contract/conventions.md#2-双主体认证-dual-principals)。
+归属某个用户的长期机器凭证，服务端只存哈希与展示前缀。有效权限是显式授予集，签发时不得超出签发者当下权限；签发需 `api_keys:issue`，预置角色中 root 与 admin 持有。传输见 [跨端认证约定](../contract/conventions.md#2-双主体认证-dual-principals)。
 持 `users:act_as` 的 key 可**替人办事**：写入口的请求体里给了 `user_name`，那次请求就以那个人为主体，属主、创建者、认领人都记他；系统里还没有这个人时先建一个只有用户名的占位账号，本人日后 SSO 登录按用户名认领。权限仍是 key 自己的显式授予集，审计标识记「那个人#key 名」，能替任何人写的 key 也能读任何人的记录。没有这个权限的 key 一切照旧，`user_name` 只是发往上游的标签。
 
 **角色（Role）**：
-权限集合的命名快捷方式。用户有效权限 = 所分配角色的权限并集 ∪ 直接授权。权限词汇与预置角色以 [rbac.py](../server/src/iclip/domains/identity/rbac.py) 为准。
+权限集合的命名快捷方式。用户有效权限 = 所分配角色的权限并集 ∪ 直接授权。权限词汇与预置角色以 [rbac.py](../server/src/iclip/domains/identity/rbac.py) 为准。给别人改角色或直接授权时，改完后他的权限里分配者自己没有的，必须是他原本就有的：能收回、能保留他原有的，不能给出超出自己的。
 
 **双主体（Dual Principal）**：
 同一套产品能力对浏览器用户与机器调用方开放。两者使用同一 Principal 类型与权限词汇，认证传输见 [跨端认证约定](../contract/conventions.md#2-双主体认证-dual-principals)。
