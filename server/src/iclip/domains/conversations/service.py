@@ -86,6 +86,10 @@ class RuntimeSessions(Protocol):
         没有这个 agent、或它不上首页菜单是 ``ValidationFailed``；已归档、还没发布过是 ``Conflict``。"""
         ...
 
+    async def abort(self, session_id: uuid.UUID) -> None:
+        """复用会话中断：撤回排队消息，取消正在运行或等待审批的消息。"""
+        ...
+
     async def open_preview(
         self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
     ) -> None:
@@ -1340,22 +1344,22 @@ class ConversationService:
             preview_id, owner=principal.user_id, agent_id=agent_id, version_id=version_id
         )
 
-    async def is_preview(self, session_id: str) -> bool:
-        """这个 id 是不是一段 agent 测试预览（只按主键查，不判谁能用）；不是 UUID 的算不是。给要把预览
-        与对话分开记账的内部入口用。"""
-
-        try:
-            parsed = uuid.UUID(session_id)
-        except ValueError:
-            return False
-        return await self._previews.get(parsed) is not None
-
     async def delete_preview(
         self, principal: Principal, agent_id: str, preview_id: uuid.UUID
     ) -> None:
-        """删掉调用者自己的一段预览；只删这一行，运行时的会话与它的记录留着、再也寻址不到。不是他的、
-        不是这个 agent 的、没有这一段都是 ``NotFound``。"""
+        """复用会话中断后删除自己的预览；中断失败保留入口，运行时的会话与记录留存。
 
+        在中断前核对属主与 agent，不属于调用者或 agent、没有这一段都是 ``NotFound``。
+        """
+
+        preview = await self._previews.get(preview_id)
+        if (
+            preview is None
+            or preview.owner_user_id != principal.user_id
+            or preview.agent_id != agent_id
+        ):
+            raise NotFound("没有这段预览")
+        await self._runtime.abort(preview_id)
         if not await self._previews.delete(preview_id, owner=principal.user_id, agent_id=agent_id):
             raise NotFound("没有这段预览")
 

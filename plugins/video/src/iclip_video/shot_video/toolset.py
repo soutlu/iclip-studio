@@ -184,7 +184,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
                 channel="dev",
                 user_name=_user_name(ctx),
                 reference_image_urls=references,
-                conversation_id=_conversation_id(ctx),
+                conversation_id=_generation_conversation_id(ctx),
             ),
         )
         if job.status != "completed" or not job.output_url:
@@ -228,7 +228,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
                 resolution=GRID_RESOLUTION,
                 channel="dev",
                 user_name=_user_name(ctx),
-                conversation_id=_conversation_id(ctx),
+                conversation_id=_generation_conversation_id(ctx),
             ),
         )
         if job.status != "completed" or not job.output_url:
@@ -304,18 +304,19 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         return self._cap.space.store, self._cap.space.resolve(ctx)
 
 
-def _conversation_id(ctx: RunContext[AgentDepsT]) -> str:
-    """这次运行跑在哪段对话里，出图记录按它归档。
+def _generation_conversation_id(ctx: RunContext[AgentDepsT]) -> str | None:
+    """出图记录的业务对话归属；预览产物不挂到业务对话。
 
     入口已把对话 id 规范成 UUID；这里不是 UUID 说明运行状态损坏，直接抛 RuntimeError。
     """
 
-    conversation_id = _deps(ctx).conversation_id
+    deps = _deps(ctx)
+    conversation_id = deps.conversation_id
     try:
         uuid.UUID(conversation_id)
     except ValueError as exc:
         raise RuntimeError("这次运行的对话 id 不是 UUID——运行状态已损坏。") from exc
-    return conversation_id
+    return None if deps.preview else conversation_id
 
 
 def _owner(ctx: RunContext[AgentDepsT]) -> uuid.UUID:

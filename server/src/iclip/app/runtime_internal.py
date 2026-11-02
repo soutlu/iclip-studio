@@ -11,7 +11,7 @@ import asyncio
 import hmac
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Final
 
 import structlog
@@ -223,7 +223,7 @@ def create_runtime_internal_router(
         return answer
 
     if plugins.shot_video is not None:
-        _image_routes(router, plugins.shot_video.generations, conversations)
+        _image_routes(router, plugins.shot_video.generations)
         _boards_route(router, plugins.shot_video.boards)
         _cuts_route(router, plugins.shot_video.cuts)
     if plugins.breakdowns is not None:
@@ -231,23 +231,16 @@ def create_runtime_internal_router(
     return router
 
 
-def _image_routes(
-    router: APIRouter, generations: ImageGenerations, conversations: ConversationService
-) -> None:
+def _image_routes(router: APIRouter, generations: ImageGenerations) -> None:
     @router.post("/plugins/generations")
     async def submit_image(body: ImageSubmission) -> ImageJob:
         """提交出图；请求不合法 422，原话同进程内交给工具的那句。
 
-        测试预览里出的图不挂对话：照常是属主的一条生成记录（同上传），``iclip`` 里不留按预览 id 记的东西，
-        按对话列记录与生成帧也就带不出预览。从这张宫格切出的图沿用它的对话，一样不挂。"""
+        插件按运行时会话类型给出归属：测试预览的 ``conversation_id`` 为空，删除预览后的在途请求也一样。
+        从这张宫格切出的图沿用它的对话归属。"""
 
-        request = body.request
-        if request.conversation_id is not None and await conversations.is_preview(
-            request.conversation_id
-        ):
-            request = replace(request, conversation_id=None)
         try:
-            return await generations.submit(body.user_id, request)
+            return await generations.submit(body.user_id, body.request)
         except InvalidImageRequest as exc:
             raise ValidationFailed(str(exc)) from exc
 

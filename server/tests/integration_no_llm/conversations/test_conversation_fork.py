@@ -217,6 +217,9 @@ class StartMovedUnderUs:
     def __init__(self) -> None:
         self.targets: list[uuid.UUID] = []
 
+    async def abort(self, session_id: uuid.UUID) -> None:
+        _untouched()
+
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         _untouched()
 

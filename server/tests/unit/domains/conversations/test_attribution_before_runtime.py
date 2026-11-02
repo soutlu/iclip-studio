@@ -68,6 +68,9 @@ class UntouchedRuntime:
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         raise AssertionError("前置校验没过，不该在运行时开会话")
 
+    async def abort(self, session_id: uuid.UUID) -> None:
+        raise AssertionError("这里不中断会话")
+
     async def open_preview(
         self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
     ) -> None:

@@ -10,19 +10,27 @@ import asyncio
 import json
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.client import RuntimeClient, RuntimeUnavailable
+from agent_runtime.plugins.base import PluginRegistry
+from agent_runtime.transcript.ops import MAIN_AGENT_ID
 from fastapi import FastAPI
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.tools import Tool
 from sqlalchemy import text
 from starlette.testclient import TestClient
 
 from tests.helpers.agents import AgentSeed
-from tests.helpers.app import make_client, new_conversation, settled
+from tests.helpers.app import TEST_MODEL_NAME, make_client, new_conversation, settled
 from tests.helpers.auth import register_and_login
 from tests.helpers.pg import connected
+from tests.helpers.plugins import FixedPlugin
 from tests.helpers.ws import AGENT_ID, open_conversation, sign_in_as, until
 
 PROMPT = {"prompt_id": "prm_preview", "content": [{"type": "text", "text": "试一下"}]}
@@ -211,6 +219,149 @@ async def test_deleting_a_preview_is_for_its_owner_and_hides_it_everywhere(
     assert (by_other.status_code, wrong_agent.status_code) == (404, 404)
     assert (deleted.status_code, again.status_code) == (204, 404)
     assert await statuses(owner, preview) == ALL_HIDDEN
+
+
+async def test_a_failed_runtime_stop_keeps_the_preview_available(
+    people: dict[str, httpx.AsyncClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = people["owner"]
+    preview = await a_preview(owner)
+
+    async def unavailable(_self: RuntimeClient, _session_id: uuid.UUID) -> None:
+        raise RuntimeUnavailable("运行时暂时不可用")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(RuntimeClient, "abort_session", unavailable)
+        refused = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+
+    assert refused.status_code == 503, refused.text
+    assert (await owner.get(f"/conversations/{preview}/status")).status_code == 200
+    retried = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+    assert retried.status_code == 204, retried.text
+
+
+class TestDeletingAnActivePreview:
+    @pytest.fixture
+    def model_entered(self) -> asyncio.Event:
+        return asyncio.Event()
+
+    @pytest.fixture
+    def model_released(self) -> asyncio.Event:
+        return asyncio.Event()
+
+    @pytest.fixture
+    def models(
+        self, model_entered: asyncio.Event, model_released: asyncio.Event
+    ) -> dict[str, FunctionModel]:
+        async def respond(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+            yield "正在生成"
+            model_entered.set()
+            await model_released.wait()
+            yield "完成"
+
+        return {TEST_MODEL_NAME: FunctionModel(stream_function=respond)}
+
+    async def test_deleting_stops_the_active_prompt_and_discards_the_queue(
+        self,
+        people: dict[str, httpx.AsyncClient],
+        pg_url: str,
+        model_entered: asyncio.Event,
+        model_released: asyncio.Event,
+    ) -> None:
+        owner = people["owner"]
+        preview = await a_preview(owner)
+        try:
+            sent = await owner.post(f"/conversations/{preview}/prompts", json=PROMPT)
+            assert sent.status_code == 200, sent.text
+            await asyncio.wait_for(model_entered.wait(), timeout=5)
+            queued = await owner.post(
+                f"/conversations/{preview}/prompts",
+                json={**PROMPT, "prompt_id": "prm_queued"},
+            )
+            assert queued.status_code == 200, queued.text
+            assert await _prompt_states(pg_url, preview) == {
+                "prm_preview": "running",
+                "prm_queued": "queued",
+            }
+
+            # 拒绝的删除不能打断属主正在运行的预览，也不能清掉它的队列。
+            for client, agent_id in ((people["other_admin"], AGENT_ID), (owner, "director")):
+                refused = await client.delete(f"/agents/{agent_id}/previews/{preview}")
+                assert refused.status_code == 404, refused.text
+                assert await _prompt_states(pg_url, preview) == {
+                    "prm_preview": "running",
+                    "prm_queued": "queued",
+                }
+
+            deleted = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+            assert deleted.status_code == 204, deleted.text
+            await _wait_for_prompt_states(
+                pg_url, preview, {"prm_preview": "aborted", "prm_queued": "aborted"}
+            )
+            assert (await owner.get(f"/conversations/{preview}/status")).status_code == 404
+        finally:
+            model_released.set()
+
+
+class TestDeletingAnAwaitingPreview:
+    @pytest.fixture
+    def agent_seeds(self) -> tuple[AgentSeed, ...]:
+        return (AgentSeed(AGENT_ID, plugins=("approval",)),)
+
+    @pytest.fixture
+    def runtime_plugins(self) -> PluginRegistry:
+        def approved_action() -> str:
+            return "已执行"
+
+        capability = Capability[Any](
+            id="approval", tools=[Tool(approved_action, requires_approval=True)]
+        )
+        return {"approval": FixedPlugin.bind(name="approval", capabilities=(capability,))}
+
+    async def test_deleting_cancels_the_pending_approval_and_discards_the_queue(
+        self, people: dict[str, httpx.AsyncClient], pg_url: str, app: FastAPI
+    ) -> None:
+        owner = people["owner"]
+        preview = await a_preview(owner)
+        sent = await owner.post(f"/conversations/{preview}/prompts", json=PROMPT)
+        assert sent.status_code == 200, sent.text
+        await _wait_for_prompt_states(pg_url, preview, {"prm_preview": "awaiting"})
+        queued = await owner.post(
+            f"/conversations/{preview}/prompts", json={**PROMPT, "prompt_id": "prm_queued"}
+        )
+        assert queued.status_code == 200, queued.text
+        assert app.state.transcript_store.pending_interactions(preview, MAIN_AGENT_ID)
+
+        deleted = await owner.delete(f"/agents/{AGENT_ID}/previews/{preview}")
+
+        assert deleted.status_code == 204, deleted.text
+        await _wait_for_prompt_states(
+            pg_url, preview, {"prm_preview": "aborted", "prm_queued": "aborted"}
+        )
+        assert app.state.transcript_store.pending_interactions(preview, MAIN_AGENT_ID) == ()
+        assert (await owner.get(f"/conversations/{preview}/status")).status_code == 404
+
+
+async def _wait_for_prompt_states(pg_url: str, preview: str, expected: dict[str, str]) -> None:
+    states: dict[str, str] = {}
+    for _ in range(200):
+        states = await _prompt_states(pg_url, preview)
+        if states == expected:
+            return
+        await asyncio.sleep(0.02)
+    assert states == expected
+
+
+async def _prompt_states(pg_url: str, preview: str) -> dict[str, str]:
+    async with connected(pg_url) as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT prompt_id, status FROM agent_runtime.agent_jobs"
+                " WHERE conversation_id = :preview"
+            ),
+            {"preview": preview},
+        )
+        return {row.prompt_id: row.status for row in rows}
 
 
 # --- 订阅与活动帧 ------------------------------------------------------------------

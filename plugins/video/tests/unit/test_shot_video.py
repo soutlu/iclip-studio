@@ -495,25 +495,35 @@ async def test_generate_accepts_a_frame_the_ledger_never_sampled(
     assert generations.submitted
 
 
-async def test_generate_tags_the_job_with_the_conversation(
+@pytest.mark.parametrize("preview", [False, True], ids=["conversation", "preview"])
+@pytest.mark.parametrize("tool", ["frames", "anchor"])
+async def test_generation_tags_only_conversations_and_keeps_materials_in_the_session(
     tools: ShotVideoToolset[object],
     files: FakeFileStore,
+    materials: FakeMaterialLedger,
     generations: FakeGenerations,
+    preview: bool,
+    tool: str,
 ) -> None:
-
     conversation_id = str(uuid.uuid4())
-    ctx = make_context(replace(make_deps(), conversation_id=conversation_id))
-    # 使用失败结果避免进入切格流程，本测试仅检查提交字段。
-    generations.outcomes = [Outcome(status="failed", output_url=None, error_code="REJECTED")]
-    await files.write(f"{USER}/{conversation_id}", EXTRACTION_PATH, ledger("S1-1"))
-    with pytest.raises(ToolFailed):
-        await tools.generate_shot_frames(
+    namespace = f"{USER}/{conversation_id}"
+    ctx = make_context(replace(make_deps(), conversation_id=conversation_id, preview=preview))
+    await files.write(namespace, EXTRACTION_PATH, ledger("S1-1"))
+
+    if tool == "frames":
+        result = await tools.generate_shot_frames(
             ctx, [FrameRequest(no="S1-1", prompt="猫")], [], "全局", "9:16"
         )
-    with pytest.raises(ToolFailed):
-        await tools.generate_anchor_sheet(ctx, ["一只猫"])
+    else:
+        result = await tools.generate_anchor_sheet(ctx, ["一只猫"])
 
-    assert {request.conversation_id for request in generations.submitted} == {conversation_id}
+    [request] = generations.submitted
+    assert request.conversation_id == (None if preview else conversation_id)
+    assert isinstance(result.return_value, dict)
+    outputs = result.return_value["frames" if tool == "frames" else "images"]
+    assert materials.urls(namespace) == {GRID, *(item["url"] for item in outputs)}
+    assert materials.urls(NAMESPACE) == {VIDEO}
+    assert {space for space, _ in materials.rows} == {NAMESPACE, namespace}
 
 
 async def test_a_conversation_id_that_is_not_a_uuid_is_corrupt_state(
