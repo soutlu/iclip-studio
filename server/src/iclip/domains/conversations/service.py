@@ -1333,35 +1333,23 @@ class ConversationService:
     async def open_preview(
         self, principal: Principal, agent_id: str, *, version_id: uuid.UUID | None
     ) -> AgentPreview:
-        """给调用者开一段 agent 测试预览：``version_id`` 为空试这个 agent 当下的草稿，否则试它的那一版。
+        """给调用者开一段新的 agent 测试预览，换掉他在这个 agent 上的当前预览：``version_id`` 为空试这个 agent
+        当下的草稿，否则试它的那一版。端点已核 ``agent:manage``。
 
-        运行时那边先开预览会话，再落行；没有这个 agent 是 ``NotFound``，版本不是它的是 ``ValidationFailed``。
-        中途失败只留下寻址不到的运行时会话。端点已核 ``agent:manage``。"""
+        先由运行时开新的预览会话：没有这个 agent 是 ``NotFound``，版本不是它的是 ``ValidationFailed``，这时什么都
+        没动。再复用会话中断停掉当前那段（撤回排队消息，取消正在运行或等待审批的消息）：开跑检查不看预览行，不停
+        它排着的消息换掉之后照样会跑。中断失败原样抛出、行不换，刚开的会话寻址不到，它没有消息、什么都不跑。最后
+        一条语句换掉这一行；换掉的那段 id 再也寻址不到，它在运行时的会话与记录留着。并发的几次打开都成功，只有
+        最后落行的那段留下。"""
 
         preview_id = uuid.uuid4()
         await self._runtime.open_preview(preview_id, agent_id=agent_id, version_id=version_id)
-        return await self._previews.create(
+        current = await self._previews.current(owner=principal.user_id, agent_id=agent_id)
+        if current is not None:
+            await self._runtime.abort(current.id)
+        return await self._previews.replace(
             preview_id, owner=principal.user_id, agent_id=agent_id, version_id=version_id
         )
-
-    async def delete_preview(
-        self, principal: Principal, agent_id: str, preview_id: uuid.UUID
-    ) -> None:
-        """复用会话中断后删除自己的预览；中断失败保留入口，运行时的会话与记录留存。
-
-        在中断前核对属主与 agent，不属于调用者或 agent、没有这一段都是 ``NotFound``。
-        """
-
-        preview = await self._previews.get(preview_id)
-        if (
-            preview is None
-            or preview.owner_user_id != principal.user_id
-            or preview.agent_id != agent_id
-        ):
-            raise NotFound("没有这段预览")
-        await self._runtime.abort(preview_id)
-        if not await self._previews.delete(preview_id, owner=principal.user_id, agent_id=agent_id):
-            raise NotFound("没有这段预览")
 
 
 __all__ = [

@@ -1,7 +1,7 @@
 """对话的 Postgres 仓储。使用数据库时钟，避免实例钟差影响排序与游标。
 
 删除只标记 ``deleted_at``：行留着占住 id。除治理者的审计列表与 ``include_deleted`` 直读，
-每条读写都只看活着的行。agent 测试预览另一张表 ``agent_previews``，删就是真删。"""
+每条读写都只看活着的行。agent 测试预览另一张表 ``agent_previews``，每人每个 agent 一行，开新的就换掉这一行。"""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ from sqlalchemy import (
     MetaData,
     Table,
     Text,
+    UniqueConstraint,
     Uuid,
     and_,
-    delete,
     false,
     func,
     literal,
@@ -172,6 +172,8 @@ agent_previews_table = Table(
     Column("agent_id", Text, nullable=False),
     Column("version_id", Uuid, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # 与迁移 0049 同名同式。
+    UniqueConstraint("owner_user_id", "agent_id", name="uq_agent_previews_owner_agent"),
 )
 
 _PREVIEWS = agent_previews_table.c
@@ -689,21 +691,13 @@ class SqlAgentPreviewStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(
-        self,
-        preview_id: uuid.UUID,
-        *,
-        owner: uuid.UUID,
-        agent_id: str,
-        version_id: uuid.UUID | None,
-    ) -> AgentPreview:
-        statement = (
-            pg_insert(agent_previews_table)
-            .values(id=preview_id, owner_user_id=owner, agent_id=agent_id, version_id=version_id)
-            .returning(*agent_previews_table.c)
+    async def current(self, *, owner: uuid.UUID, agent_id: str) -> AgentPreview | None:
+        statement = select(agent_previews_table).where(
+            _PREVIEWS.owner_user_id == owner, _PREVIEWS.agent_id == agent_id
         )
-        async with self._engine.begin() as conn:
-            return _preview((await conn.execute(statement)).mappings().one())
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        return None if row is None else _preview(row)
 
     async def get(self, preview_id: uuid.UUID) -> AgentPreview | None:
         statement = select(agent_previews_table).where(_PREVIEWS.id == preview_id)
@@ -711,18 +705,28 @@ class SqlAgentPreviewStore:
             row = (await conn.execute(statement)).mappings().one_or_none()
         return None if row is None else _preview(row)
 
-    async def delete(self, preview_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str) -> bool:
-        statement = (
-            delete(agent_previews_table)
-            .where(
-                _PREVIEWS.id == preview_id,
-                _PREVIEWS.owner_user_id == owner,
-                _PREVIEWS.agent_id == agent_id,
-            )
-            .returning(_PREVIEWS.id)
+    async def replace(
+        self,
+        preview_id: uuid.UUID,
+        *,
+        owner: uuid.UUID,
+        agent_id: str,
+        version_id: uuid.UUID | None,
+    ) -> AgentPreview:
+        # 一条 upsert：并发的两次替换撞上同一个唯一键时后到的等先到的提交、再走更新，不报错，留下后写的那一行。
+        statement = pg_insert(agent_previews_table).values(
+            id=preview_id, owner_user_id=owner, agent_id=agent_id, version_id=version_id
         )
+        statement = statement.on_conflict_do_update(
+            constraint="uq_agent_previews_owner_agent",
+            set_={
+                "id": statement.excluded.id,
+                "version_id": statement.excluded.version_id,
+                "created_at": func.now(),
+            },
+        ).returning(*agent_previews_table.c)
         async with self._engine.begin() as conn:
-            return (await conn.execute(statement)).first() is not None
+            return _preview((await conn.execute(statement)).mappings().one())
 
 
 __all__ = [

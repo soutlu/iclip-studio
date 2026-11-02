@@ -200,7 +200,7 @@ import [asgi.py](../server/src/iclip/asgi.py) 只建各个服务与运行时服�
 - **对话域**：开会话、分叉、做同款的拷文件、首页名册、起标题、按对话读活动与此刻在跑的对话经 [app/runtime_ports.py](../server/src/iclip/app/runtime_ports.py)，运行时答的 404/409/422 还原成同类领域错误，入口的报错与进程内调用时相同；对话活动由组合根再合上后端自己的出片阶段，运行时没有会话的对话按空闲算。后端以应用 `video`（组合根的 `VIDEO_APP_ID`，运行时按 `RUNTIME_APP_KEY` 认出它）开会话与分叉，现有会话由迁移 0044 回填为它。建对话时会话先开、对话行后落（agent 开不了会话就不落对话行），中途失败只留下不属于任何对话的会话行。首页名册（`GET /conversations/agents`）转的是 `GET /v1/agents`。
 - **消息与 transcript**：端点（[domains/agents/transcript_api.py](../server/src/iclip/domains/agents/transcript_api.py)）判完可见与可写、转存完附件，转给运行时的会话接口，`X-End-User` 是对话的属主，读一页时 `session_agent` 是对话的 agent，答复包进后端的 `TranscriptPage` 加上标题、属主、删除时刻与血缘。
 - **工作区文件与素材台账**：经 [app/runtime_workspace.py](../server/src/iclip/app/runtime_workspace.py) 的两个适配器（按命名空间寻址，反解出属主放进 `X-End-User`），制作页、工作区文件端点、资料库打标与做同款的判断都用它们；写文件的变化帧由运行时发在订着这段对话的对话内容流上，后端原样转给浏览器。
-- **测试预览**：后端在 `iclip.agent_previews` 记每段预览归谁（对话域的 `ConversationService`，端点 `/agents/{id}/previews` 也挂在对话域），transcript、发消息、订阅与读工作区文件认不认预览 id 都只在对话服务的同一处判（属主本人且此刻持 `agent:manage`）；运行开始与轮次开始的回调遇到预览什么都不做，事件流消费者不转发预览的活动，开跑检查另要属主持 `agent:manage`。删除预览在核对属主后先经运行时客户端复用会话中断，再删业务行；视频插件按运行依赖中固定的预览标记清空出图的业务对话归属，工作区与素材台账仍按原会话隔离，后端不靠预览业务行判断生成归属。
+- **测试预览**：后端在 `iclip.agent_previews` 记每段预览归谁（对话域的 `ConversationService`，端点 `/agents/{id}/previews` 也挂在对话域），transcript、发消息、订阅与读工作区文件认不认预览 id 都只在对话服务的同一处判（属主本人且此刻持 `agent:manage`）；运行开始与轮次开始的回调遇到预览什么都不做，事件流消费者不转发预览的活动，开跑检查另要属主持 `agent:manage`。业务行每人每个 agent 一行（唯一约束），开新预览先开新的运行时会话，再经运行时客户端复用会话中断停掉当前那段，最后一条 upsert 换掉这一行；视频插件按运行依赖中固定的预览标记清空出图的业务对话归属，工作区与素材台账仍按原会话隔离，后端不靠预览业务行判断生成归属。
 
 运行时答不上（连不上、超时、5xx，或不认后端这个应用）时这些端点答 `503`，后端的信封、一句固定的话，原因只进日志；客户端抛 `AppRejected` 时日志记一条错误提示检查 `RUNTIME_APP_KEY` 与运行时的应用配置。
 

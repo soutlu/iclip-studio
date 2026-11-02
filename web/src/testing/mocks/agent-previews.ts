@@ -1,6 +1,6 @@
 /**
  * 测试预览的 mock：开预览交回新 id，那段 transcript 从空的开始，发消息跑一段三步的演示运行
- * （读参考素材、理解视频、回复），每步带起止时刻，运行过程里有耗时；删预览照合同只回 204。形状照合同 §19「测试预览」。
+ * （读参考素材、理解视频、回复），每步带起止时刻，运行过程里有耗时。形状照合同 §19「测试预览」。
  */
 
 import { http, HttpResponse } from 'msw'
@@ -127,8 +127,4 @@ export const agentPreviewHandlers = [
     markMockScript(preview.id, previewRun)
     return HttpResponse.json(preview, { status: 201 })
   }),
-  http.delete(
-    '*/api/agents/:agentId/previews/:previewId',
-    () => new HttpResponse(null, { status: 204 }),
-  ),
 ]
