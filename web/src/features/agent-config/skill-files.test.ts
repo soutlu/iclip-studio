@@ -81,6 +81,15 @@ describe('skillBody / withSkillBody', () => {
     expect(readDescription(next)).toBe('从需求理解到新片方案。')
   })
 
+  it.each([
+    ['以空行开头', '\n\n# 标题'],
+    ['空正文', ''],
+    ['CRLF', '# 标题\r\n'],
+  ])('正文%s时也原样读回来', (_case, body) => {
+    expect(skillBody(withSkillBody(SOURCE, body))).toBe(body)
+    expect(skillBody(withSkillBody(SOURCE.replaceAll('\n', '\r\n'), body))).toBe(body)
+  })
+
   it('没有 frontmatter 时整篇就是正文', () => {
     expect(skillBody('# 标题')).toBe('# 标题')
     expect(withSkillBody('# 标题', '# 新')).toBe('# 新')

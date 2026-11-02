@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
-import { MarkdownPreview } from '@/shared/ui/markdown-editor'
+import { Markdown } from '@/shared/ui/markdown'
 import { thinkingLabel } from '@/shared/ui/thinking-level'
 import {
   enabledPluginNames,
@@ -418,10 +418,13 @@ function PromptCard({
   const preview = empty ? (
     <span className="text-on-surface-faint">{onOpen === undefined ? '—' : '添加系统提示词'}</span>
   ) : (
-    <MarkdownPreview
-      className="max-h-30 overflow-hidden mask-b-from-60% [&_:is(strong,h1,h2,h3,h4)]:text-on-surface"
-      value={markdown}
-    />
+    // 摘要只读：正文里的链接、代码块按钮不单独接收焦点与点击，整张卡片就是一个按钮。
+    <div className="pointer-events-none" inert>
+      <Markdown
+        className="max-h-30 overflow-hidden mask-b-from-60% text-on-surface-variant [&_:is(strong,h3,h4,h5)]:text-on-surface"
+        text={markdown}
+      />
+    </div>
   )
   if (onOpen === undefined) return <div className={className}>{preview}</div>
   return (

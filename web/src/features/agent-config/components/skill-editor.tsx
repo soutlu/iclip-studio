@@ -1,16 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
+import { Icon } from '@/shared/icons'
+import { fileKindOf } from '@/shared/lib/file-kind'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
-import { Textarea } from '@/shared/ui/field'
 import { ListError, ListPending } from '@/shared/ui/list-state'
-import { MarkdownEditor } from '@/shared/ui/markdown-editor'
+import { SourceEditor } from '@/shared/ui/source-editor'
 import { toast } from '@/shared/ui/toast'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   fileLabel,
-  isMarkdownPath,
   isValidName,
   MAX_NAME,
   NAME_RULE,
@@ -48,6 +48,12 @@ const sentences = (messages: string[]): string | null =>
       ? (messages[0] ?? null)
       : messages.map((message) => `${message}。`).join('')
 
+/** 文本框随内容长高，整段显示不截断。 */
+const fitHeight = (el: HTMLTextAreaElement) => {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
 type SkillEditorProps = {
   skillId: string
   /** 返回上一页（技能库、选技能）或收起面板。 */
@@ -57,7 +63,8 @@ type SkillEditorProps = {
 }
 
 /**
- * 编辑一个技能：标题区依次是显示名、`SKILL.md` frontmatter 里的说明与技能标识，下面是草稿的文件页签与编辑器。
+ * 编辑一个技能：标题区是技能图标、技能标识与显示名，下面整段显示 `SKILL.md` frontmatter 里的说明，
+ * 再下面是草稿的文件页签与原文编辑器（所有文件共用，按文件类型高亮与检查）。
  * 显示名与标识是技能本身的属性，不进版本，「保存草稿」时一并改、立即生效；说明随 `SKILL.md` 进草稿。
  * 文件内容的改动先留在本地，「保存草稿」时逐个写回并带上读到的 hash；改名、删除与新建页签当场生效
  * （没保存过的新文件只在本地改）。「发布技能」先存上没保存的改动，再发布服务端的草稿。
@@ -80,10 +87,29 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const [fileNameError, setFileNameError] = useState<string | null>(null)
   const [filePending, setFilePending] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
-  const descriptionRef = useRef<HTMLInputElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
-  // 页签行在富文本与纯文本之间切换时会重新挂载，要聚焦的元素记下来，提交后再放焦点。
+  // 说明框挂上时量一次高度；之后内容变了在下面的 effect 里量，宽度变了（面板拉宽拉窄）在这里量。
+  const attachDescription = useCallback((el: HTMLTextAreaElement | null) => {
+    descriptionRef.current = el
+    if (el === null) return
+    fitHeight(el)
+    // 只看宽度：改高度本身也会触发观察，按高度重算会来回触发。
+    let width = el.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return
+      width = el.clientWidth
+      fitHeight(el)
+    })
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      descriptionRef.current = null
+    }
+  }, [])
+
+  // 改名、新建与删除确认会换掉页签里的元素，要聚焦的元素记下来，渲染后再放焦点。
   const elementsRef = useRef(new Map<string, HTMLElement>())
   const focusRequestRef = useRef<string | null>(null)
   useLayoutEffect(() => {
@@ -137,6 +163,9 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const paths = sortSkillPaths(new Set([...serverPaths, ...Object.keys(edits)]))
   const skillMdContent = edits[SKILL_MD]?.content ?? skillMd.data?.content
   const description = skillMdContent === undefined ? '' : (readDescription(skillMdContent) ?? '')
+  useLayoutEffect(() => {
+    if (descriptionRef.current !== null) fitHeight(descriptionRef.current)
+  }, [description])
   const titleValue = title ?? detail.data?.displayName ?? ''
   const titleDirty =
     title !== null && detail.data !== undefined && title.trim() !== detail.data.displayName
@@ -394,42 +423,25 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const activeQuery = active === SKILL_MD ? skillMd : activeFile
   const activeContent =
     active === SKILL_MD ? skillMdContent : (edits[active]?.content ?? activeFile.data?.content)
-  let body: ReactNode
-  if (activeContent !== undefined && isMarkdownPath(active)) {
-    body = (
-      <MarkdownEditor
+  // 每个文件一个编辑器实例：换文件就重新挂载，撤销历史不串到别的文件。
+  const body =
+    activeContent !== undefined ? (
+      <SourceEditor
         ariaLabel="文件内容"
-        className="flex-1 pb-4"
-        leading={tabs}
-        onChange={(markdown) =>
+        className="flex-1 pt-3 pb-4"
+        key={active}
+        kind={fileKindOf(active)}
+        onChange={(text) =>
           updateFile(active, (current) =>
-            active === SKILL_MD ? withSkillBody(current, markdown) : markdown,
+            active === SKILL_MD ? withSkillBody(current, text) : text,
           )
         }
         placeholder="写下这个文件的内容"
         value={active === SKILL_MD ? skillBody(activeContent) : activeContent}
       />
-    )
-  } else {
-    // 不是 markdown 的参考文件（json、yaml、txt 等）用纯文本编辑；读取中、读取失败也在这一行下面。
-    body = (
-      <div className="flex min-h-0 flex-1 flex-col pb-4">
-        <div className="-ml-1 flex min-h-(--control-height-sm) shrink-0 items-center gap-3 pb-2">
-          <div className="min-w-0 flex-1">{tabs}</div>
-        </div>
-        {activeContent !== undefined ? (
-          <Textarea
-            aria-label="文件内容"
-            className="min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-1 tabular-nums"
-            onChange={(event) => {
-              const text = event.currentTarget.value
-              updateFile(active, () => text)
-            }}
-            placeholder="写下这个文件的内容"
-            spellCheck={false}
-            value={activeContent}
-          />
-        ) : activeQuery.isError ? (
+    ) : (
+      <div className="pt-3">
+        {activeQuery.isError ? (
           <ListError
             message={activeQuery.error.message}
             onRetry={() => void activeQuery.refetch()}
@@ -439,7 +451,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
         )}
       </div>
     )
-  }
 
   const draftDot = skill.latestVersion !== null && unpublished
   const pillLabel =
@@ -518,27 +529,58 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       scroll={false}
       title="编辑技能"
     >
-      <div className="-mx-2 flex shrink-0 flex-col gap-0.5 pt-1">
-        <input
-          aria-describedby={errors.title === undefined ? undefined : `${baseId}-error`}
-          aria-invalid={errors.title !== undefined}
-          aria-label="技能名称"
-          className={cn(inlineClass, 'text-title-lg font-semibold text-on-surface')}
-          maxLength={100}
-          onChange={(event) => {
-            setTitle(event.currentTarget.value)
-            setErrors(({ title: _title, ...rest }) => rest)
-            setNotice(null)
-          }}
-          placeholder="技能名称"
-          ref={titleRef}
-          value={titleValue}
-        />
-        <input
+      <div className="-mx-2 flex shrink-0 flex-col">
+        <div className="flex items-center gap-1">
+          {/* 图标块与 Agent 头部同一种写法，放大到与两行文字等高。 */}
+          <span
+            aria-hidden
+            className="ml-2 grid size-11 shrink-0 place-items-center rounded-sm bg-surface-container-high text-on-surface-variant"
+          >
+            <Icon decorative name="skill" size="lg" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <input
+              aria-describedby={errors.name === undefined ? undefined : `${baseId}-error`}
+              aria-invalid={errors.name !== undefined}
+              aria-label="技能标识"
+              autoCapitalize="none"
+              className={cn(inlineClass, 'font-mono text-label text-on-surface-muted')}
+              maxLength={MAX_NAME}
+              onChange={(event) => {
+                setName(event.currentTarget.value)
+                setErrors(({ name: _name, ...rest }) => rest)
+                setNotice(null)
+              }}
+              placeholder="技能标识"
+              ref={nameRef}
+              spellCheck={false}
+              value={nameValue}
+            />
+            <input
+              aria-describedby={errors.title === undefined ? undefined : `${baseId}-error`}
+              aria-invalid={errors.title !== undefined}
+              aria-label="技能名称"
+              className={cn(inlineClass, 'text-title-lg font-semibold text-on-surface')}
+              maxLength={100}
+              onChange={(event) => {
+                setTitle(event.currentTarget.value)
+                setErrors(({ title: _title, ...rest }) => rest)
+                setNotice(null)
+              }}
+              placeholder="技能名称"
+              ref={titleRef}
+              value={titleValue}
+            />
+          </div>
+        </div>
+        <textarea
           aria-describedby={errors.description === undefined ? undefined : `${baseId}-error`}
           aria-invalid={errors.description !== undefined}
           aria-label="简短说明"
-          className={cn(inlineClass, 'text-body text-on-surface-variant')}
+          className={cn(
+            inlineClass,
+            'mt-3 block resize-none overflow-hidden text-body text-on-surface-variant',
+          )}
           disabled={skillMdContent === undefined}
           maxLength={1024}
           onChange={(event) => {
@@ -546,26 +588,14 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
             updateFile(SKILL_MD, (current) => withDescription(current, text, skill.name))
             setErrors(({ description: _description, ...rest }) => rest)
           }}
-          placeholder="一句话说明这个技能做什么"
-          ref={descriptionRef}
-          value={description}
-        />
-        <input
-          aria-describedby={errors.name === undefined ? undefined : `${baseId}-error`}
-          aria-invalid={errors.name !== undefined}
-          aria-label="技能标识"
-          autoCapitalize="none"
-          className={cn(inlineClass, 'text-label text-on-surface-faint tabular-nums')}
-          maxLength={MAX_NAME}
-          onChange={(event) => {
-            setName(event.currentTarget.value)
-            setErrors(({ name: _name, ...rest }) => rest)
-            setNotice(null)
+          // 说明是一段话：回车不换行。
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.preventDefault()
           }}
-          placeholder="技能标识"
-          ref={nameRef}
-          spellCheck={false}
-          value={nameValue}
+          placeholder="一句话说明这个技能做什么"
+          ref={attachDescription}
+          rows={1}
+          value={description}
         />
         {fieldError === undefined ? null : (
           <p className="px-2 text-label text-error" id={`${baseId}-error`} role="alert">
@@ -573,7 +603,10 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
           </p>
         )}
       </div>
-      <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-hairline pt-3">{body}</div>
+      <div className="mt-4 flex min-h-0 flex-1 flex-col">
+        {tabs}
+        {body}
+      </div>
     </PanelShell>
   )
 }
