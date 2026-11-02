@@ -1,4 +1,4 @@
-"""对话域的几个运行时端口经运行时服务的 HTTP 接口实现：开会话与预览会话、分叉与按清单拷文件（``RuntimeSessions``），
+"""对话域的几个运行时端口经运行时服务的 HTTP 接口实现：开会话与预览会话、中断、分叉与按清单拷文件（``RuntimeSessions``），
 首页名册、起标题、按对话读活动与此刻在跑的对话。
 
 应用身份由客户端的密钥定（后端是应用 ``video``），分叉与拷文件的 ``X-End-User`` 是目标对话的属主。运行时
@@ -26,7 +26,7 @@ from iclip.domains.conversations.service import AgentDirectory, AgentEntry
 
 
 class RuntimeServicePorts:
-    """``open`` / ``fork`` / ``copy_files`` 合起来是对话域的 ``RuntimeSessions``；其余几个方法由组合根接成
+    """``open`` / ``open_preview`` / ``abort`` / ``fork`` / ``copy_files`` 是对话域的 ``RuntimeSessions``；其余方法由组合根接成
     对应的端口。"""
 
     def __init__(self, client: RuntimeClient) -> None:
@@ -34,6 +34,9 @@ class RuntimeServicePorts:
 
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         await self._client.open_session(SessionOpenIn(id=session_id, agent_id=agent_id))
+
+    async def abort(self, session_id: uuid.UUID) -> None:
+        await self._client.abort_session(session_id)
 
     async def open_preview(
         self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None

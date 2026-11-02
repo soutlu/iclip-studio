@@ -184,6 +184,9 @@ def _untouched(*_: object, **__: object) -> NoReturn:
 class OpensSessions:
     """运行时会话的替身：这里只看整行广播，agent 都当作能开对话；分叉与拷文件用不到。"""
 
+    async def abort(self, session_id: uuid.UUID) -> None:
+        raise AssertionError("这里不中断会话")
+
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         return None
 

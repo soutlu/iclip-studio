@@ -200,6 +200,7 @@ def create_app(
         return found is not None and found.preview
 
     async def deps_for(row: JobRow) -> AgentRunDeps:
+        preview = await is_preview(row.conversation_id)
         # 开跑检查：应用不放行就抛，这次运行记为失败。
         await hooks.gate(
             GatePayload(
@@ -208,13 +209,14 @@ def create_app(
                 user_name=row.user_name,
                 prompt_id=row.prompt_id,
                 run_id=row.run_id,
-                preview=await is_preview(row.conversation_id),
+                preview=preview,
             )
         )
         return AgentRunDeps(
             user_id=row.owner_user_id,
             conversation_id=row.conversation_id,
             user_name=row.user_name,
+            preview=preview,
         )
 
     async def run_started(row: JobRow, run_id: str) -> None:
