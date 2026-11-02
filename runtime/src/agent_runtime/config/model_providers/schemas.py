@@ -46,6 +46,8 @@ class DeclarationOut(CamelModel):
     name: str
     """声明名，接入时填进 ``provider``。"""
     label: str
+    apis: list[ModelApi]
+    """支持的接口，按声明的顺序；llm 模型只能走其中之一，第一个是添加模型时的默认。"""
     credential_fields: list[CredentialFieldOut]
     custom_models: bool
     """能不能自己加模型。"""
@@ -139,6 +141,14 @@ class CredentialTestIn(CamelModel):
     fields: dict[str, str] | None = None
 
 
+class ModelTestIn(CamelModel):
+    """测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。"""
+
+    name: str
+    type: ModelType
+    credential_id: uuid.UUID | None = None
+
+
 class ProbeOut(CamelModel):
     ok: bool
     elapsed_ms: int
@@ -150,7 +160,7 @@ class CustomModelCreateIn(CamelModel):
     name: str
     type: ModelType
     api: ModelApi | None = None
-    """llm 必填，其余类型不能给。"""
+    """llm 必填，且要是供应商声明的 ``apis`` 之一；其余类型不能给。"""
     context_size: int | None = None
     thinking: list[ThinkingEffort] = []
     """只有 llm 能给。"""
@@ -246,6 +256,7 @@ __all__ = [
     "ModelProviderOut",
     "ModelProviderUpdateIn",
     "ModelProvidersOut",
+    "ModelTestIn",
     "ModelUpdateIn",
     "ProbeOut",
     "ProviderModelOut",

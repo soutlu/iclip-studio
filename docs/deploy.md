@@ -88,6 +88,8 @@
    - 用密码注册：执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
    - 其他管理用户、但不用 Agent 配置页的人设为 admin：`docker compose run --rm server python -m scripts.admin set-roles <账号> admin`。`set-roles` 整份替换这个账号的角色。
 
+运行时服务直接连模型供应商：接 Google Gemini 或 OpenRouter 时，服务器要能直连 Google 或 OpenRouter 的官方地址，否则在密钥里填一个服务器连得上的接口地址；Gemini 的接口地址要讲 Gemini 原生接口，OpenAI 兼容的中转不行。
+
 后端与运行时服务各只跑 1 个 worker。实时投影、事件分发与浏览器订阅都存在进程内存里，增加 worker 前先看[两个服务](architecture.md#1-两个服务)。
 
 ### 成片渲染服务

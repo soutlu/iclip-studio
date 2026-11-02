@@ -1,6 +1,7 @@
 name: bailian
 label: 阿里云百炼
 pydantic_ai_provider: alibaba
+apis: [responses, chat]
 credential_fields:
   - {name: api_key, label: API Key, type: secret, required: true}
   - {name: base_url, label: 接口地址, type: text, required: true, default: "https://dashscope.aliyuncs.com/compatible-mode/v1"}

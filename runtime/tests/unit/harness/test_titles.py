@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
+import httpx2
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from agent_runtime.harness.models import ModelSpec, build_model
 from agent_runtime.harness.titles import MAX_TITLE_CHARS, clean_title, title_generator
 
 pytestmark = pytest.mark.unit
@@ -32,6 +37,80 @@ async def test_起标题只用最低思考档() -> None:
     # 标题请求覆盖主模型的 high 设置，避免不必要的高强度推理。
     assert seen[0].model_settings is not None
     assert seen[0].model_settings.get("openai_reasoning_effort") == "low"
+
+
+GEMINI_REPLY: dict[str, Any] = {
+    "candidates": [
+        {"content": {"role": "model", "parts": [{"text": "夜景延时"}]}, "finishReason": "STOP"}
+    ],
+}
+CHAT_REPLY: dict[str, Any] = {
+    "id": "c1",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "qwen3.8-max",
+    "choices": [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "夜景延时"},
+            "finish_reason": "stop",
+        }
+    ],
+}
+
+
+def _stub_upstream(monkeypatch: pytest.MonkeyPatch, reply: dict[str, Any]) -> list[dict[str, Any]]:
+    """httpx2 的默认传输层换成替身，记下请求体，不连网。"""
+
+    bodies: list[dict[str, Any]] = []
+
+    async def handle(_transport: object, request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(await request.aread()))
+        return httpx2.Response(200, json=reply)
+
+    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", handle)
+    return bodies
+
+
+async def test_gemini_起标题用通用_thinking_写成最低档(monkeypatch: pytest.MonkeyPatch) -> None:
+    bodies = _stub_upstream(monkeypatch, GEMINI_REPLY)
+    model = build_model(
+        ModelSpec(
+            name="gemini/gemini-3.8-flash",
+            provider="google",
+            model="gemini-3.8-flash",
+            api="gemini",
+            api_key="k",
+            base_url=None,
+            thinking="high",
+        )
+    )
+
+    assert await title_generator(model)("帮我做一条夜景延时的短片") == "夜景延时"
+
+    # openai_reasoning_effort 对 Gemini 不起作用；通用 thinking=low 盖过模型的 high。
+    (body,) = bodies
+    assert body["generationConfig"]["thinkingConfig"]["thinking_level"] == "LOW"
+
+
+async def test_openai_兼容的模型起标题用_reasoning_effort(monkeypatch: pytest.MonkeyPatch) -> None:
+    bodies = _stub_upstream(monkeypatch, CHAT_REPLY)
+    model = build_model(
+        ModelSpec(
+            name="bailian/qwen3.8-max",
+            provider="alibaba",
+            model="qwen3.8-max",
+            api="chat",
+            api_key="k",
+            base_url="https://dashscope.example/v1",
+            thinking="high",
+        )
+    )
+
+    assert await title_generator(model)("帮我做一条夜景延时的短片") == "夜景延时"
+
+    (body,) = bodies
+    assert body["reasoning_effort"] == "low"
 
 
 async def test_用户没打字就不叫模型() -> None:

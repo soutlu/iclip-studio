@@ -1788,7 +1788,7 @@ export type CustomModelCreateIn = {
   /**
    * Api
    */
-  api?: 'chat' | 'responses' | null
+  api?: 'chat' | 'responses' | 'gemini' | null
   /**
    * Contextsize
    */
@@ -1813,6 +1813,10 @@ export type CustomModelCreateIn = {
  * 一家可以接入的供应商。
  */
 export type DeclarationOut = {
+  /**
+   * Apis
+   */
+  apis: Array<'chat' | 'responses' | 'gemini'>
   /**
    * Credentialfields
    */
@@ -1852,7 +1856,7 @@ export type DeclaredModelOut = {
   /**
    * Api
    */
-  api: 'chat' | 'responses' | null
+  api: 'chat' | 'responses' | 'gemini' | null
   /**
    * Contextsize
    */
@@ -3877,6 +3881,26 @@ export type ModelProvidersOut = {
 }
 
 /**
+ * ModelTestIn
+ *
+ * 测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。
+ */
+export type ModelTestIn = {
+  /**
+   * Credentialid
+   */
+  credentialId?: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+}
+
+/**
  * ModelUpdateIn
  *
  * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
@@ -3886,7 +3910,7 @@ export type ModelUpdateIn = {
   /**
    * Api
    */
-  api?: 'chat' | 'responses' | null
+  api?: 'chat' | 'responses' | 'gemini' | null
   /**
    * Contextsize
    */
@@ -4322,7 +4346,7 @@ export type ProviderModelOut = {
   /**
    * Api
    */
-  api: 'chat' | 'responses' | null
+  api: 'chat' | 'responses' | 'gemini' | null
   /**
    * Contextsize
    */
@@ -11554,6 +11578,38 @@ export type AddProviderModelModelProvidersProviderIdModelsPostResponses = {
 
 export type AddProviderModelModelProvidersProviderIdModelsPostResponse =
   AddProviderModelModelProvidersProviderIdModelsPostResponses[keyof AddProviderModelModelProvidersProviderIdModelsPostResponses]
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostData = {
+  body: ModelTestIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models/test'
+}
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostError =
+  TestProviderModelModelProvidersProviderIdModelsTestPostErrors[keyof TestProviderModelModelProvidersProviderIdModelsTestPostErrors]
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ProbeOut
+}
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostResponse =
+  TestProviderModelModelProvidersProviderIdModelsTestPostResponses[keyof TestProviderModelModelProvidersProviderIdModelsTestPostResponses]
 
 export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteData = {
   body?: never

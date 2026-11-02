@@ -71,6 +71,7 @@ from agent_runtime.config.model_providers.schemas import (
     ModelProviderOut,
     ModelProvidersOut,
     ModelProviderUpdateIn,
+    ModelTestIn,
     ModelUpdateIn,
     ProbeOut,
     ProviderModelOut,
@@ -88,6 +89,7 @@ def _declaration_out(declaration: ProviderDeclaration) -> DeclarationOut:
     return DeclarationOut(
         name=declaration.name,
         label=declaration.label,
+        apis=list(declaration.apis),
         credential_fields=[
             CredentialFieldOut(
                 name=field.name,
@@ -400,7 +402,7 @@ class ModelProviderService:
     async def create_credential(
         self, provider_id: uuid.UUID, body: CredentialCreateIn, *, created_by: uuid.UUID
     ) -> CredentialOut:
-        """新建一把密钥：按声明校验字段，先试连，通过才保存；供应商的第一把成为默认密钥。"""
+        """新建一把密钥：按声明校验字段后保存，不试连；供应商的第一把成为默认密钥。"""
 
         state = await self._state(provider_id)
         declaration = self._declaration_of(state.provider)
@@ -408,7 +410,6 @@ class ModelProviderService:
         if any(one.name == name for one in state.credentials):
             raise ValidationFailed("这个供应商下已有同名密钥")
         plain = new_fields(declaration, body.fields)
-        await self._require_probe(declaration, state, plain)
         credential_id = uuid.uuid4()
         async with self._store.edit(provider_id) as editor:
             await editor.insert_credential(
@@ -422,7 +423,7 @@ class ModelProviderService:
     async def update_credential(
         self, provider_id: uuid.UUID, credential_id: uuid.UUID, body: CredentialUpdateIn
     ) -> CredentialOut:
-        """改名或改字段：给了的字段替换，没给的保持原值；字段真有变化时先试连，通过才保存。"""
+        """改名或改字段：给了的字段替换，没给的保持原值；不试连。"""
 
         state = await self._state(provider_id)
         declaration = self._declaration_of(state.provider)
@@ -433,7 +434,6 @@ class ModelProviderService:
             current = decrypt_fields(declaration, credential.fields, self._cipher)
             plain = merged_fields(declaration, current, body.fields)
             if plain != current:
-                await self._require_probe(declaration, state, plain)
                 stored = encrypt_fields(declaration, plain, self._cipher)
         async with self._store.edit(provider_id) as editor:
             _ = _credential(editor.state, credential_id)
@@ -472,6 +472,36 @@ class ModelProviderService:
             raise ValidationFailed("credentialId 与 fields 至少给一个")
         return _probe_out(await self._run_probe(declaration, state, plain))
 
+    async def test_model(self, provider_id: uuid.UUID, body: ModelTestIn) -> ProbeOut:
+        """用一把密钥（不给就是默认密钥）测试供应商的一个 llm 模型，停用的也能测；不保存。模型不存在是
+        ``NotFound``；不是 llm、供应商还没有密钥是 ``ValidationFailed``。"""
+
+        state = await self._state(provider_id)
+        declaration = self._declaration_of(state.provider)
+        model = find_model(merge_models(declaration, state.settings), body.name, body.type)
+        if model is None:
+            raise NotFound("模型不存在")
+        if model.type != "llm":
+            raise ValidationFailed("只有 llm 模型能测试")
+        credential_id = (
+            state.provider.default_credential_id
+            if body.credential_id is None
+            else body.credential_id
+        )
+        if credential_id is None:
+            raise ValidationFailed("先添加密钥")
+        credential = _credential(state, credential_id)
+        plain = decrypt_fields(declaration, credential.fields, self._cipher)
+        result = await self._probe.probe(declaration, model, plain)
+        if not result.ok:
+            _logger.info(
+                "模型测试没通过",
+                provider=state.provider.name,
+                model=model.name,
+                reason=result.reason,
+            )
+        return _probe_out(result)
+
     async def add_model(
         self, provider_id: uuid.UUID, body: CustomModelCreateIn
     ) -> ProviderModelOut:
@@ -483,6 +513,7 @@ class ModelProviderService:
             if not declaration.custom_models:
                 raise ValidationFailed(f"{declaration.label}不能自己加模型")
             spec = custom_model(
+                declaration,
                 name=body.name,
                 model_type=body.type,
                 api=body.api,
@@ -523,6 +554,7 @@ class ModelProviderService:
             else:
                 current = model.properties
                 spec = custom_model(
+                    declaration,
                     name=model.name,
                     model_type=model.type,
                     api=body.api if "api" in given else current.api,
@@ -612,13 +644,6 @@ class ModelProviderService:
                 reason=result.reason,
             )
         return result
-
-    async def _require_probe(
-        self, declaration: ProviderDeclaration, state: ProviderState, plain: Mapping[str, str]
-    ) -> None:
-        result = await self._run_probe(declaration, state, plain)
-        if not result.ok:
-            raise ValidationFailed(f"试连没通过：{result.reason}")
 
     def _setting(self, model: ProviderModel) -> ModelSetting:
         return ModelSetting(

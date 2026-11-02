@@ -26,6 +26,7 @@ from agent_runtime.config.model_providers.schemas import (
     ModelProviderOut,
     ModelProvidersOut,
     ModelProviderUpdateIn,
+    ModelTestIn,
     ModelUpdateIn,
     ProbeOut,
     ProviderModelOut,
@@ -102,7 +103,7 @@ def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
         body: CredentialCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """新建一把密钥：先试连，通过才保存；供应商的第一把成为默认密钥。"""
+        """新建一把密钥，不试连；供应商的第一把成为默认密钥。"""
 
         return await relay(
             runtime,
@@ -135,7 +136,7 @@ def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
         body: CredentialUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """改名或改字段；字段有变化时先试连，通过才保存。"""
+        """改名或改字段，不试连。"""
 
         return await relay(
             runtime,
@@ -172,6 +173,22 @@ def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
             runtime,
             "POST",
             admin_path("model-providers", str(provider_id), "models"),
+            actor=principal.user_id,
+            body=body,
+        )
+
+    @router.post("/{provider_id}/models/test", response_model=ProbeOut)
+    async def test_provider_model(
+        provider_id: uuid.UUID,
+        body: ModelTestIn,
+        principal: Annotated[Principal, require_permission(_MANAGE)],
+    ) -> Response:
+        """用一把密钥（不给就是默认密钥）测试一个 llm 模型，不保存；结果在答复里，没通过也是 200。"""
+
+        return await relay(
+            runtime,
+            "POST",
+            admin_path("model-providers", str(provider_id), "models/test"),
             actor=principal.user_id,
             body=body,
         )

@@ -1,0 +1,10 @@
+name: openrouter
+label: OpenRouter
+pydantic_ai_provider: openrouter
+apis: [chat]
+credential_fields:
+  - {name: api_key, label: API Key, type: secret, required: true}
+  # 不填走 OpenRouter 官方地址。
+  - {name: base_url, label: 接口地址, type: text}
+custom_models: true
+models: []

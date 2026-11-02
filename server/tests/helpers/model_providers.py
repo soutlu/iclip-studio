@@ -18,17 +18,33 @@ BAD_KEY = "sk-bad-5555555555bad1"
 
 
 class KeyCheckingProbe:
-    """只认 ``accepted`` 里的 API Key：认得就通，不认得就答「API Key 无效」。"""
+    """只认 ``accepted`` 里的 API Key：认得就通，不认得就答「API Key 无效」。``calls`` 按先后记下每次试连的
+    模型名与 API Key。"""
 
     def __init__(self, accepted: set[str]) -> None:
         self.accepted = accepted
+        self.calls: list[tuple[str, str | None]] = []
 
     async def probe(
         self, declaration: ProviderDeclaration, model: ProviderModel, fields: Mapping[str, str]
     ) -> ProbeResult:
+        self.calls.append((model.name, fields.get("api_key")))
         if fields.get("api_key") in self.accepted:
             return ProbeResult(ok=True, elapsed_ms=7)
         return ProbeResult(ok=False, elapsed_ms=3, reason="API Key 无效或没有权限（HTTP 401）")
+
+
+async def connect_provider(
+    client: httpx.AsyncClient, provider: str, name: str | None = None
+) -> dict[str, Any]:
+    """按声明 ``provider`` 接入一个供应商；引用名默认 ``<provider>-main``。"""
+
+    response = await client.post(
+        "/model-providers",
+        json={"name": name or f"{provider}-main", "provider": provider, "label": provider},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 async def connect_bailian(client: httpx.AsyncClient, name: str = "bailian-main") -> dict[str, Any]:
@@ -57,4 +73,5 @@ __all__ = [
     "KeyCheckingProbe",
     "add_credential",
     "connect_bailian",
+    "connect_provider",
 ]

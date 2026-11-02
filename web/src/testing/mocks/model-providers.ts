@@ -1,7 +1,8 @@
 /**
- * 模型供应商的 mock：一份百炼声明，两个按它接入的供应商（百炼自己的，与停用了声明里模型、只用自己加的模型的团队服务），
+ * 模型供应商的 mock：五份声明（百炼内置两个模型，其余不内置），两个按百炼接入的供应商（百炼自己的，与停用了声明里模型、只用自己加的模型的团队服务），
  * 各自的密钥、模型与默认模型，形状与规则照合同 §18。agent 编辑页的「选模型」（§19）从这里现算，改了供应商下一次读就看得到。
- * 「谁在用」由调用方按 agent 的草稿与当前版本答（`usage`）。试连：字段值里带 `invalid` 的不通。
+ * 「谁在用」由调用方按 agent 的草稿与当前版本答（`usage`）。试连与测试模型：字段值里带 `invalid` 的不通；
+ * 保存密钥不试连。
  * 每例由 `resetMockModelProviders` 放回预置数据。
  */
 
@@ -21,6 +22,7 @@ import type {
   ModelProviderCreateIn,
   ModelProviderOut,
   ModelProviderUpdateIn,
+  ModelTestIn,
   ModelUpdateIn,
   ProbeOut,
   ProviderModelOut,
@@ -44,8 +46,40 @@ const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOSt
 
 const BAILIAN_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 
+const apiKeyField = {
+  default: null,
+  label: 'API Key',
+  name: 'api_key',
+  required: true,
+  type: 'secret',
+} as const
+
+/** 不内置模型、能自己加模型的声明。 */
+const openDeclaration = (
+  name: string,
+  label: string,
+  apis: DeclarationOut['apis'],
+  baseUrl: DeclarationOut['credentialFields'][number],
+): DeclarationOut => ({
+  apis,
+  credentialFields: [apiKeyField, baseUrl],
+  customModels: true,
+  label,
+  models: [],
+  name,
+})
+
+const optionalBaseUrl = {
+  default: null,
+  label: '接口地址',
+  name: 'base_url',
+  required: false,
+  type: 'text',
+} as const
+
 const mockDeclarations: DeclarationOut[] = [
   {
+    apis: ['responses', 'chat'],
     credentialFields: [
       { default: null, label: 'API Key', name: 'api_key', required: true, type: 'secret' },
       { default: BAILIAN_URL, label: '接口地址', name: 'base_url', required: true, type: 'text' },
@@ -70,6 +104,17 @@ const mockDeclarations: DeclarationOut[] = [
     ],
     name: 'bailian',
   },
+  openDeclaration('gemini', 'Google Gemini', ['gemini'], optionalBaseUrl),
+  openDeclaration('openai-compatible', 'OpenAI 兼容', ['chat', 'responses'], {
+    ...optionalBaseUrl,
+    required: true,
+  }),
+  openDeclaration('openrouter', 'OpenRouter', ['chat'], optionalBaseUrl),
+  openDeclaration('volcengine', '火山方舟', ['chat', 'responses'], {
+    ...optionalBaseUrl,
+    default: 'https://ark.cn-beijing.volces.com/api/v3',
+    required: true,
+  }),
 ]
 
 const credential = (
@@ -234,14 +279,11 @@ const isDefaultModel = (provider: MockProvider, type: ModelType, name: string) =
     (item) => item.providerId === provider.id && item.type === type && item.modelName === name,
   )
 
-/** 试连：要有启用的 llm 模型；字段值里带 `invalid` 的不通。 */
-const probe = (provider: MockProvider, fields: Record<string, string>): ProbeOut | string => {
-  if (!modelsOf(provider).some((model) => model.type === 'llm' && model.enabled))
-    return '供应商没有启用的 llm 模型，无法试连'
-  return Object.values(fields).some((value) => value.includes('invalid'))
+/** 用一组字段发一次请求：字段值里带 `invalid` 的不通。 */
+const probe = (fields: Record<string, string>): ProbeOut =>
+  Object.values(fields).some((value) => value.includes('invalid'))
     ? { elapsedMs: 420, ok: false, reason: '接口返回 401，API Key 无效' }
     : { elapsedMs: 236, ok: true, reason: null }
-}
 
 /** 按声明收字段：没给的用 default，去掉首尾空白、空串当没填；必填的缺了、声明里没有的都不收。 */
 const checkFields = (provider: MockProvider, fields: Record<string, string>) => {
@@ -263,8 +305,14 @@ const withDefaults = (provider: MockProvider, fields: Record<string, string>) =>
   return filled
 }
 
-const checkCustomModel = (model: Pick<CustomModel, 'api' | 'thinking' | 'type'>) => {
+const checkCustomModel = (
+  provider: MockProvider,
+  model: Pick<CustomModel, 'api' | 'thinking' | 'type'>,
+) => {
   if (model.type === 'llm' && model.api === null) return 'llm 模型要写接口'
+  const declaration = declarationOf(provider)
+  if (model.api !== null && declaration !== undefined && !declaration.apis.includes(model.api))
+    return `${declaration.label}的模型只能走 ${declaration.apis.join('、')} 接口，不能走 ${model.api}`
   if (model.type !== 'llm' && (model.api !== null || model.thinking.length > 0))
     return '只有 llm 模型能写接口与思考档位'
   if (new Set(model.thinking).size !== model.thinking.length) return '思考档位不能重复'
@@ -382,8 +430,25 @@ export const modelProviderHandlers = (usage: Usage) => {
           : { ...saved.fields, ...(body.fields ?? {}) }
       const problem = checkFields(provider, fields)
       if (problem !== null) return detail(problem, 422)
-      const result = probe(provider, fields)
-      return typeof result === 'string' ? detail(result, 422) : HttpResponse.json(result)
+      if (!modelsOf(provider).some((model) => model.type === 'llm' && model.enabled))
+        return detail('先添加一个模型再试连', 422)
+      return HttpResponse.json(probe(fields))
+    }),
+
+    http.post('*/api/model-providers/:providerId/models/test', async ({ params, request }) => {
+      const provider = findProvider(params['providerId'])
+      if (provider === undefined) return notFound()
+      const body = (await request.json()) as ModelTestIn
+      const model = modelsOf(provider).find(
+        (item) => item.type === body.type && item.name === body.name,
+      )
+      if (model === undefined) return detail('模型不存在', 404)
+      if (model.type !== 'llm') return detail('只有 llm 模型能测试', 422)
+      const credentialId = body.credentialId ?? provider.defaultCredentialId
+      if (credentialId === null) return detail('先添加密钥', 422)
+      const saved = provider.credentials.find((item) => item.id === credentialId)
+      if (saved === undefined) return detail('密钥不存在', 404)
+      return HttpResponse.json(probe(saved.fields))
     }),
 
     http.post('*/api/model-providers/:providerId/credentials', async ({ params, request }) => {
@@ -397,9 +462,6 @@ export const modelProviderHandlers = (usage: Usage) => {
       const fields = withDefaults(provider, body.fields)
       const problem = checkFields(provider, fields)
       if (problem !== null) return detail(problem, 422)
-      const result = probe(provider, fields)
-      if (typeof result === 'string') return detail(result, 422)
-      if (!result.ok) return detail(`试连没通过：${result.reason ?? ''}`, 422)
       const created = credential(crypto.randomUUID(), name, 0, fields)
       provider.credentials.push(created)
       provider.defaultCredentialId ??= created.id
@@ -424,10 +486,12 @@ export const modelProviderHandlers = (usage: Usage) => {
         if (JSON.stringify(fields) !== JSON.stringify(saved.fields)) {
           const problem = checkFields(provider, fields)
           if (problem !== null) return detail(problem, 422)
-          const result = probe(provider, fields)
-          if (typeof result === 'string') return detail(result, 422)
-          if (!result.ok) return detail(`试连没通过：${result.reason ?? ''}`, 422)
-          saved.fields = fields
+          // 空值当没填（合同 §18「字段」）。
+          saved.fields = Object.fromEntries(
+            Object.entries(fields)
+              .map(([key, value]) => [key, value.trim()] as const)
+              .filter(([, value]) => value !== ''),
+          )
         }
         if (name !== undefined) saved.name = name
         saved.updatedAt = new Date().toISOString()
@@ -464,7 +528,7 @@ export const modelProviderHandlers = (usage: Usage) => {
       if (model.name === '') return detail('请填写模型名', 422)
       if (modelsOf(provider).some((item) => item.type === model.type && item.name === model.name))
         return detail(`已有同名同类型的模型 ${model.name}`, 422)
-      const problem = checkCustomModel(model)
+      const problem = checkCustomModel(provider, model)
       if (problem !== null) return detail(problem, 422)
       provider.custom.push(model)
       return HttpResponse.json(modelOut(provider, model.type, model.name), { status: 201 })
@@ -500,7 +564,7 @@ export const modelProviderHandlers = (usage: Usage) => {
           ...(body.thinking == null ? {} : { thinking: body.thinking }),
           ...(body.enabled == null ? {} : { enabled: body.enabled }),
         }
-        const problem = checkCustomModel(next)
+        const problem = checkCustomModel(provider, next)
         if (problem !== null) return detail(problem, 422)
         Object.assign(custom, next)
       }

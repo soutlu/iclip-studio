@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { errorMessageOf } from '@/shared/api/client'
+import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
+import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import {
   THINKING_LEVELS,
   ThinkingEmoji,
@@ -25,6 +26,9 @@ import {
   type ProviderModel,
 } from '../model-providers.api'
 import { Segmented } from './segmented'
+import { TestStatus, type Test } from './test-status'
+
+const IDLE: Test = { kind: 'idle' }
 
 const LABEL_CLASS = 'text-label font-medium text-on-surface-variant'
 const INPUT_CLASS = 'h-(--control-height-lg) rounded-sm bg-top-layer px-3'
@@ -42,15 +46,6 @@ const MASK = '••••'
 type Errors = Partial<Record<string, string>>
 type Values = Record<string, string>
 type CredentialField = Declaration['credentialFields'][number]
-
-/** 试连的结果；`ok` 才能保存。改了任一接入字段就回到 idle。 */
-type Test =
-  | { kind: 'idle' }
-  | { kind: 'testing' }
-  | { kind: 'ok'; elapsedMs: number }
-  | { kind: 'failed'; reason: string }
-
-const IDLE: Test = { kind: 'idle' }
 
 const errorProps = (id: string, error: string | undefined) =>
   error === undefined ? {} : { 'aria-describedby': `${id}-error`, 'aria-invalid': true as const }
@@ -132,40 +127,12 @@ function InlineForm({
   )
 }
 
-/** 试连的结果：通了是绿点加耗时，没通是红点加原因，试连中转圈。 */
-function TestStatus({ test }: { test: Test }) {
-  return (
-    <span
-      aria-live="polite"
-      className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-label text-on-surface-variant tabular-nums"
-      role="status"
-    >
-      {test.kind === 'testing' ? (
-        <>
-          <Icon className="animate-spin" decorative name="loading" size="sm" />
-          正在试连
-        </>
-      ) : test.kind === 'ok' ? (
-        <>
-          <span
-            aria-label="试连通过"
-            className="size-1.5 shrink-0 rounded-full bg-primary"
-            role="img"
-          />
-          {test.elapsedMs} ms
-        </>
-      ) : test.kind === 'failed' ? (
-        <>
-          <span
-            aria-label="试连没通过"
-            className="size-1.5 shrink-0 rounded-full bg-error"
-            role="img"
-          />
-          <span className="min-w-0 text-error">{test.reason}</span>
-        </>
-      ) : null}
-    </span>
-  )
+/** 422 答复里给人看的那句 `detail`；别的失败为 null。 */
+const refusalOf = (error: unknown): string | null => {
+  if (!(error instanceof ApiError) || error.status !== 422) return null
+  const body: unknown = error.body
+  if (typeof body !== 'object' || body === null || !('detail' in body)) return null
+  return typeof body.detail === 'string' && body.detail.trim() !== '' ? body.detail.trim() : null
 }
 
 /** 表单里各字段的初值：新建取声明里的默认值，修改取已存的值；机密字段一律空着。 */
@@ -287,6 +254,7 @@ export function ProviderCreateForm({
   const baseId = useId()
   const createProvider = useCreateProvider()
   const [declarationName, setDeclarationName] = useState(declarations[0]?.name ?? '')
+  const chosen = declarations.find((item) => item.name === declarationName)
   const [label, setLabel] = useState('')
   const [name, setName] = useState('')
   const [errors, setErrors] = useState<Errors>({})
@@ -336,13 +304,26 @@ export function ProviderCreateForm({
     >
       <div className="flex min-w-0 flex-col items-start gap-1.5">
         <span className={LABEL_CLASS}>接入方式</span>
-        <Segmented
-          disabled={busy}
-          label="接入方式"
-          onValueChange={setDeclarationName}
-          options={declarations.map((item) => ({ label: item.label, value: item.name }))}
-          value={declarationName}
-        />
+        <MenuRoot>
+          <MenuTrigger
+            aria-label={`接入方式：${chosen?.label ?? '未选择'}`}
+            className="inline-flex h-(--control-height-md) max-w-72 min-w-0 ui-state cursor-pointer items-center gap-1.5 rounded-sm px-2.5 text-body-sm text-on-surface ring-1 ring-border ui-focus ring-inset data-[state=open]:bg-state-active"
+            disabled={busy}
+          >
+            <Icon className="text-on-surface-faint" decorative name="provider" size="sm" />
+            <span className="min-w-0 truncate">{chosen?.label ?? '未选择'}</span>
+            <Icon className="text-on-surface-faint" decorative name="expand" size="sm" />
+          </MenuTrigger>
+          <MenuSurface align="start" className="max-w-80 min-w-60">
+            <MenuRadioGroup onValueChange={setDeclarationName} value={declarationName}>
+              {declarations.map((item) => (
+                <MenuRadioItem key={item.name} value={item.name}>
+                  {item.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuSurface>
+        </MenuRoot>
       </div>
       <div className={GRID_CLASS}>
         <Field error={errors['label']} id={`${baseId}-label`} label="显示名">
@@ -385,7 +366,7 @@ export function ProviderCreateForm({
 }
 
 /**
- * 添加或修改一把密钥。新建、或改了接入字段时要先试连通过才能保存；只改名不试连。
+ * 添加或修改一把密钥。保存不试连；「试连」是可选的一步，改了任一接入字段结果就清掉。
  * 修改时机密字段留空就是保持原值，提交里只放真变了的字段。
  */
 export function CredentialForm({
@@ -415,8 +396,8 @@ export function CredentialForm({
 
   const changed = changedFields(fields, values, credential)
   const nameChanged = name.trim() !== (credential?.name ?? '')
-  const needsTest = !editing || Object.keys(changed).length > 0
-  const canSave = (nameChanged || needsTest) && (!needsTest || test.kind === 'ok') && !busy
+  const fieldsChanged = !editing || Object.keys(changed).length > 0
+  const canSave = (nameChanged || fieldsChanged) && !busy
 
   const clearError = (key: string) => {
     setErrors(({ [key]: _dropped, ...rest }) => rest)
@@ -445,6 +426,12 @@ export function CredentialForm({
           : { kind: 'failed', reason: result.reason ?? '试连没通过' },
       )
     } catch (error) {
+      // 后端拒绝试这一次（422，如还没有启用的模型）也是试连的结果：原因写在结果那一行，不进表单错误条。
+      const refused = refusalOf(error)
+      if (refused !== null) {
+        setTest({ kind: 'failed', reason: refused })
+        return
+      }
       setTest(IDLE)
       setFormError(errorMessageOf(error, '试连失败，请重试'))
     }
@@ -463,7 +450,7 @@ export function CredentialForm({
         await updateCredential.mutateAsync({
           changes: {
             ...(nameChanged ? { name: name.trim() } : {}),
-            ...(needsTest ? { fields: changed } : {}),
+            ...(fieldsChanged ? { fields: changed } : {}),
           },
           id: credential.id,
           providerId: provider.id,
@@ -499,7 +486,7 @@ export function CredentialForm({
       }
       error={formError}
       onSubmit={() => void save()}
-      status={<TestStatus test={test} />}
+      status={<TestStatus action="试连" className="mr-auto" test={test} />}
       title={editing ? '编辑密钥' : '添加密钥'}
     >
       <div className={GRID_CLASS}>
@@ -538,8 +525,7 @@ export function CredentialForm({
 }
 
 const MODEL_TYPES: readonly ModelType[] = ['llm', 'embedding', 'rerank']
-const MODEL_APIS = ['responses', 'chat'] as const
-type ModelApi = (typeof MODEL_APIS)[number]
+type ModelApi = Declaration['apis'][number]
 
 /** 上下文长度：正整数，或带 K、M 的长度（按 1024 进位），如 128K；空是不写。不合格为 undefined。 */
 const parseContextSize = (text: string): number | null | undefined => {
@@ -554,14 +540,16 @@ const parseContextSize = (text: string): number | null | undefined => {
 
 /**
  * 添加或修改自己加的模型（声明里的模型只能启停，不进这里）。名字与类型是模型的身份，修改时不能改；
- * 只有 llm 有接口、上下文长度与思考档位。
+ * 只有 llm 有接口、上下文长度与思考档位。接口只能选声明的 `apis`，默认第一个，只有一个时不给选。
  */
 export function ModelForm({
+  declaration,
   model,
   onDone,
   provider,
 }: {
   provider: ModelProvider
+  declaration: Declaration
   /** null 是添加。 */
   model: ProviderModel | null
   onDone: () => void
@@ -574,7 +562,8 @@ export function ModelForm({
     model?.contextSize === null || model === null ? '' : formatContextSize(model.contextSize)
   const [name, setName] = useState(model?.name ?? '')
   const [type, setType] = useState<ModelType>(model?.type ?? 'llm')
-  const [api, setApi] = useState<ModelApi>(model?.api ?? 'responses')
+  const apis = declaration.apis
+  const [api, setApi] = useState<ModelApi | undefined>(model?.api ?? apis[0])
   const [context, setContext] = useState(initialContext)
   const [thinking, setThinking] = useState<ThinkingLevel[]>(model?.thinking ?? [])
   const [errors, setErrors] = useState<Errors>({})
@@ -598,7 +587,7 @@ export function ModelForm({
       if (model === null)
         await addModel.mutateAsync({
           body: {
-            api: llm ? api : null,
+            api: llm ? (api ?? null) : null,
             contextSize: llm ? contextSize : null,
             name: name.trim(),
             thinking: llm ? ordered : [],
@@ -608,7 +597,7 @@ export function ModelForm({
         })
       else
         await updateModel.mutateAsync({
-          changes: { api, contextSize, thinking: ordered },
+          changes: { api: api ?? null, contextSize, thinking: ordered },
           model,
           providerId: provider.id,
         })
@@ -668,16 +657,18 @@ export function ModelForm({
       {type === 'llm' ? (
         <>
           <div className={GRID_CLASS}>
-            <div className="flex min-w-0 flex-col items-start gap-1.5">
-              <span className={LABEL_CLASS}>接口</span>
-              <Segmented
-                disabled={pending}
-                label="模型接口"
-                onValueChange={setApi}
-                options={MODEL_APIS.map((value) => ({ label: value, value }))}
-                value={api}
-              />
-            </div>
+            {apis.length > 1 && api !== undefined ? (
+              <div className="flex min-w-0 flex-col items-start gap-1.5">
+                <span className={LABEL_CLASS}>接口</span>
+                <Segmented
+                  disabled={pending}
+                  label="模型接口"
+                  onValueChange={setApi}
+                  options={apis.map((value) => ({ label: value, value }))}
+                  value={api}
+                />
+              </div>
+            ) : null}
             <Field error={errors['context']} id={`${baseId}-context`} label="上下文长度">
               <Input
                 autoComplete="off"
