@@ -43,11 +43,13 @@ const splitFrontmatter = (source: string): Frontmatter | null => {
 const LEADING_BLANK_LINES = /^(?:[ \t]*\r?\n)+/
 
 /**
- * 编辑器里显示的正文：`SKILL.md` 去掉 frontmatter 与紧跟的空行。
- * 去掉空行是为了让编辑器交出的值与再读出来的正文一字不差，否则每改一个字都会整篇重载。
+ * 编辑器里显示的正文：`SKILL.md` 去掉 frontmatter 与紧跟的一个空行（`withSkillBody` 写进去的那一个）。
+ * 只去这一个，编辑器交出的正文（哪怕以空行开头）与再读出来的一字不差，否则每改一个字都会整篇重载。
  */
-export const skillBody = (source: string): string =>
-  (splitFrontmatter(source)?.body ?? source).replace(LEADING_BLANK_LINES, '')
+export const skillBody = (source: string): string => {
+  const parts = splitFrontmatter(source)
+  return parts === null ? source : parts.body.replace(/^\r?\n/, '')
+}
 
 /** 用编辑器交出的正文换掉 `SKILL.md` 的正文，frontmatter 原样留着，中间空一行。 */
 export const withSkillBody = (source: string, body: string): string => {
@@ -140,9 +142,6 @@ export const withDescription = (source: string, description: string, name: strin
   const { eol } = parts
   return `---${eol}${next.join(eol)}${eol}---${eol}${parts.body}`
 }
-
-/** 用富文本编辑器打开的文件；别的参考文件（json、yaml、txt 等）用纯文本编辑。 */
-export const isMarkdownPath = (path: string): boolean => /\.(?:md|markdown)$/i.test(path)
 
 /** 页签上显示的名字：参考文件去掉 `references/`。 */
 export const fileLabel = (path: string): string =>

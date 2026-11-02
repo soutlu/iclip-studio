@@ -64,19 +64,11 @@ const skillCards = () =>
     .map((node) => node.textContent)
 const sidePanel = () => screen.getByRole('region', { name: '配置调整' })
 
-/** jsdom 没有排版，点击定不了光标：直接把 DOM 选区放到这段末尾，再告诉 ProseMirror 选区变了。 */
-const placeCaretAtEnd = (block: Element) => {
-  const text = block.lastChild as Text
-  document.getSelection()?.collapse(text, text.length)
-  document.dispatchEvent(new Event('selectionchange'))
-}
-
-const typeAtEndOfLastParagraph = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
+/** 在编辑器全文末尾接着打字。 */
+const typeAtEnd = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
   const content = await within(sidePanel()).findByRole('textbox', { name: '文件内容' })
-  const paragraphs = content.querySelectorAll('p')
   await user.click(content)
-  placeCaretAtEnd(paragraphs[paragraphs.length - 1] as Element)
-  await user.keyboard(text)
+  await user.keyboard(`{Control>}{End}{/Control}${text}`)
 }
 
 const openDirectorSkill = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -245,14 +237,13 @@ describe('编辑技能', () => {
         '创作 Brief',
       ),
     )
-    await typeAtEndOfLastParagraph(user, '附上参考链接。')
+    await typeAtEnd(user, '附上参考链接。')
 
-    // json 用纯文本编辑。
+    // json 也在同一个编辑器里改原文。
     await user.click(within(panel).getByRole('tab', { name: 'shot-schema.json' }))
     const json = await within(panel).findByRole('textbox', { name: '文件内容' })
-    expect(json.tagName).toBe('TEXTAREA')
-    await user.clear(json)
-    await user.type(json, '{{}')
+    await user.click(json)
+    await user.keyboard('{Control>}a{/Control}{Backspace}{{}')
 
     await user.click(within(panel).getByRole('button', { name: '添加参考文件' }))
     await user.type(within(panel).getByRole('textbox', { name: '参考文件名' }), 'notes.md{Enter}')
@@ -374,7 +365,7 @@ describe('编辑技能', () => {
         '创作 Brief',
       ),
     )
-    await typeAtEndOfLastParagraph(user, '这句会丢。')
+    await typeAtEnd(user, '这句会丢。')
     expect(within(panel).getByRole('textbox', { name: '文件内容' })).toHaveTextContent('这句会丢。')
     await user.click(within(panel).getByRole('button', { name: '保存草稿' }))
 
@@ -429,6 +420,26 @@ describe('编辑技能', () => {
     expect(readDescription(content)).toBe('照参考片做新片： 从拆解到工程')
     expect(content).toContain('name: director\n')
     expect(skillBody(content)).toBe(skillBody(original.content))
+  })
+
+  it('正文开头加空行：存下的就是敲的原文，编辑器不因读回而重载', async () => {
+    const user = await renderPage()
+    const sent = recordWrites()
+    const panel = await openDirectorSkill(user)
+    const original = mockSkillFile('director', 'SKILL.md')
+    const save = within(panel).getByRole('button', { name: '保存草稿' })
+    await user.click(within(panel).getByRole('textbox', { name: '文件内容' }))
+    await user.keyboard('{Control>}{Home}{/Control}{Enter}')
+    expect(save).toBeEnabled()
+    // 重载会清掉撤销历史：撤销不回去，改动就还在。
+    await user.keyboard('{Control>}z{/Control}')
+    expect(save).toBeDisabled()
+
+    await user.keyboard('{Enter}')
+    await user.click(save)
+    await waitFor(() => expect(sent.find((item) => item.method === 'PUT')?.body).toBeTruthy())
+    const put = sent.find((item) => item.method === 'PUT')
+    expect(skillBody(String(put?.body?.['content']))).toBe(`\n${skillBody(original.content)}`)
   })
 
   it('说明清空时不保存，就地提示', async () => {

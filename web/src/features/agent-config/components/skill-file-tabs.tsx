@@ -1,4 +1,6 @@
-import { useRef, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Icon } from '@/shared/icons'
+import { fileKindOf } from '@/shared/lib/file-kind'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
@@ -26,7 +28,7 @@ type SkillFileTabsProps = {
   pending: boolean
   /** 保存或发布中：不能增删改文件。 */
   disabled: boolean
-  /** 页签行在格式切换时会重新挂载，焦点由编辑器按这些元素去放。 */
+  /** 改名、新建与删除确认会换掉页签里的元素，焦点由编辑器按这些元素去放。 */
   registerElement: (key: FileTabsFocusKey, element: HTMLElement | null) => void
   onSelect: (path: string, focus: boolean) => void
   onStartAdd: () => void
@@ -39,11 +41,28 @@ type SkillFileTabsProps = {
 }
 
 const TAB_CLASS =
-  'flex h-7.5 shrink-0 items-center rounded-full text-label text-on-surface-variant ui-state'
+  'flex h-7.5 shrink-0 items-center rounded-sm text-body-sm text-on-surface-variant ui-state'
+
+type Overflow = 'none' | 'start' | 'end' | 'both'
+
+// 放不下时，哪一侧还有页签就在哪一侧淡出 40px。
+const FADE: Record<Overflow, string | undefined> = {
+  both: 'linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent)',
+  end: 'linear-gradient(to right, black calc(100% - 40px), transparent)',
+  none: undefined,
+  start: 'linear-gradient(to right, transparent, black 40px)',
+}
+
+const overflowOf = (scroller: HTMLElement): Overflow => {
+  const start = scroller.scrollLeft > 1
+  const end = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1
+  return start && end ? 'both' : start ? 'start' : end ? 'end' : 'none'
+}
 
 /**
- * 技能文件的页签，放在编辑器格式按钮那一行的左侧：`SKILL.md`、一道细线、参考文件（全名、不折行，放不下横向滚动）、`+`。
- * 选中的参考文件带「⋯」（重命名 / 删除），双击也是重命名；改名、新建与删除确认都就地替换这一格。
+ * 技能文件的页签栏，编辑器上方单独一行，底边一条细线贯穿面板：`SKILL.md`、一道竖线、参考文件（全名、不折行），
+ * 放不下时横向滚动、两侧淡出；「+」固定在最右。选中的参考文件带「⋯」（重命名 / 删除），双击也是重命名；
+ * 改名与删除确认就地替换这一格，新建的文件名输入框替换「+」。
  */
 export function SkillFileTabs({
   active,
@@ -65,6 +84,20 @@ export function SkillFileTabs({
 }: SkillFileTabsProps) {
   // 选了菜单里的动作时，焦点交给输入框或确认按钮，不还给「⋯」。
   const choseRef = useRef(false)
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const [overflow, setOverflow] = useState<Overflow>('none')
+
+  // 页签增删改名会改变内容宽度，面板拉宽拉窄会改变可见宽度，两者都要重新判断两侧有没有藏着的页签。
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    const list = listRef.current
+    if (scroller === null || list === null) return
+    const observer = new ResizeObserver(() => setOverflow(overflowOf(scroller)))
+    observer.observe(scroller)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [])
 
   const navigate = (event: KeyboardEvent, index: number) => {
     const last = paths.length - 1
@@ -150,7 +183,7 @@ export function SkillFileTabs({
         >
           <span className="whitespace-nowrap">删除 {label}？</span>
           <button
-            className="h-6 ui-state cursor-pointer rounded-full px-2 font-medium text-error ui-focus"
+            className="h-6 ui-state cursor-pointer rounded-sm px-2 font-medium text-error ui-focus"
             disabled={pending}
             onClick={onConfirmDelete}
             type="button"
@@ -158,7 +191,7 @@ export function SkillFileTabs({
             删除
           </button>
           <button
-            className="h-6 ui-state cursor-pointer rounded-full px-2 ui-focus"
+            className="h-6 ui-state cursor-pointer rounded-sm px-2 ui-focus"
             disabled={pending}
             onClick={onCancel}
             ref={(element) => registerElement(KEEP_KEY, element)}
@@ -177,7 +210,7 @@ export function SkillFileTabs({
         <button
           aria-selected={selected}
           className={cn(
-            'h-7.5 cursor-pointer rounded-full px-3 whitespace-nowrap ui-focus',
+            'inline-flex h-7.5 cursor-pointer items-center gap-1.5 rounded-sm pr-2.5 pl-2 whitespace-nowrap ui-focus',
             selected && reference && 'pr-0.5',
           )}
           onClick={() => onSelect(path, false)}
@@ -190,13 +223,19 @@ export function SkillFileTabs({
           tabIndex={selected ? 0 : -1}
           type="button"
         >
+          <Icon
+            className={selected ? 'text-on-surface-variant' : 'text-on-surface-faint'}
+            decorative
+            name={fileKindOf(path) === 'json' ? 'file-json' : 'file'}
+            size="sm"
+          />
           {label}
         </button>
         {selected && reference ? (
           <MenuRoot>
             <MenuTrigger asChild disabled={disabled}>
               <IconButton
-                className="mr-1 rounded-full"
+                className="mr-1"
                 label={`${label} 的操作`}
                 name="more"
                 size="xs"
@@ -239,14 +278,26 @@ export function SkillFileTabs({
 
   const references = paths.filter((path) => path !== SKILL_MD)
   return (
-    <div className="hide-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto">
-      <ul aria-label="技能文件" className="flex shrink-0 items-center gap-0.5" role="tablist">
-        {tab(SKILL_MD, 0)}
-        {references.length === 0 ? null : (
-          <li aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-hairline" role="presentation" />
-        )}
-        {references.map((path, index) => tab(path, index + 1))}
-      </ul>
+    <div className="-mx-6 flex shrink-0 items-center gap-1 border-b border-hairline pr-4 pb-2 pl-5">
+      <div
+        className="hide-scrollbar min-w-0 flex-1 overflow-x-auto"
+        onScroll={(event) => setOverflow(overflowOf(event.currentTarget))}
+        ref={scrollerRef}
+        style={{ maskImage: FADE[overflow] }}
+      >
+        <ul
+          aria-label="技能文件"
+          className="flex w-max items-center gap-0.5"
+          ref={listRef}
+          role="tablist"
+        >
+          {tab(SKILL_MD, 0)}
+          {references.length === 0 ? null : (
+            <li aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-hairline" role="presentation" />
+          )}
+          {references.map((path, index) => tab(path, index + 1))}
+        </ul>
+      </div>
       {mode?.type === 'add' ? (
         nameInput
       ) : (
