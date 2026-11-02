@@ -120,10 +120,18 @@ export const chooseModel = (
   }
 }
 
-export const setThinking = (config: AgentConfig, thinking: ThinkingLevel): AgentConfig =>
-  config.model === null || config.model === undefined
-    ? config
-    : { ...config, model: { ...config.model, settings: { ...config.model.settings, thinking } } }
+/** `null` 删除显式档位，交给模型默认值；其他模型设置保持不变。 */
+export const setThinking = (config: AgentConfig, thinking: ThinkingLevel | null): AgentConfig => {
+  if (config.model === null || config.model === undefined) return config
+  const { thinking: _previous, ...settings } = config.model.settings ?? {}
+  return {
+    ...config,
+    model: {
+      ...config.model,
+      settings: thinking === null ? settings : { ...settings, thinking },
+    },
+  }
+}
 
 /** `null` 是用供应商的默认密钥。 */
 export const setCredential = (config: AgentConfig, credentialId: string | null): AgentConfig =>

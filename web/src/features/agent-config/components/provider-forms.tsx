@@ -5,12 +5,7 @@ import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import {
-  THINKING_LEVELS,
-  ThinkingEmoji,
-  thinkingLabel,
-  type ThinkingLevel,
-} from '@/shared/ui/thinking-level'
+import { THINKING_LEVELS, type ThinkingLevel } from '@/shared/ui/thinking-level'
 import { formatContextSize } from '../agent-draft'
 import {
   testCredential,
@@ -26,6 +21,7 @@ import {
   type ProviderModel,
 } from '../model-providers.api'
 import { Segmented } from './segmented'
+import { ThinkingLevelOptions } from './thinking-controls'
 import { TestStatus, type Test } from './test-status'
 
 const IDLE: Test = { kind: 'idle' }
@@ -686,40 +682,7 @@ export function ModelForm({
               />
             </Field>
           </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <span className={LABEL_CLASS} id={`${baseId}-thinking`}>
-              思考档位
-            </span>
-            <div
-              aria-labelledby={`${baseId}-thinking`}
-              className="flex flex-wrap gap-1.5"
-              role="group"
-            >
-              {THINKING_LEVELS.map((level) => {
-                const on = thinking.includes(level)
-                return (
-                  <button
-                    aria-pressed={on}
-                    className={cn(
-                      'inline-flex h-(--control-height-md) ui-state cursor-pointer items-center gap-1.5 rounded-full px-3 text-body-sm text-on-surface-variant ring-1 ring-border ui-focus ring-inset',
-                      on && 'bg-state-active font-medium text-on-surface ring-0',
-                    )}
-                    disabled={pending}
-                    key={level}
-                    onClick={() =>
-                      setThinking((current) =>
-                        on ? current.filter((item) => item !== level) : [...current, level],
-                      )
-                    }
-                    type="button"
-                  >
-                    <ThinkingEmoji level={level} />
-                    {thinkingLabel(level)}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          <ThinkingLevelOptions disabled={pending} onChange={setThinking} value={thinking} />
         </>
       ) : null}
     </InlineForm>

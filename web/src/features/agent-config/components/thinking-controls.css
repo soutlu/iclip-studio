@@ -1,0 +1,125 @@
+.thinking-fader,
+.thinking-level-options {
+  min-width: 0;
+}
+
+.thinking-fader-slider {
+  position: relative;
+  display: flex;
+  height: 36px;
+  align-items: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.thinking-fader-track {
+  position: relative;
+  height: 3px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-outline-variant);
+}
+
+.thinking-fader-range {
+  position: absolute;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.thinking-fader-thumb,
+.thinking-level-keycap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+}
+
+.thinking-fader-thumb {
+  width: 24px;
+  height: 34px;
+  cursor: grab;
+}
+
+.thinking-fader-thumb:active {
+  cursor: grabbing;
+}
+
+.thinking-fader-thumb[data-disabled] {
+  cursor: default;
+}
+
+.thinking-fader-grip {
+  width: 3px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+.thinking-fader-ruler {
+  display: flex;
+  height: 10px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.thinking-fader-ruler > span {
+  width: 1px;
+  height: 4px;
+  background: var(--color-outline-variant);
+}
+
+.thinking-fader-ruler > .thinking-fader-major {
+  height: 9px;
+  background: var(--color-on-surface-muted);
+}
+
+.thinking-fader-labels {
+  position: relative;
+  height: 30px;
+}
+
+.thinking-fader-label {
+  position: absolute;
+  top: 0;
+  min-width: 30px;
+  min-height: 30px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.thinking-level-key {
+  padding-block: 4px;
+}
+
+.thinking-level-keycap {
+  width: min(100%, 38px);
+  height: 30px;
+  margin-inline: auto;
+  border-top: 3px solid var(--color-outline-variant);
+  box-shadow: none;
+}
+
+.thinking-level-keycap .thinking-fader-grip {
+  width: 2px;
+  height: 13px;
+  background: var(--color-outline-variant);
+}
+
+.thinking-level-key[aria-pressed='true'] .thinking-level-keycap {
+  border-top-color: var(--color-primary);
+  box-shadow: var(--shadow-1);
+}
+
+.thinking-level-key[aria-pressed='true'] .thinking-fader-grip {
+  background: var(--color-primary);
+}
+
+.thinking-level-key:not(:disabled):hover .thinking-level-keycap,
+.thinking-fader-thumb:hover {
+  background: var(--color-surface-container-low);
+}
