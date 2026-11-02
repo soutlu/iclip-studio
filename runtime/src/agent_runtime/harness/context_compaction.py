@@ -33,7 +33,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import RunContext
 from pydantic_ai_harness.compaction import SummarizingCompaction, estimate_context_tokens
 
-# 私有模块：harness 0.62 未公开导出补记加载交换的标记，升级时须复核。
+# 私有模块：harness 0.63 未公开导出补记加载交换的标记，升级时须复核。
 from pydantic_ai_harness.compaction._capability_loads import RECORDED_LOAD_METADATA_KEY
 
 _logger = structlog.stdlib.get_logger(__name__)

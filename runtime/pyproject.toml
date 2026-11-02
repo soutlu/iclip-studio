@@ -7,9 +7,9 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.52",
     "pydantic>=2.13.5",
     "structlog>=26.1.0",
-    "pydantic-ai-slim[openai,mcp,google]>=2.62.0",  # OpenAI 兼容端点（含百炼、OpenRouter）；Gemini 原生接口；MCP 服务的客户端
+    "pydantic-ai-slim[openai,mcp,google]>=2.63.0",  # OpenAI 兼容端点（含百炼、OpenRouter）；Gemini 原生接口；MCP 服务的客户端
     # 0.x 的 minor 版本可能破坏 API；导入边界见 tests/unit/architecture/test_architecture.py
-    "pydantic-ai-harness>=0.62.0",
+    "pydantic-ai-harness>=0.63.0",
     "pyyaml>=6",  # 供应商声明、技能 frontmatter 与 agent 导出包
     "cryptography>=50.0.1",  # 密钥字段的 MultiFernet 加密
     "packaging>=26",  # 导出包的格式版本比较
