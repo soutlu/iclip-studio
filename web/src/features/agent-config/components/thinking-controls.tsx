@@ -1,10 +1,10 @@
 import { Slider } from 'radix-ui'
-import { useId } from 'react'
+import { useId, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { THINKING_LEVELS, thinkingLabel, type ThinkingLevel } from '@/shared/ui/thinking-level'
 import './thinking-controls.css'
 
-/** 按模型支持的档位逐格调节；默认值独立于强度刻度，不推测供应商的默认档位。 */
+/** 拖动时连续预览，释放后提交最近的有效档位；键盘逐档调节，默认值独立于强度刻度。 */
 export function ThinkingFader({
   levels,
   value,
@@ -17,8 +17,35 @@ export function ThinkingFader({
   const id = useId()
   const index = value === null ? -1 : levels.indexOf(value)
   const explicit = index >= 0
-  const label = value === null ? '默认' : thinkingLabel(value)
+  const [dragPosition, setDragPosition] = useState<number | null>(null)
+  const position = dragPosition ?? Math.max(0, index)
+  const previewLevel = dragPosition === null ? value : (levels[Math.round(position)] ?? value)
+  const label = previewLevel === null ? '默认' : thinkingLabel(previewLevel)
   const unavailable = value !== null && !explicit
+  const disabled = !explicit || levels.length === 1
+  const commit = (next: number) => {
+    const level = levels[Math.max(0, Math.min(levels.length - 1, Math.round(next)))]
+    setDragPosition(null)
+    if (level !== undefined && level !== value) onChange(level)
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
+    if (disabled) return
+    const current = Math.round(position)
+    const next = {
+      ArrowRight: current + 1,
+      ArrowUp: current + 1,
+      ArrowLeft: current - 1,
+      ArrowDown: current - 1,
+      PageUp: current + 1,
+      PageDown: current - 1,
+      Home: 0,
+      End: levels.length - 1,
+    }[event.key]
+    if (next === undefined) return
+    // Radix 的细步进用于指针跟手，键盘仍按真实模型档位移动。
+    event.preventDefault()
+    commit(next)
+  }
 
   return (
     <div className="thinking-fader" role="group" aria-labelledby={id}>
@@ -54,21 +81,30 @@ export function ThinkingFader({
         <div className="mt-3 px-4">
           <Slider.Root
             className="thinking-fader-slider"
-            disabled={!explicit || levels.length === 1}
+            data-dragging={dragPosition !== null}
+            disabled={disabled}
             max={Math.max(1, levels.length - 1)}
             min={0}
-            onValueChange={([next]) => {
-              const level = next === undefined ? undefined : levels[next]
-              if (level !== undefined) onChange(level)
+            onKeyDown={onKeyDown}
+            onPointerCancel={() => setDragPosition(null)}
+            onPointerDown={() => {
+              if (!disabled) setDragPosition(Math.max(0, index))
             }}
-            step={1}
-            value={[Math.max(0, index)]}
+            onPointerUp={() => setDragPosition(null)}
+            onValueChange={([next]) => {
+              if (next !== undefined) setDragPosition(next)
+            }}
+            onValueCommit={([next]) => {
+              if (next !== undefined) commit(next)
+            }}
+            step={0.01}
+            value={[position]}
           >
             <Slider.Track className="thinking-fader-track">
               {explicit ? <Slider.Range className="thinking-fader-range" /> : null}
             </Slider.Track>
             <Slider.Thumb
-              aria-disabled={!explicit || levels.length === 1}
+              aria-disabled={disabled}
               aria-label="思考档位"
               aria-valuetext={
                 value === null ? '默认（跟随模型）' : unavailable ? `${label}（不可用）` : label
@@ -78,21 +114,19 @@ export function ThinkingFader({
               <span aria-hidden className="thinking-fader-grip" />
             </Slider.Thumb>
           </Slider.Root>
-          <div aria-hidden className="thinking-fader-ruler">
-            {Array.from({ length: Math.max(1, (levels.length - 1) * 6 + 1) }, (_, tick) => (
-              <span className={tick % 6 === 0 ? 'thinking-fader-major' : undefined} key={tick} />
-            ))}
-          </div>
           <div className="thinking-fader-labels">
             {levels.map((level, position) => (
               <button
-                aria-pressed={value === level}
+                aria-pressed={previewLevel === level}
                 className={cn(
                   'thinking-fader-label ui-state cursor-pointer rounded-xs text-caption text-on-surface-muted ui-focus',
-                  value === level && 'font-medium text-on-surface',
+                  previewLevel === level && 'font-medium text-primary',
                 )}
                 key={level}
-                onClick={() => onChange(level)}
+                onClick={() => {
+                  setDragPosition(null)
+                  onChange(level)
+                }}
                 style={{
                   left: `${levels.length === 1 ? 0 : (position / (levels.length - 1)) * 100}%`,
                 }}

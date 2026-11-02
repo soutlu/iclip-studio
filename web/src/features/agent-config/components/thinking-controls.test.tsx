@@ -1,7 +1,7 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ThinkingLevel } from '@/shared/ui/thinking-level'
 import { renderWithTooltip } from '@/testing/render'
 import { ThinkingFader, ThinkingLevelOptions } from './thinking-controls'
@@ -20,6 +20,70 @@ function FaderHarness({
 }
 
 describe('ThinkingFader', () => {
+  describe('指针拖动', () => {
+    beforeEach(() => {
+      // jsdom 不排版；三个档位间隔各占 100px，只补浏览器提供的几何和指针信息。
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        DOMRect.fromRect({ x: 0, y: 0, width: 300, height: 36 }),
+      )
+      vi.stubGlobal(
+        'PointerEvent',
+        class extends MouseEvent {
+          readonly pointerId = 1
+          readonly pointerType = 'mouse'
+          readonly isPrimary = true
+        },
+      )
+    })
+    afterEach(() => vi.unstubAllGlobals())
+
+    const capturedThumb = () => {
+      const thumb = screen.getByRole('slider', { name: '思考档位' })
+      let captured: number | undefined
+      Object.assign(thumb, {
+        setPointerCapture: (pointerId: number) => {
+          captured = pointerId
+        },
+        hasPointerCapture: (pointerId: number) => captured === pointerId,
+        releasePointerCapture: () => {
+          captured = undefined
+        },
+      })
+      return thumb
+    }
+
+    it('拖动中连续预览但不提交，松开只提交最近的有效档位', () => {
+      const onChange = vi.fn()
+      renderWithTooltip(<ThinkingFader levels={SPARSE_LEVELS} onChange={onChange} value="low" />)
+      const thumb = capturedThumb()
+
+      fireEvent.pointerDown(thumb, { clientX: 100 })
+      fireEvent.pointerMove(thumb, { clientX: 130 })
+      expect(thumb).toHaveAttribute('aria-valuenow', '1.3')
+      fireEvent.pointerMove(thumb, { clientX: 160 })
+      expect(thumb).toHaveAttribute('aria-valuenow', '1.6')
+      expect(onChange).not.toHaveBeenCalled()
+
+      fireEvent.pointerUp(thumb, { clientX: 160 })
+      expect(onChange).toHaveBeenCalledExactlyOnceWith('high')
+    })
+
+    it('取消拖动不提交，预览回到原有档位', () => {
+      const onChange = vi.fn()
+      renderWithTooltip(<ThinkingFader levels={SPARSE_LEVELS} onChange={onChange} value="low" />)
+      const thumb = capturedThumb()
+
+      fireEvent.pointerDown(thumb, { clientX: 100 })
+      fireEvent.pointerMove(thumb, { clientX: 260 })
+      expect(thumb).toHaveAttribute('aria-valuenow', '2.6')
+      fireEvent.pointerCancel(thumb)
+
+      expect(onChange).not.toHaveBeenCalled()
+      expect(thumb).toHaveAttribute('aria-valuenow', '1')
+      expect(thumb).toHaveAttribute('aria-valuetext', '低')
+    })
+  })
+
   it('方向键只经过模型支持的档位，Home、End 与边界保持离散取值', async () => {
     const user = userEvent.setup()
     renderWithTooltip(<FaderHarness />)
