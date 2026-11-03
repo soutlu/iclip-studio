@@ -38,14 +38,18 @@ type MarkdownImageProps = ComponentProps<'img'> & {
   thumbnail?: boolean
 }
 
-/** 正文图片点开进灯箱。 */
+/** 正文图片限高 320px、按原比例缩放，一屏放得下；点开进灯箱看原图。 */
 function MarkdownImage({ alt, height, onError, src, thumbnail, title, width }: MarkdownImageProps) {
   const inLink = use(InsideLinkContext)
   const [open, setOpen] = useState(false)
   const image = (
     <img
       alt={alt ?? ''}
-      className={thumbnail ? 'block h-20 w-auto max-w-40 object-cover' : undefined}
+      className={
+        thumbnail
+          ? 'block h-20 w-auto max-w-40 object-cover'
+          : 'block h-auto max-h-80 w-auto max-w-full object-contain'
+      }
       height={height}
       onError={onError}
       src={src}
