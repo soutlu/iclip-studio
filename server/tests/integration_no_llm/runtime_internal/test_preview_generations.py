@@ -44,7 +44,6 @@ from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 from tests.helpers.runtime_backed import (
@@ -150,7 +149,6 @@ async def _tool_request(owner_id: str, session_id: str, *, preview: bool) -> Ima
     ) as client:
         capability = mount_shot_video(
             space=FileSpace(store=FakeFileStore(), namespace=workspace_namespace),
-            ledger=FakeMaterialLedger(),
             generations=generations,
             objects=FakeObjects(),
             records=FakeCutRecords(),

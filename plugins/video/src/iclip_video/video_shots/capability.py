@@ -8,8 +8,7 @@ from typing import Annotated, Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace, FileStore
 from agent_runtime.harness.files import write_or_retry
-from agent_runtime.harness.materials import require_materials
-from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.harness.materials import require_media
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.tool_args import REPLAY_CONTEXT, JsonText
@@ -46,9 +45,6 @@ class VideoShots(CapPlugin[AgentDepsT]):
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
 
-    ledger: MaterialLedger
-    """素材来源台账，供工具输入验证使用。"""
-
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
 
     def get_toolset(self) -> VideoShotsToolset[AgentDepsT]:
@@ -59,10 +55,10 @@ class VideoShots(CapPlugin[AgentDepsT]):
         return CAPABILITY_ID
 
     @classmethod
-    def bind(cls, *, space: FileSpace, ledger: MaterialLedger) -> type[Self]:
+    def bind(cls, *, space: FileSpace) -> type[Self]:
         """把运行服务绑进类，交给登记表。"""
 
-        return cls._bound(space=space, ledger=ledger)
+        return cls._bound(space=space)
 
     @classmethod
     def from_spec(cls) -> Self:
@@ -126,13 +122,15 @@ class VideoShotsToolset(FunctionToolset[AgentDepsT]):
     async def _validate_shot_delivery(
         self, ctx: RunContext[Any], aspect_ratio: str, shots: list[VideoShotRequest]
     ) -> None:
-        """镜头帧地址须是本对话已登记的图片素材；表的形状由工具体校验。"""
+        """镜头帧地址要取得到、是图片；表的形状由工具体校验。"""
 
-        _ = aspect_ratio
-        await require_materials(
-            self._cap.ledger,
-            self._cap.space.resolve(ctx),
-            (url for shot in shots for url in shot.image_urls),
+        _ = (ctx, aspect_ratio)
+        await require_media(
+            [
+                (f"第 {group} 组第 {number} 张", url)
+                for group, shot in enumerate(shots, start=1)
+                for number, url in enumerate(shot.image_urls, start=1)
+            ],
             kind="image",
             what="镜头帧地址",
         )

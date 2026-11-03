@@ -1,62 +1,39 @@
-"""读两份文件并检查，再认文件里写的图片地址。
+"""读两份文件并检查结构，以及把图片地址检查出的问题挂到写着它的节点上。
 
-AI 导演的工具和制作页都从这里拿到同一个 ``Film``。"""
+AI 导演的工具和制作页都从这里拿到同一个 ``Film``；地址取不取得到只在提交点另查。"""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
-
-from agent_runtime.material_ledger.store import MaterialLedger
+from collections.abc import Mapping
 
 from iclip_video.iclip_studio.film.checks import check
 from iclip_video.iclip_studio.film.film import Film
 
 
-@dataclass(frozen=True, slots=True)
-class ConversationImages:
-    """一段对话里的图片：素材台账里登记的图片。"""
-
-    ledger: MaterialLedger
-    namespace: str
-
-    async def known(self, url: str) -> bool:
-        """这个地址是不是这段对话素材台账里的图片。"""
-
-        recorded = await self.ledger.lookup(self.namespace, url)
-        return recorded is not None and recorded.kind == "image"
-
-    async def known_all(self, urls: Sequence[str]) -> frozenset[str]:
-        """这批地址里哪些是这段对话素材台账里的图片；一次查完。"""
-
-        recorded = await self.ledger.lookup_many(self.namespace, urls)
-        return frozenset(url for url, material in recorded.items() if material.kind == "image")
-
-
-async def load_film(
-    project_source: str,
-    run_source: str | None,
-    *,
-    images: ConversationImages,
-) -> Film | list[str]:
-    """通过时返回 ``Film``，否则返回全部问题。文件里写的地址要在这段对话的素材台账里。"""
+def load_film(project_source: str, run_source: str | None) -> Film | list[str]:
+    """通过时返回 ``Film``，否则返回全部问题。只查结构，不查文件里写的地址取不取得到。"""
 
     film = check(project_source, run_source)
     if isinstance(film, list):
         return film
     if film.errors:
         return film.errors
-    given = film.given_images()
-    known = await images.known_all(list(dict.fromkeys(node.attrs["src"] for _, node in given)))
-    for document, node in given:
-        if node.attrs["src"] not in known:
-            # 不回显地址：没被认可的地址不通过报错进模型上下文。
-            document.error(node, "src 不在这段对话的素材里；只能写对话素材里的图片地址")
-            if document is not film.project:
-                film.errors.append(document.errors[-1])
-    if film.errors:
-        return film.errors
     return film
 
 
-__all__ = ["ConversationImages", "load_film"]
+def image_problems(film: Film, reasons: Mapping[str, str]) -> list[str]:
+    """``reasons`` 是（图片地址 → 用不了的原因）：写着这些地址的每个节点挂一条问题，返回全部问题。
+
+    原因不带地址：问题按节点位置说，不把地址回显进模型上下文。"""
+
+    for document, node in film.given_images():
+        reason = reasons.get(node.attrs["src"])
+        if reason is None:
+            continue
+        document.error(node, f"src 用不了：{reason}；换成能打开的图片地址")
+        if document is not film.project:
+            film.errors.append(document.errors[-1])
+    return film.errors
+
+
+__all__ = ["image_problems", "load_film"]

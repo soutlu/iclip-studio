@@ -18,7 +18,11 @@ depends_on = []
 
 [[modules]]
 path = "iclip.platform.media"
-depends_on = ["iclip.common"]
+depends_on = ["iclip.common", "iclip.platform.outbound"]
+
+[[modules]]
+path = "iclip.platform.outbound"
+depends_on = []
 
 # 配置页三组管理接口转给运行时服务的那一层，技能库、模型供应商与 agent 配置的路由共用。
 [[modules]]
@@ -95,6 +99,7 @@ depends_on = [
     "iclip.common",
     "iclip.platform.media",
     "iclip.platform.object_store",
+    "iclip.platform.outbound",
     "iclip.domains.identity",
 ]
 
@@ -165,6 +170,7 @@ depends_on = [
     "iclip.platform.db",
     "iclip.platform.object_store",
     "iclip.platform.media",
+    "iclip.platform.outbound",
     "iclip.platform.shot_media",
     "iclip.platform.video_breakdown",
     "iclip.config",

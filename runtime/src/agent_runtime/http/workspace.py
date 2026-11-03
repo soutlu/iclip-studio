@@ -1,6 +1,6 @@
-"""会话工作区与素材台账接口：列文件、读一份、带版本写一份；登记素材、按地址查一条或一批。
+"""会话工作区接口：列文件、读一份、带版本写一份。
 
-命名空间是「``X-End-User``（会话属主）/会话 id」，与 agent 的工作区插件、受理消息时登记附件同一条规则。
+命名空间是「``X-End-User``（会话属主）/会话 id」，与 agent 的工作区插件同一条规则。
 报错同后端读写工作区文件的端点：路径或内容不合规 422，版本对不上 409，文件不在 404。写文件经组合根交来的
 会通知的存储，写成功就给订着这段会话的对话内容流连接发 ``event.fs.changed``。会话不是调用方应用的（含不存在）也答 404，在请求
 形状校验之后、读写之前。
@@ -14,13 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from agent_runtime.app_wire import (
-    FilesOut,
-    FileWriteIn,
-    MaterialsIn,
-    MaterialsLookupIn,
-    MaterialsLookupOut,
-)
+from agent_runtime.app_wire import FilesOut, FileWriteIn
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import (
@@ -34,7 +28,6 @@ from agent_runtime.file_store.store import (
     normalize_path,
 )
 from agent_runtime.http.auth import CallingApp, SessionOwner
-from agent_runtime.material_ledger.store import Material, MaterialLedger
 from agent_runtime.service.sessions import SessionService
 
 
@@ -44,7 +37,6 @@ def _namespace(owner: uuid.UUID, session_id: uuid.UUID) -> str:
 
 def create_workspace_router(
     files: FileStore,
-    ledger: MaterialLedger,
     sessions: SessionService,
     calling_app: Callable[..., Awaitable[CallingApp]],
 ) -> APIRouter:
@@ -108,37 +100,6 @@ def create_workspace_router(
             raise Conflict(str(exc)) from exc
         except (InvalidPath, InvalidContent, QuotaExceeded) as exc:
             raise ValidationFailed(str(exc)) from exc
-
-    @router.post("/materials", status_code=204)
-    async def record_materials(
-        session_id: uuid.UUID, body: MaterialsIn, owner: SessionOwner, app: CallingApp = caller
-    ) -> None:
-        await sessions.require_owned(session_id, app_id=app.id)
-        await ledger.record(_namespace(owner, session_id), body.materials)
-
-    @router.get("/materials", response_model=Material)
-    async def lookup_material(
-        session_id: uuid.UUID,
-        owner: SessionOwner,
-        url: Annotated[str, Query(min_length=1, description="素材地址，按原始字符串精确匹配。")],
-        app: CallingApp = caller,
-    ) -> Material:
-        await sessions.require_owned(session_id, app_id=app.id)
-        found = await ledger.lookup(_namespace(owner, session_id), url)
-        if found is None:
-            raise NotFound("这段对话的素材里没有这个地址")
-        return found
-
-    @router.post("/materials:lookup", response_model=MaterialsLookupOut)
-    async def lookup_materials(
-        session_id: uuid.UUID,
-        body: MaterialsLookupIn,
-        owner: SessionOwner,
-        app: CallingApp = caller,
-    ) -> MaterialsLookupOut:
-        await sessions.require_owned(session_id, app_id=app.id)
-        found = await ledger.lookup_many(_namespace(owner, session_id), body.urls)
-        return MaterialsLookupOut(materials=tuple(found.values()))
 
     return router
 

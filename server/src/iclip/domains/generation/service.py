@@ -349,17 +349,6 @@ class GenerationService:
             source_job_id=base_id,
         )
 
-    async def find_conversation_image(
-        self, principal: Principal, url: str, conversation_id: uuid.UUID
-    ) -> GenerationJob | None:
-        return await self._repo.find_by_output(
-            url,
-            kind=KIND_IMAGE,
-            owner=visible_owner_incl_act_as(principal),
-            conversation_id=conversation_id,
-            inherited=await self._inheritance(principal, conversation_id),
-        )
-
     async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
         return await self._repo.find_by_output(
             url,

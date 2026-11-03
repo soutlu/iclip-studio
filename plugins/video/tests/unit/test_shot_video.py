@@ -12,7 +12,6 @@ from typing import Any
 import httpx
 import pytest
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from pydantic_ai import Agent, ModelRetry, ToolFailed
@@ -54,7 +53,7 @@ from iclip_video.shot_video.shots import parse_shot_rows
 from iclip_video.shot_video.toolset import ShotVideoToolset
 from iclip_video.video_document import video_doc_path
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.media_probe import ScriptedMedia
 from tests.helpers.plugins import with_requirements
 from tests.helpers.shot_video import (
     FakeBoards,
@@ -131,25 +130,14 @@ def files() -> FakeFileStore:
 
 
 @pytest.fixture
-def materials() -> FakeMaterialLedger:
-    """模拟参考视频已在收件阶段登记。"""
-
-    fake = FakeMaterialLedger()
-    fake.rows[(NAMESPACE, VIDEO)] = Material(url=VIDEO, kind="video")
-    return fake
-
-
-@pytest.fixture
 def capability(
     files: FakeFileStore,
-    materials: FakeMaterialLedger,
     generations: FakeGenerations,
     boards: FakeBoards,
     cuts: FakeCuts,
 ) -> ShotVideo[object]:
     return mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=materials,
         generations=generations,
         boards=boards,
         cuts=cuts,
@@ -181,28 +169,35 @@ async def check_args(
     await outcome
 
 
-async def test_an_out_of_scope_address_is_refused_on_the_agent_path(
-    capability: ShotVideo[object], files: FakeFileStore
+async def test_a_reference_that_does_not_open_is_refused_before_any_generation(
+    capability: ShotVideo[object],
+    files: FakeFileStore,
+    media: ScriptedMedia,
+    generations: FakeGenerations,
 ) -> None:
-    """通过真实 Agent 确认未登记地址在工具执行前被拒绝。"""
+    """通过真实 Agent 确认打不开的参考图在工具执行前被拒，不提交出图。"""
+
+    await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
+    broken = "https://cdn.test/made-up.jpg"
+    media.set(broken, (404, None))
+    args = {
+        "frames": [{"no": "S1-1", "prompt": "猫"}],
+        "reference_images": ["https://cdn.test/ok.jpg", broken],
+        "global_reference": "全局参考",
+        "target_aspect": "9:16",
+    }
 
     def call_once(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(
-                parts=[
-                    ToolCallPart(
-                        "plan_shot_frames",
-                        {"video_url": "https://cdn.test/made-up.mp4"},
-                        tool_call_id="c1",
-                    )
-                ]
+                parts=[ToolCallPart("generate_shot_frames", args, tool_call_id="c1")]
             )
         return ModelResponse(parts=[TextPart("好")])
 
     agent = Agent(
         FunctionModel(call_once), capabilities=with_requirements(capability, capability.space)
     )
-    result = await agent.run("帮我拆一下", deps=make_deps())
+    result = await agent.run("出这一批帧", deps=make_deps())
 
     refusals = [
         part
@@ -211,8 +206,9 @@ async def test_an_out_of_scope_address_is_refused_on_the_agent_path(
         if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
     assert len(refusals) == 1
-    assert "不是这段对话里的素材" in refusals[0].model_response_str()
-    assert await files.entries(NAMESPACE) == []
+    assert "@Image2：打不开" in refusals[0].model_response_str()
+    assert "made-up" not in refusals[0].model_response_str()
+    assert generations.submitted == []
 
 
 async def test_missing_run_identity_is_a_bug_not_a_retry(tools: ShotVideoToolset[object]) -> None:
@@ -230,65 +226,60 @@ async def test_tools_only_take_http_urls(
         await check_args(tools, "plan_shot_frames", ctx, video_url=url)
 
 
-async def test_plan_refuses_an_address_the_conversation_never_had(
-    tools: ShotVideoToolset[object], ctx: RunContext[object]
+async def test_plan_takes_any_http_video_without_probing_it(
+    tools: ShotVideoToolset[object], ctx: RunContext[object], media: ScriptedMedia
 ) -> None:
-    """素材范围校验必须先于视频下载，避免请求未登记的地址。"""
+    """取帧只查地址形状：后端经出网防护下载，取不到如实报。"""
 
-    with pytest.raises(ModelRetry, match="不是这段对话里的素材") as failure:
-        await check_args(tools, "plan_shot_frames", ctx, video_url="https://cdn.test/made-up.mp4")
+    await check_args(
+        tools, "plan_shot_frames", ctx, video_url="https://cdn.test/never-mentioned.mp4"
+    )
 
-    # 不回显未登记地址，避免重试消息将其引入素材上下文。
-    assert "made-up" not in str(failure.value)
+    assert media.asked == []
 
 
-async def test_plan_refuses_an_image_the_user_sent(
-    tools: ShotVideoToolset[object], ctx: RunContext[object], materials: FakeMaterialLedger
+async def check_references(
+    tools: ShotVideoToolset[object], ctx: RunContext[object], urls: list[str]
 ) -> None:
-
-    image = "https://cdn.test/poster.jpg"
-    materials.rows[(NAMESPACE, image)] = Material(url=image, kind="image")
-    with pytest.raises(ModelRetry, match="图片"):
-        await check_args(tools, "plan_shot_frames", ctx, video_url=image)
+    await check_args(
+        tools,
+        "generate_shot_frames",
+        ctx,
+        frames=[FrameRequest(no="S1-1", prompt="猫")],
+        reference_images=urls,
+        global_reference="全局",
+        target_aspect="9:16",
+    )
 
 
 async def test_reference_images_refuse_a_video(
     tools: ShotVideoToolset[object], ctx: RunContext[object]
 ) -> None:
-
-    with pytest.raises(ModelRetry, match="视频"):
-        await check_args(
-            tools,
-            "generate_shot_frames",
-            ctx,
-            frames=[FrameRequest(no="S1-1", prompt="猫")],
-            reference_images=[VIDEO],
-            global_reference="全局",
-            target_aspect="9:16",
-        )
+    with pytest.raises(ModelRetry, match="@Image1：不是图片"):
+        await check_references(tools, ctx, [VIDEO])
 
 
-async def test_reference_images_take_an_address_the_tools_wrote_down(
-    tools: ShotVideoToolset[object], ctx: RunContext[object], materials: FakeMaterialLedger
+async def test_a_reachable_reference_never_seen_in_the_conversation_is_taken(
+    tools: ShotVideoToolset[object], ctx: RunContext[object], media: ScriptedMedia
 ) -> None:
+    """MCP 工具给的图：没有扩展名、对话里没出现过，取得到、是图片就收。"""
 
-    frame = "https://bucket.oss-ap-southeast-1.aliyuncs.com/shot-frames/k/S1-1.jpg"
-    materials.rows[(NAMESPACE, frame)] = Material(url=frame, kind="image")
+    from_mcp = "https://mcp.example.com/blob/7f3a"
+    media.set(from_mcp, (200, "image/png"))
 
-    async def call(url: str) -> None:
-        await check_args(
-            tools,
-            "generate_shot_frames",
-            ctx,
-            frames=[FrameRequest(no="S1-1", prompt="猫")],
-            reference_images=[url],
-            global_reference="全局",
-            target_aspect="9:16",
-        )
+    await check_references(tools, ctx, [from_mcp])
 
-    await call(frame)
-    with pytest.raises(ModelRetry, match="不是这段对话里的素材"):
-        await call("https://bucket.oss-ap-southeast-1.aliyuncs.com/shot-frames/k/S9-9.jpg")
+    assert media.asked == [from_mcp]
+
+
+async def test_a_reference_that_does_not_answer_is_reported_as_not_opening(
+    tools: ShotVideoToolset[object], ctx: RunContext[object], media: ScriptedMedia
+) -> None:
+    frame = "https://cdn.test/S1-1.jpg"
+    media.set(frame, (502, None))
+
+    with pytest.raises(ModelRetry, match="@Image1：打不开"):
+        await check_references(tools, ctx, [frame])
 
 
 async def test_plan_needs_the_document_first(
@@ -329,10 +320,9 @@ async def test_plan_writes_the_ledger_the_boards_port_built(
     tools: ShotVideoToolset[object],
     ctx: RunContext[object],
     files: FakeFileStore,
-    materials: FakeMaterialLedger,
     boards: FakeBoards,
 ) -> None:
-    """工作区里没有台账：交给端口的 previous 为空，端口建出的台账照原样落盘，板地址登记进素材台账。"""
+    """工作区里没有台账：交给端口的 previous 为空，端口建出的台账照原样落盘。"""
 
     await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
 
@@ -353,7 +343,6 @@ async def test_plan_writes_the_ledger_the_boards_port_built(
         "每组图中每张视频帧左上的标注即帧号（S<镜头号>-<序号>）。",
         "boards": [{"board": 1, "shots": [1, 2], "url": board_url(1)}],
     }
-    assert board_url(1) in materials.urls(NAMESPACE)
 
 
 async def test_plan_hands_the_workspace_ledger_to_the_port_and_keeps_it_when_reused(
@@ -497,10 +486,9 @@ async def test_generate_accepts_a_frame_the_ledger_never_sampled(
 
 @pytest.mark.parametrize("preview", [False, True], ids=["conversation", "preview"])
 @pytest.mark.parametrize("tool", ["frames", "anchor"])
-async def test_generation_tags_only_conversations_and_keeps_materials_in_the_session(
+async def test_generation_tags_only_conversations(
     tools: ShotVideoToolset[object],
     files: FakeFileStore,
-    materials: FakeMaterialLedger,
     generations: FakeGenerations,
     preview: bool,
     tool: str,
@@ -520,10 +508,6 @@ async def test_generation_tags_only_conversations_and_keeps_materials_in_the_ses
     [request] = generations.submitted
     assert request.conversation_id == (None if preview else conversation_id)
     assert isinstance(result.return_value, dict)
-    outputs = result.return_value["frames" if tool == "frames" else "images"]
-    assert materials.urls(namespace) == {GRID, *(item["url"] for item in outputs)}
-    assert materials.urls(NAMESPACE) == {VIDEO}
-    assert {space for space, _ in materials.rows} == {NAMESPACE, namespace}
 
 
 async def test_a_conversation_id_that_is_not_a_uuid_is_corrupt_state(
@@ -646,7 +630,6 @@ async def test_generate_stays_on_dev_when_pro_is_off(
     ]
     toolset = mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=FakeMaterialLedger(),
         generations=generations,
         boards=FakeBoards(),
         cuts=FakeCuts(),
@@ -684,7 +667,6 @@ async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
     generations.outcomes = [Outcome(status="submitted", output_url=None)]
     toolset = mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=FakeMaterialLedger(),
         generations=generations,
         boards=FakeBoards(),
         cuts=FakeCuts(),
@@ -730,7 +712,6 @@ class PollingBackend:
         )
         toolset = mount_shot_video(
             space=FileSpace(store=files, namespace=workspace_namespace),
-            ledger=FakeMaterialLedger(),
             generations=HttpImageGenerations(api),
             boards=FakeBoards(),
             cuts=cuts,
@@ -874,11 +855,10 @@ async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
     tools: ShotVideoToolset[object],
     ctx: RunContext[object],
     files: FakeFileStore,
-    materials: FakeMaterialLedger,
     generations: FakeGenerations,
     cuts: FakeCuts,
 ) -> None:
-    """按帧号要那几格（存到哪由宿主定），收缩到目标画幅；交回的地址与整图一起登记进素材台账。"""
+    """按帧号要那几格（存到哪由宿主定），收缩到目标画幅。"""
 
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
 
@@ -898,7 +878,6 @@ async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
     assert result.return_value == {
         "frames": [{"no": "S1-1", "url": urls[0]}, {"no": "S2-1", "url": urls[1]}]
     }
-    assert {*urls, GRID} <= materials.urls(NAMESPACE)
 
 
 async def test_anchor_sheet_cuts_one_cell_per_entity_without_shrinking(
@@ -926,17 +905,15 @@ async def test_a_failed_cut_is_a_brief_failure_with_the_reason_in_the_log(
     tools: ShotVideoToolset[object],
     ctx: RunContext[object],
     files: FakeFileStore,
-    materials: FakeMaterialLedger,
     generations: FakeGenerations,
     cuts: FakeCuts,
     tool: str,
     message: str,
 ) -> None:
-    """切格、下载、转存失败对模型只说哪一步没成，原因只进日志；没切成的格子不登记。"""
+    """切格、下载、转存失败对模型只说哪一步没成，原因只进日志。"""
 
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     cuts.error = GridCutFailed("OSS 写入失败（试了 3 次）: Read timed out")
-    before = set(materials.urls(NAMESPACE))
 
     with capture_logs() as logs, pytest.raises(ToolFailed) as raised:
         if tool == "frames":
@@ -949,22 +926,19 @@ async def test_a_failed_cut_is_a_brief_failure_with_the_reason_in_the_log(
     assert raised.value.message == message
     assert logs[-1]["reason"] == "OSS 写入失败（试了 3 次）: Read timed out"
     assert logs[-1]["job_id"] == str(generations.job_ids[0])
-    assert materials.urls(NAMESPACE) == before
 
 
 async def test_a_cut_that_cannot_be_recorded_goes_up_unchanged(
     tools: ShotVideoToolset[object],
     ctx: RunContext[object],
     files: FakeFileStore,
-    materials: FakeMaterialLedger,
     generations: FakeGenerations,
     cuts: FakeCuts,
 ) -> None:
-    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试，也不登记素材。"""
+    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试。"""
 
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     cuts.error = ConnectionError("数据库断了")
-    before = set(materials.urls(NAMESPACE))
 
     with pytest.raises(ConnectionError, match="数据库断了"):
         await tools.generate_shot_frames(
@@ -972,4 +946,3 @@ async def test_a_cut_that_cannot_be_recorded_goes_up_unchanged(
         )
 
     assert len(generations.job_ids) == 1
-    assert materials.urls(NAMESPACE) == before

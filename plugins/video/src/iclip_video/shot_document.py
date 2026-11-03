@@ -136,7 +136,7 @@ def validate_video_shot_requests(
 ) -> None:
     """校验整份结构化入参，非法时抛 ShotDocumentError；不改写文本、时间或图片顺序。
 
-    素材来源由工具输入验证器检查；本函数不访问工作区或序列化交付文件。
+    图片地址取不取得到由工具输入验证器检查；本函数不访问工作区或序列化交付文件。
     """
 
     if not shots:

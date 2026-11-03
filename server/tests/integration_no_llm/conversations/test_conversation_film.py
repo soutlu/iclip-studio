@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
-from tests.helpers.film import EXPECTED, FILM, GIVEN_IMAGES, PHOTOS, RUN, run_of
+from tests.helpers.film import EXPECTED, FILM, PHOTOS, RUN, run_of
 from tests.helpers.pg import connected
 
 URL = "/conversations"
@@ -35,7 +35,7 @@ def say(version: int, text: str) -> dict[str, object]:
 async def film_conversation(
     client: httpx.AsyncClient, pg_url: str, run: str = RUN, *, film: str = FILM
 ) -> str:
-    """登录、开一段对话，放进样例工程（默认 ``FILM``）与它用到的素材，返回对话 id。"""
+    """登录、开一段对话，放进样例工程（默认 ``FILM``），返回对话 id。"""
 
     user_id = await login_as_editor(client, pg_url)
     created = await client.post(URL, json={"agentId": "director", "title": "鞋款"})
@@ -50,14 +50,6 @@ async def film_conversation(
                     "VALUES (:ns, :path, :content, 1, now(), now())"
                 ),
                 {"ns": namespace, "path": path, "content": content},
-            )
-        for url in GIVEN_IMAGES:
-            await conn.execute(
-                text(
-                    "INSERT INTO agent_runtime.materials (namespace, url, kind) "
-                    "VALUES (:ns, :url, 'image')"
-                ),
-                {"ns": namespace, "url": url},
             )
     return conversation
 
@@ -147,7 +139,8 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     assert cleared.json()["film"]["runVersion"] == 2
     assert cleared.json()["film"]["groups"][0]["frames"][6]["url"] is None
 
-    foreign = await client.put(
+    # 别处的图不论出没出现在这段对话里，能打开就能选用（这里探地址的替身都答取得到）。
+    elsewhere = await client.put(
         f"{URL}/{mine}/film/image",
         json={
             "node": "scene",
@@ -156,8 +149,10 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
             "runVersion": 2,
         },
     )
-    assert foreign.status_code == 422
-    assert "只能换成这段对话里的图" in foreign.json()["detail"]
+    assert elsewhere.status_code == 200, elsewhere.text
+    assert (
+        elsewhere.json()["film"]["groups"][0]["frames"][6]["url"] == "https://elsewhere.test/a.png"
+    )
 
 
 MUSIC_LINE = next(line for line in FILM.splitlines() if 'id="配乐"' in line)
@@ -260,18 +255,6 @@ async def test_an_image_inserted_into_the_text_joins_the_list_before_the_views(
 ) -> None:
     mine = await film_conversation(client, pg_url)
     corner = "https://cdn.test/corner.jpg"
-    async with connected(pg_url) as conn:
-        namespace = await conn.scalar(
-            text("SELECT DISTINCT namespace FROM agent_runtime.materials WHERE namespace LIKE :ns"),
-            {"ns": f"%/{mine}"},
-        )
-        await conn.execute(
-            text(
-                "INSERT INTO agent_runtime.materials (namespace, url, kind) "
-                "VALUES (:ns, :url, 'image')"
-            ),
-            {"ns": namespace, "url": corner},
-        )
     edit = {
         "target": "value:video01Setting",
         "text": "纽约红砖街区参考 @Image7，街角参考 @Image11。",

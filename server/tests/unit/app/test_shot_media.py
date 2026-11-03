@@ -3,17 +3,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, cast
+from typing import cast
 
-import httpcore
 import httpx
 import pytest
 from agent_runtime.errors import NotFound
-from agent_runtime.outbound.fetch import public_client
-from agent_runtime.outbound.guard import FetchRefused
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
     AnchorSheets,
@@ -40,6 +35,7 @@ from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MediaDownloads
 from iclip.platform.object_store.layout import MEDIA_PATHS
+from iclip.platform.outbound.guard import public_client
 from tests.helpers.fetch_url import rewriting
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
@@ -47,12 +43,12 @@ from tests.helpers.generation import (
     make_job,
 )
 from tests.helpers.identity import FakePrincipals
+from tests.helpers.loopback import Route, loopback_policy, loopback_server
 from tests.helpers.shot_video import FakeCutRecords, FakeObjects
 
 KEY = "k"
 VIDEO = "https://cdn.test/ref.mp4"
 INTERNAL = "https://iclip.oss-cn-shenzhen-internal.aliyuncs.com"
-PUBLIC_IP = "93.184.216.34"
 DOCUMENT = "**[00:00.000-00:02.000]** 中景"
 
 
@@ -109,42 +105,6 @@ def refusing_client(asked: list[str]) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-class Network404(httpcore.AsyncNetworkBackend):
-    """出网防护底下的网络替身：记下实际连的 (ip, port)，一律回 404。"""
-
-    def __init__(self) -> None:
-        self.connected: list[tuple[str, int]] = []
-
-    async def connect_tcp(
-        self,
-        host: str,
-        port: int,
-        timeout: float | None = None,
-        local_address: str | None = None,
-        socket_options: Iterable[Any] | None = None,
-    ) -> httpcore.AsyncNetworkStream:
-        self.connected.append((host, port))
-        return httpcore.AsyncMockStream([b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"])
-
-    async def connect_unix_socket(
-        self,
-        path: str,
-        timeout: float | None = None,
-        socket_options: Iterable[Any] | None = None,
-    ) -> httpcore.AsyncNetworkStream:
-        raise AssertionError("不该连本机 socket")
-
-    async def sleep(self, seconds: float) -> None:
-        await asyncio.sleep(seconds)
-
-
-def resolving(table: Mapping[str, Sequence[str]]) -> Any:
-    async def resolve(host: str, port: int) -> Sequence[str]:
-        return table[host]
-
-    return resolve
-
-
 def downloads(
     internal: httpx.AsyncClient, public: httpx.AsyncClient, *, own_base: str = "https://cdn.test"
 ) -> MediaDownloads:
@@ -179,43 +139,41 @@ async def test_frame_boards_download_an_own_object_from_the_rewritten_address() 
 
 
 async def test_frame_boards_download_other_addresses_through_the_public_only_client() -> None:
-    """别处的地址原样经出网防护的客户端下载，连的是查过的公网 IP。"""
+    """别处的地址原样经出网防护的客户端下载（这里放行回环上的测试服务器），不走本桶的那条路。"""
 
     asked: list[str] = []
-    network = Network404()
-    public = public_client(resolve=resolving({"other.test": [PUBLIC_IP]}), network_backend=network)
-    adapter = FrameBoardsAdapter(
-        downloads(refusing_client(asked), public), objects=FakeObjects(), codec=SOFTWARE
-    )
+    async with loopback_server({"/ref.mp4": Route(status="404 Not Found")}) as server:
+        public = public_client(timeout=5, policy=loopback_policy(server))
+        adapter = FrameBoardsAdapter(
+            downloads(refusing_client(asked), public), objects=FakeObjects(), codec=SOFTWARE
+        )
+        try:
+            with pytest.raises(BoardsUnreadable):
+                await adapter.boards(
+                    video_url=server.url("/ref.mp4"),
+                    rows=parse_shot_rows(DOCUMENT),
+                    previous=None,
+                )
+        finally:
+            await public.aclose()
 
-    try:
-        with pytest.raises(BoardsUnreadable):
-            await adapter.boards(
-                video_url="https://other.test/ref.mp4",
-                rows=parse_shot_rows(DOCUMENT),
-                previous=None,
-            )
-    finally:
-        await public.aclose()
-
-    assert network.connected == [(PUBLIC_IP, 443)]
+    assert server.paths == ["/ref.mp4"]
     assert asked == []
 
 
-async def test_frame_boards_refuse_an_address_resolving_to_an_internal_ip() -> None:
-    """模型给的地址解析到内网：一个字节都不连，按取不到视频报给模型。"""
+async def test_frame_boards_refuse_an_internal_address() -> None:
+    """模型给的地址是内网：不发请求，按取不到视频报给模型，说清是出网防护拒的。"""
 
     asked: list[str] = []
-    network = Network404()
-    public = public_client(resolve=resolving({"evil.test": ["10.0.0.5"]}), network_backend=network)
+    public = public_client(timeout=5)
     adapter = FrameBoardsAdapter(
         downloads(refusing_client(asked), public), objects=FakeObjects(), codec=SOFTWARE
     )
 
     try:
-        with pytest.raises(BoardsUnreadable, match="非公网地址") as raised:
+        with pytest.raises(BoardsUnreadable, match="不是允许的公网地址") as raised:
             await adapter.boards(
-                video_url="https://evil.test/ref.mp4",
+                video_url="http://10.0.0.5/ref.mp4",
                 rows=parse_shot_rows(DOCUMENT),
                 previous=None,
             )
@@ -223,8 +181,32 @@ async def test_frame_boards_refuse_an_address_resolving_to_an_internal_ip() -> N
         await public.aclose()
 
     assert isinstance(raised.value.__cause__, MediaError)
-    assert isinstance(raised.value.__cause__.__cause__, FetchRefused)
-    assert network.connected == []
+    assert asked == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param("http://a.test:abc/ref.mp4", id="httpx 认不了的端口"),
+        pytest.param("http://xn--a.test/ref.mp4", id="主机名不是合法 IDNA"),
+    ],
+)
+async def test_frame_boards_report_a_malformed_address(url: str) -> None:
+    """模型给的地址格式不对：不发请求，按取不到视频报给模型，说清是地址格式不对。"""
+
+    asked: list[str] = []
+    public = public_client(timeout=5)
+    adapter = FrameBoardsAdapter(
+        downloads(refusing_client(asked), public), objects=FakeObjects(), codec=SOFTWARE
+    )
+
+    try:
+        with pytest.raises(BoardsUnreadable, match="地址格式不对") as raised:
+            await adapter.boards(video_url=url, rows=parse_shot_rows(DOCUMENT), previous=None)
+    finally:
+        await public.aclose()
+
+    assert isinstance(raised.value.__cause__, MediaError)
     assert asked == []
 
 

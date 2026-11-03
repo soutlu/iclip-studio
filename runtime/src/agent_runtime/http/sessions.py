@@ -1,6 +1,6 @@
 """会话接口：开会话、分叉、按清单拷文件，以及按会话读活动与正占着执行位的会话。
 
-会话 id 等于应用那一侧的对话 id，路径上按 UUID 解析后规范成带横线的写法：工作区与素材台账的命名空间、
+会话 id 等于应用那一侧的对话 id，路径上按 UUID 解析后规范成带横线的写法：工作区的命名空间、
 队列里的会话 id 都只认这一种拼写。``X-End-User`` 是新会话（分叉与拷文件的目标）的属主。
 
 会话归开它的应用：带会话 id 的路由先认归属，不存在与归别的应用一样答 404；按会话读活动与此刻在跑的会话
@@ -60,7 +60,7 @@ def create_sessions_router(
     async def fork_session(
         session_id: uuid.UUID, body: SessionForkIn, end_user: SessionOwner, app: CallingApp = caller
     ) -> None:
-        """从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件与整份素材台账、写种子快照。
+        """从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件、写种子快照。
 
         源不是调用方应用的会话是 404，源或目标是预览会话是 422，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，
         源没跑过、轮号越界是 422；数完轮数后源的轮数又变了是 409。这些都在写任何东西之前。"""
@@ -79,7 +79,7 @@ def create_sessions_router(
     async def copy_files(
         session_id: uuid.UUID, body: FilesCopyIn, end_user: SessionOwner, app: CallingApp = caller
     ) -> FilesCopyOut:
-        """按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用
+        """按清单拷文件；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用
         的会话（目标先开好），任一不是答 404；任一是预览会话答 422。"""
 
         copied = await sessions.copy_files(

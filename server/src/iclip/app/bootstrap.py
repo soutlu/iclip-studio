@@ -10,7 +10,6 @@ import procrastinate
 import structlog
 from agent_runtime.client import RuntimeClient
 from agent_runtime.errors import NotFound
-from agent_runtime.outbound.fetch import PublicFetcher, public_client
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
@@ -52,7 +51,7 @@ from iclip.app.runtime_internal import (
     create_runtime_internal_router,
 )
 from iclip.app.runtime_ports import RuntimeServicePorts
-from iclip.app.runtime_workspace import RuntimeFiles, RuntimeMaterials
+from iclip.app.runtime_workspace import RuntimeFiles
 from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
 from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
@@ -150,6 +149,9 @@ from iclip.platform.object_store.store import (
     PublicObjectStore,
     ServerUploadSigner,
 )
+from iclip.platform.outbound.fetch import TOTAL_TIMEOUT_SECONDS, PublicFetcher
+from iclip.platform.outbound.guard import public_client
+from iclip.platform.outbound.media_check import UrlProber
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -315,16 +317,18 @@ def build_app(
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     runtime_transport: httpx.AsyncBaseTransport | None = None,
+    media_probe: UrlProber | None = None,
 ) -> FastAPI:
     """按运行配置装出整个应用；只建对象、不连库，连接与后台循环都留给 lifespan。agent 的运行、transcript、
-    两条实时通道的上游、工作区文件与素材台账都在运行时服务里，这里经它的客户端调；``runtime_transport`` 是
-    测试把客户端接到进程内运行时 app 上的口子。"""
+    两条实时通道的上游与工作区文件都在运行时服务里，这里经它的客户端调；``runtime_transport`` 是
+    测试把客户端接到进程内运行时 app 上的口子。``image_fetcher`` 与 ``media_probe`` 不给就用组合根建的出网
+    下载器取字节、探地址，测试换成不连网的替身。"""
 
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
     configure_logging(settings.log_level, settings.log_format)
-    # 一个客户端：配置页的管理接口、会话与消息、transcript、两条 WebSocket、工作区文件与素材台账、首页名册、
+    # 一个客户端：配置页的管理接口、会话与消息、transcript、两条 WebSocket、工作区文件、首页名册、
     # 起标题、对话活动与拆解、打标的模型调用都经它；lifespan 里进入、结束时退出。
     runtime_client = RuntimeClient(
         settings.runtime_service.url,
@@ -404,7 +408,9 @@ def build_app(
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
     # 取帧与拆解下载的视频地址是模型给的：不是本桶对象就经只连公网的客户端；lifespan 结束时关。
-    public_http_client = public_client()
+    public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
+    # 转存消息附件取字节、制作页查图片地址经它；lifespan 结束时关。
+    public_fetcher = PublicFetcher()
     model_url_downloads = MediaDownloads(
         internal=http_client, public=public_http_client, fetch_url=fetch_url, owns=owns_url
     )
@@ -416,9 +422,8 @@ def build_app(
         PgInspirationVideos(active_engine),
         PgStyleDirectory(catalog_engine) if catalog_engine is not None else NoStyleDirectory(),
     )
-    # 工作区文件与素材台账在运行时服务里；写文件后的变更帧由运行时在订着这段对话的对话内容流上送来，浏览器连接原样转出。
+    # 工作区文件在运行时服务里；写文件后的变更帧由运行时在订着这段对话的对话内容流上送来，浏览器连接原样转出。
     workspace_files = RuntimeFiles(runtime_client)
-    material_ledger = RuntimeMaterials(runtime_client)
     live_connections = LiveConnections()
     runtime_events = RuntimeEvents(runtime_client, live_connections)
     conversation_workspace = ConversationWorkspace(workspace_files)
@@ -624,7 +629,7 @@ def build_app(
         },
         film=ConversationFilmAdapter(
             store=workspace_files,
-            ledger=material_ledger,
+            probe=media_probe if media_probe is not None else public_fetcher.probe,
             generation=generation.service if generation is not None else None,
         ),
         drafts=SqlWholeFilmDraftStore(active_engine),
@@ -648,17 +653,13 @@ def build_app(
         same_style_source=LibrarySameStyleSource(library_reports),
     )
     uploads: UploadsModule | None = None
-    owned_fetcher: PublicFetcher | None = None
     if public_objects is not None:
-        if image_fetcher is None:
-            owned_fetcher = PublicFetcher()
-            image_fetcher = owned_fetcher.fetch
         uploads = build_uploads_module(
             public_objects,
             act_as=identity.act_as,
             record=settled_records.record_upload,
             find_recorded=settled_records.recorded_upload,
-            fetch=image_fetcher,
+            fetch=image_fetcher if image_fetcher is not None else public_fetcher.fetch,
             conversation_writable=conversations.service.workspace_writable,
         )
 
@@ -700,8 +701,7 @@ def build_app(
             await public_http_client.aclose()
             if render_client is not None:
                 await render_client.aclose()
-            if owned_fetcher is not None:
-                await owned_fetcher.aclose()
+            await public_fetcher.aclose()
             if owns_catalog_engine and catalog_engine is not None:
                 await catalog_engine.dispose()
             if owns_engine:

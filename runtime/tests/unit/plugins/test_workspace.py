@@ -32,7 +32,6 @@ from agent_runtime.file_store.store import (
     StoredFile,
     normalize_path,
 )
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.plugins.workspace.capability import (
     FULL_RESOLUTION_MAX_BYTES,
     MAX_READ_CHARS,
@@ -44,7 +43,6 @@ from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 OTHER_USER = uuid.UUID("22222222-2222-2222-2222-222222222222")
@@ -81,24 +79,10 @@ def make_context(deps: object) -> RunContext[object]:
     return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
 
 
-def image_ledger(*urls: str) -> FakeMaterialLedger:
-    """模拟收件阶段已登记的图片素材。"""
-
-    fake = FakeMaterialLedger()
-    for url in urls:
-        fake.rows[(NS, url)] = Material(url=url, kind="image")
-    return fake
-
-
-def make_workspace(
-    store: FakeFileStore,
-    probe: FakeProbe | None = None,
-    ledger: FakeMaterialLedger | None = None,
-) -> Workspace[object]:
+def make_workspace(store: FakeFileStore, probe: FakeProbe | None = None) -> Workspace[object]:
     return Workspace[object](
         space=FileSpace(store=store, namespace=workspace_namespace),
         probe=probe if probe is not None else FakeProbe(),
-        ledger=ledger if ledger is not None else FakeMaterialLedger(),
     )
 
 
@@ -486,10 +470,8 @@ async def test_full_workspace_tells_the_model_how_to_recover(ctx: RunContext[obj
     assert "a.md" in text(await tools.write_file(ctx, "a.md", "z" * 90))
 
 
-def read_tools(
-    probe: FakeProbe, ledger: FakeMaterialLedger | None = None
-) -> WorkspaceToolset[object]:
-    return WorkspaceToolset(make_workspace(FakeFileStore(), probe, ledger))
+def read_tools(probe: FakeProbe) -> WorkspaceToolset[object]:
+    return WorkspaceToolset(make_workspace(FakeFileStore(), probe))
 
 
 async def check_args(
@@ -576,7 +558,7 @@ async def test_a_stringified_region_is_parsed_on_the_agent_path(store: FakeFileS
     agent = Agent(
         FunctionModel(script),
         deps_type=AgentRunDeps,
-        capabilities=[make_workspace(store, FakeProbe(), image_ledger(OSS_IMAGE))],
+        capabilities=[make_workspace(store, FakeProbe())],
     )
 
     with capture_logs() as logs:
@@ -693,28 +675,17 @@ async def test_an_address_that_cannot_carry_scaling_is_refused() -> None:
         )
 
 
-async def test_read_media_file_only_takes_addresses_recorded_for_the_conversation() -> None:
-    tools = read_tools(FakeProbe(), image_ledger(OSS_IMAGE))
+async def test_an_oss_image_never_seen_in_the_conversation_is_read() -> None:
+    """读图不查地址来源：对话里没出现过的 OSS 图片照读。"""
+
+    tools = read_tools(FakeProbe())
     ctx = make_context(make_deps())
+    fresh = "https://bucket.oss-ap-southeast-1.aliyuncs.com/never-mentioned.jpg"
 
-    await check_args(tools, ctx, url=OSS_IMAGE)
-    # 桶是各用户共用的：同一个桶里没登记的文件也要拒。
-    with pytest.raises(ModelRetry, match="不是这段对话里的素材") as failure:
-        await check_args(
-            tools, ctx, url="https://bucket.oss-ap-southeast-1.aliyuncs.com/made-up.jpg"
-        )
+    await check_args(tools, ctx, url=fresh)
+    result = await tools.read_media_file(ctx, fresh)
 
-    # 不回显未登记地址，避免重试消息将其引入素材上下文。
-    assert "made-up" not in str(failure.value)
-
-
-async def test_a_video_address_cannot_be_read_as_an_image() -> None:
-
-    video = "https://cdn.test/ref.mp4"
-    ledger = FakeMaterialLedger()
-    ledger.rows[(NS, video)] = Material(url=video, kind="video")
-    with pytest.raises(ModelRetry, match="视频"):
-        await check_args(read_tools(FakeProbe(), ledger), make_context(make_deps()), url=video)
+    assert model_facing(result)[0] == f'<image url="{fresh}">'
 
 
 @pytest.mark.parametrize("url", ["style.jpg", "file:///etc/passwd", "ftp://host/a.jpg"])

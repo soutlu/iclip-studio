@@ -107,7 +107,7 @@ class RuntimeSessions(Protocol):
         turn: int,
         agent_id: str | None,
     ) -> None:
-        """从源对话的第 ``turn`` 轮分叉：开会话、拷工作区文件与整份素材台账、写种子快照。
+        """从源对话的第 ``turn`` 轮分叉：开会话、拷工作区文件、写种子快照。
 
         ``agent_id`` 为 None 照抄源会话的版本，否则按 ``open`` 固定那个 agent 并照它抛错。源有没跑完的
         消息、或数完轮数后轮数又变了是 ``Conflict``；源没跑过或 ``turn`` 超出轮数是 ``ValidationFailed``。
@@ -124,7 +124,7 @@ class RuntimeSessions(Protocol):
         files: Sequence[tuple[str, str]],
         require_any: frozenset[str],
     ) -> bool:
-        """按（源路径，目标路径）清单拷几份文件进目标对话的工作区，连同整份素材台账；源里没有的跳过。
+        """按（源路径，目标路径）清单拷几份文件进目标对话的工作区；源里没有的跳过。
         ``require_any`` 一个都不在时什么都不写、回 ``False``。"""
         ...
 
@@ -871,7 +871,7 @@ class ConversationService:
         再在运行时开会话、固定 agent 此刻的当前版本，agent 不能开对话时按 ``RuntimeSessions.open``
         抛错、不落行。这个 id 已有对话行（重发）时这些都不再做。
 
-        给了 ``same_as`` 就是做同款：先把那张资料库卡挂着的对话的制作文件与素材台账拷进来，再落
+        给了 ``same_as`` 就是做同款：先把那张资料库卡挂着的对话的制作文件拷进来，再落
         对话行。调用者没有 ``generation:read``、或 ``same_as`` 不是挂着对话的资料库卡抛
         ``NotFound``，在开会话之前；源没有工程文件或分镜文件抛 ``ValidationFailed``，那时会话已经开了。
         两种都不落行；这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。"""
@@ -1259,7 +1259,7 @@ class ConversationService:
             await self._broadcast_row("updated", conversation)
 
     async def delete(self, principal: Principal, conversation_id: uuid.UUID) -> None:
-        """把对话标记删除。工作区与素材台账留着，治理者复盘时还要看。"""
+        """把对话标记删除。工作区留着，治理者复盘时还要看。"""
 
         await self._repo.delete(conversation_id, owner=principal.user_id)
         self._announce_deleted(principal.user_id, conversation_id)

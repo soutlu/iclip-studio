@@ -34,6 +34,7 @@ from tests.helpers.app import (
     make_client,
     make_runtime_config,
 )
+from tests.helpers.media_probe import offline_media_checks
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 from tests.helpers.runtime_backed import (
@@ -53,6 +54,13 @@ def _no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     """官方护栏：这一层只用替身，任何真模型请求都直接报错。按用例开关，不影响同一进程里的其他层。"""
 
     monkeypatch.setattr(pydantic_ai_models, "ALLOW_MODEL_REQUESTS", False)
+
+
+@pytest.fixture(autouse=True)
+def _offline_media_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """插件提交点的地址检查不连网：没预设的地址一律答取得到，类型按扩展名认。"""
+
+    offline_media_checks(monkeypatch)
 
 
 TEST_SECRET = "test-secret-0123456789-0123456789-xyz"

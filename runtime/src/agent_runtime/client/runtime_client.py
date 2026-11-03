@@ -1,7 +1,7 @@
 """运行时服务的客户端：``/v1`` 各接口一个带类型的方法，管理接口原样透传，两条 WebSocket 的连接。
 
-请求体与答复体照用路由的那一份（``agent_runtime.app_wire``、``agent_runtime.transcript.wire`` 与文件存储、
-素材台账的形状），信封 snake_case、嵌套的 transcript 实体 camelCase。每个请求带 ``Authorization: Bearer
+请求体与答复体照用路由的那一份（``agent_runtime.app_wire``、``agent_runtime.transcript.wire`` 与文件存储的
+形状），信封 snake_case、嵌套的 transcript 实体 camelCase。每个请求带 ``Authorization: Bearer
 <应用密钥>``；会话接口里要属主的方法收 ``owner``，放进 ``X-End-User``。
 
 报错：约定的 404、409、422 还原成同类领域错误（``detail`` 与 ``code`` 原样），401、403 是运行时不认这个
@@ -35,9 +35,6 @@ from agent_runtime.app_wire import (
     FilesCopyOut,
     FilesOut,
     FileWriteIn,
-    MaterialsIn,
-    MaterialsLookupIn,
-    MaterialsLookupOut,
     ModelCallIn,
     PromptStatsOut,
     RunStatsOut,
@@ -65,7 +62,6 @@ from agent_runtime.client.errors import (
 from agent_runtime.client.streams import EventStream, TranscriptChannel
 from agent_runtime.errors import ModelUnavailable
 from agent_runtime.file_store.store import FileEntry, StoredFile
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt
 from agent_runtime.transcript.wire import (
     ApprovalRequest,
@@ -86,7 +82,6 @@ _CONNECTION_LIMITS: Final = httpx.Limits(max_connections=None, max_keepalive_con
 
 _FILE_ENTRY = TypeAdapter(FileEntry)
 _STORED_FILE = TypeAdapter(StoredFile)
-_MATERIAL = TypeAdapter(Material)
 
 _UNKNOWN_APP_CLOSE: Final = 1008
 """运行时认不出应用时在握手前关连接用的关闭码（RFC 6455 的 policy violation）。"""
@@ -334,7 +329,7 @@ class RuntimeClient:
         )
         return _parse(response, OpsCatchup.model_validate_json)
 
-    # --- 工作区与素材台账 ---------------------------------------------------------
+    # --- 工作区 -----------------------------------------------------------------
 
     async def list_files(
         self, session_id: uuid.UUID, *, owner: uuid.UUID, prefix: str = ""
@@ -364,33 +359,6 @@ class RuntimeClient:
             "PUT", f"/v1/sessions/{session_id}/files/{_file_path(path)}", owner=owner, body=body
         )
         return _parse(response, _FILE_ENTRY.validate_json)
-
-    async def record_materials(
-        self, session_id: uuid.UUID, body: MaterialsIn, *, owner: uuid.UUID
-    ) -> None:
-        """``POST /v1/sessions/{id}/materials``。"""
-
-        await self._call("POST", f"/v1/sessions/{session_id}/materials", owner=owner, body=body)
-
-    async def lookup_material(
-        self, session_id: uuid.UUID, url: str, *, owner: uuid.UUID
-    ) -> Material:
-        """``GET /v1/sessions/{id}/materials?url=``；没登记过是 ``NotFound``。"""
-
-        response = await self._call(
-            "GET", f"/v1/sessions/{session_id}/materials", owner=owner, params={"url": url}
-        )
-        return _parse(response, _MATERIAL.validate_json)
-
-    async def lookup_materials(
-        self, session_id: uuid.UUID, body: MaterialsLookupIn, *, owner: uuid.UUID
-    ) -> MaterialsLookupOut:
-        """``POST /v1/sessions/{id}/materials:lookup``：一次查一批，只答登记过的那些。"""
-
-        response = await self._call(
-            "POST", f"/v1/sessions/{session_id}/materials:lookup", owner=owner, body=body
-        )
-        return _parse(response, MaterialsLookupOut.model_validate_json)
 
     # --- agent 名册与起标题 --------------------------------------------------------
 

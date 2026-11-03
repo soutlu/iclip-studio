@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import MaterialLedger
 
 from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.shot_video.generation import IMAGE_MODEL
@@ -178,7 +177,6 @@ class FakeCuts:
 def mount_shot_video(
     *,
     space: FileSpace,
-    ledger: MaterialLedger,
     generations: ImageGenerations,
     boards: FakeBoards,
     cuts: FakeCuts,
@@ -189,7 +187,6 @@ def mount_shot_video(
 
     return ShotVideo.bind(
         space=space,
-        ledger=ledger,
         generations=generations,
         boards=boards,
         cuts=cuts,

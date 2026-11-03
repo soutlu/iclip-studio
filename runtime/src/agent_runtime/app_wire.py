@@ -1,7 +1,7 @@
-"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区与素材台账、agent 名册与起标题、模型调用、运行统计。
+"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区、agent 名册与起标题、模型调用、运行统计。
 
 路由（``agent_runtime.http``）与应用用的客户端库（``agent_runtime.client``）共用这一份，只依赖 pydantic
-与 transcript、文件存储、素材台账的形状，不碰 Web 框架。transcript 的消息与读页信封在
+与 transcript、文件存储的形状，不碰 Web 框架。transcript 的消息与读页信封在
 ``agent_runtime.transcript.wire``。
 """
 
@@ -14,7 +14,6 @@ from typing import Annotated, Any, Final, Self
 from pydantic import Field, model_validator
 
 from agent_runtime.file_store.store import FileEntry
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.wire import Envelope, PromptId, PromptParts, SessionActivityOut
 
 END_USER_HEADER: Final = "X-End-User"
@@ -64,7 +63,7 @@ class SessionForkIn(Envelope):
 
 
 class FilesCopyIn(Envelope):
-    """按清单把源会话的几份文件拷进 ``target_id``，连同整份素材台账；目标的属主是 ``X-End-User``。"""
+    """按清单把源会话的几份文件拷进 ``target_id``；目标的属主是 ``X-End-User``。"""
 
     target_id: uuid.UUID
     source_user: uuid.UUID
@@ -108,7 +107,7 @@ class SessionPromptIn(Envelope):
     agent_id: AgentIdField
 
 
-# --- 工作区与素材台账 -----------------------------------------------------------
+# --- 工作区 -------------------------------------------------------------------
 
 
 class FilesOut(Envelope):
@@ -120,28 +119,6 @@ class FileWriteIn(Envelope):
 
     content: str
     expected_version: int | None = None
-
-
-class MaterialsIn(Envelope):
-    materials: tuple[Material, ...]
-    """同一地址重复登记保留首条。"""
-
-
-MAX_MATERIAL_LOOKUP_URLS: Final = 1000
-"""一次批量查素材最多带多少个地址；更多的由应用分批查。"""
-
-
-class MaterialsLookupIn(Envelope):
-    urls: Annotated[
-        tuple[Annotated[str, Field(min_length=1)], ...],
-        Field(min_length=1, max_length=MAX_MATERIAL_LOOKUP_URLS),
-    ]
-    """素材地址，按原始字符串精确匹配；可以重复。"""
-
-
-class MaterialsLookupOut(Envelope):
-    materials: tuple[Material, ...]
-    """登记过的那些，每个地址一条；没登记过的不在里面。"""
 
 
 # --- agent 名册与起标题 ----------------------------------------------------------
@@ -301,7 +278,6 @@ __all__ = [
     "FilesCopyIn",
     "FilesCopyOut",
     "FilesOut",
-    "MaterialsIn",
     "ModelCallIn",
     "PreviewTargetIn",
     "PromptStatOut",

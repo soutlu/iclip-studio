@@ -129,7 +129,7 @@ async def seed_turns(pg_url: str, conversation_id: str, prompts: list[str]) -> l
 
 
 async def seed_side_data(pg_url: str, namespace: str) -> None:
-    """工作区文件与素材台账各放一条，两者都按命名空间隔离。"""
+    """工作区放一份文件，按命名空间隔离。"""
 
     async with connected(pg_url) as conn:
         await conn.execute(
@@ -140,18 +140,11 @@ async def seed_side_data(pg_url: str, namespace: str) -> None:
             ),
             {"ns": namespace, "content": '{"shots": []}'},
         )
-        await conn.execute(
-            text(
-                "INSERT INTO agent_runtime.materials (namespace, url, kind)"
-                " VALUES (:ns, 'https://example.test/ref.mp4', 'video')"
-            ),
-            {"ns": namespace},
-        )
 
 
-async def side_data(pg_url: str, namespace: str) -> tuple[list[str], list[str]]:
+async def side_data(pg_url: str, namespace: str) -> list[str]:
     async with connected(pg_url) as conn:
-        paths = list(
+        return list(
             (
                 await conn.execute(
                     text(
@@ -162,17 +155,6 @@ async def side_data(pg_url: str, namespace: str) -> tuple[list[str], list[str]]:
                 )
             ).scalars()
         )
-        urls = list(
-            (
-                await conn.execute(
-                    text(
-                        "SELECT url FROM agent_runtime.materials WHERE namespace = :ns ORDER BY url"
-                    ),
-                    {"ns": namespace},
-                )
-            ).scalars()
-        )
-    return paths, urls
 
 
 async def fork(client: httpx.AsyncClient, conversation_id: str, **body: object) -> httpx.Response:
@@ -286,16 +268,10 @@ async def test_fork_carries_history_and_workspace_and_leaves_the_source_alone(
         "终态是拿原 run id 回源查的，副本没存运行记录"
     )
 
-    assert await side_data(pg_url, f"{owner}/{copy['id']}") == (
-        ["video_shot.json"],
-        ["https://example.test/ref.mp4"],
-    )
+    assert await side_data(pg_url, f"{owner}/{copy['id']}") == ["video_shot.json"]
     source_history = await client.get(f"{URL}/{source}/transcript")
     assert len(source_history.json()["items"]) == 3, "源对话的历史不能被分叉动到"
-    assert await side_data(pg_url, f"{owner}/{source}") == (
-        ["video_shot.json"],
-        ["https://example.test/ref.mp4"],
-    )
+    assert await side_data(pg_url, f"{owner}/{source}") == ["video_shot.json"]
 
 
 async def test_fork_copies_the_file_but_not_its_version(
@@ -342,10 +318,7 @@ async def test_governor_forks_anyone_including_tombstones(
         copy = forked.json()["conversation"]
         assert copy["ownerUserId"] == boss
         assert copy["deletedAt"] is None, "副本是活的，墓碑只是它的来源"
-        assert await side_data(pg_url, f"{boss}/{copy['id']}") == (
-            ["video_shot.json"],
-            ["https://example.test/ref.mp4"],
-        )
+        assert await side_data(pg_url, f"{boss}/{copy['id']}") == ["video_shot.json"]
 
     assert (await fork(client, source)).status_code == 404, "属主自己也看不见墓碑"
 

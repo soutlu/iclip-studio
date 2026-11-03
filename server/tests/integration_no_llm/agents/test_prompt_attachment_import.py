@@ -1,4 +1,4 @@
-"""发消息入口的图片转存：挂不上 OSS 处理参数的图片受理前转存进本桶，素材台账与队列存新地址；
+"""发消息入口的图片转存：挂不上 OSS 处理参数的图片受理前转存进本桶，队列存新地址；
 转存失败整条 422、什么都不写；没配对象存储时这种图片直接 422。"""
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from agent_runtime.outbound.guard import FetchFailed
 from fastapi import FastAPI
 from PIL import Image
 from pydantic_ai.models import Model
 from sqlalchemy import text
 
 from iclip.platform.db.engine import build_engine
+from iclip.platform.outbound.guard import FetchFailed
 from tests.helpers.agents import AgentSeed, model_builder, seed_agents
 from tests.helpers.app import make_client, make_runtime_config, new_conversation, settled
 from tests.helpers.auth import login_as_editor
@@ -113,15 +113,6 @@ def image(url: str) -> dict[str, object]:
     return {"type": "image", "source": {"kind": "url", "url": url}}
 
 
-async def materials(pg_url: str, namespace: str) -> list[str]:
-    async with connected(pg_url) as conn:
-        rows = await conn.execute(
-            text("SELECT url FROM agent_runtime.materials WHERE namespace = :ns ORDER BY url"),
-            {"ns": namespace},
-        )
-        return [row[0] for row in rows]
-
-
 async def queued_image_urls(pg_url: str, conversation_id: str) -> list[list[str]]:
     """队列里每条消息的图片地址，按提交先后。"""
 
@@ -171,7 +162,6 @@ async def test_an_external_image_is_imported_and_only_the_new_address_is_kept(
     new_url = f"{BUCKET_BASE}/{stored}"
     assert stored.endswith(".png")
     assert sent.json()["content"][1]["source"]["url"] == new_url
-    assert await materials(pg_url, f"{user_id}/{conversation_id}") == [new_url]
     assert await queued_image_urls(pg_url, conversation_id) == [[new_url]]
     assert await image_uploads(pg_url) == [(uuid.UUID(user_id), new_url)]
     assert bucket.metadata[stored] == {"x-oss-meta-uploader": user_id}
@@ -219,7 +209,7 @@ async def test_a_failed_import_is_422_and_nothing_is_written(
 ) -> None:
     fetch.error = FetchFailed("对方回了 404")
     async with make_client(oss_app) as client:
-        user_id = await login_as_editor(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         sent = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -231,7 +221,6 @@ async def test_a_failed_import_is_422_and_nothing_is_written(
 
     assert sent.status_code == 422, sent.text
     assert "第 2 张附件" in sent.json()["detail"]
-    assert await materials(pg_url, f"{user_id}/{conversation_id}") == []
     assert await queued_image_urls(pg_url, conversation_id) == []
 
 
@@ -266,10 +255,10 @@ async def test_regenerating_with_new_content_imports_its_images(
 async def test_without_an_object_store_an_external_image_is_refused(
     app: FastAPI, pg_url: str
 ) -> None:
-    """没配对象存储就转存不了：挂不上处理参数的图片在受理时 422，台账与队列都不写。"""
+    """没配对象存储就转存不了：挂不上处理参数的图片在受理时 422，队列不写。"""
 
     async with make_client(app) as client:
-        user_id = await login_as_editor(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         sent = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -278,5 +267,4 @@ async def test_without_an_object_store_an_external_image_is_refused(
 
     assert sent.status_code == 422, sent.text
     assert "OSS" in sent.json()["detail"]
-    assert await materials(pg_url, f"{user_id}/{conversation_id}") == []
     assert await queued_image_urls(pg_url, conversation_id) == []

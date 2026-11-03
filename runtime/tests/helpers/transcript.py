@@ -25,7 +25,6 @@ from agent_runtime.transcript.display import ToolDisplayRegistry
 from agent_runtime.transcript.ops import MAIN_AGENT_ID
 from agent_runtime.transcript.wire import OpsPayload, TranscriptPage
 from tests.helpers.golden import CONTRACT_DIR, check_golden_file
-from tests.helpers.material_ledger import FakeMaterialLedger
 
 GOLDEN_DIR = CONTRACT_DIR / "transcript"
 
@@ -156,7 +155,6 @@ def _service(
         history=history,
         queue=queue,
         runner=runner,
-        ledger=FakeMaterialLedger(),
     )
 
 

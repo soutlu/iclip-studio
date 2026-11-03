@@ -60,7 +60,6 @@ from agent_runtime.live.frames import (
     timestamp_now,
 )
 from agent_runtime.live.hub import AppEventHub, SessionFileChanges
-from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.model_connections import ModelConnection
 from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from agent_runtime.run_deps import AgentRunDeps, conversation_of
@@ -89,8 +88,8 @@ def create_app(
     起停，lifespan 结束时关掉回调用的 HTTP 客户端与自己建的 engine。合同导出因此只 import、建 app、不启动。
 
     ``plugins`` 是交给本服务的插件登记表：agent 装配按它造插件，管理接口校验 agent 配置（插件名、要求
-    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区或素材台账的插件给
-    ``PluginBinder``，用本服务的工作区存储与素材台账绑定，写入才会发给订着这段会话的对话内容流连接。``credential_probe``
+    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区的插件给
+    ``PluginBinder``，用本服务的工作区存储绑定，写入才会发给订着这段会话的对话内容流连接。``credential_probe``
     不给就用真实的试连；``engine`` 不给就按 ``settings.database_url`` 自己建，给了由调用方负责关；
     ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子，``model_transport``
     是测试接住模型调用转给上游的请求的口子。插件经 ``PluginHost.model_connection`` 查写定的模型的连接，与给应用的
@@ -138,7 +137,6 @@ def create_app(
     file_store = PgFileStore(active_engine)
     # 分叉与按清单拷文件用底下这份，副本不算变更；插件与应用经接口写文件用会通知的那份。
     announcing_files = AnnouncingFileStore(file_store, on_file_change)
-    material_ledger = PgMaterialLedger(active_engine)
 
     async def model_connection(declaration: str, model: str) -> ModelConnection:
         # 登记表要先绑好，下面的配置服务才能按它校验插件；插件只在工具调用时查连接，那时配置服务早已建好。
@@ -147,13 +145,7 @@ def create_app(
     registry = (
         plugins
         if isinstance(plugins, Mapping)
-        else plugins(
-            PluginHost(
-                files=announcing_files,
-                ledger=material_ledger,
-                model_connection=model_connection,
-            )
-        )
+        else plugins(PluginHost(files=announcing_files, model_connection=model_connection))
     )
 
     config_services = build_config_services(
@@ -167,7 +159,7 @@ def create_app(
     mcp_servers = config_services.mcp_servers
     agent_config = config_services.agent_config
 
-    # 运行这一侧：持久化、用量、队列、实时投影、历史、装配、会话、工作区与素材台账。
+    # 运行这一侧：持久化、用量、队列、实时投影、历史、装配、会话与工作区。
     step_store = PgStepStore(
         active_engine, max_snapshots_per_run=settings.agent_runs.max_snapshots_per_run
     )
@@ -202,7 +194,6 @@ def create_app(
         queue=job_queue,
         history=transcript_history,
         files=file_store,
-        ledger=material_ledger,
     )
 
     # 回调按会话归属的应用找地址；没配回调的应用不在表里。
@@ -267,7 +258,6 @@ def create_app(
         store=transcript_store,
         history=transcript_history,
         queue=job_queue,
-        ledger=material_ledger,
         runner=ConversationRunner(
             agents=agent_runtime,
             store=transcript_store,
@@ -327,9 +317,7 @@ def create_app(
     v1.include_router(admin)
     v1.include_router(create_sessions_router(sessions, job_queue, auth.calling_app))
     v1.include_router(create_transcript_router(transcripts, sessions, auth.calling_app))
-    v1.include_router(
-        create_workspace_router(announcing_files, material_ledger, sessions, auth.calling_app)
-    )
+    v1.include_router(create_workspace_router(announcing_files, sessions, auth.calling_app))
     v1.include_router(create_agents_router(agent_runtime))
     v1.include_router(create_model_calls_router(model_connection, model_call_client))
     v1.include_router(create_stats_router(PgRunStats(active_engine), auth.calling_app))

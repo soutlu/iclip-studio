@@ -5,7 +5,7 @@
   接后端 app，地址是后端的内部接口，令牌是环境变量 ``RUNTIME_INTERNAL_TOKEN``（集成层 ``base_env`` 设好，
   后端缺了它起不来）。
 - 插件登记表交给运行时：默认是视频插件包在没配任何可选段时登记的那三个（``standard_plugins``），绑上运行时
-  服务的工作区与素材台账；要替身插件的测试给 ``plugins``。模型替身与试连替身两边共用一份。
+  服务的工作区；要替身插件的测试给 ``plugins``。模型替身与试连替身两边共用一份。
 - 不跑 lifespan 时（``httpx.ASGITransport`` 驱动后端）运行照样跑：运行时受理消息就起运行；只有两条
   WebSocket 要 lifespan。``TestClient`` 跑的是组合起来的 lifespan：先运行时（运行驱动与事件分发），再后端
   （事件流消费者），等事件流连上才交给测试。
@@ -52,6 +52,7 @@ from iclip.app.bootstrap import VIDEO_APP_ID
 from iclip.app.runtime_internal import RUNTIME_INTERNAL_PREFIX
 from iclip.config import RuntimeConfig
 from tests.helpers.app import TEST_CREDENTIAL_KEY
+from tests.helpers.media_probe import ScriptedProbe
 
 RUNTIME_URL = "http://runtime.test"
 """后端测试环境里的 ``RUNTIME_URL``；请求经 ASGI 传输层直达进程内的运行时 app，不出网。"""
@@ -109,21 +110,19 @@ class OneUpgradeAtATime(ASGIWebSocketTransport):
 
 
 def standard_plugins(host: PluginHost) -> PluginRegistry:
-    """视频插件包在运行时配置没写任何可选段时登记的四个插件，绑上运行时服务的工作区、素材台账与模型连接的查找。
+    """视频插件包在运行时配置没写任何可选段时登记的四个插件，绑上运行时服务的工作区与模型连接的查找。
 
-    查图片信息与调方舟都不出网：替身客户端一律答 404。"""
+    查图片信息与调方舟都不出网：替身客户端一律答 404；提交点探素材地址由 ``integration_no_llm`` 的夹具换成
+    不连网的替身（``media_probe.offline_media_checks``）。"""
 
     space = FileSpace(store=host.files, namespace=workspace_namespace)
     offline = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(404)))
     plugins = (
-        Workspace.bind(
-            space=space, probe=OssMediaProbe(offline, fetch_url=lambda url: url), ledger=host.ledger
-        ),
-        IclipStudio.bind(space=space, ledger=host.ledger, images=None),
-        VideoShots.bind(space=space, ledger=host.ledger),
+        Workspace.bind(space=space, probe=OssMediaProbe(offline, fetch_url=lambda url: url)),
+        IclipStudio.bind(space=space, images=None),
+        VideoShots.bind(space=space),
         Video.bind(
             space=space,
-            ledger=host.ledger,
             understanding=ArkVideoUnderstanding(offline, connection=host.model_connection),
         ),
     )
@@ -180,9 +179,10 @@ def build_backed_app(
 ) -> FastAPI:
     """先装运行时 app，再照 ``build_app`` 装后端（``options`` 原样交给它）接上它，最后把运行时的回调接到后端。
 
-    ``skill_cache_dir`` 交给运行时（见 ``runtime_settings``）。交回的是后端 app，它的 lifespan 换成先运行时、
-    后后端的组合。"""
+    ``skill_cache_dir`` 交给运行时（见 ``runtime_settings``）。``options`` 没给 ``media_probe`` 时制作页探
+    地址用不连网的替身（都答取得到）。交回的是后端 app，它的 lifespan 换成先运行时、后后端的组合。"""
 
+    options.setdefault("media_probe", ScriptedProbe())
     to_server = LateASGITransport()
     runtime = create_app(
         runtime_settings(config, engine, skill_cache_dir=skill_cache_dir),

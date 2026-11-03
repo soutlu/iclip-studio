@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
@@ -15,7 +14,6 @@ from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 from iclip_video.video.capability import Video
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.shot_video import FakeUnderstanding
 
 
@@ -54,13 +52,11 @@ class _NoProbe:
         raise MediaProbeFailed(f"测试没有接图片信息：{url}")
 
 
-def workspace_for(space: FileSpace, ledger: MaterialLedger | None = None) -> Workspace[Any]:
+def workspace_for(space: FileSpace) -> Workspace[Any]:
     """与被测插件共用 ``space`` 的工作区：插件 ``get_ordering().requires`` 要求同挂 workspace，
     单测其它插件时一起挂上它。"""
 
-    return Workspace[Any](
-        space=space, probe=_NoProbe(), ledger=ledger if ledger is not None else FakeMaterialLedger()
-    )
+    return Workspace[Any](space=space, probe=_NoProbe())
 
 
 def with_requirements(
@@ -71,9 +67,7 @@ def with_requirements(
 
     stand_ins: dict[type[AbstractCapability[Any]], AbstractCapability[Any]] = {
         Workspace: workspace_for(space),
-        Video: Video[Any](
-            space=space, ledger=FakeMaterialLedger(), understanding=FakeUnderstanding(document="")
-        ),
+        Video: Video[Any](space=space, understanding=FakeUnderstanding(document="")),
     }
     return [*(stand_ins[one] for one in _required(capability)), capability]
 

@@ -10,7 +10,6 @@ from typing import get_args
 
 import httpx
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import MaterialLedger
 from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.shot_video.generation import IMAGE_MODEL
 from iclip_video.shot_video.ports import (
@@ -140,7 +139,6 @@ class FakeUnderstanding:
 def mount_shot_video(
     *,
     space: FileSpace,
-    ledger: MaterialLedger,
     generations: ImageGenerations,
     objects: FakeObjects,
     records: FakeCutRecords,
@@ -154,7 +152,6 @@ def mount_shot_video(
 
     return ShotVideo.bind(
         space=space,
-        ledger=ledger,
         generations=generations,
         boards=FrameBoardsAdapter(all_own(client, fetch_url), objects=objects, codec=codec),
         cuts=GridCutsAdapter(client, fetch_url=fetch_url, objects=objects, records=records),

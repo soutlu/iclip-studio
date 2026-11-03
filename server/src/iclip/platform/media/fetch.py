@@ -8,9 +8,9 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import httpx
-from agent_runtime.outbound.guard import FetchFailed
 
 from iclip.platform.media.errors import MediaError
+from iclip.platform.outbound.guard import FetchFailed, failure_of
 
 _DOWNLOAD_CHUNK: Final = 256 * 1024
 
@@ -41,7 +41,7 @@ class MediaDownloads:
     """下载模型交来的地址时，选用哪个客户端、连哪个地址。
 
     本桶对象（``owns`` 为真）走 ``internal`` 客户端，地址经 ``fetch_url`` 换成内网的；别的地址走只连
-    公网的 ``public`` 客户端（``agent_runtime.outbound.fetch.public_client``），用原地址。本桶的内网
+    公网的 ``public`` 客户端（``iclip.platform.outbound.guard.public_client``），用原地址。本桶的内网
     地址解析出的是内网 IP，过不了出网防护，所以分两条路。"""
 
     internal: httpx.AsyncClient
@@ -78,10 +78,10 @@ async def download(client: httpx.AsyncClient, url: str, dest: Path, *, max_bytes
                     if written > max_bytes:
                         raise MediaError(f"素材超过 {max_bytes} 字节的上限: {url}")
                     handle.write(chunk)
-    except httpx.HTTPError as exc:
-        raise MediaError(f"取不到素材（{type(exc).__name__}）: {url}") from exc
+    except (httpx.HTTPError, httpx.InvalidURL, UnicodeError) as exc:
+        raise MediaError(f"取不到素材（{failure_of(exc)}）: {url}") from exc
     except FetchFailed as exc:
-        # 出网防护的客户端拒绝或解析不了时抛的不是 httpx 的错误。
+        # 出网防护的请求钩子在发出前拒掉地址时抛 FetchFailed，不是 httpx 的错误。
         raise MediaError(f"取不到素材（{exc}）: {url}") from exc
     if written == 0:
         raise MediaError(f"取到的素材是空的: {url}")

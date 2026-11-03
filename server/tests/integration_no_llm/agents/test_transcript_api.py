@@ -22,21 +22,6 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
     return (AgentSeed(AGENT_ID),)
 
 
-async def _materials(pg_url: str, namespace: str) -> list[tuple[str, str]]:
-
-    async with connected(pg_url) as conn:
-        rows = (
-            await conn.execute(
-                text(
-                    "SELECT url, kind FROM agent_runtime.materials "
-                    "WHERE namespace = :ns ORDER BY url"
-                ),
-                {"ns": namespace},
-            )
-        ).all()
-    return [(row[0], row[1]) for row in rows]
-
-
 async def test_anonymous_cannot_send(app: FastAPI) -> None:
 
     async with make_client(app) as client:
@@ -142,43 +127,14 @@ async def test_second_prompt_queues_while_the_first_runs(app: FastAPI, pg_url: s
         await settled(client, conversation_id)
 
 
-async def test_attachments_land_in_the_material_ledger(app: FastAPI, pg_url: str) -> None:
-    """消息受理时须登记附件及类型，使后续工具的素材校验认可用户输入。"""
-
-    # 图片要挂得上 OSS 处理参数；这个 app 没配对象存储，不转存，外部图片会被 422。
-    image = "https://bkt.oss-ap-southeast-1.aliyuncs.com/style.jpg"
-    video = "https://cdn.test/ref.mp4"
-    async with make_client(app) as client:
-        user_id = await login_as_editor(client, pg_url)
-        conversation_id = await new_conversation(client, AGENT_ID)
-        sent = await client.post(
-            f"/conversations/{conversation_id}/prompts",
-            json={
-                "prompt_id": "prm_media",
-                "content": [
-                    {"type": "text", "text": "看这两个"},
-                    {"type": "image", "source": {"kind": "url", "url": image}},
-                    {"type": "video", "source": {"kind": "url", "url": video}},
-                ],
-            },
-        )
-        assert sent.status_code == 200, sent.text
-        await settled(client, conversation_id)
-
-    assert await _materials(pg_url, f"{user_id}/{conversation_id}") == [
-        (image, "image"),
-        (video, "video"),
-    ]
-
-
 @pytest.mark.parametrize("url", ["file:///etc/passwd", "https:///a.png"])
 async def test_an_attachment_that_is_not_http_is_refused(
     app: FastAPI, pg_url: str, url: str
 ) -> None:
-    """台账地址会用于工具外呼，仅接受带主机名的 HTTP(S)。"""
+    """附件地址会交给工具与模型去取，仅接受带主机名的 HTTP(S)。"""
 
     async with make_client(app) as client:
-        user_id = await login_as_editor(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         sent = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -189,7 +145,6 @@ async def test_an_attachment_that_is_not_http_is_refused(
         )
 
     assert sent.status_code == 422
-    assert await _materials(pg_url, f"{user_id}/{conversation_id}") == []
 
 
 async def test_catchup_reports_whether_it_got_everything(app: FastAPI, pg_url: str) -> None:

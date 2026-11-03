@@ -7,9 +7,9 @@ import json
 import uuid
 from typing import Any
 
+import httpx
 import pytest
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import FileIoDisplay, ToolDisplayRegistry
@@ -36,7 +36,7 @@ from iclip_video.shot_document import (
 )
 from iclip_video.video_shots.capability import VideoShots, VideoShotsToolset
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.media_probe import Answer, ScriptedMedia
 from tests.helpers.plugins import with_requirements
 from tests.helpers.shot_document import FRAME_URL, OTHER_FRAME_URL, one_shot, shots_document
 
@@ -51,21 +51,10 @@ def files() -> FakeFileStore:
 
 
 @pytest.fixture
-def materials() -> FakeMaterialLedger:
-    """一张镜头帧已在收件阶段登记。"""
-
-    ledger = FakeMaterialLedger()
-    ledger.rows[(NAMESPACE, FRAME_URL)] = Material(url=FRAME_URL, kind="image")
-    return ledger
-
-
-@pytest.fixture
-def plugin(files: FakeFileStore, materials: FakeMaterialLedger) -> type[VideoShots[object]]:
+def plugin(files: FakeFileStore) -> type[VideoShots[object]]:
     """与组合根同一条路：服务绑进类。"""
 
-    return VideoShots[object].bind(
-        space=FileSpace(store=files, namespace=workspace_namespace), ledger=materials
-    )
+    return VideoShots[object].bind(space=FileSpace(store=files, namespace=workspace_namespace))
 
 
 @pytest.fixture
@@ -341,26 +330,43 @@ async def test_delivery_rejects_a_bad_aspect_ratio(
     assert await files.read(NAMESPACE, SHOTS_PATH) is None
 
 
-async def test_delivery_rejects_a_made_up_frame_url(
-    tools: VideoShotsToolset[object], ctx: RunContext[object]
+async def test_delivery_names_the_frame_that_does_not_open(
+    tools: VideoShotsToolset[object], ctx: RunContext[object], media: ScriptedMedia
 ) -> None:
-    """拒绝未登记帧地址，错误仅提示合法来源，不回显该地址。"""
+    """打不开的帧地址按组与张的位置报给模型，不回显地址。"""
 
-    with pytest.raises(ModelRetry, match="不要自己拼。") as rejected:
+    broken = "https://cdn.test/编的.jpg"
+    media.set(broken, (404, None))
+    second = one_shot(image_urls=[FRAME_URL, broken])
+    second.index = 2
+
+    with pytest.raises(ModelRetry, match="第 2 组第 2 张：打不开") as rejected:
         await check_args(
-            tools,
-            "write_video_shots",
-            ctx,
-            aspect_ratio="9:16",
-            shots=[one_shot(image_urls=["https://cdn.test/编的.jpg"])],
+            tools, "write_video_shots", ctx, aspect_ratio="9:16", shots=[one_shot(), second]
         )
-    assert "编的" not in str(rejected.value), "被拒的地址不回显，否则重试一次就洗成素材了"
+    assert "编的" not in str(rejected.value)
+    assert "第 1 组" not in str(rejected.value)
+
+
+async def test_a_reachable_frame_never_seen_in_the_conversation_is_delivered(
+    capability: VideoShots[object], files: FakeFileStore, media: ScriptedMedia
+) -> None:
+    """MCP 工具给的地址没有扩展名、对话里也没出现过：取得到、是图片就收。"""
+
+    from_mcp = "https://mcp.example.com/files/abc123?signature=x"
+    media.set(from_mcp, (200, "image/webp"))
+
+    messages = await invoke(capability, "write_video_shots", shot_payload([from_mcp]))
+
+    assert refusals(messages) == []
+    assert media.asked == [from_mcp]
+    assert await files.read(NAMESPACE, SHOTS_PATH) is not None
 
 
 async def test_delivery_rejects_a_frame_url_that_is_not_http(
     tools: VideoShotsToolset[object], ctx: RunContext[object]
 ) -> None:
-    with pytest.raises(ModelRetry, match="http"):
+    with pytest.raises(ModelRetry, match="第 1 组第 1 张：打不开"):
         await check_args(
             tools,
             "write_video_shots",
@@ -370,37 +376,35 @@ async def test_delivery_rejects_a_frame_url_that_is_not_http(
         )
 
 
-@pytest.mark.parametrize("case", ["unregistered", "wrong-kind", "other-conversation"])
-async def test_delivery_rejects_invalid_reference_material_without_writing(
-    capability: VideoShots[object],
-    files: FakeFileStore,
-    materials: FakeMaterialLedger,
-    case: str,
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param((404, None), id="404"),
+        pytest.param((503, None), id="5xx"),
+        pytest.param(httpx.ConnectTimeout("连不上"), id="超时"),
+        pytest.param((200, "video/mp4"), id="不是图片"),
+    ],
+)
+async def test_delivery_rejects_a_wrong_frame_address_without_writing(
+    capability: VideoShots[object], files: FakeFileStore, media: ScriptedMedia, answer: Answer
 ) -> None:
-    url = "https://cdn.test/not-authorized.jpg"
-    if case == "wrong-kind":
-        materials.rows[(NAMESPACE, url)] = Material(url=url, kind="video")
-    elif case == "other-conversation":
-        materials.rows[(OTHER_NAMESPACE, url)] = Material(url=url, kind="image")
+    url = "https://cdn.test/not-there.jpg"
+    media.set(url, answer)
 
     messages = await invoke(capability, "write_video_shots", shot_payload([url]))
 
     rejected = refusals(messages)
     assert len(rejected) == 1
+    assert "第 1 组第 1 张" in rejected[0].model_response_str()
     assert url not in rejected[0].model_response_str()
     assert await files.entries(NAMESPACE) == []
-    assert await files.entries(OTHER_NAMESPACE) == []
 
 
 @pytest.mark.parametrize("count", [0, 1, MAX_REFERENCE_IMAGES])
 async def test_delivery_accepts_reference_count_boundaries(
-    capability: VideoShots[object],
-    files: FakeFileStore,
-    materials: FakeMaterialLedger,
-    count: int,
+    capability: VideoShots[object], files: FakeFileStore, count: int
 ) -> None:
     urls = [f"https://cdn.test/user-{index}.jpg" for index in range(count)]
-    await materials.record(NAMESPACE, [Material(url=url, kind="image") for url in urls])
 
     messages = await invoke(capability, "write_video_shots", shot_payload(urls))
 
@@ -411,10 +415,9 @@ async def test_delivery_accepts_reference_count_boundaries(
 
 
 async def test_delivery_rejects_more_references_than_the_cap(
-    capability: VideoShots[object], files: FakeFileStore, materials: FakeMaterialLedger
+    capability: VideoShots[object], files: FakeFileStore
 ) -> None:
     urls = [f"https://cdn.test/user-{index}.jpg" for index in range(MAX_REFERENCE_IMAGES + 1)]
-    await materials.record(NAMESPACE, [Material(url=url, kind="image") for url in urls])
 
     messages = await invoke(capability, "write_video_shots", shot_payload(urls))
 
@@ -518,11 +521,9 @@ async def test_a_string_that_is_not_json_is_refused_and_keeps_the_file(
     assert stored.content == original
 
 
-async def test_quota_failure_preserves_existing_file(materials: FakeMaterialLedger) -> None:
+async def test_quota_failure_preserves_existing_file() -> None:
     files = FakeFileStore(max_file_bytes=4096)
-    capability = VideoShots[object](
-        space=FileSpace(store=files, namespace=workspace_namespace), ledger=materials
-    )
+    capability = VideoShots[object](space=FileSpace(store=files, namespace=workspace_namespace))
     args = shot_payload([FRAME_URL])
     first = await invoke(capability, "write_video_shots", args)
     assert refusals(first) == []

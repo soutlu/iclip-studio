@@ -1,26 +1,18 @@
-"""验证工程文件的生图节点与生成域之间的适配：出图时标上节点名，按地址认图。"""
+"""验证工程文件的生图节点与生成域之间的适配：出图时标上节点名，查进度。"""
 
 from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from iclip_video.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
-from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
-from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
+from iclip.domains.generation.schemas import KIND_IMAGE
 from iclip.domains.identity.models import Principal
-from tests.helpers.generation import (
-    FixedLineage,
-    InMemoryGenerationRepository,
-    film_image_service,
-    image_request,
-    make_job,
-)
+from tests.helpers.generation import InMemoryGenerationRepository, film_image_service
 
 OWNER = uuid.UUID("77777777-7777-7777-7777-777777777777")
 PRINCIPAL = Principal(
@@ -31,8 +23,6 @@ PRINCIPAL = Principal(
     username="tester",
 )
 CONVERSATION = uuid.uuid4()
-OTHER_CONVERSATION = uuid.uuid4()
-START = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
 
 
 def node_request(**overrides: Any) -> NodeImageRequest:
@@ -48,26 +38,6 @@ def node_request(**overrides: Any) -> NodeImageRequest:
     }
     fields.update(overrides)
     return NodeImageRequest(**fields)
-
-
-def image_row(
-    node: str | None,
-    *,
-    minutes: int,
-    url: str | None,
-    conversation: uuid.UUID = CONVERSATION,
-) -> GenerationJob:
-    moment = START + timedelta(minutes=minutes)
-    return make_job(
-        image_request(),
-        status=STATUS_COMPLETED,
-        owner_user_id=OWNER,
-        conversation_id=conversation,
-        metadata=None if node is None else {FILM_NODE_KEY: node},
-        output=GenerationOutput(url=url),
-        created_at=moment,
-        finished_at=moment,
-    )
 
 
 async def test_an_image_is_filed_under_its_node_and_conversation() -> None:
@@ -94,72 +64,3 @@ async def test_a_request_the_model_cannot_serve_is_refused_before_anything_is_qu
         await adapter.submit(PRINCIPAL, node_request(aspect_ratio="17:9"))
 
     assert repo.jobs == {}
-
-
-async def test_an_address_belongs_when_the_conversation_has_a_finished_image_at_it() -> None:
-    edited = image_row(None, minutes=1, url="https://cdn.test/edited.png")
-    elsewhere = image_row(
-        None, minutes=2, url="https://cdn.test/elsewhere.png", conversation=OTHER_CONVERSATION
-    )
-    uploaded = make_job(
-        kind=KIND_IMAGE,
-        operation=OPERATION_UPLOAD,
-        status=STATUS_COMPLETED,
-        owner_user_id=OWNER,
-        output=GenerationOutput(url="https://cdn.test/upload.png"),
-    )
-    adapter = FilmImagesAdapter(
-        film_image_service(InMemoryGenerationRepository([edited, elsewhere, uploaded]))
-    )
-
-    async def belongs(url: str) -> bool:
-        return await adapter.belongs(PRINCIPAL, str(CONVERSATION), url)
-
-    assert await belongs("https://cdn.test/edited.png")
-    assert not await belongs("https://cdn.test/elsewhere.png")
-    assert not await belongs("https://cdn.test/upload.png"), "上传不属于任何对话，由素材台账认"
-    assert not await belongs("https://cdn.test/never.png")
-
-
-async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
-    """分叉出来的对话带着工程文件，也按血缘继承源对话分叉前生成的图。"""
-
-    fork = uuid.uuid4()
-    forked_at = START + timedelta(minutes=10)
-    someone_else = uuid.uuid4()
-    before = make_job(
-        image_request(),
-        status=STATUS_COMPLETED,
-        owner_user_id=someone_else,
-        conversation_id=CONVERSATION,
-        metadata={FILM_NODE_KEY: "短发女生参考图"},
-        output=GenerationOutput(url="https://cdn.test/before-fork.png"),
-        created_at=START,
-        finished_at=START + timedelta(minutes=1),
-    )
-    after = make_job(
-        image_request(),
-        status=STATUS_COMPLETED,
-        owner_user_id=someone_else,
-        conversation_id=CONVERSATION,
-        metadata={FILM_NODE_KEY: "短发女生参考图"},
-        output=GenerationOutput(url="https://cdn.test/after-fork.png"),
-        created_at=START + timedelta(minutes=20),
-        finished_at=START + timedelta(minutes=21),
-    )
-    adapter = FilmImagesAdapter(
-        film_image_service(
-            InMemoryGenerationRepository([before, after]),
-            FixedLineage({fork: ((CONVERSATION, forked_at),)}),
-        )
-    )
-
-    assert await adapter.belongs(PRINCIPAL, str(fork), "https://cdn.test/before-fork.png")
-    assert not await adapter.belongs(PRINCIPAL, str(fork), "https://cdn.test/after-fork.png")
-
-
-async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
-    adapter = FilmImagesAdapter(film_image_service(InMemoryGenerationRepository()))
-
-    with pytest.raises(RuntimeError, match="对话 id 不是 UUID"):
-        await adapter.belongs(PRINCIPAL, "thread-1", "https://cdn.test/a.png")

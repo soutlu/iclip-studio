@@ -85,7 +85,7 @@ async def validate_video_shots(owner: uuid.UUID, conversation_id: uuid.UUID, con
 async def validate_film(owner: uuid.UUID, conversation_id: uuid.UUID, content: str) -> None:
     """用户写回工程文件时，按工具的同一套规则检查这一个文件。
 
-    这里只拿得到这一份内容：要对照运行文件和对话素材的规则留给 ``check_film``。"""
+    这里只拿得到这一份内容：要对照运行文件的规则与图片地址的检查留给 ``check_film``。"""
 
     _ = (owner, conversation_id)
     _reject(check_project_content(content))

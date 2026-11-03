@@ -25,7 +25,7 @@ from agent_runtime.file_store.store import (
     normalize_path,
 )
 from agent_runtime.harness.files import write_or_retry
-from agent_runtime.harness.materials import require_http, require_material
+from agent_runtime.harness.materials import require_http
 from agent_runtime.harness.media import (
     IMAGE_CONTEXT_MAX_EDGE,
     cropped_image_url,
@@ -33,7 +33,6 @@ from agent_runtime.harness.media import (
     media_tag_open,
     resized_image_url,
 )
-from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbe, MediaProbeFailed
 from agent_runtime.tool_args import JsonText
@@ -71,9 +70,6 @@ MAX_SEARCH_RESULTS: Final = 50
 FULL_RESOLUTION_MAX_BYTES: Final = 10 * 1024 * 1024
 """原分辨率单图大小上限，超限时要求使用 region 分块读取。"""
 
-_RECORDED_AT: Final = "工具结果里返回的地址记在它写下的账本或版记录里，用 read_file 读回来再用。"
-"""素材来源错误的恢复指引。"""
-
 _GUIDANCE = "这段对话有一个持久的工作目录，你和你派出去的下属共用同一个根，所有路径都相对它。"
 """仅说明目录用途，工具用法由各工具的提示与参数描述定义，避免重复注入。"""
 
@@ -90,9 +86,6 @@ class Workspace(CapPlugin[AgentDepsT]):
 
     probe: MediaProbe
     """读取原图尺寸、大小与格式的外部协议。"""
-
-    ledger: MaterialLedger
-    """校验图片地址来源的对话素材台账。"""
 
     # 保留父类 id 的 kw_only 属性，避免默认字段先于必需位置字段。
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
@@ -126,10 +119,10 @@ class Workspace(CapPlugin[AgentDepsT]):
         return CAPABILITY_ID
 
     @classmethod
-    def bind(cls, *, space: FileSpace, probe: MediaProbe, ledger: MaterialLedger) -> type[Self]:
+    def bind(cls, *, space: FileSpace, probe: MediaProbe) -> type[Self]:
         """把运行服务绑进类，交给登记表。"""
 
-        return cls._bound(space=space, probe=probe, ledger=ledger)
+        return cls._bound(space=space, probe=probe)
 
     @classmethod
     def from_spec(cls) -> Self:
@@ -310,16 +303,8 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
     ) -> None:
         """工具参数验证器，签名须与 read_media_file 一致。"""
 
-        _ = (region, full_resolution)
+        _ = (ctx, region, full_resolution)
         require_http(url, what="图片地址")
-        await require_material(
-            self._capability.ledger,
-            self._capability.resolve_scope(ctx),
-            url,
-            kind="image",
-            what="图片地址",
-            recorded_at=_RECORDED_AT,
-        )
 
     async def read_file(
         self, ctx: RunContext[AgentDepsT], path: str, offset: int = 1, limit: int = MAX_READ_LINES
@@ -543,7 +528,7 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
         - 原图超过 10 MB 时 `full_resolution` 会被拒，改用 `region` 分块看。
         - 结果开头一句报出原图宽高、格式、字节数与这次的交付方式。输出坐标一律按
           原图尺寸算，读的是 `region` 时再加上区域偏移。
-        - 只接受这段对话里出现过的地址；自行构造的一律被拒。
+        - 只读得了 OSS 上不带 query 的图片地址，其余地址读不了。
 
         Args:
             url: 图片地址，逐字取自对话或本会话工具结果里的图片 URL，不要自行构造。

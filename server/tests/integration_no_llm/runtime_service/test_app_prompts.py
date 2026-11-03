@@ -1,5 +1,5 @@
-"""运行时服务的会话接口跑一段真会话：开会话、发消息跑完、读状态、读页与补批、重新生成；附件在受理时由
-运行时自己登记进会话的素材台账。运行驱动随服务的 lifespan 起停，模型是按名字换上的替身。"""
+"""运行时服务的会话接口跑一段真会话：开会话、发消息跑完、读状态、读页与补批、重新生成。运行驱动随服务的
+lifespan 起停，模型是按名字换上的替身。"""
 
 from __future__ import annotations
 
@@ -90,12 +90,6 @@ async def test_a_prompt_runs_to_completion_and_reads_back(
     assert ops.json()["latest_seq"] == body["seq"]
     assert ops.json()["stream_epoch"] == body["stream_epoch"]
     assert ops.json()["batches"], "跑过一轮，补批里有东西"
-
-    # 附件在受理时登记进了「属主/会话」的素材台账：运行时自己登记，不靠应用回调。
-    for url, kind in ((IMAGE, "image"), (VIDEO, "video")):
-        found = await app_client.get(f"/sessions/{session}/materials", params={"url": url})
-        assert found.status_code == 200, found.text
-        assert found.json() == {"url": url, "kind": kind}
 
 
 async def test_a_prompt_for_an_agent_the_session_was_not_opened_with_is_refused(

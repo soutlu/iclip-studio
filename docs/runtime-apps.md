@@ -6,7 +6,7 @@
 
 | 运行时管 | 应用管 |
 |---|---|
-| agent 配置、会话、消息队列与运行、transcript、工作区文件与素材台账、用量与统计 | 用户身份与登录、谁能看谁能写、自己的产品记录（如对话列表、标题、归属）、给浏览器的接口 |
+| agent 配置、会话、消息队列与运行、transcript、工作区文件、用量与统计 | 用户身份与登录、谁能看谁能写、自己的产品记录（如对话列表、标题、归属）、给浏览器的接口 |
 
 运行时信任应用：它只认应用的密钥，应用交来的用户 id 原样记下，不核对用户存不存在、有没有权限。浏览器不直连运行时，应用的服务端是唯一的调用方。
 
@@ -55,13 +55,13 @@ Python 应用用客户端库 [agent_runtime/client/](../runtime/src/agent_runtim
 4. 跟进：连对话内容流 `/v1/ws` 订这段会话（`subscribe_v2`）收 transcript 帧；连应用事件流 `/v1/events` 收本应用全部会话的忙闲。断线后用 `POST /v1/sessions:activities` 重新对齐忙闲。
 5. 读回：`GET /v1/sessions/{id}/transcript?session_agent=<agent>` 读一页，`…/transcript/ops` 按水位补批，`…/status` 读运行状态。
 
-停、插队、重新生成、审批、分叉、拷文件、工作区文件与素材台账都在同一组 `/v1/sessions/{id}/…` 路由下，见 `runtime-openapi.json`。
+停、插队、重新生成、审批、分叉、拷文件与工作区文件都在同一组 `/v1/sessions/{id}/…` 路由下，见 `runtime-openapi.json`。
 
 可以运行的样例：[test_second_app.py](../server/tests/integration_no_llm/runtime_service/test_second_app.py) 里的应用 `crm` 不配插件包，按上面的顺序跑通一段会话，并核对它与 `video` 互相寻址不到对方的会话。
 
 ## 4. 用户与可见性
 
-- `X-End-User` 是会话的属主，不是正在看的人：工作区与素材台账按它分命名空间，新消息的属主记它。治理者替别人看对话时，应用照样填对话的属主。
+- `X-End-User` 是会话的属主，不是正在看的人：工作区按它分命名空间，新消息的属主记它。治理者替别人看对话时，应用照样填对话的属主。
 - 运行时只认会话归不归调用方应用；别的应用的会话一律 `404`。同一个应用里谁能看哪段会话、能不能写，应用在转发之前自己判。视频后端在对话域判完再转，入口在 [transcript_api.py](../server/src/iclip/domains/agents/transcript_api.py) 与 [app/runtime_ports.py](../server/src/iclip/app/runtime_ports.py)。
 - 运行时答 401、403 只说应用的密钥或权限不对，应用按运行时不可用处理，不当成用户没登录或无权限。
 

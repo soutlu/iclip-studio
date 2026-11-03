@@ -35,7 +35,6 @@ from pydantic_ai_harness.step_persistence import (
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.transcript import NoPromptRuns, PerRunBatchReads
 
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
@@ -251,7 +250,6 @@ async def test_child_page_does_not_rebuild_the_main_stream(engine: AsyncEngine) 
         history=history,
         queue=JobQueue(engine),
         runner=no_runner,
-        ledger=FakeMaterialLedger(),
     )
 
     def child_page(seeded: Seeded) -> Callable[[], Awaitable[object]]:

@@ -1,20 +1,17 @@
-"""取帧与出图工具注册、输入来源校验与工作区编排。"""
+"""取帧与出图工具注册、输入地址校验与工作区编排。"""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
-import structlog
 from agent_runtime.file_store.store import FileStore
 from agent_runtime.harness.files import write_or_retry
-from agent_runtime.harness.materials import require_materials
-from agent_runtime.material_ledger.store import Material
+from agent_runtime.harness.materials import require_http, require_media
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.tool_args import JsonText
 from agent_runtime.transcript.display import media_grid
-from pydantic_ai import ModelRetry, ToolFailed
+from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
@@ -35,8 +32,6 @@ from iclip_video.shot_video.ports import AnchorSheets, ImageRequest, ShotCells
 from iclip_video.shot_video.prompt import assemble_anchor_prompt, assemble_grid_prompt
 from iclip_video.shot_video.shots import CELL_ID_SHAPE
 from iclip_video.video_document import video_doc_path
-
-_logger = structlog.stdlib.get_logger(__name__)
 
 if TYPE_CHECKING:
     from iclip_video.shot_video.capability import ShotVideo
@@ -96,7 +91,7 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
             )
 
         boards = document.boards
-        # 板号由台账模型保证从 1 起；复用的台账可能被改过，超出层级数时先拒再登记地址。
+        # 板号由台账模型保证从 1 起；复用的台账可能被改过，超出层级数时拒掉。
         stray = sorted({board.board for board in boards if board.board > len(rows)})
         if stray:
             raise ModelRetry(
@@ -104,7 +99,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
                 f"{len(rows)} 个结构层级。用 delete_file 删掉 {EXTRACTION_PATH} 后重新调用 "
                 "plan_shot_frames。"
             )
-        await self._record_images(namespace, [board.url for board in boards])
         # 台账只存板号与地址；板上有哪几个镜头按 rows 现算。命中复用时 rows 与建账时
         # 逐字相同（它是 extractionKey 的组成部分），两条路算出来一样。
         shots_of = {
@@ -199,9 +193,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         frames_payload = [
             {"no": cell_id, "url": url} for cell_id, url in zip(cell_ids, cut.urls, strict=True)
         ]
-        await self._register(
-            namespace, [*cut.urls, cut.grid_url], failure_message="镜头帧处理失败。"
-        )
         return ToolReturn(
             return_value={"frames": frames_payload},
             metadata=media_grid(zip(cut.urls, cell_ids, strict=True)),
@@ -216,7 +207,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
             cells: 逐张描述，一张一个实体，1-4 条。
         """
 
-        _, namespace = self._workspace(ctx)
         owner = _owner(ctx)
         descriptions = resolve_cells(cells)
         job = await self._cap.generator.generate(
@@ -242,24 +232,16 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
             failure_message="设定图处理失败。",
         )
         images = [{"index": index, "url": url} for index, url in enumerate(cut.urls, start=1)]
-        await self._register(
-            namespace, [*cut.urls, cut.grid_url], failure_message="设定图处理失败。"
-        )
         return ToolReturn(
             return_value={"images": images},
             metadata=media_grid(zip(cut.urls, descriptions, strict=True), note=f"{len(images)} 格"),
         )
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
-        """取帧收的视频地址。参数表与工具逐字一致，官方按它调。"""
+        """取帧收的视频地址只查形状：后端经出网防护下载，取不到如实报。参数表与工具逐字一致，官方按它调。"""
 
-        await require_materials(
-            self._cap.ledger,
-            self._cap.space.resolve(ctx),
-            (video_url,),
-            kind="video",
-            what="视频地址",
-        )
+        _ = ctx
+        require_http(video_url, what="视频地址")
 
     async def _validate_frame_generation(
         self,
@@ -269,34 +251,18 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         global_reference: str,
         target_aspect: str,
     ) -> None:
-        """出图收的参考图地址。
+        """出图收的参考图地址要取得到、是图片，查过才提交出图。
 
         参数表必须与工具逐字一致；``frames``、``global_reference``、``target_aspect`` 在这里
-        照收不看，它们不是素材来源规则，由工具体在提交出图前校验，帧号不要求属于取帧台账。
+        照收不看，由工具体在提交出图前校验，帧号不要求属于取帧台账。
         """
 
-        _ = (frames, global_reference, target_aspect)
-        await require_materials(
-            self._cap.ledger,
-            self._cap.space.resolve(ctx),
-            reference_images,
+        _ = (ctx, frames, global_reference, target_aspect)
+        await require_media(
+            [(f"@Image{n}", url) for n, url in enumerate(reference_images, start=1)],
             kind="image",
             what="参考图地址",
         )
-
-    async def _register(self, namespace: str, urls: Sequence[str], *, failure_message: str) -> None:
-        """登记生成出来的地址；登记失败不要求模型重新出图。"""
-
-        try:
-            await self._record_images(namespace, urls)
-        except ModelRetry as exc:
-            _logger.warning("生成产物登记失败", reason=str(exc))
-            raise ToolFailed(failure_message) from exc
-
-    async def _record_images(self, namespace: str, urls: Sequence[str]) -> None:
-        """把本能力落下的图片地址记进台账，模型下一步才交得回来。"""
-
-        await self._cap.ledger.record(namespace, [Material(url=url, kind="image") for url in urls])
 
     def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
         """这次运行的文件存储与命名空间。命名空间算不出来就让它抛，不退回公共的。"""
