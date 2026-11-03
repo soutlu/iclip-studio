@@ -1,17 +1,17 @@
-# vendor：transcript 协议数据层
+# vendor：Transcript 协议数据层
 
-本目录来自 `@moonshot-ai/transcript` 0.0.2，仓库为 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 `packages/transcript`，对齐到上游提交 `c9f01f0`（2026-10-10）；包版本号不标识协议内容，核对以该提交为准。已核对到 `a2afdbc`（2026-10-30），其间上游只改了 `history/`（本仓不引进）和轮上的可选字段 `wedged`（由 Kimi 服务端写，我们的运行时不写，未引进）。许可证见 [LICENSE](LICENSE)。本仓保留了协议扩展与裁剪，不是上游的逐字副本。
+本目录代码移植自 `@moonshot-ai/transcript`（仓库为 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 `packages/transcript`），基准对齐到上游提交 `c9f01f0`（2026-10-10），并已核对至 `a2afdbc`（2026-10-30）。开源许可证见 [LICENSE](LICENSE)。
 
-## 做过的改写
+本项目在此基础上做了定制扩展与裁剪，因此不是上游代码的原样拷贝。
 
-- 工具帧增加 `metadata`：声明位于 [model/frame.ts](model/frame.ts)，接收校验位于 [contract/schema.ts](contract/schema.ts)，相等判断位于 [ops/apply.ts](ops/apply.ts) 的 `frameEquals`，三处一起维护；它承载面向用户的工具结果。
-- 轮头部和用户文本帧使用 `content` 保存原始消息 part，代替上游的 `prompt` 与 `attachmentIds`；类型、schema 与 [ops/apply.ts](ops/apply.ts) 的相等判断共同维护这一扩展。上游的 `triggerPromptId` 保留在 [model/turn.ts](model/turn.ts)、schema 与相等判断里，乐观气泡按它认领。
-- 未引入上游 `history/`。历史投影由[后端 transcript](../../../../../runtime/src/agent_runtime/harness/transcript/from_messages.py)生成，相关上游 history 测试未保留。
-- 未引入上游用户文本帧的 `origin`（技能激活与 `clientMetadata`）、[消息记录](model/prompt.ts)的 `clientMetadata` 和 `contract/origin.ts`。
-- [测试目录](__tests__/)验证本仓的消息 `content`、工具 `metadata` 扩展与协议输入边界；跨端消息解析与回放见[金样测试](../golden.test.ts)。
+## 本项目的定制改动
 
-## 维护边界
+1. **工具卡片增加 `metadata` 字段**：用于承载展示给前端用户的结构化工具结果。类型定义在 [model/frame.ts](model/frame.ts)，Zod 校验在 [contract/schema.ts](contract/schema.ts)，相等性比较在 [ops/apply.ts](ops/apply.ts) 的 `frameEquals`，修改时需三处同步。
+2. **用户消息统一用 `content` 数组保存原始消息块**：在轮次头部（Turn）和用户文本块中使用 `content` 替代了上游的 `prompt` 与 `attachmentIds`；保留了上游的 `triggerPromptId`（定义在 [model/turn.ts](model/turn.ts)），供前端乐观发送的气泡认领服务端返回的消息。
+3. **裁剪不需要的模块**：未引入上游的 `history/` 目录（本项目的历史记录由[后端 `from_messages.py`](../../../../../runtime/src/agent_runtime/harness/transcript/from_messages.py) 负责生成），也未引入上游的 `origin` 与 `clientMetadata` 字段。
+4. **测试覆盖**：[__tests__/](__tests__/) 验证本目录的 `content`、`metadata` 扩展与 Schema 边界；跨端协议对齐由外层的[金样测试（`golden.test.ts`）](../golden.test.ts)保障。
 
-日常业务适配、连接封装与应用状态放在[上级目录](../)，不在 vendor 内修改。除上述改写外，本目录文件与上游一致。上游同步或跨端协议变更需要修改本目录时，逐项核对并保留上述本仓扩展，不直接覆盖整目录。
+## 维护与升级边界
 
-协议变更同时核对前端 schema、类型、操作投影和[后端协议类型](../../../../../runtime/src/agent_runtime/transcript/wire.py)，更新对应层的契约与行为测试。保留上游许可证；字段是否接受、保留或丢弃以 schema 为准。
+- 日常业务逻辑、WebSocket 连接管理与前端状态管理统一放在[上级目录（`src/shared/transcript/`）](../)，不在本 `vendor/` 目录内修改。
+- 后续同步上游改动或调整跨端协议时，请逐项对比并保留上述定制扩展，切勿直接用上游目录整体覆盖；同时需同步核对[后端协议定义（`wire.py`）](../../../../../runtime/src/agent_runtime/transcript/wire.py)并更新金样测试。

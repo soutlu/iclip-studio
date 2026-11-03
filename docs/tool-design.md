@@ -1,56 +1,57 @@
 # Agent 工具编写规范
 
-> 本文管工具的模型面文本与登记声明。装配机制见 [architecture.md](architecture.md)，业务事实见 [CONTEXT.md](CONTEXT.md)。
+> 本文规定如何编写面向大模型的 Agent 工具描述（docstring）、参数校验与前端卡片展示信息。
+> - 插件装配机制见 [architecture.md](architecture.md)
+> - 业务概念见 [CONTEXT.md](CONTEXT.md)
 
-## 1. 文本归属
+## 1. 指引文字写在哪里
 
-| 内容 | 落点 |
+不同层级的指引各司其职，同一条规则只写在一处，不要在多个地方重复抄写：
+
+| 指引内容 | 应该写在哪里 |
 |---|---|
-| 工具做什么、参数来源、适用范围、上限、重复调用和失败语义 | 工具 docstring |
-| 何时选择工具、跨工具接力顺序、判断标准与产出格式 | 技能的 `SKILL.md` 及其 references（在配置页的技能库里编辑） |
-| 整组工具共有、单个 docstring 无法表达的语义 | capability 的 `get_instructions`；没有则返回 `None` |
-| 本次失败后可以采取的动作 | 给模型的错误消息 |
+| 单个工具是干什么的、参数从哪来、适用范围、数量上限、能否重复调用、失败后怎么处理 | **工具函数的 docstring** |
+| 什么时候该调哪个工具、多个工具之间的配合顺序、创作判断标准与交付格式 | **技能库（`SKILL.md` 及 `references/` 参考文档）**，在管理后台编辑 |
+| 整个插件（一组工具）共用的背景规则，写在单个工具里不合适的 | **插件类的 `get_instructions` 方法**（没有则返回 `None`） |
+| 当次调用失败的原因，以及模型下一步该怎么修正 | **工具抛出的错误消息（`ModelRetry` 或 `ToolFailed`）** |
 
-同一条指引只放一处。capability 指引不重复工具描述；docstring 可以指出其他工具负责的边界或必需的前置产物，不编排跨工具流程。
+---
 
-## 2. 模型面写法
+## 2. 面向大模型的 docstring 写法
 
-只写会改变模型动作的信息：
+工具的 docstring 是直接给大模型看的指令，**只写会影响模型调用行为的信息**（完整范例可参考 [WorkspaceToolset.read_media_file](../runtime/src/agent_runtime/plugins/workspace/capability.py)）：
 
-- 第一行用一句话说明工具做什么。
-- 说明适用范围、何时不要调用、重复调用是否复用结果；涉及并行或分批时明确规则。
-- 规则用明确指令，并写出模型可预期的结果；不使用「尽量」「最好」等含糊建议。
-- 上限用数字表达，同时说明超限后的可执行动作。
-- 提前说明拒绝、失败与退化语义；错误消息给出修正参数、读取产物或停止重试等下一步。
-- `Args:` 只补充参数如何取值；schema 已表达的类型、默认值、必填性不复述。
+- **首行一句话定性**：第一行直接写清楚这个工具做什么。
+- **写清边界与调用时机**：明确说明什么时候该调、什么时候不要调、重复调用是否会直接复用已有结果，以及是否支持并发/分批调用。
+- **使用明确指令，不用含糊词汇**：直接写「必须……」「禁止……」，不要写「尽量」「最好」这类模棱两可的建议。
+- **写明数字上限与超限后的做法**：例如报错或说明写*「镜头组 3 的时长为 42 秒，超出 4～30 秒允许范围；请将该组拆分为两组后重新交付」*——既给出具体数字，又告诉模型下一步该怎么做。
+- **`Args:` 只补充取值来源**：参数的类型、默认值和是否必填已经在 JSON Schema 里表达了，不要在 `Args:` 里重复抄一遍；只写模型该从哪里获取这个参数值。
+- **不写内部设计理由**：不要向模型解释为什么定这个规则或背后的计费逻辑；如需防止模型盲目重复发起付费调用，直接规定「遇到某类错误时禁止重试，并直接告知用户原因」。
 
-不放设计理由，不复述业务背景或计费细节。需要约束重复付费调用时，直接说明禁止重复的条件和失败后的动作。
+---
 
-例如，「镜头组 3 的 seconds 是 42，只收 4-30；重新切分这一组再交付」写清了上限与超限后的动作；解释为什么卡这个区间不属于工具指引。完整工具示例直接阅读 [WorkspaceToolset.read_media_file](../runtime/src/agent_runtime/plugins/workspace/capability.py)，不在文档复制 docstring。
+## 3. 工具注册与参数校验
 
-## 3. 登记与范围校验
+工具统一通过 `Tool(..., args_validator=...)` 注册到插件（Capability）中（参考 [workspace](../runtime/src/agent_runtime/plugins/workspace/capability.py)、[shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py) 与 [skills](../runtime/src/agent_runtime/harness/skills.py)）：
 
-工具登记时声明输入范围、审批条件和展示信息。当前工具使用 `Tool(..., args_validator=...)` 注册到 toolset 或 capability；参考 [workspace](../runtime/src/agent_runtime/plugins/workspace/capability.py)、[shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py) 与 [skill references](../runtime/src/agent_runtime/harness/skills.py)。
+- **前置参数校验放 `args_validator`**：像媒体地址、已挂载的技能这类单工具入参范围检查，统一放在 `args_validator` 中拦截，不要散落在工具主体代码里。地址不在参数里、要从工程文件读出来的（`check_film`、`generate_images`）在工具主体里检查，`check_film` 把不能用的地址列进问题清单。共用的地址校验在 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py)：
+  - `require_http` 只检查地址形状是否为合法的 HTTP(S) 链接。
+  - 提交类工具用 `require_media` 检查链接能否打开、类型是否正确。有不能用的地址时抛 `ModelRetry`，按位置称呼（如「第 2 组第 1 张」）逐条列出称呼与原因，让模型换地址，不回显地址。
+  - 读取类工具不做这项检查（规则见 [CONTEXT.md「媒体地址」](CONTEXT.md#术语)）。
+- **正确区分三种异常**：
+  - `ModelRetry("...")`：模型传错了参数格式或漏了前置步骤，让模型根据提示修正参数后重试。
+  - `ToolFailed("...")`：外部服务报错或业务条件不满足（例如后台未启用对应模型），直接结束本次调用并把原因返回给模型，不消耗模型的参数纠错重试次数。
+  - `ApprovalRequired(metadata=...)`：操作需要人工审批，暂停当前运行并等待用户确认。
+- **安全与权限边界**：`args_validator` 和人工审批不能替代底层权限检查。用户数据隔离依然在工具执行层和数据库存储层按 `AgentRunDeps` 中的所属用户 ID 严格校验。
 
-- 素材地址、已挂载 skill 等单工具范围规则放 `args_validator`，不散入工具执行逻辑；地址不在参数里、要从工程文件读出的（`check_film`、`generate_images`）在工具里查，`check_film` 把不能用的地址列进问题清单。共用素材校验使用 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py)：`require_http` 只查地址形状；提交点用 `require_media` 查链接能打开、类型对，称呼按位置给（如「第 2 组第 1 张」）；不行的抛 `ModelRetry` 逐条列出称呼与原因，让模型换地址，不回显地址。读取类工具不查（规则见 [CONTEXT.md「媒体地址」](CONTEXT.md#术语)）。
-- `ModelRetry` 表示参数可以修正；`ToolFailed` 报告本次失败，不消耗工具重试次数；是否再次调用由业务策略决定；`ApprovalRequired(metadata=...)` 表示需要审批，metadata 提供原因。
-- 范围验证与审批不替代授权。属主隔离仍按运行 deps 在工具和存储层执行；文件存在性、存储安全与业务状态校验保留在对应执行边界。
-- Agent 能看见哪些工具由挂载声明决定。不应拥有的工具不挂载；需要按运行条件过滤工具表时使用 `PrepareTools`。
-- 跨工具统一规则有实际需求时，集中在一个 capability 的 `before_tool_execute`；不为尚不存在的规则创建策略层。
+---
 
-## 4. 输出与展示
+## 4. 工具返回值与前端卡片展示
 
-给模型的单次文本返回不超过 50,000 字符；超出时在源头写入工作区，返回路径与摘要。`video_parser` 使用这一方式。
-
-每件工具的 display 映射由所属插件提供，组合根合并后供实时与历史共同使用。`kind` 只取 [display 协议](../runtime/src/agent_runtime/transcript/display.py) 已有值，不自行扩展；无法生成专用展示时使用 `generic`。
-
-卡头文案：
-
-- `generic.summary` 是标题：书面动宾短语，四到五个字（读取图片、生成画面、拆解视频），不带数字、路径和口语缩略。
-- `generic.detail` 是主语：这一步作用的对象实例（文件名、路径、镜头号），取不到就不给。
-- 数字（行数、张数、字节、命中数、渠道）一律放 metadata 的角标，不进标题。
-- 前端为 `file_io`、`search`、`url_fetch`、`skill_call`、`agent_call` 各配一个同写法的标题，活动组摘要沿用同一套词。
-
-给用户的结构化结果放 `ToolReturn(return_value=给模型的内容, metadata=给用户的内容)`。metadata 随工具结果持久化，不进入模型上下文；形状与构造函数以 [display 模块](../runtime/src/agent_runtime/transcript/display.py) 为准，不重复维护字段表。
-
-前端按登记的 `view` 选择结果渲染器，不按工具名判断；没有 `view` 的工具只能带 `ToolNote`。角标文字由工具写入 metadata，前端不从 output 或参数推导；正文不在 metadata 重复存储。
+- **返回值长度限制**：单次返回给大模型的文本不得超过 `50,000` 个字符；如果产出内容过长（如 `video_parser` 的长视频分析），应先写入工作区文件，再向模型返回文件路径与简短摘要。
+- **分离「给模型看的内容」与「给用户界面看的数据」**：
+  使用 `ToolReturn(return_value=给模型看的文本, metadata=给前端渲染卡片的结构化数据)`。其中 `metadata` 会随聊天记录持久化落库并推送给前端，但不会放进发给大模型的上下文窗口（数据结构见 [transcript/display.py](../runtime/src/agent_runtime/transcript/display.py)）。
+- **前端工具卡片标题规范（`generic` 卡片）**：
+  - `summary`（主标题）：使用 4～5 个字的书面动宾短语（如「读取图片」「生成画面」「拆解视频」），不带数字、文件路径或口语简写。
+  - `detail`（副标题/操作对象）：写本次操作的具体目标（如文件名、路径、镜头号），没有则留空。
+  - **数字统一放角标**：行数、图片张数、文件大小、命中条数等数字统一放进 `metadata` 的角标字段，不要拼在标题里。

@@ -1,32 +1,26 @@
-# vendor：HyperFrames Studio 时间线与画面吸附纯逻辑
+# vendor：HyperFrames Studio 时间线与画面吸附纯算法
 
-本目录照抄 [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) 的 `packages/studio/src`，对齐到 tag `v0.8.168`（提交 `6e1f9ee1`）。许可证见 [LICENSE](LICENSE)（Apache-2.0，上游未附 NOTICE）。不安装 `@hyperframes/studio` 包，见 [ADR-0003](../../../../../../../docs/adr/0003-whole-film-hyperframes.md)。
+本目录代码移植自 [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) 的 `packages/studio/src`，基准对齐到标签 `v0.8.168`（提交 `6e1f9ee1`），开源许可证见 [LICENSE](LICENSE)（Apache-2.0）。根据 [ADR-0003](../../../../../../../docs/adr/0003-whole-film-hyperframes.md)，本项目不直接安装 `@hyperframes/studio` UI 包，仅按需摘录其纯计算逻辑。
 
-目录结构与上游相同，被抄文件的 import 行因此保持原样。每个文件开头三到八行是来源、许可与改动说明；去掉这几行后与上游逐字节一致，摘录文件只删不改（下表注明的除外）。
+为了保持源文件内部 `import` 路径不变，本目录保持与上游一致的目录结构。每个文件头部注有来源、许可证与裁剪说明；除下表列出的裁剪外，其余代码与上游逐字一致。
 
-## 收录范围
+## 收录文件清单
 
-| 文件                                                                              | 上游               | 说明                                                                                   |
-| --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------- |
-| `utils/rounding.ts`                                                               | 全文               | 上游没有对应测试                                                                       |
-| `player/lib/time.ts`                                                               | 全文               |                                                                                        |
-| `player/components/timelineSnapping.ts`                                            | 全文               | 吸附到播放头、片段边界、拍点、刻度                                                     |
-| `player/components/timelineZoom.ts`                                                | 全文               | 缩放档位与滑杆                                                                         |
-| `player/components/timelineLayout.ts`、`automationLaneHeight.ts`                  | 全文               | 时间与像素换算、行几何                                                                 |
-| `player/components/timelineGaps.ts`                                                | 全文               | 整轨压实 `resolveAllTrackGaps`                                                         |
-| `player/components/timelineEditing.ts`                                            | 摘录               | 只取 `resolveTimelineMove`（去掉 z-index 叠放分支及其可选入参、出参）、`resolveTimelineResize` 与两个数值格式化函数 |
-| `player/components/timelineGroupEditing.ts`                                       | 摘录（第 1–175 行） | 去掉多选分组修剪的接线；`clampPlaybackRate` 由 `@hyperframes/parsers` 的源码（`packages/parsers/src/mediaDuration.ts` 第 25–34 行）内联替代；`DEFAULT_TIMELINE_MIN_DURATION` 改为导出 |
-| `player/components/timelineCollision.ts`                                          | 摘录               | 只取特效块落到行上最近的空位 `resolveNearestFreeStart`（及其三个小函数）、在行外开新行 `resolveInsertRow` 与 `timeRangesOverlap`，去掉分音画区与分组的落点代码；上游测试未收录 |
-| `player/components/timelineStackingSync.ts`                                       | 全文               | 换行后只给被挪的块重排叠放 `computeStackingPatches`；`spansOverlap` 取已安装的 `@hyperframes/core`；上游测试未收录 |
-| `components/editor/snapEngine.ts`                                                  | 全文               | 画面上拖动的吸附与参考线；本仓只吸画面本身的中线与四边，不吸别的块                     |
-| `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts`                  | 本仓替身           | 只声明被抄文件引用的类型：`ZoomMode`、`TimelineTimeRange` 照抄，`TimelineElement` 只留被读的字段 |
+| 文件路径 | 引入方式 | 用途与裁剪说明 |
+|---|---|---|
+| `utils/rounding.ts`、`player/lib/time.ts` | 全文引入 | 时间与数值舍入基础工具 |
+| `player/components/timelineSnapping.ts` | 全文引入 | 时间线拖拽吸附计算（对齐播放头、片段边界、音乐拍点与时间刻度） |
+| `player/components/timelineZoom.ts` | 全文引入 | 时间线缩放档位与滑杆换算 |
+| `player/components/timelineLayout.ts`、`automationLaneHeight.ts` | 全文引入 | 时间与像素坐标互转、轨道行高计算 |
+| `player/components/timelineGaps.ts` | 全文引入 | 画面轨自动收紧空隙（`resolveAllTrackGaps`） |
+| `player/components/timelineEditing.ts` | 部分摘录 | 仅保留 `resolveTimelineMove`（移除 z-index 分支）、`resolveTimelineResize` 及两个数值格式化函数 |
+| `player/components/timelineGroupEditing.ts` | 部分摘录 | 保留前 175 行，移除多选分组修剪接线，内联 `clampPlaybackRate` 并导出 `DEFAULT_TIMELINE_MIN_DURATION` |
+| `player/components/timelineCollision.ts` | 部分摘录 | 仅保留特效块同行就近落位（`resolveNearestFreeStart`）、跨行新建轨道（`resolveInsertRow`）与区间重叠判断（`timeRangesOverlap`） |
+| `player/components/timelineStackingSync.ts` | 全文引入 | 特效块跨行移动后重算叠放顺序（`computeStackingPatches`） |
+| `components/editor/snapEngine.ts` | 全文引入 | 预览画布上拖拽元素的中心线与四边吸附参考线计算 |
+| `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts` | 本地最小类型替身 | 仅声明上述算法文件依赖的最小 TypeScript 类型（`ZoomMode`、`TimelineTimeRange`、`TimelineElement`） |
 
-## 工具配置
+## 工具链与维护边界
 
-- 类型检查走单独的 composite 项目 [tsconfig.vendor-hyperframes.json](../../../../../../tsconfig.vendor-hyperframes.json)。上游只开 `strict`，这里只放宽上游源码实际触发的 `exactOptionalPropertyTypes` 与 `noUncheckedIndexedAccess`。
-- ESLint、Prettier、knip 都排除本目录；design-guard 照常扫描。
-- 本仓编辑规则由[上级目录的测试](../../editing/)验证，浏览器交互由 [whole-film-timeline.spec.ts](../../../../../../e2e/whole-film-timeline.spec.ts) 与 [whole-film-editor.spec.ts](../../../../../../e2e/whole-film-editor.spec.ts) 验证。
-
-## 维护边界
-
-本仓的成片编辑规则写在[上级目录](../../editing/)，不改这里的文件。升级上游版本时，按上表逐个文件重新照抄、保留本仓的改动说明，再跑本仓编辑规则与成片浏览器用例；不直接覆盖整个目录。
+- **独立类型检查**：本目录通过独立的 [tsconfig.vendor-hyperframes.json](../../../../../../tsconfig.vendor-hyperframes.json) 进行类型检查（配合上游源码放宽了 `exactOptionalPropertyTypes` 与 `noUncheckedIndexedAccess`），并在 ESLint、Prettier 与 knip 中排除。
+- **不在本目录写业务逻辑**：本项目自有的成片编辑规则统一写在[外层 `editing/` 目录](../../editing/)中并配有单测，不要直接修改本 `vendor/` 目录下的算法文件。升级上游版本时，请对照上表逐个文件同步并保留头部说明，切勿整目录直接覆盖。

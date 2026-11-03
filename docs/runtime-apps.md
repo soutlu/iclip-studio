@@ -1,26 +1,33 @@
-# 新应用接入运行时
+# 新应用接入运行时指南
 
-本文讲一个新业务（下称应用）怎样把 agent 对话接到运行时服务上。运行时的机制见[架构 §2](architecture.md#2-运行时服务)，接口形状以 [runtime-openapi.json](../contract/runtime-openapi.json) 为准，鉴权、会话归属、两条 WebSocket 与回调的约定见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)。视频后端（应用 `video`）是现成的接法，下文各步都指到它的对应代码。
+本文说明一个新的业务系统（下称「应用」）如何接入 Agent 运行时服务，快速获得 Agent 对话与工具运行能力。
+- 运行时内部机制见 [架构 §2](architecture.md#2-运行时服务)
+- 接口定义以 [runtime-openapi.json](../contract/runtime-openapi.json) 为准，通信协议细节见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)
+- 完整接入示例可参考现有的视频后端（应用 `video`）或最小接入集成测试 [test_second_app.py](../server/tests/integration_no_llm/runtime_service/test_second_app.py)
 
-## 分工
+## 职责分工
 
-| 运行时管 | 应用管 |
+| Agent 运行时负责 | 接入的业务应用负责 |
 |---|---|
-| agent 配置、会话、消息队列与运行、transcript、工作区文件、用量与统计 | 用户身份与登录、谁能看谁能写、自己的产品记录（如对话列表、标题、归属）、给浏览器的接口 |
+| 管理 Agent 配置（模型、技能库、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、输出聊天记录（Transcript）、管理工作区文件、统计 Token 消耗 | 用户登录与权限校验、管理业务侧的对话列表（标题、文件夹归属等）、向前端浏览器提供接口（BFF） |
 
-运行时信任应用：它只认应用的密钥，应用交来的用户 id 原样记下，不核对用户存不存在、有没有权限。浏览器不直连运行时，应用的服务端是唯一的调用方。
+**核心信任边界**：前端浏览器绝不直接连接运行时，所有请求都由业务应用的服务端携带「应用密钥」发起。业务应用在请求头 `X-End-User` 中传入的用户 ID，运行时会直接信任并原样记录，不会去检查该用户是否存在或是否有权限。
 
-## 1. 登记应用
+---
 
-在运行时配置（部署目录的 `configs/runtime.yaml`，形状见 [settings.py](../runtime/src/agent_runtime/settings.py) 与 [样例](../deploy/runtime.example.yaml)）的 `apps` 下加一项，改完重启运行时服务：
+## 接入五步流程
+
+### 第一步：在运行时配置文件中登记应用
+
+在运行时的配置文件 `configs/runtime.yaml`（参考 [settings.py](../runtime/src/agent_runtime/settings.py) 与 [样例](../deploy/runtime.example.yaml)）的 `apps` 下新增一项，修改后重启运行时服务：
 
 ```yaml
 apps:
-  video: {...}            # 已有的视频后端，不动
-  crm:                    # 应用标识：小写字母开头，只含小写字母、数字、- 与 _
-    key_env: CRM_APP_KEY  # 放这个应用密钥的环境变量
-    admin: false          # 要不要用 /v1/admin 管理接口
-    hooks:                # 三个键都要写，null 是不要这个回调
+  video: {...}            # 已有的视频后端，保持不变
+  crm:                    # 新应用标识：小写字母开头，仅含小写字母、数字、- 和 _
+    key_env: CRM_APP_KEY  # 存放该应用密钥的环境变量名（长度 ≥ 32 字符，不同应用不可共用）
+    admin: false          # 是否允许该应用调用 /v1/admin 管理后台接口
+    hooks:                # 三个生命周期回调都必须声明，不需要的填 null
       token_env: CRM_HOOK_TOKEN
       gate: https://crm.internal/runtime/hooks/gate
       run_started: null
@@ -28,70 +35,47 @@ apps:
       timeout_seconds: 10
 ```
 
-- 密钥与回调令牌都不少于 32 个字符，放在运行时服务的环境变量里；每个应用各用一把密钥，与别的应用相同就起不来。单机部署时 [compose.yaml](../deploy/compose.yaml) 只把列出的变量交给 `runtime` 容器，新加的变量要加进它的 `environment`。
-- 三个回调都不要时 `token_env` 可以不写；有一个地址就必须写。
-- 运行时在 compose 网络里监听 7790、不对外开端口：应用要放进同一个网络或另开端口才连得上，回调地址也要从 `runtime` 容器里连得到。
-- 会话 id 由应用铸（UUID）；撞上别的应用已有的 id 开会话答 `409`。
+- 如果采用单机 Docker Compose 部署，记得在 [compose.yaml](../deploy/compose.yaml) 的 `runtime.environment` 中把新增的环境变量（如 `CRM_APP_KEY`、`CRM_HOOK_TOKEN`）传给 `runtime` 容器，并确保容器之间网络互通。
 
-## 2. 回调
+### 第二步：实现生命周期回调接口（可选）
 
-运行时按会话归属的应用找回调地址，`POST` JSON，带 `Authorization: Bearer <回调令牌>`。请求体、重试与时机见 [conventions §20「回调」](../contract/conventions.md#回调)，模型在 [hooks.py](../runtime/src/agent_runtime/hooks.py)。
+运行时会在三个时机向 `hooks` 配置的地址发送 `POST` 请求（请求头带 `Authorization: Bearer <回调令牌>`，协议见 [conventions §20「回调」](../contract/conventions.md#回调)，数据结构见 [hooks.py](../runtime/src/agent_runtime/hooks.py)，视频后端的参考实现见 [app/runtime_internal.py](../server/src/iclip/app/runtime_internal.py)）：
 
-| 回调 | 应用要答什么 | 视频后端的做法 |
-|---|---|---|
-| `gate` | 放行答 2xx；不放行答别的非 2xx（如 `403`），这次运行失败、消息记 `failed`。答 `502`/`503`/`504` 或没答复会被重试约 30 秒，所以暂时答不了时用它们 | 重建属主主体，账号不在或已停用就拦下 |
-| `run_started` | 答 2xx；失败只记日志。它卡着运行，要快答 | 记下对话的最近一次运行、刷新行并广播 |
-| `turn_started` | 答 2xx；失败只记日志。在后台调，不卡运行 | 对话还是默认标题时调 `POST /v1/titles` 起名 |
+| 回调名称 | 触发时机 | 业务应用应该怎么响应 | 视频后端的实际做法 |
+|---|---|---|---|
+| `gate`（开跑前检查） | 每次调用大模型前（同步阻塞） | 允许运行返回 `2xx`；如果应用暂时繁忙返回 `502/503/504` 或超时，运行时会自动重试约 30 秒；返回其他非 `2xx`（如 `403`）则直接终止运行并将消息标为失败 | 检查对话所属用户是否存在且未被停用（如果是测试预览，还需检查用户当前是否仍持有 `agent:manage` 权限） |
+| `run_started`（运行开始） | 拿到运行锁后（同步阻塞，需快速响应） | 返回 `2xx`（失败仅记日志，不中断运行） | 更新对话表里的最近运行记录、清空已收尾标记，并向前端广播对话更新 |
+| `turn_started`（轮次开始） | 每轮用户消息首次开跑时（后台异步调用） | 返回 `2xx`（失败仅记日志） | 如果对话还是默认标题，在后台调用运行时的 `POST /v1/titles` 自动生成标题 |
 
-三个请求体都带 `preview`，为真的是测试预览会话（见第 6 步）。视频后端的实现在 [app/runtime_internal.py](../server/src/iclip/app/runtime_internal.py)，约定见 [conventions §21](../contract/conventions.md#21-后端给运行时的内部接口)。
+### 第三步：调用会话与发消息接口
 
-## 3. 开会话、发消息、读记录
+如果业务应用使用 Python 开发，可以直接依赖 `runtime/` 并使用内置的 `RuntimeClient`（见 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，错误处理见[架构「客户端库」](architecture.md#客户端库)）；其他语言可直接按 `runtime-openapi.json` 调用 HTTP 接口：
 
-Python 应用用客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py) 的 `RuntimeClient`（每个接口一个带类型的方法，报错规则见[架构「客户端库」](architecture.md#客户端库)）。客户端库在 `agent_runtime` 包里，没有单独的客户端包，Python 应用按路径依赖 [runtime/](../runtime/pyproject.toml)，同视频后端的 [pyproject.toml](../server/pyproject.toml)；别的语言照 `runtime-openapi.json` 与 conventions §20 直接调。顺序：
+1. **获取可用 Agent 列表**：调用 `GET /v1/agents`，拿到当前在首页上架、启用且已发布的 Agent。
+2. **创建会话**：调用 `POST /v1/sessions`（传入应用自己生成的 UUID `id` 和所选的 `agent_id`），会话创建后即自动锁定该 Agent 当时的最新版本。
+3. **发送消息**：调用 `POST /v1/sessions/{id}/prompts`（传入幂等键 `prompt_id`、消息内容 `content`、对账标签 `user_name` 和 `agent_id`，请求头 `X-End-User` 填**会话所属用户的 ID**）。
+4. **读取聊天记录与状态**：调用 `GET /v1/sessions/{id}/transcript?session_agent=<agent>` 读取一页历史记录，调用 `…/status` 查询运行状态。
+5. **其他控制操作**：停止运行、消息插队、重新生成、提交人工审批、对话分叉、复制工作区文件以及读写文件，均在同一组 `/v1/sessions/{id}/…` 路径下。
 
-1. `GET /v1/agents` 取能选的 agent（上菜单、在用、发布过）。
-2. `POST /v1/sessions` 体 `{id, agent_id}` 开会话，固定这个 agent 此刻的当前版本。
-3. `POST /v1/sessions/{id}/prompts` 发消息，体 `{prompt_id, content, user_name, agent_id}`，`X-End-User` 是会话的属主。`prompt_id` 是幂等键，`user_name` 是这条消息替谁发的标签，按应用自己的规则填。
-4. 跟进：连对话内容流 `/v1/ws` 订这段会话（`subscribe_v2`）收 transcript 帧；连应用事件流 `/v1/events` 收本应用全部会话的忙闲。断线后用 `POST /v1/sessions:activities` 重新对齐忙闲。
-5. 读回：`GET /v1/sessions/{id}/transcript?session_agent=<agent>` 读一页，`…/transcript/ops` 按水位补批，`…/status` 读运行状态。
+### 第四步：做好权限隔离并转发 WebSocket 实时流
 
-停、插队、重新生成、审批、分叉、拷文件与工作区文件都在同一组 `/v1/sessions/{id}/…` 路由下，见 `runtime-openapi.json`。
+- **先验权、再转发**：运行时只检查会话是否属于当前调用的应用（访问其他应用的会话统一返回 `404`），不检查具体用户权限。因此业务应用在把请求转发给运行时之前，必须先判断当前登录用户有没有权限查看或操作这段对话（参考 [transcript_api.py](../server/src/iclip/domains/agents/transcript_api.py)）。**注意**：请求头里的 `X-End-User` 必须始终传**这段对话的所属用户 ID**（因为工作区文件是按所属用户隔离命名空间的），哪怕是管理员在查看别人的对话，也要传原对话所属用户的 ID。
+- **转发两条 WebSocket 流**（参考[架构「浏览器连接与事件流」](architecture.md#浏览器连接与事件流)）：
+  - **对话内容流 `/v1/ws`**：前端每建立一条 WebSocket 连接，应用后端就对应连一条 `/v1/ws`。前端发来 `subscribe_v2` 时，应用后端先检查该用户能否查看这段对话：不能看的直接原地回 `not_found`；能看的原样转发给运行时，并将运行时后续推过来的聊天增量帧和文件变更帧原样透传给浏览器。
+  - **应用事件流 `/v1/events`**：应用后端建立一条长连接接收所有会话的忙闲状态变化，根据帧里的 `owner_user_id` 推送给对应用户的浏览器连接。
+  - **断线重对齐**：只要任意一条上游连接断开，应用后端就主动断开对应的浏览器连接，让前端重连并调用 `POST /v1/sessions:activities` 重新对齐状态。
 
-可以运行的样例：[test_second_app.py](../server/tests/integration_no_llm/runtime_service/test_second_app.py) 里的应用 `crm` 不配插件包，按上面的顺序跑通一段会话，并核对它与 `video` 互相寻址不到对方的会话。
+### 第五步：按需接入高阶能力（可选）
 
-## 4. 用户与可见性
+- **测试预览**：调用 `POST /v1/sessions` 时传入 `{ id, preview: { agent_id, version_id } }`（`version_id` 传空则每次运行实时读取最新草稿），详见 [conventions §19「测试预览」](../contract/conventions.md#测试预览)。
+- **转发管理后台接口**：将应用配置为 `admin: true` 后，即可通过 `RuntimeClient.admin_request` 把 `/v1/admin` 下的管理请求转发给运行时（写操作在 `X-End-User` 中传入当前管理员的用户 ID，参考 [platform/runtime_admin.py](../server/src/iclip/platform/runtime_admin.py)）。
+- **借用运行时调用固定模型**：如果应用自己的后台任务需要调用某个固定大模型、又不想单独管理 API Key，可以调用 `POST /v1/model-calls/responses`，直接复用运行时配置页里托管的供应商密钥（详见 [conventions §20「模型调用」](../contract/conventions.md#模型调用)）。
+- **为 Agent 扩展专属工具**：如果只需要接入外部通用工具，直接在管理后台登记 **MCP 服务**即可（见[架构「工具、插件与 MCP 服务」](architecture.md#工具插件与-mcp-服务)）；如果需要深度调用应用自身的内部接口，可以编写 `PluginFactory` 插件包并在运行时配置中挂载（见[架构「内部接口与视频插件包」](architecture.md#内部接口与视频插件包)）。
 
-- `X-End-User` 是会话的属主，不是正在看的人：工作区按它分命名空间，新消息的属主记它。治理者替别人看对话时，应用照样填对话的属主。
-- 运行时只认会话归不归调用方应用；别的应用的会话一律 `404`。同一个应用里谁能看哪段会话、能不能写，应用在转发之前自己判。视频后端在对话域判完再转，入口在 [transcript_api.py](../server/src/iclip/domains/agents/transcript_api.py) 与 [app/runtime_ports.py](../server/src/iclip/app/runtime_ports.py)。
-- 运行时答 401、403 只说应用的密钥或权限不对，应用按运行时不可用处理，不当成用户没登录或无权限。
-
-## 5. 转给浏览器
-
-应用给浏览器的实时连接照视频后端的做法（[架构「浏览器连接与事件流」](architecture.md#浏览器连接与事件流)）：
-
-- 每条浏览器连接对应一条 `/v1/ws`。浏览器的 `subscribe_v2` 先由应用核可见性，看不见的就地回 `not_found`，看得见的原样转过去；回执由运行时给，帧不解析、原文转给浏览器，运行时新加的帧与字段因此自动带到。
-- `/v1/events` 每个进程连一条，按帧里的 `owner_user_id` 找该通知的浏览器连接，`preview` 为真的按应用自己的规则筛。
-- 任一条上游断了，就关掉受影响的浏览器连接让它重连、重拉，断线期间的帧不补发。
-
-## 6. 测试预览
-
-`POST /v1/sessions` 体 `{id, preview: {agent_id, version_id}}` 开一段预览：`version_id` 为空试 agent 当下的草稿，每次运行重读；给了就试那一版。预览会话不能分叉、不能当拷文件的源或目标，不进 `/v1/stats`；事件流帧与回调请求体里 `preview` 为真。谁能开、谁能看由应用定，视频后端的规则见 [conventions §19「测试预览」](../contract/conventions.md#测试预览)。
-
-## 7. 管理接口
-
-`admin: true` 的应用能用 `/v1/admin`：技能库、模型供应商与默认模型、MCP 服务、agent 配置，子路径同视频后端的那几组端点。写操作在 `X-End-User` 给操作人 id，答复里只有 id，显示名由应用自己补。客户端库用 `admin_request` 原样转发；视频后端的转发在 [platform/runtime_admin.py](../server/src/iclip/platform/runtime_admin.py)。管理权限是整组的，不分哪一块。
-
-## 8. 调写定的模型（可选）
-
-应用自己的后台流程要调一个代码里写定的模型、又不想自己保管密钥时，调 `POST /v1/model-calls/responses`，体 `{declaration, model, payload}`：运行时按配置页里接的供应商找连接，换上模型名、带上密钥转给上游的 Responses 接口，上游的答复原样交回。连接没配好时答 409 `model_unavailable`，原因说清去配置页改哪里。客户端库用 `model_call`，每次给一个长于 900 秒的上限；状态码与报错见 [conventions §20「模型调用」](../contract/conventions.md#模型调用)。视频后端的拆解与打标就这样调，见 [platform/video_breakdown/model.py](../server/src/iclip/platform/video_breakdown/model.py)。
-
-## 9. 插件包（可选）
-
-应用要给 agent 加自己的工具时写一个插件包：入口是 `PluginFactory`（[plugins/base.py](../runtime/src/agent_runtime/plugins/base.py)），运行时配置的 `plugins.factory` 指向它，`plugins.config` 原样交给它；插件约定见[架构「工具、插件与 MCP 服务」](architecture.md#工具插件与-mcp-服务)。插件要直接调写定的模型时，用绑定时 `PluginHost.model_connection` 在每次调用时查连接。插件要应用自己的服务时，照视频插件包的做法经 HTTP 调应用的内部接口：令牌从环境变量读，启动时核对应用开了哪些服务，见[架构「内部接口与视频插件包」](architecture.md#内部接口与视频插件包)。只用工具、不要应用服务的，可以改用管理员登记的 MCP 服务，不必写插件包。
+---
 
 ## 现有限制
 
-- agent 配置（agent、技能库、模型供应商、默认模型、MCP 服务）所有应用共用一份，`/v1/agents` 与 `/v1/titles` 也不分应用：每个应用看到同一份首页名册。
-- 一份运行时配置只接一个插件包，插件登记表所有应用共用；现在的运行时镜像装的是 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)（运行时加视频插件包），新应用的插件包要进这个部署包或另建一个。
-- `agent_runtime` 的表结构由视频后端的 Alembic 迁移维护（[server/migrations/](../server/migrations/versions/)），部署运行时就要跑这套迁移。
-- 运行时只跑一个进程，见[架构 §1](architecture.md#1-两个服务)。
+1. **后台配置与 Agent 名册全局共享**：目前技能库、模型供应商、默认模型、MCP 服务、Agent 配置以及 `GET /v1/agents` 返回的首页列表在同一个运行时实例内由所有接入应用共享，暂不支持按应用隔离配置。
+2. **单个运行时实例只挂载一个插件部署包**：当前的生产镜像打包的是 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)（运行时 + 视频插件包）；如果新应用需要编写自己的代码插件包，需要合并进该部署包或单独构建镜像。
+3. **数据库迁移与单进程限制**：`agent_runtime` 的数据库表结构目前统一由视频后端的 Alembic 迁移脚本维护；且运行时服务必须以单进程（单 Worker）模式运行（见[架构 §1](architecture.md#1-两个服务)）。

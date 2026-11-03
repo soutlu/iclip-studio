@@ -1,272 +1,192 @@
-# 本地启动与服务器部署
+# 本地启动与服务器部署指南
 
-本文讲怎样在本机跑起整套服务，以及怎样部署、升级服务器和修改线上配置。镜像的构建与上传见[发版与镜像发布](release.md)。
+本文说明如何在本地开发环境跑起整套服务，以及线上服务器的首次部署、日常升级和配置维护。Docker 镜像的构建与发布流程见[发版与镜像发布](release.md)。
 
 ## 本地启动
 
-1. 安装 Python、uv、Node.js、pnpm，准备一个可连接的 PostgreSQL 开发库，然后执行 `make setup`。
-   - 版本以 [server/pyproject.toml](../server/pyproject.toml)、[web/package.json](../web/package.json) 与各自的 lockfile 为准。
-   - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
-2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
-   - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[后端的配置与装配](architecture.md#后端的配置与装配)；缺少变量时，启动会列出变量名。
-   - `CREDENTIAL_ENCRYPTION_KEYS` 必填，生成方法见[服务器部署](#服务器部署)第 3 步；运行时服务用它解密模型供应商的密钥与 MCP 服务的地址、请求头，后端运行不读它。
-   - `RUNTIME_URL`（本地是 `http://localhost:7790`）与 `RUNTIME_APP_KEY` 必填，缺了后端起不来：消息、transcript、实时推送、工作区文件、配置页、开对话与首页名册都经运行时服务（见[调运行时](architecture.md#调运行时)）。`RUNTIME_APP_KEY` 不少于 32 个字符，运行时配置里应用 `video` 的 `key_env` 指向它。
-   - `RUNTIME_INTERNAL_TOKEN` 必填，不少于 32 个字符，缺了后端与运行时都起不来：运行时回调后端（开跑检查、运行开始、轮次开始）与插件调后端都带它。
-3. 把一份 `server/configs/config.yaml` 放到本机，再把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `server/configs/runtime.yaml`，里面的 `http://server:7788` 都换成 `http://localhost:7788`，按要用的插件打开对应的段。两份都不进仓库，改了要重启。模型、agent 与技能存在数据库里，不在文件里。
-4. 迁移数据库并启动后端与运行时服务：
+### 1. 安装基础工具与依赖
+- 安装 Python、uv、Node.js 和 pnpm（具体版本以 [server/pyproject.toml](../server/pyproject.toml)、[web/package.json](../web/package.json) 及各自的 lockfile 为准），并准备一个本地可连接的 PostgreSQL 数据库。
+- 如果需要使用视频抽帧出图（`shot_video`）、视频剪辑合成或参考视频拆解功能，请确保系统 `PATH` 中已安装 `ffmpeg` 和 `ffprobe`。
+- 在仓库根目录执行以下命令安装前后端依赖：
+  ```bash
+  make setup
+  ```
 
-   ```bash
-   make db-upgrade   # 已有数据的库先备份
-   make dev          # 后端 http://localhost:7788，运行时 http://localhost:7790，健康检查都是 /healthz
-   ```
+### 2. 配置环境变量（`.env`）与配置文件（`server/configs/`）
+- 在仓库根目录创建 `.env` 文件（所有配置项说明见[配置模型](../server/src/iclip/config/models.py)与[后端的配置与装配](architecture.md#后端的配置与装配)，缺少必填项时服务启动会直接报错并列出缺失的变量名）：
 
-   - `make dev` 先起后端，等它答了健康检查再起运行时服务（运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务），后端 60 秒内没答就连同后端一起退出，原因在上面后端的报错里；Ctrl-C 两个一起停。后端先起时连不上运行时不要紧，事件流会自己重连。
+  | 环境变量名 | 是否必填 | 用途与填写说明 |
+  |---|---|---|
+  | `DATABASE_URL` | 必填 | 本地开发数据库连接串（例如 `postgresql+asyncpg://...`） |
+  | `CREDENTIAL_ENCRYPTION_KEYS` | 必填 | 运行时用来加密模型 API Key 和 MCP 请求头的 Fernet 密钥。生成命令：<br>`uv run --project runtime python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+  | `RUNTIME_URL` | 必填 | 运行时服务地址，本地开发填 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)） |
+  | `RUNTIME_APP_KEY` | 必填 | 视频后端访问运行时的密钥（不少于 32 个字符，与 `runtime.yaml` 中 `apps.video.key_env` 对应） |
+  | `RUNTIME_INTERNAL_TOKEN` | 必填 | 运行时回调后端、以及视频插件调用后端内部接口共用的令牌（不少于 32 个字符） |
+  | `WHOLE_FILM_RENDER_URL` | 可选 | 本地需要调试「成片导出」功能时，设为 `http://localhost:8080` |
 
-   - 库里还没有 agent 时，首页没有可选的 agent。手上有旧的 `config.yaml`（带 `models` 段）、`agents/` 与 `skills/` 时，按[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)的「改后端配置」与「切换配置」两步跑一次切换命令（在 `server/` 下用 `uv run --env-file ../.env python -m scripts.import_agent_config …`）；否则用 root 账号在配置页里接入供应商、建技能与 agent 并发布。
-   - 带取帧、出图或拆解插件的 agent 要求对应的配置段与环境变量；只跑基础对话时，建一个不挂这些插件的 agent。
-   - 视频理解、参考视频拆解与资料库打标调的方舟模型，要按[服务器部署](#服务器部署)的「接入火山方舟」一步在配置页里接好。
+- 准备两份本地配置文件（均不入 Git 仓库，修改后需重启服务）：
+  1. `server/configs/config.yaml`：视频后端运行配置。
+  2. `server/configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制一份，将里面的 `http://server:7788` 全部替换成 `http://localhost:7788`，并按需开启要用到的插件配置段。
 
-5. 另开一个终端启动前端：
+### 3. 执行数据库迁移并启动后端服务
+```bash
+make db-upgrade   # 执行 Alembic 数据库迁移（如果库里已有重要数据请先备份）
+make dev          # 先启动视频后端 (:7788)，健康检查通过后自动启动运行时服务 (:7790)
+```
+- **初始化后台配置**：新库刚启动时还没有任何模型和 Agent。请使用 root 账号登录网页后台，在「配置页」中接入模型供应商、创建并发布技能与 Agent（如果需要用到视频理解、参考视频拆解或自动打标功能，请按下方[服务器部署](#服务器部署)第 6 步接入火山方舟）。
 
-   ```bash
-   cd web && pnpm dev   # http://localhost:3013，/api 经同源代理转到后端
-   ```
+### 4. 启动前端开发服务（另开终端）
+```bash
+cd web && pnpm dev   # 访问 http://localhost:3013，/api 请求会自动代理到本地后端
+```
+- 如果只想看纯前端界面、不连接真实后端，可以运行 `pnpm dev:mock`。更多启动参数见[前端启动参数](../web/README.md#启动参数)。
 
-   - 只看前端时用 `pnpm dev:mock`，不连后端。端口与代理目标见[前端启动参数](../web/README.md#启动参数)。
+### 5. 启动成片渲染服务（可选，另开终端）
+本地需要测试导出成片时（需同时配好 OSS 与媒体生成），新开一个终端启动 `render/` 服务：
+```bash
+cd render && RENDER_ALLOWED_MEDIA_HOSTS=<允许下载的素材域名> RENDER_REGISTRY_ROOT=../web/public/hyperframes pnpm dev
+```
+- 渲染服务依赖无头浏览器 `chrome-headless-shell`（默认从 `~/.cache/puppeteer` 查找，可通过环境变量 `PRODUCER_HEADLESS_SHELL_PATH` 指定路径，版本号见 [render/Dockerfile](../render/Dockerfile)），详情见 [config.ts](../render/src/config.ts)。
 
-6. 要在本机导出成片时（要求开着 OSS 与媒体生成），再开一个终端起渲染服务，并在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为 `http://localhost:8080`：
-
-   ```bash
-   cd render && RENDER_ALLOWED_MEDIA_HOSTS=<素材主机> RENDER_REGISTRY_ROOT=../web/public/hyperframes pnpm dev
-   ```
-
-   - 组件库用 `make setup`（或在 `web/` 运行 `pnpm hf:registry`）组装到 `web/public/hyperframes/` 的测试组件库；要看正式组件时按[发布组件库](#发布组件库)第 1 步组装到本机另一个目录，`RENDER_REGISTRY_ROOT` 指向它。Chrome 由 `PRODUCER_HEADLESS_SHELL_PATH` 指定，不设时用 `~/.cache/puppeteer` 里装好的 chrome-headless-shell（版本与 [render/Dockerfile](../render/Dockerfile) 里的一致，用 `npx @puppeteer/browsers install chrome-headless-shell@<版本> --path ~/.cache/puppeteer` 安装），PATH 中还要有 `ffmpeg` 和 `ffprobe`。各变量的含义见 [config.ts](../render/src/config.ts)。
+---
 
 ## 服务器部署
 
-单机部署用 [deploy/compose.yaml](../deploy/compose.yaml)，起后端、运行时服务、前端与成片渲染服务四个容器，镜像从 ACR 拉取。运行时服务的镜像 `iclip-runtime` 由 [runtime/Dockerfile](../runtime/Dockerfile) 以仓库根为上下文构建，装的是运行时与视频插件包。
+线上单机部署使用 [deploy/compose.yaml](../deploy/compose.yaml)，通过 Docker Compose 同时编排 `server`（视频后端）、`runtime`（Agent 运行时）、`web`（前端与 Nginx 反代）和 `render`（成片渲染）四个容器。注意：后端与运行时均固定运行 1 个 Worker 进程（原因见[两个服务](architecture.md#1-两个服务)）。
 
-1. 安装 NVIDIA 驱动与 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)。后端与渲染服务的容器都要申请显卡，申请不到就起不来。
-   - 没有显卡：删掉 compose.yaml 里 `server` 与 `render` 的 `deploy` 段，改用软件编解码与软件渲染。
-   - 确认后端用上了显卡：启动日志「本地视频编解码已选定」那一条的 `codec` 为 `nvenc`；渲染服务见[成片渲染服务](#成片渲染服务)。
-2. 在服务器现有的 Postgres 上，以管理员身份给本项目建一个独占的库和账号：
+### 1. 安装宿主机显卡驱动
+- 在宿主机安装 NVIDIA 显卡驱动与 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)（需包含 EGL / OpenGL 图形库，供 `render` 容器启用硬件渲染）。
+- 如果服务器没有独立显卡，请删掉 `compose.yaml` 中 `server` 和 `render` 下面的 `deploy` 显卡申请配置，服务会自动回退使用 CPU 软件编解码与软件渲染。
 
-   ```sql
-   CREATE ROLE iclip LOGIN PASSWORD '<密码>';
-   CREATE DATABASE iclip OWNER iclip;
-   ```
+### 2. 创建数据库与专属账号
+在服务器的 PostgreSQL 中为本项目创建独立的数据库和账号：
+```sql
+CREATE ROLE iclip LOGIN PASSWORD '<密码>';
+CREATE DATABASE iclip OWNER iclip;
+```
 
-3. 在服务器上建一个部署目录，放入：
-   - `compose.yaml`
-   - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
-   - `.env` 里的 `CREDENTIAL_ENCRYPTION_KEYS`：加密模型供应商密钥与 MCP 服务地址、请求头的 Fernet key，必填，缺失或格式不对运行时服务起不来。用 `docker compose run --rm server python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成一个，与数据库备份分开保管；丢了它，库里的密钥与 MCP 服务的地址、请求头都解不开，只能重新录入。换钥见[换密钥加密钥匙](#换密钥加密钥匙)。
-   - `configs/`：只读挂载，镜像里没有；模型、agent 与技能不在这里，部署好后在配置页里建
-     - `config.yaml`：后端的运行配置
-     - `runtime.yaml`：运行时服务的配置，从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制，视频后端这个应用必须叫 `video`（再接别的应用见[新应用接入运行时](runtime-apps.md)）；回调与内部接口的地址是 `http://server:7788`；要用的插件段（`video_breakdown`、`shot_video`）照样例打开；`video_breakdown` 要后端的 `config.yaml` 配 `iclip_studio` 段，`shot_video` 要后端配 `shot_video: {}` 与媒体生成，`video`（视频理解）不用配、总是登记，见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)
-   - `.env` 里运行时服务那几项（compose 只把这几项交给运行时容器）：
-     - `RUNTIME_URL=http://runtime:7790`，后端用
-     - `RUNTIME_APP_KEY`：不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `apps.video.key_env`）
-     - `RUNTIME_INTERNAL_TOKEN`：必填，不少于 32 个字符，后端与运行时同一个值（`runtime.yaml` 的 `hooks.token_env` 与 `plugins.config.internal_api.token_env`）
-     - `DATABASE_URL` 与 `CREDENTIAL_ENCRYPTION_KEYS` 两个服务共用
-   - `components/`：成片的组件库，web 与渲染服务只读挂载，镜像里没有；按[发布组件库](#发布组件库)放好，没有它编辑器读不到组件目录、导出失败
-   - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
-   - 高清版（超分）：在 `.env` 把 `VIDEO_ENHANCE_SUBMIT_URL` 设为上游超分接口的完整提交地址（与 `VIDEO_SUBMIT_URL` 同一台服务，查询地址与 key 共用），并在 `configs/config.yaml` 的 `media_generation.video` 下写 `enhance` 段（`model`、从高到低的 `resolutions`、`fps`，取值见[配置模型](../server/src/iclip/config/models.py)）；不设地址则高清版没有开通，设了地址却没写这一段启动报错。
-   - 成片导出：在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为渲染服务在 compose 网络里的地址（如 `http://render:8080`），要求同时配了 OSS 与媒体生成；不设则导出端点答「成片导出没有开通」。渲染服务的 `RENDER_ALLOWED_MEDIA_HOSTS` 要列出它会取素材的主机：本桶的内网 host `<OSS_BUCKET>.<OSS_INTERNAL_ENDPOINT 的 host>`（没配内网 endpoint 时是 `<OSS_BUCKET>.<OSS_ENDPOINT 的 host>`），以及上游视频服务发布出片的主机。
-4. 用有 DDL 权限的账号执行目标版本的数据库迁移。部署和服务启动都不会自动迁移。
-5. 登录镜像仓库，拉取并启动：
+### 3. 准备服务器部署目录
+在服务器上新建部署目录，放入以下文件与子目录：
+- `compose.yaml`：从仓库 `deploy/compose.yaml` 复制。
+- `.env`：配置镜像版本号 `IMAGE_TAG`、对外端口、`DATABASE_URL`、OSS 凭证以及运行时所需的四个核心变量（`RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`）。
+  - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
+  - 如果服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
+  - 如需开启视频超分（高清版），配置 `VIDEO_ENHANCE_SUBMIT_URL` 并在 `config.yaml` 中配置 `media_generation.video.enhance`；
+  - 如需开启成片导出，配置 `WHOLE_FILM_RENDER_URL=http://render:8080` 以及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）。
+- `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见[新应用接入运行时](runtime-apps.md)）。
+- `components/`：成片动态组件库挂载目录（镜像内不包含组件库，需按下方[发布组件库](#发布组件库)步骤上传）。
 
-   ```bash
-   docker login <ACR_REGISTRY>   # 与 .env 的 ACR_REGISTRY 相同
-   docker compose pull && docker compose up -d
-   curl http://localhost/api/healthz
-   ```
+### 4. 执行数据库迁移并启动容器
+```bash
+docker login <ACR_REGISTRY>
+docker compose run --rm server alembic upgrade head
+docker compose pull && docker compose up -d
+curl http://localhost/api/healthz
+```
 
-   - 启动顺序由 compose 定：后端答了健康检查才起运行时服务，因为运行时配了 `shot_video` 或 `video_breakdown` 时启动就向后端核对插件服务，取不到或后端没开对应服务都起不来（原因在 `docker compose logs runtime`）。后端日志里先有一条「运行时还没起来，起来后自动连上事件流」，运行时起来后出现「运行时事件流已连上」；启动 60 秒后仍连不上，后端每次重连失败记一条「运行时事件流自启动起一直连不上」的 warning。
+### 5. 设置首个 root 与管理员账号
+- **方式一（SSO 自动授权）**：在 `.env` 中设置 `ROOT_EMAIL=<管理员邮箱>`，该邮箱首次通过 SSO 登录时会自动获得 `root` 角色。
+- **方式二（命令行手动授权）**：
+  ```bash
+  # 授予最高管理员（包含 Agent 与模型供应商配置权限）：
+  docker compose run --rm server python -m scripts.admin set-roles <用户名> root,editor
+  # 授予日常管理员（仅管理用户与业务数据，不管理 Agent 与底层模型）：
+  docker compose run --rm server python -m scripts.admin set-roles <用户名> admin
+  ```
 
-6. 设置首个 root 账号：
-   - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。
-   - 用密码注册：执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
-   - 其他管理用户、但不用 Agent 配置页的人设为 admin：`docker compose run --rm server python -m scripts.admin set-roles <账号> admin`。`set-roles` 整份替换这个账号的角色。
-7. 接入火山方舟：运行时的 `video` 插件（视频理解）与后端的 `iclip_studio`（参考视频拆解、资料库打标）调的方舟模型写定在代码里，地址与密钥用配置页里接的火山方舟，运行时按调用现查。没接好时视频理解的工具答「要管理员启用这个模型」，拆解记为「没启用拆解模型」，打标记为「没启用打标模型」。用 root 账号在配置页的模型供应商里：
-   - 接入一个火山方舟，建一把密钥（方舟的 API Key；接口地址不填用默认的 `https://ark.cn-beijing.volces.com/api/v3`，走中转时填中转的地址，不带 `/responses`），它就是默认密钥；
-   - 加上两个模型并保持启用，类型 `llm`、接口 `responses`：视频理解用的 `doubao-seed-2-0-lite-260428`，拆解与打标用的 `doubao-seed-2-1-lite-260915`。
-   - 接了几个火山方舟时，用最早接入的那个启用了这个模型、又有默认密钥的。
+### 6. 在配置页接入火山方舟（用于视频理解、拆解与自动打标）
+视频理解插件（`video`）、参考视频拆解和资料库自动打标固定使用火山方舟模型。请使用 `root` 账号登录网页后台，在「模型供应商」中：
+1. 新增一个「火山方舟」供应商并保持启用，添加一把默认密钥（填入方舟 API Key，接口地址留空即使用默认地址 `https://ark.cn-beijing.volces.com/api/v3`）。
+2. 在该供应商下添加并启用以下两个 `llm` 模型（接口协议均选择 `responses`）：
+   - `doubao-seed-2-0-lite-260428`（供视频理解使用）
+   - `doubao-seed-2-1-lite-260915`（供参考视频拆解与资料库打标使用）
 
-运行时服务直接连模型供应商：接 Google Gemini 或 OpenRouter 时，服务器要能直连 Google 或 OpenRouter 的官方地址，否则在密钥里填一个服务器连得上的接口地址；Gemini 的接口地址要讲 Gemini 原生接口，OpenAI 兼容的中转不行。
+---
 
-后端与运行时服务各只跑 1 个 worker。实时投影、事件分发与浏览器订阅都存在进程内存里，增加 worker 前先看[两个服务](architecture.md#1-两个服务)。
+## 运维与升级操作
 
 ### 成片渲染服务
 
-`render` 容器只在 compose 网络里监听 8080，不对外开端口，后端经 `WHOLE_FILM_RENDER_URL=http://render:8080` 调它（职责见[架构](architecture.md#成片渲染服务)）。
-
-- **素材主机**：`.env` 里的 `RENDER_ALLOWED_MEDIA_HOSTS`（逗号分隔，带端口就写上端口）由 compose 传给它，取值见上面第 3 步。不设时容器启动即退出，日志是「配置不完整」；导出请求里的素材主机不在名单里答 400 `media-host-not-allowed`。
-- **显卡**：compose 给它申请 `gpu, compute, utility, video, graphics` 五项能力，Chrome 用显卡渲染要 `graphics`，NVENC 编码要 `video`。确认用上了显卡：`docker compose exec render node -e "fetch('http://127.0.0.1:8080/health').then(r=>r.text()).then(console.log)"` 的 `gpu` 为 `hardware`，启动日志「渲染环境」那一条的 `gpu` 为 `hardware`、`videoEncoder` 为 `nvenc`。是 `software` 时另有一条 warning「浏览器使用软件渲染」，渲染照常，只是更慢。
-  - 宿主机须安装与 NVIDIA 驱动版本一致的 EGL / OpenGL 图形用户态库；只有 CUDA 计算库时，NVENC 可用，但 Chrome 不能使用 GPU。使用 NVIDIA CDI 时，补装图形库后须重新生成 CDI 设备清单，再重建 `render` 容器，让新增的驱动库挂入容器。
-- **字体**：组件用的网页字体只用组件库里的字体文件，西文用原字体、中文用 Noto Sans SC，与编辑器预览一致；镜像另带 Noto CJK 兜底系统字体。渲染期间不从外网取字体。
-- **资源**：Chrome 要共享内存，compose 设了 `shm_size: 2gb`；临时项目目录在卷 `render-tmp`，每次导出结束即删。导出排队、进度只在内存里，重启容器后进行中的导出记为失败（`RENDER_LOST`），用户要重新导出；已完成的成片在桶里，不受影响。
-- **日志**：`docker compose logs render`，每行一个 JSON，`event` 是中文短句；一次导出按 `exportId` 串起「导出已排队」到「导出完成」或「导出失败」。
-- **上线核对**：部署或升级后导出一条片尾用 `logo-brand-close`、字标写中文的成片，与编辑器预览对比片尾字标的大小和位置。这类组件在自己的脚本里量字宽来定字号，HyperFrames 只在运行组件脚本前等正在加载的字体（最多 5 秒），量的时候字形若还没到位，字标大小就与预览不同；Apple Silicon 上模拟运行 amd64 镜像时字标小约 6%，原生运行的导出与预览一致。差得明显时检查容器的 CPU 与显卡（`/health` 的 `gpu`）。
+`render` 容器仅在 Docker 内部网络监听 `8080` 端口（机制见[架构：成片渲染服务](architecture.md#成片渲染服务)）：
+- **确认显卡硬件加速已生效**：运行 `docker compose exec render node -e "fetch('http://127.0.0.1:8080/health').then(r=>r.text()).then(console.log)"`，返回结果中的 `gpu` 应为 `hardware`，且容器启动日志中的 `videoEncoder` 应为 `nvenc`。
+- **内存与字体**：`compose.yaml` 为其分配了 `shm_size: 2gb` 共享内存与临时卷 `render-tmp`；渲染期间只使用组件库自带字体与镜像内置的 Noto CJK 字体，禁止从外网下载字体。
+- **上线验收**：每次部署或升级后，建议导出一条带有中文 `logo-brand-close` 片尾的成片，对比导出的片尾字标大小是否与网页编辑器预览一致。
 
 ### 发布组件库
 
-成片的组件库（组件目录、组件、运行时、字体与封面）在私有组件库目录里维护，不随镜像发版；部署目录的 `components/` 挂给 web（站点上的 `/hyperframes/`）与渲染服务（`RENDER_REGISTRY_ROOT`）。增减组件只发布组件库，不用重启容器。服务器上不需要 git、node 或任何组装步骤。
+成片组件库在独立的私有仓库维护，通过挂载部署目录的 `components/` 提供给前端和渲染服务，**更新组件库无需重启任何容器**：
 
-1. 在本机组装：在公开仓库检出的 `web/` 下（先 `pnpm install`）运行
+```bash
+# 1. 在本机 web/ 目录下打包组件库（生成 catalog.json 和 <版本号>/ 文件夹）
+pnpm hf:registry --library <私有组件库本地路径> --out <本机输出目录>
 
-   ```bash
-   pnpm hf:registry --library <私有组件库目录> --out <本机输出目录>
-   ```
+# 2. 先把新增的 <版本号>/ 文件夹上传到服务器
+rsync -a <本机输出目录>/<版本号> <服务器>:<部署目录>/components/
 
-   输出 `catalog.json`（组件目录，带版本号）与 `<版本号>/`（这一版的全部文件）。版本号是全部输入的摘要，输入不变时版本号不变。
-
-2. 先上传版本目录：
-
-   ```bash
-   rsync -a <本机输出目录>/<版本号> <服务器>:<部署目录>/components/
-   ```
-
-3. 再上传 `catalog.json`：
-
-   ```bash
-   rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components/
-   ```
-
-   rsync 默认先写临时文件再改名，这一步是原子替换；不要加 `--inplace`。compose 挂载的是整个 `components/` 目录，改名替换后容器里立即看到新文件。
-
-`catalog.json` 不缓存，编辑器重新打开即读到新目录；版本目录长期缓存，所以一个版本目录上传后不再改动，旧版本目录留着给还开着的编辑器用，不再需要时手动删除。渲染服务每次受理导出时读一次 `catalog.json`。
+# 3. 最后上传并原子替换 catalog.json（注意：不要加 --inplace 参数）
+rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components/
+```
 
 ### 升级
 
-从 v0.15 升级时不走下面的步骤，按[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)做。
+> 如果是从 v0.15（运行时还未独立拆分的旧版本）升级，请跳过本节，直接按文末的[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)执行。
 
-1. 新版本有表结构变化时，先执行该版本的数据库迁移。
-2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤时补做。compose.yaml 新挂载了部署目录里的目录时，先把目录放好再启动：第一次升级到挂载 `components/` 的版本前，先按[发布组件库](#发布组件库)放好组件库。
-3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
-4. 升级到快照消息按引用存的版本后，内联整段历史的旧快照行照常读取，不必处理，存法见[运行时的持久化](architecture.md#运行时的持久化)。要回收旧行占的空间，可在停机窗口执行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 改写旧行，再在库里执行 `VACUUM FULL agent_runtime.snapshots`（期间锁表）；该版本附带手动执行的历史数据迁移时，改写放在那次迁移之后。
-5. 升级到生成记录把产出并进 `output` 的版本（迁移 0039）时，先停后端再执行迁移：旧版本的代码读不了新的表结构。迁移完成后，在同一停机窗口里在库里执行 `VACUUM FULL iclip.generation_jobs`（期间锁表），回收迁移整表更新留下的旧行，实测每百万行十几秒；再按第 3 步启动新版本。
+1. 如果新版本包含数据库表结构变更，先执行迁移：
+   ```bash
+   docker compose run --rm server alembic upgrade head
+   ```
+2. 对照新版本的 [compose.yaml](../deploy/compose.yaml) 和[配置模型](../server/src/iclip/config/models.py)，检查是否需要在 `.env` 或配置文件中补充新变量。
+3. 修改 `.env` 中的 `IMAGE_TAG` 为新版本号，拉取新镜像并重启：
+   ```bash
+   docker compose pull && docker compose up -d
+   ```
+4. **可选的数据库空间回收（针对特定历史版本）**：
+   - 升级到「快照消息按哈希去重存储」的版本后（见[运行时的持久化](architecture.md#运行时的持久化)），可在停机窗口运行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 转换旧快照，随后在数据库执行 `VACUUM FULL agent_runtime.snapshots` 回收磁盘空间。
+   - 升级到迁移 `0039`（生成任务结果合并进 `output` 列）时，需先停掉后端服务再跑迁移，并在同一停机窗口执行 `VACUUM FULL iclip.generation_jobs`。
+
+### 修改线上配置
+
+- **修改模型、Agent、技能库与 MCP 服务**：直接在网页后台修改并保存/发布，下一次对话运行会自动加载最新配置，无需重启容器（已有对话锁定的 Agent 版本不受影响，见[对话固定版本与每次运行装配](architecture.md#对话固定版本与每次运行装配)）。
+- **修改 `configs/*.yaml` 或 `.env`**：修改后必须执行 `docker compose up -d` 重新创建容器才能生效（单纯执行 `docker compose restart` 不会重新读取 `.env`）。
+
+### 换密钥加密钥匙
+
+环境变量 `CREDENTIAL_ENCRYPTION_KEYS` 支持用逗号分隔配置多把 Fernet 密钥（系统总是用**第一把密钥**加密新数据，并用**所有密钥**尝试解密旧数据），因此可以在**不停服**的情况下轮换密钥：
+
+1. 生成一把新的 Fernet 密钥，拼在 `.env` 中 `CREDENTIAL_ENCRYPTION_KEYS` 现有值的**最前面**（用逗号隔开），然后执行 `docker compose up -d`。
+2. 运行以下命令，将数据库里所有的模型密钥和 MCP 服务配置用新密钥重新加密一遍：
+   ```bash
+   docker compose run --rm runtime python -m agent_runtime.admin rotate-credential-keys
+   ```
+3. 从 `.env` 的 `CREDENTIAL_ENCRYPTION_KEYS` 中删掉旧密钥，再次执行 `docker compose up -d` 完成轮换。
+
+---
+
 ### 升级到运行时独立部署的版本
 
-适用于 v0.15 的部署（数据库在迁移 0039）。这个版本起 agent 在运行时服务（`runtime` 容器）里跑；模型、agent 与技能存在数据库里、在配置页里改，部署目录的 `agents/`、`skills/` 不再挂载。后端与运行时之间的内部接口一起变了形状，两个镜像必须同一版本，compose 用同一个 `IMAGE_TAG` 拉取它们。下面的步骤在一个停机窗口里按顺序做完，命令都在部署目录执行；先在生产库的副本上演练一遍，记下「迁移数据库」那一步的耗时。
+> **历史版本迁移归档（仅适用于从 v0.15 / 数据库迁移 0039 升级）**：从该版本起，Agent 拆分为独立的 `runtime` 容器运行，且模型、Agent 与技能配置从本地 YAML 文件迁入数据库管理。请在停机维护窗口内按顺序执行。
 
-1. **停服务、备份**：
-
+1. **停服并备份数据与配置**：
    ```bash
    docker compose stop
    pg_dump --format=custom --file=<备份目录>/iclip.dump --dbname='postgresql://iclip:<密码>@<库主机>:<端口>/iclip'
    cp -a compose.yaml .env configs agents skills <备份目录>/
    cp configs/config.yaml configs/config.old.yaml
    ```
-
-   - 连接串是 `.env` 的 `DATABASE_URL` 去掉 `+asyncpg`，主机写宿主机连得上的地址；`pg_dump` 的版本不低于库的版本。
-   - `configs/config.old.yaml` 留给「切换配置」那一步读旧的 `models` 段与 `conversations.title_model`，之后只改 `configs/config.yaml`。
-2. **换 compose 与镜像**：换上新版本的 [compose.yaml](../deploy/compose.yaml)（多了 `runtime` 服务，`server` 不再挂 `agents/`、`skills/`），把 `.env` 的 `IMAGE_TAG` 改成新版本，执行 `docker compose pull`。这时报运行时那几项 `variable is not set` 不要紧，下一步补上。
-3. **补 `.env`**：先补运行时服务那几项，再生成加密钥匙，后者的命令用新镜像：
-   - `RUNTIME_URL=http://runtime:7790`。
-   - `RUNTIME_APP_KEY` 与 `RUNTIME_INTERNAL_TOKEN`：各用 `openssl rand -hex 32` 生成一个，两个取不同的值；不少于 32 个字符，后端与运行时都从这里读。
-   - `CREDENTIAL_ENCRYPTION_KEYS`：用[服务器部署](#服务器部署)第 3 步的命令生成，与数据库备份分开保管。
-   - `VIDEO_UNDERSTANDING_URL` 与 `VIDEO_UNDERSTANDING_API_KEY` 不再有服务读：把两个值记到备份目录（「接入火山方舟」那一步要填），再从 `.env` 删掉。
-   - 旧 `models` 段各项 `api_key_env` 指向的变量留着，「切换配置」要读；切换后这些密钥加密存在库里。
-
-   补完执行 `docker compose config -q`，不再报 `variable is not set` 就齐了。
-4. **迁移数据库**：
-
+2. **更新 `compose.yaml` 与 `.env`**：换上新版 `compose.yaml`，修改 `.env` 中的 `IMAGE_TAG` 并执行 `docker compose pull`。在 `.env` 中补充 `RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN` 和 `CREDENTIAL_ENCRYPTION_KEYS`，同时记下并删掉废弃的 `VIDEO_UNDERSTANDING_URL` 与 `VIDEO_UNDERSTANDING_API_KEY`。
+3. **执行数据库迁移**：
    ```bash
    docker compose run --rm server alembic upgrade head
-   docker compose run --rm server alembic current   # 输出带 (head)
    ```
-
-   - 用 `.env` 的 `DATABASE_URL` 连库，本项目的账号是库的属主，有 DDL 权限。
-   - 迁移 0046 在事务里给 `agent_runtime` 的 `events`、`agent_jobs`、`conversation_usage` 建索引，建的时候这几张表的写入要等，耗时随 `events` 的行数增长，所以只在停机窗口里跑。
-   - 现有对话的运行时会话由「切换配置」写入，迁移不回填。
-5. **改后端配置**：从 `configs/config.yaml` 删掉 `models`、`conversations`（整段，`compaction` 与 `title_model` 都在里面）、`agent_runs`、`video` 四段，`shot_video` 段只留 `shot_video: {}`（原来没有这一段就不加），`iclip_studio` 段删掉 `breakdown_model`（只剩它时写成 `iclip_studio: {}`；原来 `.env` 没设 `VIDEO_UNDERSTANDING_URL`、拆解没开时整段删掉），其余段不动。还留着这些时后端启动失败。删掉的值在 `config.old.yaml` 里，下一步搬进运行时配置，`models` 与 `title_model` 由「切换配置」写进库。
-6. **建运行时配置**：把 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制成 `configs/runtime.yaml`。`apps.video`（`admin: true`，三个回调指向 `http://server:7788`）与 `plugins.config.internal_api` 照样例不改，再按旧配置填下表；旧配置里没有的就不写，形状以样例开头列的两个文件为准。
-
-   | 旧配置（`config.old.yaml` 与 `.env`） | 写进 `configs/runtime.yaml` |
-   |---|---|
-   | `agent_runs` 段 | `agent_runs`，字段同名 |
-   | `conversations.compaction` | `compaction`，字段同名 |
-   | `video` 段 | 不写，整段删掉：视频理解总是登记，模型、思考档位与帧率写定在代码里，连接在「接入火山方舟」那一步接；`runtime.yaml` 写了 `video` 运行时起不来 |
-   | `iclip_studio` 段，且 `.env` 设了 `VIDEO_UNDERSTANDING_URL` | `plugins.config.video_breakdown: {}` |
-   | `shot_video` 段 | `plugins.config.shot_video`：出图重试的字段（`poll_interval_seconds`、`dev_attempts`、`pro_attempts`、`backoff_seconds`、`backoff_factor`、`job_timeout_seconds`）同名，没改过就写 `{}` |
-   | `.env` 设了 `OSS_INTERNAL_ENDPOINT` | `plugins.config.oss`：`public_url_base` 是 `OSS_PUBLIC_URL_BASE` 的值，`internal_url_base` 是 `<内网 endpoint 的协议>://<OSS_BUCKET>.<内网 endpoint 的 host>` |
-
-   agent 用到的插件这里没登记时，「切换配置」的发布检查会点名。
-7. **只起后端**：
-
+4. **拆分新旧配置文件**：
+   - 从 `configs/config.yaml` 中删掉 `models`、`conversations`、`agent_runs`、`video` 四段；`shot_video` 段简化为 `shot_video: {}`；`iclip_studio` 段删掉 `breakdown_model`。
+   - 从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `configs/runtime.yaml`，将原配置中的 `agent_runs`、`conversations.compaction`（改名为 `compaction`）、`shot_video`（移入 `plugins.config.shot_video`）、`video_breakdown` 与 `oss` 填进去。
+5. **启动后端并运行一键迁移脚本**：
    ```bash
    docker compose up -d server
-   docker compose ps server   # STATUS 带 (healthy)
-   ```
-
-   - 配置写错时原因在 `docker compose logs server`。
-   - 运行时这时还没起：日志先有一条「运行时还没起来，起来后自动连上事件流」，60 秒后每次重连失败记一条「运行时事件流自启动起一直连不上，关掉全部订阅连接后重连」，到「起全部服务」为止都是正常的。
-8. **切换配置**：先试一遍。新 compose 不挂 `agents/`、`skills/`，这里临时挂进去：
-
-   ```bash
+   # 先带 --dry-run 预检，确认无误后去掉 --dry-run 正式将旧配置文件导入数据库：
    docker compose run --rm -v ./agents:/app/agents:ro -v ./skills:/app/skills:ro server \
      python -m scripts.import_agent_config --runtime-config configs/runtime.yaml \
      --legacy-config configs/config.old.yaml --agents agents/agents.yaml --skills skills --dry-run
    ```
-
-   - 它把旧的 `models` 段与 `conversations.title_model`（`--legacy-config`）、`agents.yaml`（`--agents`）与技能目录（`--skills`）写进库，每个 agent 与技能发布成 v1，再给每段现有对话开一个固定在它的 agent 的 v1 上的会话。插件登记表按 `--runtime-config` 建，与运行时服务启动时同一份；连库与后端配置照常读 `.env` 与 `configs/config.yaml`。
-   - 打印会写入的供应商、密钥、模型、默认模型、技能、agent 与对话会话数，最后一行是「--dry-run：以上内容没有写入」。新建密钥会真的连一次模型供应商，服务器要连得上它们。
-   - 有问题时打印「切换没有进行，什么都没写：」和原因，改好再试，检查清单见 [import_agent_config.py](../server/scripts/import_agent_config.py) 的文件头。库里要有一个在用的 root 账号，记为这些配置的操作人，没有就先用 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor` 设一个；报「按运行时配置打开插件包失败」时，查后端是否 healthy、`RUNTIME_INTERNAL_TOKEN` 与 `runtime.yaml` 里的是否一致。
-   - 记下「对话会话 N 个，其中 agent 已不在、不可用的 M 个」：这 M 段对话的 agent 已不在 `agents.yaml` 里，切换后能读历史，发消息答 409。
-
-   去掉 `--dry-run` 正式运行，最后一行是「已写入」。全部在一个事务里，失败整体回滚，改好可以重跑。
-9. **起全部服务**：
-
-   ```bash
-   docker compose up -d
-   curl http://localhost/api/healthz
-   ```
-
-   - 后端日志出现「运行时事件流已连上」；运行时起不来时原因在 `docker compose logs runtime`。
-   - 还开着旧页面的浏览器标签要刷新一次：页面与后端的接口和实时推送一起变了。
-10. **接入火山方舟**：原来开着视频理解（旧配置的 `video` 段）或拆解（`iclip_studio` 段）时，按[服务器部署](#服务器部署)第 7 步在配置页里接：密钥填记下的 `VIDEO_UNDERSTANDING_API_KEY`；记下的 `VIDEO_UNDERSTANDING_URL` 去掉末尾的 `/responses` 后不是默认地址时，把它填进接口地址。
-11. **核对**：
-    - 首页列着原来上首页的 agent。
-    - 每个 agent 各开一段新对话发一条消息，能答复，标题自动起好。
-    - 切换前就有的对话能看到历史、能接着聊；agent 已不在的那 M 段发消息答 409，是预期的。
-    - 运行固定在 v1：在库里执行下面的查询，切换后的运行 `version` 都是 `1`。
-
-      ```sql
-      SELECT r.started_at, r.metadata::jsonb ->> 'agent_id' AS agent, v.version
-      FROM agent_runtime.runs r
-      JOIN agent_runtime.agent_versions v ON v.id = (r.metadata::jsonb ->> 'agent_version_id')::uuid
-      WHERE r.started_at > now() - interval '1 hour'
-      ORDER BY r.started_at DESC;
-      ```
-
-    - 用 root 账号打开配置页：技能库、模型供应商与 agent 列着切换进来的内容；MCP 服务是空的，切换不建。
-    - 在配置页对一个 agent 开测试预览发一条消息：能答复，对话列表里没有这段预览。
-    - 挂了取帧出图（`shot_video`）、视频理解（`video`）或拆解（`video_breakdown`）的 agent，各让它调一次对应的工具。
-12. **清理**：核对无误后删掉部署目录里的 `agents/`、`skills/` 与 `configs/config.old.yaml`。备份目录留到不再回滚为止。
-
-回滚：备份之后写进库的内容（新对话、生成记录等）都会丢，只在这个窗口里或刚切换后用。先用新版本的 compose 执行 `docker compose down`（连运行时容器一起删掉），再把备份目录里的 `compose.yaml`、`.env`、`configs/`、`agents/`、`skills/` 放回部署目录。然后以管理员身份重建库：
-
-```sql
-DROP DATABASE iclip;
-CREATE DATABASE iclip OWNER iclip;
-```
-
-再恢复备份并启动旧版本，浏览器标签再刷新一次：
-
-```bash
-pg_restore --dbname='postgresql://iclip:<密码>@<库主机>:<端口>/iclip' <备份目录>/iclip.dump
-docker compose up -d
-```
-
-### 改配置
-
-- 模型、agent 与技能在配置页里改：发布 agent、发布技能、改密钥或模型后，下一次运行自动用上新的，不用重启；已有的对话固定在开对话时的 agent 版本上，见[对话固定版本与每次运行装配](architecture.md#对话固定版本与每次运行装配)。
-- `configs/config.yaml` 与 `.env` 改了要执行 `docker compose up -d`（`restart` 不会重读 `.env`），配置写错时原因在 `docker compose logs server`。
-
-### 换密钥加密钥匙
-
-`CREDENTIAL_ENCRYPTION_KEYS` 是逗号分隔的多个 Fernet key：第一个用来加密，全部用来解密。换钥不停服：
-
-1. 生成一个新 key（命令见[服务器部署](#服务器部署)第 3 步），加在 `.env` 里这个变量的最前面，执行 `docker compose up -d`。此后新存的密钥用新 key，旧的照读。
-2. 执行 `docker compose run --rm runtime python -m agent_runtime.admin rotate-credential-keys`，把库里全部密钥的机密字段与全部 MCP 服务的地址、请求头改用新 key 加密，命令会分别打印改了几把密钥、几个 MCP 服务。
-3. 从变量里去掉旧 key，再执行 `docker compose up -d`。
+6. **启动全部容器并验证**：执行 `docker compose up -d`，按上方[服务器部署](#服务器部署)第 6 步在后台接入火山方舟，验证新旧对话收发消息与测试预览一切正常后，即可删掉部署目录下不再使用的 `agents/`、`skills/` 与 `configs/config.old.yaml`。
