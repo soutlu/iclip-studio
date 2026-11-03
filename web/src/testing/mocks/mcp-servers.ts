@@ -15,7 +15,7 @@ import type {
   McpServerUpdateIn,
 } from '@/shared/api/generated/types.gen'
 
-type Tool = { name: string; description: string | null }
+type Tool = { name: string; title: string | null; description: string | null }
 
 type MockServer = Omit<McpServerOut, 'headers' | 'usedBy'> & {
   headers: { name: string; value: string }[]
@@ -25,18 +25,18 @@ const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOSt
 const ADMIN = '00000000-0000-4000-8000-000100000001'
 
 const FEISHU_TOOLS: Tool[] = [
-  { description: '按关键词查找团队资料', name: 'search' },
-  { description: '获取文档正文与结构', name: 'read' },
-  { description: '查看文件夹中的文档', name: 'folders' },
-  { description: '了解文档中的讨论与反馈', name: 'comments' },
-  { description: '将创作方案整理为新文档', name: 'create' },
-  { description: '修改已有文档的内容', name: 'update' },
+  { description: '按关键词查找团队资料', name: 'search', title: '搜索文档' },
+  { description: '获取文档正文与结构', name: 'read', title: '读取文档' },
+  { description: '查看文件夹中的文档', name: 'folders', title: null },
+  { description: '了解文档中的讨论与反馈', name: 'comments', title: null },
+  { description: '将创作方案整理为新文档', name: 'create', title: null },
+  { description: '修改已有文档的内容', name: 'update', title: null },
 ]
 
 /** 新登记的服务试连通了时发现的工具。 */
 const DEFAULT_TOOLS: Tool[] = [
-  { description: '按关键词检索内容', name: 'search' },
-  { description: '获取单条内容详情', name: 'read' },
+  { description: '按关键词检索内容', name: 'search', title: null },
+  { description: '获取单条内容详情', name: 'read', title: null },
 ]
 
 const server = (
@@ -79,9 +79,9 @@ const seed = (): MockServer[] => [
     },
     { elapsedMs: 96, ok: true, reason: null },
     [
-      { description: '按主题与画面内容检索素材', name: 'search_images' },
-      { description: '了解图片尺寸、来源与说明', name: 'image_details' },
-      { description: '查看按主题整理的参考素材', name: 'collections' },
+      { description: '按主题与画面内容检索素材', name: 'search_images', title: null },
+      { description: '了解图片尺寸、来源与说明', name: 'image_details', title: null },
+      { description: '查看按主题整理的参考素材', name: 'collections', title: null },
     ],
   ),
   server(
@@ -95,11 +95,11 @@ const seed = (): MockServer[] => [
     },
     { elapsedMs: 3000, ok: false, reason: '连不上 brand-assets.invalid：域名解析失败' },
     [
-      { description: '获取色彩、字体与版式规则', name: 'guidelines' },
-      { description: '按场景取用 Logo 文件', name: 'logos' },
-      { description: '检索产品包装与陈列图', name: 'packshots' },
-      { description: '取用授权字体文件', name: 'fonts' },
-      { description: '检索可商用的品牌配乐', name: 'music' },
+      { description: '获取色彩、字体与版式规则', name: 'guidelines', title: null },
+      { description: '按场景取用 Logo 文件', name: 'logos', title: null },
+      { description: '检索产品包装与陈列图', name: 'packshots', title: null },
+      { description: '取用授权字体文件', name: 'fonts', title: null },
+      { description: '检索可商用的品牌配乐', name: 'music', title: null },
     ],
   ),
   // 刚登记、还没测试过：没有发现的工具，挂上后发布会被拦下。

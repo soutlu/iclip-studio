@@ -698,8 +698,16 @@ function McpServerForm({
                   key={tool.name}
                 >
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-medium text-on-surface" id={`${id}-name`}>
-                      {tool.name}
+                    {/* 服务给了显示名就先写显示名（对话里工具卡上的就是它），工具名跟在后面。 */}
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate font-medium text-on-surface" id={`${id}-name`}>
+                        {tool.title ?? tool.name}
+                      </span>
+                      {tool.title === null ? null : (
+                        <span className="shrink-0 text-label text-on-surface-faint">
+                          {tool.name}
+                        </span>
+                      )}
                     </span>
                     {tool.description === null || tool.description === '' ? null : (
                       <span

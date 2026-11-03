@@ -107,7 +107,7 @@ def _headers_json(headers: Sequence[McpHeader]) -> list[dict[str, str]]:
 
 
 def _tools_json(tools: Sequence[McpTool]) -> list[dict[str, str | None]]:
-    return [{"name": one.name, "description": one.description} for one in tools]
+    return [{"name": one.name, "title": one.title, "description": one.description} for one in tools]
 
 
 def _record(row: RowMapping) -> McpServerRecord:
@@ -132,9 +132,13 @@ def _record(row: RowMapping) -> McpServerRecord:
             reason=row["check_reason"],
             checked_at=checked_at,
         ),
+        # 没有显示名这一项之前试连存下的工具没有 ``title``，下次试连才补上。
         tools=None
         if tools is None
-        else tuple(McpTool(name=one["name"], description=one["description"]) for one in tools),
+        else tuple(
+            McpTool(name=one["name"], title=one.get("title"), description=one["description"])
+            for one in tools
+        ),
         created_by=row["created_by"],
         updated_by=row["updated_by"],
         created_at=row["created_at"],

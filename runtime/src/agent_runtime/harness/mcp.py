@@ -37,9 +37,10 @@ class McpConnection:
 
 @dataclass(frozen=True, slots=True)
 class McpToolInfo:
-    """服务交出的一个工具。"""
+    """服务交出的一个工具。``title`` 是给人看的显示名，取工具的 ``title``，没有再取 ``annotations.title``。"""
 
     name: str
+    title: str | None
     description: str | None
 
 
@@ -90,7 +91,14 @@ async def probe_mcp(connection: McpConnection) -> McpProbeOutcome:
         ok=True,
         elapsed_ms=_elapsed_ms(started),
         reason=None,
-        tools=tuple(McpToolInfo(name=one.name, description=one.description) for one in listed),
+        tools=tuple(
+            McpToolInfo(
+                name=one.name,
+                title=one.title or (one.annotations and one.annotations.title) or None,
+                description=one.description,
+            )
+            for one in listed
+        ),
     )
 
 

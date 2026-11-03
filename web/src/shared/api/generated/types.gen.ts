@@ -3618,6 +3618,10 @@ export type McpToolOut = {
    * Name
    */
   name: string
+  /**
+   * Title
+   */
+  title: string | null
 }
 
 /**

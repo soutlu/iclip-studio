@@ -1,7 +1,7 @@
 """集成测试用的本地 MCP 服务：用官方 MCP SDK 的服务端在进程里起两个 uvicorn，只监听 127.0.0.1，不出网。
 
 一个走 Streamable HTTP（``…/mcp``），一个走 SSE（``…/sse``），同一组工具：``add``、``shout``、``divide``
-（除以 0 时报错）。两个都要求 ``Authorization: Bearer <TOKEN>``，不对答 401。``calls`` 记下服务端真收到的
+（除以 0 时报错）；``add`` 的显示名给在 ``title``，``shout`` 的给在 ``annotations.title``，``divide`` 没给。两个都要求 ``Authorization: Bearer <TOKEN>``，不对答 401。``calls`` 记下服务端真收到的
 每次工具调用。"""
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typing import Any, Final
 import uvicorn
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -23,6 +24,9 @@ TOKEN: Final = "Bearer mcp-test-token-0123456789"
 """本地 MCP 服务认的请求头值；测试检查它从不以明文出现在答复里。"""
 
 TOOLS: Final = ("add", "shout", "divide")
+
+TITLES: Final = {"add": "加法", "shout": "转大写", "divide": None}
+"""各工具的显示名。"""
 
 
 @dataclass
@@ -60,13 +64,13 @@ def free_port() -> int:
 def _server(local: LocalMcp) -> MCPServer:
     server = MCPServer("calc")
 
-    @server.tool()
+    @server.tool(title=TITLES["add"])
     def add(a: int, b: int) -> int:
         """Add two integers."""
         local.calls.append(("add", {"a": a, "b": b}))
         return a + b
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(title=TITLES["shout"]))
     def shout(text: str) -> str:
         """Upper-case the text."""
         local.calls.append(("shout", {"text": text}))

@@ -383,7 +383,9 @@ describe('MCP 服务 选工具', () => {
     const panel = await openCard(user, '飞书文档')
     await user.click(within(panel).getByRole('tab', { name: '工具，已启用 2 / 6 个' }))
     const toolSwitch = (name: string) => within(panel).getByRole('switch', { name })
-    expect(toolSwitch('search')).toBeChecked()
+    // 有显示名的工具先写显示名、后跟工具名；没有的只写工具名。
+    expect(toolSwitch('搜索文档')).toBeChecked()
+    expect(within(panel).getByText('search')).toBeVisible()
     expect(toolSwitch('folders')).not.toBeChecked()
 
     await user.click(toolSwitch('folders'))
@@ -392,11 +394,11 @@ describe('MCP 服务 选工具', () => {
       within(mcpSection()).getByRole('button', { name: '配置 MCP 服务：飞书文档' }),
     ).toHaveTextContent('3/6')
 
-    await user.click(toolSwitch('read'))
+    await user.click(toolSwitch('读取文档'))
     await user.click(toolSwitch('folders'))
-    expect(toolSwitch('search')).toHaveAttribute('aria-disabled', 'true')
-    await user.click(toolSwitch('search'))
-    expect(toolSwitch('search')).toBeChecked()
+    expect(toolSwitch('搜索文档')).toHaveAttribute('aria-disabled', 'true')
+    await user.click(toolSwitch('搜索文档'))
+    expect(toolSwitch('搜索文档')).toBeChecked()
 
     await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
     await waitFor(() => expect(puts).toHaveLength(1))

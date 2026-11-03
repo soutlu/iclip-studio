@@ -34,7 +34,11 @@ BY = uuid.uuid4()
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 URL = "https://mcp.example.com/mcp"
 CIPHER = CredentialCipher([Fernet.generate_key().decode()])
-TOOLS = (McpTool(name="search", description="搜索云文档。"), McpTool(name="read", description=None))
+# 名册记的是显示名，不是说明：read 有说明没显示名，在名册里是 None。
+TOOLS = (
+    McpTool(name="search", title="检索文档", description="搜索云文档。"),
+    McpTool(name="read", title=None, description="读取原文。"),
+)
 
 
 def record(
@@ -235,7 +239,7 @@ async def test_load_reads_every_server_including_disabled_ones(setup: Setup) -> 
 
     await setup.service.load_index()
 
-    assert tools_of(setup.index) == {"search": "搜索云文档。", "read": None}
+    assert tools_of(setup.index) == {"search": "检索文档", "read": None}
     spare = setup.index.get("spare")
     assert spare is not None
     assert (spare.name, dict(spare.tools)) == ("备用", {})
@@ -259,11 +263,11 @@ async def test_a_reached_check_brings_in_the_tools_and_a_refused_one_keeps_them(
     setup.store.rows["docs"] = record()
 
     await setup.service.check("docs")
-    assert tools_of(setup.index) == {"search": "搜索云文档。", "read": None}
+    assert tools_of(setup.index) == {"search": "检索文档", "read": None}
 
     setup.probe.result = REFUSED
     await setup.service.check("docs")
-    assert tools_of(setup.index) == {"search": "搜索云文档。", "read": None}
+    assert tools_of(setup.index) == {"search": "检索文档", "read": None}
 
 
 async def test_update_takes_the_committed_row(setup: Setup) -> None:
@@ -273,7 +277,7 @@ async def test_update_takes_the_committed_row(setup: Setup) -> None:
     await setup.service.update("docs", McpServerUpdateIn(name="云文档"), by=BY)
     found = setup.index.get("docs")
     assert found is not None
-    assert (found.name, dict(found.tools)) == ("云文档", {"search": "搜索云文档。", "read": None})
+    assert (found.name, dict(found.tools)) == ("云文档", {"search": "检索文档", "read": None})
 
     # 换了地址：库里的工具清掉了，名册跟着清。
     await setup.service.update(
