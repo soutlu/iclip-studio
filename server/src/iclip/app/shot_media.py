@@ -39,7 +39,12 @@ from iclip.domains.generation.service import SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fetch import MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, fetched
+from iclip.platform.media.fetch import (
+    MAX_IMAGE_BYTES,
+    MAX_VIDEO_BYTES,
+    MediaDownloads,
+    fetched,
+)
 from iclip.platform.media.probe import probe_duration_ms
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable
@@ -66,19 +71,17 @@ class PublicObjects(Protocol):
 
 
 class FrameBoardsAdapter:
-    """``FrameBoards`` 的实现。每次调用只下载一次参考视频；``fetch_url`` 在下载前换算地址（本桶对象走
-    内网），抽帧解码用 ``codec``。"""
+    """``FrameBoards`` 的实现。每次调用只下载一次参考视频：地址是模型给的，按 ``downloads`` 选路（本桶
+    对象走内网，别的只连公网）；抽帧解码用 ``codec``。"""
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        downloads: MediaDownloads,
         *,
-        fetch_url: Callable[[str], str],
         objects: PublicObjects,
         codec: MediaCodec,
     ) -> None:
-        self._client = client
-        self._fetch_url = fetch_url
+        self._downloads = downloads
         self._objects = objects
         self._codec = codec
 
@@ -89,10 +92,9 @@ class FrameBoardsAdapter:
         rows: Sequence[Sequence[ShotSpan]],
         previous: ExtractionLedger | None,
     ) -> BoardsResult:
+        client, url = self._downloads.target(video_url)
         try:
-            async with fetched(
-                self._client, self._fetch_url(video_url), max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
-            ) as source:
+            async with fetched(client, url, max_bytes=MAX_VIDEO_BYTES, suffix=".mp4") as source:
                 _check_in_range(rows, duration_ms=await probe_duration_ms(source))
                 video_hash = await asyncio.to_thread(_sha256_file, source)
                 key = extraction_key(

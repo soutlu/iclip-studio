@@ -37,6 +37,11 @@ path = "agent_runtime.secrets"
 depends_on = []
 utility = true
 
+# 只连公网的出网下载：应用下载外部地址时经它。
+[[modules]]
+path = "agent_runtime.outbound"
+depends_on = []
+
 [[modules]]
 path = "agent_runtime.file_store"
 depends_on = []

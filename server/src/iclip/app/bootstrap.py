@@ -10,6 +10,7 @@ import procrastinate
 import structlog
 from agent_runtime.client import RuntimeClient
 from agent_runtime.errors import NotFound
+from agent_runtime.outbound.fetch import PublicFetcher, public_client
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
@@ -133,12 +134,14 @@ from iclip.domains.uploads.module import UploadsModule, build_uploads_module
 from iclip.domains.uploads.service import FetchBytes
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import MediaCodec, detect_codec
+from iclip.platform.media.fetch import MediaDownloads
 from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
     OssSettings,
     oss_fetch_url,
+    oss_owns_url,
     validate_internal_endpoint,
     validate_public_url_base,
 )
@@ -147,7 +150,6 @@ from iclip.platform.object_store.store import (
     PublicObjectStore,
     ServerUploadSigner,
 )
-from iclip.platform.outbound.fetch import PublicFetcher
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -155,14 +157,16 @@ _logger = structlog.stdlib.get_logger(__name__)
 def _object_store(
     settings: ObjectStoreEnv | None,
     injected: PublicBucket | None,
-) -> tuple[PublicBucket | None, Callable[[str], str], ServerUploadSigner | None]:
-    """桶、服务端下载用的地址换算与给别的服务端签上传地址的端口。注入了桶（测试）时没有签名端口，
-    成片导出开不了。"""
+) -> tuple[
+    PublicBucket | None, Callable[[str], str], Callable[[str], bool], ServerUploadSigner | None
+]:
+    """桶、服务端下载用的地址换算、判断地址是不是本桶对象与给别的服务端签上传地址的端口。注入了桶
+    （测试）时与没配对象存储一样不认任何地址是本桶的，也没有签名端口，成片导出开不了。"""
 
     if injected is not None:
-        return injected, _as_is, None
+        return injected, _as_is, _never, None
     if settings is None:
-        return None, _as_is, None
+        return None, _as_is, _never, None
     oss = OssSettings(
         bucket=settings.bucket,
         endpoint=settings.endpoint,
@@ -172,11 +176,15 @@ def _object_store(
         internal_endpoint=validate_internal_endpoint(settings.internal_endpoint),
     )
     store = OssObjectStore(oss)
-    return store, oss_fetch_url(oss), store
+    return store, oss_fetch_url(oss), oss_owns_url(oss), store
 
 
 def _as_is(url: str) -> str:
     return url
+
+
+def _never(url: str) -> bool:
+    return False
 
 
 VIDEO_APP_ID: Final = "video"
@@ -349,7 +357,9 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    public_objects, fetch_url, server_uploads = _object_store(settings.object_store, object_store)
+    public_objects, fetch_url, owns_url, server_uploads = _object_store(
+        settings.object_store, object_store
+    )
     _require_ffmpeg(settings.ffmpeg_required)
     # 一个客户端：生成队列经它提交、轮询，导出端点经它读进度、取消；lifespan 结束时关。
     render_client = (
@@ -393,6 +403,11 @@ def build_app(
             requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
+    # 取帧与拆解下载的视频地址是模型给的：不是本桶对象就经只连公网的客户端；lifespan 结束时关。
+    public_http_client = public_client()
+    model_url_downloads = MediaDownloads(
+        internal=http_client, public=public_http_client, fetch_url=fetch_url, owns=owns_url
+    )
     catalog_engine = _product_catalog_engine(settings.product_catalog, product_catalog_engine)
     owns_catalog_engine = catalog_engine is not None and product_catalog_engine is None
     if catalog_engine is None:
@@ -489,7 +504,7 @@ def build_app(
             raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns
-            or build_reference_breakdown(runtime_client, http_client, codec, fetch_url=fetch_url),
+            or build_reference_breakdown(runtime_client, model_url_downloads, codec),
             connector=connector,
             concurrency=breakdown_concurrency,
         )
@@ -682,6 +697,7 @@ def build_app(
                     await turn_naming.aclose()
         finally:
             await http_client.aclose()
+            await public_http_client.aclose()
             if render_client is not None:
                 await render_client.aclose()
             if owned_fetcher is not None:
@@ -762,9 +778,7 @@ def build_app(
     ):
         shot_services = ShotServices(
             generations=GenerationsAdapter(generation.service, user_principal),
-            boards=FrameBoardsAdapter(
-                http_client, fetch_url=fetch_url, objects=public_objects, codec=codec
-            ),
+            boards=FrameBoardsAdapter(model_url_downloads, objects=public_objects, codec=codec),
             cuts=GridCutsAdapter(
                 http_client,
                 fetch_url=fetch_url,

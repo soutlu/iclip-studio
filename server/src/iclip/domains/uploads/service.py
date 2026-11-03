@@ -6,6 +6,8 @@ from typing import Final, Protocol
 
 import structlog
 from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.outbound.fetch import FetchTooLarge
+from agent_runtime.outbound.guard import FetchFailed, FetchRefused
 
 from iclip.domains.identity.public import Principal
 from iclip.domains.uploads.models import (
@@ -25,8 +27,6 @@ from iclip.platform.object_store.direct_upload import (
 )
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket, StoredObject
-from iclip.platform.outbound.fetch import FetchTooLarge
-from iclip.platform.outbound.guard import FetchFailed, FetchRefused
 
 _logger = structlog.stdlib.get_logger(__name__)
 

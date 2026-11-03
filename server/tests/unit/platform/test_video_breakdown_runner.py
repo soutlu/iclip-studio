@@ -26,7 +26,7 @@ DOCUMENT = "# 出场元素\n……\n# 时间线\n……\n# 整片分析\n……"
 
 
 class FakeSampler:
-    """按给定时长作答，交出两帧；记下被要求抽帧的地址。"""
+    """视频有给定那么长：不超过上限时交出两帧并记下抽帧的地址，超过时不抽。"""
 
     def __init__(self, *, seconds: float, audio: bytes | None = b"mp3") -> None:
         self.seconds = seconds
@@ -34,12 +34,11 @@ class FakeSampler:
         self.sampled: list[str] = []
         self.error: MediaError | None = None
 
-    async def duration_seconds(self, video_url: str) -> float:
+    async def sample_up_to(self, video_url: str, *, max_seconds: float) -> SampledVideo | None:
         if self.error is not None:
             raise self.error
-        return self.seconds
-
-    async def sample(self, video_url: str) -> SampledVideo:
+        if self.seconds > max_seconds:
+            return None
         self.sampled.append(video_url)
         return SampledVideo(frames=(b"frame-0", b"frame-1"), audio=self.audio)
 

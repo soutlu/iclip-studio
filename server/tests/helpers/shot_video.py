@@ -24,6 +24,7 @@ from iclip_video.shot_video.ports import (
 from iclip.app.shot_media import FrameBoardsAdapter, GridCutsAdapter
 from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
 from iclip.platform.media.codec import MediaCodec
+from tests.helpers.fetch_url import all_own
 
 _ASPECT_RATIOS: frozenset[str] = frozenset(get_args(IMAGE_ASPECT_RATIOS))
 _RESOLUTIONS: frozenset[str] = frozenset(get_args(IMAGE_RESOLUTIONS))
@@ -155,7 +156,7 @@ def mount_shot_video(
         space=space,
         ledger=ledger,
         generations=generations,
-        boards=FrameBoardsAdapter(client, fetch_url=fetch_url, objects=objects, codec=codec),
+        boards=FrameBoardsAdapter(all_own(client, fetch_url), objects=objects, codec=codec),
         cuts=GridCutsAdapter(client, fetch_url=fetch_url, objects=objects, records=records),
         image_models=frozenset({IMAGE_MODEL}),
         policy=policy,

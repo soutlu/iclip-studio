@@ -11,13 +11,13 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from agent_runtime.outbound.guard import FetchFailed
 from fastapi import FastAPI
 from PIL import Image
 from pydantic_ai.models import Model
 from sqlalchemy import text
 
 from iclip.platform.db.engine import build_engine
-from iclip.platform.outbound.guard import FetchFailed
 from tests.helpers.agents import AgentSeed, model_builder, seed_agents
 from tests.helpers.app import make_client, make_runtime_config, new_conversation, settled
 from tests.helpers.auth import login_as_editor

@@ -61,7 +61,7 @@ from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from iclip.platform.shot_media.ffmpeg import extract_frames
-from tests.helpers.fetch_url import as_is
+from tests.helpers.fetch_url import all_own, as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.media import BROKEN_DECODE, CODECS, local_codec
@@ -755,7 +755,7 @@ async def test_processing_failure_is_an_error_in_real_agent_live_and_history(
 
 
 def boards_adapter(client: httpx.AsyncClient, objects: FakeObjects) -> FrameBoardsAdapter:
-    return FrameBoardsAdapter(client, fetch_url=as_is, objects=objects, codec=SOFTWARE)
+    return FrameBoardsAdapter(all_own(client), objects=objects, codec=SOFTWARE)
 
 
 def cuts_adapter(
@@ -831,9 +831,7 @@ async def test_the_boards_adapter_passes_the_decoder_failure_through_as_unreadab
     """抽帧解码失败的原文就是给模型的话。"""
 
     async with make_client(media) as client:
-        adapter = FrameBoardsAdapter(
-            client, fetch_url=as_is, objects=FakeObjects(), codec=BROKEN_DECODE
-        )
+        adapter = FrameBoardsAdapter(all_own(client), objects=FakeObjects(), codec=BROKEN_DECODE)
         with pytest.raises(BoardsUnreadable) as raised:
             await adapter.boards(video_url=VIDEO_URL, rows=parse_shot_rows(DOCUMENT), previous=None)
 
