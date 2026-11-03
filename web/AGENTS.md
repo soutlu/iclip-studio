@@ -1,60 +1,58 @@
 # AGENTS.md — 前端开发约定
 
-适用于 `web/`，与根 [AGENTS.md](../AGENTS.md) 一起遵守；组件和测试规则见 [实现规范](docs/frontend-implementation.md)。
+本文适用于 `web/` 目录，需与根目录 [AGENTS.md](../AGENTS.md) 一起遵守；组件编写与测试细则见[前端实现规范](docs/frontend-implementation.md)。
 
-## 1. 命令
+## 1. 常用命令
 
-在 `web/` 执行。Node 与 pnpm 版本以 [package.json](package.json) 的 `engines`、`packageManager` 为准；全部命令见其中的 `scripts`。
+以下命令在 `web/` 目录下执行（Node.js 与 pnpm 版本以 [package.json](package.json) 的 `engines` 和 `packageManager` 为准）：
 
-| 命令                                | 用途                                                  |
-| ----------------------------------- | ----------------------------------------------------- |
-| `pnpm dev`                          | 真实后端开发；启动参数见 [README](README.md#启动参数) |
-| `pnpm dev:mock`                     | MSW 原型环境，未处理的 API 请求报错                   |
-| `pnpm ci:check`                     | 格式、lint、设计系统、死代码、合同、类型与单测检查    |
-| `pnpm verify`                       | `ci:check` 加生产构建，不含 e2e                       |
-| `pnpm test`                         | Vitest 单测与组件测试                                 |
-| `pnpm test:e2e`                     | Playwright；本地起 `dev:mock`，CI 用 `preview:mock`   |
-| `pnpm build` / `pnpm serve`         | 生产构建 / 构建后本地预览                             |
-| `pnpm contract:generate`            | 从后端合同生成类型与 zod；修改顺序见根开发约定        |
-| `pnpm format` / `pnpm format:check` | Prettier 格式化 / 检查                                |
+| 命令                                | 用途                                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------------------- |
+| `pnpm dev`                          | 启动连接真实后端的开发服务器（自定义端口与代理目标见 [README](README.md#启动参数)） |
+| `pnpm dev:mock`                     | 启动纯前端 MSW Mock 环境（未定义 Mock 的 API 请求会直接报错）                       |
+| `pnpm ci:check`                     | 运行全套前端检查（格式、ESLint、设计系统、死代码、合同对齐、类型检查与单元测试）    |
+| `pnpm verify`                       | 运行 `ci:check` 并执行一次生产构建（不含 E2E 测试）                                 |
+| `pnpm test`                         | 运行 Vitest 单元测试与组件测试                                                      |
+| `pnpm test:e2e`                     | 运行 Playwright 端到端测试（本地自动启动 `dev:mock`）                               |
+| `pnpm build` / `pnpm serve`         | 执行生产构建 / 本地预览构建产物                                                     |
+| `pnpm contract:generate`            | 根据后端导出的 `openapi.json` 生成前端 TypeScript 类型与 Zod Schema                 |
+| `pnpm format` / `pnpm format:check` | 运行 Prettier 格式化代码 / 检查格式                                                 |
 
-真实后端与 mock 环境分开运行，不把真实认证与局部 mock 混进默认开发环境。
+- **环境隔离原则**：连接真实后端（`pnpm dev`）与纯前端 Mock（`pnpm dev:mock`）严格分开运行，不要把局部的 Mock 数据混进默认开发环境。
 
-## 2. 职责与实现边界
+---
 
-| 路径                                  | 职责                                                                                      |
-| ------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `src/app/`                            | Provider、router、主题与工作台注册装配                                                    |
-| `src/routes/`                         | 文件路由与应用壳                                                                          |
-| `src/features/`                       | 登录、首页、合集、会话、需求单、审计、工作区文件与分镜业务模块                            |
-| `src/shared/api/`                     | REST 客户端与后端合同生成物                                                               |
-| `src/shared/auth/`                    | 会话与权限能力                                                                            |
-| `src/shared/shell/`                   | 壳向页面公布的布局状态（ShellChromeContext）                                              |
-| `src/shared/icons/`、`src/shared/ui/` | 图标与共用 UI 组件                                                                        |
-| `src/shared/transcript/`              | 对话协议、订阅与投影；vendor 维护要求见[目录说明](src/shared/transcript/vendor/README.md) |
-| `src/shared/workbench/`               | 产物面板宿主、布局与选择状态                                                              |
-| `src/testing/`、`e2e/`                | 测试基建、MSW 与浏览器用例                                                                |
-| `src/features/storyboard/whole-film/` | 成片编辑器；`composition/` 同时编进渲染服务 `../render/`                                  |
-| `vite/`、`scripts/`                   | 构建助手与开发、检查命令                                                                  |
-| `scripts/hyperframes-*`               | 组件库组装工具与测试组件库；`pnpm hf:registry` 组装到 `public/hyperframes/`（不入库）     |
-| `../design/cue-mascot/`               | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)                  |
+## 2. 目录职责与实现边界
 
-- `src/routes/` 负责路由装配、守卫、search params 与跨 feature 组合；业务逻辑留在 feature。共用侧边栏、登录弹窗、布局和工作台由 `_shell.tsx` 及同目录 `-` 前缀助手承载。
-- feature 之间的稳定共用能力提取到 `shared/`，跨 feature 流程在 `app/` 或 `routes/` 组合。构建期助手放 `vite/`。
-- 后端 REST 请求使用 `@/shared/api/client` 的 `apiFetch`；需要响应头或状态码时使用 `apiFetchWithResponse`。两者共用同源请求、鉴权回调和 zod 校验。裸 `fetch` / `XMLHttpRequest` 仅用于 OSS 预签名直传、外链素材下载与读组件库目录 `/hyperframes/catalog.json`。
-- 接口 schema 使用 `src/shared/api/generated/` 的生成物；额外业务校验叠在生成 schema 上。后端字段缺失时保留其空值语义，不编造业务默认值。
-- 登录与守卫规则见 [实现规范](docs/frontend-implementation.md#登录与守卫)；权限门控使用后端 `user.permissions`，不使用用户名白名单。
-- 不手改生成文件，不抬高 design-guard 基线；修复存量后可以收紧基线。
-- 分镜工作台用于查看和编辑 Agent 交付的分镜、发起媒体生成；制作页（`features/storyboard/film/`）复用它的舞台与文案列，查看和改 AI 导演的工程（见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)）。产物与渲染器登记、认领与重叠规则以 [artifact.ts](src/shared/workbench/artifact.ts) 为准，文件写回与生成约定见[跨端合同](../contract/conventions.md)。
+| 目录 / 路径                           | 核心职责                                                                                                                                |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/`                            | 全局 Provider、路由实例、主题切换与工作台面板注册                                                                                       |
+| `src/routes/`                         | TanStack Router 文件路由与应用外框（`_shell.tsx`）：只负责路由装配、权限守卫、URL 参数解析与跨模块组合，具体业务逻辑放在 `features/` 中 |
+| `src/features/`                       | 各业务功能模块（登录、首页、合集、对话、需求单、审计报表、工作区文件、分镜与制作页、成片编辑器、管理后台配置等）                        |
+| `src/features/storyboard/whole-film/` | 成片时间线编辑器；其中 `composition/` 目录下的合成代码会同时被打包进后端的独立渲染服务 `../render/`                                     |
+| `src/shared/api/`                     | 统一 REST 请求客户端（`apiFetch`）与根据后端 OpenAPI 自动生成的类型和 Zod Schema（`generated/`）                                        |
+| `src/shared/auth/`                    | 登录状态管理与权限判断                                                                                                                  |
+| `src/shared/shell/`                   | 应用外框向子页面暴露的布局状态上下文（`ShellChromeContext`）                                                                            |
+| `src/shared/icons/`、`src/shared/ui/` | 统一图标库与基础通用 UI 组件                                                                                                            |
+| `src/shared/transcript/`              | Agent 聊天记录（Transcript）协议解析、WebSocket 订阅与状态合并（升级上游协议见[目录说明](src/shared/transcript/vendor/README.md)）      |
+| `src/shared/workbench/`               | 右侧产物工作台面板宿主、分栏布局与选中态管理（产物注册与认领规则见 [artifact.ts](src/shared/workbench/artifact.ts)）                    |
+| `src/testing/`、`e2e/`                | Vitest 测试辅助工具、MSW Mock 处理器与 Playwright 端到端测试用例                                                                        |
+| `vite/`、`scripts/`                   | Vite 构建插件、开发辅助脚本与 HyperFrames 组件库打包工具（`scripts/hyperframes-*`）                                                     |
+| `../design/cue-mascot/`               | 首页吉祥物素材源文件与生成说明（见[目录说明](../design/cue-mascot/README.md)）                                                          |
 
-- 成片的 `composition/` 要在浏览器和 Node 里都能跑：不碰 DOM 与浏览器 API，组件目录由调用方传入，对仓内只做 `import type`（生成的合同类型）；渲染服务另外直接用 `src/shared/api/generated/zod.gen.ts` 校验请求，改这几处后另按[开发约定](../AGENTS.md#1-命令与验证)跑渲染服务的检查。
+### 核心编码约束
 
-依赖边界、导入入口、命名与语法由 [ESLint](eslint.config.js) 管理；死代码范围由 [knip](knip.json) 管理；基础 token 见根 [设计系统](../design-system.html)。
+- **统一使用 `apiFetch` 调接口**：所有后端 REST 请求必须使用 `@/shared/api/client` 的 `apiFetch`（需要读取响应头或状态码时用 `apiFetchWithResponse`），自动享受同源代理、登录态复核与 Zod 校验。原生的 `fetch` 或 `XMLHttpRequest` 仅允许用于 OSS 预签名文件直传、外部素材下载以及读取组件库目录 `/hyperframes/catalog.json`。
+- **直接消费生成的合同 Schema**：接口请求与响应直接使用 `src/shared/api/generated/` 下的生成物（严禁手改生成文件）；如果后端某个字段返回 `null` 或缺省，保留其空值语义，不要在前端擅自编造业务默认值。
+- **权限控制只看 `user.permissions`**：页面守卫（见[前端实现规范](docs/frontend-implementation.md#登录与守卫)）与按钮显隐统一根据后端返回的 `user.permissions` 权限数组判断，严禁在代码里写死用户名白名单。
+- **成片合成代码（`composition/`）跨环境约束**：由于 `src/features/storyboard/whole-film/composition/` 会同时在浏览器和 Node.js 渲染服务（`../render/`）中运行，该目录下严禁直接操作浏览器 DOM 或 `window` API，且对仓内其他模块只能做 `import type`（引用生成的合同类型）。修改该目录或生成合同后，需同时按[根开发约定](../AGENTS.md#1-命令与验证)跑一遍 `render/` 目录下的检查。
+- **静态门禁工具**：模块导入边界与语法规范由 [ESLint](eslint.config.js) 自动检查，未使用的死代码由 [knip](knip.json) 检查，基础视觉 Token 定义在根目录 [design-system.html](../design-system.html) 中。
 
-## 3. 验证
+---
 
-- 代码变更推送前执行 `pnpm ci:static` 与 `pnpm typecheck`，并运行与改动直接相关的 Vitest 文件；核心用户旅程变更另跑相关 Playwright 用例。完整单测、生产构建与全部用例由 CI 运行，本地不重复跑 `pnpm ci:check`。
-- 新增页面、变更共享逻辑、跨层合同或用户行为时，按[实现规范的测试归层](docs/frontend-implementation.md#测试)补充或更新覆盖；纯文档或措辞变更检查格式和链接。
-- UI 变更核对桌面与移动布局、浅深主题、键盘操作和中文长内容；验收截图用本地临时脚本或本地 Playwright 运行截到 `.artifacts/design-qa/`，e2e 用例只写断言、不截图。
-- 修改生产反代时，验证路径 rewrite、WebSocket upgrade 与同源 Host / Origin；部署约定见[跨端合同](../contract/conventions.md)。
-- 运行时依赖升级由开发者决定，升级后通过 `pnpm verify`；SSO / PMS 的真实验收要求见根开发约定。
+## 3. 提交前验证要求
+
+- **修改前端代码**：推送前在 `web/` 下执行 `pnpm ci:static` 和 `pnpm typecheck`，并运行与改动直接相关的 Vitest 测试文件；如果改动了核心用户流程，额外跑对应的 Playwright E2E 用例（全量单测、生产构建与全量 E2E 由 CI 执行，本地无需重复跑 `pnpm ci:check`）。
+- **新增功能或修改交互**：按[测试分层规范](docs/frontend-implementation.md#测试)补充或更新对应测试；仅修改文档或纯文案时，检查格式（`pnpm format:check`）与链接（根目录 `make docs-check`）即可。
+- **修改 UI 样式与布局**：需同时检查桌面端与移动端宽度、浅色与深色主题、键盘无障碍操作以及中文长文本折行；验收截图统一保存到 `.artifacts/design-qa/`（正式 E2E 测试代码中只写断言，不留截图调用）。
+- **修改 Nginx 反代配置**：需验证 `/api` 路径前缀剥离、`/api/ws` WebSocket 协议升级以及同源 `Host` / `Origin` 头传递（详见[跨端合同](../contract/conventions.md)）。
