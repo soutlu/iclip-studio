@@ -7,7 +7,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 
-import httpx
 from agent_runtime.client import RuntimeClient
 from iclip_video.video_breakdown.ports import FailedBreakdown
 
@@ -22,6 +21,7 @@ from iclip.domains.references.models import (
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MediaDownloads
 from iclip.platform.video_breakdown.media import FfmpegVideoSampler
 from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel
 from iclip.platform.video_breakdown.ports import BreakdownError, BreakdownModelUnavailable
@@ -70,19 +70,13 @@ class ReferenceBreakdownsAdapter:
 
 
 def build_reference_breakdown(
-    runtime: RuntimeClient,
-    client: httpx.AsyncClient,
-    codec: MediaCodec,
-    *,
-    fetch_url: Callable[[str], str],
+    runtime: RuntimeClient, downloads: MediaDownloads, codec: MediaCodec
 ) -> ArkVideoBreakdowns:
-    """建参考视频自己的一份拆解：模型经运行时服务的 ``runtime`` 调；下载视频用的 HTTP 连接池与组合根共用，
-    抽帧解码用启动时选定的 ``codec``，探时长与下载视频前用 ``fetch_url`` 换算地址。"""
+    """建参考视频自己的一份拆解：模型经运行时服务的 ``runtime`` 调；探时长与下载视频按 ``downloads``
+    选路（客户端与组合根共用：本桶对象走内网，别的只连公网），抽帧解码用启动时选定的 ``codec``。"""
 
     model = ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL)
-    breakdown = BreakdownRunner(
-        model=model, sampler=FfmpegVideoSampler(client, codec, fetch_url=fetch_url)
-    )
+    breakdown = BreakdownRunner(model=model, sampler=FfmpegVideoSampler(downloads, codec))
     return ArkVideoBreakdowns(breakdown)
 
 

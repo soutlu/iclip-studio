@@ -1,14 +1,19 @@
-"""``shot_video`` 的两个媒体端口适配器：台账复用的判定、下载走换算后的地址、下载失败的端口错误，
-以及切图记录按运行属主落到宫格名下。抽帧、拼板与切格的像素结果由集成测试覆盖。"""
+"""``shot_video`` 的两个媒体端口适配器：台账复用的判定、下载按地址选路（本桶走换算后的地址，别处只连
+公网）、下载失败的端口错误，以及切图记录按运行属主落到宫格名下。抽帧、拼板与切格的像素结果由集成测试覆盖。"""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from typing import cast
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, cast
 
+import httpcore
 import httpx
 import pytest
 from agent_runtime.errors import NotFound
+from agent_runtime.outbound.fetch import public_client
+from agent_runtime.outbound.guard import FetchRefused
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
     AnchorSheets,
@@ -32,6 +37,8 @@ from iclip.domains.generation.models import STATUS_COMPLETED, GenerationOutput
 from iclip.domains.generation.service import SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MediaDownloads
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from tests.helpers.fetch_url import rewriting
 from tests.helpers.generation import (
@@ -45,6 +52,7 @@ from tests.helpers.shot_video import FakeCutRecords, FakeObjects
 KEY = "k"
 VIDEO = "https://cdn.test/ref.mp4"
 INTERNAL = "https://iclip.oss-cn-shenzhen-internal.aliyuncs.com"
+PUBLIC_IP = "93.184.216.34"
 DOCUMENT = "**[00:00.000-00:02.000]** 中景"
 
 
@@ -101,13 +109,62 @@ def refusing_client(asked: list[str]) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-async def test_frame_boards_download_the_reference_video_from_the_rewritten_address() -> None:
-    """取不到视频：端口错误的原文就是下载失败的原文，模型照它看到的一样。"""
+class Network404(httpcore.AsyncNetworkBackend):
+    """出网防护底下的网络替身：记下实际连的 (ip, port)，一律回 404。"""
+
+    def __init__(self) -> None:
+        self.connected: list[tuple[str, int]] = []
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        self.connected.append((host, port))
+        return httpcore.AsyncMockStream([b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"])
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        raise AssertionError("不该连本机 socket")
+
+    async def sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+
+def resolving(table: Mapping[str, Sequence[str]]) -> Any:
+    async def resolve(host: str, port: int) -> Sequence[str]:
+        return table[host]
+
+    return resolve
+
+
+def downloads(
+    internal: httpx.AsyncClient, public: httpx.AsyncClient, *, own_base: str = "https://cdn.test"
+) -> MediaDownloads:
+    """``own_base`` 下的地址算本桶对象，换到 ``INTERNAL`` 下。"""
+
+    return MediaDownloads(
+        internal=internal,
+        public=public,
+        fetch_url=rewriting(own_base, INTERNAL),
+        owns=lambda url: url.startswith(f"{own_base}/"),
+    )
+
+
+async def test_frame_boards_download_an_own_object_from_the_rewritten_address() -> None:
+    """取不到视频：端口错误的原文就是下载失败的原文，模型照它看到的一样。本桶对象不经出网防护。"""
 
     asked: list[str] = []
+    public_asked: list[str] = []
     adapter = FrameBoardsAdapter(
-        refusing_client(asked),
-        fetch_url=rewriting("https://cdn.test", INTERNAL),
+        downloads(refusing_client(asked), refusing_client(public_asked)),
         objects=FakeObjects(),
         codec=SOFTWARE,
     )
@@ -116,8 +173,59 @@ async def test_frame_boards_download_the_reference_video_from_the_rewritten_addr
         await adapter.boards(video_url=VIDEO, rows=parse_shot_rows(DOCUMENT), previous=None)
 
     assert asked == [f"{INTERNAL}/ref.mp4"]
+    assert public_asked == []
     assert raised.value.__cause__ is not None
     assert str(raised.value) == str(raised.value.__cause__)
+
+
+async def test_frame_boards_download_other_addresses_through_the_public_only_client() -> None:
+    """别处的地址原样经出网防护的客户端下载，连的是查过的公网 IP。"""
+
+    asked: list[str] = []
+    network = Network404()
+    public = public_client(resolve=resolving({"other.test": [PUBLIC_IP]}), network_backend=network)
+    adapter = FrameBoardsAdapter(
+        downloads(refusing_client(asked), public), objects=FakeObjects(), codec=SOFTWARE
+    )
+
+    try:
+        with pytest.raises(BoardsUnreadable):
+            await adapter.boards(
+                video_url="https://other.test/ref.mp4",
+                rows=parse_shot_rows(DOCUMENT),
+                previous=None,
+            )
+    finally:
+        await public.aclose()
+
+    assert network.connected == [(PUBLIC_IP, 443)]
+    assert asked == []
+
+
+async def test_frame_boards_refuse_an_address_resolving_to_an_internal_ip() -> None:
+    """模型给的地址解析到内网：一个字节都不连，按取不到视频报给模型。"""
+
+    asked: list[str] = []
+    network = Network404()
+    public = public_client(resolve=resolving({"evil.test": ["10.0.0.5"]}), network_backend=network)
+    adapter = FrameBoardsAdapter(
+        downloads(refusing_client(asked), public), objects=FakeObjects(), codec=SOFTWARE
+    )
+
+    try:
+        with pytest.raises(BoardsUnreadable, match="非公网地址") as raised:
+            await adapter.boards(
+                video_url="https://evil.test/ref.mp4",
+                rows=parse_shot_rows(DOCUMENT),
+                previous=None,
+            )
+    finally:
+        await public.aclose()
+
+    assert isinstance(raised.value.__cause__, MediaError)
+    assert isinstance(raised.value.__cause__.__cause__, FetchRefused)
+    assert network.connected == []
+    assert asked == []
 
 
 def test_cut_cells_keep_the_object_keys_the_plugin_used_to_compute() -> None:

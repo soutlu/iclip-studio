@@ -10,6 +10,8 @@ from typing import NoReturn
 import httpx
 import pytest
 from agent_runtime.errors import ValidationFailed
+from agent_runtime.outbound.fetch import FetchTooLarge
+from agent_runtime.outbound.guard import FetchFailed, FetchRefused
 from fastapi import FastAPI
 from PIL import Image
 from structlog.testing import capture_logs
@@ -26,8 +28,6 @@ from iclip.domains.uploads.models import (
 from iclip.domains.uploads.service import UploadService
 from iclip.platform.object_store.direct_upload import API_KEY_HEADER, UPLOADER_HEADER
 from iclip.platform.object_store.store import ObjectStoreUnavailable
-from iclip.platform.outbound.fetch import FetchTooLarge
-from iclip.platform.outbound.guard import FetchFailed, FetchRefused
 from tests.helpers.app import app_with_principal
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.media import multi_picture_jpeg

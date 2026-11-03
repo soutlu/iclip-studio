@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
-import httpx
-
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
-from iclip.platform.media.probe import has_audio_stream, probe_remote_duration_ms
+from iclip.platform.media.fetch import MAX_VIDEO_BYTES, MediaDownloads, fetched
+from iclip.platform.media.probe import (
+    has_audio_stream,
+    probe_duration_ms,
+    probe_remote_duration_ms,
+)
 from iclip.platform.media.process import ENCODE_TIMEOUT_SECONDS, run
 from iclip.platform.video_breakdown.ports import SampledVideo
 
@@ -28,25 +29,26 @@ _SCALE: Final = (
 
 
 class FfmpegVideoSampler:
-    """``VideoSampler`` 的 ffmpeg 实现，HTTP 客户端、编解码与地址换算由组合根注入。
+    """``VideoSampler`` 的 ffmpeg 实现，下载选路与编解码由组合根注入。
 
-    ``fetch_url`` 只用在本服务自己探时长与下载的那一刻（本桶对象走内网）；交给拆解模型的地址
-    不经过这里，仍是原地址。"""
+    ``downloads`` 只用在本服务自己探时长与下载的那一刻；交给拆解模型的地址不经过这里，仍是原地址。"""
 
-    def __init__(
-        self, client: httpx.AsyncClient, codec: MediaCodec, *, fetch_url: Callable[[str], str]
-    ) -> None:
-        self._client = client
+    def __init__(self, downloads: MediaDownloads, codec: MediaCodec) -> None:
+        self._downloads = downloads
         self._codec = codec
-        self._fetch_url = fetch_url
 
-    async def duration_seconds(self, video_url: str) -> float:
-        return await probe_remote_duration_ms(self._fetch_url(video_url)) / 1000
-
-    async def sample(self, video_url: str) -> SampledVideo:
-        async with fetched(
-            self._client, self._fetch_url(video_url), max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
-        ) as source:
+    async def sample_up_to(self, video_url: str, *, max_seconds: float) -> SampledVideo | None:
+        client, url = self._downloads.target(video_url)
+        if self._downloads.owns(video_url):
+            # 本桶对象：ffprobe 在换过的地址上直接探时长、不下载整片，短的才下载抽帧。
+            if await probe_remote_duration_ms(url) > max_seconds * 1000:
+                return None
+            async with fetched(client, url, max_bytes=MAX_VIDEO_BYTES, suffix=".mp4") as source:
+                return await sample_file(source, codec=self._codec)
+        # 别的地址不交给 ffprobe：它自己跟跳转，绕得过出网防护。先经防护下载，时长在本地文件上探。
+        async with fetched(client, url, max_bytes=MAX_VIDEO_BYTES, suffix=".mp4") as source:
+            if await probe_duration_ms(source) > max_seconds * 1000:
+                return None
             return await sample_file(source, codec=self._codec)
 
 

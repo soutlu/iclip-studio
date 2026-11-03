@@ -24,11 +24,15 @@ Resolve = Callable[[str, int], Awaitable[Sequence[str]]]
 
 
 class FetchFailed(Exception):
-    """出网下载没拿到字节：地址被拒、连不上、对方回了错误、超时或超过大小上限。"""
+    """出网请求没成：地址被拒、解析不了、连不上、对方回了错误、超时或超过大小上限。"""
 
 
 class FetchRefused(FetchFailed):
     """地址或它解析出的 IP 不合规则，没有建立任何连接。"""
+
+
+class FetchUnresolved(FetchFailed):
+    """主机名解析不了，或解析不出任何地址，没有建立任何连接。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +140,7 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
         try:
             resolved = await self._resolve(host, port)
         except OSError as exc:
-            raise FetchFailed(f"解析不了 {host}：{exc}") from exc
+            raise FetchUnresolved(f"解析不了 {host}：{exc}") from exc
         addresses: list[IpAddress] = []
         for text in resolved:
             try:
@@ -148,7 +152,7 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
             if address not in addresses:
                 addresses.append(address)
         if not addresses:
-            raise FetchFailed(f"{host} 没有解析出地址")
+            raise FetchUnresolved(f"{host} 没有解析出地址")
         return tuple(addresses)
 
 
@@ -166,6 +170,7 @@ __all__ = [
     "PUBLIC_INTERNET",
     "FetchFailed",
     "FetchRefused",
+    "FetchUnresolved",
     "GuardedBackend",
     "IpAddress",
     "OutboundPolicy",

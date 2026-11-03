@@ -47,7 +47,7 @@ from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.agents import model_builder
 from tests.helpers.app import TEST_CREDENTIAL_KEY, TEST_MODEL_NAME
-from tests.helpers.fetch_url import as_is
+from tests.helpers.fetch_url import all_own
 from tests.helpers.identity import FakePrincipals
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.runtime_service import (
@@ -194,9 +194,7 @@ async def runtime_app(
         log_format="console",
     )
     async with httpx.AsyncClient(transport=httpx.MockTransport(outside)) as fetcher:
-        backend = backend_app(
-            FrameBoardsAdapter(fetcher, fetch_url=as_is, objects=objects, codec=SOFTWARE)
-        )
+        backend = backend_app(FrameBoardsAdapter(all_own(fetcher), objects=objects, codec=SOFTWARE))
         async with open_video_plugins(
             PLUGINS_CONFIG, internal_transport=httpx.ASGITransport(app=backend)
         ) as bind:

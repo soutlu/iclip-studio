@@ -194,12 +194,9 @@ class FakeSampler:
     def __init__(self, *, broken: bool = False) -> None:
         self.broken = broken
 
-    async def duration_seconds(self, video_url: str) -> float:
+    async def sample_up_to(self, video_url: str, *, max_seconds: float) -> SampledVideo | None:
         if self.broken:
             raise MediaError("取不到这条视频")
-        return 5.0
-
-    async def sample(self, video_url: str) -> SampledVideo:
         return SampledVideo(frames=(b"jpeg",), audio=None)
 
 

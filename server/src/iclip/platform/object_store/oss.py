@@ -249,7 +249,7 @@ def oss_fetch_url(settings: OssSettings) -> Callable[[str], str]:
     if internal is None:
         return _as_is
     parts = urlsplit(internal)
-    public_prefix = f"{settings.public_url_base.rstrip('/')}/"
+    public_prefix = _public_prefix(settings)
     internal_prefix = f"{parts.scheme}://{settings.bucket}.{parts.netloc}/"
 
     def fetch_url(url: str) -> str:
@@ -258,6 +258,21 @@ def oss_fetch_url(settings: OssSettings) -> Callable[[str], str]:
         return url
 
     return fetch_url
+
+
+def oss_owns_url(settings: OssSettings) -> Callable[[str], bool]:
+    """判断地址是不是本桶对象：以 ``public_url_base`` 加 ``/`` 开头，与配没配内网 endpoint 无关。"""
+
+    public_prefix = _public_prefix(settings)
+
+    def owns(url: str) -> bool:
+        return url.startswith(public_prefix)
+
+    return owns
+
+
+def _public_prefix(settings: OssSettings) -> str:
+    return f"{settings.public_url_base.rstrip('/')}/"
 
 
 def _as_is(url: str) -> str:
@@ -270,6 +285,7 @@ __all__ = [
     "OssObjectStore",
     "OssSettings",
     "oss_fetch_url",
+    "oss_owns_url",
     "validate_internal_endpoint",
     "validate_public_url_base",
 ]

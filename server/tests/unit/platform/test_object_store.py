@@ -17,6 +17,7 @@ from iclip.platform.object_store.oss import (
     OssObjectStore,
     OssSettings,
     oss_fetch_url,
+    oss_owns_url,
     validate_internal_endpoint,
     validate_public_url_base,
 )
@@ -422,6 +423,29 @@ def test_other_addresses_are_left_alone(other: str) -> None:
 
 def test_without_an_internal_endpoint_nothing_is_rewritten() -> None:
     assert oss_fetch_url(SETTINGS)(f"https://cdn.test/{KEY}") == f"https://cdn.test/{KEY}"
+
+
+@pytest.mark.parametrize("settings", [SETTINGS, INTERNAL], ids=["no-internal", "internal"])
+def test_own_bucket_addresses_are_recognised_with_or_without_an_internal_endpoint(
+    settings: OssSettings,
+) -> None:
+    owns = oss_owns_url(settings)
+
+    assert owns(f"https://cdn.test/{KEY}")
+    assert owns(f"https://cdn.test/{KEY}?x-oss-process=image/info")
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        "https://vendor.test/result.mp4",
+        "https://cdn.test.evil/iclip/agent/a.png",
+        "https://cdn.test",
+        "http://cdn.test/iclip/agent/a.png",
+    ],
+)
+def test_other_addresses_are_not_own_bucket(other: str) -> None:
+    assert not oss_owns_url(INTERNAL)(other)
 
 
 async def test_reads_writes_and_deletes_go_to_the_data_bucket_and_signing_to_the_other() -> None:

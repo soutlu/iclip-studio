@@ -22,8 +22,9 @@ class BreakdownRunner:
         self._sampler = sampler
 
     async def run(self, video_url: str) -> str:
-        if await self._sampler.duration_seconds(video_url) <= SAMPLED_MAX_SECONDS:
-            return await self._model.from_sample(await self._sampler.sample(video_url))
+        sampled = await self._sampler.sample_up_to(video_url, max_seconds=SAMPLED_MAX_SECONDS)
+        if sampled is not None:
+            return await self._model.from_sample(sampled)
         return await self._model.from_url(video_url)
 
 

@@ -1,4 +1,4 @@
-"""用 ffmpeg 合成视频，验证拆解前的读时长、抽帧与取音轨。"""
+"""用 ffmpeg 合成视频，验证拆解前的读时长与下载选路、抽帧与取音轨。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pytest
 
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MediaDownloads
 from iclip.platform.media.process import ffmpeg_available, run
 from iclip.platform.video_breakdown.media import (
     FRAME_MAX_PIXELS,
@@ -83,16 +84,82 @@ async def test_the_decode_options_go_on_the_input(tmp_path: Path) -> None:
         await sample_file(source, codec=BROKEN_DECODE)
 
 
-async def test_the_sampler_probes_and_downloads_the_rewritten_address(tmp_path: Path) -> None:
-    """拿到的是本桶公网地址，视频只在换过的地址上读得到：探时长与下载都走换过的那个。"""
+OWN_BASE = "https://cdn.test"
 
-    public = "https://cdn.test"
+
+def unused_client() -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"这条路不该下载 {request.url}")
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def own_bucket_downloads(
+    internal: httpx.AsyncClient, public: httpx.AsyncClient, fetch_base: str
+) -> MediaDownloads:
+    return MediaDownloads(
+        internal=internal,
+        public=public,
+        fetch_url=rewriting(OWN_BASE, fetch_base),
+        owns=lambda url: url.startswith(f"{OWN_BASE}/"),
+    )
+
+
+@pytest.mark.parametrize(("max_seconds", "sampled"), [(60.0, True), (1.0, False)])
+async def test_an_own_object_is_probed_and_downloaded_at_the_rewritten_address(
+    tmp_path: Path, max_seconds: float, sampled: bool
+) -> None:
+    """拿到的是本桶公网地址，视频只在换过的地址上读得到：探时长与下载都走换过的那个，不经出网防护。"""
+
     video = synthesize_video(tmp_path / "ref.mp4", size="320x240", seconds=2, audio=True)
-    async with serving({"iclip/agent/ref.mp4": video}) as server, httpx.AsyncClient() as client:
-        sampler = FfmpegVideoSampler(client, SOFTWARE, fetch_url=rewriting(public, server.base_url))
-        seconds = await sampler.duration_seconds(f"{public}/iclip/agent/ref.mp4")
-        sample = await sampler.sample(f"{public}/iclip/agent/ref.mp4")
+    async with (
+        serving({"iclip/agent/ref.mp4": video}) as server,
+        httpx.AsyncClient() as client,
+        unused_client() as public,
+    ):
+        sampler = FfmpegVideoSampler(
+            own_bucket_downloads(client, public, server.base_url), SOFTWARE
+        )
+        sample = await sampler.sample_up_to(
+            f"{OWN_BASE}/iclip/agent/ref.mp4", max_seconds=max_seconds
+        )
 
-    assert 1.9 <= seconds <= 2.1
-    assert len(sample.frames) == 20
+    if sampled:
+        assert sample is not None
+        assert len(sample.frames) == 20
+    else:
+        assert sample is None
     assert {delivery.target for delivery in server.deliveries} == {"iclip/agent/ref.mp4"}
+
+
+@pytest.mark.parametrize(("max_seconds", "sampled"), [(60.0, True), (1.0, False)])
+async def test_another_address_is_downloaded_once_through_the_public_client_then_probed_locally(
+    tmp_path: Path, max_seconds: float, sampled: bool
+) -> None:
+    """别处的地址不交给 ffprobe/ffmpeg：经只连公网的客户端原样下载一次，时长在本地文件上探，短的就抽
+    这一份。这个主机名解析不了，ffprobe 若拿到远程地址就会失败。"""
+
+    video = synthesize_video(tmp_path / "ref.mp4", size="320x240", seconds=2, audio=True)
+    asked: list[str] = []
+
+    def outside(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, content=video)
+
+    url = "https://elsewhere.invalid/ref.mp4?sig=1"
+    async with (
+        unused_client() as internal,
+        httpx.AsyncClient(transport=httpx.MockTransport(outside)) as public,
+    ):
+        sampler = FfmpegVideoSampler(
+            own_bucket_downloads(internal, public, "http://127.0.0.1:9"), SOFTWARE
+        )
+        sample = await sampler.sample_up_to(url, max_seconds=max_seconds)
+
+    assert asked == [url]
+    if sampled:
+        assert sample is not None
+        assert len(sample.frames) == 20
+        assert sample.audio is not None
+    else:
+        assert sample is None

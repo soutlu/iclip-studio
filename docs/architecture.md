@@ -41,6 +41,7 @@ Agent 引擎使用 PydanticAI 与 Pydantic AI Harness。以下路径均相对 `r
 | `hooks.py` | 回调应用的请求体与发请求的客户端；应用那一侧也引用这里的模型 |
 | `client/` | 给应用的客户端库，见[客户端库](#客户端库) |
 | `file_store/`、`material_ledger/` | 工作区文件存储与素材台账 |
+| `outbound/` | 只连公网的出网下载（[outbound/](../runtime/src/agent_runtime/outbound/__init__.py)）：查地址形状、端口与解析出的每个 IP，连接只用查过的 IP，不走代理，跳转逐跳重查；失败分得出地址被拒、解析不了与对方回的状态码。后端下载外部地址（消息附件转存、取帧与拆解的视频）时经它 |
 | `secrets.py` | 密钥机密字段与 MCP 服务地址、请求头共用的加密与打码 |
 | `run_deps.py` | 运行依赖 `AgentRunDeps` |
 | 包根的其余模块 | 领域错误分类、工具入参的 JSON 文本归一化、地址形状判定、模型接口与思考档位的词表、agent 配置引用的「谁在用」形状 |
@@ -165,7 +166,7 @@ WebSocket 订阅、活动状态和文件变更帧的对外约定见 [contract/co
 | 位置 | 职责 |
 |---|---|
 | `domains/` | 业务用例、领域模型、HTTP 入口及存储适配；不依赖 Agent 引擎 |
-| `platform/` | 共用技术协议及适配器：数据库与行归属、对象存储、ffmpeg 媒体处理（子进程、下载、探测、视频裁剪拼接、抽口播音频与音乐规整、字体文件解析，不含业务规则）与图片文件头、取帧拼板与宫格切格的像素处理（`platform/shot_media/`）、视频拆解的抽帧与方舟模型适配器（`platform/video_breakdown/`，经运行时的模型调用接口调方舟）、出网下载（只连公网，见 [platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)）、HTTP 错误映射、翻页、连接级 WS 帧（`platform/live/`）、配置页管理接口转给运行时服务（`platform/runtime_admin.py`） |
+| `platform/` | 共用技术协议及适配器：数据库与行归属、对象存储、ffmpeg 媒体处理（子进程、下载、探测、视频裁剪拼接、抽口播音频与音乐规整、字体文件解析，不含业务规则）与图片文件头、取帧拼板与宫格切格的像素处理（`platform/shot_media/`）、视频拆解的抽帧与方舟模型适配器（`platform/video_breakdown/`，经运行时的模型调用接口调方舟）、HTTP 错误映射、翻页、连接级 WS 帧（`platform/live/`）、配置页管理接口转给运行时服务（`platform/runtime_admin.py`） |
 | `common/` | 跨层共用的纯规则：生成记录的种类、状态词表 |
 | `config/` | 配置声明、环境变量定义与启动期解析 |
 | `app/` | 组合根及跨模块适配 |
@@ -238,7 +239,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份；`/internal/run
 
 运行通过 `AgentRunDeps` 向工具传递属主用户 ID 与对话 ID，业务含义和权限约束见 [CONTEXT.md](CONTEXT.md)。harness 只传递 deps，不解包业务字段；工具所需服务由组合根闭包注入，不放进 deps。客户端 state 不作为运行身份或服务来源。
 
-跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的三个端口：两个由组合根接到生成域，一个查这次上传记过没有，一个落一条上传记录并交回最终地址，这一步只要生成仓储，媒体生成没开也照落；第三个判音乐要挂的对话是不是主体自己的，接到对话域。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
+跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的三个端口：两个由组合根接到生成域，一个查这次上传记过没有，一个落一条上传记录并交回最终地址，这一步只要生成仓储，媒体生成没开也照落；第三个判音乐要挂的对话是不是主体自己的，接到对话域。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。取帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频的拆解下载的视频地址可能是模型给的：本桶对象照旧换成内网地址、经共用的 HTTP 客户端取，别的地址经组合根建的只连公网的客户端原样下载（lifespan 里关闭）；拆解对这类地址先下载、在本地文件上探时长，不把远程地址交给 ffprobe，因为它自己跟跳转。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
 
 ### 成片渲染服务
 
@@ -278,4 +279,4 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份；`/internal/run
 
 ## 4. 日志
 
-structlog 与标准库日志的渲染链在两个文件里，做法相同：后端的 [app/logging.py](../server/src/iclip/app/logging.py) 与运行时服务的 [agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py)，各自定服务名与 `QUIET_LOGGERS`。后端只能引用运行时的形状、报错与客户端库，所以不合成一份。console 格式用本机时间，时间后一列是服务名（「后端」或「运行时」）；JSON 格式的时间是 ISO UTC。两种格式都不打探活成功的 `/healthz` 访问行和 websockets 重复的连接行。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。
+structlog 与标准库日志的渲染链在两个文件里，做法相同：后端的 [app/logging.py](../server/src/iclip/app/logging.py) 与运行时服务的 [agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py)，各自定服务名与 `QUIET_LOGGERS`。后端只能引用运行时的形状、报错、客户端库与出网防护，所以不合成一份。console 格式用本机时间，时间后一列是服务名（「后端」或「运行时」）；JSON 格式的时间是 ISO UTC。两种格式都不打探活成功的 `/healthz` 访问行和 websockets 重复的连接行。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。

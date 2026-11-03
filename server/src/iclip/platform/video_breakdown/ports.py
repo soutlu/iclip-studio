@@ -36,14 +36,10 @@ class SampledVideo:
 
 
 class VideoSampler(Protocol):
-    """读视频时长，并为模型准备帧与音轨。失败抛 ``MediaError``。"""
+    """为模型准备一条视频的帧与音轨。失败抛 ``MediaError``。"""
 
-    async def duration_seconds(self, video_url: str) -> float:
-        """不下载整片，只读时长。"""
-        ...
-
-    async def sample(self, video_url: str) -> SampledVideo:
-        """下载视频，抽帧并取出音轨。"""
+    async def sample_up_to(self, video_url: str, *, max_seconds: float) -> SampledVideo | None:
+        """视频不超过 ``max_seconds`` 秒时抽帧并取出音轨；更长的返回 None，不抽。"""
         ...
 
 

@@ -1,4 +1,5 @@
-"""出网下载的防护：只连查过的公网 IP，地址、端口、跳转、大小与时长都有上限。
+"""出网下载的防护：只连查过的公网 IP，地址、端口、跳转、大小与时长都有上限；失败分得出地址被拒、
+解析不了与对方回的状态码。下载器的取字节与探类型、流式读的客户端都按同一套规则。
 
 不连外网：解析函数与底层网络后端都注入替身，断言实际连的是哪个 (ip, port)；连本地服务器的
 那一条注入放行回环的测试策略。
@@ -7,17 +8,26 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
 import httpcore
+import httpx
 import pytest
 
-from iclip.platform.outbound.fetch import FetchTooLarge, PublicFetcher
-from iclip.platform.outbound.guard import (
+from agent_runtime.outbound.fetch import (
+    FetchBadStatus,
+    FetchTooLarge,
+    PublicFetcher,
+    UrlProbe,
+    public_client,
+)
+from agent_runtime.outbound.guard import (
     FetchFailed,
     FetchRefused,
+    FetchUnresolved,
     IpAddress,
     OutboundPolicy,
 )
@@ -219,13 +229,18 @@ async def test_a_body_without_a_length_is_cut_off_at_the_cap() -> None:
             await client.fetch("http://img.test/a.png", max_bytes=20)
 
 
-async def test_an_error_status_is_a_failure() -> None:
-    backend = RecordingBackend(
-        {(PUBLIC_IP, 80): [b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"]}
-    )
+def status(code: int) -> list[bytes]:
+    return [f"HTTP/1.1 {code} x\r\nContent-Length: 0\r\n\r\n".encode()]
+
+
+@pytest.mark.parametrize("code", [404, 503])
+async def test_an_error_status_carries_the_code(code: int) -> None:
+    backend = RecordingBackend({(PUBLIC_IP, 80): status(code)})
     async with fetcher(backend, {"img.test": [PUBLIC_IP]}) as client:
-        with pytest.raises(FetchFailed, match="404"):
+        with pytest.raises(FetchBadStatus, match=f"对方回了 {code}") as raised:
             await client.fetch("http://img.test/a.png", max_bytes=1024)
+
+    assert raised.value.status_code == code
 
 
 class _StallingStream(httpcore.AsyncMockStream):
@@ -250,8 +265,10 @@ class _StallingBackend(RecordingBackend):
 async def test_a_stalled_download_fails_at_the_total_timeout() -> None:
     backend = _StallingBackend({})
     async with fetcher(backend, {"img.test": [PUBLIC_IP]}, total_timeout_seconds=0.05) as client:
-        with pytest.raises(FetchFailed, match="秒内没有下载完"):
+        with pytest.raises(FetchFailed, match="秒内没有完成") as raised:
             await client.fetch("http://img.test/a.png", max_bytes=1024)
+
+    assert type(raised.value) is FetchFailed
 
 
 async def test_proxy_settings_in_the_environment_are_ignored(
@@ -305,3 +322,213 @@ async def test_the_production_policy_refuses_loopback_for_real() -> None:
             await instance.fetch("http://localhost/a.png", max_bytes=1024)
     finally:
         await instance.aclose()
+
+
+def unresolvable(*, error: bool) -> Any:
+    async def resolve(host: str, port: int) -> Sequence[str]:
+        if error:
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        return []
+
+    return resolve
+
+
+@pytest.mark.parametrize("error", [True, False], ids=["解析出错", "没有地址"])
+async def test_a_host_that_does_not_resolve_is_its_own_failure(error: bool) -> None:
+    backend = RecordingBackend({})
+    instance = PublicFetcher(resolve=unresolvable(error=error), network_backend=backend)
+    try:
+        with pytest.raises(FetchUnresolved, match=r"img\.test"):
+            await instance.fetch("http://img.test/a.png", max_bytes=1024)
+    finally:
+        await instance.aclose()
+
+    assert backend.connected == []
+
+
+class _HeadThenStallStream(httpcore.AsyncMockStream):
+    """先交出响应头，再读就卡住：读了响应体的话会等到总时长上限。"""
+
+    def __init__(self, head: bytes) -> None:
+        super().__init__([head])
+        self.reads = 0
+
+    async def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        self.reads += 1
+        if self.reads == 1:
+            return await super().read(max_bytes, timeout)
+        await asyncio.sleep(10)
+        return b""
+
+
+class _HeadOnlyBackend(RecordingBackend):
+    def __init__(self, head: bytes) -> None:
+        super().__init__({})
+        self.stream = _HeadThenStallStream(head)
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        self.connected.append((host, port))
+        return self.stream
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        pytest.param(b"Video/MP4; codecs=avc1", "video/mp4", id="去参数转小写"),
+        pytest.param(None, None, id="没给"),
+    ],
+)
+async def test_probe_answers_the_media_type_without_reading_the_body(
+    content_type: bytes | None, expected: str | None
+) -> None:
+    head = b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\n"
+    if content_type is not None:
+        head += b"Content-Type: " + content_type + b"\r\n"
+    backend = _HeadOnlyBackend(head + b"\r\n")
+    async with fetcher(backend, {"img.test": [PUBLIC_IP]}, total_timeout_seconds=1.0) as client:
+        probed = await client.probe("https://img.test/a.mp4")
+
+    assert probed == UrlProbe(media_type=expected)
+    assert backend.stream.reads == 1
+    assert backend.connected == [(PUBLIC_IP, 443)]
+
+
+async def test_probe_follows_redirects_to_public_hosts() -> None:
+    backend = RecordingBackend(
+        {
+            (PUBLIC_IP, 80): redirect("https://cdn.test/real.mp4"),
+            (OTHER_PUBLIC_IP, 443): [
+                b"HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: 0\r\n\r\n"
+            ],
+        }
+    )
+    table = {"img.test": [PUBLIC_IP], "cdn.test": [OTHER_PUBLIC_IP]}
+    async with fetcher(backend, table) as client:
+        probed = await client.probe("http://img.test/a.mp4")
+
+    assert probed.media_type == "video/mp4"
+    assert backend.connected == [(PUBLIC_IP, 80), (OTHER_PUBLIC_IP, 443)]
+
+
+@pytest.mark.parametrize(
+    ("location", "reason"),
+    [
+        pytest.param("http://internal.test/secret", r"10\.1\.2\.3", id="内网"),
+        pytest.param("http://user:secret@cdn.test/a.mp4", "用户名密码", id="带用户名密码"),
+    ],
+)
+async def test_probe_rechecks_the_redirect_target(location: str, reason: str) -> None:
+    backend = RecordingBackend({(PUBLIC_IP, 80): redirect(location)})
+    table = {"img.test": [PUBLIC_IP], "internal.test": ["10.1.2.3"], "cdn.test": [OTHER_PUBLIC_IP]}
+    async with fetcher(backend, table) as client:
+        with pytest.raises(FetchRefused, match=reason):
+            await client.probe("http://img.test/a.mp4")
+
+    assert backend.connected == [(PUBLIC_IP, 80)]
+
+
+@pytest.mark.parametrize("code", [404, 503])
+async def test_probe_raises_the_status_it_got(code: int) -> None:
+    backend = RecordingBackend({(PUBLIC_IP, 80): status(code)})
+    async with fetcher(backend, {"img.test": [PUBLIC_IP]}) as client:
+        with pytest.raises(FetchBadStatus) as raised:
+            await client.probe("http://img.test/a.mp4")
+
+    assert raised.value.status_code == code
+
+
+async def test_probe_of_an_unresolvable_host_is_unresolved() -> None:
+    instance = PublicFetcher(resolve=unresolvable(error=True), network_backend=RecordingBackend({}))
+    try:
+        with pytest.raises(FetchUnresolved):
+            await instance.probe("http://img.test/a.mp4")
+    finally:
+        await instance.aclose()
+
+
+async def test_probe_that_stalls_fails_plainly_at_the_total_timeout() -> None:
+    backend = _StallingBackend({})
+    async with fetcher(backend, {"img.test": [PUBLIC_IP]}, total_timeout_seconds=0.05) as client:
+        with pytest.raises(FetchFailed, match="秒内没有完成") as raised:
+            await client.probe("http://img.test/a.mp4")
+
+    assert type(raised.value) is FetchFailed
+
+
+@asynccontextmanager
+async def streaming(
+    backend: httpcore.AsyncNetworkBackend, table: Mapping[str, Sequence[str]]
+) -> AsyncGenerator[httpx.AsyncClient]:
+    client = public_client(resolve=resolver(table), network_backend=backend)
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+async def test_the_streaming_client_follows_redirects_over_checked_addresses() -> None:
+    backend = RecordingBackend(
+        {
+            (PUBLIC_IP, 80): redirect("https://cdn.test/real.mp4"),
+            (OTHER_PUBLIC_IP, 443): ok(),
+        }
+    )
+    table = {"img.test": [PUBLIC_IP], "cdn.test": [OTHER_PUBLIC_IP]}
+    async with (
+        streaming(backend, table) as client,
+        client.stream("GET", "http://img.test/a.mp4") as response,
+    ):
+        body = await response.aread()
+
+    assert (response.status_code, body) == (200, PNG)
+    assert backend.connected == [(PUBLIC_IP, 80), (OTHER_PUBLIC_IP, 443)]
+
+
+async def test_the_streaming_client_refuses_an_internal_address_before_connecting() -> None:
+    backend = RecordingBackend({})
+    async with streaming(backend, {"img.test": ["10.0.0.5"]}) as client:
+        with pytest.raises(FetchRefused, match="非公网地址"):
+            await client.get("http://img.test/a.mp4")
+
+    assert backend.connected == []
+
+
+@pytest.mark.parametrize(
+    ("location", "reason"),
+    [
+        pytest.param("http://internal.test/secret", r"10\.1\.2\.3", id="内网"),
+        pytest.param("http://user:secret@cdn.test/a.mp4", "用户名密码", id="带用户名密码"),
+        pytest.param("http://cdn.test:6379/", "6379", id="别的端口"),
+    ],
+)
+async def test_the_streaming_client_rechecks_every_redirect_hop(location: str, reason: str) -> None:
+    backend = RecordingBackend({(PUBLIC_IP, 80): redirect(location)})
+    table = {"img.test": [PUBLIC_IP], "internal.test": ["10.1.2.3"], "cdn.test": [OTHER_PUBLIC_IP]}
+    async with streaming(backend, table) as client:
+        with pytest.raises(FetchRefused, match=reason):
+            await client.get("http://img.test/a.mp4")
+
+    assert backend.connected == [(PUBLIC_IP, 80)]
+
+
+async def test_the_streaming_client_gives_up_after_three_redirects() -> None:
+    hosts = [f"h{index}.test" for index in range(5)]
+    ips = [f"93.184.216.{40 + index}" for index in range(5)]
+    responses = {
+        (ip, 80): redirect(f"http://{hosts[index + 1]}/") for index, ip in enumerate(ips[:-1])
+    }
+    responses[(ips[-1], 80)] = ok()
+    backend = RecordingBackend(responses)
+    table = dict(zip(hosts, [[ip] for ip in ips], strict=True))
+    async with streaming(backend, table) as client:
+        with pytest.raises(httpx.TooManyRedirects):
+            await client.get(f"http://{hosts[0]}/")
+
+    assert len(backend.connected) == 4
