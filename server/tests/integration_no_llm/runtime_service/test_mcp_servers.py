@@ -617,16 +617,16 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     ]
     assert returned.tool_name == "mcp_calc_add"
     assert "5" in str(returned.content)
-    # 卡头是服务的名称与这件工具的显示名，不是工具说明、工具名与标识。
+    # 卡头是服务的名称接这件工具的显示名，不是工具说明、工具名与标识；参数里没有字符串，没有主语。
     (card,) = tool_frames(await only_turn(app_client, session))
     assert (card["name"], card["state"]) == ("mcp_calc_add", "done")
-    assert card["display"] == {"kind": "generic", "summary": "计算器", "detail": "加法"}
+    assert card["display"] == {"kind": "generic", "summary": "计算器 · 加法", "detail": None}
 
     # 历史每次读都按名册当下的内容重画：改了服务名称，已跑完的这一轮跟着换。
     renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术"})
     assert renamed.status_code == 200, renamed.text
     (card,) = tool_frames(await only_turn(app_client, session))
-    assert card["display"] == {"kind": "generic", "summary": "算术", "detail": "加法"}
+    assert card["display"] == {"kind": "generic", "summary": "算术 · 加法", "detail": None}
 
 
 async def test_startup_reads_the_server_index_from_the_database(

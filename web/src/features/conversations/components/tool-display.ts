@@ -117,7 +117,7 @@ export const toolCard = (display: unknown, view?: string): ToolCard => {
     case 'generic': {
       const icon: IconName = view === 'media_grid' ? 'image' : 'task'
       return card.detail
-        ? { detail: card.detail, icon, label: card.summary }
+        ? { detail: clip(card.detail), icon, label: card.summary }
         : { icon, label: card.summary }
     }
   }

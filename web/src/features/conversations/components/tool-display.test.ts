@@ -11,6 +11,13 @@ describe('toolCard', () => {
     )
   })
 
+  it('兜底卡的主语超过 60 字截断加省略号', () => {
+    const ref = `kb1.${'x'.repeat(120)}`
+    expect(toolCard({ kind: 'generic', summary: '知识库', detail: ref }).detail).toBe(
+      `${ref.slice(0, 60)}…`,
+    )
+  })
+
   it('读取网页：只留域名与路径，查询串不上界面', () => {
     expect(
       toolCard({ kind: 'url_fetch', url: 'https://example.com/docs/a?token=secret' }).detail,
