@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import Material, MaterialLedger
+from agent_runtime.harness.materials import require_media
+from agent_runtime.harness.media_check import bad_urls
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.run_deps import AgentRunDeps
@@ -28,7 +29,7 @@ from pydantic_ai.tools import AgentDepsT, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
-from iclip_video.iclip_studio.film.load import ConversationImages, load_film
+from iclip_video.iclip_studio.film.load import image_problems, load_film
 from iclip_video.iclip_studio.film.markup import Node
 from iclip_video.iclip_studio.film.packages import IMAGE
 from iclip_video.iclip_studio.film.prompts import render_picture, render_video
@@ -63,9 +64,6 @@ class IclipStudio(CapPlugin[AgentDepsT]):
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
 
-    ledger: MaterialLedger
-    """对话素材台账：用户给的图片地址在里面，生成出来的图也登记进去。"""
-
     images: NodeImages | None = None
     """生图节点与生成记录的往来；没开媒体生成时为 None。"""
 
@@ -82,12 +80,10 @@ class IclipStudio(CapPlugin[AgentDepsT]):
         return CAPABILITY_ID
 
     @classmethod
-    def bind(
-        cls, *, space: FileSpace, ledger: MaterialLedger, images: NodeImages | None
-    ) -> type[Self]:
+    def bind(cls, *, space: FileSpace, images: NodeImages | None) -> type[Self]:
         """把运行服务绑进类，交给登记表。"""
 
-        return cls._bound(space=space, ledger=ledger, images=images)
+        return cls._bound(space=space, images=images)
 
     @classmethod
     def from_spec(cls) -> Self:
@@ -125,7 +121,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         self, ctx: RunContext[AgentDepsT], show: str | None = None
     ) -> ToolReturn[str]:
         """检查工程文件 film.icml 和运行文件 film.icrun 是否符合工程规范，包括文件结构、引用关系、
-        参数和素材来源。
+        参数，以及文件里的图片地址能不能打开、是不是图片。
 
         检查分阶段进行，返回本次发现的问题及文件位置，每次最多列出 30 处。修正后重新检查。
         图片尚未选用不影响工程规范检查；可用 show 查看指定节点的最终提示词、参考图和缺图情况。
@@ -138,6 +134,9 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         film = await self._load(ctx)
         if isinstance(film, list):
             return _problems(film)
+        problems = await self._image_problems(film)
+        if problems:
+            return _problems(problems)
         project = film.project
         videos = project.find("ReferenceVideo")
         lines = [
@@ -159,7 +158,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
 
         只在用户说了要生成哪些图时调用。每调用一次，列出的每个节点都重新生成并计费；已经生成
         过、用户没有要求重做的不要再列。一次最多 10 个节点，更多的分几次调用。生成前先做与
-        check_film 相同的检查，有问题不生成。运行文件里选用了登记图的节点不生成；挂的参考图里
+        check_film 相同的规范检查，再查要生成的节点用到的参考图能不能打开，有问题不生成。运行文件里选用了登记图的节点不生成；挂的参考图里
         有还没选用的，这个节点不生成，结果里列出缺哪几张，等用户在制作页选用后再生成。一张失败
         不影响其它张，失败的在结果里说明，不要自动重试。生成出来的图不会自动用上，用户在制作页
         选用了才算有图。
@@ -196,8 +195,17 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 outcome[name] = f"没有生成，参考图 {'、'.join(missing)} 还没有选用图"
             else:
                 pending.append(name)
+        # 只查这次真要生成的节点用到的参考图。
+        await require_media(
+            [
+                (f"{name} 的 @Image{n}", url)
+                for name in pending
+                for n, url in enumerate(render_picture(film, known[name]).image_urls, start=1)
+            ],
+            kind="image",
+            what="参考图地址",
+        )
         deps = _deps(ctx)
-        namespace = self._cap.space.resolve(ctx)
         # 生成出来的图要用户选用才算有图，同一次里先出的也不给后出的当参考，所以一起生成。
         results = await asyncio.gather(
             *(self._generate(images, deps, film, known[name]) for name in pending)
@@ -208,9 +216,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 outcome[name] = f"已生成，地址 {job.output_url}"
             else:
                 outcome[name] = f"生成失败，{job.error_message or '没有说明原因'}"
-        await self._cap.ledger.record(
-            namespace, [Material(url=url, kind="image") for url, _ in made]
-        )
         failed = sum(1 for text in outcome.values() if text.startswith("生成失败"))
         skipped = len(targets) - len(made) - failed
         lines = [f"生成结束：{len(made)} 张成功，{failed} 张失败，{skipped} 个没有生成。"]
@@ -266,11 +271,13 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         if project is None:
             raise ModelRetry(f"工作区里没有 {FILM_PATH}；先按规范把它写出来。")
         run = await files.read(namespace, RUN_PATH)
-        return await load_film(
-            project.content,
-            None if run is None else run.content,
-            images=ConversationImages(ledger=self._cap.ledger, namespace=namespace),
-        )
+        return load_film(project.content, None if run is None else run.content)
+
+    async def _image_problems(self, film: Film) -> list[str]:
+        """两个文件里写的每个图片地址都探一遍：用不了的挂到写着它的节点上，返回全部问题。"""
+
+        bad = await bad_urls([node.attrs["src"] for _, node in film.given_images()], kind="image")
+        return image_problems(film, bad) if bad else []
 
 
 def _problems(problems: list[str]) -> ToolReturn[str]:

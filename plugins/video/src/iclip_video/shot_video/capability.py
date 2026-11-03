@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.transcript.display import (
@@ -42,9 +41,6 @@ class ShotVideo(CapPlugin[AgentDepsT]):
     space: FileSpace
     """产物存储与命名空间，必须由组合根提供与工作区能力相同的 FileSpace。"""
 
-    ledger: MaterialLedger
-    """素材来源台账，记录产物地址并供工具输入验证使用。"""
-
     extractor: FrameExtractor
 
     generator: FrameGenerator
@@ -67,7 +63,6 @@ class ShotVideo(CapPlugin[AgentDepsT]):
         cls,
         *,
         space: FileSpace,
-        ledger: MaterialLedger,
         generations: ImageGenerations,
         boards: FrameBoards,
         cuts: GridCuts,
@@ -89,7 +84,6 @@ class ShotVideo(CapPlugin[AgentDepsT]):
             )
         return cls._bound(
             space=space,
-            ledger=ledger,
             extractor=FrameExtractor(boards=boards),
             generator=FrameGenerator(generations=generations, cuts=cuts, policy=policy),
         )

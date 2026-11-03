@@ -1977,7 +1977,7 @@
       },
       "FilesCopyIn": {
         "additionalProperties": false,
-        "description": "按清单把源会话的几份文件拷进 ``target_id``，连同整份素材台账；目标的属主是 ``X-End-User``。",
+        "description": "按清单把源会话的几份文件拷进 ``target_id``；目标的属主是 ``X-End-User``。",
         "properties": {
           "files": {
             "items": {
@@ -2275,83 +2275,6 @@
           "ids"
         ],
         "title": "ItemsRemoveOp",
-        "type": "object"
-      },
-      "Material": {
-        "description": "图片或视频素材及其 URL。",
-        "properties": {
-          "kind": {
-            "enum": [
-              "image",
-              "video"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url",
-          "kind"
-        ],
-        "title": "Material",
-        "type": "object"
-      },
-      "MaterialsIn": {
-        "additionalProperties": false,
-        "properties": {
-          "materials": {
-            "items": {
-              "$ref": "#/components/schemas/Material"
-            },
-            "title": "Materials",
-            "type": "array"
-          }
-        },
-        "required": [
-          "materials"
-        ],
-        "title": "MaterialsIn",
-        "type": "object"
-      },
-      "MaterialsLookupIn": {
-        "additionalProperties": false,
-        "properties": {
-          "urls": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 1000,
-            "minItems": 1,
-            "title": "Urls",
-            "type": "array"
-          }
-        },
-        "required": [
-          "urls"
-        ],
-        "title": "MaterialsLookupIn",
-        "type": "object"
-      },
-      "MaterialsLookupOut": {
-        "additionalProperties": false,
-        "properties": {
-          "materials": {
-            "items": {
-              "$ref": "#/components/schemas/Material"
-            },
-            "title": "Materials",
-            "type": "array"
-          }
-        },
-        "required": [
-          "materials"
-        ],
-        "title": "MaterialsLookupOut",
         "type": "object"
       },
       "McpCheckIn": {
@@ -9835,7 +9758,7 @@
     },
     "/v1/sessions/{session_id}/files:copy": {
       "post": {
-        "description": "按清单拷文件与整份素材台账；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用\n的会话（目标先开好），任一不是答 404；任一是预览会话答 422。",
+        "description": "按清单拷文件；``require_any`` 一个都不在时什么都不写。源与目标都要是调用方应用\n的会话（目标先开好），任一不是答 404；任一是预览会话答 422。",
         "operationId": "copy_files_v1_sessions__session_id__files_copy_post",
         "parameters": [
           {
@@ -9966,209 +9889,6 @@
         ]
       }
     },
-    "/v1/sessions/{session_id}/materials": {
-      "get": {
-        "operationId": "lookup_material_v1_sessions__session_id__materials_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "description": "素材地址，按原始字符串精确匹配。",
-            "in": "query",
-            "name": "url",
-            "required": true,
-            "schema": {
-              "description": "素材地址，按原始字符串精确匹配。",
-              "minLength": 1,
-              "title": "Url",
-              "type": "string"
-            }
-          },
-          {
-            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
-            "in": "header",
-            "name": "X-End-User",
-            "required": true,
-            "schema": {
-              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
-              "format": "uuid",
-              "title": "X-End-User",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Material"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AppKey": []
-          }
-        ],
-        "summary": "Lookup Material",
-        "tags": [
-          "workspace"
-        ]
-      },
-      "post": {
-        "operationId": "record_materials_v1_sessions__session_id__materials_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
-            "in": "header",
-            "name": "X-End-User",
-            "required": true,
-            "schema": {
-              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
-              "format": "uuid",
-              "title": "X-End-User",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MaterialsIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AppKey": []
-          }
-        ],
-        "summary": "Record Materials",
-        "tags": [
-          "workspace"
-        ]
-      }
-    },
-    "/v1/sessions/{session_id}/materials:lookup": {
-      "post": {
-        "operationId": "lookup_materials_v1_sessions__session_id__materials_lookup_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
-            "in": "header",
-            "name": "X-End-User",
-            "required": true,
-            "schema": {
-              "description": "会话的属主：用户 id。应用替看的人转发时也给属主，不给看的人。",
-              "format": "uuid",
-              "title": "X-End-User",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MaterialsLookupIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MaterialsLookupOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AppKey": []
-          }
-        ],
-        "summary": "Lookup Materials",
-        "tags": [
-          "workspace"
-        ]
-      }
-    },
     "/v1/sessions/{session_id}/prompts": {
       "get": {
         "operationId": "queue_view_v1_sessions__session_id__prompts_get",
@@ -10217,7 +9937,7 @@
         ]
       },
       "post": {
-        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n受理前先装一次这段会话固定的 agent 版本，装不起来是 409（``agent_unavailable``），什么都不写；\n带地址的图片与视频附件在入队前登记进会话的素材台账。",
+        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n受理前先装一次这段会话固定的 agent 版本，装不起来是 409（``agent_unavailable``），什么都不写。",
         "operationId": "submit_v1_sessions__session_id__prompts_post",
         "parameters": [
           {
@@ -10767,7 +10487,7 @@
     },
     "/v1/sessions/{session_id}:fork": {
       "post": {
-        "description": "从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件与整份素材台账、写种子快照。\n\n源不是调用方应用的会话是 404，源或目标是预览会话是 422，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，\n源没跑过、轮号越界是 422；数完轮数后源的轮数又变了是 409。这些都在写任何东西之前。",
+        "description": "从源会话分叉出调用方应用的新会话：固定版本、拷工作区文件、写种子快照。\n\n源不是调用方应用的会话是 404，源或目标是预览会话是 422，目标 id 已归别的应用是 409；源有没跑完或排着队的消息是 409，\n源没跑过、轮号越界是 422；数完轮数后源的轮数又变了是 409。这些都在写任何东西之前。",
         "operationId": "fork_session_v1_sessions__session_id__fork_post",
         "parameters": [
           {

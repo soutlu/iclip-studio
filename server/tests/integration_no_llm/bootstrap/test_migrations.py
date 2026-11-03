@@ -17,7 +17,6 @@ from agent_runtime.harness.jobs import metadata_obj as jobs_metadata
 from agent_runtime.harness.sessions import metadata_obj as sessions_metadata
 from agent_runtime.harness.step_store_pg import metadata_obj as step_store_metadata
 from agent_runtime.harness.usage_ledger_pg import metadata_obj as usage_ledger_metadata
-from agent_runtime.material_ledger.pg import metadata_obj as material_ledger_metadata
 from sqlalchemy import Column, MetaData, inspect, text
 
 from iclip.domains.brand_templates.infra_sql import metadata_obj as brand_templates_metadata
@@ -52,7 +51,6 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     jobs_metadata,
     sessions_metadata,
     usage_ledger_metadata,
-    material_ledger_metadata,
     file_store_metadata,
 )
 

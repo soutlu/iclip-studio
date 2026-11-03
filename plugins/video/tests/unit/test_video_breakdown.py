@@ -7,6 +7,7 @@ import inspect
 import uuid
 from collections.abc import Sequence
 
+import httpx
 import pytest
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.harness.background import is_receipt, parse_outcome
@@ -35,6 +36,7 @@ from iclip_video.video_breakdown.capability import (
 )
 from iclip_video.video_breakdown.ports import BreakdownFailureReason, FailedBreakdown
 from tests.helpers.file_store import FakeFileStore
+from tests.helpers.media_probe import Answer, ScriptedMedia
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 VIDEO = "https://cdn.test/ref.mp4"
@@ -89,13 +91,13 @@ def capability_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBre
     )
 
 
-def plugin_for(
-    files: FakeFileStore, breakdowns: FakeBreakdowns
-) -> type[VideoBreakdownPlugin[object]]:
-    """与组合根同一条路：服务绑进插件类。"""
+def plugin_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBreakdownPlugin[object]:
+    """与组合根同一条路：服务绑进插件类再按 spec 造。"""
 
-    return VideoBreakdownPlugin[object].bind(
-        space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=breakdowns
+    return (
+        VideoBreakdownPlugin[object]
+        .bind(space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=breakdowns)
+        .from_spec()
     )
 
 
@@ -228,9 +230,9 @@ async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
         # 拿到回执就先结束这一步，harness 等到结果后让模型再答一次。
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
-    result = await Agent(
-        FunctionModel(script), capabilities=[plugin_for(files, breakdowns).from_spec()]
-    ).run("拆解参考视频。", deps=make_deps())
+    result = await Agent(FunctionModel(script), capabilities=[plugin_for(files, breakdowns)]).run(
+        "拆解参考视频。", deps=make_deps()
+    )
 
     assert len(breakdowns.calls) == 1 + BREAKDOWN_RETRIES
     assert all(is_receipt(part) for part in tool_returns(result.all_messages()))
@@ -258,9 +260,60 @@ async def test_the_address_must_be_http(files: FakeFileStore) -> None:
 
     outcome = validator(make_ctx(), video_url="ref.mp4")
     assert inspect.isawaitable(outcome)
-    with pytest.raises(ModelRetry) as raised:
+    with pytest.raises(ModelRetry, match="视频地址：打不开"):
         await outcome
-    assert raised.value.message == "视频地址不对，输入提供的视频的 url。"
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        pytest.param((404, None), "打不开", id="404"),
+        pytest.param((503, None), "打不开", id="5xx"),
+        pytest.param(httpx.ConnectError("连不上"), "打不开", id="连不上"),
+        pytest.param(httpx.ReadTimeout("慢"), "打不开", id="超时"),
+        pytest.param((200, "image/jpeg"), "不是视频", id="不是视频"),
+    ],
+)
+async def test_a_wrong_video_address_never_reaches_the_backend(
+    files: FakeFileStore, media: ScriptedMedia, answer: Answer, reason: str
+) -> None:
+    breakdowns = FakeBreakdowns()
+    media.set(VIDEO, answer)
+
+    def call_once(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return call_breakdown(messages)
+        return ModelResponse(parts=[TextPart("本轮结束。")])
+
+    result = await Agent(
+        FunctionModel(call_once), capabilities=[capability_for(files, breakdowns)]
+    ).run("拆解参考视频。", deps=make_deps())
+    messages = result.all_messages()
+
+    retried = [part for part in tool_returns(messages) if part.outcome == "retried"]
+    assert retried
+    assert f"视频地址：{reason}" in retried[0].model_response_str()
+    assert VIDEO not in retried[0].model_response_str()
+    assert breakdowns.calls == []
+
+
+async def test_a_reachable_video_never_seen_in_the_conversation_is_taken(
+    files: FakeFileStore, media: ScriptedMedia
+) -> None:
+    from_mcp = "https://mcp.example.com/blob/9c1e"
+    media.set(from_mcp, (200, "video/mp4"))
+
+    await check_video(toolset(files, FakeBreakdowns()), from_mcp)
+
+    assert media.asked == [from_mcp]
+
+
+async def check_video(tools: VideoBreakdownToolset[object], url: str) -> None:
+    validator = tools.tools["breakdown_video"].args_validator
+    assert validator is not None
+    outcome = validator(make_ctx(), video_url=url)
+    assert inspect.isawaitable(outcome)
+    await outcome
 
 
 def test_documents_of_two_videos_with_the_same_name_do_not_collide() -> None:

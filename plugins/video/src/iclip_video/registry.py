@@ -187,15 +187,12 @@ def _registry(
     space = FileSpace(store=host.files, namespace=workspace_namespace)
     plugins: list[type[CapPlugin[Any]]] = [
         Workspace.bind(
-            space=space,
-            probe=OssMediaProbe(outbound, fetch_url=_fetch_url(settings.oss)),
-            ledger=host.ledger,
+            space=space, probe=OssMediaProbe(outbound, fetch_url=_fetch_url(settings.oss))
         ),
-        IclipStudio.bind(space=space, ledger=host.ledger, images=None),
-        VideoShots.bind(space=space, ledger=host.ledger),
+        IclipStudio.bind(space=space, images=None),
+        VideoShots.bind(space=space),
         Video.bind(
             space=space,
-            ledger=host.ledger,
             understanding=ArkVideoUnderstanding(outbound, connection=host.model_connection),
         ),
     ]
@@ -211,7 +208,6 @@ def _registry(
         plugins.append(
             ShotVideo.bind(
                 space=space,
-                ledger=host.ledger,
                 generations=HttpImageGenerations(backend),
                 boards=HttpFrameBoards(backend),
                 cuts=HttpGridCuts(backend),

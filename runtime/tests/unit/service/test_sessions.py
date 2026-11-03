@@ -15,7 +15,6 @@ from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import StoredFile
 from agent_runtime.harness.jobs import JobQueueView
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.service.sessions import (
     PREVIEW_NOT_FORKABLE,
     SESSION_ID_TAKEN,
@@ -24,7 +23,6 @@ from agent_runtime.service.sessions import (
     SessionService,
 )
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 
 APP = "video"
 OTHER_APP = "shop"
@@ -35,7 +33,6 @@ TARGET_USER = uuid.uuid4()
 SOURCE_SPACE = namespace_for(SOURCE_USER, str(SOURCE))
 TARGET_SPACE = namespace_for(TARGET_USER, str(TARGET))
 ASSISTANT_VERSION = uuid.uuid4()
-REF = Material(url="https://example.test/ref.mp4", kind="video")
 
 
 @dataclass
@@ -121,7 +118,6 @@ class Runtime:
     queue: SessionQueue = field(default_factory=IdleQueue)
     history: TwoTurnHistory = field(default_factory=TwoTurnHistory)
     files: FakeFileStore = field(default_factory=FakeFileStore)
-    ledger: FakeMaterialLedger = field(default_factory=FakeMaterialLedger)
 
     def service(self) -> SessionService:
         return SessionService(
@@ -131,13 +127,11 @@ class Runtime:
             queue=self.queue,
             history=self.history,
             files=self.files,
-            ledger=self.ledger,
         )
 
     async def seed_source(self, files: dict[str, str]) -> None:
         for path, content in files.items():
             await self.files.write(SOURCE_SPACE, path, content)
-        await self.ledger.record(SOURCE_SPACE, [REF])
 
     async def target_files(self) -> dict[str, StoredFile]:
         found: dict[str, StoredFile] = {}
@@ -148,11 +142,7 @@ class Runtime:
         return found
 
     async def nothing_written(self) -> bool:
-        return (
-            not self.sessions.written
-            and not await self.files.entries(TARGET_SPACE)
-            and not self.ledger.urls(TARGET_SPACE)
-        )
+        return not self.sessions.written and not await self.files.entries(TARGET_SPACE)
 
 
 async def fork(runtime: Runtime, *, turn: int = 1, agent_id: str | None = None) -> None:
@@ -213,7 +203,6 @@ async def test_copy_files_without_a_precondition_copies_what_the_source_has() ->
 
     copied = await runtime.target_files()
     assert {path: stored.content for path, stored in copied.items()} == {"treatment.md": "方案"}
-    assert runtime.ledger.urls(TARGET_SPACE) == {REF.url}
 
 
 class UnreadableQueue:
@@ -298,4 +287,3 @@ async def test_copy_files_needs_both_sessions_to_be_the_callers_before_reading_a
 
     assert str(raised.value) == SESSION_NOT_FOUND
     assert not await runtime.files.entries(TARGET_SPACE)
-    assert not runtime.ledger.urls(TARGET_SPACE)

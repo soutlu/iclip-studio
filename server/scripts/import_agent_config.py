@@ -66,7 +66,6 @@ from agent_runtime.config.model_providers.schemas import (
 from agent_runtime.config.skills.schemas import SkillPublishIn
 from agent_runtime.errors import DomainError
 from agent_runtime.file_store.pg import PgFileStore
-from agent_runtime.material_ledger.pg import PgMaterialLedger
 from agent_runtime.model_connections import ModelConnection
 from agent_runtime.model_vocab import ThinkingEffort
 from agent_runtime.plugins.base import PluginFactory, PluginHost, PluginRegistry
@@ -718,7 +717,7 @@ async def deployment_plugins(
 ) -> AsyncGenerator[PluginRegistry]:
     """按运行时配置的 ``plugins`` 打开插件包，交回与运行时服务启动时同一份插件登记表；没配就是空的。
 
-    插件类绑的工作区与素材台账接这个库，切换只读插件的名字、依赖与参数，不经它们写东西。打开失败（机密的
+    插件类绑的工作区接这个库，切换只读插件的名字、依赖与参数，不经它们写东西。打开失败（机密的
     环境变量没设、配了 ``shot_video`` 却取不到后端的图片模型）抛 ``ImportRefused``。"""
 
     try:
@@ -737,13 +736,7 @@ async def deployment_plugins(
                 f"按运行时配置打开插件包失败：{exc}。配了 shot_video 或 video_breakdown 时插件包要向后端"
                 "核对插件服务，先把后端起来、RUNTIME_INTERNAL_TOKEN 与运行时配置里的一致，再跑"
             ) from exc
-        yield bind(
-            PluginHost(
-                files=PgFileStore(engine),
-                ledger=PgMaterialLedger(engine),
-                model_connection=_no_model_calls,
-            )
-        )
+        yield bind(PluginHost(files=PgFileStore(engine), model_connection=_no_model_calls))
 
 
 async def _no_model_calls(declaration: str, model: str) -> ModelConnection:

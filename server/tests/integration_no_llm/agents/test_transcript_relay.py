@@ -35,7 +35,7 @@ from iclip.domains.agents.transcript_api import MAX_EVENT_BUFFER, LiveConnection
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.identity.public import Principal
 from tests.helpers.agents import AgentSeed
-from tests.helpers.film import FILM, GIVEN_IMAGES, RUN
+from tests.helpers.film import FILM, RUN
 from tests.helpers.pg import connected
 from tests.helpers.runtime_backed import standard_plugins
 from tests.helpers.runtime_service import JOTTED, JottingPlugin
@@ -671,14 +671,6 @@ async def _seed_film(pg_url: str, namespace: str) -> None:
                     "VALUES (:ns, :path, :content, 1, now(), now())"
                 ),
                 {"ns": namespace, "path": path, "content": content},
-            )
-        for url in GIVEN_IMAGES:
-            await conn.execute(
-                text(
-                    "INSERT INTO agent_runtime.materials (namespace, url, kind) "
-                    "VALUES (:ns, :url, 'image')"
-                ),
-                {"ns": namespace, "url": url},
             )
 
 

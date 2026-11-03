@@ -269,7 +269,7 @@ async def test_another_users_conversation_is_invisible(
 async def test_delete_keeps_the_workspace_for_review(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """工作区与素材台账随墓碑留下：治理者复盘已删对话时还要看分镜稿与素材来源。"""
+    """工作区随墓碑留下：治理者复盘已删对话时还要看分镜稿。"""
 
     user_id = await login_as_editor(client, pg_url)
     doomed = (await create(client, title="要删的")).json()["conversation"]["id"]
@@ -284,13 +284,6 @@ async def test_delete_keeps_the_workspace_for_review(
             ),
             {"ns": namespace},
         )
-        await conn.execute(
-            text(
-                "INSERT INTO agent_runtime.materials (namespace, url, kind) "
-                "VALUES (:ns, 'https://cdn.test/style.jpg', 'image')"
-            ),
-            {"ns": namespace},
-        )
 
     assert (await client.delete(f"{URL}/{doomed}")).status_code == 204
 
@@ -301,14 +294,8 @@ async def test_delete_keeps_the_workspace_for_review(
                 {"ns": namespace},
             )
         ).scalar_one()
-        materials = (
-            await conn.execute(
-                text("SELECT count(*) FROM agent_runtime.materials WHERE namespace = :ns"),
-                {"ns": namespace},
-            )
-        ).scalar_one()
 
-    assert (files, materials) == (1, 1)
+    assert files == 1
 
 
 async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(

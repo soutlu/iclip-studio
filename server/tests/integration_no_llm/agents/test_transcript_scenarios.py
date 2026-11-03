@@ -75,7 +75,6 @@ from pydantic_ai.models.function import (
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.runtime import (
     AGENT_ID,
     approval_runner,
@@ -493,7 +492,6 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
         history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        ledger=FakeMaterialLedger(),
     )
 
     first = await submit_text(runner, queue, conversation_id, "写一句")
@@ -637,7 +635,6 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
         history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        ledger=FakeMaterialLedger(),
     )
     conversation_id = new_conversation_id()
 

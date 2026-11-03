@@ -1,5 +1,4 @@
-"""验证做同款：建对话时带 ``sameAs``，源按资料库认；拷哪几份文件、改什么名、拷台账，什么时候
-不拷、不落行。"""
+"""验证做同款：建对话时带 ``sameAs``，源按资料库认；拷哪几份文件、改什么名，什么时候不拷、不落行。"""
 
 from __future__ import annotations
 
@@ -20,7 +19,6 @@ from tests.helpers.pg import connected
 
 URL = "/conversations"
 AGENT_ID = "director"
-MATERIALS = ("https://cdn.test/chosen.png", "https://cdn.test/ref.mp4")
 
 
 async def open_conversation(client: httpx.AsyncClient) -> str:
@@ -74,7 +72,7 @@ async def make_same(
 
 
 async def plant(pg_url: str, namespace: str, files: dict[str, str]) -> None:
-    """往工作区放文件，往台账登记 ``MATERIALS``。"""
+    """往工作区放文件。"""
 
     async with connected(pg_url) as conn:
         for path, content in files.items():
@@ -85,14 +83,6 @@ async def plant(pg_url: str, namespace: str, files: dict[str, str]) -> None:
                     " VALUES (:ns, :path, :content, 4, now(), now())"
                 ),
                 {"ns": namespace, "path": path, "content": content},
-            )
-        for url in MATERIALS:
-            await conn.execute(
-                text(
-                    "INSERT INTO agent_runtime.materials (namespace, url, kind)"
-                    " VALUES (:ns, :url, :kind)"
-                ),
-                {"ns": namespace, "url": url, "kind": "video" if url.endswith("mp4") else "image"},
             )
 
 
@@ -108,15 +98,6 @@ async def files_of(pg_url: str, namespace: str) -> dict[str, str]:
         return {row.path: row.content for row in rows}
 
 
-async def materials_of(pg_url: str, namespace: str) -> set[tuple[str, str]]:
-    async with connected(pg_url) as conn:
-        rows = await conn.execute(
-            text("SELECT url, kind FROM agent_runtime.materials WHERE namespace = :ns"),
-            {"ns": namespace},
-        )
-        return {(row.url, row.kind) for row in rows}
-
-
 async def row_exists(pg_url: str, conversation_id: str) -> bool:
     async with connected(pg_url) as conn:
         found = await conn.execute(
@@ -128,7 +109,6 @@ async def row_exists(pg_url: str, conversation_id: str) -> bool:
 async def assert_nothing_left(pg_url: str, owner: str, target: str) -> None:
     assert not await row_exists(pg_url, target)
     assert await files_of(pg_url, f"{owner}/{target}") == {}
-    assert await materials_of(pg_url, f"{owner}/{target}") == set()
 
 
 EVERYTHING = {
@@ -141,10 +121,8 @@ EVERYTHING = {
     "frames/1.md": "帧",
 }
 
-LEDGER = {("https://cdn.test/chosen.png", "image"), ("https://cdn.test/ref.mp4", "video")}
 
-
-async def test_same_as_copies_the_four_files_renamed_and_the_whole_ledger(
+async def test_same_as_copies_the_four_files_renamed(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
     owner = await login_as_editor(client, pg_url)
@@ -162,7 +140,6 @@ async def test_same_as_copies_the_four_files_renamed_and_the_whole_ledger(
         "film.icrun": "<run/>",
         "old_video_shot.json": '{"shots": []}',
     }
-    assert await materials_of(pg_url, f"{owner}/{copy['id']}") == LEDGER
     transcript = await client.get(f"{URL}/{copy['id']}/transcript")
     assert transcript.status_code == 200, transcript.text
     assert transcript.json()["items"] == [], "不拷历史"
@@ -234,7 +211,6 @@ async def test_a_colleagues_library_card_is_copied_into_the_callers_own_conversa
         "old_film.icml": "<film/>",
         "treatment.md": "t",
     }
-    assert await materials_of(pg_url, f"{other}/{copy['id']}") == LEDGER
     assert opened.status_code == 404, "做得了同款也仍打不开别人的对话"
 
 
@@ -252,7 +228,6 @@ async def test_a_deleted_source_with_a_library_card_is_copied_anyway(
     assert made.status_code == 201, made.text
     copy = made.json()["conversation"]
     assert await files_of(pg_url, f"{owner}/{copy['id']}") == {"old_film.icml": "<film/>"}
-    assert await materials_of(pg_url, f"{owner}/{copy['id']}") == LEDGER
 
 
 async def test_a_source_that_is_not_a_library_card_with_a_conversation_is_404_and_leaves_nothing(
@@ -327,20 +302,9 @@ async def test_a_retry_with_the_same_id_does_not_copy_again(
         json={"path": "old_film.icml", "content": "<film edited/>", "expectedVersion": 1},
     )
     assert edited.status_code == 200, edited.text
-    async with connected(pg_url) as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO agent_runtime.materials (namespace, url, kind)"
-                " VALUES (:ns, 'https://cdn.test/later.png', 'image')"
-            ),
-            {"ns": f"{owner}/{source}"},
-        )
 
     retried = await make_same(client, source, conversation_id=target)
 
     assert retried.status_code == 200, retried.text
     assert retried.json()["conversation"]["id"] == target
     assert await files_of(pg_url, f"{owner}/{target}") == {"old_film.icml": "<film edited/>"}
-    assert ("https://cdn.test/later.png", "image") not in await materials_of(
-        pg_url, f"{owner}/{target}"
-    )

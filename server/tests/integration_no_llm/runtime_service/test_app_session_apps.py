@@ -75,15 +75,11 @@ async def published(admin: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def theirs(published: None, app_client: httpx.AsyncClient) -> str:
-    """应用 A 的会话，工作区里有一份文件、台账里有一条素材。"""
+    """应用 A 的会话，工作区里有一份文件。"""
 
     session_id = await open_session(app_client)
     written = await app_client.put(f"/sessions/{session_id}/files/brief.md", json={"content": "A"})
     assert written.status_code == 200, written.text
-    recorded = await app_client.post(
-        f"/sessions/{session_id}/materials", json={"materials": [{"url": IMAGE, "kind": "image"}]}
-    )
-    assert recorded.status_code == 204, recorded.text
     return session_id
 
 
@@ -129,19 +125,6 @@ def _requests(owner: uuid.UUID) -> dict[str, Callable[[str, str], Request]]:
         "list-files": lambda s, _: ("GET", f"/sessions/{s}/files", None, None),
         "read-file": lambda s, _: ("GET", f"/sessions/{s}/files/brief.md", None, None),
         "write-file": lambda s, _: ("PUT", f"/sessions/{s}/files/brief.md", {"content": "B"}, None),
-        "record-materials": lambda s, _: (
-            "POST",
-            f"/sessions/{s}/materials",
-            {"materials": [{"url": "https://cdn.test/b.png", "kind": "image"}]},
-            None,
-        ),
-        "lookup-material": lambda s, _: ("GET", f"/sessions/{s}/materials", None, {"url": IMAGE}),
-        "lookup-materials": lambda s, _: (
-            "POST",
-            f"/sessions/{s}/materials:lookup",
-            {"urls": [IMAGE]},
-            None,
-        ),
         "fork": lambda s, _: (
             "POST",
             f"/sessions/{s}:fork",
@@ -176,13 +159,9 @@ async def test_another_apps_session_is_404_like_a_missing_one_and_left_alone(
 
         assert (foreign.status_code, foreign.json()) == (404, NOT_FOUND), route
         assert (missing.status_code, missing.json()) == (404, NOT_FOUND), route
-    # B 的请求没碰 A 的东西：文件、素材、队列都还是 A 自己写的那些。
+    # B 的请求没碰 A 的东西：文件、队列都还是 A 自己写的那些。
     kept = await app_client.get(f"/sessions/{theirs}/files/brief.md")
     assert kept.json()["content"] == "A"
-    stranger = await app_client.get(
-        f"/sessions/{theirs}/materials", params={"url": "https://cdn.test/b.png"}
-    )
-    assert stranger.status_code == 404
     assert (await app_client.get(f"/sessions/{theirs}/prompts")).json() == {
         "active": None,
         "queued": [],

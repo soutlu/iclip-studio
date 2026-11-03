@@ -271,7 +271,7 @@ export type StartConversationInput = {
   collectionId?: string | null
   taskId?: string | null
   title?: string
-  /** 做同款的源对话 id（资料库卡 id），建对话时由服务端拷制作文件与素材台账。 */
+  /** 做同款的源对话 id（资料库卡 id），建对话时由服务端拷制作文件。 */
   sameAs?: string | null
 } & ({ parts: readonly ComposerPart[] } | { content: readonly PromptContentPart[] })
 

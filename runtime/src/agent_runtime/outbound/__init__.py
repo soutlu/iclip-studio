@@ -1,6 +1,4 @@
-"""出网下载：按调用方给的地址取字节或探一眼，只连得到公网。
+"""出网：只连得到公网的 httpx 客户端（建在 httpx-secure 上）与探地址。
 
-防护放在出网边界：地址形状、端口、解析出的每个 IP 都查，连接只用查过的 IP，不走代理，
-跳转逐跳重查。读进内存与只看响应头用 ``fetch.PublicFetcher``，流式读大文件用
-``fetch.public_client`` 建的客户端，规则见 ``guard``。
+规则见 ``guard``，探地址见 ``probe``；插件的提交点检查经 ``agent_runtime.harness.media_check`` 用它们。
 """

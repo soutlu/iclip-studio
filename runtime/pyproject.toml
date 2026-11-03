@@ -1,7 +1,7 @@
 [project]
 name = "agent-runtime"
 version = "0.1.0"
-description = "Agent 运行时：agent 执行引擎与装配、技能库、模型供应商与 agent 配置、对话内容格式、插件基础、工作区文件与素材台账，供各应用服务依赖"
+description = "Agent 运行时：agent 执行引擎与装配、技能库、模型供应商与 agent 配置、对话内容格式、插件基础、工作区文件，供各应用服务依赖"
 requires-python = ">=3.13"
 dependencies = [
     "sqlalchemy[asyncio]>=2.0.52",
@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.32",  # 导入技能与 agent 的表单上传
     "asyncpg>=0.31.0",
     "httpx>=0.28.1",  # 回调应用（开跑检查、运行与轮次开始）；应用用的客户端库
+    "httpx-secure>=2.0.0,<3",  # 出网防护：提交点探素材地址只连公网
     "httpx-ws>=0.9.0",  # 客户端库连两条 WebSocket
     "wsproto>=1.3.2",  # httpx-ws 的协议层；往已关的连接上发帧抛它的错误
 ]

@@ -23,8 +23,7 @@ FILM_NODE_KEY = "film_node"
 
 
 class FilmImagesAdapter:
-    """工程文件的生图节点与生成域之间的往来：出图时给记录标上节点名，查进度；制作页选用时认一个
-    地址是不是这段对话里出过的图。"""
+    """工程文件的生图节点与生成域之间的往来：出图时给记录标上节点名，查进度。"""
 
     def __init__(self, service: GenerationService) -> None:
         self._service = service
@@ -52,15 +51,6 @@ class FilmImagesAdapter:
     async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob:
         return _node_job(await self._service.get(principal, job_id))
 
-    async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
-        """这个地址是不是这段对话里一张已完成的图片：生成、编辑或切出来的，含继承来的。制作页上
-        刚生成或编辑出的版本选用前还不在素材台账里，靠这里认。"""
-
-        job = await self._service.find_conversation_image(
-            principal, url, _conversation_uuid(conversation_id)
-        )
-        return job is not None
-
 
 def _node_job(job: GenerationJob) -> NodeImageJob:
     return NodeImageJob(
@@ -69,15 +59,6 @@ def _node_job(job: GenerationJob) -> NodeImageJob:
         output_url=job.output.url,
         error_message=job.error_message,
     )
-
-
-def _conversation_uuid(conversation_id: str) -> uuid.UUID:
-    """入口已把对话 id 规范成 UUID；这里不是 UUID 说明运行状态损坏。"""
-
-    try:
-        return uuid.UUID(conversation_id)
-    except ValueError as exc:
-        raise RuntimeError("这次运行的对话 id 不是 UUID——运行状态已损坏。") from exc
 
 
 __all__ = ["FILM_NODE_KEY", "FilmImagesAdapter"]

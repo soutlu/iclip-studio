@@ -611,7 +611,7 @@ const imageIndexes = (prompt: string): number[] => [
 const hasOnlyKeys = (value: Record<string, unknown>, keys: string[]) =>
   Object.keys(value).every((key) => keys.includes(key))
 
-/** 模拟文档结构、时间顺序和图片引用校验，不模拟素材来源台账。 */
+/** 模拟文档结构、时间顺序和图片引用校验，不模拟图片地址能否访问的检查。 */
 const validateShotsContent = (content: string): string | undefined => {
   let parsed: unknown
   try {

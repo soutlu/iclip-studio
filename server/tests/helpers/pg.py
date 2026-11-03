@@ -55,7 +55,6 @@ AGENT_RUNTIME_TABLES = (
     "agent_runtime.agent_jobs",
     "agent_runtime.agent_job_runs",
     "agent_runtime.conversation_usage",
-    "agent_runtime.materials",
     "agent_runtime.workspace_files",
     "agent_runtime.sessions",
     "agent_runtime.skills",

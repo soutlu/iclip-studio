@@ -63,7 +63,6 @@ from iclip.platform.object_store.store import ObjectStoreUnavailable
 from iclip.platform.shot_media.ffmpeg import extract_frames
 from tests.helpers.fetch_url import all_own, as_is
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.media import BROKEN_DECODE, CODECS, local_codec
 from tests.helpers.shot_video import (
     FakeCutRecords,
@@ -224,12 +223,10 @@ def make_tools(
     files: FakeFileStore,
     *,
     generations: FakeGenerations | None = None,
-    ledger: FakeMaterialLedger | None = None,
     records: FakeCutRecords | None = None,
 ) -> ShotVideoToolset[object]:
     toolset = mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=ledger or FakeMaterialLedger(),
         generations=generations or FakeGenerations(),
         objects=objects,
         records=records or FakeCutRecords(),
@@ -334,11 +331,10 @@ async def test_plan_extracts_every_second_and_boards_them(media: dict[str, bytes
 
     objects = FakeObjects()
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     client = make_client(media)
     try:
-        result = await make_tools(client, objects, files, ledger=materials).plan_shot_frames(
+        result = await make_tools(client, objects, files).plan_shot_frames(
             make_context(), VIDEO_URL
         )
     finally:
@@ -347,7 +343,6 @@ async def test_plan_extracts_every_second_and_boards_them(media: dict[str, bytes
     assert isinstance(result, ToolReturn)
     boards = model_facing(result)["boards"]
     assert len(boards) == 1
-    assert materials.urls(NAMESPACE) == {boards[0]["url"]}
     assert result.metadata == {
         "items": [{"url": boards[0]["url"], "caption": "板 1 · 1,2"}],
         "note": "1 板",
@@ -367,15 +362,12 @@ async def test_plan_reuses_the_ledger_instead_of_extracting_again(
 
     objects = FakeObjects()
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     client = make_client(media)
     try:
         first = await make_tools(client, objects, files).plan_shot_frames(make_context(), VIDEO_URL)
         objects.written.clear()
-        again = await make_tools(client, objects, files, ledger=materials).plan_shot_frames(
-            make_context(), VIDEO_URL
-        )
+        again = await make_tools(client, objects, files).plan_shot_frames(make_context(), VIDEO_URL)
     finally:
         await client.aclose()
 
@@ -384,19 +376,16 @@ async def test_plan_reuses_the_ledger_instead_of_extracting_again(
     # 复用路径不重抽帧也不重传，但结果要与首次逐字相同：板上有哪几个镜头是按 rows 现算的。
     assert model_facing(again) == model_facing(first)
     assert objects.written == {}
-    # 复用时也需登记预览板地址，保证后续工具可引用。
-    assert materials.urls(NAMESPACE) == {model_facing(again)["boards"][0]["url"]}
 
 
 async def test_plan_rebuilds_instead_of_vouching_for_a_board_address_the_ledger_was_edited_to(
     media: dict[str, bytes],
 ) -> None:
-    """key 保留、板地址改成外部地址：账本按不存在处理，重新切格并写回真地址，外部地址不进素材台账。"""
+    """key 保留、板地址改成外部地址：账本按不存在处理，重新切格并写回真地址。"""
 
     forged = "https://evil.test/board.jpg"
     objects = FakeObjects()
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     client = make_client(media)
     try:
@@ -407,9 +396,7 @@ async def test_plan_rebuilds_instead_of_vouching_for_a_board_address_the_ledger_
         tampered["boards"][0]["url"] = forged
         await files.write(NAMESPACE, EXTRACTION_PATH, json.dumps(tampered))
         objects.written.clear()
-        again = await make_tools(client, objects, files, ledger=materials).plan_shot_frames(
-            make_context(), VIDEO_URL
-        )
+        again = await make_tools(client, objects, files).plan_shot_frames(make_context(), VIDEO_URL)
     finally:
         await client.aclose()
 
@@ -418,7 +405,6 @@ async def test_plan_rebuilds_instead_of_vouching_for_a_board_address_the_ledger_
     genuine = model_facing(first)["boards"][0]["url"]
     assert model_facing(again) == model_facing(first)
     assert len(objects.written) == 1, "被改过的账本不复用，重新切格上传"
-    assert materials.urls(NAMESPACE) == {genuine}
     rewritten = await files.read(NAMESPACE, EXTRACTION_PATH)
     assert rewritten is not None
     assert json.loads(rewritten.content)["boards"] == [{"board": 1, "url": genuine}]
@@ -427,15 +413,14 @@ async def test_plan_rebuilds_instead_of_vouching_for_a_board_address_the_ledger_
 async def test_plan_refuses_a_reused_ledger_whose_board_is_out_of_range(
     media: dict[str, bytes],
 ) -> None:
-    """key 对得上但板号被改到层级之外：给出可执行的修复，不抛 IndexError，也不登记地址。"""
+    """key 对得上但板号被改到层级之外：给出可执行的修复，不抛 IndexError。"""
 
     objects = FakeObjects()
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     client = make_client(media)
     try:
-        tools = make_tools(client, objects, files, ledger=materials)
+        tools = make_tools(client, objects, files)
         await tools.plan_shot_frames(make_context(), VIDEO_URL)
         stored = await files.read(NAMESPACE, EXTRACTION_PATH)
         assert stored is not None
@@ -453,7 +438,6 @@ async def test_plan_refuses_a_reused_ledger_whose_board_is_out_of_range(
 
     assert "板 9" in str(raised.value)
     assert len(objects.written) == 1
-    assert stray not in materials.urls(NAMESPACE)
 
 
 async def test_plan_refuses_timecodes_beyond_the_clip(media: dict[str, bytes]) -> None:
@@ -493,15 +477,12 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
 
     objects = FakeObjects()
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
     records = FakeCutRecords()
     client = make_client(media)
     try:
-        tools = make_tools(
-            client, objects, files, generations=generations, ledger=materials, records=records
-        )
+        tools = make_tools(client, objects, files, generations=generations, records=records)
         await tools.plan_shot_frames(make_context(), VIDEO_URL)
         boards_written = len(objects.written)
         result = await tools.generate_shot_frames(
@@ -533,7 +514,6 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
         "items": [{"url": frame["url"], "caption": frame["no"]} for frame in payload["frames"]]
     }
 
-    assert {frame["url"] for frame in payload["frames"]} | {GRID_URL} <= materials.urls(NAMESPACE)
     assert records.cuts == [
         (generations.job_ids[0], tuple(frame["url"] for frame in payload["frames"]))
     ], "请求的两格各记一条切图，来源是这张宫格；补位格不转存也不记"
@@ -542,20 +522,16 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
 async def test_generate_fails_loudly_when_the_cut_cells_cannot_be_recorded(
     media: dict[str, bytes],
 ) -> None:
-    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试；格子也不登记素材。"""
+    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试。"""
 
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
     records = FakeCutRecords(error=ConnectionError("数据库断了"))
     client = make_client(media)
     try:
-        tools = make_tools(
-            client, FakeObjects(), files, generations=generations, ledger=materials, records=records
-        )
+        tools = make_tools(client, FakeObjects(), files, generations=generations, records=records)
         await tools.plan_shot_frames(make_context(), VIDEO_URL)
-        boards = set(materials.urls(NAMESPACE))
         with pytest.raises(ConnectionError, match="数据库断了"):
             await tools.generate_shot_frames(
                 make_context(), [FrameRequest(no="S1-1", prompt="猫")], [], "全局", "9:16"
@@ -564,7 +540,6 @@ async def test_generate_fails_loudly_when_the_cut_cells_cannot_be_recorded(
         await client.aclose()
 
     assert len(generations.job_ids) == 1
-    assert materials.urls(NAMESPACE) == boards, "先记切图、再登记素材：记不下就一格都不登记"
 
 
 async def test_generate_reports_an_unreachable_grid_without_pretending_it_worked(
@@ -638,14 +613,11 @@ async def test_anchor_sheet_cuts_the_sheet_and_records_each_entity(
 
     objects = FakeObjects()
     files = FakeFileStore()
-    materials = FakeMaterialLedger()
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
     records = FakeCutRecords()
     client = make_client(media)
     try:
-        tools = make_tools(
-            client, objects, files, generations=generations, ledger=materials, records=records
-        )
+        tools = make_tools(client, objects, files, generations=generations, records=records)
         result = await tools.generate_anchor_sheet(
             make_context(), ["全身正面平视的女性", "空景全景平视的门厅"]
         )
@@ -667,7 +639,6 @@ async def test_anchor_sheet_cuts_the_sheet_and_records_each_entity(
 
     written = list(objects.written.values())
     assert written[0] != written[1]
-    assert {image["url"] for image in payload["images"]} | {GRID_URL} <= materials.urls(NAMESPACE)
     assert records.cuts == [
         (generations.job_ids[0], tuple(image["url"] for image in payload["images"]))
     ]

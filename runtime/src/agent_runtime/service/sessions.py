@@ -1,6 +1,6 @@
-"""会话服务：开会话、分叉与按清单拷文件，应用经它操作运行时的会话、工作区、素材台账与快照。
+"""会话服务：开会话、分叉与按清单拷文件，应用经它操作运行时的会话、工作区与快照。
 
-会话 id 等于应用那一侧的对话 id；工作区与素材台账的命名空间是「属主/会话 id」，所以两端的属主都要给。
+会话 id 等于应用那一侧的对话 id；工作区的命名空间是「属主/会话 id」，所以两端的属主都要给。
 会话归开它的应用（``app_id`` 是接入应用的标识）：别的应用问到它与问到不存在的会话一样是 ``NotFound``，
 同一个 id 也不能被别的应用开走。预览会话（管理员试 agent 草稿或某一版用的）也在这里开，它不能分叉、不能
 当拷文件的源或目标。
@@ -20,7 +20,6 @@ from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.file_store.namespace import namespace_for
 from agent_runtime.file_store.store import FileStore
 from agent_runtime.harness.jobs import JobQueueView
-from agent_runtime.material_ledger.store import Material
 
 SESSION_NOT_FOUND: Final = "没有这段会话"
 """会话不在、或归别的应用时的报错：两种说法一样，不让别的应用看出这个 id 有人用。"""
@@ -89,14 +88,6 @@ class ForkHistory(Protocol):
     ) -> SeedPlan | None: ...
 
 
-class WholeLedger(Protocol):
-    """素材台账的登记与整份读出。"""
-
-    async def record(self, namespace: str, materials: Sequence[Material]) -> None: ...
-
-    async def list_all(self, namespace: str) -> Sequence[Material]: ...
-
-
 class SessionService:
     """应用开会话、分叉与拷文件的入口。"""
 
@@ -109,7 +100,6 @@ class SessionService:
         queue: SessionQueue,
         history: ForkHistory,
         files: FileStore,
-        ledger: WholeLedger,
     ) -> None:
         self._sessions = sessions
         self._version_for_new_session = version_for_new_session
@@ -117,7 +107,6 @@ class SessionService:
         self._queue = queue
         self._history = history
         self._files = files
-        self._ledger = ledger
 
     async def owned(
         self, session_ids: Collection[uuid.UUID], *, app_id: str
@@ -173,8 +162,7 @@ class SessionService:
         turn: int,
         agent_id: str | None,
     ) -> None:
-        """从源会话的第 ``turn`` 轮分叉出归 ``app_id`` 的新会话：固定版本、拷工作区文件与整份素材台账、
-        写种子快照。
+        """从源会话的第 ``turn`` 轮分叉出归 ``app_id`` 的新会话：固定版本、拷工作区文件、写种子快照。
 
         源不归 ``app_id`` 是 ``NotFound``，最先查，报错同会话不存在；源或目标是预览会话是
         ``ValidationFailed``。``agent_id`` 为 None 照抄源会话的
@@ -218,7 +206,6 @@ class SessionService:
                 # 列得出来却读不出来，只可能是绕过存储写进去的非规范路径：不静默少拷一个文件。
                 raise RuntimeError(f"工作区列出了 {entry.path} 却读不出来，这段对话的文件存坏了")
             await self._files.write(target, entry.path, found.content)
-        await self._copy_ledger(source, target)
         await seed.commit()
 
     async def copy_files(
@@ -232,13 +219,12 @@ class SessionService:
         files: Sequence[tuple[str, str]],
         require_any: frozenset[str],
     ) -> bool:
-        """按清单把源会话工作区里的几份文件拷进目标会话，连同整份素材台账。
+        """按清单把源会话工作区里的几份文件拷进目标会话。
 
         源与目标都要是 ``app_id`` 的会话（目标由应用先开好），任一不是都是 ``NotFound``，报错同会话不存在；
         任一是预览会话是 ``ValidationFailed``；都在读写任何东西之前。``files`` 是（源路径，目标路径），
         源里没有的跳过。``require_any`` 里的源路径一个都不在时什么都不写、回 ``False``；不在 ``files``
-        里的路径算不在；``require_any`` 为空即没有这个前提，照拷。台账整份跟着拷：拷过去的文件引用的地址
-        都登记在台账里，目标会话靠它认得这些地址。"""
+        里的路径算不在；``require_any`` 为空即没有这个前提，照拷。"""
 
         await self.require_owned(source_id, app_id=app_id)
         await self.require_owned(target_id, app_id=app_id)
@@ -252,11 +238,7 @@ class SessionService:
             stored = found[path]
             if stored is not None:
                 await self._files.write(target, renamed, stored.content)
-        await self._copy_ledger(source, target)
         return True
-
-    async def _copy_ledger(self, source: str, target: str) -> None:
-        await self._ledger.record(target, await self._ledger.list_all(source))
 
 
 __all__ = [
@@ -270,5 +252,4 @@ __all__ = [
     "SessionService",
     "SessionStore",
     "VersionForNewSession",
-    "WholeLedger",
 ]

@@ -74,7 +74,7 @@ GENERATED: Final = {
 """运行文件里登记的图：每个生图节点一张，登记名是「节点名-v1」。"""
 
 GIVEN_IMAGES: Final = (*PHOTOS.values(), *GENERATED.values())
-"""两个文件里写了地址的图，工具和制作页的测试把它们登记成对话素材。"""
+"""两个文件里写了地址的图。"""
 
 SHOE_FRONT: Final = PHOTOS["shoeFrontPhoto"]
 

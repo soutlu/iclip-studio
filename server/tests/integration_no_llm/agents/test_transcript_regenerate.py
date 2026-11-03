@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
@@ -18,7 +18,6 @@ from agent_runtime.harness.transcript.history import TranscriptHistory, TurnRewi
 from agent_runtime.harness.transcript.runner import ConversationRunner
 from agent_runtime.harness.transcript.service import TranscriptService
 from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.transcript.ops import (
     MAIN_AGENT_ID,
     AttachmentSource,
@@ -38,7 +37,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from tests.helpers.agents import AgentSeed
 from tests.helpers.app import TEST_MODEL_NAME, make_client, new_conversation, settled
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.pg import connected
 from tests.helpers.runtime import (
     OWNER,
@@ -326,14 +324,12 @@ class _Answered:
         *,
         queue: JobQueue | None = None,
         history: TranscriptHistory | None = None,
-        ledger: FakeMaterialLedger | None = None,
     ) -> TranscriptService:
         return TranscriptService(
             store=self.store,
             history=history or TranscriptHistory(self.step_store, self.queue),
             queue=queue or self.queue,
             runner=self.runner,
-            ledger=ledger or FakeMaterialLedger(),
         )
 
     async def snapshot_count(self) -> int:
@@ -444,28 +440,14 @@ class _Replanned(TranscriptHistory):
         return self.second(plan)
 
 
-class _CountingLedger(FakeMaterialLedger):
-    """数登记调用了几次：空清单也算一次。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls = 0
-
-    async def record(self, namespace: str, materials: Sequence[Material]) -> None:
-        self.calls += 1
-        await super().record(namespace, materials)
-
-
 async def test_a_bad_attachment_is_refused_before_anything_is_written(
     answered: _Answered,
 ) -> None:
-    """附件不合规在截断之前就拒：不登记素材、不插消息、不动历史。"""
-
-    ledger = _CountingLedger()
+    """附件不合规在截断之前就拒：不插消息、不动历史。"""
 
     snapshots = await answered.snapshot_count()
     with pytest.raises(ValidationFailed):
-        await answered.service(ledger=ledger).regenerate(
+        await answered.service().regenerate(
             conversation_id=answered.conversation_id,
             turn_id="t1",
             prompt_id="prm_regen_bad",
@@ -475,7 +457,6 @@ async def test_a_bad_attachment_is_refused_before_anything_is_written(
             ),
         )
 
-    assert ledger.calls == 0
     assert await answered.queue.get("prm_regen_bad") is None
     await answered.assert_untouched(snapshots)
 

@@ -8,8 +8,7 @@ from typing import Any, Final, Self
 
 from agent_runtime.file_store.store import FileSpace, FileStore
 from agent_runtime.harness.files import write_or_retry
-from agent_runtime.harness.materials import require_materials
-from agent_runtime.material_ledger.store import MaterialLedger
+from agent_runtime.harness.materials import require_http
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
@@ -38,9 +37,6 @@ class Video(CapPlugin[AgentDepsT]):
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
 
-    ledger: MaterialLedger
-    """素材来源台账，供工具输入验证使用。"""
-
     understanding: VideoUnderstanding
 
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
@@ -53,12 +49,10 @@ class Video(CapPlugin[AgentDepsT]):
         return CAPABILITY_ID
 
     @classmethod
-    def bind(
-        cls, *, space: FileSpace, ledger: MaterialLedger, understanding: VideoUnderstanding
-    ) -> type[Self]:
+    def bind(cls, *, space: FileSpace, understanding: VideoUnderstanding) -> type[Self]:
         """把运行服务绑进类，交给登记表。"""
 
-        return cls._bound(space=space, ledger=ledger, understanding=understanding)
+        return cls._bound(space=space, understanding=understanding)
 
     @classmethod
     def from_spec(cls) -> Self:
@@ -80,7 +74,7 @@ class Video(CapPlugin[AgentDepsT]):
 
 
 class VideoToolset(FunctionToolset[AgentDepsT]):
-    """拆解工具；视频地址的范围规则挂在登记处的验证器上。"""
+    """拆解工具；视频地址的形状检查挂在登记处的验证器上。"""
 
     def __init__(self, capability: Video[AgentDepsT]) -> None:
         super().__init__(id=capability.id)
@@ -114,15 +108,10 @@ class VideoToolset(FunctionToolset[AgentDepsT]):
         return f"视频解析完毕，文档在 {path}。"
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
-        """视频地址须是本对话已登记的视频素材。"""
+        """只查地址形状：视频交给上游模型去取，取不到由它报。"""
 
-        await require_materials(
-            self._cap.ledger,
-            self._cap.space.resolve(ctx),
-            (video_url,),
-            kind="video",
-            what="视频地址",
-        )
+        _ = ctx
+        require_http(video_url, what="视频地址")
 
     def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
         """这次运行的文件存储与命名空间。"""

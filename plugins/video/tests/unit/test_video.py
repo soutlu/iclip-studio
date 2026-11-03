@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from agent_runtime.file_store.store import FileSpace
-from agent_runtime.material_ledger.store import Material
 from agent_runtime.plugins.workspace.scope import workspace_namespace
 from agent_runtime.run_deps import AgentRunDeps
 from pydantic_ai import Agent, ToolFailed
@@ -30,7 +29,6 @@ from iclip_video.video_understanding import (
     VideoUnderstandingUnavailable,
 )
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.plugins import with_requirements
 from tests.helpers.video_understanding import FakeUnderstanding
 
@@ -47,29 +45,16 @@ def files() -> FakeFileStore:
 
 
 @pytest.fixture
-def materials() -> FakeMaterialLedger:
-    """参考视频已在收件阶段登记。"""
-
-    ledger = FakeMaterialLedger()
-    ledger.rows[(NAMESPACE, VIDEO)] = Material(url=VIDEO, kind="video")
-    return ledger
-
-
-@pytest.fixture
 def understanding() -> FakeUnderstanding:
     return FakeUnderstanding(document=DOCUMENT)
 
 
 @pytest.fixture
-def capability(
-    files: FakeFileStore, materials: FakeMaterialLedger, understanding: FakeUnderstanding
-) -> Video[object]:
+def capability(files: FakeFileStore, understanding: FakeUnderstanding) -> Video[object]:
     """与组合根同一条路：服务绑进类，再按 spec 造实例。"""
 
     return Video.bind(
-        space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=materials,
-        understanding=understanding,
+        space=FileSpace(store=files, namespace=workspace_namespace), understanding=understanding
     ).from_spec()
 
 
@@ -133,28 +118,18 @@ async def test_parse_stores_document_in_shared_workspace(
     assert await files.entries(OTHER_NAMESPACE) == []
 
 
-@pytest.mark.parametrize("case", ["unregistered", "wrong-kind", "other-conversation"])
-async def test_parse_rejects_invalid_material_before_understanding(
-    capability: Video[object],
-    files: FakeFileStore,
-    materials: FakeMaterialLedger,
-    understanding: FakeUnderstanding,
-    case: str,
+async def test_any_http_address_goes_to_the_model_without_an_address_check(
+    capability: Video[object], files: FakeFileStore, understanding: FakeUnderstanding
 ) -> None:
-    url = "https://cdn.test/not-authorized.mp4"
-    if case == "wrong-kind":
-        materials.rows[(NAMESPACE, url)] = Material(url=url, kind="image")
-    elif case == "other-conversation":
-        materials.rows[(OTHER_NAMESPACE, url)] = Material(url=url, kind="video")
+    """视频地址交给上游模型去取，这里不探；对话里没出现过的地址照样交过去。"""
+
+    url = "https://cdn.test/never-mentioned.mp4"
 
     messages = await invoke(capability, "video_parser", {"video_url": url})
 
-    rejected = refusals(messages)
-    assert len(rejected) == 1
-    assert url not in rejected[0].model_response_str()
-    assert understanding.calls == []
-    assert await files.entries(NAMESPACE) == []
-    assert await files.entries(OTHER_NAMESPACE) == []
+    assert refusals(messages) == []
+    assert understanding.calls == [url]
+    assert await files.read(NAMESPACE, video_doc_path(url)) is not None
 
 
 @pytest.mark.parametrize("url", ["reference.mp4", "file:///etc/passwd", "ftp://host/ref.mp4"])
@@ -168,7 +143,6 @@ async def test_parse_rejects_non_http_addresses_before_understanding(
 
     rejected = refusals(messages)
     assert len(rejected) == 1
-    # 这些地址也没登记，台账同样会退；退回须来自 http 规则。
     assert "http" in rejected[0].model_response_str()
     assert understanding.calls == []
     assert await files.entries(NAMESPACE) == []
@@ -190,13 +164,12 @@ async def test_parse_failure_preserves_existing_document(
 
 
 async def test_files_land_in_the_normalized_namespace(
-    files: FakeFileStore, materials: FakeMaterialLedger, understanding: FakeUnderstanding
+    files: FakeFileStore, understanding: FakeUnderstanding
 ) -> None:
     """共享 FileSpace 的能力必须使用归一化命名空间，否则工作区工具无法读取产物。"""
 
     toolset = Video[object](
         space=FileSpace(store=files, namespace=lambda _ctx: f"{USER}//thread-1"),
-        ledger=materials,
         understanding=understanding,
     ).get_toolset()
 
@@ -226,14 +199,10 @@ async def test_missing_run_identity_is_a_bug_not_a_retry(tools: VideoToolset[obj
         await tools.video_parser(make_context(object()), VIDEO)
 
 
-async def test_quota_failure_preserves_existing_file(
-    materials: FakeMaterialLedger, understanding: FakeUnderstanding
-) -> None:
+async def test_quota_failure_preserves_existing_file(understanding: FakeUnderstanding) -> None:
     files = FakeFileStore(max_file_bytes=4096)
     capability = Video[object](
-        space=FileSpace(store=files, namespace=workspace_namespace),
-        ledger=materials,
-        understanding=understanding,
+        space=FileSpace(store=files, namespace=workspace_namespace), understanding=understanding
     )
     args = {"video_url": VIDEO}
     path = video_doc_path(VIDEO)

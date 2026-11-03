@@ -1,5 +1,5 @@
-"""运行时服务的会话工作区与素材台账：按「属主/会话」读写，带版本写对不上 409，别人的命名空间看不到；
-分叉与按清单拷文件把文件和整份素材台账拷进目标属主的会话，挡下来时报错同后端。"""
+"""运行时服务的会话工作区：按「属主/会话」读写，带版本写对不上 409，别人的命名空间看不到；分叉与按清单
+拷文件把文件拷进目标属主的会话，挡下来时报错同后端。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import uuid
 
 import httpx
 import pytest
-from agent_runtime.app_wire import MAX_MATERIAL_LOOKUP_URLS
 from pydantic_ai.models import Model
 
 from tests.helpers.app import TEST_MODEL_NAME
@@ -89,62 +88,7 @@ async def test_files_are_read_and_written_with_versions(
     assert elsewhere.status_code == 404
 
 
-async def test_materials_are_recorded_and_looked_up(
-    app_client: httpx.AsyncClient, session: str, other: uuid.UUID
-) -> None:
-    base = f"/sessions/{session}/materials"
-
-    recorded = await app_client.post(base, json={"materials": [{"url": IMAGE, "kind": "image"}]})
-    assert recorded.status_code == 204, recorded.text
-    # 同一地址再登记保留首条。
-    await app_client.post(base, json={"materials": [{"url": IMAGE, "kind": "video"}]})
-
-    found = await app_client.get(base, params={"url": IMAGE})
-    assert found.json() == {"url": IMAGE, "kind": "image"}
-    unknown = await app_client.get(base, params={"url": "https://cdn.test/x.png"})
-    assert unknown.status_code == 404
-    assert unknown.json()["detail"] == "这段对话的素材里没有这个地址"
-    elsewhere = await app_client.get(base, params={"url": IMAGE}, headers=as_owner(other))
-    assert elsewhere.status_code == 404
-
-
-async def test_a_batch_lookup_answers_only_what_this_sessions_ledger_holds(
-    app_client: httpx.AsyncClient, session: str, other: uuid.UUID
-) -> None:
-    clip = "https://cdn.test/clip.mp4"
-    theirs = "https://cdn.test/theirs.png"
-    base = f"/sessions/{session}/materials"
-    await app_client.post(
-        base,
-        json={"materials": [{"url": IMAGE, "kind": "image"}, {"url": clip, "kind": "video"}]},
-    )
-    await app_client.post(
-        base, json={"materials": [{"url": theirs, "kind": "image"}]}, headers=as_owner(other)
-    )
-
-    found = await app_client.post(
-        f"{base}:lookup", json={"urls": [IMAGE, clip, IMAGE, theirs, "https://cdn.test/x.png"]}
-    )
-
-    assert found.status_code == 200, found.text
-    assert sorted(found.json()["materials"], key=lambda one: one["url"]) == [
-        {"url": IMAGE, "kind": "image"},
-        {"url": clip, "kind": "video"},
-    ]
-
-
-async def test_a_batch_lookup_over_the_limit_is_422(
-    app_client: httpx.AsyncClient, session: str
-) -> None:
-    urls = [f"https://cdn.test/{index}.png" for index in range(MAX_MATERIAL_LOOKUP_URLS + 1)]
-
-    refused = await app_client.post(f"/sessions/{session}/materials:lookup", json={"urls": urls})
-
-    assert refused.status_code == 422
-    assert refused.json()["detail"].startswith("urls: ")
-
-
-async def test_a_fork_copies_files_materials_and_history_to_the_target_owner(
+async def test_a_fork_copies_files_and_history_to_the_target_owner(
     running: None,
     app_client: httpx.AsyncClient,
     session: str,
@@ -185,10 +129,6 @@ async def test_a_fork_copies_files_materials_and_history_to_the_target_owner(
 
     copied = await app_client.get(f"/sessions/{target}/files/brief.md", headers=as_owner(other))
     assert copied.json()["content"] == "要点"
-    material = await app_client.get(
-        f"/sessions/{target}/materials", params={"url": IMAGE}, headers=as_owner(other)
-    )
-    assert material.json() == {"url": IMAGE, "kind": "image"}
     page = await app_client.get(f"/sessions/{target}/transcript", params={"session_agent": AGENT})
     assert [turn["turnId"] for turn in page.json()["items"]] == ["t1"]
 
@@ -200,9 +140,6 @@ async def test_files_copy_needs_one_of_the_required_files(
     target = await open_session(app_client)
     await app_client.put(f"/sessions/{source}/files/film.icml", json={"content": "工程"})
     await app_client.put(f"/sessions/{source}/files/treatment.md", json={"content": "方案"})
-    await app_client.post(
-        f"/sessions/{source}/materials", json={"materials": [{"url": IMAGE, "kind": "image"}]}
-    )
     files = [["film.icml", "old_film.icml"], ["treatment.md", "treatment.md"], ["gone.md", "x.md"]]
 
     nothing = await app_client.post(
@@ -236,7 +173,3 @@ async def test_files_copy_needs_one_of_the_required_files(
         "old_film.icml",
         "treatment.md",
     ]
-    material = await app_client.get(
-        f"/sessions/{target}/materials", params={"url": IMAGE}, headers=as_owner(other)
-    )
-    assert material.status_code == 200

@@ -11,11 +11,11 @@ from typing import Any, Final, Self
 from agent_runtime.file_store.store import FileSpace
 from agent_runtime.harness.background import BackgroundTools
 from agent_runtime.harness.files import write_or_retry
+from agent_runtime.harness.materials import require_media
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
 from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
-from agent_runtime.urls import is_http_url
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, CombinedCapability
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
@@ -153,9 +153,10 @@ class VideoBreakdownToolset(FunctionToolset[AgentDepsT]):
         return done
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
+        """视频地址要取得到、是视频，查过才交给后端拆。"""
+
         _ = ctx
-        if not is_http_url(video_url):
-            raise ModelRetry("视频地址不对，输入提供的视频的 url。")
+        await require_media([("视频地址", video_url)], kind="video", what="视频地址")
 
 
 def _breakdown_failure(reason: BreakdownFailureReason, *, last_attempt: bool) -> Exception:

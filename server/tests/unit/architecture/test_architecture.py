@@ -177,8 +177,7 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.transcript.wire": "transcript 的消息请求体、读页信封与帧的信封基类",
     "agent_runtime.transcript.ops": "transcript 实体：消息内容、主 agent 的 id",
     "agent_runtime.file_store.store": "工作区文件的形状与路径规则",
-    "agent_runtime.file_store.namespace": "工作区与素材台账的命名空间规则",
-    "agent_runtime.material_ledger.store": "素材的形状",
+    "agent_runtime.file_store.namespace": "工作区的命名空间规则",
     # 配置页四组管理接口的路由声明在后端，合同照它导出：请求体模型与上限照用运行时的。
     "agent_runtime.config.skills.schemas": "技能库管理接口的请求体",
     "agent_runtime.config.skills.models": "技能导入包的大小上限",
@@ -188,12 +187,9 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.config.agent_config.schemas": "agent 配置管理接口的请求体",
     "agent_runtime.agent_usage": "管理接口答复里「谁在用」的形状，后端补名字的答复照用",
     "agent_runtime.config.agent_config.package": "agent 导出包的大小上限",
-    # 出网防护放在运行时包里，运行时进程里的插件也用得上；它只依赖 httpx 与 httpcore。
-    "agent_runtime.outbound.fetch": "只连公网的下载器与客户端",
-    "agent_runtime.outbound.guard": "出网规则与它的失败分类",
 }
-"""后端源码能引用的运行时模块：接口与帧的形状、报错、客户端库与出网防护。运行时的引擎、装配、服务、
-配置的用例与存储、插件、HTTP 路由都在运行时服务里，后端只经客户端库调它。"""
+"""后端源码能引用的运行时模块：接口与帧的形状、报错与客户端库。运行时的引擎、装配、服务、配置的用例与存储、
+插件、HTTP 路由都在运行时服务里，后端只经客户端库调它。"""
 
 
 def test_the_server_imports_only_the_runtime_shapes_and_client() -> None:

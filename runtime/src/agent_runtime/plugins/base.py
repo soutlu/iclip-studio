@@ -6,11 +6,11 @@
 - ``from_spec(**参数)`` 用可序列化的参数造实例，参数的类型与默认值就写在它的签名上；
 - ``get_ordering()`` 用 ``CapabilityOrdering(requires=...)`` 写要求同一 agent 一起挂的插件类。
 
-运行用的服务（FileSpace、台账、各适配器等）不进 spec：组合根启动时调插件类的 ``bind``，得到一个把服务放在
+运行用的服务（FileSpace、各适配器等）不进 spec：组合根启动时调插件类的 ``bind``，得到一个把服务放在
 类属性上的子类，插件名不变；``from_spec`` 从类上取服务。登记表收的就是这些绑好服务的类。
 
 运行时服务从配置接插件包：插件包给一个 ``PluginFactory``，服务启动时按配置打开它拿到 ``PluginBinder``，
-再用服务自己的工作区存储、素材台账与模型连接的查找（``PluginHost``）绑出登记表；关停时退出工厂，插件包借此关掉
+再用服务自己的工作区存储与模型连接的查找（``PluginHost``）绑出登记表；关停时退出工厂，插件包借此关掉
 自己的连接。
 """
 
@@ -29,7 +29,6 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
 
 from agent_runtime.file_store.store import FileStore
-from agent_runtime.material_ledger.store import MaterialLedger
 from agent_runtime.model_connections import ModelConnectionLookup
 from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
 
@@ -128,9 +127,6 @@ class PluginHost:
 
     files: FileStore
     """工作区存储：写完就发 ``event.fs.changed`` 的那一份。"""
-
-    ledger: MaterialLedger
-    """对话素材台账。"""
 
     model_connection: ModelConnectionLookup
     """按（供应商声明名，模型名）现查配置页里接的连接，给要直接调写定模型的插件用；没有能用的抛

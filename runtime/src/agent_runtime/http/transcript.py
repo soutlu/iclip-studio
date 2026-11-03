@@ -65,8 +65,7 @@ def create_transcript_router(
     ) -> Prompt:
         """发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。
 
-        受理前先装一次这段会话固定的 agent 版本，装不起来是 409（``agent_unavailable``），什么都不写；
-        带地址的图片与视频附件在入队前登记进会话的素材台账。"""
+        受理前先装一次这段会话固定的 agent 版本，装不起来是 409（``agent_unavailable``），什么都不写。"""
 
         await sessions.require_owned(session_id, app_id=app.id)
         return await transcripts.submit(

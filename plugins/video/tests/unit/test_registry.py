@@ -23,7 +23,6 @@ from iclip_video.video.capability import Video
 from iclip_video.video_breakdown.capability import VideoBreakdown, VideoBreakdownPlugin
 from iclip_video.video_understanding import DECLARATION, MODEL
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.model_connections import FakeModelConnections
 
 TOKEN = "runtime-internal-test-token-0123456789"
@@ -74,11 +73,7 @@ class Server:
 
 
 def host(connections: FakeModelConnections | None = None) -> PluginHost:
-    return PluginHost(
-        files=FakeFileStore(),
-        ledger=FakeMaterialLedger(),
-        model_connection=connections or FakeModelConnections(),
-    )
+    return PluginHost(files=FakeFileStore(), model_connection=connections or FakeModelConnections())
 
 
 async def registry_for(config: dict[str, Any], server: Server | None = None) -> PluginRegistry:

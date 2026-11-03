@@ -53,7 +53,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from structlog.testing import capture_logs
 
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.pg import connected
 from tests.helpers.runtime import (
     AGENT_ID,
@@ -231,7 +230,6 @@ async def test_usage_is_filled_in_when_the_run_finishes(engine: AsyncEngine) -> 
         history=TranscriptHistory(step_store, queue),
         queue=queue,
         runner=runner,
-        ledger=FakeMaterialLedger(),
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert restored.meta.agent == live_status
 
@@ -902,7 +900,6 @@ async def test_repeated_prompt_receipts_do_not_run_the_model_twice(
             history=TranscriptHistory(step_store, queue),
             queue=queue,
             runner=runner,
-            ledger=FakeMaterialLedger(),
         )
 
     first = service()
@@ -2001,7 +1998,6 @@ async def test_a_tool_needing_approval_ends_the_run_and_parks_the_prompt(
         history=TranscriptHistory(step_store, queue),
         queue=queue,
         runner=runner,
-        ledger=FakeMaterialLedger(),
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert [turn.state for turn in page.items] == ["running"]
     restored = tool_cards(page.items)[0]

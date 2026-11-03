@@ -1,16 +1,15 @@
-"""限定工具素材 URL 来自当前命名空间的台账，并校验媒体类型。
+"""工具收的素材地址：形状检查，以及提交点上「链接能打开、类型对」的检查翻成给模型的话。
 
-此处验证来源和类型；SSRF 防护属于实际获取素材的出网边界。
+探地址见 ``agent_runtime.harness.media_check``；这里只决定怎么跟模型说。
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Sequence
 
 from pydantic_ai import ModelRetry
 
-from agent_runtime.harness.media import media_kind_label
-from agent_runtime.material_ledger.store import MaterialKind, MaterialLedger
+from agent_runtime.harness.media_check import MediaKind, bad_urls
 from agent_runtime.urls import is_http_url
 
 
@@ -21,47 +20,20 @@ def require_http(url: str, *, what: str) -> None:
         raise ModelRetry(f"{what}必须是带主机名的 http(s) 地址；换成对话或工具结果里给出的地址。")
 
 
-async def require_material(
-    ledger: MaterialLedger,
-    namespace: str,
-    url: str,
+async def require_media(
+    items: Sequence[tuple[str, str]],
     *,
-    kind: MaterialKind,
-    what: str,
-    recorded_at: str | None = None,
-) -> None:
-    """校验当前会话的素材与类型。
-
-    错误不回显被拒 URL，避免未经认可的地址通过错误消息进入模型上下文。
-    能力的产出地址落在某个工作区文件里时给 recorded_at，让模型能自己读回来。
-    """
-
-    recorded = await ledger.lookup(namespace, url)
-    if recorded is None:
-        raise ModelRetry(
-            f"这个{what}不是这段对话里的素材。只能用对话里给你的地址、或工具结果里"
-            f"返回的地址，不要自己拼{'；' + recorded_at if recorded_at else '。'}"
-        )
-    if recorded.kind != kind:
-        raise ModelRetry(
-            f"这个地址在对话里是一份{media_kind_label(recorded.kind)}，当不了{what}。"
-            f"换一个{media_kind_label(kind)}的地址。"
-        )
-
-
-async def require_materials(
-    ledger: MaterialLedger,
-    namespace: str,
-    urls: Iterable[str],
-    *,
-    kind: MaterialKind,
+    kind: MediaKind,
     what: str,
 ) -> None:
-    """逐个校验一组素材地址：HTTP(S)，且是当前会话里该类型的素材。"""
+    """``items``（称呼，地址）里的地址都要能打开、类型对，称呼由调用方按位置起，如「第 2 组第 1 张」。
 
-    for url in urls:
-        require_http(url, what=what)
-        await require_material(ledger, namespace, url, kind=kind, what=what)
+    有不行的抛 ``ModelRetry``，按先后逐条列出称呼与原因（打不开、不是图片或不是视频），不回显地址。"""
+
+    bad = await bad_urls((url for _, url in items), kind=kind)
+    listed = [f"{label}：{bad[url]}" for label, url in items if url in bad]
+    if listed:
+        raise ModelRetry("\n".join([f"以下{what}不能用，换成能打开的地址再调用：", *listed]))
 
 
-__all__ = ["require_http", "require_material", "require_materials"]
+__all__ = ["require_http", "require_media"]

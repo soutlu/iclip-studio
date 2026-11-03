@@ -10,8 +10,6 @@ from typing import NoReturn
 import httpx
 import pytest
 from agent_runtime.errors import ValidationFailed
-from agent_runtime.outbound.fetch import FetchTooLarge
-from agent_runtime.outbound.guard import FetchFailed, FetchRefused
 from fastapi import FastAPI
 from PIL import Image
 from structlog.testing import capture_logs
@@ -28,6 +26,8 @@ from iclip.domains.uploads.models import (
 from iclip.domains.uploads.service import UploadService
 from iclip.platform.object_store.direct_upload import API_KEY_HEADER, UPLOADER_HEADER
 from iclip.platform.object_store.store import ObjectStoreUnavailable
+from iclip.platform.outbound.fetch import FetchTooLarge
+from iclip.platform.outbound.guard import FetchFailed
 from tests.helpers.app import app_with_principal
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.media import multi_picture_jpeg
@@ -461,8 +461,8 @@ async def test_an_upload_already_recorded_is_handed_back_without_downloading() -
             FakeFetch(error=FetchFailed("对方回了 404")), "下载不下来：对方回了 404", id="下载失败"
         ),
         pytest.param(
-            FakeFetch(error=FetchRefused("img.example.com 解析到了非公网地址 10.0.0.1")),
-            "不允许服务端下载",
+            FakeFetch(error=FetchFailed("img.example.com 解析到了非公网地址 10.0.0.1")),
+            "下载不下来：img.example.com 解析到了非公网地址",
             id="出网规则拒绝",
         ),
         pytest.param(FakeFetch(error=FetchTooLarge("太大")), "超过 16MB", id="超过大小"),

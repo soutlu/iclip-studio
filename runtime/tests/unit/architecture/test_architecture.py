@@ -33,7 +33,6 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "admin.py",
         "assembly/config_services.py",
         "file_store/pg.py",
-        "material_ledger/pg.py",
         # StepPersistence 协议后端归属使用该协议的 harness。
         "harness/step_store_pg.py",
         # 对话用量台账的 Postgres 实现，同样归属 harness，表在 agent_runtime schema。
@@ -81,7 +80,6 @@ CLIENT_RUNTIME_IMPORTS = frozenset(
         "agent_runtime.transcript.ops",
         "agent_runtime.live.frames",
         "agent_runtime.file_store.store",
-        "agent_runtime.material_ledger.store",
     }
 )
 CLIENT_THIRD_PARTY = frozenset({"httpx", "httpx_ws", "wsproto", "pydantic"})
