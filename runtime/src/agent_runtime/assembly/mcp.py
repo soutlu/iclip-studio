@@ -27,7 +27,8 @@ class HarnessMcpProbe:
             tools=None
             if outcome.tools is None
             else tuple(
-                McpTool(name=one.name, description=one.description) for one in outcome.tools
+                McpTool(name=one.name, title=one.title, description=one.description)
+                for one in outcome.tools
             ),
         )
 

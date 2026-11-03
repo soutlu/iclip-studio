@@ -71,6 +71,8 @@ class McpHeaderOut(CamelModel):
 class McpToolOut(CamelModel):
     name: str
     """服务自己给的工具名；agent 里看到的名字前面另加 ``mcp_<服务标识>_``。"""
+    title: str | None
+    """服务给的显示名（工具的 ``title``，没有再取 ``annotations.title``），没给为 ``null``。"""
     description: str | None
 
 

@@ -52,7 +52,9 @@ _logger = structlog.stdlib.get_logger(__name__)
 def _tools_out(tools: Sequence[McpTool] | None) -> list[McpToolOut] | None:
     if tools is None:
         return None
-    return [McpToolOut(name=one.name, description=one.description) for one in tools]
+    return [
+        McpToolOut(name=one.name, title=one.title, description=one.description) for one in tools
+    ]
 
 
 def _check_out(result: McpProbeResult) -> McpCheckOut:

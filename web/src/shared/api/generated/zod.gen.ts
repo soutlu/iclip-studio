@@ -1490,6 +1490,7 @@ export const zMcpToolConfig = z.object({
 export const zMcpToolOut = z.object({
   description: z.string().nullable(),
   name: z.string(),
+  title: z.string().nullable(),
 })
 
 /**

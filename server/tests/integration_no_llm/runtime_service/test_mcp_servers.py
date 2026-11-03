@@ -33,7 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.helpers.app import TEST_CREDENTIAL_KEY, TEST_MODEL_NAME
-from tests.helpers.mcp import TOKEN, TOOLS, LocalMcp, free_port, local_mcp
+from tests.helpers.mcp import TITLES, TOKEN, TOOLS, LocalMcp, free_port, local_mcp
 from tests.helpers.runtime_service import PROVIDER, add_model, connect_provider, settled
 
 AGENT = "director"
@@ -358,6 +358,7 @@ async def test_saved_check_records_the_result_and_the_discovered_tools(
     assert reached["elapsedMs"] >= 0
     assert [tool["name"] for tool in reached["tools"]] == list(TOOLS)
     assert reached["tools"][0]["description"] == "Add two integers."
+    assert {tool["name"]: tool["title"] for tool in reached["tools"]} == TITLES
     saved = await read(admin)
     assert saved["lastCheck"]["ok"] is True
     assert [tool["name"] for tool in saved["tools"]] == list(TOOLS)
@@ -616,16 +617,16 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     ]
     assert returned.tool_name == "mcp_calc_add"
     assert "5" in str(returned.content)
-    # 卡头是服务的名称与这件工具的说明，不是工具名与标识。
+    # 卡头是服务的名称与这件工具的显示名，不是工具说明、工具名与标识。
     (card,) = tool_frames(await only_turn(app_client, session))
     assert (card["name"], card["state"]) == ("mcp_calc_add", "done")
-    assert card["display"] == {"kind": "generic", "summary": "计算器", "detail": "Add two integers"}
+    assert card["display"] == {"kind": "generic", "summary": "计算器", "detail": "加法"}
 
     # 历史每次读都按名册当下的内容重画：改了服务名称，已跑完的这一轮跟着换。
     renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术"})
     assert renamed.status_code == 200, renamed.text
     (card,) = tool_frames(await only_turn(app_client, session))
-    assert card["display"] == {"kind": "generic", "summary": "算术", "detail": "Add two integers"}
+    assert card["display"] == {"kind": "generic", "summary": "算术", "detail": "加法"}
 
 
 async def test_startup_reads_the_server_index_from_the_database(
@@ -643,7 +644,32 @@ async def test_startup_reads_the_server_index_from_the_database(
 
     assert found is not None
     assert found.name == "计算器"
-    assert found.tools["add"] == "Add two integers."
+    assert dict(found.tools) == TITLES
+
+
+async def test_tools_stored_without_a_title_load_with_no_title(
+    admin: httpx.AsyncClient, runtime_app: FastAPI, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    # 显示名这一项加上之前试连存下的工具没有 ``title``：启动照常读进名册，答复里是 ``null``。
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE agent_runtime.mcp_servers SET tools = ("
+                "SELECT jsonb_agg(tool - 'title') FROM jsonb_array_elements(tools) AS tool"
+                ") WHERE id = 'calc'"
+            )
+        )
+    services: ConfigServices = runtime_app.state.config_services
+    services.mcp_index.remove("calc")
+
+    async with runtime_app.router.lifespan_context(runtime_app):
+        found = services.mcp_index.get("calc")
+
+    assert found is not None
+    assert dict(found.tools) == dict.fromkeys(TOOLS)
+    assert [tool["title"] for tool in (await read(admin))["tools"]] == [None, None, None]
 
 
 async def test_a_failing_mcp_tool_goes_back_to_the_model(

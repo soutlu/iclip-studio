@@ -6602,10 +6602,22 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
         "required": [
           "name",
+          "title",
           "description"
         ],
         "title": "McpToolOut",

@@ -40,9 +40,10 @@ class McpHeader:
 
 @dataclass(frozen=True, slots=True)
 class McpTool:
-    """服务交出的一个工具：服务自己给的名字与说明。"""
+    """服务交出的一个工具：服务自己给的名字、显示名与说明。"""
 
     name: str
+    title: str | None
     description: str | None
 
 

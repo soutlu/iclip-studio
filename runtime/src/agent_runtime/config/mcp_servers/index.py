@@ -1,4 +1,4 @@
-"""进程内的 MCP 服务名册：服务标识到名称与最后一次发现的工具说明，给工具卡按标识查。
+"""进程内的 MCP 服务名册：服务标识到名称与最后一次发现的工具显示名，给工具卡按标识查。
 
 投影是同步的、只看得到工具名与参数，查不了库；名册在启动时从库里整份读一次，之后由 ``McpServerService``
 在每次建、改、删、试连提交之后跟着换。运行时服务是单进程，MCP 服务的写入都经那个服务。"""
@@ -14,7 +14,7 @@ from agent_runtime.config.mcp_servers.models import McpServerRecord
 
 @dataclass(frozen=True, slots=True)
 class IndexedMcpServer:
-    """名册里的一个服务：名称，与最后一次试连成功时发现的工具（工具名到说明，没给说明为 ``None``）；
+    """名册里的一个服务：名称，与最后一次试连成功时发现的工具（工具名到显示名，没给显示名为 ``None``）；
     从没连通过或换了地址后还没再连通时工具为空。"""
 
     name: str
@@ -24,7 +24,7 @@ class IndexedMcpServer:
 def _entry(record: McpServerRecord) -> IndexedMcpServer:
     return IndexedMcpServer(
         name=record.name,
-        tools=MappingProxyType({one.name: one.description for one in record.tools or ()}),
+        tools=MappingProxyType({one.name: one.title for one in record.tools or ()}),
     )
 
 
