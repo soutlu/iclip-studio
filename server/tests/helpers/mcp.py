@@ -54,16 +54,19 @@ def _server(local: LocalMcp) -> MCPServer:
 
     @server.tool(title=TITLES["add"])
     def add(a: int, b: int) -> int:
+        """Add two integers."""
         local.calls.append(("add", {"a": a, "b": b}))
         return a + b
 
     @server.tool(annotations=ToolAnnotations(title=TITLES["shout"]))
     def shout(text: str) -> str:
+        """Upper-case the text."""
         local.calls.append(("shout", {"text": text}))
         return text.upper()
 
     @server.tool()
     def divide(a: float, b: float) -> float:
+        """Divide a by b."""
         local.calls.append(("divide", {"a": a, "b": b}))
         if b == 0:
             raise ToolError("cannot divide by zero")
