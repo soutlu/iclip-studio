@@ -1,9 +1,3 @@
-"""实时流 epoch 与会话生命周期帧。
-
-客户端先读基线、再带 ``transcript_since`` + ``transcript_epoch`` 订阅；全局帧带属主，在写入提交之后发出，
-同一段对话的帧按提交先后到达。
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -39,8 +33,6 @@ def _send(tc: TestClient, conversation_id: str, prompt_id: str, **kwargs: Any) -
 
 
 def _next_transcript_frame(ws: Any, *, tries: int = 40) -> dict[str, Any]:
-    """下一帧 transcript 帧，不管是 reset 还是 ops；跳过回执、心跳与全局帧。"""
-
     for _ in range(tries):
         frame: dict[str, Any] = ws.receive_json()
         if frame.get("type", "").startswith("transcript."):
@@ -51,8 +43,6 @@ def _next_transcript_frame(ws: Any, *, tries: int = 40) -> dict[str, Any]:
 def test_subscribing_from_the_baseline_resumes_without_a_reset(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """照 Kimi 的顺序：基线带来水位与实时流，订阅带着它们续上，服务端只补发，不回 reset。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -78,8 +68,6 @@ def test_subscribing_from_the_baseline_resumes_without_a_reset(
 def test_a_watermark_without_its_epoch_or_from_another_stream_gets_a_reset(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """只给序号、或 epoch 对不上，服务端分不出那是不是这条流的水位，回 reset 让客户端整页重拉。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -105,8 +93,6 @@ def test_a_watermark_without_its_epoch_or_from_another_stream_gets_a_reset(
 def test_lifecycle_frames_carry_the_owner_in_commit_order(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """建、开跑、改名、换需求单、换合集、删各发一帧，提交之后发出，按写入的先后到达。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         owner_id = tc.get("/users/me").json()["user"]["id"]
@@ -123,7 +109,6 @@ def test_lifecycle_frames_carry_the_owner_in_commit_order(
 
             _send(tc, conversation_id, "prm_life")
             busy = until(ws, "event.session.work_changed")
-            # 开跑记录运行也是一次行变化：带出新的 lastRunId 与抹掉的收尾标记。
             began = until(ws, "event.session.updated")
             until(ws, "event.session.work_changed")
             assert busy["owner_user_id"] == owner_id
@@ -153,7 +138,6 @@ def test_lifecycle_frames_carry_the_owner_in_commit_order(
 
             assert tc.delete(f"/conversations/{conversation_id}").status_code == 204
             deleted = until(ws, "event.session.deleted")
-            # 对话 id 只在外层，没有 payload。
             assert set(deleted) == {"type", "session_id", "owner_user_id", "timestamp"}
             assert deleted["session_id"] == conversation_id
             assert deleted["owner_user_id"] == owner_id
@@ -162,8 +146,6 @@ def test_lifecycle_frames_carry_the_owner_in_commit_order(
 def test_an_idempotent_replay_of_create_announces_nothing(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """带同一个 id 重发建对话不是新出现的对话，不发 created。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         first = tc.post("/conversations", json={"agentId": AGENT_ID})
@@ -196,8 +178,6 @@ def test_a_fork_announces_its_copy_as_created(ws_agent_app: FastAPI, pg_url: str
 def test_the_governor_receives_other_peoples_lifecycle_frames_with_their_owner(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """治理者的连接收全平台的帧，靠帧上的属主分清哪些不是自己的对话。"""
-
     with TestClient(ws_agent_app) as tc:
         owner = sign_in_as(tc, pg_url, username="logan", roles=("editor",))
         governor = sign_in_as(tc, pg_url, username="gov", roles=("root",))

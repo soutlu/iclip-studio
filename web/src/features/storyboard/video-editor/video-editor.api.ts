@@ -23,7 +23,6 @@ import type { PixelRect, Size } from './first-frames'
 
 const CROPPED_JPEG_QUALITY = 0.92
 
-/** 一张图的原图尺寸；同一地址只读一次。 */
 export const imageSizeQuery = (url: string) =>
   queryOptions({
     queryKey: ['image-size', url] as const,
@@ -34,7 +33,6 @@ export const imageSizeQuery = (url: string) =>
     staleTime: Infinity,
   })
 
-/** 一条视频的像素尺寸，只读元数据；同一地址只读一次。 */
 export const videoSizeQuery = (url: string) =>
   queryOptions({
     queryKey: ['video-size', url] as const,
@@ -63,7 +61,6 @@ export const videoSizeQuery = (url: string) =>
     staleTime: Infinity,
   })
 
-/** 各图的原图尺寸，按地址查；还没读到或读不到的不在里面。 */
 export const useImageSizes = (urls: readonly string[]): ReadonlyMap<string, Size> =>
   useQueries({
     queries: urls.map(imageSizeQuery),
@@ -76,7 +73,6 @@ export const useImageSizes = (urls: readonly string[]): ReadonlyMap<string, Size
       ),
   })
 
-/** 从原图上裁下 `rect`，导成 JPEG。 */
 const cropImage = async (url: string, rect: PixelRect): Promise<File> => {
   const image = await loadCrossOriginImage(url)
   const canvas = document.createElement('canvas')
@@ -145,7 +141,6 @@ export const submitClipGeneration = async (
     model: VideoClipModelOut
     prompt: string
     referenceImageUrls: readonly string[]
-    /** 要先裁的图：原地址到原图上的像素框。裁好上传，新地址代替原地址发送。 */
     frameCrops?: ReadonlyMap<string, PixelRect> | undefined
     generation: ClipGeneration
   },

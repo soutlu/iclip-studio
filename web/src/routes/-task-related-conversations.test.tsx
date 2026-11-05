@@ -17,7 +17,6 @@ import { renderWithProviders } from '@/testing/render'
 import { SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 import { TaskRelatedConversations } from './-task-related-conversations'
 
-/** 应用壳里侧栏挂着全局帧订阅，帧经它落进行池；这里一并挂上。 */
 function LiveFrames() {
   useLiveConversations()
   return null
@@ -97,7 +96,6 @@ describe('需求单关联任务与视频', () => {
       expect(within(panel).queryByRole('heading', { name: conversation.title })).toBeNull()
     } else {
       expect(within(panel).getByRole('heading', { name: conversation.title })).toBeVisible()
-      // 视频进度只要 agent:read；测试的查询缓存不设保鲜期，几处挂上时各读一次，这里只比读了哪些。
       expect(new Set(requestedPaths)).toEqual(
         new Set([`/api/conversations/by-task/${task.id}`, '/api/conversations/video-progress']),
       )
@@ -179,7 +177,6 @@ describe('需求单关联对话跟着全局帧走', () => {
     },
   })
 
-  /** 打开一张挂着一段空闲对话的需求单，并记下关联对话列表被读了几次。 */
   const openWithConversation = async (currentUser = mockAuthUser) => {
     const task = addMockTask('空闲时被提交出片的需求单')
     const conversation = addMockConversation('空闲的创作尝试', undefined, mockAuthUser.id)
@@ -201,10 +198,8 @@ describe('需求单关联对话跟着全局帧走', () => {
     return { conversation, reads, row, socket }
   }
 
-  /** 留出一次真实请求往返的时间，否则「没重拉」是空断言。 */
   const roundTrip = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
-  /** 视频帧让视频进度在一秒的尾随窗口后重拉（见 conversations.live.ts），等它时放宽超时。 */
   const PROGRESS_REFRESH_TIMEOUT = { timeout: 3000 }
 
   it.each([
@@ -270,7 +265,6 @@ describe('需求单关联对话跟着全局帧走', () => {
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     socket.onclose?.()
-    // 退避重连排在定时器上，推过去才会重新握手。
     act(() => {
       vi.advanceTimersByTime(2000)
     })

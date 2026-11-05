@@ -1,6 +1,5 @@
 import { addMockCollection, addMockConversation } from './conversations'
 
-/** 浏览器回归专用的千条大合集；`cue.mock.sidebar-large-collection` 为 true 时才加入。 */
 export const seedSidebarHistory = () => {
   const collection = addMockCollection('千条历史任务')
   collection.id = '10000000-0000-4000-8000-000000000000'

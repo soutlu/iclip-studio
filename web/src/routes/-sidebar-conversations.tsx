@@ -83,7 +83,7 @@ const writeOpenCollections = (open: ReadonlySet<string>): void => {
   try {
     window.localStorage.setItem(OPEN_COLLECTIONS_KEY, JSON.stringify([...open]))
   } catch {
-    // 浏览器禁用或占满存储时 setItem 会抛错，展开状态只留在这次打开的页面里。
+    // 忽略浏览器禁用或写满 Web Storage 时抛出的异常。
   }
 }
 
@@ -111,12 +111,6 @@ const useNowRefreshedAtMidnight = (): Date => {
   return now
 }
 
-/**
- * 侧栏的合集与任务区。任务区滚到底接着读，展开的合集读全；拖动改归属后由 mutation 刷新列表。
- * 只在登录身份就绪后渲染。
- *
- * @param onStartInCollection 合集行上「在合集里新建任务」：由应用侧栏接去首页。
- */
 export function SidebarConversations({
   onStartInCollection,
 }: {
@@ -177,7 +171,6 @@ export function SidebarConversations({
   const moveMutation = useSetConversationMembership()
   const pointer = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
 
-  /** 在 document 上拦截拖动结束后指向原对话的一次 click；行可能已重建，行级监听无法可靠阻止误跳转。 */
   const swallowClickAfterDrag = (conversationId: string) => {
     document.addEventListener(
       'click',
@@ -585,7 +578,6 @@ function ConversationFilter({
     <ChipGroup
       aria-label="任务筛选"
       className="h-7 gap-0.5 bg-transparent p-0"
-      // Radix 再点一次已选项会给空串，不在档位里的值一律忽略，筛选始终有值。
       onValueChange={(next) => {
         if (isSidebarFilter(next)) onChange(next)
       }}
@@ -669,7 +661,6 @@ function NextPageRow({
   const paused = query.isFetching || query.isError
   const loadNextPage = useEffectEvent(() => void query.fetchNextPage({ cancelRefetch: false }))
 
-  // IntersectionObserver 只在相交状态变化时回调：每读到一次数据、每次暂停结束都重建，让它按当下布局再报一次。
   useEffect(() => {
     const sentinel = sentinelRef.current
     if (paused || sentinel === null) return
@@ -677,7 +668,6 @@ function NextPageRow({
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) loadNextPage()
       },
-      // rootMargin 的百分比按 root 计算，root 必须是侧栏的滚动容器。
       { root: getScrollElement(), rootMargin: '0px 0px 100% 0px' },
     )
     observer.observe(sentinel)

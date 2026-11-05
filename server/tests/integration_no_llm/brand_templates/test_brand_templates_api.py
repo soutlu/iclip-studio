@@ -1,9 +1,3 @@
-"""品牌模板端点：权限（治理者才能管，读要 ``generation:read``）、字体上传与读取、改名与停用恢复、
-列表默认只列在用的；媒体生成没开时不挂。
-
-媒体生成开着、对象存储与队列连接器是替身；读字体那一步换成替身，真解析另见
-test_brand_template_adapters.py。"""
-
 from __future__ import annotations
 
 import uuid
@@ -32,8 +26,6 @@ PASSWORD = "password-123"
 
 
 class FakeFontProbe:
-    """字体探测端口替身；真实字体解析另在媒体层验证。"""
-
     def __init__(self) -> None:
         self.info = FontInfo(
             family="Test Family", weight=600, style="normal", unicode_ranges=((32, 126),)
@@ -89,8 +81,6 @@ async def http(media_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> None:
-    """第一次叫到这个名字就注册，之后只是重新登录。"""
-
     email = f"{username}@example.com"
     created = await client.post(
         "/auth/register", json={"email": email, "password": PASSWORD, "username": username}
@@ -120,8 +110,6 @@ async def add_font(
     name: str = "品牌字体",
     brand: str | None = None,
 ) -> dict[str, Any]:
-    """传一份字体并确认，交回资源。"""
-
     upload_id = await font_upload(client, bucket)
     confirmed = await client.post(
         f"/brand-templates/fonts/{upload_id}/confirm", json={"name": name, "brand": brand}

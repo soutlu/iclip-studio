@@ -1,8 +1,3 @@
-"""验证技能的本机缓存、skill 装配与 references 访问边界。
-
-通过真实 Agent 调用工具，覆盖工具名称与校验器挂载；中文 skill 名覆盖目录命名规则。
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,8 +36,6 @@ def skill_files(name: str, references: dict[str, str] | None = None) -> dict[str
 
 
 def make_skill(root: Path, name: str, *, references: dict[str, str] | None = None) -> CachedSkill:
-    """按 key 写进缓存；测试里 key 只要每个技能各不相同。"""
-
     return materialize_skill(
         root,
         name=name,
@@ -54,8 +47,6 @@ def make_skill(root: Path, name: str, *, references: dict[str, str] | None = Non
 async def read_reference(
     root: Path, skills: list[CachedSkill], *, skill: str, name: str
 ) -> ToolReturnPart:
-    """通过 Agent 调用 get_skill_reference，以返回的 outcome（success / retried）区分成功与可重试拒绝。"""
-
     async def call_once(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(parts=[ToolCallPart(TOOL, {"skill": skill, "name": name})])
@@ -71,13 +62,11 @@ async def read_reference(
         for part in message.parts
         if isinstance(part, ToolReturnPart) and part.tool_name == TOOL
     ]
-    assert len(parts) == 1  # 单次调用必须仅有一个结果，以检测工具重复注册。
+    assert len(parts) == 1
     return parts[0]
 
 
 def test_a_skill_is_written_once_under_its_key(tmp_path: Path) -> None:
-    """同一个 key 已经在缓存里就不再写：第二次给的文件被忽略，内容仍是第一次那份。"""
-
     assert cached_skill(tmp_path, name=SKILL, key="h1") is None
 
     first = materialize_skill(tmp_path, name=SKILL, key="h1", files=skill_files(SKILL))
@@ -100,8 +89,6 @@ def test_a_new_version_lands_next_to_the_old_one(tmp_path: Path) -> None:
 def test_a_key_written_by_someone_else_in_between_is_reused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """查的时候还没有、改名时目标目录已被别的进程写好：不报错，用别人写好的那份，临时目录不留。"""
-
     first = materialize_skill(tmp_path, name=SKILL, key="h1", files=skill_files(SKILL))
     real = skills_module.cached_skill
     calls: list[str] = []
@@ -120,9 +107,6 @@ def test_a_key_written_by_someone_else_in_between_is_reused(
 
 
 async def test_a_renamed_skill_loads_under_its_new_name(tmp_path: Path) -> None:
-    """版本里写的是旧标识，SKILL.md 的 name 换成新标识再写进新标识的目录：加载器认得它（name 要等于
-    目录名），参考文件也读得到。"""
-
     files = skill_files("old-name", {"规范.md": "规范正文"})
     files["SKILL.md"] = with_frontmatter_name(files["SKILL.md"], "new-name")
     cached = materialize_skill(tmp_path, name="new-name", key="k2", files=files)
@@ -149,8 +133,6 @@ def test_files_outside_the_skill_directory_are_refused(tmp_path: Path, path: str
 
 
 async def test_skills_from_different_versions_load_together(tmp_path: Path) -> None:
-    """几个技能各在自己的 hash 目录下，一起挂上时模型都看得到。"""
-
     seen: list[str] = []
 
     async def peek(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -208,8 +190,6 @@ async def test_reference_paths_outside_the_skill_are_refused(tmp_path: Path, nam
 
 
 async def test_refusal_lists_the_available_references(tmp_path: Path) -> None:
-    """拒绝时列出可访问文件，包含子目录，以便模型修正路径。"""
-
     cached = make_skill(
         tmp_path,
         SKILL,
@@ -219,7 +199,6 @@ async def test_refusal_lists_the_available_references(tmp_path: Path) -> None:
     part = await read_reference(tmp_path, [cached], skill=SKILL, name="规范表.md")
 
     assert part.outcome == "retried"
-    # 顺序按码位排，稳定即可
     assert "它有: 深处/细则.md, 补充.md, 规范.md" in part.model_response_str()
 
 
@@ -246,8 +225,6 @@ async def test_overlong_reference_is_truncated_loudly(tmp_path: Path) -> None:
 
 
 async def test_broken_encoding_aborts_instead_of_retrying(tmp_path: Path) -> None:
-    """引用文件编码损坏属于部署资产故障，模型重试无法修复。"""
-
     cached = make_skill(tmp_path, SKILL)
     references = tmp_path / cached.library / SKILL / "references"
     references.mkdir()

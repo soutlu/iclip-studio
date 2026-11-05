@@ -20,7 +20,6 @@ import { useLiveConversations } from '../conversations.live'
 import { ConversationsRoute } from './conversations-route'
 import { sessionEnvelope } from '@/testing/ws'
 
-/** 全局帧订阅在应用里挂在侧栏顶层；页面自己不订，这里照壳的样子在外面挂一次。 */
 function LiveFrames() {
   useLiveConversations()
   return null
@@ -29,7 +28,6 @@ function LiveFrames() {
 const RUNNING = { busy: true, lastTurnReason: null, pendingInteraction: 'none' } as const
 const COMPLETED = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' } as const
 
-/** session_id 位于信封；运行帧省略 last_turn_reason。 */
 const workChanged = (
   conversationId: string,
   payload: { busy: boolean; last_turn_reason?: 'completed' | 'failed' | 'aborted' },
@@ -40,7 +38,6 @@ const workChanged = (
   payload: { pending_interaction: 'none', ...payload },
 })
 
-/** 一条视频生成任务出完了。 */
 const videoCompleted = (conversationId: string) => ({
   ...sessionEnvelope(conversationId),
   type: 'event.generation.changed',
@@ -48,7 +45,6 @@ const videoCompleted = (conversationId: string) => ({
   payload: { id: 'job-1', kind: 'video', operation: 'generate', status: 'completed' },
 })
 
-/** 筛选条件在应用里由路由存在查询参数上；这里照样在外面持有一份，只测列表本身的行为。 */
 function StatefulConversationsRoute({
   tasks,
   previews = new Map(),
@@ -82,7 +78,6 @@ const render = async (tasks: readonly { id: string; label: string }[] = []) => {
   return { ...rendered, user }
 }
 
-/** 等全局帧引起的重拉时放宽超时：那一路带一秒的去抖窗口（见 conversations.live.ts）。 */
 const AUDIT_REFRESH_TIMEOUT = { timeout: 3000 }
 
 const rowOf = (title: string, options?: { timeout: number }) =>
@@ -94,7 +89,6 @@ const expectTotals = (running: number, total: number) => {
   expect(totals).toHaveTextContent(`${total} 个`)
 }
 
-/** 三段对话：别人在跑的、自己没跑过的、别人跑完的。 */
 const seedThree = () => {
   const other = addMockUser('小王')
   const task = addMockTask('秋季新品')
@@ -354,7 +348,6 @@ describe('ConversationsRoute', () => {
     expect(initialRow).not.toHaveTextContent('进行中')
     expectTotals(0, 1)
 
-    // 先改 MSW 里的事实，推送后的重拉才与就地补丁一致。
     theirs.activity = RUNNING
     socket.deliver(workChanged(theirs.id, { busy: true }))
     await waitFor(() =>
@@ -377,7 +370,6 @@ describe('ConversationsRoute', () => {
     const { socket } = await render()
     expect(within(await rowOf('小王的秋季片')).queryByRole('img')).not.toBeInTheDocument()
 
-    // 先改 MSW 里的事实：素材片出来了，审计列表那一行带上它的地址。
     const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/new-cut.mp4'
     mockLatestMasterUrls.set(theirs.id, master)
     socket.deliver(videoCompleted(theirs.id))
@@ -410,7 +402,6 @@ describe('ConversationsRoute', () => {
 
     expect(await screen.findByText('已显示 50 / 55')).toBeVisible()
     expect(within(screen.getByRole('list')).getAllByRole('link')).toHaveLength(50)
-    // 不用再点：页脚里没有按钮
     expect(screen.queryByRole('button', { name: '更多任务' })).not.toBeInTheDocument()
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(cursors).toEqual([null])

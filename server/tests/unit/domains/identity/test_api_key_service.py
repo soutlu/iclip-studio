@@ -1,5 +1,3 @@
-"""API key 生命周期与主体构造的业务规则（内存仓储）。"""
-
 from __future__ import annotations
 
 import uuid
@@ -38,8 +36,6 @@ def make_service(
 
 
 async def test_principals_carry_the_account_username() -> None:
-    """用户名跟着主体走：用户主体是自己的，key 主体是属主的；账号没有就是空，不拿邮箱顶。"""
-
     owner = make_account(roles=("root",), username="alice")
     nameless = make_account(username=None, email="nobody@example.com")
     service, _, _ = make_service(owner, nameless)
@@ -152,8 +148,6 @@ def test_custom_token_is_rejected_when_too_short_or_not_url_safe(token: str) -> 
 
 
 async def test_authenticates_a_key_issued_with_a_custom_token() -> None:
-    """服务器上可按调用方已有的串签发；认证只查哈希，不看前缀。"""
-
     owner = make_account(roles=("root",))
     service, _, api_keys = make_service(owner)
     token = validate_api_key_token("Zq7fN2xLb9TmKd4Rv1WyPc6Hs8Gj3Ute")

@@ -1,5 +1,3 @@
-/** 拖动监听 window，防止指针离开拖柄后中断；仅上报相对位移，宽度与边界由壳管理。 */
-
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { APP_RESIZE_HANDLE_WIDTH, type ResizeInput } from './-app-shell-layout'
@@ -9,11 +7,9 @@ const KEY_STEP = 16
 type AppResizeHandleProps = {
   label: string
   position?: number
-  /** 当前宽度用于可访问说明。 */
   value: number
   min: number
   max: number
-  /** 开始拖动时记录基准宽度。 */
   onResizeStart: () => void
   onResize: (delta: number, input: ResizeInput) => void
   onResizeEnd: () => void
@@ -34,17 +30,14 @@ export function AppResizeHandle({
   value,
 }: AppResizeHandleProps) {
   const [dragging, setDragging] = useState(false)
-  // 卸载时清理 window 监听器，避免拖动状态残留。
   const detachRef = useRef<(() => void) | null>(null)
   useEffect(() => () => detachRef.current?.(), [])
 
   const startDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return
-    // 上一轮的 pointerup 可能丢失（触屏多指、指针被系统接管），先摘掉旧监听，重复按下即自愈。
     detachRef.current?.()
     detachRef.current = null
     event.preventDefault()
-    // 拖动后正文可能被裁切，让键盘焦点留在始终可见的边界上。
     event.currentTarget.focus({ preventScroll: true })
     const origin = event.clientX
     onResizeStart()
@@ -89,7 +82,6 @@ export function AppResizeHandle({
   }
 
   return (
-    // 使用原生 button 提供键盘交互；jsx-a11y 将 separator 视为非交互角色。
     <button
       aria-label={label}
       className="group layer-sidebar absolute inset-y-0 cursor-col-resize touch-none ui-focus select-none"
@@ -100,7 +92,6 @@ export function AppResizeHandle({
       title={`${label}（当前 ${value}px，拖动可在 ${min}–${max}px 之间调整，双击可恢复默认）`}
       type="button"
     >
-      {/* 热区覆盖边界；分隔线自身不占列宽。 */}
       <span
         aria-hidden
         className={cn(

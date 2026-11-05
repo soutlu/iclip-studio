@@ -188,7 +188,6 @@ class LibraryService:
 
 
 HasTreatment = Callable[[uuid.UUID, uuid.UUID], Awaitable[bool]]
-"""（对话属主，对话 id）那段对话的工作区里有没有新片执行方案。"""
 
 _INELIGIBLE: Final[Mapping[HitCaseIneligible, str]] = {
     "not_material": "这条视频不是成片素材里的素材片，无法加入爆款素材库",
@@ -198,8 +197,6 @@ _INELIGIBLE: Final[Mapping[HitCaseIneligible, str]] = {
 
 
 def _unique[T](values: Sequence[T]) -> tuple[T, ...]:
-    """去掉重复的，保留第一次出现的先后。"""
-
     return tuple(dict.fromkeys(values))
 
 
@@ -208,11 +205,6 @@ def _hit_case_key(job_id: uuid.UUID) -> EntryKey:
 
 
 class HitCaseService:
-    """爆款素材库：挑素材片入选、移出、改标签、重新打标与列表。谁持 ``generation:read`` 谁就能改。
-
-    条目与标签都在标签域；能否入选看素材片口径与所在对话有没有新片执行方案（组合根注入）。
-    ``tagging`` 没配打标时照样入选、改标签，只是不排打标。"""
-
     def __init__(
         self, reports: LibraryReports, *, tagging: TaggingService, has_treatment: HasTreatment
     ) -> None:
@@ -222,8 +214,6 @@ class HitCaseService:
 
     @property
     def can_retag(self) -> bool:
-        """打标已配置：才挂重新打标。"""
-
         return self._tagging.can_tag
 
     async def list(
@@ -236,9 +226,6 @@ class HitCaseService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> HitCasesOut:
-        """入选晚的排前面；满页才给下一页游标，总数只在第一页给。``tags`` 按维度分组：维度之间都要
-        命中，同一维度命中任一，选了上级也算下级；不存在的标签是 ``ValidationFailed``。"""
-
         check_limit(limit)
         since, until = _window(since, until)
         groups = await self._tagging.filter_groups(_unique(tags))
@@ -256,17 +243,12 @@ class HitCaseService:
         return LibraryAuthorsOut(items=list(await self._reports.hit_case_authors()))
 
     async def state(self, job_id: uuid.UUID) -> HitCaseStateOut:
-        """这条能不能入选、入选了没有；没有这条生成记录是 ``NotFound``。"""
-
         reason = await self._ineligible(await self._source(job_id))
         return await self._state(job_id, reason)
 
     async def add(
         self, principal: Principal, job_id: uuid.UUID, tag_ids: Sequence[uuid.UUID]
     ) -> HitCaseStateOut:
-        """入选：不能入选是 ``ValidationFailed``（按原因说）；已入选原样交回，不改标签、不重打。
-        否则建条目、写带来的标签、记入选人，打标配了就排一次打标。"""
-
         reason = await self._ineligible(await self._source(job_id))
         if reason is not None:
             raise ValidationFailed(_INELIGIBLE[reason])
@@ -280,9 +262,6 @@ class HitCaseService:
     async def replace_tags(
         self, principal: Principal, job_id: uuid.UUID, tag_ids: Sequence[uuid.UUID]
     ) -> HitCaseStateOut:
-        """整份替换各维度的标签。没入选是 ``NotFound``；正在打标是 ``Conflict``；不存在的标签、维度
-        本身是 ``ValidationFailed``。"""
-
         source = await self._entered(job_id)
         await self._tagging.replace(
             _hit_case_key(job_id), _unique(tag_ids), created_by=principal.user_id
@@ -290,8 +269,6 @@ class HitCaseService:
         return await self._state(job_id, await self._ineligible(source))
 
     async def retag(self, principal: Principal, job_id: uuid.UUID) -> HitCaseStateOut:
-        """按所在对话当前的新片执行方案重新打标。没入选是 ``NotFound``；正在打标是 ``Conflict``。"""
-
         if not self._tagging.can_tag:
             raise RuntimeError("打标没配置，重新打标的入口不该挂上")
         source = await self._entered(job_id)
@@ -299,8 +276,6 @@ class HitCaseService:
         return await self._state(job_id, await self._ineligible(source))
 
     async def remove(self, job_id: uuid.UUID) -> None:
-        """移出：删掉条目，标签随之删掉；没入选也照常返回。"""
-
         await self._tagging.remove(_hit_case_key(job_id))
 
     async def _source(self, job_id: uuid.UUID) -> MaterialSource:
@@ -310,8 +285,6 @@ class HitCaseService:
         return source
 
     async def _entered(self, job_id: uuid.UUID) -> MaterialSource:
-        """入选了的这一条；没有这条视频或没入选都是 ``NotFound``。"""
-
         source = await self._source(job_id)
         if await self._reports.hit_case_entry(job_id) is None:
             raise NotFound("这条素材片不在爆款素材库里")

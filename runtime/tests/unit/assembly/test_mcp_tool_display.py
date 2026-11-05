@@ -1,7 +1,3 @@
-"""MCP 工具的卡头：标题是服务名称，服务给了显示名时接「 · 显示名」；主语是这次调用的关键参数（第一个非空的
-顶层字符串的第一行）。工具说明与工具名都不上卡头。名册里没有这个服务时标题是「MCP 服务」。投影时按名册当下的
-内容画。"""
-
 from __future__ import annotations
 
 import uuid
@@ -23,7 +19,6 @@ def server(name: str, *tools: McpTool, server_id: str = "docs") -> McpServerReco
         id=server_id,
         name=name,
         description="",
-        # 名册只看名称与工具，地址的密文与哈希用不到。
         url="ciphertext",
         url_hash="url-hash",
         transport="streamable_http",
@@ -76,15 +71,11 @@ def test_a_tool_without_a_title_shows_the_server_name_and_the_key_argument() -> 
     ("args", "detail"),
     [
         ({"query": "酒红 乐福鞋"}, "酒红 乐福鞋"),
-        # 跳过不是字符串的参数，取第一个字符串。
         ({"limit": 5, "ref": "kb1.page-63"}, "kb1.page-63"),
-        # 多行只取第一行；空串与全空白不算。
         ({"note": "", "blank": "  ", "text": "第一行\n第二行"}, "第一行"),
         ('{"query": "春夏 面料"}', "春夏 面料"),
-        # 顶层没有字符串：查询词嵌在数组里的也不往里找。
         ({"content": [{"type": "text", "text": "酒红"}]}, None),
         ({"a": 2, "b": 3}, None),
-        # 流式中途的参数还不是完整 JSON。
         ('{"query": "酒', None),
         (None, None),
     ],

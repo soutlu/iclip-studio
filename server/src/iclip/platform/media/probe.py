@@ -30,7 +30,6 @@ class VideoProfile:
     width: int
     height: int
     frame_rate: str
-    """ffprobe 的分数写法，如 ``30000/1001``，fps 滤镜原样收。"""
 
     has_audio: bool
 
@@ -107,7 +106,6 @@ def _positive_fraction(value: str) -> bool:
 
 
 async def probe_keyframes(path: Path) -> list[float]:
-    # 时刻减去了容器的 start_time：ffmpeg 的 trim 与 -ss 也从那里算起。
     stdout = await run(
         [
             "ffprobe",

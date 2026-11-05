@@ -1,5 +1,3 @@
-"""审计报表用例的夹具：报表经进程内的运行时服务取运行时的事实行，服务层接在它上面。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

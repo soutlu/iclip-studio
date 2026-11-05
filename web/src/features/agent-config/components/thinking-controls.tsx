@@ -4,7 +4,6 @@ import { cn } from '@/shared/lib/utils'
 import { THINKING_LEVELS, thinkingLabel, type ThinkingLevel } from '@/shared/ui/thinking-level'
 import './thinking-controls.css'
 
-/** 拖动时连续预览，释放后提交最近的有效档位；键盘逐档调节，默认值独立于强度刻度。 */
 export function ThinkingFader({
   levels,
   value,
@@ -42,7 +41,6 @@ export function ThinkingFader({
       End: levels.length - 1,
     }[event.key]
     if (next === undefined) return
-    // Radix 的细步进用于指针跟手，键盘仍按真实模型档位移动。
     event.preventDefault()
     commit(next)
   }
@@ -146,7 +144,6 @@ export function ThinkingFader({
   )
 }
 
-/** 模型支持的档位是一组独立开关，允许不连续多选，沿用推子的握柄形态。 */
 export function ThinkingLevelOptions({
   value,
   onChange,

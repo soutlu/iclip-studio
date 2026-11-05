@@ -1,10 +1,3 @@
-"""提交点的媒体地址检查：链接能打开、类型对算能用，探不通的再探一次；不行的只说「打不开」或「不是图片/视频」，
-给模型的话按称呼列出、叫它换地址。
-
-探的是本机回环上的测试服务器：``reach_server`` 把检查自己建的客户端换成放行回环与它端口的那份；不换时
-检查用的是生产规则，连回环就该被拒。不碰外网。
-"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -50,8 +43,6 @@ def reach_server(server: LoopbackServer, monkeypatch: pytest.MonkeyPatch) -> Non
 def answering(
     monkeypatch: pytest.MonkeyPatch, *answers: httpx.Response | httpx.HTTPError
 ) -> list[str]:
-    """检查用的客户端按先后答 ``answers``；交回每次探的地址。"""
-
     asked: list[str] = []
     queue = list(answers)
 
@@ -123,8 +114,6 @@ async def test_an_address_outside_the_rules_does_not_open(url: str) -> None:
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost"])
 async def test_the_default_client_does_not_open_loopback(server: LoopbackServer, host: str) -> None:
-    """不换客户端时用生产规则：本机地址打不开，端口不在 80 / 443 里也不去连。"""
-
     assert await reason_for(server.url("/png", host=host)) == "打不开"
     assert server.connections == 0
 
@@ -135,7 +124,6 @@ async def test_a_repeated_address_is_checked_once(server: LoopbackServer) -> Non
 
     bad = await bad_urls([same, server.url("/missing.png"), same, other], kind="image")
 
-    # 打不开的那个再探了一次。
     assert sorted(server.paths) == ["/missing.png", "/missing.png", "/mp4", "/png"]
     assert bad == {server.url("/missing.png"): "打不开", other: "不是图片"}
 

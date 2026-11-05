@@ -1,7 +1,3 @@
-"""用真实 ffmpeg 合成素材，验证合成的产物与关键帧、存放前缀、阶段上报与取不到素材时的收尾。
-
-合成先把素材下到本地，httpx 替身喂字节就够。"""
-
 from __future__ import annotations
 
 import uuid
@@ -42,8 +38,6 @@ EDITED_URL = "https://example.test/edited.mp4"
 
 
 def _client(payloads: dict[str, bytes]) -> httpx.MockTransport:
-    """固定地址返回固定字节，保留真实的流式下载路径。"""
-
     def handler(request: httpx.Request) -> httpx.Response:
         body = payloads.get(str(request.url))
         if body is None:
@@ -59,7 +53,6 @@ def sources() -> dict[str, bytes]:
         root = Path(tmp)
         return {
             BASE_URL: synthesize_video(root / "base.mp4", size="320x240", seconds=4, audio=True),
-            # 照实测：模型还回来的片段比原片大（720×960 进去，834×1112 出来），同比例。
             EDITED_URL: synthesize_video(
                 root / "edited.mp4", size="480x360", seconds=2, audio=False
             ),
@@ -68,10 +61,6 @@ def sources() -> dict[str, bytes]:
 
 @dataclass
 class _Stages:
-    """记下 provider 报了哪些阶段。
-
-    ``live=False`` 模拟这条任务已经不在提交中；``broken`` 模拟写库失败。"""
-
     seen: list[ClipStage] = field(default_factory=list)
     live: bool = True
     broken: bool = False
@@ -85,8 +74,6 @@ class _Stages:
 
 @pytest.fixture(params=list(CODECS))
 def codec(request: pytest.FixtureRequest) -> MediaCodec:
-    """每一档编解码；本机用不了的硬件档跳过。"""
-
     return local_codec(request.param)
 
 
@@ -98,8 +85,6 @@ async def _compose(
     codec: MediaCodec = SOFTWARE,
     fetch_url: Callable[[str], str] = as_is,
 ) -> tuple[str, bytes]:
-    """跑一次合成，返回落库的对象 key 与产物字节。"""
-
     store = MemoryObjectStore()
     provider = FfmpegComposeProvider(
         object_store=store,
@@ -129,8 +114,6 @@ async def _profile(content: bytes) -> tuple[int, int, bool]:
 async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
     sources: dict[str, bytes],
 ) -> None:
-    """换进去的那段画幅更大，合成仍照原片——原片整条更长。"""
-
     key, content = await _compose(
         [
             {"url": BASE_URL, "start": 0, "end": 1},
@@ -150,8 +133,6 @@ async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
 async def test_sources_are_downloaded_from_the_rewritten_addresses(
     sources: dict[str, bytes],
 ) -> None:
-    """请求里是本桶的公网地址，素材只在换过的地址上取得到。"""
-
     to_internal = rewriting("https://example.test", "https://iclip.oss-internal.test")
     internal_only = {to_internal(url): body for url, body in sources.items()}
 
@@ -171,8 +152,6 @@ async def test_sources_are_downloaded_from_the_rewritten_addresses(
 async def test_a_composite_still_aligns_to_the_original_when_the_edit_covers_most_of_it(
     sources: dict[str, bytes],
 ) -> None:
-    """编辑区间超过一半：换进去的那段在合成里占大头，合成仍照原片。"""
-
     _, content = await _compose(
         [
             {"url": BASE_URL, "start": 0, "end": 0.5},
@@ -189,8 +168,6 @@ async def test_a_composite_still_aligns_to_the_original_when_the_edit_covers_mos
 async def test_open_ends_are_filled_from_the_downloaded_sources(
     sources: dict[str, bytes],
 ) -> None:
-    """编辑段产物整条、基底后段取到结尾：长度按下载下来的素材补齐。"""
-
     _, content = await _compose(
         [
             {"url": BASE_URL, "start": 0, "end": 1},
@@ -206,8 +183,6 @@ async def test_open_ends_are_filled_from_the_downloaded_sources(
 async def test_a_tail_that_starts_at_the_end_of_the_base_is_skipped(
     sources: dict[str, bytes],
 ) -> None:
-    """编辑一直改到基底结尾，后段从结尾取到结尾，是空的：跳过而不是报零长段。"""
-
     base_ms = await duration_ms_of(sources[BASE_URL])
     _, content = await _compose(
         [
@@ -222,12 +197,9 @@ async def test_a_tail_that_starts_at_the_end_of_the_base_is_skipped(
 
 
 _FRAME = 0.1
-"""素材是 10 fps，合成照原片也是。"""
 
 
 def _assert_keyframes(actual: list[float], expected: list[float]) -> None:
-    """一一对上，每个差不过一帧：多一个、少一个都算错。"""
-
     assert len(actual) == len(expected), f"关键帧 {actual}，应为 {expected}"
     for got, want in zip(actual, expected, strict=True):
         assert abs(got - want) <= _FRAME + 1e-6, f"关键帧 {actual}，应为 {expected}"
@@ -236,10 +208,6 @@ def _assert_keyframes(actual: list[float], expected: list[float]) -> None:
 async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_them(
     codec: MediaCodec,
 ) -> None:
-    """换进去的那段中途画面突变，编码器自己会在那里插关键帧；合成里不该有。
-
-    换进去的那段没有音轨，原片有：合成在这一段配静音。每一档编解码都要守这条，产物也要解得开。"""
-
     with TemporaryDirectory(prefix="clip-fixture-") as tmp:
         root = Path(tmp)
         sources = {
@@ -256,7 +224,6 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
                 seconds=2,
                 audio=False,
                 keyframes=[0, 1.6],
-                # 突变离前一个关键帧（这段的起点）不到十来帧时 x264 不按场景插，放远些才测得到。
                 flip_at=1.25,
             ),
         }
@@ -272,8 +239,6 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
 
     _assert_keyframes(
         await keyframes_of(content),
-        # 前段 [0, 1)：起点 0 与 0.6；编辑段整条从 1 起：起点与 1.6；
-        # 后段 [3, 4) 从 3 起：起点与 3.4。基底的 1.3、2.2 不在取到的段里。
         [0, 0.6, 1.0, 2.6, 3.0, 3.4],
     )
     assert (await _profile(content))[2], "静音段配了静音，合成照原片带音轨"
@@ -281,8 +246,6 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
 
 
 async def test_a_long_stretch_without_source_keyframes_gets_none(codec: MediaCodec) -> None:
-    """编码器默认隔一段（x264 是 250 帧，10 fps 下 25 秒）至少放一个关键帧；合成里不该有。"""
-
     with TemporaryDirectory(prefix="clip-fixture-") as tmp:
         root = Path(tmp)
         sources = {
@@ -303,8 +266,6 @@ async def test_a_long_stretch_without_source_keyframes_gets_none(codec: MediaCod
 
 
 async def test_the_decode_options_go_on_the_video_inputs(sources: dict[str, bytes]) -> None:
-    """解码选项真的加在了视频输入上：ffmpeg 不认的选项让这次合成失败，且不重试。"""
-
     with pytest.raises(ProviderError) as caught:
         await _compose(
             [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
@@ -319,8 +280,6 @@ async def test_the_decode_options_go_on_the_video_inputs(sources: dict[str, byte
 async def test_a_composite_reports_fetching_then_processing_then_uploading(
     sources: dict[str, bytes],
 ) -> None:
-    """三步都有：下素材、探规格算取素材，重编码算加工。"""
-
     stages = _Stages()
     await _compose(
         [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
@@ -334,8 +293,6 @@ async def test_a_composite_reports_fetching_then_processing_then_uploading(
 async def test_stops_reporting_once_the_job_has_a_conclusion_but_still_finishes(
     sources: dict[str, bytes],
 ) -> None:
-    """上报被拒（这条已经有结论了）就不再报，活照样干完——产物落在按任务 id 定好的 key 上。"""
-
     stages = _Stages(live=False)
     key, content = await _compose(
         [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
@@ -349,11 +306,6 @@ async def test_stops_reporting_once_the_job_has_a_conclusion_but_still_finishes(
 
 
 async def test_a_broken_stage_report_does_not_fail_the_job(sources: dict[str, bytes]) -> None:
-    """阶段词只是给人看的：写不进去就不写了。
-
-    让它抛出去会穿过队列的 ProviderError 捕获进重试策略，下一次执行见 submitting 就判
-    SUBMIT_INTERRUPTED——一条能出结果的加工被一次展示用的写库失败判死。"""
-
     stages = _Stages(broken=True)
     _, content = await _compose(
         [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
@@ -366,8 +318,6 @@ async def test_a_broken_stage_report_does_not_fail_the_job(sources: dict[str, by
 
 
 async def test_a_source_that_cannot_be_fetched_fails_without_retry() -> None:
-    """先下到本地，取不到素材有自己的错误码。"""
-
     provider = FfmpegComposeProvider(
         object_store=MemoryObjectStore(),
         report_stage=_Stages().report,

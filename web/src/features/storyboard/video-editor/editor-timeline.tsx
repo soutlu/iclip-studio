@@ -71,7 +71,6 @@ const secondsText = (value: number) => value.toFixed(1)
 
 type FrameProps = { mediaUrl: string; start: number; end: number; peaks: PeaksState }
 
-/** 一块的画面行与原声行。 */
 function Faces({ mediaUrl, start, end, peaks }: FrameProps) {
   const part = { mediaUrl, start, end }
   return (
@@ -86,86 +85,58 @@ function Faces({ mediaUrl, start, end, peaks }: FrameProps) {
   )
 }
 
-/** 按元素的横向范围把指针位置换成时间线上的时刻。 */
 const clockIn = (lanes: HTMLElement | null, scale: number, clientX: number) => {
   const bounds = lanes?.getBoundingClientRect()
   if (bounds === undefined || bounds.width === 0) return 0
   return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
 }
 
-/**
- * 剪辑视图里全页唯一的选中：原片轨上的选区（原片时间，生成用；点镜头时按整镜头，拖两端把手可以停在镜头中间）、
- * 草稿里的一块，或编辑轨上在跑的那条。
- */
 export type Selection =
   | ({ kind: 'run' } & SecondsRange)
   | { kind: 'draft'; id: string }
   | { kind: 'running'; id: string }
   | undefined
 
-/** 修剪把手落到的新起止（按这一块来源自己的时间）。 */
 export type TrimChange = { id: string; edge: Edge; t0: number; t1: number }
 
-/** 原片选区的把手落到的新起止（原片时间）。 */
 export type RunChange = SecondsRange & { edge: Edge }
 
-/** 舞台停在哪：草稿预览时是合成时间，原片预览时是原片时间；结尾那一端取结尾前的那一帧。 */
 type Seek = { clock: number; boundary?: 'end' }
 
-/**
- * 按着修剪把手时舞台怎么跟：草稿块给拖动中草稿的样子（`items`），原片选区给拖动中的选区（`run`）。`seek` 是被拖
- * 那一端在拖动中草稿里的时刻，`shown` 是把手在已提交的布局里所在的标尺位置（工具条时间按它写，与播放头一致）；
- * 两者只在拖草稿块的左把手、这块长度变了时不同。
- */
 export type TrimPreview =
   | { kind: 'draft'; items: readonly DraftItem[]; seek: Seek; shown: number }
   | { kind: 'run'; run: RunChange; seek: Seek; shown: number }
 
 type ClipsTimelineProps = {
   rootUrl: string
-  /** 原片时长：每秒多少像素只由它决定，草稿更长时往右滚动。 */
   duration: number
   shots: readonly Shot[]
   blocks: readonly EditBlock[]
-  /** 草稿里的块，按合成时间首尾相接。 */
   items: readonly DraftItem[]
   shotOn: (no: number) => boolean
   isPicked: (editId: string, seg: number) => boolean
   selection: Selection
-  /** 播放头的时刻：草稿预览时是合成时间，原片预览时是原片时间（见 `clockOn`）。 */
   clock: number
-  /** 播放头按哪种时间放：两种都用同一个每秒像素。标尺始终按合成时间定位。 */
   clockOn: 'draft' | 'source'
   peaksOf: (url: string) => PeaksState
-  /** 在标尺上按合成时间定位。 */
   onSeek: (clock: number) => void
   onScrub: () => void
-  /** 点镜头、Shift 点、方向键：按整镜头选中这一串，为 undefined 时清掉选区。 */
   onSelectRun: (run: SecondsRange | undefined) => void
-  /** 改原片选区：拖把手松手、按方向键时提交。 */
   onTrimRun: (change: RunChange) => void
   onSelectDraft: (id: string) => void
   onSelectRunning: (id: string) => void
   onToggleShot: (no: number) => void
-  /** 点编辑轨上完成的一段：选用或取消，同点它的眼睛，另由编辑器决定选中。 */
   onClickPart: (editId: string, seg: number) => void
-  /** 开关编辑轨上的一段：它的眼睛、把它拖进草稿、把草稿里的它拖出去都走这里。 */
   onTogglePart: (editId: string, seg: number) => void
-  /** 修剪草稿里的一块：拖把手松手、按方向键时提交。 */
   onTrim: (change: TrimChange) => void
-  /** 这样修剪之后草稿的样子（见 `trimItem`）：拖把手、还没松手时按它画。 */
   previewTrim: (change: TrimChange) => readonly DraftItem[]
-  /** 按下修剪把手、拖动中每一步给一次舞台要跟到的样子；松手、取消时给 undefined。 */
   onTrimPreview: (preview: TrimPreview | undefined) => void
-  /** 把这一段拖到草稿上、还没松手时草稿的样子（见 `previewPick`）；它已在草稿里时为 undefined。 */
   previewPick: (editId: string, seg: number) => readonly DraftItem[] | undefined
   selectionBoxRef: Ref<HTMLSpanElement>
 }
 
-/** 指针下是哪条轨的哪一块：草稿块与它的来源同 id（原片镜头 `shot-3`、编辑段 `<编辑片段>#<段>`）。 */
 type Hover = { track: 'draft' | 'film' | 'edit'; id: string }
 
-/** 按指针下的元素认出悬停的块；正在收起的块、块以外的地方都不算。 */
 const hoverAt = (target: EventTarget | null): Hover | undefined => {
   const node = target instanceof Element ? target.closest<HTMLElement>('[data-hover-track]') : null
   const track = node?.dataset['hoverTrack']
@@ -175,13 +146,8 @@ const hoverAt = (target: EventTarget | null): Hover | undefined => {
     : undefined
 }
 
-/**
- * 按住草稿里的一块或编辑轨上完成的一段：移动超过拖动阈值才算拖，缩影跟手，松手前不改草稿。
- * 编辑段拖到草稿轨上松手 = 选用；草稿块拖出草稿轨松手 = 拿掉；别处松手取消，缩影回到原处。
- */
 type Carry = {
   from: 'part' | 'draft'
-  /** 编辑段的 id，或草稿块的 id。 */
   id: string
   face: InsertionFace
   pointerId: number
@@ -190,18 +156,14 @@ type Carry = {
   x: number
   y: number
   moved: boolean
-  /** 指针在草稿轨上。 */
   over: boolean
   origin: InsertionBox
-  /** 按下时每秒多少像素、草稿轨多高：落点占位按它们摆。 */
   pps: number
   height: number
-  /** 松了手，缩影正飞向落点或回到原处。 */
   returning: boolean
   destination?: InsertionBox | undefined
 }
 
-/** 关联描边与连线怎么淡出：常驻的为空串，开关后自动出现的那一对在停留后 `fading`、拿掉时随收起 `out`。 */
 type Fade = '' | 'fading' | 'out'
 
 const fadeOf = (flash: Flash | undefined): Fade =>
@@ -209,51 +171,33 @@ const fadeOf = (flash: Flash | undefined): Fade =>
 
 const fadeClass = (fade: Fade) => cn(fade !== '' && 'is-fading', fade === 'out' && 'is-out')
 
-/** 轨道区里 `attribute` 等于 `value` 的那个元素。 */
 const nodeOf = (lanes: HTMLElement, attribute: string, value: string) =>
   [...lanes.querySelectorAll<HTMLElement>(`[${attribute}]`)].find(
     (node) => node.getAttribute(attribute) === value,
   )
 
-/** 拖动缩影上的一块：名字、开头半秒的画面与时长。 */
 const faceOf = (title: string, mediaUrl: string, t0: number, t1: number): InsertionFace => ({
   title,
   durationMs: Math.round((t1 - t0) * 1000),
   media: <Frames part={{ mediaUrl, start: t0, end: Math.min(t1, t0 + 0.5) }} />,
 })
 
-/** 修剪把手落到的新起止（按草稿块来源自己的时间，或原片时间）。 */
 type Range = { t0: number; t1: number }
 
-/**
- * 拖修剪把手的一步：草稿块带着这样修剪之后草稿的样子，以及把手被这段素材本身的开头、结尾或最短长度挡住时的
- * 说明（`limit`）。
- */
 type TrimStep =
   | { kind: 'draft'; change: TrimChange; items: readonly DraftItem[]; limit: string | undefined }
   | { kind: 'run'; change: RunChange }
 
-/** 正按着的修剪把手。 */
 type Pressed = {
-  /** 哪一对把手：草稿块的 id，或原片选区的 {@link RUN_HANDLES}。 */
   key: string
   edge: Edge
-  /**
-   * 这次拖动中轨道区铺到过的最多秒数（按下时的，往外拉长时跟着变多）：拖动中不比它窄，免得滚到最右时内容变短、
-   * 浏览器收回滚动，整条时间线在指针下跳。
-   */
   content: number
 }
 
 const RUN_HANDLES = 'run'
 
-/** 来源时间上差这么点（秒）不算越过边界。 */
 const EDGE_EPSILON = 0.001
 
-/**
- * 草稿块的把手 `edge` 被拖到 `time`（来源时间，吸附之前）时有没有被挡住：剪得比最短还短，或越过这段素材本身的
- * 开头、结尾。没被挡住时为 undefined。
- */
 const trimLimitOf = (spec: TrimSpec, edge: Edge, time: number) => {
   const shortest =
     edge === 'start'
@@ -273,10 +217,6 @@ const itemIn = (items: readonly DraftItem[], id: string) => {
   return item
 }
 
-/**
- * 拖草稿块的修剪把手时这一块按已提交的布局怎么画（见 `trimSpans`）：`committed` 是草稿本身，`step` 是拖动中的
- * 样子。`face` 是画出来的这一整块：从 `block` 起止，里面是已提交与修剪后两段来源时间合起来的画面。
- */
 const draftTrimOf = (
   step: Extract<TrimStep, { kind: 'draft' }>,
   committed: readonly DraftItem[],
@@ -295,7 +235,6 @@ const draftTrimOf = (
   return { id, edge, face, ...spans }
 }
 
-/** 这一步舞台怎么跟；`committed` 是草稿本身（把手的标尺位置按它的布局算）。 */
 const trimPreviewOf = (step: TrimStep, committed: readonly DraftItem[]): TrimPreview => {
   if (step.kind === 'run') {
     const { edge, start, end } = step.change
@@ -312,25 +251,17 @@ const trimPreviewOf = (step: TrimStep, committed: readonly DraftItem[]): TrimPre
   }
 }
 
-/** 横向位置：`at` 起、长 `len` 秒，换算成像素交给 CSS（每秒像素 `--pps` 只由原片时长与可视宽定）。 */
 const placed = (at: number, len: number, row?: number): CSSProperties =>
   ({ '--at': at, '--len': len, ...(row === undefined ? {} : { '--row': row }) }) as CSSProperties
 
 const overlap = (a0: number, a1: number, b0: number, b1: number) =>
   Math.min(a1, b1) - Math.max(a0, b0) > 0.001
 
-/** 「第 2 段 · 」：只有一段时不写。 */
 const partPrefix = (part: LanePart) =>
   part.part !== undefined && part.block.state.kind === 'ready' && part.block.state.parts.length > 1
     ? `第 ${part.part.seg} 段 · `
     : ''
 
-/**
- * 剪辑视图的时间线，三条轨自上而下：草稿（要合成的内容，按合成时间首尾相接）、原片（全部镜头，按原片时间）、
- * 编辑（编辑片段对准它的生成区间，完成的按关键帧切段）。标尺属于草稿；只有一根播放头，草稿预览时按合成时间、
- * 原片预览时按原片时间放。原片轨、编辑轨的位置只随原片变；草稿变了时只有草稿轨的块动画到新位置（见
- * `useDraftReflow`）。编辑段可以拖进草稿、草稿块可以拖出草稿，拖动的缩影、落点占位与成片页共用。
- */
 export function ClipsTimeline({
   rootUrl,
   duration,
@@ -362,7 +293,6 @@ export function ClipsTimeline({
   const scrollRef = useRef<HTMLDivElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const connectorRef = useRef<SVGSVGElement>(null)
-  // 指针最后在哪：块重画、横向滚动之后按它重新认悬停的块（旧元素被换掉时浏览器不发离开事件）。
   const pointerRef = useRef<{ x: number; y: number }>(undefined)
   const ghostRef = useRef<InsertionGhostHandle>(null)
   const previewRef = useRef<InsertionPreviewHandle>(null)
@@ -372,7 +302,6 @@ export function ClipsTimeline({
   const [hover, setHover] = useState<Hover>()
   const [pressed, setPressed] = useState<Pressed>()
   const [carry, setCarry] = useState<Carry>()
-  // 修剪把手拖动中只预览，松手才提交一次；舞台按预览跟到被拖的那一端
   const trimGesture = usePreviewGesture<TrimStep>({
     containerRef: lanesRef,
     viewportRef: scrollRef,
@@ -391,7 +320,6 @@ export function ClipsTimeline({
     onEnd: () => setPressed(undefined),
   })
   const trimming = trimGesture.preview?.last
-  // 拖草稿块的修剪把手：别的块按草稿本身画、不动；被拖的这块画成一整块、盖在相邻的块上，要剪掉的那段调暗
   const draftTrim = trimming?.kind === 'draft' ? draftTrimOf(trimming, items) : undefined
   const trimStep = trimGesture.preview?.step
   const trimLimit = trimStep?.kind === 'draft' ? trimStep.limit : undefined
@@ -403,7 +331,6 @@ export function ClipsTimeline({
   const partOf = (id: string) => parts.find((part) => part.id === id)
   const shotOf = (no: number) => shots.find((shot) => shot.no === no)
 
-  // ---- 拖放预演：编辑段拖到草稿上时，草稿轨按选用后的排序给它让出位置，落点占位画在空出来的地方 ----
   const carrying = carry?.moved === true && !carry.returning ? carry : undefined
   const carryPart = carry?.from === 'part' ? partOf(carry.id) : undefined
   const carryPicked =
@@ -417,7 +344,6 @@ export function ClipsTimeline({
     projection === undefined || landing === undefined
       ? items
       : projection.filter((item) => item.id !== landing.id)
-  // 拖草稿块的修剪把手时播放头与标尺滑块停在把手所在的标尺位置，与工具条时间一致
   const playheadAt =
     draftTrim === undefined
       ? bounded
@@ -436,11 +362,9 @@ export function ClipsTimeline({
     showHover(hoverAt(document.elementFromPoint(pointer.x, pointer.y)))
   }
   const syncHover = useEffectEvent(resyncHover)
-  // 草稿重画后按最终位置重认悬停（在重排动画开始之前，量到的是块的新位置）。
   const shownIds = shown.map((item) => item.id).join(' ')
   useLayoutEffect(() => syncHover(), [shownIds])
 
-  // ---- 连线：草稿里的一块 ↔ 它的来源。悬停任一边，或刚开关的那一块；选中不常驻，修剪、拖放时不画 ----
   const busy = pressed !== undefined || carrying !== undefined
   const hovered = hover === undefined ? undefined : itemOf(hover.id)
   const drawConnector = () => {
@@ -455,7 +379,6 @@ export function ClipsTimeline({
     const box = lanes.getBoundingClientRect()
     const a = from.getBoundingClientRect()
     const b = to.getBoundingClientRect()
-    // 草稿块底边中点 → 编辑段顶边中点，两个控制点都在竖直方向上
     const x1 = a.left + a.width / 2 - box.left
     const y1 = a.bottom - box.top
     const x2 = b.left + b.width / 2 - box.left
@@ -471,8 +394,6 @@ export function ClipsTimeline({
     end?.setAttribute('cy', String(y2))
   }
 
-  // 轨道区铺的秒数：原片与草稿取长者（往右拉长最后一块时放得下拉长出来的那段）；拖修剪把手期间不比按下时窄，
-  // 收起动画期间不比开关前窄
   const base = Math.max(
     duration,
     total,
@@ -497,15 +418,12 @@ export function ClipsTimeline({
       ? { id: hovered.id, kind: hovered.kind, out: false, fading: false }
       : reflow.flash
   useLayoutEffect(drawConnector)
-  /** 此刻每秒多少像素：轨道区的实际宽度除以它铺的秒数。 */
   const ppsNow = () => {
     const width = lanesRef.current?.getBoundingClientRect().width ?? 0
     return width > 0 ? width / content : 1
   }
 
-  // ---- 原片轨的选区：点镜头、Shift 扩选、方向键都按整镜头算，覆盖到的镜头碰到一部分也算 ----
   const order = shots.map((shot) => shot.no)
-  // 拖选区把手时按预览画，松手才改选中
   const run: SecondsRange | undefined =
     trimming?.kind === 'run'
       ? { start: trimming.change.start, end: trimming.change.end }
@@ -515,7 +433,6 @@ export function ClipsTimeline({
   const covered = run === undefined ? undefined : coveredSpan(shots, run)
   const chosen =
     covered === undefined ? [] : order.filter((no) => covered.from <= no && no <= covered.to)
-  /** 按整镜头选中 `nos` 这一串连续的镜头。 */
   const runOf = (nos: readonly number[]): SecondsRange | undefined => {
     const first = shotOf(nos[0] ?? 0)
     const last = shotOf(nos.at(-1) ?? 0)
@@ -540,8 +457,6 @@ export function ClipsTimeline({
     roving.focus(shotItemId(next.focus))
   }
 
-  // ---- 关联描边：悬停一边描出另一边，选中时常驻；连线的两端也描出，跟着连线淡出 ----
-  // 按位置记：同一处被描两次只画一个，已有常驻描边时不再叠一层会淡出的
   const linked = new Map<string, Fade>()
   const filmMarks = new Map<string, { start: number; end: number; fade: Fade }>()
   const laneMarks = new Map<string, { part: LanePart; fade: Fade }>()
@@ -563,7 +478,6 @@ export function ClipsTimeline({
   if (selectedItem !== undefined) markSource(selectedItem)
   for (const no of chosen) markDraft(shotItemId(no))
   if (carrying !== undefined) {
-    // 拖着编辑段：描出它的生成区间；已在草稿里的描出它那块（不出落点占位）
     if (carrying.over && carryPart !== undefined) {
       markFilm(carryPart.block)
       if (carryPicked) markDraft(carryPart.id)
@@ -583,9 +497,7 @@ export function ClipsTimeline({
     markSource(pair, fade)
   }
 
-  // ---- 选中描边：也是弹出卡的定位锚点 ----
   const runningPart = selection?.kind === 'running' ? partOf(selection.id) : undefined
-  // 选中的草稿块此刻框住的那段：拖它的修剪把手时框住修剪后的范围，把手也摆在它两端
   const keptSpan =
     selectedItem === undefined
       ? undefined
@@ -602,11 +514,6 @@ export function ClipsTimeline({
             }
           : undefined
 
-  // ---- 修剪把手：草稿里选中的那块，与原片轨上的选区，同一套拖动与方向键 ----
-  /**
-   * 按下修剪把手：拖动中按指针换算时间、离边界 8px 以内吸上去，只预览，松手才提交一次（见 usePreviewGesture）。
-   * `target` 是草稿里的那一块（拖动中所有块按草稿本身画、不动，松手后后面的块滑过去）；原片选区不给。
-   */
   const pressTrim = (
     event: PointerEvent<HTMLButtonElement>,
     key: string,
@@ -616,11 +523,9 @@ export function ClipsTimeline({
     target?: TrimTarget,
   ) => {
     if (event.button !== 0) return
-    // 开关后的重排与连线停在最终状态，拖动中不再有任何动画
     reflow.cancel()
     const pps = ppsNow()
     const from = edge === 'end' ? spec.t1 : spec.t0
-    // `stepOf` 另收到把手被拖到的来源时刻（吸附、停在边界之前），按它判断有没有被挡住
     const compute = (deltaPx: number) => {
       const time = from + deltaPx / pps
       return stepOf(trimTo(spec, edge, time, snapNear(spec.snaps, pps)), time)
@@ -630,10 +535,8 @@ export function ClipsTimeline({
       trimGesture.start(event, compute)
     } else trimGesture.startTrim(event, target, compute)
     setPressed({ key, edge, content })
-    // 按下就把舞台换到这一端的画面
     onTrimPreview(trimPreviewOf(stepOf({ t0: spec.t0, t1: spec.t1 }, from), items))
   }
-  /** 方向键：每一步直接提交。 */
   const keyTrim = (
     event: KeyboardEvent<HTMLButtonElement>,
     spec: TrimSpec,
@@ -649,7 +552,6 @@ export function ClipsTimeline({
   }
   const pressedEdge = (key: string) => (pressed?.key === key ? pressed.edge : undefined)
   const draftSpec = selectedItem === undefined ? undefined : trimSpecOf(selectedItem)
-  // 把手的读数：拖动中按修剪后的这一块
   const handleItem =
     selectedItem !== undefined && trimming?.kind === 'draft'
       ? (trimming.items.find((item) => item.id === selectedItem.id) ?? selectedItem)
@@ -678,12 +580,10 @@ export function ClipsTimeline({
     return `${block === undefined ? '编辑片段' : editTitleOf(block)} · ${draftLineOf(item)}`
   }
 
-  // ---- 拖放：编辑段拖进草稿 = 选用，草稿块拖出草稿 = 拿掉；只改开关，不改选中 ----
   const partTitle = (block: EditBlock, seg: number) =>
     block.state.kind === 'ready' && block.state.parts.length > 1
       ? `${editTitleOf(block)} · 第 ${seg} 段`
       : editTitleOf(block)
-  /** 指针在草稿轨上：轨道区看得见的横向范围内、草稿那一条的高度里。 */
   const overDraft = (x: number, y: number) => {
     const view = scrollRef.current?.getBoundingClientRect()
     const track = dropRef.current?.getBoundingClientRect()
@@ -735,14 +635,12 @@ export function ClipsTimeline({
     }
     if (!carry.moved || over !== carry.over) setCarry({ ...carry, moved: true, over, x, y })
   }
-  /** 松手：按显示着的落点改草稿，返回缩影飞去的地方；没改时回到原处，拿掉时不用飞。 */
   const dropCarry = (current: Carry): InsertionBox | undefined => {
     if (current.from === 'part') {
       const part = partOf(current.id)
       if (!current.over || part?.part === undefined || carryPicked) return current.origin
       const pose = previewRef.current?.snapshot()?.value
       const track = dropRef.current?.getBoundingClientRect()
-      // 新块从落点占位此刻的位置落下来，缩影飞到同一处
       if (pose?.x !== undefined && pose.width !== undefined)
         reflow.land(current.id, { left: pose.x, width: pose.width })
       onTogglePart(part.block.id, part.part.seg)
@@ -812,7 +710,6 @@ export function ClipsTimeline({
           height: carrying.height,
           text: `插入 ${secondsText(landing.at)} 秒 · ${secondsText(landing.d)} 秒`,
           blocked: false,
-          // 落点离轨道区右端不到提示的宽度时，提示靠右对齐
           alignEnd: (content - landing.at) * carrying.pps < 160,
         }
 
@@ -871,7 +768,6 @@ export function ClipsTimeline({
 
           <div aria-label="草稿" className="video-editor-timeline-track" role="group">
             {shown.map((item) => {
-              // 正在拖修剪把手的那块画成一整块：已提交与修剪后合起来的范围与画面
               const face = draftTrim?.id === item.id ? draftTrim.face : item
               return (
                 <div
@@ -902,7 +798,6 @@ export function ClipsTimeline({
                 </div>
               )
             })}
-            {/* 拿掉的块：在原地收起后消失，不能点 */}
             {reflow.leaving.map((item) => (
               <div
                 aria-hidden="true"
@@ -918,7 +813,6 @@ export function ClipsTimeline({
               </div>
             ))}
           </div>
-          {/* 拖修剪把手往里裁：要剪掉的那段调暗，盖在被拖的那块上 */}
           {draftTrim?.cut === undefined ? null : (
             <span
               aria-hidden="true"
@@ -1136,7 +1030,6 @@ export function ClipsTimeline({
 
           <TimelinePlayhead style={{ left: `${(playheadAt / content) * 100}%` }} />
 
-          {/* 拖草稿块的修剪把手被挡住：把手旁写明原因（把手在播放头处）；画在播放头之后，字不被挡 */}
           {trimLimit === undefined ? null : (
             <LimitBubble
               left={`calc(${playheadAt} * var(--pps))`}
@@ -1164,7 +1057,6 @@ export function ClipsTimeline({
   )
 }
 
-/** 草稿里一块的样子：画面、原声与原声行左端的镜头号（编辑段是 wand 图标）。 */
 function DraftFace({ item, peaksOf }: { item: DraftItem; peaksOf: (url: string) => PeaksState }) {
   return (
     <>
@@ -1184,7 +1076,6 @@ function DraftFace({ item, peaksOf }: { item: DraftItem; peaksOf: (url: string) 
 type TrimPairProps = {
   spec: TrimSpec
   valueText: string
-  /** 正按着的那一端。 */
   pressed: Edge | undefined
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, edge: Edge) => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>, edge: Edge) => void
@@ -1193,7 +1084,6 @@ type TrimPairProps = {
   onPointerCancel: () => void
 }
 
-/** 一对修剪把手，放在按起止摆好的容器两端：草稿里选中的那块与原片选区共用。 */
 function TrimPair({
   spec,
   valueText,
@@ -1228,7 +1118,6 @@ function TrimPair({
 
 type EyeProps = { label: string; on: boolean; onToggle: () => void }
 
-/** 原声行右端的小眼睛：开关这一块在不在草稿里，永远能点，不改选中。 */
 function Eye({ label, on, onToggle }: EyeProps) {
   return (
     <span className="video-editor-timeline-eye">
@@ -1251,10 +1140,8 @@ type LaneBlockProps = {
   prefix: string
   picked: boolean
   selected: boolean
-  /** 这一段的名字挂在哪个 id 上：这一块按它成组，眼睛的「选用这一段」就有了归属。 */
   nameId: string
   peaksOf: (url: string) => PeaksState
-  /** 完成的一段按住可以拖进草稿。 */
   pointer:
     | {
         onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
@@ -1268,7 +1155,6 @@ type LaneBlockProps = {
   onSelectRunning: (id: string) => void
 }
 
-/** 编辑轨上的一块：完成的一段（点它或它的眼睛选用、取消，按住拖进草稿），或在跑、读取中、读不出的整条。 */
 function LaneBlock({
   part,
   prefix,
@@ -1334,7 +1220,6 @@ function LaneBlock({
         className="video-editor-timeline-face ui-focus ui-focus-inline"
         id={nameId}
         onClick={() => onClickPart(block.id, seg)}
-        // 键盘用它的眼睛开关，这里只是鼠标的另一个入口
         tabIndex={-1}
         type="button"
         {...pointer}
@@ -1350,25 +1235,19 @@ function LaneBlock({
   )
 }
 
-/** 版本视图里的一版：画面按它自己的关键帧分块。 */
 export type VersionRow = {
   jobId: string
-  /** 轨头写的版本名，如「V2」「V1 原片」。 */
   label: string
   original: boolean
   mediaUrl: string
-  /** 关键帧还没读到（或读不出）时为 undefined，这一行先空着。 */
   shots: readonly Shot[] | undefined
   duration: number | undefined
 }
 
 type VersionsTimelineProps = {
-  /** 按完成先后排；画出来最新的在最上。 */
   versions: readonly VersionRow[]
-  /** 正在合成的那一版：请求里各段的总长（秒），算不出时为 undefined；没在合成时不给。 */
   composing: { duration: number | undefined } | undefined
   viewedId: string
-  /** 正在看的那一版的播放头。 */
   currentTime: number
   peaksOf: (url: string) => PeaksState
   onSelect: (jobId: string) => void
@@ -1376,10 +1255,6 @@ type VersionsTimelineProps = {
   onScrub: () => void
 }
 
-/**
- * 版本视图的时间线：每个版本一行，各行共用最长那一版的比例；点一行看那一版，只能在标尺上定位。
- * 行多了在下面纵向滚动，标尺与播放头留在顶上。
- */
 export function VersionsTimeline({
   versions,
   composing,
@@ -1398,7 +1273,6 @@ export function VersionsTimeline({
   const scale = Math.max(0, ...versions.map((row) => row.duration ?? 0), composing?.duration ?? 0)
   const total = versions.find((row) => row.jobId === viewedId)?.duration
   const bounded = Math.max(0, Math.min(total ?? 0, currentTime))
-  // 比例读到时长才有：一版都没读到时各行空着、不画标尺；看的那一版没读到时标尺不能拖。
   const percent = (time: number) => `${(time / scale) * 100}%`
   const span = (start: number, end: number): CSSProperties => ({
     left: `calc(${percent(start)} + 1px)`,
@@ -1406,7 +1280,6 @@ export function VersionsTimeline({
   })
 
   const keyDown = (event: KeyboardEvent<HTMLButtonElement>, jobId: string) => {
-    // 空格在编辑器里是播放；在行上是选中这一版，拦下来不让它再去播放。
     if (event.key === ' ') {
       event.preventDefault()
       onSelect(jobId)

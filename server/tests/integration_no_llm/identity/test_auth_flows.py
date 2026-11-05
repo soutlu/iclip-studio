@@ -1,5 +1,3 @@
-"""cookie 会话链路：注册 → 登录 → /users/me → 登出。"""
-
 from __future__ import annotations
 
 import httpx

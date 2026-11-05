@@ -43,7 +43,6 @@ describe('环比', () => {
 
 describe('出片次数分档', () => {
   it('五次及以上并成一档，出了 3 次及以上的镜单算占比', () => {
-    // 1 次 × 6 镜、2 次 × 2 镜、3 次 × 1 镜、7 次 × 1 镜：共 10 镜、20 次。
     const summary = attemptSummary([
       { attempts: 1, shots: 6 },
       { attempts: 2, shots: 2 },

@@ -1,5 +1,3 @@
-"""验证重新生成的末轮重放、幂等和 HTTP 错误契约，以及半途失败时原历史不动；寻址使用 t{N} 轮 id。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -71,8 +69,6 @@ def _last_user_text(messages: list[ModelMessage]) -> str:
 
 @pytest.fixture
 def reply_allowed() -> asyncio.Event:
-    """默认放行模型响应；需要忙碌窗口的用例自行暂停并释放。"""
-
     allowed = asyncio.Event()
     allowed.set()
     return allowed
@@ -80,8 +76,6 @@ def reply_allowed() -> asyncio.Event:
 
 @pytest.fixture
 def models(reply_allowed: asyncio.Event) -> dict[str, FunctionModel]:
-    """提供流式模型替身，忙碌窗口由用例显式控制。"""
-
     async def reply(messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
         await reply_allowed.wait()
         yield f"答：{_last_user_text(messages)}"
@@ -100,8 +94,6 @@ async def _send(
 
 
 async def _run_count(pg_url: str, conversation_id: str) -> int:
-    """统计持久化 run 数；重新生成保留旧 run 并新增记录。"""
-
     async with connected(pg_url) as conn:
         return (
             await conn.execute(
@@ -172,8 +164,6 @@ async def test_regenerate_with_new_content_replays_the_edited_message(
 async def test_regenerating_twice_with_the_same_prompt_id_returns_the_first(
     app: FastAPI, pg_url: str, reply_allowed: asyncio.Event
 ) -> None:
-    """幂等请求认领须早于忙碌检查，避免重试被拒或重复截断末轮。"""
-
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
@@ -272,8 +262,6 @@ async def test_regenerate_an_older_turn_is_conflict(app: FastAPI, pg_url: str) -
 async def test_regenerate_in_someone_elses_conversation_is_not_found(
     app: FastAPI, pg_url: str
 ) -> None:
-    """他人会话返回 404，避免泄漏资源存在性。"""
-
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         mine = await new_conversation(client, AGENT_ID)
@@ -305,13 +293,8 @@ async def test_regenerate_with_a_malformed_turn_id_is_unprocessable(
     assert zero.status_code == 422
 
 
-# --- 半途失败：占位、复核、截断任何一步失败，原历史都保持原样 ----------------------
-
-
 @dataclass(frozen=True)
 class _Answered:
-    """跑完一轮的一段对话（问「第一问」、答「答：第一问」），和接在同一套存储上的 runner。"""
-
     engine: AsyncEngine
     runner: ConversationRunner
     step_store: PgStepStore
@@ -344,8 +327,6 @@ class _Answered:
             ).scalar_one()
 
     async def assert_untouched(self, snapshots: int) -> None:
-        """末轮还在：没写截断快照，历史仍是那一问一答，实时流里也没发删轮。"""
-
         assert await self.snapshot_count() == snapshots
         turns = (
             await TranscriptHistory(self.step_store, self.queue).read(self.conversation_id)
@@ -361,8 +342,6 @@ class _Answered:
         assert not any(isinstance(op, ItemsRemoveOp) for batch in journal for op in batch.ops)
 
     async def assert_withdrawn(self, prompt_id: str) -> None:
-        """占过执行位的那条没开跑就撤了；会话的最近一轮结局仍是原来那一轮。"""
-
         row = await self.queue.get(prompt_id)
         assert row is not None
         assert (row.status, row.run_id) == ("aborted", None)
@@ -409,8 +388,6 @@ class _InsertFails(JobQueue):
 
 
 class _ViewBeforeTheOtherRun(JobQueue):
-    """空闲检查读到的是别人开跑之前的那一刻。"""
-
     async def view(self, conversation_id: str) -> JobQueueView:
         return JobQueueView(active=None, queued=())
 
@@ -427,8 +404,6 @@ class _SnapshotWriteFails(PgStepStore):
 
 @dataclass(frozen=True, kw_only=True)
 class _Replanned(TranscriptHistory):
-    """第一次照常规划；持位复核那一次换成 ``second`` 给的计划，模拟占位前后之间发生的事。"""
-
     second: Callable[[TurnRewind], TurnRewind | None]
     planned: list[TurnRewind | None] = field(default_factory=list[TurnRewind | None])
 
@@ -443,8 +418,6 @@ class _Replanned(TranscriptHistory):
 async def test_a_bad_attachment_is_refused_before_anything_is_written(
     answered: _Answered,
 ) -> None:
-    """附件不合规在截断之前就拒：不插消息、不动历史。"""
-
     snapshots = await answered.snapshot_count()
     with pytest.raises(ValidationFailed):
         await answered.service().regenerate(
@@ -476,8 +449,6 @@ async def test_a_failed_insert_leaves_the_last_turn_alone(answered: _Answered) -
 async def test_losing_the_slot_to_another_run_withdraws_the_regeneration(
     answered: _Answered,
 ) -> None:
-    """空闲检查之后别人先开跑了：这条只能排在后面，撤掉它，不让它在没截断的历史上跑。"""
-
     await answered.queue.submit(
         prompt_id="prm_first",
         conversation_id=answered.conversation_id,
@@ -508,12 +479,6 @@ async def test_losing_the_slot_to_another_run_withdraws_the_regeneration(
 async def test_a_last_turn_that_changed_before_the_slot_was_taken_is_left_alone(
     answered: _Answered, change: str
 ) -> None:
-    """占位之前算的截断计划过时了：放开执行位、不截断。
-
-    ``another-turn``：期间又跑完一轮，要重跑的已不是末轮；``replaced``：期间另一次重新生成把末轮换成了
-    别的运行，照旧计划截断会截掉它的结果，所以复核不过时绝不能写快照。
-    """
-
     engine = answered.engine
 
     def second(plan: TurnRewind) -> TurnRewind | None:
@@ -535,8 +500,6 @@ async def test_a_last_turn_that_changed_before_the_slot_was_taken_is_left_alone(
 
 
 async def test_a_failed_truncation_withdraws_the_regeneration(answered: _Answered) -> None:
-    """写截断快照失败：放开执行位，错误原样交给调用方，原历史不动。"""
-
     engine = answered.engine
     history = _Replanned(
         answered.step_store,

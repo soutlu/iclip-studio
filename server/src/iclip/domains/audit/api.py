@@ -1,5 +1,3 @@
-"""审计报表 HTTP 端点。只读口都要 ``users:manage``，形状见合同 §12。"""
-
 from __future__ import annotations
 
 from datetime import datetime

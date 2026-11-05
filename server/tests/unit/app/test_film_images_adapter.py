@@ -1,5 +1,3 @@
-"""验证工程文件的生图节点与生成域之间的适配：出图时标上节点名，查进度。"""
-
 from __future__ import annotations
 
 import re

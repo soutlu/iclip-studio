@@ -39,7 +39,6 @@ type Props = {
 
 const titleOf = (film: WholeFilmCard) => film.title?.trim() || '未命名成片'
 
-/** 资料库「成片」：全站导出的成片，一段对话一张卡，卡面是最新一次导出，详情里切换各版。 */
 export function WholeFilmsRoute({
   tabs,
   scope,

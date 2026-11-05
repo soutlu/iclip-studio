@@ -1,6 +1,3 @@
-"""运行时服务给应用的 agent 名册与起标题：名册只列上菜单、发布过的，第一个是默认项；没设默认对话模型时
-不起标题，设了就用它起。会话接口要应用密钥，不要管理权限。"""
-
 from __future__ import annotations
 
 import httpx
@@ -72,5 +69,4 @@ async def test_app_routes_need_a_known_key_but_not_admin(
 
     assert (missing.status_code, wrong.status_code) == (401, 401)
     assert set(missing.json()) == set(wrong.json()) == {"detail"}
-    # app_client 用的是没有管理权限的应用。
     assert (await app_client.get("/agents")).status_code == 200

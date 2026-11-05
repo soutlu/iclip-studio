@@ -1,8 +1,3 @@
-/**
- * 测试预览的 mock：开预览交回新 id，那段 transcript 从空的开始，发消息跑一段三步的演示运行
- * （读参考素材、理解视频、回复），每步带起止时刻，运行过程里有耗时。形状照合同 §19「测试预览」。
- */
-
 import { http, HttpResponse } from 'msw'
 import type { AgentPreviewOut } from '@/shared/api/generated/types.gen'
 import { markMockScript, markMockShowcase, type MockScript } from './transcript'
@@ -17,7 +12,6 @@ const REPLY =
   '3. **留下一个记忆点**：脚步停在阳光里，产品特写收尾。\n\n' +
   '补充产品图后，就可以继续细化每个镜头。'
 
-/** 一步工具调用：开始一批（步骤开跑、工具在跑），结束一批（工具完成、步骤收尾带起止时刻）；中间可以多等几拍。 */
 const toolStep = (
   turnId: string,
   ordinal: number,

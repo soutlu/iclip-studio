@@ -1,6 +1,3 @@
-"""编译：通过时交回对应 pydantic-ai 装配的结果；模型、档位、密钥、插件、技能与子 agent 的每条规则不过时
-交回带 path 的问题，且一次列全。"""
-
 from __future__ import annotations
 
 import uuid
@@ -247,8 +244,6 @@ async def test_agent_used_as_subagent_cannot_have_subagents() -> None:
 
 
 async def test_at_runtime_another_agents_draft_does_not_block_a_settled_version() -> None:
-    """别人的草稿把 main 当作子 agent：发布时拦下 main 的子 agent，运行已定下的版本时不拦。"""
-
     referrer = refs("boss", draft_subagents=("main",))
     with_subagent = config(subagents=[{"agent": "helper"}])
 
@@ -261,8 +256,6 @@ async def test_at_runtime_another_agents_draft_does_not_block_a_settled_version(
 
 
 async def test_at_runtime_a_subagents_draft_does_not_count() -> None:
-    """子 agent 的草稿里加了子 agent、当前版本没有：发布时拦下，运行时按它的当前版本装，不拦。"""
-
     drafting = refs("helper", draft_subagents=("worker",))
     agents = (drafting, refs("worker"))
     asks_helper = config(subagents=[{"agent": "helper"}])

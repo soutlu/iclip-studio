@@ -41,18 +41,14 @@ const usePreviewIntent = () => {
   }
 }
 
-/** 卡上用得到的：成片素材的一张卡，或爆款素材的一版。`id` 是打开它、找回焦点用的 id；
- * 组数与版数只有成片素材的卡有。 */
 export type CardVideo = Pick<LibraryVideo, 'id' | 'title' | 'userName' | 'face' | 'take'> &
   Partial<Pick<LibraryVideo, 'groupCount' | 'versionCount'>>
 
 type LibraryCardProps = {
   video: CardVideo
   width: number
-  /** 点作者按人筛选；不给就不能点。 */
   onAuthor?: (userName: string) => void
   onOpen: (id: string, startAt: number | null) => void
-  /** 画面左下角另加的状态，悬停露出正文时隐去。 */
   status?: ReactNode
 }
 
@@ -81,7 +77,6 @@ export function LibraryCard({ video, width, onAuthor, onOpen, status }: LibraryC
         style={{ aspectRatio: `${aspect.w} / ${aspect.h}` }}
       >
         {poster === null ? null : poster === undefined ? (
-          // 不是 OSS 地址无法截帧。
           <span className="absolute inset-0 grid place-items-center text-on-surface-variant">
             <Icon decorative name="video" size="xl" />
           </span>
@@ -116,7 +111,6 @@ export function LibraryCard({ video, width, onAuthor, onOpen, status }: LibraryC
             <span className="library-card-badge">{video.versionCount} 版</span>
           ) : null}
         </div>
-        {/* 放左下角：窄列上顶部一行已被角标与故事板占满。 */}
         {status === undefined ? null : (
           <div className="library-card-hide-on-hover pointer-events-none absolute bottom-2 left-2">
             {status}
@@ -129,7 +123,6 @@ export function LibraryCard({ video, width, onAuthor, onOpen, status }: LibraryC
           seconds={seconds}
           video={video}
         />
-        {/* 有状态时让出底边，免得两个角标挤在一起。 */}
         {take.model === null || compact || status !== undefined ? null : (
           <span className="library-card-badge library-card-hide-on-hover pointer-events-none absolute right-2 bottom-2">
             {take.model}
@@ -163,7 +156,6 @@ export function LibraryCard({ video, width, onAuthor, onOpen, status }: LibraryC
   )
 }
 
-/** 卸载时清掉地址：浏览器随之中止下载、释放解码器。 */
 function PreviewVideo({ src, seekTo }: { src: string; seekTo: number | null }) {
   const ref = useRef<HTMLVideoElement>(null)
   const [shown, setShown] = useState(false)
@@ -202,7 +194,6 @@ function PreviewVideo({ src, seekTo }: { src: string; seekTo: number | null }) {
         loop
         muted
         onPlaying={() => setShown(true)}
-        // 直接跳到某一帧时不触发 playing，只有 seeked。
         onSeeked={() => setShown(true)}
         onTimeUpdate={(event) => {
           const { currentTime, duration } = event.currentTarget

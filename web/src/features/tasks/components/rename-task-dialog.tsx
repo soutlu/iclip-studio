@@ -18,11 +18,9 @@ import { getTask, saveTask, tasksQueryKeys, type Task } from '../tasks.api'
 type RenameTaskDialogProps = {
   onOpenChange: (open: boolean) => void
   open: boolean
-  /** 关闭后保留原需求单，避免退场动画期间内容闪空。 */
   task?: Task | undefined
 }
 
-/** PUT 整体覆盖且无版本校验；提交前重新读取完整数据，仅替换标题，仍存在读写间并发覆盖窗口。 */
 export function RenameTaskDialog({ onOpenChange, open, task }: RenameTaskDialogProps) {
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>

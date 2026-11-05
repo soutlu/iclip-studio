@@ -1,10 +1,3 @@
-"""客户端库的两条 WebSocket：对话内容流交出帧的原文、事件流把会话活动解析成 ``live.frames`` 的类型，两边都
-容忍运行时新加的字段与帧；``ping`` 自动回同 ``nonce`` 的 ``pong``、运行时关连接抛带关闭码的 ``StreamClosed``、
-认不出应用是 ``AppRejected``、帧读不出类型或认得的帧解析不了是 ``RuntimeUnavailable``。
-
-对面是测试里的一个小 Starlette 应用，按脚本发帧、收帧、关连接，经 ``ASGIWebSocketTransport`` 接上，不碰库。
-"""
-
 from __future__ import annotations
 
 import json
@@ -91,7 +84,7 @@ class Send:
 
 @dataclass(frozen=True)
 class Expect:
-    """等对面发来一帧，记进 ``inbound``。"""
+    pass
 
 
 @dataclass(frozen=True)
@@ -104,8 +97,6 @@ Step = Send | Expect | Close
 
 @dataclass
 class FakeRuntime:
-    """按 ``script`` 一步步走的对面；认不出密钥就在握手前以 1008 关。走完脚本接着收，直到对方断开。"""
-
     script: list[Step] = field(default_factory=list[Step])
     inbound: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     authorization: list[str | None] = field(default_factory=list[str | None])
@@ -158,8 +149,6 @@ def _subscribe() -> Subscribe:
 
 
 def _text(frame: Envelope) -> str:
-    """帧在 WebSocket 上的原文，与运行时发帧时的序列化相同。"""
-
     return frame.model_dump_json(exclude_none=True, by_alias=True)
 
 
@@ -168,8 +157,6 @@ def _raw(frame: Envelope) -> RawFrame:
 
 
 def _with_extra(frame: Envelope) -> str:
-    """运行时新版本可能发的样子：外层与 ``payload`` 里各多一个这个客户端不认识的字段。"""
-
     wire = json.loads(_text(frame))
     wire["added_later"] = {"nested": [1, 2]}
     wire["payload"]["also_added"] = True
@@ -247,8 +234,6 @@ async def test_an_unknown_app_key_is_refused_before_the_handshake(fake: FakeRunt
 async def test_a_handshake_answered_with_an_app_refusal_status_is_app_rejected(
     status: int,
 ) -> None:
-    """ASGI 服务器替握手前就关的连接代答 HTTP 403，经它连时看到的是这个，不是 1008。"""
-
     transport = httpx.MockTransport(lambda _r: httpx.Response(status))
     async with RuntimeClient("http://runtime.test", KEY, transport=transport) as client:
         with pytest.raises(AppRejected) as raised:
@@ -273,8 +258,6 @@ async def test_a_handshake_answered_with_another_status_is_plain_runtime_unavail
 async def test_transcript_frames_with_fields_or_types_this_client_does_not_know_come_verbatim(
     fake: FakeRuntime,
 ) -> None:
-    """运行时先于应用升级：多出的字段与新的帧类型都照原文交出，连接不断。"""
-
     extended = _with_extra(RESET)
     novel = '{"type": "transcript.something_new", "session_id": "x", "payload": {}}'
     fake.script = [Send(extended), Send(novel), Send(OPS)]
@@ -309,9 +292,6 @@ async def test_a_frame_without_a_readable_type_is_runtime_unavailable(
 async def test_events_tolerate_added_fields_and_hand_back_unknown_types_raw(
     fake: FakeRuntime,
 ) -> None:
-    """认得的事件多出字段照样解析（多的忽略）、原文一字不差地跟着交出，带多余字段的心跳照样回，认不出的
-    类型原文交出、不断流。"""
-
     novel = '{"type": "event.session.something_new", "session_id": "x"}'
     extended = _with_extra(ACTIVITY)
     fake.script = [

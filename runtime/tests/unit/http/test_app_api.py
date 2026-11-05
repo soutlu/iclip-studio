@@ -1,6 +1,3 @@
-"""给应用的会话接口里不碰库就答复的那部分：缺属主、形状不对、页大小越界、非规范路径都在进服务之前拒；
-运行时的那一页不带应用的信封字段。engine 建出来但从不连接，lifespan 不跑。"""
-
 from __future__ import annotations
 
 import base64

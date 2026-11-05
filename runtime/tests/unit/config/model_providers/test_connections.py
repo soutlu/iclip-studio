@@ -1,6 +1,3 @@
-"""写定的模型怎么找连接：同一份声明的供应商里，按接入先后第一个启用、启用了这个 llm 模型、又有默认密钥的；
-地址是它密钥里的接口地址加 ``/responses``，密钥是默认密钥的明文。找不到时说清去配置页改哪里。"""
-
 from __future__ import annotations
 
 import base64
@@ -50,8 +47,6 @@ def provider(
     created_at: datetime = T0,
     provider_id: uuid.UUID | None = None,
 ) -> ProviderState:
-    """一个接入的供应商，有一把密钥；``model_enabled`` 为 None 时没有加 ``MODEL``。"""
-
     pid = provider_id or uuid.uuid4()
     given = {"api_key": key} if base_url is None else {"api_key": key, "base_url": base_url}
     credential = CredentialRecord(
@@ -93,8 +88,6 @@ def provider(
 
 
 class FixedStore:
-    """只答 ``states`` 的仓储：照给定的先后交回。"""
-
     def __init__(self, states: Sequence[ProviderState]) -> None:
         self._states = tuple(states)
 

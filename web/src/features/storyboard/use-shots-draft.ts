@@ -1,5 +1,3 @@
-/** 局部编辑、整份版本写回；冲突和失败保留草稿，保存期间的新修改继续提交。 */
-
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, errorMessageOf, UserFacingError } from '@/shared/api/client'
@@ -22,7 +20,6 @@ export type SaveState =
   | { kind: 'error'; message: string }
   | { kind: 'conflict'; shots: ShotConflict[]; aspect?: AspectConflict }
 
-/** 脏数据与冲突按「改了哪一处」记：镜头组用编号，整份分镜的画幅用这个键。 */
 const ASPECT_KEY = 'aspect_ratio'
 type DirtyKey = number | typeof ASPECT_KEY
 
@@ -30,7 +27,6 @@ const shotKeys = (keys: ReadonlySet<DirtyKey>): number[] =>
   [...keys].filter((key): key is number => key !== ASPECT_KEY)
 
 type Base = { version: number; document: ShotsDocument }
-/** 上传落进的那一格：镜头组编号、第几帧（从 1 数）与上传地址。 */
 type UploadedFrame = { index: number; frame: number; url: string }
 type UseShotsDraftOptions = {
   conversationId: string
@@ -84,7 +80,6 @@ const conflictingKeys = (
   return keys
 }
 
-/** 调用方按对话与文件路径挂载，避免不同文件共用一个编辑生命周期。 */
 export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptions) => {
   const queryClient = useQueryClient()
   const content = file?.content
@@ -94,7 +89,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
   )
   const [edited, setEdited] = useState<ShotsDocument | null>(null)
   const [state, setState] = useState<SaveState>({ kind: 'idle' })
-  // 只用来在保存失败时说清图片已经传上去了；同一格只记最后一次。
   const [uploads, setUploads] = useState<readonly UploadedFrame[]>([])
   const [lastSaved, setLastSaved] = useState<Base | null>(null)
   const ledgerRef = useRef({
@@ -140,7 +134,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     })
   }, [])
 
-  /** 立刻写回；返回此刻已落盘的文档，保存失败、有冲突或尚未读到文件时为 null。 */
   const saveNow = useCallback((): Promise<ShotsDocument | null> => {
     const book = ledgerRef.current
     clearTimer()
@@ -174,7 +167,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
           book.base = { document: mine, version: saved.file.version }
           setLastSaved(book.base)
           landed = mine
-          // 请求中的快照已落盘。后续编辑仍以最新草稿为准，不能被这次响应清除。
           const current = book.edited ?? mine
           book.dirty = changedKeys(mine, current)
           book.edited = book.dirty.size === 0 ? null : current
@@ -233,7 +225,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     return book.inFlight
   }, [clearTimer, conversationId, path, queryClient, showConflict])
 
-  /** 把一处改动记进草稿：标脏、有待处理的最新版本先对账，没冲突才排下一次延迟保存。 */
   const commit = useCallback(
     (document: ShotsDocument, key: DirtyKey) => {
       const book = ledgerRef.current
@@ -248,7 +239,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
           showConflict()
           return
         }
-        // 冲突期间也可能收到其它组的上传结果；始终重新对账，不能绕过同组冲突。
         const merged = replay(latest.document, document, book.dirty)
         book.base = latest
         book.latest = null
@@ -283,7 +273,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     [commit],
   )
 
-  /** 画幅是整份分镜的声明，和镜头正文走同一条草稿链路，只是脏数据记在文档级的键上。 */
   const updateAspectRatio = useCallback(
     (aspectRatio: string) => {
       const book = ledgerRef.current
@@ -312,7 +301,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     [updateShot],
   )
 
-  /** 候选图写入成功才算应用；失败只撤回本次图片替换，保留其它草稿与冲突。 */
   const applyFrame = useCallback(
     async (index: number, frame: number, previousUrl: string, url: string) => {
       const book = ledgerRef.current
@@ -326,7 +314,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
       if ((await saveNow()) === null) {
         const currentDraft = book.edited
         const currentShot = currentDraft === null ? undefined : shotOf(currentDraft, index)
-        // 保存期间发生的文字编辑和其它图片变化不属于本次失败，不能整份回滚。
         if (replaced && currentDraft !== null && currentShot?.image_urls[frame - 1] === url) {
           const restored = {
             ...currentShot,
@@ -363,7 +350,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     [replaceFrame, saveNow],
   )
 
-  /** 记下这一格刚换成了上传的图；不改草稿，只影响 `hasUnsavedUpload`。 */
   const recordUpload = useCallback((index: number, frame: number, url: string) => {
     setUploads((current) => [
       ...current.filter((upload) => upload.index !== index || upload.frame !== frame),
@@ -374,7 +360,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
   const resolveConflict = useCallback(
     (choice: 'mine' | 'theirs') => {
       const book = ledgerRef.current
-      // 用最新的就不再提上传过什么，不管下面有没有真正换掉草稿。
       if (choice === 'theirs') setUploads([])
       const latest = book.latest
       const mine = book.edited
@@ -410,13 +395,11 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     [saveNow],
   )
 
-  // 保存前发出的读取可能晚于保存响应返回，把缓存盖回旧版本；比刚落盘的版本旧就不显示，更新的照常显示。
   const shown =
     lastSaved !== null && file !== undefined && file.version < lastSaved.version
       ? lastSaved.document
       : parsed
 
-  // 按已落盘的文件内容判断，不看哪次请求成功：较早的一次保存成功不能抹掉后来那张图的提示。
   const hasUnsavedUpload =
     edited !== null &&
     uploads.some(
@@ -429,7 +412,6 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     applyFrame,
     document: edited ?? shown,
     hasUnsavedChanges: edited !== null,
-    /** 草稿里有记过的上传图，而已落盘的文件那一格还不是它。 */
     hasUnsavedUpload,
     state,
     updateAspectRatio,

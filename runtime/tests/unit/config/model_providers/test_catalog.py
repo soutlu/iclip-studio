@@ -1,5 +1,3 @@
-"""供应商声明：随代码发布的声明能加载；形状不对的声明在启动时就报错，模型的接口只能是声明的 apis 之一。"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -120,11 +118,9 @@ def test_shipped_declarations_load_with_their_apis_and_address_field() -> None:
     }
     assert addresses == {
         "bailian": (True, "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-        # 不填走官方地址。
         "gemini": (False, None),
         "openrouter": (False, None),
         "volcengine": (True, "https://ark.cn-beijing.volces.com/api/v3"),
-        # 没有官方地址，要自己填。
         "openai-compatible": (True, None),
     }
     for name in ("gemini", "openrouter", "volcengine", "openai-compatible"):

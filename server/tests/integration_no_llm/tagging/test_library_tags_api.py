@@ -1,6 +1,3 @@
-"""``GET /library-tags``：预置的五个维度按先后排、带 ``autoFill`` 与下级；每个标签的条数含带它下级的、
-同一条只算一次，移除的参考视频不算。打标没配置时照样挂着。"""
-
 from __future__ import annotations
 
 import uuid

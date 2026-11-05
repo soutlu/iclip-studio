@@ -1,6 +1,3 @@
-"""模型供应商用例：读声明，接入与修改供应商，管密钥（保存前先试连）、模型的启停与自己加的模型，设默认模型，
-换钥。规则见 ``rules``；跨行的规则都在 ``ModelProviderStore.edit`` 锁住供应商之后判断。"""
-
 from __future__ import annotations
 
 import uuid
@@ -132,16 +129,12 @@ def _model_out(model: ProviderModel, users: Sequence[AgentUsage]) -> ProviderMod
 def _provider_users(
     references: Sequence[ModelReference], provider: ProviderRecord
 ) -> tuple[AgentUsage, ...]:
-    """写了这个供应商的 agent。"""
-
     return merge_usages(one.usage for one in references if one.provider == provider.name)
 
 
 def _model_users(
     references: Sequence[ModelReference], provider: ProviderRecord, model: ProviderModel
 ) -> tuple[AgentUsage, ...]:
-    """写了这个模型的 agent；agent 只用 llm 模型，别的类型没人用。"""
-
     if model.type != "llm":
         return ()
     return merge_usages(
@@ -152,8 +145,6 @@ def _model_users(
 def _credential_users(
     references: Sequence[ModelReference], provider: ProviderRecord, credential_id: uuid.UUID
 ) -> tuple[AgentUsage, ...]:
-    """显式写了这把密钥的 agent；没写密钥的用默认密钥，默认密钥本来就不能删。"""
-
     return merge_usages(
         one.usage
         for one in references
@@ -185,7 +176,6 @@ def _credential(state: ProviderState, credential_id: uuid.UUID) -> CredentialRec
 def _declaration_named(declarations: Declarations, name: str) -> ProviderDeclaration:
     declaration = declarations.get(name)
     if declaration is None:
-        # 声明随代码发布；库里还有用它的供应商却删了声明，是发布出了错，不能装作没事。
         raise RuntimeError(f"库里有供应商用声明 {name}，但代码里已没有这个声明")
     return declaration
 
@@ -193,8 +183,6 @@ def _declaration_named(declarations: Declarations, name: str) -> ProviderDeclara
 async def rotate_credential_keys(
     store: ModelProviderStore, *, declarations: Declarations, cipher: CredentialCipher
 ) -> int:
-    """把全部密钥的机密字段改用第一个 key 重新加密，交回改了几把。供 ``scripts/admin.py`` 换钥用。"""
-
     def rotate(declaration_name: str, credential: CredentialRecord) -> Mapping[str, str]:
         secrets = _declaration_named(declarations, declaration_name).secret_fields
         return {
@@ -214,9 +202,6 @@ def _require_not_default(editor: ProviderEditor, model: ProviderModel) -> None:
 
 
 class ModelProviderService:
-    """``probe`` 由组合根接上，每次调用都是一次真实的上游请求；``usages`` 由组合根接到 agent 配置域，
-    回答哪些 agent 在用哪个供应商、模型与密钥。"""
-
     def __init__(
         self,
         store: ModelProviderStore,
@@ -233,8 +218,6 @@ class ModelProviderService:
         self._usages = usages
 
     def declarations(self) -> DeclarationsOut:
-        """可以接入的供应商声明，按声明名排。"""
-
         return DeclarationsOut(
             declarations=[
                 _declaration_out(self._declarations[name]) for name in sorted(self._declarations)
@@ -242,8 +225,6 @@ class ModelProviderService:
         )
 
     async def providers(self) -> ModelProvidersOut:
-        """接入的全部供应商，带打码的密钥与合并后的模型列表，每个模型与每把密钥带在用它的 agent。"""
-
         references = await self._usages.model_references()
         return ModelProvidersOut(
             providers=[
@@ -252,8 +233,6 @@ class ModelProviderService:
         )
 
     async def model_options(self) -> ModelOptionsOut:
-        """agent 编辑页选模型用：启用的供应商，各带启用的 ``llm`` 模型与打码的密钥，不带「谁在用」。"""
-
         options: list[ProviderOptionOut] = []
         for state in await self._store.states():
             provider = state.provider
@@ -291,8 +270,6 @@ class ModelProviderService:
         return ModelOptionsOut(providers=options)
 
     async def resolved(self, name: str) -> ResolvedProvider | None:
-        """按引用名找接入的供应商，带密钥 id 与合并后的模型列表；没有给 ``None``。供别的模块查引用。"""
-
         state = next((one for one in await self._store.states() if one.provider.name == name), None)
         if state is None:
             return None
@@ -305,9 +282,6 @@ class ModelProviderService:
     async def runtime_model(
         self, provider_name: str, model_name: str, credential_id: uuid.UUID
     ) -> RuntimeModel | None:
-        """运行时建对话模型要的东西：按引用名找供应商、它的这个 llm 模型与这把密钥，密钥字段解密成明文。
-        三者有一样不在给 ``None``；启没启用不在这里判（agent 编译时已查）。"""
-
         state = next(
             (one for one in await self._store.states() if one.provider.name == provider_name),
             None,
@@ -317,9 +291,6 @@ class ModelProviderService:
         return self._runtime_model(state, model_name, credential_id)
 
     async def default_llm(self) -> RuntimeModel | None:
-        """默认的对话模型连同供应商的默认密钥，用来起对话标题；没设默认、供应商停用、模型停用或没有默认
-        密钥都给 ``None``。"""
-
         default = next(
             (one for one in await self._store.default_models() if one.type == "llm"), None
         )
@@ -337,14 +308,6 @@ class ModelProviderService:
         return found
 
     async def responses_connection(self, declaration_name: str, model_name: str) -> ModelConnection:
-        """代码里写定的模型（声明名 + 模型名）此刻的 Responses 连接，挑法见 ``rules.responses_connection``。
-        每次都现查现解密，配置页改了下一次调用就生效。
-
-        Raises:
-            ModelUnavailable: 配置页里没有能用的：没有启用的这家供应商启用了这个模型，或它没有默认密钥。
-            RuntimeError: 代码里写的声明名不存在。
-        """
-
         declaration = self._declarations.get(declaration_name)
         if declaration is None:
             raise RuntimeError(f"代码里写定的供应商声明 {declaration_name} 不存在")
@@ -375,9 +338,6 @@ class ModelProviderService:
         )
 
     async def create(self, body: ModelProviderCreateIn) -> ModelProviderOut:
-        """接入一个供应商：启用、还没有密钥。不认识的声明、不合格的引用名或显示名、引用名撞了都是
-        ``ValidationFailed``。"""
-
         name = check_provider_name(body.name)
         if body.provider not in self._declarations:
             raise ValidationFailed(f"没有叫 {body.provider} 的供应商声明")
@@ -388,9 +348,6 @@ class ModelProviderService:
         return await self._provider_out_by_id(provider_id)
 
     async def update(self, provider_id: uuid.UUID, body: ModelProviderUpdateIn) -> ModelProviderOut:
-        """改显示名、启停或默认密钥；默认密钥必须是这个供应商的密钥。某个 agent 的草稿或当前版本还写着
-        这个供应商时停用是 ``Conflict``。"""
-
         async with self._store.edit(provider_id) as editor:
             provider = editor.state.provider
             if provider.enabled and body.enabled is False:
@@ -409,9 +366,6 @@ class ModelProviderService:
         return await self._provider_out_by_id(provider_id)
 
     async def delete(self, provider_id: uuid.UUID) -> None:
-        """删一个供应商连同它的密钥与模型设置。某个 agent 的草稿或当前版本还写着这个供应商（含它的模型与
-        密钥）、或某个类型的默认模型是它的，都是 ``Conflict``。"""
-
         async with self._store.edit(provider_id) as editor:
             provider = editor.state.provider
             users = _provider_users(await self._usages.model_references(), provider)
@@ -425,8 +379,6 @@ class ModelProviderService:
     async def create_credential(
         self, provider_id: uuid.UUID, body: CredentialCreateIn, *, created_by: uuid.UUID
     ) -> CredentialOut:
-        """新建一把密钥：按声明校验字段后保存，不试连；供应商的第一把成为默认密钥。"""
-
         state = await self._state(provider_id)
         declaration = self._declaration_of(state.provider)
         name = clean_credential_name(body.name)
@@ -446,8 +398,6 @@ class ModelProviderService:
     async def update_credential(
         self, provider_id: uuid.UUID, credential_id: uuid.UUID, body: CredentialUpdateIn
     ) -> CredentialOut:
-        """改名或改字段：给了的字段替换，没给的保持原值；不试连。"""
-
         state = await self._state(provider_id)
         declaration = self._declaration_of(state.provider)
         credential = _credential(state, credential_id)
@@ -464,9 +414,6 @@ class ModelProviderService:
         return await self._credential_out_by_id(provider_id, credential_id)
 
     async def delete_credential(self, provider_id: uuid.UUID, credential_id: uuid.UUID) -> None:
-        """删一把密钥；默认密钥不能删，先换默认（``Conflict``）。某个 agent 的草稿或当前版本显式写着这把
-        密钥也是 ``Conflict``。"""
-
         async with self._store.edit(provider_id) as editor:
             credential = _credential(editor.state, credential_id)
             provider = editor.state.provider
@@ -480,8 +427,6 @@ class ModelProviderService:
             await editor.delete_credential(credential_id)
 
     async def test_credential(self, provider_id: uuid.UUID, body: CredentialTestIn) -> ProbeOut:
-        """试连，不保存：已保存的一把、一组新字段，或叠了新字段的已保存的一把（见 ``CredentialTestIn``）。"""
-
         state = await self._state(provider_id)
         declaration = self._declaration_of(state.provider)
         if body.credential_id is not None:
@@ -496,9 +441,6 @@ class ModelProviderService:
         return _probe_out(await self._run_probe(declaration, state, plain))
 
     async def test_model(self, provider_id: uuid.UUID, body: ModelTestIn) -> ProbeOut:
-        """用一把密钥（不给就是默认密钥）测试供应商的一个 llm 模型，停用的也能测；不保存。模型不存在是
-        ``NotFound``；不是 llm、供应商还没有密钥是 ``ValidationFailed``。"""
-
         state = await self._state(provider_id)
         declaration = self._declaration_of(state.provider)
         model = find_model(merge_models(declaration, state.settings), body.name, body.type)
@@ -528,9 +470,6 @@ class ModelProviderService:
     async def add_model(
         self, provider_id: uuid.UUID, body: CustomModelCreateIn
     ) -> ProviderModelOut:
-        """自己加一个模型，启用；声明不允许自己加模型、属性不合格、和已有的同名同类型都是
-        ``ValidationFailed``。"""
-
         async with self._store.edit(provider_id) as editor:
             declaration = self._declaration_of(editor.state.provider)
             if not declaration.custom_models:
@@ -560,9 +499,6 @@ class ModelProviderService:
     async def update_model(
         self, provider_id: uuid.UUID, model_type: ModelType, name: str, body: ModelUpdateIn
     ) -> ProviderModelOut:
-        """启停一个模型，或改自己加的模型的属性。声明里的模型改属性是 ``ValidationFailed``；停用默认
-        模型、或停用某个 agent 的草稿或当前版本还写着的模型是 ``Conflict``。"""
-
         given = body.model_fields_set
         async with self._store.edit(provider_id) as editor:
             declaration = self._declaration_of(editor.state.provider)
@@ -592,16 +528,12 @@ class ModelProviderService:
                 _require_not_default(editor, model)
                 await self._require_unused_model(provider, model)
             if updated.source == SOURCE_DECLARED and updated.enabled:
-                # 声明里的模型默认启用，重新启用就是去掉那条停用记录。
                 await editor.delete_model(updated.name, updated.type)
             else:
                 await editor.put_model(self._setting(updated))
         return await self._model_out_with_users(provider, updated)
 
     async def delete_model(self, provider_id: uuid.UUID, model_type: ModelType, name: str) -> None:
-        """删一个自己加的模型。声明里的模型只能停用（``ValidationFailed``）；默认模型、某个 agent 的草稿或
-        当前版本还写着的模型不能删（``Conflict``）。"""
-
         async with self._store.edit(provider_id) as editor:
             declaration = self._declaration_of(editor.state.provider)
             model = find_model(merge_models(declaration, editor.state.settings), name, model_type)
@@ -621,8 +553,6 @@ class ModelProviderService:
     async def set_default_model(
         self, model_type: ModelType, body: DefaultModelIn
     ) -> DefaultModelOut:
-        """把某类型的默认模型设成某供应商的一个模型：必须存在、是这个类型、已启用。"""
-
         if await self._store.state(body.provider_id) is None:
             raise ValidationFailed("供应商不存在")
         async with self._store.edit(body.provider_id) as editor:
@@ -742,8 +672,6 @@ class ModelProviderService:
         )
 
     async def _require_unused_model(self, provider: ProviderRecord, model: ProviderModel) -> None:
-        """某个 agent 的草稿或当前版本还写着这个模型就是 ``Conflict``；只被旧版本用到的不拦。"""
-
         users = _model_users(await self._usages.model_references(), provider, model)
         if users:
             raise Conflict(in_use_message(f"模型 {model.name} ", users))

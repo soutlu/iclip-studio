@@ -11,7 +11,6 @@ import { MAX_REFERENCE_URLS } from '../task-limits'
 
 type TaskMediaFieldProps = {
   label: string
-  /** 可访问名称的词根，同一表单里有多组同类素材时用它区分；默认就是 label。 */
   name?: string
   kind: 'image' | 'video'
   value: readonly string[]
@@ -22,7 +21,6 @@ type TaskMediaFieldProps = {
   onUploadingChange?: (busy: boolean) => void
 }
 
-/** 只维护素材引用；移除不会删除上传文件，关闭表单后不会应用迟到的上传结果。 */
 export function TaskMediaField({
   label,
   name = label,
@@ -164,7 +162,6 @@ export function TaskMediaField({
                 onClick={() => setPreview({ kind, name: `${name} ${index + 1}`, url })}
                 type="button"
               >
-                {/* 按 2 倍的 96px 高取缩略图；灯箱仍用原图。超宽图受容器宽度限制时在框内完整显示。 */}
                 <img
                   alt={`${name} ${index + 1}`}
                   className={cn(
@@ -218,7 +215,6 @@ export function TaskMediaField({
           <p className="text-body-sm text-on-surface-faint">未添加</p>
         )}
         {dragOver && (
-          // 拖放目标与其他投放区一致保持中性：外圈墨色描边标出目标，提示面用不透明中性底盖住缩略图。
           <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-sm bg-surface-container-high text-body-sm font-medium text-on-surface">
             松开可{kind === 'video' && value.length > 0 ? '替换视频' : '添加素材'}
           </div>
@@ -254,7 +250,6 @@ export function TaskMediaField({
   )
 }
 
-/** 表单和发送预览共用；只显示素材首帧，由调用方打开完整播放器。 */
 export function TaskVideoPreview({
   url,
   name,

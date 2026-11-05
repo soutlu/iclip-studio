@@ -1,8 +1,3 @@
-"""浏览器 WS 的身份与对话可见性、规范化 id、断连清理，以及无需内容订阅的全局活动。
-
-档位、水位与内容帧结构由运行时服务测试覆盖；后端原样转发另由 relay 测试核对。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -38,8 +33,6 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
 def test_closing_the_connection_releases_every_pin_and_listener(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """TestClient 退出时先发断开再取消连接任务，走的是连接被取消的那条收尾路径。"""
-
     store: TranscriptStore = ws_agent_app.state.transcript_store
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -64,8 +57,6 @@ def test_closing_the_connection_releases_every_pin_and_listener(
 def test_subscribing_with_a_dashless_conversation_id_receives_frames(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """WS 与 REST 收同样两种写法：无横线 id 订得上，回发一律是规范写法。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -75,7 +66,6 @@ def test_subscribing_with_a_dashless_conversation_id_receives_frames(
             assert ws.receive_json()["type"] == "server_hello"
             subscribe(ws, dashless)
 
-            # 客户端按 session_id 分流，全局帧与 REST 只给规范写法，回发不能多出第二种拼写。
             assert until(ws, "transcript.reset")["session_id"] == conversation_id
             assert until(ws, "ack")["payload"]["accepted"] == [conversation_id]
 
@@ -92,8 +82,6 @@ def test_subscribing_with_a_dashless_conversation_id_receives_frames(
 def test_cross_origin_upgrade_is_refused(
     ws_agent_app: FastAPI, pg_url: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """WS 升级不受 CORS 约束且携带 cookie，需独立校验 Origin 并记录拒绝原因。"""
-
     with (
         caplog.at_level(logging.INFO, logger="iclip.domains.agents.transcript_api"),
         TestClient(ws_agent_app) as tc,
@@ -107,7 +95,6 @@ def test_cross_origin_upgrade_is_refused(
             pass
 
     assert refused.value.code == 1008
-    # structlog 经标准日志转发时，record.msg 保留事件字典。
     assert any(
         record.name == "iclip.domains.agents.transcript_api"
         and isinstance(record.msg, dict)
@@ -117,8 +104,6 @@ def test_cross_origin_upgrade_is_refused(
 
 
 def test_anonymous_upgrade_is_refused(ws_agent_app: FastAPI) -> None:
-    """没有凭证的升级以 policy violation 拒绝。"""
-
     with (
         TestClient(ws_agent_app) as tc,
         pytest.raises(WebSocketDisconnect) as refused,
@@ -132,8 +117,6 @@ def test_anonymous_upgrade_is_refused(ws_agent_app: FastAPI) -> None:
 def test_a_signed_in_user_without_agent_run_is_refused(
     ws_agent_app: FastAPI, pg_url: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """建连要 agent:run；只读身份以 policy violation 拒绝，日志带上 user_id 表明身份已认出。"""
-
     with (
         caplog.at_level(logging.INFO, logger="iclip.domains.agents.transcript_api"),
         TestClient(ws_agent_app) as tc,
@@ -156,8 +139,6 @@ def test_a_signed_in_user_without_agent_run_is_refused(
 
 
 def test_api_key_upgrades_with_bearer_alone(ws_agent_app: FastAPI, pg_url: str) -> None:
-    """机器端不带 cookie 与 Origin，凭带 agent:run 的钥匙握手。"""
-
     with TestClient(ws_agent_app) as tc:
         root = sign_in_as(tc, pg_url, username="logan", roles=("root",))
         issued = tc.post(
@@ -171,19 +152,14 @@ def test_api_key_upgrades_with_bearer_alone(ws_agent_app: FastAPI, pg_url: str) 
 
 
 def test_same_origin_upgrade_is_accepted(ws_agent_app: FastAPI, pg_url: str) -> None:
-    """浏览器同源页面带 Origin 握手：Origin 的 host 与 Host 头一致即放行。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         with tc.websocket_connect("/ws", headers={"origin": "http://testserver"}) as ws:
             assert ws.receive_json()["type"] == "server_hello"
 
 
-# 只有这条用例要跨域白名单；直接参数化覆写 conftest 的同名夹具，其余用例仍是空元组。
 @pytest.mark.parametrize("cors_allow_origins", [("https://allowed.example",)], ids=["allowlisted"])
 def test_allowlisted_cross_origin_upgrade_is_accepted(ws_agent_app: FastAPI, pg_url: str) -> None:
-    """配置的 cors_allow_origins 同样放行 WS 跨域升级。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         with tc.websocket_connect("/ws", headers={"origin": "https://allowed.example"}) as ws:
@@ -191,8 +167,6 @@ def test_allowlisted_cross_origin_upgrade_is_accepted(ws_agent_app: FastAPI, pg_
 
 
 async def _seed_file(pg_url: str, namespace: str, path: str, content: str) -> None:
-    """直接插入会话工作区文件。"""
-
     async with connected(pg_url) as conn:
         await conn.execute(
             text(
@@ -205,8 +179,6 @@ async def _seed_file(pg_url: str, namespace: str, path: str, content: str) -> No
 
 
 def _subscribed_off(ws: Any, conversation_id: str, frame_id: str = "s1") -> dict[str, Any]:
-    """off 档订一段对话：不发 reset，交回它的回执。文件变化跟着订阅走，off 档也收。"""
-
     subscribe(ws, conversation_id, grade="off", frame_id=frame_id)
     ack = until(ws, "ack")
     assert ack["id"] == frame_id
@@ -224,8 +196,6 @@ def _put(tc: TestClient, conversation_id: str, path: str, body: str) -> None:
 def test_a_subscribed_connection_gets_every_file_change_of_the_conversation_as_is(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """运行时的文件帧原样转给浏览器：外层只有对话与时刻；按路径筛由客户端自己做。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -251,8 +221,6 @@ def test_a_subscribed_connection_gets_every_file_change_of_the_conversation_as_i
 def test_activity_frames_reach_a_connection_that_subscribed_nothing(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """会话活动事件供未订阅会话的侧栏使用，不受 subscribe_v2 限制。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -268,7 +236,6 @@ def test_activity_frames_reach_a_connection_that_subscribed_nothing(
 
             busy = until(ws, "event.session.work_changed")
             assert busy["session_id"] == conversation_id
-            # 未完成过运行时无终态；exclude_none 会省略该字段。
             assert busy["payload"] == {"busy": True, "pending_interaction": "none"}
 
             idle = until(ws, "event.session.work_changed")
@@ -279,7 +246,6 @@ def test_activity_frames_reach_a_connection_that_subscribed_nothing(
                 "last_turn_reason": "completed",
             }
 
-            # 列表保留同一活动状态，供事件丢失后重新同步。
             listed = tc.get("/conversations").json()
             row = next(
                 item for item in listed["ungrouped"]["items"] if item["id"] == conversation_id
@@ -294,8 +260,6 @@ def test_activity_frames_reach_a_connection_that_subscribed_nothing(
 def test_governor_can_subscribe_to_a_deleted_conversation_but_its_owner_cannot(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """订阅跟着 ``agent_of(writing=False)`` 放开墓碑，治理者订得上；属主订不上，与 REST 同口径。"""
-
     with TestClient(ws_agent_app) as tc:
         owner = sign_in_as(tc, pg_url, username="logan", roles=("editor",))
         governor = sign_in_as(tc, pg_url, username="gov", roles=("root",))
@@ -319,9 +283,6 @@ def test_governor_can_subscribe_to_a_deleted_conversation_but_its_owner_cannot(
 def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """治理者的连接收全平台的活动与标题帧，也能订别人的对话、收它的文件变化；别的普通用户订不上，一帧都
-    收不到。"""
-
     with TestClient(ws_agent_app) as tc:
         owner = sign_in_as(tc, pg_url, username="logan", roles=("editor",))
         stranger = sign_in_as(tc, pg_url, username="maya", roles=("editor",))
@@ -339,7 +300,6 @@ def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
             assert other_ws.receive_json()["type"] == "server_hello"
             subscribe(gov_ws, conversation_id, grade="turn")
             assert until(gov_ws, "transcript.reset")["session_id"] == conversation_id
-            # 订不上就收不到这段对话的文件变化：能收的范围就是能订的范围。
             subscribe(other_ws, conversation_id, grade="off", frame_id="theirs")
             assert until(other_ws, "ack")["payload"]["not_found"] == [conversation_id]
 
@@ -370,8 +330,6 @@ def test_governor_receives_other_peoples_frames_and_a_stranger_receives_none(
             changed = until(gov_ws, "event.fs.changed")
             assert changed["session_id"] == conversation_id
 
-            # 陌生人的连接：上面几件事一帧都没到。帧按序入队，这里 off 档订一下自己的对话，
-            # 跳过心跳后收到的第一帧就该是这一帧的回执。
             subscribe(other_ws, mine, grade="off", frame_id="w-mine")
             frame = other_ws.receive_json()
             while frame["type"] == "ping":

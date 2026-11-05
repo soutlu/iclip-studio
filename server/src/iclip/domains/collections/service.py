@@ -1,5 +1,3 @@
-"""合集用例。属主与治理者可读写合集；其他主体访问时返回 NotFound。"""
-
 from __future__ import annotations
 
 import uuid
@@ -21,8 +19,6 @@ class CollectionService:
         self._repo = repo
 
     def _visible_to(self, principal: Principal, *, scope: Scope = "me") -> uuid.UUID | None:
-        """返回属主过滤条件；仅治理者可在 scope="all" 时获得 None。"""
-
         if scope == "me":
             return principal.user_id
         if not principal.has(MANAGE_PERMISSION):
@@ -43,15 +39,11 @@ class CollectionService:
         )
 
     async def get(self, principal: Principal, collection_id: uuid.UUID) -> Collection:
-        """读取合集；非属主且无治理权限时返回 404。"""
-
         return await self._repo.get(collection_id, owner=visible_owner(principal))
 
     async def list_recent(
         self, principal: Principal, *, scope: Scope = "me", limit: int = 20, offset: int = 0
     ) -> tuple[Collection, ...]:
-        """按建立时间倒序返回合集；scope="all" 需要治理权限。"""
-
         return await self._repo.list_recent(
             owner=self._visible_to(principal, scope=scope),
             limit=min(limit, MAX_LIST_LIMIT),
@@ -61,8 +53,6 @@ class CollectionService:
     async def rename(
         self, principal: Principal, collection_id: uuid.UUID, *, name: str
     ) -> Collection:
-        """仅属主或治理者可改名；其他主体返回 404，避免泄露合集存在性。"""
-
         return await self._repo.rename(collection_id, owner=visible_owner(principal), name=name)
 
     async def delete(self, principal: Principal, collection_id: uuid.UUID) -> None:

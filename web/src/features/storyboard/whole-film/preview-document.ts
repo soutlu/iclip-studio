@@ -1,8 +1,3 @@
-/**
- * 预览用的合成页：草稿用合成构建（与导出同一份）生成页面，页头加 `<base>` 指向本站的组件目录，
- * 交给播放器的 srcdoc。
- */
-
 import {
   buildComposition,
   CompositionError,
@@ -14,11 +9,9 @@ import type { ComponentCatalog } from './composition/catalog'
 import { escapeAttribute } from './composition/html'
 import type { WholeFilmDraft } from './editing/draft'
 
-/** 组件库这一版在站点上的位置（/hyperframes/<version>/） */
 export const componentBaseHref = (origin: string, catalog: ComponentCatalog) =>
   `${origin}/hyperframes/${catalog.version}/`
 
-/** 在合成页的 `<head>` 后面插入 `<base href>`，页里相对组件目录的路径就从那里取 */
 export const withBaseHref = (html: string, baseHref: string): string => {
   const head = /<head[^>]*>/i.exec(html)
   if (head === null) throw new Error('合成页没有 <head>')
@@ -27,14 +20,11 @@ export const withBaseHref = (html: string, baseHref: string): string => {
 }
 
 type MediaSources = {
-  /** 素材片的地址（按 sourceJobId）；读不到时为 undefined */
   videoUrl: (sourceJobId: string) => string | undefined
   musicUrl: string | undefined
-  /** 每条素材片用的字幕记录：识别完成的记录里最晚建的那条，与导出取的同一条 */
   subtitles: Readonly<Record<string, SubtitleRecord | null | undefined>>
 }
 
-/** 草稿引用到的素材地址；读不到地址的不放进去，合成时按缺素材处理 */
 export const compositionMedia = (
   draft: WholeFilmDraft,
   { videoUrl, musicUrl, subtitles }: MediaSources,
@@ -64,7 +54,6 @@ const BLOCKED_TEXT: Record<CompositionErrorCode, string> = {
   'invalid-draft': EMPTY_TEXT,
 }
 
-/** 生成预览页；画面轨还是空的、或草稿合成不了时给出原因（一句话，不带组件 id） */
 export const previewState = (
   draft: WholeFilmDraft,
   media: CompositionMedia,

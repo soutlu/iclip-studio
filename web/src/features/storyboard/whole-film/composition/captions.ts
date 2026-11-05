@@ -1,22 +1,16 @@
 import type { SubtitleSentence, WholeFilmDocument } from '@/shared/api/generated'
 
-/** 一条素材片的字幕记录；时间是素材片里的毫秒。旧记录的句子没有 `words`。 */
 export interface SubtitleRecord {
   subtitleJobId: string
   sentences: SubtitleSentence[]
 }
 
-/** 成片时间（毫秒）上的一个词；`text` 含紧跟的标点。 */
 export interface PlacedWord {
   text: string
   start: number
   end: number
 }
 
-/**
- * 放进成片的一句字幕：识别出的一句在某段画面里的部分。一句跨过段的边界时，前后两段各得一份。
- * 时间是成片毫秒；`text` 是这一份里的词按中文排版拼起来的文字。
- */
 export interface PlacedCaption {
   clipId: string
   subtitleJobId: string
@@ -27,7 +21,6 @@ export interface PlacedCaption {
   words: PlacedWord[]
 }
 
-/** 交给字幕组件的一个词：时间是成片秒数，同一 `sentence` 的词是一组。 */
 export interface CaptionWord {
   text: string
   start: number
@@ -35,13 +28,11 @@ export interface CaptionWord {
   sentence: number
 }
 
-// 拉丁字母、数字连成一个词；其余每个非空白字符单独算一个（中文按字）。
 const TOKEN = /[\p{Script=Latin}\p{Nd}'’]+|\S/gu
 const PUNCTUATION = /^[\p{P}\p{S}]+$/u
 const LATIN_EDGE_END = /[\p{Script=Latin}\p{Nd}]$/u
 const LATIN_EDGE_START = /^[\p{Script=Latin}\p{Nd}]/u
 
-/** 词按中文排版拼接：两侧都是拉丁字母或数字时才加空格。字幕组件用同一条规则。 */
 export function joinWords(words: readonly { text: string }[]): string {
   let text = ''
   for (const { text: piece } of words) {
@@ -51,10 +42,6 @@ export function joinWords(words: readonly { text: string }[]): string {
   return text
 }
 
-/**
- * 改过字的句子、没有逐词时间的旧句子：在这句原来的起止内按字数平均分配。
- * 标点不单独占时间：句中、句末的并到前一个词，句首的并到后一个词。
- */
 function spreadByCharacters(text: string, startMs: number, endMs: number): PlacedWord[] {
   const tokens: { text: string; weight: number }[] = []
   let leading = ''
@@ -88,11 +75,6 @@ function sentenceWords(sentence: SubtitleSentence, editedText: string | undefine
   }))
 }
 
-/**
- * 字幕放进成片：每段画面取它素材范围 `[playbackStart, playbackStart + duration)` 里的词，换算成成片时间。
- * 词按中点归属，跨段的句子在边界上按词截断，截在段内；改过字的句子（按字幕记录与句序对上）与没有
- * 逐词时间的句子在原起止内按字数平均分配。没有字幕记录的段、片头片尾没有字幕。按成片时间先后排列。
- */
 export function placeCaptions(
   draft: Pick<WholeFilmDocument, 'layer0' | 'captions'>,
   subtitles: Readonly<Record<string, SubtitleRecord | null | undefined>>,
@@ -138,7 +120,6 @@ export function placeCaptions(
   return result
 }
 
-/** 字幕组件的 `words` 变量：放进成片的每一份句子是一组，时间换成秒。 */
 export function captionWords(placed: readonly PlacedCaption[]): CaptionWord[] {
   return placed.flatMap((caption, sentence) =>
     caption.words.map((word) => ({

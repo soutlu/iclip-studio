@@ -20,7 +20,6 @@ type TaskCreationPreviewProps = {
   onConfirm: (agentId: string) => void
 }
 
-/** 显示将被提交的原始消息和媒体；Agent 每次打开都不预选，选定名册里的一项才能开始。返回修改不会触发保存或运行。 */
 export function TaskCreationPreview({
   agents,
   draft,
@@ -36,7 +35,6 @@ export function TaskCreationPreview({
   const text = draft.content.find((part) => part.type === 'text')?.text ?? ''
   const images = draft.content.filter((part) => part.type === 'image')
   const video = draft.content.find((part) => part.type === 'video')
-  // 与首页同一口径：名册读取失败时不开始，选中项不在当前名册里也不算选定。
   const chosenAgent =
     agents.error === null ? (agents.items?.find((item) => item.id === agentId) ?? null) : null
   const agentLabel = agents.pending

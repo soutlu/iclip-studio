@@ -16,41 +16,27 @@ import {
 import { ComponentHoverPreview } from './component-hover-preview'
 import { hoverPreviewOf } from './hover-preview'
 
-/** 鼠标在卡片上停这么久才开始加载悬停预览，划过去的不加载 */
 export const HOVER_PREVIEW_DELAY_MS = 300
 
 type ComponentsPanelProps = {
-  /** 组件目录与站点地址：悬停预览按它们生成合成页 */
   catalog: ComponentCatalog
   origin: string
-  /** 这一栏的小标题（品牌或分类）和各自的卡片 */
   groups: ComponentGroup[]
-  /** 小标题这一排叫什么，如「品牌」「分类」 */
   groupsLabel: string
-  /** 选中的小标题；不在 groups 里时取第一个 */
   selected: string | undefined
   onSelect: (id: string) => void
-  /** 这一栏没有卡片时的说明 */
   emptyText: string
-  /** 点卡片：按组件的默认去处放进成片 */
   onUse: (item: CatalogItem) => void
-  /** 拿着卡片移动；null 是拖动中途作废 */
   onCarry: (item: CatalogItem, carry: CardCarry | null) => void
-  /** 拿着卡片在某处松手 */
   onDrop: (item: CatalogItem, carry: CardCarry) => void
 }
 
-/** 拖着的卡片：指针位置，以及拿起时卡片的位置与大小（没放下时缩影退回这里） */
 export type CardCarry = {
   clientX: number
   clientY: number
   origin: { left: number; top: number; width: number; height: number }
 }
 
-/**
- * 品牌栏、通用栏：一排小标题加卡片网格；点卡片放进成片，或拖到时间线的轨上。
- * 鼠标停在卡片上时在卡片里播放组件动画，同一时间只播一张。
- */
 export function ComponentsPanel({
   catalog,
   origin,
@@ -63,7 +49,6 @@ export function ComponentsPanel({
   onCarry,
   onDrop,
 }: ComponentsPanelProps) {
-  // 正在播悬停预览的卡片（组件名）
   const [hovered, setHovered] = useState<string | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(hoverTimerRef.current), [])
@@ -123,7 +108,6 @@ export function ComponentsPanel({
   )
 }
 
-/** 组件的预览图；目录里没有缩略图的用分类图标 */
 export function ComponentThumb({
   catalog,
   item,
@@ -150,14 +134,11 @@ export function ComponentThumb({
 type CardProps = {
   catalog: ComponentCatalog
   item: CatalogItem
-  /** 悬停预览的合成页；不在播时为 undefined */
   preview: string | undefined
   onUse: () => void
   onCarry: (carry: CardCarry | null) => void
   onDrop: (carry: CardCarry) => void
-  /** 鼠标进到卡片上 */
   onHoverStart: () => void
-  /** 鼠标离开、或拿起卡片开始拖：立即停掉悬停预览 */
   onHoverEnd: () => void
 }
 
@@ -205,7 +186,6 @@ function ComponentCard({
       if (distance <= DRAG_THRESHOLD) return
       current.moved = true
       setLifting(true)
-      // 按下后指针被卡片捕获，拖走时不会先收到离开，这里停掉预览
       onHoverEnd()
     }
     onCarry({ clientX: event.clientX, clientY: event.clientY, origin: current.origin })
@@ -231,7 +211,6 @@ function ComponentCard({
   useEscapeAheadOfDialog(lifting, cancel)
 
   return (
-    // 拖着卡片时收起说明，免得它挡在侧栏上跟着不走
     <TooltipRoot onOpenChange={setTip} open={tip && !lifting}>
       <TooltipTrigger asChild>
         <button

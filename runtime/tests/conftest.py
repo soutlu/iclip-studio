@@ -1,5 +1,3 @@
-"""测试树根配置：按目录自动注入层级 marker。"""
-
 from __future__ import annotations
 
 from pathlib import Path

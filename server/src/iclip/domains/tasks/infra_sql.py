@@ -1,5 +1,3 @@
-"""需求单 Postgres 仓储。创建、更新时间及发布期限比较均使用数据库时钟；读取不按属主隔离。"""
-
 from __future__ import annotations
 
 import uuid
@@ -59,7 +57,6 @@ tasks_table = Table(
     Column("status", Text, nullable=False),
     Column("priority", Integer, nullable=False),
     Column("deadline", DateTime(timezone=True), nullable=True),
-    # 删除账号不能级联删除需求单。
     Column(
         "creator_user_id",
         Uuid,
@@ -75,7 +72,6 @@ tasks_table = Table(
 
 _ROWS = tasks_table.c
 
-# 列表按 (created_at, id) 倒序。
 Index("ix_tasks_created", _ROWS.created_at.desc(), _ROWS.id.desc())
 
 _ORDER: Final = (_ROWS.created_at.desc(), _ROWS.id.desc())
@@ -86,8 +82,6 @@ def _conditions(
     assignee_user_id: uuid.UUID | None,
     ids: Sequence[uuid.UUID] | None,
 ) -> list[ColumnElement[bool]]:
-    """列表与计数共用的筛选条件。"""
-
     conditions: list[ColumnElement[bool]] = []
     if status is not None:
         conditions.append(_ROWS.status == status)
@@ -105,8 +99,6 @@ def _conditions(
 
 
 def _after(cursor: TaskCursor | None) -> list[ColumnElement[bool]]:
-    """按 ``(created_at, id)`` 的复合排序键续页，避免跳过同一时刻建的记录。"""
-
     if cursor is None:
         return []
     return [
@@ -117,7 +109,6 @@ def _after(cursor: TaskCursor | None) -> list[ColumnElement[bool]]:
     ]
 
 
-# 联合主键保证认领幂等；撤回需求单时保留认领记录。
 task_assignees_table = Table(
     "task_assignees",
     metadata_obj,
@@ -127,7 +118,6 @@ task_assignees_table = Table(
         ForeignKey(f"{DB_SCHEMA}.tasks.id", ondelete="cascade"),
         nullable=False,
     ),
-    # 删除账号不能级联删除认领记录。
     Column(
         "user_id",
         Uuid,
@@ -138,7 +128,6 @@ task_assignees_table = Table(
     PrimaryKeyConstraint("task_id", "user_id"),
 )
 
-# 补充按认领人查询的索引，联合主键仅覆盖 task_id 前缀查询。
 Index("ix_task_assignees_user", task_assignees_table.c.user_id)
 
 
@@ -158,8 +147,6 @@ def _row(mapping: RowMapping, assignee_user_ids: tuple[uuid.UUID, ...] = ()) -> 
 
 
 class SqlTaskRepository:
-    """``TaskRepository`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -183,7 +170,6 @@ class SqlTaskRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            # id 已存在：不写入，把已有那一张原样交回去（认领人一并读出）。
             return await self.get(task.id), False
         return _row(row), True
 
@@ -235,8 +221,6 @@ class SqlTaskRepository:
     async def _assignees_of(
         conn: AsyncConnection, task_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, tuple[uuid.UUID, ...]]:
-        """批量读取并按需求单分组认领人，避免逐单查询。"""
-
         if not task_ids:
             return {}
         statement = (
@@ -285,7 +269,6 @@ class SqlTaskRepository:
             .where(
                 _ROWS.id == task_id,
                 _ROWS.status == STATUS_DRAFT,
-                # 期限可以不填；填了就不能已经过期。
                 or_(_ROWS.deadline.is_(None), _ROWS.deadline > func.now()),
             )
             .values(status=STATUS_PUBLISHED, updated_at=func.now())
@@ -325,7 +308,6 @@ class SqlTaskRepository:
                 .one_or_none()
             )
             if row is None:
-                # 已 confirmed 时只增加认领关系，重新读取聚合结果。
                 row = (
                     (await conn.execute(select(tasks_table).where(_ROWS.id == task_id)))
                     .mappings()

@@ -1,10 +1,3 @@
-"""会话的消息与 transcript 接口：发消息、停、插队、重新生成、审批，读队列、运行状态、一页 transcript 与补批。
-
-请求与答复照用 transcript 的信封（``agent_runtime.transcript.wire``），状态码与报错同后端的同名端点。
-应用先在自己那一侧判完谁看得见、谁能写，再转发到这里；这里不认识应用的对话表。每个路由在请求形状校验之后
-先认会话归属：不是调用方应用的会话（含不存在）答 404。
-"""
-
 from __future__ import annotations
 
 import re
@@ -34,8 +27,6 @@ from agent_runtime.transcript.wire import (
 )
 
 _PROTOCOL_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
-"""协议里由客户端铸的标识（消息 id、交互 id、轮 id）与 agent id 的形状：主 agent 是 main，子代理是它的
-run id。"""
 
 ProtocolId = Annotated[str, Path(pattern=_PROTOCOL_ID.pattern)]
 
@@ -56,7 +47,6 @@ def create_transcript_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/sessions/{session_id}", tags=["transcript"])
     caller = Depends(calling_app)
-    # :abort 紧跟会话 id，挂不到带尾部斜杠的前缀下。
     outer = APIRouter(tags=["transcript"])
 
     @router.post("/prompts", response_model=Prompt)

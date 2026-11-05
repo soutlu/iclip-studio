@@ -1,5 +1,3 @@
-"""不挂对话的生成记录也能发全局帧，信封只带属主。"""
-
 from __future__ import annotations
 
 import uuid
@@ -9,13 +7,10 @@ from typing import Any, cast
 from iclip.domains.agents.transcript_api import LiveConnections
 
 ENVELOPE = {"type", "session_id", "owner_user_id", "timestamp", "payload"}
-"""全局帧外层的全部字段（合同 §5「全局帧」）。"""
 
 
 @dataclass(eq=False)
 class Listening:
-    """只认属主的一条连接替身，记下收到的帧。"""
-
     owner: uuid.UUID
     frames: list[Any] = field(default_factory=list)
 

@@ -31,7 +31,6 @@ const renderPage = async (initial?: string) => {
   return user
 }
 
-/** 记下发往某个端点的请求体，响应仍交给预置的 mock。 */
 const recordBodies = (method: 'PUT' | 'POST' | 'PATCH', path: RegExp) => {
   const bodies: Body[] = []
   server.events.on('request:start', ({ request }) => {
@@ -51,7 +50,6 @@ const pluginCards = () =>
     .queryAllByText(/./, { selector: 'span.truncate' })
     .map((node) => node.textContent)
 
-/** 右栏打开的配置面板。 */
 const sidePanel = () => screen.getByRole('region', { name: '配置调整' })
 
 const openPlugins = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -67,7 +65,6 @@ describe('AgentConfigPage 保存草稿', () => {
     expect(save).toBeDisabled()
 
     const panel = await openPlugins(user)
-    // 关了再开回到原位，草稿不算改过。
     await user.click(within(panel).getByRole('switch', { name: '工作区文件' }))
     expect(save).toBeEnabled()
     await user.click(within(panel).getByRole('switch', { name: '工作区文件' }))
@@ -125,7 +122,6 @@ describe('AgentConfigPage 发布', () => {
     const posts = recordBodies('POST', /\/agents\/director\/versions$/)
     const panel = await openPlugins(user)
     await user.click(within(panel).getByRole('switch', { name: '工作区文件' }))
-    // 不连带关掉依赖它的插件，只标出缺的依赖。
     expect(within(panel).getByRole('switch', { name: '视频理解' })).toBeChecked()
     expect(within(panel).getAllByRole('img', { name: '需要同时启用「工作区文件」' })).toHaveLength(
       4,
@@ -140,12 +136,10 @@ describe('AgentConfigPage 发布', () => {
     const problems = await within(section('插件')).findByRole('alert')
     expect(problems).toHaveTextContent('「视频理解」需要同时启用「工作区文件」')
     expect(within(section('指令')).queryByRole('alert')).toBeNull()
-    // 先存的草稿把 lockVersion 加到了 4，发布带的是存好后的值（mock 对不上会答 409）。
     expect(posts).toEqual([{ lockVersion: 4 }])
     expect(within(editor()).getByRole('button', { name: '保存草稿' })).toBeDisabled()
 
     await user.click(within(await openPlugins(user)).getByRole('switch', { name: '工作区文件' }))
-    // 改了草稿，问题收起。
     expect(within(section('插件')).queryByRole('alert')).toBeNull()
     await user.click(within(editor()).getByRole('button', { name: '发布' }))
 
@@ -189,7 +183,6 @@ describe('AgentConfigPage 历史版本', () => {
     expect(restores).toEqual([{ lockVersion: 3 }])
     expect(pluginCards()).toEqual(['工作区文件', '视频理解', '导演工程'])
     expect(within(editor()).getByRole('button', { name: '管理插件' })).toBeVisible()
-    // 恢复已存进草稿，没有要保存的。
     expect(within(editor()).getByRole('button', { name: '保存草稿' })).toBeDisabled()
   })
 
@@ -333,12 +326,10 @@ describe('AgentConfigPage 模型设置', () => {
     await user.click(await screen.findByRole('menuitemradio', { name: /创作团队/ }))
     expect(within(panel).getByRole('button', { name: '密钥：创作团队' })).toBeVisible()
 
-    // 不能设档位的模型：跟随模型默认值，不显示滑杆。
     await user.click(within(panel).getByRole('radio', { name: /^studio-chat\s?128K$/ }))
     expect(within(panel).queryByRole('slider', { name: '思考档位' })).not.toBeInTheDocument()
     expect(within(panel).getByRole('button', { name: '密钥：默认' })).toBeVisible()
 
-    // 新模型不允许原来的档位：取它允许的第一档。
     await user.click(within(panel).getByRole('radio', { name: /^studio-chat-long/ }))
     expect(within(panel).getByRole('button', { name: '极低' })).toBeVisible()
     expect(within(panel).getByRole('button', { name: '很高' })).toBeVisible()
@@ -373,7 +364,6 @@ describe('AgentConfigPage 子 Agent', () => {
     )
     const panel = sidePanel()
 
-    // 从卡片点进来先展开它。
     expect(within(panel).getByRole('textbox', { name: '拆解助手的调用时限（秒）' })).toHaveValue(
       '300',
     )
@@ -411,7 +401,6 @@ describe('AgentConfigPage 子 Agent', () => {
 
   it('正被别人用作子 Agent 的 agent 不能再添加子 Agent', async () => {
     const user = await renderPage('breakdown-helper')
-    // 节标题旁的「+」与空节里的添加卡都被拦下。
     const adds = within(section('子 Agent')).getAllByRole('button', { name: '添加子 Agent' })
     expect(adds).toHaveLength(2)
     for (const add of adds) expect(add).toHaveAttribute('aria-disabled', 'true')

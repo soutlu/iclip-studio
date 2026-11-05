@@ -1,6 +1,3 @@
-"""技能压缩包：SKILL.md 在根目录或唯一顶层目录里都能读；符号链接、``..``、绝对路径、重复路径、二进制、
-超出范围与超过上限的文件被拒绝并点名；导出的包再读回来是同一份文件。"""
-
 from __future__ import annotations
 
 import io
@@ -16,13 +13,12 @@ from agent_runtime.config.skills.models import MAX_FILE_BYTES, MAX_FILES, SKILL_
 SKILL = "---\nname: pdf-tools\ndescription: 处理 PDF\n---\n\n# PDF 工具\n"
 
 Entry = tuple[str, bytes] | tuple[str, bytes, int]
-"""（压缩包里的名字，字节，可选的 Unix 文件类型与权限）。"""
 
 
 def make_zip(*entries: Entry) -> bytes:
     buffer = io.BytesIO()
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # 重复名字时 zipfile 会警告，这里正是要造它。
+        warnings.simplefilter("ignore")
         with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for entry in entries:
                 info = zipfile.ZipInfo(entry[0])
@@ -130,8 +126,6 @@ def test_a_file_over_the_single_file_limit_is_rejected() -> None:
 
 
 def test_declared_total_over_the_limit_stops_before_reading() -> None:
-    """六个 1 MB 的文件压缩后很小，解压前按声明的大小就拦下，一个都不读。"""
-
     big = [(f"references/{index}.md", b"a" * MAX_FILE_BYTES) for index in range(6)]
     data = make_zip((SKILL_MD, SKILL.encode()), *big)
 

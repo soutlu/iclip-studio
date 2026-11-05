@@ -1,5 +1,3 @@
-"""对话挂上需求单就是认领：待认领推到进行中，草稿与已撤回的不动，摘掉不清认领。"""
-
 from __future__ import annotations
 
 import httpx
@@ -51,7 +49,6 @@ async def test_attaching_later_claims_too_and_detaching_keeps_the_claim(
 
 
 _TO_STATUS = {"draft": (), "withdrawn": ("publish", "withdraw")}
-"""建出草稿后，推到这个状态要依次调用的动作。"""
 
 
 @pytest.mark.parametrize("status", list(_TO_STATUS))

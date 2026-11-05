@@ -1,5 +1,3 @@
-"""成片草稿现行表的文档、版本和归属约束。"""
-
 from __future__ import annotations
 
 import uuid

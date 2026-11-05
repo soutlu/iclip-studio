@@ -1,11 +1,3 @@
-/** 制作页改字的草稿：按段（`target`）记改动，停手 800ms 后一次写回；保存期间的新改动接着排下一次。
- *
- * `target` 只在读到的那一版文件里有效。写回撞上新版本（409）就重读：这段在新版本里还是改之前的样子，就按新版本
- * 再发；已经和我改的一样，就不用发了；别的情况算冲突，交给人选留谁的。不合规矩（422）保留草稿，说明原因。
- *
- * 字里的图在草稿里记身份、不记编号（见 `film-draft-text`）：别处插入、删除图片或选用机位图让编号变了，草稿照样指着
- * 原来那张图；显示与发送时再按当下的列表编号，新插入的图按改字接口的约定从 M+1 起编、地址带在 `images` 里。 */
-
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
@@ -15,12 +7,10 @@ import { toDraftText, toRequestText, toShownText } from './film-draft-text'
 
 const SAVE_DELAY_MS = 800
 
-/** 一段字的内容：全局设定是整段文字；镜头是台词前后的几段文字与每句台词的字。 */
 export type FilmSegmentValue =
   | { kind: 'text'; text: string }
   | { kind: 'shot'; parts: readonly string[]; lines: readonly string[] }
 
-/** 冲突的一段：`theirs` 是新版本里它的样子，新版本里没有这段了为 undefined。 */
 export type FilmConflict = { target: string; label: string; theirs: FilmSegmentValue | undefined }
 
 export type FilmSaveState =
@@ -30,20 +20,16 @@ export type FilmSaveState =
   | { kind: 'error'; message: string }
   | { kind: 'conflict'; conflicts: readonly FilmConflict[] }
 
-/** 改动：`base` 是改之前文件里的样子，用来认出别人有没有也改了这段。 */
 type FilmEdit = { label: string; base: FilmSegmentValue; value: FilmSegmentValue }
 
 const sameValue = (left: FilmSegmentValue | undefined, right: FilmSegmentValue | undefined) =>
   JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
 
-/** 一段字换一种写法：全局设定换整段，镜头换台词前后的每段（台词里不写图）。 */
 const mapText = (value: FilmSegmentValue, map: (text: string) => string): FilmSegmentValue =>
   value.kind === 'text'
     ? { kind: 'text', text: map(value.text) }
     : { kind: 'shot', lines: value.lines, parts: value.parts.map(map) }
 
-/** 一版文件里每段能改的字，按 `target` 认，写成草稿的样子（图记身份，见 `film-draft-text`）；同一段出现在几组里时
- * 内容相同（几组共用的字里没有图），取哪组都一样。 */
 const segmentValues = (view: FilmView): Map<string, FilmSegmentValue> => {
   const values = new Map<string, FilmSegmentValue>()
   for (const group of view.groups) {
@@ -63,7 +49,6 @@ const segmentValues = (view: FilmView): Map<string, FilmSegmentValue> => {
   return values
 }
 
-/** 一段字所在的那组；几组共用时取第一组。 */
 const groupOf = (view: FilmView, target: string): FilmGroup | undefined =>
   view.groups.find(
     (group) =>
@@ -71,7 +56,6 @@ const groupOf = (view: FilmView, target: string): FilmGroup | undefined =>
       group.shots.some((shot) => shot.target === target),
   )
 
-/** 把草稿叠到文件上，页面看到的是叠完的样子：图按这组当下的列表写回编号。 */
 const withEdits = (view: FilmView, edits: ReadonlyMap<string, FilmEdit>): FilmView => {
   if (edits.size === 0) return view
   return {
@@ -101,8 +85,6 @@ const withEdits = (view: FilmView, edits: ReadonlyMap<string, FilmEdit>): FilmVi
   }
 }
 
-/** 发给后端的一段：图按这组当下的列表编号，新插入的图从 M+1 起编、地址放进 `images`；镜头带上每句台词原来的 `target`，
- * 按原来的先后。 */
 const editIn = (view: FilmView, target: string, value: FilmSegmentValue): FilmTextEditIn => {
   const group = groupOf(view, target)
   const images: string[] = []
@@ -143,7 +125,6 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     book.timer = null
   }, [])
 
-  /** 撞上新版本后对账，返回冲突的段；不冲突的留着按新版本再发。 */
   const reconcile = useCallback(
     (latest: FilmView): FilmConflict[] => {
       const book = bookRef.current
@@ -161,7 +142,6 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     [publish],
   )
 
-  /** 立刻写回，答复都落盘了没有：保存失败、有冲突或还没读到工程时为 false。 */
   const persist = useCallback((): Promise<boolean> => {
     const book = bookRef.current
     clearTimer()
@@ -182,7 +162,6 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
             view.filmVersion,
             sending.map(([target, edit]) => editIn(view, target, edit.value)),
           )
-          // 发出去的这一版已经落盘；保存期间又改了的，以落盘的为底接着改。
           for (const [target, edit] of sending) {
             const current = book.edits.get(target)
             if (current === undefined) continue
@@ -220,14 +199,12 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     return book.inFlight
   }, [clearTimer, conversationId, publish, queryClient, reconcile])
 
-  /** 立刻写回，答复写回后的整页；没全落盘为 null。出片前先存，发出去的和文件里的一样。 */
   const saveNow = useCallback(
     async (): Promise<FilmView | null> =>
       (await persist()) ? (readView(queryClient, conversationId) ?? null) : null,
     [conversationId, persist, queryClient],
   )
 
-  /** 记下一段的新内容（页面上的写法，图按当下的编号）；改回原样就不算改动。冲突没处理完之前只记不存。 */
   const update = useCallback(
     (target: string, label: string, shown: FilmSegmentValue) => {
       const book = bookRef.current
@@ -252,7 +229,6 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     [clearTimer, conversationId, persist, publish, queryClient],
   )
 
-  /** 留我的：还在的段以新版本为底再发，新版本里没有了的只能放弃；用最新的：放弃冲突的段。 */
   const resolveConflict = useCallback(
     (choice: 'mine' | 'theirs') => {
       const book = bookRef.current
@@ -270,7 +246,6 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     [persist, publish],
   )
 
-  // 离开页面时还没到点的那次立刻存。
   useEffect(
     () => () => {
       if (bookRef.current.timer !== null) void persist()

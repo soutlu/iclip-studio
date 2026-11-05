@@ -22,7 +22,6 @@ export function LibraryTabsList() {
 
 type LibraryPageHeaderProps = {
   description?: string
-  /** 关键词搜索；不给就不显示搜索框。 */
   search?: { label: string; placeholder: string; value: string; onSearch: (q: string) => void }
   action?: ReactNode
   tabs: ReactNode
@@ -72,7 +71,6 @@ function SearchBox({
     setDraft(value)
   }
 
-  // 父组件每次渲染都会给新的 onSearch，放进依赖会让计时反复重来。
   const search = useEffectEvent((q: string) => onSearch(q))
   useEffect(() => {
     if (draft.trim() === applied.trim()) return

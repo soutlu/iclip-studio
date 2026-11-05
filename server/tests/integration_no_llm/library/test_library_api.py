@@ -1,6 +1,3 @@
-"""资料库端点：持 ``generation:read`` 就能看全站的素材卡与成片卡连同来源对话，打不打得开对话按对话
-自己的可读范围。"""
-
 from __future__ import annotations
 
 import json
@@ -37,7 +34,6 @@ SHOT = VideoShotIn.model_validate(
         "timeline": [{"timestamps": [0, 3], "prompt": "模特走向镜头。", "image_indexes": []}],
     }
 )
-"""种进去的出片带的结构化镜头组。"""
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> uuid.UUID:
@@ -55,8 +51,6 @@ async def login_again(client: httpx.AsyncClient, username: str) -> None:
 async def plant_video(
     pg_url: str, *, owner: uuid.UUID, user_name: str
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """一段对话下一条成了的镜 1 出片，请求带 ``SHOT``；返回（对话 id，出片 id）。"""
-
     conversation_id, video_id = uuid.uuid4(), uuid.uuid4()
     async with connected(pg_url) as conn:
         await conn.execute(
@@ -66,7 +60,6 @@ async def plant_video(
             ),
             {"id": conversation_id, "owner": owner},
         )
-        # 每段对话在运行时都有会话（建对话时开），工作区文件经运行时读。
         await conn.execute(
             text("INSERT INTO agent_runtime.sessions (id, app_id) VALUES (:id, 'video')"),
             {"id": conversation_id},
@@ -104,8 +97,6 @@ async def mark_deleted(pg_url: str, conversation_id: uuid.UUID) -> None:
 
 
 async def detach(pg_url: str, video_id: uuid.UUID) -> None:
-    """把出片从对话上摘下来：它成了一张不挂对话的卡，卡 id 是出片 id。"""
-
     async with connected(pg_url) as conn:
         await conn.execute(
             text("UPDATE iclip.generation_jobs SET conversation_id = NULL WHERE id = :id"),
@@ -128,8 +119,6 @@ async def plant_file(pg_url: str, owner: uuid.UUID, conversation_id: uuid.UUID, 
 async def plant_whole_film(
     pg_url: str, *, owner: uuid.UUID, conversation_id: uuid.UUID, sources: list[uuid.UUID]
 ) -> uuid.UUID:
-    """``conversation_id`` 上一次完成的成片导出，画面轨按先后用到 ``sources``；返回成片记录 id。"""
-
     film = uuid.uuid4()
     async with connected(pg_url) as conn:
         await conn.execute(
@@ -171,9 +160,6 @@ async def test_whole_films_need_generation_read(client: httpx.AsyncClient, pg_ur
 async def test_whole_film_authors_count_whole_film_cards_by_conversation_owner(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """成片卡的作者是对话属主：Lena 记在 Nora 对话上的导出仍算 Nora 的卡；只有素材片没有导出的对话
-    不算。"""
-
     nora = await login_as(client, pg_url, "nora", "editor")
     nora_conversation, nora_video = await plant_video(pg_url, owner=nora, user_name="nora")
     await plant_video(pg_url, owner=nora, user_name="nora")
@@ -200,9 +186,6 @@ async def test_whole_film_authors_count_whole_film_cards_by_conversation_owner(
 async def test_whole_film_cards_carry_every_version_and_the_conversation(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """属主看到自己的成片卡、打得开对话；同事看到同一张卡，打不开对话。卡面是最后一版，每版带用到的
-    素材片，没有水印版与时长。"""
-
     owner = await login_as(client, pg_url, "nora", "editor")
     conversation_id, video_id = await plant_video(pg_url, owner=owner, user_name="nora")
     first = await plant_whole_film(
@@ -270,9 +253,6 @@ async def test_viewer_reads_the_empty_library(client: httpx.AsyncClient, pg_url:
 async def test_everyone_gets_the_conversation_only_readers_can_open_it(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """卡 id 就是对话 id，人人拿得到对话；打不打得开按对话的可读范围，删了只剩治理者打得开。
-    作者按属主，不看请求里的名字。"""
-
     owner = await login_as(client, pg_url, "nora", "editor")
     conversation_id, video_id = await plant_video(pg_url, owner=owner, user_name="someone-else")
     card = f"{VIDEOS}/{conversation_id}"
@@ -324,9 +304,6 @@ async def test_everyone_gets_the_conversation_only_readers_can_open_it(
 async def test_can_make_same_needs_a_conversation_with_a_film_or_shot_file(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """做得了同款：卡挂着对话、工作区里有 ``film.icml`` 或 ``video_shot.json``；不看读者打不打得开
-    那段对话、它删没删。"""
-
     owner = await login_as(client, pg_url, "nora", "editor")
     with_film, _ = await plant_video(pg_url, owner=owner, user_name="nora")
     with_shots, _ = await plant_video(pg_url, owner=owner, user_name="nora")

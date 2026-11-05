@@ -1,9 +1,3 @@
-"""把一份配置编译成装配 agent 要用的 ``CompiledAgent``，或者一张问题清单。
-
-先查完全部引用再给结果，不在半路停：模型、插件、MCP 服务、技能、子 agent 各自的问题都列出来，每条带
-``path``。跨领域的事实都经端口查（见 ``repository``）；子 agent 用的是本领域自己的 ``AgentRefs``。结果直接
-对应 pydantic-ai 的装配：``capabilities`` 是原生 AgentSpec 的条目，MCP 服务、技能与子 agent 单独带着。"""
-
 from __future__ import annotations
 
 import uuid
@@ -52,13 +46,6 @@ async def compile_agent(
     agents: Sequence[AgentRefs],
     runtime: bool = False,
 ) -> CompiledAgent | tuple[Problem, ...]:
-    """``skills`` 是技能库的全部技能，``agents`` 是全部 agent 的引用（含 ``agent_id`` 自己）。
-
-    ``runtime`` 为真是运行前装配一个已定下的配置（对话固定的版本，或草稿）：子 agent 只有一层的规则只看
-    各 agent 的当前版本，不看草稿，也不查「自己正被别人当作子 agent」——别人草稿里的改动不该让已经定下的
-    版本跑不起来；MCP 服务只查在不在、启没启用，不拿最后一次发现的工具对照（见 ``_compile_mcp``）。其余规则
-    与发布一样。"""
-
     problems: list[Problem] = []
     model = await _compile_model(config.model, models, problems)
     capabilities, mcp_servers = await _compile_tools(
@@ -165,9 +152,6 @@ async def _compile_mcp(
     *,
     runtime: bool,
 ) -> CompiledMcpServer | None:
-    """MCP 服务要在、要启用；发布时另查选的工具都在最后一次发现的工具里、加上前缀后模型收得下。运行时只查
-    前两条：工具的增减以服务当下交出的为准，原生的 ``allowed_tools`` 只放行写了的那几个。"""
-
     path = f"tools[{index}]"
     server = await mcp.server(tool.server)
     if server is None:
@@ -208,8 +192,6 @@ def _check_mcp_tools(
 
 
 def _exposed_name_problem(server_id: str, tool: str) -> str | None:
-    """模型看到的工具名不合写法时给人看的原因，合格给 ``None``。"""
-
     exposed = mcp_tool_name(server_id, tool)
     if MCP_TOOL_NAME_PATTERN.fullmatch(exposed) is not None:
         return None
@@ -227,8 +209,6 @@ def _compile_cap(
     plugins: PluginDirectory,
     problems: list[Problem],
 ) -> Mapping[str, Mapping[str, Any]] | None:
-    """插件编译成 ``{插件名: 参数}``，插件名就是它的 spec 名。"""
-
     path = f"tools[{index}]"
     if tool.toolset not in plugins.available():
         problems.append(Problem(path, f"本部署没有插件 {tool.toolset}"))
@@ -330,8 +310,6 @@ def _subagents_of(refs: AgentRefs) -> frozenset[str]:
 
 
 def _active_subagents_of(refs: AgentRefs) -> frozenset[str]:
-    """只看当前版本里写的子 agent：运行时装配的是当前版本。"""
-
     return frozenset(refs.active.subagents if refs.active is not None else ())
 
 

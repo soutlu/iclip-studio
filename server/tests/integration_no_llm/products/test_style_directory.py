@@ -1,5 +1,3 @@
-"""验证 PDM 款目录的批量归属解析、有效行过滤与归属缺失处理。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -23,8 +21,6 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 
 async def test_resolves_category_and_brand(engine: AsyncEngine) -> None:
-    """品牌来自独立列，attributes 保留新库的空对象形状。"""
-
     await seed_pdm_style(engine, style_no="DEMO-STYLE-1", entity_id=1)
 
     found = await PgStyleDirectory(engine).resolve(["DEMO-STYLE-1"])
@@ -53,8 +49,6 @@ async def test_inactive_and_deleted_styles_are_invisible(engine: AsyncEngine) ->
 
 
 async def test_missing_grouping_is_dropped(engine: AsyncEngine) -> None:
-    """缺品类或缺品牌的款圈选不出同类款，不返回半个归属。"""
-
     await seed_pdm_style(engine, style_no="NO-CATEGORY", entity_id=4, category_id=None)
     await seed_pdm_style(engine, style_no="NO-BRAND", entity_id=5, brand_code=None)
     await seed_pdm_style(engine, style_no="EMPTY-BRAND", entity_id=6, brand_code="")

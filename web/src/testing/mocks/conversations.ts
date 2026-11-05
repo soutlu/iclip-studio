@@ -7,26 +7,19 @@ import type {
 import { mockAuthUser } from './auth-user'
 import { mockCreatedAt } from './paging'
 
-// 内存对话与合集遵循 ConversationOut / CollectionOut；单独成模块，transcript mock 才能按 id 查属主而不成环。
-
 export type MockConversation = z.output<typeof zConversationOut>
 
-/** 这段对话的全局帧信封上的属主与出帧时刻（合同 §5「全局帧」）。 */
 export const mockSessionEnvelope = (conversationId: string) => ({
   owner_user_id: mockConversationOwner(conversationId),
   timestamp: new Date().toISOString(),
 })
 
-/** 删除只写 deletedAt（合同 §6 墓碑）；墓碑只有审计列表列得出来。 */
 export const mockConversations: MockConversation[] = []
 
-/** 按对话 id 记它自己最新一条素材片的地址；只有审计列表带这一项，没记的为 null。 */
 export const mockLatestMasterUrls = new Map<string, string>()
 
-/** 视频进度（合同 §6）：按对话 id 记还没跑完的视频到哪一步，没记的就是没有。 */
 export const mockVideoProgress = new Map<string, 'queued' | 'running'>()
 
-/** 审计列表里的一行：对话本身加上它最新一条素材片的地址。 */
 export const mockAuditRow = (
   conversation: MockConversation,
 ): z.output<typeof zConversationsAuditItemOut> => ({
@@ -34,11 +27,9 @@ export const mockAuditRow = (
   latestMasterUrl: mockLatestMasterUrls.get(conversation.id) ?? null,
 })
 
-/** 还活着的那一段；墓碑对改名、换归属、再删、发消息一律按不存在答复。 */
 export const liveMockConversation = (conversationId: string) =>
   mockConversations.find((item) => item.id === conversationId && item.deletedAt === null)
 
-/** `id` 缺省随机；浏览器演示数据给固定的，刷新页面后还是同一段对话，存在浏览器里的东西对得上。 */
 export const addMockConversation = (
   title: string,
   createdAt = mockCreatedAt(),
@@ -69,7 +60,6 @@ export const addMockConversation = (
   return conversation
 }
 
-/** 缺省属主是登录的测试用户；找不到那段对话时也按它算，历史用例不带对话行也能读 transcript。 */
 export const mockConversationOwner = (conversationId: string): string =>
   mockConversations.find((item) => item.id === conversationId)?.ownerUserId ?? mockAuthUser.id
 

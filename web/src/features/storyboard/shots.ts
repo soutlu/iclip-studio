@@ -1,26 +1,19 @@
-/** 分镜共用的文件路径、参考图上限、生成状态与按镜头组认出片。 */
-
 import type { z } from 'zod'
 import type { GenerationOut } from '@/shared/api/generated/types.gen'
 import { zGenerationOut } from '@/shared/api/generated/zod.gen'
 
 type GenerationStatus = GenerationOut['status']
 
-/** 按 zod 解析后的记录形状；可选字段比生成的 TS 类型多带 `undefined`。 */
 type GenerationRecord = z.infer<typeof zGenerationOut>
 
 export const SHOTS_PATH = 'video_shot.json'
 
-/** 每组参考图上限，与后端 MAX_REFERENCE_IMAGES 一致（见 contract/conventions.md）。 */
 export const MAX_REFERENCE_IMAGES = 30
 
-/** 达到上限时给人看的那句，拦上传与追加新图共用。 */
 export const REFERENCE_LIMIT_TEXT = `每组最多使用 ${MAX_REFERENCE_IMAGES} 张参考图`
 
-/** 与状态角标的媒体状态同词，可直接传给它画。 */
 export type GenerationPhase = 'queued' | 'running' | 'completed' | 'failed'
 
-/** 业务状态到给人看的阶段：pending 还在本系统排队，submitting / submitted 已交给上游在跑。 */
 export const phaseOfStatus = (status: GenerationStatus): GenerationPhase => {
   switch (status) {
     case 'pending':
@@ -35,7 +28,6 @@ export const phaseOfStatus = (status: GenerationStatus): GenerationPhase => {
   }
 }
 
-/** 还没到终态的状态，从合同枚举按阶段筛出。 */
 const IN_FLIGHT: ReadonlySet<GenerationStatus> = new Set(
   zGenerationOut.shape.status.options.filter((status) => {
     const phase = phaseOfStatus(status)
@@ -45,12 +37,10 @@ const IN_FLIGHT: ReadonlySet<GenerationStatus> = new Set(
 
 export const isRunningStatus = (status: GenerationStatus): boolean => IN_FLIGHT.has(status)
 
-/** 出片（take）：无来源的视频 generate。编辑段有来源，合成是 compose，都不算。 */
 export const isTake = (
   job: Pick<GenerationRecord, 'kind' | 'operation' | 'sourceJobId'>,
 ): boolean => job.kind === 'video' && job.operation === 'generate' && job.sourceJobId == null
 
-/** 这条记录是这一组的出片。编辑段与合成抄了原作的镜号，靠 `isTake` 排除。 */
 export const isShotVideo = (
   job: Pick<GenerationRecord, 'kind' | 'operation' | 'shotIndex' | 'sourceJobId'>,
   shotIndex: number,

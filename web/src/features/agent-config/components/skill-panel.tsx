@@ -7,17 +7,12 @@ import { SkillListPanel } from './skill-list-panel'
 type SkillPanelProps = {
   view: SkillView
   skills: readonly Skill[]
-  /** 当前 Agent 草稿里按先后绑定的技能。 */
   skillIds: readonly string[]
   onSkillIdsChange: (skillIds: string[]) => void
   onNavigate: (view: SkillView) => void
   onClose: () => void
 }
 
-/**
- * 右侧的技能面板：技能库、给当前 Agent 选技能、新建技能、编辑技能之间来回切换。
- * 选技能只改 Agent 草稿的 `skillIds`（新的排在最后），存草稿与发布仍走左栏底部。
- */
 export function SkillPanel({
   onClose,
   onNavigate,

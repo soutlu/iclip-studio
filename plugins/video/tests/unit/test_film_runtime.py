@@ -1,5 +1,3 @@
-"""验证工程文件与运行文件的运行时：检查规则、取图、拼提示词与出片请求。"""
-
 from __future__ import annotations
 
 import pytest
@@ -34,18 +32,15 @@ from tests.helpers.film import (
 USE_PERSON = '<use output="personB.image" image={personB-v1}/>'
 
 BLOCKED_IMAGES = {"no-personB": ("view01", "view03"), "none": ("view01", "view03")}
-"""这两种状态取消了 personB，挂着它的两张机位图生成时被拦住。"""
 
 _SCRIPT_BLOCK = FILM[
     FILM.index('  <script id="lines">') : FILM.index("  </script>\n") + len("  </script>\n")
 ]
-"""示例里的整份剧本，连同缩进和末尾的换行。"""
 
 _VIEW01_BLOCK = FILM[
     FILM.index('  <gpt:Image id="view01"') : FILM.index("  </gpt:Image>\n")
     + len("  </gpt:Image>\n")
 ]
-"""示例里 view01 这个生图节点，连同它的参考图列表。"""
 
 
 def checked(project: str = FILM, run: str | None = RUN) -> Film:
@@ -69,8 +64,6 @@ def line_of(source: str, anchor: str) -> int:
 
 
 def at(source: str, anchor: str, message: str) -> str:
-    """``anchor`` 所在那一行报出的一条问题。"""
-
     return f"film.icml 第 {line_of(source, anchor)} 行：{message}"
 
 
@@ -89,9 +82,6 @@ def fault(
     also: tuple[tuple[str, str], ...] = (),
     id: str,
 ) -> object:
-    """一处错：把 ``old`` 换成 ``new``（``also`` 里的几处一起换），``anchor`` 所在的那一行报出
-    ``message``；不给 ``anchor`` 时就是 ``new`` 所在的那一行。"""
-
     return pytest.param((old, new), also, anchor or new, message, id=id)
 
 
@@ -687,7 +677,6 @@ def test_one_fault_in_the_project_file_is_reported_on_its_line(
 
 
 def test_a_listed_view_must_belong_to_a_shot_of_that_video() -> None:
-    # video02 的列表里换上 video01 第 3 镜的机位图；那一镜不在 video02 里。
     moved = changed(
         FILM,
         "    <seedance:Reference image={view06.image}/>\n  </seedance:ReferenceVideo>\n</icml>",
@@ -766,8 +755,6 @@ def test_every_video_in_a_file_has_the_same_aspect_ratio() -> None:
 
 
 def more_photos(source: str, count: int, tag: str) -> tuple[str, str]:
-    """在素材里多写 ``count`` 张照片，返回 (新的原文, 挂这几张的 ``tag`` 参考图，一张一行)。"""
-
     photos = "".join(
         f'  <media:Image id="多图{n}" src="https://cdn.test/more-{n}.png"/>\n' for n in range(count)
     )
@@ -790,7 +777,6 @@ def test_an_image_takes_at_most_ten_references_whether_or_not_they_have_images()
         "纽约红砖街区参考 @Image6；另参考 @Image7、@Image8、@Image9、@Image10、@Image11。",
     )
 
-    # 没有运行文件，personB、scene 都没有图，也按文件里列的算：6 + 5 = 11 张。
     assert problems(crowded, None) == [
         at(crowded, '<gpt:Image id="view01"', "参考图有 11 张，超过 10 张")
     ]
@@ -911,8 +897,6 @@ def test_one_fault_in_the_run_file_is_reported(old: str, new: str, expected: str
 
 
 def node_images(film: Film) -> dict[str, str | None]:
-    """每个生图节点现在用的图片地址。"""
-
     return {
         node.attrs["id"]: film.image_url(f"{node.attrs['id']}.image") for node in film.image_nodes()
     }
@@ -960,7 +944,6 @@ SENT_VIDEOS = [
     for video in ("video01", "video02")
     if not EXPECTED["states"][state][video]["blocked"]
 ]
-"""示例里能出片的组；被缺图拦住的两组见下一条测试。"""
 
 
 @pytest.mark.parametrize(("state", "video"), SENT_VIDEOS)
@@ -1016,8 +999,6 @@ def test_a_video_request_copies_the_shot_times_and_the_list_as_it_is() -> None:
 
 
 def test_every_video_aspect_ratio_is_one_the_image_package_can_write() -> None:
-    """制作页改画幅时机位图跟着视频改，视频能写的画幅生图节点都要能写。"""
-
     assert set(VIDEO_ASPECTS) <= set(GPT_IMAGE_ASPECTS)
 
 
@@ -1031,7 +1012,6 @@ def test_saving_the_project_file_checks_that_file_alone() -> None:
 
 def test_saving_the_run_file_checks_that_file_alone() -> None:
     assert check_run_content(RUN) == []
-    # 选用的节点存不存在要对照工程文件，保存时不查。
     assert check_run_content(RUN.replace("personB.image", "不存在的节点.image")) == []
     assert (
         "在这之前没有定义"

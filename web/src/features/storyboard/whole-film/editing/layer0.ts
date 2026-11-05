@@ -23,24 +23,19 @@ import {
   sourceOf,
 } from './timeline'
 
-// 第 0 层（画面轨）是视频段与组件段的同一个列表，先后不限，始终从 0 起首尾相接。
-
 const replaceClip = (draft: WholeFilmDraft, clip: Layer0Clip): WholeFilmDraft => ({
   ...draft,
   layer0: draft.layer0.map((c) => (c.id === clip.id ? clip : c)),
 })
 
-/** 插到第 index 段之前（等于段数时插到最后），或插到离 timeMs 最近的切点 */
 export type InsertAt = { index: number } | { timeMs: number }
 
 const indexAt = (draft: WholeFilmDraft, at: InsertAt) =>
   'index' in at ? clamp(at.index, 0, draft.layer0.length) : insertIndexAt(draft.layer0, at.timeMs)
 
-/** 把几段按先后连着插到第 index 段之前，后面的段整体后移 */
 const insertAllAt = (layer0: Layer0Clip[], index: number, clips: readonly Layer0Clip[]) =>
   clips.reduce((lane, clip, offset) => insertAt(lane, index + offset, clip), layer0)
 
-/** 按先后连着放进第 0 层，后面的段整体后移；成片超过总长上限时拒绝，不缩短 */
 const insertClips = (
   draft: WholeFilmDraft,
   clips: readonly Layer0Clip[],
@@ -48,15 +43,12 @@ const insertClips = (
 ): EditResult => {
   if (clips.some((clip) => clip.duration < MIN_CLIP_MS)) return refuse('too-short')
   const added = clips.reduce((sum, clip) => sum + clip.duration, 0)
-  // 特效块本来就不晚于上限结束，画面轨不超过上限，成片也就不超过
   if (layer0End(draft) + added > MAX_FILM_MS) return refuse('film-too-long')
   return done(normalize({ ...draft, layer0: insertAllAt(draft.layer0, indexAt(draft, at), clips) }))
 }
 
-/** 素材里的一段：从素材的 playbackStart 起放 duration（毫秒） */
 export type MaterialPiece = { playbackStart: number; duration: number }
 
-/** 把同一条素材里的几段按先后连着加入成片，每段成为画面轨上的一段；第一段视频定下画布尺寸 */
 export const insertMaterial = (
   draft: WholeFilmDraft,
   args: { sourceJobId: string; pieces: readonly MaterialPiece[]; at: InsertAt },
@@ -84,10 +76,6 @@ export const insertMaterial = (
   )
 }
 
-/**
- * 把组件作为一段放进画面轨，与视频段同等占时间。variables 是写进草稿的可填项，没写的项合成时取
- * 组件自己的默认值。
- */
 export const insertComponent = (
   draft: WholeFilmDraft,
   args: { component: string; duration: number; variables: ComponentVariables; at: InsertAt },
@@ -104,15 +92,9 @@ export const insertComponent = (
   return insertClips(draft, [clip], args.at)
 }
 
-/** 第 0 层里有没有这几段 */
 const hasAll = (draft: WholeFilmDraft, clipIds: readonly string[]) =>
   clipIds.every((id) => draft.layer0.some((clip) => clip.id === id))
 
-/**
- * 调整连着的几段（按画面轨先后给 id）的顺序，当成一整块挪到第 `to` 个插入点，即挪动前的第 `to`
- * 段之前，等于段数时挪到最后（拖动时由 {@link insertIndexAt} 按松手处算出）。落点就在这一块里或
- * 紧挨它两侧时原样返回；这几段不相连时拒绝。
- */
 export const moveClips = (
   draft: WholeFilmDraft,
   args: { clipIds: readonly string[]; to: number },
@@ -131,11 +113,6 @@ export const moveClips = (
   return done(normalize({ ...draft, layer0: insertAllAt(others, at, block) }))
 }
 
-/**
- * 修剪一段的一端，算法用 Studio 的修剪。修开头时切点不动、入点后移（组件段从组件自己时间里更晚处
- * 起播）；之后整轨收紧，后面的段跟着移。视频段不超出素材，组件段不超出组件自己的时长（已经超出的
- * 段拖结尾时收回上限以内），任何一段都不短于最短时长，成片拉长到总长上限就停住。
- */
 export const trimClip = (
   draft: WholeFilmDraft,
   args: { clipId: string; edge: 'start' | 'end'; deltaMs: number },
@@ -176,11 +153,9 @@ export const trimClip = (
   )
 }
 
-/** 拆开后两段都不短于最短时长 */
 const canSplitAt = (clip: Layer0Clip, timeMs: number) =>
   timeMs >= clip.start + MIN_CLIP_MS && timeMs <= clip.start + clip.duration - MIN_CLIP_MS
 
-/** 在 timeMs 处把一段拆成两段，后半段接着前半段的入点往后播；优先拆 clipId 指定的段，否则拆播放头下的段 */
 export const splitClip = (
   draft: WholeFilmDraft,
   args: { timeMs: number; clipId?: string },
@@ -212,7 +187,6 @@ export const splitClip = (
   )
 }
 
-/** 删掉第 0 层的几段，后面的段跟着前移 */
 export const deleteClips = (
   draft: WholeFilmDraft,
   args: { clipIds: readonly string[] },
@@ -223,7 +197,6 @@ export const deleteClips = (
   )
 }
 
-/** 几段视频的原声音量一起设成同一个值，收进 0 到上限；组件段没有原声，跳过；一段视频都没有时拒绝 */
 export const setClipsVolume = (
   draft: WholeFilmDraft,
   args: { clipIds: readonly string[]; volume: number },

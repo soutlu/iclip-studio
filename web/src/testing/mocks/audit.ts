@@ -1,12 +1,3 @@
-/** 审计清单的 mock：按人与按任务执行；总览另见 audit-overview.ts。
-
-单测与 dev:mock 共用。以此刻为准往前确定地造一批任务执行（一段对话一行），再给对话 mock 里的每段对话各添一行、
-身份取自那段对话（从清单点进去打得开），按请求的时间窗、人、排序与游标切出来；
-按人是同一批任务执行按人汇总。造出的那批里刻意放了四种异常、已删除、没出片与多模型用量的对话，
-还有一个只跑过、没出过片的人，按人表的空值排在他身上。
-
-聚合只求演示自洽，不是后端口径的参考实现：测试要断言数字就用下面的 fixture 喂自己的数据。 */
-
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
 import {
@@ -50,11 +41,9 @@ type Anomaly = Execution['anomalies'][number]
 type SortKey = NonNullable<ReturnType<typeof sortKeyOf>>
 
 const HOUR_MS = 3_600_000
-/** 造多少段、每段隔多久：约 4.3 小时一段，全部落在近 30 天里，一页 50 段翻得到第三页。 */
 const EXECUTION_COUNT = 160
 const SPACING_MS = 4.3 * HOUR_MS
 
-/** 只跑过、没出过片的人。 */
 const IDLE_PERSON = 'he.huan'
 
 const TASKS = [
@@ -63,11 +52,9 @@ const TASKS = [
   { id: uuidOf(7000, 3), title: '跑鞋新品上市' },
 ]
 
-/** 这三段挂同一张单、一条出片都没有：需求单卡住。标题故意很长，看截断。 */
 const STUCK_TASK = { id: uuidOf(7000, 9), title: '儿童雨靴春季上新短视频（三段都没出片的需求单）' }
 const STUCK_TASK_INDEXES = new Set([20, 21, 22])
 
-/** 第五段有一条出片挂了十几个小时（视频悬挂）；没出结果的不算进镜头带，只在异常里看得到。 */
 const STUCK_PENDING_ID = uuidOf(8000, 4)
 
 const THRESHOLDS = { retryAtLeast: 3, spendTimes: 3, stuckHours: 1, taskConversations: 3 }
@@ -136,7 +123,6 @@ const addUsage = (a: Usage, b: Usage): Usage => {
 
 const shotsOf = (index: number, random: () => number, idle: boolean): Shot[] => {
   if (idle) return []
-  // 卡住的那张单：每段出了两次都失败，一镜也不算。
   if (STUCK_TASK_INDEXES.has(index)) return []
   const count = pickWeighted(random, [0, 1, 2, 3, 4], [0.06, 0.3, 0.32, 0.2, 0.12])
   const shots = Array.from({ length: count }, (_, position): Shot => {
@@ -145,7 +131,6 @@ const shotsOf = (index: number, random: () => number, idle: boolean): Shot[] => 
       [1, 2, 3, 4, 5, 6, 8],
       [0.5, 0.27, 0.11, 0.05, 0.03, 0.02, 0.02],
     )
-    // 约一成失败，失败的不算。
     const attempts = Array.from({ length: tries }).filter(() => random() >= 0.1).length
     return {
       attempts,
@@ -154,11 +139,9 @@ const shotsOf = (index: number, random: () => number, idle: boolean): Shot[] => 
       shot: position + 1,
     }
   })
-  // 一次都没成功的镜不算镜，镜号照原样留空。
   return shots.filter((shot) => shot.attempts > 0)
 }
 
-/** 对话 mock 里一段真实对话的身份；带着它造出的那一行指向这段对话，点进去打得开。 */
 type Identity = {
   conversationId: string
   createdAt: number
@@ -168,10 +151,6 @@ type Identity = {
   userName: string
 }
 
-/**
- * 第 index 段（0 是最新的）：时间窗之外的事实都在这里定好，异常要看时间窗，另算。
- * 带 identity 时建立时刻、属主、需求单、标题与删除取自那段对话，其余照样按 index 确定地造。
- */
 const draftOf = (index: number, now: number, identity?: Identity): Omit<Execution, 'anomalies'> => {
   const random = mulberry32(index * 7919 + 17)
   const createdAt =
@@ -195,7 +174,6 @@ const draftOf = (index: number, now: number, identity?: Identity): Omit<Executio
   const deliveredAt = delivered
     ? Math.min(now, startedAt + active * 1000 * (1 + random() * 2))
     : null
-  // 约十七段里删掉一段；第 23 段的倍数是消耗离群。
   const deletedAt =
     identity !== undefined
       ? identity.deletedAt
@@ -206,7 +184,6 @@ const draftOf = (index: number, now: number, identity?: Identity): Omit<Executio
     (idle ? 200_000 : 950_000) * Math.exp(0.55 * (random() - 0.5) * 2) * (index % 23 === 7 ? 6 : 1),
   )
   const primary = usageOf(index % 3 === 0 ? Math.round(total * 0.8) : total, random)
-  // 每三段有一段另用了一个小模型。
   const usage: ModelUsage[] =
     index % 3 === 0
       ? [
@@ -262,7 +239,6 @@ const draftOf = (index: number, now: number, identity?: Identity): Omit<Executio
   }
 }
 
-/** 与 handlers.addMockUser 同一条规则：两个登录账号用各自的用户名，其他人是 id 的前八位。 */
 const usernameOf = (ownerUserId: string): string =>
   ownerUserId === mockAuthUser.id
     ? mockAuthUser.username
@@ -270,10 +246,8 @@ const usernameOf = (ownerUserId: string): string =>
       ? mockGovernor.username
       : ownerUserId.slice(0, 8)
 
-/** 按需求单 id 查标题；需求单存在 handlers 里，由它传进来，免得两个模块互相引用。 */
 type TaskTitleOf = (taskId: string) => string | null
 
-/** 对话 mock 里的每段对话（墓碑也算，治理者能读）各一行，接在造出的那批后面。 */
 const conversationDraftsOf = (now: number, taskTitleOf: TaskTitleOf) =>
   mockConversations.map((conversation, position) =>
     draftOf(EXECUTION_COUNT + position, now, {
@@ -298,7 +272,6 @@ const windowOf = (query: URLSearchParams, now: number): Window | null => {
   return { now, since, until: Math.min(requested === null ? now : Date.parse(requested), now) }
 }
 
-/** 建立时刻落在时间窗里的任务执行；按人与按任务执行都从这一批出。 */
 const draftsIn = ({ since, until, now }: Window, taskTitleOf: TaskTitleOf) =>
   [
     ...Array.from({ length: EXECUTION_COUNT }, (_, index) => draftOf(index, now)),
@@ -308,7 +281,6 @@ const draftsIn = ({ since, until, now }: Window, taskTitleOf: TaskTitleOf) =>
     return at >= since && at < until
   })
 
-/** 一群任务执行合成一格指标：同一需求单只算一件，没挂单的有出片对话各算一件。 */
 const metricsOf = (drafts: readonly Omit<Execution, 'anomalies'>[]): Metrics => {
   const delivered = drafts.filter((draft) => draft.deliveredAt !== null)
   const deliveredTasks = new Set(delivered.flatMap((draft) => draft.taskId ?? [])).size
@@ -355,7 +327,6 @@ const metricsOf = (drafts: readonly Omit<Execution, 'anomalies'>[]): Metrics => 
   }
 }
 
-/** 这个时间窗的四种门槛：消耗离群按全体每件出片平均消耗算，与按不按人筛无关。 */
 const thresholdsOf = (drafts: readonly Omit<Execution, 'anomalies'>[]): Thresholds => {
   const perDelivery = metricsOf(drafts).tokensPerDelivery
   return {
@@ -414,7 +385,6 @@ const SORT_VALUE: Record<SortKey, (execution: Execution) => number | null> = {
   tokens: (execution) => execution.metrics.usage.totalTokens,
 }
 
-/** 按接口的排序排：空值不管升降都排最后，同值按对话 id 定先后。 */
 const sortExecutions = (items: readonly Execution[], key: SortKey, order: 'asc' | 'desc') => {
   const sign = order === 'asc' ? 1 : -1
   const valueOf = SORT_VALUE[key]
@@ -429,7 +399,6 @@ const sortExecutions = (items: readonly Execution[], key: SortKey, order: 'asc' 
 
 const PAGE_DEFAULT = 20
 
-/** 按请求切一页任务执行；游标记着发它的排序，换了排序还带旧游标就报错，和后端一样。 */
 export const mockExecutionsOf = (
   query: URLSearchParams,
   taskTitleOf: TaskTitleOf,
@@ -463,7 +432,6 @@ export const mockExecutionsOf = (
   }
 }
 
-/** 按人：时间窗里跑过或出过片的每个人一行，出片多的在前；迷你图按出片时刻分期。 */
 export const mockPeopleOf = (
   query: URLSearchParams,
   taskTitleOf: TaskTitleOf,
@@ -493,14 +461,12 @@ export const mockPeopleOf = (
   return { bucket, items }
 }
 
-/** 审计三个读口的 handler；清单里真实对话那几行的需求单标题由 taskTitleOf 查。 */
 export const auditHandlers = (taskTitleOf: TaskTitleOf) => [
   overviewHandler,
 
   http.get('*/api/audit/people', ({ request }) => {
     const report = mockPeopleOf(new URL(request.url).searchParams, taskTitleOf)
     if (report === null) return HttpResponse.json({ detail: 'since 必填' }, { status: 422 })
-    // 按生成的 schema 过一遍，mock 形状漂移时在这里就报出来。
     return HttpResponse.json(zAuditPeopleOut.parse(report))
   }),
 
@@ -511,14 +477,10 @@ export const auditHandlers = (taskTitleOf: TaskTitleOf) => [
   }),
 ]
 
-// ——— 单测 fixture ———
-
-/** 缺省门槛：与后端缺省值一致，消耗离群的门槛取 300 万 token。 */
 export const MOCK_THRESHOLDS: Thresholds = { ...THRESHOLDS, spendTokens: 3_000_000 }
 
 type ExecutionPatch = Omit<Partial<Execution>, 'metrics'> & { metrics?: Partial<Metrics> }
 
-/** 一段形状完整的任务执行：一镜一次就过、已出片、没有异常；只关心的字段自己覆盖。 */
 export const executionFixture = ({ metrics, ...patch }: ExecutionPatch = {}): Execution => ({
   anomalies: [],
   conversationId: crypto.randomUUID(),
@@ -544,7 +506,6 @@ export const executionFixture = ({ metrics, ...patch }: ExecutionPatch = {}): Ex
   ...patch,
 })
 
-/** 一页任务执行：总数与异常数缺省按这一页数。 */
 export const executionsPageFixture = (
   items: Execution[],
   patch: Partial<ExecutionsPage> = {},
@@ -557,7 +518,6 @@ export const executionsPageFixture = (
   ...patch,
 })
 
-/** 一个人的一行：七天、每天零件的迷你图。 */
 export const personFixture = (userName: string, metrics: Partial<Metrics> = {}): Person => ({
   metrics: { ...emptyAuditMetrics(), ...metrics },
   trend: Array.from({ length: 7 }, (_, day) => ({

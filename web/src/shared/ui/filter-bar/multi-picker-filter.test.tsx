@@ -52,7 +52,6 @@ describe('MultiPickerFilter', () => {
     await user.click(within(popup).getByRole('checkbox', { name: /场景种草/ }))
     expect(onChange).toHaveBeenLastCalledWith(['lifestyle'])
 
-    // 弹层没关，接着用键盘勾上一项。
     within(popup)
       .getByRole('checkbox', { name: /上身展示/ })
       .focus()

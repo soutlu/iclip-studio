@@ -1,5 +1,3 @@
-/** 故事板：卡片右上角的「N 镜 · 时长」角标。能悬停的设备悬停或点它出浮层，不能悬停的设备点它出底部面板；每镜一帧，保持原比例排成一条。 */
-
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectOf } from '@/shared/lib/aspect-ratio'
@@ -14,17 +12,13 @@ import { cutCountOf, formatClock, formatSecond, keyframesOf, type Keyframe } fro
 
 const canHover = () => window.matchMedia('(hover: hover)').matches
 
-/** 故事板只看这一版的画面与脚本。 */
 type StoryboardVideo = Pick<LibraryVideo, 'face' | 'take'>
 
 type StoryboardBadgeProps = {
   video: StoryboardVideo
   seconds: number | null
-  /** 窄列上只留镜数，不显示时长。 */
   compact: boolean
-  /** 指着某一帧时给那一刻，卡片画面跳过去；故事板收起时给 null。 */
   onFocusFrame: (at: number | null) => void
-  /** 点某一帧：进详情，从这一段开头播。 */
   onPickFrame: (at: number) => void
 }
 
@@ -36,7 +30,6 @@ export function StoryboardBadge({
   onPickFrame,
 }: StoryboardBadgeProps) {
   const hover = useHoverPreview()
-  // 点开的浮层不随指针离开收起，要点外面、再点角标或按 Esc。
   const [pinned, setPinned] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const frames = keyframesOf(video.take, seconds)
@@ -53,7 +46,6 @@ export function StoryboardBadge({
     setSheetOpen(false)
     onPickFrame(at)
   }
-  // 与点击同以 canHover 为准，不能悬停的设备只出底部面板；能悬停的设备上触摸也不算悬停。
   const hovering = (event: React.PointerEvent) => event.pointerType !== 'touch' && canHover()
   const hoverProps = {
     onPointerEnter: (event: React.PointerEvent) => {
@@ -79,7 +71,6 @@ export function StoryboardBadge({
             aria-label={label}
             className="library-card-badge library-storyboard-badge absolute top-2 right-2 cursor-pointer ui-focus"
             onClick={(event) => {
-              // 不能悬停就点角标出底部面板；拦下默认的开关，浮层不出。
               if (canHover()) return
               event.preventDefault()
               setSheetOpen(true)
@@ -95,8 +86,6 @@ export function StoryboardBadge({
             {seconds === null || (compact && cuts !== null) ? null : formatClock(seconds)}
           </button>
         </PopupTrigger>
-        {/* 浮层贴着整张画面放在旁边，不压住卡片本身；角标的父级就是画面。
-            要排在触发按钮后面：Radix 按挂载顺序登记锚点，排在前面会被触发按钮顶掉。 */}
         <PopupAnchor className="pointer-events-none absolute inset-0" />
         {open ? (
           <PopupSurface
@@ -104,7 +93,6 @@ export function StoryboardBadge({
             aria-label="故事板"
             className="w-max max-w-[min(760px,calc(100vw-24px))] min-w-70 p-3.5 pb-3"
             collisionPadding={12}
-            // 悬停出来的浮层不抢焦点，点开的才把焦点给第一帧。
             onOpenAutoFocus={(event) => {
               if (!pinned) event.preventDefault()
             }}
@@ -149,13 +137,11 @@ type StoryboardStripProps = {
   video: StoryboardVideo
   frames: readonly Keyframe[]
   seconds: number | null
-  /** 浮层自带标题行；底部面板的标题在面板表头里。 */
   heading: boolean
   onFocusFrame: (at: number | null) => void
   onPick: (at: number) => void
 }
 
-/** 帧条：挂上时对准第一帧，收起时告诉卡片不再对准；指针在条上时滚轮一律横向翻帧。 */
 function StoryboardStrip({
   video,
   frames,
@@ -181,7 +167,6 @@ function StoryboardStrip({
     onFocusFrame(frame.at)
   }
 
-  // 只在挂上与收起时各报一次，帧的切换由 focusFrame 自己报。
   const announce = useEffectEvent((mounted: boolean) =>
     onFocusFrame(mounted ? (frames[0]?.at ?? null) : null),
   )
@@ -190,7 +175,7 @@ function StoryboardStrip({
     return () => announce(false)
   }, [])
 
-  // React 的 wheel 监听是被动的，拦不住页面滚动；在条的外框上挂一个非被动的原生监听。
+  // React onWheel 默认使用被动监听器，需通过原生非被动监听器调用 preventDefault。
   useEffect(() => {
     const root = rootRef.current
     const strip = stripRef.current
@@ -205,7 +190,6 @@ function StoryboardStrip({
     return () => root.removeEventListener('wheel', onWheel)
   }, [])
 
-  // 左右方向键在帧之间移焦点。
   const onFrameKeyDown = (event: KeyboardEvent<HTMLButtonElement>, order: number) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     const buttons = stripRef.current?.querySelectorAll('button')

@@ -1,8 +1,3 @@
-"""Agent 配置用例：建 agent、改元信息与先后、存草稿、发布与读版本、恢复到草稿、归档，以及导出导入。
-
-同一 agent 的草稿保存、发布、恢复、归档都在锁住这个 agent 行的事务里做，判断与写入看到的是同一份草稿；
-草稿按 ``lock_version`` 防覆盖。保存只查结构，引用在发布时由 ``compile_agent`` 查。"""
-
 from __future__ import annotations
 
 import uuid
@@ -81,8 +76,6 @@ from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 
 
 class AgentPublishBlocked(ValidationFailed):
-    """发布前编译没通过：``problems`` 是全部问题，消息是拼好的一句话。"""
-
     def __init__(self, problems: Sequence[Problem]) -> None:
         super().__init__(format_problems(problems))
         self.problems = tuple(problems)
@@ -90,8 +83,6 @@ class AgentPublishBlocked(ValidationFailed):
 
 @dataclass(frozen=True, slots=True)
 class AgentExport:
-    """导出包：下载用的文件名与 YAML 文本。"""
-
     filename: str
     content: str
 
@@ -101,8 +92,6 @@ def _problem_out(problem: Problem) -> AgentProblemOut:
 
 
 def _agent_out(state: AgentState, agents: Sequence[AgentRefs]) -> AgentOut:
-    """``agents`` 是全部 agent 的引用，用来判断它是不是别人的子 agent。"""
-
     agent = state.agent
     active = state.active
     return AgentOut(
@@ -142,8 +131,6 @@ def _check_lock(writer: AgentWriter, lock_version: int) -> None:
 
 
 def _check_skill_ids(skill_ids: Sequence[uuid.UUID], skills: Sequence[SkillFacts]) -> None:
-    """技能名单的结构：不重复、都在技能库里（归档与否发布时才查）。"""
-
     known = {skill.id for skill in skills}
     seen: set[uuid.UUID] = set()
     problems: list[Problem] = []
@@ -158,8 +145,6 @@ def _check_skill_ids(skill_ids: Sequence[uuid.UUID], skills: Sequence[SkillFacts
 
 
 class AgentConfigService:
-    """``models``、``plugins``、``mcp``、``skills`` 由组合根接到模型供应商、插件登记表、MCP 服务与技能库上。"""
-
     def __init__(
         self,
         store: AgentStore,
@@ -176,15 +161,11 @@ class AgentConfigService:
         self._skills = skills
 
     async def list(self) -> AgentsOut:
-        """全部 agent；子 agent 的两个标记从同一次读出的全部 agent 里算，不再另查。"""
-
         states = await self._store.list()
         agents = tuple(agent_refs(state) for state in states)
         return AgentsOut(items=[_agent_out(state, agents) for state in states])
 
     def plugins(self) -> AgentPluginsOut:
-        """本部署插件登记表里的全部插件，配置页列出来供选择。"""
-
         return AgentPluginsOut(
             items=[
                 AgentPluginOut(
@@ -199,8 +180,6 @@ class AgentConfigService:
         )
 
     async def detail(self, agent_id: str) -> AgentDetailOut:
-        """一个 agent 连同草稿、技能绑定与谁把它当作子 agent；没有是 ``NotFound``。"""
-
         state = await self._require(agent_id)
         draft = state.draft
         agents = await self._store.references()
@@ -219,9 +198,6 @@ class AgentConfigService:
         )
 
     async def create(self, body: AgentCreateIn, *, by: uuid.UUID) -> AgentDetailOut:
-        """建一个 agent：草稿是空配置（没有模型），按 ``listed`` 上不上菜单，排在最后。标识不合规矩、名称
-        为空或超长是 ``ValidationFailed``，标识已被占用是 ``Conflict``。"""
-
         agent_id = check_agent_id(body.id)
         await self._store.create(
             agent_id,
@@ -234,8 +210,6 @@ class AgentConfigService:
         return await self.detail(agent_id)
 
     async def update(self, agent_id: str, body: AgentUpdateIn) -> AgentDetailOut:
-        """改名称、描述或上不上菜单；描述不进版本，改了立即生效。"""
-
         name = clean_name(body.name) if body.name is not None else None
         description = clean_description(body.description) if body.description is not None else None
         async with self._store.edit(agent_id) as writer:
@@ -243,8 +217,6 @@ class AgentConfigService:
         return await self.detail(agent_id)
 
     async def reorder(self, body: AgentOrderIn) -> AgentsOut:
-        """按给的先后排；必须正好是全部 agent 的标识，各一次。"""
-
         current = {state.agent.id for state in await self._store.list()}
         if len(set(body.ids)) != len(body.ids) or set(body.ids) != current:
             raise ValidationFailed("要给出全部 agent 的标识，每个一次")
@@ -254,9 +226,6 @@ class AgentConfigService:
     async def save_draft(
         self, agent_id: str, body: AgentDraftIn, *, by: uuid.UUID
     ) -> AgentDetailOut:
-        """整份保存草稿。``lockVersion`` 对不上是 ``Conflict``；配置的结构已由请求模型校验，技能名单重复或
-        有不存在的技能是 ``ValidationFailed``；其余引用不查，草稿允许暂时不完整。"""
-
         _check_skill_ids(body.skill_ids, await self._skills.skills())
         async with self._store.edit(agent_id) as writer:
             _check_lock(writer, body.lock_version)
@@ -276,9 +245,6 @@ class AgentConfigService:
         *,
         runtime: bool = False,
     ) -> CompiledAgent | tuple[Problem, ...]:
-        """按当下的模型供应商、插件登记表、技能库与全部 agent 编译一份配置；``runtime`` 见
-        ``compile_agent``。"""
-
         return await compile_agent(
             agent_id,
             config,
@@ -291,11 +257,7 @@ class AgentConfigService:
             runtime=runtime,
         )
 
-    # --- 运行时读 -------------------------------------------------------------
-
     async def listed(self) -> tuple[AgentState, ...]:
-        """首页能选的 agent：上菜单、在用、发布过，按 ``sort_order``。"""
-
         return tuple(
             state
             for state in await self._store.list()
@@ -305,9 +267,6 @@ class AgentConfigService:
         )
 
     async def version_for_new_session(self, agent_id: str) -> uuid.UUID:
-        """新对话要固定的版本：这个 agent 的当前版本。没有这个 agent 或它不上菜单是 ``ValidationFailed``，
-        已归档或还没发布过是 ``Conflict``。"""
-
         state = await self._store.get(agent_id)
         if state is None:
             raise ValidationFailed(f"没有标识为 {agent_id} 的 agent")
@@ -320,31 +279,20 @@ class AgentConfigService:
         return state.active.id
 
     async def check_preview_target(self, agent_id: str, version_id: uuid.UUID | None) -> None:
-        """预览会话要试的 agent 与版本（为空即草稿）在不在：没有这个 agent 是 ``NotFound``，版本不是它的是
-        ``ValidationFailed``。不看上不上菜单、在不在用、发没发布过：预览本来就是发布前试草稿。"""
-
         if await self._store.get(agent_id) is None:
             raise NotFound(f"没有标识为 {agent_id} 的 agent")
         if version_id is not None and await self._store.version(agent_id, version_id) is None:
             raise ValidationFailed(f"这个版本不是 {agent_id} 的")
 
     async def runtime_version(self, agent_id: str, version_id: uuid.UUID) -> AgentVersion | None:
-        """这个 agent 的这个版本；不属于它给 ``None``。"""
-
         return await self._store.version(agent_id, version_id)
 
     async def runtime_state(self, agent_id: str) -> AgentState | None:
-        """一个 agent 此刻的全部，含草稿与描述；没有给 ``None``。"""
-
         return await self._store.get(agent_id)
 
     async def publish(
         self, agent_id: str, body: AgentPublishIn, *, by: uuid.UUID
     ) -> AgentVersionOut:
-        """把草稿发布成新版本：``lockVersion`` 对不上是 ``Conflict``；编译不通过是 ``AgentPublishBlocked``
-        （带全部问题）；配置与技能名单都与当前版本相同是 ``ValidationFailed``；否则在同一个事务里写版本、
-        技能名单与操作记录，移动当前版本，草稿的 ``base_version_id`` 指到新版本。"""
-
         note = clean_note(body.note)
         version_id = uuid.uuid4()
         async with self._store.edit(agent_id) as writer:
@@ -383,9 +331,6 @@ class AgentConfigService:
     async def restore(
         self, agent_id: str, version_id: uuid.UUID, body: AgentRestoreIn, *, by: uuid.UUID
     ) -> AgentDetailOut:
-        """把一个版本的配置与技能名单抄回草稿，记一条 restore；不发布。``lockVersion`` 对不上是
-        ``Conflict``，没有这个版本是 ``NotFound``。"""
-
         async with self._store.edit(agent_id) as writer:
             _check_lock(writer, body.lock_version)
             version = await writer.version(version_id)
@@ -399,8 +344,6 @@ class AgentConfigService:
         return await self.detail(agent_id)
 
     async def archive(self, agent_id: str, *, by: uuid.UUID) -> AgentDetailOut:
-        """归档；别的 agent 的草稿或当前版本还把它当作子 agent 是 ``Conflict``，列出它们。已归档的原样不动。"""
-
         async with self._store.edit(agent_id) as writer:
             if writer.state.agent.status != STATUS_ARCHIVED:
                 users = subagent_users(await self._store.references(), agent_id)
@@ -410,17 +353,12 @@ class AgentConfigService:
         return await self.detail(agent_id)
 
     async def unarchive(self, agent_id: str, *, by: uuid.UUID) -> AgentDetailOut:
-        """取消归档；在用的原样不动。"""
-
         async with self._store.edit(agent_id) as writer:
             if writer.state.agent.status != STATUS_ACTIVE:
                 await self._set_status(writer, STATUS_ACTIVE, by=by)
         return await self.detail(agent_id)
 
     async def export(self, agent_id: str) -> AgentExport:
-        """把 agent 与它的子 agent 各自的当前版本写成导出包，去掉密钥。没有这个 agent、或它与它的子 agent
-        有没发布过的，是 ``NotFound``。"""
-
         state = await self._require(agent_id)
         if state.active is None:
             raise NotFound("还没有发布过版本")
@@ -437,10 +375,6 @@ class AgentConfigService:
         )
 
     async def import_package(self, data: bytes, *, dry_run: bool, by: uuid.UUID) -> AgentImportOut:
-        """导入一个导出包。``dry_run`` 只读不写：交回每个 agent 会新建还是覆盖、问题与提醒，以及整个包的问题
-        与提醒。正式导入时有任何问题是 ``ValidationFailed``，什么都不写；否则同标识的覆盖草稿，没有的新建
-        （只有草稿），都不发布，每个 agent 记一条 import。"""
-
         read = read_package(data)
         package = read.package
         items: list[AgentImportItemOut] = []
@@ -486,8 +420,6 @@ class AgentConfigService:
         known_agents: set[str],
         skills: Mapping[str, SkillFacts],
     ) -> tuple[AgentImportItemOut, ImportedAgent | None]:
-        """查包里的一个 agent：问题拦导入，提醒不拦。都没问题时交回要写的那一份。"""
-
         problems: list[Problem] = []
         warnings: list[Problem] = []
         if (issue := agent_id_problem(agent_id, new=not exists)) is not None:

@@ -19,7 +19,6 @@ import { renderWithTooltip } from '@/testing/render'
 import { FakeSocket } from '@/testing/ws'
 import { conversationsReturnSearch } from './-conversations-return'
 
-/** 筛选存在地址栏，要用真实路由树连着历史记录一起看；侧栏顶层要订全局帧，连接用假 socket。 */
 const renderAt = async (initialPath: string) => {
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -56,7 +55,6 @@ describe('全部对话的需求单预览', () => {
     addMockConversation('衬衫尝试').taskId = recent.id
     addMockConversation('外套尝试一').taskId = historical.id
     addMockConversation('外套尝试二').taskId = historical.id
-    // 同一个接口还会被筛选条的候选查询（不带 ids）打到，只记按 id 批量读取的那些。
     const batchRequests: string[][] = []
     server.use(
       http.get('*/api/tasks', ({ request }) => {
@@ -74,7 +72,6 @@ describe('全部对话的需求单预览', () => {
       'https://example.com/shirt.jpg',
     )
     expect(within(recentRow).getByText(recent.title)).toBeVisible()
-    // 封面只认商品图：这张需求单只有参考图，也没有素材片，列表行就不放图。两张需求单同一批读回，上面那张有图时这里也到了。
     for (const title of ['外套尝试一', '外套尝试二']) {
       const row = await screen.findByRole('link', { name: new RegExp(title) })
       expect(within(row).getByText(historical.title)).toBeVisible()
@@ -99,7 +96,6 @@ describe('全部对话的需求单预览', () => {
     await renderAt('/conversations')
 
     const failedRow = await screen.findByRole('link', { name: /历史尝试/ })
-    // 查询默认重试一次再报错，等它过了那一秒。
     expect(
       await within(failedRow).findByText('需求单信息暂不可用', {}, { timeout: 3000 }),
     ).toBeVisible()
@@ -114,7 +110,6 @@ describe('全部对话的需求单预览', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '重新读取需求单' }))
 
-    // 商品图只有预览里才有，封面出来说明预览补上了。
     expect(await within(failedRow).findByRole('img', { name: '历史尝试的封面' })).toBeVisible()
     expect(within(failedRow).getByText(task.title)).toBeVisible()
     expect(screen.queryByRole('button', { name: '重新读取需求单' })).toBeNull()
@@ -162,7 +157,6 @@ describe('全部对话的筛选条件', () => {
 
     await user.click(row)
     await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${theirs.id}`))
-    // 返回按钮认这段对话是从这一屏点进去的；换一段就没这条记录。
     expect(conversationsReturnSearch(theirs.id)).toEqual({ ownerUserId: other.id })
     expect(conversationsReturnSearch('别的对话')).toEqual({})
 

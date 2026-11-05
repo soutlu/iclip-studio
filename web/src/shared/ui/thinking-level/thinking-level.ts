@@ -1,10 +1,7 @@
-/** 模型思考档位的中文名称。档位取值与先后跟合同 `AgentModelSettings.thinking` 一致。 */
-
 import type { AgentModelSettings } from '@/shared/api/generated/types.gen'
 
 export type ThinkingLevel = NonNullable<AgentModelSettings['thinking']>
 
-/** 从不思考到想得最多。 */
 export const THINKING_LEVELS: readonly ThinkingLevel[] = [
   'none',
   'minimal',

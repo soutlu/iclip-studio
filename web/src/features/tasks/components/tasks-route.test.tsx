@@ -38,7 +38,6 @@ const makeTask = (overrides: Partial<(typeof mockTasks)[number]>) => ({
   ...overrides,
 })
 
-/** 以测试用户登录后挂载；给了 start 就接上现成名册，overrides 换权限等字段。 */
 const renderLoggedIn = async (
   start?: (draft: TaskCreationDraft, agentId: string) => Promise<void>,
   overrides: Partial<MockUser> = {},
@@ -54,7 +53,6 @@ const chooseAgent = async (user: ReturnType<typeof userEvent.setup>, dialog: HTM
   await user.click(await screen.findByRole('menuitem', { name: '分镜 Agent' }))
 }
 
-/** jsdom 不排版：让网格的计算样式报出浏览器按容器宽度排出的 count 条列轨道。 */
 const layOutGridColumns = (count: number) => {
   const getComputedStyle = window.getComputedStyle.bind(window)
   vi.stubGlobal('getComputedStyle', (element: Element, pseudo?: string | null) =>
@@ -64,10 +62,8 @@ const layOutGridColumns = (count: number) => {
   )
 }
 
-/** 等一会儿，给本不该发出的请求留出发出的时间。 */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
-/** 按编号先后建立，列表倒序时「已认领的需求 1」排在最后。 */
 const pushClaimedTasks = (count: number) =>
   mockTasks.push(
     ...Array.from({ length: count }, (_, index) =>
@@ -181,7 +177,6 @@ describe('TasksRoute 列表与筛选', () => {
 
     const all = within(screen.getByRole('region', { name: '全部需求单' }))
     expect(await all.findByText('已显示 1 / 3')).toBeVisible()
-    // 不用再点：页脚里没有按钮
     expect(all.queryByRole('button', { name: '展开显示更多需求单' })).not.toBeInTheDocument()
     await settle()
     expect(cursors).toEqual([null])
@@ -589,7 +584,6 @@ describe('TasksRoute 编辑与上传', () => {
     { owner: '自己', creatorUserId: mockAuthUser.id, menus: 1 },
     { owner: '他人', creatorUserId: '4133e687-07d8-4460-a0dc-954f802697f4', menus: 0 },
   ])('我的需求单里 $owner 创建的草稿，重命名入口与详情改标题同一规则', async (row) => {
-    // 卡片只在「我的需求单」挂重命名；mock 按认领人筛，挂上认领人让草稿落进这一区。
     mockTasks.push(
       makeTask({
         assigneeUserIds: [mockAuthUser.id],
@@ -695,7 +689,6 @@ describe('TasksRoute 发布与创作', () => {
     )
     expect(sent).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: '开始创作' }))
-    // 重新进入预览不沿用上一次的选择。
     dialog = await screen.findByRole('dialog', { name: '发起创作' })
     expect(within(dialog).getByRole('button', { name: '确认并开始' })).toBeDisabled()
     await chooseAgent(user, dialog)

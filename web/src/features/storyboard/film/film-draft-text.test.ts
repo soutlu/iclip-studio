@@ -25,7 +25,6 @@ const groupOf = (frames: FilmFrame[]): FilmGroup => ({
   video: 'v',
 })
 
-/** 列表三张：a、b 与镜头的机位图 view；后面接一张没进列表的机位图。 */
 const before = groupOf([
   frame('a', 1, 'https://example.com/a.png'),
   frame('b', 2, 'https://example.com/b.png'),
@@ -38,7 +37,6 @@ const added = 'https://example.com/new.png'
 describe('草稿里的图', () => {
   it('列表变了，草稿照样指着原来那张图：显示与发送都按当下的编号', () => {
     const draft = toDraftText('参考@Image3，a 是 @Image1，b 是 @Image2。', before)
-    // 别处删掉了 a：b 成了 @1，机位图成了 @2。
     const after = groupOf([
       frame('b', 1, 'https://example.com/b.png'),
       frame('view', 2, 'https://example.com/view.png'),

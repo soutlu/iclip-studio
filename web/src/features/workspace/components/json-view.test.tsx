@@ -17,7 +17,6 @@ const artifact = {
   type: 'workspace',
 } as const
 
-/** 在阅读页直接打开一份内容给定的 JSON 文件。 */
 const openJson = async (content: string, path = PATH) => {
   server.use(
     http.get('*/api/conversations/:conversationId/workspace/file', () =>
@@ -43,7 +42,6 @@ const SHOTS = {
   ],
 }
 
-/** 格式化后超过 200 行：{ items: [{ v: 0 }, … 70 个] }。 */
 const LARGE = { items: Array.from({ length: 70 }, (_, v) => ({ v })) }
 
 describe('JSON 格式化视图', () => {

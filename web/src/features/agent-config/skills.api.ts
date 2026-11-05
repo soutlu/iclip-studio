@@ -1,5 +1,3 @@
-/** 技能库的读写：技能详情、草稿文件、改显示名与标识、新建与发布。合同见 contract/conventions.md §17。 */
-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
@@ -11,7 +9,6 @@ export type SkillDetail = z.infer<typeof zSkillDetailOut>
 export type DraftFile = z.infer<typeof zDraftFileOut>
 
 const skillPath = (id: string) => `/skills/${encodeURIComponent(id)}`
-// 文件路径里的斜杠原样带上（合同 §17「文件」），只转义每一段。
 const filePath = (id: string, path: string) =>
   `${skillPath(id)}/draft/files/${path.split('/').map(encodeURIComponent).join('/')}`
 
@@ -27,7 +24,6 @@ export const useSkillDetail = (id: string) =>
     queryKey: skillQueryKeys.detail(id),
   })
 
-/** 草稿里一个文件的内容与 hash；`enabled` 为假时不读（还没保存的新文件）。 */
 export const useSkillFile = (id: string, path: string, enabled: boolean) =>
   useQuery({
     enabled,
@@ -39,7 +35,6 @@ export const useSkillFile = (id: string, path: string, enabled: boolean) =>
     queryKey: skillQueryKeys.file(id, path),
   })
 
-/** 写操作后技能列表上的显示名、说明、版本与未发布标记随之重读。 */
 export const useRefreshSkill = () => {
   const queryClient = useQueryClient()
   return (id: string) =>
@@ -49,7 +44,6 @@ export const useRefreshSkill = () => {
     ])
 }
 
-/** 新建技能，同时生成带 frontmatter 的 `SKILL.md` 草稿；标识被占用是 409，不合规矩是 422。 */
 export const useCreateSkill = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -66,7 +60,6 @@ export const useCreateSkill = () => {
   })
 }
 
-/** 改显示名或标识，只带要改的项；不进版本，立即生效。标识已被别的技能占用是 409。 */
 export const updateSkill = (id: string, body: SkillUpdateIn) =>
   apiFetch(skillPath(id), zSkillDetailOut, {
     body,
@@ -74,7 +67,6 @@ export const updateSkill = (id: string, body: SkillUpdateIn) =>
     method: 'PATCH',
   })
 
-/** 写一个草稿文件：新建时 `baseHash` 为 null，改已有文件时给读到的 hash，对不上是 409。 */
 export const writeSkillFile = (
   id: string,
   path: string,
@@ -87,7 +79,6 @@ export const writeSkillFile = (
     method: 'PUT',
   })
 
-/** 改名一次写完，内容与 hash 不变；答复新路径上的文件。 */
 export const renameSkillFile = (id: string, from: string, to: string, baseHash: string) =>
   apiFetch(`${skillPath(id)}/draft/files/rename`, zDraftFileOut, {
     body: { baseHash, from, to },
@@ -101,7 +92,6 @@ export const deleteSkillFile = (id: string, path: string, baseHash: string) =>
     method: 'DELETE',
   })
 
-/** 把服务端此刻的草稿发布成新版本；草稿不合格、或与最新版相同是 422，`detail` 列出全部问题。 */
 export const usePublishSkill = () => {
   const refresh = useRefreshSkill()
   return useMutation({

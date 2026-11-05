@@ -1,8 +1,3 @@
-"""制作页用的图片地址检查：链接能打开、是图片算能用，探不通的再探一次；不行的只说「打不开」或「不是图片」。
-
-探地址走真的 ``PublicFetcher.probe``，连本机回环上的测试服务器（放行回环的策略）；不连外网。
-"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -91,8 +86,6 @@ async def test_an_address_outside_the_rules_does_not_open(fetcher: PublicFetcher
 
 
 def answering(*answers: str | FetchFailed | None) -> tuple[UrlProber, list[str]]:
-    """按先后答 ``answers``（媒体类型或要抛的失败）的探地址替身，连同记下每次探的地址的列表。"""
-
     asked: list[str] = []
     queue = list(answers)
 

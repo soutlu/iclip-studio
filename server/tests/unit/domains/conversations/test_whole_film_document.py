@@ -1,5 +1,3 @@
-"""成片草稿的时间线、跨轨标识与字幕唯一性；字段声明由生成合同表达。"""
-
 from __future__ import annotations
 
 import uuid
@@ -25,7 +23,6 @@ SUBTITLE = uuid.uuid4()
 Document = dict[str, Any]
 
 FIELD_BOUND = ""
-"""字段自身的边界（长度、范围、类型）由 pydantic 报，只断言被拒，不看措辞。"""
 
 
 def parse(document: Document) -> WholeFilmDocument:
@@ -33,8 +30,6 @@ def parse(document: Document) -> WholeFilmDocument:
 
 
 def rejected(document: Document) -> str:
-    """不合规矩的文档报的那一句；只取第一条，与 HTTP 422 的 ``detail`` 同一来源。"""
-
     with pytest.raises(ValidationError) as caught:
         parse(document)
     return str(caught.value.errors()[0]["msg"])
@@ -45,9 +40,6 @@ def edit(index: int, text: str = "改过的字") -> dict[str, Any]:
 
 
 def test_a_full_draft_round_trips_its_wire_shape() -> None:
-    """组件段夹在两段视频之间、改字、关掉并挪过、缩放旋转过的字幕、音乐与不同行上相互重叠、挪过位置
-    又缩放旋转过的特效块都在：按 camelCase 原样读出来。"""
-
     document = draft_document(
         layer0=[
             component_clip("c1", start=0, duration=2000),
@@ -83,7 +75,6 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
     parsed = parse(document)
 
     assert parsed.model_dump(mode="json", by_alias=True) == document
-    # 画面轨 8 秒，o2 到 9 秒结束：成片到所有轨上内容的最远结束
     assert parsed.total_ms() == 9000
     assert parsed.video_sources() == (SOURCE,)
 
@@ -141,8 +132,6 @@ def test_clip_and_film_durations(durations: list[int], accepted: bool) -> None:
 
 
 def test_layer0_holds_any_number_of_clips_up_to_two_minutes() -> None:
-    """视频段不设段数上限：两分钟按最短时长排满可以，再多一段就超出（防大包的上限也在这里）。"""
-
     full = butted(
         [(f"c{index}", MIN_CLIP_MS) for index in range(MAX_LAYER0_CLIPS)], source_job_id=SOURCE
     )

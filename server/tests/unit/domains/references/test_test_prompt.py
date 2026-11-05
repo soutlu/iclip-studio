@@ -1,5 +1,3 @@
-"""试生成提示词：从拆解里取哪几块、怎么排，秒数怎么取，缺了什么就拼不出。"""
-
 from __future__ import annotations
 
 import pytest

@@ -1,8 +1,3 @@
-"""模型供应商的四张表与它们的 Postgres 仓储。
-
-时间统一用数据库时钟。类型、来源与字段形状的取值只在 Python 里检查，表上不加 CHECK；
-``model_providers.default_credential_id`` 不加外键，由服务在改它的事务里核对它属于本供应商。"""
-
 from __future__ import annotations
 
 import uuid
@@ -122,8 +117,6 @@ _defaults = default_models_table.c
 
 
 def _violated_constraint(error: IntegrityError) -> str:
-    """违反的约束名；asyncpg 把它挂在被包起来的原异常上。"""
-
     cause = getattr(error.orig, "__cause__", None)
     return getattr(cause, "constraint_name", None) or ""
 
@@ -196,7 +189,6 @@ _DEFAULTS: Final = (
 
 
 _CREDENTIAL_ORDER: Final = (_credentials.created_at.desc(), _credentials.id.desc())
-"""密钥新的在前；自己加的模型按类型、名字排。"""
 _MODEL_ORDER: Final = (_models.type, _models.name)
 
 
@@ -235,8 +227,6 @@ async def _read_states(
 
 
 class _SqlProviderEditor:
-    """``ProviderEditor`` 的 Postgres 实现，用一条已锁住供应商那一行的事务连接。"""
-
     def __init__(
         self, conn: AsyncConnection, state: ProviderState, defaults: tuple[DefaultModel, ...]
     ) -> None:
@@ -356,7 +346,6 @@ class _SqlProviderEditor:
         )
 
     async def delete_provider(self) -> None:
-        # 密钥与模型设置在表上是级联删除，这里照样显式删，不靠库的约束替我们做。
         await self._conn.execute(
             delete(provider_credentials_table).where(_credentials.provider_id == self._provider_id)
         )
@@ -369,8 +358,6 @@ class _SqlProviderEditor:
 
 
 class SqlModelProviderStore:
-    """``ModelProviderStore`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

@@ -1,5 +1,3 @@
-"""使用真实数据库与 worker 验证生成队列的驱动配置、迁移和状态推进。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -37,15 +35,12 @@ from tests.helpers.generation import (
 )
 from tests.helpers.pg import reset_database, truncate_clean
 
-# 缩短调度间隔以验证完整链路，默认间隔由配置测试覆盖。
 SETTINGS = GenerationQueueSettings(
     poll_interval_seconds=1, error_retry_seconds=2, shutdown_grace_seconds=2
 )
 
 
 class QueueFactory(Protocol):
-    """创建连接真实测试数据库的 queue，并在测试结束后关闭连接。"""
-
     async def __call__(
         self, *, video: ScriptedProvider, image: ScriptedProvider
     ) -> GenerationQueue: ...
@@ -56,7 +51,6 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
     created = build_engine(migrated_pg)
     async with created.begin() as conn:
         await reset_database(conn)
-        # 清理任务及 worker，避免上一用例的失联心跳影响当前恢复判断。
         await truncate_clean(conn, ("procrastinate_jobs", "procrastinate_workers"), cascade=True)
     try:
         yield created
@@ -66,8 +60,6 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 @pytest.fixture
 async def queue_factory(engine: AsyncEngine, migrated_pg: str) -> AsyncGenerator[QueueFactory]:
-    """创建并关闭连接真实测试数据库的 GenerationQueue。"""
-
     opened: list[GenerationQueue] = []
 
     async def make(*, video: ScriptedProvider, image: ScriptedProvider) -> GenerationQueue:
@@ -109,8 +101,6 @@ async def make_user(engine: AsyncEngine) -> uuid.UUID:
 
 
 async def _submit_task_statuses(engine: AsyncEngine) -> list[str]:
-    """仅统计生成提交任务，排除 healer 周期任务以避免运行时长影响断言。"""
-
     async with engine.connect() as conn:
         rows = await conn.execute(
             text(
@@ -124,8 +114,6 @@ async def _submit_task_statuses(engine: AsyncEngine) -> list[str]:
 async def wait_for_status(
     repo: SqlGenerationRepository, job_id: uuid.UUID, expected: str, *, timeout: float = 20.0
 ) -> None:
-    """等待任务达到指定状态，超时时报告当前任务信息。"""
-
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     status = ""
@@ -201,14 +189,11 @@ async def test_an_asynchronous_generation_runs_end_to_end(
 async def test_a_submitted_row_missing_its_poll_is_polled_after_the_submit_replays(
     engine: AsyncEngine, queue_factory: QueueFactory
 ) -> None:
-    """进程死在写回执与排轮询之间：重排的提交任务补排轮询把这一行收尾，付费提交不再发生。"""
-
     from iclip.domains.generation.provider import ProviderProgress
 
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     job = await repo.create(make_job(video_request(), owner_user_id=owner))
-    # 回执已落库、首个轮询没排上，队列里只剩被重排的提交任务。
     await repo.mark_submitting(job.id)
     await repo.mark_submitted(job.id, provider_task_id="v-1", provider_status="queued")
     video = ScriptedProvider(
@@ -232,8 +217,6 @@ async def test_a_submitted_row_missing_its_poll_is_polled_after_the_submit_repla
 async def test_a_restart_mid_submit_fails_the_row_honestly(
     engine: AsyncEngine, queue_factory: QueueFactory
 ) -> None:
-    """优雅关停打断提交后，重排任务遇到 submitting 必须失败；供应商无幂等键，不能重复提交。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     job = await repo.create(make_job(image_request(), owner_user_id=owner))
@@ -244,7 +227,7 @@ async def test_a_restart_mid_submit_fails_the_row_honestly(
         async def submit(self, job_arg):  # type: ignore[no-untyped-def]
             self.submit_calls.append(job_arg.id)
             entered.set()
-            await asyncio.sleep(3600)  # 模拟长时间图像生成。
+            await asyncio.sleep(3600)
             raise AssertionError("不该走到这里")
 
     image = Hanging()
@@ -255,11 +238,9 @@ async def test_a_restart_mid_submit_fails_the_row_honestly(
     await asyncio.wait_for(entered.wait(), timeout=20)
     assert (await repo.get(job.id, owner=None)).status == STATUS_SUBMITTING
 
-    # 关停在两秒宽限期后打断提交，持久状态保留为 submitting。
     await queue.stop()
     assert (await repo.get(job.id, owner=None)).status == STATUS_SUBMITTING
 
-    # 新进程处理重排任务，验证 submitting 状态守卫。
     queue.start()
     await wait_for_status(repo, job.id, STATUS_FAILED, timeout=60)
 
@@ -271,11 +252,6 @@ async def test_a_restart_mid_submit_fails_the_row_honestly(
 async def test_a_hard_killed_worker_is_found_by_heartbeat(
     engine: AsyncEngine, queue_factory: QueueFactory
 ) -> None:
-    """直接认领任务并令心跳过期，模拟 worker 硬退出。
-
-    不启动 worker，避免恢复任务在断言前被再次认领，专门验证失联检测 SQL。
-    """
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     job = await repo.create(make_job(image_request(), owner_user_id=owner))
@@ -292,7 +268,6 @@ async def test_a_hard_killed_worker_is_found_by_heartbeat(
 
     assert await queue.heal_stalled() == 0
 
-    # 心跳只比失联阈值多过去一点：阈值误接成更长的时限就捡不回来。
     async with engine.begin() as conn:
         await conn.execute(
             text(

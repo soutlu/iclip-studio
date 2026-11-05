@@ -1,5 +1,3 @@
-"""API key 全链路：root 签发 → Bearer 调用 → 吊销；key 权限即显式授权集。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

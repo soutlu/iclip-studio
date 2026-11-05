@@ -1,5 +1,3 @@
-"""发消息的附件转存：只转挂不上 OSS 参数的图片，同址只转一次、并发转，id 可复算，失败说第几张。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -49,8 +47,6 @@ def stored_url(upload_id: uuid.UUID) -> str:
 
 @dataclass
 class FakeImport:
-    """uploads 转存的替身：记下每次转存，按地址注入失败；量一下同时在转几张。"""
-
     failures: dict[str, Exception] = field(default_factory=dict[str, Exception])
     calls: list[tuple[Principal, str, uuid.UUID]] = field(
         default_factory=list[tuple[Principal, str, uuid.UUID]]
@@ -122,8 +118,6 @@ async def test_nothing_to_import_leaves_the_content_alone() -> None:
 
 
 async def test_a_failed_image_names_its_attachment_position_and_the_rest_still_land() -> None:
-    """附件从 1 数、视频也算；同时在转的那张照样转完，重发同一条消息时复用。"""
-
     bad = "https://img.example.com/broken.jpg"
     fake = FakeImport(failures={bad: ValidationFailed("这张图下载不下来：对方回了 404")})
     content = (TextContent(text="看"), video(VIDEO), image(EXTERNAL), image(bad))

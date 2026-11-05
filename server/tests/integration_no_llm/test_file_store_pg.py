@@ -1,5 +1,3 @@
-"""验证 PgFileStore 的生成列、容量并发约束、CAS 和 PostgreSQL text 输入边界。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -85,8 +83,6 @@ async def test_delete_reports_whether_anything_was_there(
 async def test_nul_bytes_are_refused_before_the_driver_sees_them(
     store: PgFileStore, namespace: str
 ) -> None:
-    """PostgreSQL text 不接受 NUL，存储层应在驱动调用前拒绝。"""
-
     with pytest.raises(InvalidContent):
         await store.write(namespace, "稿.md", "前\x00后")
 
@@ -117,9 +113,6 @@ async def test_overwrite_counts_only_the_delta(engine: AsyncEngine, namespace: s
 async def test_namespace_quota_holds_under_concurrent_writes_to_different_paths(
     engine: AsyncEngine, namespace: str
 ) -> None:
-    """跨行容量聚合需要 advisory 锁，防止并发写入分别通过检查后超额。"""
-
-    # 预建两条连接，避免建连耗时导致写入串行，使缺锁的实现也能通过测试。
     warmed = await asyncio.gather(engine.connect(), engine.connect())
     await asyncio.gather(*(connection.close() for connection in warmed))
 

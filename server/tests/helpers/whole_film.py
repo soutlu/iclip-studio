@@ -1,5 +1,3 @@
-"""成片草稿文档的构造器：按 wire 形状（camelCase、整数毫秒）拼字典，测试只改要验证的那几处。"""
-
 from __future__ import annotations
 
 import uuid
@@ -75,8 +73,6 @@ def _transform(scale: float, rotation: float, pivot: tuple[int, int]) -> dict[st
 
 
 def butted(clips: Sequence[tuple[str, int]], *, source_job_id: uuid.UUID) -> list[dict[str, Any]]:
-    """一串首尾相接的视频片段，``(id, 时长)`` 依次排开，都出自 ``source_job_id``。"""
-
     layer: list[dict[str, Any]] = []
     start = 0
     for clip_id, duration in clips:
@@ -101,9 +97,6 @@ def draft_document(
     music: dict[str, Any] | None = None,
     overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），字幕开着、在原位、没缩放没旋转，
-    没有音乐与特效块。"""
-
     source = source_job_id or uuid.uuid4()
     default_layer = butted([("a", 3000), ("b", 2000)], source_job_id=source)
     return {

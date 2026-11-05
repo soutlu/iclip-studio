@@ -1,8 +1,3 @@
-"""运行时服务的会话归属：会话归开它的应用。别的应用的密钥对它的每个会话路由都答 404，报错同不存在的会话，
-什么都不写；活动与占位只算自己的会话；别的应用的 id 开不走（409）。
-
-应用 A 是 ``reader``（``app_client``），应用 B 是 ``bff``（``other_app``），两边代同一个属主。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -49,8 +44,6 @@ def models(entered: asyncio.Event, gate: asyncio.Event) -> dict[str, Model]:
 
 @pytest.fixture
 async def other_app(runtime_app: FastAPI, owner: uuid.UUID) -> AsyncGenerator[httpx.AsyncClient]:
-    """另一个应用 ``bff``，代同一个属主；路径相对 ``/v1``。"""
-
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=runtime_app),
         base_url="http://runtime.test/v1",
@@ -75,8 +68,6 @@ async def published(admin: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def theirs(published: None, app_client: httpx.AsyncClient) -> str:
-    """应用 A 的会话，工作区里有一份文件。"""
-
     session_id = await open_session(app_client)
     written = await app_client.put(f"/sessions/{session_id}/files/brief.md", json={"content": "A"})
     assert written.status_code == 200, written.text
@@ -84,12 +75,9 @@ async def theirs(published: None, app_client: httpx.AsyncClient) -> str:
 
 
 Request = tuple[str, str, dict[str, Any] | None, dict[str, str] | None]
-"""（方法，路径，请求体，查询参数）。"""
 
 
 def _requests(owner: uuid.UUID) -> dict[str, Callable[[str, str], Request]]:
-    """每个带会话 id 的路由，按（会话 id，调用方自己的另一个会话 id）拼出一次请求。"""
-
     prompt = {
         "prompt_id": "prm_x",
         "content": [{"type": "text", "text": "你好"}],
@@ -159,7 +147,6 @@ async def test_another_apps_session_is_404_like_a_missing_one_and_left_alone(
 
         assert (foreign.status_code, foreign.json()) == (404, NOT_FOUND), route
         assert (missing.status_code, missing.json()) == (404, NOT_FOUND), route
-    # B 的请求没碰 A 的东西：文件、队列都还是 A 自己写的那些。
     kept = await app_client.get(f"/sessions/{theirs}/files/brief.md")
     assert kept.json()["content"] == "A"
     assert (await app_client.get(f"/sessions/{theirs}/prompts")).json() == {
@@ -193,7 +180,6 @@ async def test_an_id_another_app_holds_cannot_be_opened_and_stays_theirs(
     assert taken.json() == {"detail": "这个会话 id 已经被用了，换一个"}
     assert (await app_client.get(f"/sessions/{theirs}/status")).status_code == 200
     assert (await other_app.get(f"/sessions/{theirs}/status")).json() == NOT_FOUND
-    # 同一个应用重开自己的 id 照旧可以。
     await open_session(app_client, theirs)
 
 
@@ -235,8 +221,6 @@ async def test_activities_and_busy_count_only_the_callers_sessions(
 
 
 async def test_the_store_keeps_each_id_with_the_app_that_opened_it(engine: AsyncEngine) -> None:
-    """开与照抄都按归属写：同一应用重开改版本、照抄到已有的保持原样，别的应用的 id 什么都不写。"""
-
     store = PgSessionStore(engine)
     source, held, fresh = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 

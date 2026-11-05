@@ -1,7 +1,3 @@
-"""品牌资源迁移：现行表约束与升级的数据保留。
-
-升级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -22,22 +18,17 @@ from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
 
 BEFORE_URL_RENAME = "476ee9b3b464"
-"""0028，地址列仍叫 video_url。"""
 
 URL_RENAMED = "a7d8c31f42e9"
-"""0029，只有视频模板，地址列已叫 url。"""
 
 BRAND_RESOURCES = "0f74c2a89d31"
-"""0030，kind 为自由文本，brand 与媒体参数独立可空。"""
 
 BEFORE_PROFILES = "e82dd7339835"
-"""0033，还有片头片尾与视频四列，没有品牌表。"""
 
 _INSERT = text(
     "INSERT INTO iclip.brand_templates (id, kind, brand, name, url, created_by)"
     " VALUES (:id, :kind, :brand, :name, :url, :created_by)"
 )
-"""现行表的一行资源。"""
 
 _INSERT_WITH_VIDEO = text(
     "INSERT INTO iclip.brand_templates"
@@ -45,7 +36,6 @@ _INSERT_WITH_VIDEO = text(
     " VALUES (:id, :kind, :brand, :name, :url, :width, :height, :duration_ms, :has_audio,"
     " :created_by)"
 )
-"""0030–0033 的表，还有视频四列。"""
 
 _INSERT_PROFILE = text(
     "INSERT INTO iclip.brand_profiles (brand, slogan, accent_color, updated_by, updated_at)"
@@ -155,8 +145,6 @@ async def test_the_profile_table_constraints(
 
 
 async def _seed_resources(url: str) -> dict[str, uuid.UUID]:
-    """在 0033 的表里各写一条片头、片尾与字体，返回种类到 id。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         creator = await make_user(engine)
@@ -209,8 +197,6 @@ def test_upgrade_keeps_only_fonts_and_drops_the_video_columns(scratch_db: str) -
 
 
 async def _existing_template(url: str) -> dict[str, Any]:
-    """在 0028 表里写一条每列都有值的模板，返回改名后应保留的完整数据。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         row = {

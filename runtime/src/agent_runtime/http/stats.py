@@ -1,9 +1,3 @@
-"""运行统计接口：给应用的报表取事实行（消息、跑到终态的顶层运行、按模型的累计用量、每段会话的首末消息）。
-
-只读，只答调用方应用自己的会话，预览会话不算；不认识用户与业务对象，聚合由应用自己做。按时间窗或按会话取，二选一，
-按会话一次最多 ``MAX_STATS_SESSIONS`` 段。
-"""
-
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -30,7 +24,6 @@ def _scope(body: StatsQueryIn) -> StatsScope:
     if body.session_ids is not None:
         return body.session_ids
     if body.since is None:
-        # 请求体的校验已挡掉：按时间窗取一定带 since。
         raise ValueError("按时间窗取要给 since")
     return StatsWindow(since=body.since, until=body.until)
 

@@ -1,8 +1,3 @@
-"""``shot_video`` 插件的两个媒体端口：取帧拼板（``FrameBoards``）与宫格切格（``GridCuts``）。
-
-下载、探时长、算取帧 key、判断能否复用台账、上传与记切图都在这里，像素活交给
-[platform/shot_media/](../platform/shot_media/__init__.py)；失败换成插件端口声明的错误。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -58,22 +53,14 @@ _logger = structlog.stdlib.get_logger(__name__)
 
 
 class PublicObjects(Protocol):
-    """写可公开访问的对象，并按 key 算出同一个公网地址。"""
+    async def put_public_object(
+        self, *, object_key: str, content: bytes, content_type: str
+    ) -> str: ...
 
-    async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
-        """写入并返回 ``public_url(object_key)``；同 key 已存在即复用。存不下来抛
-        ``ObjectStoreUnavailable``。"""
-        ...
-
-    def public_url(self, object_key: str) -> str:
-        """对象 key 对应的公网地址，与写入时返回的逐字相同；不访问存储。"""
-        ...
+    def public_url(self, object_key: str) -> str: ...
 
 
 class FrameBoardsAdapter:
-    """``FrameBoards`` 的实现。每次调用只下载一次参考视频：地址是模型给的，按 ``downloads`` 选路（本桶
-    对象走内网，别的只连公网）；抽帧解码用 ``codec``。"""
-
     def __init__(
         self,
         downloads: MediaDownloads,
@@ -116,12 +103,6 @@ class FrameBoardsAdapter:
     async def _build(
         self, source: Path, *, key: str, rows: Sequence[Sequence[ShotSpan]]
     ) -> ExtractionLedger:
-        """按固定间隔抽帧，按结构分组生成公开预览板与取帧台账。
-
-        台账只存复用判定用的版本与 key，以及实际建成的板号与地址（复用时按 key 重算核对）。
-        板上有哪几个镜头由插件按 ``rows`` 现算——rows 是 key 的组成部分，命中复用时
-        它与建账时逐字相同。"""
-
         sampled = sample_rows(rows, interval_ms=FRAME_INTERVAL_MS)
         rendered = await render_boards(
             source,
@@ -143,12 +124,6 @@ class FrameBoardsAdapter:
 
 
 def reusable(ledger: ExtractionLedger, *, key: str, public_url: Callable[[str], str]) -> bool:
-    """工作区里的台账是不是这次取帧的产物：版本是当前版本、key 相同，且每块板的地址都是本系统按
-    该 key 与板号发布的地址。
-
-    台账在模型可写的工作区里；板地址按 key 与板号重算后整串比对，复用时登记的只会是本系统发布的
-    地址。"""
-
     if ledger.extraction_version != EXTRACTION_VERSION or ledger.extraction_key != key:
         return False
     forged = [
@@ -163,7 +138,6 @@ def reusable(ledger: ExtractionLedger, *, key: str, public_url: Callable[[str], 
 
 
 def _check_in_range(rows: Sequence[Sequence[ShotSpan]], *, duration_ms: int) -> None:
-    # 允许末镜头时间码因取整超出媒体时长 500 ms。
     out_of_range = [shot for row in rows for shot in row if shot.end_ms > duration_ms + 500]
     if out_of_range:
         ids = ", ".join(str(shot.shot_id) for shot in out_of_range)
@@ -182,19 +156,12 @@ def _sha256_file(path: Path) -> str:
 
 
 class CutRecords(Protocol):
-    """把从一张宫格切出来、已转存的几格各记一条切图记录。"""
-
     async def record_cuts(
         self, user_id: uuid.UUID, grid_job_id: uuid.UUID, urls: Sequence[str]
-    ) -> None:
-        """来源是 ``grid_job_id`` 那张宫格，与 ``urls`` 同序；``user_id`` 是运行属主。"""
-        ...
+    ) -> None: ...
 
 
 class CutRecordsAdapter:
-    """``CutRecords`` 接到生成域的切图记录上。每次调用都用 ``resolve_principal`` 按运行属主 id 重建
-    主体，它的错误原样抛出。"""
-
     def __init__(
         self,
         records: SettledRecords,
@@ -211,17 +178,12 @@ class CutRecordsAdapter:
 
 
 def cut_object_keys(job_id: uuid.UUID, cells: ShotCells | AnchorSheets) -> list[str]:
-    """切下来的每一格存到哪个对象 key，与 ``cells`` 同序：出图一格按帧号，设定图一格按序号。"""
-
     if isinstance(cells, ShotCells):
         return [MEDIA_PATHS.shot_cell(job_id=job_id, cell_id=cell) for cell in cells.cell_ids]
     return [MEDIA_PATHS.anchor_sheet(job_id=job_id, index=index) for index in cells.indexes]
 
 
 class GridCutsAdapter:
-    """``GridCuts`` 的实现：下载整图、按 ``GRID_ROWS`` × ``GRID_COLS`` 切格、按 ``cut_object_keys`` 定
-    每格的 key 并行转存后记切图。``fetch_url`` 在下载整图前换算地址（本桶对象走内网）。"""
-
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -263,8 +225,6 @@ class GridCutsAdapter:
     async def _slice(
         self, grid_url: str, *, aspect: str | None, job_id: uuid.UUID
     ) -> tuple[bytes, ...]:
-        """检测网格并裁剪，指定 aspect 时居中收缩；检测不到分隔带的轴按等分退回，并记告警。"""
-
         async with fetched(
             self._client, self._fetch_url(grid_url), max_bytes=MAX_IMAGE_BYTES, suffix=".img"
         ) as source:
@@ -281,8 +241,6 @@ class GridCutsAdapter:
         return cut.cells
 
     async def _put_all(self, cells: Sequence[tuple[str, bytes]]) -> list[str]:
-        """并行上传格子并保持返回顺序；等待全部任务结束后报告首个失败，避免遗留未收集异常。"""
-
         results = await asyncio.gather(
             *(
                 self._objects.put_public_object(

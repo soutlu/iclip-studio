@@ -162,9 +162,6 @@ def _object_store(
 ) -> tuple[
     PublicBucket | None, Callable[[str], str], Callable[[str], bool], ServerUploadSigner | None
 ]:
-    """桶、服务端下载用的地址换算、判断地址是不是本桶对象与给别的服务端签上传地址的端口。注入了桶
-    （测试）时与没配对象存储一样不认任何地址是本桶的，也没有签名端口，成片导出开不了。"""
-
     if injected is not None:
         return injected, _as_is, _never, None
     if settings is None:
@@ -190,8 +187,6 @@ def _never(url: str) -> bool:
 
 
 VIDEO_APP_ID: Final = "video"
-"""后端在运行时里的应用标识：后端经运行时服务开的会话都归它（服务按 ``RUNTIME_APP_KEY`` 认出它），迁移
-0044 与切换命令给已有对话补的会话也是它。"""
 
 
 def _require_ffmpeg(required: bool) -> None:
@@ -319,17 +314,10 @@ def build_app(
     runtime_transport: httpx.AsyncBaseTransport | None = None,
     media_probe: UrlProber | None = None,
 ) -> FastAPI:
-    """按运行配置装出整个应用；只建对象、不连库，连接与后台循环都留给 lifespan。agent 的运行、transcript、
-    两条实时通道的上游与工作区文件都在运行时服务里，这里经它的客户端调；``runtime_transport`` 是
-    测试把客户端接到进程内运行时 app 上的口子。``image_fetcher`` 与 ``media_probe`` 不给就用组合根建的出网
-    下载器取字节、探地址，测试换成不连网的替身。"""
-
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
     configure_logging(settings.log_level, settings.log_format)
-    # 一个客户端：配置页的管理接口、会话与消息、transcript、两条 WebSocket、工作区文件、首页名册、
-    # 起标题、对话活动与拆解、打标的模型调用都经它；lifespan 里进入、结束时退出。
     runtime_client = RuntimeClient(
         settings.runtime_service.url,
         settings.runtime_service.app_key,
@@ -365,7 +353,6 @@ def build_app(
         settings.object_store, object_store
     )
     _require_ffmpeg(settings.ffmpeg_required)
-    # 一个客户端：生成队列经它提交、轮询，导出端点经它读进度、取消；lifespan 结束时关。
     render_client = (
         None
         if settings.whole_film_render is None
@@ -407,9 +394,7 @@ def build_app(
             requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
-    # 取帧与拆解下载的视频地址是模型给的：不是本桶对象就经只连公网的客户端；lifespan 结束时关。
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
-    # 转存消息附件取字节、制作页查图片地址经它；lifespan 结束时关。
     public_fetcher = PublicFetcher()
     model_url_downloads = MediaDownloads(
         internal=http_client, public=public_http_client, fetch_url=fetch_url, owns=owns_url
@@ -422,7 +407,6 @@ def build_app(
         PgInspirationVideos(active_engine),
         PgStyleDirectory(catalog_engine) if catalog_engine is not None else NoStyleDirectory(),
     )
-    # 工作区文件在运行时服务里；写文件后的变更帧由运行时在订着这段对话的对话内容流上送来，浏览器连接原样转出。
     workspace_files = RuntimeFiles(runtime_client)
     live_connections = LiveConnections()
     runtime_events = RuntimeEvents(runtime_client, live_connections)
@@ -567,7 +551,6 @@ def build_app(
         activities: dict[uuid.UUID, ConversationActivity] = {}
         for one in conversation_ids:
             state = states.get(one)
-            # 运行时只答有会话的对话；没有会话就没跑过，与队列里查不到时一样是空闲。
             activities[one] = ConversationActivity(
                 busy=state is not None and state.busy,
                 pending_interaction="none" if state is None else state.pending_interaction,
@@ -581,8 +564,6 @@ def build_app(
         return await generation.service.latest_master_by_conversation(conversation_ids)
 
     async def user_principal(user_id: uuid.UUID) -> Principal:
-        """按账号当下的角色重建用户主体；账号不存在抛 NotFound，已停用抛 AuthenticationFailed。"""
-
         return identity.service.principal_for_user(await identity.service.get_account(user_id))
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
@@ -595,13 +576,11 @@ def build_app(
         return True
 
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
-    # 配置页的四组管理接口转给运行时服务；技能库与 agent 配置的答复里的操作人由 identity 补上显示名。
     skills = build_skills_module(runtime_client, identity.users.display_names)
     model_providers = build_model_providers_module(runtime_client)
     mcp_servers = build_mcp_servers_module(runtime_client)
     agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 
-    # 审计报表读运行时的数据只经它的统计接口。
     audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))
     library = build_library_module(
         library_reports,
@@ -668,9 +647,7 @@ def build_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         try:
-            # 客户端在 lifespan 这个任务里进出：测试换上的 ASGI WebSocket 传输层的任务组要求同一个任务。
             async with runtime_client:
-                # 事件流连不上不挡启动：运行时启动时要向后端核对插件服务，部署里后端先起。
                 runtime_events.start()
                 if connector is not None:
                     await connector.open_async()
@@ -691,10 +668,8 @@ def build_app(
                         await generation.queue.stop()
                     if connector is not None:
                         await connector.close_async()
-                    # 先停事件流、关掉浏览器连接（它们各占一条对话内容流），再退出客户端。
                     await runtime_events.stop()
                     live_connections.close_all(GOING_AWAY)
-                    # 后台起名要经运行时服务起标题：先收掉它们，再关客户端。
                     await turn_naming.aclose()
         finally:
             await http_client.aclose()
@@ -710,9 +685,7 @@ def build_app(
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     install_error_handlers(app)
-    # 测试等轮次开始回调交出的后台起名跑完。
     app.state.turn_naming = turn_naming
-    # 测试等事件流连上再发消息，免得漏掉开头的活动。
     app.state.runtime_events = runtime_events
 
     @app.get("/healthz")
@@ -768,7 +741,6 @@ def build_app(
             ),
         )
     )
-    # 插件服务那几组挂不挂的条件同视频插件包按运行时配置登记插件的条件（iclip_video.registry）。
     shot_services: ShotServices | None = None
     if (
         settings.shot_tools_enabled
@@ -804,8 +776,7 @@ def build_app(
         )
     )
 
-    # Starlette 里后加的中间件在外层；CORS 要在最外层，preflight 不带凭证也得被它应答。
-    # 内部接口自己核运行时的令牌，不解析用户凭证：不然每次回调都按 Bearer 去查一次 API key。
+    # Starlette 后注册的中间件位于最外层；CORS 须置于最外层以直接响应无凭证的 OPTIONS 预检请求。
     app.add_middleware(
         PrincipalMiddleware,
         resolver=identity.resolver,
@@ -820,7 +791,6 @@ def build_app(
             allow_headers=["*"],
         )
 
-    # 集成测试经它直接调生成队列的任务协程，不起 worker。
     app.state.generation = generation
     return app
 

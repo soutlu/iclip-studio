@@ -1,5 +1,3 @@
-"""对话用量台账的 Postgres 累加：同一（对话，模型）只有一行，数字往上加。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

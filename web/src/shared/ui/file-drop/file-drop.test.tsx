@@ -10,7 +10,6 @@ type HarnessProps = {
   onFallbackFiles?: (files: File[]) => void
 }
 
-/** 与真实页面同构：一个局部拖放区，外加聊天框那样挂在 window 上的兜底接收者。 */
 function DropPage({
   blocked = false,
   onFiles = () => {},
@@ -115,7 +114,6 @@ describe('useFileDropTarget', () => {
 
     fireEvent.dragEnter(zone(), { dataTransfer: fileDrag() })
     expect(screen.getByText('松开添加素材')).toBeInTheDocument()
-    // 内层接收者（如按落点插入的编辑器）收下后 preventDefault，事件照常冒泡到区域。
     const drop = createEvent.drop(child, { dataTransfer: fileDrag() })
     drop.preventDefault()
     fireEvent(child, drop)

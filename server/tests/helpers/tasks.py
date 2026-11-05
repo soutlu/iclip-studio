@@ -1,5 +1,3 @@
-"""tasks 测试替身、构造器与经 HTTP 建单的驱动。"""
-
 from __future__ import annotations
 
 import uuid
@@ -115,8 +113,6 @@ def make_task(
 
 
 class InMemoryTaskRepository:
-    """TaskRepository 内存替身，保留 expect 状态守卫。"""
-
     def __init__(self, tasks: list[Task] | None = None) -> None:
         self.tasks: dict[uuid.UUID, Task] = {task.id: task for task in tasks or []}
 

@@ -1,5 +1,3 @@
-"""验证实时 transcript 的批次序号、UTF-16 偏移、补发窗口和交互清理。"""
-
 from __future__ import annotations
 
 from typing import Literal
@@ -86,15 +84,12 @@ def _epoch(store: TranscriptStore) -> str:
 
 
 def test_append_offset_is_counted_in_utf16_units() -> None:
-    """emoji 占两个 UTF-16 单位，Python len 不能直接作为客户端追加偏移。"""
-
     store = TranscriptStore()
     _open_turn(store)
     _append(store, 0, "好的👍")
 
     assert utf16_len("好的👍") == 4
     assert len("好的👍") == 3
-    # UTF-16 偏移为 4；Python 字符数 3 应被拒绝。
     with pytest.raises(ValueError, match="追加位置对不上"):
         _append(store, 3, "继续")
     _append(store, 4, "继续")
@@ -104,7 +99,6 @@ def test_append_offset_is_counted_in_utf16_units() -> None:
 def test_catch_up_reports_incomplete_when_the_window_has_moved_past() -> None:
 
     store = TranscriptStore()
-    # 多写两批，补发日志挤掉最早的两批。
     for _ in range(JOURNAL_CAPACITY + 2):
         store.append(CONVERSATION, AGENT, ())
 
@@ -124,8 +118,6 @@ def test_catch_up_from_a_position_beyond_the_watermark_is_incomplete() -> None:
 
 
 def test_removing_a_turn_cancels_the_interactions_anchored_to_its_tools() -> None:
-    """删除轮次需取消关联审批，避免留下无法响应的交互。"""
-
     store = TranscriptStore()
     _open_turn(store)
     store.append(
@@ -159,8 +151,6 @@ def test_removing_a_turn_cancels_the_interactions_anchored_to_its_tools() -> Non
 
 
 def test_removing_a_turn_drops_the_tasks_its_tool_cards_own() -> None:
-    """重新生成移除一轮时，这一轮的后台工具任务与子代理任务一起清掉，别的轮的任务留着。"""
-
     def task(task_id: str, kind: Literal["tool", "subagent"]) -> TaskUpsertOp:
         return TaskUpsertOp(
             task=TranscriptTask(task_id=task_id, kind=kind, state="completed", detached=False)
@@ -203,8 +193,6 @@ def test_removing_a_turn_drops_the_tasks_its_tool_cards_own() -> None:
 
 
 def test_a_turn_is_held_until_the_message_history_has_it() -> None:
-    """实时轮需保留至消息快照持久化完成，避免交接期间两侧均无数据。"""
-
     store = TranscriptStore()
     _open_turn(store)
     store.append(
@@ -232,8 +220,6 @@ def test_a_turn_is_held_until_the_message_history_has_it() -> None:
 
 
 def test_pinned_conversations_survive_eviction() -> None:
-    """运行中或被订阅的对话不可淘汰，否则批次序号重置会中断流。"""
-
     store = TranscriptStore(resident=2)
     store.pin(CONVERSATION)
     store.append(CONVERSATION, AGENT, ())
@@ -244,8 +230,6 @@ def test_pinned_conversations_survive_eviction() -> None:
 
 
 def test_unpinned_conversations_are_evicted() -> None:
-    """淘汰后序号从 1 开始，订阅端必须发送 reset。"""
-
     store = TranscriptStore(resident=2)
     store.append(CONVERSATION, AGENT, ())
     for index in range(5):
@@ -255,10 +239,6 @@ def test_unpinned_conversations_are_evicted() -> None:
 
 
 def test_a_watermark_from_before_eviction_does_not_resume_the_rebuilt_stream() -> None:
-    """淘汰后重建的流从 1 重新编号：旧水位落在新编号的范围里，单看序号会把新批次接到旧内容上。
-
-    epoch 换了新的，续订判补不齐，订阅端只能回 reset。"""
-
     store = TranscriptStore(resident=2)
     store.append(CONVERSATION, AGENT, ())
     before = _epoch(store)
@@ -278,8 +258,6 @@ def test_a_watermark_from_before_eviction_does_not_resume_the_rebuilt_stream() -
 
 
 def test_a_watermark_from_before_a_restart_does_not_resume_the_new_numbering() -> None:
-    """进程重启后新流很快越过旧水位：日志里最旧一批还是 1，单看序号会判补得齐。"""
-
     before_restart = TranscriptStore()
     for _ in range(3):
         before_restart.append(CONVERSATION, AGENT, ())
@@ -295,8 +273,6 @@ def test_a_watermark_from_before_a_restart_does_not_resume_the_new_numbering() -
 
 
 def test_a_watermark_without_its_epoch_is_never_resumed() -> None:
-    """只给序号不给 epoch，分不出是哪条流的水位，按补不齐处理。"""
-
     store = TranscriptStore()
     for _ in range(3):
         store.append(CONVERSATION, AGENT, ())

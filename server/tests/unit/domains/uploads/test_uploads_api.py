@@ -1,5 +1,3 @@
-"""使用 bucket 与记录替身验证上传签名、审计头、权限、确认规则与记在谁名下。"""
-
 from __future__ import annotations
 
 import uuid
@@ -57,10 +55,6 @@ RecordCall = tuple[Principal, uuid.UUID, MediaKind, str, str | None]
 
 @dataclass
 class RecordedUploads:
-    """RecordUpload 与 FindRecordedUpload 的替身：记下每次确认记给了谁、哪一次上传、什么种类、
-    什么地址、什么 MD5，按 upload_id 存一条记录。``earlier`` 给了就当同一个文件早先传过，记录的
-    地址落它的；去不去重由生成域判断，这里不复制那条规则。"""
-
     calls: list[RecordCall] = field(default_factory=list[RecordCall])
     rows: dict[uuid.UUID, Recorded] = field(default_factory=dict[uuid.UUID, Recorded])
     earlier: Recorded | None = None
@@ -85,8 +79,6 @@ class RecordedUploads:
 
 @dataclass
 class FakeFetch:
-    """出网下载替身：交回 ``body`` 或抛 ``error``，记下每次下载的地址与上限。"""
-
     body: bytes = b""
     error: Exception | None = None
     calls: list[tuple[str, int]] = field(default_factory=list[tuple[str, int]])
@@ -251,8 +243,6 @@ async def test_music_over_its_own_limit_is_refused() -> None:
 
 
 async def test_oversized_upload_is_refused() -> None:
-    """预签名 PUT 无法限制长度，确认时须校验桶内实际大小。"""
-
     bucket = FakeBucket()
     recorded = RecordedUploads()
     app = build_test_app(bucket, granted=uploader(), recorded=recorded)
@@ -270,8 +260,6 @@ async def test_oversized_upload_is_refused() -> None:
 
 
 async def test_unexpected_type_in_the_bucket_is_refused() -> None:
-    """Content-Type 签进了签名里，桶里仍可能出现别的类型（改过 CORS 或 SDK 直传），确认时按桶里的算。"""
-
     bucket = FakeBucket()
     recorded = RecordedUploads()
     app = build_test_app(bucket, granted=uploader(), recorded=recorded)
@@ -283,8 +271,6 @@ async def test_unexpected_type_in_the_bucket_is_refused() -> None:
     assert response.status_code == 422
     assert recorded.calls == [], "核对不过不记录"
 
-
-# --- 视频按内容去重 -----------------------------------------------------------------
 
 MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
 
@@ -304,8 +290,6 @@ MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
 async def test_ineligible_uploads_are_recorded_without_md5(
     content_type: str, ext: str, etag: str | None, object_type: str | None
 ) -> None:
-    """图片、不是一次整传的视频不记 MD5，照旧交回本次的地址。"""
-
     bucket = FakeBucket()
     recorded = RecordedUploads()
     app = build_test_app(bucket, granted=uploader(), recorded=recorded)
@@ -322,8 +306,6 @@ async def test_ineligible_uploads_are_recorded_without_md5(
 
 
 def seed_earlier(bucket: FakeBucket, *, size_bytes: int = 70) -> Recorded:
-    """桶里放一份早先传过的视频，交回它那条记录。"""
-
     first = uuid.uuid4()
     key = f"iclip/agent/uploads/{first}.mp4"
     bucket.put(key, content_type="video/mp4", size_bytes=size_bytes, etag=MD5_ETAG)
@@ -331,8 +313,6 @@ def seed_earlier(bucket: FakeBucket, *, size_bytes: int = 70) -> Recorded:
 
 
 async def test_a_duplicate_hands_back_the_earlier_address_and_drops_this_copy() -> None:
-    """记录交回别人先传的地址：交回那个地址与那份对象的类型、大小，删掉本次传上来的对象。"""
-
     bucket = FakeBucket()
     earlier = seed_earlier(bucket)
     recorded = RecordedUploads(earlier=earlier)
@@ -371,8 +351,6 @@ async def test_a_copy_that_cannot_be_dropped_still_confirms_and_leaves_a_warning
     assert key in bucket.objects
 
 
-# --- 按地址转存图片 -------------------------------------------------------------
-
 EXTERNAL = "https://img.example.com/look.jpg?token=abc"
 
 
@@ -398,8 +376,6 @@ def importer(
 
 
 async def test_an_imported_image_is_stored_with_audit_metadata_and_recorded_as_an_upload() -> None:
-    """类型按文件头定（地址写的是 .jpg，内容是 PNG）；对象带上传者与 key，记录属主是调用者。"""
-
     me, key_id, upload_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     fetch = FakeFetch(body=picture())
     service, bucket, records = importer(fetch)
@@ -419,8 +395,6 @@ async def test_an_imported_image_is_stored_with_audit_metadata_and_recorded_as_a
 
 
 async def test_a_multi_picture_jpeg_from_a_phone_is_stored_as_jpg() -> None:
-    """手机拍的 JPEG 常带多帧扩展（Pillow 认成 MPO），照 JPEG 收，对象后缀 .jpg。"""
-
     upload_id = uuid.uuid4()
     service, bucket, records = importer(FakeFetch(body=multi_picture_jpeg()))
 

@@ -1,5 +1,3 @@
-"""模型供应商端点的请求与响应形状，camelCase 别名。术语见 docs/CONTEXT.md「供应商」等词条。"""
-
 from __future__ import annotations
 
 import uuid
@@ -27,30 +25,24 @@ class CredentialFieldOut(CamelModel):
     type: CredentialFieldType
     required: bool
     default: str | None
-    """不填时用的值；机密字段恒为 ``null``。"""
 
 
 class DeclaredModelOut(CamelModel):
     name: str
     type: ModelType
     api: ModelApi | None
-    """只有 llm 有。"""
     context_size: int | None
     thinking: list[ThinkingEffort]
-    """允许设的思考档位；空就是不能设档位。"""
 
 
 class DeclarationOut(CamelModel):
     """一家可以接入的供应商。"""
 
     name: str
-    """声明名，接入时填进 ``provider``。"""
     label: str
     apis: list[ModelApi]
-    """支持的接口，按声明的顺序；llm 模型只能走其中之一，第一个是添加模型时的默认。"""
     credential_fields: list[CredentialFieldOut]
     custom_models: bool
-    """能不能自己加模型。"""
     models: list[DeclaredModelOut]
 
 
@@ -64,16 +56,13 @@ class ProviderModelOut(DeclaredModelOut):
     source: ModelSource
     enabled: bool
     used_by: list[AgentUsageOut]
-    """草稿或当前版本写着这个模型的 agent，按 agent 标识排；它们还在用时不能停用或删除。只有 llm 会有。"""
 
 
 class CredentialOut(CamelModel):
     id: uuid.UUID
     name: str
     fields: dict[str, str]
-    """按声明的字段名给值；机密字段是打码后的样子（``••••`` 加末 4 位，原值不足 8 位只有 ``••••``）。"""
     used_by: list[AgentUsageOut]
-    """草稿或当前版本显式写着这把密钥的 agent，按 agent 标识排；它们还在用时不能删。"""
     created_at: datetime
     updated_at: datetime
 
@@ -81,31 +70,23 @@ class CredentialOut(CamelModel):
 class ModelProviderOut(CamelModel):
     id: uuid.UUID
     name: str
-    """引用名，接入后不能改。"""
     provider: str
-    """用的声明名。"""
     label: str
     enabled: bool
     default_credential_id: uuid.UUID | None
-    """还没有密钥时为 ``null``。"""
     credentials: list[CredentialOut]
-    """新的在前。"""
     models: list[ProviderModelOut]
-    """声明里的按声明顺序在前，自己加的按类型、名字在后。"""
     created_at: datetime
     updated_at: datetime
 
 
 class ModelProvidersOut(CamelModel):
     providers: list[ModelProviderOut]
-    """按接入时刻从新到旧。"""
 
 
 class ModelProviderCreateIn(CamelModel):
     name: str
-    """引用名：小写字母、数字、连字符，最多 64 个字符，接入后不能改。"""
     provider: str
-    """声明名，见 ``GET /model-providers/declarations``。"""
     label: str
 
 
@@ -115,13 +96,11 @@ class ModelProviderUpdateIn(CamelModel):
     label: str | None = None
     enabled: bool | None = None
     default_credential_id: uuid.UUID | None = None
-    """换默认密钥，必须是这个供应商的密钥。"""
 
 
 class CredentialCreateIn(CamelModel):
     name: str
     fields: dict[str, str]
-    """按声明的字段名给值；没给的字段用声明里的 ``default``。"""
 
 
 class CredentialUpdateIn(CamelModel):
@@ -129,7 +108,6 @@ class CredentialUpdateIn(CamelModel):
 
     name: str | None = None
     fields: dict[str, str] | None = None
-    """只放要改的字段，给了就替换；没给的字段（包括机密字段）保持原值。"""
 
 
 class CredentialTestIn(CamelModel):
@@ -153,17 +131,14 @@ class ProbeOut(CamelModel):
     ok: bool
     elapsed_ms: int
     reason: str | None
-    """失败原因，给人看的一句话；成功时为 ``null``。"""
 
 
 class CustomModelCreateIn(CamelModel):
     name: str
     type: ModelType
     api: ModelApi | None = None
-    """llm 必填，且要是供应商声明的 ``apis`` 之一；其余类型不能给。"""
     context_size: int | None = None
     thinking: list[ThinkingEffort] = []
-    """只有 llm 能给。"""
 
 
 class ModelUpdateIn(CamelModel):
@@ -186,7 +161,6 @@ class DefaultModelOut(CamelModel):
 
 class DefaultModelsOut(CamelModel):
     defaults: list[DefaultModelOut]
-    """设过的类型各一条，按类型排；没设过的类型不在里面。"""
 
 
 class DefaultModelIn(CamelModel):
@@ -198,22 +172,17 @@ class ModelOptionOut(CamelModel):
     """agent 能选的一个对话模型。"""
 
     name: str
-    """写进 agent 配置的 ``model.name``。"""
     context_size: int | None
     thinking: list[ThinkingEffort]
-    """允许设的思考档位；空就是不能设档位。"""
 
 
 class CredentialOptionOut(CamelModel):
     """agent 能选的一把密钥。"""
 
     id: uuid.UUID
-    """写进 agent 配置的 ``model.credential_id``。"""
     name: str
     fields: dict[str, str]
-    """同 ``CredentialOut.fields``：机密字段只给打码后的值。"""
     is_default: bool
-    """是供应商的默认密钥；agent 不写密钥时用它。"""
 
 
 class ProviderOptionOut(CamelModel):
@@ -221,19 +190,15 @@ class ProviderOptionOut(CamelModel):
 
     id: uuid.UUID
     name: str
-    """引用名，写进 agent 配置的 ``model.provider``。"""
     label: str
     models: list[ModelOptionOut]
-    """启用的 ``llm`` 模型，顺序同供应商列表。"""
     credentials: list[CredentialOptionOut]
-    """新的在前。"""
 
 
 class ModelOptionsOut(CamelModel):
     """agent 编辑页选模型用：只读，只列启用的供应商。"""
 
     providers: list[ProviderOptionOut]
-    """按接入时刻从新到旧。"""
 
 
 __all__ = [

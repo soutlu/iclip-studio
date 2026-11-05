@@ -31,7 +31,6 @@ const renderPage = async () => {
   return user
 }
 
-/** 记下发往某个端点的请求体，响应仍交给预置的 mock。 */
 const recordBodies = (method: 'PUT' | 'POST' | 'PATCH', path: RegExp) => {
   const bodies: Body[] = []
   server.events.on('request:start', ({ request }) => {
@@ -69,7 +68,6 @@ const openCard = async (user: User, name: string) => {
 
 const field = (panel: HTMLElement, name: string) => within(panel).getByRole('textbox', { name })
 
-/** 测试连接通过后「保存配置」才可点，等它可点再点。 */
 const saveWhenTested = async (user: User, panel: HTMLElement) => {
   const save = within(panel).getByRole('button', { name: '保存配置' })
   await waitFor(() => expect(save).toBeEnabled())
@@ -88,7 +86,6 @@ describe('MCP 服务 添加', () => {
     const save = within(panel).getByRole('button', { name: '保存配置' })
     expect(save).toBeDisabled()
 
-    // 必填项没填时不发试连。
     await user.click(within(panel).getByRole('button', { name: '测试连接' }))
     expect(field(panel, '服务名称')).toHaveAccessibleDescription('请填写服务名称')
     expect(field(panel, '标识')).toHaveAccessibleDescription('请填写标识')
@@ -127,7 +124,6 @@ describe('MCP 服务 添加', () => {
         url: 'https://assets.example/mcp',
       },
     ])
-    // 存下的服务记着试连结果，再保存要重新测试。
     expect(within(sidePanel()).getByRole('status')).toHaveTextContent(/\d+ ms/)
     expect(within(sidePanel()).getByRole('button', { name: '保存配置' })).toBeDisabled()
     expect(within(sidePanel()).getByLabelText('请求头的值 1')).toHaveAttribute(
@@ -180,7 +176,6 @@ describe('MCP 服务 保存后试连出错', () => {
     expect(within(panel).queryByRole('alert')).toBeNull()
     expect(creates).toHaveLength(1)
 
-    // 再测再存：已经建好，走修改，不会因标识被占用而失败。
     await user.click(within(panel).getByRole('button', { name: '测试连接' }))
     await saveWhenTested(user, panel)
     await waitFor(() => expect(patches).toHaveLength(1))
@@ -212,7 +207,6 @@ describe('MCP 服务 测试连接', () => {
     const url = within(panel).getByLabelText('服务地址')
     await user.clear(url)
     await user.type(url, 'https://brand-assets.example/mcp')
-    // 改了地址，之前的结果作废。
     expect(status).toHaveTextContent('')
     await user.click(within(panel).getByRole('button', { name: '测试连接' }))
     await waitFor(() => expect(status).toHaveTextContent(/\d+ ms/))
@@ -280,7 +274,6 @@ describe('MCP 服务 请求头', () => {
     await user.click(within(panel).getByRole('button', { name: '测试连接' }))
     await saveWhenTested(user, panel)
     await waitFor(() => expect(patches).toHaveLength(1))
-    // 请求头只带名字：试连按服务里同名请求头的原值连，保存沿用原值。
     expect(checks.at(-1)).toEqual({
       headers: [{ name: 'Authorization' }],
       serverId: 'feishu-docs',
@@ -288,7 +281,6 @@ describe('MCP 服务 请求头', () => {
       transport: 'streamable_http',
       url: 'https://docs.example/mcp',
     })
-    // 地址没改：保存不带 url，沿用原来的。
     expect(patches[0]).toEqual({
       description: '查阅团队文档与创作资料',
       headers: [{ name: 'Authorization' }],
@@ -367,7 +359,6 @@ describe('MCP 服务 挂到 Agent', () => {
     await user.click(within(panel).getByRole('button', { name: '从当前 Agent 移除' }))
     expect(within(sidePanel()).getByRole('heading', { name: '管理 MCP 服务' })).toBeVisible()
     expect(within(mcpSection()).getByRole('button', { name: '添加 MCP 服务' })).toBeVisible()
-    // 顶部「MCP 服务」此时已选中，再点回到服务库。
     expect(screen.getByRole('tab', { name: 'MCP 服务' })).toHaveAttribute('aria-selected', 'true')
     await openLibrary(user)
   })
@@ -383,7 +374,6 @@ describe('MCP 服务 选工具', () => {
     const panel = await openCard(user, '飞书文档')
     await user.click(within(panel).getByRole('tab', { name: '工具，已启用 2 / 6 个' }))
     const toolSwitch = (name: string) => within(panel).getByRole('switch', { name })
-    // 有显示名的工具先写显示名、后跟工具名；没有的只写工具名。
     expect(toolSwitch('搜索文档')).toBeChecked()
     expect(within(panel).getByText('search')).toBeVisible()
     expect(toolSwitch('folders')).not.toBeChecked()

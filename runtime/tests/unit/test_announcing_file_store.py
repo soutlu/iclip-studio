@@ -1,6 +1,3 @@
-"""写完就通知的文件存储：会话工作区里新写报 created、再写报 modified、真删了报 deleted；没删到、写失败与
-会话以外的命名空间都不报。"""
-
 from __future__ import annotations
 
 import uuid

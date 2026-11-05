@@ -1,5 +1,3 @@
-/** 详情右栏的两页：脚本（全局设定、逐镜正文、参考图）与参数（出片请求的参数和来源）。 */
-
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { formatDateTime } from '@/shared/lib/date-time'
@@ -26,7 +24,6 @@ function SectionHeading({ title, note }: { title: string; note?: string }) {
   )
 }
 
-/** 正文里的 `@ImageN` 换成带缩略图的小标，指向第 N 张参考图。 */
 function PromptText({ text, take }: { text: string; take: LibraryTake }) {
   return promptSegmentsOf(text, take.referenceImageUrls).map((segment) =>
     segment.kind === 'text' ? (
@@ -49,7 +46,6 @@ function PromptText({ text, take }: { text: string; take: LibraryTake }) {
 
 type LibraryScriptPanelProps = {
   take: LibraryTake
-  /** 正在播的秒数，用来标出当前那一镜。 */
   currentTime: number
   onSeek: (seconds: number) => void
   onPreviewImage: (media: LightboxMedia) => void
@@ -168,11 +164,9 @@ export function LibraryScriptPanel({
 type LibraryParamsPanelProps = {
   video: LibraryVideo
   version: LibraryVersion
-  /** 详情读回来之前不知道是第几版，不显示。 */
   showVersion: boolean
 }
 
-/** 请求里没有的参数整行不显示，不编默认值。 */
 export function LibraryParamsPanel({ video, version, showVersion }: LibraryParamsPanelProps) {
   const { take } = version
   const seconds = durationSecondsOf(version.durationMs, take)
@@ -189,7 +183,6 @@ export function LibraryParamsPanel({ video, version, showVersion }: LibraryParam
     ])
   if (version.userName !== null) rows.push(['作者', version.userName])
   rows.push(['生成时间', formatDateTime(version.finishedAt)])
-  // 对话 id 人人都拿得到，打不打得开看 canOpenConversation。
   if (video.canOpenConversation && video.conversationId !== null) {
     rows.push([
       '来源任务',

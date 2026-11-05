@@ -1,8 +1,3 @@
-"""MCP 服务的一张表与它的 Postgres 仓储。
-
-时间统一用数据库时钟。连接方式与请求头、工具的形状只在 Python 里检查，表上不加 CHECK；``url`` 是密文，
-``url_hash`` 是明文地址的 sha256，地址与名称各有唯一约束；请求头是 jsonb ``[{name, value}]``，值是密文。"""
-
 from __future__ import annotations
 
 import uuid
@@ -77,8 +72,6 @@ _c = mcp_servers_table.c
 
 
 def _violated_constraint(error: IntegrityError) -> str:
-    """违反的约束名；asyncpg 把它挂在被包起来的原异常上。"""
-
     cause = getattr(error.orig, "__cause__", None)
     return getattr(cause, "constraint_name", None) or ""
 
@@ -86,10 +79,6 @@ def _violated_constraint(error: IntegrityError) -> str:
 async def _duplicate(
     engine: AsyncEngine, error: IntegrityError, *, url_hash: str, name: str
 ) -> Conflict | None:
-    """地址或名称撞了已有服务时给人看的 ``Conflict``，写明撞的是哪个服务；别的约束交回 ``None``。
-
-    要在出错的事务回滚之后调：另开一个连接按哈希查那个服务的名称。查的时候它已被删掉，就只说地址登记过。"""
-
     violated = _violated_constraint(error)
     if violated == _DUPLICATE_NAME:
         return Conflict(f"这个名称已经有了：{name}")
@@ -132,7 +121,6 @@ def _record(row: RowMapping) -> McpServerRecord:
             reason=row["check_reason"],
             checked_at=checked_at,
         ),
-        # 没有显示名这一项之前试连存下的工具没有 ``title``，下次试连才补上。
         tools=None
         if tools is None
         else tuple(
@@ -159,7 +147,6 @@ class _SqlMcpServerEditor:
     def __init__(self, conn: AsyncConnection, record: McpServerRecord) -> None:
         self._conn = conn
         self._record = record
-        # ``update`` 写下的地址哈希与名称，事务回滚后据此说明撞了哪个服务。
         self.written: tuple[str, str] | None = None
 
     @property
@@ -281,7 +268,6 @@ class SqlMcpServerStore:
                 editor = _SqlMcpServerEditor(conn, _record(row))
                 yield editor
         except IntegrityError as exc:
-            # 事务已回滚，另开连接查撞了哪个服务。
             if editor is None or editor.written is None:
                 raise
             url_hash, name = editor.written

@@ -1,8 +1,3 @@
-"""验证 YAML 形状和环境变量的配置契约。
-
-每项测试先清理服务使用的环境变量，避免读取开发机配置。
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -141,8 +136,6 @@ def test_blank_value_counts_as_missing(tmp_path: Path, monkeypatch: pytest.Monke
 def test_a_missing_runtime_internal_token_fails_startup_naming_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """开跑检查在内部接口上：没有令牌每次运行都过不了，所以启动就失败。"""
-
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
     monkeypatch.delenv("RUNTIME_INTERNAL_TOKEN")
@@ -413,8 +406,6 @@ def test_object_store_half_configured_fails_loudly(
 def test_media_generation_without_a_bucket_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """生成结果依赖对象存储转存，缺少桶会留下可能过期的供应商地址。"""
-
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
     monkeypatch.delenv("OSS_BUCKET")
@@ -443,8 +434,6 @@ def test_whole_film_render_is_off_until_its_url_is_set(
 def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """每次导出是一条生成记录，成片上传进桶：没有桶、没开媒体生成都导不出来，报出缺的那一样。"""
-
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
     monkeypatch.setenv("WHOLE_FILM_RENDER_URL", "http://render:8080")
@@ -491,8 +480,6 @@ def test_shot_video_without_media_generation_names_what_it_lacks(
 def test_shot_video_section_absent_means_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """没写 shot_video 段就不装取帧与出图，也不算缺东西。"""
-
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
     settings = resolve_settings(config)
@@ -510,8 +497,6 @@ def test_shot_video_section_absent_means_off(
 def test_the_iclip_studio_section_alone_turns_breakdown_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, section: str, concurrency: int | None
 ) -> None:
-    """模型写定在代码里、连接在运行时的配置页里：这一段写了就开，不要别的环境变量。"""
-
     config = load_runtime_config(write(tmp_path, VALID + section))
     _core(monkeypatch)
 

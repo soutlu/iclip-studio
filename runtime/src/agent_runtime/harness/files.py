@@ -1,5 +1,3 @@
-"""工具写工作区文件时，把存储错误翻成模型可纠正的退回。"""
-
 from __future__ import annotations
 
 from pydantic_ai import ModelRetry
@@ -21,8 +19,6 @@ async def write_or_retry(
     *,
     expected_version: int | None = None,
 ) -> FileEntry:
-    """写入文件；内容、配额与版本问题抛 ModelRetry，并提示模型怎么改。"""
-
     try:
         return await files.write(namespace, path, content, expected_version=expected_version)
     except InvalidContent as exc:

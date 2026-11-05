@@ -1,6 +1,3 @@
-"""配置页管理接口转发时保留路径分段，以及未给字段与显式清空的区别；带操作人的答复整份只查一次显示名，
-补到每个操作人字段上，查不到的人为 null，失败的答复原样交回、不查名字。"""
-
 from __future__ import annotations
 
 import json
@@ -34,8 +31,6 @@ NOW = datetime(2026, 11, 1, tzinfo=UTC)
 
 
 class Runtime:
-    """假的运行时服务：记下收到的请求，交回预先放好的答复（默认空的成功答复）。"""
-
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.answer = httpx.Response(200, json={})
@@ -46,8 +41,6 @@ class Runtime:
 
 
 class Names:
-    """假的 identity：记下每次查了哪些 id；``GONE`` 不在本系统。"""
-
     def __init__(self) -> None:
         self.calls: list[set[uuid.UUID]] = []
 
@@ -116,7 +109,6 @@ async def test_path_parameters_are_forwarded_segment_by_segment(
     assert first.url.raw_path.decode() == (
         f"/v1/admin/skills/{SKILL}/draft/files/references/sub/%E6%8C%87%E5%8D%97%201.md"
     )
-    # 点段转义着转出，交给运行时按非法路径判，不在半路被规范化成别的路由。
     assert second.url.raw_path.decode() == (
         f"/v1/admin/skills/{SKILL}/draft/files/references/%2E%2E/SKILL.md"
     )
@@ -125,8 +117,6 @@ async def test_path_parameters_are_forwarded_segment_by_segment(
 async def test_an_update_forwards_only_the_fields_it_was_given(
     client: httpx.AsyncClient, runtime: Runtime
 ) -> None:
-    """有的更新按「给没给」区分不动与清空：只给了 ``enabled``，就只转 ``enabled``。"""
-
     await client.patch(
         f"/model-providers/{PROVIDER}/models/llm/qwen/qwen-max", json={"enabled": False}
     )
@@ -156,7 +146,6 @@ async def test_a_list_looks_up_every_actor_once_and_names_each_item(
         (str(ALICE), "爱丽丝"),
         (str(GONE), None),
     ]
-    # 别的字段照运行时的原样。
     assert [
         {k: v for k, v in one.items() if k != "createdByName"} for one in listed.json()["items"]
     ] == [wire(one) for one in items]
@@ -165,8 +154,6 @@ async def test_a_list_looks_up_every_actor_once_and_names_each_item(
 async def test_a_detail_names_its_creator_and_the_drafts_editor_in_one_lookup(
     client: httpx.AsyncClient, runtime: Runtime, names: Names
 ) -> None:
-    """配置文档里插件参数的同名键是用户写的内容，不补名字、原样交回。"""
-
     config = AgentConfig.model_validate(
         {
             "schema_version": 1,

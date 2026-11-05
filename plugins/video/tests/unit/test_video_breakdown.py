@@ -1,6 +1,3 @@
-"""验证视频拆解工具：工作区已有的那份照用，否则交给参考视频的拆解并写进工作区；四种失败原因各自
-给模型对的回复，重试次数用完给终局失败。"""
-
 from __future__ import annotations
 
 import inspect
@@ -52,8 +49,6 @@ ASK_AN_ADMIN = "拆解失败，拆解模型没有启用，不要重试，告诉�
 
 
 class FakeBreakdowns:
-    """参考视频拆解的替身：按顺序交出给定的结果，最后一个一直重复；记下每次是谁要的哪条视频。"""
-
     def __init__(self, *results: str | FailedBreakdown) -> None:
         self._results: Sequence[str | FailedBreakdown] = results or (DOCUMENT,)
         self.calls: list[tuple[uuid.UUID, str]] = []
@@ -73,8 +68,6 @@ def make_deps() -> AgentRunDeps:
 
 
 def make_ctx(*, retry: int = 0) -> RunContext[object]:
-    """第 ``retry`` 次重试时的运行上下文；预算与工具登记的一致。"""
-
     return RunContext[object](
         deps=make_deps(),
         model=TestModel(),
@@ -92,8 +85,6 @@ def capability_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBre
 
 
 def plugin_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBreakdownPlugin[object]:
-    """与组合根同一条路：服务绑进插件类再按 spec 造。"""
-
     return (
         VideoBreakdownPlugin[object]
         .bind(space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=breakdowns)
@@ -106,8 +97,6 @@ def toolset(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBreakdownT
 
 
 async def test_a_document_already_in_the_workspace_is_left_alone(files: FakeFileStore) -> None:
-    """用户指正过的文档不被参考视频里的那份盖掉，也不再去要拆解。"""
-
     await files.write(NAMESPACE, PATH, "用户指正过的文档")
     breakdowns = FakeBreakdowns()
 
@@ -167,8 +156,6 @@ async def test_a_failed_model_call_on_the_last_attempt_is_final(files: FakeFileS
 
 
 async def run_agent_that_keeps_calling(capability: VideoBreakdown[object]) -> list[ModelMessage]:
-    """模型每次收到重试提示就原样再调一次，直到拿到工具结果。"""
-
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         last = messages[-1].parts[-1]
         if len(messages) == 1 or (isinstance(last, ToolReturnPart) and last.outcome == "retried"):
@@ -196,8 +183,6 @@ def tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
 async def test_failed_model_calls_are_tried_four_times_and_the_run_survives(
     files: FakeFileStore,
 ) -> None:
-    """首次加三次重试，每次都去要一次拆解；预算用完后模型拿到的是失败结果，整次运行不被中止。"""
-
     breakdowns = FakeBreakdowns(FailedBreakdown(reason="model_call_failed"))
 
     messages = await run_agent_that_keeps_calling(capability_for(files, breakdowns))
@@ -213,9 +198,6 @@ async def test_failed_model_calls_are_tried_four_times_and_the_run_survives(
 async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
     files: FakeFileStore,
 ) -> None:
-    """按插件挂上（连同 BackgroundTools）后，重试次数照样由登记处的上限管：用完给终局失败，运行正常
-    结束。"""
-
     breakdowns = FakeBreakdowns(FailedBreakdown(reason="model_call_failed"))
     outcomes: list[tuple[str, str]] = []
 
@@ -227,7 +209,6 @@ async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
             outcomes.append((outcome.state, outcome.text))
             if outcome.text == CALL_AGAIN:
                 return call_breakdown(messages)
-        # 拿到回执就先结束这一步，harness 等到结果后让模型再答一次。
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
     result = await Agent(FunctionModel(script), capabilities=[plugin_for(files, breakdowns)]).run(
@@ -236,7 +217,6 @@ async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
 
     assert len(breakdowns.calls) == 1 + BREAKDOWN_RETRIES
     assert all(is_receipt(part) for part in tool_returns(result.all_messages()))
-    # 模型最后收到的是终局失败：前几次让它再调，最后一次让用户稍后再试。
     assert outcomes == [("error", CALL_AGAIN)] * BREAKDOWN_RETRIES + [("error", TRY_LATER)]
     assert result.output == "本轮结束。"
 

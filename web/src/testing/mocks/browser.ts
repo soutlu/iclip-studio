@@ -134,10 +134,6 @@ export const worker = setupWorker(...handlers)
 
 const pausedResponses = new Map<string, () => void>()
 
-/**
- * 浏览器用例暂停某个路径的 mock 响应：暂停后到达的请求照常发出，响应等 `release` 后再交给原有 handler。
- * 挂在 `window.cueMockResponses` 上，用例经 `page.evaluate` 调用。
- */
 const mockResponseGate = {
   pause(pathname: string) {
     if (pausedResponses.has(pathname)) return
@@ -146,7 +142,6 @@ const mockResponseGate = {
       release = resolve
     })
     pausedResponses.set(pathname, release)
-    // resolver 不返回响应时，MSW 接着交给后面匹配的 handler。
     worker.use(
       http.all(`*${pathname}`, async () => {
         await released

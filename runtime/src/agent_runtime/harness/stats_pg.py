@@ -1,10 +1,3 @@
-"""运行统计的只读查询：按应用取消息、跑到终态的顶层运行、按模型的累计用量与每段会话的首末消息。
-
-每条查询都经 ``agent_runtime.sessions`` 只认 ``app_id`` 这个应用的会话，预览会话不算（它们不是应用的对话，
-报表不该数到）。取法二选一：按时间窗（各行自己的时刻落在 ``[since, until)`` 里，``until`` 为空不设上界）
-或按会话 id 取这几段会话的全部行。只返回事实行，不做聚合；行按（会话，时刻，id）排好。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -19,14 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 @dataclass(frozen=True, slots=True)
 class StatsWindow:
-    """时间窗 ``[since, until)``；``until`` 为空不设上界。"""
-
     since: datetime
     until: datetime | None = None
 
 
 StatsScope = StatsWindow | Sequence[uuid.UUID]
-"""按时间窗，或按这几段会话。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,15 +57,12 @@ class SessionStat:
 
 _Mode = Literal["window", "sessions"]
 
-# 会话 id 按文本比：队列与用量表的会话列是文本，写的是带横线的小写写法。
 _BY_SESSIONS: Final = "AND {session} = ANY(CAST(:session_ids AS text[]))"
 _BY_WINDOW: Final = """AND {anchor} >= CAST(:since AS timestamptz)
   AND (CAST(:until AS timestamptz) IS NULL OR {anchor} < CAST(:until AS timestamptz))"""
 
 
 def _both(template: str, **columns: str) -> Mapping[_Mode, TextClause]:
-    """同一条查询按两种取法各备一份：模板里的 ``{scope}`` 换成按会话或按时间窗的筛选。"""
-
     return {
         "sessions": text(template.format(scope=_BY_SESSIONS.format(**columns))),
         "window": text(template.format(scope=_BY_WINDOW.format(**columns))),
@@ -96,11 +83,6 @@ ORDER BY j.conversation_id, j.created_at, j.prompt_id
     anchor="j.created_at",
 )
 
-# 顶层运行只认 agent_job_runs 登记过的 run_id（运行驱动发放的）；子代理的内部运行带 parent_run_id、不登记。
-# 开始是第一条 run_started 事件，结束是第一条 run_completed / run_failed，两头缺一不算。按会话取时先在
-# 聚合前圈住会话。时间窗看开始事件，只能在聚合之后筛：聚合前先经 idx_events_run_started 圈出窗里有
-# 开始事件的运行（第一条开始事件在窗里的一定在其中），只聚合它们的事件，结束事件不按窗裁；圈进来的
-# 第一条开始事件在窗外的，由聚合后的筛选去掉。
 _STARTED_IN_WINDOW: Final = f"""AND r.run_id IN (
       SELECT b.run_id FROM agent_runtime.events b
       WHERE b.kind = 'run_started'
@@ -154,7 +136,6 @@ ORDER BY u.conversation_id, u.model_name
     anchor="u.last_at",
 )
 
-# 最近一条消息按发起时刻，同一时刻按 prompt_id 大的算。
 _SESSIONS: Final = text(f"""
 SELECT DISTINCT ON (j.conversation_id)
        s.id AS session_id,
@@ -185,8 +166,6 @@ def _query(
 
 
 class PgRunStats:
-    """运行统计的 Postgres 读取。每个方法一个连接、只读。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -195,8 +174,6 @@ class PgRunStats:
             return (await conn.execute(statement, params)).all()
 
     async def prompts(self, app_id: str, scope: StatsScope) -> tuple[PromptStat, ...]:
-        """消息；时间窗看发起时刻。"""
-
         rows = await self._rows(*_query(_PROMPTS, app_id, scope))
         return tuple(
             PromptStat(
@@ -209,8 +186,6 @@ class PgRunStats:
         )
 
     async def runs(self, app_id: str, scope: StatsScope) -> tuple[RunStat, ...]:
-        """跑到终态的顶层运行；时间窗看开始事件的时刻。"""
-
         rows = await self._rows(*_query(_RUNS, app_id, scope))
         return tuple(
             RunStat(
@@ -224,8 +199,6 @@ class PgRunStats:
         )
 
     async def usage(self, app_id: str, scope: StatsScope) -> tuple[UsageStat, ...]:
-        """按（会话，模型）的累计用量；时间窗看最后一次累加的时刻。"""
-
         rows = await self._rows(*_query(_USAGE, app_id, scope))
         return tuple(
             UsageStat(
@@ -244,8 +217,6 @@ class PgRunStats:
     async def sessions(
         self, app_id: str, session_ids: Sequence[uuid.UUID]
     ) -> tuple[SessionStat, ...]:
-        """这几段会话里跑过的：第一条消息的时刻、最近一条消息的 ``user_name``。"""
-
         rows = await self._rows(
             _SESSIONS, {"app_id": app_id, "session_ids": [str(one) for one in session_ids]}
         )

@@ -15,7 +15,6 @@ const JOB_ID = '0b9c2f4e-5d8a-4c1b-9e3f-7a6d5c4b3a21'
 const CLEAN = 'https://downloads.example.test/clean.mp4'
 const MARKED = 'https://downloads.example.test/marked.mp4'
 
-/** 下载边界：外链照常回字节，Blob URL 与锚点点击换成桩，点击即视为交给浏览器保存。 */
 const stubSaving = () => {
   const fetched: string[] = []
   server.use(
@@ -76,7 +75,6 @@ describe('VideoDownload', () => {
       if (item !== null) await user.click(await screen.findByRole('menuitem', { name: item }))
 
       await waitFor(() => expect(events).toEqual([{ jobId: JOB_ID, name: 'video.downloaded' }]))
-      // 事件还悬着，字节已经取回并交给浏览器。
       await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
       expect(fetched).toEqual([url])
       release()
@@ -103,7 +101,6 @@ describe('VideoDownload', () => {
         http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
       )
       const createObjectURL = vi.fn(() => 'blob:http://localhost/download')
-      // 补齐下载边界，避免 jsdom 缺少 Blob URL API 掩盖状态码校验失效。
       vi.stubGlobal(
         'URL',
         class extends URL {
@@ -213,7 +210,6 @@ describe('VideoDownload · 高清版', () => {
   const ENHANCEMENTS_URL = `*/api/generations/${JOB_ID}/enhancements`
 
   type GenerationJob = z.output<typeof zGenerationOut>
-  /** `mine` 缺省为 true：记录是自己的。 */
   type Tier = { resolution: '1080p' | '720p'; job: GenerationJob | null; mine?: boolean }
 
   const enhanceJob = (status: GenerationJob['status'], overrides: Partial<GenerationJob> = {}) =>
@@ -225,7 +221,6 @@ describe('VideoDownload · 高清版', () => {
       ...overrides,
     })
 
-  /** 各档按给的样子答，`answer(...)` 换成另一种答法；`reads` 是读了几次。 */
   const serveTiers = (tiers: Tier[]) => {
     const state = {
       answer: (next: Tier[]) => {
@@ -249,7 +244,6 @@ describe('VideoDownload · 高清版', () => {
   const ring = (button: HTMLElement) => button.querySelector('[data-enhance-ring]')
   const dot = (button: HTMLElement) => button.querySelector('[data-enhance-dot]')
 
-  /** 提交收下的请求体；`release` 之前悬着，答复是一条刚受理的超分记录。 */
   const holdSubmits = () => {
     const bodies: unknown[] = []
     let release: () => void = () => undefined
@@ -290,7 +284,6 @@ describe('VideoDownload · 高清版', () => {
         />
       </>,
     )
-    // 等各档读回来再点，免得点在「还没有档」的那一刻。
     await waitFor(() =>
       expect(rendered.queryClient.getQueryData(['video-enhancements', JOB_ID])).toBeDefined(),
     )
@@ -359,11 +352,9 @@ describe('VideoDownload · 高清版', () => {
     const tiers = serveTiers([{ job: null, resolution: '1080p' }])
     const submits = holdSubmits()
     const { user } = await renderEnhanceable()
-    // 菜单开着时它外面的内容对读屏隐藏，按钮先拿到手。
     const trigger = screen.getByRole('button', { name: '下载视频' })
     expect(trigger).not.toHaveAccessibleDescription()
     const menu = await openMenu(user)
-    // 打开时重拉的那一次落定后再点，免得它把在路上的那一行盖回去。
     await waitFor(() => expect(tiers.reads).toBe(2))
     tiers.answer([{ job: enhanceJob('pending'), resolution: '1080p' }])
 
@@ -375,7 +366,6 @@ describe('VideoDownload · 高清版', () => {
     await waitFor(() =>
       expect(submits.bodies).toEqual([{ resolution: '1080p', sourceJobId: JOB_ID }]),
     )
-    // 在路上时再点也点不了，不会提交第二次。
     await user.click(running)
     expect(submits.bodies).toHaveLength(1)
 
@@ -390,7 +380,6 @@ describe('VideoDownload · 高清版', () => {
     const tiers = serveTiers([{ job: enhanceJob('failed'), resolution: '1080p' }])
     const submits = holdSubmits()
     const { user } = await renderEnhanceable()
-    // 菜单开着时它外面的内容对读屏隐藏，按钮先拿到手。
     const trigger = screen.getByRole('button', { name: '下载视频' })
     expect(trigger).toHaveAccessibleDescription('高清版生成失败')
     const menu = await openMenu(user)
@@ -573,7 +562,6 @@ describe('VideoDownload · 高清版', () => {
     await waitFor(() => expect(tiers.reads).toBe(2))
 
     tiers.answer([{ job: enhanceJob('completed', { outputUrl: HD }), resolution: '1080p' }])
-    // 状态跳转帧到了：app 层失效这条来源的查询。
     await act(() => queryClient.invalidateQueries({ queryKey: ['video-enhancements', JOB_ID] }))
     expect(await within(menu).findByRole('menuitem', { name: '下载高清版 1080p' })).toBeVisible()
     await user.keyboard('{Escape}')

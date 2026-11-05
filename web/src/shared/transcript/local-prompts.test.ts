@@ -44,7 +44,6 @@ describe('LocalPromptStore', () => {
 
     expect(store.getLocalTurnState('c1')).toEqual({ generation: 2, pending: 0 })
     expect(store.get('c1')).toMatchObject({ inFlightPromptId: 'p1', pending: [item('p1')] })
-    // 时间线还没接替它，仍是本地未完成的工作。
     expect(store.hasPendingLocalWork('c1', idle)).toBe(true)
   })
 
@@ -59,7 +58,6 @@ describe('LocalPromptStore', () => {
       turns: [turn('t1', 'p1')],
     }
     expect(store.hasPendingLocalWork('c1', done)).toBe(false)
-    // 认领由时间线推导，store 里的记录不动。
     expect(store.get('c1').pending).toEqual([item('p1')])
   })
 
@@ -108,7 +106,6 @@ describe('LocalPromptStore', () => {
       turns: [turn('t1', 'p1')],
     }
     expect(store.begin('c1', item('p2'), settled)).toBe(true)
-    // 已被接替的 p1 在这次发送时清掉。
     expect(store.get('c1')).toMatchObject({ inFlightPromptId: 'p2', pending: [item('p2')] })
   })
 
@@ -120,7 +117,6 @@ describe('LocalPromptStore', () => {
       turnActive: true,
       turns: [],
     }
-    // 排队期间再发一条，p1 按「已接替」清掉；这是此前组件内的同一条规则。
     store.begin('c1', item('p2'), queued)
     expect(store.get('c1').pending).toEqual([item('p2')])
   })

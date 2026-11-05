@@ -1,8 +1,3 @@
-/**
- * 原文编辑器的 CodeMirror 扩展：全部等宽，语法只靠颜色区分，不隐藏任何标记。
- * 不用 basicSetup：不要行号、折叠栏、当前行高亮、自动补全与自动配对括号；Tab 不绑定，留给焦点移动。
- */
-
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -30,7 +25,6 @@ import { tags as t } from '@lezer/highlight'
 import type { FileKind } from '@/shared/lib/file-kind'
 import { jsonProblems, markdownProblems } from './lint'
 
-// 颜色只取代码着色与正文色 token，深色模式随 token 切换。
 const codeStyle = HighlightStyle.define([
   { color: 'var(--color-code-key)', tag: t.heading },
   { color: 'var(--color-code-literal)', tag: [t.strong, t.emphasis] },
@@ -50,7 +44,6 @@ const codeStyle = HighlightStyle.define([
     color: 'var(--color-on-surface-muted)',
     tag: [t.angleBracket, t.punctuation, t.separator, t.brace, t.squareBracket, t.paren],
   },
-  // 放在最后：同一段文字同时是链接、标题时，地址与标记调淡要赢。
   { color: 'var(--color-on-surface-muted)', tag: t.url },
   {
     color: 'var(--color-on-surface-faint)',
@@ -99,7 +92,6 @@ export const BASE: Extension = [
   EditorView.contentAttributes.of({ spellcheck: 'false' }),
 ]
 
-/** 用 marker 包住每个选区；已经被包住的再按一次就去掉。空选区插入一对 marker，光标放中间。 */
 const wrapWith =
   (marker: string): Command =>
   (view) => {
@@ -133,7 +125,6 @@ const LANGUAGES: Record<FileKind, Extension> = {
   markdown: [
     markdown({ base: markdownLanguage, codeLanguages: languages }),
     linter((view) => markdownProblems(view.state.doc.toString())),
-    // 默认键位里 Mod-i 是「选中上一层语法节点」，加粗、斜体要排在它前面。
     Prec.high(
       keymap.of([
         { key: 'Mod-b', run: wrapWith('**') },

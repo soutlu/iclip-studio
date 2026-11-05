@@ -1,12 +1,3 @@
-"""transcript 实体与操作，使用 camelCase 别名序列化；metadata 为本仓扩展字段。
-
-实时与历史投影必须生成相同 id，编号不依赖事件到达顺序：
-- 同一 prompt 的全部 run 合为一轮，按组内最早消息时间排序，从 1 编号。
-- 步骤按轮内 ModelResponse 顺序编号，跨 run 连续。
-- 正文与思考块共享从 1 开始的块编号，工具块不占号。
-- 工具块 id 为 <stepId>.<toolCallId>。
-"""
-
 from __future__ import annotations
 
 import re
@@ -23,24 +14,15 @@ TOOL_STATE_BY_OUTCOME: dict[str, Literal["done", "error"]] = {
     "interrupted": "error",
     "retried": "error",
 }
-"""工具结果到卡片终态的统一映射；非成功结果均为 error。"""
 
 MAIN_AGENT_ID = "main"
-"""当前唯一产出 transcript 的主 agent 标识。"""
 
 COMPACTION_NOTICE = "对话已压缩"
-"""实时与历史投影共用的压缩提示文案。"""
 
 APPROVAL_ID_PREFIX = "apr_"
-"""审批交互 id 前缀，与 toolCallId 一一对应。"""
 
 
 def utf16_len(text: str) -> int:
-    """按 UTF-16 code unit 计数，与客户端 String.length 及追加 offset 一致。
-
-    Python len 按码点计数，不能用于包含 emoji 的协议偏移。
-    """
-
     return len(text.encode("utf-16-le")) // 2
 
 
@@ -48,8 +30,6 @@ _F_ORDINAL = re.compile(r"\.f(\d+)$")
 
 
 def next_frame_ordinal(frame_ids: Iterable[str]) -> int:
-    """返回下一正文或思考块编号；工具块使用 toolCallId，不计入 f 序号。"""
-
     highest = 0
     for frame_id in frame_ids:
         found = _F_ORDINAL.search(frame_id)
@@ -75,16 +55,11 @@ class TextFrame(_Wire):
     role: Literal["assistant", "user"]
     text: str
     content: tuple[PromptContent, ...] | None = None
-    """用户原始图文 parts；助手文本不使用此字段。"""
     prompt_ids: tuple[str, ...] | None = None
     task_id: str | None = None
-    """后台工具的完成通知：等于发起它的那次调用的 toolCallId，也是任务列表里那条任务的 id。
-    带它的用户块不是用户说的话，``content`` 只有一段与 ``text`` 相同的文字。"""
 
     @model_validator(mode="after")
     def _user_block_carries_content(self) -> TextFrame:
-        """用户块需保留 parts，避免仅有 text 时丢失图片及图文顺序。"""
-
         if self.role == "user" and self.content is None:
             raise ValueError(f"用户块 {self.frame_id} 没带 content")
         return self
@@ -104,17 +79,12 @@ class ToolFrame(_Wire):
     state: Literal["running", "done", "error"]
     input: Any | None = None
     output: Any | None = None
-    """模型收到的工具返回内容；界面结果见 metadata。"""
     display: Any | None = None
-    """服务端提供的 display，客户端按 kind 渲染。"""
     view: str | None = None
-    """结果渲染器；未指定时使用 generic。"""
     metadata: Any | None = None
-    """界面使用的 ToolReturn.metadata，不发送给模型。"""
     error: str | None = None
     approval_id: str | None = None
     agent_refs: tuple[AgentRef, ...] | None = None
-    """这次调用派出的子代理。"""
 
 
 class NoticeFrame(_Wire):
@@ -183,11 +153,6 @@ class AgentDescriptor(_Wire):
 
 
 def owned_task_ids(frames: Iterable[TranscriptFrame]) -> frozenset[str]:
-    """这些块里的工具卡认领的任务 id：tool 任务是卡的 toolCallId，subagent 任务是卡 agentRefs 里的子运行。
-
-    一轮的任务就是它的工具卡认领的这些；续跑写基线与重新生成清任务共用这一条认定。
-    """
-
     owned: set[str] = set()
     for frame in frames:
         if isinstance(frame, ToolFrame):
@@ -197,8 +162,6 @@ def owned_task_ids(frames: Iterable[TranscriptFrame]) -> frozenset[str]:
 
 
 def agents_from_tasks(tasks: Iterable[TranscriptTask]) -> tuple[AgentDescriptor, ...]:
-    """主 agent 加每个子代理各一条；实时与历史共用这一个函数，两条路的名册才对得上。"""
-
     return (
         AgentDescriptor(agent_id=MAIN_AGENT_ID, type="main"),
         *(
@@ -222,12 +185,10 @@ class TurnHeader(_Wire):
     kind: Literal["turn"] = "turn"
     turn_id: str
     trigger_prompt_id: str | None = None
-    """发起本轮的消息 id；客户端按它认领自己先画出来的气泡。子代理的轮没有。"""
     ordinal: int
     state: Literal["queued", "running", "completed", "failed", "cancelled"]
     origin: TurnOrigin
     content: tuple[PromptContent, ...]
-    """发起本轮的用户原始 parts。"""
     started_at: str | None = None
     ended_at: str | None = None
     usage: TurnUsage | None = None
@@ -294,10 +255,6 @@ class VideoContent(_Wire):
 
 
 PromptContent = Annotated[TextContent | ImageContent | VideoContent, Field(discriminator="type")]
-"""用户输入仅包含文字、图片和视频，媒体来源限定为 url 或 sessionMedia。
-
-工具调用、工具返回和思考属于模型消息；base64 与本地 path 不接受为服务端用户输入。
-"""
 
 
 class Prompt(_Wire):
@@ -319,8 +276,6 @@ class AgentStatusMeta(_Wire):
 
 
 def agent_context_status(context_tokens: int, max_context_tokens: int) -> AgentStatusMeta:
-    """Pydantic AI 的上下文读数 → Kimi agent meta。"""
-
     return AgentStatusMeta(
         context_tokens=context_tokens,
         max_context_tokens=max_context_tokens,
@@ -334,12 +289,6 @@ class TranscriptMeta(_Wire):
 
 
 class TranscriptSnapshot(_Wire):
-    """``transcript.reset`` 带的那一份。
-
-    ``items`` 恒为空、``has_more_older`` 恒为真：协议把历史整个交给 REST 分页，推送这条
-    路只送增量。剩下几个数组是全局实体，它们不分页，每次都全量带上。
-    """
-
     items: tuple[Any, ...] = ()
     tasks: tuple[TranscriptTask, ...] = ()
     interactions: tuple[Interaction, ...] = ()
@@ -426,13 +375,11 @@ EmittableOperation = Annotated[
     | ItemsRemoveOp,
     Field(discriminator="op"),
 ]
-"""投影器可生成的操作，不含仅由实时状态构造的 reset。"""
 
 TranscriptOperation = Annotated[
     ResetOp | EmittableOperation,
     Field(discriminator="op"),
 ]
-"""客户端可接收的操作联合，包含 reset。"""
 
 
 __all__ = [

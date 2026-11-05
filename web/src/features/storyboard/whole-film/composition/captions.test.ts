@@ -81,7 +81,6 @@ describe('placeCaptions', () => {
   })
 
   it('跨段的句子在切点按词的中点截断，前后两段各得一份，时间收在各自段内', () => {
-    // 同一条素材片切成两段：[0, 2000) 与 [2000, 3500)；「的」中点 2850 落在后一段。
     const placed = place(
       [
         video({ id: 'a', start: 0, duration: 2000 }),
@@ -117,7 +116,6 @@ describe('placeCaptions', () => {
     const placed = place([video({ id: 'a', start: 0, duration: 4000 })], { 'job-a': RECORD }, [
       { subtitleJobId: 'sub-a', sentenceIndex: 1, text: '真 OK！好' },
     ])
-    // 「真」「OK！」「好」字数 1:2:1，平分 1500–3500。
     expect(placed[1]?.words).toEqual([
       { text: '真', start: 1500, end: 2000 },
       { text: 'OK！', start: 2000, end: 3000 },

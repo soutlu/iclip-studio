@@ -1,8 +1,3 @@
-"""供应商声明：``declarations/`` 下一个供应商一个 YAML，随代码发布，启动时读取并校验，有错即启动失败。
-
-声明说清一家供应商怎么接：密钥表单有哪些字段、哪些是机密、能不能自己加模型、内置哪些模型。自己加的
-模型与声明里的模型按同一套规则校验（``ModelDeclaration``）。"""
-
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
@@ -33,7 +28,6 @@ from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 DECLARATIONS_DIR: Final = Path(__file__).resolve().parent / "declarations"
 
 CredentialFieldName = Literal["api_key", "base_url"]
-"""密钥字段只能是这两个：它们一一对应 Agent 引擎建模型时的 API Key 与接口地址，别的字段建模型用不上。"""
 
 API_KEY_FIELD: Final = "api_key"
 BASE_URL_FIELD: Final = "base_url"
@@ -48,8 +42,6 @@ class _Declaration(BaseModel):
 
 
 class CredentialFieldDeclaration(_Declaration):
-    """密钥表单的一个字段。``default`` 是不填时用的值，机密字段不能有。"""
-
     name: CredentialFieldName
     label: Label
     type: CredentialFieldType
@@ -64,11 +56,6 @@ class CredentialFieldDeclaration(_Declaration):
 
 
 class ModelDeclaration(_Declaration):
-    """一个模型：声明里内置的，或接入后自己加的。
-
-    ``api`` 只有 llm 才有、且必须有；``thinking`` 是允许设的思考档位，不写就是不能设档位，也只有 llm
-    才有；``context_size`` 可选。"""
-
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_MODEL_NAME_CHARS)
     ]
@@ -96,9 +83,6 @@ class ModelDeclaration(_Declaration):
 
 
 class ProviderDeclaration(_Declaration):
-    """一家供应商怎么接。``name`` 与文件名一致；``pydantic_ai_provider`` 是 Agent 引擎认的 provider 名；
-    ``apis`` 是它支持的接口，llm 模型（声明里的与自己加的）只能走其中之一，第一个是添加模型时的默认。"""
-
     name: Annotated[str, StringConstraints(pattern=PROVIDER_NAME_PATTERN.pattern)]
     label: Label
     pydantic_ai_provider: Annotated[str, StringConstraints(min_length=1)]
@@ -136,8 +120,6 @@ class ProviderDeclaration(_Declaration):
 
 
 class Declarations(Mapping[str, ProviderDeclaration]):
-    """全部供应商声明，按声明名查；按文件名排序。"""
-
     def __init__(self, declarations: Mapping[str, ProviderDeclaration]) -> None:
         self._by_name = dict(declarations)
 
@@ -152,9 +134,6 @@ class Declarations(Mapping[str, ProviderDeclaration]):
 
 
 def load_declarations(directory: Path = DECLARATIONS_DIR) -> Declarations:
-    """读 ``directory`` 下全部 ``*.yaml``。文件读不了、形状不对、``name`` 与文件名不一致、一个都没有，
-    都抛 ``RuntimeError``，启动就此失败。"""
-
     found: dict[str, ProviderDeclaration] = {}
     for path in sorted(directory.glob("*.yaml")):
         try:

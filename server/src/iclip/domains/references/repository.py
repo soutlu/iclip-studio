@@ -1,5 +1,3 @@
-"""参考视频的端口：自有表的仓储，以及由组合根接上的拆解、上传记录与试生成。"""
-
 from __future__ import annotations
 
 import uuid
@@ -19,8 +17,6 @@ from iclip.domains.references.test_prompt import TestPrompt
 
 
 class ReferenceStore(Protocol):
-    """``reference_videos`` 的数据访问。状态跳转都是带条件的更新，不读后整体覆盖。"""
-
     async def ensure_row(
         self,
         video_url: str,
@@ -28,28 +24,17 @@ class ReferenceStore(Protocol):
         owner: uuid.UUID,
         requested_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
-    ) -> tuple[ReferenceVideo, bool]:
-        """这条视频的那一行；没有就以 ``pending`` 新建。第二项是这次是不是新建的：并发的几次里只有
-        一次为真。已有的行不改，属主仍是第一次建它的人。"""
-        ...
+    ) -> tuple[ReferenceVideo, bool]: ...
 
-    async def get(self, reference_id: uuid.UUID) -> ReferenceVideo | None:
-        """按 id 读，含已移除的；没有给 ``None``。"""
-        ...
+    async def get(self, reference_id: uuid.UUID) -> ReferenceVideo | None: ...
 
     async def list(
         self, scope: Scope, *, limit: int, after: ReferenceCursor | None
-    ) -> Sequence[ReferenceVideo]:
-        """没移除的行，建立晚的排前面，同一刻按 id 倒序。"""
-        ...
+    ) -> Sequence[ReferenceVideo]: ...
 
-    async def count(self, scope: Scope) -> int:
-        """筛选范围里没移除的行数。"""
-        ...
+    async def count(self, scope: Scope) -> int: ...
 
-    async def owner_counts(self) -> Sequence[tuple[str, int]]:
-        """没移除的行按属主的用户名各有几条；条数多的在前，同数按用户名。"""
-        ...
+    async def owner_counts(self) -> Sequence[tuple[str, int]]: ...
 
     async def update(
         self,
@@ -57,9 +42,7 @@ class ReferenceStore(Protocol):
         *,
         version: int,
         document: str,
-    ) -> int | None:
-        """改拆解正文，版本加一，交回新版本。没移除、版本对得上、不在拆解中才改；否则给 ``None``。"""
-        ...
+    ) -> int | None: ...
 
     async def requeue(
         self,
@@ -68,68 +51,36 @@ class ReferenceStore(Protocol):
         from_failed_only: bool,
         requested_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
-    ) -> bool:
-        """已完成或已失败的行改回 ``pending`` 等后台接手，记下这次是谁要的；``from_failed_only`` 只动
-        已失败的。行不在这几种状态（正在排队或拆解）就不动，给 ``False``。"""
-        ...
+    ) -> bool: ...
 
-    async def abandon_pending(self, reference_id: uuid.UUID) -> None:
-        """排队没排上：还在 ``pending`` 的这一行改成 ``failed / model_call_failed``，拆解不动。"""
-        ...
+    async def abandon_pending(self, reference_id: uuid.UUID) -> None: ...
 
-    async def claim(self, reference_id: uuid.UUID) -> Claim | None:
-        """``pending`` 改成 ``running`` 并记开始时刻；不在 ``pending`` 给 ``None``。"""
-        ...
+    async def claim(self, reference_id: uuid.UUID) -> Claim | None: ...
 
-    async def finish(self, claim: Claim, *, document: str) -> bool:
-        """这一次拆完：覆盖拆解、清掉失败原因、版本加一。这一次已被收尾（不在拆解中，或开始时刻
-        对不上）给 ``False``，不写。"""
-        ...
+    async def finish(self, claim: Claim, *, document: str) -> bool: ...
 
-    async def fail(self, claim: Claim, *, error_code: BreakdownErrorCode) -> bool:
-        """这一次没拆成：记失败原因，拆解不动。已被收尾给 ``False``，不写。"""
-        ...
+    async def fail(self, claim: Claim, *, error_code: BreakdownErrorCode) -> bool: ...
 
-    async def time_out_stalled(self, *, older_than_seconds: int) -> int:
-        """开始超过这么久还在拆解中的行改成 ``failed / timeout``，交回改了几行。"""
-        ...
+    async def time_out_stalled(self, *, older_than_seconds: int) -> int: ...
 
-    async def restore(self, reference_id: uuid.UUID, *, owner: uuid.UUID) -> None:
-        """清掉移除时刻，让这一行回到资料库，属主换成 ``owner``；没移除的不动。"""
-        ...
+    async def restore(self, reference_id: uuid.UUID, *, owner: uuid.UUID) -> None: ...
 
-    async def remove(self, reference_id: uuid.UUID) -> bool:
-        """记移除时刻；已移除或不存在给 ``False``。"""
-        ...
+    async def remove(self, reference_id: uuid.UUID) -> bool: ...
 
 
 class VideoBreakdowns(Protocol):
-    """把一条视频拆成一份 Markdown 文档；每次调用都是一次付费模型调用。"""
-
-    async def breakdown(self, video_url: str) -> str:
-        """拆不成抛 ``BreakdownFailed``，带上落到行上的失败原因。"""
-        ...
+    async def breakdown(self, video_url: str) -> str: ...
 
 
 OwnVideoUpload = Callable[[Principal, uuid.UUID], Awaitable[str | None]]
-"""主体本人这条视频上传的地址，参数为（主体，``uploadId``）；不是他的、不是视频上传或不存在都给
-``None``。由组合根接到生成域的上传记录上。"""
 
 
 class BreakdownQueue(Protocol):
-    """把一行交给后台拆解。"""
-
-    async def enqueue_breakdown(self, reference_id: uuid.UUID) -> None:
-        """排一次拆解；排不上就抛出。"""
-        ...
+    async def enqueue_breakdown(self, reference_id: uuid.UUID) -> None: ...
 
 
 class TestVideos(Protocol):
-    """参考视频的试生成：记成生成域的一条视频生成，由组合根接上。"""
-
-    async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None:
-        """``owner`` 名下这条参考视频最新的一次试生成；没有给 ``None``。"""
-        ...
+    async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None: ...
 
     async def submit(
         self,
@@ -139,10 +90,7 @@ class TestVideos(Protocol):
         aspect_ratio: str,
         *,
         user_name: str,
-    ) -> None:
-        """以主体的名义提交一次试生成，``user_name`` 照原样作发往上游的归属标签，排上队就返回。
-        正文超长或请求不合法抛 ``ValidationFailed``。"""
-        ...
+    ) -> None: ...
 
 
 __all__ = [

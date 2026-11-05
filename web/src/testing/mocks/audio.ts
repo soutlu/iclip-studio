@@ -1,17 +1,12 @@
 import { http, HttpResponse } from 'msw'
 
-// mock 里生成的背景音乐：按拍子合成的一段鼓点 WAV。真实后端给的是 m4a，浏览器一样解码；拍子清楚，拍点检测认得出来。
-
-/** 生成的音乐多长、每分钟几拍。 */
 export const MOCK_MUSIC_SECONDS = 30
 const MOCK_MUSIC_BPM = 120
 
-/** 生成的音乐的地址；mock 的生成完成后 `outputUrl` 就是它。 */
 export const MOCK_MUSIC_URL = 'http://localhost/mock-audio/generated.wav'
 
 const SAMPLE_RATE = 22_050
 
-/** 单声道 16 位 PCM 的 WAV：一层持续的高音铺底，每拍一下 60 Hz 的低音鼓（0.15 秒内衰减），小节第一拍更响。 */
 const beatTrackWav = (seconds: number, bpm: number): ArrayBuffer => {
   const length = Math.round(seconds * SAMPLE_RATE)
   const samples = Float32Array.from({ length }, (_, index) => {

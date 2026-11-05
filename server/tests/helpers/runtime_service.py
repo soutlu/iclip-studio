@@ -1,7 +1,3 @@
-"""运行时服务测试的常量、替身与驱动：两个应用的密钥（一个有管理权限）、三个测试插件，经管理接口接入供应商与
-发布 agent，经会话接口等一段会话跑完；跑着 lifespan 的服务用同步 ``TestClient`` 驱动 WebSocket，回调由
-``HookRecorder`` 接住。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -29,19 +25,14 @@ from tests.helpers.model_providers import GOOD_KEY
 from tests.helpers.runtime import wrote
 
 ADMIN_KEY = "runtime-admin-key-0123456789-abcdefg"
-"""有管理权限的应用 ``bff`` 的密钥。"""
 
 READER_KEY = "runtime-reader-key-0123456789-abcdef"
-"""没有管理权限的应用 ``reader`` 的密钥。"""
 
 PROVIDER = "bailian-main"
-"""``connect_provider`` 接入的供应商引用名（按百炼声明）。"""
 
 
 @dataclass
 class LimitedPlugin(CapPlugin[Any]):
-    """测试插件 ``limited``：带一个整数参数 ``limit``。"""
-
     label = "限量"
     summary = "测试用。"
 
@@ -60,9 +51,6 @@ class LimitedPlugin(CapPlugin[Any]):
 
 @dataclass
 class JottingPlugin(CapPlugin[Any]):
-    """测试插件 ``jotting``：一件工具 ``jot``，往会话工作区写 ``notes.md``；用 ``bind`` 绑上运行时服务的
-    工作区存储。"""
-
     label = "记一笔"
     summary = "测试用。"
 
@@ -91,13 +79,10 @@ class JottingPlugin(CapPlugin[Any]):
 
 
 JOTTED = "notes.md"
-"""``jot`` 写的那份文件。"""
 
 
 @dataclass
 class ApprovingPlugin(CapPlugin[Any]):
-    """测试插件 ``approving``：一件要审批才能动的工具 ``write_file``。"""
-
     label = "改文件"
     summary = "测试用。"
 
@@ -117,8 +102,6 @@ class ApprovingPlugin(CapPlugin[Any]):
 
 
 async def connect_provider(admin: httpx.AsyncClient) -> str:
-    """经管理接口接入供应商 ``PROVIDER`` 并加一把好密钥，交回供应商 id。"""
-
     provider = await admin.post(
         "/model-providers", json={"name": PROVIDER, "provider": "bailian", "label": "百炼"}
     )
@@ -133,8 +116,6 @@ async def connect_provider(admin: httpx.AsyncClient) -> str:
 
 
 async def add_model(admin: httpx.AsyncClient, provider_id: str, name: str) -> None:
-    """给供应商加一个自己加的对话模型；运行时按模型名换成测试替身。"""
-
     added = await admin.post(
         f"/model-providers/{provider_id}/models", json={"name": name, "type": "llm", "api": "chat"}
     )
@@ -150,8 +131,6 @@ async def publish_agent(
     subagents: Sequence[str] = (),
     listed: bool = True,
 ) -> None:
-    """经管理接口建 agent、存草稿、发布 v1；``listed`` 为真就上首页菜单。用到的模型要先加好。"""
-
     created = await admin.post("/agents", json={"id": agent_id, "name": agent_id})
     assert created.status_code == 201, created.text
     config = {
@@ -182,8 +161,6 @@ async def publish_agent(
 
 
 async def settled(client: httpx.AsyncClient, session_id: str, *, tries: int = 250) -> None:
-    """等会话里在跑的与排着的都收完尾；``client`` 的路径相对 ``/v1``。"""
-
     for _ in range(tries):
         queue = await client.get(f"/sessions/{session_id}/prompts")
         assert queue.status_code == 200, queue.text
@@ -193,15 +170,8 @@ async def settled(client: httpx.AsyncClient, session_id: str, *, tries: int = 25
     raise AssertionError("这段会话没跑完")
 
 
-# --- 跑着 lifespan 的服务（同步 TestClient，WebSocket 用） ------------------------
-
-
 @dataclass(frozen=True)
 class LiveRuntime:
-    """跑着 lifespan 的运行时服务：同步 ``TestClient``、会话属主与已发布的 agent。
-
-    ``reader`` 是被测的应用（回调只配在它上面），``bff`` 是另一个应用。"""
-
     tc: TestClient
     app: FastAPI
     owner: uuid.UUID
@@ -257,14 +227,10 @@ class LiveRuntime:
         raise AssertionError(f"这段会话没到 {status}")
 
     def connect(self, path: str, key: str = READER_KEY) -> Any:
-        """``/v1/ws`` 或 ``/v1/events`` 的连接（上下文管理器）。"""
-
         return self.tc.websocket_connect(path, headers={"Authorization": f"Bearer {key}"})
 
 
 def receive(ws: Any, kind: str, *, tries: int = 60) -> dict[str, Any]:
-    """等一帧 ``kind``，跳过期间的回执与心跳。"""
-
     for _ in range(tries):
         frame: dict[str, Any] = ws.receive_json()
         if frame.get("type") == kind:
@@ -291,8 +257,6 @@ def subscribe(
 
 
 def ops_until_turn_ends(ws: Any, *, tries: int = 60) -> list[dict[str, Any]]:
-    """收 ``transcript.ops`` 帧，直到某帧里这一轮到了终态；低档会筛掉批次，不能按帧数等。"""
-
     frames: list[dict[str, Any]] = []
     for _ in range(tries):
         frame: dict[str, Any] = ws.receive_json()
@@ -308,9 +272,6 @@ def ops_until_turn_ends(ws: Any, *, tries: int = 60) -> list[dict[str, Any]]:
 
 
 class HookRecorder:
-    """接住运行时回调应用的请求：按路径最后一段（``gate`` / ``run-started`` / ``turn-started``）记下请求体
-    与令牌，按 ``answers`` 答复，没给的答 204。在服务的事件循环里被调，测试线程只读。"""
-
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.tokens: list[str] = []
@@ -344,7 +305,6 @@ READER_HOOKS = ResolvedHooks(
     turn_started=f"{HOOK_BASE}/turn-started",
     timeout_seconds=2.0,
 )
-"""被测应用 ``reader`` 的三个回调都配上。"""
 
 
 __all__ = [

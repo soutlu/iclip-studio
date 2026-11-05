@@ -1,5 +1,3 @@
-"""使用 MockTransport 验证生成供应商的协议映射和重试边界。"""
-
 from __future__ import annotations
 
 import json
@@ -203,8 +201,6 @@ async def test_video_submit_passes_provider_options_and_resolution_through() -> 
 
 
 async def test_video_submit_tells_unreachable_from_result_unknown() -> None:
-    """连不上可以确定没发出去；发出去了没拿到结果不能确定，两种码不能混。查状态是幂等的，照旧可重试。"""
-
     def refused(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
@@ -273,8 +269,6 @@ def succeeded_with(result: Mapping[str, object]) -> HttpVideoProvider:
 
 
 async def test_video_poll_takes_the_measured_output_duration() -> None:
-    """产物时长取上游实测的秒数折成毫秒；``result.duration_ms`` 是生成耗时，不读。"""
-
     provider = succeeded_with(
         SUCCEEDED_RESULT | {"output_duration_seconds": 10.041667, "duration_ms": 45000}
     )
@@ -283,8 +277,6 @@ async def test_video_poll_takes_the_measured_output_duration() -> None:
 
 
 async def test_video_poll_without_output_duration_leaves_it_empty() -> None:
-    """上游没给时长就空着，不拿生成耗时或请求里的目标秒数顶替。"""
-
     provider = succeeded_with(SUCCEEDED_RESULT | {"duration_ms": 45000})
     progress = await provider.poll(make_job(video_request(seconds=10), provider_task_id="t-1"))
     assert (progress.outcome, progress.duration_ms) == ("succeeded", None)
@@ -292,8 +284,6 @@ async def test_video_poll_without_output_duration_leaves_it_empty() -> None:
 
 @pytest.mark.parametrize("seconds", [0, -1.5, "10", True, None, 1e306, 10**400])
 async def test_video_poll_with_unusable_output_duration_still_succeeds(seconds: object) -> None:
-    """时长给坏了只是没有时长，片照样算出好了。"""
-
     provider = succeeded_with(SUCCEEDED_RESULT | {"output_duration_seconds": seconds})
     progress = await provider.poll(make_job(provider_task_id="t-1"))
     assert (progress.outcome, progress.duration_ms) == ("succeeded", None)
@@ -342,8 +332,6 @@ async def test_video_poll_rejects_unknown_status() -> None:
 async def test_video_poll_rejects_success_without_both_outputs(
     result: dict[str, str], missing: str
 ) -> None:
-    """上游两份产物都发布完才进 succeeded，缺一份就是协议错，判失败不留半份。"""
-
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"status": "succeeded", "result": result})
 
@@ -393,8 +381,6 @@ async def test_image_generation_rehosts_result_and_returns_stable_url() -> None:
 
 
 async def test_image_never_retries_and_never_switches_channel() -> None:
-    """供应商无幂等键，自动重试可能重复计费；渠道价格不同，不能自动切换。"""
-
     attempts: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -457,8 +443,6 @@ async def test_image_sends_the_channel_from_the_request(channel: str) -> None:
 
 
 async def test_image_edit_sends_the_urls_in_the_order_the_caller_gave() -> None:
-    """编号由图片顺序决定，所以顺序必须原样发出；帧号只是我们自己的标签，不外发。"""
-
     request = image_request(
         channel="dev",
         prompt="把【输入图片 2 中的标注 1】的杯子换成红色",
@@ -494,8 +478,6 @@ async def test_image_edit_sends_the_urls_in_the_order_the_caller_gave() -> None:
 
 
 async def test_seedream_sends_a_pixel_size_and_no_channel() -> None:
-    """上游只收一个同时表达画幅与分辨率的像素 size，也没有渠道这个轴。"""
-
     sent: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -548,8 +530,6 @@ def upstream_down(_request: httpx.Request) -> httpx.Response:
 
 
 async def test_nano_refuses_to_send_a_null_channel() -> None:
-    """这家声明了渠道轴，受理层会填好；真为空说明装配串了，不能给付费接口送 null。"""
-
     provider = nano_provider(upstream_down)
     with pytest.raises(ProviderError, match="没有渠道"):
         await provider.submit(make_job(image_request(channel=None)))
@@ -583,8 +563,6 @@ async def _report_stage(_job_id: uuid.UUID, _stage: ClipStage) -> bool:
 async def test_every_provider_reports_a_misrouted_job_with_one_code(
     provider: GenerationProvider, job: GenerationJob
 ) -> None:
-    """任务排错了队是同一件事，四家都给同一个码，且不碰上游。"""
-
     with pytest.raises(ProviderError) as error:
         await provider.submit(job)
     assert (error.value.code, error.value.retryable) == ("PROVIDER_KIND_MISMATCH", False)
@@ -601,8 +579,6 @@ GPT_IMAGE_SETTINGS = GatewayImageSettings(
 
 
 async def gpt_image_sent(job_request: ImageGenerationIn) -> tuple[str, dict[str, object]]:
-    """提交一次，返回 (打到的地址, 发出的 payload)。"""
-
     sent: list[tuple[str, dict[str, object]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -624,8 +600,6 @@ async def gpt_image_sent(job_request: ImageGenerationIn) -> tuple[str, dict[str,
 
 
 async def test_gpt_image_sends_a_pixel_size_and_auto_quality() -> None:
-    """上游收像素 size；质量档不由调用方选，明确传 auto。没有渠道这个轴。"""
-
     url, payload = await gpt_image_sent(image_request(aspect_ratio="9:16", resolution="2k"))
 
     assert url == f"{GPT_IMAGE_API_BASE}/text-to-image"
@@ -655,8 +629,6 @@ async def test_gpt_image_with_references_uses_its_edit_route() -> None:
 
 @pytest.mark.parametrize("aspect_ratio", get_args(IMAGE_ASPECT_RATIOS))
 async def test_every_gpt_image_size_follows_the_upstream_rule(aspect_ratio: str) -> None:
-    """宽高都是 16 的倍数，比例对得上所写的画幅，不超过上游的最大尺寸。"""
-
     _, payload = await gpt_image_sent(image_request(aspect_ratio=aspect_ratio, resolution="2k"))
 
     size = payload["size"]
@@ -681,8 +653,6 @@ async def test_gpt_image_refuses_a_tier_it_does_not_declare() -> None:
 
     assert raised.value.code == "PROVIDER_SIZE_UNSUPPORTED"
 
-
-# --- 超分（高清版） ------------------------------------------------------------------
 
 ENHANCE_URL = "https://video.test/videos/enhance/async"
 ENHANCE_SETTINGS = replace(VIDEO_SETTINGS, enhance_submit_url=ENHANCE_URL)
@@ -717,8 +687,6 @@ def finished_film() -> GenerationJob:
 async def test_an_enhancement_goes_to_its_own_address_with_the_upstream_body(
     source: Callable[[], GenerationJob],
 ) -> None:
-    """超分打超分那个地址，请求体就是记下的那份，一个字段都不多；同一把 key。种类不论跟哪种来源。"""
-
     seen: list[tuple[str, str | None, dict[str, object]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -781,8 +749,6 @@ async def test_takes_still_go_to_the_generation_address_when_enhance_is_on() -> 
 
 
 async def test_an_enhancement_is_polled_like_a_take() -> None:
-    """查询地址、带的 user_name 与成功结果的两个地址都同出片。"""
-
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

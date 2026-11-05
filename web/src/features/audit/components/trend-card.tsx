@@ -1,5 +1,3 @@
-/** 首屏的一张趋势卡：标题（点了滚到下面对应的一节）与 ⓘ、数字与环比，下面一张趋势图。 */
-
 import { useId, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { EMPTY } from '../overview-format'
@@ -11,12 +9,9 @@ type TrendCardProps = {
   title: string
   info: string
   head: CardHead
-  /** 环比悬停时写的「与 X–Y 相比」。 */
   deltaTitle: string
   model: ChartModel
-  /** 标题点了滚到的那一节。 */
   onJump: () => void
-  /** 标题右侧的图例，如 token 的分项。 */
   legend?: ReactNode
   className?: string
 }
@@ -64,7 +59,6 @@ export function TrendCard({
           </h3>
           <InfoTip text={info} />
         </div>
-        {/* 宽屏上图例贴右上角，折成两行也不把数字那一行往下挤，同一排的卡片数字对齐。 */}
         {legend === undefined ? null : (
           <div className="lg:absolute lg:top-4.5 lg:right-5 lg:max-w-[55%]">{legend}</div>
         )}

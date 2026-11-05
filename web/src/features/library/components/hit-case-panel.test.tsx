@@ -16,7 +16,6 @@ const faceJobOf = (title: string | null) => {
   return video.face.jobId
 }
 
-/** 记下发出的写请求：方法、路径（去掉 /api）与请求体。 */
 const recordWrites = () => {
   const writes: { method: string; path: string; body: unknown }[] = []
   server.events.on('request:start', ({ request }) => {
@@ -129,7 +128,6 @@ describe('已入选', () => {
         '所在对话暂无可读的新片执行方案，无法打标，AI 打的标签已清空；请在补充新片执行方案后点击「重新打标」重试。',
       ),
     ).toBeVisible()
-    // AI 维度旁的提示是爆款的说法。
     expect(
       within(screen.getByRole('group', { name: '品类' })).getByRole('img', {
         name: '由 AI 自动打标，重新打标时会重写该项标签',

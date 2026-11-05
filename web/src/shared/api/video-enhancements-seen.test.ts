@@ -1,5 +1,3 @@
-/** 看过的超分记录是模块里的状态：每个用例换一份内存存储，再按需重新载入模块。 */
-
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

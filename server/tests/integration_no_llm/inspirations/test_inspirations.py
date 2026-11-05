@@ -1,5 +1,3 @@
-"""验证爆款视频 HTTP 契约、降级分级、门槛语义与库内排序。"""
-
 from __future__ import annotations
 
 import httpx
@@ -28,8 +26,6 @@ async def test_anonymous_is_rejected(client: httpx.AsyncClient) -> None:
 
 
 async def test_unknown_style_is_none_not_an_error(client: httpx.AsyncClient) -> None:
-    """款号在产品资料里查不到时不是错误，只是这次没有可用参考。"""
-
     await register_and_login(client)
 
     found = await search(client)
@@ -57,8 +53,6 @@ async def test_exact_match_returns_own_videos(
 async def test_falls_back_to_same_brand_and_category(
     client: httpx.AsyncClient, business_engine: AsyncEngine, catalog_engine: AsyncEngine
 ) -> None:
-    """本款没有视频时，优先拿同品牌同类目的替身。"""
-
     await register_and_login(client)
     await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(
@@ -80,15 +74,12 @@ async def test_falls_back_to_same_brand_and_category(
     found = (await search(client)).json()
 
     assert found["matches"] == [{"styleNo": STYLE, "matchLevel": "sameBrandCategory"}]
-    # 同类目里指标更高的别家品牌不参与：这一级只放同品牌。
     assert found["videoUrls"] == urls_of(["201"])
 
 
 async def test_falls_back_to_same_category(
     client: httpx.AsyncClient, business_engine: AsyncEngine, catalog_engine: AsyncEngine
 ) -> None:
-    """同品牌同类目没有视频时，再退一级到同类目。"""
-
     await register_and_login(client)
     await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(
@@ -126,8 +117,6 @@ async def test_none_when_the_whole_category_has_no_videos(
 async def test_style_without_a_category_cannot_fall_back(
     client: httpx.AsyncClient, business_engine: AsyncEngine, catalog_engine: AsyncEngine
 ) -> None:
-    """上游没给品类的款无从圈选同类款，落到 none 而不是拿全库凑数。"""
-
     await register_and_login(client)
     await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=None)
     await seed_video(business_engine, video_id="501", style_no="OTHER", category_id=RUNNING)
@@ -148,8 +137,6 @@ async def test_thresholds_do_not_change_match_level(
     matched_style: str,
     match_level: str,
 ) -> None:
-    """门槛筛空本款或同品牌候选，都不再放宽到指标更高的其他品牌。"""
-
     await register_and_login(client)
     await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(business_engine, video_id="601", style_no=matched_style, orders=1)
@@ -184,8 +171,6 @@ async def test_thresholds_filter_the_result(
 async def test_exact_and_fallback_scopes_share_one_deduplicated_top_n(
     client: httpx.AsyncClient, business_engine: AsyncEngine, catalog_engine: AsyncEngine
 ) -> None:
-    """本款与两级替身范围重叠时，视频去重后共享排序和 limit。"""
-
     await register_and_login(client)
     await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_pdm_style(
@@ -229,8 +214,6 @@ async def test_sort_by_selects_a_different_sample(
 async def test_a_video_shared_by_two_styles_appears_once(
     client: httpx.AsyncClient, business_engine: AsyncEngine, catalog_engine: AsyncEngine
 ) -> None:
-    """两个入参款都落到同一批替身上时，同一条视频只出现一次。"""
-
     await register_and_login(client)
     for style_no in (STYLE, "DEMO-STYLE-2"):
         await seed_pdm_style(
@@ -274,8 +257,6 @@ async def test_without_the_product_catalog_returns_exact_but_cannot_fall_back(
     app_without_catalog: FastAPI,
     business_engine: AsyncEngine,
 ) -> None:
-    """缺产品资料库时仍返回本款视频，未精确命中的款不能按归属找替身。"""
-
     await seed_video(business_engine, video_id="1201", style_no=STYLE)
 
     async with httpx.AsyncClient(

@@ -1,5 +1,3 @@
-"""transcript 测试替身、两条路的归一化比对与金样。"""
-
 from __future__ import annotations
 
 import re
@@ -30,11 +28,6 @@ GOLDEN_DIR = CONTRACT_DIR / "transcript"
 
 
 class PerRunBatchReads:
-    """历史重建的三个批量读，用官方协议的逐个读方法拼出来。
-
-    混在官方内存 store 上就是测试替身；混在 ``PgStepStore`` 上就是参照实现：批量 SQL 与它读出的
-    东西必须一模一样。"""
-
     async def list_events_for_runs(
         self: StepStore, run_ids: Sequence[str]
     ) -> Mapping[str, list[StepEvent]]:
@@ -57,8 +50,6 @@ class PerRunBatchReads:
 
 
 class EmptyConversationSnapshots(PerRunBatchReads, InMemoryStepStore):
-    """实时页用的空历史：官方内存 store 补上按对话取快照的入口，恒无快照。"""
-
     async def latest_conversation_snapshot(
         self, *, conversation_id: str, include_interrupted: bool = False
     ) -> None:
@@ -66,8 +57,6 @@ class EmptyConversationSnapshots(PerRunBatchReads, InMemoryStepStore):
 
 
 class NoPromptRuns:
-    """没有 prompt 映射的历史读取：每个 run 各自成轮。"""
-
     async def prompt_of_runs(self, conversation_id: str) -> dict[str, str]:
         return {}
 
@@ -78,17 +67,12 @@ class NoPromptRuns:
         return ()
 
 
-# --- 归一化 -----------------------------------------------------------------
-
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _SHORT_ID = re.compile(r"^(?:[a-z_]+-[0-9a-f]{8}|prm_[0-9a-f]{8,})$")
-"""runner 铸的 run id（storyboard-1a2b3c4d）、测试铸的会话 id（c-…）与 prompt id。"""
 
 
 class Normalizer:
-    """把时间与随机 id 换成占位，同一个原值全程换成同一个占位。"""
-
     def __init__(self) -> None:
         self._ids: dict[str, str] = {}
 
@@ -105,10 +89,8 @@ class Normalizer:
 
     def _field(self, key: str, value: Any) -> Any:
         if key == "stream_epoch":
-            # 实时流的身份每次建流都换新：两条路的流不是同一条，金样只关心它在不在。
             return "<epoch>"
         if key == "durationMs":
-            # 两条路的时钟不同，耗时对不上；金样要能过前端的 number schema，所以写 0 不写占位串。
             return 0
         return self(value)
 
@@ -125,12 +107,6 @@ def normalize(value: Any) -> Any:
 
 
 def comparable(page: TranscriptPage) -> dict[str, Any]:
-    """两条路能比的那部分：seq 是店的水位、prompts 只有实时店有，meta 只比 activity。
-
-    失败或取消的轮不比用量：官方在这两种收尾里不发结果事件，实时侧填不上用量，刷新后才有。
-    这是已知差异，不是两条路的结构分叉。
-    """
-
     data = page.model_dump(by_alias=True, exclude_none=True)
     data.pop("seq", None)
     data.pop("prompts", None)
@@ -142,9 +118,6 @@ def comparable(page: TranscriptPage) -> dict[str, Any]:
             for step in turn.get("steps", ()):
                 step.pop("usage", None)
     return normalize(data)
-
-
-# --- 两条路 -----------------------------------------------------------------
 
 
 def _service(
@@ -168,11 +141,6 @@ async def live_page(
     display: ToolDisplayRegistry,
     runtime_agent_id: str,
 ) -> TranscriptPage:
-    """客户端实时收到的东西：把补发日志重放进一个新店，用空历史读出一页。
-
-    读子代理那页时主流也一起重放：子页的名册取自主流的任务表。
-    """
-
     replayed = TranscriptStore()
     for replayed_agent in dict.fromkeys((MAIN_AGENT_ID, agent_id)):
         for batch in whole_journal(store, conversation_id, replayed_agent):
@@ -194,8 +162,6 @@ async def cold_page(
     runtime_agent_id: str,
     delegate_tool: str | None,
 ) -> TranscriptPage:
-    """刷新后看到的东西：空的实时店，全靠持久化重建。"""
-
     history = TranscriptHistory(step_store, queue, display, delegate_tool)
     return await _service(TranscriptStore(), history, queue, runner).page(
         conversation_id, agent_id=agent_id, runtime_agent_id=runtime_agent_id
@@ -205,8 +171,6 @@ async def cold_page(
 def whole_journal(
     store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
 ) -> tuple[OpBatch, ...]:
-    """这条实时流补发日志里的全部批次：带上流自己的 epoch 从 0 续订。"""
-
     epoch = store.subscribe_view(conversation_id, agent_id).epoch
     return store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches
 
@@ -214,11 +178,6 @@ def whole_journal(
 def ws_frames(
     store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
 ) -> list[Any]:
-    """这条流从订阅起会收到的全部帧：一帧 reset，之后每批一帧 ops。
-
-    只记客户端要解析的部分：帧类型、信封上的 ``stream_epoch`` 与载荷；``session_id`` 与时间戳不进金样。
-    """
-
     view = store.subscribe_view(conversation_id, agent_id)
     frames: list[Any] = [
         {
@@ -241,12 +200,7 @@ def ws_frames(
     return frames
 
 
-# --- 金样 -------------------------------------------------------------------
-
-
 def check_golden(name: str, sample: Any) -> None:
-    """与 contract/transcript/<name>.json 比对；UPDATE_GOLDEN=1 时改写文件。"""
-
     check_golden_file(GOLDEN_DIR / f"{name}.json", sample)
 
 

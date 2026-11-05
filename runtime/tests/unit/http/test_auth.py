@@ -1,6 +1,3 @@
-"""应用密钥鉴权：``/v1`` 要认得的应用密钥（401），``/v1/admin`` 另要管理权限（403），管理接口的写操作要
-``X-End-User``（422）；健康检查不鉴权。用到的路由都在碰库之前就答复，engine 建出来但从不连接。"""
-
 from __future__ import annotations
 
 import base64
@@ -118,7 +115,6 @@ OWNER_SCOPED = {
     ("get", "/v1/sessions/{session_id}/files/{path}"),
     ("put", "/v1/sessions/{session_id}/files/{path}"),
 }
-"""会话接口里要会话属主的那几个：算命名空间、记新消息的属主，或给分叉与拷文件的目标定属主。"""
 
 
 def _end_user_headers(operation: Mapping[str, Any]) -> list[bool]:

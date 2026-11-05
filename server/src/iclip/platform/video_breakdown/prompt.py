@@ -1,7 +1,3 @@
-"""视频拆解发给模型的两段文字：系统提示词与用户消息。
-
-两段都是验证过的原文，逐字发送；正文里的 ``{}`` 是给模型看的台词写法，不做格式化。"""
-
 from __future__ import annotations
 
 from typing import Final

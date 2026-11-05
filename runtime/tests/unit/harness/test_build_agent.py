@@ -1,5 +1,3 @@
-"""运行装配的行为：运行 metadata、子代理能力隔离与调用限额、超时。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -65,8 +63,6 @@ def producer_with_writer(
     max_calls: int | None = None,
     timeout_seconds: float | None = None,
 ) -> Any:
-    """producer 下挂一个 shot-writer，与运行时装配一样：子代理的落库 metadata 就是它的档案。"""
-
     stored = step_store or InMemoryStepStore()
     profile = subagent_profile(WRITER, child)
     writer = make_agent(
@@ -98,8 +94,6 @@ def producer_with_writer(
 
 
 async def drive(agent: Any) -> None:
-    """通过 run_stream_events 跑完一次运行。"""
-
     async with agent.run_stream_events("hi", conversation_id="c1", run_id="run-1") as events:
         async for _event in events:
             pass
@@ -128,8 +122,6 @@ async def _child_done(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncI
 
 
 async def test_runs_record_the_given_metadata_for_parent_and_subagent() -> None:
-    """落库 run_id 与消息 run_id 一致；顶层记装配时给的 metadata，子运行记它的档案。"""
-
     step_store = InMemoryStepStore()
     profile_model = FunctionModel(stream_function=_child_done, model_name="child-m")
     stored = producer_with_writer(
@@ -157,16 +149,10 @@ async def test_runs_record_the_given_metadata_for_parent_and_subagent() -> None:
 
 
 async def test_subagent_only_gets_the_capabilities_declared_for_it() -> None:
-    """保留 inherit_tools=False，shared_capabilities 只有不带工具的 transcript 镜像。"""
-
     def parent_only_tool() -> str:
-        """只给主 agent 的工具。"""
-
         return "父"
 
     def child_only_tool() -> str:
-        """只给下属的工具。"""
-
         return "子"
 
     seen: dict[str, tuple[str, ...]] = {}
@@ -186,7 +172,6 @@ async def test_subagent_only_gets_the_capabilities_declared_for_it() -> None:
 
     agent = producer_with_writer(
         FunctionModel(stream_function=parent_delegates),
-        # 挂了 transcript 镜像的子代理一律走流式，模型须提供 stream_function。
         FunctionModel(stream_function=child_records),
         parent_extra=[Capability[Any](id="parent-pack", tools=[parent_only_tool])],
         child_extra=[Capability[Any](id="child-pack", tools=[child_only_tool])],
@@ -203,8 +188,6 @@ CHILD_OUTPUT = "三个镜头写好了"
 
 
 def _delegate_returns(messages: list[ModelMessage]) -> list[Any]:
-    """主 agent 至今收到的委派工具结果；重试提示不算。"""
-
     return [
         part.content
         for message in messages
@@ -214,8 +197,6 @@ def _delegate_returns(messages: list[ModelMessage]) -> list[Any]:
 
 
 async def test_a_delegation_past_max_calls_does_not_run_the_subagent() -> None:
-    """max_calls 用完后再委派，子代理不再跑，主 agent 收到的是一条普通工具结果而不是子代理产出。"""
-
     seen: list[Any] = []
 
     async def parent_delegates_twice(
@@ -249,8 +230,6 @@ async def test_a_delegation_past_max_calls_does_not_run_the_subagent() -> None:
 
 
 async def test_a_subagent_past_its_timeout_is_cut_off() -> None:
-    """子代理超过 timeout_seconds 就被撤下，主 agent 收到一条普通工具结果接着往下走。"""
-
     seen: list[Any] = []
 
     async def parent_delegates_once(
@@ -275,7 +254,6 @@ async def test_a_subagent_past_its_timeout_is_cut_off() -> None:
         timeout_seconds=0.05,
     )
 
-    # 子代理永不返回：限时没生效时由这里报错，而不是把用例挂住。
     async with asyncio.timeout(10):
         await drive(agent)
 

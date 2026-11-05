@@ -1,8 +1,3 @@
-/**
- * 出片参数的下拉：允许自由输入、按 value 匹配已有选项、弹层自己锚在输入框上。
- * 这三条和 shared/ui/search-list 的「按 id 选一个候选」不是一回事，所以不并进去。
- */
-
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -24,7 +19,6 @@ type TaskSpecPickerProps = {
 const CONTROL =
   'task-form-control flex h-(--control-height-md) w-full min-w-0 items-center gap-1 rounded-sm border border-transparent bg-surface-container-low px-3 text-body text-on-surface'
 
-/** 规格字段既可选建议值也可自由填写；已知显示名回写原有合同值。 */
 export function TaskSpecPicker({
   label,
   options,
@@ -83,7 +77,6 @@ export function TaskSpecPicker({
         )
       }
     } else if (expanded && event.key === 'Enter') {
-      // 自由输入已经同步到表单；没有活动项时只收起，避免误提交整个需求单。
       event.preventDefault()
       if (activeOption) select(activeOption.value)
       else changeOpen(false)
@@ -199,7 +192,6 @@ export function TaskSpecPicker({
             changeOpen(false)
           }}
           onInteractOutside={(event) => {
-            // 输入框是弹层的锚点；继续编辑或点击箭头由字段自己处理。
             if (
               event.target instanceof Node &&
               inputRef.current?.parentElement?.contains(event.target)

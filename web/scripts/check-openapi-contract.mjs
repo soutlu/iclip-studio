@@ -1,4 +1,3 @@
-/** 从合同重新生成客户端，逐字节校验入库产物；后端合同由 make contract-check 校验。 */
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -12,7 +11,6 @@ const fail = (message) => {
   process.exit(1)
 }
 
-/** 列出目录下的全部文件（相对路径，已排序）。 */
 const listFiles = (root, prefix = '') =>
   readdirSync(join(root, prefix), { withFileTypes: true })
     .flatMap((entry) =>
@@ -20,7 +18,6 @@ const listFiles = (root, prefix = '') =>
     )
     .sort()
 
-// 临时目录须位于仓库内且不被 .prettierignore 排除，确保生成器使用项目的格式配置。
 for (const entry of readdirSync(WEB_ROOT)) {
   if (entry.startsWith('.openapi-check-'))
     rmSync(join(WEB_ROOT, entry), { force: true, recursive: true })

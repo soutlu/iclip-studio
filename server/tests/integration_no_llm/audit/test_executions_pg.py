@@ -1,8 +1,3 @@
-"""任务执行清单的 Postgres 口径：对话归属人、四种排序键的升降与跨空值翻页、userName 只筛行、四种异常、
-行上的镜只数成功的生成，以及整个筛选范围的条数。
-
-视频悬挂按此刻判，样本都相对测试开始的此刻 ``BASE`` 往过去放。"""
-
 from __future__ import annotations
 
 import uuid
@@ -43,15 +38,9 @@ def by_id(page: AuditExecutionsOut) -> dict[uuid.UUID, ExecutionOut]:
     return {item.conversation_id: item for item in page.items}
 
 
-# --- 对话归属人 ---------------------------------------------------------------------
-
-
 async def test_conversation_belongs_to_latest_run_else_latest_video_owner(
     engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
-    """A 没跑过：Derek 先出片、Sara 后出片，归 Sara。B 先 Derek 后 Eva 各跑一轮，Sara 的出片
-    还在最后：有运行就以最近一轮为准，归 Eva。视频本身仍归属主；交付周期与用量跟对话归属人走。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek = await plant.user(SARA), await plant.user(DEREK)
@@ -86,19 +75,9 @@ async def test_conversation_belongs_to_latest_run_else_latest_video_owner(
     assert [people[name].usage.total_tokens for name in (EVA, DEREK, SARA)] == [700, 0, 0]
 
 
-# --- 排序与翻页 ---------------------------------------------------------------------
-
-
 async def plant_sortable(
     engine: AsyncEngine,
 ) -> dict[ExecutionSort, dict[uuid.UUID, SortValue | None]]:
-    """六段执行，四种排序键各自的取值；每镜重试与 token 有并列，每镜重试与运行时长还有空值。
-    重试只数成功的生成，空值恰好都是没有出片的那几段。
-
-    E1 一镜一次出片（重试 1、运行 600 秒、token 500）；E2 一镜失败一次再成两次（2、1320 秒、100）；
-    E3 只跑过（空、空、300）；E4 一镜成一次、另一镜失败一次再成（1、300 秒、没有用量算 0）；E5 只跑
-    过、没有用量（空、空、0）；E6 一镜只失败了一次（没有成功镜为空、没出片为空、200）。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara = await plant.user(SARA)
@@ -149,8 +128,6 @@ async def plant_sortable(
 
 
 def expected_order(keys: Mapping[uuid.UUID, SortValue | None], order: SortOrder) -> list[uuid.UUID]:
-    """按键排、同键按对话 id，方向一致；空值不论升降都在最后，彼此仍按 id 同方向排。"""
-
     descending = order == "desc"
     present = sorted(
         (key for key, value in keys.items() if value is not None),
@@ -180,10 +157,6 @@ async def read_all(
 async def test_every_sort_pages_through_without_gaps_or_repeats(
     engine: AsyncEngine, service: AuditService, sort: ExecutionSort, order: SortOrder
 ) -> None:
-    """每镜重试与运行时长各有三个值、三个空值：每页两条、四条时在页中间跨过「有值 → 空值」，每页
-    三条时恰在第一、二页之间跨过；空值不论升降都在最后。满页才给游标，最后一页恰好满时再取一次是
-    空页，条数照旧；每页四条时第二页不满就停。"""
-
     keys = (await plant_sortable(engine))[sort]
     expected = expected_order(keys, order)
     page_sizes = {2: [2, 2, 2, 0], 3: [3, 3, 0], 4: [4, 2]}
@@ -200,9 +173,6 @@ async def test_every_sort_pages_through_without_gaps_or_repeats(
 async def test_sort_values_match_the_row_details(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """排序键就是行上能看到的那几个数：每镜重试 = 行上各镜成功次数之和 ÷ 镜数，运行时长 = 单任务
-    时长，token 合计。只失败过的 E6 与只跑过的两段一样没有镜，重试为空。"""
-
     keys = await plant_sortable(engine)
     rows = by_id(await service.executions(since=SINCE, limit=10))
 
@@ -219,15 +189,9 @@ async def test_sort_values_match_the_row_details(
         assert row.created_at == keys["start"][conversation_id]
 
 
-# --- 行上的镜与异常 -------------------------------------------------------------------
-
-
 async def test_only_successful_takes_count_on_the_row(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """镜 1 五次出片按受理先后：失败、排队、成了、提交中、已提交，只有成了的那次算，之前失败过也是
-    一次通过。镜 2 失败两次、还悬着一次，没成过就不算镜：不列在行上，也不进镜数。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara = await plant.user(SARA)
@@ -265,9 +229,6 @@ async def test_only_successful_takes_count_on_the_row(
 async def test_retry_and_stuck_flag_on_their_thresholds(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """同一镜成功生成三次算反复重试，两次不算，失败三次再成一次也不算；停在 submitted 超过一小时
-    算悬挂，半小时的、以及提交中与排队的老记录都不算。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara = await plant.user(SARA)
@@ -290,7 +251,6 @@ async def test_retry_and_stuck_flag_on_their_thresholds(
                     created_at=at,
                     finished_at=at,
                 )
-        # 另一镜只出一次：反复重试看的是单镜，不是整段对话的成功次数。
         await plant.video(
             twice, owner=sara, shot=1, created_at=ago(hours=4), finished_at=ago(hours=3)
         )
@@ -335,8 +295,6 @@ async def test_retry_and_stuck_flag_on_their_thresholds(
 async def delivered(
     plant: Plant, owner: uuid.UUID, *, at: datetime, tokens: int, run_by: str | None = None
 ) -> uuid.UUID:
-    """一段没挂需求单、出了一件出片的对话，带这么多 token。"""
-
     conversation_id = await plant.conversation(owner, at=at)
     if run_by is not None:
         await plant.turn(conversation_id, user_name=run_by, started_at=at, ended_at=at)
@@ -354,9 +312,6 @@ async def delivered(
 async def test_spend_baseline_is_the_whole_window_regardless_of_user_filter(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """全窗四件出片共 1300 token，每件平均 325，门槛 975：Sara 那段 1000 超了。只看 Sara 时门槛
-    不变、照样标出——若按 Sara 自己算，平均 1000、门槛 3000，就标不出来。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek = await plant.user(SARA), await plant.user(DEREK)
@@ -394,10 +349,6 @@ async def test_spend_is_off_when_the_window_has_no_delivery(
 async def test_task_stuck_needs_three_executions_in_window_and_no_delivery_ever(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """卡住的单：窗里三段执行、从没出片，三段都标，只看 Derek 时他那段也标（段数不看 userName）。
-    反例：窗里三段没出片、但窗外早先有一段成过片的单；窗里只有两段、第三段在窗外的单；两段执行
-    外加一段既没跑也没出片的对话（不算执行）的单。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek = await plant.user(SARA), await plant.user(DEREK)
@@ -427,7 +378,6 @@ async def test_task_stuck_needs_three_executions_in_window_and_no_delivery_ever(
         for hours in (5, 4):
             await attempt(idle_third, at=ago(hours=hours, minutes=30))
         await plant.conversation(sara, at=ago(hours=3), task_id=idle_third)
-        # 一段有出片的对话，让本期有出片基准；它不挂单，不影响卡住判定。
         await delivered(plant, derek, at=ago(hours=1), tokens=0, run_by=DEREK)
 
     page = await service.executions(since=SINCE, limit=100)
@@ -445,11 +395,6 @@ async def test_task_stuck_needs_three_executions_in_window_and_no_delivery_ever(
 async def test_anomalies_come_in_a_fixed_order_and_totals_cover_every_page(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """反复重试要有出片、需求单卡住要从没出片，同一行不会两个都中，四种的顺序分两行看：一行没挂单、
-    一镜成功三次、另一镜悬在上游、token 远超门槛，按 retry、stuck、spend 排；另一行挂在卡住的单下、
-    一镜悬在上游、token 也超了，按 stuck、spend、task_stuck 排。每页两条时条数与命中条数仍是整个
-    范围的。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara = await plant.user(SARA)
@@ -472,8 +417,6 @@ async def test_anomalies_come_in_a_fixed_order_and_totals_cover_every_page(
         for hours in (17, 16):
             sibling = await plant.conversation(sara, at=ago(hours=hours), task_id=task_id)
             await plant.turn(sibling, user_name=SARA, started_at=ago(hours=hours), ended_at=None)
-        # 六件各 10 token 的出片，连同重试的那段共七件：本期每件平均 (6000 + 5000 + 60) / 7，
-        # 门槛约 4740。
         for hours in range(6):
             await delivered(plant, sara, at=ago(hours=hours + 1), tokens=10)
 

@@ -1,5 +1,3 @@
-/** 后端场景测试存下的金样，用 vendored schema 逐帧解析并回放：两端形状对不上先在这里红。 */
-
 import { describe, expect, it } from 'vitest'
 import backgroundTurn from '../../../../contract/transcript/background-turn.json'
 import delegateTurn from '../../../../contract/transcript/delegate-turn.json'
@@ -28,7 +26,6 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
   const sample = SAMPLES[name] as Golden
 
   it('实时流 epoch 在页的信封与每帧信封上都有（客户端续订要带它）', () => {
-    // vendored schema 不认这个信封字段，这里直接看原始金样，免得被 schema 剥掉后测不出缺失。
     expect((sample.rest as { stream_epoch?: unknown }).stream_epoch).toEqual(expect.any(String))
     for (const frame of sample.ws ?? []) expect(frame.stream_epoch).toEqual(expect.any(String))
   })
@@ -42,7 +39,6 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
     expect(page.agent_id).toBe('main')
     expect(page.items.length).toBeGreaterThan(0)
     expect(page.agents.map((agent) => agent.type)).toContain('main')
-    // zod 默认剥掉未声明字段：schema 漏了 triggerPromptId 这里会红，而不是悄悄丢。
     for (const item of page.items) {
       if (item.kind === 'turn') expect(item.triggerPromptId).toBeDefined()
     }
@@ -58,14 +54,12 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
   it.skipIf(sample.ws === undefined)('WS 帧序列逐帧过 schema，回放不缺批、轮数与 REST 一致', () => {
     const frames = sample.ws ?? []
     expect(frames[0]?.type).toBe('transcript.reset')
-    // 与 connection.ts 同一种喂法：载荷原样交给事件 schema。
     const reset = transcriptResetEventSchema.parse(frames[0]?.payload)
     expect(reset.agent_id).toBe('main')
 
     const transcript = new AgentTranscript('main')
     for (const frame of frames.slice(1)) {
       expect(frame.type).toBe('transcript.ops')
-      // schema 推出的类型带 `?: T | undefined`，与 exactOptionalPropertyTypes 下的接口不等价，按 vendored 接口收窄。
       const batch = transcriptOpsEventSchema.parse(frame.payload) as TranscriptOpsEvent
       const applied = transcript.apply(batch.ops)
       expect(applied.gap).toBeUndefined()
@@ -78,7 +72,6 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
 })
 
 describe('金样 background-turn 的后台工具字段', () => {
-  // 已发布字段只增不改（contract/conventions.md「后台工具」）：经 schema 解析后两处都还在，没被剥掉。
   const page = transcriptResponseSchema.parse(backgroundTurn.rest)
 
   it('页里有带 taskId 的 user 正文块（完成通知）', () => {

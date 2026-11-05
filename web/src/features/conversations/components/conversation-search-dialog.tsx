@@ -12,7 +12,6 @@ type ConversationSearchDialogProps = {
   open: boolean
 }
 
-/** 搜索由后端执行，覆盖全部历史对话。 */
 export function ConversationSearchDialog({ onOpenChange, open }: ConversationSearchDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -20,7 +19,6 @@ export function ConversationSearchDialog({ onOpenChange, open }: ConversationSea
     <DialogRoot open={open} onOpenChange={onOpenChange}>
       <DialogSurface
         aria-label="搜索任务"
-        // 打开弹窗时将焦点交给搜索框。
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           inputRef.current?.focus()
@@ -31,7 +29,6 @@ export function ConversationSearchDialog({ onOpenChange, open }: ConversationSea
           closeLabel="关闭"
           title="搜索任务"
         />
-        {/* 关闭时卸载，重置下次输入并停止订阅搜索。 */}
         {open ? <SearchPanel inputRef={inputRef} onNavigate={() => onOpenChange(false)} /> : null}
       </DialogSurface>
     </DialogRoot>
@@ -49,7 +46,6 @@ function SearchPanel({
   const [submitted, setSubmitted] = useState('')
 
   useEffect(() => {
-    // 输入停止 250ms 后发起搜索。
     const timer = setTimeout(() => setSubmitted(keyword.trim()), 250)
     return () => clearTimeout(timer)
   }, [keyword])
@@ -100,7 +96,6 @@ function SearchResults({ keyword, onNavigate, query }: SearchResultsProps) {
   return <SearchRows onNavigate={onNavigate} rows={query.data} />
 }
 
-/** 结果的成员来自这次搜索，行取池里的当前值：改名、删除在弹窗开着时也跟上。 */
 function SearchRows({
   onNavigate,
   rows,

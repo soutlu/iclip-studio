@@ -143,7 +143,6 @@ describe('参考视频列表', () => {
     expect(within(pending as HTMLElement).getByText('拆解完成后自动打标签')).toBeVisible()
     expect(screen.getByText('拆解失败')).toBeVisible()
     expect(screen.getAllByRole('article', { name: '未标注' })).toHaveLength(2)
-    // 打标中与没打成：人工维度的标签照旧显示，角标说打标的状态。
     expect(within(screen.getByRole('article', { name: 'DTC' })).getByText('正在打标')).toBeVisible()
     expect(within(screen.getByRole('article', { name: 'INS' })).getByText('打标失败')).toBeVisible()
     expect(screen.getByText('共 7 条')).toBeVisible()
@@ -226,7 +225,6 @@ describe('参考视频列表', () => {
     const names = within(popup)
       .getAllByRole('option')
       .map((option) => option.textContent)
-    // 大类带判断句；条数含下级。
     expect(names.slice(15, 19)).toEqual([
       '开箱测评型拆包装上手，或在片中做测试、对比2',
       '标准开箱流程0',
@@ -439,7 +437,6 @@ describe('参考视频详情', () => {
       path: `/references/${row.id}/tags`,
     })
 
-    // 两层的维度：清单里大类与小类都在，选小类加进去。
     await user.click(within(dialog).getByRole('button', { name: '添加内容结构' }))
     const picker = await screen.findByRole('dialog', { name: '添加内容结构' })
     await user.type(within(picker).getByRole('combobox', { name: '搜索内容结构' }), '开箱')
@@ -705,7 +702,6 @@ describe('参考视频详情', () => {
       url: 'https://assets.example.com/test.mp4',
     } as const
 
-    /** jsdom 不解码视频：给视频报一个画面尺寸，再在原片上发出 loadedmetadata，当作读到了元数据。 */
     const loadOriginal = (dialog: HTMLElement, width: number, height: number) => {
       vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(width)
       vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(height)
@@ -784,7 +780,6 @@ describe('参考视频详情', () => {
     it('能改但不是属主本人（canEdit 为真，如治理者）：没有「试生成」', async () => {
       const row = addMockReference({ document: '# 出场元素\n\n第一版拆解', userName: 'Maya.Cheng' })
       server.use(
-        // 同一路径也匹配 /references/filters：只接管这一行，其余交给默认 mock。
         http.get('*/api/references/:id', ({ params }) =>
           params['id'] === row.id ? HttpResponse.json({ ...row, canEdit: true }) : undefined,
         ),

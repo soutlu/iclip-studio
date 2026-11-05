@@ -1,9 +1,3 @@
-/** 制作页的舞台：选了本组的一条素材片就放它（与分镜页同一个素材片舞台），否则显示这组用到的一张图，点画面看原图。
- * 左上写 @N（还没有编号的写它的名字），有图时下面挂这张图最新图片任务的角标；右上「编辑」（这张图在用或生成过才有）与「替换」；
- * 左右箭头与焦点在舞台里时的 ←/→ 按这组全部图的先后切，不画帧计数。
- * 换图三个入口同一条路（`useFilmReplace`）：「替换」选文件、拖到舞台上、点过舞台后粘贴；没图的那张也能换。
- * 还没有图的生成图是生成卡（`FilmGenerateCard`），没挂图的段写「该段暂无图片」。列宽随这组的画幅，见 storyboard.css 的布局一节。 */
-
 import { useRef, useState, type ClipboardEvent, type CSSProperties } from 'react'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
@@ -21,7 +15,6 @@ import { frameTag, missingImageText } from './film-content'
 import { FilmGenerateCard, type GenerateCardBusy } from './film-generate-card'
 import { FILM_EDIT_TRIGGER } from './film-image-edit'
 
-/** 换图要的：拖放区、粘贴、选文件，以及舞台上这张是不是正在换。 */
 export type StageReplace = {
   drop: ReturnType<typeof useFileDropTarget>
   onPaste: (event: ClipboardEvent<HTMLElement>) => void
@@ -31,13 +24,10 @@ export type StageReplace = {
 
 type FilmStageProps = {
   group: FilmGroup
-  /** 选中的素材片与它的操作；选了就放它，没选显示图。 */
   take: Omit<TakeView, 'kind'> | undefined
-  /** 舞台上那张图在 `frames` 里的位置；选中的段没挂图时为 undefined。 */
   frame: number | undefined
   readOnly: boolean
   replace: StageReplace
-  /** 还没有图的那张：它最近一次生成的任务、正在提交的那件事、提交失败的原话，与「生成这张」「选用这张」。 */
   generate: {
     job: GenerationJob | undefined
     busy: GenerateCardBusy
@@ -45,14 +35,11 @@ type FilmStageProps = {
     onGenerate: () => void
     onChoose: (url: string) => void
   }
-  /** 编辑入口：能不能打开（这张图在用，或生成过），有图时这张图最新那条图片任务的角标，与打开编辑器
-   * （先看底图，或从角标进先看那条结果）。 */
   edit: {
     openable: boolean
     badge: FrameBadge | undefined
     onEdit: (open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
   }
-  /** 切到第几张。 */
   onStep: (position: number) => void
   onOpen: (media: { name: string; url: string }) => void
 }
@@ -180,7 +167,6 @@ export function FilmStage({
   )
 }
 
-/** 「替换」：选一个图片文件换掉舞台上这张。 */
 function ReplaceAction({ locked, onFile }: { locked: boolean; onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   return (

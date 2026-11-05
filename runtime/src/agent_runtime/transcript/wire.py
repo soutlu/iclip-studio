@@ -1,11 +1,3 @@
-"""transcript WS 帧与 REST 响应信封。
-
-信封使用 snake_case，嵌套实体与操作使用 camelCase，与客户端 schema.ts 保持一致。
-每帧 reset 必须携带 seq 以覆盖客户端水位，支持进程重启后从 1 重新编号；``stream_epoch`` 标出
-这条实时流的身份，客户端带着它续订，对不上就回 reset。``stream_epoch`` + ``payload.seq`` 是某个
-agent 的 Transcript 批次号，续订补批用。WS 帧的外层定义在 ``agent_runtime.live.frames``。
-"""
-
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
@@ -26,15 +18,10 @@ from agent_runtime.transcript.ops import (
 
 
 class Envelope(BaseModel):
-    """信封层：字段名原样，不转 camelCase。"""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class ResetPayload(Envelope):
-    """``has_more_older`` 在 snapshot 外面，协议就是这么放的。``type`` 与外层帧的相同，照 Kimi：载荷本身就是
-    一个完整的 transcript 事件，客户端直接交给事件 schema。"""
-
     type: Literal["transcript.reset"] = "transcript.reset"
     agent_id: str
     snapshot: TranscriptSnapshot
@@ -43,8 +30,6 @@ class ResetPayload(Envelope):
 
 
 class OpsPayload(Envelope):
-    """一批操作。``seq`` 是这一批的批次号，每 agent 连续；``type`` 同 ``ResetPayload``。"""
-
     type: Literal["transcript.ops"] = "transcript.ops"
     agent_id: str
     ops: tuple[EmittableOperation, ...]
@@ -52,10 +37,8 @@ class OpsPayload(Envelope):
 
 
 PendingInteraction = Literal["none", "approval", "question"]
-"""最高优先级的待处理事项。"""
 
 LastTurnReason = Literal["completed", "failed", "aborted"]
-"""最近完成轮次的结果。"""
 
 
 class SessionActivityOut(Envelope):
@@ -64,19 +47,9 @@ class SessionActivityOut(Envelope):
     busy: bool
     pending_interaction: PendingInteraction
     last_turn_reason: LastTurnReason | None = None
-    """最近完成那一轮的结局；还没有结局为空。"""
 
 
 class SubscribePayload(Envelope):
-    """订阅一段对话。``transcript`` 是每个 agent 要哪一档，我们只产出 ``delta``。
-
-    ``transcript_since`` 是客户端手上的水位，按 agent 给；``transcript_epoch`` 是同一水位所属的实时流。
-    两者都对得上才补那之后的批次；给了水位不给 epoch、或 epoch 对不上，一律回 reset。
-
-    协议里还有一帧 ``client_hello``，用来一次报上全部订阅与各自的 cursor。我们不收它：一条
-    连接管几段对话就发几帧 ``subscribe_v2``，各带自己的水位，重连时照样。
-    """
-
     session_id: str
     transcript: dict[str, Literal["off", "turn", "block", "delta"]] = Field(default_factory=dict)
     transcript_since: dict[str, int] = Field(default_factory=dict)
@@ -122,7 +95,6 @@ class TranscriptPage(Envelope):
     pending_interactions: tuple[str, ...] = ()
     seq: int
     stream_epoch: str
-    """``seq`` 所属的实时流；客户端拿基线订阅时与 ``seq`` 一起带上（``transcript_epoch``）。"""
 
 
 class OpsBatchOut(Envelope):
@@ -160,11 +132,7 @@ class RunStatusOut(Envelope):
     status: Literal["running", "awaiting", "completed", "failed", "aborted", "idle"]
 
 
-# transcript 请求体按外部协议保留 snake_case。
-
-
 PromptId = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")]
-"""客户端生成的消息 id，发送与重新生成共用此约束。"""
 
 PromptParts = Annotated[tuple[PromptContent, ...], Field(min_length=1)]
 

@@ -1,5 +1,3 @@
-"""视频理解插件：拆解参考视频，拆解内容写进工作区。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -29,13 +27,10 @@ CAPABILITY_ID: Final = "video"
 
 @dataclass
 class Video(CapPlugin[AgentDepsT]):
-    """视频理解插件。"""
-
     label = "视频理解"
     summary = "把参考视频交给视频理解模型拆解，拆解内容写进工作区，当场返回。"
 
     space: FileSpace
-    """与工作区能力相同的 FileSpace。"""
 
     understanding: VideoUnderstanding
 
@@ -50,8 +45,6 @@ class Video(CapPlugin[AgentDepsT]):
 
     @classmethod
     def bind(cls, *, space: FileSpace, understanding: VideoUnderstanding) -> type[Self]:
-        """把运行服务绑进类，交给登记表。"""
-
         return cls._bound(space=space, understanding=understanding)
 
     @classmethod
@@ -59,13 +52,10 @@ class Video(CapPlugin[AgentDepsT]):
         return cls(**cls._bound_services())
 
     def get_ordering(self) -> CapabilityOrdering:
-        # 写下的文件经 workspace 的文件工具读取。
         return CapabilityOrdering(requires=(Workspace,))
 
     @classmethod
     def display_table(cls) -> Mapping[str, DisplayFn]:
-        """工具卡声明。"""
-
         return {
             "video_parser": lambda args: GenericDisplay(
                 summary="拆解视频", detail=_video_name(args)
@@ -74,8 +64,6 @@ class Video(CapPlugin[AgentDepsT]):
 
 
 class VideoToolset(FunctionToolset[AgentDepsT]):
-    """拆解工具；视频地址的形状检查挂在登记处的验证器上。"""
-
     def __init__(self, capability: Video[AgentDepsT]) -> None:
         super().__init__(id=capability.id)
         self._cap = capability
@@ -108,20 +96,14 @@ class VideoToolset(FunctionToolset[AgentDepsT]):
         return f"视频解析完毕，文档在 {path}。"
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
-        """只查地址形状：视频交给上游模型去取，取不到由它报。"""
-
         _ = ctx
         require_http(video_url, what="视频地址")
 
     def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
-        """这次运行的文件存储与命名空间。"""
-
         return self._cap.space.store, self._cap.space.resolve(ctx)
 
 
 def _video_name(args: Any) -> str | None:
-    """视频工具卡展示原素材文件名。"""
-
     url = args.get("video_url") if isinstance(args, dict) else None
     return url_filename(url) if isinstance(url, str) else None
 

@@ -1,8 +1,3 @@
-"""验证生成能力的 lifespan 启停、队列连接和 worker 关停顺序。
-
-直接驱动 lifespan_context，与 uvicorn 保持一致；避免夹具任务改变取消语义。
-"""
-
 from __future__ import annotations
 
 import httpx
@@ -20,7 +15,6 @@ async def test_app_with_generation_starts_and_stops_cleanly(
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
 
-    # 对象存储使用替身；队列连接真实测试数据库，覆盖完整 lifespan。
     app = build_app(config_with_media(), object_store=MemoryObjectStore(), media_codec=SOFTWARE)
 
     lifespan = app.router.lifespan_context(app)

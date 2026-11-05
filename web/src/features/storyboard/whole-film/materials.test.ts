@@ -10,17 +10,14 @@ import {
   type MaterialRange,
 } from './materials'
 
-/** 只选一个镜头 startMs–endMs */
 const range = (startMs: number, endMs: number): MaterialRange =>
   shotRange('job', 'take', { startMs, endMs })
 
-/** 一条 6 秒的素材，每秒一个镜头 */
 const SHOTS = Array.from({ length: 6 }, (_, at) => ({
   startMs: at * 1_000,
   endMs: (at + 1) * 1_000,
 }))
 
-/** 选中第 first 到第 last 个镜头（从 1 数），两端可另给修剪后的位置 */
 const shots = (
   first: number,
   last: number,
@@ -33,7 +30,6 @@ const shots = (
   shots: SHOTS.slice(first - 1, last),
 })
 
-/** Shift 点第 n 个镜头 */
 const shiftClick = (current: MaterialRange | null, n: number, jobId = 'job') => {
   const shot = SHOTS[n - 1]
   if (shot === undefined) throw new Error(`没有镜头 ${n}`)

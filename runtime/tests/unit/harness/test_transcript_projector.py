@@ -1,8 +1,3 @@
-"""投影器自己的规则：端到端跑不出来、只能用手工事件或官方模型解析的协议流钉住的那几条。
-
-真实运行能产出的形状都在 integration_no_llm/agents/test_transcript_scenarios.py 里比两条路。
-"""
-
 from __future__ import annotations
 
 import json
@@ -77,7 +72,6 @@ def _read_display(args: Any) -> ToolDisplay | None:
 DISPLAYS = ToolDisplayRegistry.merged(
     {"Read": ToolDisplayEntry(draw=_read_display, view="file_content")}, delegate_display_table()
 )
-"""非空注册表，避免两条路同时缺 display 也能相等。"""
 
 
 def _at(minute: int) -> datetime:
@@ -102,8 +96,6 @@ def _derived(*messages: Any) -> tuple[TranscriptTurn, ...]:
 
 
 def _shape(turns: tuple[TranscriptTurn, ...]) -> Any:
-    """手工事件里没有 AgentRunResultEvent，实时侧补不上用量，其余逐字比。"""
-
     def strip(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: strip(item) for key, item in value.items() if key != "usage"}
@@ -114,12 +106,7 @@ def _shape(turns: tuple[TranscriptTurn, ...]) -> Any:
     return strip(normalize(turns))
 
 
-# --- 只能用手工事件造出来的形状 -------------------------------------------------
-
-
 async def test_two_adjacent_text_parts_stay_two_frames_on_both_paths() -> None:
-    """模型一次响应里连发两段正文是两个块，不并成一段；假模型造不出这个形状。"""
-
     async def stream() -> AsyncIterator[Any]:
         yield PartStartEvent(index=0, part=TextPart(content=""))
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="第一段"))
@@ -143,8 +130,6 @@ async def test_two_adjacent_text_parts_stay_two_frames_on_both_paths() -> None:
 
 
 async def test_a_compaction_notice_lands_on_the_same_step_on_both_paths() -> None:
-    """压缩提示关联之后的第一步：实时等待步骤创建，历史按边界时间定位。"""
-
     summary = "Summary of previous conversation:\n\n## Intent\n翻 README"
     projector = _projector()
 
@@ -177,7 +162,6 @@ async def test_a_compaction_notice_lands_on_the_same_step_on_both_paths() -> Non
             run_id=RUN,
             timestamp=_at(2),
         ),
-        # 边界时间位于第一步与第二步响应之间。
         ModelResponse(
             parts=[CompactionPart(content=summary, provider_name="function")],
             run_id=RUN,
@@ -190,14 +174,10 @@ async def test_a_compaction_notice_lands_on_the_same_step_on_both_paths() -> Non
     assert _shape(live) == _shape(derived)
 
 
-# --- 只有真实 Responses 流才有的形状 --------------------------------------------
-
 RAW_THOUGHT = ("先想", "一", "想")
 
 
 def _bailian_reasoning_stream() -> bytes:
-    """百炼 Responses 流：思考只以原始思维链 reasoning_text 增量下发，没有 summary。"""
-
     reasoning_done = {"id": "msg_r", "type": "reasoning", "summary": []}
     message_done = {
         "id": "msg_a",
@@ -263,12 +243,6 @@ def _bailian_reasoning_stream() -> bytes:
 
 
 async def test_raw_reasoning_shows_as_thinking_on_both_paths() -> None:
-    """原始思维链只在 provider_details 里，两条路都要显示出来。
-
-    假模型的 DeltaThinkingPart 造不出 raw_content 与更新函数增量，场景测试覆盖不到；
-    这里用官方 Responses 模型解析百炼形状的 SSE，pydantic-ai 改了这份约定时测试会失败。
-    """
-
     def serve(_: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
             200, headers={"content-type": "text/event-stream"}, content=_bailian_reasoning_stream()
@@ -310,12 +284,7 @@ async def test_raw_reasoning_shows_as_thinking_on_both_paths() -> None:
     assert _shape(live) == _shape(derived)
 
 
-# --- 子代理任务的收尾 ---------------------------------------------------------
-
-
 def test_a_replayed_delegation_points_the_card_at_the_latest_child_only() -> None:
-    """崩溃续跑会重放同一次 delegate；账本只记最后一个子运行，父卡也只能指向它。"""
-
     baseline = TranscriptTurn(
         turn_id="t1",
         ordinal=1,
@@ -353,8 +322,6 @@ def test_a_replayed_delegation_points_the_card_at_the_latest_child_only() -> Non
 
 
 async def test_the_turn_header_carries_the_prompt_that_started_it() -> None:
-    """轮头两次都带触发消息的 id；耗时只在终态那次。"""
-
     projector = TranscriptEventStream(
         turn_id="t1", turn_ordinal=1, content=CONTENT, prompt_id="prm_1", display=DISPLAYS
     )
@@ -377,8 +344,6 @@ async def test_the_turn_header_carries_the_prompt_that_started_it() -> None:
 
 
 async def test_a_steer_before_the_first_step_keeps_its_prompt_id() -> None:
-    """首步还没开就到的插话先暂存，落进首步时仍带着它来自哪条消息。"""
-
     projector = TranscriptEventStream(
         turn_id="t1",
         turn_ordinal=1,
@@ -402,26 +367,19 @@ async def test_a_steer_before_the_first_step_keeps_its_prompt_id() -> None:
 
 
 async def test_a_failed_turn_fails_its_running_task() -> None:
-    """父运行报错时任务随轮次收尾为 failed；框架补的收尾不进历史，所以也不带它的错误文本。"""
-
     task = await _task_after(RuntimeError("父运行炸了"))
 
     assert (task.state, task.state_reason, task.error) == ("failed", None, None)
 
 
 async def test_a_task_whose_call_never_came_back_is_settled_by_the_turn() -> None:
-    """正常收尾但那次调用一直没结果时，任务不能停在 running。"""
-
     task = await _task_after(None)
 
-    # 不带 stateReason：历史只能从子运行事件推终态，两条路要对得上。
     assert (task.state, task.state_reason) == ("failed", None)
     assert task.ended_at is not None
 
 
 async def _task_after(error: BaseException | None) -> TranscriptTask:
-    """派出一个子代理后按 error 结束这一轮，返回它的任务。"""
-
     call = ToolCallPart(
         tool_name=DELEGATE_TOOL, args={"agent_name": WRITER, "task": TASK}, tool_call_id="c1"
     )

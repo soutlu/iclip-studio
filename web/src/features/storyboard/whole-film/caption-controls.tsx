@@ -22,11 +22,6 @@ import type { useSubtitleRecognition } from './use-subtitle-recognition'
 
 type Recognition = ReturnType<typeof useSubtitleRecognition>
 
-/**
- * 字幕标题：全部字幕的开关、显示并更换当前样式与字体；只有图标的识别入口独立显示提交、运行与重试状态。
- * 开关是按下态按钮（开着为按下），名字随状态说下一步（关闭字幕 / 打开字幕），没有字幕时也能点。
- * 当前样式有字体项时，样式菜单里另有一组「字体」，改的是字幕的可填项。
- */
 export function CaptionControls({
   catalog,
   component,
@@ -43,7 +38,6 @@ export function CaptionControls({
   component: string
   styles: readonly CatalogItem[]
   onStyle: (component: string) => void
-  /** 字幕的可填项（草稿里填过的） */
   variables: ComponentVariables
   onVariables: (variables: ComponentVariables) => void
   hidden: boolean
@@ -55,7 +49,6 @@ export function CaptionControls({
   const style = styles.find((candidate) => candidate.name === component)
   const title = style?.title ?? '样式不可用，请重新选择'
   const font = style === undefined ? undefined : fontVariableOf(style)
-  // 选回目录里的默认值时不再存这一项，同组件的字体项
   const onFont = (value: string) => {
     if (font === undefined) return
     const rest = Object.fromEntries(Object.entries(variables).filter(([id]) => id !== font.id))
@@ -149,7 +142,6 @@ export function CaptionControls({
   )
 }
 
-/** 有字幕时只在进行中或失败时覆盖一小块状态，旧结果继续显示并可编辑。 */
 export function CaptionStatus({
   recognition,
   hasCaptions,

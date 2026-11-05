@@ -1,7 +1,3 @@
-"""模型供应商端点：只有 ``model:manage``（预置角色里只有 root）能用；密钥保存不试连、机密字段只以打码形式
-返回、没给的机密字段保持原值、默认密钥不能删；试连与测试模型只答结果、不保存；声明里的模型默认启用、能停用，
-自己加的模型按声明规则校验、接口只能是供应商声明的；默认模型必须存在且已启用。"""
-
 from __future__ import annotations
 
 import json
@@ -48,8 +44,6 @@ DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 async def root(
     engine: AsyncEngine, app: FastAPI, migrated_pg: str
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    """``engine`` 夹具建起时会清表，先于登录建好，免得把刚注册的 root 清掉。"""
-
     async with make_client(app) as client:
         await register_and_login(client, username="root", email="root@example.com")
         await set_roles_in_db(migrated_pg, "root@example.com", ["root"])
@@ -374,7 +368,6 @@ async def test_testing_a_model_uses_the_default_or_given_key_without_saving(
 
     await add_credential(root, provider["id"])
     bad = await add_credential(root, provider["id"], name="坏的", api_key=BAD_KEY)
-    # 停用的模型也能测。
     disabled = await root.patch(
         f"/model-providers/{provider['id']}/models/llm/ZHIPU/GLM-5.3-Flash",
         json={"enabled": False},
@@ -581,8 +574,6 @@ async def test_provider_updates_keep_what_was_not_sent(root: httpx.AsyncClient) 
 
 
 async def provider_rows(engine: AsyncEngine, provider_id: str) -> tuple[int, int, int]:
-    """库里这个供应商自己、它的密钥与模型设置各有几行。"""
-
     async with engine.connect() as conn:
         counts = [
             (
@@ -601,8 +592,6 @@ async def provider_rows(engine: AsyncEngine, provider_id: str) -> tuple[int, int
 
 
 async def save_agent_model(root: httpx.AsyncClient, model: dict[str, Any] | None) -> None:
-    """把 agent ``user`` 的草稿模型换成 ``model``（没有这个 agent 先建一个）。"""
-
     detail = await root.get("/agents/user")
     if detail.status_code == 404:
         detail = await root.post("/agents", json={"id": "user", "name": "用户"})
@@ -621,8 +610,6 @@ async def save_agent_model(root: httpx.AsyncClient, model: dict[str, Any] | None
 async def test_deleting_a_provider_takes_its_credentials_and_models_with_it(
     root: httpx.AsyncClient, engine: AsyncEngine
 ) -> None:
-    """有 agent 的草稿写着它、或它有默认模型时是 409，都清掉后连同密钥与模型设置一起删掉。"""
-
     provider = await connect_bailian(root)
     other = await connect_bailian(root, name="bailian-spare")
     base = f"/model-providers/{provider['id']}"
@@ -667,9 +654,6 @@ async def test_deleting_a_provider_takes_its_credentials_and_models_with_it(
 async def test_agent_managers_read_model_options_without_model_manage(
     app: FastAPI, root: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """只列启用的供应商与它们启用的对话模型，密钥只给打码值并标出默认的那把；``model:manage`` 的端点照样
-    403。"""
-
     provider = await connect_bailian(root)
     paused = await connect_bailian(root, name="bailian-paused")
     base = f"/model-providers/{provider['id']}"

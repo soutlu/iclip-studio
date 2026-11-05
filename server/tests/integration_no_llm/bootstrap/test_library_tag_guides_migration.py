@@ -1,5 +1,3 @@
-"""内容结构的默认判断说明迁移：只清空旧默认值，保留自定义说明。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -42,8 +40,6 @@ async def _customize(url: str, guide: str) -> None:
 
 
 async def _plant_non_targets(url: str) -> None:
-    """同名子标签与其他根维度即使使用旧说明，也不属于本次迁移。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         async with engine.begin() as conn:

@@ -1,6 +1,3 @@
-"""一次性切换命令：照现在三个 agent（加一个子 agent）仿造的文件配置，切换后库里的供应商、密钥、模型、默认
-模型、技能、agent 与对话会话都对；``--dry-run`` 不写；报错路径什么都不写。"""
-
 from __future__ import annotations
 
 import uuid
@@ -94,8 +91,6 @@ def skill_md(name: str) -> str:
 
 @pytest.fixture
 def files(tmp_path: Path) -> Path:
-    """仿造的旧文件：config.old.yaml、agents/（每个 spec 只有注释、旁边是 instructions.md）与 skills/。"""
-
     (tmp_path / "config.old.yaml").write_text(
         yaml.safe_dump(
             {"app": {"name": "旧"}, "models": MODELS, "conversations": {"title_model": "flash"}},
@@ -109,7 +104,6 @@ def files(tmp_path: Path) -> Path:
         folder.mkdir(parents=True)
         (folder / "agent.yaml").write_text("# 身份来自 agents.yaml\n", encoding="utf-8")
         (folder / "instructions.md").write_text(f"你是 {name}。\n", encoding="utf-8")
-    # 按文件里的先后排 sort_order：落盘时保留字典的先后。
     (agents / "agents.yaml").write_text(
         yaml.safe_dump(AGENTS, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
@@ -208,7 +202,6 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
 
     await importing(engine, files)
 
-    # 供应商按声明名接入；密钥按（api_key_env，base_url）去重，第一把是默认。
     ((provider_id, provider_name, default_key),) = await rows(
         engine, "SELECT id, provider, default_credential_id FROM agent_runtime.model_providers"
     )
@@ -222,7 +215,6 @@ async def test_the_cutover_writes_the_file_configuration_into_the_database(
     assert [name for _id, name in credentials] == ["T_QWEN_A", "T_QWEN_B"]
     assert credentials[0][0] == default_key
     second_key = credentials[1][0]
-    # 声明里没有的模型建成自己加的：接口、上下文长度与它配的档位。
     ((properties,),) = await rows(
         engine, "SELECT properties FROM agent_runtime.provider_models WHERE name = 'qwen-custom'"
     )
@@ -338,8 +330,6 @@ def use_a_provider_without_a_declaration(files: Path) -> None:
 
 
 def rename_the_subagent_folder(files: Path) -> None:
-    """子 agent 的标识取 spec 所在目录名，这个名字不合 agent 标识规则。"""
-
     (files / "agents" / "shot-writer").rename(files / "agents" / "Shot_Writer")
     _rewrite(
         files,
@@ -372,8 +362,6 @@ async def test_a_failed_check_writes_nothing(
 async def test_a_failure_halfway_rolls_everything_back(
     engine: AsyncEngine, base_env: None, files: Path
 ) -> None:
-    """一个插件不在本部署的登记表里：发布被拦下时前面写的供应商、技能都回滚掉。"""
-
     await plant_root(engine)
     _rewrite(
         files, "agents/agents.yaml", {"agent.director.capabilities": ["workspace", "shot_video"]}

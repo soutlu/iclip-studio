@@ -1,8 +1,3 @@
-"""逐格生成请求的纯校验。
-
-镜头组表的结构与规则在 [shot_document](../shot_document.py)，两条创作流共用。
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -25,8 +20,6 @@ class FrameRequest(BaseModel):
 
 
 def resolve_requests(frames: Sequence[FrameRequest]) -> tuple[list[str], list[str]]:
-    """校验逐格请求与同批帧号唯一性，不要求帧号属于候选帧台账；新增或短镜头也可生成。"""
-
     if not 1 <= len(frames) <= GRID_CELLS:
         raise ModelRetry(f"frames 必须是 1-{GRID_CELLS} 条，当前 {len(frames)} 条。")
     cell_ids: list[str] = []
@@ -48,8 +41,6 @@ def resolve_requests(frames: Sequence[FrameRequest]) -> tuple[list[str], list[st
 
 
 def resolve_cells(cells: Sequence[str]) -> list[str]:
-    """校验补拍的逐格描述。"""
-
     if not 1 <= len(cells) <= GRID_CELLS:
         raise ModelRetry(f"cells 必须是 1-{GRID_CELLS} 条，当前 {len(cells)} 条。")
     descriptions: list[str] = []

@@ -1,5 +1,3 @@
-"""验证 tach 依赖图之外的约束：不依赖后端、框架引用边界与异常处理。"""
-
 from __future__ import annotations
 
 import ast
@@ -9,10 +7,8 @@ PROJECT = Path(__file__).resolve().parents[3]
 SRC = PROJECT / "src" / "iclip_video"
 TESTS = PROJECT / "tests"
 
-# 插件依赖运行时，后端依赖插件，反过来不行：源码与测试都不得引用后端包。
 SERVER_PACKAGES = frozenset({"iclip"})
 
-# 框架及允许直接导入它的路径前缀（相对 src/iclip_video）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("pydantic_ai",): (
         "iclip_studio/",
@@ -21,10 +17,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "video_breakdown/",
         "shot_video/",
     ),
-    # Agent 引擎在运行时，插件不直接引用 harness 与模型 SDK。
     ("pydantic_ai_harness",): (),
     ("openai",): (),
-    # HTTP 入口、存储与队列都在宿主。
     ("fastapi", "starlette"): (),
     ("sqlalchemy",): (),
     ("fastapi_users", "fastapi_users_db_sqlalchemy"): (),

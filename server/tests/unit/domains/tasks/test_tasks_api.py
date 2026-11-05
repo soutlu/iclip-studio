@@ -1,5 +1,3 @@
-"""使用内存仓储验证 /tasks 权限、状态机和冻结规则；身份由测试中间件注入。"""
-
 from __future__ import annotations
 
 import uuid
@@ -36,8 +34,6 @@ BODY: dict[str, object] = {
 
 
 def editor(user_id: uuid.UUID | None = None, *extra: str) -> Principal:
-    """预置 editor 同时持有这两个权限，真实角色表中不存在只授予其一的角色。"""
-
     return principal("tasks:read", "tasks:write", *extra, user_id=user_id)
 
 
@@ -85,8 +81,6 @@ async def test_creation_only_accepts_draft_or_published(status: str) -> None:
 
 
 async def test_status_cannot_be_supplied_when_overwriting() -> None:
-    """状态只在创建时可选，之后一律走状态机端点。"""
-
     task = make_task()
     repo = InMemoryTaskRepository([task])
     async with client(build_test_app(repo, granted=editor(task.creator_user_id))) as http:
@@ -287,8 +281,6 @@ async def test_published_input_is_frozen_but_planner_fields_stay_open(field: str
 
 
 async def test_published_task_may_have_no_deadline() -> None:
-    """期限始终可选：机器提交的需求单不带期限，策划仍能继续编辑它。"""
-
     task = make_task(status=STATUS_PUBLISHED)
     repo = InMemoryTaskRepository([task])
     async with client(build_test_app(repo, granted=editor())) as http:
@@ -328,8 +320,6 @@ async def test_current_state_determines_the_action_result(
 
 @pytest.mark.parametrize("status", [STATUS_PUBLISHED, STATUS_CONFIRMED, STATUS_WITHDRAWN])
 async def test_only_drafts_can_be_deleted(status: TaskStatus) -> None:
-    """已发布需求单通过撤回留痕，不能直接删除。"""
-
     task = make_task(status=status, deadline=future())
     repo = InMemoryTaskRepository([task])
     caller = editor(task.creator_user_id, "users:manage")

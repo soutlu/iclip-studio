@@ -18,7 +18,6 @@ import type { Panel } from './panel'
 import { AddCard, AlertGlyph, CardBadge, EmptyDash, ResourceCard } from './resource-card'
 
 const GRID = 'grid grid-cols-2 gap-2 @min-[600px]:grid-cols-3 @max-[360px]:grid-cols-1'
-// 子 Agent 卡片尾部有时限与次数两枚角标，两列才放得下名字。
 const WIDE_GRID = 'grid grid-cols-2 gap-2 @max-[360px]:grid-cols-1'
 
 export type SectionProblems = Partial<Record<EditorSection, string[]>>
@@ -55,7 +54,6 @@ function Section({
   )
 }
 
-/** 发布被拦下的原因，就地写在出问题的那一节里，改了草稿才收起。 */
 function ProblemList({ problems }: { problems: string[] }) {
   return (
     <ul className="mb-3 flex flex-col gap-1 text-body-sm text-error" role="alert">
@@ -71,7 +69,6 @@ function ProblemList({ problems }: { problems: string[] }) {
 
 type AgentEditorPaneProps = {
   value: DraftValue
-  /** 看历史版本：只读，不开面板。 */
   readOnly: boolean
   current: { id: string; isSubagent: boolean }
   agents: readonly Agent[]
@@ -82,7 +79,6 @@ type AgentEditorPaneProps = {
   onOpenPanel: (panel: Panel) => void
 }
 
-/** 左栏的配置摘要：指令（模型与提示词）、技能、插件、MCP 服务、子 Agent；细节都在右侧面板里改。 */
 export function AgentEditorPane({
   agents,
   current,
@@ -105,7 +101,6 @@ export function AgentEditorPane({
     : undefined
   const open = (next: Panel) => (readOnly ? undefined : () => onOpenPanel(next))
 
-  // 发布被拦下时滚到第一处出问题的那一节。
   const firstProblem = (
     ['general', 'instructions', 'skills', 'plugins', 'mcp', 'subagents'] as const
   ).find((section) => problems[section] !== undefined)
@@ -337,7 +332,6 @@ export function AgentEditorPane({
   )
 }
 
-/** 模型胶囊：模型名、次级思考档位与箭头；不给 onClick 是只读的（看历史版本）。 */
 function ModelPill({
   active = false,
   model,
@@ -400,7 +394,6 @@ function ModelPill({
   )
 }
 
-/** 系统提示词的排版预览：只露开头几行、底部渐隐，悬停出铅笔；空的时候是添加入口。 */
 function PromptCard({
   active,
   markdown,
@@ -418,7 +411,6 @@ function PromptCard({
   const preview = empty ? (
     <span className="text-on-surface-faint">{onOpen === undefined ? '—' : '添加系统提示词'}</span>
   ) : (
-    // 摘要只读：正文里的链接、代码块按钮不单独接收焦点与点击。
     <div inert>
       <Markdown
         className="max-h-30 overflow-hidden mask-b-from-60% text-on-surface-variant [&_:is(strong,h3,h4,h5)]:text-on-surface"
@@ -430,7 +422,6 @@ function PromptCard({
   return (
     <div className={cn(className, 'ui-state')}>
       {preview}
-      {/* 按钮铺满整张卡片，摘要放在按钮外面：正文的代码块、图片自带按钮，按钮里不能再套按钮。 */}
       <button
         aria-label="编辑系统提示词"
         aria-pressed={active}

@@ -20,7 +20,6 @@ const tagVariants = cva(
 
 type TagProps = ComponentPropsWithRef<'span'> & VariantProps<typeof tagVariants>
 
-/** 纯展示的类型 / 状态 / 计数标签；不承担选择，可选择的用 Chip。 */
 export function Tag({ className, variant, ...props }: TagProps) {
   return <span className={cn(tagVariants({ variant }), className)} {...props} />
 }

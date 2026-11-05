@@ -1,8 +1,3 @@
-"""通过 direct.model_request 生成会话标题，不建立工具运行或历史。
-
-失败返回 None，不影响主运行的完成状态。
-"""
-
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -18,10 +13,8 @@ from agent_runtime.harness.models import thinking_settings
 _logger = structlog.stdlib.get_logger(__name__)
 
 TITLE_THINKING: Final = "low"
-"""起标题固定用的思考档位，盖过模型自带的；部分模型不接受更低的档位。"""
 
 GenerateTitle = Callable[[str], Awaitable[str | None]]
-"""从用户输入生成标题，失败返回 None。"""
 
 INSTRUCTIONS = """\
 给这段对话起一个标题。
@@ -32,15 +25,11 @@ INSTRUCTIONS = """\
 - 只输出标题本身，不要任何解释。"""
 
 MAX_INPUT_CHARS = 400
-"""标题生成输入的字符上限。"""
 
 MAX_TITLE_CHARS = 200
-"""生成标题的字符上限。"""
 
 
 def title_generator(model: Model) -> GenerateTitle:
-    """绑定模型并返回标题生成函数。"""
-
     async def generate(user_text: str) -> str | None:
         excerpt = user_text.strip()[:MAX_INPUT_CHARS]
         if not excerpt:
@@ -62,8 +51,6 @@ def title_generator(model: Model) -> GenerateTitle:
 
 
 def clean_title(raw: str) -> str | None:
-    """取首行并移除成对引号，生成可显示标题；空结果返回 None。"""
-
     line = raw.strip().splitlines()[0].strip() if raw.strip() else ""
     for quote in ('"', "'", "“", "”", "「", "」", "《", "》"):
         line = line.strip(quote)

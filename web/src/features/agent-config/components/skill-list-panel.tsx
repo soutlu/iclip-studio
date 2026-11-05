@@ -8,10 +8,8 @@ import { PanelShell } from './panel-shell'
 import { CardBadge, CardGlyph } from './resource-card'
 
 type SkillListPanelProps = {
-  /** `library` 点一行编辑这个技能；`catalog` 点一行给当前 Agent 添加或去掉它。 */
   mode: 'library' | 'catalog'
   skills: readonly Skill[]
-  /** 当前 Agent 草稿里绑定的技能。 */
   boundIds: readonly string[]
   onToggle: (skill: Skill) => void
   onOpen: (skill: Skill) => void
@@ -19,10 +17,6 @@ type SkillListPanelProps = {
   onClose: () => void
 }
 
-/**
- * 技能库与「添加技能」共用的列表：搜索、「新建技能」，一行一个技能（图标、名字、一句说明），从没发布过的带「草稿」。
- * 选技能时右侧是 + / ✓；从没发布过的技能不能绑定，点了进它的编辑器，发布后再来添加。
- */
 export function SkillListPanel({
   boundIds,
   mode,
@@ -34,7 +28,6 @@ export function SkillListPanel({
 }: SkillListPanelProps) {
   const [query, setQuery] = useState('')
   const keyword = query.trim().toLowerCase()
-  // 已归档的不再列出；选技能时还绑着的照样列出来，好去掉它。
   const listed = skills.filter(
     (skill) => skill.status === 'active' || (mode === 'catalog' && boundIds.includes(skill.id)),
   )
@@ -44,7 +37,6 @@ export function SkillListPanel({
   return (
     <PanelShell onClose={onClose} title={mode === 'library' ? '技能库' : '添加技能'}>
       <div className="mb-4 flex items-center gap-2">
-        {/* 搜索框是浅灰底、不描边，聚焦也不出框（同插件面板）。 */}
         <Input
           aria-label="搜索技能"
           leadingIcon="search"
@@ -62,7 +54,6 @@ export function SkillListPanel({
         {matches.map((skill) => {
           const draftOnly = skill.latestVersion === null
           const bound = boundIds.includes(skill.id)
-          // 选技能时，没发布过、也没绑着的那一行点了是进编辑器。
           const opens = mode === 'library' || (draftOnly && !bound)
           return (
             <li className="min-w-0" key={skill.id}>

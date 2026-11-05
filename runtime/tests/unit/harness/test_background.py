@@ -1,5 +1,3 @@
-"""验证后台工具结果经真实 harness 套标签、转义后，parse_outcome 能还原出工具原文。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -31,8 +29,6 @@ TAGGED_TEXT = (
 
 
 async def _delivered(tool: Callable[[], Awaitable[str]]) -> BackgroundOutcome:
-    """真跑一次后台工具，返回递入运行的那条结果的解析；消息形状与 harness 实际写的一致。"""
-
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(parts=[ToolCallPart(TOOL_NAME, {}, tool_call_id=CALL_ID)])
@@ -56,8 +52,6 @@ async def _delivered(tool: Callable[[], Awaitable[str]]) -> BackgroundOutcome:
 
 
 async def test_a_done_outcome_keeps_framing_tags_in_the_tool_text() -> None:
-    """工具返回里的框架标签被 harness 转义后，解析出的原文与工具返回一字不差。"""
-
     async def breakdown_video() -> str:
         await asyncio.sleep(0.01)
         return TAGGED_TEXT
@@ -73,8 +67,6 @@ async def test_a_done_outcome_keeps_framing_tags_in_the_tool_text() -> None:
 
 
 async def test_a_failed_outcome_keeps_framing_tags_in_the_failure_message() -> None:
-    """工具失败原文里的框架标签被 harness 转义后，解析出的失败原文与抛出时一字不差。"""
-
     async def breakdown_video() -> str:
         await asyncio.sleep(0.01)
         raise ToolFailed(TAGGED_TEXT)

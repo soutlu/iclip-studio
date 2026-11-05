@@ -36,7 +36,6 @@ const ALIGN_PLACEMENT: Record<
   'top-start': { align: 'start', side: 'top' },
 }
 
-// 侧栏底部的账户卡片：头像、名字与用户名、展开标记排成一行，整张卡片是菜单触发器。
 const USER_CARD_BUTTON_CLASS =
   'group flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface select-none focus-visible:bg-inverse-surface focus-visible:text-inverse-on-surface focus-visible:outline-hidden data-[state=open]:bg-state-active'
 
@@ -49,7 +48,6 @@ const APPEARANCE: Record<ThemePreference, { icon: IconName; label: string }> = {
 const USER_AVATAR_CLASS =
   'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
 
-/** 侧栏底部的账户入口：点整张卡片打开账户菜单，菜单里是个人信息、外观、设置（未上线）与退出登录。 */
 export function CueUserMenu({
   align = 'bottom-end',
   className = '',
@@ -65,16 +63,13 @@ export function CueUserMenu({
       return
     }
 
-    // 退出后由会话状态驱动页面更新，保留当前路由。
     logoutMutation.mutate()
   }, [logoutMutation])
 
   const userLabel = userDisplayName(user)
-  // 第二行给用户名；显示名本就退回用户名时不重复。
   const secondaryLabel = user?.username && user.username !== userLabel ? user.username : ''
   const departments = user?.departments ?? []
   const hasProfileDetails = Boolean(user?.jobTitle || user?.city || departments.length)
-  // 头像依次使用 SSO 图片、用户名首字母和通用轮廓。
   const avatarUrl = user?.avatarUrl.trim() ?? ''
   const avatarInitial = user ? userLabel.trim().charAt(0).toUpperCase() : ''
 
@@ -132,7 +127,6 @@ export function CueUserMenu({
       <MenuSurface
         align={ALIGN_PLACEMENT[align].align}
         side={ALIGN_PLACEMENT[align].side}
-        // 个人信息与菜单项之间不留菜单项间距，保持分隔线贴着下面的菜单项。
         className="w-[280px] gap-0 overflow-hidden"
       >
         <div className="border-b border-border px-3 py-2.5">
@@ -175,7 +169,6 @@ export function CueUserMenu({
             </dl>
           ) : null}
         </div>
-        {/* 外观占一行，与「设置」对齐：左边图标和字，右边三档图标。 */}
         <div className="flex h-(--control-height-sm) items-center gap-2 pr-1 pl-2 text-body text-on-surface">
           <Icon
             className="shrink-0 text-on-surface-variant"
@@ -215,7 +208,6 @@ export function CueUserMenu({
           disabled={isLoggingOut}
           className="data-disabled:cursor-wait"
           onSelect={(event) => {
-            // 菜单留着显示「退出中」；退出成功后侧栏换成登录入口，菜单随之卸载。
             event.preventDefault()
             handleLogout()
           }}

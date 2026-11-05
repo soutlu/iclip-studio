@@ -1,7 +1,3 @@
-"""运行时回调应用：开跑检查不放行这次运行失败，原因记在消息行上，应用暂时不在（没答复、答 502/503/504）先在
-窗口里重试；运行开始在这次运行的第一批操作之前调到；轮次开始每轮一次，审批续跑不算；没配回调的应用一次都
-不调。回调经 ``HookRecorder`` 接住。"""
-
 from __future__ import annotations
 
 import uuid
@@ -73,17 +69,12 @@ def test_a_gate_that_does_not_let_it_through_fails_the_run(
     assert [body["prompt_id"] for body in hook_recorder.named("gate")] == ["prm_refused"]
 
 
-# --- 开跑检查接在运行驱动上：应用暂时不在就重试，没放行的原因记在消息行上 -----------------
-
-
 async def reader_app(_session_id: str) -> str:
     return "reader"
 
 
 @pytest.fixture
 async def quick_gate(hook_recorder: HookRecorder) -> AsyncGenerator[AppHooks]:
-    """回调经 ``hook_recorder`` 接住、重试退避缩到几十毫秒的开跑检查。"""
-
     async with httpx.AsyncClient(transport=httpx.MockTransport(hook_recorder)) as client:
         yield AppHooks(
             hooks={"reader": READER_HOOKS},
@@ -96,8 +87,6 @@ async def quick_gate(hook_recorder: HookRecorder) -> AsyncGenerator[AppHooks]:
 
 
 async def run_through_gate(engine: AsyncEngine, gate: AppHooks) -> JobRow:
-    """照组合根的接法把开跑检查接在运行依赖构造上，跑完一条消息，交回它的消息行。"""
-
     async def deps_for(row: JobRow) -> None:
         await gate.gate(
             GatePayload(
@@ -171,7 +160,6 @@ def test_run_started_comes_before_the_runs_first_ops(
         subscribe(ws, session)
         receive(ws, "ack")
         live.send(session, "prm_order")
-        # 受理时那批只有 prompt.upsert；运行自己产出的第一批带 turn.upsert。
         for _ in range(60):
             frame = receive(ws, "transcript.ops")
             if any(op["op"] == "turn.upsert" for op in frame["payload"]["ops"]):
@@ -231,7 +219,6 @@ class TestTurnStarted:
         assert approved.status_code == 204, approved.text
         live.settled(session)
         hook_recorder.waits_for("turn-started", 1)
-        # 审批续跑是同一轮的第二次运行：运行开始调两次，轮次开始只调一次。
         assert len(hook_recorder.named("run-started")) == 2
         assert hook_recorder.named("turn-started") == [
             {"session_id": session, "text": "第一问", "preview": False}

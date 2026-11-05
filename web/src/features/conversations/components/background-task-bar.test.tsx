@@ -23,7 +23,6 @@ const tasksOf = (...tasks: TranscriptTask[]): ReadonlyMap<string, TranscriptTask
 
 describe('BackgroundTaskBar', () => {
   beforeEach(() => {
-    // 只假造时钟与计时用的 setInterval；setTimeout 照旧，user-event 的交互才走得动。
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     vi.setSystemTime(NOW)
   })

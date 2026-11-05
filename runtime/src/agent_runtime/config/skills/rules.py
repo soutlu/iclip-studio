@@ -1,8 +1,3 @@
-"""技能库的规则：标识、文件路径与内容、上限、``SKILL.md`` 的 frontmatter、清单与内容 hash、显示名。
-
-都是纯函数。检查文件的函数交回问题清单，每条写明是哪个文件、为什么不行，调用方决定报错还是交给人看；
-``check_*`` / ``clean_*`` 不合格直接抛 ``ValidationFailed``，消息给人看。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -27,11 +22,9 @@ from agent_runtime.config.skills.models import (
 from agent_runtime.errors import ValidationFailed
 
 _NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-"""小写字母、数字与单个连字符，不以连字符开头或结尾。"""
 
 _FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(.*?)^---[ \t]*\r?$", re.DOTALL | re.MULTILINE)
 _NAME_KEY = re.compile(r"name[ \t]*:")
-"""frontmatter 里顶层 ``name`` 键所在的行（从行首起）。"""
 
 
 def _mb(size: int) -> str:
@@ -39,8 +32,6 @@ def _mb(size: int) -> str:
 
 
 def name_problem(name: str) -> str | None:
-    """不合 Agent Skills 规范的原因；合格给 ``None``。"""
-
     if not name:
         return "技能标识不能为空"
     if len(name) > MAX_NAME_CHARS:
@@ -57,8 +48,6 @@ def check_name(name: str) -> str:
 
 
 def clean_display_name(display_name: str) -> str:
-    """连续的空白（含换行）并成一个空格、去掉首尾；空的、超长的不收。"""
-
     cleaned = " ".join(display_name.split())
     if not cleaned:
         raise ValidationFailed("请填写显示名")
@@ -76,24 +65,18 @@ def _description_problem(description: str) -> str | None:
 
 
 def clean_description(description: str) -> str:
-    """去掉首尾空白；空的、超长的不收。"""
-
     if (problem := _description_problem(description)) is not None:
         raise ValidationFailed(problem)
     return description.strip()
 
 
 def clean_note(note: str | None) -> str | None:
-    """去掉首尾空白，空的当作没有。"""
-
     if note is None:
         return None
     return note.strip() or None
 
 
 def path_safety_problem(path: str) -> str | None:
-    """路径本身不安全的原因：要相对的 posix 路径，不许绝对路径、``..``、反斜杠、空段与控制字符。"""
-
     if not path:
         return "路径为空"
     if "\\" in path:
@@ -111,8 +94,6 @@ def path_safety_problem(path: str) -> str | None:
 
 
 def path_problem(path: str) -> str | None:
-    """路径不收的原因：不安全，或不是 ``SKILL.md`` 也不在 ``references/`` 下。"""
-
     if (problem := path_safety_problem(path)) is not None:
         return problem
     if path != SKILL_MD and not path.startswith(REFERENCES_DIR):
@@ -121,8 +102,6 @@ def path_problem(path: str) -> str | None:
 
 
 def decode_text(data: bytes) -> str | None:
-    """按 UTF-8 严格解码；不是 UTF-8 文本给 ``None``。"""
-
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
@@ -130,8 +109,6 @@ def decode_text(data: bytes) -> str | None:
 
 
 def content_problem(content: str) -> str | None:
-    """内容不收的原因：含 NUL、编不成 UTF-8（孤立的代理字符），或超过单个文件的上限。"""
-
     if "\x00" in content:
         return "含 NUL 字符，不是文本"
     try:
@@ -144,8 +121,6 @@ def content_problem(content: str) -> str | None:
 
 
 def limit_problems(sizes: Collection[int]) -> list[str]:
-    """一组文件的文件数与总大小超没超上限。"""
-
     problems: list[str] = []
     if len(sizes) > MAX_FILES:
         problems.append(f"文件数 {len(sizes)} 个，超过上限 {MAX_FILES} 个")
@@ -155,8 +130,6 @@ def limit_problems(sizes: Collection[int]) -> list[str]:
 
 
 def file_problems(files: Mapping[str, str]) -> list[str]:
-    """一整份文件（路径 → 内容）的全部问题：逐个文件的路径与内容、文件数与总大小、有没有 ``SKILL.md``。"""
-
     problems: list[str] = []
     for path in sorted(files):
         problem = path_problem(path) or content_problem(files[path])
@@ -173,8 +146,6 @@ def _size(content: str) -> int:
 
 
 def _frontmatter(skill_md: str) -> tuple[dict[str, Any] | None, str | None]:
-    """frontmatter 解析成的映射，或解析不了的原因。"""
-
     match = _FRONTMATTER.match(skill_md)
     if match is None:
         return None, f"{SKILL_MD} 开头缺少 frontmatter（--- 包起来的 YAML）"
@@ -200,9 +171,6 @@ def _frontmatter_name_problem(name: object) -> str | None:
 
 
 def frontmatter_problems(skill_md: str, *, require_name: bool) -> list[str]:
-    """frontmatter 的问题：要有非空、不超长的 ``description``；``require_name`` 时另要有合标识规则的
-    ``name``（导入靠它认技能）。发布不查 ``name``：版本里写的 ``name`` 不作数，用时换成技能当前的标识。"""
-
     found, problem = _frontmatter(skill_md)
     if found is None:
         return [problem or f"{SKILL_MD} 的 frontmatter 读不出来"]
@@ -220,8 +188,6 @@ def frontmatter_problems(skill_md: str, *, require_name: bool) -> list[str]:
 
 
 def frontmatter_name(skill_md: str) -> str | None:
-    """frontmatter 里合格的 ``name``；没有或不合格给 ``None``。"""
-
     found, _ = _frontmatter(skill_md)
     name = found.get("name") if found is not None else None
     if not isinstance(name, str) or name_problem(name) is not None:
@@ -230,8 +196,6 @@ def frontmatter_name(skill_md: str) -> str | None:
 
 
 def frontmatter_description(skill_md: str) -> str | None:
-    """frontmatter 里合格的 ``description``（去掉首尾空白）；没有或不合格给 ``None``。"""
-
     found, _ = _frontmatter(skill_md)
     description = found.get("description") if found is not None else None
     if not isinstance(description, str) or _description_problem(description) is not None:
@@ -240,10 +204,6 @@ def frontmatter_description(skill_md: str) -> str | None:
 
 
 def with_frontmatter_name(skill_md: str, name: str) -> str:
-    """把 ``SKILL.md`` frontmatter 顶层的 ``name`` 换成 ``name``：换掉 ``name:`` 这一行（连同它缩进的
-    续行），没有这个键就插到 frontmatter 第一行；别的键与正文原样留着，已经是这个值就原样交回。
-    没有 frontmatter 是 ``ValueError``：已发布的版本一定有，调用方不该拿到没有的。"""
-
     match = _FRONTMATTER.match(skill_md)
     if match is None:
         raise ValueError(f"{SKILL_MD} 开头缺少 frontmatter，写不进 name")
@@ -253,7 +213,6 @@ def with_frontmatter_name(skill_md: str, name: str) -> str:
     start, end = match.span(1)
     lines = skill_md[start:end].splitlines(keepends=True)
     eol = "\r\n" if "\r\n" in skill_md[: match.end()] else "\n"
-    # 交给 YAML 写值：像 ``123``、``null`` 这样的标识要加引号才读回文字。
     field = yaml.safe_dump({"name": name}, width=1_000_000).rstrip("\n") + eol
     first = next((index for index, line in enumerate(lines) if _NAME_KEY.match(line)), None)
     if first is None:
@@ -262,7 +221,6 @@ def with_frontmatter_name(skill_md: str, name: str) -> str:
         last = first + 1
         while last < len(lines) and (lines[last][:1] in (" ", "\t") or not lines[last].strip()):
             last += 1
-        # 续行末尾的空行不算这个键的，留给后面。
         while last > first + 1 and not lines[last - 1].strip():
             last -= 1
         lines[first:last] = [field]
@@ -270,8 +228,6 @@ def with_frontmatter_name(skill_md: str, name: str) -> str:
 
 
 def initial_skill_md(*, name: str, display_name: str, description: str) -> str:
-    """新建技能时的 ``SKILL.md`` 草稿：frontmatter 写 ``name`` 与 ``description``，正文是显示名作标题。"""
-
     frontmatter = yaml.safe_dump(
         {"name": name, "description": description},
         allow_unicode=True,
@@ -282,8 +238,6 @@ def initial_skill_md(*, name: str, display_name: str, description: str) -> str:
 
 
 def file_hash(content: str) -> str:
-    """内容按 UTF-8 编码后的 sha256，十六进制。"""
-
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
@@ -292,16 +246,10 @@ def file_entry(path: str, content: str) -> FileEntry:
 
 
 def manifest(files: Mapping[str, str]) -> tuple[FileEntry, ...]:
-    """一整份文件的清单，按 ``path`` 排。"""
-
     return tuple(file_entry(path, files[path]) for path in sorted(files))
 
 
 def content_hash(entries: Iterable[FileEntry]) -> str:
-    """清单的 hash：按 ``path`` 排好的 ``[{path, size, hash}]`` 规范化成 JSON（键排序、无空白、不转义
-    非 ASCII）后的 sha256。已发布版本存着这个值，写法不能再改；草稿与版本都从 ``(path, size, hash)``
-    现算，不从库里的 jsonb 回读再算。"""
-
     ordered = sorted(entries, key=lambda entry: entry.path)
     canonical = json.dumps(
         [{"path": entry.path, "size": entry.size, "hash": entry.hash} for entry in ordered],
@@ -313,15 +261,10 @@ def content_hash(entries: Iterable[FileEntry]) -> str:
 
 
 def format_problems(problems: Iterable[str]) -> str:
-    """把问题清单拼成一句给人看的报错。"""
-
     return "；".join(problems)
 
 
 def check_publish(files: Mapping[str, str]) -> str:
-    """一份草稿能不能发布：文件、上限与 frontmatter 都合格时交回 frontmatter 的 ``description``（去掉
-    首尾空白），否则 ``ValidationFailed`` 列出全部问题。``name`` 不查，见 ``frontmatter_problems``。"""
-
     problems = file_problems(files)
     if SKILL_MD in files:
         problems += frontmatter_problems(files[SKILL_MD], require_name=False)

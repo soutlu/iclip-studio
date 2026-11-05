@@ -6,7 +6,6 @@ import { VideoPlayer } from './video-player'
 
 const SRC = 'https://videos.example.test/take.mp4'
 
-/** jsdom 不播放媒体：play / pause 改成立即切换 paused 并发出对应事件，与浏览器一致。 */
 const stubPlayback = () => {
   const paused = new WeakMap<HTMLMediaElement, boolean>()
   vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(function (
@@ -31,7 +30,6 @@ const stubPlayback = () => {
   return { play, pause }
 }
 
-/** 读到元数据：给出时长。 */
 const loadMetadata = (video: HTMLVideoElement, duration: number) => {
   Object.defineProperty(video, 'duration', { configurable: true, value: duration })
   fireEvent.loadedMetadata(video)
@@ -144,11 +142,9 @@ describe('VideoPlayer', () => {
     expect(playback.play).toHaveBeenCalledOnce()
     expect(fireEvent.keyDown(root, { key: 'k' })).toBe(false)
     expect(playback.pause).toHaveBeenCalledOnce()
-    // 带修饰键的组合留给浏览器
     expect(fireEvent.keyDown(root, { key: 'ArrowLeft', metaKey: true })).toBe(true)
     expect(video.currentTime).toBe(0)
 
-    // 焦点在控件条按钮上：方向键照样跳转，空格只按一次按钮
     const play = screen.getByRole('button', { name: '播放' })
     act(() => play.focus())
     await user.keyboard('{ArrowRight}')

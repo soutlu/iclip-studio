@@ -1,5 +1,3 @@
-/** 受控宿主夹具通过恢复入口与隐藏容器模拟应用壳，验证产物交互与布局请求。 */
-
 import { MOCK_STREAM_EPOCH } from '@/testing/mocks/transcript'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -57,7 +55,6 @@ const agentEntry: ArtifactEntry = {
   type: 'sub-agent',
 }
 
-/** 按模式认一类文件、不自动打开的常驻类型；标题带路径，同类的几件在菜单里分得开。 */
 const canvasEntry: ArtifactEntry = {
   autoOpen: false,
   component: Painted,
@@ -69,7 +66,6 @@ const canvasEntry: ArtifactEntry = {
   type: 'canvas',
 }
 
-/** 只有某个 agent 才交付的常驻类型：不给 `empty`，没有文件时选择页不列它。 */
 const scriptEntry: ArtifactEntry = {
   autoOpen: false,
   component: Painted,
@@ -175,7 +171,6 @@ const fsChanged = (path: string, change: 'created' | 'modified' | 'deleted') => 
   type: 'event.fs.changed',
 })
 
-/** 主流快照：一轮里一张派出了子代理的工具卡。 */
 const delegationReset = (state: 'running' | 'done') => ({
   payload: {
     agent_id: 'main',
@@ -419,7 +414,6 @@ describe('WorkbenchHost 展开态', () => {
   it('派活卡只有被地址点名时才占标签位，切到别的标签它就退回菜单', async () => {
     serveFiles(['video_shot.json'])
     const registry = registryWith(shotsEntry, workspaceEntry, agentEntry)
-    // mock 主流的冷读里本来就有一张派活卡 call_t2_delegate。
     await renderHost(ROOMY, registry, `/c/${CONVERSATION_ID}?artifact=frame:call_t2_delegate`)
 
     expect(await screen.findByText('画着委派任务 · 拆解')).toBeVisible()

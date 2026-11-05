@@ -1,11 +1,3 @@
-"""保存进程内实时投影、批次序号与补发日志；持久事实来自 StepPersistence。
-
-重启后序号重新开始，订阅必须发送 reset，让客户端无条件更新水位。每条实时流（``(会话, agent)``
-的一份 ``_AgentTranscript``）建出来时生成一个 epoch：进程重启或淘汰后重建都会换新，续订时 epoch
-对不上就回 reset，不拿新编号的批次接旧水位。
-所有方法保持同步，发号、应用状态与记录日志不可被 await 分割，确保订阅一致读。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -43,38 +35,28 @@ from agent_runtime.transcript.ops import (
 )
 
 JOURNAL_CAPACITY: Final = 2000
-"""每个 Agent 的补发批次上限，超出窗口时 complete=False。"""
 
 RESIDENT_CONVERSATIONS: Final = 256
-"""驻留会话数上限，被固定的会话不参与淘汰。"""
 
 
 @dataclass(frozen=True, slots=True)
 class OpBatch:
-    """带连续 Agent 序号的操作批次；``epoch`` 是它所属的实时流。"""
-
     seq: int
     ops: tuple[EmittableOperation, ...]
     epoch: str
 
 
 Listener = Callable[[OpBatch], None]
-"""同步订阅回调，在 append 原子操作内通知。"""
 
 
 @dataclass(frozen=True, slots=True)
 class SubscribeView:
-    """一次性读取订阅水位、批次与快照，避免多次读取之间产生不一致。"""
-
     watermark: int
     epoch: str
-    """``watermark`` 所属的实时流。"""
     snapshot: TranscriptSnapshot
     live_turns: tuple[TranscriptTurn, ...]
-    """尚未交接到持久化历史的轮次，参与 REST 分页。"""
     batches: tuple[OpBatch, ...]
     complete: bool
-    """False 表示所需批次已超出补发窗口或不属于这条实时流，须重新拉取。"""
 
 
 @dataclass(slots=True)
@@ -88,7 +70,6 @@ class _LiveTurn:
     header: TurnHeader
     steps: dict[str, _LiveStep] = field(default_factory=dict)
     snapshot_persisted: bool = False
-    """历史已持久化本轮后才允许释放实时状态。"""
 
 
 @dataclass(slots=True)
@@ -107,25 +88,17 @@ class _AgentTranscript:
 class _Conversation:
     agents: dict[str, _AgentTranscript] = field(default_factory=dict)
     pins: int = 0
-    """运行与订阅的引用计数，非零时不淘汰。"""
 
 
 class TranscriptStore:
-    """按会话保存的进程内实时投影。"""
-
     def __init__(self, *, resident: int = RESIDENT_CONVERSATIONS) -> None:
         self._resident = resident
-        # 使用插入顺序维护 LRU，命中时移至末尾。
         self._conversations: dict[str, _Conversation] = {}
         self._listeners: dict[tuple[str, str], set[Listener]] = {}
-
-    # --- 写 -----------------------------------------------------------------
 
     def append(
         self, conversation_id: str, agent_id: str, ops: tuple[EmittableOperation, ...]
     ) -> OpBatch:
-        """原子分配序号、应用操作、记录补发日志并通知订阅者。"""
-
         conversation = self._conversation(conversation_id)
         agent = conversation.agents.setdefault(agent_id, _AgentTranscript())
         batch = OpBatch(seq=agent.next_seq, ops=ops, epoch=agent.epoch)
@@ -138,8 +111,6 @@ class TranscriptStore:
         return batch
 
     def listen(self, conversation_id: str, agent_id: str, listener: Listener) -> None:
-        """注册同步回调，保持 append 的原子性。"""
-
         self._listeners.setdefault((conversation_id, agent_id), set()).add(listener)
 
     def unlisten(self, conversation_id: str, agent_id: str, listener: Listener) -> None:
@@ -152,21 +123,15 @@ class TranscriptStore:
             del self._listeners[key]
 
     def mark_snapshot_persisted(self, conversation_id: str, agent_id: str, turn_id: str) -> None:
-        """快照持久化后交接轮次；仅发送终态不足以安全释放实时内容。"""
-
         turn = self._agent(conversation_id, agent_id).turns.get(turn_id)
         if turn is not None:
             turn.snapshot_persisted = True
 
     def drop_persisted_turns(self, conversation_id: str, agent_id: str) -> None:
-        """释放已交接的实时轮次。"""
-
         agent = self._agent(conversation_id, agent_id)
         agent.turns = {
             turn_id: turn for turn_id, turn in agent.turns.items() if not turn.snapshot_persisted
         }
-
-    # --- 读 -----------------------------------------------------------------
 
     def subscribe_view(
         self,
@@ -176,11 +141,6 @@ class TranscriptStore:
         since: int | None = None,
         epoch: str | None = None,
     ) -> SubscribeView:
-        """一次读取完整订阅视图；帧构造统一由 subscription.subscribe_frames 决定。
-
-        ``since`` 与 ``epoch`` 是调用方手上的水位；给了 ``since`` 而 ``epoch`` 缺失或对不上，视为补不齐。
-        """
-
         agent = self._agent(conversation_id, agent_id)
         watermark = agent.next_seq - 1
         batches, complete = self._since(agent, since, epoch)
@@ -199,16 +159,10 @@ class TranscriptStore:
         )
 
     def pending_interactions(self, conversation_id: str, agent_id: str) -> tuple[Interaction, ...]:
-        """返回待处理审批和提问，供撤回或失败时统一取消。"""
-
         agent = self._agent(conversation_id, agent_id)
         return tuple(item for item in agent.interactions.values() if item.state == "pending")
 
-    # --- 常驻 ---------------------------------------------------------------
-
     def pin(self, conversation_id: str) -> None:
-        """运行或订阅期间固定会话，禁止淘汰。"""
-
         self._conversation(conversation_id).pins += 1
 
     def unpin(self, conversation_id: str) -> None:
@@ -217,14 +171,10 @@ class TranscriptStore:
             conversation.pins -= 1
 
     def holds(self, conversation_id: str) -> bool:
-        """这段会话还有没有固定引用或监听；订阅方全撤、运行收尾后应为假。"""
-
         conversation = self._conversations.get(conversation_id)
         pinned = conversation is not None and conversation.pins > 0
         listened = any(key[0] == conversation_id for key in self._listeners)
         return pinned or listened
-
-    # --- 内部 ---------------------------------------------------------------
 
     def _conversation(self, conversation_id: str) -> _Conversation:
         conversation = self._conversations.pop(conversation_id, None) or _Conversation()
@@ -236,8 +186,6 @@ class TranscriptStore:
         return self._conversation(conversation_id).agents.setdefault(agent_id, _AgentTranscript())
 
     def _evict(self) -> None:
-        """淘汰未固定且最久未使用的会话。"""
-
         if len(self._conversations) <= self._resident:
             return
         for conversation_id, conversation in list(self._conversations.items()):
@@ -250,23 +198,18 @@ class TranscriptStore:
     def _since(
         agent: _AgentTranscript, since: int | None, epoch: str | None
     ) -> tuple[tuple[OpBatch, ...], bool]:
-        """查询 since 后的批次及完整性。先比 epoch 再比序号：另一条流的水位与这条流的编号无关。"""
-
         if since is None:
             return (), True
         if epoch != agent.epoch:
             return (), False
         wanted = tuple(batch for batch in agent.journal if batch.seq > since)
         if not wanted:
-            # 客户端水位高于服务端时可能来自重启前的序列，必须重新拉取。
             return (), since <= agent.next_seq - 1
         oldest = agent.journal[0].seq
         return wanted, oldest <= since + 1
 
 
 def _apply(conversation: _Conversation, agent: _AgentTranscript, op: EmittableOperation) -> None:
-    """应用本服务支持的 transcript 操作。"""
-
     match op:
         case TurnUpsertOp():
             existing = agent.turns.get(op.turn.turn_id)
@@ -288,7 +231,6 @@ def _apply(conversation: _Conversation, agent: _AgentTranscript, op: EmittableOp
             frame = step.frames[op.target.frame_id]
             if not isinstance(frame, TextFrame | ThinkingFrame):
                 raise ValueError(f"只有正文块与思考块能追加，{op.target.frame_id} 是 {frame.kind}")
-            # offset 不匹配说明投影器错误，在服务端直接报错，避免客户端反复重拉。
             if utf16_len(frame.text) != op.offset:
                 raise ValueError(
                     f"追加位置对不上：块 {op.target.frame_id} 现有 "
@@ -315,19 +257,12 @@ def _apply(conversation: _Conversation, agent: _AgentTranscript, op: EmittableOp
         case ItemsRemoveOp():
             _remove_items(conversation, agent, op.ids)
         case _:
-            # reset 仅由订阅路径构造，不接受投影器输出。
             raise ValueError(f"实时状态不接受这种操作：{op.op}")
 
 
 def _remove_items(
     conversation: _Conversation, agent: _AgentTranscript, ids: tuple[str, ...]
 ) -> None:
-    """删除时间线条目及关联工具交互，避免残留审批；客户端协议不会自动清理关联交互。
-
-    被删轮次的任务（owned_task_ids：后台工具任务与子代理任务）一起清掉；子代理连同它自己那条流
-    也清掉，否则重新生成后仍能订到上一次的子流。
-    """
-
     cards = [
         frame
         for turn_id in ids
@@ -352,8 +287,6 @@ def _remove_items(
 
 
 def _assemble(turn: _LiveTurn) -> TranscriptTurn:
-    """将实时状态转换为协议嵌套结构。"""
-
     return TranscriptTurn(
         **turn.header.model_dump(by_alias=False),
         steps=tuple(

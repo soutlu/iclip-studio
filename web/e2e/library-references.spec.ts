@@ -20,12 +20,10 @@ test('资料库切到灵感库，页签与标签筛选都在地址里，退回�
   const main = page.getByRole('main', { name: '资料库' })
   await expect(main.getByText('共 13 条')).toBeVisible()
 
-  // 选大类也算它的小类：开箱测评型本身一条，标准开箱流程一条。
   await main.getByRole('button', { name: '内容结构：内容结构' }).click()
   const structure = page.getByRole('dialog', { name: '选择内容结构' })
   await structure.getByRole('option', { name: /开箱测评型/ }).click()
   await expect(main.getByText('找到 2 条')).toBeVisible()
-  // 不同维度都要命中。
   await main.getByRole('button', { name: '品类：品类' }).click()
   const category = page.getByRole('dialog', { name: '选择品类' })
   await category.getByRole('combobox', { name: '搜索品类' }).fill('拖鞋')
@@ -34,7 +32,6 @@ test('资料库切到灵感库，页签与标签筛选都在地址里，退回�
   await page.keyboard.press('Escape')
   await expect(page).toHaveURL(/tags=/)
 
-  // mock 会话不跨刷新保存，用离开再退回验证页签与筛选从地址还原。
   await page.getByRole('button', { name: '需求单' }).click()
   await expect(page).toHaveURL('/tasks')
   await page.goBack()
@@ -59,11 +56,9 @@ test('属主试生成：提交后显示生成中，完成后原片与试生成�
   const dialog = page.getByRole('dialog', { name })
   await expect(dialog.getByText('用拆解试生成')).toBeVisible()
 
-  // 读到原片元数据（画幅）后按钮才可点，click 会等到它可点。
   await dialog.getByRole('button', { name: '试生成', exact: true }).click()
   await expect(dialog.getByRole('status').filter({ hasText: '试生成中' })).toBeVisible()
 
-  // mock 提交 5 秒后完成，详情每 5 秒轮询一次。
   const tested = dialog.getByRole('group', { name: '播放器：试生成' })
   await expect(tested).toBeVisible({ timeout: 15_000 })
   await expect(dialog.getByRole('button', { name: '重新试生成' })).toBeVisible()
@@ -73,7 +68,6 @@ test('属主试生成：提交后显示生成中，完成后原片与试生成�
   expect(original).not.toBeNull()
   expect(result).not.toBeNull()
   if (original === null || result === null) return
-  // 竖版原片：两格同高、同一行，试生成在原片右边。
   expect(Math.abs(result.y - original.y)).toBeLessThan(1)
   expect(Math.abs(result.height - original.height)).toBeLessThan(1)
   expect(result.x).toBeGreaterThanOrEqual(original.x + original.width)
@@ -99,7 +93,6 @@ test('上传一条视频：先排队、拆完接着打标、打完自动出标�
   await expect(main.getByText('共 14 条')).toBeVisible()
   const newest = main.getByRole('article').first()
   await expect(newest.getByText(/排队中|拆解中/)).toBeVisible()
-  // mock 几秒后拆完、再过几秒打完标，列表每 5 秒轮询一次。
   const tagged = '拖鞋 · 居家/日常放松 · 标准开箱流程'
   await expect(newest).toHaveAccessibleName(tagged, { timeout: 20_000 })
 

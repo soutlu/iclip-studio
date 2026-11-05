@@ -1,5 +1,3 @@
-"""测试自产的静态 TTF/OTF：有真实 cmap、轮廓和度量，不依赖机器字体或私有品牌素材。"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,12 +21,6 @@ def make_font(
     otf: bool = False,
     win_metrics: tuple[int, int] = (900, 300),
 ) -> Path:
-    """创建一份可被 fontTools 完整解析的字体，每个字符画一个矩形轮廓。
-
-    em 为 1000，Win 行高默认 1200（``win_metrics`` 是 Win ascent 与 descent），每个字符推进 1000。
-    这些轮廓由测试代码绘制，不包含任何外部字体数据。
-    """
-
     points = sorted(set(characters))
     cmap = {ord(char): f"uni{ord(char):04X}" for char in points}
     order = [".notdef", *cmap.values()]

@@ -13,7 +13,6 @@ import type { GenerationJob } from '../storyboard.api'
 import { draftStorageKey } from './use-draft'
 import { VideoEditor } from './video-editor'
 
-// jsdom 读不了真文件：mediabunny 换成按地址给关键帧表与时长的替身。
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 
@@ -109,7 +108,6 @@ const renderEditor = (video = root) =>
     { initialPath: '/c/test' },
   )
 
-/** 编辑段：默认从镜头 3–4（原片 2–4 秒）生成，已完成、出 3 秒，关键帧在 0/1/2 秒，切成 3 段。 */
 const editSegment = (overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({
     rootJobId: ROOT_ID,
@@ -136,7 +134,6 @@ const composite = (overrides: Partial<GenerationJob> = {}) =>
     ...overrides,
   })
 
-/** 列表接口：带 rootJobId 时只给这条原作的编辑链，否则是整段对话的视频记录。 */
 const serveJobs = (items: () => readonly GenerationJob[]) =>
   server.use(
     http.get('*/api/generations', ({ request }) => {
@@ -154,17 +151,14 @@ const shot = async (no: number) =>
   within(await originalTrack()).getByRole('button', { name: new RegExp(`^镜头 ${no} ·`) })
 const editTrack = () => screen.getByRole('group', { name: '编辑片段' })
 const block = (name: RegExp | string) => within(editTrack()).getByRole('button', { name })
-/** 编辑轨上一段的小眼睛。 */
 const partEye = (name: RegExp | string) =>
   within(within(editTrack()).getByRole('group', { name })).getByRole('button', {
     name: /选用这一段$/,
   })
-/** 原片轨上镜头 no 的小眼睛。 */
 const shotEye = (no: number) =>
   within(screen.getByRole('group', { name: '原片' })).getByRole('button', {
     name: new RegExp(`^(关闭|开启)镜头 ${no}$`),
   })
-/** 浏览器里存一份草稿：EDIT_ID 的三段都选用。 */
 const storeWholeEdit = () =>
   window.localStorage.setItem(
     draftStorageKey(CONVERSATION, ROOT_ID),
@@ -196,7 +190,6 @@ const viewButton = (name: '版本' | '剪辑') =>
   within(screen.getByRole('group', { name: '查看方式' })).getByRole('button', { name })
 const versionRows = () => screen.getByRole('group', { name: '视频版本' })
 const versionButton = (label: string) => within(versionRows()).getByRole('button', { name: label })
-/** 等版本行读好关键帧画出来，再找其中一行。 */
 const findVersion = async (label: string) =>
   within(await screen.findByRole('group', { name: '视频版本' })).findByRole('button', {
     name: label,
@@ -225,8 +218,6 @@ beforeEach(() => {
   window.localStorage.clear()
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-  // jsdom 不读视频元数据：编辑器另起一个不挂进页面的 <video> 读原片尺寸，给它补 720×1280 并发 loadedmetadata；
-  // 页面上播放用的 <video> 不受影响。
   const src = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
   vi.spyOn(HTMLMediaElement.prototype, 'src', 'set').mockImplementation(function (
     this: HTMLMediaElement,
@@ -337,9 +328,7 @@ describe('VideoEditor', () => {
 })
 
 describe('AI 改段的弹出卡', () => {
-  // 图生读原图尺寸用的 Image 桩：读到的都是 imageSize。
   let imageSize = { width: 720, height: 1280 }
-  // jsdom 不解码图片，上传前的尺寸校验读这个桩。
   beforeEach(() => {
     loginAs(mockAuthUser)
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
@@ -388,7 +377,6 @@ describe('AI 改段的弹出卡', () => {
   it('拖长、缩短选区：卡头的镜头、原片起止、首尾帧跟着变，卡不重新弹出、要求还在；提交的区间就是选区', async () => {
     const ossRoot = 'https://bucket.oss-cn-hangzhou.aliyuncs.com/root.mp4'
     files.set(ossRoot, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
-    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px，方向键一步不会吸到镜头分界上。
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
     )
@@ -420,7 +408,6 @@ describe('AI 改段的弹出卡', () => {
     expect(within(openCard()).getByText('原片 0.7 – 2.5 秒 · 视频和原声一起重做')).toBeVisible()
     const [first, last] = within(openCard()).getAllByRole('presentation')
     expect(first).toHaveAttribute('src', expect.stringContaining('t_700,'))
-    // 尾帧取结尾前 0.1 秒
     expect(last).toHaveAttribute('src', expect.stringContaining('t_2400,'))
     expect(await shot(1)).toHaveAttribute('aria-pressed', 'true')
     expect(await shot(3)).toHaveAttribute('aria-pressed', 'true')
@@ -436,7 +423,6 @@ describe('AI 改段的弹出卡', () => {
   it('拖选区把手期间卡上的首帧、尾帧停在按下时那一帧，松手后换成新的起止', async () => {
     const ossRoot = 'https://bucket.oss-cn-hangzhou.aliyuncs.com/root.mp4'
     files.set(ossRoot, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
-    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
     )
@@ -699,7 +685,6 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(generateButton()).toBeEnabled())
 
     if (cropped) {
-      // 要裁的图放进来后自己打开预览卡，卡里是裁切框。
       const tip = await screen.findByRole('tooltip')
       expect(within(tip).getByText('首帧 · 已裁成 9:16 · 图片偏小')).toBeVisible()
       expect(within(tip).getByRole('group', { name: '拖动选择保留的部分' })).toBeVisible()
@@ -874,7 +859,6 @@ describe('AI 改段的弹出卡', () => {
         ),
       )
       await user.click(within(openCard()).getByRole('radio', { name: mode }))
-      // 图生 2 张图依次作首帧、尾帧，正文不写引用；编辑时都是参考图。
       const prompt = (text: string) =>
         mode === '图生'
           ? text
@@ -1035,17 +1019,14 @@ describe('原片预览', () => {
     const user = userEvent.setup()
     await renderEditor()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
-    // 草稿预览：第 1 段在合成 2 秒处，放的是编辑片段
     await user.click(draftBlock(/第 1 段/))
     expect(stageVideo()).toHaveAttribute('src', EDITED_URL)
     expect(stageLabel()).toBeNull()
 
-    // 镜头 4 被编辑段代替、关着：选中它，舞台换成原片
     await user.click(await shot(4))
     expect(stageVideo()).toHaveAttribute('src', ROOT_URL)
     expect(playhead()).toHaveValue('3')
     expect(controls()).toHaveTextContent('00:03.00 / 00:08.00')
-    // 「共 X 秒」仍然说草稿
     expect(controls()).toHaveTextContent('共 9.0 秒 · 比原片长 1.0 秒')
     expect(stageLabel()).toBeVisible()
     expect(screen.getByText('3.0 秒 · 选区 3.0–4.0')).toBeVisible()
@@ -1066,11 +1047,9 @@ describe('原片预览', () => {
     expect(stageVideo()).toHaveAttribute('src', EDITED_URL)
     expect(playhead()).toHaveValue('2')
     expect(controls()).toHaveTextContent('00:02.00 / 00:09.00')
-    // 选区与收成胶囊的卡都留着
     expect(await shot(4)).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: '展开镜头 4 · 视频生成' })).toBeVisible()
 
-    // 标尺始终属于草稿：按合成时间定位
     await user.click(await shot(4))
     expect(stageLabel()).toBeVisible()
     fireEvent.change(playhead(), { target: { value: '4.5' } })
@@ -1086,7 +1065,6 @@ describe('原片预览', () => {
     expect(playhead()).toHaveValue('3')
     expect(controls()).toHaveTextContent('00:03.00 / 00:09.00')
 
-    // 点编辑轨上的段取消选用也回到草稿预览，播放头留在原来那一块
     await user.click(await shot(4))
     expect(stageLabel()).toBeVisible()
     await user.click(block('镜头 3–4 的编辑片段 · 第 3 段 · 1.0 秒'))
@@ -1203,7 +1181,6 @@ describe('草稿与编辑轨', () => {
   })
 
   it('拖草稿块的左、右把手：拖动中草稿不存，松手或丢失捕获都只保存一次并更新总长', async () => {
-    // jsdom 不排版：轨道区按 800px 宽算，8 秒的原片每秒 100px。
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
     )
@@ -1216,7 +1193,6 @@ describe('草稿与编辑轨', () => {
     const writes = vi.spyOn(Storage.prototype, 'setItem')
     const draftWrites = () => writes.mock.calls.filter(([written]) => written === key)
 
-    // 镜头 2 在合成 1 秒处：开头往里裁 0.4 秒
     const start = Object.assign(screen.getByRole('slider', { name: '裁剪开头' }), {
       setPointerCapture: () => undefined,
       hasPointerCapture: () => true,
@@ -1224,22 +1200,18 @@ describe('草稿与编辑轨', () => {
     })
     fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 100 })
     fireEvent.pointerMove(start, { pointerId: 1, clientX: 140 })
-    // 这块的右边沿停在 2 秒、左边沿跟到 1.4 秒：工具条时间与播放头都写 1.4 秒；总长与「共 X 秒」按松手前的草稿
     await waitFor(() => expect(controls()).toHaveTextContent('00:01.40 / 00:08.00'))
     expect(playhead()).toHaveValue('1.4')
     expect(controls()).toHaveTextContent('共 8.0 秒')
     expect(draftWrites()).toEqual([])
 
     fireEvent.pointerUp(start, { pointerId: 1 })
-    // 首尾接上：这块从合成 1 秒开始，总长与「共 X 秒」一起变
     await waitFor(() => expect(controls()).toHaveTextContent('00:01.00 / 00:07.60'))
     expect(playhead()).toHaveValue('1')
     expect(controls()).toHaveTextContent('共 7.6 秒 · 比原片短 0.4 秒')
     expect(draftWrites()).toHaveLength(1)
     expect(within(smallCard('镜头 2')).getByText('0.6 秒（这个镜头 1.0 秒）· 原片')).toBeVisible()
 
-    // 右把手同样：结尾往里裁 0.1 秒（到最短 0.5 秒），拖动中工具条时间与播放头在把手处（1.5 秒），草稿不存、
-    // 总长不变
     const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
       setPointerCapture: () => undefined,
       hasPointerCapture: () => true,
@@ -1252,7 +1224,6 @@ describe('草稿与编辑轨', () => {
     expect(controls()).toHaveTextContent('共 7.6 秒')
     expect(draftWrites()).toHaveLength(1)
 
-    // 把手丢失捕获也结束这次修剪；随后在别处松手不再保存第二遍。
     fireEvent.lostPointerCapture(end, { pointerId: 2 })
     await waitFor(() => expect(controls()).toHaveTextContent('共 7.5 秒'))
     fireEvent.pointerUp(window, { pointerId: 2 })
@@ -1261,7 +1232,6 @@ describe('草稿与编辑轨', () => {
 
   it('往右拉长草稿块：舞台按拖动中的草稿停在这块的结尾，不是后面那一块', async () => {
     storeWholeEdit()
-    // jsdom 不排版：轨道区按 850px 宽算，裁过之后 8.5 秒的草稿每秒 100px。
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 850, height: 200 }),
     )
@@ -1269,7 +1239,6 @@ describe('草稿与编辑轨', () => {
     const user = userEvent.setup()
     await renderEditor()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
-    // 编辑段第 3 段在合成 4–5 秒，后面接原片镜头 5；先用方向键把结尾裁到 4.5 秒
     await user.click(within(draftTrack()).getByRole('button', { name: /第 3 段/ }))
     act(() => screen.getByRole('slider', { name: '裁剪结尾' }).focus())
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
@@ -1282,7 +1251,6 @@ describe('草稿与编辑轨', () => {
     })
     fireEvent.pointerDown(end, { pointerId: 1, button: 0, clientX: 450 })
     fireEvent.pointerMove(end, { pointerId: 1, clientX: 490 })
-    // 拉长到 4.9 秒：按提交的草稿那里已是镜头 5（原片），舞台放的是拖动中的这一段；总长仍同「共 8.5 秒」
     await waitFor(() => expect(controls()).toHaveTextContent('00:04.90 / 00:08.50'))
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', EDITED_URL)
     expect(playhead()).toHaveValue('4.9')
@@ -1343,14 +1311,12 @@ describe('草稿与编辑轨', () => {
     })
     server.use(
       http.get('*/api/generations', async ({ request }) => {
-        // 只拦这条原作的编辑链；原片的关键帧照常读
         if (new URL(request.url).searchParams.get('rootJobId') !== null) await held
         return HttpResponse.json({ items: [editSegment({ id: EDIT_ID })] })
       }),
     )
     await renderEditor()
     expect(await screen.findByText('正在读取分段…')).toBeVisible()
-    // 等原片关键帧读完：之前这时时间线已经能点「关闭镜头」、修剪、Delete
     await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
     expect(screen.queryByRole('region', { name: '视频编辑时间线' })).toBeNull()
     expect(composeButton()).toBeDisabled()
@@ -1536,7 +1502,6 @@ describe('失败提醒', () => {
     await originalTrack()
     await waitFor(() => expect(failureNotice()).toHaveTextContent('镜头 3–4 生成失败：上游失败'))
 
-    // 整个镜头 3–4（2–4 秒）不是那次失败的区间：卡上不写上次失败
     await user.click(await shot(3))
     await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
     expect(within(openCard()).getByText('镜头 3–4 · 视频生成')).toBeVisible()
@@ -1632,7 +1597,6 @@ describe('合成与版本视图', () => {
     expect(versionButton('合成中')).toBeDisabled()
     expect(within(controls()).getByRole('button', { name: '下载' })).toBeEnabled()
     await waitFor(() => expect(controls()).toHaveTextContent('共 9.0 秒'))
-    // 两行共用最长那一版的比例。
     expect(playhead()).toHaveAttribute('max', '9')
     fireEvent.change(playhead(), { target: { value: '4' } })
     expect(controls()).toHaveTextContent('00:04.00')

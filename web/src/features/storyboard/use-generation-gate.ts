@@ -1,4 +1,3 @@
-/** 出片闸门：有组在上传或已在准备时不再发起，组件卸载后不再改状态。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const useGenerationGate = () => {

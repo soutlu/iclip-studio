@@ -79,7 +79,6 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
   const [playing, setPlaying] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  // 试听用一个不上屏的 Audio：同一时刻只放一首，关掉编辑器就停
   const audioRef = useRef<HTMLAudioElement | null>(null)
   useEffect(
     () => () => {
@@ -299,7 +298,6 @@ function SongRow({
   )
 }
 
-/** 音乐轨固定按钮位内的生成状态；查看列表不改变轨道布局。 */
 export function MusicAction({
   conversationId,
   musicJobId,
@@ -340,10 +338,6 @@ export function MusicAction({
 
 const isMissing = (error: unknown) => error instanceof ApiError && error.status === 404
 
-/**
- * 生成音乐的浮层，向上弹；`children` 是打开它的按钮（音乐轨轨名旁的「+」）。
- * 生成好的音乐出现在素材页的音乐列表里。
- */
 export function GenerateMusic({
   conversationId,
   onNotice,
@@ -360,11 +354,9 @@ export function GenerateMusic({
   const [composer, setComposer] = useState<ComposerHandle | null>(null)
   const [open, setOpen] = useState(false)
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null)
-  // 用户输入的文字；null 表示还没动过，框里是预填的描述
   const [typed, setTyped] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const task = useConversationTaskId(conversationId)
-  // 工程文件里写了配乐就拿它当默认描述；没有工程文件（404）就空着
   const film = useQuery({
     ...filmViewQuery(conversationId),
     enabled: open,
@@ -392,8 +384,6 @@ export function GenerateMusic({
         ? '已填入工程文件里的配乐描述，可直接修改'
         : '生成后出现在左侧「音乐」列表')
 
-  // Composer 不受控：每次打开都是新挂上的，挂上时写入手上的文字；用户还没输入时，后到的工程文件配乐也写进去。
-  // 浮层内容比 open 晚一轮挂上，所以跟着 Composer 句柄走，不跟 open 走
   const fill = useEffectEvent((target: ComposerHandle) =>
     target.restore({ media: [], parts: text === '' ? [] : [{ kind: 'text', text }], text: '' }),
   )
@@ -431,11 +421,8 @@ export function GenerateMusic({
         aria-label="生成音乐"
         className="wf-generate"
         collisionPadding={16}
-        // 挂到 body 会落在成片弹窗外，弹窗的滚动锁会拦下输入框的滚轮
         container={trigger?.parentElement ?? null}
         onFocusOutside={(event) => {
-          // 焦点在 body 时浮层里有节点被移除（预填换掉占位、提交钮换成转圈），成片弹窗的 FocusScope 会把
-          // 焦点拉回弹窗容器；这不是用户离开，留住浮层并把焦点还给输入框。点到外面仍照常关闭
           if (event.target !== trigger?.closest('[role="dialog"]')) return
           event.preventDefault()
           if (open) composer?.focus()

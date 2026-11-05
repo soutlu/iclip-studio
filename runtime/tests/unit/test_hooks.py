@@ -1,7 +1,3 @@
-"""回调应用：开跑检查答 2xx 才放行；超时、连不上、答 502/503/504 在重试窗口里再试，窗口用完或答别的非 2xx
-抛 ``HookRejected``；运行与轮次开始失败只记日志。请求按会话归属的应用找地址，带令牌与 JSON 请求体；
-应用没配的回调不发。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -50,8 +46,6 @@ async def app_of(session_id: str) -> str | None:
 
 
 class Recorder:
-    """记下收到的请求，按 ``answer`` 答复；``answer`` 可以抛异常模拟连不上或超时。"""
-
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.answer: Handler = lambda _request: httpx.Response(204)
@@ -67,8 +61,6 @@ def recorder() -> Recorder:
 
 
 def quick_hooks(client: httpx.AsyncClient) -> AppHooks:
-    """重试退避缩到几十毫秒的 ``AppHooks``，窗口内能试好几次。"""
-
     return AppHooks(
         hooks={"bff": BFF_HOOKS},
         app_of=app_of,
@@ -182,8 +174,6 @@ async def test_a_gateway_error_that_persists_rejects_the_run_with_its_status(
 
 
 async def test_a_gate_slower_than_the_timeout_rejects_the_run() -> None:
-    """传输层不掐超时（替身、代理）时也按 ``timeout_seconds`` 算。"""
-
     async def slow(_request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(5)
         return httpx.Response(204)

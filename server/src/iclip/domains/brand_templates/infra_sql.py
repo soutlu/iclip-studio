@@ -46,7 +46,6 @@ brand_templates_table = Table(
     CheckConstraint("btrim(name) <> ''", name="ck_brand_templates_name"),
 )
 
-# 与迁移 0034 同名同式。表保留在库里，目前没有读写；声明在这里只为元数据与迁移一致。
 brand_profiles_table = Table(
     "brand_profiles",
     metadata_obj,

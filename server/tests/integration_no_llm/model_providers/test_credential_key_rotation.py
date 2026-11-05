@@ -1,5 +1,3 @@
-"""换钥：新 key 加在最前面后旧密文照读；换钥把全部机密字段改用新 key，去掉旧 key 后仍读得出，明文字段不动。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -24,8 +22,6 @@ from tests.helpers.model_providers import GOOD_KEY, OTHER_KEY, add_credential, c
 async def root(
     engine: AsyncEngine, app: FastAPI, migrated_pg: str
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    """``engine`` 夹具建起时会清表，先于登录建好，免得把刚注册的 root 清掉。"""
-
     async with make_client(app) as client:
         await register_and_login(client, username="root", email="root@example.com")
         await set_roles_in_db(migrated_pg, "root@example.com", ["root"])

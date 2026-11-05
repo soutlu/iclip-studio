@@ -1,8 +1,3 @@
-"""资料库标签的迁移：每条参考视频建一条条目，旧片子类型按大类、品类按名字搬过去，有拆解的记为已打标，
-移除的也搬；两列与索引删掉。
-
-升级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,17 +14,13 @@ from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "b5d1e7a0c934"
-"""0035，参考视频行上还有两组标签。"""
 
 AFTER = "7f3c2a9d1e64"
-"""0036，标签搬进资料库标签表。"""
 
 
 async def _plant(
     url: str, rows: Sequence[tuple[str | None, Sequence[str], Sequence[str], bool]]
 ) -> list[uuid.UUID]:
-    """按（拆解，片子类型，品类，是否移除）种参考视频，交回 id。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         owner = await make_user(engine)
@@ -62,8 +53,6 @@ async def _plant(
 
 
 async def _entries(url: str) -> dict[uuid.UUID, dict[str, Any]]:
-    """每条参考视频的条目：打标状态与标签的「上级名/名字」集合。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         async with engine.connect() as conn:

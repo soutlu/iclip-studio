@@ -1,9 +1,3 @@
-/**
- * 测试用的 `<hyperframes-player>`：jsdom 跑不了真播放器（iframe 里的合成运行时），这里只保留编辑器
- * 用到的接口与事件。设了 srcdoc 后依次发 `ready`、`painted`；play / pause / seek 更新公开状态并发对应的事件。
- * 跳转同真运行时：按 30 帧向下取整到帧，报回那一帧的时刻。
- */
-
 const FPS = 30
 
 class FakeHyperframesPlayer extends HTMLElement {

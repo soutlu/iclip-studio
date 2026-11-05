@@ -1,6 +1,3 @@
-"""``shot_video`` 的两个媒体端口适配器：台账复用的判定、下载按地址选路（本桶走换算后的地址，别处只连
-公网）、下载失败的端口错误，以及切图记录按运行属主落到宫格名下。抽帧、拼板与切格的像素结果由集成测试覆盖。"""
-
 from __future__ import annotations
 
 import uuid
@@ -53,8 +50,6 @@ DOCUMENT = "**[00:00.000-00:02.000]** 中景"
 
 
 def board_url(*, key: str = KEY, index: int = 1) -> str:
-    """替身对象存储为这次取帧的这块板发布的地址。"""
-
     return FakeObjects().public_url(MEDIA_PATHS.shot_board(extraction_key=key, index=index))
 
 
@@ -79,15 +74,10 @@ FORGED_BOARD_URLS = {
     "another-board": board_url(index=2),
     "extra-query": f"{board_url()}?v=1",
 }
-"""key 保留、板地址被改：外部地址，本系统的对象路径挂到别的域名，别的视频或拆解文档（也就是
-别的对话才会产出）的板，同一次取帧的另一块板，真地址后面缀参数。"""
 
 
 @pytest.mark.parametrize("url", list(FORGED_BOARD_URLS.values()), ids=list(FORGED_BOARD_URLS))
 def test_a_reused_ledger_only_vouches_for_the_boards_this_extraction_published(url: str) -> None:
-    """台账在模型可写的工作区里；板地址按 key 与板号重算后整串比对，对不上就不复用，
-    复用分支拿不到它，也就登记不了它。"""
-
     with capture_logs() as logs:
         assert not reusable(ledger(url), key=KEY, public_url=FakeObjects().public_url)
 
@@ -96,8 +86,6 @@ def test_a_reused_ledger_only_vouches_for_the_boards_this_extraction_published(u
 
 
 def refusing_client(asked: list[str]) -> httpx.AsyncClient:
-    """下载一律 404 并记下请求地址。"""
-
     def handler(request: httpx.Request) -> httpx.Response:
         asked.append(str(request.url))
         return httpx.Response(404)
@@ -108,8 +96,6 @@ def refusing_client(asked: list[str]) -> httpx.AsyncClient:
 def downloads(
     internal: httpx.AsyncClient, public: httpx.AsyncClient, *, own_base: str = "https://cdn.test"
 ) -> MediaDownloads:
-    """``own_base`` 下的地址算本桶对象，换到 ``INTERNAL`` 下。"""
-
     return MediaDownloads(
         internal=internal,
         public=public,
@@ -119,8 +105,6 @@ def downloads(
 
 
 async def test_frame_boards_download_an_own_object_from_the_rewritten_address() -> None:
-    """取不到视频：端口错误的原文就是下载失败的原文，模型照它看到的一样。本桶对象不经出网防护。"""
-
     asked: list[str] = []
     public_asked: list[str] = []
     adapter = FrameBoardsAdapter(
@@ -139,8 +123,6 @@ async def test_frame_boards_download_an_own_object_from_the_rewritten_address() 
 
 
 async def test_frame_boards_download_other_addresses_through_the_public_only_client() -> None:
-    """别处的地址原样经出网防护的客户端下载（这里放行回环上的测试服务器），不走本桶的那条路。"""
-
     asked: list[str] = []
     async with loopback_server({"/ref.mp4": Route(status="404 Not Found")}) as server:
         public = public_client(timeout=5, policy=loopback_policy(server))
@@ -162,8 +144,6 @@ async def test_frame_boards_download_other_addresses_through_the_public_only_cli
 
 
 async def test_frame_boards_refuse_an_internal_address() -> None:
-    """模型给的地址是内网：不发请求，按取不到视频报给模型，说清是出网防护拒的。"""
-
     asked: list[str] = []
     public = public_client(timeout=5)
     adapter = FrameBoardsAdapter(
@@ -192,8 +172,6 @@ async def test_frame_boards_refuse_an_internal_address() -> None:
     ],
 )
 async def test_frame_boards_report_a_malformed_address(url: str) -> None:
-    """模型给的地址格式不对：不发请求，按取不到视频报给模型，说清是地址格式不对。"""
-
     asked: list[str] = []
     public = public_client(timeout=5)
     adapter = FrameBoardsAdapter(
@@ -211,8 +189,6 @@ async def test_frame_boards_report_a_malformed_address(url: str) -> None:
 
 
 def test_cut_cells_keep_the_object_keys_the_plugin_used_to_compute() -> None:
-    """每格的对象 key 由后端按帧号与序号算；桶里已有的产物都是这个布局，逐字钉住。"""
-
     job_id = uuid.UUID("55555555-5555-5555-5555-555555555555")
 
     assert cut_object_keys(job_id, ShotCells(cell_ids=("S1-1", "S12-3"))) == [
@@ -260,8 +236,6 @@ def cutter(user_id: uuid.UUID) -> Principal:
 
 
 async def test_cut_cells_are_recorded_against_their_grid_under_the_run_owner() -> None:
-    """切出来的每一格各落一条切图：来源是宫格，对话与需求单抄宫格，属主是运行属主，与地址同序。"""
-
     owner = uuid.uuid4()
     grid = make_job(
         image_request(),
@@ -296,8 +270,6 @@ async def test_cut_cells_are_recorded_against_their_grid_under_the_run_owner() -
 
 
 async def test_cut_records_let_a_resolver_failure_through() -> None:
-    """属主账号不在了：重建主体的错误原样抛出，生成域一次都不调。"""
-
     adapter = CutRecordsAdapter(cast("SettledRecords", object()), FakePrincipals())
 
     with pytest.raises(NotFound, match="用户不存在"):
@@ -306,8 +278,6 @@ async def test_cut_records_let_a_resolver_failure_through() -> None:
 
 @pytest.mark.parametrize("grid_state", ["还没完成", "是视频"])
 async def test_cutting_from_anything_but_a_finished_image_is_a_bug(grid_state: str) -> None:
-    """工具刚等到宫格完成才切；对不上是装配或状态坏了，不当成模型能改的输入。"""
-
     owner = uuid.uuid4()
     grid = (
         make_job(image_request(), owner_user_id=owner)

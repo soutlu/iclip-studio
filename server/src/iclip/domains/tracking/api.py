@@ -1,5 +1,3 @@
-"""埋点 HTTP 端点。只收事件、不回内容，要 ``generation:read``。"""
-
 from __future__ import annotations
 
 from typing import Annotated

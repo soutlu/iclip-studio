@@ -1,9 +1,3 @@
-/**
- * 参考 Kimi activity-run：卡头一行摘要加紧跟的小箭头；运行时自动展开，结束后自动收起，用户点过就以用户为准。
- * 收起时组里失败的那几次调用照样露在卡头下面——只看每次调用自己的状态，不看前后有没有补救。
- * 卡头不画转圈：摘要已说明在忙，正在跑的那一步由工具行右侧的圈指出，同屏只留一个圈。
- */
-
 import { useEffect, useRef, useState } from 'react'
 import type { TranscriptInteraction, TranscriptTask } from '@/shared/transcript/vendor'
 import { cn } from '@/shared/lib/utils'
@@ -26,7 +20,6 @@ type ActivityRunProps = {
   toolTasks: ReadonlyMap<string, TranscriptTask>
 }
 
-/** 运行时本地计时并在结束时冻结；历史记录使用步骤起止时间，缺失时不显示。 */
 function useActivityMs(running: boolean, historyMs: number | undefined): number | undefined {
   const startedRef = useRef<number | null>(null)
   const [elapsed, setElapsed] = useState<number | undefined>(undefined)
@@ -36,7 +29,6 @@ function useActivityMs(running: boolean, historyMs: number | undefined): number 
     startedRef.current ??= Date.now()
     const started = startedRef.current
     const tick = () => setElapsed(Date.now() - started)
-    // 立即记录初始读数，避免一秒内结束的活动没有计时结果。
     const first = setTimeout(tick, 0)
     const id = setInterval(tick, 1000)
     return () => {
@@ -73,7 +65,6 @@ export function ActivityRun({
     )
   const failed = failedTools(items, interactions)
 
-  // 用户手动切换后，自动开合不再覆盖其选择，直到下一次运行状态变化。
   const [open, setOpen] = useState(running)
   const [prevRunning, setPrevRunning] = useState(running)
   if (running !== prevRunning) {
@@ -86,9 +77,7 @@ export function ActivityRun({
     ? summarizeRunning(items, liveFrameId, elapsedMs, interactions)
     : summarizeDone(items, elapsedMs, interactions)
   const stateLabel = running ? '进行中' : failed.length > 0 ? '有失败' : '已完成'
-  // 显式提供 aria-label，避免分色 span 的边界空白被可访问名称计算裁掉。
   const summaryText = clauses.map((clause) => clause.text).join(' · ')
-  // 以内容和出现次数组成 key，区分相同的失败子句。
   const seen = new Map<string, number>()
   const keyed = clauses.map((clause) => {
     const base = `${clause.tone ?? ''}:${clause.text}`
@@ -118,7 +107,6 @@ export function ActivityRun({
         onClick={() => setOpen(!open)}
         type="button"
       >
-        {/* 摘要正文窄屏下截断；失败数、拒绝数与时长钉在后面不被截掉（照 mockup 的 .sum 与 .pin）。 */}
         <span aria-hidden className="flex min-w-0 items-center">
           <span className="min-w-0 truncate">
             {flowing.map(({ clause, key }, index) => (

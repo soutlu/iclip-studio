@@ -1,5 +1,3 @@
-"""生成任务的 Postgres 仓储，仅记录业务事实；排期由 procrastinate 管理。时间统一使用数据库时钟。"""
-
 from __future__ import annotations
 
 import uuid
@@ -64,8 +62,6 @@ DB_SCHEMA: Final = "iclip"
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
-# 只有各种记录都用到、或数据库要按它查的才成列；某种记录自己的输入进 request、产出进 output；
-# 加种类不改表，也不建 CHECK。
 generation_jobs_table = Table(
     "generation_jobs",
     metadata_obj,
@@ -78,17 +74,11 @@ generation_jobs_table = Table(
         ),
         nullable=False,
     ),
-    # 不关联 api_keys 外键，保留 key 删除后的审计身份。
     Column("api_key_id", Uuid, nullable=True),
-    # 不关联对话外键，删除对话后仍保留生成来源。
     Column("conversation_id", Uuid, nullable=True),
-    # 调用方自带的坐标标签，只做包含匹配；只有参考视频试生成的键按值查。
     Column("metadata", JSONB, nullable=True),
-    # 需求单同样不建外键：它是归属标签，删单不抹生成记录。
     Column("task_id", Uuid, nullable=True),
-    # 镜头组编号，只有视频有：出片由调用方给，编辑段与合成抄原作的。
     Column("shot_index", Integer, nullable=True),
-    # 原作与来源都建外键：它们不是标签，必须指一条真实存在的记录；生成记录从不硬删。
     Column(
         "root_job_id",
         Uuid,
@@ -104,7 +94,6 @@ generation_jobs_table = Table(
     Column("kind", Text, nullable=False),
     Column("operation", Text, nullable=False),
     Column("provider", Text, nullable=True),
-    # none_as_null：None 落成 SQL NULL，不是 JSON null，读回来才是「没有」。
     Column("request", JSONB(none_as_null=True), nullable=True),
     Column("status", Text, nullable=False),
     Column("provider_task_id", Text, nullable=True),
@@ -131,7 +120,6 @@ generation_jobs_table = Table(
         "id",
         postgresql_where=text("task_id IS NOT NULL"),
     ),
-    # 只索引有原作、有来源的行：按原作查链、按来源找兄弟、外键校验都走它们，出片占大多数、不必进来。
     Index(
         "ix_generation_jobs_root_job",
         "root_job_id",
@@ -142,7 +130,6 @@ generation_jobs_table = Table(
         "source_job_id",
         postgresql_where=text("source_job_id IS NOT NULL"),
     ),
-    # 按（对话，镜号）找一镜的视频；与迁移 0018 同名同式。
     Index(
         "ix_generation_jobs_conversation_shot",
         "conversation_id",
@@ -206,7 +193,6 @@ type _Columns = ReadOnlyColumnCollection[str, KeyedColumnElement[Any]]
 
 
 def _json_text(column: KeyedColumnElement[Any], key: str) -> ColumnElement[str]:
-    # 键与常量写成 SQL 字面量而不是绑定参数：通用执行计划里参数证明不了表达式索引与部分索引的条件。
     return column.op("->>", return_type=Text())(literal_column(f"'{key}'"))
 
 
@@ -225,8 +211,6 @@ _UNFINISHED: Final = text("status IN ('pending', 'submitting', 'submitted')")
 
 
 class SqlGenerationRepository:
-    """``GenerationRepository`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -292,7 +276,6 @@ class SqlGenerationRepository:
         inherited: Inheritance = (),
         operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
-        # 先按地址取出候选再筛：其余条件留在外面，计划才稳定地走地址那条 hash 索引。
         hits = (
             select(generation_jobs_table)
             .where(_json_text(_JOBS.output, "url") == output_url)
@@ -407,7 +390,6 @@ class SqlGenerationRepository:
         if metadata is not None:
             stmt = stmt.where(_JOBS.metadata.contains(dict(metadata)))
         if before is not None:
-            # 锚点与本页同一个可见范围：按对话翻页时，上一页最后一条可能是继承来的。
             anchor = await self.get(before, owner=owner, inherited=inherited)
             stmt = stmt.where(tuple_(_JOBS.created_at, _JOBS.id) < (anchor.created_at, anchor.id))
         stmt = stmt.order_by(_JOBS.created_at.desc(), _JOBS.id.desc())
@@ -418,7 +400,6 @@ class SqlGenerationRepository:
     async def in_flight_by_conversation(
         self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        # 一段对话下只要有一条已离开排队（提交中或已交给上游）就算 running；全部还在排队才是 queued。
         running = func.bool_or(_JOBS.status != STATUS_PENDING)
         stmt = (
             select(_JOBS.conversation_id, running)
@@ -453,7 +434,6 @@ class SqlGenerationRepository:
         return {conversation_id: url for conversation_id, url in rows}
 
     async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
-        # 走 source_job_id 的部分索引；一条来源下的超分只有几档、几次重做，不分页。
         stmt = (
             select(generation_jobs_table)
             .where(_JOBS.source_job_id == source_job_id, _JOBS.operation == OPERATION_ENHANCE)
@@ -494,7 +474,6 @@ class SqlGenerationRepository:
             "status": STATUS_COMPLETED,
             "output": _output_payload(output),
             "provider_status": provider_status,
-            # 同步生成在完成时补写 submitted_at；异步生成保留提交时间。
             "submitted_at": func.coalesce(_JOBS.submitted_at, func.now()),
             "finished_at": func.now(),
         }
@@ -568,8 +547,6 @@ class SqlGenerationRepository:
     async def _update_if(
         self, job_id: uuid.UUID, conditions: Sequence[ColumnElement[bool]], **values: Any
     ) -> GenerationJob | None:
-        """条件写进 WHERE 原子校验，避免并发覆盖；不满足时不更新，返回 None。"""
-
         async with self._engine.begin() as conn:
             row = (
                 (
@@ -607,8 +584,6 @@ class SqlGenerationRepository:
 def _visible(
     cols: _Columns, own: Sequence[ColumnElement[bool]], inherited: Inheritance
 ) -> ColumnElement[bool]:
-    """按属主收敛的自己那一份，并上经这组边界对继承来的；没有继承就只剩前者。"""
-
     mine = and_(true(), *own)
     if not inherited:
         return mine
@@ -616,11 +591,6 @@ def _visible(
 
 
 def _inherited(cols: _Columns, inherited: Inheritance) -> ColumnElement[bool]:
-    """经分叉继承的记录：某个祖先名下已完成、完成时刻不晚于它的边界。
-
-    规则与 ``models.inherited_through`` 相同。边界对逐条展开成 OR，而不是去 join 一段 VALUES：
-    挂在 OR 下的相关子查询用不上按对话的索引，展开后每一支都能走 ``conversation_id`` 索引。"""
-
     return and_(
         cols.status == STATUS_COMPLETED,
         or_(
@@ -633,8 +603,6 @@ def _inherited(cols: _Columns, inherited: Inheritance) -> ColumnElement[bool]:
 
 
 def _settled_values(job: GenerationJob) -> dict[str, Any]:
-    """一条创建即完成的行：产出照给，建立与完成都是数据库时钟的同一刻，没有提交与上游状态。"""
-
     return {
         "id": job.id,
         "owner_user_id": job.owner_user_id,
@@ -662,7 +630,6 @@ def _settled_values(job: GenerationJob) -> dict[str, Any]:
 
 
 def _output_payload(output: GenerationOutput) -> dict[str, Any] | None:
-    # 只去顶层的空值：exclude_none 会递归删掉字幕句子里的 speaker: None，读回就不合法。
     payload = {
         key: value for key, value in output.model_dump(mode="json").items() if value is not None
     }

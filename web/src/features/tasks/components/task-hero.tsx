@@ -4,7 +4,6 @@ type TaskHeroProps = {
   className?: string
 }
 
-/** 使用内联 SVG，使 tasks.css 可通过 .dark 与 ph-* 配色钩子切换主题。 */
 export function TaskHero({ className }: TaskHeroProps) {
   return (
     <svg
@@ -14,33 +13,24 @@ export function TaskHero({ className }: TaskHeroProps) {
       viewBox="0 0 1890 832"
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* 色块置于原始黑色轮廓之后，通过现有镂空显色，避免覆盖干净线条。 */}
       <g id="accent-fills-behind" aria-hidden="true">
-        {/* 镜头光圈 */}
         <circle cx="386.5" cy="264" r="21" className="ph-mint" />
 
-        {/* 剪刀手柄 */}
         <circle cx="1172" cy="303" r="6" className="ph-mint" />
         <circle cx="1199" cy="304" r="6" className="ph-mint" />
 
-        {/* 场记板绿色条带 */}
         <path d="M1518 196 H1604 V219 H1518 Z" className="ph-mint" />
 
-        {/* 摄像机镜头、录像灯 */}
         <path d="M1706 289 L1736 276 V339 L1706 326 Z" className="ph-mint" />
         <circle cx="1649" cy="320" r="7" className="ph-amber" />
 
-        {/* 机器人耳罩 */}
         <ellipse cx="1267" cy="516" rx="18" ry="26" className="ph-mint" />
 
-        {/* 左侧分镜条 */}
         <path d="M377 609 L397 607 L392 626 L373 628 Z" className="ph-green-shadow" />
         <path d="M405 606 L426 604 L421 623 L401 625 Z" className="ph-mint" />
 
-        {/* 视频画面 */}
         <path d="M1700 422 L1770 434 L1761 486 L1691 474 Z" className="ph-mint" />
 
-        {/* 素材箱时间轴 */}
         <rect x="1641" y="671" width="68" height="15" rx="3" className="ph-mint" />
       </g>
 
@@ -979,13 +969,10 @@ export function TaskHero({ className }: TaskHeroProps) {
         />
       </g>
 
-      {/* 原黑白稿中不存在的彩色信息需要置于轮廓前方。 */}
       <g id="accent-details-front" aria-hidden="true">
-        {/* 机器人显示眼 */}
         <rect x="1098" y="491" width="12" height="38" rx="6" className="ph-green-bright" />
         <rect x="1161" y="491" width="12" height="38" rx="6" className="ph-green-bright" />
 
-        {/* 摄像机工作提示 */}
         <g fill="none" strokeLinecap="round">
           <path
             d="M1758 263 L1748 242 M1766 263 L1781 247 M1772 270 L1789 265"

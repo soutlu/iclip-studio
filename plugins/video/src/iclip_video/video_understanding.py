@@ -1,5 +1,3 @@
-"""视频拆解协议与方舟 Responses 适配器。"""
-
 from __future__ import annotations
 
 from typing import Any, Final, Protocol
@@ -11,22 +9,17 @@ from agent_runtime.model_connections import ModelConnectionLookup
 from iclip_video.video_document import SHOT_TIMECODE_SHAPE
 
 TIMEOUT_SECONDS: Final = 600.0
-"""付费视频拆解的默认总超时；超时无法确认上游执行结果，不自动重试。"""
 
 DECLARATION: Final = "volcengine"
-"""连接取自配置页里用火山方舟声明的供应商。"""
 
 MODEL: Final = "doubao-seed-2-0-lite-260428"
-"""视频理解的方舟模型；配置页的火山方舟里要加上并启用它。"""
 
 THINKING: Final = "medium"
 
 FPS: Final = 5
-"""让对方每秒看几帧；方舟最多收 5。"""
 
 _USER_TEXT: Final = "请对随附视频做参考片拆解。"
 
-# 时间码那一条单独拼进来：写法与取帧解析器同一份，正文里的 {原台词} 等大括号不宜整体套 f-string。
 SYSTEM_PROMPT: Final = (
     """# Role & Context
 你是一名资深短视频导演与商业内容分析师，把参考短视频拆解为“商业目的—结构递进—出场清单—逐镜拉片—全片概述”五层信息，产出一份文档。
@@ -116,9 +109,6 @@ SYSTEM_PROMPT: Final = (
 
 
 class ArkVideoUnderstanding:
-    """方舟视频拆解适配器：HTTP 客户端与连接的查找由组合根注入，模型、思考档位与帧率写定在上面。每次拆解都
-    现查连接，配置页里改了下一次就生效；``timeout_seconds`` 是一次拆解请求的总超时。"""
-
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -131,13 +121,6 @@ class ArkVideoUnderstanding:
         self._timeout_seconds = timeout_seconds
 
     async def parse(self, video_url: str) -> str:
-        """交回这段视频的拆解文档。
-
-        Raises:
-            VideoUnderstandingUnavailable: 配置页里没有启用这个模型（或那家供应商没有默认密钥）。
-            VideoUnderstandingError: 调用失败或答复不能用。
-        """
-
         try:
             connection = await self._connection(DECLARATION, MODEL)
         except ModelUnavailable as exc:
@@ -177,16 +160,14 @@ class ArkVideoUnderstanding:
 
 
 class VideoUnderstandingError(RuntimeError):
-    """视频拆解调用失败。"""
+    pass
 
 
 class VideoUnderstandingUnavailable(VideoUnderstandingError):
-    """配置页里没有能用的视频理解模型；消息说清去配置页改哪里。再调也一样，等管理员启用。"""
+    pass
 
 
 def _markdown(body: object) -> str:
-    """提取 completed 响应中的非空正文；其他状态或空正文均按失败处理，避免交付截断文档。"""
-
     if not isinstance(body, dict):
         raise VideoUnderstandingError("视频拆解接口返回的顶层不是 object")
     status = body.get("status")
@@ -217,8 +198,6 @@ def _excerpt(text: str, limit: int = 300) -> str:
 
 
 class VideoUnderstanding(Protocol):
-    """把一段视频交给多模态模型，拿回一份拆解文档。"""
-
     async def parse(self, video_url: str) -> str: ...
 
 

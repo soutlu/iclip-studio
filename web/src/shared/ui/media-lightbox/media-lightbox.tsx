@@ -1,5 +1,3 @@
-/** 全屏媒体预览。作为 Radix Dialog 进层栈：在弹窗里打开时 Escape 与点击只关它自己，宿主弹窗留在原地。 */
-
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useRef } from 'react'
 import { Icon } from '@/shared/icons'
@@ -33,14 +31,11 @@ export function MediaLightbox({ media, onClose }: MediaLightboxProps) {
     >
       {media === null ? null : (
         <DialogPrimitive.Portal>
-          {/* 与弹窗同一 z 层；后挂到 body 的盖在前面，与「选择参考帧」这类嵌套弹窗同一套规则。 */}
           <DialogPrimitive.Content
             aria-describedby={undefined}
             className="media-lightbox layer-popup fixed inset-0 grid animate-in place-items-center p-6 duration-(--dur-m) fade-in"
             onOpenAutoFocus={(event) => {
               opener.remember()
-              // 默认会聚焦铺满全屏的关闭区，焦点环框住整个视口。视频聚焦播放器，空格等快捷键直接可用；
-              // 图片聚焦右上角的关闭按钮。程序聚焦不画焦点环。
               event.preventDefault()
               const player = videoRef.current?.closest<HTMLElement>(VIDEO_PLAYER_SELECTOR)
               if (player) player.focus({ focusVisible: false })

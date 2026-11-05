@@ -1,7 +1,3 @@
-"""后台打标：一次任务接手、取文字、按当前 AI 维度打标、一次写回；AI 维度整组重写，人工维度不动；
-失败与超时只清 AI 维度；按开始时刻核对，迟到的结果不写；打标中被删的标签跳过。打标走真的适配器，
-HTTP 是替身。"""
-
 from __future__ import annotations
 
 import json
@@ -64,8 +60,6 @@ def ark_tagger(ark: FakeArk) -> Tagger:
 async def pending_entry(
     engine: AsyncEngine, *, document: str | None = DOCUMENT
 ) -> tuple[uuid.UUID, uuid.UUID, dict[str, uuid.UUID]]:
-    """排着队的一条：带一个人工维度的标签（AMZ）与上一次 AI 打的标签（拖鞋、口播讲解型）。"""
-
     owner = await plant_user(engine, "maya")
     reference_id = await plant_reference(engine, owner=owner, document=document)
     tags = {
@@ -210,8 +204,6 @@ async def test_a_hit_case_is_tagged_from_its_conversations_treatment(
 
 
 async def test_a_hit_case_without_treatment_text_has_nothing_to_tag(engine: AsyncEngine) -> None:
-    """没有新片执行方案、只有空白、不挂对话、记录不存在，都取不到文字；打标记 ``no_source_text``。"""
-
     owner = await plant_user(engine, "nora")
     blank_conversation = await plant_conversation(engine, owner)
     await plant_treatment(engine, owner, blank_conversation, " \n")
@@ -254,8 +246,6 @@ async def test_an_entry_not_waiting_in_line_is_not_tagged(engine: AsyncEngine) -
 
 
 class DeletingTagger:
-    """选中一个标签，交回之前它已被治理者删掉。"""
-
     def __init__(self, engine: AsyncEngine, doomed: uuid.UUID, kept: uuid.UUID) -> None:
         self._engine = engine
         self._doomed = doomed

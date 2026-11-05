@@ -1,8 +1,3 @@
-"""制作页的组合根适配：AI 导演的工程文件在工作区，图片地址在用到它的那一步查能不能打开。
-
-读、检查与写回的规则都在 ``iclip_video.iclip_studio.film``；这里只管拿文件、查地址和写文件。打开制作页
-只查结构，不探地址：写错的图在页面上是一张打不开的缩略图，到插入、选用或生成时才拦下。"""
-
 from __future__ import annotations
 
 import uuid
@@ -49,11 +44,6 @@ class _Files:
 
 
 class ConversationFilmAdapter:
-    """对话域制作页端口的实现。
-
-    ``store`` 读写工作区：写成功后运行时发文件变更帧，打开着的页面据此重读。``probe`` 探图片地址（组合根接
-    出网下载器的 ``probe``）。``generation`` 为 None 表示没开媒体生成，生成的两步答「还没开生成」。"""
-
     def __init__(
         self,
         *,
@@ -98,7 +88,6 @@ class ConversationFilmAdapter:
             )
         except FilmEditRejected as exc:
             raise ValidationFailed(str(exc)) from exc
-        # 只查新插进列表的图：列表里原有的不归这一步管。
         await self._require_images(
             [
                 (_inserted_label(index, len(edited.inserted)), url)
@@ -134,8 +123,6 @@ class ConversationFilmAdapter:
             raise ValidationFailed(str(exc)) from exc
         if url is not None:
             await self._require_images([("这张图", url)])
-        # 选用机位图时两个文件都要写，先后由 choose_image 定：后一个没写成时留下的状态出片会被拦住。
-        # 还没有运行文件时没有版本可对，新建的这一份直接写。
         for path, content in changes:
             expected = film_version if path == FILM_PATH else run_version
             await self._write(files.namespace, path, content, expected)
@@ -151,7 +138,6 @@ class ConversationFilmAdapter:
         film_version: int,
     ) -> FilmView:
         files = await self._existing(owner, conversation_id)
-        # 只写工程文件，同改字只对它的版本。
         if files.project.version != film_version:
             raise Conflict(_STALE)
         film = _clean(files)
@@ -274,8 +260,6 @@ class ConversationFilmAdapter:
         return self._generation
 
     async def _require_images(self, items: Sequence[tuple[str, str]]) -> None:
-        """``items``（称呼，地址）里的图都要能打开、是图片；不行就按称呼说哪张，不带地址。"""
-
         bad = await bad_images(self._probe, (url for _, url in items))
         listed = [f"{label}{bad[url]}" for label, url in items if url in bad]
         if listed:
@@ -309,7 +293,6 @@ class ConversationFilmAdapter:
         return view
 
     async def _write(self, namespace: str, path: str, content: str, expected: int | None) -> None:
-        # 内容或容量不合规的 ValidationFailed 原样往外抛。
         try:
             await self._store.write(namespace, path, content, expected_version=expected)
         except Conflict as exc:
@@ -321,8 +304,6 @@ def _load(files: _Files) -> Film | list[str]:
 
 
 def _clean(files: _Files) -> Film:
-    """页面只在检查通过的分镜上改；有问题时改了也分不清是谁的。"""
-
     film = _load(files)
     if isinstance(film, list):
         raise ValidationFailed(_BROKEN)
@@ -330,8 +311,6 @@ def _clean(files: _Files) -> Film:
 
 
 def _references(urls: Sequence[str]) -> list[tuple[str, str]]:
-    """参考图按列表里的位置称呼，同页面上的编号。"""
-
     return [(f"第 {n} 张参考图", url) for n, url in enumerate(urls, start=1)]
 
 
@@ -340,8 +319,6 @@ def _inserted_label(index: int, total: int) -> str:
 
 
 def _require_selected(missing: tuple[str, ...]) -> None:
-    """参考图列表里每一张都要有图才能生成；缺的按称呼列出来。"""
-
     if missing:
         raise ValidationFailed(f"以下参考图尚未选用：{'、'.join(missing)}；无法生成")
 

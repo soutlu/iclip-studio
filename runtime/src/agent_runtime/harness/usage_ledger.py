@@ -1,5 +1,3 @@
-"""对话用量台账：模型每答一次，把这次的 token 累加到（对话，模型）一行上。"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -22,24 +20,14 @@ from agent_runtime.transcript.ops import StepUsage
 _logger = structlog.stdlib.get_logger(__name__)
 
 ConversationOf = Callable[[object], str | None]
-"""从运行依赖（``ctx.deps``）取这次运行归属的对话 id；取不到返回 None，这次响应不记账。
-
-子代理的 ``ctx.conversation_id`` 会重生成，只有依赖里继承的那份稳定，所以不看 ctx 自己的。"""
 
 
 class ConversationUsageStore(Protocol):
-    """台账存储：把一次响应的用量加到（对话，模型）那一行，没有就建。"""
-
     async def add(self, *, conversation_id: str, model_name: str, usage: StepUsage) -> None: ...
 
 
 @dataclass
 class UsageLedger(AbstractCapability[Any]):
-    """在模型请求链最内层记账，外层 capability 拒掉的响应也已计入。
-
-    写台账失败只记日志，不让已经付费的响应作废。
-    """
-
     store: ConversationUsageStore
     conversation_of: ConversationOf
 
@@ -65,7 +53,6 @@ class UsageLedger(AbstractCapability[Any]):
         usage = step_usage(response.usage)
         if usage is None:
             return
-        # 用配置里的模型 id，与子代理档案记的同一个名字；provider 回报的名字可能带版本后缀。
         model_name = ctx.model.model_name
         try:
             await self.store.add(

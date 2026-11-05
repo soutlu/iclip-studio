@@ -1,6 +1,3 @@
-"""错误信封：领域错误按分类映射状态码、``{"detail"}`` 加有值时的 ``code``；请求校验失败一律 422、一句话；
-OpenAPI 里的 422 也是这个形状。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -127,8 +124,6 @@ def test_a_subclass_inherits_its_parent_status() -> None:
 
 
 def test_a_model_level_error_keeps_only_the_reason() -> None:
-    """模型级校验器报在请求体自身，位置剥掉就空了，只留原因；自定义校验器的前缀去掉。"""
-
     errors = [
         {"type": "value_error", "loc": ("body",), "msg": "Value error, prompt 与 shot 至少传一个"}
     ]

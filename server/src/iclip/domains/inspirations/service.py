@@ -1,5 +1,3 @@
-"""按款搜爆款视频：本款优先，没有就按品牌与品类逐级放宽。"""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -18,27 +16,17 @@ from iclip.domains.products.public import StyleDirectory, StyleGrouping
 
 @dataclass(frozen=True, slots=True)
 class _FallbackResult:
-    """未命中款的匹配层级，以及去重后的替身查询范围。"""
-
     levels: Mapping[str, MatchLevel] = field(default_factory=dict)
     brand_categories: tuple[StyleGrouping, ...] = ()
     categories: tuple[int, ...] = ()
 
 
 class NoStyleDirectory:
-    """未配置产品资料库时的款目录：任何款都归属不明。
-
-    没有品类与品牌就圈选不出同类款，降级整级失效，未命中的款一律 ``none``。这是
-    实名的能力缺失，不是查不到——组合根在装配时会明确告警。
-    """
-
     async def resolve(self, style_nos: Sequence[str]) -> Mapping[str, StyleGrouping]:
         return {}
 
 
 class InspirationService:
-    """本款 → 同品牌同类目 → 同类目，逐级为没有视频的款挑替身。"""
-
     def __init__(self, videos: PgInspirationVideos, styles: StyleDirectory) -> None:
         self._videos = videos
         self._styles = styles
@@ -76,12 +64,6 @@ class InspirationService:
         )
 
     async def _fall_back(self, unresolved: Sequence[str]) -> _FallbackResult:
-        """为没有视频的款逐级挑替身，返回匹配层级与查询范围。
-
-        入参款在产品资料中查不到，或它所在的品类里没有任何视频，都落到 ``none``：
-        这不是错误，只是这次没有可用的参考。
-        """
-
         if not unresolved:
             return _FallbackResult()
 
@@ -113,8 +95,6 @@ class InspirationService:
 
 
 def _unique[ItemT](items: Iterable[ItemT]) -> tuple[ItemT, ...]:
-    """保序去重。"""
-
     return tuple(dict.fromkeys(items))
 
 

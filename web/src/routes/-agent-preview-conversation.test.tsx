@@ -12,7 +12,6 @@ import { FakeTranscriptServer } from '@/testing/transcript-server'
 import { Toaster } from '@/shared/ui/toast'
 import { AgentPreviewConversation } from './-agent-preview-conversation'
 
-// jsdom 不支持 Lottie 加载时的 canvas 探测；替换进行中状态的装饰动画。
 vi.mock('lottie-web/build/player/lottie_light', () => ({
   default: {
     loadAnimation: () => ({
@@ -29,10 +28,6 @@ const at = (ms: number) => new Date(Date.UTC(2026, 10, 1, 8, 0, 0) + ms).toISOSt
 
 const REPLY = '可以，先拍网面细节。'
 
-/**
- * 假后端：开预览交回新 id 并建一条空流；发消息记下来，按 `reply` 决定怎么答：
- * 默认受理并跑完一轮（读参考素材 1.2 秒、回复 3.8 秒），也可以只受理不收尾，或回 409 `agent_unavailable`。
- */
 const setup = () => {
   const fake = new FakeTranscriptServer()
   const opened: { agentId: string; body: unknown; id: string }[] = []
@@ -166,14 +161,11 @@ const renderPage = async (fake: FakeTranscriptServer) => {
 
 const preview = () => screen.getByRole('region', { name: 'Agent 预览' })
 const editor = () => screen.getByRole('region', { name: 'Agent 配置编辑器' })
-/** 看得见的那段试聊的输入框；看不见的几段对读屏隐藏，按角色找不到。 */
 const input = () => within(preview()).getByRole('textbox', { name: '输入消息' })
-/** 看得见的那段试聊里有没有这句话（文字查询不管读屏隐藏，这里自己筛掉）。 */
 const shown = (text: string) =>
   within(preview())
     .queryAllByText(text)
     .filter((node) => node.closest('[aria-hidden="true"]') === null)
-/** 输入框为空时的提示（叠在编辑区上、对读屏隐藏的那一层字）。 */
 const placeholder = () => input().parentElement?.parentElement?.textContent
 const resetButton = () => within(preview()).getByRole('button', { name: '新建测试对话' })
 
@@ -204,7 +196,6 @@ describe('Agent 配置页的测试预览', () => {
       { text: '为网面跑鞋做一条 15 秒竖版短片', type: 'text' },
     ])
 
-    // 再发一条用同一段预览，不再开新的。
     backend.state.reply = 'hold'
     await send(user, '再短一点')
     await waitFor(() => expect(backend.prompts).toHaveLength(2))
@@ -235,13 +226,11 @@ describe('Agent 配置页的测试预览', () => {
     await waitFor(() => expect(shown(REPLY)).toHaveLength(1))
     expect(backend.opened.map((item) => item.body)).toEqual([{}, { versionId: v5?.id }])
 
-    // 一版换到另一版：同样是新的一段。
     await pickVersion(/^v4，/)
     await waitFor(() => expect(placeholder()).toBe('用 v4 测试…'))
     expect(shown('试一下 v5')).toHaveLength(0)
     expect(shown(REPLY)).toHaveLength(0)
 
-    // 回到草稿不再是原来那段草稿试聊；再看 v5 也不是原来那段。
     await user.click(within(editor()).getByRole('button', { name: '返回草稿' }))
     await waitFor(() => expect(placeholder()).toBe('输入需求，或添加参考素材…'))
     expect(shown('草稿这边试一条')).toHaveLength(0)
@@ -379,10 +368,8 @@ describe('Agent 配置页的测试预览', () => {
     await user.click(step)
     expect(step).toHaveAttribute('aria-expanded', 'true')
     expect(within(read).getByText('跑道试穿.mp4')).toBeVisible()
-    // 只回复的步骤没有可展开的内容。
     expect(within(reply).queryByRole('button')).not.toBeInTheDocument()
 
-    // 切回测试预览，对话还在。
     await user.click(within(preview()).getByRole('tab', { name: '测试预览' }))
     expect(shown(REPLY)).toHaveLength(1)
   })

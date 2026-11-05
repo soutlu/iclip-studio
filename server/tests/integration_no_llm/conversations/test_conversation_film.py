@@ -1,5 +1,3 @@
-"""验证制作页端点：按对话读 AI 导演的工程，改字与换图带版本写回，权限同工作区文件。"""
-
 from __future__ import annotations
 
 import httpx
@@ -22,8 +20,6 @@ FIRST_SHOT = [
 
 
 def say(version: int, text: str) -> dict[str, object]:
-    """改第一个镜头里第一句台词的请求体。"""
-
     lines = [
         {"target": "line:hook", "text": text},
         {"target": "line:reply", "text": "鞋底是软的吗？"},
@@ -35,8 +31,6 @@ def say(version: int, text: str) -> dict[str, object]:
 async def film_conversation(
     client: httpx.AsyncClient, pg_url: str, run: str = RUN, *, film: str = FILM
 ) -> str:
-    """登录、开一段对话，放进样例工程（默认 ``FILM``），返回对话 id。"""
-
     user_id = await login_as_editor(client, pg_url)
     created = await client.post(URL, json={"agentId": "director", "title": "鞋款"})
     conversation = created.json()["conversation"]["id"]
@@ -69,7 +63,6 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         18,
         "mmt-seedance-2-5",
     )
-    # 缺图的这组照样带着它发给视频模型的正文。
     settings = EXPECTED["states"]["both"]["video01"]["shot"]["global_settings"]
     assert group["prompt"].startswith(f"{settings}\n\n镜头：\n0–6秒 参考@Image8，")
     person = group["frames"][2]
@@ -85,7 +78,6 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     assert person["prompt"] == [{"kind": "text", "text": EXPECTED["images"]["personB"]["prompt"]}]
     first_view = group["frames"][7]
     assert (first_view["label"], first_view["missing"]) == ("镜头 1", ["personB"])
-    # 描述里没图的那张也是图片段：带它在这张图自己列表里的编号，地址为 null。
     cited = [run for run in first_view["prompt"] if run["kind"] == "image"]
     assert cited[2] == {
         "kind": "image",
@@ -139,7 +131,6 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     assert cleared.json()["film"]["runVersion"] == 2
     assert cleared.json()["film"]["groups"][0]["frames"][6]["url"] is None
 
-    # 别处的图不论出没出现在这段对话里，能打开就能选用（这里探地址的替身都答取得到）。
     elsewhere = await client.put(
         f"{URL}/{mine}/film/image",
         json={
@@ -174,9 +165,6 @@ MUSIC_LINE = next(line for line in FILM.splitlines() if 'id="配乐"' in line)
 async def test_the_page_hands_out_the_music_description_as_written(
     client: httpx.AsyncClient, pg_url: str, film: str, expected: str | None, broken: bool
 ) -> None:
-    """「配乐」那段的正文原样给出，前端拿它当生成背景音乐的提示词；没有这一段、或工程检查不通过
-    （这时连镜头组都不给）时为 null。没有工程文件整页是 404，见下一个用例。"""
-
     mine = await film_conversation(client, pg_url, film=film)
 
     read = await client.get(f"{URL}/{mine}/film")

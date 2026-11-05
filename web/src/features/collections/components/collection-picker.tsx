@@ -27,7 +27,6 @@ type CollectionPickerProps = {
   value: string | null
 }
 
-/** 选择和搜索仅作用于调用方提供的列表；合集的读写由外层负责。 */
 export function CollectionPicker({
   disabled = false,
   error,
@@ -71,7 +70,6 @@ export function CollectionPicker({
             onCreate={
               onCreate
                 ? (name) => {
-                    // 弹窗记住稳定的返回目标，不能记住即将卸载的“新建合集”按钮。
                     triggerRef.current?.focus()
                     setOpen(false)
                     onCreate(name)
@@ -100,7 +98,6 @@ function PickerContent({
 }: CollectionPickerProps) {
   const openingDialogRef = useRef(false)
   const selected = options.find((option) => option.id === value)
-  // 当前合集置顶，其余保持接口给的最近更新顺序。
   const choices = [
     ...(selected ? [selected] : []),
     ...options.filter((option) => option.id !== value),
@@ -113,7 +110,6 @@ function PickerContent({
       avoidCollisions={false}
       className="flex max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-32px)] flex-col overflow-y-auto overscroll-contain p-2 text-on-surface"
       onCloseAutoFocus={(event) => {
-        // 新建弹窗接管焦点，避免弹层关闭时又把焦点移回选择器。
         if (openingDialogRef.current) event.preventDefault()
       }}
       sideOffset={8}
@@ -205,11 +201,9 @@ type PickerFooterProps = {
   onCreate: ((initialName: string) => void) | undefined
 }
 
-// 与共享列表的选项行同一尺寸，让页脚的图标与文字和上方选项对齐。
 const FOOTER_ROW_CLASS =
   'flex min-h-10 w-full ui-state cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2.5 text-left text-body ui-focus disabled:cursor-not-allowed disabled:text-disabled-text'
 
-/** 不关联与新建两个入口；新建把当前搜索词带进表单。 */
 function PickerFooter({ disabled, unassigned, onClear, onCreate }: PickerFooterProps) {
   const { query } = useSearchList()
   const search = query.trim()

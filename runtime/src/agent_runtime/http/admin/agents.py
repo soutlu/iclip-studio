@@ -1,5 +1,3 @@
-"""Agent 配置的管理接口，挂在 ``/v1/admin/agents``。约定见合同「Agent 配置」一节。"""
-
 from __future__ import annotations
 
 import uuid
@@ -35,8 +33,6 @@ from agent_runtime.http.auth import EndUser
 def create_agent_config_router(
     service: AgentConfigService, model_providers: ModelProviderService
 ) -> APIRouter:
-    """``model_providers`` 只用来给 agent 编辑页列能选的模型。"""
-
     router = APIRouter(prefix="/agents", tags=["agents"])
 
     @router.get("", response_model=AgentsOut)
@@ -57,7 +53,6 @@ def create_agent_config_router(
 
         return await service.reorder(body)
 
-    # 要登记在 /{agent_id} 之前，不然 plugins、model-options 会被当成 agent 标识。
     @router.get("/plugins", response_model=AgentPluginsOut)
     async def list_agent_plugins() -> AgentPluginsOut:
         """装配本服务时交给它的插件登记表里的全部插件：插件名、名字、说明、要求一起启用的插件与参数的

@@ -1,7 +1,3 @@
-"""Agent 配置的四个查询端口接到模型供应商、插件登记表、MCP 服务与技能库。
-
-插件只从组合根的登记表读：哪些名字可用、要求同挂哪些、参数按插件类 ``from_spec`` 的签名校验；这里不另列插件。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -25,8 +21,6 @@ from agent_runtime.plugins.base import PluginRegistry
 
 
 class ProviderDirectory:
-    """``ModelDirectory`` 的实现：按引用名读模型供应商域里的供应商，只给 llm 模型。"""
-
     def __init__(self, service: ModelProviderService) -> None:
         self._service = service
 
@@ -51,12 +45,6 @@ class ProviderDirectory:
 
 
 class RegistryPluginDirectory:
-    """``PluginDirectory`` 的实现：读组合根的插件登记表。
-
-    可挂的名字是登记的插件类的 serialization name；要求同挂的插件取自 ``get_ordering().requires``，
-    参数按插件类 ``from_spec`` 的签名校验。这些都在构造时（启动期）读一遍。
-    """
-
     def __init__(self, registry: PluginRegistry) -> None:
         self._registry = registry
         self._requires = {name: plugin.required_plugins() for name, plugin in registry.items()}
@@ -89,8 +77,6 @@ class RegistryPluginDirectory:
 
 
 class McpServerDirectory:
-    """``McpDirectory`` 的实现：按标识读 MCP 服务域里的服务，只给名称、启停与发现的工具名。"""
-
     def __init__(self, service: McpServerService) -> None:
         self._service = service
 
@@ -107,8 +93,6 @@ class McpServerDirectory:
 
 
 class LibrarySkillDirectory:
-    """``SkillDirectory`` 的实现：读技能库。"""
-
     def __init__(self, service: SkillsService) -> None:
         self._service = service
 

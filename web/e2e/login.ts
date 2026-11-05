@@ -1,7 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 
-/** 先等待应用壳挂载，再按需展开紧凑屏侧栏，避免 isVisible 在首屏未就绪时误判；governor 登录的是治理者。 */
 export const login = async (page: Page, username: 'tester' | 'governor' = 'tester') => {
   const expandSidebar = page.getByRole('button', { name: '展开侧边栏' })
   const loginTrigger = page.getByRole('button', { name: '登录', exact: true })

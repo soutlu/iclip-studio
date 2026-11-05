@@ -21,7 +21,6 @@ const schema = new Schema({
 
 const WORDS = ['cat', 'car', 'dog']
 
-/** 最小使用方：候选按查询词前缀筛选，选中后把 `@` 与查询词换成那个词。 */
 function MentionEditor({ query }: { query: boolean }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -81,7 +80,6 @@ function Candidates({ active, listRef, onPick, words }: CandidatesProps) {
           <button
             aria-selected={index === active}
             onClick={() => onPick(index)}
-            // 按下不抢焦点：编辑器失焦会关菜单。
             onMouseDown={(event) => event.preventDefault()}
             role="option"
             tabIndex={-1}
@@ -104,7 +102,6 @@ const optionNames = () =>
 
 const focusEditor = () => act(() => editorOf().focus())
 
-/** 把 DOM 光标放到第一段第 `offset` 个字之前，经 selectionchange 交给 ProseMirror。 */
 const moveCaret = (offset: number) => {
   const text = editorOf().querySelector('p')?.firstChild
   if (text == null) throw new Error('正文第一段应当有文字')
@@ -125,7 +122,6 @@ describe('useMention 查询模式', () => {
     expect(optionNames()).toEqual(['cat', 'car'])
     await userEvent.keyboard('t')
     expect(optionNames()).toEqual(['cat'])
-    // 光标退回查询词中间：查询词只算到光标为止。
     moveCaret(3)
     expect(optionNames()).toEqual(['cat', 'car'])
     expect(screen.getByRole('option', { name: 'cat' })).toHaveAttribute('aria-selected', 'true')

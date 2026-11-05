@@ -1,5 +1,3 @@
-"""iClip Studio 插件：登记工程文件检查与生图两件工具。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -44,31 +42,23 @@ from iclip_video.shot_prompt import format_shot_prompt
 CAPABILITY_ID: Final = "iclip_studio"
 
 MAX_LISTED_PROBLEMS: Final = 30
-"""一次检查最多列出几条问题；再多的改完前面的再查。"""
 
 MAX_IMAGES_PER_CALL: Final = 10
-"""一次生图调用最多几个节点。"""
 
 IMAGE_POLL_SECONDS: Final = 3.0
 IMAGE_WAIT_SECONDS: Final = 900.0
-"""等一张图多久查一次、最多等多久；到点只是不再等，后台那次生成不取消。"""
 
 
 @dataclass
 class IclipStudio(CapPlugin[AgentDepsT]):
-    """导演工程插件。"""
-
     label = "导演工程"
     summary = "检查 AI 导演的工程文件和运行文件是否符合规范。"
 
     space: FileSpace
-    """与工作区能力相同的 FileSpace。"""
 
     images: NodeImages | None = None
-    """生图节点与生成记录的往来；没开媒体生成时为 None。"""
 
     can_generate: bool = False
-    """登不登记生图工具；不登记时检查照常。组合根现在不开：生图由人自己做。"""
 
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
 
@@ -81,23 +71,17 @@ class IclipStudio(CapPlugin[AgentDepsT]):
 
     @classmethod
     def bind(cls, *, space: FileSpace, images: NodeImages | None) -> type[Self]:
-        """把运行服务绑进类，交给登记表。"""
-
         return cls._bound(space=space, images=images)
 
     @classmethod
     def from_spec(cls) -> Self:
-        # 现阶段生图由人自己做：生图工具保留，不登记给 agent（can_generate 用默认的 False）。
         return cls(**cls._bound_services())
 
     def get_ordering(self) -> CapabilityOrdering:
-        # 检查的两个文件由 workspace 的文件工具读写。
         return CapabilityOrdering(requires=(Workspace,))
 
     @classmethod
     def display_table(cls) -> Mapping[str, DisplayFn | ToolDisplayEntry]:
-        """工具卡声明。"""
-
         return {
             "check_film": lambda args: GenericDisplay(summary="检查工程", detail=FILM_PATH),
             "generate_images": ToolDisplayEntry(
@@ -108,8 +92,6 @@ class IclipStudio(CapPlugin[AgentDepsT]):
 
 
 class IclipStudioToolset(FunctionToolset[AgentDepsT]):
-    """检查与生图两件工具；生图只在有生图端口且允许生成时登记。"""
-
     def __init__(self, capability: IclipStudio[AgentDepsT]) -> None:
         super().__init__(id=capability.id)
         self._cap = capability
@@ -121,10 +103,10 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         self, ctx: RunContext[AgentDepsT], show: str | None = None
     ) -> ToolReturn[str]:
         """检查工程文件 film.icml 和运行文件 film.icrun 是否符合工程规范，包括文件结构、引用关系、
-        参数，以及文件里的图片地址能不能打开、是不是图片。
+        参数，以及文件里的图片地址能否打开、是否为有效图片。
 
-        检查分阶段进行，返回本次发现的问题及文件位置，每次最多列出 30 处。修正后重新检查。
-        图片尚未选用不影响工程规范检查；可用 show 查看指定节点的最终提示词、参考图和缺图情况。
+        - 检查分阶段进行，返回本次发现的问题及文件位置，单次最多列出 30 处；修正后需重新检查。
+        - 图片尚未选用不影响工程规范检查；可用 `show` 查看指定节点的最终提示词、参考图和缺图情况。
 
         Args:
             show: 填写 film.icml 中图片或视频生成节点的 id，如“镜02机位图”“全片”。工程规范
@@ -156,15 +138,15 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
     ) -> ToolReturn[str]:
         """生成 film.icml 里指定的生图节点，每个节点出一张图，返回每张图的地址。
 
-        只在用户说了要生成哪些图时调用。每调用一次，列出的每个节点都重新生成并计费；已经生成
-        过、用户没有要求重做的不要再列。一次最多 10 个节点，更多的分几次调用。生成前先做与
-        check_film 相同的规范检查，再查要生成的节点用到的参考图能不能打开，有问题不生成。运行文件里选用了登记图的节点不生成；挂的参考图里
-        有还没选用的，这个节点不生成，结果里列出缺哪几张，等用户在制作页选用后再生成。一张失败
-        不影响其它张，失败的在结果里说明，不要自动重试。生成出来的图不会自动用上，用户在制作页
-        选用了才算有图。
+        - 只在用户明确要求生成哪些图时调用；每次调用都会对列出的节点重新生成，已生成过且用户未要求重做的节点不要再列。
+        - 一次最多传入 10 个节点，超过 10 个时分多次调用。
+        - 生成前先做与 `check_film` 相同的规范检查，并检查目标节点用到的参考图能否打开，有问题则不生成。
+        - 运行文件里已选用登记图的节点不生成；所挂参考图中有尚未选用的节点也不生成，结果里会列出缺哪几张，等用户在制作页选用后再生成。
+        - 单张失败不影响其它张，失败原因在结果里说明，禁止自动重试。
+        - 生成出来的图不会自动用上，需用户在制作页选用后才生效。
 
         Args:
-            nodes: 要生成的生图节点的名字，如 ``["短发女生设定图", "镜01机位图"]``。
+            nodes: 要生成的生图节点 id 列表，如 `["短发女生设定图", "镜01机位图"]`。
         """
 
         images = self._cap.images
@@ -195,7 +177,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 outcome[name] = f"没有生成，参考图 {'、'.join(missing)} 还没有选用图"
             else:
                 pending.append(name)
-        # 只查这次真要生成的节点用到的参考图。
         await require_media(
             [
                 (f"{name} 的 @Image{n}", url)
@@ -206,7 +187,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
             what="参考图地址",
         )
         deps = _deps(ctx)
-        # 生成出来的图要用户选用才算有图，同一次里先出的也不给后出的当参考，所以一起生成。
         results = await asyncio.gather(
             *(self._generate(images, deps, film, known[name]) for name in pending)
         )
@@ -228,8 +208,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
     async def _generate(
         self, images: NodeImages, deps: AgentRunDeps, film: Film, node: Node
     ) -> NodeImageJob:
-        """给一个参考图都有图的节点出一张图并等它出结果。"""
-
         project = film.project
         picture = render_picture(film, node)
         tag = project.declared(node)
@@ -264,8 +242,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         return job
 
     async def _load(self, ctx: RunContext[AgentDepsT]) -> Film | list[str]:
-        """读两个文件并检查；通过时返回 ``Film``，否则返回问题。"""
-
         files, namespace = self._cap.space.store, self._cap.space.resolve(ctx)
         project = await files.read(namespace, FILM_PATH)
         if project is None:
@@ -274,8 +250,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         return load_film(project.content, None if run is None else run.content)
 
     async def _image_problems(self, film: Film) -> list[str]:
-        """两个文件里写的每个图片地址都探一遍：用不了的挂到写着它的节点上，返回全部问题。"""
-
         bad = await bad_urls([node.attrs["src"] for _, node in film.given_images()], kind="image")
         return image_problems(film, bad) if bad else []
 
@@ -291,8 +265,6 @@ def _problems(problems: list[str]) -> ToolReturn[str]:
 
 
 def _assembled(film: Film, node: Node) -> list[str]:
-    """一个生成节点拼好的提示词，连同发给模型的参数和参考图。"""
-
     name = node.attrs["id"]
     if film.project.declared(node).output == ("image", IMAGE):
         picture = render_picture(film, node)
@@ -322,8 +294,6 @@ def _deps(ctx: RunContext[Any]) -> AgentRunDeps:
 
 
 def _node_names(args: Any) -> str | None:
-    """工具卡展示要生成的节点。"""
-
     names = args.get("nodes") if isinstance(args, dict) else None
     if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
         return None

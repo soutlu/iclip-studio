@@ -1,7 +1,3 @@
-"""客户端库的 HTTP 失败边界：领域错误恢复、应用拒绝、异常答复、禁止重试、路径隔离与连接所有权。
-
-管理接口另核原样透传与上传下载；带类型方法的正常调用经真实运行时服务和后端集成测试覆盖。"""
-
 from __future__ import annotations
 
 import json
@@ -34,8 +30,6 @@ S = str(SESSION)
 
 
 class Recorder:
-    """接住请求，按 ``reply`` 答复。"""
-
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.reply: Callable[[httpx.Request], httpx.Response] = lambda _r: httpx.Response(204)
@@ -218,7 +212,6 @@ async def test_an_injected_http_client_is_used_and_left_open(recorder: Recorder)
 
         assert recorder.last.headers["x-trace"] == "t1"
         assert not http.is_closed
-        # 请求头逐个请求带，不改交进来的客户端。
         assert "authorization" not in http.headers
 
 
@@ -230,9 +223,6 @@ def test_an_injected_http_client_and_a_transport_are_exclusive() -> None:
             http=httpx.AsyncClient(),
             transport=httpx.MockTransport(lambda _r: httpx.Response(204)),
         )
-
-
-# --- 管理接口透传 --------------------------------------------------------------
 
 
 async def test_admin_errors_pass_through_untouched(
@@ -358,7 +348,6 @@ LONG = httpx.Timeout(960.0, connect=5.0)
         httpx.Response(200, json={"status": "completed"}),
         httpx.Response(429, json={"error": {"code": "rate_limited"}}),
         httpx.Response(400, text="not json at all"),
-        # 上游自己答的 409、502、504 不是运行时的信封，照样原样交回。
         httpx.Response(409, json={"error": {"code": "conflict"}}),
         httpx.Response(504, text="gateway timeout"),
     ],

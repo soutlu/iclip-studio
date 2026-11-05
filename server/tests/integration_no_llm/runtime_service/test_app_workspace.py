@@ -1,6 +1,3 @@
-"""运行时服务的会话工作区：按「属主/会话」读写，带版本写对不上 409，别人的命名空间看不到；分叉与按清单
-拷文件把文件拷进目标属主的会话，挡下来时报错同后端。"""
-
 from __future__ import annotations
 
 import uuid
@@ -83,7 +80,6 @@ async def test_files_are_read_and_written_with_versions(
     missing = await app_client.get(f"{base}/nothing.md")
     assert missing.status_code == 404
     assert missing.json()["detail"] == "这段对话里没有这个文件"
-    # 命名空间按属主分：同一个会话 id 换个属主就是另一块空间。
     elsewhere = await app_client.get(f"{base}/notes/brief.md", headers=as_owner(other))
     assert elsewhere.status_code == 404
 

@@ -35,15 +35,12 @@ describe('declareLinkedFonts', () => {
       '<link rel="stylesheet" href="compositions/components/x.css">'
     const output = await declareLinkedFonts(page(links), registry)
 
-    // HyperFrames 只认内联的 @font-face：认出这些字体已有定义，就不再另补。
     expect(output).toMatch(/<style>@font-face\{font-family:'Inter'/)
     expect(output).toContain('url(vendor/npm/noto/a.woff2)')
     expect(output).toContain('url(vendor/npm/inter/latin-600.woff2)')
-    // 字形仍来自 link 的样式表：每个字体只内联一条。
     expect(output).not.toContain('latin-700')
     expect(output).not.toContain('base64,AAAA')
     expect(output.match(/<link rel="stylesheet"/g)).toHaveLength(3)
-    // 声明紧挨在各自的 link 前，顺序不变。
     expect(output.indexOf("'Noto Sans SC'")).toBeLessThan(
       output.indexOf('href="vendor/fonts/noto-sans-sc.css"'),
     )

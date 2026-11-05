@@ -10,40 +10,29 @@ import {
 import { StageBackdrop } from '../components/stage-backdrop'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
-/** 编辑后等这么久再重载预览 */
 const RELOAD_DELAY_MS = 250
 
-/** 新播放器跳到要接着的时刻后，等这么多帧再换上（运行时在 iframe 里按帧画出那一刻） */
 const SETTLE_FRAMES = 3
 
-/**
- * 跳到离 ms 最近的那一帧。合成页不写帧率，运行时按 30 帧走，跳转时刻向下取整到帧；报回来的帧时刻
- * 取整到毫秒后会略小于那一帧，直接加步长再跳会少走一帧。传帧中间的时刻，取整后正好落在这一帧。
- */
 const frameSeconds = (ms: number) => (secondsToFrame(ms / 1000) + 0.5) / STUDIO_PREVIEW_FPS
 
-/** 编辑器控制预览播放器：工具条的播放暂停、时间线上点哪跳到哪 */
 export type PreviewControl = {
   play: () => void
   pause: () => void
   seek: (ms: number) => void
 }
 
-/** `@hyperframes/player` 注册的 `<hyperframes-player>` 元素上我们用到的那几样 */
 type PlayerElement = HTMLElement & {
-  /** 渲染合成页的同源 iframe（在播放器的 shadow DOM 里） */
   readonly iframeElement: HTMLIFrameElement
   play: () => void
   pause: () => void
   seek: (seconds: number) => void
   readonly currentTime: number
   readonly paused: boolean
-  /** 素材就绪、加载面板淡出，页面已经画在屏幕上；每次换页重置 */
   readonly painted: boolean
 }
 
 type PreviewPlayerProps = {
-  /** 合成页；undefined 时不放，显示 message */
   srcdoc: string | undefined
   message: string | undefined
   backdrop: string | undefined
@@ -52,9 +41,7 @@ type PreviewPlayerProps = {
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   controlRef: RefObject<PreviewControl | null>
-  /** 正在显示的合成页 iframe：每次换上新播放器、画好之后给一次；拆掉、合成不了时给 null */
   onFrame: (iframe: HTMLIFrameElement | null) => void
-  /** 铺满预览卡片的一层（画面点选）：选中框、把手能画到画面外 */
   children?: ReactNode
 }
 
@@ -63,11 +50,6 @@ const once = (target: EventTarget, type: string) =>
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-/**
- * HyperFrames 播放器。合成页换了（每次编辑后）就在底下另起一个播放器加载新页：就绪、跳到原来的时刻、
- * 画出第一帧之后才换上来，旧的随即拆掉，所以换页时看不到加载中途的画面（例如还没藏起来的视频第一帧）。
- * 原来在放的，换页时先停住，换上来后接着放。播放器自己的控件不显示，播放暂停与时间都由编辑器控制。
- */
 export function PreviewPlayer({
   srcdoc,
   message,
@@ -82,7 +64,6 @@ export function PreviewPlayer({
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
-  // 正在显示的播放器；只有它的事件驱动编辑器
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
   const callbacksRef = useRef({ onTime, onPlaying, onFrame })
@@ -92,7 +73,6 @@ export function PreviewPlayer({
     sizeRef.current = { width, height }
   })
 
-  // 画面上显示的合成页：换上来的播放器画好之后才交出去；合成不了时页面藏起来，不再交
   const shown = srcdoc === undefined ? null : active
   useEffect(() => {
     if (shown === null) return
@@ -110,7 +90,6 @@ export function PreviewPlayer({
     }
   }, [])
 
-  // 正在显示的播放器：接上事件；换下或卸载时拆掉
   useEffect(() => {
     if (active === null) return
     const onTimeUpdate = (event: Event) => {
@@ -126,7 +105,6 @@ export function PreviewPlayer({
     controlRef.current = {
       play: () => active.play(),
       pause: () => active.pause(),
-      // 在放就先停下（发 pause 事件），跳过去停在那里；之后从那里接着放
       seek: (ms) => {
         active.pause()
         active.seek(frameSeconds(ms))
@@ -151,13 +129,11 @@ export function PreviewPlayer({
   useEffect(() => {
     if (!loaded) return
     if (srcdoc === undefined) {
-      // 合成不了时只显示原因；藏起来的旧页面不能接着出声
       activeRef.current?.pause()
       return
     }
     let cancelled = false
     let pending: PlayerElement | null = null
-    // 连着改几下只重载最后一版
     const timer = setTimeout(() => {
       const host = hostRef.current
       if (host === null) return
@@ -178,8 +154,6 @@ export function PreviewPlayer({
         await ready
         if (!next.painted) await once(next, 'painted')
         if (cancelled) return
-        // 就绪后运行时还没按时间线藏起不在当前时刻的层（视频第一帧会露出来）：
-        // 跳一次到要接着的时刻（0 秒也跳），等那一帧画出来再换上
         next.seek(resumeAt)
         for (let frame = 0; frame < SETTLE_FRAMES; frame++) await nextFrame()
         if (cancelled) return
@@ -206,7 +180,6 @@ export function PreviewPlayer({
           hidden={srcdoc === undefined}
           style={{ '--preview-ratio': width / height } as CSSProperties}
         >
-          {/* 播放器由下面的 effect 直接放进这一层，不归 React 管 */}
           <div className="wf-player-slot" ref={hostRef} />
         </div>
       </div>

@@ -7,11 +7,6 @@ export type { TranscriptView } from './view'
 
 const noop = () => {}
 
-/**
- * 用一段对话里某个 agent 的流：主流走主会话池，子代理走子代理池；挂载时 activate，卸载时释放。
- * 同一段流多处同时用时共享一份；主流离开后仍在池里常驻，切回来不用重读。
- * `conversationId` 为 null 表示会话还没开（发第一条消息时才开的测试预览）：给一份空的就绪视图，不读也不订。
- */
 export const useTranscript = (
   conversationId: string | null,
   agentId: string = MAIN_AGENT_ID,

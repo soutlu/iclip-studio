@@ -1,6 +1,3 @@
-"""Agent 配置端点：只有 ``agent:manage``（root）能用，editor 一律 403；发布被拦下时 422 带结构化的问题清单，
-lockVersion 对不上 409，导出给 YAML、导入用 multipart 分两步。"""
-
 from __future__ import annotations
 
 import uuid
@@ -52,8 +49,6 @@ async def test_editor_is_forbidden_everywhere(client: httpx.AsyncClient, migrate
 async def test_admin_cannot_reach_the_config_page(
     client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """admin 有 root 的其余权限，唯独没有 ``agent:manage`` 与 ``model:manage``：配置页的各组端点都是 403。"""
-
     await register_and_login(client, username="ada", email="ada@example.com")
     await set_roles_in_db(migrated_pg, "ada@example.com", ["admin"])
 
@@ -70,8 +65,6 @@ async def test_admin_cannot_reach_the_config_page(
 async def test_root_lists_the_plugins_from_the_registry(
     client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """不需要任何配置也登记的三个插件都在；参数是插件 from_spec 签名写成的 JSON Schema。"""
-
     await login_as_root(client, migrated_pg)
 
     listed = await client.get("/agents/plugins")
@@ -176,8 +169,6 @@ async def save_subagents(client: httpx.AsyncClient, agent_id: str, subagents: li
 async def test_agents_can_start_listed_and_show_their_subagent_roles(
     client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """``listed`` 在建的时候就能给；列表每项说它有没有子 agent、是不是别人的子 agent，详情也一样。"""
-
     await login_as_root(client, migrated_pg)
     listed = await client.post("/agents", json={"id": "helper", "name": "帮手", "listed": True})
     assert listed.status_code == 201, listed.text
@@ -211,8 +202,6 @@ async def test_agents_can_start_listed_and_show_their_subagent_roles(
 async def test_agent_answers_name_the_people_behind_the_ids(
     app: FastAPI, client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """建的人与改草稿的人都带显示名（没设显示名时用用户名）；运行时记下的人在本系统里没有时为 null。"""
-
     author = await register_and_login(client, username="root", email="root@example.com")
     await set_roles_in_db(migrated_pg, "root@example.com", ["root"])
     stranger = str(uuid.uuid4())

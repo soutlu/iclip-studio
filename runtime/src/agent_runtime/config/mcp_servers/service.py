@@ -1,6 +1,3 @@
-"""MCP 服务用例：列出、建、改、删，试连（已保存的记下结果与发现的工具，没保存的什么都不存），给运行时取
-明文的连接参数，换钥。规则见 ``rules``；「在用时不能停用、不能删」在 ``McpServerStore.edit`` 锁住那一行之后判。"""
-
 from __future__ import annotations
 
 import uuid
@@ -67,9 +64,6 @@ def _check_out(result: McpProbeResult) -> McpCheckOut:
 
 
 async def rotate_mcp_server_keys(store: McpServerStore, *, cipher: CredentialCipher) -> int:
-    """把全部 MCP 服务的地址与请求头的值改用第一个 key 重新加密，交回改了几个服务。供 ``agent_runtime.admin``
-    换钥用。"""
-
     return await store.rewrite_secrets(
         lambda record: replace(
             record,
@@ -82,10 +76,6 @@ async def rotate_mcp_server_keys(store: McpServerStore, *, cipher: CredentialCip
 
 
 class McpServerService:
-    """``probe`` 由组合根接上，每次调用都是一次真实的连接；``usages`` 由组合根接到 agent 配置域，回答哪些
-    agent 挂着哪个服务。``index`` 是组合根建的服务名册，本服务是它唯一的写入方：``load_index`` 整份读一次，
-    之后建、改、删、试连在写入提交之后跟着换。"""
-
     def __init__(
         self,
         store: McpServerStore,
@@ -102,13 +92,9 @@ class McpServerService:
         self._index = index
 
     async def load_index(self) -> None:
-        """从库里整份读一次服务名册，运行时服务启动时调。"""
-
         self._index.replace(await self._store.list())
 
     async def list(self) -> McpServersOut:
-        """全部服务，按建立时刻从新到旧，带打码的请求头、上一次试连、发现的工具与挂着它的 agent。"""
-
         users = await self._usages.mcp_server_users()
         return McpServersOut(
             items=[
@@ -121,9 +107,6 @@ class McpServerService:
         return self._out(record, (await self._usages.mcp_server_users()).get(server_id, ()))
 
     async def create(self, body: McpServerCreateIn, *, by: uuid.UUID) -> McpServerOut:
-        """建一个服务，不连它；地址与请求头的值加密存。标识、名称、地址、时限或请求头不合格是
-        ``ValidationFailed``，标识已被占用、地址或名称与已有的服务重复是 ``Conflict``。"""
-
         server_id = check_server_id(body.id)
         url = check_url(body.url)
         await self._store.insert(
@@ -144,10 +127,6 @@ class McpServerService:
     async def update(
         self, server_id: str, body: McpServerUpdateIn, *, by: uuid.UUID
     ) -> McpServerOut:
-        """改给了的项，不连它。没给地址沿用原来的，给了就重新加密。给了请求头就整份替换，没给值的沿用同名
-        请求头原来的值。换了地址或连接方式时，上一次试连与发现的工具一起清掉（那是另一个服务的了）。某个
-        agent 的草稿或当前版本还挂着它时停用、地址或名称与别的服务重复是 ``Conflict``。"""
-
         async with self._store.edit(server_id) as editor:
             record = editor.record
             enabled = record.enabled if body.enabled is None else body.enabled
@@ -182,16 +161,12 @@ class McpServerService:
         return await self.get(server_id)
 
     async def delete(self, server_id: str) -> None:
-        """删一个服务；某个 agent 的草稿或当前版本还挂着它是 ``Conflict``。"""
-
         async with self._store.edit(server_id) as editor:
             await self._require_unused(editor.record)
             await editor.delete()
         self._index.remove(server_id)
 
     async def check(self, server_id: str) -> McpCheckOut:
-        """按已保存的配置连一次，列出工具，记下结果：通了换掉发现的工具，没通只记原因、发现的工具不动。"""
-
         record = await self._require(server_id)
         result = await self._run_probe(server_id, self._endpoint(record))
         recorded = await self._store.record_check(
@@ -207,9 +182,6 @@ class McpServerService:
         return _check_out(result)
 
     async def check_unsaved(self, body: McpCheckIn) -> McpCheckOut:
-        """按一份还没保存的配置连一次，什么都不存。给了 ``serverId`` 时没给地址就用那个服务的地址，没给值的
-        请求头取那个服务里同名的原值；没给 ``serverId`` 又没给地址是 ``ValidationFailed``。"""
-
         current: Mapping[str, str] | None = None
         saved_url: str | None = None
         if body.server_id is not None:
@@ -231,9 +203,6 @@ class McpServerService:
         return _check_out(await self._run_probe(body.server_id, endpoint))
 
     async def runtime_server(self, server_id: str) -> RuntimeMcpServer | None:
-        """运行时挂一个服务要的东西，地址与请求头解密成明文；没有这个服务给 ``None``。启没启用不在这里判（agent
-        编译时已查）。"""
-
         record = await self._store.get(server_id)
         if record is None:
             return None
@@ -245,8 +214,6 @@ class McpServerService:
         )
 
     async def record(self, server_id: str) -> McpServerRecord | None:
-        """一个服务的存储形态（地址与请求头仍是密文），供 agent 配置查引用；没有给 ``None``。"""
-
         return await self._store.get(server_id)
 
     async def _run_probe(self, server_id: str | None, endpoint: McpEndpoint) -> McpProbeResult:
@@ -256,7 +223,6 @@ class McpServerService:
         return result
 
     async def _refresh_index(self, server_id: str) -> None:
-        # 写入已提交，按库里此刻的那一行换名册；读到时已被并发删掉就从名册里去掉。
         record = await self._store.get(server_id)
         if record is None:
             self._index.remove(server_id)

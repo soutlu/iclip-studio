@@ -8,19 +8,9 @@ type SwitchProps = Omit<
 > & {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
-  /**
-   * 被规则拦下的原因（如正在被引用、不满足条件）：开关保持原来的开或关的颜色，只换鼠标，
-   * 悬停或按 Tab 移上去弹出原因，点击与 Enter / Space 都不切换。
-   */
   blockedReason?: string | undefined
 }
 
-/**
- * 全站唯一的开关外观：开是墨色轨道，关是灰色轨道，滑块用页面底色，浅色、深色主题里两态都看得清。
- *
- * 两种不能切换的状态：`blockedReason` 是被规则拦下，用 aria-disabled（仍可聚焦，原因弹得出来），颜色不变；
- * `disabled` 是真的不可用（如保存中），用原生 disabled，整体变淡。
- */
 export function Switch({
   blockedReason,
   checked,
@@ -33,7 +23,6 @@ export function Switch({
   const { rootProps, triggerProps } = useTabTooltip()
   const blocked = blockedReason !== undefined
   return (
-    // 提示始终挂着、只在被拦下时弹：拦与不拦切换时按钮不重建，焦点不丢。
     <TooltipRoot {...rootProps} open={rootProps.open && blocked}>
       <TooltipTrigger asChild {...triggerProps}>
         <button

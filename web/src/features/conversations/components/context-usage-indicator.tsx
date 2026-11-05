@@ -5,7 +5,6 @@ const RING_PATH = 100
 const KILO = 1000
 const MEGA = KILO * KILO
 
-/** WorkBuddy formatTokenCount：千进位、一位小数去尾零。 */
 const compact = (value: number): string => {
   const fixed = value.toFixed(1)
   return fixed.endsWith('.0') ? fixed.slice(0, -2) : fixed
@@ -22,14 +21,11 @@ type ContextUsageIndicatorProps = {
   used: number
 }
 
-/** 弧长低于这个数在 16px 的环上看不出来，整个环就像在转圈；画的时候垫到这里，数字照实报。 */
 const MIN_ARC = 8
 
-/** 用量过了这两条线，弧从墨色换成警示色，不用看数字；品牌绿只留给「生成」。 */
 const WARN_AT = 80
 const FULL_AT = 95
 
-/** 上下文用量环；只展示后端 used/max，不在浏览器估算 token。 */
 export function ContextUsageIndicator({ max, used }: ContextUsageIndicatorProps) {
   const percentValue = Math.min(100, Math.max(0, (used / max) * 100))
   const label = `${percentValue.toFixed(1)}% · ${formatTokens(used)} / ${formatTokens(max)} 上下文已使用`

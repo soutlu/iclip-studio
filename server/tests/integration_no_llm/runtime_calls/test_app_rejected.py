@@ -1,6 +1,3 @@
-"""运行时不认后端的应用密钥：经它的端点一律答 503，不答 401（浏览器会当成登录失效把人登出）；日志记一条
-提示检查配置的错误，答复与日志里都没有密钥。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -16,7 +13,6 @@ from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in
 from tests.helpers.runtime_backed import RUNTIME_APP_KEY, build_backed_app
 
 WRONG_KEY = "runtime-wrong-app-key-0123456789-abcdef"
-"""后端配的 ``RUNTIME_APP_KEY``；运行时给应用 ``video`` 配的仍是 ``RUNTIME_APP_KEY``，两边对不上。"""
 
 REJECTED = "运行时拒绝了后端的应用密钥或权限，检查 RUNTIME_APP_KEY 与运行时 apps.video 配置"
 

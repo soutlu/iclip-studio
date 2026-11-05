@@ -1,5 +1,3 @@
-"""解析镜头区间并按全片等间隔采样。相同文档产生确定的候选帧，支持按内容幂等复用。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -19,20 +17,17 @@ _TIMECODE = r"(?:(\d{1,2}):)?(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?"
 _SHOT_RANGE_RE = re.compile(_TIMECODE + r"\s*-\s*" + _TIMECODE)
 _CELL_ID_RE = re.compile(r"^S(\d+)-(\d+)$")
 
-# NFKC 已经覆盖全角数字、全角冒号与不间断空格；破折号族和零宽字符没有 NFKC
-# 映射，得单列。
+# Unicode NFKC 不会归一化破折号变体与零宽字符，需单独映射。
 _DASH_VARIANTS = {ord(char): "-" for char in "~–—−"}
 _BLANK_VARIANTS = dict.fromkeys(map(ord, "​‌‍﻿"), None)
 
 
 class ShotParseError(ValueError):
-    """拆解文档里读不出镜头时间码。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class ShotSpan:
-    """一个镜头的时间区间，半开区间 ``[start_ms, end_ms)``。"""
-
     shot_id: int
     start_ms: int
     end_ms: int
@@ -44,18 +39,12 @@ class ShotSpan:
 
 @dataclass(frozen=True, slots=True)
 class SampledCell:
-    """一个候选帧。``cell_id`` 是模型引用这一格的唯一凭据。"""
-
     cell_id: str
     shot_id: int
     src_ms: int
 
 
 def parse_shot_rows(markdown: str) -> tuple[tuple[ShotSpan, ...], ...]:
-    """按拆解表结构分组解析镜头区间，shot_id 使用全文档顺序。
-
-    仅归一化等价写法，不推断缺失或歧义时间码，避免不可复核的错误帧。"""
-
     rows: list[tuple[ShotSpan, ...]] = []
     shot_id = 0
     for line in markdown.splitlines():
@@ -81,10 +70,6 @@ def parse_shot_rows(markdown: str) -> tuple[tuple[ShotSpan, ...], ...]:
 def sample_rows(
     rows: Sequence[Sequence[ShotSpan]], *, interval_ms: int = FRAME_INTERVAL_MS
 ) -> tuple[tuple[SampledCell, ...], ...]:
-    """按全片统一栅格采样，将采样点分配给覆盖它的镜头。
-
-    镜头切分变化不移动采样点；无采样点的短镜头不补中点，因为没有对应的等间隔源帧。"""
-
     if interval_ms <= 0:
         raise ValueError(f"采样间隔必须为正: {interval_ms}")
     sampled: list[tuple[SampledCell, ...]] = []
@@ -103,8 +88,6 @@ def sample_rows(
 
 
 def parse_cell_id(cell_id: str) -> tuple[int, int]:
-    """解析帧号，返回 ``(镜头号, 序号)``。"""
-
     matched = _CELL_ID_RE.fullmatch(cell_id.strip())
     if matched is None:
         raise ShotParseError(f"帧号 {cell_id!r} 不是 {CELL_ID_SHAPE} 形状")
@@ -112,8 +95,6 @@ def parse_cell_id(cell_id: str) -> tuple[int, int]:
 
 
 def extraction_key(*, video_hash: str, rows: Sequence[Sequence[ShotSpan]], interval_ms: int) -> str:
-    """由视频内容、镜头区间与采样间隔派生幂等键，不包含参考图或画幅等生成参数。"""
-
     payload = json.dumps(
         {
             "videoHash": video_hash,
@@ -132,8 +113,6 @@ def _normalized(payload: str) -> str:
 
 
 def _timecode_ms(hours: str | None, minutes: str, seconds: str, millis: str | None) -> int:
-    """``[HH:]MM:SS[.mmm]`` → 毫秒；毫秒不足三位按右侧补零。"""
-
     return ((int(hours or 0) * 60 + int(minutes)) * 60 + int(seconds)) * 1000 + int(
         (millis or "0").ljust(3, "0")
     )

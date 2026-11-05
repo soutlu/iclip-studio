@@ -20,11 +20,6 @@ import {
 import { done, refuse, type EditResult } from './result'
 import { componentMsOf, moveStartMs, nextId, resizeMs } from './timeline'
 
-// 特效轨照 HyperFrames：`track` 是显示的行（数小的在上，从 0 起连续），同一行里不重叠；`zIndex` 是
-// 特效块之间的叠放次序（相同时数组里后面的在上），渲染只看它。特效块不跟随画面轨，可以超出画面轨
-// 的结尾（成片随之变长），只是不能在成片总长上限之后结束；放不下时拒绝，不截短。
-
-/** 落到哪：已有的第 `track` 行，或在第 `insertAt` 行之前开一行（等于行数时开在最下面） */
 export type OverlayRow = { track: number } | { insertAt: number }
 
 const endOf = (overlay: OverlayClip) => overlay.start + overlay.duration
@@ -32,16 +27,11 @@ const endOf = (overlay: OverlayClip) => overlay.start + overlay.duration
 export const overlayRowCount = (overlays: readonly OverlayClip[]): number =>
   new Set(overlays.map((overlay) => overlay.track)).size
 
-/**
- * 指针在特效轨上的位置（按行高折成的行数，从第一行顶上起算）落到哪一行：只有第一行之上、最后一行
- * 之下的空处开新行，落在行上就是那一行（同 HyperFrames 的 resolveInsertRow）。
- */
 export const overlayRowAt = (rowFloat: number, rowCount: number): OverlayRow => {
   const insertAt = resolveInsertRow(rowFloat, rowCount)
   return insertAt === null ? { track: Math.floor(rowFloat) } : { insertAt }
 }
 
-/** 去掉空行：行号收成 0…n−1，先后不变 */
 const normalizeTracks = (overlays: OverlayClip[]): OverlayClip[] => {
   const rank = new Map(
     [...new Set(overlays.map((overlay) => overlay.track))]
@@ -54,15 +44,9 @@ const normalizeTracks = (overlays: OverlayClip[]): OverlayClip[] => {
   })
 }
 
-/** 新加的组件叠在所有特效块之上（同 HyperFrames 的 blockInstaller：最大的 z 加一） */
 const topZ = (overlays: readonly OverlayClip[]) =>
   Math.max(0, ...overlays.map((overlay) => overlay.zIndex)) + 1
 
-/**
- * 把 overlay 放到 row 上；others 是其余的特效块（不含它）。落在已有的行上时，与行上的块相撞就挪到
- * 这一行离它最近的空位（同 HyperFrames 的 resolveNearestFreeStart，`origin` 是它在这一行上原来的
- * 开始时间）；开新行时，那一行和它下面的行都往下让一行。
- */
 const landOn = (
   others: OverlayClip[],
   overlay: OverlayClip,
@@ -101,7 +85,6 @@ const newOverlay = (
   variables: args.variables,
 })
 
-/** 点卡片加特效块：在最上面开一行，从 atMs 起，叠在所有特效块之上 */
 export const addOverlay = (
   draft: WholeFilmDraft,
   args: { component: string; durationMs: number; variables: ComponentVariables; atMs: number },
@@ -115,7 +98,6 @@ export const addOverlay = (
   })
 }
 
-/** 把组件拖到特效轨上松手：落到 row，叠在所有特效块之上 */
 export const dropOverlay = (
   draft: WholeFilmDraft,
   args: {
@@ -137,11 +119,6 @@ const directionOf = (from: number, row: OverlayRow): StackingDirection | null =>
   return row.track === from ? null : row.track < from ? 'up' : 'down'
 }
 
-/**
- * 拖动一个特效块：用 Studio 的拖动换算出开始时间，落到 row（不给就是原来那一行）。换了行时只给它
- * 重排叠放（同 HyperFrames 的 timelineStackingSync）：往上挪就盖过它现在压着的、时间上重叠的块，
- * 往下挪就沉到它现在被压着的块下面；别的块的 zIndex 不变，只在原来那一行左右挪时也不变。
- */
 export const moveOverlay = (
   draft: WholeFilmDraft,
   args: { overlayId: string; deltaMs: number; row?: OverlayRow },
@@ -196,10 +173,6 @@ export const moveOverlay = (
   return done(unchanged ? draft : { ...draft, overlays })
 }
 
-/**
- * 拖特效块的一端：用 Studio 的修剪，不越过同一行上相邻的块与总长上限；修开头时从组件自己时间里更晚处
- * 起播。右端最多到组件自己的时长放完（组件不拉长），已经超出的块拖右端时收回这个上限以内。
- */
 export const trimOverlay = (
   draft: WholeFilmDraft,
   args: { overlayId: string; edge: 'start' | 'end'; deltaMs: number },
@@ -229,7 +202,6 @@ export const trimOverlay = (
   })
 }
 
-/** 在画面上挪一个特效块：x、y 是画面像素，取整并裁在 ±4096 以内；位置没变时原样返回 */
 export const setOverlayPosition = (
   draft: WholeFilmDraft,
   args: { overlayId: string; x: number; y: number },
@@ -238,7 +210,6 @@ export const setOverlayPosition = (
   if (!overlay) return refuse('unknown-clip')
   const x = toOffset(args.x)
   const y = toOffset(args.y)
-  // 有位置之前存的草稿没写 x、y，按没挪过算
   if (x === (overlay.x ?? 0) && y === (overlay.y ?? 0)) return done(draft)
   return done({
     ...draft,
@@ -246,10 +217,6 @@ export const setOverlayPosition = (
   })
 }
 
-/**
- * 在画面上缩放、旋转一个特效块，规则见 {@link transformed}。`pivot` 是画出来那块的中心减去当前
- * x、y，即挪开之前的坐标（平移在缩放、旋转之后生效）。倍数与角度都没变时原样返回
- */
 export const setOverlayTransform = (
   draft: WholeFilmDraft,
   args: { overlayId: string } & TransformArgs,

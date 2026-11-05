@@ -1,8 +1,3 @@
-"""资料库的 Postgres 查询：一段对话一张卡，核卡的归属、卡面、镜头组、血缘、筛选与翻页。
-
-主体数据用原生 SQL 直插，时间戳自己定（业务仓储都用数据库时钟，控不住时刻）；与生成仓储对照的
-那条用例用分叉场景构造器，走数据库时钟。"""
-
 from __future__ import annotations
 
 import json
@@ -44,7 +39,6 @@ BASE = datetime(2026, 9, 20, 10, 0, tzinfo=UTC)
 NORA = "Nora.Ho"
 LENA = "Lena.Song"
 SARA = "Sara.Hong"
-"""只出现在请求的 ``user_name`` 里、没有账号的名字：资料库的作者一律按属主，不认它。"""
 
 SHOT_ONE: dict[str, Any] = {
     "global_settings": "浅灰地面与白墙，干净留白。",
@@ -66,7 +60,6 @@ SHOT_ONE_PROMPT = format_shot_prompt(
         ),
     )
 )
-"""受理时服务端照 shot 拼出、与 shot 一起存进请求的正文。"""
 SHOT_ONE_CUTS = ["空地面停一拍。", "踩入 @Image1 夹趾凉鞋。"]
 MARKER_PROMPT = (
     "浅灰地面与白墙。\n\n[0–4秒｜镜头1] 换成编织凉鞋 @Image1。\n[4–8秒｜镜头2] 向前迈一步。\n"
@@ -87,18 +80,6 @@ def shape(groups: Sequence[ShotGroupOut]) -> list[tuple[int | None, list[uuid.UU
 
 
 class Seed:
-    """两个人、四段对话、三条不挂对话的出片。时刻是距 BASE 的分钟数，写作「建立 → 完成」。
-
-    c1 Nora「春夏凉鞋合集」（-60 建）：镜 1 A（结构化 shot，0 → 5）、B（拼好的正文，60 → 65）、
-    A 上的合成 M（90 → 92）；镜 2 C 失败、D（30 → 50）、D2（40 → 45，晚建早完成）；没镜号的
-    P（10 → 12）与它上面的合成 PC（79 → 80）、Q（11 → 13）。
-    c2 Lena「滑板街拍」（-60 建）：E（40 → 130）与它上面的编辑段（131 → 132）。
-    c4 Lena 分叉自 c1（50 建，D 的完成时刻正好等于边界）：在继承来的 A 上剪出合成 Y（100 → 101），
-    自己出 G（110 → 120）。c5 Lena 分叉自 c1（70 建），没有自己的行。
-    不挂对话：Nora 的横版纯文本 H（10 → 14）与它上面的合成 HC（40 → 42），Lena 的 K（15 → 16）。
-    H、HC、Y 的请求里写的是 SARA。
-    """
-
     def __init__(self) -> None:
         self.nora, self.lena = uuid.uuid4(), uuid.uuid4()
         self.c1, self.c2, self.c4, self.c5 = (uuid.uuid4() for _ in range(4))
@@ -298,8 +279,6 @@ async def _video(
     request: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """一条出片；地址按 ``url_name`` 起，缺省用 id。"""
-
     name = url_name or str(video_id)
     body: dict[str, Any] = {
         "model": "vendor-b-seedance-2-5",
@@ -348,8 +327,6 @@ async def _edit(
     created: float,
     finished: float,
 ) -> None:
-    """在 ``base`` 那条素材片上改一段：来源是它，原作与镜号随它。"""
-
     await conn.execute(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
@@ -396,9 +373,6 @@ async def _composite(
     url_name: str | None = None,
     duration_ms: int | None = None,
 ) -> None:
-    """在 ``base`` 那条素材片上剪一段再合成：先落编辑段（合成前两分钟建、前一分钟完成），合成以基底为
-    来源、把编辑段夹进去，原作与镜号随基底。合成请求按别名落库，归属标签的键是 ``userName``。"""
-
     edit_id = uuid.uuid4()
     await _edit(
         conn,
@@ -469,9 +443,6 @@ async def ids(reports: PgLibraryReports, scope: Scope) -> list[uuid.UUID]:
 async def test_library_sees_what_the_generation_repository_sees(
     engine: AsyncEngine, reports: PgLibraryReports
 ) -> None:
-    """资料库手写的继承规则与生成仓储的是同一条：三层链逐跳边界、分叉时在途之后才完成的只进父、
-    编辑段读得到却不是一版。"""
-
     chain = await three_level_fork(engine)
     repo = SqlGenerationRepository(engine)
     inheritance = await SqlConversationRepository(engine).ancestry(chain.child.id)
@@ -502,8 +473,6 @@ async def test_library_sees_what_the_generation_repository_sees(
 async def test_one_card_per_conversation_ordered_by_the_face_finish_time(
     reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """E 建得早、完成得晚，排最前；它上面更晚完成的编辑段不当卡面。"""
-
     rows = await reports.videos(Scope(), limit=20, after=None)
 
     cards = [
@@ -531,9 +500,6 @@ async def test_one_card_per_conversation_ordered_by_the_face_finish_time(
 async def test_a_fork_card_holds_what_it_inherits_plus_its_own(
     reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """c4 读得到 c1 在它建立前完成的（D 正好等于边界也算），加上自己的 Y 与 G；B、M、PC 完成得晚，
-    不进来。没镜号的 P、Q 各自一组。"""
-
     groups = await reports.groups_of(seed.c4)
 
     assert shape(groups) == [
@@ -564,8 +530,6 @@ async def test_a_fork_card_holds_what_it_inherits_plus_its_own(
 async def test_the_source_card_is_not_touched_by_its_forks(
     reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """c1 的卡只装 c1 读得到的：c4 在继承来的 A 上剪的 Y 不进来。卡面 M 是合成，脚本沿原作 A。"""
-
     groups = await reports.groups_of(seed.c1)
 
     assert shape(groups) == [
@@ -634,7 +598,6 @@ async def test_filters_look_only_at_the_card_itself(reports: PgLibraryReports, s
     assert seed.h not in await ids(reports, Scope(orientation="portrait"))
     assert await ids(reports, Scope(since=at(91), until=at(93))) == [seed.c1]
     assert await ids(reports, Scope(q="凉鞋合集")) == [seed.c4, seed.c1]
-    # 卡面 M 对应的出片 A 的正文；c4 卡面 G 的正文里没有
     assert await ids(reports, Scope(q="夹趾")) == [seed.c1]
     assert await ids(reports, Scope(q="100%")) == [seed.c2]
     assert await ids(reports, Scope(q="100_")) == []
@@ -682,8 +645,6 @@ async def test_deleting_a_conversation_keeps_every_card(
 async def test_a_dangling_conversation_id_counts_as_no_conversation(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """生成记录的对话 id 没有外键，指向不存在的对话时按不挂对话算：卡 id 是出片 id。"""
-
     stray = uuid.uuid4()
     async with engine.begin() as conn:
         await _video(
@@ -706,9 +667,6 @@ async def test_a_dangling_conversation_id_counts_as_no_conversation(
 async def test_a_reference_test_video_is_not_a_card(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """参考视频的试生成只是拿来对照拆解的：``metadata`` 带 ``referenceId`` 的出片不成卡；别的坐标
-    不影响，同样的出片照成卡。"""
-
     before = await ids(reports, Scope())
     trial, take = uuid.uuid4(), uuid.uuid4()
     async with engine.begin() as conn:
@@ -733,8 +691,6 @@ async def test_a_reference_test_video_is_not_a_card(
 async def test_a_video_upload_is_not_a_card_or_a_version(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """上传的视频不是通过本系统生成的：不挂对话也不自成一张卡，不进任何卡的版本。"""
-
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
     upload = uuid.uuid4()
@@ -765,8 +721,6 @@ async def test_a_video_upload_is_not_a_card_or_a_version(
 async def test_subtitle_records_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """字幕记录是素材片的附属结果，不是片：挂在对话上、完成得比卡面还晚，卡与版本都不变。"""
-
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
     subtitles = [uuid.uuid4(), uuid.uuid4()]
@@ -805,8 +759,6 @@ async def test_subtitle_records_are_not_cards_or_versions(
 async def test_audio_records_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """音频记录不是片：挂在对话上的背景音乐（完成得比卡面还晚）与一条上传的音乐，卡与版本都不变。"""
-
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
     generated, uploaded = uuid.uuid4(), uuid.uuid4()
@@ -861,9 +813,6 @@ async def _whole_film(
     sources: Sequence[uuid.UUID] = (),
     status: str = STATUS_COMPLETED,
 ) -> None:
-    """挂在 ``conversation_id`` 上的一次成片导出，画面轨按先后用到 ``sources``；只有完成的有地址，
-    还没结束的没有完成时刻。"""
-
     completed = status == STATUS_COMPLETED
     await conn.execute(
         text(
@@ -891,9 +840,6 @@ async def _whole_film(
 async def test_whole_films_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """素材卡不收成片：挂在有卡的对话上、完成得比卡面还晚，卡面、组与版都不变；挂在一段没有
-    别的素材片的对话上，也不成卡。"""
-
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
     in_c1, alone = uuid.uuid4(), uuid.uuid4()
@@ -912,8 +858,6 @@ async def test_whole_films_are_not_cards_or_versions(
 async def test_a_trial_is_never_a_face(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """c2 里比 E 晚完成的试生成不顶替卡面、不算一版；只有试生成的对话没有卡。"""
-
     before = await ids(reports, Scope())
     only_trials = uuid.uuid4()
     async with engine.begin() as conn:
@@ -950,10 +894,6 @@ async def test_a_trial_is_never_a_face(
 async def test_unattached_masters_make_one_card_per_take(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """不挂对话与挂在不存在的对话上的素材片一起按原作成卡：不挂对话的 T 与它上面挂在不存在的对话上的
-    合成 TC 是一张卡；都挂在不存在的对话上的 U 与 UC 是一张卡；在 c1 的 A 上合成、不挂对话的 AC 自成
-    一张卡，卡 id 是 A、作者是 A 的属主，c1 的卡不变。"""
-
     t, tc, u, uc, ac, ghost = (uuid.uuid4() for _ in range(6))
     before_c1 = shape(await reports.groups_of(seed.c1))
     nora: dict[str, Any] = {"owner": seed.nora, "user_name": NORA}
@@ -1015,9 +955,6 @@ async def test_unattached_masters_make_one_card_per_take(
 async def test_one_card_pages_walk_the_whole_list_and_match_the_count(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, scope: Scope
 ) -> None:
-    """一页一张地翻，与一次取全的列表逐张相同、不重不漏；计数与列表同一套候选。另加一张挂在不存在的
-    对话上的卡。"""
-
     async with engine.begin() as conn:
         await _video(
             conn,
@@ -1046,8 +983,6 @@ async def test_one_card_pages_walk_the_whole_list_and_match_the_count(
 async def test_authors_match_the_authors_on_the_list(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """作者按卡计数：对话卡记对话属主，不挂对话（含对话不存在）的卡记原作出片的属主。"""
-
     async with engine.begin() as conn:
         await _video(
             conn,
@@ -1070,13 +1005,6 @@ async def test_authors_match_the_authors_on_the_list(
 
 
 class Films:
-    """在 ``Seed`` 上加的成片导出，时刻同样是距 BASE 的分钟数。
-
-    c1（Nora）：W0（45 完成，c4、c5 建立前就有）、W1（200，用到 A、D）、Lena 记在这段对话上的 W2（300，
-    卡面，用到 D、A、B），另有一条失败的与一条还没结束的。c4（Lena 的副本）：自己的 W4（250）。
-    c2（Lena）：只有组件段的 W5（150，没有用到素材片）。c5 没有自己的导出。还有一条挂在不存在的对话上的。
-    """
-
     def __init__(self) -> None:
         self.w0, self.w1, self.w2, self.w4, self.w5 = (uuid.uuid4() for _ in range(5))
         self.failed, self.running, self.dangling = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
@@ -1143,10 +1071,6 @@ async def film_cards(
 async def test_a_whole_film_card_holds_its_conversations_own_exports(
     reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:
-    """一段对话一张卡，只装自己完成的导出：c4、c5 不继承 c1 的，c5 因此没有卡；失败的、还没结束的、
-    挂在不存在的对话上的都不收。卡里按完成先后编版本，卡面是最后一版；作者是对话属主，每一版的归属人
-    是导出的人，用到的素材片按请求里的先后。"""
-
     rows = await reports.whole_films(WholeFilmScope(), limit=20, after=None)
 
     assert [
@@ -1179,9 +1103,6 @@ async def test_a_whole_film_card_holds_its_conversations_own_exports(
 async def test_high_definition_versions_are_neither_takes_nor_exports(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:
-    """高清版（超分记录）完成得比所有卡面都晚，素材卡、组、版与成片卡、成片版本都不变：
-    素材片与成片的高清版种类都是视频，都不挂对话。"""
-
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
     before_films = [
@@ -1233,9 +1154,6 @@ async def test_high_definition_versions_are_neither_takes_nor_exports(
 async def test_whole_film_filters_and_pages_follow_the_face(
     reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:
-    """作者、时间窗与关键词都只看卡本身：时间窗落在卡面的完成时刻上（c1 的 W1 在窗里也不算），关键词
-    只搜对话标题。翻页按卡面完成时刻倒序接着走。"""
-
     assert await film_cards(reports, WholeFilmScope(user_name=LENA)) == [seed.c4, seed.c2]
     assert await film_cards(reports, WholeFilmScope(user_name=NORA)) == [seed.c1]
     assert await film_cards(reports, WholeFilmScope(since=at(100), until=at(210))) == [seed.c2]
@@ -1259,9 +1177,6 @@ async def test_whole_film_filters_and_pages_follow_the_face(
 async def test_whole_film_authors_count_cards_by_conversation_owner(
     reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:
-    """c1 的卡算 Nora 的（Lena 记在上面的 W2 也在里面）；Lena 有 c4 与 c2 两张。c5 没有卡，失败的与
-    挂在不存在的对话上的不算。"""
-
     authors = [(author.user_name, author.count) for author in await reports.whole_film_authors()]
 
     assert authors == [(LENA, 2), (NORA, 1)]

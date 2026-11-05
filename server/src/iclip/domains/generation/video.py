@@ -1,9 +1,3 @@
-"""视频异步接口的适配器。提交拿 task_id，之后按固定间隔查状态。
-
-请求字段照上游原样转发，只去掉我们自己加的归属字段与结构化 shot；成功时上游给的是它自己
-发布好的两个稳定地址（原片与水印版），直接存，不再转存。编辑段与出片一样转发：参考片段的
-地址受理时就在请求里。超分（高清版）是同一家的另一个提交地址，任务查询与结果同出片。"""
-
 from __future__ import annotations
 
 import math
@@ -33,7 +27,6 @@ from iclip.domains.generation.schemas import (
 PROVIDER_NAME: Final = "video_api"
 
 _REQUESTS: Final = (VideoGenerationIn, VideoEnhanceRequest)
-"""这家处理的两类请求：出片与编辑段，以及超分。两者的任务查询是同一个接口。"""
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -44,23 +37,17 @@ _FAILED_STATUSES: Final = frozenset({"failed", "cancelled", "canceled", "error",
 _SUBMIT_TIMEOUT_SECONDS: Final = 30.0
 _POLL_TIMEOUT_SECONDS: Final = 20.0
 _MAX_DURATION_MS: Final = 2**31 - 1
-"""时长列是 32 位整数，超出的值存不进去。"""
 
 
 @dataclass(frozen=True, slots=True)
 class VideoProviderSettings:
-    """由组合根从环境变量解析后传入的运行值。模型与归属标签都在请求里，这里不持有。"""
-
     submit_url: str
     status_base_url: str
     api_key: str
     enhance_submit_url: str | None = None
-    """超分的提交地址；为空就是没开通。超分的任务查询与出片走同一个地址。"""
 
 
 class HttpVideoProvider:
-    """``GenerationProvider`` 的视频实现。"""
-
     def __init__(
         self,
         settings: VideoProviderSettings,
@@ -85,11 +72,9 @@ class HttpVideoProvider:
                     retryable=False,
                 )
             url = self._settings.enhance_submit_url
-            # 不插帧时不发 fps，上游按原片帧率出。
             payload = request.model_dump(exclude_none=True)
         else:
             url = self._settings.submit_url
-            # 没给的可选字段不发，上游的模型默认值才能生效；归属字段与 shot 是我们自己的，不发。
             payload = request.model_dump(exclude_none=True, exclude=set(NOT_FORWARDED_FIELDS))
         body = await self._request(
             "POST",
@@ -135,13 +120,6 @@ class HttpVideoProvider:
         params: dict[str, str] | None = None,
         result_unknown_on_transport_error: bool = False,
     ) -> dict[str, Any]:
-        """请求 JSON 对象响应。
-
-        连不上是 ``PROVIDER_UNREACHABLE``。连上了却没拿到结果（读超时之类）在提交阶段是
-        ``PROVIDER_RESULT_UNKNOWN``：请求可能已被收下，不能当成没发出去；查状态是幂等的，
-        仍按不可达处理。5xx 可重试，4xx 不可重试。
-        """
-
         try:
             async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
                 response = await client.request(
@@ -220,7 +198,6 @@ def _progress_from_body(
             if not isinstance(value, str) or not is_http_url(value)
         ]
         if missing:
-            # 上游两份产物都发布完才进 succeeded，缺一份就是协议错。
             raise ProviderError(
                 f"视频接口报成功但没给 result.{' / result.'.join(missing)}",
                 code="PROVIDER_OUTPUT_MISSING",
@@ -254,21 +231,15 @@ def _progress_from_body(
 
 
 def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: str) -> int | None:
-    """上游实测的产物时长 ``output_duration_seconds`` 折成毫秒；没给或给坏了都是 ``None``。
-
-    ``result.duration_ms`` 是生成耗时、请求里的 ``seconds`` 是目标时长，都不拿来顶替。"""
-
     if "output_duration_seconds" not in result:
         return None
     seconds = result["output_duration_seconds"]
     if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
         scaled = seconds * 1000
-        # 整数多大都能取整；浮点先排除 inf / nan，round 碰上它们会抛错。
         if isinstance(scaled, int) or math.isfinite(scaled):
             ms = round(scaled)
             if 0 < ms <= _MAX_DURATION_MS:
                 return ms
-    # 时长只是附带信息，给坏了不该让已经出好的片判失败。
     _logger.warning(
         "视频上游给的产物时长不可用",
         job_id=job_id,
@@ -279,8 +250,6 @@ def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: s
 
 
 def _error_fields(error: Any) -> tuple[str | None, str | None]:
-    """本地错误读 message；PROVIDER_ERROR 优先保留上游的 upstream_message 原文。"""
-
     if isinstance(error, str) and error.strip():
         return None, error.strip()
     if isinstance(error, dict):

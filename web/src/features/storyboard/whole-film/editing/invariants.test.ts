@@ -45,11 +45,9 @@ const context = contextOf(
     },
     m2: { durationMs: 5_000, beats: [{ timeMs: 0, strength: 1 }] },
   },
-  // 比随机放进去的时长（至多 12 秒）短，序列里也会修剪已经超出组件时长的块
   { card: 6_000, other: 3_000, badge: 4_000 },
 )
 
-/** 固定种子的伪随机数（mulberry32），同一种子每次得到同一串操作 */
 const randomOf = (seed: number) => {
   let state = seed
   return () => {
@@ -127,7 +125,6 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
   }
   const total = filmDuration(draft)
   const clipId = () => pick([...draft.layer0.map((c) => c.id), 'missing'])
-  /** 连着的一到三段，偶尔混进不在草稿里的 */
   const clipIds = () => {
     const from = int(0, draft.layer0.length)
     const ids = draft.layer0.slice(from, from + int(1, 3)).map((c) => c.id)
@@ -151,7 +148,6 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
       },
       context,
     )
-  // 加素材常被拒（随机范围超出素材），排两份，序列才走得到五段视频以上
   const edits: (() => EditResult)[] = [
     material,
     material,
@@ -251,7 +247,6 @@ it.each([1, 2, 3, 4, 5, 6, 7, 8])('随机编辑序列（种子 %i）：每一步
     reached.overlayRows ||= overlayRowCount(draft.overlays) >= 3
     reached.music ||= draft.music !== null
   }
-  // 随机序列要真的走到这些状态，不变量检查才有意义
   expect(committed).toBeGreaterThan(100)
   expect(reached).toEqual({
     fiveVideos: true,

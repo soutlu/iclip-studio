@@ -1,10 +1,3 @@
-"""测试库直连与清表。
-
-清表先踢掉握着表锁的遗留会话，再在限时内 TRUNCATE：上一个用例可能留下没关干净的连接
-（跨事件循环的 NullPool 连接、被取消在事务中间的运行），它握着的表锁会让 TRUNCATE 无限期
-等待，整条 CI 就此挂住。测试库专用，踢掉别的会话不伤人。
-"""
-
 from __future__ import annotations
 
 import json
@@ -41,8 +34,6 @@ APP_TABLES = (
     "iclip.brand_templates",
     "iclip.brand_profiles",
 )
-"""iclip 里每个用例自己造数据的表。``library_tags`` 不在里面：预置的标签树由迁移写入，用例共用；自己
-加的标签由用例自己删掉。"""
 
 AGENT_RUNTIME_TABLES = (
     "agent_runtime.runs",
@@ -75,14 +66,11 @@ AGENT_RUNTIME_TABLES = (
 )
 
 LOCK_TIMEOUT = "10s"
-"""TRUNCATE 等锁的上限。等不到就报错并列出阻塞方，不让 CI 挂死。"""
 
 
 async def truncate_clean(
     conn: AsyncConnection, tables: Sequence[str], *, cascade: bool = False
 ) -> None:
-    """清空 ``tables``；表名是测试代码里的常量，不来自外部输入。"""
-
     holders = (
         await conn.execute(
             text(
@@ -106,21 +94,11 @@ async def truncate_clean(
 
 
 async def reset_database(conn: AsyncConnection) -> None:
-    """一条语句清空 ``APP_TABLES`` 与 ``AGENT_RUNTIME_TABLES``。
-
-    不带 CASCADE：外键两端都在清单里就不需要级联；新表外键指向清单却没进清单时当场报错。
-    """
-
     await truncate_clean(conn, (*APP_TABLES, *AGENT_RUNTIME_TABLES))
 
 
 @asynccontextmanager
 async def connected(url: str) -> AsyncGenerator[AsyncConnection]:
-    """在一次性引擎上开一个事务连接，块正常结束提交、出错回滚，最后释放引擎。
-
-    NullPool 让连接随块关闭，``asyncio.run`` 里用也不会把连接留给下一个事件循环。
-    """
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
@@ -141,8 +119,6 @@ async def insert_inline_snapshot(
     conversation_id: str,
     messages: list[ModelMessage],
 ) -> None:
-    """按改为引用存之前 ``save_snapshot`` 的写法落一行：外置媒体后整段历史内联。"""
-
     messages_json = await externalize_media(
         json.loads(ModelMessagesTypeAdapter.dump_json(messages)),
         media_store=PgMediaStore(engine),

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { jsonProblems, markdownProblems } from './lint'
 
-/** 每条问题标出的原文与文案。 */
 const marked = (text: string, problems: ReturnType<typeof markdownProblems>) =>
   problems.map(({ from, message, to }) => ({ message, text: text.slice(from, to) }))
 

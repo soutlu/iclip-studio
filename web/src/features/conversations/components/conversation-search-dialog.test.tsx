@@ -10,7 +10,6 @@ import type { Conversation } from '../conversations.api'
 import { useLiveConversations } from '../conversations.live'
 import { ConversationSearchDialog } from './conversation-search-dialog'
 
-/** 全局帧订阅在应用里挂在侧栏顶层；弹窗自己不订，这里照壳的样子在外面挂一次。 */
 function LiveFrames() {
   useLiveConversations()
   return null
@@ -106,10 +105,8 @@ describe('ConversationSearchDialog', () => {
     await screen.findByRole('list', { name: '搜索结果' })
     expect(titles()).toEqual(['亚麻衬衫二剪'])
 
-    // 断线期间别处把另一段改了名；全局帧不补发，改名帧丢了。
     socket.onclose?.()
     renamed.title = '亚麻长裙'
-    // 第一次重连排在 1 秒退避（另加至多 250ms 抖动）之后，握手完成才算重连上。
     await act(() => new Promise((resolve) => setTimeout(resolve, 1300)))
     socket.deliver(SERVER_HELLO)
 

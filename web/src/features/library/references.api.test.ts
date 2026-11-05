@@ -72,7 +72,6 @@ describe('nearestTestAspectRatio', () => {
 })
 
 describe('useReference', () => {
-  /** 挂上详情查询，答复由 `current()` 现给，交回读了几次与查询结果。 */
   const watch = (current: () => ReferenceDetail) => {
     const counter = { reads: 0 }
     server.use(

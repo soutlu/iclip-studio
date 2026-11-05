@@ -1,9 +1,3 @@
-"""identity SQL 适配器：ORM 表（fastapi-users 要求 declarative）+ 仓储实现。
-
-schema 固定为 ``iclip``（declarative 类定义期无法按配置动态化；
-config 的 db_schema 必须与此一致，组合根启动期校验）。
-"""
-
 from __future__ import annotations
 
 import secrets
@@ -45,7 +39,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     username: Mapped[str | None] = mapped_column(String(150), unique=True, nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     avatar_url: Mapped[str] = mapped_column(String(1024), default="", nullable=False)
-    # 密码注册的默认身份；SSO 首登在 sync 中覆写为 ["editor"]。
     roles: Mapped[list[str]] = mapped_column(JSONB, default=lambda: ["viewer"], nullable=False)
     direct_permissions: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     city: Mapped[str] = mapped_column(String(255), default="", nullable=False)
@@ -64,7 +57,6 @@ class OAuthAccount(SQLAlchemyBaseOAuthAccountTableUUID, Base):
 
     @declared_attr
     def user_id(cls) -> Mapped[uuid.UUID]:  # pyright: ignore[reportIncompatibleVariableOverride]
-        # 基类的 FK 目标不带 schema，跨 schema 元数据解析不到，必须覆写。
         return mapped_column(
             GUID,
             ForeignKey(f"{DB_SCHEMA}.users.id", ondelete="cascade"),
@@ -126,8 +118,6 @@ def _department_from_json(data: dict[str, Any]) -> PmsDepartment:
 
 
 def account_from_row(row: User) -> UserAccount:
-    """将 ORM 行转换为领域快照；持久化部门 JSON 非法时抛出校验错误。"""
-
     return UserAccount(
         id=row.id,
         email=row.email,
@@ -169,12 +159,8 @@ class SqlUserRepository:
             return account_from_row(row) if row is not None else None
 
     async def display_names(self, user_ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
-        """一次查出这些用户各自给人看的名字：显示名，没有就用用户名，再没有用邮箱；不存在的 id 不在结果里。
-        配置页给操作人补名字用。"""
-
         if not user_ids:
             return {}
-        # fastapi-users 把 id 与 email 标成普通类型，按列查走表上的列。
         users = User.__table__.c
         async with self._sessions() as session:
             rows = await session.execute(
@@ -248,7 +234,6 @@ class SqlUserRepository:
                 return found.id
         try:
             async with self._sessions() as session, session.begin():
-                # 占位账号：没有角色，密码是随机的谁也不知道；本人 SSO 登录时按用户名认领。
                 placeholder = User(
                     email=email,
                     hashed_password=PasswordHelper().hash(secrets.token_urlsafe(32)),
@@ -260,7 +245,6 @@ class SqlUserRepository:
                 await session.flush()
                 return placeholder.id
         except IntegrityError:
-            # 两个请求同时报同一个名字，只有一个建得成，另一个重查就有了。
             async with self._sessions() as session:
                 found = await get_user_row_by_username(session, username)
                 if found is None:
@@ -284,8 +268,6 @@ class SqlUserRepository:
                 return
             if display_name:
                 row.display_name = display_name
-                # 用户名是发往上游的归属标签，SSO 账号拿显示名当用户名；撞名就留空，
-                # 发消息时会明确报「没有用户名」，不悄悄改成别的名字。
                 if row.username is None:
                     taken = await get_user_row_by_username(session, display_name)
                     if taken is None:
@@ -359,8 +341,6 @@ class SqlApiKeyRepository:
 
 
 async def get_user_row_by_username(session: AsyncSession, username: str) -> User | None:
-    """按 username 查用户行（fastapi-users 适配层的登录标识解析用）。"""
-
     result = await session.execute(select(User).where(User.username == username))
     return result.unique().scalar_one_or_none()
 

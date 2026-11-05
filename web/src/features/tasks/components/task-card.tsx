@@ -15,12 +15,10 @@ import { TaskStatusTag } from './task-status-tag'
 
 type TaskCardProps = {
   onClick: () => void
-  /** 提供 onRename 时展示更多操作菜单。 */
   onRename?: (() => void) | undefined
   task: Task
 }
 
-/** 多款保留首款与总数，完整商品信息仍在需求详情展示。 */
 const productsSummary = ([first, ...rest]: Task['inputs']['products']): string => {
   if (!first) return '未填商品'
   return rest.length ? `${first.style_no} 等 ${rest.length + 1} 款` : first.style_no
@@ -36,7 +34,6 @@ export function TaskCard({ onClick, onRename, task }: TaskCardProps) {
   const videoType = videoSpecLabel(spec.video_type, VIDEO_TYPE_OPTIONS) || '未填视频类型'
   const contentType = videoSpecLabel(spec.content_type, CONTENT_TYPE_OPTIONS) || '未填内容类型'
   const createdAt = formatDateTime(task.createdAt)
-  // 仅省略已由平台、款号字段表达的前缀；原始标题用于详情及可访问名称。
   const platformKey = spec.platform.toLowerCase()
   const prefixes = new Set([
     platformKey,
@@ -101,7 +98,6 @@ export function TaskCard({ onClick, onRename, task }: TaskCardProps) {
       {onRename && (
         <MenuRoot>
           <MenuTrigger asChild>
-            {/* 按钮只有 24px；角上独处不会与邻近控件抢点，热区扩到 48px 方便触屏。 */}
             <IconButton
               className="hit-48 absolute top-2 right-2 bg-surface-container-lowest"
               label="更多操作"

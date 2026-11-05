@@ -8,7 +8,6 @@ import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { ApprovalCard } from './approval-card'
 
-/** 记录这张卡向服务端提交了几次决定。 */
 function countDecisions() {
   const decisions: boolean[] = []
   server.use(
@@ -58,7 +57,6 @@ describe('ApprovalCard 数字快捷键', () => {
     await userEvent.keyboard('12')
 
     expect(decisions).toEqual([])
-    // 弹窗打开期间卡片被标成 aria-hidden，查询要带 hidden 才找得到。
     expect(screen.getByRole('button', { hidden: true, name: '同意' })).toBeEnabled()
   })
 })
@@ -83,7 +81,6 @@ const cardFor = (frame: ToolCallFrame) => (
   />
 )
 
-/** jsdom 不排版，scrollHeight 恒为 0；按用例给出预览正文排出来的高度（jsdom 下行高按 21px 估）。 */
 const stubContentHeight = (px: number) => {
   Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
     configurable: true,

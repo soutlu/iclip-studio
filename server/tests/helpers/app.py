@@ -1,5 +1,3 @@
-"""测试用 app 装配与 HTTP 驱动：运行配置、进程内客户端、注入身份的路由 app、开对话与等运行结束。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -22,15 +20,11 @@ from iclip.domains.identity.middleware import bind_principal
 from iclip.domains.identity.public import Principal
 
 TEST_MODEL_NAME = "test-model"
-"""集成层 ``models`` 夹具注册的替身模型名；种下的 agent 默认用它。"""
 
 TEST_CREDENTIAL_KEY = base64.urlsafe_b64encode(b"test-credential-key-0123456789ab").decode()
-"""测试用的 ``CREDENTIAL_ENCRYPTION_KEYS``：一个合法的 Fernet key（32 字节 urlsafe base64）。"""
 
 
 def make_runtime_config(*, cors_allow_origins: tuple[str, ...] = ()) -> RuntimeConfig:
-    """测试运行配置；地址与凭证由 base_env 提供，``cors_allow_origins`` 是跨域白名单。"""
-
     return RuntimeConfig(
         app=AppSection(name="iclip-test"),
         db=DbSection(schema="iclip"),
@@ -45,11 +39,6 @@ def make_client(app: FastAPI) -> httpx.AsyncClient:
 
 
 def app_with_principal(granted: Principal | None) -> FastAPI:
-    """只挂错误处理的空 app，每个请求都以 ``granted`` 为已解析身份；``None`` 即匿名。
-
-    路由单测用它跳过凭证解析，调用方自己 ``include_router``。
-    """
-
     app = FastAPI()
 
     @app.middleware("http")
@@ -64,16 +53,12 @@ def app_with_principal(granted: Principal | None) -> FastAPI:
 
 
 async def new_conversation(client: httpx.AsyncClient, agent_id: str) -> str:
-    """创建会话并返回 AG-UI threadId；agent 端点仅接受服务端创建的会话。"""
-
     created = await client.post("/conversations", json={"agentId": agent_id})
     assert created.status_code == 201, created.text
     return str(created.json()["conversation"]["id"])
 
 
 async def settled(client: httpx.AsyncClient, conversation_id: str, *, tries: int = 200) -> None:
-    """等会话运行结束；请求在 prompt 受理后即返回，不代表结果已持久化。同步客户端用 ws.settled。"""
-
     for _ in range(tries):
         queue = (await client.get(f"/conversations/{conversation_id}/prompts")).json()
         if queue["active"] is None and not queue["queued"]:

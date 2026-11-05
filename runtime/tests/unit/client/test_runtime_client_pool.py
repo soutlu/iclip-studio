@@ -1,9 +1,3 @@
-"""客户端库自建的连接池：WebSocket 再多也不挤掉普通请求。
-
-ASGI 传输层不经过 httpcore 的连接池，这里用 uvicorn 在回环地址的临时端口上起一个小 Starlette 应用，走真实
-socket：``/v1/ws`` 握手后一直挂着直到对端关，``/v1/agents`` 答一份空名册。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -23,7 +17,6 @@ from agent_runtime.client import RuntimeClient
 
 KEY = "app-key-0123456789-0123456789-abcdef"
 
-# 比 httpx 默认的连接总数上限 100 多一条。
 WEBSOCKETS = 101
 
 
@@ -68,7 +61,6 @@ async def test_open_websockets_leave_room_for_requests(base_url: str) -> None:
 
         async def hold_one() -> None:
             nonlocal opened
-            # 进出同一个任务：httpx-ws 的会话里有任务组，不能在别的任务里退出。
             async with client.connect_transcript():
                 opened += 1
                 if opened == WEBSOCKETS:

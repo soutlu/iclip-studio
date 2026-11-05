@@ -19,7 +19,6 @@ const jsonEqual = (a: Json | undefined, b: Json | undefined): boolean => {
   return [...keys].every((key) => jsonEqual(a[key], b[key]))
 }
 
-/** 一次编辑记一步撤销；被拒或没有改动的编辑不进历史 */
 export const commitEdit = (
   history: History<WholeFilmDraft>,
   result: EditResult,

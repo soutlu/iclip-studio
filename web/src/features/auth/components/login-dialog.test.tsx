@@ -13,7 +13,6 @@ const serveSsoProbe = (respond: () => Response | Promise<Response>) =>
   server.use(http.get('*/api/auth/sso/authorize', respond))
 const ssoOpen = () => HttpResponse.json({ authorization_url: 'https://sso.example.com/authorize' })
 
-/** 应用壳的用法：点「登录」打开弹窗。 */
 function LoginTrigger() {
   const [open, setOpen] = useState(false)
   return (

@@ -38,7 +38,6 @@ const workspaceEntry: ArtifactEntry = {
   type: 'workspace',
 }
 
-/** 按文件名模式认领一类文件的项，模式由各用例给。 */
 const patternEntry = (pattern: string, type = 'canvas'): ArtifactEntry => ({
   autoOpen: false,
   component: Placeholder,

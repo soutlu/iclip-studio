@@ -1,10 +1,3 @@
-"""Agent 配置 HTTP 端点，全部要求 ``agent:manage``。约定见合同「Agent 配置」一节。
-
-业务在运行时服务：每个端点验完权限与请求体，按同一个子路径转给它的 ``/v1/admin/agents``（见
-``iclip.platform.runtime_admin``）。答复里带操作人 id 的端点补上操作人的显示名，其余原样交回。请求与答复的
-声明照旧写在这里，合同由它们导出。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -41,8 +34,6 @@ _MANAGE = "agent:manage"
 
 
 def create_agent_config_router(runtime: RuntimeClient, user_names: UserNames) -> APIRouter:
-    """``user_names`` 给答复里的操作人补显示名。"""
-
     router = APIRouter(prefix="/agents", tags=["agents"])
 
     async def named(
@@ -82,7 +73,6 @@ def create_agent_config_router(runtime: RuntimeClient, user_names: UserNames) ->
 
         return await named(AgentsOut, "PUT", "agents/order", principal, body)
 
-    # 要登记在 /{agent_id} 之前，不然 plugins、model-options 会被当成 agent 标识。
     @router.get("/plugins", response_model=AgentPluginsOut)
     async def list_agent_plugins(
         principal: Annotated[Principal, require_permission(_MANAGE)],

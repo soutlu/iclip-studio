@@ -1,6 +1,3 @@
-"""运行时从库里装配 agent：对话固定在开对话时的版本、按版本号复用或重装、装不起来只影响用到那个版本的
-对话、首页名册、按草稿装配，以及用默认模型起标题。走真实 app 与 Postgres，模型按名字换成替身。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -64,8 +61,6 @@ SKILL = "storyboard-rules"
 
 @pytest.fixture
 def heard() -> list[tuple[str, str]]:
-    """（模型名，模型收到的指令），按调用先后。"""
-
     return []
 
 
@@ -114,8 +109,6 @@ async def run_once(client: httpx.AsyncClient, conversation_id: str) -> None:
 
 
 async def run_metadata(pg_url: str, conversation_id: str) -> list[dict[str, str]]:
-    """这段对话顶层运行（没有父运行）的落库 metadata，按开始先后。"""
-
     async with connected(pg_url) as conn:
         rows = await conn.execute(
             text(
@@ -140,8 +133,6 @@ async def session_version(pg_url: str, conversation_id: str) -> uuid.UUID | None
 async def seed(
     app: FastAPI, engine: AsyncEngine, *seeds: AgentSeed, models: tuple[str, ...] = ()
 ) -> Seeded:
-    """种下 ``seeds``；``models`` 是另外加在测试供应商上、种子没用到的模型。"""
-
     seeded = await seed_agents(services_of(app), engine, seeds)
     for name in models:
         await services_of(app).model_providers.add_model(
@@ -151,8 +142,6 @@ async def seed(
 
 
 async def title_of(client: httpx.AsyncClient, conversation_id: str, *, expect: str) -> str:
-    """起名与这一轮并行，跑完这一轮时可能还没写上；等它写成 ``expect`` 或等够了为止。"""
-
     title = ""
     for _ in range(100):
         title = (await client.get(f"/conversations/{conversation_id}")).json()["conversation"][
@@ -174,14 +163,9 @@ async def republish(app: FastAPI, seeded: Seeded, seed_: AgentSeed) -> uuid.UUID
     return version
 
 
-# --- 版本固定 -------------------------------------------------------------------
-
-
 async def test_a_conversation_keeps_its_version_after_a_new_one_is_published(
     app: FastAPI, engine: AsyncEngine, pg_url: str, heard: list[tuple[str, str]]
 ) -> None:
-    """发布新版本后，老对话仍按开对话时的版本跑，新对话按新版本；运行记录写着各自的版本。"""
-
     seeded = await seed(app, engine, AgentSeed(AGENT_ID, instructions="第一版提示词"))
     v1 = seeded.versions[AGENT_ID]
     async with make_client(app) as client:
@@ -230,8 +214,6 @@ async def test_a_fork_keeps_the_source_version_unless_it_switches_agent(
 async def test_a_conversation_without_a_session_is_unavailable(
     app: FastAPI, engine: AsyncEngine, pg_url: str
 ) -> None:
-    """切换前就有、agent 已不在的对话：会话版本为空，发消息是 409 ``agent_unavailable``。"""
-
     await seed(app, engine, AgentSeed(AGENT_ID))
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
@@ -247,9 +229,6 @@ async def test_a_conversation_without_a_session_is_unavailable(
     assert sent.status_code == 409
     assert sent.json()["code"] == "agent_unavailable"
     assert page.status_code == 200, "读历史照常"
-
-
-# --- 开对话与首页 ----------------------------------------------------------------
 
 
 async def test_only_listed_published_active_agents_open_conversations_and_reach_the_home_list(
@@ -300,14 +279,9 @@ async def test_archiving_an_agent_keeps_its_existing_conversations_running(
     assert heard == [(TEST_MODEL_NAME, "照旧")]
 
 
-# --- 装不起来 --------------------------------------------------------------------
-
-
 async def test_a_disabled_model_breaks_only_the_conversations_on_that_version(
     app: FastAPI, engine: AsyncEngine, pg_url: str, heard: list[tuple[str, str]]
 ) -> None:
-    """v1 用的模型在 v2 换掉后被停用：固定在 v1 的对话发消息是 409，原因写明；v2 的对话照常。"""
-
     seeded = await seed(app, engine, AgentSeed(AGENT_ID), models=(OTHER_MODEL,))
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
@@ -334,8 +308,6 @@ async def test_a_plugin_removed_from_the_code_makes_its_versions_unavailable(
     models: Mapping[str, Model],
     tmp_path: Path,
 ) -> None:
-    """发布时登记表里有的插件，换了部署后不在了：用到它的版本装不起来，不悄悄跳过这个插件。"""
-
     def build(registry: dict[str, Any]) -> FastAPI:
         return build_backed_app(
             make_runtime_config(),
@@ -367,8 +339,6 @@ async def test_a_plugin_removed_from_the_code_makes_its_versions_unavailable(
 async def test_a_run_that_cannot_assemble_after_queueing_fails_with_the_reason(
     engine: AsyncEngine,
 ) -> None:
-    """受理后、开跑前装不起来（期间模型被停用等）：这一轮记失败，原因记在消息行上。"""
-
     runner, _store, queue = make_runner(
         engine, agents={}, step_store=PgStepStore(engine), store=TranscriptStore()
     )
@@ -391,15 +361,9 @@ async def test_a_run_that_cannot_assemble_after_queueing_fails_with_the_reason(
     assert reason.startswith("agent_unavailable: ")
 
 
-# --- 缓存 ------------------------------------------------------------------------
-
-
 async def test_assemblies_are_reused_until_something_they_use_changes(
     app: FastAPI, engine: AsyncEngine, pg_url: str
 ) -> None:
-    """什么都没变就复用同一个 Agent；发布技能、改密钥、改模型属性、改子 agent 描述、子 agent 发布新版都
-    让下一次重新装配，运行记录跟着写新的技能 hash。"""
-
     seeded = await seed(
         app,
         engine,
@@ -471,9 +435,6 @@ async def test_assemblies_are_reused_until_something_they_use_changes(
 async def test_a_renamed_skill_is_written_again_under_a_new_key(
     app: FastAPI, engine: AsyncEngine, pg_url: str, heard: list[tuple[str, str]], tmp_path: Path
 ) -> None:
-    """改技能标识后下一次运行重新装配：按新标识写进新的缓存目录，``SKILL.md`` 的 name 换成新标识，模型
-    看到的是新标识，旧目录留着；同一内容、同一标识不再写；发布新版本又换一个目录。"""
-
     seeded = await seed(
         app, engine, AgentSeed(AGENT_ID, skills=(SkillSeed(SKILL, references={"spec.md": "规范"}),))
     )
@@ -491,7 +452,6 @@ async def test_a_renamed_skill_is_written_again_under_a_new_key(
         (old_key,) = keys()
 
         await services.skills.rename(skill_id, SkillUpdateIn(name="storyboard-kit"))
-        # 技能清单在一段对话里只在开头写一次，之后的变化另发；看清单要开一段新对话。
         renamed_conversation = await open_conversation(client)
         await run_once(client, renamed_conversation)
         await run_once(client, conversation_id)
@@ -513,7 +473,6 @@ async def test_a_renamed_skill_is_written_again_under_a_new_key(
     assert "name: storyboard-rules\n" in old_md
     assert "name: storyboard-kit\n" in new_md
     assert (cache / new_key / "storyboard-kit" / "references" / "spec.md").is_file()
-    # 改名后开的对话挂的是新标识：加载器认得改过 name 的 SKILL.md。
     _model, renamed_words = heard[1]
     assert "storyboard-kit" in renamed_words
     assert SKILL not in renamed_words
@@ -538,14 +497,9 @@ async def test_publishing_an_agent_is_picked_up_by_new_conversations_without_a_r
     assert [words for _model, words in heard] == ["旧", "新"]
 
 
-# --- 草稿 ------------------------------------------------------------------------
-
-
 async def test_the_draft_entry_assembles_the_unpublished_draft(
     app: FastAPI, engine: AsyncEngine, heard: list[tuple[str, str]]
 ) -> None:
-    """留给以后预览用的入口：按草稿装配，不发布；运行记录标明是草稿与它的 lockVersion。"""
-
     seeded = await seed(app, engine, AgentSeed(AGENT_ID, instructions="已发布"))
     services = services_of(app)
     detail = await services.agent_config.detail(AGENT_ID)
@@ -575,9 +529,6 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
     assert (await services.agent_config.detail(AGENT_ID)).active_version is not None
     with pytest.raises(AgentUnavailable):
         await agent_runtime_of(app).for_draft("nobody")
-
-
-# --- 标题 ------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("with_default", [True, False], ids=["设了默认模型", "没设"])

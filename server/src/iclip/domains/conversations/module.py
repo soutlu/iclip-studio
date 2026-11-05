@@ -1,5 +1,3 @@
-"""conversations 装配单元：组合根只调用 ``build_conversations_module``。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -44,7 +42,6 @@ from iclip.domains.identity.public import ActAs
 @dataclass(frozen=True)
 class ConversationsModule:
     routers: tuple[Any, ...]
-    """使用 Any 隔离 Web 框架类型。"""
 
     service: ConversationService
 
@@ -79,8 +76,6 @@ def build_conversations_module(
     announce_row: AnnounceConversationRow,
     announce_deleted: AnnounceConversationDeleted,
 ) -> ConversationsModule:
-    """外部依赖由组合根注入，协议定义见 service.py。"""
-
     service = ConversationService(
         repo,
         previews=previews,

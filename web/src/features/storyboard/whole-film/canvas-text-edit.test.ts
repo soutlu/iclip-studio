@@ -92,7 +92,6 @@ const fail = (): never => {
   throw new Error('应当记一步编辑')
 }
 
-/** 一句高亮字幕：每个词一个元素，词后面有不带字的底块 */
 const highlightGroup = () => {
   const group = document.createElement('div')
   group.setAttribute('data-hf-id', 'caption:0')
@@ -103,7 +102,6 @@ const highlightGroup = () => {
   return group
 }
 
-/** 像浏览器里打字那样就地改掉元素里的文字节点 */
 const typeInto = (element: Element, text: string) => {
   const node = element.firstChild
   if (!(node instanceof Text)) throw new Error('元素里没有文字')

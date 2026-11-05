@@ -1,5 +1,3 @@
-/** 模型供应商、密钥、模型与默认模型的读写，都要 `model:manage`。合同见 contract/conventions.md §18。 */
-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
@@ -33,7 +31,6 @@ export type Declaration = z.infer<typeof zDeclarationsOut>['declarations'][numbe
 export type DefaultModel = z.infer<typeof zDefaultModelOut>
 export type AgentUsage = ProviderModel['usedBy'][number]
 
-/** 在用的 agent 名，用顿号连起来，写进提示与拦下的原因。 */
 export const usageNames = (users: readonly AgentUsage[]): string =>
   users.map((user) => user.agentName).join('、')
 
@@ -47,11 +44,9 @@ const providerQueryKeys = {
 const providerPath = (id: string) => `/model-providers/${encodeURIComponent(id)}`
 const credentialPath = (providerId: string, id: string) =>
   `${providerPath(providerId)}/credentials/${encodeURIComponent(id)}`
-// 模型名在路径最后、可以带斜杠（合同 §18「模型」），斜杠原样带上，只转义每一段。
 const modelPath = (providerId: string, type: ModelType, name: string) =>
   `${providerPath(providerId)}/models/${type}/${name.split('/').map(encodeURIComponent).join('/')}`
 
-/** 全部供应商，按接入时刻从新到旧；每个带密钥（只给打码值）、模型与各自的「谁在用」。 */
 export const useModelProviders = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -63,7 +58,6 @@ export const useModelProviders = () =>
     select: (data) => data.providers,
   })
 
-/** 本部署能接入的模型声明；随代码发布，读一次就够。 */
 export const useProviderDeclarations = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -76,7 +70,6 @@ export const useProviderDeclarations = () =>
     staleTime: Infinity,
   })
 
-/** 各类型的默认模型；没设的类型不在里面。 */
 export const useDefaultModels = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -88,10 +81,6 @@ export const useDefaultModels = () =>
     select: (data) => data.defaults,
   })
 
-/**
- * 一次写操作：成功后重读供应商与默认模型，并让 agent 编辑页的「选模型」重读，模型设置里马上看得到改动。
- * 失败的 `ApiError` 原样抛给调用方，就地写出后端的原因（含被引用时的 409）。
- */
 const useModelWrite = <Variables, Result>(request: (variables: Variables) => Promise<Result>) => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -113,7 +102,6 @@ export const useCreateProvider = () =>
     }),
   )
 
-/** 改显示名、启停或默认密钥；有 agent 写着它时停用是 409。 */
 export const useUpdateProvider = () =>
   useModelWrite(({ id, changes }: { id: string; changes: ModelProviderUpdateIn }) =>
     apiFetch(providerPath(id), zModelProviderOut, {
@@ -123,7 +111,6 @@ export const useUpdateProvider = () =>
     }),
   )
 
-/** 连同密钥与模型设置一起删；有 agent 写着它、或默认模型在它这里是 409。 */
 export const useDeleteProvider = () =>
   useModelWrite((id: string) =>
     apiFetch(providerPath(id), z.undefined(), {
@@ -132,7 +119,6 @@ export const useDeleteProvider = () =>
     }),
   )
 
-/** 只试不存：没通过也是 200，看 `ok` 与 `reason`。 */
 export const testCredential = (providerId: string, body: CredentialTestIn) =>
   apiFetch(`${providerPath(providerId)}/credentials/test`, zProbeOut, {
     body,
@@ -140,7 +126,6 @@ export const testCredential = (providerId: string, body: CredentialTestIn) =>
     method: 'POST',
   })
 
-/** 用一把密钥（不给就是默认密钥）测一个模型，不存：没通过也是 200；还没有密钥是 422。 */
 export const testModel = (providerId: string, body: ModelTestIn) =>
   apiFetch(`${providerPath(providerId)}/models/test`, zProbeOut, {
     body,
@@ -148,7 +133,6 @@ export const testModel = (providerId: string, body: ModelTestIn) =>
     method: 'POST',
   })
 
-/** 新建密钥，不试连。供应商的第一把自动成为默认密钥。 */
 export const useCreateCredential = () =>
   useModelWrite(({ providerId, body }: { providerId: string; body: CredentialCreateIn }) =>
     apiFetch(`${providerPath(providerId)}/credentials`, zCredentialOut, {
@@ -158,7 +142,6 @@ export const useCreateCredential = () =>
     }),
   )
 
-/** `fields` 只放要改的字段，没给的保持原值。 */
 export const useUpdateCredential = () =>
   useModelWrite(
     ({
@@ -194,7 +177,6 @@ export const useAddModel = () =>
     }),
   )
 
-/** 声明里的模型只能改 `enabled`；在用或是默认模型时停用是 409。 */
 export const useUpdateModel = () =>
   useModelWrite(
     ({

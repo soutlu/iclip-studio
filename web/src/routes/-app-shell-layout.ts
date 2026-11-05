@@ -1,4 +1,3 @@
-// 数值与 design-system.html 的 --layout-app-* 对齐；拖动热区覆盖边界，不占列宽。
 export const SIDEBAR_WIDTH = { default: 264, min: 200, max: 400, collapsed: 56 } as const
 export const WORKBENCH_WIDTH = { default: 820, min: 560 } as const
 export const CHAT_MIN = 400
@@ -16,7 +15,6 @@ export type ShellLayoutState = {
   workbenchWidth: number
   contentClip: { pane: ContentPane; width: number } | null
   firstPane: ContentPane
-  /** null 表示尚未选择内容布局，首个自动产物可初始化展开状态。 */
   mode: ContentMode | null
   activePane: ContentPane
 }
@@ -35,7 +33,6 @@ export const DEFAULT_LAYOUT: ShellLayoutState = {
 export const clampWidth = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max)
 
-/** 内容操作在窄屏只切换活动栏，桌面才修改展开偏好。 */
 export function selectContentPane(
   state: ShellLayoutState,
   pane: ContentPane,
@@ -51,7 +48,6 @@ export function selectContentPane(
   }
 }
 
-/** 只派生当前视口的几何，不覆盖用户在更宽视口中选择的展开宽度和排列。 */
 export function resolveShellLayout({
   viewport,
   hasWorkbench,
@@ -102,7 +98,6 @@ export function resolveShellLayout({
   }
 }
 
-/** 可见边界连续跟随指针；低于内容最小宽时记录裁切宽度，到图标栏宽度才折叠。 */
 export function resizeSidebar(
   state: ShellLayoutState,
   rawWidth: number,
@@ -123,7 +118,6 @@ export function resizeSidebar(
   }
 }
 
-/** 裁切记在被收窄的那一栏上，换位和窗口变化不会改写正常展开宽度。 */
 export function resizeContent(
   state: ShellLayoutState,
   rawWorkbenchWidth: number,

@@ -1,7 +1,3 @@
-"""给应用的模型调用 ``POST /v1/model-calls/responses``：要应用密钥；按配置页里接的火山方舟找连接，请求体换上
-模型名、带上默认密钥转给 ``{接口地址}/responses``，上游的状态码与正文原样交回；找不到连接答 409
-``model_unavailable``，等上游超时与连不上上游各有自己的 code。上游是 ``httpx.MockTransport`` 替身，不连网。"""
-
 from __future__ import annotations
 
 import json
@@ -31,8 +27,6 @@ SECRET_INPUT = "payload-marker-do-not-log"
 
 
 class Upstream:
-    """方舟替身：记下收到的请求，按 ``reply`` 答。"""
-
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.reply: Any = httpx.Response(200, json={"status": "completed", "output": []})
@@ -84,8 +78,6 @@ def runtime_app(
 async def connect_ark(
     admin: httpx.AsyncClient, *, base_url: str | None = None, model_enabled: bool = True
 ) -> None:
-    """接入火山方舟，建一把默认密钥，加上 ``MODEL``。"""
-
     provider = await connect_provider(admin, "volcengine")
     provider_id = provider["id"]
     if base_url is None:
@@ -150,7 +142,6 @@ async def test_the_call_goes_to_the_providers_responses_with_its_key_and_the_ans
     assert str(sent.url) == DEFAULT_RESPONSES
     assert sent.headers["Authorization"] == f"Bearer {ARK_KEY}"
     assert json.loads(sent.content) == {"model": MODEL, "input": SECRET_INPUT}
-    # 拆解最多等 900 秒，运行时等上游不能比它短。
     assert sent.extensions["timeout"]["read"] >= 900
 
 

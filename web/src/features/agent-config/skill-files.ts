@@ -1,32 +1,20 @@
-/**
- * 技能文件的纯逻辑：技能标识的规则、`SKILL.md` 的 frontmatter 读写、编辑器里显示的正文、参考文件的路径规则。
- * 编辑器不显示 frontmatter：说明在标题下面改，改了只重写 frontmatter 里的 `description`，别的键原样留着。
- * 文件规则见合同 §17「文件」。
- */
-
 export const SKILL_MD = 'SKILL.md'
 const REFERENCES = 'references/'
 
-// 技能标识按 Agent Skills 规范（合同 §17、CONTEXT「技能库」），上限与后端一致。
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 export const MAX_NAME = 64
 export const NAME_RULE = `标识只能用小写字母、数字和连字符，不以连字符开头或结尾、不连用，最多 ${MAX_NAME} 个字符`
 
-/** 标识合不合规矩；不论空不空。 */
 export const isValidName = (name: string): boolean =>
   name.length <= MAX_NAME && NAME_PATTERN.test(name)
 
 type Frontmatter = {
-  /** `---` 之间的 YAML，不含两条分隔线。 */
   header: string
-  /** 从文件开头到结尾那条 `---`（含它的换行）的原文。 */
   block: string
-  /** frontmatter 之后的原文。 */
   body: string
   eol: string
 }
 
-// 与后端同一个写法：文件第一行就是 `---`。
 const FRONTMATTER = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/
 
 const splitFrontmatter = (source: string): Frontmatter | null => {
@@ -42,16 +30,11 @@ const splitFrontmatter = (source: string): Frontmatter | null => {
 
 const LEADING_BLANK_LINES = /^(?:[ \t]*\r?\n)+/
 
-/**
- * 编辑器里显示的正文：`SKILL.md` 去掉 frontmatter 与紧跟的一个空行（`withSkillBody` 写进去的那一个）。
- * 只去这一个，编辑器交出的正文（哪怕以空行开头）与再读出来的一字不差，否则每改一个字都会整篇重载。
- */
 export const skillBody = (source: string): string => {
   const parts = splitFrontmatter(source)
   return parts === null ? source : parts.body.replace(/^\r?\n/, '')
 }
 
-/** 用编辑器交出的正文换掉 `SKILL.md` 的正文，frontmatter 原样留着，中间空一行。 */
 export const withSkillBody = (source: string, body: string): string => {
   const parts = splitFrontmatter(source)
   if (parts === null) return body
@@ -59,13 +42,11 @@ export const withSkillBody = (source: string, body: string): string => {
   return `${block}${parts.eol}${body}`
 }
 
-/** 顶层键 `key` 所在的行与它的续行（缩进的行、空行）的范围；没有为 null。 */
 const fieldRange = (lines: readonly string[], key: string) => {
   const start = lines.findIndex((line) => new RegExp(`^${key}[ \\t]*:`).test(line))
   if (start === -1) return null
   let end = start + 1
   while (end < lines.length && /^(?:[ \t]|$)/.test(lines[end] ?? '')) end += 1
-  // 续行末尾的空行不算这个键的，留给后面。
   while (end > start + 1 && (lines[end - 1] ?? '').trim() === '') end -= 1
   return { end, start }
 }
@@ -85,7 +66,6 @@ const readSingleQuoted = (text: string): string => {
   return (close === null ? text.slice(1) : (close[1] ?? '')).replaceAll("''", "'")
 }
 
-/** 块标量（`|` 保留换行，`>` 折成一行，段落间留换行）：去掉公共缩进。 */
 const readBlock = (indicator: string, lines: readonly string[]): string => {
   const indents = lines
     .filter((line) => line.trim() !== '')
@@ -101,11 +81,6 @@ const readBlock = (indicator: string, lines: readonly string[]): string => {
     .trim()
 }
 
-/**
- * `SKILL.md` 的 frontmatter 里的 `description`；没有 frontmatter 或没写为 null。
- * 认 YAML 的普通、双引号、单引号与块标量写法，够读本系统与常见技能包写出来的文件。
- * 引号里的原样交回（输入框边打边写回，词间的空格不能被吃掉），其余写法去掉首尾空白。
- */
 export const readDescription = (source: string): string | null => {
   const parts = splitFrontmatter(source)
   if (parts === null) return null
@@ -121,10 +96,6 @@ export const readDescription = (source: string): string | null => {
   return joined.replace(/\s+#.*$/, '').trim()
 }
 
-/**
- * 把说明写进 `SKILL.md` 的 frontmatter：只换 `description` 这一项（写成双引号字符串，JSON 的写法也是合法的 YAML），
- * 别的键、正文都原样留着。没有 frontmatter 时补一份，带上技能现在的标识 `name`。
- */
 export const withDescription = (source: string, description: string, name: string): string => {
   const field = `description: ${JSON.stringify(description)}`
   const parts = splitFrontmatter(source)
@@ -143,18 +114,12 @@ export const withDescription = (source: string, description: string, name: strin
   return `---${eol}${next.join(eol)}${eol}---${eol}${parts.body}`
 }
 
-/** 页签上显示的名字：参考文件去掉 `references/`。 */
 export const fileLabel = (path: string): string =>
   path.startsWith(REFERENCES) ? path.slice(REFERENCES.length) : path
 
-/** `SKILL.md` 在最前，参考文件按路径排。 */
 export const sortSkillPaths = (paths: Iterable<string>): string[] =>
   [...paths].sort((a, b) => (a === SKILL_MD ? -1 : b === SKILL_MD ? 1 : a < b ? -1 : a > b ? 1 : 0))
 
-/**
- * 把输入的参考文件名变成 `references/` 下的路径；不合格时交回原因。规则同合同 §17「文件」：
- * 相对的 posix 路径，不许反斜杠、空段与 `.`、`..`。`previous` 是改名前的路径，与它相同不算重名。
- */
 export const referencePath = (
   input: string,
   existing: readonly string[],

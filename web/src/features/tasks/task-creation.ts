@@ -7,7 +7,6 @@ export type TaskCreationDraft = {
   content: readonly PromptContentPart[]
 }
 
-/** 发起创作可选的 Agent 名册；顺序由服务端定，``error`` 为 null 表示最近一次读取没有失败。 */
 export type TaskCreationAgents = {
   items: readonly { id: string; name: string }[] | undefined
   pending: boolean
@@ -15,7 +14,6 @@ export type TaskCreationAgents = {
   retry: () => void
 }
 
-/** 从需求单发起创作的接线：名册和开始动作一起给，预览里选定 Agent 后才能开始。 */
 export type TaskCreationStarter = {
   agents: TaskCreationAgents
   start: (draft: TaskCreationDraft, agentId: string) => Promise<void>
@@ -23,7 +21,6 @@ export type TaskCreationStarter = {
 
 const OPENING = '请基于以下创作要求和参考素材开始创作，用中文回复。'
 
-/** 预览和提交共享同一份消息；原始需求保持逐字不变，固定开场不算有效创作内容。 */
 export function buildTaskCreationDraft(
   task: Pick<Task, 'id' | 'title' | 'inputs'>,
 ): TaskCreationDraft | null {

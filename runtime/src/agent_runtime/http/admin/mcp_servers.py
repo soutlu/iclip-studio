@@ -1,5 +1,3 @@
-"""MCP 服务的管理接口，挂在 ``/v1/admin/mcp-servers``。约定见合同「MCP 服务」一节。"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Response

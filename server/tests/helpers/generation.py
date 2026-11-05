@@ -1,5 +1,3 @@
-"""generation 测试替身与构造器。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -77,7 +75,6 @@ FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
 FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
 FAKE_MUSIC_PROVIDER = "music_fake"
-"""替身 provider 的名字。队列按任务行上的 provider 列查表，替身与 make_job 得用同一套。"""
 
 
 def video_request(**overrides: Any) -> VideoGenerationIn:
@@ -93,8 +90,6 @@ def video_request(**overrides: Any) -> VideoGenerationIn:
 
 
 def edit_request(**overrides: Any) -> VideoEditRequest:
-    """编辑段落库的请求：参考视频恰好一条，是调用方上传的参考片段；区间默认 1–4 秒。"""
-
     fields: dict[str, Any] = {
         "model": "vendor-a-seedance-2-5",
         "prompt": "一只猫跳上窗台",
@@ -109,11 +104,6 @@ def edit_request(**overrides: Any) -> VideoEditRequest:
 
 
 def compose_request(**overrides: Any) -> VideoComposeRequest:
-    """默认是一次合成：基底前段、编辑段产物整条、基底后段取到结尾。
-
-    没写出处的段按地址补一个固定的 ``sourceJobId``：执行方只读地址与起止，出处只有受理与迁移
-    关心，那些用例自己给。"""
-
     fields: dict[str, Any] = {
         "segments": [
             {"url": "https://example.com/base.mp4", "start": 0, "end": 1},
@@ -135,15 +125,11 @@ def compose_request(**overrides: Any) -> VideoComposeRequest:
 SHOT_IMAGE_URLS = ["https://example.com/a.png", "https://example.com/b.png"]
 
 SHOT_PROMPT = "人物保持一致。\n\n镜头：\n0–6秒 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
-"""与 web/src/features/storyboard/storyboard.api.test.ts 里的镜头组拼出的正文一字不差。"""
 
 LEGACY_SHOT_PROMPT = "人物保持一致。\n\n[0–6秒｜镜头1] 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
-"""同一个镜头组按旧拼法（每镜 ``[起–止秒｜镜头N] 正文``）拼出的正文，历史记录里存的是这种。"""
 
 
 def video_shot(**overrides: Any) -> dict[str, Any]:
-    """一段结构化镜头组的请求体，默认值与前端那份单测夹具相同。"""
-
     shot: dict[str, Any] = {
         "global_settings": "人物保持一致。",
         "timeline": [
@@ -191,8 +177,6 @@ def make_job(
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> GenerationJob:
-    """kind 与 operation 随请求定，默认是一条出片；只有没有请求的行（切图、上传）才显式给这两个。"""
-
     now = datetime.now(UTC)
     payload: GenerationRequest | None
     if kind is None and operation is None:
@@ -240,21 +224,15 @@ def make_job(
 
 
 def stored_request(job: GenerationJob) -> GenerationRequest:
-    """调模型或本地拼接的记录落库的请求；切图与上传没有请求，拿它们来取是用例写错了。"""
-
     assert job.request is not None, f"{job.kind} / {job.operation} 没有请求"
     return job.request
 
 
 def external_base(job: GenerationJob) -> str | None:
-    """帧图编辑请求快照里记的外部底图地址；没有为 ``None``。"""
-
     return job.request.source_url if isinstance(job.request, ImageGenerationIn) else None
 
 
 def edit_range(job: GenerationJob) -> tuple[int | None, int | None]:
-    """编辑段请求快照里的区间；不是编辑段为 ``(None, None)``。"""
-
     if isinstance(job.request, VideoEditRequest):
         return job.request.range_start_ms, job.request.range_end_ms
     return None, None
@@ -263,8 +241,6 @@ def edit_range(job: GenerationJob) -> tuple[int | None, int | None]:
 def make_edit(
     base: GenerationJob, *, range_start_ms: int = 1000, range_end_ms: int = 4000, **fields: Any
 ) -> GenerationJob:
-    """基于 ``base`` 的一条编辑段：来源是基底，原作与镜号随基底（基底是出片就是它自己），区间默认 1–4 秒。"""
-
     fields.setdefault("shot_index", base.shot_index)
     return make_job(
         edit_request(range_start_ms=range_start_ms, range_end_ms=range_end_ms),
@@ -275,9 +251,6 @@ def make_edit(
 
 
 def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
-    """把 ``edit`` 夹回它的基底的一条合成：来源是基底，原作与镜号随基底（与编辑段的相同），
-    各段是基底前段、编辑段整条、基底后段，出处分别记基底与编辑段；执行方是本地 ffmpeg。"""
-
     assert edit.source_job_id is not None, "只能合成编辑段"
     base = edit.source_job_id
     fields.setdefault("provider", "ffmpeg")
@@ -293,8 +266,6 @@ def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
-    """识别素材片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
-
     assert video.output.url is not None, "只识别有地址的素材片"
     fields.setdefault("owner_user_id", video.owner_user_id)
     fields.setdefault("conversation_id", video.conversation_id)
@@ -307,9 +278,6 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
-    """一次成片导出的请求：画面轨按先后用到 ``sources`` 这几条素材片（地址随 id 起），草稿是空的，
-    没有音乐与字幕。"""
-
     return WholeFilmRequest(
         revision=1,
         document={},
@@ -325,8 +293,6 @@ def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
 def make_enhancement(
     source: GenerationJob, resolution: VideoEnhanceResolution = "1080p", **fields: Any
 ) -> GenerationJob:
-    """给来源 ``source``（素材片或成片）做的一条超分记录：种类是视频，镜号随来源，不挂对话，默认排队中。"""
-
     assert source.output.url is not None, "只给有地址的来源做高清版"
     fields.setdefault("shot_index", source.shot_index)
     return make_job(
@@ -346,15 +312,11 @@ MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短�
 
 
 def make_music(**fields: Any) -> GenerationJob:
-    """生成背景音乐的一条音频记录：挂一段对话（默认新起一个 id），默认排队中。"""
-
     fields.setdefault("conversation_id", uuid.uuid4())
     return make_job(MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT), **fields)
 
 
 def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
-    """一条上传：创建即完成，没有请求与来源，不挂对话。"""
-
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", datetime.now(UTC))
     fields.setdefault(
@@ -364,8 +326,6 @@ def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> Generati
 
 
 def make_cut(grid: GenerationJob, **fields: Any) -> GenerationJob:
-    """从宫格 ``grid`` 切出来的一格：来源是宫格，对话与属主随它，创建即完成。"""
-
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", datetime.now(UTC))
     fields.setdefault(
@@ -378,8 +338,6 @@ def make_cut(grid: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 class InMemoryGenerationRepository:
-    """GenerationRepository 内存替身，仅处理状态跳转与列表筛选；排期由队列负责。"""
-
     def __init__(self, jobs: list[GenerationJob] | None = None) -> None:
         self.jobs: dict[uuid.UUID, GenerationJob] = {job.id: job for job in jobs or []}
 
@@ -617,15 +575,11 @@ class InMemoryGenerationRepository:
     async def in_flight_by_conversation(
         self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        """在途汇总的优先级规则只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
-
         raise AssertionError("unit 层不走在途汇总")
 
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]
     ) -> Mapping[uuid.UUID, str]:
-        """取最新素材片的排序与素材片判定只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
-
         raise AssertionError("unit 层不走最新素材片")
 
     async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
@@ -646,8 +600,6 @@ class InMemoryGenerationRepository:
 
 
 class ScriptedProvider:
-    """按预设顺序响应并记录调用的 provider 替身。"""
-
     def __init__(
         self,
         *,
@@ -656,7 +608,6 @@ class ScriptedProvider:
         progress: ProviderProgress | Exception | None = None,
     ) -> None:
         self.provider_name = name
-        """可写：装配替身时按那条 lane 该叫什么名字改。"""
         self._submission = submission
         self._progress = progress
         self.submit_calls: list[uuid.UUID] = []
@@ -696,10 +647,6 @@ def build_queue(
     lanes: tuple[ProviderLane, ...] | None = None,
     connector: InMemoryConnector | None = None,
 ) -> tuple[GenerationQueue, InMemoryConnector]:
-    """两家替身各占一条 lane，名字与 make_job 落到 provider 列上的值一致。
-
-    ``connector`` 给了就用它（如注入排队故障的子类），不给新建一个。"""
-
     if lanes is None:
         video_double = video or ScriptedProvider()
         video_double.provider_name = FAKE_VIDEO_PROVIDER
@@ -727,12 +674,9 @@ MEDIA_ENVS = {
     "VIDEO_API_KEY": "vk",
     "IMAGE_API_BASE": "https://image.test/gateway",
 }
-"""开媒体生成要的环境变量；地址都是替身，装配期不外呼。"""
 
 
 def config_with_media() -> RuntimeConfig:
-    """测试运行配置外加媒体生成段：视频一个模型，图片一家。"""
-
     return make_runtime_config().model_copy(
         update={
             "media_generation": MediaGenerationSection(
@@ -761,8 +705,6 @@ def film_image_service(
     *,
     image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),
 ) -> GenerationService:
-    """生成服务：带 AI 导演的图片模型 gpt-image-2.5，视频只接一家替身。"""
-
     return build_generation_module(
         repo,
         act_as=ActAs(InMemoryUserRepository()),
@@ -791,8 +733,6 @@ def film_image_service(
 
 
 class FixedLineage:
-    """ConversationLineage 替身：各对话的继承边界对与主体读不读得到都预先写死。"""
-
     def __init__(
         self,
         ancestry: Mapping[uuid.UUID, Inheritance] | None = None,
@@ -810,8 +750,6 @@ class FixedLineage:
 
 
 class FakeMediaProbe:
-    """RemoteMediaProbe 替身：按地址给时长，不认得的地址像取不到一样抛 ``MediaError``；记下探过哪些。"""
-
     def __init__(self, durations: Mapping[str, int] | None = None) -> None:
         self._durations = dict(durations or {})
         self.probed: list[str] = []
@@ -824,12 +762,6 @@ class FakeMediaProbe:
 
 
 class MemoryObjectStore:
-    """PublicBucket 内存替身。
-
-    sign_put 不产生可访问的地址；测试通过 put_public_object 模拟直传完成。``metadata`` 按 key
-    记下随对象写入的 x-oss-meta-* 头。
-    """
-
     def __init__(self, *, base: str = "https://cdn.example.test") -> None:
         self.base = base
         self.objects: dict[str, tuple[bytes, str]] = {}
@@ -851,8 +783,6 @@ class MemoryObjectStore:
         return f"{self.base}/{object_key}?signed-for={headers['Content-Type']}"
 
     async def find_object(self, *, prefix: str) -> StoredObject | None:
-        """对象都当一次整传：ETag 照 OSS 写成内容 MD5 的大写十六进制。"""
-
         found = [key for key in self.objects if key.startswith(prefix)]
         if not found:
             return None

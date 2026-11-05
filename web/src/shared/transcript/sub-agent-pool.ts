@@ -1,11 +1,3 @@
-/**
- * 子代理流的读取池，照 Kimi 的 _Fe：每段对话只订一个当前在看的子代理；先读基线再带水位订阅，断档就重读再重订。
- *
- * 有意不照搬一处：Kimi 的子代理池直接应用 reset，而我们的 reset 从不带历史轮，照搬会清空
- * 已显示的子代理过程；这里与主池一样，不拿空 reset 替换内容，按退避重读基线。
- * 另按 (对话, 子代理) 记持有数，与主池同一个理由：同一张卡可能被多个界面同时打开。
- */
-
 import { errorMessageOf } from '@/shared/api/client'
 import { TranscriptChannel } from './channel'
 import type { TranscriptConnection, TranscriptOps } from './connection'
@@ -29,7 +21,6 @@ interface Entry {
   baselineLoaded: boolean
   resumePromise: Promise<void> | null
   emptyResetRetries: number
-  /** 读不到基线时给界面的话；读到即清掉。 */
   failure: TranscriptView | null
   view: TranscriptView
 }
@@ -39,9 +30,7 @@ const keyOf = (conversationId: string, agentId: string) => `${conversationId}\u0
 export class SubAgentTranscriptPool {
   private readonly connection: TranscriptConnection
   private readonly entries = new Map<string, Entry>()
-  /** 每段对话当前要看的子代理。 */
   private readonly desired = new Map<string, string>()
-  /** 每段对话已在连接上订阅的子代理。 */
   private readonly subscribed = new Map<string, string>()
   private readonly holders = new Map<string, number>()
   private readonly dirty = new Set<Entry>()
@@ -167,7 +156,6 @@ export class SubAgentTranscriptPool {
     this.subscribed.set(conversationId, agentId)
   }
 
-  /** 重读基线再带水位重订（Kimi 的 h / p）。 */
   private resume(entry: Entry): Promise<void> {
     if (entry.resumePromise !== null) return entry.resumePromise
     const task = this.recover(entry).finally(() => {
@@ -195,7 +183,6 @@ export class SubAgentTranscriptPool {
         entry.failure = errorView(errorMessageOf(error, MISSING_MESSAGE))
         this.changed(entry)
       }
-      // 不带水位订阅：服务端回 reset，空 reset 再走退避重读（Kimi 同样不带水位重订）。
       if (this.current(entry)) this.subscribeChild(entry, false)
     }
   }

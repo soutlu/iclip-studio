@@ -16,7 +16,6 @@ export const releasePointer = (event: PointerEvent<HTMLElement>) => {
     event.currentTarget.releasePointerCapture(event.pointerId)
 }
 
-// 拖完松手时浏览器还会补一个 click，那一下不算点选；被拖走的元素收不到这个 click，记号留到下一次按下作废。
 export const useClickAfterDrag = () => {
   const swallowRef = useRef(false)
   return {

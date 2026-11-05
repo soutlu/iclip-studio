@@ -10,7 +10,6 @@ describe('LoginForm', () => {
   it('提交用户名密码后以表单登录并回调 onSuccess', async () => {
     const user = userEvent.setup()
     const onSuccess = vi.fn()
-    // 仅记录请求，保留原 handler 的登录状态更新。
     const loginBodies: Promise<string>[] = []
     server.events.on('request:start', ({ request }) => {
       if (request.method === 'POST' && request.url.endsWith('/api/auth/login')) {

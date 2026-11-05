@@ -22,7 +22,7 @@ MAX_IMAGE_BYTES: Final = 64 * 1024 * 1024
 MAX_AUDIO_BYTES: Final = 64 * 1024 * 1024
 
 REMOTE_INPUT: Final = (
-    # ffmpeg 按内容探测格式，一份伪装成 mp4 的播放列表会让 HLS 解复用器去跟里面的地址。
+    # FFmpeg 按内容探测容器格式，禁用网络协议与播放列表解复用器以防伪装成 MP4 的 M3U8 触发 SSRF。
     "-protocol_whitelist",
     "http,https,tcp,tls",
     "-rw_timeout",
@@ -38,20 +38,12 @@ REMOTE_INPUT: Final = (
 
 @dataclass(frozen=True, slots=True)
 class MediaDownloads:
-    """下载模型交来的地址时，选用哪个客户端、连哪个地址。
-
-    本桶对象（``owns`` 为真）走 ``internal`` 客户端，地址经 ``fetch_url`` 换成内网的；别的地址走只连
-    公网的 ``public`` 客户端（``iclip.platform.outbound.guard.public_client``），用原地址。本桶的内网
-    地址解析出的是内网 IP，过不了出网防护，所以分两条路。"""
-
     internal: httpx.AsyncClient
     public: httpx.AsyncClient
     fetch_url: Callable[[str], str]
     owns: Callable[[str], bool]
 
     def target(self, url: str) -> tuple[httpx.AsyncClient, str]:
-        """下载 ``url`` 用的客户端与实际连的地址。"""
-
         if self.owns(url):
             return self.internal, self.fetch_url(url)
         return self.public, url
@@ -81,7 +73,6 @@ async def download(client: httpx.AsyncClient, url: str, dest: Path, *, max_bytes
     except (httpx.HTTPError, httpx.InvalidURL, UnicodeError) as exc:
         raise MediaError(f"取不到素材（{failure_of(exc)}）: {url}") from exc
     except FetchFailed as exc:
-        # 出网防护的请求钩子在发出前拒掉地址时抛 FetchFailed，不是 httpx 的错误。
         raise MediaError(f"取不到素材（{exc}）: {url}") from exc
     if written == 0:
         raise MediaError(f"取到的素材是空的: {url}")

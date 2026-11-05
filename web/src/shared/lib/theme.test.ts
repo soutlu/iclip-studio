@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const STORAGE_KEY = 'cue.appearance'
 
-/** 可控的系统配色：`set` 改深浅并通知监听者。 */
 const stubSystem = (dark: boolean) => {
   const listeners = new Set<() => void>()
   const media = {
@@ -20,7 +19,6 @@ const stubSystem = (dark: boolean) => {
   }
 }
 
-/** 每次拿一份新的模块：外观偏好是模块里的状态。 */
 const loadTheme = async () => {
   vi.resetModules()
   return import('./theme')

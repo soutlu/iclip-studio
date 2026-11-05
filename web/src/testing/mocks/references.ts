@@ -1,14 +1,3 @@
-/** 参考视频的 mock：内存里的一张表，筛选、翻页、改、改标签、重拆、重新打标、移除与试生成照合同 §14、§15 做。
- *
- * 上传建的行和重拆的行按时间往前走：先排队，过一会儿拆解中，再过一会儿拆完（带演示拆解），
- * 拆完接着打标：排队、打标中，再过一会儿打完，AI 维度换成演示标签、人工维度不动。dev:mock 下轮询看得见状态变化。
- * 同一份文件内容再传一次交回原来那一行（200）。
- * 试生成同样按时间往前走：提交后生成中，过一会儿完成，试生成与原片同一个示例视频；改过或重拆过拆解就标为过时。
- * 演示行覆盖各种状态：拆完的、没标签的、排队与拆解中的、没拆成的（有无上一次拆解）、别人的；
- * 打标有打完的、排队与打标中的（静止）、没打成的；
- * 试生成有未试生成、生成中、完成（含横版）、拆解已更新、失败，以及别人的完成与未试生成。
- * 标签 id 用 `mockTagId(名字)` 取。单测要断言具体内容就先 `resetMockReferences([])` 再用 `addMockReference` 放自己的行。 */
-
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
 import type {
@@ -17,7 +6,7 @@ import type {
   zReferenceUpdateIn,
   zReferenceVideoOut,
 } from '@/shared/api/generated/zod.gen'
-// no-inline：地址要进 <video src>，不能被构建内联成 data URI。
+// ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockAuthUser } from './auth-user'
@@ -35,10 +24,8 @@ type Reference = z.output<typeof zReferenceVideoOut>
 type TestVideo = NonNullable<Reference['testVideo']>
 type Filters = z.output<typeof zReferenceFiltersOut>
 
-/** 一组标签名换成 id。 */
 const tagIdsOf = (...names: string[]) => names.map(mockTagId)
 
-/** 打完标时写回的 AI 维度标签。 */
 const DEMO_AI_TAGS = ['拖鞋', '居家/日常放松', '标准开箱流程'] as const
 
 const DEMO_DOCUMENT = `# 出场元素
@@ -82,7 +69,6 @@ const DEMO_DOCUMENT = `# 出场元素
 先给人，再给脚。前半段慢，换到脚部特写后切得快。
 `
 
-/** 中文长内容：一段很长、不带空格的说明，验折行。 */
 const LONG_DOCUMENT = `${DEMO_DOCUMENT}
 ## 备注
 
@@ -95,26 +81,19 @@ ${'这一段是很长的中文说明没有任何空格用来检查拆解正文�
 
 const HOUR_MS = 60 * 60_000
 
-/** 上传或重拆之后多久进拆解中、多久拆完。 */
 const PENDING_MS = 1500
 const SETTLE_MS = 4000
 
-/** 打标排进去之后多久进打标中、多久打完。 */
 const TAG_PENDING_MS = 1000
 const TAG_SETTLE_MS = 2500
 
-/** 试生成提交后多久完成。 */
 const TEST_SETTLE_MS = 5000
 
 type Row = Reference & {
   removed: boolean
-  /** 上传字节的指纹；同样的内容再传一次认出是同一条。演示行没有。 */
   contentKey: string | null
-  /** 后台拆解的进度：什么时候排进去的。没有就是静止的演示行。 */
   queuedAt: number | null
-  /** 后台打标的进度：什么时候排进去的。没有就是静止的演示状态。 */
   tagQueuedAt: number | null
-  /** 试生成什么时候提交的；没有就是静止的演示状态。 */
   testQueuedAt: number | null
 }
 
@@ -123,7 +102,6 @@ let seq = 0
 
 const idOf = (n: number) => `5ef00000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
-/** 一行参考视频；没给的字段按「拆完、打完标、有演示拆解、属主是测试用户」补。 */
 export const addMockReference = (overrides: Partial<Reference> = {}): Reference => {
   seq += 1
   const at = new Date(Date.now() - seq * 60_000).toISOString()
@@ -140,7 +118,6 @@ export const addMockReference = (overrides: Partial<Reference> = {}): Reference 
     tagError: null,
     tagIds: [],
     tagQueuedAt: null,
-    // 与回填同一口径：有拆解的算打完了标，没拆完过的还没打过。
     tagStatus: overrides.document === null ? null : 'completed',
     testQueuedAt: null,
     testVideo: null,
@@ -156,7 +133,6 @@ export const addMockReference = (overrides: Partial<Reference> = {}): Reference 
 
 const ago = (hours: number) => new Date(Date.now() - hours * HOUR_MS).toISOString()
 
-/** 一次已经结束或静止的试生成；完成的试生成用与原片同方向的示例视频。 */
 const demoTestVideo = (overrides: Partial<TestVideo>): TestVideo => ({
   createdAt: ago(1),
   errorMessage: null,
@@ -195,11 +171,9 @@ const seedDemo = () => {
       createdAt: ago(5),
       errorCode: 'model_call_failed',
       tagIds: tagIdsOf('拖鞋', '开箱测评型'),
-      // 静止的生成中：从 42 秒前开始，dev:mock 下一直走表。
       testVideo: demoTestVideo({ createdAt: ago(42 / 3600), status: 'running' }),
       userName: me,
     },
-    // 静止的打标中：人工维度的标签留着，AI 维度等打完再换。
     {
       createdAt: ago(26),
       tagIds: tagIdsOf('AMZ', '短靴'),
@@ -212,7 +186,6 @@ const seedDemo = () => {
       tagIds: tagIdsOf('拖鞋', '图文幻灯片'),
       userName: 'Nora.Ho',
     },
-    // 没打成：AI 维度已清空，只剩人工维度。
     {
       createdAt: ago(50),
       tagError: 'model_call_failed',
@@ -262,7 +235,6 @@ const seedDemo = () => {
     addMockReference({ updatedAt: overrides.createdAt ?? ago(0), ...overrides })
 }
 
-/** 每例清空后放回演示行；给了 `seed` 就换成这些行（空数组即空表）。 */
 export const resetMockReferences = (seed?: readonly Partial<Reference>[]) => {
   rows.length = 0
   seq = 0
@@ -270,13 +242,10 @@ export const resetMockReferences = (seed?: readonly Partial<Reference>[]) => {
   else for (const overrides of seed) addMockReference(overrides)
 }
 
-/** 拆解变了：已有的试生成按更新前的拆解生成，标为过时。 */
 const markTestStale = (row: Row) => {
   if (row.testVideo !== null) row.testVideo = { ...row.testVideo, stale: true }
 }
 
-/** 按时间推进后台拆解：排队 → 拆解中 → 拆完，拆完写回演示拆解、版本加一，接着排上打标；
- * 打标：排队 → 打标中 → 打完，AI 维度换成演示标签、人工维度不动；试生成到点就完成。 */
 const advance = (row: Row, now: number) => {
   if (
     row.testQueuedAt !== null &&
@@ -296,7 +265,6 @@ const advance = (row: Row, now: number) => {
         document: DEMO_DOCUMENT,
         errorCode: null,
         queuedAt: null,
-        // 打标从拆完的那一刻算起，不看这次是哪一刻来读的。
         tagQueuedAt: row.queuedAt + SETTLE_MS,
         tagStatus: 'pending',
         updatedAt: new Date(now).toISOString(),
@@ -312,7 +280,6 @@ const advance = (row: Row, now: number) => {
   else
     Object.assign(row, {
       tagError: null,
-      // 治理者可能已删掉或改了名的，打不上就跳过。
       tagIds: [
         ...row.tagIds.filter((id) => !isMockAiTag(id)),
         ...DEMO_AI_TAGS.flatMap((name) => findMockTagId(name) ?? []),
@@ -328,7 +295,6 @@ const live = (): Row[] => {
   return rows.filter((row) => !row.removed)
 }
 
-/** 交出去的样子：去掉 mock 自己的字段，`canEdit` 按此刻登录的人算。 */
 const publicOf = (row: Row, viewer: string): Reference => {
   const {
     removed: _removed,
@@ -343,21 +309,16 @@ const publicOf = (row: Row, viewer: string): Reference => {
 
 const find = (id: unknown) => live().find((row) => row.id === id)
 
-/** 此刻每条没移除的参考视频的标签，标签树的条数照它现算。 */
 export const mockReferenceTagSets = (): string[][] => live().map((row) => row.tagIds)
 
-/** 治理者删了标签：每一条（含已移除的）去掉这些标签。 */
 export const forgetMockReferenceTags = (ids: ReadonlySet<string>) => {
   for (const row of rows) row.tagIds = row.tagIds.filter((id) => !ids.has(id))
 }
 
 const NOT_FOUND = () => HttpResponse.json({ detail: '资料库里没有这条参考视频' }, { status: 404 })
 
-/** jsdom 的 XHR 发 File 时带不上文件内容，收到的是这几个字面量之一。 */
 const NOT_FILE_BYTES = new Set(['', 'undefined', '[object File]'])
 
-/** 字节的简单指纹：长度加 FNV-1a，够 mock 认出同一个文件。收到的不是文件内容（jsdom）就认不出来、当新文件；
- * 单测要重复上传的答复用 `server.use` 给。 */
 const fingerprint = (body: ArrayBuffer): string | null => {
   if (NOT_FILE_BYTES.has(new TextDecoder().decode(body))) return null
   let hash = 0x811c9dc5
@@ -400,7 +361,6 @@ const filtersOf = (all: readonly Row[]): Filters => {
 const isBusy = (row: Row) => row.breakdownStatus === 'pending' || row.breakdownStatus === 'running'
 const isTagBusy = (row: Row) => row.tagStatus === 'pending' || row.tagStatus === 'running'
 
-/** `viewer` 给出此刻登录的用户名：属主才能改、改标签、重拆、重新打标、移除。 */
 export const referenceHandlers = (viewer: () => string) => [
   http.get('*/api/references', ({ request }) => {
     const query = new URL(request.url).searchParams
@@ -525,7 +485,6 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  // 画幅不影响 mock：试生成沿用原片的示例视频。
   http.post('*/api/references/:id/test-generations', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
@@ -556,5 +515,4 @@ export const referenceHandlers = (viewer: () => string) => [
   }),
 ]
 
-// 模块载入时放好演示行；单测每例之后由 setup 再放一次。
 resetMockReferences()

@@ -1,9 +1,3 @@
-"""第二个应用接运行时：运行时只配两个应用、不配插件包，应用 ``crm`` 照 docs/runtime-apps.md 的步骤用客户端库开
-会话、发消息、跟着两条 WebSocket、读回 transcript；它与应用 ``video`` 互相寻址不到对方的会话。
-
-最后一条在子进程里走运行时的真实启动入口（YAML 没有 ``plugins``），核对进程里没有 import 视频插件包与视频
-后端的任何模块：测试进程本身经夹具 import 了后端，只能在干净的进程里看。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -46,18 +40,14 @@ from tests.helpers.runtime_service import (
 )
 
 VIDEO_KEY = ADMIN_KEY
-"""应用 ``video`` 的密钥：它有管理权限，夹具 ``admin`` 经它接供应商、发布 agent。"""
 
 CRM_KEY = READER_KEY
-"""第二个应用 ``crm`` 的密钥：没有管理权限、没有回调。"""
 
 AGENT = "director"
 REPLY = "答：收到"
 WAIT = 10.0
-"""等运行跑完、等帧到的上限（秒）。"""
 
 VIDEO_CODE = ("iclip", "iclip_video")
-"""视频后端与视频插件包的顶层包名。"""
 
 
 @pytest.fixture
@@ -69,8 +59,6 @@ def models() -> dict[str, Model]:
 def runtime_app(
     engine: AsyncEngine, migrated_pg: str, tmp_path: Path, models: Mapping[str, Model]
 ) -> FastAPI:
-    """两个应用 ``video`` 与 ``crm``，插件登记表是空的（没配插件包时启动入口交的就是空表）。"""
-
     settings = RuntimeSettings(
         database_url=migrated_pg,
         credential_encryption_keys=(TEST_CREDENTIAL_KEY,),
@@ -94,8 +82,6 @@ def runtime_app(
 
 @pytest.fixture
 async def published(admin: httpx.AsyncClient) -> None:
-    """``video`` 经管理接口接好供应商与模型、发布一个不挂插件的 ``AGENT``；agent 配置所有应用共用。"""
-
     provider_id = await connect_provider(admin)
     await add_model(admin, provider_id, TEST_MODEL_NAME)
     await publish_agent(admin, AGENT)
@@ -239,11 +225,6 @@ print("loaded:" + ",".join(sorted(
 async def test_the_runtime_entry_without_a_plugin_package_loads_no_video_code(
     engine: AsyncEngine, migrated_pg: str, tmp_path: Path
 ) -> None:
-    """真实的启动入口 ``app_from_env`` 读 YAML、建服务、跑 lifespan（连库、起运行驱动）并答一个应用请求，全程
-    没有 import ``iclip`` 与 ``iclip_video``；子进程用的是后端的环境，两个包都装着，没被 import 才有意义。
-
-    ``engine`` 只为先清空测试表：子进程用真实的模型装配，不能让它认领别的用例留下的消息。"""
-
     config = tmp_path / "runtime.yaml"
     config.write_text(
         ENTRY_CONFIG.replace("SKILL_CACHE", str(tmp_path / "skills")), encoding="utf-8"

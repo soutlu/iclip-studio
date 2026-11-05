@@ -1,7 +1,6 @@
 import { cn } from '@/shared/lib/utils'
 import { MCP_STATUS_LABEL, type McpStatus } from '../mcp-draft'
 
-/** 连接状态的小圆点：通了是主色（绿），没通是错误色，还没试过是灰色；状态写在可访问名里。 */
 export function StatusDot({ status, className }: { status: McpStatus; className?: string }) {
   return (
     <span

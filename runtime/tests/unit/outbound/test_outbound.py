@@ -1,9 +1,3 @@
-"""出网防护的行为：只连公网的 80 / 443，跳转后照查，不带用户名密码、不走代理；探地址只看响应头，
-取不到的一律报 ``FetchFailed``。
-
-连的是本机回环上的测试服务器：放行回环与它端口的策略连得上，生产策略连它就该被拒。不碰外网。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -60,7 +54,6 @@ async def test_a_response_without_a_type_answers_none(server: LoopbackServer) ->
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost"])
 async def test_loopback_is_refused_by_the_public_rule(server: LoopbackServer, host: str) -> None:
-    # 端口放行，只剩「公网地址」这一条把它拦下。
     client = public_client(timeout=2, policy=OutboundPolicy(ports=frozenset({server.port})))
 
     with pytest.raises(FetchFailed):
@@ -85,7 +78,6 @@ async def test_a_redirect_to_a_private_address_is_refused(server: LoopbackServer
 async def test_a_port_outside_the_rule_is_refused_without_connecting(
     server: LoopbackServer, host: str
 ) -> None:
-    # 主机名也不连：httpx-secure 按主机名选 IP 时会先连一次 TCP，端口要在那之前拒。
     other = OutboundPolicy(ports=frozenset({server.port + 1}), loopback=True)
 
     with pytest.raises(FetchFailed, match=f"不连 {server.port} 端口"):
@@ -97,8 +89,6 @@ async def test_a_port_outside_the_rule_is_refused_without_connecting(
 async def test_the_production_rule_refuses_other_ports_without_connecting(
     server: LoopbackServer,
 ) -> None:
-    """内网主机的端口开没开，结果都一样：不连，答取不到。"""
-
     with pytest.raises(FetchFailed):
         await probe_with(public_client(timeout=2), server.url("/a.png", host="localhost"))
 

@@ -1,5 +1,3 @@
-"""按人页签的 Postgres 口径：谁上榜、出片去重、按粒度铺满的每期出片数与排序。"""
-
 from __future__ import annotations
 
 import uuid
@@ -26,10 +24,6 @@ def local(day: int, hour: int = 0, minute: int = 0) -> datetime:
 
 
 async def plant_people(engine: AsyncEngine) -> None:
-    """新加坡 8 月 3 日起一周。Sara：需求单 A 当天两段对话各出一次片（算一件），第 2 天一段没挂单的
-    对话出片，第 1 天跑一轮，窗外前一天还有一件。Derek 与 Eva 各一件、各跑三轮。Ian 只跑了五轮。
-    Felix 窗里只有一次失败的出片、运行在窗外：既没出片也没跑，不上榜。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek, eva, felix = [await plant.user(name) for name in (SARA, DEREK, EVA, FELIX)]
@@ -74,9 +68,6 @@ async def plant_people(engine: AsyncEngine) -> None:
 async def test_daily_people_rank_dedupe_and_fill_every_day(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """出片多的在前，同数看运行次数，再同按名字；只跑过的人排在后面也在。同一需求单两段对话只算
-    一件，当天的每期出片数也只算一件；窗外的那件不算。每人的趋势七天每天都在，没出片的天是 0。"""
-
     await plant_people(engine)
 
     found = await service.people(since=local(0), until=local(7), timezone="Asia/Singapore")
@@ -102,8 +93,6 @@ async def test_daily_people_rank_dedupe_and_fill_every_day(
 async def test_hourly_people_only_list_who_delivered_or_ran_in_the_window(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """两天内按小时：8 月 3 日 10:00–14:00 只有 Sara 12:05 那件；Felix 同一窗里的失败出片不算。"""
-
     await plant_people(engine)
 
     found = await service.people(since=local(0, 10), until=local(0, 14), timezone="Asia/Singapore")

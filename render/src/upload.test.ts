@@ -19,7 +19,6 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-/** 本机上传目标：记下收到的头与内容，按给定状态码回答。 */
 async function target(status: number) {
   const received: { headers: IncomingHttpHeaders; body: Buffer; method: string }[] = []
   server = createServer((req, res) => {

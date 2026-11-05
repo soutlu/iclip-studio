@@ -1,6 +1,3 @@
-"""运行时服务的鉴权落在真实的库上：没有密钥或密钥不对 401，没有管理权限的应用 403，都不写库；
-有管理权限的应用写库时，作者记的是 ``X-End-User``。"""
-
 from __future__ import annotations
 
 import uuid

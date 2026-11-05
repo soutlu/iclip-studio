@@ -1,14 +1,7 @@
-/**
- * 后台任务展示对话：拆解视频转入后台后的各种画面。
- * 「后台任务展示」回看完成通知（原卡写「已转入后台」）、失败通知与被停下后中断的原卡，末轮还有一个拆解在跑；
- * 「多个后台任务」末轮同时拆两条视频，输入框上方是汇总的一行。只回看，不自动起演示运行。
- */
-
 import type { MockShowcase } from './transcript'
 
 type Frame = Record<string, unknown>
 
-/** 进行中的任务按取页时刻倒推开始时间，计时才像真的在走。 */
 const secondsAgo = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString()
 
 const at = (day: string, time: string) => `2026-10-${day}T${time}Z`
@@ -16,7 +9,6 @@ const at = (day: string, time: string) => `2026-10-${day}T${time}Z`
 const RECEIPT = (callId: string) =>
   `Tool 'breakdown_video' is running in background (task ${callId}). This call is pending. Do not repeat or poll it; its result will arrive automatically. Continue independent work, or end your response.`
 
-/** 回执到达就是 done，之后不再变；中断的那张由 fields 改成 error。 */
 const breakdown = (frameId: string, callId: string, file: string, fields: Frame = {}): Frame => ({
   display: { detail: file, kind: 'generic', summary: '拆解视频' },
   frameId,
@@ -46,7 +38,6 @@ const say = (frameId: string, text: string): Frame => ({
   text,
 })
 
-/** 结果到达处插进来的完成通知：role 是 user、带 taskId、没有 promptIds。 */
 const notice = (frameId: string, taskId: string, text: string): Frame => ({
   content: [{ text, type: 'text' }],
   frameId,
@@ -75,7 +66,6 @@ const turn = (
     frames,
     kind: 'step',
     ordinal: index + 1,
-    // 跑着的那一轮只有末步还没结束。
     state: state === 'running' && index === steps.length - 1 ? 'running' : 'completed',
     stepId: `${turnId}.${index + 1}`,
     turnId,

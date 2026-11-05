@@ -1,5 +1,3 @@
-"""用真实 ffmpeg 验证给语音识别抽音频：多声道混成单声道 16 kHz mp3，没有音轨与读不了的素材明确报错。"""
-
 from __future__ import annotations
 
 import json
@@ -20,8 +18,6 @@ pytestmark = [
 
 
 def _stereo_video(path: Path) -> None:
-    """一段带双声道音轨（左右声道频率不同）的 2 秒视频，采样率 48 kHz。"""
-
     subprocess.run(
         [
             "ffmpeg", "-v", "error", "-y",
@@ -63,8 +59,6 @@ async def test_a_stereo_track_comes_out_as_mono_16k_mp3(tmp_path: Path) -> None:
 
 
 async def test_a_video_without_audio_is_reported_as_no_audio_stream(tmp_path: Path) -> None:
-    """没有音轨单独一种错：调用方要据此记「没有口播」，不能和处理失败混在一起。"""
-
     source = tmp_path / "silent.mp4"
     synthesize_video(source, size="160x120", seconds=1, audio=False)
     dest = tmp_path / "speech.mp3"

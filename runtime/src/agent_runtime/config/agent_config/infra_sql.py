@@ -1,8 +1,3 @@
-"""Agent 配置的六张表与它们的 Postgres 仓储。
-
-时间统一用数据库时钟；外部输入一律走绑定参数。状态与操作种类的取值、配置格式与版本号递增只在 Python 里，
-表上不加 CHECK；``active_version_id`` 不加外键，只由发布的事务在同一 agent 的行锁下改。"""
-
 from __future__ import annotations
 
 import uuid
@@ -230,8 +225,6 @@ def _version_of(row: RowMapping, skill_ids: Sequence[uuid.UUID]) -> AgentVersion
 
 
 def _violated_constraint(error: IntegrityError) -> str:
-    """违反的约束名；asyncpg 把它挂在被包起来的原异常上。"""
-
     cause = getattr(error.orig, "__cause__", None)
     return getattr(cause, "constraint_name", None) or ""
 
@@ -334,8 +327,6 @@ async def _insert_agent(
 
 
 class _SqlAgentWriter:
-    """``AgentWriter`` 的 Postgres 实现，用一条已锁住 agent 行与草稿行的事务连接。"""
-
     def __init__(self, conn: AsyncConnection, state: AgentState) -> None:
         self._conn = conn
         self._state = state
@@ -485,8 +476,6 @@ class _SqlAgentWriter:
 
 
 class SqlAgentStore:
-    """``AgentStore`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

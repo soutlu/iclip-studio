@@ -1,5 +1,3 @@
-"""验证工程文件的两件工具：check_film 报出问题或概况，generate_images 给生图节点出图。"""
-
 from __future__ import annotations
 
 import uuid
@@ -44,21 +42,15 @@ from tests.helpers.media_probe import ScriptedMedia
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 PHOTO_URLS = tuple(PHOTOS.values())
-"""用户给的五张照片。"""
 NAMESPACE = f"{USER}/thread-1"
 
 
 class FakeNodeImages:
-    """生成域的替身：记下每次出图请求，按设定给出结果；出图立刻有结论，不用等。"""
-
     def __init__(self) -> None:
         self.requests: list[NodeImageRequest] = []
         self.failing: dict[str, str] = {}
-        """节点名 → 失败原因。"""
         self.rejecting: dict[str, str] = {}
-        """节点名 → 受理时就被拒的原因。"""
         self.pending_polls = 0
-        """出图先停在进行中几次查询，再给结论。"""
         self._jobs: dict[uuid.UUID, tuple[NodeImageRequest, int]] = {}
 
     def url_of(self, node: str) -> str:
@@ -119,15 +111,11 @@ def capability(
 
 
 def text_of(result: ToolReturn[str]) -> str:
-    """给模型看的那段文字；return_value 是联合类型，先收窄。"""
-
     assert isinstance(result.return_value, str)
     return result.return_value
 
 
 def without_uses(*nodes: str) -> str:
-    """去掉这几个生图节点选用的运行文件。"""
-
     run = RUN
     for node in nodes:
         use = f'  <use output="{node}.image" image={{{node}-v1}}/>\n'
@@ -207,8 +195,6 @@ async def test_a_video_address_cannot_stand_in_for_an_image(
 async def test_the_check_probes_every_address_written_in_the_files_once(
     files: FakeFileStore, media: ScriptedMedia, ctx: RunContext[object], run: str | None
 ) -> None:
-    """对话里没出现过的地址也照查：取得到、是图片就算过。"""
-
     tools = await workspace(files, run=run)
 
     assert text_of(await tools.check_film(ctx)).startswith("工程规范检查通过")
@@ -231,8 +217,6 @@ async def test_an_address_that_does_not_answer_is_reported_at_its_node(
 
 
 def test_loading_checks_only_the_structure() -> None:
-    """读文件不探地址：写着打不开的地址照样读出 ``Film``。"""
-
     film = load_film(FILM.replace(SHOE_FRONT, "https://gone.invalid/x.jpg"), RUN)
 
     assert isinstance(film, Film)
@@ -332,7 +316,6 @@ async def test_listed_nodes_get_one_image_each(
         ],
         "note": "2 张",
     }
-    # 两个节点都不挂参考图，生成前没有地址要查。
     assert media.asked == []
 
 
@@ -345,7 +328,6 @@ async def test_a_node_whose_references_lack_images_is_not_generated(
 
     result = await tools.generate_images(ctx, ["view02", "view01", "personB"])
 
-    # 同一次里先出的 personB 要选用才算有图，挂着它的 view01 也不生成。
     assert [request.node for request in images.requests] == ["personB"]
     assert text_of(result).splitlines()[1:] == [
         f"personB：已生成，地址 {images.url_of('personB')}",
@@ -390,7 +372,6 @@ async def test_one_failure_does_not_stop_the_others(
     assert lines[3] == "view05：生成失败，请求被拒：图片生成仅支持模型 nano_banana_pro"
     (sent,) = [request for request in images.requests if request.node == "view02"]
     assert list(sent.reference_image_urls) == EXPECTED["images"]["view02"]["input_str_list"]
-    # 只查这次要生成的三个节点挂的参考图，文件里别的地址不查。
     used = {
         url
         for name in ("view05", "personB", "view02")

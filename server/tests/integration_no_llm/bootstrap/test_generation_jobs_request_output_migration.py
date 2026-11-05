@@ -1,7 +1,3 @@
-"""生成记录表把各种记录自己的产出并进 ``output``、输入并进 ``request`` 的迁移：在 0038 按旧结构给
-每种记录造一行，升级后逐行核对 output、request 与 provider；搬不过去的行让整个迁移回滚。
-升级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -20,10 +16,8 @@ from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "ad8ae2f51ce1"
-"""0038，产出与区间、外部底图还各占一列。"""
 
 AFTER = "e7b3c91d4a26"
-"""0039，产出并进 output，区间与外部底图并进 request。"""
 
 _INSERT = text(
     "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind, operation,"
@@ -66,8 +60,6 @@ IMAGE_REQUEST = {"prompt": "p", "userName": "logan", "aspectRatio": "1:1", "reso
 
 @dataclass
 class Row:
-    """一行旧结构的记录，与升级后该有的 output、request 新增键与 provider。"""
-
     kind: str
     operation: str
     provider: str
@@ -82,8 +74,6 @@ class Row:
 
 
 def _rows() -> dict[str, Row]:
-    """每种记录一行；``source`` / ``root`` 指同表里的另一行。"""
-
     return {
         "出片": Row(
             "video",
@@ -364,8 +354,6 @@ def test_upgrade_moves_each_kinds_own_fields(
 def test_a_row_that_cannot_be_moved_rolls_the_whole_migration_back(
     scratch_db: str, broken: dict[str, Any]
 ) -> None:
-    """请求为空的行装不下区间或外部底图：核对不过，整个迁移回滚，表还是 0038 的样子。"""
-
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
     rows = {"坏行": Row("video", "generate", "video_api", request=None, columns=broken)}

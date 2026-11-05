@@ -1,5 +1,3 @@
-"""技能库规则：标识、路径安全与收录范围、文本与大小上限、frontmatter 与改写其中的 name。"""
-
 from __future__ import annotations
 
 import pytest

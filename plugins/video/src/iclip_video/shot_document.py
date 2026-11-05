@@ -1,5 +1,3 @@
-"""镜头组 prompt 表的结构与校验措辞，供交付工具与文件写回共用；与出片请求共用的纯判定在 shot_rules.py。"""
-
 from __future__ import annotations
 
 import json
@@ -23,16 +21,14 @@ SHOT_MAX_SECONDS: Final = 30
 
 
 class ShotDocumentError(ValueError):
-    """镜头组 prompt 表不合规则。"""
+    pass
 
 
 class AspectError(ShotDocumentError):
-    """画幅写法不合法。"""
+    pass
 
 
 def parse_aspect(value: str) -> float:
-    """把 ``宽:高`` 解析成宽高比。"""
-
     parts = value.split(":")
     if len(parts) != 2:
         raise AspectError(f"画幅要写成 宽:高，比如 9:16；收到的是 {value!r}")
@@ -89,14 +85,10 @@ class VideoShotRequest(BaseModel):
 
 
 class StoredTimelineItem(TimelineItem):
-    """文件中一个镜头的原始内容与从正文提取的图片编号。"""
-
     image_indexes: list[Annotated[int, Field(strict=True, ge=1)]]
 
 
 class StoredVideoShotPrompt(BaseModel):
-    """文件中的镜头组提示词，仅比提交内容多逐镜图片编号。"""
-
     model_config = ConfigDict(extra="forbid")
 
     global_settings: str
@@ -104,8 +96,6 @@ class StoredVideoShotPrompt(BaseModel):
 
 
 class VideoShotDocumentRow(BaseModel):
-    """工作区镜头组表的一行，独立于工具入参模型。"""
-
     model_config = ConfigDict(extra="forbid")
 
     index: int
@@ -115,30 +105,18 @@ class VideoShotDocumentRow(BaseModel):
 
 
 class VideoShotsDocument(BaseModel):
-    """镜头组表文件的结构；字段名与工具入参一致。
-
-    文件写回不区分生成它的创作流。
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     aspect_ratio: str
     shots: list[VideoShotDocumentRow]
 
     def file_text(self) -> str:
-        """写进工作区文件的原文；交付工具与它的工具卡共用这一份序列化，两边不会分叉。"""
-
         return self.model_dump_json(indent=2)
 
 
 def validate_video_shot_requests(
     shots: Sequence[VideoShotRequest | VideoShotDocumentRow],
 ) -> None:
-    """校验整份结构化入参，非法时抛 ShotDocumentError；不改写文本、时间或图片顺序。
-
-    图片地址取不取得到由工具输入验证器检查；本函数不访问工作区或序列化交付文件。
-    """
-
     if not shots:
         raise ShotDocumentError("shots 一条都没有；镜头组 prompt 表不能是空的。")
     for position, shot in enumerate(shots, start=1):
@@ -198,8 +176,6 @@ def _validate_image_refs(prompt: str, *, where: str, image_count: int) -> None:
 def build_video_shots_document(
     aspect_ratio: str, shots: Sequence[VideoShotRequest]
 ) -> VideoShotsDocument:
-    """校验整份提交并补充逐镜图片编号，失败时抛 ShotDocumentError；不改写输入或访问存储。"""
-
     parse_aspect(aspect_ratio)
     validate_video_shot_requests(shots)
     return VideoShotsDocument(
@@ -227,11 +203,6 @@ def build_video_shots_document(
 
 
 def validate_shots_document(content: str) -> VideoShotsDocument:
-    """校验写回的镜头组表并返回解析结果，非法时抛 ShotDocumentError。
-
-    与提交共用字段校验，并检查派生的图片编号；模型工具的地址来源校验不属于此入口。
-    """
-
     try:
         document = json.loads(content)
     except json.JSONDecodeError as exc:

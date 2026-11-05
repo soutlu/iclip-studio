@@ -1,9 +1,3 @@
-/**
- * 技能库的 mock：几个技能（含一个从没发布过的），草稿文件与最新版，形状照合同 §17。
- * 改草稿、改名、删除、发布、新建与改显示名或标识都改内存里的数据，hash 冲突、路径规则、上限与发布检查照合同做；
- * hash 用简单的 FNV（客户端只把它当不透明的值回传）。每例由 `resetMockSkills` 放回预置数据。
- */
-
 import { http, HttpResponse } from 'msw'
 import type {
   DraftFileRenameIn,
@@ -44,7 +38,6 @@ type MockFile = { content: string; hash: string; updatedAt: string }
 
 type MockSkill = Omit<SkillOut, 'hasUnpublishedChanges'> & {
   files: Map<string, MockFile>
-  /** 最新版的内容 hash；没发布过为 null。 */
   latestContentHash: string | null
 }
 
@@ -65,7 +58,6 @@ const contentHash = (files: Map<string, MockFile>) =>
       .join('\n'),
   )
 
-/** frontmatter 里一行写的某个键（如 `description`）；mock 只认本 mock 与页面写出来的两种写法。 */
 const frontmatterField = (source: string, key: string): string | null => {
   const header = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source)?.[1]
   const raw =
@@ -170,7 +162,6 @@ export const mockSkillId = (name: string): string => {
   return found.id
 }
 
-/** 草稿里一个文件此刻的内容与 hash，测试用它断言回传的 baseHash。 */
 export const mockSkillFile = (name: string, path: string): MockFile => {
   const found = skills.find((item) => item.name === name)?.files.get(path)
   if (found === undefined) throw new Error(`mock 里技能 ${name} 没有文件 ${path}`)
@@ -203,7 +194,6 @@ const conflict = (detail: string) => HttpResponse.json({ detail }, { status: 409
 
 const findSkill = (id: unknown) => skills.find((item) => item.id === String(id))
 
-/** 端点路径里 `/draft/files/` 之后的文件路径，斜杠原样、每段解码。 */
 const filePathOf = (request: Request) =>
   new URL(request.url).pathname
     .split('/draft/files/')[1]
@@ -227,7 +217,6 @@ const limitProblem = (files: Map<string, MockFile>): string | null => {
   return total > MAX_TOTAL ? '全部文件合计超过 5 MB' : null
 }
 
-/** 没发布过的技能，说明跟着草稿里的 `SKILL.md` 走。 */
 const followDraft = (item: MockSkill) => {
   if (item.latestVersion !== null) return
   const description = frontmatterField(item.files.get(SKILL_MD)?.content ?? '', 'description')
@@ -239,7 +228,6 @@ const touch = (item: MockSkill) => {
   followDraft(item)
 }
 
-/** 技能库用到的全部端点；`actor` 是当前登录的人，记成新技能的创建人。 */
 export const skillHandlers = (actor: () => Actor) => [
   http.get('*/api/skills', () =>
     HttpResponse.json({ items: skills.filter((item) => item.status === 'active').map(toOut) }),

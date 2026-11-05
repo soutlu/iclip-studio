@@ -1,5 +1,3 @@
-"""MCP 服务端点的请求与响应形状，camelCase 别名。术语见 docs/CONTEXT.md「MCP 服务」。"""
-
 from __future__ import annotations
 
 import uuid
@@ -27,7 +25,6 @@ class McpHeaderIn(CamelModel):
 
 class McpServerCreateIn(CamelModel):
     id: str
-    """标识，创建后不能改。"""
     name: str
     description: str = ""
     url: str
@@ -65,14 +62,11 @@ class McpCheckIn(CamelModel):
 class McpHeaderOut(CamelModel):
     name: str
     value: str
-    """打码后的样子：``••••`` 加末 4 位，原值不足 8 位只有 ``••••``。"""
 
 
 class McpToolOut(CamelModel):
     name: str
-    """服务自己给的工具名；agent 里看到的名字前面另加 ``mcp_<服务标识>_``。"""
     title: str | None
-    """服务给的显示名（工具的 ``title``，没有再取 ``annotations.title``），没给为 ``null``。"""
     description: str | None
 
 
@@ -80,7 +74,6 @@ class McpLastCheckOut(CamelModel):
     ok: bool
     elapsed_ms: int
     reason: str | None
-    """没通的原因，给人看的一句话；通了为 ``null``。"""
     checked_at: datetime
 
 
@@ -89,17 +82,13 @@ class McpServerOut(CamelModel):
     name: str
     description: str
     url: str
-    """完整的地址（库里加密存，这里解密后原样给）。"""
     transport: McpTransport
     timeout_seconds: int
     headers: list[McpHeaderOut]
     enabled: bool
     last_check: McpLastCheckOut | None
-    """最后一次试连；从没试过为 ``null``。"""
     tools: list[McpToolOut] | None
-    """最后一次试连成功时发现的工具，按服务给的先后；从没成功过为 ``null``。"""
     used_by: list[AgentUsageOut]
-    """草稿或当前版本挂着这个服务的 agent，按 agent 标识排；它们还在用时不能停用或删除。"""
     created_by: uuid.UUID
     updated_by: uuid.UUID
     created_at: datetime
@@ -116,9 +105,7 @@ class McpCheckOut(CamelModel):
     ok: bool
     elapsed_ms: int
     reason: str | None
-    """没通的原因，给人看的一句话；通了为 ``null``。"""
     tools: list[McpToolOut] | None
-    """发现的工具，按服务给的先后；没通为 ``null``。"""
 
 
 __all__ = [

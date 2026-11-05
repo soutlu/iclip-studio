@@ -1,5 +1,3 @@
-"""试连的失败原因：按错误类别给一句话，只取上游错误体里的说明，抹掉机密；建不出模型也是结果。"""
-
 from __future__ import annotations
 
 import pytest
@@ -17,7 +15,7 @@ SECRET = "sk-live-aaaaaaaaaaaaaaaa"
 
 
 class AuthHTTPError(ModelHTTPError, ModelAuthenticationError):
-    """上游答 401 时适配器抛的组合类型。"""
+    pass
 
 
 def test_authentication_failure_keeps_status_and_upstream_message_only() -> None:

@@ -1,5 +1,3 @@
-"""identity 的跨模块契约：其它模块只准从这里 import。"""
-
 from __future__ import annotations
 
 from iclip.domains.identity.acting import ActAs

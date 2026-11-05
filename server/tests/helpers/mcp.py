@@ -1,9 +1,3 @@
-"""集成测试用的本地 MCP 服务：用官方 MCP SDK 的服务端在进程里起两个 uvicorn，只监听 127.0.0.1，不出网。
-
-一个走 Streamable HTTP（``…/mcp``），一个走 SSE（``…/sse``），同一组工具：``add``、``shout``、``divide``
-（除以 0 时报错）；``add`` 的显示名给在 ``title``，``shout`` 的给在 ``annotations.title``，``divide`` 没给。两个都要求 ``Authorization: Bearer <TOKEN>``，不对答 401。``calls`` 记下服务端真收到的
-每次工具调用。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -21,12 +15,10 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 TOKEN: Final = "Bearer mcp-test-token-0123456789"
-"""本地 MCP 服务认的请求头值；测试检查它从不以明文出现在答复里。"""
 
 TOOLS: Final = ("add", "shout", "divide")
 
 TITLES: Final = {"add": "加法", "shout": "转大写", "divide": None}
-"""各工具的显示名。"""
 
 
 @dataclass
@@ -39,8 +31,6 @@ class LocalMcp:
 
 
 class _RequireToken:
-    """纯 ASGI 的鉴权：SSE 的长连接经不起 ``BaseHTTPMiddleware``。"""
-
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
 
@@ -54,8 +44,6 @@ class _RequireToken:
 
 
 def free_port() -> int:
-    """一个此刻没人监听的本机端口；拿来当连不上的地址，或交给 uvicorn。"""
-
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
@@ -81,7 +69,6 @@ def _server(local: LocalMcp) -> MCPServer:
         """Divide a by b."""
         local.calls.append(("divide", {"a": a, "b": b}))
         if b == 0:
-            # 工具自己报的错原话交给调用方；别的异常服务端只回一句笼统的话。
             raise ToolError("cannot divide by zero")
         return a / b
 
@@ -91,16 +78,12 @@ def _server(local: LocalMcp) -> MCPServer:
 
 @asynccontextmanager
 async def local_mcp() -> AsyncGenerator[LocalMcp]:
-    """起两个服务，块结束时关掉。每次都建新的服务端：Streamable HTTP 的会话管理器只能跑一次。"""
-
     http_port, sse_port = free_port(), free_port()
     local = LocalMcp(
         http_url=f"http://127.0.0.1:{http_port}/mcp", sse_url=f"http://127.0.0.1:{sse_port}/sse"
     )
     http_app = _server(local).streamable_http_app()
     sse_app = _server(local).sse_app()
-    # 不让 uvicorn 碰日志配置：``log_config``、``log_level`` 与 ``access_log=False`` 都会改写进程里 uvicorn
-    # 那几个 logger，之后测日志的用例会被带偏。
     servers = [
         uvicorn.Server(
             uvicorn.Config(

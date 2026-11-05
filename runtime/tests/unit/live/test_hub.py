@@ -1,5 +1,3 @@
-"""验证应用事件的发布顺序、预览会话的标记与归属查询失败隔离。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -47,8 +45,6 @@ class Sink:
 
 
 def lookup(apps: Mapping[str, Route], delays: Mapping[str, int]) -> RouteOf:
-    """按表查归属；``delays`` 给某段会话让查询多让出几次事件循环，模拟读库有快有慢。"""
-
     async def route_of(session_id: str) -> Route | None:
         for _ in range(delays.get(session_id, 0)):
             await asyncio.sleep(0)
@@ -84,14 +80,9 @@ async def drained(*sinks: Sink, count: int, tries: int = 100) -> None:
     raise AssertionError("事件没送到")
 
 
-# --- 应用事件集线器 -------------------------------------------------------------
-
-
 async def test_events_arrive_in_publish_order_even_when_a_lookup_is_slow(
     hub: AppEventHub,
 ) -> None:
-    """busy 的那段查归属慢；随后的 idle 不能抢在它前面。"""
-
     sink = Sink()
     hub.attach("bff", sink)
 

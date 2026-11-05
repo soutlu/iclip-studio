@@ -1,5 +1,3 @@
-"""使用内存仓储验证 /generations 权限、错误映射和受理语义。"""
-
 from __future__ import annotations
 
 import json
@@ -71,7 +69,6 @@ VIDEO_BODY = {
 IMAGE_BODY = {"prompt": "一只猫的正面特写", "aspectRatio": "1:1"}
 
 CLIP_URL = "https://cdn.test/iclip/agent/uploads/clip.mp4"
-"""编辑段请求里的参考片段：要是提交者本人的一条视频上传，用例用 ``seed_clip`` 放进去。"""
 
 EDIT_BODY = {
     "model": "vendor-a-seedance-2-5",
@@ -82,14 +79,12 @@ EDIT_BODY = {
     "seconds": -1,
     "reference_image_urls": ["https://cdn.test/sandal.png"],
 }
-"""编辑段请求体，缺 ``source_job_id`` 与归属，用例按需补。"""
 
 DURATIONS_MS = {
     "https://example.com/base.mp4": 6000,
     "https://example.com/source.mp4": 6000,
     CLIP_URL: 5000,
 }
-"""远程探测替身认得的地址与时长：基底 6 秒，片段 5 秒；参考时长独立于基底替换区间。"""
 
 
 IMAGE_MODELS = {"nano_banana_pro": NANO_BANANA_PRO.spec, "seedream_v5_pro": SEEDREAM_V5_PRO.spec}
@@ -118,8 +113,6 @@ def api_key(*permissions: str) -> Principal:
 
 
 class ClearedCompletions:
-    """替身：记下受理出片后回调取消了哪些对话的收尾标记。"""
-
     def __init__(self) -> None:
         self.calls: list[tuple[uuid.UUID, uuid.UUID]] = []
 
@@ -138,9 +131,6 @@ def build_test_app(
     users: InMemoryUserRepository | None = None,
     video_models: tuple[str, ...] = VIDEO_MODELS,
 ) -> FastAPI:
-    """``durations`` 是远程探测替身认得的地址与时长，替身挂在 ``app.state.probe`` 上；``users``
-    是替人办事查的账号表。"""
-
     app = app_with_principal(granted)
     cleared = ClearedCompletions()
     app.state.cleared_completions = cleared
@@ -182,9 +172,6 @@ def only_job(repo: InMemoryGenerationRepository) -> GenerationJob:
     return job
 
 
-# --- 视频提交 ------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("model", VIDEO_MODELS)
 async def test_video_submit_accepts_and_persists_pending_without_calling_provider(
     model: str,
@@ -208,7 +195,6 @@ async def test_video_submit_accepts_and_persists_pending_without_calling_provide
 )
 async def test_video_submit_rejects_other_models_before_persisting_or_queueing(model: str) -> None:
     repo = InMemoryGenerationRepository()
-    # 若错误路径仍尝试入队，坏队列会让此用例失败。
     app = build_test_app(repo, granted=principal("generation:submit"), broken_queue=True)
     async with client(app) as http:
         response = await http.post("/generations/video", json={**VIDEO_BODY, "model": model})
@@ -226,8 +212,6 @@ async def test_video_model_is_required_like_upstream() -> None:
 
 
 async def test_video_submit_passes_model_specific_fields_through_untouched() -> None:
-    """画幅、时长范围、分辨率、私有参数由上游按模型判，受理层不复制那套规则。"""
-
     repo = InMemoryGenerationRepository()
     app = build_test_app(repo, granted=principal("generation:submit"))
     body = {
@@ -263,8 +247,6 @@ async def test_video_submit_passes_model_specific_fields_through_untouched() -> 
     ],
 )
 async def test_video_submit_rejects_fields_we_do_not_take(extra: dict[str, object]) -> None:
-    """上游会丢弃或兼容的字段，我们直接拒：不静默忽略，也不让身份字段与服务端定的原作从请求体进来。"""
-
     app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:submit"))
     async with client(app) as http:
         response = await http.post("/generations/video", json={**VIDEO_BODY, **extra})
@@ -272,8 +254,6 @@ async def test_video_submit_rejects_fields_we_do_not_take(extra: dict[str, objec
 
 
 async def test_reference_urls_stop_at_the_same_count_the_shot_file_allows() -> None:
-    """分镜文件一组能挂 30 张帧图，出片就得收得下 30 张：存得下却发不出去是我们自己的口径打架。"""
-
     app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:submit"))
     urls = [f"https://cdn.test/{index}.png" for index in range(31)]
     async with client(app) as http:
@@ -290,8 +270,6 @@ async def test_reference_urls_stop_at_the_same_count_the_shot_file_allows() -> N
 
 
 async def test_request_validation_errors_use_the_same_string_envelope() -> None:
-    """校验失败也走 ``{"detail": "<字段路径>: <原因>"}``，调用方读同一个字段就够。"""
-
     app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:submit"))
     async with client(app) as http:
         response = await http.post(
@@ -352,8 +330,6 @@ async def test_video_submit_assembles_the_prompt_from_a_shot_and_stores_both() -
 async def test_video_submit_rejects_a_body_whose_text_does_not_hold_together(
     body: dict[str, object],
 ) -> None:
-    """没正文、正文与 shot 打架、全局或镜头引用越界、拼完超长，都在受理前拒掉。"""
-
     repo = InMemoryGenerationRepository()
     app = build_test_app(repo, granted=principal("generation:submit"), broken_queue=True)
     async with client(app) as http:
@@ -372,9 +348,6 @@ async def test_historical_video_models_are_read_without_rewriting() -> None:
 
     assert response.status_code == 200
     assert response.json()["generation"]["request"]["model"] == "vendor-b-seedance-2-0"
-
-
-# --- user_name ---------------------------------------------------------------
 
 
 async def test_api_key_caller_must_name_its_user_and_is_taken_at_its_word() -> None:
@@ -419,9 +392,6 @@ async def test_image_user_name_follows_the_same_rule() -> None:
         assert (await http.post("/generations/image", json=IMAGE_BODY)).status_code == 422
 
 
-# --- 图片提交与形状 ----------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "body",
     [
@@ -439,8 +409,6 @@ async def test_bad_image_request_shapes_are_rejected(body: dict[str, object]) ->
 
 
 async def test_oversized_metadata_is_rejected_at_intake() -> None:
-    """坐标是标签不是仓库：序列化超过上限就拒，两种生成同一条线。"""
-
     app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:submit"))
     async with client(app) as http:
         image = await http.post(
@@ -493,12 +461,7 @@ async def test_submit_requires_the_submit_permission(path: str, body: dict[str, 
         assert (await http.post(path, json=body)).status_code == 401
 
 
-# --- 读取与归属 ----------------------------------------------------------------
-
-
 async def test_reading_someone_elses_generation_is_a_404() -> None:
-    """不可见资源返回 404，避免泄漏其存在性。"""
-
     job = make_job(video_request())
     repo = InMemoryGenerationRepository([job])
     async with client(build_test_app(repo, granted=principal("generation:read"))) as http:
@@ -522,8 +485,6 @@ async def test_owner_reads_own_generation_and_manager_reads_everyones() -> None:
 
 
 async def test_origin_lands_on_columns_not_in_the_stored_request() -> None:
-    """归属字段单独存列，不包含在供应商请求 JSON 中；三个字段两种生成都收，坐标原样回读。"""
-
     conversation_id, task_id = uuid.uuid4(), uuid.uuid4()
     repo = InMemoryGenerationRepository()
     caller = principal("generation:submit", "generation:read")
@@ -556,8 +517,6 @@ async def test_origin_lands_on_columns_not_in_the_stored_request() -> None:
 
 
 async def test_the_shot_number_is_shot_index_alone_and_metadata_stays_the_callers() -> None:
-    """镜号只认 ``shot_index``：落记录的列、回显在 ``shotIndex``；metadata 原样存取，里面的 shot 不当镜号。"""
-
     repo = InMemoryGenerationRepository()
     caller = principal("generation:submit", "generation:read")
     async with client(build_test_app(repo, granted=caller)) as http:
@@ -581,8 +540,6 @@ async def test_the_shot_number_is_shot_index_alone_and_metadata_stays_the_caller
 def fork_of_someone_elses_take(
     forker: uuid.UUID, *, readable: bool
 ) -> tuple[InMemoryGenerationRepository, uuid.UUID, GenerationJob, GenerationJob, FixedLineage]:
-    """别人在源对话里出成的一条，和分叉的人在副本里自己的一条；主体读不读得到副本由调用方定。"""
-
     source, fork = uuid.uuid4(), uuid.uuid4()
     forked_at = datetime.now(UTC)
     inherited = make_job(
@@ -607,8 +564,6 @@ def fork_of_someone_elses_take(
 async def test_listing_a_fork_adds_what_it_inherited_only_for_those_who_can_read_it(
     readable: bool,
 ) -> None:
-    """按对话列副本：读得到副本就连同继承的一起给；读不到只按属主口径，不另报 404。"""
-
     forker = uuid.uuid4()
     repo, fork, inherited, own, lineage = fork_of_someone_elses_take(forker, readable=readable)
     app = build_test_app(
@@ -626,8 +581,6 @@ async def test_listing_a_fork_adds_what_it_inherited_only_for_those_who_can_read
 async def test_an_inherited_base_counts_only_for_those_who_can_read_the_fork(
     readable: bool,
 ) -> None:
-    """在副本里剪源对话里别人的出片：读得到副本才算继承；读不到就剪不了，也探不出它在不在。"""
-
     forker = uuid.uuid4()
     repo, fork, inherited, _, lineage = fork_of_someone_elses_take(forker, readable=readable)
     seed_clip(repo, owner=forker)
@@ -660,8 +613,6 @@ async def test_list_rejects_invalid_parameters(query: dict[str, str]) -> None:
 
 
 async def test_response_hides_provider_and_upstream_task_mechanics() -> None:
-    """provider 名称、上游任务号与状态词、提交时刻是排队与排障的内部机制，不进响应。"""
-
     job = make_job(video_request())
     repo = InMemoryGenerationRepository([job])
     owner = principal("generation:read", user_id=job.owner_user_id)
@@ -676,8 +627,6 @@ async def test_response_hides_provider_and_upstream_task_mechanics() -> None:
 
 
 async def read_back(job: GenerationJob) -> dict[str, object]:
-    """属主读回这一条的对外形状。"""
-
     repo = InMemoryGenerationRepository([job])
     owner = principal("generation:read", user_id=job.owner_user_id)
     async with client(build_test_app(repo, granted=owner)) as http:
@@ -685,14 +634,10 @@ async def read_back(job: GenerationJob) -> dict[str, object]:
 
 
 def a_composite(**fields: object) -> GenerationJob:
-    """一条合成：挂在一次编辑段上，编辑段又挂在一次出片上。"""
-
     return make_composite(make_edit(make_job(video_request())), **fields)
 
 
 async def test_the_duration_comes_from_its_column() -> None:
-    """合成是本系统自己拼的，量过的时长记在列上交出来；别的记录没有。"""
-
     composite = a_composite(status=STATUS_COMPLETED, output=GenerationOutput(duration_ms=7040))
     take = make_job(video_request())
     unmeasured = a_composite(status=STATUS_COMPLETED)
@@ -728,8 +673,6 @@ async def test_a_record_reads_back_with_its_operation_source_range_and_finish() 
 
 
 async def test_the_range_and_the_external_base_are_top_level_fields_not_part_of_request() -> None:
-    """区间与外部底图记在请求快照里，对外的 ``request`` 不带它们，只在顶层给。"""
-
     take = make_job(video_request(), status=STATUS_COMPLETED)
     edit = make_edit(take, status=STATUS_COMPLETED, range_start_ms=800, range_end_ms=4000)
     external = "https://elsewhere.test/base.png"
@@ -754,8 +697,6 @@ async def test_the_range_and_the_external_base_are_top_level_fields_not_part_of_
 
 
 async def test_in_flight_local_processing_reports_the_stage_it_is_on() -> None:
-    """合成在拼时阶段词照实给；编辑段没有本地加工，列里留着什么词都不当阶段。"""
-
     composite = await read_back(
         replace(a_composite(status=STATUS_SUBMITTING), provider_status="uploading")
     )
@@ -787,8 +728,6 @@ async def test_clip_stage_is_empty_unless_it_is_a_known_in_flight_stage(
 
 
 async def test_failing_to_enqueue_fails_the_row_instead_of_leaving_it_pending() -> None:
-    """任务落库与入队分属两个事务；入队失败须标记失败，避免永久 pending。"""
-
     repo = InMemoryGenerationRepository()
     app = build_test_app(repo, granted=principal("generation:submit"), broken_queue=True)
     async with client(app) as http:
@@ -798,9 +737,6 @@ async def test_failing_to_enqueue_fails_the_row_instead_of_leaving_it_pending() 
     stored = only_job(repo)
     assert stored.status == "failed"
     assert stored.error_code == "QUEUE_DEFER_FAILED"
-
-
-# --- 视频任务快照 ------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -860,8 +796,6 @@ async def test_video_task_carries_both_urls_when_done_and_the_error_when_failed(
 
 @pytest.mark.parametrize("role", ["图片", "合成", "视频上传"])
 async def test_video_task_endpoint_answers_only_for_upstream_video_records(role: str) -> None:
-    """上游任务查询的形状只套得上出片与编辑段；图片、合成（没有水印版）、视频上传与不存在同样是 404。"""
-
     job = (
         make_job(image_request())
         if role == "图片"
@@ -914,12 +848,7 @@ async def test_video_models_endpoint_lists_the_configured_models() -> None:
         assert (await http.get("/generations/video-models")).status_code == 403
 
 
-# --- 图片模型选择 ------------------------------------------------------------
-
-
 async def test_image_model_and_channel_are_settled_at_intake() -> None:
-    """省略两者时按配置的默认那家与它声明的默认渠道填，并写进 provider 列。"""
-
     repo = InMemoryGenerationRepository()
     app = build_test_app(repo, granted=principal("generation:submit"))
     async with client(app) as http:
@@ -958,10 +887,7 @@ async def test_image_keeps_the_model_the_caller_named() -> None:
 async def test_image_requests_beyond_the_model_are_rejected_before_queueing(
     body: dict[str, str], expected: str
 ) -> None:
-    """按所选模型的能力声明拦在受理层，不留下一行已排队、可能已付费的失败。"""
-
     repo = InMemoryGenerationRepository()
-    # 若错误路径仍尝试入队，坏队列会让此用例失败。
     app = build_test_app(repo, granted=principal("generation:submit"), broken_queue=True)
     async with client(app) as http:
         response = await http.post("/generations/image", json={**IMAGE_BODY, **body})
@@ -993,8 +919,6 @@ async def test_image_models_endpoint_needs_read_permission() -> None:
         assert (await http.get("/generations/image-models")).status_code == 403
 
 
-# --- 视频编辑：编辑段与合成 ---------------------------------------------------
-
 BASE_URL = "https://example.com/base.mp4"
 EDITED_URL = "https://example.com/edited.mp4"
 
@@ -1006,8 +930,6 @@ def seed_take(
     conversation: uuid.UUID | None = None,
     shot_index: int | None = None,
 ) -> GenerationJob:
-    """先放一条已完成的出片进去当基底。"""
-
     take = make_job(
         video_request(),
         status=STATUS_COMPLETED,
@@ -1028,8 +950,6 @@ def seed_edit(
     status: GenerationStatus = STATUS_COMPLETED,
     range_start_ms: int = 1000,
 ) -> GenerationJob:
-    """在 ``base`` 上放一条编辑段，与基底同属主、同对话。"""
-
     edit = make_edit(
         base,
         status=status,
@@ -1053,24 +973,17 @@ def seed_clip(
     url: str = CLIP_URL,
     kind: GenerationKind = "video",
 ) -> GenerationJob:
-    """放一条 ``owner`` 的上传进去，产物就是 ``url``：编辑段的参考片段默认就是它。"""
-
     upload = make_upload(kind=kind, owner_user_id=owner, output=GenerationOutput(url=url))
     repo.jobs[upload.id] = upload
     return upload
 
 
 def only_new(repo: InMemoryGenerationRepository, seeded: set[uuid.UUID]) -> GenerationJob:
-    """仓储里种子之外刚受理的那一条。"""
-
     (job,) = [job for job in repo.jobs.values() if job.id not in seeded]
     return job
 
 
 def splice_body(edit: GenerationJob, **fields: object) -> dict[str, object]:
-    """把 ``edit`` 夹回它的基底的合成请求，与编辑器发的同形：基底前段（起点为 0 时没有）、编辑段
-    整条、基底后段取到结尾。"""
-
     assert edit.source_job_id is not None
     start_ms, end_ms = edit_range(edit)
     assert start_ms is not None and end_ms is not None
@@ -1088,8 +1001,6 @@ def splice_body(edit: GenerationJob, **fields: object) -> dict[str, object]:
 
 
 async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and_range() -> None:
-    """编辑段走视频上游：来源与原作都是那条出片，区间原样记；落库的请求记着参考片段地址。"""
-
     repo = InMemoryGenerationRepository()
     owner, conversation, task = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     take = seed_take(repo, owner=owner, conversation=conversation)
@@ -1164,8 +1075,6 @@ async def test_an_edit_on_a_composite_keeps_the_original_take_as_its_root() -> N
 
 
 async def test_edits_and_composites_take_the_shot_index_of_their_original() -> None:
-    """编辑段与合成的镜号不由调用方给，抄基底的；在合成上再剪，仍是原作那一镜。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner, shot_index=4)
@@ -1200,8 +1109,6 @@ async def test_edits_and_composites_take_the_shot_index_of_their_original() -> N
 async def test_a_source_outside_the_conversation_is_one_and_the_same_422(
     flaw: str, path: str
 ) -> None:
-    """不存在、看不见、不在这段对话、继承边界之外，一律同一句，不暴露存在性；不落库。"""
-
     repo = InMemoryGenerationRepository()
     owner, conversation, parent = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     forked_at = datetime.now(UTC)
@@ -1216,7 +1123,6 @@ async def test_a_source_outside_the_conversation_is_one_and_the_same_422(
         )
         source = take
         if flaw == "分叉之后才完成":
-            # 同一个人在祖先对话里的，按属主读得到，但完成在分叉之后，不归这段对话。
             source = replace(source, finished_at=forked_at + timedelta(minutes=1))
             repo.jobs[source.id] = source
         source_id = source.id
@@ -1291,8 +1197,6 @@ async def test_an_edit_needs_a_finished_take_as_its_base(role: str) -> None:
 async def test_an_edit_with_a_bad_range_clip_list_or_model_is_rejected(
     flaw: dict[str, object],
 ) -> None:
-    """请求形状的各项规则在请求类型的单测里；这里只确认它们在端点上是 422、不落库。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1328,8 +1232,6 @@ async def test_image_generation_cannot_use_automatic_duration() -> None:
 
 @pytest.mark.parametrize("flaw", ["库里没有", "不是上传", "别人的上传", "图片上传"])
 async def test_the_clip_must_be_the_callers_own_video_upload(flaw: str) -> None:
-    """片段地址要对上调用者本人的一条视频上传；对不上一律同一句，不入队，也不去探任何时长。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1365,8 +1267,6 @@ async def test_the_clip_must_be_the_callers_own_video_upload(flaw: str) -> None:
 async def test_seedance_edit_checks_actual_clip_duration_independent_of_the_replacement_range(
     clip_ms: int, accepted: bool
 ) -> None:
-    """基底替换区间 1–4 秒；参考按当前选用素材拼接，可以更长或更短，原区间照常记账。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1402,9 +1302,6 @@ async def test_seedance_edit_checks_actual_clip_duration_independent_of_the_repl
 async def test_the_range_stays_within_the_base(
     start_ms: int, end_ms: int, accepted: bool, measured: bool
 ) -> None:
-    """基底 6 秒：区间终点最多多出合成同一个容差，起点要严格在基底里。基底量过时长就照它，
-    没量过才去探。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1440,8 +1337,6 @@ async def test_the_range_stays_within_the_base(
 async def test_a_duration_that_cannot_be_read_is_refused_in_its_own_words(
     unreadable: str,
 ) -> None:
-    """探不出时长也不受理，但措辞说的是读不出来，不是时长对不上。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1466,9 +1361,6 @@ async def test_a_duration_that_cannot_be_read_is_refused_in_its_own_words(
 
 
 async def test_a_composite_splices_an_edit_back_into_its_base() -> None:
-    """基底加一条编辑段的三段：来源记基底，原作与镜号随基底，各段的出处换成地址一起落库；
-    本地执行，没有区间。"""
-
     repo = InMemoryGenerationRepository()
     owner, conversation, task = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     take = seed_take(repo, owner=owner, conversation=conversation, shot_index=3)
@@ -1508,8 +1400,6 @@ async def test_a_composite_splices_an_edit_back_into_its_base() -> None:
 
 
 async def test_a_composite_can_cut_its_base_alone() -> None:
-    """裁剪、删段只用基底：两段都出自基底，地址都是基底的。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1536,8 +1426,6 @@ async def test_a_composite_can_cut_its_base_alone() -> None:
 
 
 async def test_a_composite_on_a_composite_keeps_the_original_take_as_its_root() -> None:
-    """基底是一次合成时，来源是那次合成，原作与镜号仍是最初那条出片的。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner, shot_index=2)
@@ -1599,8 +1487,6 @@ async def test_a_composite_needs_a_finished_master_as_its_base(role: str) -> Non
 
 @pytest.mark.parametrize("role", ["别的基底的编辑段", "还在跑的编辑段", "另一条素材片"])
 async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: str) -> None:
-    """每段要么出自基底本身，要么出自基于这个基底的一条已完成编辑段；别的一律拒，不落库。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1631,8 +1517,6 @@ async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: 
 
 
 async def test_a_segment_from_an_edit_in_another_conversation_is_out_of_scope() -> None:
-    """来源是同一个基底、但不在这段对话里的编辑段，与不存在同一句，不暴露存在性。"""
-
     repo = InMemoryGenerationRepository()
     owner, conversation = uuid.uuid4(), uuid.uuid4()
     take = seed_take(repo, owner=owner, conversation=conversation)
@@ -1671,8 +1555,6 @@ async def test_a_segment_from_an_edit_in_another_conversation_is_out_of_scope() 
 async def test_a_segment_end_stays_within_its_sources_duration(
     duration_ms: int | None, end: float, accepted: bool
 ) -> None:
-    """那条记录量过时长时，段的结尾最多超出一点点容差；没量过就交给执行方。"""
-
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     seeded = seed_take(repo, owner=owner)
@@ -1727,8 +1609,6 @@ async def test_a_composite_with_malformed_segments_is_rejected(
 
 @pytest.mark.parametrize("path", ["/generations/video-edits", "/generations/video-composites"])
 async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> None:
-    """钥匙不报名字就拒；持 users:act_as 的钥匙报了名字，属主换成那个人；浏览器只能报自己。"""
-
     def body_for(source: GenerationJob, user_name: str | None) -> dict[str, object]:
         if path.endswith("video-edits"):
             body: dict[str, object] = {**EDIT_BODY, "source_job_id": str(source.id)}
@@ -1743,7 +1623,6 @@ async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> 
     owner = uuid.uuid4()
     source = seed_take(repo, owner=owner)
     users = InMemoryUserRepository()
-    # 替人办事时片段要是那个人本人的上传，不是钥匙属主的。
     sara = await users.ensure_by_name("Sara.Hong", email=placeholder_email("Sara.Hong"))
     seed_clip(repo, owner=sara)
     seeded = set(repo.jobs)
@@ -1775,13 +1654,7 @@ async def test_submit_without_a_conversation_does_not_call_back() -> None:
     assert app.state.cleared_completions.calls == []
 
 
-# --- 帧图编辑的底图与来源地址 ------------------------------------------------------
-
-
 class BaseWorld:
-    """帧图编辑找底图的场景：我在这段对话（从别人的源对话分叉来）里的图、编辑、上传，别人的上传，
-    源对话里分叉前完成的图，别的对话里的图，以及一条视频。地址都按名字起。"""
-
     def __init__(self) -> None:
         self.me, self.someone = uuid.uuid4(), uuid.uuid4()
         self.conversation, self.source, self.elsewhere = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
@@ -1882,9 +1755,6 @@ def url_of(name: str, *, ext: str = "png") -> str:
 async def test_a_frame_edit_records_exactly_one_source_for_its_base(
     base: str, caller: str, readable: bool, expected: str | None
 ) -> None:
-    """底图对上本对话或它继承来的图、或主体可见的上传就记那一行，对不上就记外部地址，不报错。
-    底图地址不进 request；回来的 sourceUrl 就是请求给的那个地址。"""
-
     world = BaseWorld()
     url = url_of(base, ext="mp4" if base == "take" else "png")
     granted = {
@@ -1974,8 +1844,6 @@ async def test_a_malformed_base_address_is_rejected_before_anything_is_stored(
 
 
 async def test_a_base_address_written_into_metadata_is_the_callers_label_not_a_source() -> None:
-    """服务端不读 metadata：只在里面写 sourceUrl 的请求没有来源，metadata 原样回显。"""
-
     world = BaseWorld()
     seeded = set(world.repo.jobs)
     tag = {"shot": 1, "frame": 2, "sourceUrl": world.mine.output.url}
@@ -1997,8 +1865,6 @@ async def test_a_base_address_written_into_metadata_is_the_callers_label_not_a_s
 
 
 async def test_every_sourced_record_reads_back_with_its_sources_address() -> None:
-    """编辑段与合成回基底地址，切图回宫格地址，帧图编辑回底图地址；列表与单条读一致。"""
-
     owner = uuid.uuid4()
     conversation = uuid.uuid4()
     repo = InMemoryGenerationRepository()
@@ -2043,8 +1909,6 @@ async def test_every_sourced_record_reads_back_with_its_sources_address() -> Non
 async def test_an_inherited_edit_carries_its_bases_address_even_when_the_base_is_unreadable() -> (
     None
 ):
-    """副本继承来的帧图编辑，底图是祖先属主的上传：按 id 单条读那条上传是 404，列表里照样给地址。"""
-
     world = BaseWorld()
     done = world.forked_at - timedelta(minutes=5)
     theirs = replace(world.their_upload, finished_at=done)
@@ -2075,8 +1939,6 @@ async def test_an_inherited_edit_carries_its_bases_address_even_when_the_base_is
 
 @pytest.mark.parametrize("kind", ["image", "video"])
 async def test_settled_records_read_back_without_a_request(kind: GenerationKind) -> None:
-    """上传与切图创建即完成、没有请求：读回 request 为 null，不是空对象。"""
-
     owner = uuid.uuid4()
     grid = make_job(image_request(), status=STATUS_COMPLETED, owner_user_id=owner)
     upload = make_upload(kind=kind, owner_user_id=owner)
@@ -2182,8 +2044,6 @@ async def test_image_clip_rejects_missing_images_invalid_duration_or_range(
 
 
 def seed_portrait_base(repo: InMemoryGenerationRepository, base_role: str) -> GenerationJob:
-    """原作是一条 9:16 的出片；``base_role`` 为 composite 时基底是在它上面合成的一版。"""
-
     owner = uuid.uuid4()
     seeded = seed_take(repo, owner=owner)
     take = replace(
@@ -2225,8 +2085,6 @@ async def post_image_clip(
 async def test_three_or_more_images_are_references_in_the_originals_aspect_ratio(
     base_role: str,
 ) -> None:
-    """3 张及以上图片网关按参考图生成，不给比例就随素材；补上原作出片的画幅，基底是合成也取原作的。"""
-
     repo = InMemoryGenerationRepository()
     base = seed_portrait_base(repo, base_role)
     seeded = set(repo.jobs)
@@ -2257,8 +2115,6 @@ async def test_three_or_more_images_are_references_in_the_originals_aspect_ratio
 async def test_first_frames_and_edits_leave_the_aspect_ratio_to_the_gateway(
     fields: dict[str, object],
 ) -> None:
-    """1–2 张图片网关按首帧、首尾帧生成，画幅跟随首帧；视频编辑跟随参考视频。都不传比例。"""
-
     repo = InMemoryGenerationRepository()
     base = seed_portrait_base(repo, "take")
     seed_clip(repo, owner=base.owner_user_id)

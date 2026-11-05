@@ -17,10 +17,6 @@ import {
 } from '@/shared/workbench'
 import { FakeSocket, SERVER_HELLO } from './ws'
 
-/**
- * 不需要路由、查询与订阅的组件用它代替 RTL 的 render：外加应用层只挂一次的 TooltipProvider，共用提示（含 IconButton 自带的）脱离它会抛错。
- * 传了 wrapper 时套在 TooltipProvider 里面；rerender 沿用同一层包装。
- */
 export const renderWithTooltip = (ui: ReactElement, options: RenderOptions = {}) => {
   const Inner = options.wrapper
   return render(ui, {
@@ -33,15 +29,10 @@ export const renderWithTooltip = (ui: ReactElement, options: RenderOptions = {})
   })
 }
 
-/** 被测组件经它交给路由根组件，rerender 换掉它就能在同一棵 Provider 树里换 props。 */
 const SubjectContext = createContext<ReactNode>(null)
 
 const useSubject = () => use(SubjectContext)
 
-/**
- * 使用独立 QueryClient、内存路由、订阅连接和工作台 Provider；/c/$conversationId 仅供参数匹配，socket 已完成握手。
- * 产物登记表缺省为空，需要按路径命中产物的用例传入自己的。返回的 rerender 只换被测组件，Provider 与路由保持不变。
- */
 export const renderWithProviders = async (
   ui: ReactNode,
   {
@@ -49,7 +40,6 @@ export const renderWithProviders = async (
     initialPath = '/',
     registry = new ArtifactRegistry(),
   }: {
-    /** 换成按订阅语义应答的假服务端（如 FakeTranscriptServer.createSocket）；给了就由它握手，返回的 socket 不再接线。 */
     createSocket?: () => WebSocket
     initialPath?: string
     registry?: ArtifactRegistry
@@ -68,7 +58,6 @@ export const renderWithProviders = async (
     history: createMemoryHistory({ initialEntries: [initialPath] }),
     routeTree: rootRoute.addChildren([conversationRoute]),
   })
-  // 先完成路由加载，使首帧即可渲染被测组件。
   await router.load()
 
   const tree = (subject: ReactNode) => (
@@ -87,7 +76,6 @@ export const renderWithProviders = async (
     </QueryClientProvider>
   )
   const result = render(tree(ui))
-  // Provider 在微任务里建连，等它建好再握手。
   await act(async () => {})
   if (createSocket === undefined) socket.deliver(SERVER_HELLO)
 

@@ -47,7 +47,6 @@ const expectPlaced = (actual: Placed, expected: Placed) => {
 }
 
 describe('画面上的一块', () => {
-  // 不变换时画在 (100, 200)，宽 80、高 40，中心 (140, 220)
   const local = { left: 100, top: 200, width: 80, height: 40 }
 
   it('原大、不转时转轴取画出来那块的中心（取整）；缩放或旋转着时沿用记下的', () => {
@@ -69,12 +68,10 @@ describe('画面上的一块', () => {
   })
 
   it('缩放、旋转绕转轴：中心 = 转轴 + 位移 + R·S·(c0 − 转轴)，宽高乘倍数', () => {
-    // 转轴在左上角，顺时针转 90°、放大 2 倍，再往右挪 10
     expectPlaced(
       placedBox(local, at({ x: 10, scale: 2, rotation: 90, pivot: { x: 100, y: 200 } })),
       { cx: 70, cy: 280, width: 160, height: 80, angle: 90 },
     )
-    // 绕自己的中心转，中心不动
     expectPlaced(placedBox(local, at({ rotation: -45, pivot: { x: 140, y: 220 } })), {
       cx: 140,
       cy: 220,
@@ -125,7 +122,6 @@ describe('伸出画面', () => {
   })
 
   it('转过的块按转过的四角算', () => {
-    // 贴着左边的方块，不转时在画面里，转 45° 后角伸出去
     const square = { cx: 50, cy: 500, width: 100, height: 100, angle: 0 }
     expect(outsideCanvas(square, canvas)).toBe(false)
     expect(outsideCanvas({ ...square, angle: 45 }, canvas)).toBe(true)
@@ -210,7 +206,6 @@ describe('拖角缩放', () => {
 
 describe('拖把手旋转', () => {
   const pivot = { x: 0, y: 0 }
-  // 指针从正下方出发，绕转轴转到 degrees（屏幕坐标 y 向下，顺时针为正）
   const turn = (from: number, degrees: number, shift = false) =>
     rotateGesture({
       pivot,

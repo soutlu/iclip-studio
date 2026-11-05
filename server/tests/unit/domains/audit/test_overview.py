@@ -1,5 +1,3 @@
-"""审计总览的纯规则：时间窗与粒度、上一期、回看下限，以及均线的补窗。不连库。"""
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
@@ -50,8 +48,6 @@ def metrics(
     cycle: SpreadOut | None = None,
     upstream: SpreadOut | None = None,
 ) -> MetricsOut:
-    """一格指标；``users`` 非零即这一格有人发起运行。token 全记在普通输入上。"""
-
     return EMPTY_METRICS.model_copy(
         update={
             "runs": users,
@@ -85,8 +81,6 @@ def day_cells(
     days_back: dict[int, MetricsOut],
     units: dict[int, frozenset[str]] | None = None,
 ) -> list[Cell]:
-    """从回看下限到 ``until`` 每个本地日一格；``days_back`` 以最后一格为 0 往前数。"""
-
     first = window.lookback.astimezone(window.zone).date()
     last = (window.until - timedelta(microseconds=1)).astimezone(window.zone).date()
     count = (last - first).days + 1
@@ -103,8 +97,6 @@ def day_cells(
 
 
 def week_window(zone: ZoneInfo = UTC_ZONE) -> OverviewWindow:
-    """按天的一周：2026-09-01 到 09-08 两个本地零点之间。"""
-
     return plan_window(
         since=midnight(date(2026, 9, 1), zone),
         until=midnight(date(2026, 9, 8), zone),
@@ -133,8 +125,6 @@ def test_bucket_follows_calendar_days_spanned_in_the_timezone(
 
 
 def test_a_short_window_straddling_local_midnight_spans_two_days() -> None:
-    """跨度按本地日历算：新加坡 23:00 到次日 01:00 只有两小时，也是两个日历日。"""
-
     since = datetime(2026, 9, 1, 23, tzinfo=SINGAPORE).astimezone(UTC)
     window = plan_window(
         since=since, until=since + timedelta(hours=2), zone=SINGAPORE, now=FAR_FUTURE
@@ -145,8 +135,6 @@ def test_a_short_window_straddling_local_midnight_spans_two_days() -> None:
 
 
 def test_previous_period_keeps_local_wall_clock_across_dst() -> None:
-    """纽约 11 月 1 日结束夏令时：往前挪 7 个日历日仍落在本地零点，UTC 上差 7 天零 1 小时。"""
-
     since = midnight(date(2026, 11, 2), NEW_YORK)
     until = midnight(date(2026, 11, 9), NEW_YORK)
 
@@ -198,8 +186,6 @@ def test_lookback_is_the_earlier_of_previous_start_and_sixty_days_back() -> None
 
 
 def test_daily_axis_runs_from_the_day_of_since_to_the_day_before_until() -> None:
-    """起点不在零点：首期仍是那天的零点；终点恰在零点，那一天不算一期。"""
-
     since = datetime(2026, 9, 1, 15, tzinfo=SINGAPORE).astimezone(UTC)
     window = plan_window(
         since=since, until=midnight(date(2026, 9, 5), SINGAPORE), zone=SINGAPORE, now=FAR_FUTURE
@@ -224,8 +210,6 @@ def test_weekly_axis_starts_on_the_local_monday() -> None:
 
 
 def test_daily_axis_keeps_local_midnight_across_dst() -> None:
-    """纽约 11 月 1 日结束夏令时：那一天有 25 小时，每期仍从本地零点起。"""
-
     window = plan_window(
         since=midnight(date(2026, 10, 30), NEW_YORK),
         until=midnight(date(2026, 11, 3), NEW_YORK),
@@ -247,8 +231,6 @@ def test_fill_periods_refuses_counts_before_the_first_period() -> None:
 
 
 def test_fewer_than_three_active_days_widen_the_window_day_by_day() -> None:
-    """七天窗里只有一个活跃日：往前一天天补，补到第 9 天前才凑够三个。"""
-
     window = week_window()
     cells = day_cells(
         window,
@@ -268,8 +250,6 @@ def test_fewer_than_three_active_days_widen_the_window_day_by_day() -> None:
 
 
 def test_sample_groups_widen_on_their_own_until_they_have_enough() -> None:
-    """镜不够 30 个就逐格往前补；单任务样本窗里已有 10 个就不动，各报各的起点。"""
-
     window = week_window()
     cells = day_cells(
         window,
@@ -284,8 +264,6 @@ def test_sample_groups_widen_on_their_own_until_they_have_enough() -> None:
     ma7 = trend(cells, window)[-1].ma7
 
     assert ma7 is not None
-    # 窗里五天各两镜（另两天换成了只有耗时样本的格）共 10 镜；往前逐格补，前第 10 天那格的
-    # 20 镜一进来刚好 30 个。
     assert ma7.attempts_per_shot.since == window.since - timedelta(days=4)
     assert ma7.attempts_per_shot.value == pytest.approx((5 * 4 + 20) / 30)
     assert ma7.one_take_rate.value == pytest.approx((5 + 20) / 30)
@@ -297,8 +275,6 @@ def test_sample_groups_widen_on_their_own_until_they_have_enough() -> None:
 
 
 def test_widening_stops_at_lookback_and_reports_it() -> None:
-    """一个活跃日都没有、样本也不够：补到回看下限为止，没有样本的值为空，起点如实报下限。"""
-
     window = week_window()
     cells = day_cells(window, {0: metrics(shots=1, attempts=2)})
 
@@ -314,8 +290,6 @@ def test_widening_stops_at_lookback_and_reports_it() -> None:
 
 
 def test_head_metrics_replace_only_the_first_period() -> None:
-    """``since`` 不在格边界上时，首期换成只算 ``since`` 之后的指标，期首仍是格起点。"""
-
     since = midnight(date(2026, 9, 1), UTC_ZONE) + timedelta(hours=9)
     window = plan_window(
         since=since, until=since + timedelta(days=4), zone=UTC_ZONE, now=FAR_FUTURE

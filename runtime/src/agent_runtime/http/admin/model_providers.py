@@ -1,6 +1,3 @@
-"""模型供应商与默认模型的管理接口，挂在 ``/v1/admin/model-providers`` 与 ``/v1/admin/default-models``。
-约定见合同「模型供应商」一节。"""
-
 from __future__ import annotations
 
 import uuid

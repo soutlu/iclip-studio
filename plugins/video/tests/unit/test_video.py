@@ -1,5 +1,3 @@
-"""通过真实 Agent 与工具体验证视频拆解与素材范围。"""
-
 from __future__ import annotations
 
 import uuid
@@ -51,8 +49,6 @@ def understanding() -> FakeUnderstanding:
 
 @pytest.fixture
 def capability(files: FakeFileStore, understanding: FakeUnderstanding) -> Video[object]:
-    """与组合根同一条路：服务绑进类，再按 spec 造实例。"""
-
     return Video.bind(
         space=FileSpace(store=files, namespace=workspace_namespace), understanding=understanding
     ).from_spec()
@@ -74,8 +70,6 @@ def make_context(deps: object) -> RunContext[object]:
 async def invoke(
     capability: Video[object], tool_name: str, args: str | dict[str, Any]
 ) -> list[ModelMessage]:
-    """模型只调用一次工具，随后结束，保留注册校验器与工具返回的完整路径。"""
-
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="video-call")])
@@ -121,8 +115,6 @@ async def test_parse_stores_document_in_shared_workspace(
 async def test_any_http_address_goes_to_the_model_without_an_address_check(
     capability: Video[object], files: FakeFileStore, understanding: FakeUnderstanding
 ) -> None:
-    """视频地址交给上游模型去取，这里不探；对话里没出现过的地址照样交过去。"""
-
     url = "https://cdn.test/never-mentioned.mp4"
 
     messages = await invoke(capability, "video_parser", {"video_url": url})
@@ -166,8 +158,6 @@ async def test_parse_failure_preserves_existing_document(
 async def test_files_land_in_the_normalized_namespace(
     files: FakeFileStore, understanding: FakeUnderstanding
 ) -> None:
-    """共享 FileSpace 的能力必须使用归一化命名空间，否则工作区工具无法读取产物。"""
-
     toolset = Video[object](
         space=FileSpace(store=files, namespace=lambda _ctx: f"{USER}//thread-1"),
         understanding=understanding,
@@ -193,8 +183,6 @@ async def test_an_unavailable_model_is_final_and_asks_for_an_admin(
 
 
 async def test_missing_run_identity_is_a_bug_not_a_retry(tools: VideoToolset[object]) -> None:
-    """deps 类型错误属于装配故障，模型重试无法修复。"""
-
     with pytest.raises(RuntimeError, match="AgentRunDeps"):
         await tools.video_parser(make_context(object()), VIDEO)
 

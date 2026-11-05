@@ -1,7 +1,3 @@
-"""对话的视频进度：还有视频记录没跑完的对话各到哪一步，范围按记录的属主。
-
-记录经生成仓储直接落库，不起队列；开着媒体生成装应用，没开时接口只会答空。"""
-
 from __future__ import annotations
 
 import uuid
@@ -63,8 +59,6 @@ async def _pending(
 
 
 async def _seed_own(repo: SqlGenerationRepository, owner: uuid.UUID) -> dict[str, str]:
-    """一个人名下各种状态的记录；交回应当列出的那几段对话与它们的阶段。"""
-
     queued, submitting, submitted = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     await _pending(repo, owner, queued)
     await _pending(repo, owner, queued)
@@ -103,9 +97,6 @@ async def _progress(http: httpx.AsyncClient) -> dict[str, str]:
 async def test_video_progress_lists_unfinished_videos_by_conversation_within_what_one_may_see(
     client: httpx.AsyncClient, media_app: FastAPI, engine: AsyncEngine, pg_url: str
 ) -> None:
-    """全在排队是 queued，有一条提交中或已交给上游就是 running；跑完、失败、图片与没挂对话的
-    记录都不列。普通用户只看自己的，治理者与替人办事的钥匙看全平台。"""
-
     repo = SqlGenerationRepository(engine)
     logan = uuid.UUID(await login_as_editor(client, pg_url))
     own = await _seed_own(repo, logan)

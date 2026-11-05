@@ -23,7 +23,6 @@ const validate = (values: Record<Field, string>): Errors => {
   return errors
 }
 
-/** 新建技能：填名称、标识与简短说明，创建出只有草稿的技能，交回它的 id。 */
 export function SkillCreateForm({
   onBack,
   onCreated,
@@ -45,7 +44,6 @@ export function SkillCreateForm({
 
   const change = (field: Field, value: string) => {
     setValues((current) => ({ ...current, [field]: value }))
-    // 改哪一项就收起哪一项的错误，表单级的失败一并收起。
     setErrors(({ [field]: _dropped, form: _form, ...rest }) => rest)
   }
 
@@ -59,7 +57,6 @@ export function SkillCreateForm({
           : next.description !== undefined
             ? descriptionRef
             : null
-    // 提交中字段是禁用的，等这一帧解除禁用后再聚焦。
     requestAnimationFrame(() => target?.current?.focus())
   }
 
@@ -76,7 +73,6 @@ export function SkillCreateForm({
       const created = await create.mutateAsync(trimmed)
       onCreated(created.id)
     } catch (error) {
-      // 标识已被占用是 409，原因写在标识下面；别的（含 422）写在表单底部。
       const message = errorMessageOf(error, '创建失败，请重试创建')
       reject(
         error instanceof ApiError && error.status === 409 ? { name: message } : { form: message },

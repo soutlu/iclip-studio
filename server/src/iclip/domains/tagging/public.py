@@ -1,5 +1,3 @@
-"""tagging 的跨模块契约：其它模块只准从这里 import。"""
-
 from __future__ import annotations
 
 from iclip.domains.tagging.infra_sql import entry_columns_sql, entry_filter_sql, entry_join_sql

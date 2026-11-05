@@ -26,7 +26,7 @@ async def communicate(args: list[str], *, timeout: float) -> tuple[bytes, bytes]
     try:
         process = await asyncio.create_subprocess_exec(
             *args,
-            # 子进程读终端会让后台进程组收到 SIGTTIN，连同后端一起暂停。
+            # 子进程读取终端输入会触发 SIGTTIN 挂起后台进程组，须将 stdin 重定向至 DEVNULL。
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -40,7 +40,6 @@ async def communicate(args: list[str], *, timeout: float) -> tuple[bytes, bytes]
         await process.wait()
         raise MediaError(f"{args[0]} 超过 {timeout:.0f} 秒还没结束") from None
     except asyncio.CancelledError:
-        # 取消 asyncio 任务不会结束它起的子进程。
         process.kill()
         await process.wait()
         raise

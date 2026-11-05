@@ -48,7 +48,6 @@ function PickerControls({
   )
 }
 
-// 搜索、键盘与状态展示由 shared/ui/search-list 的测试覆盖，这里只看选择器自己的语义。
 describe('SearchPicker', () => {
   it('选择选项应用筛选，再次选择当前项清除筛选', async () => {
     const user = userEvent.setup()

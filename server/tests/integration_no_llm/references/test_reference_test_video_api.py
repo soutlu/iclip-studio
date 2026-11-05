@@ -1,8 +1,3 @@
-"""参考视频试生成端点：只限属主本人、``userName`` 同出片、什么时候 409 与 422、落成一条什么样的
-视频生成，以及详情里的 ``testVideo`` 怎么跟着生成记录与当前拆解变。
-
-拆解配好、媒体生成开着；队列连接器是内存替身，不跑 worker，生成记录的状态直接改表模拟。"""
-
 from __future__ import annotations
 
 import json
@@ -72,7 +67,6 @@ FULL = """\
 ## 想达到什么
 记住这双拖鞋。
 """
-"""一份拼得出提示词的拆解：两镜，最后一镜止于 6.2 秒。"""
 
 
 @pytest.fixture
@@ -106,8 +100,6 @@ async def http(media_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> uuid.UUID:
-    """第一次叫到这个名字就注册，之后只是重新登录；交回用户 id。"""
-
     email = f"{username}@example.com"
     created = await client.post(
         "/auth/register", json={"email": email, "password": PASSWORD, "username": username}
@@ -135,8 +127,6 @@ async def trial_jobs(pg_url: str, reference_id: uuid.UUID) -> list[dict[str, Any
 async def settle(
     pg_url: str, reference_id: uuid.UUID, *, output_url: str | None = None, **columns: str
 ) -> None:
-    """把这条参考视频的试生成改成给定的状态与结果。"""
-
     assignments = [f"{name} = :{name}" for name in columns]
     if output_url is not None:
         assignments.append("output = CAST(:output AS jsonb)")
@@ -159,8 +149,6 @@ def path(reference_id: uuid.UUID) -> str:
 
 
 async def issue_key(client: httpx.AsyncClient, permissions: list[str]) -> str:
-    """以这个客户端当前登录的人签一把钥匙，交回明文。"""
-
     created = await client.post(
         "/api-keys", json={"name": "partner-app", "permissions": permissions}
     )
@@ -212,8 +200,6 @@ async def test_the_owner_submits_one_wan3_video_from_the_breakdown(
 async def test_only_the_owner_themself_may_submit(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """别人看得见也不行，能改别人参考视频的治理者也不行。"""
-
     maya = await login_as(http, pg_url, "maya", "editor")
     reference_id = await plant_reference(engine, owner=maya, document=FULL)
 
@@ -231,8 +217,6 @@ async def test_only_the_owner_themself_may_submit(
 async def test_a_key_must_give_a_user_name(
     media_app: FastAPI, http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """同出片：钥匙给的 ``userName`` 照记，不给是 ``422``。"""
-
     logan = await login_as(http, pg_url, "logan", "root")
     reference_id = await plant_reference(engine, owner=logan, document=FULL)
     token = await issue_key(http, SUBMIT_GRANTS)
@@ -317,8 +301,6 @@ async def test_a_breakdown_that_cannot_make_a_prompt_is_422(
 async def test_the_detail_follows_the_generation_record(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """所有读者看到的都是属主名下最新的那一条。"""
-
     maya = await login_as(http, pg_url, "maya", "editor")
     reference_id = await plant_reference(engine, owner=maya, document=FULL)
     before = (await http.get(f"/references/{reference_id}")).json()

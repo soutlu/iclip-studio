@@ -1,7 +1,3 @@
-"""爆款素材库的种数据：对话、出片记录、对话工作区里的新片执行方案，以及直接种进库的条目。
-
-时间戳按「多少分钟以前」给，列表的先后因此可控。"""
-
 from __future__ import annotations
 
 import json
@@ -36,7 +32,6 @@ async def plant_conversation(
             ),
             {"id": conversation_id, "owner": owner, "title": title},
         )
-        # 每段对话在运行时都有会话（建对话时开），工作区文件经运行时读。
         await conn.execute(
             text("INSERT INTO agent_runtime.sessions (id, app_id) VALUES (:id, 'video')"),
             {"id": conversation_id},
@@ -53,8 +48,6 @@ async def plant_job(
     status: str = "completed",
     finished_minutes_ago: float = 0,
 ) -> uuid.UUID:
-    """一条镜 1 的出片；``kind`` / ``status`` 换掉就不是素材片了。"""
-
     job_id = uuid.uuid4()
     request = request_to_payload(VideoGenerationIn(model="m", shot=SHOT, user_name="nora"))
     async with engine.begin() as conn:
@@ -84,8 +77,6 @@ async def plant_job(
 async def plant_treatment(
     engine: AsyncEngine, owner: uuid.UUID, conversation_id: uuid.UUID, content: str = TREATMENT
 ) -> None:
-    """``owner`` 名下这段对话的工作区里放一份新片执行方案。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -100,8 +91,6 @@ async def plant_treatment(
 async def plant_material(
     engine: AsyncEngine, owner: uuid.UUID, *, finished_minutes_ago: float = 0
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """能入选的一条：对话、对话里的出片与新片执行方案都齐；返回（对话 id，出片 id）。"""
-
     conversation_id = await plant_conversation(engine, owner)
     job_id = await plant_job(
         engine, owner, conversation_id, finished_minutes_ago=finished_minutes_ago
@@ -118,8 +107,6 @@ async def plant_hit_case(
     status: str | None = "completed",
     added_minutes_ago: float = 0,
 ) -> uuid.UUID:
-    """不走接口，直接把一条放进爆款素材库，带这些标签。"""
-
     entry_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(
@@ -139,8 +126,6 @@ async def plant_hit_case(
 
 
 async def hit_case_rows(engine: AsyncEngine, job_id: uuid.UUID) -> tuple[int, int]:
-    """这条素材片在库里的（条目数，标签数）。"""
-
     async with engine.connect() as conn:
         entries = (
             await conn.execute(

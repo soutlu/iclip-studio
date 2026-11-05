@@ -33,7 +33,6 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
   })
   const ssoEnabled = ssoProbe.data ?? false
 
-  // 区域收起（hidden）后，其中的焦点会留在原处或被浏览器退回 body；要在重绘前改交飞书登录按钮，所以用 layout effect。
   useLayoutEffect(() => {
     if (!open || !ssoEnabled) return
     const active = document.activeElement
@@ -47,7 +46,6 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
       <DialogSurface
         aria-label="登录 iClip"
         className="max-w-[420px]"
-        // Radix 默认聚焦第一个可聚焦元素，即标题栏的关闭按钮。
         onOpenAutoFocus={(event) => {
           const target = entryFocusTarget(usernameRef, ssoButtonRef)
           if (target === null) return

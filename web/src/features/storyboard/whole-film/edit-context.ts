@@ -10,7 +10,6 @@ import type { Material } from './materials'
 
 const loadReader = () => import('../editing/media-file')
 
-/** 一段视频的画面尺寸；第一段加入成片时用它定画布。 */
 export const videoSizeQuery = (url: string | undefined) =>
   queryOptions({
     queryKey: ['whole-film', 'video-size', url],
@@ -44,7 +43,6 @@ export type KeyframeState =
 
 export type KeyframeStates = ReadonlyMap<string, KeyframeState>
 
-/** 各版素材片的关键帧表（地址 → 表）；时长也取它，记录上没记时长的素材片靠它知道多长。 */
 export const useKeyframeIndexes = (urls: readonly string[]): KeyframeStates =>
   useQueries({
     queries: urls.map((url) => keyframeQuery(url)),
@@ -67,7 +65,6 @@ const sourceDurationMs = (material: Material, keyframes: KeyframeStates): number
   return material.durationMs ?? undefined
 }
 
-/** 每条素材片用哪条字幕记录：识别完成的记录里最晚建的那条，与后端导出取的是同一条 */
 const latestSubtitles = (jobs: readonly GenerationJob[]) => {
   const latest = new Map<string, GenerationJob>()
   for (const job of jobs.filter((item) => item.status === 'completed').toSorted(byCreation))
@@ -80,17 +77,11 @@ type ContextInput = {
   keyframes: KeyframeStates
   subtitles: readonly GenerationJob[]
   music: readonly GenerationJob[]
-  /** 音乐地址 → 量出的时长（毫秒）；记录上没记时长的音乐靠它 */
   musicDurations: ReadonlyMap<string, number>
-  /** 当前用的这首音乐的拍点（音乐文件时间） */
   beats: { jobId: string; beats: MusicBeat[] } | undefined
   catalog: ComponentCatalog
 }
 
-/**
- * 编辑操作要的素材事实。只收时长已知的素材片与音乐，组件收目录里除字幕样式外的全部；画面尺寸在
- * 加入成片时另给（见 `withSourceSize`）。
- */
 export const buildEditContext = ({
   materials,
   keyframes,
@@ -131,7 +122,6 @@ export const buildEditContext = ({
   return { sources, music: songs, components }
 }
 
-/** 加入成片时给这条素材补上画面尺寸（第一段视频定画布） */
 export const withSourceSize = (
   context: EditContext,
   jobId: string,

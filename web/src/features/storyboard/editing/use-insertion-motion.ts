@@ -134,7 +134,6 @@ function createMotionDriver() {
         const value = target[key]
         if (value === undefined) continue
         state.target[key] = value
-        // 跟手坐标立即更新，其它字段仍可继续入场或收束。
         if (options.immediate === true || reduced || state.value[key] === undefined) {
           state.value[key] = value
           state.velocity[key] = 0
@@ -167,7 +166,6 @@ function createMotionDriver() {
   }
 }
 
-/** 插入预演与落位共用连续的临界阻尼运动；目标变化时保留当前位置和速度。 */
 export function useInsertionMotion() {
   const [motion] = useState(createMotionDriver)
   useEffect(() => () => motion.dispose(), [motion])

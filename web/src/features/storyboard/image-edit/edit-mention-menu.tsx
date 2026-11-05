@@ -1,7 +1,3 @@
-/** 修改要求里敲 `@` 的菜单：按「编辑底图 / 标注 / 本组图片」分组列出能引用的东西，`@` 之后的字按名称筛选。
- *
- * 焦点始终留在编辑器里：选项不可聚焦、按下不抢焦点，键盘由编辑器转过来；`active` 是键盘停在的项。 */
-
 import { useId } from 'react'
 import type { ComposerMentionMenu } from '@/shared/ui/composer'
 import { cn } from '@/shared/lib/utils'
@@ -13,7 +9,6 @@ const groupLabelOf = (kind: EditMentionItem['kind'], frames: string) =>
 
 const keepEditorFocus = (event: { preventDefault: () => void }) => event.preventDefault()
 
-/** 相邻同类的项归成一组；`index` 是它在整张列表里的位置，也就是键盘与选中用的序号。 */
 const groupsOf = (items: readonly EditMentionItem[]) => {
   const groups: {
     kind: EditMentionItem['kind']
@@ -29,9 +24,7 @@ const groupsOf = (items: readonly EditMentionItem[]) => {
 
 type EditMentionMenuProps = {
   menu: ComposerMentionMenu<EditMentionItem>
-  /** 本组图片那一组的标题：分镜页叫帧，制作页叫图。 */
   frames: string
-  /** 这一项此刻不能选（图片已到上限）时给出原因。 */
   blockedReason: (item: EditMentionItem) => string | undefined
 }
 

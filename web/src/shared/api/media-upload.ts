@@ -1,5 +1,3 @@
-/** 合同见 contract/conventions.md §10。 */
-
 import type { z } from 'zod'
 import { apiFetch, NETWORK_FAILURE, UserFacingError } from './client'
 import { zUploadConfirmedOut, zUploadTicketOut } from './generated/zod.gen'
@@ -33,7 +31,7 @@ const UPLOAD_RULES: Readonly<Record<UploadKind, UploadRule>> = {
     formatError: '文件格式不受支持，无法上传；请选择 MP4 或 MOV 视频',
     sizeError: '视频超过 512 MiB，无法上传；请选择更小的文件',
   },
-  // 同一种音乐浏览器各报各的（m4a 常报 audio/x-m4a），签名与直传要用后端认的那一种。
+  // 浏览器对 m4a 常上报 audio/x-m4a，需统一映射为后端签名与 OSS 接受的标准 MIME 类型。
   audio: {
     byExtension: { m4a: 'audio/mp4', mp3: 'audio/mpeg', wav: 'audio/wav' },
     byType: {
@@ -122,7 +120,6 @@ const putToStorage = (
         if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total)
       })
     }
-    // loadend 在成功、HTTP 错误、断网与中断后都会到；拿不到响应时 status 为 0。
     request.addEventListener('loadend', () => {
       if (request.status >= 200 && request.status < 300) {
         resolve()
@@ -139,7 +136,6 @@ const putToStorage = (
 
 export type UploadedMedia = { url: string; uploadId: string }
 
-/** `conversationId` 只对音频有意义：确认时把这首音乐挂到这段对话上（合同 §10）。 */
 export const uploadMediaFile = async (
   file: File,
   kind: UploadKind,

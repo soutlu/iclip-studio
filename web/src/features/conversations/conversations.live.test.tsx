@@ -18,13 +18,11 @@ function LiveFrames() {
   return null
 }
 
-/** 全部对话页的那份无限查询；有它挂着，失效才会真的发请求。 */
 function AuditList() {
   useAuditConversations(DEFAULT_AUDIT_FILTERS, true)
   return null
 }
 
-/** 视频进度查询；同上，挂着才会真的重拉。 */
 function VideoProgressList() {
   useVideoProgress()
   return null
@@ -44,7 +42,6 @@ const conversationRow = (overrides: Partial<Conversation> = {}): Conversation =>
   return row
 }
 
-/** 照一次读完的 HTTP 请求把行放进池：开本、合并、关本。 */
 const mergeRead = (queryClient: QueryClient, rows: Conversation[]): Conversation[] => {
   const store = conversationRowsOf(queryClient)
   const book = store.open()
@@ -277,7 +274,6 @@ describe('useLiveConversations', () => {
     server.use(http.get('*/api/conversations/:conversationId', () => new Promise<never>(() => {})))
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, row)
-    // 一次列表请求在途：读库早于下面两帧。
     const rows = conversationRowsOf(queryClient)
     const book = rows.open()
     const stale = { ...row }
@@ -337,7 +333,6 @@ describe('useLiveConversations', () => {
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, row)
 
-    // 没有来源对话的任务帧不带 session_id（合同 §5「全局帧」）。
     socket.deliver({
       ...sessionEnvelope(row.id),
       payload: { id: 'job-1', kind: 'video', operation: 'enhance', status: 'submitted' },

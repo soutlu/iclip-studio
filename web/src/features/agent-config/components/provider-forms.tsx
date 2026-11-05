@@ -30,13 +30,11 @@ const LABEL_CLASS = 'text-label font-medium text-on-surface-variant'
 const INPUT_CLASS = 'h-(--control-height-lg) rounded-sm bg-top-layer px-3'
 const GRID_CLASS = 'grid grid-cols-1 gap-4 @min-[440px]:grid-cols-2'
 
-// 上限与运行时一致（合同 §18、运行时 model_providers/models.py）。
 const PROVIDER_NAME = /^[a-z0-9-]{1,64}$/
 const MAX_LABEL = 50
 const MAX_CREDENTIAL_NAME = 50
 const MAX_MODEL_NAME = 200
 const MAX_FIELD_VALUE = 2000
-// 打码后的机密值以它开头；原样传回会被当成新值（合同 §18），所以拦下。
 const MASK = '••••'
 
 type Errors = Partial<Record<string, string>>
@@ -74,7 +72,6 @@ function Field({
   )
 }
 
-/** 面板里就地展开的一块表单：浅灰底、标题、字段、底部一行（左边试连结果，右边按钮）。回车即保存。 */
 function InlineForm({
   actions,
   children,
@@ -91,7 +88,6 @@ function InlineForm({
   actions: ReactNode
 }) {
   const formRef = useRef<HTMLFormElement>(null)
-  // 展开就把焦点放进第一个能填的字段，浏览器顺带把表单滚进视野。
   useEffect(() => {
     formRef.current
       ?.querySelector<HTMLInputElement>('input:not([readonly]):not(:disabled)')
@@ -123,7 +119,6 @@ function InlineForm({
   )
 }
 
-/** 422 答复里给人看的那句 `detail`；别的失败为 null。 */
 const refusalOf = (error: unknown): string | null => {
   if (!(error instanceof ApiError) || error.status !== 422) return null
   const body: unknown = error.body
@@ -131,7 +126,6 @@ const refusalOf = (error: unknown): string | null => {
   return typeof body.detail === 'string' && body.detail.trim() !== '' ? body.detail.trim() : null
 }
 
-/** 表单里各字段的初值：新建取声明里的默认值，修改取已存的值；机密字段一律空着。 */
 const initialValues = (
   fields: readonly CredentialField[],
   saved: ProviderCredential | null,
@@ -147,9 +141,6 @@ const initialValues = (
     ]),
   )
 
-/**
- * 要提交的字段：新建是填了的全部；修改只放真变了的，机密字段留空就是不改（合同 §18「字段」）。
- */
 const changedFields = (
   fields: readonly CredentialField[],
   values: Values,
@@ -177,7 +168,6 @@ const fieldErrors = (
       errors[field.name] = `请输入新的${field.label}，不要粘贴打码后的值`
       continue
     }
-    // 新建时没填的用声明里的默认值；修改时机密字段留空就是不改。
     const mayBeEmpty =
       !field.required || (editing ? field.type === 'secret' : field.default !== null)
     if (value === '' && !mayBeEmpty) errors[field.name] = `请填写${field.label}`
@@ -185,7 +175,6 @@ const fieldErrors = (
   return errors
 }
 
-/** 声明里的接入字段：机密字段是密码框；新建时名称与机密字段并排，其余字段占满一行。 */
 function CredentialInputs({
   baseId,
   disabled,
@@ -234,10 +223,6 @@ function CredentialInputs({
   })
 }
 
-/**
- * 添加供应商：选接入方式，填显示名与引用名，只建供应商。密钥在建好后的供应商下面添加并试连（合同 §18），
- * 没有密钥的供应商是正常状态。
- */
 export function ProviderCreateForm({
   declarations,
   onCancel,
@@ -361,10 +346,6 @@ export function ProviderCreateForm({
   )
 }
 
-/**
- * 添加或修改一把密钥。保存不试连；「试连」是可选的一步，改了任一接入字段结果就清掉。
- * 修改时机密字段留空就是保持原值，提交里只放真变了的字段。
- */
 export function CredentialForm({
   credential,
   declaration,
@@ -373,7 +354,6 @@ export function CredentialForm({
 }: {
   provider: ModelProvider
   declaration: Declaration | undefined
-  /** null 是添加。 */
   credential: ProviderCredential | null
   onDone: () => void
 }) {
@@ -422,7 +402,6 @@ export function CredentialForm({
           : { kind: 'failed', reason: result.reason ?? '试连没通过' },
       )
     } catch (error) {
-      // 后端拒绝试这一次（422，如还没有启用的模型）也是试连的结果：原因写在结果那一行，不进表单错误条。
       const refused = refusalOf(error)
       if (refused !== null) {
         setTest({ kind: 'failed', reason: refused })
@@ -523,7 +502,6 @@ export function CredentialForm({
 const MODEL_TYPES: readonly ModelType[] = ['llm', 'embedding', 'rerank']
 type ModelApi = Declaration['apis'][number]
 
-/** 上下文长度：正整数，或带 K、M 的长度（按 1024 进位），如 128K；空是不写。不合格为 undefined。 */
 const parseContextSize = (text: string): number | null | undefined => {
   const trimmed = text.trim()
   if (trimmed === '') return null
@@ -534,10 +512,6 @@ const parseContextSize = (text: string): number | null | undefined => {
   return size > 0 ? size : undefined
 }
 
-/**
- * 添加或修改自己加的模型（声明里的模型只能启停，不进这里）。名字与类型是模型的身份，修改时不能改；
- * 只有 llm 有接口、上下文长度与思考档位。接口只能选声明的 `apis`，默认第一个，只有一个时不给选。
- */
 export function ModelForm({
   declaration,
   model,
@@ -546,7 +520,6 @@ export function ModelForm({
 }: {
   provider: ModelProvider
   declaration: Declaration
-  /** null 是添加。 */
   model: ProviderModel | null
   onDone: () => void
 }) {
@@ -569,7 +542,6 @@ export function ModelForm({
   const save = async () => {
     const next: Errors = {}
     if (name.trim() === '') next['name'] = '请填写模型名'
-    // 没动过的长度原样带回，免得按 1024 进位改掉原来的值。
     const contextSize =
       context === initialContext ? (model?.contextSize ?? null) : parseContextSize(context)
     if (contextSize === undefined)

@@ -1,5 +1,3 @@
-/** 叠在舞台底部正中的帧计数胶囊「1 / 2」：数的是当前段引用的帧；点开向上列出本组全部图片（含未被引用的），只用来切画面、开大图。 */
-
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
@@ -8,15 +6,10 @@ import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { FrameTile } from './frame-tile'
 
 export type FrameGallery = {
-  /** 本组全部图片，下标 + 1 即帧号。 */
   urls: readonly string[]
-  /** 舞台上正在看的帧。 */
   current: number | undefined
-  /** 当前帧在当前段里排第几、这段共几帧；这段没有帧时为 undefined。 */
   position: { index: number; count: number } | undefined
-  /** 图片任务有新结果、还没看过的帧。 */
   fresh: ReadonlySet<number>
-  /** 这一帧被哪些段用着，放在格子的说明里。 */
   usageOf: (frame: number) => string
   onPick: (frame: number) => void
   onPreview: (frame: number) => void
@@ -30,7 +23,6 @@ type FrameCounterProps = {
 export function FrameCounter({ aspectRatio, gallery }: FrameCounterProps) {
   const [open, setOpen] = useState(false)
   const { current, fresh, position, urls } = gallery
-  // 舞台上这张自己挂着角标；点只替看不到的那些亮。
   const freshElsewhere = [...fresh].some((frame) => frame !== current)
   const ratio = aspectValueOf(aspectRatio)
   return (

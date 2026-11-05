@@ -1,5 +1,3 @@
-/** 阅读一份工作区文件：头上是返回、目录与文件名、JSON 的全部收起 / 展开、复制原文；正文按渲染器族分派。 */
-
 import { useMemo } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
@@ -29,13 +27,11 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
   const content = file.data?.file.content
   const empty = content !== undefined && content.trim() === ''
   const kind = fileKindOf(path, content)
-  // 解析结果要稳定：收起状态与排好的行都跟着它记忆。
   const json = useMemo(
     () => (kind === 'json' && content !== undefined && !empty ? parseJson(content) : undefined),
     [content, empty, kind],
   )
   const fold = useJsonFold(json?.ok === true ? json.value : undefined)
-  // 这份文件若本身登记成了别的产物（比如分镜），给一个去那边看的入口；匹配只看路径，版本号只是凑齐类型。
   const own = registry.matchFiles([{ path, version: file.data?.file.version ?? 0 }])[0]
   const dir = dirName(path)
   const name = splitFileName(baseName(path))
@@ -61,7 +57,6 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
             name={fileIconOf(path)}
             size="sm"
           />
-          {/* 截中间：目录与文件名开头一起从末尾截，主名末 4 字加扩展名固定不截；全名留在文本里供读屏，悬停看 title。 */}
           <span className="flex min-w-0 whitespace-nowrap" title={path}>
             <span className="min-w-[1ch] truncate">
               {dir === '' ? null : (

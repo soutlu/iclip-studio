@@ -14,7 +14,6 @@ import { Icon } from '@/shared/icons'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { StatusBadge } from '@/shared/ui/status-badge'
 
-/** 需求单、对话与出片的组合放在路由层，各 feature 保持自己的查询与展示边界。 */
 export function TaskRelatedConversations({ taskId }: { taskId: string }) {
   const { data: user } = useUser()
   if (!user) return null
@@ -45,7 +44,6 @@ function RelatedConversations({
   const query = useTaskConversations(taskId, canAudit)
   useLiveTaskConversations(taskId, canAudit)
   const playingVideoRef = useRef<HTMLVideoElement | null>(null)
-  // 成员来自查询，行取池里的当前值。
   const rows = useConversationRows(query.data ?? [])
   return (
     <>
@@ -70,7 +68,6 @@ function RelatedConversations({
           {canAudit ? '暂无关联任务' : '当前账号暂无关联该需求单的任务'}
         </p>
       )}
-      {/* 各对话的内嵌播放器与放大后的灯箱（经 portal 仍在这棵树里）同一时刻只放一个。 */}
       <div
         className="divide-y divide-border/60"
         onPlayCapture={(event) => {

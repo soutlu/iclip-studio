@@ -14,10 +14,6 @@ import { CardBadge, CardGlyph } from './resource-card'
 
 type Mode = 'mcp-library' | 'mcp-select'
 
-/**
- * MCP 服务的列表面板，两种用法：服务库（顶部导航）点一行进它的配置；管理（左侧一节）点一行给当前 agent
- * 挂上或摘下，挂上时放出它的全部工具。两种都能「添加服务」，填完测试通过并保存后出现在列表里。
- */
 export function McpListPanel({
   config,
   mode,
@@ -43,7 +39,6 @@ export function McpListPanel({
   return (
     <PanelShell onClose={onClose} title={library ? 'MCP 服务' : '管理 MCP 服务'}>
       <div className="mb-4 flex items-center gap-2">
-        {/* 搜索框同插件面板：浅灰底、不描边，聚焦也不出框。 */}
         <Input
           aria-label="搜索 MCP 服务"
           leadingIcon="search"

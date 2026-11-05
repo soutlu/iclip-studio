@@ -1,11 +1,3 @@
-"""两条 WebSocket 的连接层：认不出应用在握手前以 1008 关闭；事件流送达这个应用的会话活动、出站积压超过上限以
-1013 关闭；对话内容流订阅补批时实时批挤爆队列同样以 1013 关闭，对方断开后、或读循环还在处理上一帧时自己收尾，
-都放开固定、监听与文件变化登记；补批放不进余量改发 reset、连接不断；订着一段会话的连接收它的文件变化，按订阅
-登记与注销。
-
-只挂两条路由、一个查表的集线器与替身的 transcript 服务和会话服务，不碰库。真实的订阅、档位与写文件见后端
-``tests/integration_no_llm/runtime_service/test_app_streams.py``。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -51,9 +43,7 @@ OTHER_BFF_SESSION = "9d2c1b0a-5e4f-4a3b-8c7d-6e5f4a3b2c1d"
 TOOL_SESSION = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 OWNER = "6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10"
 CHILD = "run-child"
-"""替身 transcript 服务认作属于每段会话的子代理流。"""
 OTHER_CHILD = "run-child-2"
-"""同上，第二个子代理。"""
 AT = "2026-10-30T08:00:00+00:00"
 
 APPS = {BFF_SESSION: "bff", OTHER_BFF_SESSION: "bff", TOOL_SESSION: "tool"}
@@ -88,10 +78,6 @@ def wrote(session_id: str, path: str = "notes.md") -> FsChanged:
 
 
 class FakeTranscripts:
-    """只认主流、``CHILD`` 与 ``OTHER_CHILD``；带水位订阅回 ``catchup`` 里给这个 agent 的那么多条补批，没有
-    补批或不带水位回一帧 reset。记着固定次数与监听；取快照前先给刚登记的监听推 ``live_during_subscribe`` 条
-    实时批，当作先监听、再取快照两步之间落下的批次。"""
-
     def __init__(self) -> None:
         self.pins = 0
         self.listeners: dict[tuple[str, str], Listener] = {}
@@ -132,8 +118,6 @@ class FakeTranscripts:
 
 
 class FakeSessions:
-    """按 ``APPS`` 核归属；``delay`` 秒后才答，当作真去查库。"""
-
     def __init__(self) -> None:
         self.delay = 0.0
 
@@ -146,8 +130,6 @@ class FakeSessions:
 
 
 class RecordingFileChanges(SessionFileChanges):
-    """照常分发，另记下每次登记与注销。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.log: list[tuple[str, str]] = []
@@ -221,8 +203,6 @@ def bearer(key: str) -> dict[str, str]:
 
 
 def in_app_loop(client: TestClient, action: Callable[[], None]) -> None:
-    """在服务的事件循环里同步跑 ``action``：连接的出站队列只在那个循环里收帧。"""
-
     portal = client.portal
     assert portal is not None, "TestClient 要在 with 里用"
     portal.call(action)
@@ -236,8 +216,6 @@ def send_subscribe(
     frame_id: str = "s1",
     since: dict[str, int] | None = None,
 ) -> None:
-    """发一帧 subscribe_v2；带水位时 epoch 一律是替身的 ``e1``。"""
-
     payload: dict[str, Any] = {"session_id": session_id, "transcript": transcript}
     if since is not None:
         payload["transcript_since"] = since
@@ -248,8 +226,6 @@ def send_subscribe(
 def subscribe(
     ws: Any, session_id: str, transcript: dict[str, str], *, frame_id: str = "s1"
 ) -> dict[str, Any]:
-    """发一帧 subscribe_v2，等到它的回执交回（其间的 reset 跳过）。"""
-
     send_subscribe(ws, session_id, transcript, frame_id=frame_id)
     return until_ack(ws, frame_id)
 
@@ -276,16 +252,11 @@ def until_ack(ws: Any, frame_id: str) -> dict[str, Any]:
 
 
 def next_change(ws: Any) -> dict[str, Any]:
-    """下一帧文件变化，其间的 reset / 回执跳过。"""
-
     for _ in range(20):
         frame: dict[str, Any] = ws.receive_json()
         if frame["type"] == "event.fs.changed":
             return frame
     raise AssertionError("没等到文件变化")
-
-
-# --- 握手 -----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("path", ["/v1/events", "/v1/ws"])
@@ -300,9 +271,6 @@ def test_an_unknown_app_is_refused_before_the_handshake(
         pass
 
     assert refused.value.code == 1008
-
-
-# --- 应用事件流 -----------------------------------------------------------------
 
 
 def test_overflowing_the_outbound_queue_closes_the_connection(
@@ -322,12 +290,7 @@ def test_overflowing_the_outbound_queue_closes_the_connection(
     assert closed.value.code == 1013
 
 
-# --- 对话内容流 -----------------------------------------------------------------
-
-
 def eventually(check: Callable[[], bool], seconds: float = 2.0) -> bool:
-    """在服务线程里改的状态，限时等它满足 ``check``。"""
-
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         if check():
@@ -343,7 +306,6 @@ def test_overflowing_during_catchup_closes_and_releases_the_session(
     file_changes: RecordingFileChanges,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 队列很小，取快照前落下的实时批就把它挤爆；一帧订两个 agent，溢出后还有补批要放。
     monkeypatch.setattr(streams, "MAX_OUTBOUND", 2)
     transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
 
@@ -354,8 +316,6 @@ def test_overflowing_during_catchup_closes_and_releases_the_session(
                 ws.receive_json()
         assert closed.value.code == 1013
 
-        # 对方回关闭帧后服务这一侧收到断开；读循环卡在出站队列上时收不到，固定与监听一直占着。
-        # 要在 with 里看：退出时测试客户端会取消连接任务，卡住的也会被 finally 放开。
         ws.close()
         released = eventually(lambda: transcripts.pins == 0 and not transcripts.listeners)
         assert released, (transcripts.pins, list(transcripts.listeners))
@@ -370,8 +330,6 @@ def test_a_close_while_handling_a_frame_ends_the_connection_quietly(
     sessions: FakeSessions,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 第一帧的实时批挤爆队列；第二帧核归属要等一会儿，发送泵趁这时以 1013 关了连接，读循环处理完
-    # 这一帧再去读，应用侧已断开。
     monkeypatch.setattr(streams, "MAX_OUTBOUND", 2)
     transcripts.live_during_subscribe = streams.MAX_OUTBOUND + 1
     sessions.delay = 0.05
@@ -384,7 +342,6 @@ def test_a_close_while_handling_a_frame_ends_the_connection_quietly(
                 ws.receive_json()
         assert closed.value.code == 1013
 
-        # 不等对方回关闭帧，连接自己收尾；退出 with 时连接任务不带着异常结束。
         released = eventually(lambda: transcripts.pins == 0 and not transcripts.listeners)
         assert released, (transcripts.pins, list(transcripts.listeners))
 
@@ -393,14 +350,12 @@ def test_a_close_while_handling_a_frame_ends_the_connection_quietly(
 def test_catchup_that_does_not_fit_falls_back_to_a_reset(
     client: TestClient, transcripts: FakeTranscripts, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 补批刚好占满余量，回执就放不下了：改发 reset，连接不断，对方覆盖水位后重取历史。
     monkeypatch.setattr(streams, "MAX_OUTBOUND", 4)
     transcripts.catchup = {MAIN_AGENT_ID: streams.MAX_OUTBOUND}
 
     with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
         send_subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta"}, since={MAIN_AGENT_ID: 7})
         reset, ack = ws.receive_json(), ws.receive_json()
-        # 再来回一趟，证明连接还开着。
         unsubscribe(ws, BFF_SESSION)
 
     assert (reset["type"], reset["payload"]["agent_id"]) == ("transcript.reset", MAIN_AGENT_ID)
@@ -411,8 +366,6 @@ def test_catchup_that_does_not_fit_falls_back_to_a_reset(
 def test_catchup_leaves_room_for_the_agents_after_it_in_the_same_frame(
     client: TestClient, transcripts: FakeTranscripts, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 队列 8 格。main 补 4 帧后剩 4；CHILD 的 3 帧放进去只剩 1 格，不够 OTHER_CHILD 一帧加回执一格，
-    # 改发 reset，剩 3；OTHER_CHILD 的 2 帧正好留出回执那一格。
     monkeypatch.setattr(streams, "MAX_OUTBOUND", 8)
     transcripts.catchup = {MAIN_AGENT_ID: 4, CHILD: 3, OTHER_CHILD: 2}
     agents = (MAIN_AGENT_ID, CHILD, OTHER_CHILD)
@@ -431,7 +384,6 @@ def test_catchup_leaves_room_for_the_agents_after_it_in_the_same_frame(
             if frame["type"] == "ack":
                 break
             received.append((frame["payload"]["agent_id"], frame["type"]))
-        # 再来回一趟，证明连接还开着。
         unsubscribe(ws, BFF_SESSION)
 
     assert received == [
@@ -443,27 +395,21 @@ def test_catchup_leaves_room_for_the_agents_after_it_in_the_same_frame(
     assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", "s1", [BFF_SESSION])
 
 
-# --- 对话内容流上的文件变化 -------------------------------------------------------
-
-
 def test_several_agents_register_once_and_the_last_one_out_unregisters(
     client: TestClient, file_changes: RecordingFileChanges
 ) -> None:
     with client.websocket_connect("/v1/ws", headers=bearer(BFF_KEY)) as ws:
         subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "delta", CHILD: "turn"})
-        # 同一帧再发是更新档位，不再登记。
         subscribe(ws, BFF_SESSION, {MAIN_AGENT_ID: "turn", CHILD: "off"}, frame_id="s2")
         unsubscribe(ws, BFF_SESSION, (CHILD,))
         assert file_changes.log == [("attach", BFF_SESSION)]
 
-        # 还有主流订着，照样收得到。
         in_app_loop(client, lambda: file_changes.publish(wrote(BFF_SESSION, "still.md")))
         still = next_change(ws)
 
         unsubscribe(ws, BFF_SESSION, (MAIN_AGENT_ID,), frame_id="u2")
         assert file_changes.log == [("attach", BFF_SESSION), ("detach", BFF_SESSION)]
 
-        # 撤空了就收不到：另订一段会话当哨兵，先到的必须是哨兵那一帧。
         subscribe(ws, OTHER_BFF_SESSION, {MAIN_AGENT_ID: "off"}, frame_id="s3")
 
         def publish() -> None:

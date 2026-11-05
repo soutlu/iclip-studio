@@ -12,7 +12,6 @@ import {
   wholeFilmQueryKeys,
 } from './whole-film.api'
 
-/** 进度与重试范围直接取服务端记录；这里只持有本次请求是否正在提交。 */
 export function useSubtitleRecognition({
   conversationId,
   sourceJobIds,
@@ -85,7 +84,6 @@ export function useSubtitleRecognition({
     setSubmitting(true)
     const queryKey = wholeFilmQueryKeys.subtitles(conversationId)
     try {
-      // 不让提交前的读取响应盖掉刚受理的任务。
       await queryClient.cancelQueries({ queryKey })
       const targets = incomplete.length > 0 ? incomplete.map(({ id }) => id) : ids
       for (const sourceJobId of targets) {

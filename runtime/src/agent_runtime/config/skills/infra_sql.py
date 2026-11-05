@@ -1,8 +1,3 @@
-"""技能库的四张表与它们的 Postgres 仓储。
-
-时间统一用数据库时钟；外部输入一律走绑定参数。状态取值、文件规则与版本号递增只在 Python 里，表上不加
-CHECK；``latest_version_id`` 不加外键，只由写版本的事务在同一技能的行锁下改。"""
-
 from __future__ import annotations
 
 import uuid
@@ -118,7 +113,6 @@ _DRAFT: Final = text("""
 SELECT path, size, hash, updated_at FROM agent_runtime.skill_draft_files
 WHERE skill_id = :skill_id ORDER BY path COLLATE "C"
 """)
-"""按码位排，与清单（Python 的 ``sorted``）同一个先后；库的默认排序规则会把大小写混着排。"""
 
 _DRAFT_CONTENTS: Final = text("""
 SELECT path, content FROM agent_runtime.skill_draft_files WHERE skill_id = :skill_id""")
@@ -228,15 +222,11 @@ def _draft_rows(
 
 
 def _violated_constraint(error: IntegrityError) -> str:
-    """违反的约束名；asyncpg 把它挂在被包起来的原异常上。"""
-
     cause = getattr(error.orig, "__cause__", None)
     return getattr(cause, "constraint_name", None) or ""
 
 
 class _SqlSkillWriter:
-    """``SkillWriter`` 的 Postgres 实现，用一条已锁住技能行的事务连接。"""
-
     def __init__(self, conn: AsyncConnection, skill: Skill) -> None:
         self._conn = conn
         self._skill = skill
@@ -363,8 +353,6 @@ class _SqlSkillWriter:
 
 
 class SqlSkillStore:
-    """``SkillStore`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

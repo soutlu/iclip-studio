@@ -1,5 +1,3 @@
-/** 按人筛选：工具条右侧的单选菜单，「全部人」加这段时间里出过片或跑过的每个人。 */
-
 import { Icon } from '@/shared/icons'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import type { Person } from '../audit.api'
@@ -7,13 +5,11 @@ import { PickButton } from './overview-toolbar'
 
 type PersonFilterProps = {
   people: readonly Person[]
-  /** 选中的用户名；null 是全部人。 */
   value: string | null
   onChange: (userName: string | null) => void
   nameOf: (userName: string) => string | undefined
 }
 
-/** 菜单项的值：全部人用空串，Radix 单选组不收 null。 */
 const ALL = ''
 
 export function PersonFilter({ people, value, onChange, nameOf }: PersonFilterProps) {

@@ -1,5 +1,3 @@
-"""事件流消费者的日志：启动期运行时还没起来时从轻，超过宽限或连上过再断时记 warning。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -15,8 +13,6 @@ from iclip.domains.agents.transcript_api import LiveConnections
 
 
 class _Dropping:
-    """连上后第一次取帧就断开的事件流。"""
-
     def __aiter__(self) -> Self:
         return self
 
@@ -25,12 +21,9 @@ class _Dropping:
 
 
 Step = RuntimeUnavailable | _Dropping
-"""一次连接的结局：连不上抛出的异常，或连上后的事件流。"""
 
 
 class _ScriptedClient(RuntimeClient):
-    """按脚本一次次连事件流；脚本用完后的那次连接停住，并置位 ``exhausted``。"""
-
     def __init__(self, steps: list[Step]) -> None:
         super().__init__("http://runtime.test", "test-key")
         self._steps: Iterator[Step] = iter(steps)
@@ -53,8 +46,6 @@ async def _logs_of(
     retry_seconds: float = 0.01,
     startup_grace_seconds: float = 60.0,
 ) -> list[tuple[str, str]]:
-    """跑完脚本，交回消费者记下的 (级别, 事件)；warning 必须带 reason 与 retry_seconds。"""
-
     async with _ScriptedClient(steps) as client:
         events = RuntimeEvents(
             client,
@@ -91,7 +82,6 @@ async def test_startup_failures_log_one_info_until_connected() -> None:
 
 
 async def test_failures_past_the_startup_grace_are_warnings() -> None:
-    # 第一次失败在宽限内；之后每次之前至少等过一次重连，已过宽限。
     logs = await _logs_of(
         [_refused(), _refused(), _refused()], retry_seconds=0.1, startup_grace_seconds=0.05
     )

@@ -34,7 +34,6 @@ import { UsageAvatars } from './usage-avatars'
 
 const IDLE: Test = { kind: 'idle' }
 
-/** 一节的标题行：标题左，图标动作右。 */
 function SectionHeading({ action, id, title }: { id: string; title: string; action?: ReactNode }) {
   return (
     <div className="mb-1 flex min-h-8 items-center justify-between gap-3">
@@ -46,7 +45,6 @@ function SectionHeading({ action, id, title }: { id: string; title: string; acti
   )
 }
 
-/** 行里只表达状态的小图标（内置模型的锁）：名字在可访问名与悬停提示里。 */
 function StateGlyph({ label, name }: { label: string; name: 'locked' | 'link' }) {
   return (
     <TooltipRoot>
@@ -60,7 +58,6 @@ function StateGlyph({ label, name }: { label: string; name: 'locked' | 'link' })
   )
 }
 
-/** 被后端拦下的原因（含被引用时的 409），就地写在出问题的那一行下面，下一次操作前收起。 */
 function RowAlert({ message }: { message: string }) {
   return (
     <p className="px-2.5 pb-2 text-body-sm text-error" role="alert">
@@ -69,10 +66,6 @@ function RowAlert({ message }: { message: string }) {
   )
 }
 
-/**
- * 列表里的一行：名字、小件、右侧的动作与开关；动作在悬停或聚焦时出现，触屏上常显。`status` 是这一行
- * 测试的结果，写在名字那一行下面。
- */
 function Row({
   children,
   error,
@@ -101,7 +94,6 @@ function RowActions({ children }: { children: ReactNode }) {
   )
 }
 
-/** 同一个 agent 只算一次，按标识排（合同 §19「被引用时拦住」）。 */
 const uniqueUsers = (lists: readonly (readonly AgentUsage[])[]): AgentUsage[] => {
   const byId = new Map<string, AgentUsage>()
   for (const user of lists.flat()) byId.set(user.agentId, user)
@@ -123,10 +115,6 @@ type Editor =
   | { kind: 'credential'; credential: ProviderCredential | null }
   | null
 
-/**
- * 选中的供应商：显示名就地改，默认密钥的接口地址，在用的 agent、删除与启停；下面是它的模型与密钥，
- * 添加与修改在各自一节里就地展开。在用、是默认的项不能停用或删除，原因在悬停提示里；后端仍拦下时原因写在那一行下面。
- */
 function ProviderDetail({
   addKey,
   declaration,
@@ -134,7 +122,6 @@ function ProviderDetail({
   onDeleted,
   provider,
 }: {
-  /** 刚建好的供应商：一打开就展开「添加密钥」。 */
   addKey: boolean
   provider: ModelProvider
   declaration: Declaration | undefined
@@ -180,7 +167,6 @@ function ProviderDetail({
         ? '默认模型在这个供应商里，请先在「默认模型」里换掉'
         : undefined
 
-  /** 用默认密钥测一个模型；还没有密钥等被拦下的原因也写成没通过的结果。 */
   const runModelTest = async (key: string, model: ProviderModel) => {
     setTests((current) => ({ ...current, [key]: { kind: 'testing' } }))
     let result: Test
@@ -497,10 +483,6 @@ function ProviderDetail({
   )
 }
 
-/**
- * 「模型与供应商」：供应商卡片（模型数、密钥数），选中的供应商的详情、模型与密钥，最后是各类型的默认模型。
- * 只在持 `model:manage` 时打开。任何修改后 agent 的「模型设置」随之重读。
- */
 export function ProviderPanel({ onClose }: { onClose: () => void }) {
   const titleId = useId()
   const providers = useModelProviders()
@@ -508,7 +490,6 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
   const defaults = useDefaultModels()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  // 刚建好的供应商：选中它时直接展开「添加密钥」。
   const [addKeyFor, setAddKeyFor] = useState<string | null>(null)
 
   const list = providers.data ?? []

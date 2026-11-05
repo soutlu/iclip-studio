@@ -1,5 +1,3 @@
-"""使用合成灰度图验证网格检测、等分回退、画幅收缩和坐标还原。"""
-
 from __future__ import annotations
 
 from collections.abc import Collection
@@ -24,8 +22,6 @@ def make_image(
     white_cols: Collection[int] = (),
     white_rows: Collection[int] = (),
 ) -> GrayImage:
-    """构造灰度图：指定整行、整列为白色分隔带，其余像素为中灰。"""
-
     cols, rows = set(white_cols), set(white_rows)
     pixels = bytearray(CELL for _ in range(width * height))
     for y in range(height):
@@ -57,8 +53,6 @@ def test_falls_back_to_equal_split_and_says_so() -> None:
 
 
 def test_one_axis_detected_is_not_detected() -> None:
-    """任一轴检测失败都应标记等分回退，避免宣称所有坐标均来自检测。"""
-
     image = make_image(100, 100, white_cols={*range(44, 48)})
     layout = grid_cell_boxes(image, rows=2, cols=2)
     assert (layout.detected_x, layout.detected_y) == (True, False)
@@ -66,9 +60,6 @@ def test_one_axis_detected_is_not_detected() -> None:
 
 
 def test_gutter_outside_search_band_is_ignored() -> None:
-    """离等分线太远的白带不是网格线（可能是画面本身的白色区域）。"""
-
-    # 切出的两段都不短于最短区间，只有搜索带能拒掉它。
     image = make_image(100, 100, white_cols={*range(28, 32)})
     layout = grid_cell_boxes(image, rows=1, cols=2)
     assert not layout.detected_x

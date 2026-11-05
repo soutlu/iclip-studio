@@ -1,6 +1,3 @@
-"""运行时服务的插件入口：配置校验、各配置段登记哪些插件、启动时核对后端开了配了的插件服务与出图要的模型，
-内部令牌只发给后端。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,9 +39,6 @@ SERVICES_PATH = "/internal/runtime/plugins/services"
 
 @dataclass
 class Server:
-    """后端与外部服务的替身：记下每个请求；插件服务默认都开，``models`` 是接入的图片模型名，``shot_video``
-    或 ``video_breakdown`` 为假就答没开；OSS 图片信息答一张图。"""
-
     models: tuple[str, ...] = (IMAGE_MODEL,)
     shot_video: bool = True
     video_breakdown: bool = True
@@ -117,12 +111,9 @@ async def test_each_optional_section_registers_its_plugin(
 
 
 EVERYTHING = {"internal_api": INTERNAL_API, "video_breakdown": {}, "shot_video": {}}
-"""每个可选段都写上：登记表里是全部插件。"""
 
 
 async def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
-    """生图现阶段由人自己做：出图要的模型接上了也不登记生图工具，检查照常装配。"""
-
     registry = await registry_for(EVERYTHING)
 
     capability = registry["iclip_studio"].from_spec()
@@ -172,8 +163,6 @@ async def test_a_plugin_that_needs_the_backend_asks_it_for_its_services_with_the
 async def test_a_plugin_whose_backend_service_is_off_fails_at_startup_naming_the_fix(
     section: str, backend: Server, fix: str
 ) -> None:
-    """后端没开对应服务时运行时起不来：带着注定 404 的工具跑，每次调用都让整次运行失败。"""
-
     with pytest.raises(RuntimeError, match=f"配了 {section}") as raised:
         await registry_for({"internal_api": INTERNAL_API, section: {}}, backend)
 
@@ -227,8 +216,6 @@ async def test_shot_video_without_its_image_model_fails_to_bind() -> None:
 
 
 async def test_the_media_probe_goes_through_the_plain_client_and_the_rebased_address() -> None:
-    """查 OSS 不经内部接口的客户端：请求上没有内部令牌；本桶地址先换成内网地址。"""
-
     server = Server()
     internal = "https://bucket.oss-ap-southeast-1-internal.aliyuncs.com"
     config = {
@@ -280,8 +267,6 @@ async def test_a_malformed_config_fails_on_entry(config: dict[str, Any], where: 
     ids=["empty", "old-fields"],
 )
 async def test_a_video_section_is_rejected_with_how_to_fix_it(section: dict[str, Any]) -> None:
-    """视频理解不再有配置段：写了就起不来，报错说清删掉它。"""
-
     with pytest.raises(ValidationError, match=r"video 段已去掉.*从 plugins\.config 里删掉它"):
         async with open_video_plugins({"video": section}):
             pytest.fail("配置不对时不该交出绑定函数")
@@ -296,9 +281,6 @@ async def test_a_missing_secret_names_its_variable(monkeypatch: pytest.MonkeyPat
 
 
 async def test_video_parses_through_the_hosts_connection_at_call_time() -> None:
-    """``plugins.config`` 是空的也登记 ``video``：登记不查连接，工具调用时才经宿主查写定的模型，用查到的地址
-    与密钥调。"""
-
     seen: list[httpx.Request] = []
 
     def ark(request: httpx.Request) -> httpx.Response:
@@ -326,8 +308,6 @@ async def test_video_parses_through_the_hosts_connection_at_call_time() -> None:
 
 
 async def test_a_secret_pasted_into_the_config_is_not_echoed() -> None:
-    """配置里只收环境变量名；误把令牌本身写进去时，校验报错指出字段，不带它的值。"""
-
     with pytest.raises(ValidationError) as raised:
         async with open_video_plugins({"internal_api": {**INTERNAL_API, "token": TOKEN}}):
             pytest.fail("配置不对时不该交出绑定函数")

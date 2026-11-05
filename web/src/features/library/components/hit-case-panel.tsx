@@ -1,6 +1,3 @@
-/** 查看器的「爆款素材」页签：针对当前选中的那一版。没入选时先选人工维度的标签再加入，进不了时按钮置灰并提示原因；
- * 入选后看打标状态、改全部维度的标签、重新打标、移出。确认沿用底栏原地确认的写法。 */
-
 import { useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
@@ -64,7 +61,6 @@ export function HitCasePanel({ jobId }: { jobId: string }) {
   return <AddPanel index={tags.data.index} ineligible={ineligibleReason} jobId={jobId} key="add" />
 }
 
-/** 没入选：能入选时先在人工维度上选标签，与「加入爆款素材库」一起提交；进不了时只留置灰的按钮。 */
 function AddPanel({
   jobId,
   index,
@@ -77,7 +73,6 @@ function AddPanel({
   const [draft, setDraft] = useState<string[]>([])
   const add = useAddHitCase(jobId)
   const state = useHitCaseState(jobId)
-  // 入选前只让人选人工维度，AI 维度在入选后由打标填上。
   const manual = { ...index, dimensions: index.dimensions.filter((one) => !isAiDimension(one)) }
 
   const submit = () =>
@@ -119,14 +114,12 @@ function AddPanel({
   )
 }
 
-/** 置灰的「加入爆款素材库」：悬停或点按时说明原因，写法同「做同款」。 */
 function IneligibleButton({ reason }: { reason: HitCaseIneligible }) {
   const [hint, setHint] = useState(false)
   return (
     <TooltipRoot onOpenChange={setHint} open={hint}>
       <TooltipTrigger
         asChild
-        // 触屏没有悬停，点按也要亮出提示；拦下默认处理，Radix 才不会在点击时把它关掉。
         onClick={(event) => {
           event.preventDefault()
           setHint(true)
@@ -148,7 +141,6 @@ function IneligibleButton({ reason }: { reason: HitCaseIneligible }) {
 
 type Mode = 'view' | 'confirm-retag' | 'confirm-remove'
 
-/** 已入选：打标状态、全部维度的标签、重新打标与移出。 */
 function AddedPanel({
   jobId,
   entry,
@@ -165,7 +157,6 @@ function AddedPanel({
   const retag = useRetagHitCase(jobId)
   const remove = useRemoveHitCase(jobId)
   const tagging = isTaggingBusy(entry.tagStatus)
-  // 没打过标（打标没配置）时不给重新打标；打过的、不在打的才能重打，付费调用另要提交权限。
   const canRetag =
     hasPermission(user, PERMISSION.generationSubmit) &&
     (entry.tagStatus === 'completed' || entry.tagStatus === 'failed')
@@ -286,7 +277,6 @@ function AddedPanel({
   )
 }
 
-/** 标签下面的一行后台状态：正在打标；没打成按原因说一句，能重新打标的人原地点「重新打标」。 */
 function TagStatusLine({
   entry,
   canRetag,

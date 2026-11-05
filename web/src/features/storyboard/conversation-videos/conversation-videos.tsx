@@ -15,7 +15,6 @@ type ConversationVideosProps = {
   conversationId: string
 }
 
-/** 需求单关联对话的视频浏览区；对话信息与访问权限由上层负责。 */
 export function ConversationVideos({ conversationId }: ConversationVideosProps) {
   const query = useConversationVideos(conversationId)
   useLiveGenerations(conversationId)
@@ -72,7 +71,6 @@ export function ConversationVideos({ conversationId }: ConversationVideosProps) 
 
 type VideoGroupProps = {
   group: ConversationVideoGroup
-  /** 放大进灯箱前暂停本对话里所有的内嵌播放器。 */
   onBeforeExpand: () => void
 }
 
@@ -126,7 +124,6 @@ function VideoGroup({ group, onBeforeExpand }: VideoGroupProps) {
       <GroupPlayer
         key={selected.id}
         label={group.label}
-        // 放大接着当前进度在灯箱里播，关掉后把灯箱播到的位置写回来。
         onExpand={(at) => {
           onBeforeExpand()
           setExpanded({ kind: 'video', name: group.label, startAt: at, url: selected.outputUrl })

@@ -1,5 +1,3 @@
-"""模型供应商的集成夹具：试连换成只认几把 API Key 的替身，不发真实请求。"""
-
 from __future__ import annotations
 
 import pytest

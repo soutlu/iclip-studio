@@ -1,10 +1,7 @@
-/** 驱动 cue.svg 的开箱动画：按节点上的首尾姿态插值，不依赖渲染运行时。素材源文件与重建脚本在仓库根 `design/cue-mascot`。 */
-
 const OPEN_MS = 300
 const CLOSE_MS = 217
 const POSE_LENGTH = 6
 
-/** x, y, 弧度, 缩放 x, 缩放 y, 不透明度。 */
 type Pose = readonly number[]
 
 type MascotNode = {
@@ -20,7 +17,6 @@ const parsePose = (raw: string | null): Pose | null => {
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** 素材烤进去的 cubic-bezier(0.3, 0.15, 0.7, 0.85)，二分求 x 对应的 y。 */
 const ease = (x: number): number => {
   let low = 0
   let high = 1
@@ -39,7 +35,6 @@ export class CueMascot {
   private progress = 0
   private frame = 0
 
-  /** 读取 `data-cue-node` 节点的 `data-from` / `data-to`，姿态缺失或格式不对时抛错。 */
   constructor(svg: SVGSVGElement) {
     this.nodes = [...svg.querySelectorAll('[data-cue-node]')].map((element) => {
       const from = parsePose(element.getAttribute('data-from'))
@@ -51,7 +46,6 @@ export class CueMascot {
     this.render(0)
   }
 
-  /** 展开 300 ms、收起 217 ms，从当前姿态续接；减少动态效果或 animate 为 false 时直接切换。 */
   setExpanded(expanded: boolean, { animate = true } = {}): void {
     cancelAnimationFrame(this.frame)
     const target = expanded ? 1 : 0
@@ -70,7 +64,6 @@ export class CueMascot {
     this.frame = requestAnimationFrame(tick)
   }
 
-  /** 组件卸载时取消未完成的帧。 */
   destroy(): void {
     cancelAnimationFrame(this.frame)
     this.frame = 0

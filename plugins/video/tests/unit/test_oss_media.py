@@ -1,5 +1,3 @@
-"""OSS 上的图片信息查询与下载前的地址换算。"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -28,7 +26,6 @@ def oss(
     )
 
 
-# OSS image/info 的字段值均为字符串。
 INFO_BODY = {
     "FileSize": {"value": "21839"},
     "Format": {"value": "jpg"},
@@ -52,8 +49,6 @@ async def test_the_probe_reads_the_oss_image_info() -> None:
 
 
 async def test_the_probe_asks_the_rewritten_address_for_image_info() -> None:
-    """本桶地址先换成内网地址，再挂查询参数。"""
-
     internal = "https://bucket.oss-ap-southeast-1-internal.aliyuncs.com"
     asked: list[str] = []
 
@@ -111,8 +106,6 @@ async def test_a_non_json_body_is_a_probe_failure() -> None:
 async def test_an_address_that_cannot_carry_the_info_parameter_is_refused_unasked(
     url: str,
 ) -> None:
-    """非 OSS 域名与已带 query 的地址走 agent_runtime.harness.media 的同一道守卫，不发请求、不回显地址。"""
-
     asked: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -143,8 +136,6 @@ async def test_a_network_failure_is_a_probe_failure() -> None:
     ],
 )
 def test_only_addresses_under_the_public_base_are_rebased(url: str, fetched: str) -> None:
-    """前缀按「根地址 + /」比，相似的域名与根地址本身都不换；key 与查询串原样。"""
-
     fetch_url = rebased_fetch_url("https://cdn.test/", "https://bucket.internal.test")
 
     assert fetch_url(url) == fetched

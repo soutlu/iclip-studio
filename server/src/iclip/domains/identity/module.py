@@ -1,5 +1,3 @@
-"""identity 装配单元：组合根只调用 ``build_identity_module``。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,12 +30,6 @@ from iclip.domains.identity.sso import SsoVerifier
 
 @dataclass(frozen=True, slots=True)
 class SsoRuntime:
-    """identity 自持的 SSO 运行设置；``pms_base_url`` 为空即不同步 PMS 资料。
-
-    ``oauth_name`` 是 OAuth 账号表里记的提供方名，登录回调按它查找与关联账号。
-    ``root_email`` 非空时，该邮箱 SSO 登录即自动持有 root 角色（root 引导）。
-    """
-
     base_url: str
     app_name: str
     redirect_url: str
@@ -54,7 +46,6 @@ class IdentityModule:
     users: SqlUserRepository
     api_keys: SqlApiKeyRepository
     act_as: ActAs
-    """写入口拿到请求体后调它一次，钥匙替人办事就在这一步换属主。"""
 
 
 def build_identity_module(
@@ -65,11 +56,6 @@ def build_identity_module(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
 ) -> IdentityModule:
-    """装配 identity；``sso is None`` 时不挂 /auth/sso/*（前端以 404 探测）。
-
-    测试可注入 ``sso_verifier`` / ``pms_client`` 替身。
-    """
-
     users = SqlUserRepository(sessions)
     api_keys = SqlApiKeyRepository(sessions)
     service = IdentityService(users, api_keys)

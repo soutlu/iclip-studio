@@ -21,13 +21,11 @@ test.afterEach(async ({ page }) => {
   expect(await page.pageErrors(), '页面不应出现未捕获异常').toEqual([])
 })
 
-/** 1×1 的上传测试 PNG，仅验证加载与布局。 */
 const PRODUCT_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 )
 
-/** 只通过浏览器 MSW 的已有接口准备数据，不绕过任务认领或图片上传合同。 */
 const openGallery = async (page: Page) => {
   await page.goto('/')
   await login(page)
@@ -57,7 +55,6 @@ const openGallery = async (page: Page) => {
         return (await post(`/api/uploads/${signed.uploadId}/confirm`)) as { url: string }
       }
       const image = await uploadImage()
-      // 非方形样本能发现缩略图意外被固定宽高拉伸或裁切。
       const canvas = document.createElement('canvas')
       canvas.width = 80
       canvas.height = 40
@@ -104,7 +101,6 @@ const openGallery = async (page: Page) => {
         await post(`/api/tasks/${created.task.id}/publish`)
         if (claimed) await post(`/api/tasks/${created.task.id}/confirm`)
       }
-      // 列表按创建时间倒序；让长标题、多款、单款出现在首排。
       for (let index = mine.length - 1; index >= 0; index -= 1) {
         await create(mine[index], index, true)
       }
@@ -122,7 +118,6 @@ const openGallery = async (page: Page) => {
   await expect(page.getByRole('region', { name: '我的需求单' })).toBeVisible()
 }
 
-// 只断言本用例准备的需求单，不依赖共享浏览器演示数据的数量。
 const cardsIn = (region: Locator) =>
   region.getByRole('button', { name: /^查看需求：画廊(?:验收|其他)｜/ })
 

@@ -1,8 +1,3 @@
-"""使用 ffmpeg 合成媒体，通过 MockTransport 验证下载、取帧、拼板和非等分切格的像素结果。
-
-插件接的是后端真实的取帧拼板与切格适配器，走的是组合根装配的同一条路；适配器自己的端口错误也在这里
-逐个核对。"""
-
 from __future__ import annotations
 
 import json
@@ -98,13 +93,10 @@ FAST = GenerationPolicy(
 )
 
 STORE_DOWN = "OSS 写入失败（试了 3 次）: Read timed out"
-"""对象存储重试耗尽后抛出的错误消息。"""
 
 
 @dataclass(frozen=True, slots=True)
 class Grid:
-    """四格尺寸不同、分隔线偏离等分位置的 2×2 网格，用于识别错误的等分裁切。"""
-
     left: int
     gutter_w: int
     right: int
@@ -132,10 +124,8 @@ class Grid:
 
 
 SMALL = Grid(left=180, gutter_w=6, right=218, top=150, gutter_h=6, bottom=248)
-"""宽度小于 DETECT_WIDTH，覆盖无需缩放的坐标还原。"""
 
 BIG = Grid(left=600, gutter_w=20, right=780, top=500, gutter_h=20, bottom=680)
-"""宽度大于 DETECT_WIDTH，覆盖缩略图到原图的坐标还原。"""
 
 
 def run_ffmpeg(args: list[str]) -> None:
@@ -145,8 +135,6 @@ def run_ffmpeg(args: list[str]) -> None:
 
 
 def make_grid_png(path: Path, grid: Grid) -> bytes:
-    """合成含四个纯色格、白色分隔带和外边框的 2×2 图片。"""
-
     boxes = [
         (0, 0, grid.left, grid.top, "red"),
         (grid.left + grid.gutter_w, 0, grid.right, grid.top, "green"),
@@ -173,8 +161,6 @@ def make_grid_png(path: Path, grid: Grid) -> bytes:
 
 
 def make_clip_mp4(path: Path) -> bytes:
-    """合成三秒动态图样视频，使不同时间的抽帧可区分。"""
-
     run_ffmpeg(
         [
             "-f",
@@ -190,8 +176,6 @@ def make_clip_mp4(path: Path) -> bytes:
 
 
 def make_client(payloads: dict[str, bytes]) -> httpx.AsyncClient:
-    """用固定 URL 响应替代网络，保留真实下载流程。"""
-
     def handler(request: httpx.Request) -> httpx.Response:
         body = payloads.get(str(request.url))
         if body is None:
@@ -202,12 +186,9 @@ def make_client(payloads: dict[str, bytes]) -> httpx.AsyncClient:
 
 
 _USER_SENT = f"{media_tag('video', VIDEO_URL)}{media_tag('image', OSS_IMAGE_URL)} 帮我拆一下"
-"""模拟用户已提供参考视频和图片的上下文。"""
 
 
 def make_context(*, said: str = _USER_SENT) -> RunContext[object]:
-    """直接调用工具体，默认素材已登记；注册表上的地址范围校验由单测覆盖。"""
-
     deps = AgentRunDeps(user_id=USER, conversation_id=CONVERSATION, user_name="logan")
     return RunContext[object](
         deps=deps,
@@ -251,8 +232,6 @@ def media() -> dict[str, bytes]:
 
 
 async def cut(media: dict[str, bytes], url: str) -> list[tuple[int, int]]:
-    """经设定图工具把一张四格图切满四格（不收缩画幅），返回每格的实际像素尺寸。"""
-
     objects = FakeObjects()
     generations = FakeGenerations(outcomes=[Outcome(output_url=url)])
     async with make_client(media) as client:
@@ -267,8 +246,6 @@ async def test_cut_follows_the_real_gutters(media: dict[str, bytes]) -> None:
 
 
 async def test_cut_scales_detection_back_to_full_resolution(media: dict[str, bytes]) -> None:
-    """缩略图检测坐标须还原到原分辨率；容差覆盖 ffmpeg 高度偶数对齐的取整误差。"""
-
     sizes = await cut(media, BIG_GRID_URL)
     for (width, height), (want_w, want_h) in zip(sizes, BIG.cell_sizes(), strict=True):
         assert abs(width - want_w) <= 8, f"宽 {width} 离 {want_w} 太远"
@@ -276,8 +253,6 @@ async def test_cut_scales_detection_back_to_full_resolution(media: dict[str, byt
 
 
 async def test_a_grid_without_gutters_is_cut_evenly_and_logged(tmp_path: Path) -> None:
-    """检测不到分隔带时按等分切、照常交付，并留一条带 job 的告警。"""
-
     url = "https://cdn.test/plain.png"
     plain = tmp_path / "plain.png"
     run_ffmpeg(["-f", "lavfi", "-i", "color=c=gray:s=400x400", "-frames:v", "1", str(plain)])
@@ -298,8 +273,6 @@ async def test_a_grid_without_gutters_is_cut_evenly_and_logged(tmp_path: Path) -
 
 @pytest.mark.parametrize("codec_name", list(CODECS))
 async def test_extracting_frames_gives_one_per_interval(codec_name: str, tmp_path: Path) -> None:
-    """每一档解码抽出来的都一样：三秒每秒两帧。本机用不了的硬件档跳过。"""
-
     clip = tmp_path / "clip.mp4"
     make_clip_mp4(clip)
     out_dir = tmp_path / "frames"
@@ -320,8 +293,6 @@ async def test_extracting_frames_puts_the_decode_options_on_the_input(tmp_path: 
 
 
 def model_facing(result: ToolReturn[dict[str, Any]]) -> dict[str, Any]:
-    """提取模型侧返回；return_value 联合类型需先收窄。"""
-
     payload = result.return_value
     assert isinstance(payload, dict)
     return payload
@@ -348,7 +319,6 @@ async def test_plan_extracts_every_second_and_boards_them(media: dict[str, bytes
         "note": "1 板",
     }
     assert len(objects.written) == 1
-    # 台账只留复用判定要用的东西：板上有哪几个镜头由调用方按 rows 现算。
     stored = await files.read(NAMESPACE, EXTRACTION_PATH)
     assert stored is not None
     ledger = json.loads(stored.content)
@@ -373,7 +343,6 @@ async def test_plan_reuses_the_ledger_instead_of_extracting_again(
 
     assert isinstance(first, ToolReturn)
     assert isinstance(again, ToolReturn)
-    # 复用路径不重抽帧也不重传，但结果要与首次逐字相同：板上有哪几个镜头是按 rows 现算的。
     assert model_facing(again) == model_facing(first)
     assert objects.written == {}
 
@@ -381,8 +350,6 @@ async def test_plan_reuses_the_ledger_instead_of_extracting_again(
 async def test_plan_rebuilds_instead_of_vouching_for_a_board_address_the_ledger_was_edited_to(
     media: dict[str, bytes],
 ) -> None:
-    """key 保留、板地址改成外部地址：账本按不存在处理，重新切格并写回真地址。"""
-
     forged = "https://evil.test/board.jpg"
     objects = FakeObjects()
     files = FakeFileStore()
@@ -413,8 +380,6 @@ async def test_plan_rebuilds_instead_of_vouching_for_a_board_address_the_ledger_
 async def test_plan_refuses_a_reused_ledger_whose_board_is_out_of_range(
     media: dict[str, bytes],
 ) -> None:
-    """key 对得上但板号被改到层级之外：给出可执行的修复，不抛 IndexError。"""
-
     objects = FakeObjects()
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
@@ -425,7 +390,6 @@ async def test_plan_refuses_a_reused_ledger_whose_board_is_out_of_range(
         stored = await files.read(NAMESPACE, EXTRACTION_PATH)
         assert stored is not None
         tampered = json.loads(stored.content)
-        # 地址照本系统的布局拼：只有板号越界这一处不对，拦它的只剩层级数检查。
         stray = objects.public_url(
             MEDIA_PATHS.shot_board(extraction_key=tampered["extractionKey"], index=9)
         )
@@ -441,8 +405,6 @@ async def test_plan_refuses_a_reused_ledger_whose_board_is_out_of_range(
 
 
 async def test_plan_refuses_timecodes_beyond_the_clip(media: dict[str, bytes]) -> None:
-    """时间码超出时长时需返回实际时长，供模型修正。"""
-
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), "**[00:00.000-00:09.000]** 中景")
     client = make_client(media)
@@ -458,8 +420,6 @@ async def test_plan_refuses_timecodes_beyond_the_clip(media: dict[str, bytes]) -
 async def test_plan_asks_for_a_retry_when_a_board_cannot_be_stored(
     media: dict[str, bytes],
 ) -> None:
-    """预览板存储失败需返回可重试错误且不落账本，避免下次复用不存在的地址。"""
-
     objects = FakeObjects(error=ObjectStoreUnavailable(STORE_DOWN))
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
@@ -500,7 +460,6 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
 
     assert isinstance(result, ToolReturn)
     payload = model_facing(result)
-    # 模型面只有图在哪、版记录在哪；渠道与切格细节不进返回值。
     assert set(payload) == {"frames"}
     assert [frame["no"] for frame in payload["frames"]] == ["S1-1", "S2-1"]
     assert len(objects.written) == boards_written + 2
@@ -522,8 +481,6 @@ async def test_generate_cuts_the_grid_and_records_the_batch(media: dict[str, byt
 async def test_generate_fails_loudly_when_the_cut_cells_cannot_be_recorded(
     media: dict[str, bytes],
 ) -> None:
-    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试。"""
-
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
@@ -566,8 +523,6 @@ async def test_generate_reports_an_unreachable_grid_without_pretending_it_worked
 async def test_generate_fails_when_cut_frames_cannot_be_stored(
     media: dict[str, bytes],
 ) -> None:
-    """切格存储失败只向模型返回简短错误，不保存无效版记录。"""
-
     objects = FakeObjects()
     files = FakeFileStore()
     await files.write(NAMESPACE, video_doc_path(VIDEO_URL), DOCUMENT)
@@ -609,8 +564,6 @@ async def test_anchor_sheet_reports_unstored_cells_the_same_way(media: dict[str,
 async def test_anchor_sheet_cuts_the_sheet_and_records_each_entity(
     media: dict[str, bytes],
 ) -> None:
-    """补拍不收缩画幅；不同颜色格产生不同字节，验证按检测网格线切分。"""
-
     objects = FakeObjects()
     files = FakeFileStore()
     generations = FakeGenerations(outcomes=[Outcome(output_url=GRID_URL)])
@@ -647,8 +600,6 @@ async def test_anchor_sheet_cuts_the_sheet_and_records_each_entity(
 async def test_processing_failure_is_an_error_in_real_agent_live_and_history(
     media: dict[str, bytes],
 ) -> None:
-    """真实工具失败经官方框架返回 failed，Agent 仍能回复；两条投影都显示错误。"""
-
     secret_detail = "private-storage-response-with-signature"
     objects = FakeObjects(error=ObjectStoreUnavailable(secret_detail))
     files = FakeFileStore()
@@ -719,7 +670,6 @@ async def test_processing_failure_is_an_error_in_real_agent_live_and_history(
         ]
         assert len(cards) == 1
         assert cards[0].state == "error"
-        # 工具卡显示的就是模型收到的那句。
         assert cards[0].output == told
         assert secret_detail not in turns[0].model_dump_json()
         assert str(generations.job_ids[0]) not in turns[0].model_dump_json()
@@ -738,8 +688,6 @@ def cuts_adapter(
 async def test_the_boards_adapter_builds_a_ledger_then_hands_it_back_unchanged(
     media: dict[str, bytes],
 ) -> None:
-    """首次按 key 发布板并交回新台账；再拿这份台账来问，原样交回且不重传。"""
-
     objects = FakeObjects()
     rows = parse_shot_rows(DOCUMENT)
     async with make_client(media) as client:
@@ -799,8 +747,6 @@ async def test_the_boards_adapter_reports_an_unstored_board_in_the_model_facing_
 async def test_the_boards_adapter_passes_the_decoder_failure_through_as_unreadable(
     media: dict[str, bytes],
 ) -> None:
-    """抽帧解码失败的原文就是给模型的话。"""
-
     async with make_client(media) as client:
         adapter = FrameBoardsAdapter(all_own(client), objects=FakeObjects(), codec=BROKEN_DECODE)
         with pytest.raises(BoardsUnreadable) as raised:
@@ -828,7 +774,6 @@ async def test_the_cuts_adapter_stores_the_requested_cells_in_order_and_records_
     ]
     assert urls == tuple(objects.public_url(key) for key in keys)
     assert list(objects.written) == keys
-    # 按阅读顺序取前两格：左上、右上；补位的下排两格不转存。
     assert [probe_size(cell) for cell in objects.written.values()] == [
         (SMALL.left, SMALL.top),
         (SMALL.right, SMALL.top),

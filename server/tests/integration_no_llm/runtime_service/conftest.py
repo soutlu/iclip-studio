@@ -1,12 +1,3 @@
-"""运行时服务的夹具：经 ``httpx.ASGITransport`` 挂上运行时服务，接迁移好的测试库。
-
-迁移与 Postgres 夹具由后端测试层提供；运行时不依赖宿主用户表，``X-End-User`` 只需调用方提供的 UUID。
-插件登记表默认只有一个测试插件 ``limited``，模型按名字换成集成层 ``models`` 夹具给的替身。
-
-``ASGITransport`` 不跑 lifespan：要让消息真跑起来的用例另取 ``running``，它起停运行驱动。WebSocket 与回调
-的用例取 ``live``：同步 ``TestClient`` 跑着 lifespan，另有一份不跨事件循环的 engine。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -52,16 +43,12 @@ from tests.helpers.runtime_service import (
 
 @pytest.fixture
 def plugin_registry() -> PluginRegistry:
-    """测试可覆写：交给运行时服务的插件登记表。"""
-
     return {"limited": LimitedPlugin}
 
 
 def _settings(
     database_url: str, tmp_path: Path, *, reader_hooks: ResolvedHooks | None
 ) -> RuntimeSettings:
-    """两个应用：有管理权限的 ``bff`` 与被测的 ``reader``（回调只配在它上面）。"""
-
     return RuntimeSettings(
         database_url=database_url,
         credential_encryption_keys=(TEST_CREDENTIAL_KEY,),
@@ -95,41 +82,30 @@ def runtime_app(
 
 @pytest.fixture
 async def running(runtime_app: FastAPI) -> AsyncGenerator[None]:
-    """跑运行时服务的 lifespan：运行驱动起来，用例结束时关停。"""
-
     async with runtime_app.router.lifespan_context(runtime_app):
         yield
 
 
 @pytest.fixture
 def actor() -> uuid.UUID:
-    """调用方代办的用户标识；运行时只记录它，不查询宿主账号。"""
-
     return uuid.uuid4()
 
 
 @pytest.fixture
 def owner() -> uuid.UUID:
-    """调用方给出的会话属主标识。"""
-
     return uuid.uuid4()
 
 
 LIVE_AGENT = "director"
-"""``live`` 发布好的 agent。"""
 
 
 @pytest.fixture
 def live_agent_plugins() -> tuple[str, ...]:
-    """测试可覆写：``live`` 发布的 agent 挂哪些测试插件（``approving``、``jotting``）。"""
-
     return ()
 
 
 @pytest.fixture
 def reader_hooks() -> ResolvedHooks | None:
-    """测试可覆写：被测应用 ``reader`` 的回调；默认没有。"""
-
     return None
 
 
@@ -147,11 +123,6 @@ def live(
     reader_hooks: ResolvedHooks | None,
     hook_recorder: HookRecorder,
 ) -> Generator[LiveRuntime]:
-    """跑着 lifespan 的运行时服务，给同步 ``TestClient`` 用（WebSocket 只能这样测）。
-
-    ``TestClient`` 有自己的事件循环：engine 用 NullPool，接供应商、发布 agent 都在进它之前的另一个
-    事件循环里做完，不跨循环复用连接。回调经 ``hook_recorder`` 接住。"""
-
     asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
     settings = _settings(migrated_pg, tmp_path, reader_hooks=reader_hooks)
@@ -194,8 +165,6 @@ async def _seed_live(app: FastAPI, plugins: tuple[str, ...]) -> uuid.UUID:
 
 @pytest.fixture
 async def anonymous(runtime_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
-    """不带任何请求头的客户端。"""
-
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=runtime_app), base_url="http://runtime.test"
     ) as client:
@@ -204,8 +173,6 @@ async def anonymous(runtime_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
 
 @pytest.fixture
 async def admin(runtime_app: FastAPI, actor: uuid.UUID) -> AsyncGenerator[httpx.AsyncClient]:
-    """有管理权限的应用，代 ``actor`` 操作；路径相对 ``/v1/admin``。"""
-
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=runtime_app),
         base_url="http://runtime.test/v1/admin",
@@ -216,8 +183,6 @@ async def admin(runtime_app: FastAPI, actor: uuid.UUID) -> AsyncGenerator[httpx.
 
 @pytest.fixture
 async def app_client(runtime_app: FastAPI, owner: uuid.UUID) -> AsyncGenerator[httpx.AsyncClient]:
-    """没有管理权限的应用，``X-End-User`` 是 ``owner``；路径相对 ``/v1``。"""
-
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=runtime_app),
         base_url="http://runtime.test/v1",

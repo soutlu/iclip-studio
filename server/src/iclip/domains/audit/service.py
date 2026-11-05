@@ -1,6 +1,3 @@
-"""审计报表用例：把查询参数整理成筛选范围，负责游标与参数校验，拼装总览、按人与任务执行。
-治理者权限由路由声明。"""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -51,8 +48,6 @@ def _as_utc(moment: None) -> None: ...
 @overload
 def _as_utc(moment: datetime | None) -> datetime | None: ...
 def _as_utc(moment: datetime | None) -> datetime | None:
-    """无时区输入按 UTC 解释，避免与 timestamptz 比较时驱动报错。"""
-
     if moment is None or moment.tzinfo is not None:
         return moment
     return moment.replace(tzinfo=UTC)
@@ -76,8 +71,6 @@ async def _period(reports: AuditReports, scope: Scope, timezone: str) -> Overvie
 async def _series(
     reports: AuditReports, window: OverviewWindow, timezone: str
 ) -> list[TrendPointOut]:
-    """按周直接切本期；按小时 / 按天先铺回看下限起的基础格，均线从格里补窗。"""
-
     current = Scope(since=window.since, until=window.until)
     if window.bucket == "week":
         rows = await reports.by_period(current, bucket="week", timezone=timezone)
@@ -96,7 +89,6 @@ async def _series(
     units = await reports.delivery_units(grid, bucket=window.grid, timezone=timezone)
     cells = build_cells(rows, units, until=window.until)
     head = head_cell(cells, window.since)
-    # since 不在格边界上时，首期只算 since 之后的，与按周的首期同一规则；均线仍用整格。
     head_metrics = (
         await reports.overall(Scope(since=window.since, until=head.end))
         if head.start < window.since
@@ -112,9 +104,6 @@ class AuditService:
     async def overview(
         self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
     ) -> OverviewOut:
-        """审计总览：本期与上一期整段各查一次，趋势按粒度分期；时间窗与均线规则见 overview.py。
-        这些查询共用一次从运行时取回的事实行，从回看下限（不晚于上一期起点）起，到本期结束。"""
-
         now = datetime.now(UTC)
         window = plan_window(
             since=_as_utc(since),
@@ -145,8 +134,6 @@ class AuditService:
     async def people(
         self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
     ) -> AuditPeopleOut:
-        """时间窗里出过片或跑过的人，出片多的在前、再看运行次数、同数按名字；时间窗与粒度同总览。"""
-
         window = plan_window(
             since=_as_utc(since),
             until=_as_utc(until),
@@ -190,9 +177,6 @@ class AuditService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> AuditExecutionsOut:
-        """任务执行一页；``until`` 为空或晚于此刻按此刻。消耗离群的基准按整个时间窗算，不看
-        ``user_name``。满页才给下一页游标，游标只对发它的那种排序与方向有效。"""
-
         check_limit(limit)
         now = datetime.now(UTC)
         start = _as_utc(since)

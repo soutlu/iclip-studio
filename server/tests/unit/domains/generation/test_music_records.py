@@ -1,8 +1,3 @@
-"""音频记录里生成的背景音乐：端点受理（提示词原样、对话必填、读不到对话 404、没开通 422、代办）、
-结果落库与读出、失败不重投，以及它不触发字幕识别、不动收尾标记。
-
-用内存仓储与真实队列协程，provider 全是替身，不碰音乐模型。"""
-
 from __future__ import annotations
 
 import uuid
@@ -88,8 +83,6 @@ def build_world(
     music_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
-    """装一个真队列与真服务：字幕识别也开着，完成回调接到服务上，与装配一致。"""
-
     store = InMemoryGenerationRepository()
     for job in jobs:
         store.jobs[job.id] = job
@@ -163,9 +156,6 @@ def client(
         create_generations_router(world.service, act_as=ActAs(users or InMemoryUserRepository()))
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
-
-
-# --- 受理 -----------------------------------------------------------------------
 
 
 async def test_the_prompt_is_recorded_and_queued_exactly_as_sent() -> None:
@@ -274,9 +264,6 @@ async def test_generating_music_is_refused_when_it_is_not_configured() -> None:
 
 
 async def test_generating_music_settles_the_author_like_other_submits() -> None:
-    """钥匙不报名字就拒；持 users:act_as 的钥匙报了名字，属主换成那个人；浏览器只能报自己。
-    名字只用来换属主，不进请求。"""
-
     users = InMemoryUserRepository()
     sara = await users.ensure_by_name("Sara.Hong", email=placeholder_email("Sara.Hong"))
     world = build_world([])
@@ -305,9 +292,6 @@ async def test_generating_music_needs_the_submit_permission() -> None:
         )
 
     assert response.status_code == 403
-
-
-# --- 执行结果 -------------------------------------------------------------------
 
 
 async def test_generated_music_completes_with_its_address_and_duration_and_nothing_else() -> None:
@@ -356,9 +340,6 @@ async def test_a_failed_generation_is_recorded_and_never_resubmitted() -> None:
     )
     assert world.music.submit_calls == [music.id], "失败就停，重来只能另起一条"
     assert world.tasks("generation.submit", FAKE_MUSIC_PROVIDER) == []
-
-
-# --- 读取 -----------------------------------------------------------------------
 
 
 async def test_generated_music_reads_back_by_id_and_by_kind_and_conversation() -> None:

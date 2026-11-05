@@ -1,5 +1,3 @@
-"""identity 持久化端口（纯 Protocol，无 SQL）。"""
-
 from __future__ import annotations
 
 import uuid
@@ -12,9 +10,9 @@ from iclip.domains.identity.models import ApiKeyRecord, PmsDepartment, UserAccou
 class UserRepository(Protocol):
     async def get(self, user_id: uuid.UUID) -> UserAccount | None: ...
 
-    async def list_page(self, *, offset: int, limit: int) -> tuple[tuple[UserAccount, ...], int]:
-        """按创建时间倒序分页；返回 (本页, 总数)。"""
-        ...
+    async def list_page(
+        self, *, offset: int, limit: int
+    ) -> tuple[tuple[UserAccount, ...], int]: ...
 
     async def update_access_fields(
         self,
@@ -25,15 +23,11 @@ class UserRepository(Protocol):
         is_active: bool | None,
     ) -> UserAccount | None: ...
 
-    async def ensure_role(self, user_id: uuid.UUID, role: str) -> None:
-        """幂等地给用户追加角色（root 引导用）。"""
-        ...
+    async def ensure_role(self, user_id: uuid.UUID, role: str) -> None: ...
 
     async def touch_last_login(self, user_id: uuid.UUID, at: datetime) -> None: ...
 
-    async def ensure_by_name(self, username: str, *, email: str) -> uuid.UUID:
-        """按用户名找账号，没有就建一个占位账号（无角色、不能登录）；返回其 id。"""
-        ...
+    async def ensure_by_name(self, username: str, *, email: str) -> uuid.UUID: ...
 
     async def sync_sso_profile(
         self,
@@ -45,11 +39,7 @@ class UserRepository(Protocol):
         city: str | None,
         job_title: str | None,
         departments: tuple[PmsDepartment, ...] | None,
-    ) -> None:
-        """SSO 登录后同步展示资料；None 字段不变（roles 仅首登时传入）。
-
-        账号还没有用户名时用 ``display_name`` 补上，已有的不改；名字被别的账号占着就留空。"""
-        ...
+    ) -> None: ...
 
 
 class ApiKeyRepository(Protocol):
@@ -59,9 +49,7 @@ class ApiKeyRepository(Protocol):
 
     async def get_by_hash(self, token_hash: str) -> ApiKeyRecord | None: ...
 
-    async def list_for_owner(self, owner: uuid.UUID | None) -> tuple[ApiKeyRecord, ...]:
-        """owner=None 为 manager 视角（全量）。"""
-        ...
+    async def list_for_owner(self, owner: uuid.UUID | None) -> tuple[ApiKeyRecord, ...]: ...
 
     async def revoke(self, key_id: uuid.UUID, at: datetime) -> None: ...
 

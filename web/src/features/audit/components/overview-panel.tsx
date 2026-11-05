@@ -1,5 +1,3 @@
-/** 总览：工具条定时间，首屏五张趋势卡撑满一屏，往下是出片质量、耗时、模型消耗、使用人次各节的图。 */
-
 import { useId } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { cn } from '@/shared/lib/utils'
@@ -16,7 +14,6 @@ import { TrendCard } from './trend-card'
 type OverviewPanelProps = {
   range: OverviewRange
   onRangeChange: (next: OverviewRange) => void
-  /** 上游归属用户名 → 显示名；名册里没有就原样显示。 */
   nameOf: (userName: string) => string | undefined
 }
 
@@ -67,7 +64,6 @@ const CARD_LABEL: Record<CardKey, string> = {
 
 const BUCKET_UNIT = { hour: '小时', day: '天', week: '周' } as const
 
-/** 均线窗里不够这么多活跃日、镜、件就往前补；数字与服务端的补窗规则一致，只用在说明里。 */
 const AVERAGE_INFO =
   '当天往前 7 天 / 30 天（含当天）的平均值。件数仅按活跃日平均；比率与中位数在该时间段内重新计算。该时间段内不足 3 个活跃日、或不足 30 镜 / 10 件时，继续向前补足。'
 
@@ -143,7 +139,6 @@ function OverviewCard({
     new Date(overview.window.previousUntil),
   )
   const { bucket } = overview.window
-  // token 卡的分项图例放在标题右侧，不另占一行；按周没有均线，也就没有「当天合计」的点。
   const legend =
     card.key === 'perDelivery' ? (
       <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1 text-caption text-on-surface-muted">
@@ -173,7 +168,6 @@ function OverviewCard({
   )
 }
 
-/** 总览上所有图共用一套读法；只列这一屏上真的出现了的项，口径收进 ⓘ。 */
 function Legend({ overview }: { overview: Overview }) {
   const { bucket } = overview.window
   const inactive = bucket === 'day' && overview.series.some((point) => point.inactive)
@@ -228,7 +222,6 @@ function Legend({ overview }: { overview: Overview }) {
   )
 }
 
-/** 首次读取时的骨架：五张卡的位置先占住，数据到了不跳。 */
 function OverviewSkeleton() {
   return (
     <div className="flex flex-col gap-3">

@@ -1,5 +1,3 @@
-"""验证标题结果清理与生成失败时的降级行为。"""
-
 from __future__ import annotations
 
 import json
@@ -17,8 +15,6 @@ pytestmark = pytest.mark.unit
 
 
 def _exploding() -> FunctionModel:
-    """调用即抛出异常的模型替身。"""
-
     def script(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         raise RuntimeError("模型这会儿不干活")
 
@@ -34,7 +30,6 @@ async def test_起标题只用最低思考档() -> None:
 
     await title_generator(FunctionModel(script))("帮我做一条夜景延时的短片")
 
-    # 标题请求覆盖主模型的 high 设置，避免不必要的高强度推理。
     assert seen[0].model_settings is not None
     assert seen[0].model_settings.get("openai_reasoning_effort") == "low"
 
@@ -60,8 +55,6 @@ CHAT_REPLY: dict[str, Any] = {
 
 
 def _stub_upstream(monkeypatch: pytest.MonkeyPatch, reply: dict[str, Any]) -> list[dict[str, Any]]:
-    """httpx2 的默认传输层换成替身，记下请求体，不连网。"""
-
     bodies: list[dict[str, Any]] = []
 
     async def handle(_transport: object, request: httpx2.Request) -> httpx2.Response:
@@ -88,7 +81,6 @@ async def test_gemini_起标题用通用_thinking_写成最低档(monkeypatch: p
 
     assert await title_generator(model)("帮我做一条夜景延时的短片") == "夜景延时"
 
-    # openai_reasoning_effort 对 Gemini 不起作用；通用 thinking=low 盖过模型的 high。
     (body,) = bodies
     assert body["generationConfig"]["thinkingConfig"]["thinking_level"] == "LOW"
 
@@ -122,7 +114,6 @@ async def test_用户没打字就不叫模型() -> None:
 
     generate = title_generator(FunctionModel(script))
 
-    # 图片消息无可用文本，不应为它发一次模型请求。
     assert await generate("   ") is None
     assert calls == []
 
@@ -130,7 +121,6 @@ async def test_用户没打字就不叫模型() -> None:
 async def test_模型炸了不抛出去() -> None:
     generate = title_generator(_exploding())
 
-    # 标题生成属于附加步骤，其异常不得影响主运行收尾。
     assert await generate("帮我做一条夜景延时的短片") is None
 
 

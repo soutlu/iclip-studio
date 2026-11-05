@@ -8,12 +8,9 @@ import {
 } from './draft'
 import { done, type EditResult } from './result'
 
-// 字幕放进成片的位置由合成构建算（composition/captions.ts 的 placeCaptions），这里只改草稿。
-
 const sameSentence = (edit: CaptionEdit, subtitleJobId: string, sentenceIndex: number) =>
   edit.subtitleJobId === subtitleJobId && edit.sentenceIndex === sentenceIndex
 
-/** 改一句字幕的字；改动按字幕记录与句序记，重新识别换了记录后不再生效 */
 export const setCaptionText = (draft: WholeFilmDraft, args: CaptionEdit): EditResult => {
   const edit = { ...args }
   const exists = draft.captions.edits.some((e) =>
@@ -27,7 +24,6 @@ export const setCaptionText = (draft: WholeFilmDraft, args: CaptionEdit): EditRe
   return done({ ...draft, captions: { ...draft.captions, edits } })
 }
 
-/** 撤掉一句的改字，回到识别结果 */
 export const clearCaptionText = (
   draft: WholeFilmDraft,
   args: { subtitleJobId: string; sentenceIndex: number },
@@ -42,26 +38,19 @@ export const clearCaptionText = (
   )
 }
 
-/** 关掉或打开全部字幕；样式与改过的字不动 */
 export const setCaptionsHidden = (draft: WholeFilmDraft, args: { hidden: boolean }): EditResult =>
   done(
-    // 有这个字段之前存的草稿没写它，按开着算
     args.hidden === (draft.captions.hidden ?? false)
       ? draft
       : { ...draft, captions: { ...draft.captions, hidden: args.hidden } },
   )
 
-/**
- * 在画面上挪字幕：全部字幕共用一个位置。x、y 是画面像素，取整并裁在 ±4096 以内；
- * 位置没变时原样返回
- */
 export const setCaptionsPosition = (
   draft: WholeFilmDraft,
   args: { x: number; y: number },
 ): EditResult => {
   const x = toOffset(args.x)
   const y = toOffset(args.y)
-  // 有位置之前存的草稿没写 x、y，按没挪过算
   return done(
     x === (draft.captions.x ?? 0) && y === (draft.captions.y ?? 0)
       ? draft
@@ -69,24 +58,15 @@ export const setCaptionsPosition = (
   )
 }
 
-/**
- * 在画面上缩放、旋转字幕：全部字幕共用一套，规则见 {@link transformed}；`pivot` 同特效块，是挪开
- * 之前的坐标。倍数与角度都没变时原样返回
- */
 export const setCaptionsTransform = (draft: WholeFilmDraft, args: TransformArgs): EditResult => {
   const next = transformed(draft.captions, args)
   return done(next === undefined ? draft : { ...draft, captions: { ...draft.captions, ...next } })
 }
 
-/**
- * 改字幕样式的可填项，全部字幕共用一套；换样式时照样保留，合成时只取当前样式声明过的项。
- * 取值没变时原样返回
- */
 export const setCaptionsVariables = (
   draft: WholeFilmDraft,
   args: { variables: ComponentVariables },
 ): EditResult => {
-  // 有这个字段之前存的草稿没写它，按没填过算
   const current = draft.captions.variables ?? {}
   const same =
     Object.keys(current).length === Object.keys(args.variables).length &&
@@ -96,7 +76,6 @@ export const setCaptionsVariables = (
   )
 }
 
-/** 换字幕样式（组件库里的字幕组件） */
 export const setCaptionStyle = (draft: WholeFilmDraft, args: { component: string }): EditResult =>
   done(
     args.component === draft.captions.component

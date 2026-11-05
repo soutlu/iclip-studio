@@ -31,10 +31,8 @@ export type Conversation = z.output<typeof zConversationsPageOut>['items'][numbe
 
 export type ConversationPage = z.output<typeof zConversationPageOut>
 
-/** 侧栏拓扑里的一个合集：元信息、总条数，加第一页对话。 */
 export type SidebarCollection = z.output<typeof zSidebarOut>['collections'][number]
 
-/** 侧栏拓扑：任务区第一页加每个合集（各带自己的第一页）。 */
 export type SidebarTopology = z.output<typeof zSidebarOut>
 
 const conversationsPageSchema = zConversationsPageOut.transform((payload) => payload.items)
@@ -44,9 +42,6 @@ const conversationEnvelopeSchema = zConversationEnvelope.transform(
 
 const SEARCH_LIMIT = 50
 
-/** 侧栏与全部对话页共用：``open`` / ``done`` 看属主标没标收尾，``running`` 是此刻在跑的那几段。
- *
- * 取合同查询参数的枚举，路由解析地址栏也用这一份，合同加档位时两边一起变。 */
 export const conversationListStateSchema = zReadSidebarConversationsGetQuery.shape.state
   .unwrap()
   .unwrap()
@@ -61,12 +56,9 @@ const SEARCH_KEY = ['conversations', 'search'] as const
 export const conversationsQueryKeys = {
   all: ['conversations'] as const,
   agents: ['conversation-agents'] as const,
-  /** 治理者的全部对话，按筛选条件分键；auditAll 作前缀整体失效。 */
   audit: (filters: object) => [...AUDIT_KEY, filters] as const,
   auditAll: AUDIT_KEY,
-  /** 侧栏任务区与各合集从头读起的分页列表；刷新时整体失效，已读的页按新游标原位重拉。 */
   moreAll: MORE_KEY,
-  /** 一个分区的分页列表：不给 collectionId 是任务区。 */
   more: ({
     collectionId,
     state,
@@ -74,31 +66,18 @@ export const conversationsQueryKeys = {
     collectionId?: string | undefined
     state: ConversationListState
   }) => [...MORE_KEY, collectionId ?? 'ungrouped', state] as const,
-  /** 一段对话的整行。不在 all 前缀下：列表刷新不连带重读，行的变化由行池送达。 */
   row: (conversationId: string) => ['conversation-row', conversationId] as const,
-  /** 视频进度。不在 all 前缀下：改对话不改它，它只随视频帧与重连重拉。 */
   videoProgress: ['conversation-video-progress'] as const,
   search: (keyword: string) => [...SEARCH_KEY, keyword] as const,
-  /** 所有关键词的搜索结果；重连对账时整体失效。 */
   searchAll: SEARCH_KEY,
-  /** 未传 state 时作为所有筛选的缓存键前缀。 */
   sidebar: (state?: ConversationListState): readonly string[] =>
     state === undefined ? SIDEBAR_KEY : [...SIDEBAR_KEY, state],
-  /** 按 all 以外的状态筛选的侧栏拓扑或分页列表，对话状态一变它们的归属就可能不同。 */
   filteredLists: (list: 'more' | 'sidebar'): QueryFilters => ({
     queryKey: list === 'sidebar' ? SIDEBAR_KEY : MORE_KEY,
     predicate: ({ queryKey }) => queryKey.at(-1) !== 'all',
   }),
 }
 
-/**
- * 对话列表的刷新配方：失效列表，挂着的查询原位重拉。侧栏的分页列表从头按新游标逐页重拉、页数不变，
- * 重拉完才换上新数据，已展开的行不会收起。
- *
- * 缺省失效全部会话列表（侧栏拓扑与分页列表、搜索、需求单下的尝试、全部对话页），给改了对话的写操作用。
- * ``'sidebar'`` 只重拉侧栏拓扑与分页列表，给全局帧与合集变动用：全部对话页另有节流窗口，不跟着每帧重拉。
- * 等这些重拉都完成才 resolve。
- */
 export const refreshConversationLists = async (
   queryClient: QueryClient,
   scope: 'all' | 'sidebar' = 'all',
@@ -110,7 +89,6 @@ export const refreshConversationLists = async (
   await Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
 }
 
-/** 仅提供当前服务实际装配的顶层 Agent；顺序和默认项由服务端定义。 */
 export const useConversationAgents = (enabled: boolean) =>
   useQuery({
     enabled,
@@ -123,7 +101,6 @@ export const useConversationAgents = (enabled: boolean) =>
       }),
   })
 
-/** 服务端按标题搜索当前用户的全部对话，按最近活动排序。 */
 export const searchConversations = async (
   keyword: string,
   signal: AbortSignal,
@@ -147,7 +124,6 @@ const mergeTopology = (
   ungrouped: { ...topology.ungrouped, items: store.mergeRows(topology.ungrouped.items, book) },
 })
 
-/** 分组、计数和首页数据来自同一服务端拓扑，避免不同查询时间点造成不一致。 */
 export const useSidebarTopology = (enabled: boolean, state: ConversationListState) =>
   useQuery({
     enabled,
@@ -182,7 +158,6 @@ const newestCachedCollectionOf = (
   return undefined
 }
 
-/** 只读侧栏的查询缓存、不发请求；侧栏重拉或换筛选时跟着更新。 */
 export const useCachedConversationCollection = (
   conversationId: string,
 ): SidebarCollection | undefined => {
@@ -191,7 +166,6 @@ export const useCachedConversationCollection = (
     (onChange: () => void) => queryClient.getQueryCache().subscribe(onChange),
     [queryClient],
   )
-  // 返回缓存里的那个合集对象本身：缓存不变时引用不变，满足快照稳定的要求。
   return useSyncExternalStore(subscribe, () =>
     newestCachedCollectionOf(
       queryClient
@@ -216,11 +190,6 @@ const rowReadsOf = (store: ConversationRowStore): Map<string, AbortController> =
   return reads
 }
 
-/**
- * 取一段对话的整行并经记录本合进行池，跟上 `lastRunId` 等帧上没有的字段；404 按删除处理。
- * 新的一次中止在途那次，只有最后一次的结果进池，被中止的那次只关掉自己的记录本；已记墓碑的对话照样读。
- * 读取失败只记警告，行保持原值。
- */
 export const refreshConversationRow = async (
   queryClient: QueryClient,
   conversationId: string,
@@ -255,7 +224,6 @@ export const refreshConversationRow = async (
   }
 }
 
-/** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */
 export const createConversation = async (
   body: z.input<typeof zConversationIn>,
 ): Promise<Conversation> =>
@@ -265,20 +233,14 @@ export const createConversation = async (
     method: 'POST',
   })
 
-/** 起一段对话的入参：正文给 composer 的 ``parts`` 或已拼好的 ``content``；归属、标题与做同款的源不给就不带。 */
 export type StartConversationInput = {
   agentId: string
   collectionId?: string | null
   taskId?: string | null
   title?: string
-  /** 做同款的源对话 id（资料库卡 id），建对话时由服务端拷制作文件。 */
   sameAs?: string | null
 } & ({ parts: readonly ComposerPart[] } | { content: readonly PromptContentPart[] })
 
-/**
- * 建对话并发首条消息。对话 id 与消息 id 都由客户端铸，同一份输入重试复用两者：建对话的回执丢了
- * 重发不会多一段，首条消息重发不会多起一次运行。首条消息成功后才交给 ``onCreated``。
- */
 export const useStartConversation = (
   ownerUserId: string | null,
   onCreated: (conversationId: string) => void,
@@ -336,7 +298,6 @@ export const useStartConversation = (
 
 export const mintPromptId = (): string => mintUuid()
 
-/** 保持文字与媒体相对顺序；空文字、未就绪附件和文件附件不进入消息。 */
 export const partsContent = (parts: readonly ComposerPart[]): PromptContentPart[] =>
   parts.flatMap((part): PromptContentPart[] => {
     if (part.kind === 'text') return part.text === '' ? [] : [{ text: part.text, type: 'text' }]
@@ -346,7 +307,6 @@ export const partsContent = (parts: readonly ComposerPart[]): PromptContentPart[
       : []
   })
 
-/** 往一段对话里发一条消息。同一个 `promptId` 重发不会多起一次运行。 */
 export const submitPrompt = async (
   conversationId: string,
   { content, promptId }: { promptId: string; content: readonly PromptContentPart[] },
@@ -358,7 +318,6 @@ export const submitPrompt = async (
   })
 }
 
-/** 取消排队或运行中的消息；已结束状态视为成功，容忍与自然结束的竞态。 */
 export const abortPrompt = async (conversationId: string, promptId: string): Promise<void> => {
   try {
     await apiFetch(`/conversations/${conversationId}/prompts/${promptId}:abort`, z.unknown(), {
@@ -371,7 +330,6 @@ export const abortPrompt = async (conversationId: string, promptId: string): Pro
   }
 }
 
-/** 将排队消息追加到当前轮；消息已离开队列时视为成功，容忍自动出队的竞态。 */
 export const steerPrompt = async (conversationId: string, promptId: string): Promise<void> => {
   try {
     await apiFetch(`/conversations/${conversationId}/prompts:steer`, z.unknown(), {
@@ -385,7 +343,6 @@ export const steerPrompt = async (conversationId: string, promptId: string): Pro
   }
 }
 
-/** 相同审批决定可重复提交；409 决定冲突和 404 交互失效均由调用方展示。 */
 export const respondInteraction = async (
   conversationId: string,
   interactionId: string,
@@ -398,7 +355,6 @@ export const respondInteraction = async (
   )
 }
 
-/** 服务端替换末轮并重新运行；新轮经推送更新，409 与 404 原样交给调用方。 */
 export const regeneratePrompt = async (
   conversationId: string,
   turnId: string,
@@ -411,7 +367,6 @@ export const regeneratePrompt = async (
   })
 }
 
-/** 只提取文字 part，忽略附件及无效条目。 */
 export const promptText = (content: unknown): string => {
   const parsed = z.array(z.unknown()).safeParse(content)
   if (!parsed.success) return ''
@@ -423,7 +378,6 @@ export const promptText = (content: unknown): string => {
     .join('')
 }
 
-/** 队列预览只提取 URL 来源的图片与视频。 */
 export const promptMedia = (content: unknown): { kind: 'image' | 'video'; url: string }[] => {
   const parsed = z.array(z.unknown()).safeParse(content)
   if (!parsed.success) return []
@@ -439,13 +393,11 @@ export const promptMedia = (content: unknown): { kind: 'image' | 'video'; url: s
 }
 
 type Membership = {
-  /** undefined 保持原归属，null 解除归属。 */
   collectionId?: string | null
   conversationId: string
   taskId?: string | null
 }
 
-/** 两处归属分别调用端点；结束后不论成败自己刷新对话列表，``onSaved`` 只管调用方的收尾。 */
 export const useSetConversationMembership = (
   onSaved?: () => void,
   onUpdated?: (conversation: Conversation) => void,
@@ -490,8 +442,6 @@ export const useSetConversationMembership = (
   })
 }
 
-/** 从某一轮岔出一段自己的对话。源对话不变，副本带着截到那一轮的历史、工作区与已出片的记录。
- * 副本 id 由服务端铸、没有幂等键：`start` 在成功后不再放行，只有失败后才能重试；返回的 `start` 引用不变。 */
 export const useForkConversation = (onForked: (conversationId: string) => void) => {
   const queryClient = useQueryClient()
   const inFlightRef = useRef(false)
@@ -522,7 +472,6 @@ export const useForkConversation = (onForked: (conversationId: string) => void) 
   return { isPending: mutation.isPending, start }
 }
 
-/** 改名；成功后自己刷新对话列表。答复的行在写请求之前开的记录本里合并。 */
 export const useRenameConversation = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -544,7 +493,6 @@ export const useRenameConversation = () => {
   })
 }
 
-/** 属主标记这段对话收尾了或取消；服务端不会自己标，属主再动手会自动取消。成功后自己刷新对话列表。 */
 export const useSetConversationCompletion = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -566,7 +514,6 @@ export const useSetConversationCompletion = () => {
   })
 }
 
-/** 删除返回 204，无响应正文；成功后自己刷新对话列表。 */
 export const useDeleteConversation = () => {
   const queryClient = useQueryClient()
   return useMutation({

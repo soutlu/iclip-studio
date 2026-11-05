@@ -1,5 +1,3 @@
-/** 参考 Kimi mention 提示：KB 取整、MB 一位小数；文件名按 grapheme 截断至 32，优先保留扩展名及其前四字。 */
-
 const KB = 1024
 const MB = 1024 * 1024
 
@@ -9,10 +7,8 @@ export const formatAttachmentSize = (bytes: number): string => {
   return `${(bytes / MB).toFixed(1)} MB`
 }
 
-/** 像素尺寸用乘号连接，数字本身不加单位。 */
 export const formatDimensions = (width: number, height: number): string => `${width} × ${height}`
 
-/** 时长四舍五入到秒；不足一小时写 m:ss，满一小时写 h:mm:ss。 */
 export const formatDuration = (seconds: number): string => {
   const total = Math.round(seconds)
   const h = Math.floor(total / 3600)
@@ -23,11 +19,9 @@ export const formatDuration = (seconds: number): string => {
 }
 
 const NAME_MAX_GRAPHEMES = 32
-/** 扩展名前额外保留的字符数。 */
 const TAIL_EXTRA = 4
 
 let segmenter: Intl.Segmenter | undefined
-/** 按 grapheme 分段，避免拆开 emoji 和组合字符。 */
 const graphemes = (text: string): string[] => {
   segmenter ??= new Intl.Segmenter('und', { granularity: 'grapheme' })
   return [...segmenter.segment(text)].map((part) => part.segment)

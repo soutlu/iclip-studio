@@ -1,5 +1,3 @@
-"""取帧与出图插件的内存替身（生成、取帧拼板与切格），以及经插件装配的入口。"""
-
 from __future__ import annotations
 
 import uuid
@@ -26,15 +24,12 @@ from iclip_video.shot_video.ports import (
 from iclip_video.shot_video.shots import ShotSpan
 
 _ASPECT_RATIOS = frozenset({"1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"})
-"""替身受理的画幅；真的取值表在宿主的生成域里，这里只要分得出合法与否。"""
 
 _RESOLUTIONS = frozenset({"1k", "2k", "4k"})
 
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """预设的生成结果。"""
-
     status: str = "completed"
     output_url: str | None = "https://cdn.test/out.png"
     error_code: str | None = None
@@ -43,11 +38,6 @@ class Outcome:
 
 @dataclass
 class FakeGenerations:
-    """按预设顺序返回结果，耗尽后重复最后一条。
-
-    submit 始终返回 pending，get 才返回结果，以覆盖工具的轮询逻辑。
-    """
-
     outcomes: list[Outcome] = field(default_factory=lambda: [Outcome()])
     submitted: list[ImageRequest] = field(default_factory=list[ImageRequest])
     job_ids: list[uuid.UUID] = field(default_factory=list[uuid.UUID])
@@ -88,8 +78,6 @@ class FakeGenerations:
 
 
 def board_url(index: int = 1, *, key: str = "k") -> str:
-    """替身为这次取帧的这块板发布的地址。"""
-
     return f"https://cdn.test/boards/{key}/{index}.jpg"
 
 
@@ -102,9 +90,6 @@ class BoardsCall:
 
 @dataclass
 class FakeBoards:
-    """取帧拼板的替身：给了台账就当它是这次的产物原样交回；没给就每个层级出一块板。设了 ``error``
-    就抛它。"""
-
     calls: list[BoardsCall] = field(default_factory=list[BoardsCall])
     error: Exception | None = None
 
@@ -144,15 +129,11 @@ class CutCall:
 
 
 def cut_url(job_id: uuid.UUID, cell: str | int) -> str:
-    """替身为这张宫格的这一格（帧号或设定图序号）交回的地址。"""
-
     return f"https://cdn.test/cuts/{job_id}/{cell}.jpg"
 
 
 @dataclass
 class FakeCuts:
-    """切格转存的替身：每一格交回 ``cut_url(job_id, 帧号或序号)``；设了 ``error`` 就抛它。"""
-
     calls: list[CutCall] = field(default_factory=list[CutCall])
     error: Exception | None = None
 
@@ -182,9 +163,6 @@ def mount_shot_video(
     cuts: FakeCuts,
     policy: GenerationPolicy,
 ) -> ShotVideo[object]:
-    """经 ``ShotVideo.bind`` 绑好服务、再 ``from_spec`` 造一份取帧与出图 capability，和组合根挂给
-    agent 的同一条路。"""
-
     return ShotVideo.bind(
         space=space,
         generations=generations,

@@ -1,12 +1,3 @@
-/**
- * hyperframes-registry.mjs（组装组件库）与 render/scripts/smoke-catalog.mjs（组件的冒烟筛选）共用：
- * 版本与路径、组件库版本号、下载与校验、组件库条目的读取与归类、外链本地化规则。
- *
- * 外链本地化：组件库里的组件从 jsDelivr 取 GSAP、three 等脚本，从 Google Fonts 取字体；国内取不到，
- * 一律换成本地 `vendor/` 下的文件。脚本取 npm 上的同一版本（jsDelivr 的 /npm/ 本来就是 npm 包里的原文件），
- * Google Fonts 换成 fontsource 的字体文件加我们自己写的 CSS。换不了的（ES 模块导入等）记为不支持，
- * 由组件目录把整个组件排除。
- */
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -21,24 +12,16 @@ export const HF_VERSION = '0.8.168'
 export const TARBALL = {
   url: `https://codeload.github.com/heygen-com/hyperframes/tar.gz/refs/tags/v${HF_VERSION}`,
   sha256: '6e0c38c6059c76410309d6b15914b416e6d9aec74faff96f55d16497345d20d3',
-  /** 源码包里的顶层目录。 */
   root: `hyperframes-${HF_VERSION}`,
 }
 
 export const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const CACHE_DIR = join(WEB_ROOT, 'node_modules', '.cache', 'hyperframes', HF_VERSION)
-/** 入库的测试组件库：不带参数组装时用它。 */
 export const FIXTURES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-fixtures')
-/** 不带参数组装时的输出目录（开发与 e2e 从这里取）。 */
 export const DEFAULT_OUT = join(WEB_ROOT, 'public', 'hyperframes')
 
-/** 组件库源目录里参与组装的文件：目录、锁文件、改写、封面与字体文件。其余文件（说明、.git 等）不算输入。 */
 const LIBRARY_INPUTS = ['catalog.json', 'registry.lock.json', 'patches', 'thumbnails', 'fonts']
 
-/**
- * 组件库的版本号：源目录里参与组装的全部文件（路径与内容）、组装脚本的源码与 HyperFrames 版本
- * 一起取 sha256 的前 12 位。输入相同则版本号相同，任一输入变了版本号就变。
- */
 export async function libraryVersion(library) {
   const hash = createHash('sha256')
   const add = (data) => hash.update(data).update('\0')
@@ -61,8 +44,6 @@ export async function libraryVersion(library) {
   return hash.digest('hex').slice(0, 12)
 }
 
-/** 合成页加载的运行时脚本（相对组件目录根）；组件里的 GSAP 也换成这一份。 */
-/** 中文字体：字幕组件与合成页的默认字体都用它，经 `<link>` 引用这份 CSS。 */
 export const CJK_FONT = {
   family: 'Noto Sans SC',
   css: 'vendor/fonts/noto-sans-sc.css',
@@ -77,13 +58,10 @@ export const RUNTIME = {
 
 export const sha256 = (data) => createHash('sha256').update(data).digest('hex')
 
-/** 下载或缓存的文件与预期摘要不符。 */
 export class IntegrityError extends Error {}
 
-/** 组件库的输入组装不出来（目录、改写或字体写得不对，组件对不上）；只报这句话，不带调用栈。 */
 export class SyncError extends Error {}
 
-/** npm 源：构建期可用 NPM_CONFIG_REGISTRY 换成镜像源（见 web/Dockerfile）。 */
 const NPM_REGISTRY = (process.env.NPM_CONFIG_REGISTRY ?? 'https://registry.npmjs.org/').replace(
   /\/?$/,
   '/',
@@ -95,7 +73,6 @@ async function download(url) {
   return Buffer.from(await response.arrayBuffer())
 }
 
-/** 先写同目录的临时文件再改名：读的一方要么看到旧文件，要么看到完整的新文件。 */
 export async function writeAtomic(path, data) {
   await mkdir(dirname(path), { recursive: true })
   const temp = `${path}.${process.pid}.tmp`
@@ -103,10 +80,6 @@ export async function writeAtomic(path, data) {
   await rename(temp, path)
 }
 
-/**
- * 取一份文件：有缓存用缓存，没有就下载；两种情况都核对 sha256，不符即报错（缓存被改过也报）。
- * `expected` 为 null 时只下载并返回实际摘要（--update-lock 用）。
- */
 export async function fetchVerified(url, cachePath, expected) {
   const data = existsSync(cachePath) ? await readFile(cachePath) : await download(url)
   const actual = sha256(data)
@@ -125,7 +98,6 @@ async function extractTarball(file, dir) {
   await run('tar', ['-xzf', file, '-C', dir], { maxBuffer: 1 << 26 })
 }
 
-/** 源码包：下载、核对 sha256，解到缓存目录；返回包里的仓库根目录。`tarball` 可指定本机已有的包。 */
 export async function sourceTree(tarball) {
   const file = tarball ?? join(CACHE_DIR, 'hyperframes.tar.gz')
   const { sha256: actual } = await fetchVerified(TARBALL.url, file, TARBALL.sha256)
@@ -138,7 +110,6 @@ export async function sourceTree(tarball) {
   return join(dir, TARBALL.root)
 }
 
-/** 组件库里的区块与组件，按 registry.json 的顺序。 */
 export async function registryItems(src) {
   const registry = JSON.parse(await readFile(join(src, 'registry', 'registry.json'), 'utf8'))
   const items = []
@@ -157,17 +128,14 @@ export async function registryItems(src) {
   return items
 }
 
-/** 组件要装进项目的文件（照 `hyperframes add` 的安装位置）；说明文档不装。 */
 export const installedFiles = (item) =>
   (item.files ?? []).filter((file) => !file.target.endsWith('.md'))
 
-/** 组件的合成文件（安装位置）。 */
 export const compositionTarget = (item) =>
   item.files.find(
     (file) => file.type === 'hyperframes:composition' || file.type === 'hyperframes:snippet',
   )?.target
 
-/** HyperFrames Studio 的组件分类：@hyperframes/core registry/types.ts 的 resolveBlockCategory 原样照抄。 */
 export function category(tags) {
   if (!tags || tags.length === 0) return 'scenes'
   const set = new Set(tags)
@@ -182,10 +150,8 @@ export function category(tags) {
   return 'scenes'
 }
 
-/** 组件目录的 placement：字幕样式是 `caption`，其余组件为 null，放在哪条轨都行。 */
 export const placement = (categoryId) => (categoryId === 'captions' ? 'caption' : null)
 
-/** 合成根元素上写的固定尺寸与时长（HyperFrames 挂载时按它设宿主大小）。 */
 export function rootAttributes(html) {
   const tag = /<[a-z]+\b[^>]*\bdata-composition-id\b[^>]*>/i.exec(html)?.[0] ?? ''
   const number = (attribute) => {
@@ -201,10 +167,7 @@ export function rootAttributes(html) {
 
 export const isTextFile = (path) => /\.(html?|css|m?js|cjs|json|svg)$/i.test(path)
 
-/** 安装后要做外链本地化的文件。 */
 const isRuntimeText = (path) => /\.(html?|css|m?js|cjs)$/i.test(path)
-
-// ---------------------------------------------------------------- 外链本地化
 
 const CDN_HOSTS = [
   'cdn.jsdelivr.net',
@@ -219,26 +182,22 @@ const CDN_URL = new RegExp(
   `https?://(?:${CDN_HOSTS.map((host) => host.replaceAll('.', '\\.')).join('|')})[^\\s"'\`)<>\\\\]*`,
   'g',
 )
-/** 本地化之后不能再出现的外链主机。 */
 export const CDN_HOST_PATTERN = new RegExp(
   CDN_HOSTS.map((host) => host.replaceAll('.', '\\.')).join('|'),
 )
 
-/** jsDelivr 上不写精确版本的引用，钉到这些版本（升级组件库时复核）。 */
 const RANGE_PINS = {
   'd3@7': '7.9.0',
   'us-atlas@3': '3.0.1',
   'world-atlas@2': '2.0.2',
 }
 
-/** cdnjs 与 gstatic 上的文件换成 npm 包里的同一文件或目录。 */
 const MIRRORS = [
   {
     prefix: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
     to: { name: 'three', version: '0.128.0', file: 'build/three.min.js' },
   },
   {
-    // DRACOLoader.setDecoderPath 的目录；three 包里带同一套解码器。
     prefix: 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/',
     to: {
       name: 'three',
@@ -249,7 +208,6 @@ const MIRRORS = [
   },
 ]
 
-/** Google Fonts 字体名 → fontsource 包；可变字体用 fontsource-variable。 */
 const FONTSOURCE_VERSION = '5.3.0'
 const FONT_PACKAGES = {
   'Noto Sans SC': { name: '@fontsource/noto-sans-sc', version: '5.3.1' },
@@ -266,7 +224,6 @@ export function fontPackage(family) {
 
 const npmPath = (name, version, file) => `vendor/npm/${name}@${version}/${file}`
 
-/** 解析 `fonts.googleapis.com/css2?…`：每个字体要的字形（style、weight），以及 font-display。 */
 function parseGoogleFonts(url) {
   const query = new URL(url.replaceAll('&amp;', '&')).searchParams
   const display = query.get('display') ?? 'auto'
@@ -288,13 +245,8 @@ function parseGoogleFonts(url) {
   return { display, families }
 }
 
-/** 本地 CSS 的文件名：同样的字体请求落到同一个文件。 */
 const googleFontsCss = (fonts) => `vendor/fonts/${sha256(JSON.stringify(fonts)).slice(0, 12)}.css`
 
-/**
- * 一处外链换成什么：`{ path, needs }`；换不了时 `{ unsupported }`。
- * `path` 是相对组件目录根的路径；`needs` 是要放进 vendor/ 的东西。
- */
 function resolveUrl(url) {
   const jsdelivr = /^https?:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/]+\/)?[^/@]+)@([^/]+)\/(.+)$/.exec(
     url,
@@ -327,7 +279,6 @@ function resolveUrl(url) {
   return { unsupported: `没有本地化规则：${url}` }
 }
 
-/** `<script type="module">` 与 import map 里的外链是 ES 模块导入，换成本地文件也解析不了裸模块名。 */
 function moduleRanges(text, path) {
   if (/\.m?js$/.test(path)) {
     return [...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["'`]https?:\/\/[^"'`]+["'`]/g)].map(
@@ -351,12 +302,6 @@ const tagRanges = (text, name) =>
   ])
 const within = (ranges, offset) => ranges.some(([from, to]) => offset >= from && offset < to)
 
-/**
- * 把一个文件里的外链换成本地路径。返回改写后的文本、要放进 vendor/ 的东西，以及换不了的外链。
- * 路径写法跟 HyperFrames 运行时挂载子合成时的解析方式走：`<link href>` 相对子合成文件本身；
- * 脚本 src、样式里的 url()、脚本里的地址写成不带 `./` 的相对路径，按组件目录根解析。
- * 预连接的 `<link>` 直接去掉。
- */
 export function localize(text, path) {
   if (!isRuntimeText(path)) return { text, needs: [], unsupported: [] }
   const stripped = text.replace(PRECONNECT, (tag) => (CDN_HOST_PATTERN.test(tag) ? '' : tag))
@@ -385,13 +330,7 @@ export function localize(text, path) {
 const LOCAL_REFERENCE =
   /<(link|script|img|video|audio|source|image|use)\b[^>]*?\s(?:src|href|xlink:href)\s*=\s*["']([^"'#?]+)[^"']*["']|url\(\s*["']?([^"')#?]+)/gi
 
-/**
- * 组件引用的本地文件，按运行时挂载子合成时的解析方式换算成相对组件目录根的路径：
- * `<link href>`、`./` 或 `../` 开头的脚本 src、`../` 开头的其他地址相对子合成文件，其余按组件目录根；
- * .css 文件里的 url() 相对它自己。只看属性与样式里写死的路径，脚本拼出来的不在内。
- */
 export function localReferences(text, path) {
-  // 注释与脚本正文里的示例路径、拼接代码不算引用：同长度的空白盖掉，位置不变。
   const blank = (match) => ' '.repeat(match.length)
   const masked = text
     .replace(/<!--[\s\S]*?-->/g, blank)
@@ -419,9 +358,6 @@ export function localReferences(text, path) {
   return result
 }
 
-// ---------------------------------------------------------------- npm 包与字体
-
-/** npm 包的 tgz：按锁文件核对；`expected` 为 null 时再与 npm 给的 sha512 完整性核对（--update-lock）。 */
 export async function npmPackage(name, version, expected) {
   const base = name.split('/').at(-1)
   const url = `${NPM_REGISTRY}${name}/-/${base}-${version}.tgz`
@@ -449,10 +385,6 @@ export async function npmPackage(name, version, expected) {
   return { dir: join(dir, 'package'), sha256: actual }
 }
 
-/**
- * 一个字体的 @font-face：只收拉丁与扩展拉丁（组件的英文字体）；中文字体收全部分片，
- * 浏览器按 unicode-range 只下载用到的。`npmBase` 是 CSS 所在目录到 vendor/npm/ 的相对路径。
- */
 export async function fontFaces(
   family,
   faces,
@@ -469,7 +401,6 @@ export async function fontFaces(
   const files = []
   for (const face of faces) {
     for (const subset of subsets) {
-      // 中文分片在 unicode.json 里写作 "[4]"，文件名里是 4；可变字体全轴的文件名用 full。
       const slice = subset.replace(/^\[(\d+)\]$/, '$1')
       const weight = face.weight === 'variable' ? 'full' : face.weight
       const file = `files/${metadata.id}-${slice}-${weight}-${face.style}.woff2`
@@ -495,10 +426,6 @@ export async function fontFaces(
 
 export const isLatinSubset = (subset) => subset === 'latin' || subset === 'latin-ext'
 
-// ---------------------------------------------------------------- 组件字体的整套字形
-
-// 中文补字覆盖的码位：中日韩部首、标点、假名、注音、带圈字符、汉字（含扩展 A 与兼容汉字）、
-// 竖排与全角形式、扩展 B 以后。拉丁字母与常用西文标点不在内，组件自己的字体照常显示它们。
 const CJK_BLOCKS = [
   [0x2e80, 0x2fdf],
   [0x3000, 0x30ff],
@@ -520,7 +447,6 @@ function parseRanges(value) {
   })
 }
 
-/** 把 unicode-range 收窄到中日韩码位；没有交集时返回 null。 */
 export function cjkUnicodeRange(value) {
   const parts = []
   for (const [from, to] of parseRanges(value)) {
@@ -544,10 +470,6 @@ const cssValue = (block, property) =>
     .replace(/^['"]|['"]$/g, '')
     .trim()
 
-/**
- * 一段 CSS 或 HTML 里每条 @font-face 的字体名、字重与字形描述。字重的 normal、bold 换成数字，
- * 区间等其余写法原样保留；没写时按 CSS 默认取 400、normal。
- */
 export function fontFaceDescriptors(text) {
   const result = []
   for (const [, block] of text.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
@@ -563,16 +485,6 @@ export function fontFaceDescriptors(text) {
   return result
 }
 
-/**
- * 一个组件字体的中文字形：同名的 @font-face，只覆盖中日韩码位，字形取 Noto Sans SC。只给组件里
- * 写死的字体用：这些组件的 font-family 没有中文兜底，不配的话中文会落到各平台不同的系统字体。
- *
- * `descriptors` 是这个字体的西文字形用过的全部字重、字形描述，每一种各出一组描述完全相同的中文字形。
- * 浏览器先按字重、字形在同名的 @font-face 里挑出最接近的一组，再在组里按 unicode-range 取字：
- * 中文字形的描述与西文的不同（比如写成字重区间）时，它会被单独挑中，西文字母因此退到下一个字体。
- * 字重（区间取下限）小于 550 用 Noto 的 400，否则用 700；Noto 只有正体，斜体也用正体字形。
- * `notoDir` 是 Noto Sans SC 的 fontsource 包目录；字体文件路径相对 CSS 所在的 vendor/fonts/families/。
- */
 export async function cjkTwinFaces(family, descriptors, notoDir) {
   const pkg = fontPackage(CJK_FONT.family)
   const metadata = JSON.parse(await readFile(join(notoDir, 'metadata.json'), 'utf8'))
@@ -600,20 +512,12 @@ export async function cjkTwinFaces(family, descriptors, notoDir) {
   return rules.join('\n')
 }
 
-// ---------------------------------------------------------------- 字体可填项与源目录里的字体文件
-
-/**
- * 字体可填项：取值是组件目录 fonts 里的字体名，空字符串是组件自带的字体。合成页把选中的字体设成组件
- * 外层的 `--font-display`、`--font-body`（HyperFrames 组件按设计规范读这两个变量），见 build.ts。
- */
 export const FONT_VARIABLE = { id: 'font', type: 'font', label: '字体', default: '' }
 
 const READS_FONT_VARIABLE = /var\(\s*--font-(?:display|body)\b/
 
-/** 组件目录 fonts 里每个字体的 CSS 位置：中文字形的 url() 按这一层目录写（见 cjkTwinFaces）。 */
 const FONT_CSS_PATH = /^vendor\/fonts\/families\/[^/]+\.css$/
 
-/** 核对源目录组件目录里的 fonts：每个字体写成 `{ css, brand?, faces? }`，css 在 vendor/fonts/families/ 下。 */
 export function checkCatalogFonts(fonts) {
   for (const [family, font] of Object.entries(fonts)) {
     if (typeof font !== 'object' || font === null || typeof font.css !== 'string')
@@ -623,11 +527,6 @@ export function checkCatalogFonts(fonts) {
   }
 }
 
-/**
- * 发布的组件目录：源目录的组件目录加上 version。组件文件（套完改写后）读了 `--font-display` 或
- * `--font-body`、自己没写 font 项的条目，在可填项最后加上 {@link FONT_VARIABLE}；字体去掉只在源目录
- * 用的 faces。`compositionText(src)` 取组件文件的内容。
- */
 export async function publishedCatalog(catalog, version, compositionText) {
   const items = []
   for (const item of catalog.items) {
@@ -646,12 +545,6 @@ export async function publishedCatalog(catalog, version, compositionText) {
 
 const FONT_FORMATS = { woff2: 'woff2', woff: 'woff', ttf: 'truetype', otf: 'opentype' }
 
-/**
- * 源目录 fonts/ 下字体文件的 @font-face：faces 里每个字重、字形各一条，`font-display: block`。
- * 字体文件拷到 `outDir` 里同样的路径，url() 相对 `cssPath`。返回 CSS，只有这些条目、不配中文字形：
- * 这类字体只经字体可填项使用，合成页设的字体变量自带 Noto Sans SC 兜底（见 build.ts）。
- * 文件不在源目录的 fonts/ 下、不存在或格式认不出时抛出。
- */
 export async function localFontFaces({ family, faces, cssPath, libraryDir, outDir }) {
   if (!Array.isArray(faces) || faces.length === 0)
     throw new SyncError(`字体「${family}」的 faces 要列出至少一个字体文件`)
@@ -676,7 +569,6 @@ export async function localFontFaces({ family, faces, cssPath, libraryDir, outDi
   return rules.join('\n')
 }
 
-/** 列出目录下全部文件（相对路径，正斜杠）。 */
 export async function listFiles(root, dir = '') {
   const result = []
   for (const entry of await readdir(join(root, dir), { withFileTypes: true })) {

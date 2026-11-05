@@ -1,5 +1,3 @@
-/** 按 turn → step → frame 顺序渲染，连续活动由 activity-group 分组并收进活动卡，单块由 turn-frame 渲染。 */
-
 import { memo, use } from 'react'
 import type {
   TranscriptInteraction,
@@ -18,26 +16,19 @@ import { WorkbenchLinksContext } from './workbench-links'
 
 type ConversationTurnProps = {
   turn: TranscriptTurn
-  /** 本段对话的全部交互（含已决定的）；工具卡凭它认出被拒绝的那一步。 */
   interactions: ReadonlyMap<string, TranscriptInteraction>
-  /** 本段对话的后台工具任务（见 useToolTasks）；只在工具任务变化时换引用，memo 才挡得住无关重渲染。 */
   toolTasks: ReadonlyMap<string, TranscriptTask>
-  /** 最新一轮：终态栏常驻；历史轮悬停才露出。 */
   latest?: boolean | undefined
-  /** 仅在末轮且对话空闲时提供重新生成回调。三个回调都收本轮，调用方据此传稳定引用，memo 才挡得住无关重渲染。 */
   onRegenerate?: ((turn: TranscriptTurn) => void) | undefined
   regenerateDisabled?: boolean | undefined
-  /** 每一轮都能分叉；对话在忙时由调用方置灰。 */
   onFork?: ((turn: TranscriptTurn) => void) | undefined
   forkDisabled?: boolean | undefined
-  /** 仅为末轮提供修改开场输入的回调。 */
   onEdit?: ((turn: TranscriptTurn) => void) | undefined
   editDisabled?: boolean | undefined
 }
 
 const isSettled = (turn: TranscriptTurn) => turn.state !== 'running' && turn.state !== 'queued'
 
-/** 按轮 memo，避免流式更新重渲历史轮次。 */
 export const ConversationTurn = memo(function ConversationTurn({
   editDisabled,
   forkDisabled,
@@ -53,7 +44,6 @@ export const ConversationTurn = memo(function ConversationTurn({
   const linked = use(WorkbenchLinksContext)
   const settled = isSettled(turn)
   const entries = turn.steps.flatMap((step) => step.frames.map((frame) => ({ frame, step })))
-  // 复制从最后一句用户插话之后算起；后台任务的完成通知（带 taskId）不是用户说的话，不算边界。
   const lastUserFrameIndex = entries.findLastIndex(
     ({ frame }) => frame.kind === 'text' && frame.role === 'user' && frame.taskId === undefined,
   )
@@ -65,7 +55,6 @@ export const ConversationTurn = memo(function ConversationTurn({
         : [],
     )
     .join('\n\n')
-  // 轮头部保存开场输入，user frame 保存运行中追加消息；live 块为未结束轮的末步末块。
   const liveFrameId = settled ? undefined : turn.steps.at(-1)?.frames.at(-1)?.frameId
   const blocks = groupActivityCards(groupTurnEntries(entries))
   const results = settled ? turnResults(entries.map(({ frame }) => frame)) : []
@@ -84,7 +73,6 @@ export const ConversationTurn = memo(function ConversationTurn({
   )
 
   return (
-    // relative：有悬停的设备上，历史轮的终态栏叠在本轮下方的空隙里，不占版面（见下）。
     <article className="group relative flex flex-col gap-3" aria-label={`第 ${turn.ordinal} 轮`}>
       {turn.content.length > 0 ? (
         <UserBubble content={turn.content} editDisabled={editDisabled} onEdit={edit} />
@@ -114,9 +102,6 @@ export const ConversationTurn = memo(function ConversationTurn({
       {results.length === 0 || !linked ? null : <TurnResultList results={results} />}
       {settled && copyText !== '' ? (
         <TurnActions
-          // 最新一轮常驻、占位；历史轮悬停才露出，不占位，叠在与下一轮之间的空隙里，
-          // 所以列轮的容器要给轮间留出不少于这一栏高度（24px）的间距。
-          // 触屏上历史轮也常驻，于是回到文档流里占一行，和最新一轮一样，不再叠进空隙。
           className={
             latest ? undefined : 'absolute inset-x-0 top-full pt-0.5 touch:static touch:pt-0'
           }
@@ -124,7 +109,6 @@ export const ConversationTurn = memo(function ConversationTurn({
           endedAt={turn.endedAt}
           forkDisabled={forkDisabled}
           onFork={fork}
-          // 没跑完的轮由下面那行「重试」承担重新生成，操作栏不再重复给一个。
           onRegenerate={turn.error === undefined ? regenerate : undefined}
           regenerateDisabled={regenerateDisabled}
           revealed={latest}

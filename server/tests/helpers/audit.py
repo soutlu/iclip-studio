@@ -1,9 +1,3 @@
-"""审计报表集成测试的种子与装配：原生 SQL 直插，时间戳都由调用方给（业务仓储用数据库时钟，控不住时刻）；
-报表经进程内的运行时服务取运行时的事实行。
-
-运行时的统计接口只答应用 ``video`` 的会话：种对话时同时给它开一个归 ``video`` 的会话（``open_session``），
-与生产上建对话先开会话一致。"""
-
 from __future__ import annotations
 
 import json
@@ -38,12 +32,9 @@ from tests.helpers.app import make_runtime_config
 from tests.helpers.runtime_backed import RUNTIME_APP_KEY, RUNTIME_URL, runtime_settings
 
 EVER: Final = datetime(2000, 1, 1, tzinfo=UTC)
-"""比任何种子都早的起点：报表的筛选范围一定有起点，要看全部数据的用例从这里起。"""
 
 
 async def open_session(conn: AsyncConnection, conversation_id: uuid.UUID) -> None:
-    """给这段对话开一个归应用 ``video`` 的运行时会话。"""
-
     await conn.execute(
         text("INSERT INTO agent_runtime.sessions (id, app_id) VALUES (:id, :app_id)"),
         {"id": conversation_id, "app_id": VIDEO_APP_ID},
@@ -51,9 +42,6 @@ async def open_session(conn: AsyncConnection, conversation_id: uuid.UUID) -> Non
 
 
 class CountingRuntimeClient(RuntimeClient):
-    """记下每个统计接口调了几次的运行时客户端；调用照常发给运行时服务。``stats_calls`` 的键是
-    ``/v1/stats/`` 下的路径名。"""
-
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.stats_calls: Counter[str] = Counter()
@@ -77,8 +65,6 @@ class CountingRuntimeClient(RuntimeClient):
 
 @asynccontextmanager
 async def audit_runtime_client(engine: AsyncEngine) -> AsyncGenerator[CountingRuntimeClient]:
-    """报表调的运行时服务的客户端：运行时 app 接同一个测试库，客户端经 ASGI 传输层直达，不出网。"""
-
     runtime = create_app(
         runtime_settings(make_runtime_config(), engine, hooks=False), plugins={}, engine=engine
     )
@@ -90,15 +76,11 @@ async def audit_runtime_client(engine: AsyncEngine) -> AsyncGenerator[CountingRu
 
 @asynccontextmanager
 async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[PgAuditReports]:
-    """报表连同它调的运行时服务，见 ``audit_runtime_client``。"""
-
     async with audit_runtime_client(engine) as client:
         yield PgAuditReports(engine, RuntimeStats(client))
 
 
 class Plant:
-    """在一个事务连接上种用户、需求单、对话、运行、出片、下载与用量。"""
-
     def __init__(self, conn: AsyncConnection) -> None:
         self._conn = conn
         self._names: dict[uuid.UUID, str] = {}
@@ -165,8 +147,6 @@ class Plant:
         return conversation_id
 
     async def prompt(self, conversation_id: uuid.UUID, *, user_name: str, at: datetime) -> str:
-        """一条消息：运行次数与活跃人数都数它，锚点是发起时刻。"""
-
         prompt_id = f"prm_{uuid.uuid4().hex[:8]}"
         await self._conn.execute(
             text(
@@ -193,8 +173,6 @@ class Plant:
         ended_at: datetime | None,
         end: str = "run_completed",
     ) -> None:
-        """这条消息的一次运行：登记 run_id，落开始事件，给了 ``ended_at`` 再落终态事件。"""
-
         run_id = f"agent-{uuid.uuid4().hex[:8]}"
         await self._conn.execute(
             text(
@@ -222,8 +200,6 @@ class Plant:
         started_at: datetime,
         ended_at: datetime | None,
     ) -> None:
-        """一条消息跑一轮，发起即开跑。"""
-
         prompt_id = await self.prompt(conversation_id, user_name=user_name, at=started_at)
         await self.run(prompt_id, started_at=started_at, ended_at=ended_at)
 
@@ -239,8 +215,6 @@ class Plant:
         status: str = STATUS_COMPLETED,
         duration_ms: int | None = None,
     ) -> uuid.UUID:
-        """一条出片：没有来源的视频 generate，带镜号。"""
-
         video_id = uuid.uuid4()
         await self._conn.execute(
             text(
@@ -288,8 +262,6 @@ class Plant:
         model: str = "m-a",
         requests: int = 1,
     ) -> None:
-        """一个模型上的累计用量，token 全记在普通输入上。"""
-
         await self._conn.execute(
             text(
                 "INSERT INTO agent_runtime.conversation_usage (conversation_id, model_name,"

@@ -1,6 +1,3 @@
-"""使用 bucket 替身验证公开对象存储适配器的 key 边界、URL、重试与直传签名，以及内网 endpoint 的
-校验、读写与签名的分工和下载地址换算。"""
-
 from __future__ import annotations
 
 import time
@@ -36,14 +33,10 @@ KEY = f"{OSS_ROOT}/generated-images/a.png"
 
 @pytest.fixture(autouse=True)
 def no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    """移除重试等待，仅验证次数和错误分类。"""
-
     monkeypatch.setattr(oss_module, "RETRY_BACKOFF_SECONDS", 0.0)
 
 
 def timeout() -> oss2.exceptions.RequestError:
-    """模拟 SDK 封装的 requests 读取超时，status 为 -2。"""
-
     return oss2.exceptions.RequestError(OSError("Read timed out. (read timeout=60)"))
 
 
@@ -62,8 +55,6 @@ class FakeListing:
 
 
 class FakeHead:
-    """SDK 的 HeadObjectResult：ETag 已去掉引号，缺的头为 None。"""
-
     def __init__(
         self,
         *,
@@ -89,7 +80,6 @@ class FakeBucket:
     ) -> None:
         self.existing = existing or set()
         self.failures = list(failures or [])
-        """按序为请求注入异常；耗尽后正常响应，剩余项可检测请求次数。"""
         self.listed = listed or []
         self.head = head
         self.writes: list[tuple[str, bytes, str]] = []
@@ -151,8 +141,6 @@ async def test_write_returns_public_url_and_encodes_the_key() -> None:
 
 
 async def test_audit_metadata_goes_into_the_write_headers() -> None:
-    """服务端转存的对象要和直传一样带上传者与 key 的 x-oss-meta-* 头。"""
-
     bucket = FakeBucket()
     await store(bucket).put_public_object(
         object_key=KEY,
@@ -234,8 +222,6 @@ async def test_a_server_side_5xx_is_retried_too() -> None:
 
 
 async def test_sdk_failure_becomes_one_known_error_once_the_attempts_run_out() -> None:
-    """统一 SDK 异常类型并保留尝试次数，供业务层处理和日志诊断。"""
-
     bucket = FakeBucket(failures=[timeout() for _ in range(RETRY_ATTEMPTS + 1)])
     with pytest.raises(ObjectStoreUnavailable, match=f"试了 {RETRY_ATTEMPTS} 次"):
         await store(bucket).put_public_object(
@@ -247,8 +233,6 @@ async def test_sdk_failure_becomes_one_known_error_once_the_attempts_run_out() -
 
 
 async def test_client_side_rejections_are_not_retried() -> None:
-    """403 等客户端错误无法通过重试恢复，应立即返回。"""
-
     bucket = FakeBucket(failures=[server_error(403), server_error(403)])
     with pytest.raises(ObjectStoreUnavailable) as failure:
         await store(bucket).put_public_object(
@@ -274,8 +258,6 @@ async def test_find_object_survives_a_network_blip() -> None:
 
 
 def test_signed_put_binds_every_header_and_keeps_slashes() -> None:
-    """Content-Type 与审计头都必须原样参与签名；key 中的斜杠须保留，避免上传为含 %2F 的其他对象。"""
-
     bucket = FakeBucket()
     wanted = {"Content-Type": "image/png", "x-oss-meta-uploader": "3c1e"}
     url = store(bucket).sign_put(object_key=KEY, headers=wanted)
@@ -377,8 +359,6 @@ def test_public_url_base_must_be_http(bad_base: str) -> None:
         validate_public_url_base(bad_base)
 
 
-# --- 内网 endpoint ---------------------------------------------------------------
-
 INTERNAL = replace(SETTINGS, internal_endpoint="https://oss-cn-shenzhen-internal.aliyuncs.com")
 
 
@@ -465,8 +445,6 @@ async def test_reads_writes_and_deletes_go_to_the_data_bucket_and_signing_to_the
 
 
 def test_signed_put_uses_the_public_endpoint_even_with_an_internal_one() -> None:
-    """签名在本地算，不发请求；浏览器拿到的直传地址必须是公网 host。"""
-
     settings = replace(INTERNAL, endpoint="https://oss-cn-shenzhen.aliyuncs.com")
     url = OssObjectStore(settings).sign_put(object_key=KEY, headers={"Content-Type": "image/png"})
 
@@ -482,7 +460,6 @@ def _query(url: str) -> dict[str, str]:
 
 
 NOW = 1_800_000_000
-"""钉住时钟：签名随过期时刻变，同一刻签出来的才能比。"""
 
 
 @pytest.fixture
@@ -491,17 +468,12 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _same_key_signed(method: str, endpoint: str, **kwargs: object) -> str:
-    """同一把凭证、同一刻、直接用 SDK 签的对照地址。"""
-
     bucket = oss2.Bucket(oss2.Auth("ak", "sk"), endpoint, "iclip")
     return str(bucket.sign_url(method, FILM_KEY, 6 * 3600, slash_safe=True, **kwargs))
 
 
 @pytest.mark.usefixtures("frozen_clock")
 def test_a_server_upload_goes_to_the_internal_host_and_binds_only_the_type() -> None:
-    """签名本地算：服务端上传走内网 host，过期时刻是现在加给的秒数；只签 Content-Type、不带 ACL 头，
-    对象随桶公共读。"""
-
     signed = OssObjectStore(PUBLIC_AND_INTERNAL).sign_server_upload(
         object_key=FILM_KEY, content_type="video/mp4", expires_seconds=6 * 3600
     )

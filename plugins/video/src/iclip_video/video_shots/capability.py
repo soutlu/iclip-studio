@@ -1,5 +1,3 @@
-"""镜头组表插件：交付镜头组 prompt 表。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -30,20 +28,16 @@ from iclip_video.shot_document import (
 CAPABILITY_ID: Final = "video_shots"
 
 ShotRequests = Annotated[list[VideoShotRequest], JsonText]
-"""交付工具的 ``shots`` 入参；工具卡按同一类型重放入参。"""
 
 _SHOT_REQUESTS: Final = TypeAdapter[list[VideoShotRequest]](ShotRequests)
 
 
 @dataclass
 class VideoShots(CapPlugin[AgentDepsT]):
-    """镜头组表插件。"""
-
     label = "镜头组表"
     summary = "提交镜头组的提示词表，每次提交全部镜头组，替换上一次的。"
 
     space: FileSpace
-    """与工作区能力相同的 FileSpace。"""
 
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
 
@@ -56,8 +50,6 @@ class VideoShots(CapPlugin[AgentDepsT]):
 
     @classmethod
     def bind(cls, *, space: FileSpace) -> type[Self]:
-        """把运行服务绑进类，交给登记表。"""
-
         return cls._bound(space=space)
 
     @classmethod
@@ -65,19 +57,14 @@ class VideoShots(CapPlugin[AgentDepsT]):
         return cls(**cls._bound_services())
 
     def get_ordering(self) -> CapabilityOrdering:
-        # 写下的文件经 workspace 的文件工具读取。
         return CapabilityOrdering(requires=(Workspace,))
 
     @classmethod
     def display_table(cls) -> Mapping[str, DisplayFn]:
-        """工具卡声明。"""
-
         return {"write_video_shots": _shots_display}
 
 
 class VideoShotsToolset(FunctionToolset[AgentDepsT]):
-    """交付工具；镜头帧地址的范围规则挂在登记处的验证器上。"""
-
     def __init__(self, capability: VideoShots[AgentDepsT]) -> None:
         super().__init__(id=capability.id)
         self._cap = capability
@@ -122,8 +109,6 @@ class VideoShotsToolset(FunctionToolset[AgentDepsT]):
     async def _validate_shot_delivery(
         self, ctx: RunContext[Any], aspect_ratio: str, shots: list[VideoShotRequest]
     ) -> None:
-        """镜头帧地址要取得到、是图片；表的形状由工具体校验。"""
-
         _ = (ctx, aspect_ratio)
         await require_media(
             [
@@ -136,24 +121,14 @@ class VideoShotsToolset(FunctionToolset[AgentDepsT]):
         )
 
     def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
-        """这次运行的文件存储与命名空间。"""
-
         return self._cap.space.store, self._cap.space.resolve(ctx)
 
 
 def _shots_display(args: Any) -> FileIoDisplay:
-    """分镜表的交付画成一次普通的文件写入；``content`` 是这次要写进文件的原文。"""
-
     return FileIoDisplay(operation="write", path=SHOTS_PATH, content=_shots_file_text(args))
 
 
 def _shots_file_text(args: Any) -> str | None:
-    """按交付工具同一套校验与序列化，由入参算出要写的原文；纯计算，不碰存储。
-
-    工具会退回的入参没有原文可写，给 None。入参按重放校验：字符串化的结构照常还原，
-    但不再记日志，实时建卡与每次读历史都会走到这里。
-    """
-
     if not isinstance(args, dict):
         return None
     aspect_ratio = args.get("aspect_ratio")

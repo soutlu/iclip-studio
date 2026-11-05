@@ -1,9 +1,3 @@
-"""运行时服务的预览会话：开的时候不看上不上菜单、发没发布过；草稿预览每次运行装 agent 当下的草稿，版本预览装
-那一版；只跑它预览的 agent；开了以后是不是预览不再变；不能分叉、不能拷文件进出；运行开始、轮次开始与开跑检查的
-回调与事件流上的活动都标着 ``preview``。
-
-``app_client`` 是被测应用 ``reader``；``admin`` 经管理接口种 agent。"""
-
 from __future__ import annotations
 
 import uuid
@@ -44,8 +38,6 @@ def models() -> dict[str, Model]:
 
 
 async def save_draft(admin: httpx.AsyncClient, agent_id: str, model: str) -> None:
-    """把草稿的模型换成 ``model``，别的不动。"""
-
     detail = (await admin.get(f"/agents/{agent_id}")).json()
     saved = await admin.put(
         f"/agents/{agent_id}/draft",
@@ -66,9 +58,6 @@ async def save_draft(admin: httpx.AsyncClient, agent_id: str, model: str) -> Non
 
 @pytest.fixture
 async def seeded(admin: httpx.AsyncClient) -> str:
-    """``tester`` 发布了 v1（版本模型），不上首页菜单，草稿已改成草稿模型、没有发布；另有一个 ``helper``。
-    交回 ``tester`` 的 v1 的 id。"""
-
     provider_id = await connect_provider(admin)
     for name in (VERSION_MODEL, DRAFT_MODEL, EDITED_MODEL):
         await add_model(admin, provider_id, name)
@@ -107,8 +96,6 @@ def prompt(prompt_id: str, agent_id: str = AGENT) -> dict[str, Any]:
 
 
 async def reply_after(client: httpx.AsyncClient, session_id: str, prompt_id: str) -> str:
-    """发一条消息、等它跑完，交回这一页 transcript 的原文。"""
-
     sent = await client.post(f"/sessions/{session_id}/prompts", json=prompt(prompt_id))
     assert sent.status_code == 200, sent.text
     await settled(client, session_id)
@@ -126,7 +113,6 @@ async def test_a_draft_preview_runs_the_draft_of_the_moment_and_a_version_previe
     assert "草稿的答复" in await reply_after(app_client, draft, "prm_draft_1")
     assert "版本的答复" in await reply_after(app_client, pinned, "prm_pinned_1")
 
-    # 改了草稿：草稿预览下一次运行就换成新草稿，版本预览不变。
     await save_draft(admin, AGENT, EDITED_MODEL)
     assert "改过的草稿的答复" in await reply_after(app_client, draft, "prm_draft_2")
     assert "改过的草稿的答复" not in await reply_after(app_client, pinned, "prm_pinned_2")
@@ -144,7 +130,6 @@ async def test_a_preview_needs_an_existing_agent_and_one_of_its_versions(
         json={"id": str(uuid.uuid4()), "agent_id": AGENT, "preview": {"agent_id": AGENT}},
     )
     neither = await app_client.post("/sessions", json={"id": str(uuid.uuid4())})
-    # 同一个不上菜单的 agent，开普通会话照旧不行。
     plain = await app_client.post("/sessions", json={"id": str(uuid.uuid4()), "agent_id": AGENT})
 
     assert (missing.status_code, missing.json()) == (404, {"detail": "没有标识为 nobody 的 agent"})
@@ -167,8 +152,6 @@ async def test_a_preview_runs_only_the_agent_it_previews(
 
 @pytest.fixture
 async def director(admin: httpx.AsyncClient, seeded: str) -> None:
-    """上了首页菜单的 ``director``，开普通会话用。"""
-
     await publish_agent(admin, "director", model=VERSION_MODEL)
 
 
@@ -226,9 +209,6 @@ async def test_a_preview_cannot_be_forked_or_copied_into_or_out_of(
     refused = {"detail": "预览会话不能分叉，也不能拷文件进出"}
     for answer in (forked, copied_out, copied_in):
         assert (answer.status_code, answer.json()) == (422, refused)
-
-
-# --- 回调与事件流：标着 preview ---------------------------------------------------
 
 
 @pytest.fixture

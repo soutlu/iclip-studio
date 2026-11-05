@@ -1,7 +1,3 @@
-"""参考视频用例与仓储：建行幂等与建条目、属主检查、版本冲突、拆解中不许改与重拆、改标签与重新打标、
-移除后列表不见但按地址仍能用、AI 导演的 ``ensure``、按标签筛选。用例接真的 Postgres 仓储，排队与
-上传记录是替身。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -47,8 +43,6 @@ def principal(user_id: uuid.UUID, role: str = "editor") -> Principal:
 
 
 class RecordingQueue:
-    """记下排了哪些行；``finish_with`` 给了就像后台那样立刻把这一行拆完。"""
-
     def __init__(self, store: SqlReferenceStore, *, finish_with: str | None = None) -> None:
         self._store = store
         self._finish_with = finish_with
@@ -68,8 +62,6 @@ class BrokenQueue:
 
 
 def uploads_of(owned: Mapping[tuple[uuid.UUID, uuid.UUID], str]) -> OwnVideoUpload:
-    """（属主，uploadId）对得上才交回地址。"""
-
     async def own_video_upload(who: Principal, upload_id: uuid.UUID) -> str | None:
         return owned.get((who.user_id, upload_id))
 
@@ -111,7 +103,6 @@ async def test_creating_twice_from_the_same_video_makes_one_row_and_one_breakdow
     assert (was_new, again_new) == (True, False)
     assert again.id == created.id
     assert created.breakdown_status == "pending"
-    # 还在资料库里的那一行，别人再传只是打开它，属主不变。
     assert (created.user_name, again.user_name, again.can_edit) == ("maya", "maya", False)
     assert queue.enqueued == [created.id]
     listed = await references.list(principal(maya))
@@ -283,8 +274,6 @@ async def test_ensure_puts_a_failed_video_back_in_line_and_waits_for_the_new_res
 
 
 class LockstepStore(SqlReferenceStore):
-    """两次 ``ensure_row`` 都读完才放行，让两次 ``ensure`` 都看到那一行还是已失败。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         super().__init__(engine)
         self._both_read = asyncio.Barrier(2)
@@ -455,7 +444,6 @@ async def test_filters_list_owners_by_count_and_skip_removed_rows(engine: AsyncE
 
     owners = (await references.filters()).owners
 
-    # 条数多的在前，同数按用户名；移除的不算。
     assert [(one.user_name, one.count) for one in owners] == [
         ("maya", 2),
         ("nora", 1),

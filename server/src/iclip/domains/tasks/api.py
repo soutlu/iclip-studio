@@ -1,5 +1,3 @@
-"""需求单 HTTP 端点。读取使用 tasks:read，写入使用 tasks:write，状态和角色约束由服务层校验。"""
-
 from __future__ import annotations
 
 import uuid
@@ -48,7 +46,6 @@ def create_tasks_router(service: TaskService, *, act_as: ActAs) -> APIRouter:
     ) -> TasksPageOut:
         """按建立时间倒序翻页。``ids`` 可重复给，按 id 集合批量读取，一次最多 100 个。"""
 
-        # 「我认领的」只认 me：认领人必须从服务端身份来，不能是调用方报上来的 id。
         assignee = principal.user_id if claimed_by == "me" else None
         page = await service.list_recent(
             status=status, assignee_user_id=assignee, ids=ids, limit=limit, cursor=cursor

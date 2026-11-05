@@ -1,34 +1,3 @@
-"""一次性切换：把旧的文件配置（config.yaml 的 ``models`` 段与 ``conversations.title_model``、agents.yaml、
-skills 目录）写进数据库，并给现有对话开运行时会话。
-
-用法（在服务器上，与 ``scripts.admin`` 一样经 compose 跑）：
-
-    docker compose run --rm server python -m scripts.import_agent_config \\
-        --runtime-config configs/runtime.yaml \\
-        --legacy-config configs/config.old.yaml --agents agents/agents.yaml --skills skills [--dry-run]
-
-旧文件直接用 PyYAML 读，不经过新版的配置加载。数据库照常按 ``CONFIG_FILE``（缺省 ``configs/config.yaml``，
-已删掉 ``models`` 段与 ``title_model``）连；技能库、模型供应商与 agent 配置三块服务按运行时服务的同一套装配
-直接建（``CREDENTIAL_ENCRYPTION_KEYS`` 来自环境变量），插件登记表按 ``--runtime-config`` 里的 ``plugins``
-打开插件包得到，与运行时服务启动时同一份。运行时配置里配了 ``shot_video`` 或 ``video_breakdown`` 时，插件包
-打开时要向后端的内部接口核对插件服务：这一步要后端已经起来、``RUNTIME_INTERNAL_TOKEN`` 与运行时配置里的一致、
-后端开了对应服务，否则就拒绝、什么都不写。写入都经各领域的服务，复用它们的校验、试连与发布检查，所以新建密钥会真的连一次模型供应商。
-
-检查清单（任何一条不满足就报错停下，什么都不写）：
-
-- 库里还没有任何 agent、技能或供应商；
-- 有一个在用的 root 账号，它记为这些配置的操作人（取最早建的那个）；
-- 每个模型的 ``provider`` 恰好对应一份供应商声明的 ``pydantic_ai_provider``；声明里没有的模型要声明允许
-  自己加；每个模型的 ``api_key_env`` 在环境变量里有值；
-- 思考档位在声明允许的档位里（自己加的模型允许它配的那一档），不自动改档；
-- agents.yaml 只有认得的字段；每个 spec 文件除注释外没有内容；引用的模型、技能都在；子 agent 的目录名合乎
-  agent 标识规则，同一个子 agent 在几处的写法一致；
-- 各技能导入与发布、各 agent 发布都通过检查（插件要在本部署的登记表里）。
-
-``--dry-run`` 在同一个事务里把上面的事全做一遍再整体回滚，打印会写入的内容；正式运行在一个事务里做完，
-任何一步失败全部回滚。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -79,7 +48,6 @@ from iclip.config import load_runtime_config, resolve_settings
 from iclip.platform.db.engine import build_engine
 
 NOTE = "从文件配置切换"
-"""技能与 agent 的 v1 发布说明。"""
 
 INSTRUCTIONS_FILENAME = "instructions.md"
 
@@ -93,16 +61,11 @@ _MODEL_FIELDS = frozenset(
 
 
 class ImportRefused(Exception):
-    """切换前的检查没通过；消息写明是哪一处。"""
-
-
-# --- 读旧文件，定计划 --------------------------------------------------------------
+    pass
 
 
 @dataclass(frozen=True)
 class LegacyModel:
-    """config.yaml ``models`` 段的一项。"""
-
     key: str
     provider: str
     api: str
@@ -118,7 +81,6 @@ class CredentialPlan:
     name: str
     fields: dict[str, str]
     source: tuple[str, str | None]
-    """（api_key_env，base_url）：同一组只建一把。"""
 
 
 @dataclass
@@ -131,8 +93,6 @@ class CustomModelPlan:
 
 @dataclass
 class ProviderPlan:
-    """按一份声明接入的供应商，名字就用声明名。第一把密钥是默认密钥。"""
-
     declaration: ProviderDeclaration
     credentials: list[CredentialPlan] = field(default_factory=list[CredentialPlan])
     custom_models: list[CustomModelPlan] = field(default_factory=list[CustomModelPlan])
@@ -140,8 +100,6 @@ class ProviderPlan:
 
 @dataclass(frozen=True)
 class ModelRef:
-    """agent 配置里的 ``model``：供应商、模型名、第几把密钥与思考档位。"""
-
     provider: str
     name: str
     credential_index: int
@@ -175,7 +133,6 @@ class ImportPlan:
     title_model: ModelRef | None
     skills: dict[str, dict[str, str]]
     agents: list[AgentPlan]
-    """先子 agent（各自只出现一次），再顶层 agent，按文件里的先后；``sort_order`` 按顶层在前的先后排。"""
 
 
 def _mapping(raw: object, where: str) -> dict[str, Any]:
@@ -199,8 +156,6 @@ def _read_yaml(path: Path) -> object:
 
 
 def read_legacy_models(path: Path) -> tuple[dict[str, LegacyModel], str | None]:
-    """旧 config.yaml 的 ``models`` 段与 ``conversations.title_model``；其余段不看。"""
-
     raw = _mapping(_read_yaml(path), str(path))
     models: dict[str, LegacyModel] = {}
     for key, section in _mapping(raw.get("models"), "models").items():
@@ -241,8 +196,6 @@ def _declaration_for(provider: str, declarations: Declarations, key: str) -> Pro
 def plan_models(
     legacy: Mapping[str, LegacyModel], declarations: Declarations, env: Mapping[str, str]
 ) -> tuple[dict[str, ProviderPlan], dict[str, ModelRef]]:
-    """按声明接入供应商、按（api_key_env，base_url）建密钥、补自己加的模型，交回每个旧模型名指到哪里。"""
-
     providers: dict[str, ProviderPlan] = {}
     refs: dict[str, ModelRef] = {}
     for key, model in legacy.items():
@@ -307,8 +260,6 @@ def plan_models(
 
 
 def _spec_instructions(base_dir: Path, spec: object, where: str) -> tuple[str, str]:
-    """（spec 所在目录名，同目录 instructions.md 的内容）。spec 文件除注释外有内容就报错。"""
-
     if not isinstance(spec, str):
         raise ImportRefused(f"{where}.spec 应是文件路径")
     path = (base_dir / spec).resolve()
@@ -340,8 +291,6 @@ def _check_agent_id(agent_id: str, where: str) -> None:
 def plan_agents(
     path: Path, models: Mapping[str, Any], skills: Mapping[str, Any]
 ) -> list[AgentPlan]:
-    """读 agents.yaml：顶层 agent 上首页菜单，子 agent 各建成独立的 agent、不上菜单。"""
-
     raw = _mapping(_read_yaml(path), str(path))
     _unknown(raw, frozenset({"agent"}), str(path))
     base_dir = path.parent
@@ -414,8 +363,6 @@ def plan_agents(
 
 
 def read_skills(directory: Path) -> dict[str, dict[str, str]]:
-    """技能目录下每个带 ``SKILL.md`` 的子目录是一个技能：名字 → 文件（相对路径 → 内容）。"""
-
     if not directory.is_dir():
         raise ImportRefused(f"技能目录不存在：{directory}")
     found: dict[str, dict[str, str]] = {}
@@ -451,15 +398,7 @@ def build_plan(
     )
 
 
-# --- 一个事务里写 ----------------------------------------------------------------
-
-
 class OneTransaction:
-    """把各仓储的 ``engine.connect()`` / ``engine.begin()`` 都落到同一个连接、同一个外层事务上：``begin`` 开
-    一个保存点，块里出错只回滚到保存点（与仓储自己开事务时的语义一致），整体提交或回滚由调用方决定。
-
-    仓储只用这两个入口，所以这里只实现它们；交给 ``build_config_services`` 时按 ``AsyncEngine`` 传。"""
-
     def __init__(self, conn: AsyncConnection) -> None:
         self._conn = conn
 
@@ -552,8 +491,6 @@ def _agent_config(
 async def apply_plan(
     plan: ImportPlan, services: ConfigServices, conn: AsyncConnection, *, say: Callable[[str], None]
 ) -> ImportResult:
-    """按计划经各领域服务写入，最后给现有对话开会话；调用方负责提交或回滚。"""
-
     await _refuse_if_configured(services)
     by = await _operator(conn)
     providers = services.model_providers
@@ -641,7 +578,6 @@ async def apply_plan(
     ]
     await agents.reorder(AgentOrderIn(ids=order))
 
-    # 现有对话（含已删的）各开一个归后端的会话：agent 还在就指向它刚发布的 v1，不在了版本为空（运行时装不起来）。
     await conn.execute(
         text(
             "INSERT INTO agent_runtime.sessions (id, app_id, agent_version_id)"
@@ -676,11 +612,6 @@ async def run_import(
     credential_probe: CredentialProbe | None = None,
     say: Callable[[str], None] = print,
 ) -> ImportResult:
-    """读旧文件定计划，再在一个事务里写；``dry_run`` 时最后整体回滚。检查不过抛 ``ImportRefused``。
-
-    ``plugins`` 是本部署的插件登记表，agent 发布时按它查插件；``credential_keys`` 是加密密钥机密字段的
-    Fernet key。"""
-
     plan = build_plan(
         legacy_config=legacy_config,
         agents_file=agents_file,
@@ -691,7 +622,6 @@ async def run_import(
     async with engine.connect() as conn:
         transaction = await conn.begin()
         try:
-            # 仓储只用 connect() / begin() 两个入口，OneTransaction 把它们落到这个事务上。
             services = build_config_services(
                 cast("AsyncEngine", OneTransaction(conn)),
                 credential_keys=credential_keys,
@@ -715,11 +645,6 @@ async def run_import(
 async def deployment_plugins(
     runtime_config: Path, engine: AsyncEngine
 ) -> AsyncGenerator[PluginRegistry]:
-    """按运行时配置的 ``plugins`` 打开插件包，交回与运行时服务启动时同一份插件登记表；没配就是空的。
-
-    插件类绑的工作区接这个库，切换只读插件的名字、依赖与参数，不经它们写东西。打开失败（机密的
-    环境变量没设、配了 ``shot_video`` 却取不到后端的图片模型）抛 ``ImportRefused``。"""
-
     try:
         config = load_config(runtime_config)
     except (OSError, ValueError) as exc:
@@ -740,8 +665,6 @@ async def deployment_plugins(
 
 
 async def _no_model_calls(declaration: str, model: str) -> ModelConnection:
-    """切换只读插件的名字、依赖与参数，不跑工具，也就不该有插件来查模型连接。"""
-
     raise RuntimeError(f"切换配置时不调模型，插件却要查 {declaration}/{model} 的连接")
 
 
@@ -791,7 +714,6 @@ def main(argv: Sequence[str]) -> int:
     try:
         asyncio.run(go())
     except (ImportRefused, DomainError) as exc:
-        # 检查不过与领域服务的拒绝（如发布被编译检查拦下）都已整体回滚，原因原样给操作的人。
         print(f"切换没有进行，什么都没写：{exc}", file=sys.stderr)
         return 1
     return 0

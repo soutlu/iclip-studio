@@ -1,8 +1,3 @@
-"""从快照、运行结束事件与 run→prompt 映射重建历史，三者以 run_id 关联。
-
-读取完整消息快照后由调用方分页。包含中断快照，与运行入口保持相同口径，避免丢失失败轮次或复用轮号。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -47,41 +42,29 @@ from agent_runtime.transcript.ops import (
 
 
 class ConversationSnapshots(StepStore, Protocol):
-    """历史读取与截断所需的存储协议；截断保存为新快照，保留旧记录。
-
-    在官方 StepStore 之上多一个按对话取快照的入口，和三个批量读：重建一段历史要看每个运行的事件、
-    下属运行与派发账本，逐个运行去查会让查询条数随运行数增长，批量读让它固定。
-    """
-
     async def latest_conversation_snapshot(
         self, *, conversation_id: str, include_interrupted: bool = False
     ) -> ContinuableSnapshot | None: ...
 
-    async def list_events_for_runs(self, run_ids: Sequence[str]) -> Mapping[str, list[StepEvent]]:
-        """多个运行的事件，各自按 seq 升序；问到的运行都在结果里，没有事件的是空列表。"""
-        ...
+    async def list_events_for_runs(
+        self, run_ids: Sequence[str]
+    ) -> Mapping[str, list[StepEvent]]: ...
 
-    async def list_child_runs(self, parent_run_ids: Sequence[str]) -> Mapping[str, list[RunRecord]]:
-        """按父运行分组的下属运行，组内按开跑时刻；问到的父运行都在结果里，没有下属的是空列表。"""
-        ...
+    async def list_child_runs(
+        self, parent_run_ids: Sequence[str]
+    ) -> Mapping[str, list[RunRecord]]: ...
 
     async def get_tool_effects(
         self, keys: Sequence[tuple[str, str]]
-    ) -> Mapping[tuple[str, str], ToolEffectRecord]:
-        """按 ``(run_id, tool_call_id)`` 取工具账本；没有记录的键不在结果里。"""
-        ...
+    ) -> Mapping[tuple[str, str], ToolEffectRecord]: ...
 
 
 class PromptRunsSource(Protocol):
-    """查询 run 所属消息及其当前状态。"""
-
     async def prompt_of_runs(self, conversation_id: str) -> dict[str, str]: ...
 
     async def prompt_status_of_runs(self, conversation_id: str) -> dict[str, JobStatus]: ...
 
-    async def steered_prompts(self, conversation_id: str) -> tuple[SteeredPrompt, ...]:
-        """本对话插过话的消息，按插话先后。"""
-        ...
+    async def steered_prompts(self, conversation_id: str) -> tuple[SteeredPrompt, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,26 +72,18 @@ class TranscriptHistoryView:
     turns: tuple[TranscriptTurn, ...]
     context_tokens: int | None
     interactions: tuple[Interaction, ...] = ()
-    """持久化审批视图，供进程重启后恢复待处理交互。"""
     tasks: tuple[TranscriptTask, ...] = ()
-    """本对话派出过的子代理任务与后台工具任务。"""
     agents: tuple[AgentDescriptor, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class TranscriptHistory:
-    """根据对话 id 重建历史轮次。"""
-
     store: ConversationSnapshots
     prompt_runs: PromptRunsSource
     display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY
-    """与实时运行共享的工具卡展示规则。"""
     delegate_tool: str | None = None
-    """派发工具名；留空则不查子代理账本。"""
 
     async def read(self, conversation_id: str) -> TranscriptHistoryView:
-        """读取可恢复的时间线与 Pydantic AI 上下文读数。"""
-
         snapshot = await self.store.latest_conversation_snapshot(
             conversation_id=conversation_id, include_interrupted=True
         )
@@ -119,7 +94,6 @@ class TranscriptHistory:
         states = _run_states(run_ids, events_of)
         errors: dict[str, str | None] = {}
         for run_id in run_ids:
-            # 取消不是错误：实时侧的 cancelled 轮不带 error，这里也不把 CancelledError 当错误文本。
             errors[run_id] = (
                 None if states[run_id] == "cancelled" else run_error_from_events(events_of[run_id])
             )
@@ -150,11 +124,6 @@ class TranscriptHistory:
         )
 
     async def read_tasks(self, conversation_id: str) -> tuple[TranscriptTask, ...]:
-        """本对话的任务（子代理与后台工具），与 ``read`` 给的 ``tasks`` 相同；只推导任务，不重建轮次。
-
-        子代理页取名册用：只要快照、运行终态、派发账本与下属运行，不必为它把主流整段重建一遍。
-        """
-
         snapshot = await self.store.latest_conversation_snapshot(
             conversation_id=conversation_id, include_interrupted=True
         )
@@ -171,11 +140,6 @@ class TranscriptHistory:
         run_ids: Sequence[str],
         run_states: Mapping[str, TurnState],
     ) -> tuple[dict[str, str], tuple[TranscriptTask, ...]]:
-        """派发调用对上的子运行 id 与本对话的任务，``read`` 与 ``read_tasks`` 共用。
-
-        ``run_states`` 是本对话每个运行的终态：后台工具任务按它判中断终态，下属运行按它随父算停。
-        """
-
         subagent_of_call = await self._subagent_of_call(messages)
         tasks = tasks_from_messages(
             messages,
@@ -187,12 +151,6 @@ class TranscriptHistory:
         return subagent_of_call, tasks
 
     async def read_child(self, child_run_id: str) -> TranscriptHistoryView:
-        """按子运行 id 重建子代理那条流；一次派发就是它的 t1。
-
-        子运行没有自己的终态而父运行被停时随父算 cancelled，与任务表同口径。
-        没落过快照的子运行读出来是空的，与主 agent 首个响应期间被停的边界相同。
-        """
-
         snapshot = await self.store.latest_snapshot(run_id=child_run_id, include_interrupted=True)
         if snapshot is None:
             return TranscriptHistoryView(turns=(), context_tokens=None)
@@ -219,8 +177,6 @@ class TranscriptHistory:
         return run_state_from_events(await self.store.list_events(run_id=run_id)) == "cancelled"
 
     async def _subagent_of_call(self, messages: Sequence[ModelMessage]) -> dict[str, str]:
-        """从工具账本读出每次派发调用对上的子运行 id；父工具卡与任务都按它认领。"""
-
         if self.delegate_tool is None:
             return {}
         calls = [
@@ -241,13 +197,6 @@ class TranscriptHistory:
     async def _child_runs(
         self, run_ids: Sequence[str], run_states: Mapping[str, TurnState]
     ) -> tuple[ChildRun, ...]:
-        """按运行血缘取本对话每个 run 的下属运行；终态与结束时间来自它们自己的事件。
-
-        父运行被停止时子运行收到的是 asyncio 取消，官方不会给它写终态事件；
-        这种没有自己终态的子运行随父运行算 cancelled，与实时侧的 killed 对上。
-        下属运行一次查完，它们的事件再一次查完。
-        """
-
         if self.delegate_tool is None:
             return ()
         children_of = await self.store.list_child_runs(run_ids)
@@ -263,7 +212,6 @@ class TranscriptHistory:
                 state = run_state_from_events(events)
                 if not _ended(events) and parent_state == "cancelled":
                     state = "cancelled"
-                # 子运行的 metadata 就是装配时写入的档案；按 get 读，缺键得 None。
                 profile = cast("SubAgentProfile", record.metadata)
                 children.append(
                     ChildRun(
@@ -279,8 +227,6 @@ class TranscriptHistory:
         return tuple(children)
 
     async def turn_count(self, conversation_id: str) -> int:
-        """这段对话一共几轮。分叉在动手拷贝之前用它挡掉越界的分叉点。"""
-
         snapshot = await self.store.latest_conversation_snapshot(
             conversation_id=conversation_id, include_interrupted=True
         )
@@ -291,11 +237,6 @@ class TranscriptHistory:
     async def plan_fork(
         self, conversation_id: str, *, ordinal: int, target_conversation_id: str
     ) -> ForkSeed | None:
-        """规划一次分叉，不写库；轮号越界返回 None。
-
-        消息里的 run_id 原样保留：副本不复制运行记录，靠这些 id 回源查终态与子代理。
-        """
-
         snapshot = await self.store.latest_conversation_snapshot(
             conversation_id=conversation_id, include_interrupted=True
         )
@@ -310,11 +251,6 @@ class TranscriptHistory:
         )
 
     async def plan_rewind(self, conversation_id: str, *, ordinal: int) -> TurnRewind | None:
-        """从同一快照验证并规划末轮截断，不写库；非末轮返回 None。
-
-        调用方可先检查相关 run 数据，再提交截断，避免校验失败后已丢失末轮。
-        """
-
         snapshot = await self.store.latest_conversation_snapshot(
             conversation_id=conversation_id, include_interrupted=True
         )
@@ -335,23 +271,16 @@ def _run_states(
 
 
 def _ended(events: Sequence[StepEvent]) -> bool:
-    """有没有官方写的终态事件；被父运行连带取消的子运行没有。"""
-
     return any(event.kind in {"run_completed", "run_failed"} for event in events)
 
 
 @dataclass(frozen=True, slots=True)
 class ForkSeed:
-    """尚未落库的分叉起点：截到某一轮的消息，等着写成副本的第一张快照。"""
-
     store: ConversationSnapshots
     conversation_id: str
-    """副本的对话 id，不是源的。"""
     kept: list[ModelMessage]
 
     async def commit(self) -> None:
-        """把起点存成副本的快照；这张快照的 run_id 不参与消息分轮，与截断保存同一口径。"""
-
         await self.store.save_snapshot(
             ContinuableSnapshot(
                 run_id=f"fork-{uuid.uuid4().hex[:8]}",
@@ -364,16 +293,12 @@ class ForkSeed:
 
 @dataclass(frozen=True, slots=True)
 class TurnRewind:
-    """尚未落库的截断计划，run_ids 为末轮包含的运行。"""
-
     store: ConversationSnapshots
     conversation_id: str
     kept: list[ModelMessage]
     run_ids: tuple[str, ...]
 
     async def commit(self) -> None:
-        """将截断结果保存为新快照，保留旧快照和事件；新快照 run_id 不参与消息分轮。"""
-
         await self.store.save_snapshot(
             ContinuableSnapshot(
                 run_id=f"regenerate-{uuid.uuid4().hex[:8]}",

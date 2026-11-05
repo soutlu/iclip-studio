@@ -1,6 +1,3 @@
-"""给应用的模型调用：按代码里写定的模型在配置页里找连接，把请求体转给上游的 Responses 接口，上游的答复
-原样交回。密钥只在运行时里用，不交给应用；日志不记请求体与密钥。"""
-
 from __future__ import annotations
 
 import httpx
@@ -22,8 +19,6 @@ _OWN_FAILURE = {
 def create_model_calls_router(
     connection: ModelConnectionLookup, client: httpx.AsyncClient
 ) -> APIRouter:
-    """``connection`` 按（声明名，模型名）现查连接；``client`` 是调上游用的客户端，它的超时就是等上游的上限。"""
-
     router = APIRouter(tags=["model-calls"])
 
     @router.post(
@@ -43,7 +38,6 @@ def create_model_calls_router(
         },
     )
     async def responses(body: ModelCallIn) -> Response:
-        # 找不到连接抛 ModelUnavailable，由错误处理器答 409 并带 code。
         found = await connection(body.declaration, body.model)
         try:
             upstream = await client.post(

@@ -1,13 +1,3 @@
-"""出图、取帧拼板、宫格切格与参考视频拆解四个端口的 HTTP 实现：调后端给运行时的内部接口。
-
-路径、请求、答复与状态码见 contract/conventions.md §21；请求与答复用各插件包 ``wire.py`` 里的模型，与后端
-那一侧共用。后端答的 422 还原成端口声明的错误、原话不变，工具照进程内那样处理。其余失败（连不上、超时、
-令牌不对、404、5xx、答复形状不对）抛 ``InternalApiError``：与进程内适配器的意外错误一样，工具不接，
-这次工具调用失败，不翻成让模型改参数的错误。其中后端暂时不可达（传输错误、超时与 502/503/504）是它的子类
-``InternalApiUnavailable``；只有查出图任务把它还原成端口的 ``ImageJobUnavailable``，让轮询接着等，
-提交不是幂等的，照旧失败即报。
-"""
-
 from __future__ import annotations
 
 import json
@@ -43,17 +33,12 @@ from iclip_video.video_breakdown.ports import FailedBreakdown
 from iclip_video.video_breakdown.wire import ReferenceBreakdownCall, ReferenceBreakdownResult
 
 PLUGINS_PATH: Final = "/internal/runtime/plugins"
-"""插件服务在后端的路径前缀；客户端的 ``base_url`` 是后端的根地址。"""
 
 CONNECT_TIMEOUT_SECONDS: Final = 10.0
-"""连后端内部接口建连的上限。"""
 
 POLL_TIMEOUT: Final = httpx.Timeout(30.0, connect=CONNECT_TIMEOUT_SECONDS)
-"""查一次出图任务的上限。共用客户端的答复上限要等最慢的拆解与取帧，用在轮询上，总时限只在两次查询之间
-检查，就形同虚设。"""
 
 _UNAVAILABLE_STATUSES: Final = frozenset({502, 503, 504})
-"""网关或后端暂时答不了：后端重启、过载或网关超时。"""
 
 _EXCERPT_LIMIT: Final = 300
 
@@ -65,25 +50,20 @@ _PLUGIN_SERVICES: Final = TypeAdapter(PluginServices)
 
 
 class InternalApiError(RuntimeError):
-    """后端内部接口没给出约定的答复。消息带方法、路径与状态码或连接错误的类名，不带令牌。"""
+    pass
 
 
 class InternalApiUnavailable(InternalApiError):
-    """后端暂时不可达：传输错误、超时，或答 502/503/504。请求可能到了后端，也可能没到。"""
+    pass
 
 
 class _Envelope(BaseModel):
-    """后端的错误信封（conventions §4）；带 ``code`` 的失败另按自己的模型读。"""
-
     model_config = ConfigDict(extra="ignore")
 
     detail: str
 
 
 class InternalApi:
-    """后端内部接口的一层薄封装：``client`` 由组合根建好，带后端根地址、``Authorization: Bearer`` 令牌与
-    超时；这里发请求、认状态码、按模型读答复，失败一律抛 ``InternalApiError``。"""
-
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
 
@@ -96,13 +76,6 @@ class InternalApi:
         params: dict[str, str] | None = None,
         timeout: httpx.Timeout | None = None,
     ) -> httpx.Response:
-        """发一次请求交回答复，不看状态码。``timeout`` 不给就用客户端的上限。
-
-        Raises:
-            InternalApiUnavailable: 连不上、超时等传输错误。
-            InternalApiError: 其余请求错误。
-        """
-
         where = f"{method} {PLUGINS_PATH}{path}"
         try:
             return await self._client.request(
@@ -120,12 +93,6 @@ class InternalApi:
             raise InternalApiError(f"后端内部接口 {where} 没发成（{type(exc).__name__}）") from exc
 
     def answer[T](self, response: httpx.Response, adapter: TypeAdapter[T]) -> T:
-        """2xx 的答复按 ``adapter`` 读出来。
-
-        Raises:
-            InternalApiError: 不是 2xx，或答复的形状不对。
-        """
-
         if not response.is_success:
             raise self.unexpected(response)
         try:
@@ -134,25 +101,12 @@ class InternalApi:
             raise self.unexpected(response, why="答复的形状不对") from exc
 
     def detail(self, response: httpx.Response) -> str:
-        """错误信封里的 ``detail``。
-
-        Raises:
-            InternalApiError: 答复不是错误信封。
-        """
-
         try:
             return _Envelope.model_validate_json(response.content).detail
         except ValidationError as exc:
             raise self.unexpected(response, why="答复不是错误信封") from exc
 
     def failure[F: BaseModel](self, response: httpx.Response, model: type[F]) -> F:
-        """带 ``code`` 的 422 按 ``model`` 读出来。请求结构校验失败的 422 只有 ``detail``、没有 ``code``，
-        那是客户端发错了，不当成端口的失败。
-
-        Raises:
-            InternalApiError: 答复里没有 ``code``，或形状不合 ``model``。
-        """
-
         try:
             payload = json.loads(response.content)
         except ValueError as exc:
@@ -166,9 +120,6 @@ class InternalApi:
 
     @staticmethod
     def unexpected(response: httpx.Response, *, why: str | None = None) -> InternalApiError:
-        """把一个不合约定的答复写成 ``InternalApiError``：状态码加答复开头一段；502/503/504 写成
-        ``InternalApiUnavailable``。"""
-
         request = response.request
         reason = f"，{why}" if why is not None else ""
         kind = (
@@ -183,8 +134,6 @@ class InternalApi:
 
 
 class HttpImageGenerations:
-    """``ImageGenerations`` 经 ``/plugins/generations``；提交被拒（422）还原成 ``InvalidImageRequest``。"""
-
     def __init__(self, api: InternalApi) -> None:
         self._api = api
 
@@ -196,8 +145,6 @@ class HttpImageGenerations:
         return self._api.answer(response, _IMAGE_JOB)
 
     async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
-        """查一次任务，上限 ``POLL_TIMEOUT``；后端暂时不可达还原成 ``ImageJobUnavailable``。"""
-
         try:
             response = await self._api.send(
                 "GET",
@@ -211,8 +158,6 @@ class HttpImageGenerations:
 
 
 class HttpFrameBoards:
-    """``FrameBoards`` 经 ``/plugins/frame-boards``；422 按 ``code`` 还原成同一个 ``FrameBoardsFailed`` 子类。"""
-
     def __init__(self, api: InternalApi) -> None:
         self._api = api
 
@@ -226,7 +171,6 @@ class HttpFrameBoards:
         call = FrameBoardsCall(
             video_url=video_url, rows=tuple(tuple(row) for row in rows), previous=previous
         )
-        # 取帧台账在线上按它的 camelCase 别名。
         response = await self._api.send(
             "POST", "/frame-boards", body=call.model_dump(mode="json", by_alias=True)
         )
@@ -236,8 +180,6 @@ class HttpFrameBoards:
 
 
 class HttpGridCuts:
-    """``GridCuts`` 经 ``/plugins/grid-cuts``；没切成（422）还原成 ``GridCutFailed``，原因不变。"""
-
     def __init__(self, api: InternalApi) -> None:
         self._api = api
 
@@ -260,9 +202,6 @@ class HttpGridCuts:
 
 
 class HttpReferenceBreakdowns:
-    """``ReferenceBreakdowns`` 经 ``/plugins/reference-breakdowns``；要排拆解时后端等到出结果才答，客户端的
-    超时要比后端的等待上限长。"""
-
     def __init__(self, api: InternalApi) -> None:
         self._api = api
 
@@ -273,12 +212,6 @@ class HttpReferenceBreakdowns:
 
 
 async def plugin_services(api: InternalApi) -> PluginServices:
-    """后端开了哪些插件服务，经 ``/plugins/services``。
-
-    Raises:
-        InternalApiError: 后端连不上或没给出约定的答复。
-    """
-
     response = await api.send("GET", "/services")
     return api.answer(response, _PLUGIN_SERVICES)
 

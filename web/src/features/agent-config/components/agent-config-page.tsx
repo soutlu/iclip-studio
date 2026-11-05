@@ -13,21 +13,13 @@ import type { Panel } from './panel'
 import { PreviewHost, type PreviewConversationProps } from './preview-host'
 
 type AgentConfigPageProps = {
-  /** 地址栏里选中的 agent；不给或不存在时选第一个在用的。 */
   agentId: string | undefined
   onAgentChange: (id: string) => void
-  /** 右栏测试预览里的对话与运行过程；对话组件属于对话模块，由路由层接进来。 */
   PreviewConversation: ComponentType<PreviewConversationProps>
 }
 
-/** 按 agent 记的界面状态：换了 agent 就各自从头（不开面板、看草稿）。 */
 type Scoped<T> = { agentId: string | null; value: T }
 
-/**
- * Agent 配置页：顶部是配置导航（这一版有「Agent」「技能库」「插件」「MCP 服务」，持 `model:manage` 时另有「模型与供应商」）
- * 下面左右各半，左边编辑 agent，右边默认是测试预览，打开配置面板时面板替换它（预览留着，只是看不见）。
- * 新建入口在 Agent 切换菜单里，打开全宽创建页；不开弹窗。
- */
 export function AgentConfigPage({
   agentId,
   onAgentChange,
@@ -43,7 +35,6 @@ export function AgentConfigPage({
     agentId: null,
     value: null,
   })
-  // 面板收起后把焦点还给打开它的那个控件。
   const openerRef = useRef<HTMLElement | null>(null)
 
   const list = agents.data ?? []
@@ -53,7 +44,6 @@ export function AgentConfigPage({
     null
   const panel = panelState.agentId === currentId ? panelState.value : null
   const viewingVersionId = versionState.agentId === currentId ? versionState.value : null
-  // 编辑区与版本菜单读的是同一份，这里不另起请求。
   const currentDetail = useAgent(currentId)
   const versions = useAgentVersions(currentId)
   const viewingVersionNumber = versions.data?.find((item) => item.id === viewingVersionId)?.version
@@ -61,7 +51,6 @@ export function AgentConfigPage({
   const setPanel = (next: Panel | null) => {
     if (next !== null && panel === null && document.activeElement instanceof HTMLElement)
       openerRef.current = document.activeElement
-    // 打开面板就回到草稿：面板改的是草稿。
     if (next !== null) setVersionState({ agentId: currentId, value: null })
     setPanelState({ agentId: currentId, value: next })
   }
@@ -78,7 +67,6 @@ export function AgentConfigPage({
     setCreating(false)
     onAgentChange(id)
   }
-  // 创建页会卸载原入口，取消后聚焦重新挂载的切换按钮或空状态新建按钮。
   const cancelCreating = () => {
     setCreating(false)
     requestAnimationFrame(() => agentEntryRef.current?.focus({ preventScroll: true }))
@@ -92,7 +80,6 @@ export function AgentConfigPage({
         : panel.type.startsWith('mcp-')
           ? 'mcp'
           : 'agent'
-  // 编辑技能时正文通常很长：右栏从一半加宽到 3/5，左栏照常可用，一页里改完。
   const wideRight = panel?.type === 'skills' && panel.view.kind === 'editor'
 
   return (
@@ -119,7 +106,6 @@ export function AgentConfigPage({
             <TabsTrigger value="agent">Agent</TabsTrigger>
             <TabsTrigger
               disabled={creating || currentId === null}
-              // 编辑器、选技能也算在这一页下面：已选中时再点回到技能库（Radix 对已选中的页签不发 onValueChange）。
               onClick={() => {
                 if (tab === 'skills') setPanel({ type: 'skills', view: { kind: 'library' } })
               }}
@@ -132,7 +118,6 @@ export function AgentConfigPage({
             </TabsTrigger>
             <TabsTrigger
               disabled={creating || currentId === null}
-              // 在管理列表或某个服务的配置里时这一项已经选中，再点回到服务库。
               onClick={() => {
                 if (panel?.type !== 'mcp-library') setPanel({ type: 'mcp-library' })
               }}
@@ -151,7 +136,6 @@ export function AgentConfigPage({
 
       <div
         className={cn(
-          // relative：测试预览（PreviewHost）绝对定位在右半栏。
           'relative grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns] ui-motion-m motion-reduce:transition-none',
           wideRight
             ? 'md:grid-cols-[minmax(420px,2fr)_minmax(0,3fr)]'
@@ -200,7 +184,6 @@ export function AgentConfigPage({
             onSelectAgent={selectAgent}
             onViewVersion={(value) => {
               setVersionState({ agentId: currentId, value })
-              // 看历史版本时右栏的草稿面板收起。
               if (value !== null) setPanelState({ agentId: currentId, value: null })
             }}
             panel={panel}

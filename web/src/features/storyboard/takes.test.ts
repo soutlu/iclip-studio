@@ -55,7 +55,6 @@ describe('takesOfShot', () => {
     const composite = (spec: Partial<GenerationJob> & { id: string }) =>
       job({ operation: 'compose', rootJobId: 'a', sourceJobId: 'a', ...spec })
     const jobs = [
-      // 提交晚、完成早：按完成时刻排在 v3 前面。
       composite({
         createdAt: '2026-09-01T10:30:00Z',
         durationMs: 9000,
@@ -78,7 +77,6 @@ describe('takesOfShot', () => {
         id: 'a-v2',
         outputUrl: 'a-v2.mp4',
       }),
-      // 基于上一版合成再剪的：来源是 a-v2，原作仍是 a。
       composite({
         createdAt: '2026-09-01T10:20:00Z',
         durationMs: 7000,
@@ -115,7 +113,6 @@ describe('takesOfShot', () => {
       ['b', 'b-v2', 'b-v2.mp4', 5],
       ['a', 'a-v3', 'a-v3.mp4', 7],
     ])
-    // 卡上其余几样仍读出片本身。
     expect(takes[2]).toMatchObject({
       model: 'vendor-a-seedance-2-5',
       resolution: '1080p',

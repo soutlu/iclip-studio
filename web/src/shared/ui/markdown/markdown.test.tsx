@@ -35,7 +35,6 @@ describe('Markdown 代码块', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('fenced 代码块带头部条：语言名，点复制把原文写进剪贴板', async () => {
-    // userEvent.setup 会替换剪贴板，断言用替身须随后安装。
     const user = userEvent.setup()
     const writeText = stubClipboard()
     renderWithTooltip(<Markdown text={'```json\n{\n  "shots": 3\n}\n```\n'} />)

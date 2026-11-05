@@ -1,5 +1,3 @@
-"""装配层的图片模型注册表：能力声明与适配器出自同一张表，按同一个名字对上。"""
-
 from __future__ import annotations
 
 import json
@@ -38,14 +36,12 @@ from tests.helpers.identity import InMemoryUserRepository
 GATEWAY = "https://image.test"
 
 COMMON_KEYS = {"data_id", "user_name", "prompt", "task_source", "env"}
-"""各家 payload 共有的键，由网关 provider 统一填。"""
 
 OWN_KEYS = {
     "nano_banana_pro": {"aspect_ratio", "resolution", "channel"},
     "seedream_v5_pro": {"size", "output_format"},
     "gpt-image-2.5": {"size", "quality"},
 }
-"""各家专有的键。表的键也钉住了落库的 provider 名：改名等于丢掉历史对账。"""
 
 PRINCIPAL = Principal(
     kind="user",
@@ -103,8 +99,6 @@ def build(
 
 
 async def test_every_registered_image_model_is_wired_to_its_own_payload() -> None:
-    """按名字受理的那家，排进队列后打的是它自己的地址、发的是它自己的键。"""
-
     sent: dict[str, dict[str, object]] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -134,8 +128,6 @@ async def test_every_registered_image_model_is_wired_to_its_own_payload() -> Non
 
 
 async def test_a_model_can_declare_its_own_task_routes() -> None:
-    """一家模型在网关上的两条路由与别家不同名时，照它自己声明的打。"""
-
     hit: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -212,8 +204,6 @@ ENHANCE = VideoEnhanceSpec(model="video-enhance", resolutions=("1080p", "720p"),
 
 
 async def test_an_enhancement_runs_through_the_video_lane_to_both_addresses() -> None:
-    """装配好的超分：受理后排进视频那条队列，提交打超分地址，查询与结果同出片。"""
-
     calls: list[tuple[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

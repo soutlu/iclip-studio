@@ -7,11 +7,9 @@ import { Input } from '@/shared/ui/field'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { fileLabel, SKILL_MD } from '../skill-files'
 
-/** 页签行此刻在做的事：添加参考文件、给一个改名、确认删除一个；null 是平常的页签。 */
 export type FileTabsMode =
   { type: 'add' } | { type: 'rename'; path: string } | { type: 'delete'; path: string } | null
 
-/** 需要聚焦的元素：页签用文件路径，另有「添加参考文件」按钮、文件名输入框与删除确认里的「取消」。 */
 export type FileTabsFocusKey = string
 
 export const ADD_KEY = '+add'
@@ -24,11 +22,8 @@ type SkillFileTabsProps = {
   mode: FileTabsMode
   name: string
   nameError: string | null
-  /** 改名或删除正在提交。 */
   pending: boolean
-  /** 保存或发布中：不能增删改文件。 */
   disabled: boolean
-  /** 改名、新建与删除确认会换掉页签里的元素，焦点由编辑器按这些元素去放。 */
   registerElement: (key: FileTabsFocusKey, element: HTMLElement | null) => void
   onSelect: (path: string, focus: boolean) => void
   onStartAdd: () => void
@@ -45,7 +40,6 @@ const TAB_CLASS =
 
 type Overflow = 'none' | 'start' | 'end' | 'both'
 
-// 放不下时，哪一侧还有页签就在哪一侧淡出 40px。
 const FADE: Record<Overflow, string | undefined> = {
   both: 'linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent)',
   end: 'linear-gradient(to right, black calc(100% - 40px), transparent)',
@@ -59,11 +53,6 @@ const overflowOf = (scroller: HTMLElement): Overflow => {
   return start && end ? 'both' : start ? 'start' : end ? 'end' : 'none'
 }
 
-/**
- * 技能文件的页签栏，编辑器上方单独一行，底边一条细线贯穿面板：`SKILL.md`、一道竖线、参考文件（全名、不折行），
- * 放不下时横向滚动、两侧淡出；「+」固定在最右。选中的参考文件带「⋯」（重命名 / 删除），双击也是重命名；
- * 改名与删除确认就地替换这一格，新建的文件名输入框替换「+」。
- */
 export function SkillFileTabs({
   active,
   disabled,
@@ -82,13 +71,11 @@ export function SkillFileTabs({
   pending,
   registerElement,
 }: SkillFileTabsProps) {
-  // 选了菜单里的动作时，焦点交给输入框或确认按钮，不还给「⋯」。
   const choseRef = useRef(false)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const [overflow, setOverflow] = useState<Overflow>('none')
 
-  // 页签增删改名会改变内容宽度，面板拉宽拉窄会改变可见宽度，两者都要重新判断两侧有没有藏着的页签。
   useEffect(() => {
     const scroller = scrollerRef.current
     const list = listRef.current
@@ -121,8 +108,6 @@ export function SkillFileTabs({
     if (path !== undefined) onSelect(path, true)
   }
 
-  // Esc 只收起输入框或删除确认，不连带关掉面板。面板的 Esc 是挂在面板 DOM 上的原生监听，
-  // 比 React 冒泡阶段的处理先到，所以在捕获阶段拦下（标成已处理，面板就不理它）。
   const cancelOnEscape = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
     event.preventDefault()
@@ -166,7 +151,6 @@ export function SkillFileTabs({
     const label = fileLabel(path)
     const selected = path === active
     const reference = path !== SKILL_MD
-    // 页签外面的 li 只管排版，读屏只看到 tablist 里的 tab。
     if (mode?.type === 'rename' && mode.path === path)
       return (
         <li key={path} role="presentation">

@@ -1,5 +1,3 @@
-/** 成片编辑器读写的接口：草稿（合同 §6「成片草稿」）、音乐与字幕记录、生成背景音乐与识别字幕。 */
-
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import type { MusicIn, SubtitleIn, WholeFilmDraftIn } from '@/shared/api/generated/types.gen'
@@ -39,7 +37,6 @@ export const readWholeFilmDraft = (conversationId: string, signal?: AbortSignal)
     ...(signal === undefined ? {} : { signal }),
   })
 
-/** 还没存过时答复 `{ revision: 0, document: null }`；编辑期间不再重读，由编辑器自己持有最新的一版。 */
 export const useWholeFilmDraftQuery = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.draft(conversationId),
@@ -49,7 +46,6 @@ export const useWholeFilmDraftQuery = (conversationId: string) =>
     refetchOnWindowFocus: false,
   })
 
-/** 整份保存；`revision` 对不上是 409（ApiError.status）。 */
 export const saveWholeFilmDraft = (conversationId: string, body: WholeFilmDraftIn) =>
   apiFetch(draftPath(conversationId), zWholeFilmDraftSavedOut, {
     body,
@@ -60,10 +56,6 @@ export const saveWholeFilmDraft = (conversationId: string, body: WholeFilmDraftI
 const exportsPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}/whole-film/exports`
 
-/**
- * 按服务端存着的那一版草稿导出（合同 §6「成片导出」），受理即排队；`revision` 不是存着的那一版是 409，
- * 没开通、画面轨是空的是 422（都带一句可以给人看的原因）。渲染服务不收、连不上都在导出状态里报失败。
- */
 export const startWholeFilmExport = (conversationId: string, revision: number) =>
   apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
     body: { revision },
@@ -71,7 +63,6 @@ export const startWholeFilmExport = (conversationId: string, revision: number) =
     method: 'POST',
   })
 
-/** 自己在这段对话里最新的一次导出；没导出过为 null。 */
 export const readLatestWholeFilmExport = async (conversationId: string, signal: AbortSignal) =>
   (
     await apiFetch(`${exportsPath(conversationId)}/latest`, zLatestExport, {
@@ -80,17 +71,12 @@ export const readLatestWholeFilmExport = async (conversationId: string, signal: 
     })
   ).export
 
-/**
- * 取消一次导出；已经结束的也答 204、状态不变。正在交给渲染服务的那一刻是 409，
- * 渲染服务连不上是 502（都带一句可以给人看的原因），导出不变。
- */
 export const cancelWholeFilmExport = (conversationId: string, exportId: string) =>
   apiFetch(`${exportsPath(conversationId)}/${encodeURIComponent(exportId)}`, zExportCancelled, {
     fallbackErrorMessage: '取消导出失败',
     method: 'DELETE',
   })
 
-/** 这段对话的音乐：生成的与确认时挂到这段对话的上传，按创建时间倒序。 */
 export const useConversationMusic = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.music(conversationId),
@@ -99,7 +85,6 @@ export const useConversationMusic = (conversationId: string) =>
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 这段对话的字幕记录；自动卡点按它判断切点会不会切进口播。 */
 export const useConversationSubtitles = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.subtitles(conversationId),
@@ -108,7 +93,6 @@ export const useConversationSubtitles = (conversationId: string) =>
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 这段对话挂的需求单；生成的背景音乐跟对话一起归到它。 */
 export const useConversationTaskId = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.task(conversationId),
@@ -141,7 +125,6 @@ export const submitSubtitle = async (body: SubtitleIn): Promise<GenerationJob> =
     })
   ).generation
 
-/** 新提交或新上传的音乐先放进列表，再重读一次拿到服务端的那一行。 */
 export const refreshConversationMusic = (
   queryClient: QueryClient,
   conversationId: string,

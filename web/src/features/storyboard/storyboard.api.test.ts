@@ -61,7 +61,6 @@ describe('readConversationVideoJobs', () => {
     server.use(
       http.get('*/api/generations', ({ request }) => {
         requests.push(Object.fromEntries(new URL(request.url).searchParams))
-        // 多取的一页给空，让多发的请求由 requests 断言暴露，而不是先撞上 zod 校验。
         return HttpResponse.json({ items: pages[requests.length - 1] ?? [] })
       }),
     )

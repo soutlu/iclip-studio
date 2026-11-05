@@ -1,5 +1,3 @@
-"""用 ffmpeg 合成视频，验证拆解前的读时长与下载选路、抽帧与取音轨。"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,8 +39,6 @@ async def frame_size(frame: bytes, tmp_path: Path) -> tuple[int, int]:
 async def test_two_seconds_give_twenty_frames_and_the_audio_track(
     codec_name: str, tmp_path: Path
 ) -> None:
-    """每一档解码抽出来的都一样；本机用不了的硬件档跳过。"""
-
     source = tmp_path / "source.mp4"
     synthesize_video(source, size="320x240", seconds=2, audio=True)
 
@@ -109,8 +105,6 @@ def own_bucket_downloads(
 async def test_an_own_object_is_probed_and_downloaded_at_the_rewritten_address(
     tmp_path: Path, max_seconds: float, sampled: bool
 ) -> None:
-    """拿到的是本桶公网地址，视频只在换过的地址上读得到：探时长与下载都走换过的那个，不经出网防护。"""
-
     video = synthesize_video(tmp_path / "ref.mp4", size="320x240", seconds=2, audio=True)
     async with (
         serving({"iclip/agent/ref.mp4": video}) as server,
@@ -136,9 +130,6 @@ async def test_an_own_object_is_probed_and_downloaded_at_the_rewritten_address(
 async def test_another_address_is_downloaded_once_through_the_public_client_then_probed_locally(
     tmp_path: Path, max_seconds: float, sampled: bool
 ) -> None:
-    """别处的地址不交给 ffprobe/ffmpeg：经只连公网的客户端原样下载一次，时长在本地文件上探，短的就抽
-    这一份。这个主机名解析不了，ffprobe 若拿到远程地址就会失败。"""
-
     video = synthesize_video(tmp_path / "ref.mp4", size="320x240", seconds=2, audio=True)
     asked: list[str] = []
 

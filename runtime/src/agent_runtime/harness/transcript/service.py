@@ -1,5 +1,3 @@
-"""HTTP 与 WebSocket 共用的 transcript 服务，统一历史、实时、队列与订阅重置规则。"""
-
 from __future__ import annotations
 
 import re
@@ -52,9 +50,6 @@ class TranscriptService:
     history: TranscriptHistory
     queue: JobQueue
     runner: ConversationRunner
-    """受理前用它的装配入口（``runner.agents``）先装一次，装不起来就不入队。"""
-
-    # --- 写 -----------------------------------------------------------------
 
     async def submit(
         self,
@@ -66,10 +61,6 @@ class TranscriptService:
         user_name: str,
         content: tuple[PromptContent, ...],
     ) -> Prompt:
-        """提交消息，运行或排队状态由持久化队列决定。``user_name`` 已由入口按主体定好。
-
-        对话的 agent 版本装不起来抛 ``AgentUnavailable``，什么都不写。"""
-
         _check_content(content)
         await self.runner.agents.for_conversation(conversation_id, agent_id)
         submission = await self.queue.submit(
@@ -97,15 +88,6 @@ class TranscriptService:
         prompt_id: str | None = None,
         content: tuple[PromptContent, ...] | None = None,
     ) -> Prompt:
-        """仅在会话空闲时重新生成末轮，可替换输入内容。
-
-        轮 id 使用 t{N}；格式错误抛 ValidationFailed，忙碌或非末轮抛 Conflict，
-        末轮是分叉带过来的轮（消息行在源对话名下）抛 NotFound。未提供 prompt_id 时生成新 id，
-        避免复用已占用的记录。
-
-        插入重跑的那条消息就占住了执行位，之后才截断末轮：任何一步失败，原历史都保持原样。
-        """
-
         match = re.fullmatch(r"t([1-9]\d*)", turn_id)
         if match is None:
             raise ValidationFailed(f"不是合法的轮 id：{turn_id}")
@@ -113,7 +95,6 @@ class TranscriptService:
         if prompt_id is not None:
             claimed = await self.queue.get(prompt_id)
             if claimed is not None:
-                # 重复 id 直接返回已有记录，避免截断已重跑的末轮却不启动新运行。
                 if claimed.conversation_id != conversation_id:
                     raise Conflict("这个消息 id 已经用过了，换一个")
                 return claimed.as_entity()
@@ -123,12 +104,10 @@ class TranscriptService:
         rewind = await self.history.plan_rewind(conversation_id, ordinal=ordinal)
         if rewind is None:
             raise Conflict("只能重新生成最后一轮")
-        # 先通过末轮首次 run 在本对话里查找消息，再提交截断，避免查找失败后已修改历史。
         row = await self.queue.get_by_run(rewind.run_ids[0], conversation_id=conversation_id)
         if row is None:
             raise NotFound("分叉带过来的历史不能重新生成或编辑，只能接着往下聊。")
         replay = row.content if content is None else content
-        # 不写库就能判定的校验先做完；到这里为止历史一点没动。
         _check_content(replay)
         await self.runner.agents.for_conversation(conversation_id, row.agent_id)
         submission = await self.queue.submit(
@@ -136,7 +115,6 @@ class TranscriptService:
             conversation_id=conversation_id,
             agent_id=row.agent_id,
             owner_user_id=row.owner_user_id,
-            # 重跑的是同一个人的那条消息，归属标签照原样。
             user_name=row.user_name,
             content=replay,
             now=datetime.now(UTC),
@@ -144,10 +122,8 @@ class TranscriptService:
         )
         regenerated = submission.row
         if not submission.accepted:
-            # 同一个 id 并发重发、另一份已经受理：照发消息的幂等退回那条，不再截一轮。
             return regenerated.as_entity()
         if regenerated.status != "running":
-            # 空闲检查之后有人先占了执行位，这条排在了后面：撤掉，不让它在没截断的历史上跑。
             withdrawn = await self.queue.abort(
                 regenerated.prompt_id, conversation_id=conversation_id, now=datetime.now(UTC)
             )
@@ -159,27 +135,18 @@ class TranscriptService:
                 )
             raise Conflict(_BUSY)
         try:
-            # 持位复核：占位之前算的截断计划可能已过时，期间别的运行可能改了历史。
             current = await self.history.plan_rewind(conversation_id, ordinal=ordinal)
             if current is None or current.run_ids != rewind.run_ids:
                 raise Conflict("末轮刚刚变了，刷新之后再重新生成")
             await current.commit()
         except BaseException:
-            # 自己抛的 Conflict 也走这里：先放开执行位、原历史不动，再把原因交给调用方。
             await self._withdraw(regenerated)
             raise
-        # 先删除旧轮实体，避免客户端更新头部时保留新回复中已不存在的步骤和块。
         self.store.append(conversation_id, MAIN_AGENT_ID, (ItemsRemoveOp(ids=(turn_id,)),))
         await self.runner.submit(regenerated)
         return regenerated.as_entity()
 
     async def _withdraw(self, row: JobRow) -> None:
-        """撤回占了执行位却没开跑的那条重新生成。
-
-        记 aborted 且没有 run：队列推导会话活动时把「未启动便撤回」的消息排除在外，最近一轮的
-        结局仍是历史里末轮那一次。记成 failed 会让侧栏显示一轮其实没跑过的失败。
-        """
-
         await self.queue.finish(
             row.prompt_id,
             status="aborted",
@@ -197,15 +164,7 @@ class TranscriptService:
     async def approve(self, conversation_id: str, interaction_id: str, *, approved: bool) -> None:
         await self.runner.approve(conversation_id, interaction_id, approved=approved)
 
-    # --- 读 -----------------------------------------------------------------
-
     async def verify_agent(self, conversation_id: str, agent_id: str) -> None:
-        """子代理 id 必须能回溯到这段对话：它是某次运行的子运行，而那次运行属于这段对话。
-
-        要在任何实时存储读取之前调：查一个不存在的 agent 会把它建出来。
-        只认一层：孙运行的父运行挂在子运行新铸的会话 id 下，自然 404。
-        """
-
         if agent_id == MAIN_AGENT_ID:
             return
         record = await self.history.store.get_run(run_id=agent_id)
@@ -225,12 +184,6 @@ class TranscriptService:
         )
 
     async def run_status(self, conversation_id: str) -> RunStatusOut:
-        """这段对话此刻在跑、跑完了还是出错了，供外部调用方轮询。
-
-        排队中的消息算「在跑」：``JobQueue.activities`` 有意不看 queued，照它答会把「刚提交、
-        还没被捡起来」说成上一轮已完成。
-        """
-
         view = await self.queue.view(conversation_id)
         if view.active is not None:
             return RunStatusOut(
@@ -242,9 +195,6 @@ class TranscriptService:
         return RunStatusOut(status=activity.last_turn_reason or "idle")
 
     async def _context_window(self, conversation_id: str, agent_id: str) -> int | None:
-        """读页时给用量仪表的窗口。agent 版本装不起来是这段对话此刻的事实，读历史照常，只是不画仪表；
-        发消息时会按同一原因被拒。"""
-
         try:
             resolved = await self.runner.agents.for_conversation(conversation_id, agent_id)
         except AgentUnavailable:
@@ -261,8 +211,6 @@ class TranscriptService:
         after_turn: str | None = None,
         page_size: int = DEFAULT_PAGE_SIZE,
     ) -> TranscriptPage:
-        """分页合并历史与尚未交接的实时轮次，覆盖终态发出至快照落库的间隙。"""
-
         if before_turn is not None and after_turn is not None:
             raise ValidationFailed("before_turn 与 after_turn 只能给一个")
         size = max(1, min(page_size, MAX_PAGE_SIZE))
@@ -287,10 +235,8 @@ class TranscriptService:
                 update={"agent": agent_context_status(history.context_tokens, max_context_tokens)}
             )
         if (await self.queue.view(conversation_id)).active is not None:
-            # 占用状态以持久化队列为准，进程内实时状态无法覆盖重启和其他 worker。
             meta = meta.model_copy(update={"activity": "turn"})
         elif meta.activity is None:
-            # 刷新后没有实时状态：没在跑就是闲着，与实时收尾发的 idle 一致。
             meta = meta.model_copy(update={"activity": "idle"})
         return TranscriptPage(
             agent_id=agent_id,
@@ -317,11 +263,6 @@ class TranscriptService:
         after_turn: str | None,
         size: int,
     ) -> TranscriptPage:
-        """子代理那一页：历史按子运行 id 重建，名册用主流那份。
-
-        不套主 agent 的两段口径：队列有活不等于这个子代理在跑，上下文仪表子代理也没有。
-        """
-
         view = self.store.subscribe_view(conversation_id, agent_id)
         history = await self.history.read_child(agent_id)
         items, has_more = _slice(
@@ -355,12 +296,6 @@ class TranscriptService:
         since: int,
         epoch: str | None = None,
     ) -> OpsCatchup:
-        """返回 since 后的批次；无法完整补发时 complete=False，客户端重新拉取。
-
-        给了 ``epoch`` 就先核对它是不是当前实时流，对不上同样 complete=False。不给时只按序号判，
-        沿用旧调用方的口径：这种调用方碰上服务重启后重新编号的批次分不出来，合同里写明了。
-        """
-
         current = self.store.subscribe_view(conversation_id, agent_id)
         view = self.store.subscribe_view(
             conversation_id,
@@ -376,8 +311,6 @@ class TranscriptService:
             stream_epoch=view.epoch,
         )
 
-    # --- 订阅 ---------------------------------------------------------------
-
     def subscribe(
         self,
         conversation_id: str,
@@ -386,8 +319,6 @@ class TranscriptService:
         since: int | None,
         epoch: str | None = None,
     ) -> SubscribeFrames:
-        """按客户端水位给出订阅帧与它们所属的实时流；``epoch`` 对不上或缺失时只回 reset。"""
-
         view = self.store.subscribe_view(conversation_id, agent_id, since=since, epoch=epoch)
         return SubscribeFrames(
             stream_epoch=view.epoch,
@@ -408,10 +339,6 @@ class TranscriptService:
 
 
 def _check_content(content: Sequence[PromptContent]) -> None:
-    """消息至少一段，附件只收 http(s) 地址，图片地址还要挂得上 OSS 处理参数（给模型的缩图靠它）；
-    发消息与重新生成都在写任何东西之前过这一遍。外部图片在入口已转存成本桶地址，到这里还挂不上
-    的，是没配对象存储时的外部地址，或重新生成原样重放的旧消息。"""
-
     if not content:
         raise ValidationFailed("消息是空的")
     for part in content:
@@ -429,8 +356,6 @@ def _check_content(content: Sequence[PromptContent]) -> None:
 def _timeline(
     derived: tuple[TranscriptTurn, ...], live: tuple[TranscriptTurn, ...]
 ) -> tuple[TranscriptTurn, ...]:
-    """按轮号合并时间线，同号以实时状态为准。"""
-
     merged = {turn.ordinal: turn for turn in derived}
     merged.update({turn.ordinal: turn for turn in live})
     return tuple(merged[ordinal] for ordinal in sorted(merged))
@@ -439,11 +364,6 @@ def _timeline(
 def _tasks(
     derived: tuple[TranscriptTask, ...], live: tuple[TranscriptTask, ...]
 ) -> tuple[TranscriptTask, ...]:
-    """合并历史与实时任务，同 id 以实时状态为准；交接后的轮次只剩历史那一份。
-
-    按 task_id 排序：子运行 id 是 UUID7，按创建时间有序，两条路才不因并发派出的先后而不同。
-    """
-
     merged = {item.task_id: item for item in derived}
     merged.update({item.task_id: item for item in live})
     return tuple(sorted(merged.values(), key=lambda item: item.task_id))
@@ -452,8 +372,6 @@ def _tasks(
 def _interactions(
     derived: tuple[Interaction, ...], live: tuple[Interaction, ...]
 ) -> tuple[Interaction, ...]:
-    """合并历史与实时审批，同 id 以实时状态为准；重启后的待处理审批从历史恢复。"""
-
     merged = {item.interaction_id: item for item in derived}
     merged.update({item.interaction_id: item for item in live})
     return tuple(merged.values())
@@ -462,8 +380,6 @@ def _interactions(
 def _slice(
     turns: tuple[TranscriptTurn, ...], *, before_turn: str | None, after_turn: str | None, size: int
 ) -> tuple[tuple[TranscriptTurn, ...], bool]:
-    """分页并返回是否还有更旧轮次；新内容通过实时流提供。"""
-
     if before_turn is not None:
         end = _index(turns, before_turn)
         start = max(0, end - size)

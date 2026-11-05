@@ -36,7 +36,6 @@ class UploadConfirmIn(CamelModel):
         | None
     ) = None
     conversation_id: uuid.UUID | None = None
-    """只收音乐，要是自己的对话；记过的上传再确认时不看它。"""
 
 
 class UploadConfirmedOut(CamelModel):

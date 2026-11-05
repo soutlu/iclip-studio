@@ -1,5 +1,3 @@
-/** Agent 配置页的读写：agent、草稿、版本、可挂的插件、可选的模型与技能。合同见 contract/conventions.md §17–§19。 */
-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
@@ -21,7 +19,6 @@ import {
   zSkillsOut,
 } from '@/shared/api/generated/zod.gen'
 
-// 读回来的数据按 zod 解析后的形状用（缺省的可选字段带着 undefined）。
 export type Agent = z.infer<typeof zAgentOut>
 export type AgentDetail = z.infer<typeof zAgentDetailOut>
 export type AgentConfig = z.infer<typeof zAgentConfig>
@@ -44,7 +41,6 @@ export const agentQueryKeys = {
   skills: ['skills', 'list'] as const,
 }
 
-/** 全部 agent，含已归档的，按合同的先后。 */
 export const useAgents = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -64,7 +60,6 @@ export const useAgent = (id: string | null) =>
     queryKey: agentQueryKeys.detail(id ?? ''),
   })
 
-/** 版本号从大到小，不带配置。 */
 export const useAgentVersions = (id: string | null) =>
   useQuery({
     enabled: id !== null,
@@ -77,7 +72,6 @@ export const useAgentVersions = (id: string | null) =>
     select: (data) => data.items,
   })
 
-/** 一个版本的配置与技能名单；版本发布后不变。 */
 export const useAgentVersion = (id: string, versionId: string | null) =>
   useQuery({
     enabled: versionId !== null,
@@ -121,7 +115,6 @@ export const useSkills = () =>
     select: (data) => data.items,
   })
 
-/** 写操作答复的详情直接放进缓存，列表上的标记（未发布的修改、子 agent）随之重读。 */
 const useStoreDetail = () => {
   const queryClient = useQueryClient()
   return (detail: AgentDetail) => {
@@ -130,7 +123,6 @@ const useStoreDetail = () => {
   }
 }
 
-/** 新建只有空草稿的 agent；标识不合规矩是 422、已被占用是 409。 */
 export const useCreateAgent = () => {
   const store = useStoreDetail()
   return useMutation({
@@ -144,7 +136,6 @@ export const useCreateAgent = () => {
   })
 }
 
-/** 改名称、描述与上不上首页；不进版本，立即生效。 */
 export const useUpdateAgent = () => {
   const store = useStoreDetail()
   return useMutation({
@@ -158,7 +149,6 @@ export const useUpdateAgent = () => {
   })
 }
 
-/** 整份覆盖草稿；`lockVersion` 对不上是 409。 */
 export const useSaveDraft = () => {
   const store = useStoreDetail()
   return useMutation({
@@ -178,7 +168,6 @@ export const useSaveDraft = () => {
   })
 }
 
-/** 把服务端此刻的草稿发布成新版本；检查不过是带 `problems` 的 422。 */
 export const usePublishAgent = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -197,7 +186,6 @@ export const usePublishAgent = () => {
   })
 }
 
-/** 把一版整份抄回草稿，不发布。 */
 export const useRestoreVersion = () => {
   const store = useStoreDetail()
   return useMutation({
@@ -219,13 +207,11 @@ export const useRestoreVersion = () => {
   })
 }
 
-/** 发布被检查拦下时的问题清单；别的失败（含「没有可发布的改动」）为 null。 */
 export const publishProblemsOf = (error: unknown): AgentProblem[] | null => {
   if (!(error instanceof ApiError) || error.status !== 422) return null
   const parsed = zAgentPublishProblemsOut.safeParse(error.body)
   return parsed.success && parsed.data.problems.length > 0 ? parsed.data.problems : null
 }
 
-/** 草稿的 lockVersion 已过期：别处改过草稿。 */
 export const isStaleDraft = (error: unknown): boolean =>
   error instanceof ApiError && error.status === 409

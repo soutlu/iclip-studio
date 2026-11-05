@@ -1,15 +1,3 @@
-/** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是全局设定卡，之后按时间排各镜头，末尾一行写总长与「结束」。
- *
- * 参考图按列表先后列这组会发出去的图（有编号的），每张只画缩略图与 @N，没选用的画空位，名字与「未选用」在悬停里；
- * 点哪张舞台看哪张。它们排在全局设定卡的标题行里（段名、字数之后，右端按钮之前），一行放不下在自己那块里折行；
- * 这组没有全局设定时单独一行，前面写「参考图」。还没进列表的机位图不在其中，在它那一镜头部的缩略图里。
- * 全局设定一段一行，前面写模板里的段名。字里的 `@ImageN` 在原位置是图片芯片（镜头开头的「参考@ImageN，」也是），
- * 点芯片选中这段、舞台看那张图；这段选中且舞台正看着那张时芯片高亮。
- * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
- * 全局设定与镜头正文里能插入、删除图片（见 `FilmTextEditor`），镜头开头机位图的引用删不掉；还被别的生成节点用到的设定
- * （`shared`）与台词里不能写图，都不给插入的入口。有没存下的改动时各段的复制按钮不可用，拷走的总是存好的字。
- * 点哪段选中哪段，舞台跟着切到它挂的图。列里不收拖进来的文件，免得漏给聊天输入框。 */
-
 import { Fragment, useRef, useState, type FocusEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -37,27 +25,18 @@ import type { FilmSegmentValue } from './use-film-draft'
 
 type FilmScriptProps = {
   group: FilmGroup
-  /** 选中的段；舞台在看素材片时为 undefined，哪段都不标。 */
   selectedId: string | undefined
-  /** 舞台上那张图在 `frames` 里的位置，对应的图片芯片高亮。 */
   frame: number | undefined
   readOnly: boolean
   onSelect: (contentId: string, frame?: number) => void
-  /** 在参考图里点了第 `position` 张：舞台看它，选哪段由使用方定。 */
   onPickFrame: (position: number) => void
-  /** 一段字改了：`label` 是这段给人看的名字，冲突时用。 */
   onEdit: (target: string, label: string, value: FilmSegmentValue) => void
-  /** 图片芯片预览卡上的「放大」。 */
   onPreview: (media: { name: string; url: string }) => void
-  /** 有上传权限：能插入图片的段收粘贴、拖入与「+」上传的图。 */
   uploads: boolean
-  /** 第 `key` 个编辑器里有没有图正在上传；出片要等它们传完。 */
   onUploadingChange: (key: string, uploading: boolean) => void
-  /** 此刻不能复制段落的原因（有没存下的改动），给了就置灰、悬停说原因；与顶栏复制按钮同一句。 */
   copyBlocked: string | undefined
 }
 
-// 段里自带选中动作的控件（展开全局设定、点图片）聚焦时不再走「焦点进段就选中」，免得先选段再选图跳两次。
 const keepFocusInside = (event: FocusEvent) => event.stopPropagation()
 
 const copyButton = (label: string, text: string, blocked: string | undefined) => (
@@ -72,7 +51,6 @@ const copyButton = (label: string, text: string, blocked: string | undefined) =>
   />
 )
 
-/** 一张图在 `frames` 里的位置与它本身；不在这组里为 undefined。 */
 const frameAt = (group: FilmGroup, node: string | null) => {
   const index = node === null ? -1 : group.frames.findIndex((frame) => frame.node === node)
   const frame = group.frames[index]
@@ -104,20 +82,17 @@ export function FilmScript({
   }))
   const total = filmDuration(group)
 
-  // 焦点落进这段（点正文、Tab 进来）或点段标题就选中；已选中的段再点、再打字不重置图。
   const select = (id: string) => {
     if (id !== selectedId) onSelect(id)
   }
   const settingsSelected = selectedId === SETTINGS_ID
   const settingsClamped = compact && !settingsSelected
-  /** 一段里的图片芯片：这段选中、舞台又正在看那张，才算这枚芯片的；点芯片选中这段、看那张。 */
   const chipsOf = (id: string, selected: boolean) => ({
     frames: group.frames,
     highlighted: selected ? frame : undefined,
     onEnlarge: onPreview,
     onPick: (position: number) => onSelect(id, position),
   })
-  /** 第 `key` 个编辑器插入图片要的；只读时不给。 */
   const insertOf = (key: string): FilmTextInsert | undefined =>
     readOnly
       ? undefined
@@ -132,7 +107,6 @@ export function FilmScript({
         compact={compact}
         onJump={(id) => {
           select(id)
-          // 平滑与否交给滚动容器的 scroll-behavior，减少动效时样式里关掉。
           itemsRef.current.get(id)?.scrollIntoView({ block: 'nearest' })
         }}
         onToggleCompact={() => setCompact((current) => !current)}
@@ -190,14 +164,11 @@ export function FilmScript({
               <div className="film-segment-body">
                 {group.settings.map((setting) => (
                   <SettingRow
-                    // 还被别的生成节点用到的字（几组共用的拍法与声音、与生图共用的描述）里不能有图，不给插入的入口。
                     insert={
                       !setting.shared && setting.target !== null
                         ? insertOf(setting.target)
                         : undefined
                     }
-                    // 同一组里每段设定的 target 各不相同；没法改的段没有 target、字也不会变，同一段名下可以有几段，
-                    // 按段名连同字认。
                     key={setting.target ?? `${setting.kind}:${setting.label ?? ''}:${setting.text}`}
                     onEdit={onEdit}
                     readOnly={readOnly}
@@ -292,8 +263,6 @@ export function FilmScript({
   )
 }
 
-/** 这组的参考图：按列表先后一张一枚，只画缩略图与 @N，没选用的画空位（读屏与悬停说「未选用」）；
- * 舞台正看着的那张高亮。只是芯片那一块，放在哪一行由使用方定。 */
 function FrameStrip({
   frame,
   group,
@@ -308,7 +277,6 @@ function FrameStrip({
   return (
     <div aria-label="参考图" className="film-frames" role="group">
       {group.frames.flatMap((item, index) =>
-        // 只列会发出去的（有编号的）；没进列表的机位图在它那一镜的头部与舞台上。位置照 `frames` 里的算。
         item.number === null
           ? []
           : [
@@ -328,7 +296,6 @@ function FrameStrip({
   )
 }
 
-/** 全局设定的一段：称呼浮在左边，字从它后面接着排、折行回到行首。 */
 function SettingRow({
   insert,
   onEdit,
@@ -347,7 +314,6 @@ function SettingRow({
       {setting.label === null ? null : (
         <span className="film-setting-label">
           {setting.label}
-          {/* 称呼浮在左边，行尾的普通空格会被吃掉，换成不折行的空格才留得住。 */}
           {settingSeparator(setting).replace(' ', ' ')}
         </span>
       )}
@@ -366,7 +332,6 @@ function SettingRow({
 
 type Padded = { lead: string; core: string; trail: string }
 
-/** 一段文字去掉首尾空白后的样子，连同原来的首尾空白；改字只改中间，首尾照旧，文件排版不变。 */
 const splitPadding = (text: string): Padded => {
   const core = text.trim()
   if (core === '') return { core, lead: text, trail: '' }
@@ -374,8 +339,6 @@ const splitPadding = (text: string): Padded => {
   return { core, lead: text.slice(0, start), trail: text.slice(start + core.length) }
 }
 
-/** 镜头正文：台词前后的文字各是一段，台词单独一行。只有空白的那段不画（排版留下的换行），正在改的那段照画，
- * 删空了也不会从手底下消失；整镜都没有字时画第一段，好往里写。 */
 function ShotBody({
   insertOf,
   label,
@@ -386,15 +349,12 @@ function ShotBody({
 }: {
   insertOf: (key: string) => FilmTextInsert | undefined
   label: string
-  /** 开头机位图的引用「参考@ImageN，」：选用了机位图的镜头才有，删不掉、挪不动。 */
   lead: string | undefined
   onEdit: FilmScriptProps['onEdit']
   readOnly: boolean
   shot: FilmShot
 }) {
   const [editing, setEditing] = useState<number | null>(null)
-  // 每段最近交出去的样子：字的头尾正好是空格或空行时（刚敲的），重新去首尾空白会把它吃掉、把光标重置，
-  // 所以只要这段还是交出去的那个样子，就按交出去时的拆法显示。
   const [emitted, setEmitted] = useState<ReadonlyMap<number, Padded>>(() => new Map())
   const { target } = shot
   const parts = shot.parts.map((text, index) => {
@@ -420,7 +380,6 @@ function ShotBody({
         const line = shot.lines[index - 1]
         const shown = part.core !== '' || editing === index || (empty && index === 0)
         return (
-          // 第 i 段跟在第 i 句台词后面，用那句的 target 认；第一段前面没有台词。
           <Fragment key={line?.target ?? 'lead'}>
             {line === undefined ? null : (
               <div className="film-line">

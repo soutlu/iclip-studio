@@ -19,7 +19,6 @@ const ENDPOINT = '*/api/conversations/:conversationId/whole-film/draft'
 
 const film = (): WholeFilmDocument => draftOf([video('v1', SOURCE, 0, 2_000)])
 
-/** 记下每次保存的请求体，再交给默认的 mock 处理 */
 const recordSaves = (slow = 0) => {
   const saves: WholeFilmDraftIn[] = []
   server.use(
@@ -48,7 +47,6 @@ const volume = (result: Session, value: number) => {
   })
 }
 
-/** 改过草稿的用例都等保存落定，免得卸载时补存的那一下落进下一个用例 */
 const settled = (result: Session) => waitFor(() => expect(result.current.save.kind).toBe('idle'))
 
 describe('useDraftSession', () => {

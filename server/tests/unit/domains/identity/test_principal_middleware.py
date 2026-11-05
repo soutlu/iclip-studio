@@ -1,5 +1,3 @@
-"""身份中间件：免解析前缀下的路径一律匿名、不按 Bearer 查 API key；其余路径照常解析。"""
-
 from __future__ import annotations
 
 import httpx
@@ -16,8 +14,6 @@ INTERNAL_PREFIX = "/internal/runtime/"
 
 
 class CountingApiKeys(InMemoryApiKeyRepository):
-    """记下每次按哈希查 API key 的调用。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.lookups = 0
@@ -54,6 +50,5 @@ async def test_an_internal_path_never_looks_up_an_api_key() -> None:
         internal = await client.post(f"{INTERNAL_PREFIX}hooks/gate", headers=bearer)
         assert (internal.text, api_keys.lookups) == ("anonymous", 0)
 
-        # 前缀之外照常按 Bearer 查一次（这把 key 不存在，所以仍是匿名）。
         public = await client.get("/conversations", headers=bearer)
         assert (public.text, api_keys.lookups) == ("anonymous", 1)

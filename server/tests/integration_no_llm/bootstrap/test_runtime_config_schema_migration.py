@@ -1,8 +1,3 @@
-"""技能库、模型供应商与 agent 配置的表挪进 ``agent_runtime`` 的迁移：行原样跟过去，表之间的外键名字与
-``ON DELETE`` 不变，指向用户表的外键去掉。
-
-升级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,10 +14,8 @@ from iclip.platform.db.engine import build_engine
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "fd5fe51c6ffc"
-"""0044，配置的表还在 ``iclip``，操作人列有指向 ``iclip.users`` 的外键。"""
 
 AFTER = "62893acbf136"
-"""0045，配置的表在 ``agent_runtime``。"""
 
 MOVED = (
     "skills",
@@ -95,8 +88,6 @@ FOREIGN_KEYS_AFTER = {
         "FOREIGN KEY (agent_version_id) REFERENCES agent_runtime.agent_versions(id)"
     ),
 }
-"""升级后 ``agent_runtime`` 里这些表的全部外键：表之间的照旧，``sessions`` 的变成同一 schema 内的，
-没有一个指向 ``iclip``。"""
 
 _CONSTRAINTS = text(
     "SELECT n.nspname, c.relname, con.conname, pg_get_constraintdef(con.oid)"
@@ -150,8 +141,6 @@ def _plant_user(url: str) -> uuid.UUID:
 
 
 def _seed(url: str, schema: str, actor: uuid.UUID) -> None:
-    """``schema`` 里每张配置表一行，操作人都是 ``actor``；再开一个指向这个 agent 版本的会话。"""
-
     s = schema
     asyncio.run(
         _execute(
@@ -236,8 +225,6 @@ def _seed(url: str, schema: str, actor: uuid.UUID) -> None:
 
 
 def _rows(url: str, schema: str) -> dict[str, list[str]]:
-    """每张配置表的全部行，整行转成 JSON 文本比。"""
-
     return {
         table: sorted(
             row[0]

@@ -1,5 +1,3 @@
-"""钥匙替人办事的三条规则：浏览器只核对自己的名字，无权限的钥匙原样返回，有权限的换属主。"""
-
 from __future__ import annotations
 
 import uuid
@@ -53,7 +51,6 @@ async def test_key_with_the_permission_acts_as_the_named_person() -> None:
     assert acting.user_id == placeholder.id
     assert acting.username == "Sara.Hong"
     assert acting.audit_label == "Sara.Hong#partner-app"
-    # 权限与钥匙身份都还是钥匙自己的：报一个 root 的名字换不来 root 的权限。
     assert acting.permissions == key.permissions
     assert acting.api_key_id == key.api_key_id
     assert acting.kind == "api_key"
@@ -61,8 +58,6 @@ async def test_key_with_the_permission_acts_as_the_named_person() -> None:
 
 @pytest.fixture
 def log_context() -> Iterator[None]:
-    """每条用例从空的日志上下文起步，结束后清掉，不串到别的用例。"""
-
     structlog.contextvars.clear_contextvars()
     try:
         yield
@@ -75,7 +70,6 @@ async def test_switching_marks_the_log_context_with_who_is_acted_as(log_context:
 
     await act_as_with(InMemoryUserRepository())(api_key(ACT_AS_PERMISSION), "Sara.Hong")
 
-    # 只补一个字段，中间件绑定的钥匙标识原样留着。
     assert structlog.contextvars.get_contextvars() == {
         "principal": "logan#partner-app",
         "acting_as": "Sara.Hong",
@@ -103,9 +97,7 @@ async def test_blank_name_means_nobody_to_act_as() -> None:
 def test_placeholder_account_is_recognized_only_by_its_own_name() -> None:
     assert is_placeholder_account("Sara.Hong", placeholder_email("Sara.Hong"))
     assert not is_placeholder_account("Sara.Hong", "sara.hong@example.com")
-    # SSO 无邮箱的真人与占位账号同域，不能因为后缀相同就被当成空座。
     assert not is_placeholder_account("Sara.Hong", sso_placeholder_email("u-7"))
-    # 大小写不同或换一个名字，合成出来的都不是这一个。
     assert not is_placeholder_account("sara.hong", placeholder_email("Sara.Hong"))
     assert not is_placeholder_account("Rudy", placeholder_email("Sara.Hong"))
 

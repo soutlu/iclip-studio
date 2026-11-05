@@ -1,5 +1,3 @@
-/** 量元素的宽高给图表用：挂上时同步量一次，之后跟着 ResizeObserver 走。 */
-
 import { useCallback, useState } from 'react'
 
 export function useElementSize<T extends HTMLElement>() {

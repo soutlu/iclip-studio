@@ -91,7 +91,6 @@ describe('DateRangePicker', () => {
     await user.click(screen.getByRole('radio', { name: '自定义' }))
 
     expect(applied).toEqual([])
-    // 日历常驻，草稿被丢掉的证据是网格上不再有选中的一天。
     expect(screen.queryAllByRole('gridcell', { selected: true })).toHaveLength(0)
     expect(screen.getByRole('radio', { name: '近 7 天' })).toBeChecked()
   })

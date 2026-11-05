@@ -2,7 +2,6 @@ export type PlaySegment = { mediaUrl: string; start: number; end: number }
 
 export type LaidOutSegment = PlaySegment & { at: number; duration: number }
 
-/** 首尾相接排好各段，跳过空段；段上的其余字段原样带着。 */
 export const layoutPlay = <T extends PlaySegment>(
   segments: readonly T[],
 ): (T & { at: number; duration: number })[] => {

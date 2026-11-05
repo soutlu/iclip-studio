@@ -4,10 +4,6 @@ import { cn } from '@/shared/lib/utils'
 
 type SegmentedOption<T extends string> = { value: T; label: string; icon?: ReactNode }
 
-/**
- * 选项不多的单选：一排分段，选中的一段浅墨底加中等字重；方向键在段间移动。
- * `block` 用在表单字段里：占满一行、与输入框同高，各段等分。
- */
 export function Segmented<T extends string>({
   block = false,
   disabled = false,

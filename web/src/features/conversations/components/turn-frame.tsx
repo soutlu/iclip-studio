@@ -1,5 +1,3 @@
-/** 单块分派由普通轮次与活动组共用，避免两者循环依赖。 */
-
 import { useEffect, useRef, useState } from 'react'
 import type {
   TranscriptFrame,
@@ -17,10 +15,8 @@ import { UserBubble } from './user-bubble'
 
 type TurnFrameProps = {
   frame: TranscriptFrame
-  /** 未结束轮次的最后一块，用于思考计时与动效。 */
   live: boolean
   interactions: ReadonlyMap<string, TranscriptInteraction>
-  /** 后台工具任务，按 taskId（即发起调用的 toolCallId）查。 */
   toolTasks: ReadonlyMap<string, TranscriptTask>
 }
 
@@ -28,10 +24,8 @@ export function TurnFrame({ frame, interactions, live, toolTasks }: TurnFramePro
   switch (frame.kind) {
     case 'text':
       if (frame.role === 'assistant') {
-        // 助手正文不加气泡，行距比共用排版松一档，长段中文读着不挤。
         return <Markdown className="leading-[1.75]" text={frame.text} />
       }
-      // 带 taskId 的 user 块是后台任务的完成通知，不是用户说的话。
       return frame.taskId === undefined ? (
         <UserBubble content={frame.content} />
       ) : (
@@ -56,7 +50,6 @@ export function TurnFrame({ frame, interactions, live, toolTasks }: TurnFramePro
   }
 }
 
-/** 一行中性文字，只有图标是红的。 */
 function ErrorNotice({ message }: { message: string }) {
   return (
     <p className="flex items-start gap-2 text-body-sm text-chat-secondary-text">
@@ -67,14 +60,11 @@ function ErrorNotice({ message }: { message: string }) {
 }
 
 type RunFailedNoticeProps = {
-  /** 这一轮的运行记录原文，「复制错误信息」复制的就是它。 */
   error: string
-  /** 末轮且空闲时才有；没有就不给「重试」。 */
   onRetry?: (() => void) | undefined
   retryDisabled?: boolean | undefined
 }
 
-/** 轮次没跑完：一行，红 × 加一句话，能重试就给重试，错误原文只给复制，不铺在对话里。 */
 export function RunFailedNotice({ error, onRetry, retryDisabled = false }: RunFailedNoticeProps) {
   const { copied, copy } = useCopyFeedback()
   return (
@@ -104,7 +94,6 @@ export function RunFailedNotice({ error, onRetry, retryDisabled = false }: RunFa
   )
 }
 
-/** 仅对实时思考块计时，结束时冻结；历史块没有本地计时记录，返回 null。 */
 function useThinkingSeconds(live: boolean): number | null {
   const startedRef = useRef<number | null>(null)
   const [seconds, setSeconds] = useState<number | null>(null)
@@ -120,7 +109,6 @@ function useThinkingSeconds(live: boolean): number | null {
   return live ? (seconds ?? 0) : seconds
 }
 
-/** 思考与工具行同一结构；展开是全文，不封顶。 */
 function ThinkingBlock({ live, text }: { live: boolean; text: string }) {
   const [open, setOpen] = useState(false)
   const seconds = useThinkingSeconds(live)

@@ -1,6 +1,3 @@
-"""启动入口：没配插件包就是空登记表；配了就交回外壳，lifespan 启动时先打开插件包、用它的绑定函数建 app 再
-启动 app，关停时倒序收尾，任一步失败都按 lifespan 协议报失败并收拾已打开的。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -23,8 +20,6 @@ FERNET_KEY = base64.urlsafe_b64encode(b"asgi-test-key-0123456789abcdefgh").decod
 
 
 class Lifespan:
-    """按 ASGI lifespan 协议驱动一个 app：发 startup / shutdown，收它的答复。"""
-
     def __init__(self, app: PluginsAtStartup) -> None:
         self._inbox: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._outbox: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -45,8 +40,6 @@ class Lifespan:
 
 
 class Steps:
-    """记下插件包与 app 各自起停的先后。"""
-
     def __init__(self) -> None:
         self.events: list[str] = []
         self.hosts: list[PluginHost] = []

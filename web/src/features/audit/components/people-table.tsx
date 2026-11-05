@@ -1,5 +1,3 @@
-/** 按人：一人一行，出片件数带长度条，末列是每期出片的迷你图；点表头在前端排序。 */
-
 import { useState } from 'react'
 import { cn } from '@/shared/lib/utils'
 import type { OverviewBucket, Person } from '../audit.api'
@@ -10,7 +8,6 @@ import { SortHeader, TableScroll, TD, TH } from './table-bits'
 
 type PeopleTableProps = {
   people: readonly Person[]
-  /** 迷你图每一格的粒度，决定末列列名。 */
   bucket: OverviewBucket
   nameOf: (userName: string) => string | undefined
 }
@@ -21,7 +18,6 @@ const TREND_TITLE: Record<OverviewBucket, string> = {
   week: '每周出片',
 }
 
-/** 出片件数长度条最长多少 px。 */
 const BAR_MAX = 80
 
 export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
@@ -33,8 +29,6 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
   const maxDeliveries = Math.max(1, ...people.map((person) => person.metrics.deliveries))
   return (
     <TableScroll>
-      {/* 宽屏固定列宽：「人」320、迷你图 152（110 的图加两侧内边距），5 个数字列均分余下宽度；
-          窄屏按内容排、横着滚。固定布局只认表头行的宽度。 */}
       <table
         aria-label="按人"
         className="w-full border-separate border-spacing-0 text-body @6xl:table-fixed"

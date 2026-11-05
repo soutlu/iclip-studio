@@ -1,8 +1,3 @@
-/**
- * 原文编辑器：直接编辑文件原文（CodeMirror 6），进出都是字符串，交出的就是用户敲的字，不做解析后的重写。
- * 挂载沿用 composer 的做法：回调 ref 建 EditorView，变化中的回调走 ref，不重建实例。
- */
-
 import { EditorState } from '@codemirror/state'
 import { EditorView, placeholder as placeholderText } from '@codemirror/view'
 import { useCallback, useLayoutEffect, useRef } from 'react'
@@ -12,11 +7,8 @@ import { BASE, languageFor } from './extensions'
 import './source-editor.css'
 
 type SourceEditorProps = {
-  /** 当前原文。与编辑器上次交出的值不同（恢复版本、换了编辑对象）时整篇替换，不进撤销历史。 */
   value: string
-  /** 用户改了内容才调用，交出改后的全文；挂载、换值、移动光标都不调用。 */
   onChange: (text: string) => void
-  /** 按文件类型选语法高亮与写法检查；text 不加语言。 */
   kind: FileKind
   ariaLabel: string
   placeholder?: string
@@ -24,7 +16,6 @@ type SourceEditorProps = {
   className?: string
 }
 
-/** 建编辑器状态时用到的设置；任何一项变了都整篇换新状态。 */
 type Settings = { ariaLabel: string; kind: FileKind; placeholder: string | undefined }
 
 export function SourceEditor({
@@ -60,7 +51,6 @@ export function SourceEditor({
         languageFor(settings.kind),
         EditorView.contentAttributes.of({ 'aria-label': settings.ariaLabel }),
         settings.placeholder === undefined ? [] : placeholderText(settings.placeholder),
-        // CRLF 的文件按 CRLF 读写，交出的换行与原文一致。
         doc.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
         emit,
       ],
@@ -84,7 +74,6 @@ export function SourceEditor({
     [createState],
   )
 
-  // 外部换了内容（不是自己刚交出去的那份）或换了文件类型：整篇换成新的状态，撤销历史从这里重新开始。
   useLayoutEffect(() => {
     const view = viewRef.current
     const settings = { ariaLabel, kind, placeholder }

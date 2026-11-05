@@ -117,16 +117,11 @@ const NO_JOBS: readonly GenerationJob[] = []
 const LAST_FRAME_LEAD = 0.1
 const CARD_FRAME_WIDTH = 60
 const REFERENCE_FRAME_WIDTH = 1280
-/** 合成比原片长或短不到这么多（秒）时不提。 */
 const LENGTH_NOTE_THRESHOLD = 0.05
 
 const secondsText = (value: number) => value.toFixed(1)
 const posterOf = (url: string) => videoSnapshotUrl(url, 320)
 
-/**
- * 镜头提示词面板左边在视口里的横坐标。面板挂在按钮所在的宿主里、右端对齐按钮；刚挂上时还没定位、
- * 又在缩放进场，所以不量面板自己的位置，按宿主右端减面板的布局宽度算。
- */
 const promptsPanelLeft = (panel: HTMLElement): number =>
   (panel.closest('.video-editor-prompts') ?? panel).getBoundingClientRect().right -
   panel.offsetWidth
@@ -135,7 +130,6 @@ type View = 'versions' | 'clips'
 
 type Props = {
   conversationId: string
-  /** 打开编辑器的那条素材片：出片，或某条出片的一次合成。 */
   video: GenerationJob | undefined
   loading: boolean
   shotIndex: number | undefined
@@ -144,7 +138,6 @@ type Props = {
 
 export function VideoEditor({ conversationId, video, loading, shotIndex, onClose }: Props) {
   const conversationJobs = useShotGenerations(conversationId).data
-  // 从一次合成打开时，编辑的仍是它的原片；版本视图先看打开的那一版。
   const opened = video !== undefined && isComposite(video) ? video : undefined
   const root =
     opened === undefined ? video : conversationJobs?.find((job) => job.id === opened.rootJobId)
@@ -190,7 +183,6 @@ type EditorProps = {
 
 type Submission = 'edit' | 'compose'
 
-/** 失败提示：同一件事（按 key）一直失败只提示一次，恢复后再失败才再提示。 */
 const useFailureToasts = (failures: readonly { key: string; message: string }[]) => {
   const reportedRef = useRef(new Set<string>())
   useEffect(() => {
@@ -228,26 +220,17 @@ function Editor({
   const selectionBoxRef = useRef<HTMLSpanElement>(null)
   const cardRef = useRef<AiEditCardHandle>(null)
   const [view, setView] = useState<View>(openedCompositeId === undefined ? 'clips' : 'versions')
-  // 版本视图看的那一版；没选就是最近完成的一版。
   const [viewedId, setViewedId] = useState(openedCompositeId)
-  // 打开着的镜头提示词面板：生成卡要让开它。
   const [promptsPanel, setPromptsPanel] = useState<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<Selection>()
-  // 剪辑视图的舞台预览什么：原片轨有选区时可以预览整条原片（播放头按原片时间），其余时候预览草稿（播放头按合成时间）。
   const [preview, setPreview] = useState<'draft' | 'source'>('draft')
-  // 原片预览时草稿的播放头停在哪（合成时间）：回到草稿预览时还原。
   const [draftClock, setDraftClock] = useState(0)
-  // 舞台播放头的时刻：草稿预览、版本视图是所放内容的时间，原片预览是原片时间。
   const [currentTime, setCurrentTime] = useState(0)
-  // 播放头要停的时刻（按舞台此刻放的内容）。草稿一变、预览一换，预览先在自己的 effect 里回到原处或开头，
-  // 子组件的 effect 先跑，在这里跳才不会被覆盖。
   const [seekRequest, setSeekRequest] = useState<{ clock: number; boundary?: 'end' }>()
   const [request, setRequest] = useState(NO_REQUEST)
-  // 首帧、尾帧拖过的裁切框，按图片地址记，与输入卡的草稿一样活到编辑器关闭。
   const [frameCrops, setFrameCrops] = useState(NO_CROPS)
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
-  // 正按着修剪把手：拖动中的样子只给舞台、时间线和卡上的文字看，草稿与选区松手才改。
   const [trimPreview, setTrimPreview] = useState<TrimPreview>()
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
@@ -269,7 +252,6 @@ function Editor({
     () => (shots === undefined ? [] : failedEditsOf(root.id, jobs, shots)),
     [root.id, jobs, shots],
   )
-  // 每条完成的编辑段按它自己文件的关键帧切段，读法同原片；读到的时长就是它的时长。
   const resultUrls = useStableValue(
     lane.flatMap(({ job }) =>
       job.status === 'completed' && job.outputUrl !== null ? [job.outputUrl] : [],
@@ -313,10 +295,8 @@ function Editor({
       shots !== undefined &&
       blocks.every((block) => block.state.kind !== 'measuring'),
   })
-  // 草稿定下之前没有块：时间线不画、合成不可点、Delete 拿不到选中的块
   const items = source === undefined || draft === undefined ? [] : draftItemsOf(source, draft)
   const pieces = outputOf(items)
-  // 舞台此刻放的草稿：拖草稿块的修剪把手时是拖动中的样子；合成、「共 X 秒」与浏览器里存的都按草稿本身。
   const staged = trimPreview?.kind === 'draft' ? trimPreview.items : items
   const composing = composingOf(jobs, root.id)
   const composable =
@@ -330,7 +310,6 @@ function Editor({
       busy,
     })
 
-  // 最近完成的合成一换（不论从哪里提交），切到版本视图看它，从头、停着。
   const latestId = latest?.id ?? null
   const [seenLatestId, setSeenLatestId] = useState<string | null>()
   if (chainJobs !== undefined && seenLatestId !== latestId) {
@@ -342,7 +321,6 @@ function Editor({
     setSeenLatestId(latestId)
   }
 
-  // 只在新的定位请求时跳：之后草稿再变不该把播放头拉回去。
   const seekTo = useEffectEvent(({ clock, boundary }: { clock: number; boundary?: 'end' }) =>
     previewRef.current?.previewAt(clock, boundary),
   )
@@ -350,7 +328,6 @@ function Editor({
     if (seekRequest !== undefined) seekTo(seekRequest)
   }, [seekRequest])
 
-  // 剪辑视图的选中
   const clipsView = view === 'clips'
   const selectedItem =
     clipsView && selection?.kind === 'draft'
@@ -360,18 +337,15 @@ function Editor({
     clipsView && selection?.kind === 'running'
       ? blocks.find((block) => block.id === selection.id && block.state.kind === 'running')
       : undefined
-  // 选着的草稿块被拿掉了，或在跑的那条落定了，就不再选着。
   if (
     (selection?.kind === 'draft' && selectedItem === undefined && clipsView) ||
     (selection?.kind === 'running' && runningBlock === undefined && clipsView)
   )
     setSelection(undefined)
-  // 原片轨上选中的选区（原片时间）：卡上的首帧、尾帧按它取，拖把手松手才换。
   const chosenRun: SecondsRange | undefined =
     clipsView && selection?.kind === 'run'
       ? { start: selection.start, end: selection.end }
       : undefined
-  // 此刻的选区：拖把手时是拖动中的样子（卡头的镜头、卡上的起止、舞台标签跟着变），和它覆盖到的镜头（碰到一部分也算）。
   const range: SecondsRange | undefined =
     chosenRun !== undefined && trimPreview?.kind === 'run'
       ? { start: trimPreview.run.start, end: trimPreview.run.end }
@@ -379,7 +353,6 @@ function Editor({
   const shotSpan =
     range === undefined || shots === undefined ? undefined : coveredSpan(shots, range)
   const sourcePreview = range !== undefined && preview === 'source'
-  // 参考片段只从原片上取选区那一段。
   const referenceClips = range === undefined ? [] : [{ mediaUrl, ...range }]
   const selectedDuration = range === undefined ? 0 : range.end - range.start
 
@@ -393,11 +366,9 @@ function Editor({
         })
   const requestBlock = generationBlockOf(referenceImageCountOf(request))
 
-  // 图生时每张图的用途与裁切，按去重后真正发送的图算。
   const frameUrls =
     mode === 'image' ? compileReferencePrompt(draftPartsOf(request)).referenceImageUrls : []
   const imageSizes = useImageSizes(frameUrls)
-  // 舞台按原片画幅摆，图生的首帧也按它裁；读到之前舞台按播放器读到的画面比例。
   const videoSize = useQuery(videoSizeQuery(mediaUrl)).data
   const framePlans = planFrames({
     urls: frameUrls,
@@ -420,7 +391,6 @@ function Editor({
             },
     }
   }
-  /** 提交前定下首帧、尾帧要裁的框：原图与原片的尺寸还没读完就等它读完。 */
   const readFrameCrops = async (urls: readonly string[]) => {
     if (urls.length === 0 || urls.length > MAX_FIRST_FRAMES) return undefined
     const [size, ...images] = await Promise.all([
@@ -442,7 +412,6 @@ function Editor({
   const generatingSameShots =
     range !== undefined &&
     blocks.some((block) => block.state.kind === 'running' && isRangeOf(block.job, range))
-  // 区间与选区完全相同的生成里最近一次失败了：卡上写出原因，对这个区间重新提交后就不再是最近一次。
   const lastFailure =
     range === undefined ? undefined : failedEdits.find((edit) => isRangeOf(edit.job, range))
   const blockReason =
@@ -460,24 +429,18 @@ function Editor({
   const seedJob = (job: GenerationJob) =>
     seedVideoEditJob(queryClient, conversationId, root.id, job)
 
-  /**
-   * 进原片预览（已在里面就留着），舞台停在 `seek`、不播放；从草稿预览进来时记下草稿播放头。
-   * 两种预览一换，舞台放的内容就换了，正在播放的随之停下。
-   */
   const showSource = (seek: { clock: number; boundary?: 'end' }) => {
     if (!sourcePreview) setDraftClock(clipsView ? currentTime : 0)
     setPreview('source')
     setSeekRequest(seek)
   }
 
-  /** 回到草稿预览，播放头到合成时间 `clock`；不给时回到进原片预览前草稿播放头所在的位置。 */
   const showDraft = (clock?: number) => {
     setPreview('draft')
     if (clock !== undefined) setSeekRequest({ clock })
     else if (sourcePreview) setSeekRequest({ clock: draftClock })
   }
 
-  /** 选中原片轨上的选区：舞台预览原片、停在选区开头，弹出生成卡；为 undefined 时清掉选区，回到草稿预览。 */
   const selectRun = (next: SecondsRange | undefined) => {
     if (busy) return
     setCardOpen(true)
@@ -490,14 +453,12 @@ function Editor({
     showSource({ clock: next.start })
   }
 
-  /** 改原片选区（拖把手松手、按方向键）：舞台停在把手所在那一帧（结尾那一端取结尾前一点），播放头跟到那一端。 */
   const trimRun = ({ edge, start, end }: RunChange) => {
     if (busy) return
     setSelection({ kind: 'run', start, end })
     showSource(edge === 'end' ? { clock: end, boundary: 'end' } : { clock: start })
   }
 
-  /** 选中草稿里的一块：出修剪把手与小卡，回到草稿预览，播放头到它开头。 */
   const selectDraft = (id: string, within = items) => {
     const item = within.find((candidate) => candidate.id === id)
     if (item === undefined) return
@@ -505,19 +466,16 @@ function Editor({
     showDraft(item.at)
   }
 
-  /** 选中编辑轨上在跑的那条：小卡写进度，回到草稿预览。 */
   const selectRunning = (id: string) => {
     setSelection({ kind: 'running', id })
     showDraft()
   }
 
-  /** 在标尺上定位：标尺始终属于草稿，原片预览时回到草稿预览，选区与生成卡留着。 */
   const seekDraft = (clock: number) => {
     if (sourcePreview) showDraft(clock)
     else previewRef.current?.previewAt(clock)
   }
 
-  /** 改草稿：播放头留在原来那一块的同一位置（见 keepPlace）；原片预览时舞台不动，只挪记着的草稿播放头。 */
   const changeDraft = (next: Draft) => {
     if (busy || source === undefined) return
     const after = draftItemsOf(source, next)
@@ -532,7 +490,6 @@ function Editor({
       changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
   }
 
-  /** 选用或取消一段；取消时那块正选中就清掉选中。 */
   const togglePart = (editId: string, seg: number) => {
     if (source === undefined || draft === undefined) return undefined
     if (isPicked(draft, editId, seg)) {
@@ -543,10 +500,6 @@ function Editor({
     return changeDraft(pickPart(source, draft, editId, seg))
   }
 
-  /**
-   * 点编辑轨上完成的一段：同点它的眼睛，另回到草稿预览。选用后选中它在草稿里的那块；取消选用时播放头
-   * 留在原来那一块的同一位置（见 keepPlace）。
-   */
   const clickPart = (editId: string, seg: number) => {
     if (draft === undefined) return
     const picking = !isPicked(draft, editId, seg)
@@ -556,13 +509,11 @@ function Editor({
     else if (sourcePreview) showDraft(keepPlace(items, after, draftClock))
   }
 
-  /** 草稿里的一块修剪到新起止之后的草稿；这一块不在草稿里时为 undefined。 */
   const trimmedDraft = ({ id, t0, t1 }: TrimChange) => {
     const item = items.find((candidate) => candidate.id === id)
     return draft === undefined || item === undefined ? undefined : trimItem(draft, item, { t0, t1 })
   }
 
-  /** 修剪草稿里的一块（拖把手松手、按方向键）：后面的块跟着移，舞台与播放头跟到被拖的那一端。 */
   const trim = (trimChange: TrimChange) => {
     const next = trimmedDraft(trimChange)
     if (busy || source === undefined || next === undefined) return
@@ -574,10 +525,6 @@ function Editor({
     )
   }
 
-  /**
-   * 按着修剪把手：舞台按拖动中的样子停在被拖的那一端（原片选区换到原片预览），草稿与选区不动；松手、取消时
-   * 回到按提交的样子放。
-   */
   const followTrim = (next: TrimPreview | undefined) => {
     if (busy && next !== undefined) return
     setTrimPreview(next)
@@ -585,7 +532,6 @@ function Editor({
     else if (next !== undefined) setSeekRequest(next.seek)
   }
 
-  /** 拿掉草稿里的一块 = 关掉它的眼睛。 */
   const removeItem = (id: string) => {
     const item = items.find((candidate) => candidate.id === id)
     if (item === undefined) return
@@ -604,7 +550,6 @@ function Editor({
   const { dismissed, dismiss } = useDismissedFailures(conversationId, root.id)
   const notices = failureNoticesOf(failedEdits, failedCompositeOf(jobs, root.id), dismissed)
 
-  /** 点失败提醒：回到剪辑视图；编辑段的失败另把原片选区恢复成那次生成的实际起止、弹出生成卡。 */
   const openFailure = ({ edit }: Notice) => {
     if (busy) return
     chooseView('clips')
@@ -618,7 +563,6 @@ function Editor({
 
   const collapseCard = () => setCardOpen(false)
 
-  /** 点生成卡的 ✕ 或按 Escape：卡收成胶囊、选区留着，舞台回到草稿预览。 */
   const closeCard = () => {
     collapseCard()
     showDraft()
@@ -673,7 +617,6 @@ function Editor({
     }
   }
 
-  // 版本视图：每一版读自己的关键帧，看的那一版放在舞台上
   const rootVersion: ChainVersion = { jobId: root.id, label: ORIGINAL_LABEL, mediaUrl }
   const listed = versions.length === 0 ? [rootVersion] : versions
   const viewed =
@@ -700,7 +643,6 @@ function Editor({
     viewedDuration === undefined
       ? undefined
       : layoutPlay([{ mediaUrl: viewed.mediaUrl, start: 0, end: viewedDuration }])
-  // 剪辑视图的舞台：原片预览放整条原片；草稿预览按草稿播放，每块是它来源用到的那一段。
   const current = clipsView
     ? shots === undefined
       ? undefined
@@ -778,7 +720,6 @@ function Editor({
     </Button>
   )
 
-  // 版本视图只在看的那一版读不出关键帧时报错；别的版本读不出只是那一行空着。
   const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
   const peaksOf = (url: string) => peaks.get(url) ?? LOADING_PEAKS
   const timeline =
@@ -834,7 +775,6 @@ function Editor({
       </p>
     )
 
-  // 生成卡的首帧、尾帧取选中的原片选区的起止，小卡取草稿块用到的开头：都按已提交的取，拖把手松手才换。
   const frameOf = (edge: 'start' | 'end', width = CARD_FRAME_WIDTH) =>
     chosenRun === undefined
       ? undefined
@@ -927,7 +867,6 @@ function Editor({
         referenceLimit={chosen?.model.maxReferenceImages}
       />
     )
-  // 原片预览时舞台左上角注明放的是原片的哪几个镜头，同成片页预览素材。
   const stageLabel =
     sourcePreview && range !== undefined && shotSpan !== undefined ? (
       <StageLabel label={`原片 · ${spanName(shotSpan)}`} range={range} time={currentTime} />
@@ -942,7 +881,6 @@ function Editor({
         anchorRef={selectionBoxRef}
         frame={videoSnapshotUrl(selectedItem.mediaUrl, CARD_FRAME_WIDTH, selectedItem.t0)}
         key={selectedItem.id}
-        // 拖把手时写拖动中的长度，同把手的读数
         line={draftLineOf(staged.find((item) => item.id === selectedItem.id) ?? selectedItem)}
         onClose={() => setSelection(undefined)}
         title={
@@ -987,7 +925,6 @@ function Editor({
         }}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={(event) => {
-          // 选中草稿里一块时 Delete / Backspace 等于关掉它的眼睛
           if (
             (event.key === 'Delete' || event.key === 'Backspace') &&
             selectedItem !== undefined &&
@@ -998,7 +935,6 @@ function Editor({
             removeItem(selectedItem.id)
             return
           }
-          // 空格播放、暂停；焦点在按钮上时也不触发按钮
           if (
             event.key !== ' ' ||
             event.defaultPrevented ||
@@ -1069,7 +1005,6 @@ function Editor({
             current={current}
             currentTime={currentTime}
             shownTime={trimPreview?.shown}
-            // 拖草稿块的把手时舞台放的是拖动中的草稿，总长仍按草稿本身写，同「共 X 秒」
             shownDuration={trimPreview?.kind === 'draft' ? total : undefined}
             onPlay={collapseCard}
             onTime={setCurrentTime}

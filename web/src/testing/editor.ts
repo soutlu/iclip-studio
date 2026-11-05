@@ -1,5 +1,3 @@
-/** 往 ProseMirror 里整段放文字或文件：走粘贴事件进它的事务管线。逐字键入用 `userEvent.keyboard`（jsdom 里走 DOM 变更 → handleTextInput）。 */
-
 import { fireEvent } from '@testing-library/react'
 
 export const pasteTextIntoComposer = (editor: HTMLElement, text: string) => {

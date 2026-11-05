@@ -1,5 +1,3 @@
-"""镜头组 prompt 表的测试样例：一组镜头的工具入参与写回文件。"""
-
 from __future__ import annotations
 
 import json
@@ -27,8 +25,6 @@ def one_shot(**overrides: Any) -> VideoShotRequest:
 
 
 def shots_document(**overrides: Any) -> str:
-    """工作区文件校验入口接受的有效镜头组 prompt 表。"""
-
     row: dict[str, Any] = {
         "index": 1,
         "prompt": {

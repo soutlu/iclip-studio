@@ -1,6 +1,3 @@
-"""打标请求按 AI 维度生成平铺或层级选项，解析校验归属并保留多选；
-标签名字换成 id，选了下级就去掉上级，模型调用失败按能不能再试落两种原因。"""
-
 from __future__ import annotations
 
 import json
@@ -333,7 +330,6 @@ async def test_the_call_sends_the_text_with_the_request_built_for_these_dimensio
     (call,) = ark.calls
     assert (call["declaration"], call["model"]) == ("volcengine", TAG_MODEL)
     assert TAG_MODEL == "doubao-seed-2-1-lite-260915"
-    # 打标比运行时等上游的上限短，照旧只等自己的那么久。
     assert call["read_timeout"] == TAG_TIMEOUT_SECONDS
     (sent,) = ark.tag_requests
     system, user = sent["input"]

@@ -26,7 +26,6 @@ import {
   type UsedSpan,
 } from './materials'
 
-/** 拖着选中的范围走：指针在哪，范围拿起时在页面上的位置与大小；松手或取消后为 null */
 export type MaterialCarry = {
   clientX: number
   clientY: number
@@ -36,29 +35,19 @@ export type MaterialCarry = {
 
 type MaterialAreaProps = {
   groups: readonly MaterialGroup[]
-  /** 素材片还没读到或读取失败时，区域里放这个 */
   placeholder: ReactNode
   versionOf: (take: MaterialTake) => Material
   onVersion: (takeId: string, jobId: string) => void
   keyframes: KeyframeStates
   range: MaterialRange | null
-  /** 画面轨上每版素材片已经用了的段，按 jobId 分；轨道底边画一道 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
-  /** 点镜头、Shift 点镜头（在选区上点也是点它下面的镜头）：选中这一段，预览停在它开头、不播放 */
   onPick: (range: MaterialRange) => void
-  /** Shift 点掉了最后一个选中的镜头：什么也不选 */
   onClear: () => void
-  /** 在选区外按下一个镜头拖起来：只选中它，预览不切到素材 */
   onSelect: (range: MaterialRange) => void
-  /** 拖或微调选区的一端：预览停在这一端 */
   onTrim: (range: MaterialRange, edge: Edge) => void
-  /** 镜头或选区两端上按 Enter：把选区插到播放头处 */
   onInsert: () => void
-  /** 素材预览在播放时，素材里放到的时刻（毫秒）；不在播放时为 undefined，选区里不画播放头 */
   playingMs: number | undefined
-  /** 拖着 range 到画面轨上松手；落在轨上返回 true */
   onDrop: (clientX: number, clientY: number, range: MaterialRange) => boolean
-  /** 拖动中指针移到哪；取消时为 null */
   onCarry: (carry: MaterialCarry | null) => void
 }
 
@@ -68,13 +57,11 @@ const percent = (ms: number, durationMs: number) => `${(ms / durationMs) * 100}%
 
 const insertOnEnter = (event: KeyboardEvent<HTMLElement>, onInsert: () => void) => {
   if (event.key !== 'Enter') return false
-  // 不让按钮再补一次点击（那会重新选中镜头）
   event.preventDefault()
   onInsert()
   return true
 }
 
-/** 视频素材区：一个镜头组一段、每条原作一行，区域定高、原作多时在区域里上下滚动。 */
 export function MaterialArea({
   groups,
   placeholder,
@@ -140,13 +127,11 @@ export function MaterialArea({
 }
 
 type TakeRowProps = {
-  /** 组里第一条原作带上组名，放在左列原作名上面 */
   groupLabel: string | undefined
   take: MaterialTake
   version: Material
   keyframes: KeyframeStates
   range: MaterialRange | null
-  /** 这一版在画面轨上已经用了的段 */
   used: readonly UsedSpan[]
   playingMs: number | undefined
   onPick: (range: MaterialRange) => void
@@ -166,7 +151,6 @@ type RangeDrag = {
   edge: Edge | 'body'
   base: MaterialRange
   moved: boolean
-  /** 在选区外按下的镜头：拖起来时先选中它 */
   fromShot: boolean
   origin: MaterialCarry['origin']
 }
@@ -208,7 +192,6 @@ function TakeRow({
     return durationMs === undefined || width <= 0 ? 0 : durationMs / width
   }
 
-  /** 点一个镜头：按着 Shift 时扩选或去掉一端，否则只选它 */
   const pickShot = (shot: ShotSpan, extend: boolean) => {
     const clicked = shotRange(version.jobId, take.id, shot)
     const next = extend ? shiftShot(range, clicked, shots) : clicked
@@ -216,7 +199,6 @@ function TakeRow({
     else onPick(next)
   }
 
-  /** 指针横坐标下的镜头；选区盖住了选中的镜头，在选区上点时靠它知道点的是哪个 */
   const shotAtX = (clientX: number) => {
     const left = stripRef.current?.getBoundingClientRect().left ?? 0
     const ms = (clientX - left) * msPerPx()
@@ -281,13 +263,9 @@ function TakeRow({
     dragRef.current = null
     setLifting(false)
     if (current.edge === 'body' && current.moved) {
-      // 松手后浏览器还会给按下的镜头补一个 click，那一下不算点镜头
       clickAfterDrag.swallow()
       onDrop(event.clientX, event.clientY, current.base)
-    }
-    // 在选区里点一下（没拖动）就是点指针下的那个镜头，同点选区外的镜头；点选区外的镜头由它的 click
-    // 处理
-    else if (current.edge === 'body' && !current.fromShot) {
+    } else if (current.edge === 'body' && !current.fromShot) {
       const shot = shotAtX(event.clientX)
       if (shot !== undefined) pickShot(shot, event.shiftKey)
     }
@@ -363,7 +341,6 @@ function TakeRow({
                   if (!clickAfterDrag.take()) pickShot(shot, event.shiftKey)
                 }}
                 onKeyDown={(event) => insertOnEnter(event, onInsert)}
-                // 在选区外按下镜头即可拖：拖起来时先选中这个镜头
                 onPointerCancel={cancel}
                 onPointerDown={(event) =>
                   press(event, 'body', shotRange(version.jobId, take.id, shot), true)

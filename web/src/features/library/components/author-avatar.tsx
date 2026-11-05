@@ -1,6 +1,5 @@
 import { cn } from '@/shared/lib/utils'
 
-/** 作者头像：用户名的首字压在圆底上，尺寸与字号由调用方给。 */
 export function AuthorAvatar({ name, className }: { name: string; className: string }) {
   return (
     <span

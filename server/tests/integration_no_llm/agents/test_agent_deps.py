@@ -1,8 +1,3 @@
-"""通过完整 HTTP 登录与工具调用验证每次运行的身份隔离。
-
-Agent 注册表为共享对象，deps 必须逐次运行传入，不能在装配时绑定首个用户。
-"""
-
 from __future__ import annotations
 
 import httpx
@@ -24,21 +19,13 @@ AGENT_ID = "storyboard"
 
 
 def identity_capability() -> tuple[Capability[AgentRunDeps], ...]:
-    """提供返回运行依赖的工具，用于验证 RunContext[AgentRunDeps] 注入。"""
-
     def whoami(ctx: RunContext[AgentRunDeps]) -> str:
-        """报出这次运行的属主。"""
-
         return str(ctx.deps.user_id)
 
     def which_conversation(ctx: RunContext[AgentRunDeps]) -> str:
-        """报出这次运行所属的对话。"""
-
         return ctx.deps.conversation_id
 
     def on_behalf_of(ctx: RunContext[AgentRunDeps]) -> str:
-        """报出这次运行替谁跑。"""
-
         return f"for:{ctx.deps.user_name}"
 
     return (
@@ -53,8 +40,6 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
 
 @pytest.fixture
 def runtime_plugins() -> PluginRegistry:
-    """交给运行时服务的插件登记表只有测试 identity 插件。"""
-
     return {"identity": FixedPlugin.bind(name="identity", capabilities=identity_capability())}
 
 
@@ -65,8 +50,6 @@ async def tools_said(
     conversation_id: str | None = None,
     user_name: str | None = None,
 ) -> list[str]:
-    """直接检查工具返回值，避免整份 transcript 的子串匹配产生误报。"""
-
     conversation_id = conversation_id or await new_conversation(client, AGENT_ID)
     body: dict[str, object] = {
         "prompt_id": prompt_id,
@@ -126,11 +109,6 @@ async def test_each_run_carries_its_own_owner(
 async def test_a_run_whose_owner_was_deactivated_fails_at_start(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """开跑闸门：属主账号已停用，消息照常受理，运行开跑即失败，工具一个都不跑。
-
-    停用的账号登不进来，所以用替人办事的钥匙替他开对话、发消息；属主不存在的情形有外键挡着，造不出来。
-    """
-
     await register_and_login(client, username="service-bot", email="bot@example.com")
     await set_roles_in_db(pg_url, "bot@example.com", ["root"])
     issued = await client.post(
@@ -179,8 +157,6 @@ async def deactivate_in_db(pg_url: str, username: str) -> None:
 
 
 async def run_status(pg_url: str, conversation_id: str) -> str:
-    """这段对话唯一一条消息的终态。"""
-
     async with connected(pg_url) as conn:
         row = await conn.execute(
             text(
@@ -195,8 +171,6 @@ async def run_status(pg_url: str, conversation_id: str) -> str:
 async def test_browser_run_is_on_behalf_of_the_login_user(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """浏览器发消息不带 user_name，运行替登录的这个人跑。"""
-
     await register_and_login(client, username="caller-alpha", email="alpha@example.com")
     await set_roles_in_db(pg_url, "alpha@example.com", ["editor"])
 
@@ -206,8 +180,6 @@ async def test_browser_run_is_on_behalf_of_the_login_user(
 async def test_api_key_run_is_on_behalf_of_the_named_user_not_the_key_owner(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """机器调用方替它的终端用户发消息：运行带的是它给的名字，不是 key 属主账号。"""
-
     await register_and_login(client, username="service-bot", email="bot@example.com")
     await set_roles_in_db(pg_url, "bot@example.com", ["root"])
     issued = await client.post(
