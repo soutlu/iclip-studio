@@ -14,6 +14,7 @@ import { openAddImage } from '@/testing/storyboard'
 import type { ShotsDocument } from '../shot-document'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
+import { SUBMIT_HOLD_MS } from '../use-submit-lock'
 import { StoryboardReader } from './storyboard-reader'
 import { sessionEnvelope } from '@/testing/ws'
 
@@ -801,7 +802,7 @@ describe('StoryboardReader', () => {
     expect(model).toHaveFocus()
   })
 
-  it('提交出片期间模型与画幅都选不动', async () => {
+  it('提交出片全程只有主按钮变化，工具条其他控件都不禁用', async () => {
     provide()
     let release = () => {}
     const held = new Promise<void>((resolve) => {
@@ -817,31 +818,95 @@ describe('StoryboardReader', () => {
     await screen.findByRole('region', { name: '镜头组 1' })
     const bar = screen.getByRole('group', { name: '出片工具栏' })
     const model = within(bar).getByRole('button', { name: '视频模型' })
-    const aspect = within(bar).getByRole('button', { name: '画幅' })
     await waitFor(() => expect(model).toBeEnabled())
-    expect(aspect).toBeEnabled()
+    const controls = [
+      model,
+      within(bar).getByRole('button', { name: '画幅' }),
+      within(bar).getByRole('button', { name: '生成音频' }),
+      ...within(bar).getAllByRole('radio'),
+    ]
+    expect(controls.length).toBeGreaterThan(3)
+    const expectControlsEnabled = () => {
+      for (const control of controls) expect(control).toBeEnabled()
+    }
 
     await userEvent.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
     expect(await within(bar).findByRole('button', { name: '提交中…' })).toBeVisible()
-    expect(model).toBeDisabled()
-    expect(aspect).toBeDisabled()
+    expectControlsEnabled()
 
     release()
-    await waitFor(() => expect(model).toBeEnabled())
-    expect(aspect).toBeEnabled()
+    expect(await within(bar).findByRole('button', { name: '已提交' })).toBeVisible()
+    expectControlsEnabled()
   })
 
-  it('服务端拒收出片时在出片按钮旁提示原话，不弹全局提示、不刷新记录', async () => {
+  describe('受理后的停留', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('接口马上 202：写「已提交」，1.5 秒内再点不发第二个请求、列表已刷新，过后恢复可点', async () => {
+      provide()
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      let reads = 0
+      let posts = 0
+      server.use(
+        http.get('*/api/generations', () => {
+          reads += 1
+          return HttpResponse.json({ items: jobs })
+        }),
+        http.post('*/api/generations/video', () => {
+          posts += 1
+          return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
+        }),
+      )
+      await renderReader()
+      await screen.findByRole('region', { name: '镜头组 1' })
+      const bar = screen.getByRole('group', { name: '出片工具栏' })
+      const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+      await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+      const readsBefore = reads
+
+      await user.click(generate)
+      expect(await within(bar).findByRole('button', { name: '已提交' })).toBe(generate)
+      await waitFor(() => expect(reads).toBeGreaterThan(readsBefore))
+      expect(generate).toHaveAccessibleName('已提交')
+
+      await user.click(generate)
+      act(() => {
+        vi.advanceTimersByTime(SUBMIT_HOLD_MS - 500)
+      })
+      await user.click(generate)
+      expect(generate).toHaveAccessibleName('已提交')
+      expect(generate).toHaveAttribute('aria-disabled', 'true')
+      expect(posts).toBe(1)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+      await waitFor(() => expect(generate).toHaveAccessibleName('生成第 1 组'))
+      expect(generate).not.toHaveAttribute('aria-disabled')
+      await user.click(generate)
+      await waitFor(() => expect(posts).toBe(2))
+    })
+  })
+
+  it('服务端拒收出片时在出片按钮旁提示原话，不弹全局提示、不刷新记录，不打勾、立刻能重试', async () => {
     provide()
     let reads = 0
+    let posts = 0
     server.use(
       http.get('*/api/generations', () => {
         reads += 1
         return HttpResponse.json({ items: jobs })
       }),
-      http.post('*/api/generations/video', () =>
-        HttpResponse.json({ detail: '视频生成仅支持模型 vendor-a-seedance-2-5' }, { status: 422 }),
-      ),
+      http.post('*/api/generations/video', () => {
+        posts += 1
+        return HttpResponse.json(
+          { detail: '视频生成仅支持模型 vendor-a-seedance-2-5' },
+          { status: 422 },
+        )
+      }),
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
@@ -858,6 +923,9 @@ describe('StoryboardReader', () => {
     expect(toasts === null ? null : within(toasts).queryByText(/视频生成仅支持模型/)).toBeNull()
     expect(reads).toBe(readsBefore)
     await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+    expect(generate).toHaveAccessibleName('生成第 1 组')
+    await userEvent.click(generate)
+    await waitFor(() => expect(posts).toBe(2))
   })
 
   it('视频模型清单读不到时说明原因，不能出片', async () => {

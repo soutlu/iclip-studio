@@ -31,15 +31,17 @@ export const useVideoGeneration = (conversationId: string, fileModel?: string) =
   const options: VideoGenerationOptions = { ...wanted, model }
 
   const submit = async (index: number, send: (choice: VideoChoice) => Promise<unknown>) => {
-    if (model === undefined) return
+    if (model === undefined) return false
     setFailure(undefined)
     try {
       await send({ generateAudio: options.generateAudio, model, resolution: options.resolution })
       void queryClient.invalidateQueries({
         queryKey: storyboardQueryKeys.videoJobs(conversationId),
       })
+      return true
     } catch (error) {
       setFailure({ index, message: errorMessageOf(error, '视频提交失败') })
+      return false
     }
   }
 

@@ -9,6 +9,7 @@ import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import { useUnseenResults } from '../components/use-unseen-results'
 import { versionThumbSize } from '../components/version-thumb-size'
+import { useSubmitLock } from '../use-submit-lock'
 import { AnnotationCanvas } from './annotation-canvas'
 import { exportAnnotatedImage } from './annotation-export'
 import { EditComposer, type EditComposerHandle } from './edit-composer'
@@ -70,6 +71,7 @@ export function FrameImageEditor({
 }: FrameImageEditorProps) {
   const queryClient = useQueryClient()
   const drafts = useFrameEditDrafts(target)
+  const lock = useSubmitLock()
   const [selectedKey, setSelectedKey] = useState(initialKey ?? CURRENT_KEY)
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
   const [wantedModel, setWantedModel] = useState<string>()
@@ -130,19 +132,19 @@ export function FrameImageEditor({
     const problem = editDraftError({ annotations, parts }, baseUrl)
     if (problem !== null) {
       setOperationError(problem)
-      return
+      return false
     }
     if (currentUrl === undefined) {
       setOperationError(words.gone)
-      return
+      return false
     }
     if (baseUrl === '') {
       setOperationError('暂无可编辑的图片，请先在版本中选择一张已生成的图片')
-      return
+      return false
     }
     if (model === undefined || resolution === undefined) {
       setOperationError('图片模型尚未加载，无法提交；请稍后重试')
-      return
+      return false
     }
     setOperationError(null)
     try {
@@ -161,17 +163,21 @@ export function FrameImageEditor({
         ...(channel === undefined ? {} : { channel }),
       })
       seedImageEditJob(queryClient, target, job)
+      return true
     } catch (error) {
       setOperationError(errorMessageOf(error, '图片编辑提交失败'))
+      return false
     }
   }
   const submitRegenerate = async (parts: EditDraftPart[]) => {
-    if (regenerate === undefined || regenerate.blocked !== undefined) return
+    if (regenerate === undefined || regenerate.blocked !== undefined) return false
     setOperationError(null)
     try {
       await regenerate.submit(parts)
+      return true
     } catch (error) {
       setOperationError(errorMessageOf(error, '再生成提交失败'))
+      return false
     }
   }
   const replace = async (url: string) => {
@@ -384,7 +390,8 @@ export function FrameImageEditor({
                 setRegenerateParts(parts)
                 setOperationError(null)
               }}
-              onSubmit={submitRegenerate}
+              onSubmit={(parts) => void lock.run(() => submitRegenerate(parts))}
+              phase={lock.phase}
               settings={null}
               submitBlocked={regenerate.blocked !== undefined}
             />
@@ -405,7 +412,8 @@ export function FrameImageEditor({
                 drafts.updateDraft(baseUrl, (current) => ({ ...current, parts }))
                 setOperationError(null)
               }}
-              onSubmit={submit}
+              onSubmit={(parts) => void lock.run(() => submit(parts))}
+              phase={lock.phase}
               settings={
                 aspectUnsupported ? null : (
                   <EditGenerationSettings

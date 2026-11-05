@@ -1,7 +1,7 @@
 import { useId, useRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
-import { Button } from '@/shared/ui/button'
+import { SubmitButton, type SubmitPhase } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
@@ -35,7 +35,7 @@ type VideoGenerationBarProps = {
   aspect: AspectControl
   blocker: GenerationBlocker | undefined
   notice: string | undefined
-  submitting: boolean
+  phase: SubmitPhase
   onGenerate: () => void
 }
 
@@ -46,8 +46,8 @@ export function VideoGenerationBar({
   notice,
   onChange,
   onGenerate,
+  phase,
   shotIndex,
-  submitting,
   value,
 }: VideoGenerationBarProps) {
   const modelLabel =
@@ -84,7 +84,7 @@ export function VideoGenerationBar({
           <span aria-hidden className="storyboard-bar-divider" />
           <GenerationPicker
             className="storyboard-bar-model"
-            disabled={submitting || models.items.length === 0}
+            disabled={models.items.length === 0}
             label="视频模型"
             leading={<Icon decorative name="video" size="sm" />}
             onChange={(model) => onChange({ ...value, model })}
@@ -95,7 +95,6 @@ export function VideoGenerationBar({
           <ChipGroup
             aria-label="分辨率"
             className="storyboard-bar-segmented"
-            disabled={submitting}
             onValueChange={(next) => {
               const resolution = VIDEO_RESOLUTIONS.find((item) => item === next)
               if (resolution !== undefined) onChange({ ...value, resolution })
@@ -121,7 +120,6 @@ export function VideoGenerationBar({
                 aria-label="生成音频"
                 aria-pressed={value.generateAudio}
                 className="storyboard-bar-control storyboard-bar-audio ui-state ui-focus"
-                disabled={submitting}
                 onClick={() => onChange({ ...value, generateAudio: !value.generateAudio })}
                 type="button"
               >
@@ -143,8 +141,8 @@ export function VideoGenerationBar({
                 : statusId
           }
           onGenerate={onGenerate}
+          phase={phase}
           shotIndex={shotIndex}
-          submitting={submitting}
         />
       </div>
     </div>
@@ -215,28 +213,28 @@ function GenerateButton({
   blocked,
   describedBy,
   onGenerate,
+  phase,
   shotIndex,
-  submitting,
 }: {
   blocked: boolean
   describedBy: string | undefined
   onGenerate: () => void
+  phase: SubmitPhase
   shotIndex: number
-  submitting: boolean
 }) {
-  const unavailable = submitting || blocked
+  const unavailable = phase !== 'idle' || blocked
   return (
-    <Button
+    <SubmitButton
       aria-describedby={describedBy}
       aria-disabled={unavailable ? true : undefined}
       className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
+      label={`生成第 ${shotIndex} 组`}
       leadingIcon="video"
       onClick={() => {
         if (!unavailable) onGenerate()
       }}
+      phase={phase}
       size="md"
-    >
-      {submitting ? '提交中…' : `生成第 ${shotIndex} 组`}
-    </Button>
+    />
   )
 }

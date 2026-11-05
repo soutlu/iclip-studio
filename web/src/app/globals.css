@@ -367,6 +367,7 @@
 @import './fonts.css';
 @import './base.css';
 @import './utility-classes.css';
+@import '../shared/ui/button/submit-button.css';
 @import '../shared/ui/composer/composer.css';
 @import '../shared/ui/media-preview/media-preview.css';
 @import '../shared/ui/media-lightbox/media-lightbox.css';
