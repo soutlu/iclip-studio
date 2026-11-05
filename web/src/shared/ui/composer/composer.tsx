@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { Button, IconButton } from '@/shared/ui/button'
+import { IconButton, SubmitButton } from '@/shared/ui/button'
 import { useFileDropTarget, useWindowFileDrop } from '@/shared/ui/file-drop'
 import type { ComposerNode, ComposerNodeSpec, ErasedNodeSpec } from './composer-node'
 import { ComposerNodeViews, type ComposerAttachmentPreviewOf } from './composer-node-views'
@@ -76,6 +76,7 @@ type ComposerProps<N extends ComposerNode, Item> = {
   leading?: ReactNode
   trailing?: ReactNode
   sending?: boolean
+  accepted?: boolean
   dense?: boolean
   busy?: boolean
   onStop?: (() => void) | undefined
@@ -130,6 +131,7 @@ const NO_NODES: readonly ErasedNodeSpec[] = []
 
 export function Composer<N extends ComposerNode = never, Item = never>({
   accept = 'media',
+  accepted = false,
   addControl,
   ariaLabel = '输入消息',
   attachmentLimit,
@@ -166,7 +168,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   const nodeSpecs: readonly ErasedNodeSpec[] = nodes ?? NO_NODES
 
   const canSendNow = () => {
-    if (sending || submitAction?.disabled === true || editor.empty) return false
+    if (sending || accepted || submitAction?.disabled === true || editor.empty) return false
     return !editor.attIds.some((attId) => attachments.entries.get(attId)?.status !== 'ready')
   }
 
@@ -329,21 +331,21 @@ export function Composer<N extends ComposerNode = never, Item = never>({
               </button>
             ) : null}
             {submitAction !== undefined ? (
-              <Button
+              <SubmitButton
                 className={cn(
                   'shrink-0 rounded-full',
                   submitAction.size === 'sm' &&
-                    'h-(--control-height-sm) gap-1.5 px-2.5 text-label [&>svg]:size-(--icon-sm)',
+                    'h-(--control-height-sm) gap-1.5 px-2.5 text-label [&_svg]:size-(--icon-sm)',
                 )}
                 disabled={!canSend}
+                label={submitAction.label}
                 leadingIcon={submitAction.icon}
-                loading={sending}
                 onClick={submit}
+                pendingLabel={submitAction.pendingLabel}
+                phase={accepted ? 'accepted' : sending ? 'sending' : 'idle'}
                 size="md"
                 variant={submitAction.emphasis === 'primary' ? 'primary' : 'tonal'}
-              >
-                {sending ? submitAction.pendingLabel : submitAction.label}
-              </Button>
+              />
             ) : !busy || onStop === undefined || !editor.empty ? (
               <button
                 aria-label="发送"

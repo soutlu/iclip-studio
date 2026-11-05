@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
+import type { SubmitPhase } from '@/shared/ui/button'
 import {
   Composer,
   readyAttachment,
@@ -51,7 +52,8 @@ type EditComposerProps = {
   onSelectAnnotation: (id: string) => void
   initialParts: readonly EditDraftPart[]
   onPartsChange: (parts: EditDraftPart[]) => void
-  onSubmit: (parts: EditDraftPart[]) => Promise<void>
+  onSubmit: (parts: EditDraftPart[]) => void
+  phase: SubmitPhase
   settings: ReactNode
   editingResult: boolean
   submitBlocked?: boolean
@@ -68,6 +70,7 @@ export function EditComposer({
   onPartsChange,
   onSelectAnnotation,
   onSubmit,
+  phase,
   ref,
   regenerate = false,
   selectedAnnotation,
@@ -81,8 +84,6 @@ export function EditComposer({
   const [parts, setParts] = useState<readonly ComposerPart<AnnotationNode>[]>(() =>
     composerPartsOf(initialParts),
   )
-  const [sending, setSending] = useState(false)
-  const submittingRef = useRef(false)
 
   useEffect(() => {
     const restored = composerPartsOf(initial)
@@ -129,24 +130,13 @@ export function EditComposer({
     ),
   }
 
-  const submit = async (submitted: readonly ComposerPart<AnnotationNode>[]) => {
-    if (submittingRef.current) return
-    submittingRef.current = true
-    setSending(true)
-    try {
-      await onSubmit(draftPartsOf(submitted))
-    } finally {
-      submittingRef.current = false
-      setSending(false)
-    }
-  }
-
   return (
     <AnnotationChipsProvider
       value={{ annotations, onSelect: onSelectAnnotation, selectedId: selectedAnnotation }}
     >
       <Composer<AnnotationNode, EditMentionItem>
         accept="image"
+        accepted={phase === 'accepted'}
         addControl={(openFilePicker) => (
           <EditAddPopover
             blockedReason={blockedReason}
@@ -176,7 +166,7 @@ export function EditComposer({
           setParts(next)
           onPartsChange(draftPartsOf(next))
         }}
-        onSubmit={(submission) => void submit(submission.parts)}
+        onSubmit={(submission) => onSubmit(draftPartsOf(submission.parts))}
         placeholder={
           regenerate
             ? '描述想生成的内容，输入 @ 可引用图片'
@@ -185,7 +175,7 @@ export function EditComposer({
               : '描述修改要求，输入 @ 可引用图片或标注'
         }
         ref={composerRef}
-        sending={sending}
+        sending={phase === 'sending'}
         submitAction={{
           disabled: submitBlocked,
           emphasis: editingResult ? 'neutral' : 'primary',

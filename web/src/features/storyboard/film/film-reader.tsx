@@ -296,11 +296,12 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
     saveState: draft.state.kind,
     uploading: gate.uploading,
   })
-  const generateBlocker = gate.preparing
-    ? undefined
-    : missingBlocker !== undefined && (baseBlocker === undefined || baseBlocker.transient)
-      ? { reason: missingBlocker, transient: false }
-      : baseBlocker
+  const generateBlocker =
+    gate.phase !== 'idle'
+      ? undefined
+      : missingBlocker !== undefined && (baseBlocker === undefined || baseBlocker.transient)
+        ? { reason: missingBlocker, transient: false }
+        : baseBlocker
   const generateNotice = generationNoticeOf({
     aspectRatio: group.aspectRatio,
     model: video.options.model,
@@ -309,13 +310,13 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
   const generate = () =>
     gate.run(async (mounted) => {
       const saved = await draft.saveNow()
-      if (saved === null || !mounted()) return
+      if (saved === null || !mounted()) return false
       const current = saved.groups.find((item) => item.video === group.video)
       if (current === undefined) {
         video.reportError(group.index, '该组已不在分镜中，无法出片；请刷新分镜')
-        return
+        return false
       }
-      await video.submit(group.index, (choice) =>
+      return video.submit(group.index, (choice) =>
         generateFilmVideo(conversationId, {
           ...choice,
           filmVersion: saved.filmVersion,
@@ -442,7 +443,7 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
         <VideoGenerationBar
           aspect={{
             description: FILM_ASPECT_DESCRIPTION,
-            disabled: readOnly || gate.preparing || aspectSaving,
+            disabled: readOnly || aspectSaving,
             onChange: (aspectRatio) => void changeAspect(aspectRatio),
             value: group.aspectRatio,
           }}
@@ -451,8 +452,8 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
           notice={generateNotice}
           onChange={video.setOptions}
           onGenerate={() => void generate()}
+          phase={gate.phase}
           shotIndex={group.index}
-          submitting={gate.preparing}
           value={video.options}
         />
       </div>
@@ -471,7 +472,7 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
               runVersion: saved.runVersion,
               ...(prompt === undefined ? {} : { prompt }),
             })
-            await queryClient.invalidateQueries({
+            void queryClient.invalidateQueries({
               queryKey: imageEditConversationKey(conversationId),
             })
           }}
