@@ -322,7 +322,7 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
   // 私用区的记号。几种情况同一句原因。
   const copyBlocked =
     draft.hasUnsavedChanges || draft.state.kind === 'saving' ? '修改尚未保存，无法复制' : undefined
-  // 提交途中按钮自己写着「提交中」，不另说原因。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
+  // 提交途中与受理后的停留里按钮自己写着状态，不另说原因，状态行也不跳动。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
   // 免得每次自动保存时原因从状态行上消失；只读与冲突、保存失败照旧先说。
   const missingBlocker = missingFramesText(group)
   const baseBlocker = generationBlockerOf({
@@ -331,11 +331,12 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
     saveState: draft.state.kind,
     uploading: gate.uploading,
   })
-  const generateBlocker = gate.preparing
-    ? undefined
-    : missingBlocker !== undefined && (baseBlocker === undefined || baseBlocker.transient)
-      ? { reason: missingBlocker, transient: false }
-      : baseBlocker
+  const generateBlocker =
+    gate.phase !== 'idle'
+      ? undefined
+      : missingBlocker !== undefined && (baseBlocker === undefined || baseBlocker.transient)
+        ? { reason: missingBlocker, transient: false }
+        : baseBlocker
   const generateNotice = generationNoticeOf({
     aspectRatio: group.aspectRatio,
     model: video.options.model,
@@ -345,13 +346,13 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
   const generate = () =>
     gate.run(async (mounted) => {
       const saved = await draft.saveNow()
-      if (saved === null || !mounted()) return
+      if (saved === null || !mounted()) return false
       const current = saved.groups.find((item) => item.video === group.video)
       if (current === undefined) {
         video.reportError(group.index, '该组已不在分镜中，无法出片；请刷新分镜')
-        return
+        return false
       }
-      await video.submit(group.index, (choice) =>
+      return video.submit(group.index, (choice) =>
         generateFilmVideo(conversationId, {
           ...choice,
           filmVersion: saved.filmVersion,
@@ -485,7 +486,7 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
         <VideoGenerationBar
           aspect={{
             description: FILM_ASPECT_DESCRIPTION,
-            disabled: readOnly || gate.preparing || aspectSaving,
+            disabled: readOnly || aspectSaving,
             onChange: (aspectRatio) => void changeAspect(aspectRatio),
             value: group.aspectRatio,
           }}
@@ -494,8 +495,8 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
           notice={generateNotice}
           onChange={video.setOptions}
           onGenerate={() => void generate()}
+          phase={gate.phase}
           shotIndex={group.index}
-          submitting={gate.preparing}
           value={video.options}
         />
       </div>
@@ -514,7 +515,7 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
               runVersion: saved.runVersion,
               ...(prompt === undefined ? {} : { prompt }),
             })
-            await queryClient.invalidateQueries({
+            void queryClient.invalidateQueries({
               queryKey: imageEditConversationKey(conversationId),
             })
           }}
