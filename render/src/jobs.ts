@@ -1,14 +1,9 @@
-/**
- * 导出任务：只在内存里，先进先出、一次一个。状态 queued → rendering → uploading → done，
- * 失败为 failed，取消为 cancelled。终态后保留 1 小时，进行中的不过期；服务重启后全部丢失。
- */
 import type { Logger } from './log'
 
 export type ExportStatus = 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
 
 export type FailureCode = 'render-failed' | 'upload-failed' | 'media-unreachable' | 'timeout'
 
-/** 渲染或上传失败；`code` 原样出现在 GET /exports/{id} 的 error 里。 */
 export class ExportFailure extends Error {
   readonly code: FailureCode
 
@@ -19,7 +14,6 @@ export class ExportFailure extends Error {
   }
 }
 
-/** 渲染出的文件；cleanup 删掉临时目录。 */
 export interface RenderedFile {
   file: string
   cleanup(): Promise<void>
@@ -30,19 +24,13 @@ export interface UploadTarget {
   headers: Record<string, string>
 }
 
-/**
- * 要渲染的内容：受理时那一版组件库的目录、素材地址，以及按「素材地址 → 渲染时用的地址」生成合成页的函数
- * （渲染器先把素材取到本地，再用本地路径生成合成页）。
- */
 export interface RenderJobInput {
   id: string
-  /** 组件库这一版的目录（`<RENDER_REGISTRY_ROOT>/<version>/`），合成页里组件与运行时的路径都相对它。 */
   registryDir: string
   mediaUrls: string[]
   compose(mediaPaths: Readonly<Record<string, string>>): string
 }
 
-/** 实际干活的部分：渲染合成页、上传成片。测试里换成假的。 */
 export interface ExportWorker {
   render(
     job: RenderJobInput,
@@ -79,9 +67,7 @@ const TERMINAL = new Set<ExportStatus>(['done', 'failed', 'cancelled'])
 export interface QueueOptions {
   worker: ExportWorker
   logger: Logger
-  /** 一个任务从开始渲染到上传完成的上限，超时即 failed（timeout）。 */
   timeoutMs: number
-  /** 终态任务保留多久，默认 1 小时。 */
   ttlMs?: number
   now?: () => number
 }
@@ -105,7 +91,6 @@ export class ExportQueue {
     this.now = options.now ?? Date.now
   }
 
-  /** 排队；同一 id 还在（未过期）时返回 false。过期删除后同一 id 可以再提交。 */
   submit(input: ExportInput): boolean {
     this.sweep()
     if (this.records.has(input.id)) return false
@@ -138,7 +123,6 @@ export class ExportQueue {
     }
   }
 
-  /** 取消排队中、渲染中或上传中的任务；已是终态的不改。返回任务是否存在。 */
   cancel(id: string): boolean {
     this.sweep()
     const record = this.records.get(id)
@@ -157,7 +141,6 @@ export class ExportQueue {
     return { running: this.running ? 1 : 0, waiting: this.waiting.length }
   }
 
-  /** 删掉终态超过保留期的任务。 */
   sweep(): void {
     const now = this.now()
     for (const [id, record] of this.records) {
@@ -167,12 +150,10 @@ export class ExportQueue {
     }
   }
 
-  /** 当前任务（若有）处理完的承诺；测试与优雅退出用。 */
   settled(): Promise<void> {
     return this.idle
   }
 
-  /** 退出前取消全部进行中与排队的任务。 */
   cancelAll(): void {
     for (const id of [...this.waiting, ...(this.running ? [this.running] : [])]) this.cancel(id)
   }
@@ -203,7 +184,6 @@ export class ExportQueue {
     }, this.timeoutMs)
     const started = this.now()
     let rendered: RenderedFile | null = null
-    // 取消随时可能在等待期间发生（cancel 直接改状态），每次 await 之后都要重新看。
     const cancelled = (): boolean => record.status === 'cancelled'
     log.info('开始渲染')
     try {

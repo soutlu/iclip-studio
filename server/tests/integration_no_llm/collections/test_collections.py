@@ -1,5 +1,3 @@
-"""验证合集 HTTP 契约、SET NULL 外键、侧栏拓扑和审计分页。"""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -63,11 +61,6 @@ async def plant_job(
     prompt_id: str,
     ran: bool = True,
 ) -> None:
-    """直接插入任务状态供筛选用例使用；本测试未装配 Agent。
-
-    ``ran`` 为真时 run 已挂上：票据行带 run_id，对话行也照 ``begin_run`` 那样记下最近一次 run
-    与活动时间。为假是 run 还没挂上就结束的行（run_id 为空），对话上没有留痕。"""
-
     run_id = f"{AGENT_ID}-{prompt_id}" if ran else None
     async with connected(pg_url) as conn:
         await conn.execute(
@@ -239,7 +232,6 @@ async def test_sidebar_groups_by_collection(client: httpx.AsyncClient, pg_url: s
         first["id"],
     ]
     assert groups[collection_id]["page"]["nextCursor"] is None
-    # 空合集仍须显示，以便用户将会话移入。
     assert groups[empty_id]["conversationCount"] == 0
     assert groups[empty_id]["page"]["items"] == []
     assert sidebar["ungroupedCount"] == 1
@@ -249,8 +241,6 @@ async def test_sidebar_groups_by_collection(client: httpx.AsyncClient, pg_url: s
 async def test_sidebar_keeps_creation_order_after_edits(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """两区都按建立时间倒序：改名、挂需求单这类后续操作不把对话换到别的位置。"""
-
     await login_as_editor(client, pg_url)
     collection_id = await open_collection(client, "春季系列")
     early = await open_conversation(client, title="合集里先建的", collectionId=collection_id)
@@ -276,8 +266,6 @@ async def test_sidebar_keeps_creation_order_after_edits(
 
 
 async def test_sidebar_filters_by_run_state(client: httpx.AsyncClient, pg_url: str) -> None:
-    """running 只看此刻在不在跑；跑完的活动事实照旧，但不由它决定收尾。"""
-
     owner = await login_as_editor(client, pg_url)
     collection_id = await open_collection(client, "在跑的那些")
     running = await open_conversation(client, title="正在跑", collectionId=collection_id)
@@ -298,7 +286,6 @@ async def test_sidebar_filters_by_run_state(client: httpx.AsyncClient, pg_url: s
         status="completed",
         prompt_id="prm_state_done",
     )
-    # 从没在对话上留下 run 的失败行：既不算在跑，也不算跑完，只在 all 里。
     await plant_job(
         pg_url,
         owner=owner,
@@ -326,8 +313,6 @@ async def test_sidebar_filters_by_run_state(client: httpx.AsyncClient, pg_url: s
 
 
 async def test_sidebar_filters_by_completion(client: httpx.AsyncClient, pg_url: str) -> None:
-    """done / open 看属主标没标收尾，与跑没跑过无关。"""
-
     await login_as_editor(client, pg_url)
     collection_id = await open_collection(client, "收尾了的那些")
     in_collection = await open_conversation(
@@ -386,7 +371,6 @@ async def test_sidebar_pages_by_cursor(client: httpx.AsyncClient, pg_url: str) -
 
     await login_as_editor(client, pg_url)
     collection_id = await open_collection(client)
-    # 内嵌会话上限为 10、任务分页为 20；分别多建一条覆盖翻页边界。
     for index in range(11):
         await open_conversation(client, title=f"合集里第{index}段", collectionId=collection_id)
     for index in range(21):
@@ -422,8 +406,6 @@ async def test_sidebar_pages_by_cursor(client: httpx.AsyncClient, pg_url: str) -
 async def test_other_peoples_collection_pages_empty(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """不可见和不存在的合集均返回空分页，避免泄漏其存在性。"""
-
     await login_as_editor(client, pg_url)
     collection_id = await open_collection(client)
     await open_conversation(client, collectionId=collection_id)
@@ -480,7 +462,6 @@ async def test_audit_is_governor_only_and_filters(
         assert marked.status_code == 200, marked.text
         done = (await governor.get(AUDIT, params={"state": "done"})).json()
         assert [item["id"] for item in done["items"]] == [on_task["id"]]
-        # runningTotal 不看 state：同一范围里在跑的还是那一段。
         assert (done["total"], done["runningTotal"]) == (1, 1)
 
         by_person = (await governor.get(AUDIT, params={"ownerUserId": owner})).json()
@@ -493,7 +474,6 @@ async def test_audit_is_governor_only_and_filters(
 
         future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
         assert (await governor.get(AUDIT, params={"since": future})).json()["items"] == []
-        # 无时区日期按 UTC 解析。
         today = datetime.now(UTC).date().isoformat()
         assert (await governor.get(AUDIT, params={"since": today})).status_code == 200
 
@@ -501,8 +481,6 @@ async def test_audit_is_governor_only_and_filters(
 async def test_audit_time_window_includes_since_and_excludes_until(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """列表、翻页、总数和在跑数都按左闭右开筛建立时间，相邻日期不重复收零点的对话。"""
-
     owner = await login_as_editor(client, pg_url)
     since = datetime(2026, 10, 21, tzinfo=UTC)
     until = since + timedelta(days=1)
@@ -566,7 +544,6 @@ async def test_audit_pages_by_cursor(app: FastAPI, client: httpx.AsyncClient, pg
         assert second["nextCursor"] is None
         ids = [item["id"] for item in [*first["items"], *second["items"]]]
         assert len(set(ids)) == 3
-        # 总数是筛选范围的，不是这一页的。
         assert (first["total"], second["total"]) == (3, 3)
 
         assert (await governor.get(AUDIT, params={"cursor": "坏掉的"})).status_code == 422
@@ -583,7 +560,6 @@ async def test_governor_reads_other_peoples_history(
         await login_as_root(governor, pg_url)
         page = await governor.get(f"{CONVERSATIONS}/{conversation_id}/transcript")
         assert page.status_code == 200, page.text
-        # 会话页据此判断这不是自己的对话；治理者与属主读到的是同一个属主。
         assert page.json()["owner_user_id"] == owner
         own = await client.get(f"{CONVERSATIONS}/{conversation_id}/transcript")
         assert own.json()["owner_user_id"] == owner
@@ -604,8 +580,6 @@ async def test_governor_reads_other_peoples_history(
 async def test_audit_lists_deleted_conversations_on_request(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """``deleted`` 三值：缺省只看活着的，``deleted`` 只看墓碑，``all`` 都看；三个数字同一口径。"""
-
     owner = await login_as_editor(client, pg_url)
     alive = await open_conversation(client, title="还在的")
     gone = await open_conversation(client, title="删掉的")
@@ -633,7 +607,6 @@ async def test_audit_lists_deleted_conversations_on_request(
         assert deleted["items"][0]["deletedAt"] is not None
         assert (deleted["total"], deleted["runningTotal"]) == (1, 0)
 
-        # 删之前标过收尾的墓碑，state=done 也把它算进去。
         done = (await governor.get(AUDIT, params={"deleted": "deleted", "state": "done"})).json()
         assert [item["id"] for item in done["items"]] == [gone["id"]]
 
@@ -647,8 +620,6 @@ async def test_audit_lists_deleted_conversations_on_request(
 async def test_governor_reviews_a_deleted_conversation_read_only(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """治理者读得到墓碑的 transcript 与工作区，信封带 deleted_at；属主与写路径仍是 404。"""
-
     owner = await login_as_editor(client, pg_url)
     conversation_id = str((await open_conversation(client))["id"])
     async with connected(pg_url) as conn:
@@ -681,7 +652,6 @@ async def test_governor_reviews_a_deleted_conversation_read_only(
             )
         ).status_code == 404
 
-        # 治理者自己删掉的对话也读得到，但墓碑对谁都是只读的。
         own = str((await open_conversation(governor, title="自己删的"))["id"])
         assert (await governor.delete(f"{CONVERSATIONS}/{own}")).status_code == 204
         assert (await governor.get(f"{CONVERSATIONS}/{own}/transcript")).status_code == 200
@@ -725,8 +695,6 @@ async def test_deleting_draft_task_only_clears_the_column(
 async def test_attempts_of_a_task_are_listed_in_order_and_stay_private(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """按建立时间倒序列出需求单的个人创作；跨用户记录仅通过审计端点访问。"""
-
     await login_as_editor(client, pg_url)
     task_id = await open_task(client)
     first = await open_conversation(client, taskId=task_id, title="第一次")

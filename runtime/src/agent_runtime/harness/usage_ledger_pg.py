@@ -1,5 +1,3 @@
-"""对话用量台账的 Postgres 实现：一条 upsert 累加，多 worker 并发下不读改写。"""
-
 from __future__ import annotations
 
 from typing import Final
@@ -37,14 +35,11 @@ conversation_usage_table = Table(
     Column("first_at", TIMESTAMP(timezone=True), nullable=False),
     Column("last_at", TIMESTAMP(timezone=True), nullable=False),
     PrimaryKeyConstraint("conversation_id", "model_name"),
-    # 运行统计按时间窗取用量，看最后一次累加的时刻（harness/stats_pg.py）。
     Index("idx_conversation_usage_last", "last_at"),
 )
 
 
 class PgConversationUsage:
-    """把一次响应的四类 token 加到（对话，模型）那一行；时间用数据库时钟。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

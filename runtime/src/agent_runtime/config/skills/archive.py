@@ -1,8 +1,3 @@
-"""技能的 zip 压缩包：导入时读出文件并查结构与安全，导出时把一份文件打成 ``<name>/`` 下的 zip。
-
-读只做压缩包这一层的检查（结构、路径、符号链接、重复、大小、文本），frontmatter 由导入用例另查。
-防压缩炸弹：解压任何文件之前先按每项声明的解压后大小累计核对，读取时再按上限截断，声明不实也读不爆。"""
-
 from __future__ import annotations
 
 import io
@@ -29,16 +24,12 @@ from agent_runtime.config.skills.rules import (
 
 _JUNK_DIR = "__MACOSX"
 _JUNK_FILE = ".DS_Store"
-"""macOS 压缩文件夹时顺带写进去的元数据，不算技能的文件，读的时候跳过。"""
 
 _FIXED_DATE = (1980, 1, 1, 0, 0, 0)
-"""导出时每项都记这个时刻，同一份文件打出来的包逐字节相同。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ParsedArchive:
-    """读出来的文件（技能内的路径 → 内容，只含合格的）与问题清单；没问题时 ``problems`` 为空。"""
-
     files: dict[str, str]
     problems: tuple[str, ...]
 
@@ -49,15 +40,10 @@ def _is_junk(name: str) -> bool:
 
 
 def _is_symlink(info: zipfile.ZipInfo) -> bool:
-    """Unix 下打的包把文件类型放在 ``external_attr`` 的高 16 位。"""
-
     return stat.S_ISLNK(info.external_attr >> 16)
 
 
 def _root(names: list[str]) -> str | None:
-    """技能的根目录前缀：``SKILL.md`` 在包的根目录给 ``""``；全部文件都在同一个顶层目录里、且
-    ``SKILL.md`` 就在那个目录下给 ``"<目录>/"``；都不是给 ``None``。"""
-
     if SKILL_MD in names:
         return ""
     tops = {name.split("/", 1)[0] for name in names}
@@ -69,9 +55,6 @@ def _root(names: list[str]) -> str | None:
 
 
 def read_archive(data: bytes) -> ParsedArchive:
-    """读一个技能压缩包。不是 zip、超过压缩包或解压后的上限、找不到 ``SKILL.md`` 时只交回问题，不读
-    文件；其余问题逐个文件记下，合格的文件照读。"""
-
     if len(data) > MAX_ARCHIVE_BYTES:
         return ParsedArchive({}, (f"压缩包超过上限 {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB",))
     try:
@@ -131,8 +114,6 @@ def _read_members(archive: zipfile.ZipFile) -> ParsedArchive:
 
 
 def _read_text(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> tuple[str | None, str]:
-    """读一项并解成文本：交回（问题，内容），有问题时内容为空串。"""
-
     if info.file_size > MAX_FILE_BYTES:
         return f"超过单个文件的上限 {MAX_FILE_BYTES // (1024 * 1024)} MB", ""
     try:
@@ -151,8 +132,6 @@ def _read_text(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> tuple[str | N
 
 
 def write_archive(name: str, files: Mapping[str, str]) -> bytes:
-    """把一份文件打成 zip，全部放在顶层目录 ``<name>/`` 下，按路径排序、时刻固定。"""
-
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(files):

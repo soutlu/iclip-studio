@@ -33,7 +33,6 @@ const OWNERS: Record<string, string> = {
   [CONVERSATION_B]: accountB.id,
 }
 
-/** 只有一句回复的一轮历史。 */
 const turnSaying = (text: string) =>
   [
     {
@@ -56,10 +55,6 @@ const turnSaying = (text: string) =>
     },
   ] as unknown as SeedStream['items']
 
-/**
- * MSW 持有服务端会话：登录接口按用户名认甲乙，退出清掉。transcript 由假服务端按身份核可见性，
- * REST 页按请求时的身份，订阅按连接握手时的身份；甲乙各自只看得见自己的那段对话。
- */
 const serveAccounts = (initial: Account | null) => {
   let current = initial
   const fake = new FakeTranscriptServer({
@@ -97,7 +92,6 @@ const serveAccounts = (initial: Account | null) => {
   }
 }
 
-/** 照 App 的 Provider 顺序装配，只把路由换成内存历史、订阅连接换成假服务端。 */
 const renderApp = async (fake: FakeTranscriptServer, initialPath: string) => {
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -127,7 +121,6 @@ const logout = async (user: User) => {
   await user.click(await screen.findByRole('menuitem', { name: '退出登录' }))
 }
 
-/** 在已经打开或由侧栏打开的登录弹窗里用账号密码登录，等弹窗关上。 */
 const loginInDialog = async (user: User, account: Account) => {
   const dialog = await screen.findByRole('dialog', { name: /登录 iClip/ })
   await user.type(within(dialog).getByRole('textbox', { name: '用户名' }), account.username)
@@ -138,7 +131,6 @@ const loginInDialog = async (user: User, account: Account) => {
   )
 }
 
-/** 让假服务端排在宏任务里的帧（握手、回执）都送到并处理完。 */
 const flushNetwork = () =>
   act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -151,7 +143,6 @@ const subscribedTo = (received: readonly { type?: string; payload?: { session_id
       : [],
   )
 
-/** 服务端给某段对话改了名：全局帧发给此刻开着的每条连接。 */
 const announceTitle = (fake: FakeTranscriptServer, conversationId: string, title: string) => {
   fake.broadcast({
     owner_user_id: OWNERS[conversationId],
@@ -162,7 +153,6 @@ const announceTitle = (fake: FakeTranscriptServer, conversationId: string, title
   })
 }
 
-// 单例 queryClient 带着登录缓存，游客草稿暂存在 sessionStorage，窄屏用例改了视口宽度，每例都还原。
 afterEach(() => {
   queryClient.clear()
   window.sessionStorage.clear()
@@ -201,11 +191,9 @@ describe('换了登录身份时订阅连接与 transcript 状态按身份换代�
       ),
     )
     await flushNetwork()
-    // 订阅回执回来之后仍是乙的对话，没有按甲的握手身份被判看不见。
     expect(screen.getByText('乙自己的内容')).toBeVisible()
     expect(screen.queryByText('该对话不存在或不属于当前账号，无法查看')).not.toBeInTheDocument()
 
-    // 甲握手的、退出后的游客、乙登录后的，各一条；前两条已关。
     const connections = accounts.fake.connections()
     expect(connections.map(({ open, viewer }) => ({ open, viewer }))).toEqual([
       { open: false, viewer: accountA.id },
@@ -245,7 +233,6 @@ describe('换了登录身份时订阅连接与 transcript 状态按身份换代�
     )
     expect(screen.queryByText('甲的私密内容')).not.toBeInTheDocument()
     expect(screen.queryByText('甲改过的名字')).not.toBeInTheDocument()
-    // 换的是连接与读取状态，应用壳与页面没有重新挂载。
     expect(screen.getByRole('main')).toBe(main)
     await flushNetwork()
     expect(accounts.fake.connections().map(({ open, viewer }) => ({ open, viewer }))).toEqual([

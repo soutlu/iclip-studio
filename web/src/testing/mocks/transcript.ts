@@ -1,5 +1,3 @@
-/** MSW 同时模拟 REST 历史、WebSocket 批次和消息提交；单测可覆盖端点以固定场景。 */
-
 import { http, HttpResponse, ws } from 'msw'
 import { mockAuthUser } from './auth-user'
 import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
@@ -9,10 +7,8 @@ const HISTORY_TURNS = 2
 
 const HISTORY_SEQ = 10
 
-/** 原型环境的实时流不会重启，epoch 固定。 */
 export const MOCK_STREAM_EPOCH = 'mock-stream'
 
-/** 长对话：14 轮历史，验证首屏只读 10 轮、向上翻接上更早的；按地址打开，不进侧栏，也不自动起演示运行。 */
 export const MOCK_LONG_CONVERSATION_ID = '0199aaaa-0000-7000-8000-0000000000aa'
 const LONG_HISTORY_TURNS = 14
 
@@ -25,7 +21,6 @@ const DEMO_CHUNKS = [
 
 const DEMO_THINKING = '先看看目录里已经有哪些镜头，再决定补哪几条。'
 
-/** 使用 data URL 参考图，避免网络依赖。 */
 const DEMO_IMAGE_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%23d1e8d6'/%3E%3Ccircle cx='160' cy='90' r='48' fill='%23006d42'/%3E%3C/svg%3E"
 
@@ -36,7 +31,6 @@ const DEMO_FRAME_URLS = [
 
 const BEAT_MS = 500
 
-/** 延迟文件更新，保留打开面板和切组的操作时间。 */
 const FS_CHANGE_DELAY_MS = 5000
 
 const WORK_DONE_DELAY_MS = 2000
@@ -45,12 +39,10 @@ type Batch = unknown[]
 
 type Connection = {
   conversationId: string
-  /** 这条连接在这段对话里订了哪些 agent 的流；主流与子代理流各自推送。 */
   agents: Set<string>
   send: (payload: { agent_id: string; ops: Batch; seq: number }) => void
 }
 
-/** 能接着补就返回要补的批次，否则（没带水位、epoch 不对、水位越界）返回 null，该回 reset。 */
 const replayFrom = (
   conversationId: string,
   agentId: string,
@@ -68,7 +60,6 @@ const connections = new Set<Connection>()
 
 let turns = HISTORY_TURNS
 
-/** 批次号与日志按 (对话, agent) 各记一套，补发端点按同一把钥匙读。 */
 const streamKey = (conversationId: string, agentId: string) => `${conversationId}/${agentId}`
 const seqOf = new Map<string, number>()
 const logOf = new Map<string, { ops: Batch; seq: number }[]>()
@@ -76,13 +67,11 @@ const logOf = new Map<string, { ops: Batch; seq: number }[]>()
 export const MOCK_CHILD_AGENT = 'shot-writer'
 export const MOCK_CHILD_TASK = '写第 3 组的三个镜头'
 export const MOCK_CHILD_REPLY = 'S3-1 特写：鞋头压过水面；S3-2 中景：起跑；S3-3 全景：冲线。'
-/** 历史第 2 轮派出的子代理，一开始就是完成的；演示运行另派一个，边跑边填。 */
 export const MOCK_HISTORY_CHILD = 't2-child'
 export const MOCK_HISTORY_DELEGATE_CALL = 'call_t2_delegate'
 
 const HISTORY_CHILD = { done: true, text: MOCK_CHILD_REPLY }
 
-/** 子代理流的进度：文本用整块替换，页与推送才对得上。 */
 const children = new Map<string, { text: string; done: boolean }>([
   [MOCK_HISTORY_CHILD, HISTORY_CHILD],
 ])
@@ -97,22 +86,17 @@ type Active = Prompt & { ordinal: number; turnId: string }
 const running = new Map<string, Active>()
 const queues = new Map<string, Prompt[]>()
 
-/** 按对话记录定时器，停止时取消尚未发送的批次。 */
 const timers = new Map<string, ReturnType<typeof setTimeout>[]>()
 
-/** 待审批会话使用固定未结束轮次，不自动启动演示运行。 */
 const awaitingApproval = new Set<string>()
 
 const justFinished = new Set<MockConversation>()
 
-/** 展示对话：几轮固定历史摆出某一类界面状态，只回看、不自动起演示运行。 */
 export type MockShowcase = {
   title: string
   turns: () => (Record<string, unknown> & { turnId: string })[]
   interactions?: readonly unknown[]
-  /** 每次取页现算，进行中任务的开始时间才能相对当前时刻。 */
   tasks?: () => readonly unknown[]
-  /** 缺省 idle；末轮还在跑的展示给 turn。 */
   activity?: 'idle' | 'turn'
 }
 
@@ -122,10 +106,6 @@ export const markMockShowcase = (conversationId: string, showcase: MockShowcase)
   showcases.set(conversationId, showcase)
 }
 
-/**
- * 自定义的演示运行：给出这一轮各步的批次（每拍一批），代替默认的演示内容；开场（消息转 running、轮开始、忙）
- * 与收尾（轮完成、消息完成、闲）照常由 playTurn 补上，停止与排队也照常。
- */
 export type MockScript = (turn: { turnId: string }) => Lazy[]
 
 const scripts = new Map<string, MockScript>()
@@ -134,18 +114,12 @@ export const markMockScript = (conversationId: string, script: MockScript) => {
   scripts.set(conversationId, script)
 }
 
-/** 连接后照服务端发开跑的 updated（带新 lastRunId）与结束事件，模拟未读运行。 */
 export const markMockJustFinished = (conversation: MockConversation) => {
   justFinished.add(conversation)
 }
 
-/** 重复相同决定返回 204，不同决定返回 409，与后端一致。 */
 const decisions = new Map<string, boolean>()
 
-/**
- * 单测每例清理：取消未发的批次，清掉运行、队列、批次日志与审批记录，子代理回到只有历史那一个。
- * 连接里的定时器不在此列：单测用 FakeSocket，不经过 ws.link。
- */
 export const resetMockTranscript = () => {
   for (const handles of timers.values()) for (const handle of handles) clearTimeout(handle)
   timers.clear()
@@ -171,7 +145,6 @@ const APPROVAL_TOOL_CALL_ID = 'call_cover'
 const APPROVAL_PROMPT_ID = 'p_cover'
 const APPROVAL_PROMPT_TEXT = '把这两张镜头帧拼成封面'
 
-/** 等待审批时轮次仍为运行态，工具调用关联待处理交互。 */
 export const markMockAwaitingApproval = (conversationId: string) => {
   awaitingApproval.add(conversationId)
   running.set(conversationId, {
@@ -183,7 +156,6 @@ export const markMockAwaitingApproval = (conversationId: string) => {
   })
 }
 
-/** 超过十二行，审批卡预览先收起、可展开全部。 */
 const APPROVAL_DOCUMENT = [
   '# 封面',
   '',
@@ -222,7 +194,6 @@ const approvalFrame = (state: 'running' | 'done' | 'error') => ({
   ...(state === 'error' ? { error: '你拒绝了这一步' } : {}),
 })
 
-/** 在读取规范与出图之间插入正文，阻止连续工具合并为活动组。 */
 const approvalTurn = () => ({
   kind: 'turn',
   ordinal: 3,
@@ -331,7 +302,6 @@ const childTurn = (childId: string) => {
   }
 }
 
-/** 子代理那一页：只有它自己的 t1；名册与主页同一份。 */
 export const mockChildPage = (conversationId: string, childId: string) => ({
   agent_id: childId,
   agents: [
@@ -352,7 +322,6 @@ export const mockChildPage = (conversationId: string, childId: string) => ({
   todos: [],
 })
 
-/** 一页历史：照后端按轮切，缺省取最新的 pageSize 轮，给了 beforeTurn 取它之前的那一页。 */
 const pageOf = <T extends { turnId: string }>(
   turns: readonly T[],
   { beforeTurn, pageSize }: { beforeTurn?: string | null; pageSize?: number },
@@ -365,7 +334,6 @@ const pageOf = <T extends { turnId: string }>(
   return { hasMore: start > 0, items: turns.slice(start, end) }
 }
 
-/** 为待审批会话追加固定审批轮；未传 ID 时返回普通历史。 */
 export const mockTranscriptPage = (
   conversationId = '',
   request: { beforeTurn?: string | null; pageSize?: number } = {},
@@ -388,7 +356,6 @@ export const mockTranscriptPage = (
       activity: awaiting ? 'turn' : (showcase?.activity ?? 'idle'),
       agent: { contextTokens: 32768, contextUsage: 0.03125, maxContextTokens: 1048576 },
     },
-    // 属主照对话行上的来；没有对话行时按测试用户算，只读用例在测试里改这个字段。
     owner_user_id: mockConversationOwner(conversationId),
     pending_interactions: awaiting ? [APPROVAL_INTERACTION_ID] : [],
     prompts: awaiting
@@ -401,7 +368,6 @@ export const mockTranscriptPage = (
           },
         ]
       : [],
-    // 页里只有历史那几轮，水位也停在历史处；之后的都从日志补，页与水位才对得上。
     seq: HISTORY_SEQ,
     stream_epoch: MOCK_STREAM_EPOCH,
     tasks: showcase?.tasks?.() ?? [],
@@ -414,7 +380,6 @@ export const mockTranscriptPage = (
   }
 }
 
-/** 长对话里的一轮：一问一答，回复带轮号，便于断言顺序。 */
 const longTurn = (ordinal: number) => ({
   content: [{ text: `长对话第 ${ordinal} 问`, type: 'text' }],
   durationMs: 1200,
@@ -451,7 +416,6 @@ const historyTurn = (ordinal: number) => ({
   kind: 'turn',
   ordinal,
   origin: { kind: 'user' },
-  // 将参考图置于两段文字之间，验证 part 顺序。
   content:
     ordinal === 1
       ? [
@@ -592,7 +556,7 @@ export const transcriptHandlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // path-to-regexp 不支持 :promptId:abort，使用通配路由后自行解析 ID。
+  // path-to-regexp 不支持 :promptId:abort 语法，需使用通配符路由并手动解析参数。
   http.post('*/api/conversations/:conversationId/prompts/*', ({ params, request }) => {
     const conversationId = String(params['conversationId'])
     const tail = new URL(request.url).pathname.split('/').pop() ?? ''
@@ -636,10 +600,8 @@ export const transcriptHandlers = [
       }),
     )
 
-    // 结束事件广播到所有连接，侧栏据此刷新 lastRunId。
     setTimeout(() => {
       for (const conversation of justFinished) {
-        // 照服务端：开跑记录运行发 updated 带出新的 lastRunId，收场再发活动帧。
         conversation.lastRunId = crypto.randomUUID()
         conversation.completedAt = null
         client.send(
@@ -661,11 +623,8 @@ export const transcriptHandlers = [
       }
     }, WORK_DONE_DELAY_MS)
 
-    /** 这条连接订着的对话；一条连接可以同时订多段（主会话池常驻最近几段）。 */
     const joined = new Map<string, Connection>()
-    // 按连接去重文件更新计划，避免 StrictMode 重订造成重复版本递增。
     const fsScheduled = new Set<string>()
-    /** 照服务端：文件变化跟着订阅走，只发给此刻还订着这段对话的连接。 */
     const scheduleShotsChange = (conversationId: string) => {
       if (fsScheduled.has(conversationId)) return
       fsScheduled.add(conversationId)
@@ -711,7 +670,6 @@ export const transcriptHandlers = [
 
       if (frame.type !== 'subscribe_v2') return
       const conversationId = frame.payload?.session_id ?? ''
-      // 不属于这段对话的子代理整帧拒绝，与后端一致。
       const agentIds = Object.keys(frame.payload?.transcript ?? { main: 'delta' })
       if (agentIds.some((agentId) => agentId !== 'main' && !children.has(agentId))) {
         client.send(
@@ -719,7 +677,6 @@ export const transcriptHandlers = [
         )
         return
       }
-      // 带着基线水位与 epoch 订阅的，从日志接着补；没带或对不上的，回一帧不带历史轮的 reset。
       for (const agentId of agentIds) {
         const replay = replayFrom(
           conversationId,
@@ -792,14 +749,12 @@ export const transcriptHandlers = [
           ),
       }
       for (const agentId of agentIds) connection.agents.add(agentId)
-      // 演示的分镜改动只给打开着的那页（主流 delta 档）排一次；侧栏 turn 档订着的对话不动它的文件。
       if ((frame.payload?.transcript ?? { main: 'delta' })['main'] === 'delta') {
         scheduleShotsChange(conversationId)
       }
       if (existing !== undefined) return
       joined.set(conversationId, connection)
       connections.add(connection)
-      // 普通订阅自动启动演示运行；待审批会话保持等待，长对话与展示对话只用来回看。
       if (
         !awaitingApproval.has(conversationId) &&
         !showcases.has(conversationId) &&
@@ -813,8 +768,6 @@ export const transcriptHandlers = [
       }
     })
 
-    // 生成帧是全局帧，不看这条连接订了哪段对话；mock 里同一浏览器只有一个登录用户，不按属主过滤。
-    // 没挂对话的记录（超分记录）信封上没有 session_id，属主就是这个登录用户。
     const unwatchGenerations = watchMockGenerations(({ conversationId, ...payload }) => {
       const envelope =
         conversationId === null
@@ -845,7 +798,6 @@ const broadcast = (conversationId: string, ops: Batch, agentId = 'main') => {
 
 type Lazy = Batch | (() => Batch)
 
-/** 不带 agent 的批次走主流；子代理流的批次点名 agent。 */
 type Scheduled = Lazy | { agent: string; ops: Lazy }
 
 const resolve = (item: Scheduled): [string, Batch] => {
@@ -855,7 +807,6 @@ const resolve = (item: Scheduled): [string, Batch] => {
   return ['main', typeof item === 'function' ? item() : item]
 }
 
-/** 记录批次定时器以支持取消；函数批次在发送时求值。 */
 const schedule = (conversationId: string, batches: Scheduled[], done?: () => void) => {
   const handles = batches.map((item, index) =>
     setTimeout(
@@ -870,7 +821,6 @@ const schedule = (conversationId: string, batches: Scheduled[], done?: () => voi
   timers.set(conversationId, [...(timers.get(conversationId) ?? []), ...handles])
 }
 
-/** 取消未发批次，终止当前轮后继续队列。 */
 const stopTurn = (conversationId: string) => {
   for (const handle of timers.get(conversationId) ?? []) clearTimeout(handle)
   timers.delete(conversationId)
@@ -880,7 +830,6 @@ const stopTurn = (conversationId: string) => {
   const childId = `${active.turnId}-child`
   const child = children.get(childId)
   if (child !== undefined && !child.done) {
-    // 父被停，子代理随之停：它那条流也收成 cancelled。
     children.set(childId, { ...child, done: true })
     broadcast(
       conversationId,
@@ -925,13 +874,11 @@ const stopTurn = (conversationId: string) => {
         status: 'aborted',
       },
     },
-    // 自定义演示运行开跑时标了忙，停下要标回闲；默认演示没标过，这一条对它不起作用。
     { meta: { activity: 'idle' }, op: 'meta.merge' },
   ])
   drain(conversationId)
 }
 
-/** 按审批决定结束交互、工具和轮次，再继续队列。 */
 const settleApproval = (conversationId: string, approved: boolean) => {
   const now = new Date().toISOString()
   broadcast(conversationId, [
@@ -1073,7 +1020,6 @@ const playTurn = (conversationId: string, prompt: Prompt) => {
     stepId,
     turnId,
   })
-  // 相邻的检索与写入调用用于验证活动组聚合。
   const tool2 = (state: 'running' | 'done') => ({
     op: 'frame.upsert',
     frame: {
@@ -1148,7 +1094,6 @@ const playTurn = (conversationId: string, prompt: Prompt) => {
     return
   }
 
-  // 演示运行派一个子代理：它那条流边跑边填，面板打开时能看到进度。
   const childId = `${turnId}-child`
   const delegateCallId = `${turnId}-delegate`
   children.set(childId, { done: false, text: '' })
@@ -1196,7 +1141,6 @@ const playTurn = (conversationId: string, prompt: Prompt) => {
     ]
   }
 
-  // 首批立即发送并写入日志，订阅未就绪时仍可补发；开场输入存于轮头部，user frame 仅用于追加。
   broadcast(conversationId, [
     {
       op: 'prompt.upsert',

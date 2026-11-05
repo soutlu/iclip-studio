@@ -1,7 +1,3 @@
-"""用真实 ffmpeg 跑一次启动探测：本机编得了的第一档硬件被选中，一档都编不了就落到软件。
-
-没有硬件的机器（如 CI）上它验证的是另一半：探测正常结束，交回软件。"""
-
 from __future__ import annotations
 
 import pytest

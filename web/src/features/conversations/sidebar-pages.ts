@@ -22,7 +22,6 @@ import {
 
 export type SidebarPagesQuery = InfiniteQueryObserverResult<InfiniteData<ConversationPage>>
 
-/** 一个侧栏分区的行（取行池里的当前值）与它的分页查询；查询还没挂上时 `query` 为 undefined，行取拓扑首页。 */
 export type SidebarPages = {
   items: readonly Conversation[]
   query: SidebarPagesQuery | undefined
@@ -39,7 +38,6 @@ const sidebarPagesOptions = (
     queryKey: conversationsQueryKeys.more({ collectionId, state }),
     queryFn: async ({ client, pageParam, signal }) => {
       const query = new URLSearchParams({ state })
-      // 服务端解析不了空游标：从头读时不带 cursor 参数。
       if (pageParam !== null) query.set('cursor', pageParam)
       const rows = conversationRowsOf(client)
       return rows.track(
@@ -81,10 +79,6 @@ const membersOf = (pages: readonly ConversationPage[]): readonly Conversation[] 
   return members
 }
 
-/**
- * 侧栏任务区的分页列表。首页取同一筛选下拓扑里的那一页，`firstPage` 给出之前不发请求；
- * 往后由调用方 `fetchNextPage`。只在 {@link refreshConversationLists} 失效时从头逐页原位重拉。
- */
 export const useSidebarPages = (
   state: ConversationListState,
   firstPage: ConversationPage | undefined,
@@ -100,10 +94,6 @@ export type SidebarCollectionSource = {
   open: boolean
 }
 
-/**
- * 侧栏各合集的分页列表，按 collectionId 给出。展开的合集自动读到最后一页，收着的不发请求；
- * 失效后的重拉与任务区相同。不再出现在 `collections` 里的合集停止订阅。
- */
 export const useSidebarCollectionPages = (
   collections: readonly SidebarCollectionSource[],
   state: ConversationListState,

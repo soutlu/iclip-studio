@@ -1,5 +1,3 @@
-"""外部 PDM 同步库的替身表：建表与登记款，供款目录与爆款视频查询测试共用。"""
-
 from __future__ import annotations
 
 from typing import Final
@@ -32,8 +30,6 @@ _INSERT_STYLE = text(
 
 
 async def recreate_pdm_styles(engine: AsyncEngine) -> None:
-    """删掉重建替身表，每条用例从空表起步。"""
-
     async with engine.begin() as conn:
         for statement in filter(None, (part.strip() for part in _RECREATE.split(";"))):
             await conn.execute(text(statement))
@@ -49,8 +45,6 @@ async def seed_pdm_style(
     is_active: bool = True,
     deleted: bool = False,
 ) -> None:
-    """登记一个款的品类与品牌归属。``None`` 表示上游缺这一项；不给 ``entity_id`` 就按款号推一个。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             _INSERT_STYLE,

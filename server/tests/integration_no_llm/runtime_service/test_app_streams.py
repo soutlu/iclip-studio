@@ -1,7 +1,3 @@
-"""运行时服务的两条 WebSocket：对话内容流 ``/v1/ws`` 按 subscribe_v2 订阅、按档位发帧、只认调用方应用自己的
-会话，订着的会话的工作区文件变化也发在这条上，断开时放开全部监听与固定；应用事件流 ``/v1/events`` 按应用
-分发会话活动。"""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -33,9 +29,6 @@ def ops_of(frames: list[dict[str, Any]]) -> set[str]:
     return {op["op"] for frame in frames for op in frame["payload"]["ops"]}
 
 
-# --- 对话内容流 -----------------------------------------------------------------
-
-
 def test_subscribing_then_running_delivers_a_reset_then_ops(live: LiveRuntime) -> None:
     session = live.open_session()
 
@@ -50,7 +43,6 @@ def test_subscribing_then_running_delivers_a_reset_then_ops(live: LiveRuntime) -
             "msg": "",
             "payload": {"accepted": [session], "not_found": []},
         }
-        # 运行时帧上只有会话、时刻与实时流；载荷带与外层相同的 type。
         assert set(reset) == {"type", "session_id", "timestamp", "stream_epoch", "payload"}
         assert reset["session_id"] == session
         assert (reset["payload"]["type"], reset["payload"]["agent_id"]) == (
@@ -68,7 +60,6 @@ def test_subscribing_then_running_delivers_a_reset_then_ops(live: LiveRuntime) -
     assert {frame["payload"]["type"] for frame in frames} == {"transcript.ops"}
     assert all("timestamp" in frame for frame in frames)
     assert {"prompt.upsert", "turn.upsert", "append"} <= ops_of(frames)
-    # 嵌套的实体与操作按别名（camelCase）。
     assert "turnId" in str(frames)
     assert "turn_id" not in str(frames)
     live.settled(session)
@@ -130,7 +121,6 @@ def test_the_off_grade_sends_nothing_and_raising_it_resets(live: LiveRuntime) ->
 
     with live.connect("/v1/ws") as ws:
         subscribe(ws, session, grade="off")
-        # off 不发 reset，第一帧就是回执。
         assert ws.receive_json()["type"] == "ack"
         live.send(session, "prm_off")
         live.settled(session)
@@ -140,7 +130,6 @@ def test_the_off_grade_sends_nothing_and_raising_it_resets(live: LiveRuntime) ->
         subscribe(ws, session, grade="delta", since=1, frame_id="s3")
         raised = receive(ws, "transcript.reset")
 
-    # 静默期间的批次都没发，订阅后的第一帧是 reset。
     assert first["type"] == "transcript.reset"
     assert raised["session_id"] == session
 
@@ -207,9 +196,6 @@ def test_unsubscribing_releases_the_session(live: LiveRuntime) -> None:
         assert not store.holds(session)
 
 
-# --- 应用事件流 -----------------------------------------------------------------
-
-
 def activities_until_idle(ws: Any, session: str, *, tries: int = 60) -> list[dict[str, Any]]:
     seen: list[dict[str, Any]] = []
     for _ in range(tries):
@@ -229,8 +215,6 @@ def test_session_activity_arrives_busy_then_idle_and_only_to_its_app(live: LiveR
     with live.connect("/v1/events") as events, live.connect("/v1/events", ADMIN_KEY) as other:
         live.send(session, "prm_events")
         seen = activities_until_idle(events, session)
-        # 另一个应用自己的事件排在被测应用的事件之后（分发只有一条队列）：它收到的第一帧是自己的，
-        # 说明前面那些一帧都没给它。
         live.send(other_session, "prm_other", key=ADMIN_KEY)
         first_of_other = other.receive_json()
     live.settled(other_session, ADMIN_KEY)
@@ -265,15 +249,11 @@ def test_the_event_stream_carries_no_file_changes(live: LiveRuntime) -> None:
             headers=live.headers(),
         )
         assert put.status_code == 200, put.text
-        # 写文件排在前面：要是事件流上还发文件变化，下面收到的第一帧就是它。
         live.send(session, "prm_after_put")
         first = events.receive_json()
     live.settled(session)
 
     assert (first["type"], first["payload"]["busy"]) == ("event.session.work_changed", True)
-
-
-# --- 对话内容流上的文件变化 -------------------------------------------------------
 
 
 def put_file(live: LiveRuntime, session: str, path: str, *, key: str = READER_KEY) -> None:
@@ -286,8 +266,6 @@ def put_file(live: LiveRuntime, session: str, path: str, *, key: str = READER_KE
 
 
 def subscribed_off(ws: Any, session: str, frame_id: str) -> None:
-    """off 档订一段会话：不发 reset，第一帧就是回执。"""
-
     subscribe(ws, session, grade="off", frame_id=frame_id)
     ack = ws.receive_json()
     assert (ack["type"], ack["id"], ack["payload"]["accepted"]) == ("ack", frame_id, [session])
@@ -319,8 +297,6 @@ def test_a_files_put_reaches_the_off_grade_subscriber_created_then_modified(
 def test_file_changes_reach_only_connections_subscribed_to_the_session(
     live: LiveRuntime,
 ) -> None:
-    """另订一段会话当哨兵：没订或已退订的连接，先收到的必须是哨兵那一帧。"""
-
     session, sentinel = live.open_session(), live.open_session()
 
     with live.connect("/v1/ws") as watching, live.connect("/v1/ws") as bystander:

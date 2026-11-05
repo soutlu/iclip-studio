@@ -1,10 +1,3 @@
-/**
- * 渲染服务的 HTTP 接口（compose 内网可达，不对外暴露，不鉴权）：
- *   POST   /exports        排队一个导出（202）；形状不对、素材主机不允许、合成失败答 400，同一 id 答 409
- *   GET    /exports/{id}   任务状态；没有这个任务答 404
- *   DELETE /exports/{id}   取消；终态也答 204；没有答 404
- *   GET    /health         服务状态、浏览器渲染方式（hardware / software）、Chrome 版本、队列
- */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import {
   buildComposition,
@@ -17,7 +10,6 @@ import { disallowedMediaHosts, parseExportRequest } from './request'
 
 export interface ServerContext {
   queue: ExportQueue
-  /** 当前的组件库；每次受理导出读一次，渲染用受理时那一版。 */
   library: () => Promise<ComponentLibrary>
   allowedHosts: Set<string>
   logger: Logger
@@ -76,7 +68,6 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     return
   }
   const library = await context.library()
-  // 渲染时用取到本地的素材再生成一次；这里先按原地址生成，草稿有问题当场答 400。
   const compose = (paths: Readonly<Record<string, string>>) => {
     const local = (url: string) => paths[url] ?? url
     return buildComposition({
@@ -103,7 +94,6 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     }
     throw error
   }
-  // 只取草稿里真正用到的素材。
   const videoUrls = request.document.layer0.flatMap((clip) =>
     clip.type === 'video' ? [request.media.videos[clip.sourceJobId]?.url ?? ''] : [],
   )
@@ -160,8 +150,7 @@ export function createExportServer(context: ServerContext) {
       else res.end()
     })
   })
-  // 空闲连接保持得比客户端（后端 httpx 默认 5 秒）久：渲染在同一个进程里，事件循环偶尔被占住时，
-  // 按 Node 默认的 5 秒会在客户端正要复用连接时把它关掉，那一次请求就失败。
+  // keepAliveTimeout 需大于后端 httpx 默认的 5 秒空闲复用窗口，避免复用瞬间连接被服务端关闭。
   server.keepAliveTimeout = 65_000
   server.headersTimeout = 66_000
   return server

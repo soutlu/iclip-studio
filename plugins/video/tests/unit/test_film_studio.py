@@ -1,5 +1,3 @@
-"""验证制作页的工程读法：标签在原文里的位置、按视频请求分的组、改字写回与换图写回。"""
-
 from __future__ import annotations
 
 import difflib
@@ -63,8 +61,6 @@ def first(project: str = FILM, run: str | None = RUN) -> FilmGroup:
 
 
 def written(edits: list[FilmTextEdit], project: str = FILM, run: str | None = RUN) -> str:
-    """把 ``edits`` 写进 ``project``，返回改好的工程文件。"""
-
     return edit_text(project, run, checked(project, run), edits).source
 
 
@@ -100,7 +96,6 @@ def test_each_tag_knows_where_it_and_its_text_sit_in_the_source() -> None:
     assert value.inner is not None and source[slice(*value.inner)] == "东亚女性 &amp; 鞋"
     assert source[slice(*setter.opening)] == "<a:Set a={b}/>"
     assert setter.inner is None
-    # 剧本正文不按 XML 读：没有子标签，读出来的字和原文一字不差。
     assert script.children == []
     assert script.inner is not None
     raw = "\n    <lighter><短发女生>Light &amp; <b>fast</lighter>\n  "
@@ -145,8 +140,6 @@ def test_a_group_lists_its_reference_list_as_it_is_numbered_by_position() -> Non
 
 
 def golden_prompt(state: str, video: str) -> str:
-    """样例里这组发给视频模型的正文：全局设定、空一行、「镜头：」、每镜一行「起–止秒 正文」、末尾约束。"""
-
     shot = EXPECTED["states"][state][video]["shot"]
     lines = [
         f"{format_seconds(start)}–{format_seconds(end)}秒 {cut['prompt']}"
@@ -197,7 +190,6 @@ def test_a_view_that_is_not_chosen_follows_the_list_without_a_number() -> None:
         ("view06", "镜头 3", 8, GENERATED["view06"]),
         ("view04", "镜头 1", None, None),
     ]
-    # 没进列表的机位图照样带着它的描述，能生成。
     view04 = later.frames[-1]
     assert view04.kind == "generated" and view04.prompt is not None and view04.missing == ()
 
@@ -231,7 +223,6 @@ def test_a_generated_image_carries_its_prompt_with_the_references_in_place() -> 
         ("view01", "镜头 1"),
     ]
     assert [run.url for run in images] == EXPECTED["images"]["view02"]["input_str_list"]
-    # 图片段带着它在这张图自己的参考图列表里的编号，按它写回 @ImageN 就是发给模型的那段描述。
     assert [run.number for run in images] == [1, 2, 3, 4, 5]
     joined = "".join(
         run.text if isinstance(run, FilmPromptText) else f"@Image{run.number}" for run in runs
@@ -462,7 +453,6 @@ def test_a_shot_whose_line_has_a_comment_is_not_offered() -> None:
             [shot(1, ("参考@Image8，x", "", ""), FilmLineEdit("line:hook", "a | b"), REPLY)],
             "分镜有问题",
         ),
-        # 列表里没有、也不是新插入的图号不写；写错的图号过不了保存检查。
         (
             [FilmTextEdit("value:video01Setting", text="街区参考 @Image11。")],
             "@Image11 没有对应的图",
@@ -541,7 +531,6 @@ def test_inserting_a_new_photo_puts_it_before_the_views_and_moves_their_numbers(
         ("view03", 11),
     ]
     assert made.frames[7].url == NEW_PHOTO
-    # 另一组不动。
     assert numbered(later) == numbered(groups()[1])
 
 
@@ -555,7 +544,6 @@ def test_a_photo_already_in_the_materials_is_reused_for_another_group() -> None:
         [setting("纽约红砖街区参考 @Image6，街角参考 @Image10。", NEW_PHOTO, video="video02")],
     )
 
-    # 「素材」里已经有这张照片：不再加，第 2 组的列表引用它。
     expected = (
         once.replace(
             '  <text:Value id="video02Setting">纽约红砖街区参考 @Image6。</text:Value>',
@@ -630,7 +618,6 @@ def test_removing_the_only_reference_to_an_image_takes_it_out_of_the_list() -> N
         "view02",
         "view03",
     ]
-    # personB 仍是第 2 组的设定图，只是不在第 1 组的列表里了。
     assert "personB" in checked(edited.source).project.nodes
 
 
@@ -648,7 +635,6 @@ def test_removing_one_of_two_references_keeps_the_list() -> None:
 
 
 def test_inserting_and_removing_in_one_edit_renumbers_once() -> None:
-    # 删掉 personB（@3）的唯一一处，同时在场景里插入新照片：personB 出列表，新照片排在 scene 之后、机位图之前。
     edited = edit_text(
         FILM,
         RUN,
@@ -678,13 +664,9 @@ def test_inserting_and_removing_in_one_edit_renumbers_once() -> None:
 @pytest.mark.parametrize(
     "edit",
     [
-        # 删掉镜头开头的机位图引用。
         shot(1, ("中景，平视。", " ", ""), HOOK, REPLY),
-        # 挪到别处。
         shot(1, ("中景，参考@Image8，平视。", " ", ""), HOOK, REPLY),
-        # 在别的字里再写一次机位图的图号。
         setting("纽约红砖街区参考 @Image7，与 @Image8 一致。"),
-        # 新插入的图就是机位图那张。
         setting("纽约红砖街区参考 @Image7，与 @Image11 一致。", GENERATED["view01"]),
     ],
 )
@@ -712,7 +694,6 @@ SHARED_BODY = FILM.replace(
     '    <text:Append name="person" text={video01ModelB}/>\n'
     '    <text:Append name="person" text={模特B身材}/>\n',
 )
-"""模特B 的身材句同时用在 personB 的设定图和第 1 组的人物里：一段与生图共用的元素描述。"""
 
 
 def test_a_setting_is_shared_when_another_generation_node_uses_it() -> None:
@@ -729,14 +710,12 @@ def test_a_setting_is_shared_when_another_generation_node_uses_it() -> None:
         ("value:模特B声音", False),
     ]
     assert [item.shared for item in later.settings] == [True, False, False, False, True]
-    # 保存时按同一个口径拒绝：往这段里插图不写。
     body = FilmTextEdit("value:模特B身材", text="身材匀称，参考 @Image11。", images=(NEW_PHOTO,))
     with pytest.raises(FilmEditRejected, match="用在几个地方，无法插入图片"):
         written([body], SHARED_BODY)
 
 
 def test_inserting_a_generated_image_references_its_node() -> None:
-    # personB 选用的图不在第 2 组的列表里：列表引用 personB 的输出，不复制成照片。
     edited = edit_text(
         FILM,
         RUN,
@@ -760,7 +739,6 @@ def test_inserting_a_generated_image_references_its_node() -> None:
     later = groups(edited.source)[1]
     assert numbered(later)[5:8] == [("scene", 6), ("personB", 7), ("view04", 8)]
     assert later.frames[6].url == GENERATED["personB"]
-    # 之后 personB 换了选用，第 2 组的这张跟着变。
     rechosen = RUN.replace(
         '<use output="personB.image" image={personB-v1}/>',
         '<use output="personB.image" image={scene-v1}/>',
@@ -794,7 +772,6 @@ BARE = """<?icml using="@iclip/markup@1"?>
   </seedance:ReferenceVideo>
 </icml>
 """
-"""没有照片、也没引入 media 的工程，视频一张参考图都没有。"""
 
 INTO_BARE = FilmTextEdit("value:场景", text="红砖街区参考 @Image1。", images=(NEW_PHOTO,))
 
@@ -874,7 +851,6 @@ def test_clearing_a_choice_removes_its_use_and_leaves_the_image_empty() -> None:
     assert content == run_of("no-personB")
     film = checked(FILM, content)
     assert film.image_url("personB.image") is None
-    # 登记的图留着，可以再选用。
     assert film.registered["personB-v1"] == GENERATED["personB"]
 
 
@@ -930,7 +906,6 @@ def test_choosing_a_view_for_the_first_time_writes_it_into_its_group() -> None:
 
     changes = choose_image(film, FILM_NO_VIEW04, RUN_NO_VIEW04, "view04", VIEW04)
 
-    # 先写工程文件：插在 video02 元素图之后、镜头 2 的机位图之前，镜头 1 开头写引用，后面的图号各加 1。
     assert [path for path, _ in changes] == [FILM_PATH, RUN_PATH]
     project, run = (content for _, content in changes)
     assert project == FILM
@@ -940,7 +915,6 @@ def test_choosing_a_view_for_the_first_time_writes_it_into_its_group() -> None:
 def test_clearing_a_view_takes_it_out_of_its_group() -> None:
     changes = choose_image(checked(), FILM, RUN, "view04", None)
 
-    # 先写运行文件：删掉选用，再删掉列表里的这一行和镜头 1 开头的引用，后面的图号各减 1。
     assert changes == [(RUN_PATH, RUN_NO_VIEW04), (FILM_PATH, FILM_NO_VIEW04)]
 
 
@@ -974,7 +948,6 @@ def test_a_view_in_the_middle_moves_the_later_numbers() -> None:
 
 
 def test_a_half_written_choice_still_passes_and_blocks_its_group_until_it_is_repeated() -> None:
-    # 两种写法中途失败都会停在这里：列表里有 view04，运行文件里没有选用它。
     film = checked(FILM, RUN_NO_VIEW04)
 
     assert missing_references(film, "video02") == ("镜头 1",)
@@ -1003,7 +976,6 @@ def test_the_aspect_ratio_is_rewritten_on_every_video_and_view_and_nowhere_else(
 
     updated = set_aspect_ratio(checked(), FILM, "9:16")
 
-    # 两个视频与六张机位图各改一行；设定图 scene 同是 16:9、personB 是 3:4，都不动。
     assert updated == expected
     assert len(changed_lines(FILM, expected)) == 16
     made = groups(expected, RUN)

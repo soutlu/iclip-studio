@@ -33,7 +33,6 @@ const renderPage = async () => {
   return user
 }
 
-/** 记下发往技能库与 Agent 草稿的写请求，响应仍交给预置的 mock。 */
 const recordWrites = () => {
   const sent: Sent[] = []
   server.events.on('request:start', ({ request }) => {
@@ -64,7 +63,6 @@ const skillCards = () =>
     .map((node) => node.textContent)
 const sidePanel = () => screen.getByRole('region', { name: '配置调整' })
 
-/** 在编辑器全文末尾接着打字。 */
 const typeAtEnd = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
   const content = await within(sidePanel()).findByRole('textbox', { name: '文件内容' })
   await user.click(content)
@@ -134,7 +132,6 @@ describe('技能库与添加技能', () => {
       ),
     )
     expect(within(created).getByRole('img', { name: '尚未发布' })).toHaveTextContent('草稿')
-    // 返回回到技能库，新技能在里面。
     await user.click(within(created).getByRole('button', { name: '返回' }))
     expect(
       await within(sidePanel()).findByRole('button', { name: '编辑技能：新品视频策划' }),
@@ -164,7 +161,6 @@ describe('技能库与添加技能', () => {
       '参考视频复刻',
     ])
 
-    // 没发布过的不能添加：点了进它的编辑器，返回回到选技能。
     await user.click(within(panel).getByRole('button', { name: '编辑技能：多平台尺寸适配' }))
     panel = sidePanel()
     expect(await within(panel).findByRole('textbox', { name: '技能名称' })).toHaveValue(
@@ -175,7 +171,6 @@ describe('技能库与添加技能', () => {
     expect(within(sidePanel()).getByRole('heading', { name: '添加技能' })).toBeInTheDocument()
     expect(skillCards()).not.toContain('多平台尺寸适配')
 
-    // 绑着的技能在编辑器里可以从当前 Agent 移除，回到选技能。
     await user.click(within(skillSection()).getByRole('button', { name: '编辑技能：参考视频复刻' }))
     await user.click(await within(sidePanel()).findByRole('button', { name: '从当前 Agent 移除' }))
     expect(
@@ -225,7 +220,6 @@ describe('编辑技能', () => {
     const user = await renderPage()
     const sent = recordWrites()
     const panel = await openDirectorSkill(user)
-    // 编辑器里不显示 frontmatter。
     const content = within(panel).getByRole('textbox', { name: '文件内容' })
     expect(content).toHaveTextContent('照参考片做新视频')
     expect(content).not.toHaveTextContent('description')
@@ -239,7 +233,6 @@ describe('编辑技能', () => {
     )
     await typeAtEnd(user, '附上参考链接。')
 
-    // json 也在同一个编辑器里改原文。
     await user.click(within(panel).getByRole('tab', { name: 'shot-schema.json' }))
     const json = await within(panel).findByRole('textbox', { name: '文件内容' })
     await user.click(json)
@@ -279,7 +272,6 @@ describe('编辑技能', () => {
     expect(sent.find((item) => item.method === 'PATCH')?.body).toEqual({
       displayName: '照参考片做新片',
     })
-    // 存好后草稿有未发布的修改。
     expect(
       within(panel).getByRole('img', { name: '已发布 v4，草稿有未发布的修改' }),
     ).toBeInTheDocument()
@@ -307,7 +299,6 @@ describe('编辑技能', () => {
     ])
     expect(sent[0]?.body).toEqual({ name: 'film-director' })
     expect(within(panel).getByRole('textbox', { name: '技能标识' })).toHaveValue('film-director')
-    // 标识不进版本：存好后没有未发布的修改。
     expect(within(panel).getByRole('img', { name: '已发布 v4' })).toBeInTheDocument()
   })
 
@@ -431,7 +422,6 @@ describe('编辑技能', () => {
     await user.click(within(panel).getByRole('textbox', { name: '文件内容' }))
     await user.keyboard('{Control>}{Home}{/Control}{Enter}')
     expect(save).toBeEnabled()
-    // 重载会清掉撤销历史：撤销不回去，改动就还在。
     await user.keyboard('{Control>}z{/Control}')
     expect(save).toBeDisabled()
 
@@ -474,7 +464,6 @@ describe('编辑技能', () => {
     expect(within(panel).getByRole('heading', { name: '编辑技能' })).toBeInTheDocument()
     expect(within(panel).getByRole('tab', { name: 'reference-video-guide.md' })).toHaveFocus()
 
-    // 添加参考文件按 Esc 取消，焦点回到「添加参考文件」。
     await user.click(within(panel).getByRole('button', { name: '添加参考文件' }))
     expect(within(panel).getByRole('textbox', { name: '参考文件名' })).toHaveFocus()
     await user.keyboard('{Escape}')
@@ -484,7 +473,6 @@ describe('编辑技能', () => {
     await user.click(within(panel).getByRole('button', { name: 'brief-guide.md 的操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '重命名' }))
     const rename = within(panel).getByRole('textbox', { name: '新文件名' })
-    // 与已有文件重名：就地说明，不发请求。
     await user.clear(rename)
     await user.type(rename, 'shot-schema.json{Enter}')
     expect(within(panel).getByRole('alert')).toHaveTextContent('已有同名文件，请换一个文件名')
@@ -561,7 +549,6 @@ describe('编辑技能', () => {
       `POST /api/skills/${mockSkillId('platform-adapt')}/versions`,
     ])
     expect(within(panel).getByRole('button', { name: '发布技能' })).toBeDisabled()
-    // 技能库里不再是草稿，说明跟着新版本。
     await user.click(within(panel).getByRole('button', { name: '返回' }))
     expect(
       await within(sidePanel()).findByRole('button', { name: '编辑技能：多平台尺寸适配' }),

@@ -9,11 +9,6 @@ import {
   type ReferenceDetail,
 } from './references.api'
 
-/**
- * 在资料库内继续观察已缓存的后台任务，关闭详情、切换筛选或页签不会中断轮询。
- * 上传、入选和重打直接写入既有详情缓存；任务完成后的列表与计数刷新由详情查询负责。
- * 不另存任务状态，也不为尚未在本客户端出现的任务额外扫描全库。
- */
 export function useLibraryTaggingRefresh() {
   const client = useQueryClient()
   const subscribe = useCallback(

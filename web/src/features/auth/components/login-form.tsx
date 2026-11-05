@@ -10,13 +10,10 @@ type LoginFormProps = {
   ssoEnabled: boolean
   initialErrorMessage?: string | undefined
   onSuccess: () => void
-  /** 用户名输入框；账号密码区展开时，登录弹窗打开后把焦点交给它。 */
   usernameRef?: Ref<HTMLInputElement>
-  /** 「使用飞书登录」按钮；账号密码区收起时，登录弹窗把焦点交给它。 */
   ssoButtonRef?: Ref<HTMLButtonElement>
 }
 
-/** 飞书登录整页跳转；onSuccess 仅用于账号密码登录。初始错误在提交后清除。 */
 export function LoginForm({
   ssoEnabled,
   initialErrorMessage,
@@ -30,7 +27,6 @@ export function LoginForm({
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [ssoSubmitting, setSsoSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState(initialErrorMessage ?? '')
-  // 未手动切换时，密码区根据 SSO 是否可用决定展开状态。
   const [passwordOpenOverride, setPasswordOpenOverride] = useState<boolean | null>(null)
   const passwordOpen = passwordOpenOverride ?? !ssoEnabled
   const submitting = loginMutation.isPending || ssoSubmitting
@@ -86,7 +82,6 @@ export function LoginForm({
     setErrorMessage('')
 
     try {
-      // SSO 完成后返回发起登录的站内路径。
       await startSsoLogin(sanitizeCueAuthNextPath(window.location.pathname))
     } catch (error) {
       setErrorMessage(errorMessageOf(error, '飞书登录暂不可用，请稍后重试'))

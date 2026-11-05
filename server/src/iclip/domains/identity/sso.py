@@ -1,11 +1,3 @@
-"""企业 SSO 协议客户端（身份提供方模式）。
-
-登录时 verify 一次、换发自有会话 cookie，之后请求零外呼。协议：
-  跳转:  {base}/sso/issue/jwt?redirect_uri={前端落地路由}&_fromApp={appname}
-  验证:  GET {base}/sso/rpc/session/verify?jwt={jwt}
-         → {result: "OK", userSession: {innerUserId, unionId, name, email, avatarUrl}}
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,11 +13,11 @@ _TIMEOUT_SECONDS = 5.0
 
 
 class SsoSessionInvalid(Exception):
-    """SSO 会话无效或已过期（映射 401）。"""
+    pass
 
 
 class SsoUnavailable(Exception):
-    """SSO 验证服务不可达或响应非法（映射 502）。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,8 +30,6 @@ class SsoUserSession:
 
 
 class SsoVerifier:
-    """构造跳转地址、向 SSO 服务端验证 jwt_token。"""
-
     def __init__(
         self,
         *,
@@ -101,8 +91,6 @@ def _positive_integer(value: object) -> int | None:
 
 
 def sso_placeholder_email(union_id: str) -> str:
-    """为无邮箱的 SSO 用户合成占位邮箱。"""
-
     return f"{union_id}@{SSO_EMAIL_PLACEHOLDER_DOMAIN}"
 
 

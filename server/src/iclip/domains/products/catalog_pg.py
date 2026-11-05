@@ -1,7 +1,3 @@
-"""外部 PDM 同步库的只读查询，不建表、不迁移、不写入。
-
-只解析款的品类与品牌编码，供使用方圈选同类款。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -20,23 +16,14 @@ WHERE product_number = ANY(:style_nos) AND is_active AND NOT is_source_deleted
 
 
 def _blank_to_none(value: str | None) -> str | None:
-    """将上游空字符串视为缺失值。"""
-
     return value.strip() or None if value else None
 
 
 class PgStyleDirectory:
-    """按 PDM 款号批量解析品类与品牌归属。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
     async def resolve(self, style_nos: Sequence[str]) -> Mapping[str, StyleGrouping]:
-        """查不到的款、以及品类或品牌缺失的款，都不出现在结果里。
-
-        缺归属不是错误：使用方据此判断这个款无从圈选同类款，自行决定怎么处理。
-        """
-
         if not style_nos:
             return {}
         async with self._engine.connect() as conn:

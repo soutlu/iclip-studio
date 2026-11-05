@@ -7,10 +7,6 @@ import { AddCard, AlertGlyph, CardBadge, EmptyDash, ResourceCard } from './resou
 
 const GRID = 'grid grid-cols-2 gap-2 @min-[600px]:grid-cols-3 @max-[360px]:grid-cols-1'
 
-/**
- * 左侧「MCP 服务」一节的卡片：名字、放出的工具数 / 发现的工具数、连接状态；点开右侧是它的配置。
- * 没挂的时候草稿里是添加卡、历史版本里是一道短线。服务已不在库里时只写标识并标红，留给发布检查。
- */
 export function McpCards({
   config,
   onOpenPanel,

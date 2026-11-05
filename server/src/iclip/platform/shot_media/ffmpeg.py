@@ -1,5 +1,3 @@
-"""取帧与切格用到的 ffmpeg 调用：整片按固定帧率抽帧、解码降采样灰度图、一次解码裁多个矩形。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -12,18 +10,13 @@ from iclip.platform.media.process import PROBE_TIMEOUT_SECONDS, run
 from iclip.platform.shot_media.grid import GrayImage, parse_pgm
 
 EXTRACT_TIMEOUT_SECONDS = 900.0
-"""全片解码抽帧的超时上限。"""
 
 CROP_TIMEOUT_SECONDS = 120.0
 
 DETECT_WIDTH = 640
-"""网格检测的降采样宽度；裁剪仍使用原图，输出画质不受检测分辨率影响。"""
 
 
 async def extract_frames(path: Path, *, fps: float, out_dir: Path, codec: MediaCodec) -> list[Path]:
-    """按固定帧率抽帧并返回时间升序的路径；第 i 帧对应 i / fps 秒，避免全量载入内存。
-    解码用 ``codec`` 的选项。"""
-
     if fps <= 0:
         raise MediaError(f"抽帧帧率必须为正: {fps}")
     await run(
@@ -51,8 +44,6 @@ async def extract_frames(path: Path, *, fps: float, out_dir: Path, codec: MediaC
 
 
 async def decode_gray(path: Path, *, max_width: int = DETECT_WIDTH) -> tuple[GrayImage, int]:
-    """解码降采样灰度图并返回原图宽度，供 grid.scale_box 还原裁剪坐标。"""
-
     stdout = await run(
         [
             "ffmpeg",
@@ -62,7 +53,6 @@ async def decode_gray(path: Path, *, max_width: int = DETECT_WIDTH) -> tuple[Gra
             str(path),
             "-frames:v",
             "1",
-            # 只在图比 max_width 宽时才缩（-1 保持比例，2 的倍数对齐）。
             "-vf",
             f"scale='min({max_width},iw)':-2,format=gray",
             "-f",
@@ -103,8 +93,6 @@ async def _image_width(path: Path) -> int:
 
 
 async def crop_cells(path: Path, boxes: Sequence[tuple[int, int, int, int]]) -> list[bytes]:
-    """使用一次 filter_complex 解码并裁剪多个矩形，返回 JPEG 文件，避免重复解码。"""
-
     if not boxes:
         raise MediaError("没有要裁的区域")
     with TemporaryDirectory(prefix="shot-video-cells-") as tmp:

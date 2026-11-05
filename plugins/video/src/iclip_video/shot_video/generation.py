@@ -1,5 +1,3 @@
-"""镜头图生成与渠道重试，切格转存交给 ``GridCuts`` 端口。版记录与工具返回值由调用方拼装。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -26,25 +24,14 @@ from iclip_video.shot_video.ports import (
 _logger = structlog.stdlib.get_logger(__name__)
 
 IMAGE_MODEL: Final = "nano_banana_pro"
-"""出图用哪家。写在这里而不是配置里：这条链路的 4k 整图与 dev/pro 重试只有这一家给得了，
-产品接口的默认模型换成别家不该带着它一起换。"""
 
 GRID_RESOLUTION: Final = "4k"
-"""使用最高分辨率，保证整图裁成多格后仍有足够细节。"""
 
 ANCHOR_ASPECT: Final = "1:1"
-"""设定图使用方形网格；裁切后不再收缩到目标画幅，避免裁掉主体。"""
 
 
 @dataclass(frozen=True, slots=True)
 class GenerationPolicy:
-    """按配置的 dev、pro 顺序重试失败生成；已有成功结果时不自动升级渠道。
-
-    重试不分错误码：结果未知、已出图后转存失败也照样另起新任务，接受可能的重复计费
-    （见 CONTEXT 不变量 10）。
-
-    各字段的默认值与校验只在 ``shot_video`` 配置段一处，这里全部由组合根显式传入。"""
-
     poll_interval_seconds: float
     dev_attempts: int
     pro_attempts: int
@@ -60,15 +47,11 @@ class GenerationPolicy:
 
 @dataclass(frozen=True, slots=True)
 class CellCut:
-    """一次切格转存的结果：未切的整图，与逐格转存后的地址。"""
-
     grid_url: str
     urls: tuple[str, ...]
 
 
 class FrameGenerator:
-    """生成与裁剪服务，工作区记录由调用方持久化。"""
-
     def __init__(
         self,
         *,
@@ -81,9 +64,6 @@ class FrameGenerator:
         self._policy = policy
 
     async def generate(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
-        """生成没成功就按配置渠道顺序另起一次，不分错误码；提交前校验失败直接让模型改参数，
-        到了总时限就停。返回成功结果或最后一次结果。"""
-
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._policy.total_timeout_seconds
         channels = self._policy.channels()
@@ -94,7 +74,6 @@ class FrameGenerator:
                     user_id, replace(request, channel=channel), deadline=deadline
                 )
             except InvalidImageRequest as exc:
-                # 提交前校验失败，不产生付费调用，可要求模型修正参数。
                 raise ModelRetry(str(exc)) from exc
             if job.status == "completed" and job.output_url:
                 return job
@@ -112,12 +91,6 @@ class FrameGenerator:
         aspect: str | None,
         failure_message: str,
     ) -> CellCut:
-        """经 ``GridCuts`` 切格转存，逐格地址与 ``cells`` 同序；转存成功的每一格各记一条切图。
-
-        整图恒为 GRID_CELLS 格，``cells`` 只给实际请求的那几格，多出来的是补位格，
-        不转存也不记。切格、下载、转存失败时向模型报告简短错误，诊断信息留日志；记录落不下是
-        数据库的事，原样抛出，不让模型重出一张付费宫格。"""
-
         grid_url = job.output_url
         if not grid_url:
             job_failure(job, message=failure_message, reason="生成记录未携带结果 URL")
@@ -148,14 +121,11 @@ class FrameGenerator:
             try:
                 job = await self._generations.get(user_id, job.job_id)
             except ImageJobUnavailable as exc:
-                # 任务已提交、还在宿主后台跑；这时放弃，用户重来就重复计费。照旧等到总时限。
                 _logger.warning("查出图任务暂时失败", job_id=str(job.job_id), reason=str(exc))
         return job
 
 
 def job_failure(job: ImageJob, *, message: str, reason: str | None = None) -> NoReturn:
-    """记录诊断信息并报告失败。模型收到短句加错误码，供它判断重试是否有用；网关原文只留日志。"""
-
     _logger.warning(
         "图像工具失败",
         job_id=str(job.job_id),
@@ -163,7 +133,6 @@ def job_failure(job: ImageJob, *, message: str, reason: str | None = None) -> No
         error_code=job.error_code,
         reason=reason if reason is not None else job.error_message,
     )
-    # 切格、下载、转存阶段的失败没有错误码，调用方给的短句本身已写明阶段。
     if job.error_code is None:
         raise ToolFailed(message)
     raise ToolFailed(f"{message.rstrip('。')}（{job.error_code}）。")

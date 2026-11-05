@@ -1,5 +1,3 @@
-"""验证思考、多工具调用、重试、图文混排和无 run_id 收尾消息的历史 transcript 投影。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -91,8 +89,6 @@ def _returns(*parts: object, run_id: str | None = RUN, minute: int = 2) -> Model
 
 
 def test_trailing_message_without_a_run_id_stays_in_the_same_turn() -> None:
-    """无 run_id 的收尾重试消息应归属前一运行，避免生成时间戳为空的额外轮。"""
-
     turns = turns_from_messages(
         [
             _ask("走"),
@@ -128,8 +124,6 @@ def test_trailing_message_without_a_run_id_stays_in_the_same_turn() -> None:
 def test_thinking_frame_prefers_content_and_is_empty_without_any_text(
     part: ThinkingPart, shown: str
 ) -> None:
-    """content 有字就用 content；只有加密签名的思考块显示为空。"""
-
     turns = turns_from_messages([_ask("想一想"), _reply(part)])
 
     frame = turns[0].steps[0].frames[0]
@@ -154,8 +148,6 @@ def test_two_runs_become_two_turns_in_time_order() -> None:
 
 
 def _resumed() -> list[ModelRequest | ModelResponse]:
-    """模拟同一 prompt 的中断与续跑；续跑首条请求包含工具补偿返回和追加用户消息。"""
-
     return [
         _ask("出三张图", run_id="r1", minute=0),
         _reply(
@@ -180,8 +172,6 @@ _OF_ONE_PROMPT = {"r1": "p1", "r2": "p1"}
 
 
 def test_the_turn_state_comes_from_the_last_run() -> None:
-    """轮状态取最后一次运行；早期中断不应覆盖续跑成功的终态。"""
-
     turns = turns_from_messages(
         _resumed(),
         turn_states={"r1": "failed", "r2": "completed"},
@@ -203,8 +193,6 @@ def test_the_turn_state_comes_from_the_last_run() -> None:
 
 
 def _awaiting() -> list[ModelRequest | ModelResponse]:
-    """模拟待审批运行：以 run_completed 结束，但保留未返回调用；区别于运行中断。"""
-
     return [
         _ask("把这个文件改掉", run_id="r1", minute=0),
         _reply(
@@ -255,8 +243,6 @@ def test_a_frontier_approval_is_settled_by_the_prompt_that_stopped_waiting() -> 
 
 
 def test_a_close_out_return_is_not_a_decision() -> None:
-    """悬空调用的补偿返回不代表用户批准；中断运行也不应产生审批交互。"""
-
     closed_out = [
         *_awaiting(),
         _returns(
@@ -296,8 +282,6 @@ def test_a_close_out_return_is_not_a_decision() -> None:
 
 
 def test_an_official_repair_return_is_not_a_decision() -> None:
-    """中断修复返回与审批返回形状相似，需结合运行是否正常结束判断。"""
-
     repaired = [
         *_awaiting(),
         _returns(
@@ -331,8 +315,6 @@ def test_an_official_repair_return_is_not_a_decision() -> None:
 
 
 def test_a_delegation_closed_by_a_repair_return_carries_no_error_text() -> None:
-    """崩溃续跑补的 interrupted 返回等同没有返回：任务不带结果与错误，终态取子运行。"""
-
     messages = [
         _ask("给这条视频做分镜"),
         _reply(ToolCallPart(tool_name="delegate_task", args={}, tool_call_id="c1")),
@@ -366,8 +348,6 @@ def test_two_runs_without_a_mapping_stay_two_turns() -> None:
 
 
 def test_step_usage_splits_cache_out_of_the_input_total() -> None:
-    """input_tokens 包含缓存读写，普通输入量需减去二者。"""
-
     turns = turns_from_messages([_ask("走"), _reply(TextPart(content="好"))])
 
     usage = turns[0].steps[0].usage
@@ -379,8 +359,6 @@ def test_step_usage_splits_cache_out_of_the_input_total() -> None:
 
 
 def test_turn_usage_adds_up_the_step_readings() -> None:
-    """实时与历史共用用量汇总口径：写缓存计入 input，读缓存单列；全部缺失则省略。"""
-
     assert turn_usage([]) is None
 
     summed = turn_usage(
@@ -396,8 +374,6 @@ def test_turn_usage_adds_up_the_step_readings() -> None:
 
 
 def test_terminal_state_comes_from_the_caller_not_from_the_message_shape() -> None:
-    """最终响应形状无法区分完成与取消，必须使用调用方提供的终态；缺失时按 failed 处理。"""
-
     messages = [_ask("走"), _reply(TextPart(content="好"))]
 
     assert turns_from_messages(messages)[0].state == "failed"
@@ -406,8 +382,6 @@ def test_terminal_state_comes_from_the_caller_not_from_the_message_shape() -> No
 
 
 def test_run_state_is_read_off_the_official_run_end_event() -> None:
-    """取消与异常均记录为 run_failed，使用 error 异常名区分。"""
-
     def event(kind: str, error: str | None = None) -> StepEvent:
         return StepEvent(run_id="r1", kind=kind, step_index=0, error=error)  # pyright: ignore[reportArgumentType]
 
@@ -419,8 +393,6 @@ def test_run_state_is_read_off_the_official_run_end_event() -> None:
 
 
 def test_a_steer_arriving_before_any_step_leads_the_first_one() -> None:
-    """首个模型响应前的追加消息暂存至第一步，避免无步骤时丢弃。"""
-
     turns = turns_from_messages(
         [
             _ask("走"),
@@ -451,8 +423,6 @@ def _user_prompt_ids(turn: TranscriptTurn) -> list[tuple[str, ...] | None]:
 
 
 def test_a_steer_block_is_claimed_by_the_steered_prompt_with_the_same_content() -> None:
-    """插话块按先后对回内容相同的插话行，每行只用一次；别的轮的行不算，对不上的留空。"""
-
     turns = turns_from_messages(
         [
             _ask("走"),
@@ -473,8 +443,6 @@ def test_a_steer_block_is_claimed_by_the_steered_prompt_with_the_same_content() 
 
 
 def test_a_steer_row_moved_to_the_resumed_run_still_claims_its_block() -> None:
-    """续跑把插话行挪到新 run，块却留在旧 run 的段里；按轮配对才对得上。"""
-
     turns = turns_from_messages(
         [
             _ask("走"),
@@ -502,13 +470,6 @@ def test_duration_is_only_reported_for_ended_turns() -> None:
 
 
 def test_attachments_survive_the_round_trip() -> None:
-    """用户附件经过消息持久化后，须从 tag 恢复为原附件 part，图文保持原序。
-
-    三种编码都要还原：OSS 图片是开标签、像素、闭标签三项；视频是单个完整标签；受理规则收紧之前
-    存下的非 OSS 图片也是单个完整标签，历史里还有，照样还原。
-    """
-
-    # 使用可缩放地址以生成完整的开标签、图片和闭标签三项，覆盖独立闭标签的解析。
     url = "https://bkt.oss-ap-southeast-1.aliyuncs.com/u/shot.png"
     legacy = "https://cdn.test/u/style.jpg"
     content = (
@@ -520,11 +481,9 @@ def test_attachments_survive_the_round_trip() -> None:
         VideoContent(source=AttachmentSource(kind="url", url="https://cdn.test/u/ref.mp4")),
         TextContent(text="做个 30 秒的"),
     )
-    # model_prompt 现在拒绝挂不上参数的图片，旧消息里那张按当时的写法手工拼。
     stored = [*model_prompt(content[:3]), media_tag("image", legacy), *model_prompt(content[4:])]
     turns = turns_from_messages([_ask(stored), _reply(TextPart(content="好"))])
 
-    # 恢复 tag 中的原图地址，不能使用模型收到的缩略图地址。
     assert turns[0].content == content
 
 
@@ -583,8 +542,6 @@ def test_turn_run_ids_groups_the_runs_of_one_prompt() -> None:
 
 
 def _compaction(summary: str, *, run_id: str = RUN, minute: int) -> ModelResponse:
-    """构造位于历史切点的压缩边界，其创建时间晚于列表中的相邻消息。"""
-
     return ModelResponse(
         parts=[CompactionPart(content=summary, provider_name="function")],
         run_id=run_id,
@@ -593,8 +550,6 @@ def _compaction(summary: str, *, run_id: str = RUN, minute: int) -> ModelRespons
 
 
 def test_a_compaction_boundary_is_not_a_step() -> None:
-    """压缩边界不代表模型响应，不占步骤编号。"""
-
     turns = turns_from_messages(
         [
             _ask("走", minute=0),
@@ -609,8 +564,6 @@ def test_a_compaction_boundary_is_not_a_step() -> None:
 
 
 def test_a_boundary_with_no_step_after_it_shows_nothing() -> None:
-    """压缩后请求失败而未产生步骤时，不展示压缩提示。"""
-
     turns = turns_from_messages(
         [
             _ask("走", minute=0),
@@ -623,8 +576,6 @@ def test_a_boundary_with_no_step_after_it_shows_nothing() -> None:
 
 
 def test_a_boundary_does_not_become_the_turns_start_time() -> None:
-    """边界列表位置早于当前 run 消息，但创建时间较晚，不能作为轮开始时间。"""
-
     turns = turns_from_messages(
         [
             _ask("第一问", run_id="r1", minute=0),
@@ -655,15 +606,12 @@ def test_drop_last_turn_takes_the_boundary_of_that_run_with_it() -> None:
 
 
 def test_a_boundary_merged_into_a_response_still_shows_its_notice() -> None:
-    """边界合入响应后需按 part 识别；响应仍计为步骤，压缩提示保持可见。"""
-
     merged = ModelResponse(
         parts=[
             CompactionPart(content="旧账", provider_name="function"),
             TextPart(content="第一答"),
         ],
         run_id=RUN,
-        # 框架合并时保留前一条消息的时间戳。
         timestamp=_at(8),
     )
     turns = turns_from_messages(
@@ -681,8 +629,6 @@ def test_a_boundary_merged_into_a_response_still_shows_its_notice() -> None:
 
 
 def _compacted_by(run_id: str, *, cut_run: str, minute: int) -> ModelResponse:
-    """执行压缩的 run 记在边界上；边界本身随切点消息归旧 run。"""
-
     return ModelResponse(
         parts=[CompactionPart(content="旧账", provider_name="function")],
         run_id=cut_run,
@@ -696,8 +642,6 @@ def _frame_ids(turns: tuple[TranscriptTurn, ...]) -> list[list[str]]:
 
 
 def test_a_boundary_cut_into_an_older_turn_shows_on_the_compacting_runs_next_step() -> None:
-    """切点落在旧轮时边界归旧轮，提示挂到执行压缩那个 run 的下一步，与实时投影一致。"""
-
     turns = turns_from_messages(
         [
             _ask("第一问", run_id="r1", minute=0),
@@ -712,8 +656,6 @@ def test_a_boundary_cut_into_an_older_turn_shows_on_the_compacting_runs_next_ste
 
 
 def test_a_compaction_whose_run_made_no_step_shows_on_no_later_run() -> None:
-    """压缩后请求失败时实时没有下一步可挂；刷新后也不挂到之后别的 run 上。"""
-
     turns = turns_from_messages(
         [
             _ask("第一问", run_id="r1", minute=0),
@@ -728,16 +670,12 @@ def test_a_compaction_whose_run_made_no_step_shows_on_no_later_run() -> None:
     assert _frame_ids(turns) == [["t1.1.f1"], [], ["t3.1.f1"]]
 
 
-# --- 后台工具 -----------------------------------------------------------------
-
 BREAKDOWN_DISPLAY = ToolDisplayRegistry.merged(
     {"breakdown_video": lambda _args: GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4")}
 )
 
 
 async def _background_run() -> list[ModelMessage]:
-    """真跑一次后台工具：回执后模型先答一句，结果递入后再答一句。消息形状与 harness 实际写的一致。"""
-
     async def breakdown_video() -> str:
         await asyncio.sleep(0.01)
         return "拆好了"
@@ -771,8 +709,6 @@ def _outcome_at(messages: list[ModelMessage]) -> int:
 async def test_a_steer_and_a_background_outcome_in_one_request_keep_their_part_order(
     steer_first: bool,
 ) -> None:
-    """同一次请求里递入的插话与后台结果各成一块，按 part 顺序挂在末步。"""
-
     messages = await _background_run()
     at = _outcome_at(messages)
     request = messages[at]
@@ -816,12 +752,9 @@ async def test_a_steer_and_a_background_outcome_in_one_request_keep_their_part_o
 async def test_a_background_task_without_an_outcome_ends_by_how_its_run_ended(
     run_state: TurnState, paused: bool, task_state: str
 ) -> None:
-    """回执之后没有结果、运行已不在：被停与审批暂停是 killed，其余 failed；卡收成中断。"""
-
     messages = await _background_run()
     kept = messages[: _outcome_at(messages)]
     if paused:
-        # 审批暂停的运行以一次没答复的调用收尾。
         kept.append(_reply(ToolCallPart(tool_name="write_file", args={}, tool_call_id="c9")))
 
     (task,) = tasks_from_messages(

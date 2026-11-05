@@ -44,7 +44,6 @@ it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟�
   expect(time).toHaveBeenLastCalledWith(1.25)
   expect(playback).toHaveBeenLastCalledWith({ playing: false, muted: true })
   expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
-  // 时钟完全不变也会由 playing 事件恢复，不依赖父组件再渲染同一 clock。
   fireEvent.playing(active)
   expect(playback).toHaveBeenLastCalledWith({ playing: true, muted: true })
   fireEvent.seeking(active)
@@ -162,7 +161,6 @@ it('外部切换播放：从播放头播到结尾停下，停在结尾再播从�
   expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
   expect(started).toHaveBeenCalledTimes(1)
   await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
-  // 定位到某一刻时媒体往后多走 0.001 秒，停在帧边界上也显示这一刻的帧
   expect(active.currentTime).toBeCloseTo(6.501, 6)
   active.currentTime = 9
   act(() => frames.at(-1)?.(100))

@@ -14,7 +14,6 @@ import { renderWithProviders, renderWithTooltip } from '@/testing/render'
 import { ConversationTurn } from './conversation-turn'
 import { UserBubble } from './user-bubble'
 
-/** jsdom 不执行布局，显式模拟超过十行的内容高度。 */
 const stubOverflowing = () => {
   const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(500)
   const client = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(240)
@@ -53,7 +52,6 @@ describe('UserBubble', () => {
   })
 
   it('气泡下有复制钮：纯文字消息复制的是文字 part 原样接起来的正文；没给 onEdit 就没有修改钮', async () => {
-    // 在 user-event 初始化后安装剪贴板替身，避免被其覆盖。
     const user = userEvent.setup()
     const writeText = stubClipboard()
     renderWithTooltip(<UserBubble content={[text('先看这句：'), text('\n还有这句')]} />)
@@ -87,7 +85,6 @@ describe('UserBubble', () => {
     await user.click(screen.getByRole('button', { name: 'reference.png' }))
 
     expect(screen.getByRole('dialog', { name: 'reference.png' })).toBeInTheDocument()
-    // 芯片缩略图为装饰图片，具名图片只能来自灯箱。
     expect(screen.getByRole('img', { name: 'reference.png' })).toBeInTheDocument()
   })
 
@@ -109,14 +106,12 @@ describe('UserBubble 媒体芯片的悬停卡', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  /** 计时器推进包在 act 中，确保对应状态更新完成。 */
   const advance = (ms: number) => {
     act(() => {
       vi.advanceTimersByTime(ms)
     })
   }
 
-  /** 先越过跨芯片共享的快速重开窗口，再测量当前卡片时序。 */
   const renderChip = () => {
     renderWithTooltip(<UserBubble content={[image('https://example.com/reference.png')]} />)
     advance(500)
@@ -155,7 +150,6 @@ const turnWithFrames = (frames: TranscriptTurn['steps'][number]['frames']): Tran
   turnId: 't1',
 })
 
-/** 分镜文件登记成产物，与 app 层的登记一致：对话里照写文件名，点了进分镜面板。 */
 const registry = () => {
   const value = new ArtifactRegistry()
   value.register({

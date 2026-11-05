@@ -1,9 +1,3 @@
-"""FileStore 的 PostgreSQL 后端，agent_runtime 表由 Alembic 管理。
-
-写入和删除共用命名空间 advisory 锁：容量为跨行聚合，需在锁内检查后写入；
-先查版本再查容量可区分两类错误。删除也需持锁，避免并发 upsert 重建已删除文件。
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -51,7 +45,6 @@ workspace_files_table = Table(
     Column("namespace", Text, nullable=False),
     Column("path", Text, nullable=False),
     Column("content", Text, nullable=False),
-    # 生成列由 PostgreSQL 计算容量；Computed 排除 INSERT/UPDATE 显式赋值。
     Column(
         "size_bytes",
         BigInteger,
@@ -66,12 +59,9 @@ workspace_files_table = Table(
 
 
 _BY_CODE_POINT = workspace_files_table.c.path.collate("C")
-"""按 C collation 排序，避免服务器 locale 影响文件顺序，并与 Python sorted 保持一致。"""
 
 
 class PgFileStore:
-    """``FileStore`` 的 Postgres 实现。"""
-
     def __init__(
         self,
         engine: AsyncEngine,
@@ -84,8 +74,6 @@ class PgFileStore:
         self._max_namespace_bytes = max_namespace_bytes
 
     async def _lock(self, conn: AsyncConnection, namespace: str) -> None:
-        """持有命名空间写锁至事务结束；hashtext 冲突仅导致额外串行，不影响隔离正确性。"""
-
         await conn.execute(
             text("SELECT pg_advisory_xact_lock(hashtext(:namespace))"), {"namespace": namespace}
         )
@@ -111,7 +99,6 @@ class PgFileStore:
         key = normalize_path(path)
         validate_content(content)
         size = len(content.encode("utf-8"))
-        # UTF-8 字节数与 octet_length 一致，单文件容量可在事务前检查。
         if size > self._max_file_bytes:
             raise QuotaExceeded(scope="file", attempted=size, limit=self._max_file_bytes, path=key)
         table = workspace_files_table
@@ -127,7 +114,6 @@ class PgFileStore:
             current_version = None if current is None else int(current[0])
             current_size = 0 if current is None else int(current[1])
             if expected_version is not None and current_version != expected_version:
-                # actual=None 表示文件已删除，带预期版本的写入不得重新创建文件。
                 raise VersionConflict(key, expected=expected_version, actual=current_version)
             used = (
                 await conn.execute(
@@ -181,7 +167,6 @@ class PgFileStore:
         conditions = [table.c.namespace == namespace]
         if prefix:
             directory = normalize_path(prefix)
-            # 按目录段边界精确匹配，避免将同前缀文件名当作子目录。
             conditions.append(
                 or_(
                     table.c.path == directory,
@@ -211,14 +196,12 @@ class PgFileStore:
                     select(table.c.path, table.c.content)
                     .where(
                         table.c.namespace == namespace,
-                        # SQL 仅预筛，最终匹配由 build_matches 判定；autoescape 将 % 和 _ 视为字面量。
                         table.c.content.icontains(query, autoescape=True),
                     )
                     .order_by(_BY_CODE_POINT)
                     .limit(MAX_SEARCH_FILES)
                 )
             ).all()
-        # 多取一条判断是否截断。
         found = build_matches(((row[0], row[1]) for row in rows), query, limit=limit + 1)
         truncated = len(found) > limit or len(rows) >= MAX_SEARCH_FILES
         return SearchResult(matches=found[:limit], truncated=truncated)

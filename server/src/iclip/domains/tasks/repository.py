@@ -1,8 +1,3 @@
-"""需求单持久化端口，读取不按属主隔离。
-
-状态条件与写入须原子执行，避免校验后状态被并发改变；条件不匹配返回 None 或 False，
-由服务层转换为冲突。修改权限由服务层校验。"""
-
 from __future__ import annotations
 
 import uuid
@@ -15,17 +10,9 @@ from iclip.domains.tasks.schemas import TaskInputs
 
 
 class TaskRepository(Protocol):
-    """``iclip.tasks`` 的数据访问。"""
+    async def create_if_absent(self, task: Task) -> tuple[Task, bool]: ...
 
-    async def create_if_absent(self, task: Task) -> tuple[Task, bool]:
-        """按 id 幂等插入一行新需求单。
-
-        返回落库后的整行与「本次是否新建」；id 已存在时不写入，返回已有那一行。"""
-        ...
-
-    async def get(self, task_id: uuid.UUID) -> Task:
-        """按 id 读一行；没有这一行就抛 ``NotFound``。"""
-        ...
+    async def get(self, task_id: uuid.UUID) -> Task: ...
 
     async def list_recent(
         self,
@@ -35,10 +22,7 @@ class TaskRepository(Protocol):
         ids: Sequence[uuid.UUID] | None = None,
         limit: int,
         after: TaskCursor | None = None,
-    ) -> tuple[Task, ...]:
-        """按 ``(created_at, id)`` 倒序返回一页需求单，可按状态、认领人与 id 集合筛选；
-        ``after`` 是上一页末行的排序键。"""
-        ...
+    ) -> tuple[Task, ...]: ...
 
     async def count(
         self,
@@ -46,9 +30,7 @@ class TaskRepository(Protocol):
         status: TaskStatus | None = None,
         assignee_user_id: uuid.UUID | None = None,
         ids: Sequence[uuid.UUID] | None = None,
-    ) -> int:
-        """同一组筛选下的总条数，不受翻页影响。"""
-        ...
+    ) -> int: ...
 
     async def save(
         self,
@@ -59,29 +41,17 @@ class TaskRepository(Protocol):
         priority: int,
         deadline: datetime | None,
         inputs: TaskInputs,
-    ) -> Task | None:
-        """整体更新可变字段；状态与 expect 不符时返回 None。字段冻结由服务层校验。"""
-        ...
+    ) -> Task | None: ...
 
-    async def publish(self, task_id: uuid.UUID) -> Task | None:
-        """原子校验 draft 状态和未过期的期限后发布，时间比较使用数据库时钟。"""
-        ...
+    async def publish(self, task_id: uuid.UUID) -> Task | None: ...
 
-    async def confirm(self, task_id: uuid.UUID, *, user_id: uuid.UUID) -> Task | None:
-        """在同一事务中幂等添加认领人，并将 published 转为 confirmed。
-
-        已 confirmed 的需求单仅追加认领人；其他状态不写入并返回 None。"""
-        ...
+    async def confirm(self, task_id: uuid.UUID, *, user_id: uuid.UUID) -> Task | None: ...
 
     async def set_status(
         self, task_id: uuid.UUID, *, expect: TaskStatus, status: TaskStatus
-    ) -> Task | None:
-        """条件更新状态；当前状态与 expect 不符时返回 None。"""
-        ...
+    ) -> Task | None: ...
 
-    async def delete(self, task_id: uuid.UUID, *, expect: TaskStatus) -> bool:
-        """条件删除；当前状态与 expect 不符时返回 False。"""
-        ...
+    async def delete(self, task_id: uuid.UUID, *, expect: TaskStatus) -> bool: ...
 
 
 __all__ = ["TaskRepository"]

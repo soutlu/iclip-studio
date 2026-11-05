@@ -1,9 +1,3 @@
-"""检查工程文件和运行文件。
-
-分四步，前一步有问题就不做后一步：按包声明读工程文件；内容规则（剧本、模板与填槽、图号写法、
-生成节点和参考图、镜头和台词、视频、图号与参考图列表对不对得上）；运行文件；按文件原样算每个
-请求的提示词字数和参考图张数。问题带文件名和行号，改对一处就少一条。"""
-
 from __future__ import annotations
 
 import math
@@ -45,16 +39,11 @@ from iclip_video.iclip_studio.film.script import read_script
 from iclip_video.shot_prompt import format_shot_prompt
 
 _ANY_MARK: Final = re.compile(r"@image", re.IGNORECASE)
-"""文字里每一处像图号的写法，大小写都算；写对了的才是 ``IMAGE_NUMBER``。"""
 
 _WRITTEN_MARK: Final = re.compile(r"@image\s*\d*", re.IGNORECASE)
-"""报错时把写错的那一处连同后面的数字一起引出来。"""
 
 
 def check(project_source: str, run_source: str | None = None) -> Film | list[str]:
-    """检查两个文件。工程文件读得成节点树时返回 ``Film``，问题在它的 ``errors`` 里；连 XML 都
-    读不通时返回这一条问题。``run_source`` 为 None 表示没有运行文件。"""
-
     try:
         project = load_project(project_source)
     except MarkupError as exc:
@@ -71,8 +60,6 @@ def check(project_source: str, run_source: str | None = None) -> Film | list[str
 
 
 def load_project(source: str) -> Document:
-    """按包声明读工程文件；XML 读不通时抛 ``MarkupError``。"""
-
     return load(
         source,
         label=FILM_PATH,
@@ -84,10 +71,6 @@ def load_project(source: str) -> Document:
 
 
 def load_run(source: str) -> Document:
-    """按声明读运行文件，并查它自己就能判断的规则；XML 读不通时抛 ``MarkupError``。
-
-    要对照工程文件的规则（``use`` 写的节点存不存在）不在这里。"""
-
     run = load(
         source,
         label=RUN_PATH,
@@ -113,8 +96,6 @@ def load_run(source: str) -> Document:
 
 
 def check_project_content(source: str) -> list[str]:
-    """只看工程文件自己：声明、内容规则和上限。给人保存这个文件时用，那里拿不到另一个文件。"""
-
     try:
         project = load_project(source)
     except MarkupError as exc:
@@ -128,8 +109,6 @@ def check_project_content(source: str) -> list[str]:
 
 
 def check_run_content(source: str) -> list[str]:
-    """只看运行文件自己。给人保存这个文件时用。"""
-
     try:
         return load_run(source).errors
     except MarkupError as exc:
@@ -137,9 +116,6 @@ def check_run_content(source: str) -> list[str]:
 
 
 def _check_content(film: Film, source: str) -> None:
-    """内容规则。剧本、填槽和图号写法有问题时不往下查：镜头、参考图的规则都要先认得台词、槽和
-    图号。"""
-
     _check_script(film, source)
     _check_renders(film.project)
     _check_marks(film)
@@ -169,15 +145,10 @@ def _check_script(film: Film, source: str) -> None:
 
 
 def _check_renders(project: Document) -> None:
-    """模板与填槽：槽名在模板里，一个槽先 Set 一次再 Append，必填的槽要填；槽里填 text:Value，
-    多镜头视频模板的 shots 槽 Set 一个 film:Shots；同一段文字在一个 Render 里只填一次。"""
-
     for render in project.find("Render"):
         reference = render.reference("template")
         assert reference is not None
         kit = project.template(reference)
-        # opened 是 Set 过的槽；filled 是 Set 或 Append 过的槽，先 Append 后 Set 只报一处，
-        # 也不再算成必填没填。
         opened: set[str] = set()
         filled: set[str] = set()
         used: set[str] = set()
@@ -216,9 +187,6 @@ def _check_renders(project: Document) -> None:
 
 
 def _check_marks(film: Film) -> None:
-    """图号的写法：文字和镜头正文里的 ``@Image`` 后面直接跟从 1 起、不带前导零的数字；台词里不写
-    ``@Image``。"""
-
     project = film.project
     for node in project.root.walk():
         if not (project.is_a(node, "Value") or project.is_a(node, "Shot")):
@@ -247,8 +215,6 @@ def _written_mark(text: str, start: int) -> str:
 
 
 def _check_generations(project: Document) -> None:
-    """生成节点的 prompt 是对应模板的 Render；同一张图在一个节点的列表里只出现一次。"""
-
     for node in _generation_nodes(project):
         reference = node.reference("prompt")
         assert reference is not None
@@ -266,9 +232,6 @@ def _check_generations(project: Document) -> None:
 
 
 def _check_shots(film: Film) -> None:
-    """镜头的时间、正文里的台词，剧本里每句台词正好引用一次、先后一致；剧本写在引用它台词的镜头
-    之前；每组镜头正好用在一个视频里；一张机位图只给一个镜头用。"""
-
     project = film.project
     scripts = project.find(SCRIPT_TAG)
     script = scripts[0] if scripts else None
@@ -318,7 +281,6 @@ def _check_shots(film: Film) -> None:
                     )
                 else:
                     views[view] = (shots, order + 1)
-        # 先定义后引用：读文件时只查了属性里的 {引用}，镜头正文里的 {段名} 在这里查。
         if quotes_script and script is not None and script.line > shots.line:
             project.error(shots, f"剧本 {script.attrs['id']} 要写在引用它台词的 film:Shots 之前")
     for name, line in film.lines.items():
@@ -329,8 +291,6 @@ def _check_shots(film: Film) -> None:
 
 
 def _check_videos(film: Film) -> None:
-    """时长等于这组镜头的时长并在模型的范围内；机位图与视频同画幅；所有视频同画幅。"""
-
     project = film.project
     first: Node | None = None
     for video in _videos(project):
@@ -364,9 +324,6 @@ def _check_videos(film: Film) -> None:
 
 
 def _check_numbers(project: Document) -> None:
-    """图号与参考图列表：每个生成节点用到的文字里的编号正好是 1 到列表张数；带编号的文字正好用在
-    一个生成节点里；列表里的机位图只在它那一镜开头引用一次。"""
-
     nodes = _generation_nodes(project)
     texts = {node: written_texts(project, node) for node in nodes}
     for node in nodes:
@@ -404,9 +361,6 @@ def _check_numbers(project: Document) -> None:
 
 
 def _check_listed_views(project: Document, texts: dict[Node, list[Node]]) -> None:
-    """视频列表里某一镜的机位图：那一镜在这个视频里，正文以「参考@ImageN，」开头，N 在这个视频的
-    文字里只出现这一次。"""
-
     views: dict[str, tuple[Node, Node, int]] = {}
     for shots in project.find("Shots"):
         for number, shot in enumerate(project.kids(shots, "Shot"), start=1):
@@ -449,8 +403,6 @@ def _check_listed_views(project: Document, texts: dict[Node, list[Node]]) -> Non
 
 
 def _check_run(film: Film, source: str) -> None:
-    """读运行文件，把登记和选用记到 ``film`` 上。"""
-
     try:
         run = load_run(source)
     except MarkupError as exc:
@@ -480,8 +432,6 @@ def _check_run(film: Film, source: str) -> None:
 
 
 def _check_limits(film: Film) -> None:
-    """每个请求按文件原样算：提示词字数和参考图张数不超过模型的上限。"""
-
     project = film.project
     for node in _generation_nodes(project):
         tag = project.declared(node)

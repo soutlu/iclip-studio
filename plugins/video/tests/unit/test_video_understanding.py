@@ -1,6 +1,3 @@
-"""验证方舟视频拆解适配器的请求形状（写定的模型、思考档位与帧率，每次现查的连接）、模型没启用、响应校验与
-拆解文档路径。"""
-
 from __future__ import annotations
 
 import json
@@ -46,8 +43,6 @@ def ark(
 
 
 def responses_body(status: str = "completed", text: str = "## 4、逐镜拉片表\n……") -> dict[str, Any]:
-    """包含 reasoning 和 message 的成功响应。"""
-
     return {
         "status": status,
         "output": [
@@ -64,8 +59,6 @@ async def test_parser_takes_the_output_text_and_skips_reasoning() -> None:
 
 @pytest.mark.parametrize("status", ["incomplete", "in_progress", "failed"])
 async def test_parser_refuses_a_response_that_did_not_finish(status: str) -> None:
-    """输出被截断时接口仍可能返回 200，需校验完成状态以避免交付残缺镜头表。"""
-
     understanding = ark(lambda _: httpx.Response(200, json=responses_body(status=status)))
     with pytest.raises(VideoUnderstandingError, match=status):
         await understanding.parse(VIDEO)
@@ -114,8 +107,6 @@ async def test_parser_sends_the_written_model_thinking_and_fps_to_the_resolved_c
 
 
 async def test_the_connection_is_looked_up_on_every_call() -> None:
-    """配置页里改了连接，下一次拆解就用新的；不在启动时记下一份。"""
-
     urls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

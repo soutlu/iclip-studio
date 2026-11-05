@@ -1,5 +1,3 @@
-"""Agent 配置测试的替身：一张只有两个测试插件的登记表。插件名都是测试自己起的，不引用真实插件。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -9,10 +7,8 @@ from agent_runtime.config.agent_config.public import PluginFacts, Problem, probl
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 NOTES = "notes"
-"""没有依赖的测试插件，参数 ``limit`` 是正整数。"""
 
 SEARCH = "search"
-"""要求同挂 ``notes`` 的测试插件，没有参数。"""
 
 
 class NotesParameters(BaseModel):
@@ -26,8 +22,6 @@ class NoParameters(BaseModel):
 
 
 class FakePlugins:
-    """``PluginDirectory`` 的替身：插件名 →（要求同挂的插件，参数模型）。"""
-
     def __init__(
         self, plugins: Mapping[str, tuple[tuple[str, ...], type[BaseModel]]] | None = None
     ) -> None:

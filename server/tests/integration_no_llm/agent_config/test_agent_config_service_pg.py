@@ -1,8 +1,3 @@
-"""Agent 配置用例连真实 Postgres（技能库与模型供应商也是真的，插件登记表用测试替身）：发布是原子的、草稿按
-lockVersion 防覆盖、内容不变不出新版本、版本号递增、恢复后草稿等于那一版、归档被引用的 agent 是 409、导入
-检查不写库且有问题时正式导入也不写、覆盖导入只改草稿、导出再导入得到同样的配置，以及技能、模型、密钥、
-供应商被草稿或当前版本引用时拦下、只被旧版本引用时放行。"""
-
 from __future__ import annotations
 
 import uuid
@@ -156,8 +151,6 @@ async def save(
     agent_config: AgentConfig,
     skill_ids: list[uuid.UUID] | None = None,
 ) -> int:
-    """整份保存草稿，交回新的 lockVersion。"""
-
     current = await world.agents.detail(agent_id)
     saved = await world.agents.save_draft(
         agent_id,
@@ -178,8 +171,6 @@ async def publish(world: World, agent_id: str, note: str | None = None) -> uuid.
 
 
 async def ready_agent(world: World, agent_id: str, **fields: Any) -> uuid.UUID:
-    """建一个 agent、存好可发布的草稿并发布，交回版本 id。"""
-
     await new_agent(world, agent_id)
     await save(world, agent_id, config(world, **fields), [world.skill_id])
     return await publish(world, agent_id)
@@ -209,8 +200,6 @@ async def operations(engine: AsyncEngine, agent_id: str) -> list[str]:
 
 @asynccontextmanager
 async def failing_version_skills(engine: AsyncEngine) -> AsyncGenerator[None]:
-    """块内往 ``agent_version_skills`` 插行时报错：发布写完版本行之后才失败。触发器用完必须删掉。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -239,8 +228,6 @@ async def failing_version_skills(engine: AsyncEngine) -> AsyncGenerator[None]:
 
 
 async def test_a_reserved_word_cannot_name_a_new_agent(world: World, engine: AsyncEngine) -> None:
-    """``/agents/`` 下固定路径的那几段不能当标识：新建与导入新 agent 都拦下，什么都不写。"""
-
     with pytest.raises(ValidationFailed, match="plugins 是保留词"):
         await world.agents.create(AgentCreateIn(id="plugins", name="插件"), by=world.author)
     assert await operations(engine, "plugins") == []
@@ -467,7 +454,6 @@ async def test_export_then_import_gives_the_same_config(world: World) -> None:
     assert detail.active_version is not None
     active = await world.agents.version("director", detail.active_version.id)
     assert active.config.model is not None and detail.draft.config.model is not None
-    # 密钥只属于本环境，导出时去掉；其余与当前版本一字不差。
     assert detail.draft.config == active.config.model_copy(
         update={"model": active.config.model.model_copy(update={"credential_id": None})}
     )
@@ -692,7 +678,6 @@ async def test_provider_in_use_cannot_be_disabled_until_only_old_versions_use_it
     with pytest.raises(Conflict, match="director"):
         await world.providers.update(world.provider_id, ModelProviderUpdateIn(enabled=False))
 
-    # 草稿不再写它，当前版本还写着，照样拦。
     await save(world, "director", AgentConfig(schema_version=1), [])
     with pytest.raises(Conflict):
         await world.providers.update(world.provider_id, ModelProviderUpdateIn(enabled=False))

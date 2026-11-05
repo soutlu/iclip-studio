@@ -1,6 +1,3 @@
-"""import ``iclip.asgi`` 只建插件登记表与各个服务，不连库、不装配 agent：合同导出靠这一点，数据库连不上也
-照样 import 得进来；也不连带装上运行时服务本身。"""
-
 from __future__ import annotations
 
 import os
@@ -13,7 +10,6 @@ from scripts.dump_openapi import PLACEHOLDER_ENV
 SERVER_DIR = Path(__file__).resolve().parents[3]
 
 UNREACHABLE_DATABASE = "postgresql+asyncpg://nobody:nothing@127.0.0.1:1/nowhere"
-"""端口 1 上没有数据库：import 时只要试着连一次就会失败。"""
 
 MINIMAL_CONFIG = """\
 app: {name: iclip-test}
@@ -49,8 +45,6 @@ def _run_after_importing_the_app(tmp_path: Path, code: str) -> subprocess.Comple
 def test_importing_the_asgi_app_neither_connects_to_database_nor_loads_runtime_service(
     tmp_path: Path,
 ) -> None:
-    """后端引用运行时的错误信封（``agent_runtime.http.errors``），不该连带 import 运行时服务的 app 工厂。"""
-
     done = _run_after_importing_the_app(tmp_path, "print('agent_runtime.http.app' in sys.modules)")
 
     assert done.returncode == 0, done.stderr

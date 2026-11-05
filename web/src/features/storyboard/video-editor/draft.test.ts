@@ -27,7 +27,6 @@ import {
 } from './draft'
 import { shotsOf } from './edit-blocks'
 
-// 原片 6 秒、6 个镜头，各 1 秒。A、B 都从镜头 4–5 生成，各切成两段；C 从镜头 2 生成，只有一段。
 const edit = (
   id: string,
   order: number,
@@ -111,7 +110,6 @@ describe('镜头的开关', () => {
     expect(shotOn(source, picked, 4)).toBe(false)
     expect(shotOn(source, picked, 5)).toBe(false)
     expect(shotOn(source, picked, 3)).toBe(false)
-    // 再打开镜头 5 后又选用 A 的另一段：A 已在草稿里，不再清
     const reopened = putShot(source, picked, 5, true)
     expect(shotOn(source, pickPart(source, reopened, A.id, 2), 5)).toBe(true)
   })
@@ -201,9 +199,7 @@ describe('修剪', () => {
   it('拖动时离边界 8px 以内吸上去；方向键只吸前方的边界', () => {
     expect(snapNear([1, 2], 100)(1.95)).toBe(2)
     expect(snapNear([1, 2], 100)(1.9)).toBe(1.9)
-    // 往右一步越过了 2：停在 2
     expect(snapAhead([1, 2], 1.95, 1, 100)(2.05)).toBe(2)
-    // 刚离开 1 往右：不吸回 1
     expect(snapAhead([1, 2], 1, 1, 100)(1.1)).toBe(1.1)
   })
 
@@ -236,7 +232,6 @@ describe('合成内容', () => {
       { sourceJobId: 'a', start: 0, end: 2.5 },
       { sourceJobId: 'root', start: 5, end: 6 },
     ])
-    // A1 与 A2 中间插进镜头 4：不再相接
     expect(
       composeSegmentsOf(outputOf(draftItemsOf(source, putShot(source, draft, 4, true)))),
     ).toEqual([
@@ -339,7 +334,6 @@ describe('能否合成', () => {
     expect(check(EMPTY_DRAFT)).toBe(false)
     const draft = pickAll(EMPTY_DRAFT, A)
     expect(check(draft)).toBe(true)
-    // 最近一次合成里原片分成了相接的两段：先合并再比
     expect(
       check(draft, [
         { sourceJobId: 'root', start: 0, end: 1 },
@@ -371,7 +365,6 @@ describe('播放头留位', () => {
 
   it('那一块没了，停在原来位置上现在那一块的开头', () => {
     const after = draftItemsOf(source, pickAll(EMPTY_DRAFT, A))
-    // 原来在镜头 4 的 3.5 秒，现在那里是 A1（3 秒起）
     expect(keepPlace(before, after, 3.5)).toBe(3)
   })
 

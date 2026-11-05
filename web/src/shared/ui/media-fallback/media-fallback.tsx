@@ -1,5 +1,3 @@
-/** 图片或视频读不出来时的占位：一句主句，需要时补一行指引和一个重试。 */
-
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
@@ -13,18 +11,12 @@ const MAIN: Record<MediaFallbackKind, string> = {
 
 type MediaFallbackProps = {
   kind: MediaFallbackKind
-  /** 主句之后的补充指引，说明这一处还能怎么办。 */
   hint?: string
   onRetry?: () => void
-  /** 缩略图等窄格子里排成一行小字。 */
   compact?: boolean
   className?: string
 }
 
-/**
- * 渲染为 `<span>`，可以放进 `<button>`；播报语义由调用点的外壳决定，占位本身不做 live region。
- * 底色与定位也留给外壳，`className` 直接落在根元素上。
- */
 export function MediaFallback({
   className,
   compact = false,

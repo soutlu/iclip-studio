@@ -22,7 +22,6 @@ function FaderHarness({
 describe('ThinkingFader', () => {
   describe('指针拖动', () => {
     beforeEach(() => {
-      // jsdom 不排版；三个档位间隔各占 100px，只补浏览器提供的几何和指针信息。
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
         DOMRect.fromRect({ x: 0, y: 0, width: 300, height: 36 }),
       )

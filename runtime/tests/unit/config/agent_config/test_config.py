@@ -1,5 +1,3 @@
-"""Agent 配置格式：不收未知字段与不认识的 type，同一工具集、同一子 agent 不能写两次，问题的 path 指到字段。"""
-
 from __future__ import annotations
 
 from typing import Any

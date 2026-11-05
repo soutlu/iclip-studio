@@ -1,5 +1,3 @@
-"""验证测试分层目录与命名规则。"""
-
 from __future__ import annotations
 
 import ast

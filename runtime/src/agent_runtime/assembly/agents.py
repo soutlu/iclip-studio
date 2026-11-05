@@ -1,14 +1,3 @@
-"""运行时从库里装配 agent：对话固定的版本（或某个 agent 的草稿）→ 编译 → 按版本号取缓存或装配。
-
-每次运行先读出装配用到的全部东西的版本，拼成缓存键：agent 版本（草稿是它的 ``lock_version``）、各技能
-的标识与最新版的内容 hash、子 agent 的当前版本与描述（连同它们的技能）、用到的供应商与密钥的修改时刻和
-模型本身、挂的 MCP 服务的修改时刻。键命中就复用装好的 Agent，没命中就装配后放进 LRU。发布 agent、发布技能
-或改它的标识、改密钥、模型或 MCP 服务之后，下一次运行自然换成新的，不用通知，多个进程各自如此。
-
-编译沿用发布时的检查（``compile_agent`` 的运行时模式），引用的模型被停用、插件已从代码里删掉、技能被
-归档等装不起来的情况都报 ``AgentUnavailable``，只影响用到这个版本的对话。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -71,35 +60,26 @@ from agent_runtime.transcript.display import ToolDisplayRegistry
 _logger = structlog.stdlib.get_logger(__name__)
 
 ModelBuilder = Callable[[RuntimeModel, ThinkingEffort | None], BuiltModel]
-"""按供应商、模型与明文密钥建出 pydantic-ai 模型；测试换成替身。"""
 
 
 def build_runtime_model(found: RuntimeModel, thinking: ThinkingEffort | None) -> BuiltModel:
-    """``ModelBuilder`` 的生产实现：交给 ``build_provider_model``。"""
-
     return build_provider_model(found.declaration, found.model, found.fields, thinking)
 
 
 @dataclass(frozen=True, slots=True)
 class AgentEntry:
-    """可发起对话的一个顶层 Agent；``name`` 是给人看的名字。"""
-
     id: str
     name: str
 
 
 @dataclass(frozen=True, slots=True)
 class AgentDirectory:
-    """首页能选的顶层 Agent 名册，按配置里的先后；``default`` 为空即目录是空的。"""
-
     items: tuple[AgentEntry, ...]
     default: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class AssemblySettings:
-    """装配用的启动期依赖：插件登记表、持久化与用量、实时投影、技能缓存目录与缓存条数。"""
-
     plugins: PluginRegistry
     step_store: PgStepStore
     usage_ledger: UsageLedger
@@ -112,11 +92,6 @@ class AssemblySettings:
 
 @dataclass(frozen=True, slots=True)
 class _Prepared:
-    """一个 agent 装配前读齐的全部：编译结果、模型、MCP 服务（连同明文的连接参数）、技能（名字、最新版 id 与
-    内容 hash）与子 agent。
-
-    ``source`` 写明配置从哪来（版本或草稿），原样进运行记录的 metadata，也进缓存键。"""
-
     compiled: CompiledAgent
     model: RuntimeModel
     mcp_servers: tuple[tuple[CompiledMcpServer, RuntimeMcpServer], ...]
@@ -129,8 +104,6 @@ class _Prepared:
         return self.compiled.agent_id
 
     def fingerprint(self) -> dict[str, Any]:
-        """缓存键的原料：装配用到的每样东西的版本。版本发布后不可变，草稿以 ``lock_version`` 标版本。"""
-
         model = self.model
         return {
             "agent": self.agent_id,
@@ -140,11 +113,9 @@ class _Prepared:
                 "provider_updated_at": model.provider.updated_at.isoformat(),
                 "credential_id": str(model.credential_id),
                 "credential_updated_at": model.credential_updated_at.isoformat(),
-                # provider_models 没有修改时刻，自己加的模型改了属性要靠模型本身区分。
                 "model": repr(model.model),
                 "thinking": self.compiled.model.thinking,
             },
-            # 服务的修改时刻随地址、请求头、时限与启停一起变。
             "mcp_servers": [
                 {
                     "server": server.id,
@@ -180,17 +151,11 @@ def _cache_key(role: str, prepared: _Prepared) -> str:
 
 @dataclass(frozen=True, slots=True)
 class _Built:
-    """装好的一份：Agent、它所用模型的上下文窗口与它当子代理时的档案。"""
-
     run: RunAgent
     profile: SubAgentProfile
 
 
 class AgentRuntime:
-    """按对话固定的版本装配 agent，也负责首页名册与对话标题；会话由 ``service/sessions.py`` 开。
-
-    同一个缓存键的两次并发装配会各装一份、后到的覆盖先到的，结果等价，不加锁。"""
-
     def __init__(
         self,
         *,
@@ -210,15 +175,7 @@ class AgentRuntime:
         self._cache: OrderedDict[str, _Built] = OrderedDict()
         self._title_model: tuple[str, BuiltModel] | None = None
 
-    # --- 运行 -----------------------------------------------------------------
-
     async def for_conversation(self, conversation_id: str, agent_id: str) -> RunAgent:
-        """``RunAgents`` 的实现：按会话固定的版本装配。会话不在、版本为空或不是这个 agent 的都是
-        ``AgentUnavailable``。
-
-        预览会话只跑它预览的那个 agent，给了别的是 ``ValidationFailed``：版本为空就装这个 agent 当下的
-        草稿（``for_draft``，缓存键带草稿的 ``lock_version``，改了草稿下一次运行就换），否则装固定的那一版。"""
-
         target = await self._sessions.target(uuid.UUID(conversation_id))
         if target is not None and target.preview_agent_id is not None:
             if agent_id != target.preview_agent_id:
@@ -240,9 +197,6 @@ class AgentRuntime:
         return self._assembled("top", prepared).run
 
     async def for_draft(self, agent_id: str) -> RunAgent:
-        """按这个 agent 当前的草稿装配，草稿预览会话每次运行都走这里；运行记录标明是草稿。没有这个 agent
-        或草稿装不起来是 ``AgentUnavailable``。"""
-
         state = await self._agent_config.runtime_state(agent_id)
         if state is None:
             raise AgentUnavailable(f"没有标识为 {agent_id} 的 agent")
@@ -315,8 +269,6 @@ class AgentRuntime:
         )
 
     def _assembled(self, role: str, prepared: _Prepared) -> _Built:
-        """按缓存键取；没有就装配并放进缓存，超出条数时丢掉最久没用的。"""
-
         key = _cache_key(role, prepared)
         found = self._cache.get(key)
         if found is not None:
@@ -329,8 +281,6 @@ class AgentRuntime:
         return built
 
     def _build(self, role: str, prepared: _Prepared) -> _Built:
-        """装配一份；技能的文件在 ``_prepare`` 里已写进缓存目录。装配本身出错报装不起来。"""
-
         settings = self._settings
         compiled = prepared.compiled
         try:
@@ -383,7 +333,6 @@ class AgentRuntime:
                 ),
             ]
             top = role == "top"
-            # 子运行沿用原有的三个键，实时任务卡与历史按它们读；顶层记下这次用的配置。
             run_metadata = _run_metadata(prepared, profile) if top else profile_metadata(profile)
             agent = build_agent(
                 name=prepared.agent_id,
@@ -418,9 +367,6 @@ class AgentRuntime:
         return found
 
     async def _materialize(self, skill: Skill) -> None:
-        """技能最新版的文件不在本机缓存里就读出来写进去，``SKILL.md`` 的 ``name`` 换成技能当前的标识
-        （harness 按目录名认技能，要求两者一致）；同一份内容、同一个标识只写一次。"""
-
         root = self._settings.skill_cache_dir
         key = _skill_dir_key(skill)
         if skill.latest_version_id is None or cached_skill(root, name=skill.name, key=key):
@@ -429,19 +375,12 @@ class AgentRuntime:
         files[SKILL_MD] = with_frontmatter_name(files[SKILL_MD], skill.name)
         materialize_skill(root, name=skill.name, key=key, files=files)
 
-    # --- 首页与标题 -------------------------------------------------------------
-
     async def directory(self) -> AgentDirectory:
-        """首页名册：上菜单、在用、发布过的 agent，按 ``sort_order``，第一个是默认项；组合根把它接成对话域的
-        ``ListAgents``。"""
-
         states = await self._agent_config.listed()
         items = tuple(AgentEntry(id=state.agent.id, name=state.agent.name) for state in states)
         return AgentDirectory(items=items, default=items[0].id if items else None)
 
     async def generate_title(self, user_text: str) -> str | None:
-        """``GenerateTitle`` 的实现：用默认的对话模型起标题；没设默认模型就不起。"""
-
         found = await self._model_providers.default_llm()
         if found is None:
             return None
@@ -458,7 +397,6 @@ class AgentRuntime:
             try:
                 model = self._settings.build_model(found, None)
             except Exception:
-                # 起标题失败只是还叫默认名（合同如此），下一轮再试；原因记下来。
                 _logger.warning("建不出起标题的模型，这段对话先用默认名", exc_info=True)
                 return None
             self._title_model = (key, model)
@@ -466,16 +404,12 @@ class AgentRuntime:
 
 
 def _skill_dir_key(skill: Skill) -> str:
-    """技能在本机缓存里的目录名：最新版的内容 hash 与当前标识合起来的 sha256，改了哪个都换新目录。"""
-
     if skill.latest_content_hash is None:
         raise AgentUnavailable(f"技能 {skill.name} 没有发布过的版本")
     return hashlib.sha256(f"{skill.latest_content_hash}\n{skill.name}".encode()).hexdigest()
 
 
 def _run_metadata(prepared: _Prepared, profile: SubAgentProfile) -> dict[str, str]:
-    """顶层运行的落库 metadata（str→str）：agent、版本或草稿、模型、思考档位与技能。"""
-
     metadata = {"agent_id": prepared.agent_id, **prepared.source, "model": profile["model"]}
     if "thinking_effort" in profile:
         metadata["thinking_effort"] = profile["thinking_effort"]

@@ -1,7 +1,3 @@
-"""MCP 服务名册：启动时从库里整份读；建、改、试连提交之后按库里那一行换，删掉之后去掉；写入没成的不动。
-
-仓储是内存里的替身：``edit`` 里的修改在块正常结束时才生效，名册若在提交前就读库会读到旧的那一行。"""
-
 from __future__ import annotations
 
 import uuid
@@ -34,7 +30,6 @@ BY = uuid.uuid4()
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 URL = "https://mcp.example.com/mcp"
 CIPHER = CredentialCipher([Fernet.generate_key().decode()])
-# 名册记的是显示名，不是说明：read 有说明没显示名，在名册里是 None。
 TOOLS = (
     McpTool(name="search", title="检索文档", description="搜索云文档。"),
     McpTool(name="read", title=None, description="读取原文。"),
@@ -68,8 +63,6 @@ def record(
 
 
 class FakeStore:
-    """``McpServerStore`` 的内存替身。"""
-
     def __init__(self, *records: McpServerRecord) -> None:
         self.rows: dict[str, McpServerRecord] = {one.id: one for one in records}
 
@@ -112,7 +105,6 @@ class FakeStore:
             raise NotFound("MCP 服务不存在")
         editor = FakeEditor(found)
         yield editor
-        # 块正常结束才「提交」。
         if editor.deleted:
             del self.rows[server_id]
         elif editor.staged is not None:
@@ -243,7 +235,6 @@ async def test_load_reads_every_server_including_disabled_ones(setup: Setup) -> 
     spare = setup.index.get("spare")
     assert spare is not None
     assert (spare.name, dict(spare.tools)) == ("备用", {})
-    # 整份换：库里没有的不留。
     assert setup.index.get("gone") is None
 
 
@@ -279,7 +270,6 @@ async def test_update_takes_the_committed_row(setup: Setup) -> None:
     assert found is not None
     assert (found.name, dict(found.tools)) == ("云文档", {"search": "检索文档", "read": None})
 
-    # 换了地址：库里的工具清掉了，名册跟着清。
     await setup.service.update(
         "docs", McpServerUpdateIn(url="https://other.example.com/mcp"), by=BY
     )

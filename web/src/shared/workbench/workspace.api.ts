@@ -1,14 +1,10 @@
-/** 宿主与渲染器共用文件查询键，event.fs.changed 仅失效对应文件。 */
-
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import { zConversationFileEnvelope, zConversationFilesOut } from '@/shared/api/generated/zod.gen'
 
 const workspaceRoot = (conversationId: string) => ['workspace', conversationId] as const
 
-/** 工作区查询自成一根，不挂在会话键下：会话列表整体失效或逐帧补丁时不连带文件列表与内容。 */
 export const workspaceQueryKeys = {
-  /** 这段对话的全部工作区查询，整体失效用它。 */
   all: workspaceRoot,
   file: (conversationId: string, path: string) =>
     [...workspaceRoot(conversationId), 'file', path] as const,
@@ -25,8 +21,6 @@ export const useWorkspaceFiles = (conversationId: string) =>
     queryKey: workspaceQueryKeys.files(conversationId),
   })
 
-/** 整份写回须携带读取版本；409 时由调用方重拉处理，成功返回递增后的版本。`failureMessage` 是失败时报错的前缀，
- * 由调用方按它写的是什么文件给出，如「分镜保存失败」。 */
 export const writeWorkspaceFile = (
   conversationId: string,
   body: { path: string; content: string; expectedVersion: number },

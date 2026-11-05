@@ -250,7 +250,6 @@ function CardComposer({
         ref={composerRef}
         sending={sending}
         submitAction={{
-          // 首帧、尾帧不写进正文，只有它们时正文是空的，交不上去。
           disabled:
             submitDisabled ||
             exceedsReferenceLimit ||
@@ -286,11 +285,9 @@ type AiEditCardProps = {
   onExpand: () => void
   onCollapse: () => void
   anchorRef: RefObject<HTMLElement | null>
-  /** 有浮层要让开时给出它左边在视口里的横坐标：卡停在它左边，放不下就收窄。 */
   avoidLeft?: (() => number) | undefined
   positions: string
   detail: string
-  /** 第二行写的是上次生成失败的原因，用红字。 */
   detailFailed: boolean
   frames: { first: string | undefined; last: string | undefined }
   draft: readonly ComposerPart[]
@@ -422,13 +419,11 @@ export function AiEditCard({
       if (morphRef.current !== animation) return
       morphRef.current = null
       delete card.dataset['morphing']
-      // 动画期间读到的 offsetWidth 是动画中的尺寸，落定后按最终尺寸重摆。
       place()
     }
     animation.finished.then(settle, settle)
   })
 
-  // 时间线排在卡之后渲染，卡的 layout effect 执行时选区外框的 ref 尚未挂上；等本轮 ref 全部挂好后再摆一次。
   const anchorSeenRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (anchorRef.current === anchorSeenRef.current) return

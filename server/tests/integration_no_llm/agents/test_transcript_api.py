@@ -1,5 +1,3 @@
-"""使用 TestModel 验证 transcript 的 HTTP 权限、消息受理、分页和补发契约。"""
-
 from __future__ import annotations
 
 import uuid
@@ -46,8 +44,6 @@ async def test_sending_to_someone_elses_conversation_is_not_found(
 
 
 async def test_a_dashless_conversation_id_can_send_a_prompt(app: FastAPI, pg_url: str) -> None:
-    """线上故障那条链路：无横线 id 建完对话直接发消息，受理后按同一段对话读得回来。"""
-
     dashless = uuid.uuid4().hex
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
@@ -68,8 +64,6 @@ async def test_a_dashless_conversation_id_can_send_a_prompt(app: FastAPI, pg_url
 
 
 async def test_a_conversation_id_that_is_not_a_uuid_is_rejected(app: FastAPI, pg_url: str) -> None:
-    """路径上的对话 id 按 UUID 解析：形状不对是 422，不进到可见性判断。"""
-
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         status = await client.get("/conversations/not-a-uuid/status")
@@ -78,8 +72,6 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_rejected(app: FastAPI, pg
 
 
 async def test_api_key_caller_must_say_who_the_message_is_for(app: FastAPI, pg_url: str) -> None:
-    """机器调用方替终端用户发消息：不带 user_name 是 422，带了就照它给的收下。"""
-
     async with make_client(app) as owner:
         await register_and_login(owner)
         await set_roles_in_db(pg_url, "logan@example.com", ["root"])
@@ -131,8 +123,6 @@ async def test_second_prompt_queues_while_the_first_runs(app: FastAPI, pg_url: s
 async def test_an_attachment_that_is_not_http_is_refused(
     app: FastAPI, pg_url: str, url: str
 ) -> None:
-    """附件地址会交给工具与模型去取，仅接受带主机名的 HTTP(S)。"""
-
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
@@ -177,8 +167,6 @@ async def test_catchup_reports_whether_it_got_everything(app: FastAPI, pg_url: s
 
 
 async def test_status_answers_an_api_key_holder(app: FastAPI, pg_url: str) -> None:
-    """外部调用方凭 key 单独轮询运行状态：只读，要 agent:read，不需要登录会话。"""
-
     async with make_client(app) as client:
         await register_and_login(client)
         await set_roles_in_db(pg_url, "logan@example.com", ["root"])
@@ -227,8 +215,6 @@ async def _run_of(pg_url: str, prompt_id: str) -> str:
 
 
 async def test_a_run_is_recorded_on_the_conversation(app: FastAPI, pg_url: str) -> None:
-    """跑过一次后对话行记下这次 run，最近活动时间跟着推前；侧栏排序、未读小点与审计时间筛选都靠它。"""
-
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         created = await client.post("/conversations", json={"agentId": AGENT_ID})

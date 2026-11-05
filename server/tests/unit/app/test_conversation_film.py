@@ -1,5 +1,3 @@
-"""验证制作页的组合根适配：从工作区读工程，用到图的那一步查地址，带版本写回，按文件生图与出片。"""
-
 from __future__ import annotations
 
 import uuid
@@ -53,7 +51,6 @@ NAMESPACE = namespace_for(OWNER, str(CONVERSATION))
 GENERATED_SCENE = "https://cdn.test/scene-generated.png"
 UPLOADED = "https://cdn.test/iclip/agent/uploads/my-scene.png"
 NO_SCENE = RUN.replace('  <use output="scene.image" image={scene-v1}/>\n', "")
-"""没有选用 scene 的运行文件。"""
 
 FIRST_SHOT = (
     "参考@Image8，中景，平视，手持跟拍。模特A和模特B在红砖街区的人行道上并肩走向镜头。"
@@ -64,8 +61,6 @@ FIRST_SHOT = (
 
 
 def say(text: str) -> FilmTextEdit:
-    """把第一个镜头里第一句台词改成 ``text``。"""
-
     return FilmTextEdit(
         "shot:video01Shots:1",
         parts=FIRST_SHOT,
@@ -74,8 +69,6 @@ def say(text: str) -> FilmTextEdit:
 
 
 class RecordingStore(FakeFileStore):
-    """写入记下先后，写到 ``failing`` 这个文件时按版本冲突退回。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.failing: str | None = None
@@ -85,9 +78,7 @@ class RecordingStore(FakeFileStore):
         self, namespace: str, path: str, content: str, *, expected_version: int | None = None
     ) -> FileEntry:
         if path == self.failing:
-            # 当作别人刚改过这个文件：两个文件在这些测试里都已存在，写入都带版本号。
             assert expected_version is not None
-            # 运行时答 409，客户端还原成 Conflict，原话是存储的版本冲突那句。
             raise Conflict(
                 str(VersionConflict(path, expected=expected_version, actual=expected_version + 1))
             )
@@ -118,8 +109,6 @@ class Page:
 
 @pytest.fixture(autouse=True)
 def retry_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """探不通的图片地址不等，直接再探一次（替身每次答得一样）。"""
-
     monkeypatch.setattr("iclip.platform.outbound.media_check.RETRY_DELAY_SECONDS", 0.0)
 
 
@@ -142,8 +131,6 @@ async def page(
 
 
 def generated(node: str, url: str) -> GenerationJob:
-    """``node`` 按描述生成成功的一条记录。"""
-
     return make_job(
         image_request(),
         status=STATUS_COMPLETED,
@@ -176,8 +163,6 @@ async def test_a_film_with_problems_shows_only_how_many() -> None:
 
 
 async def test_opening_the_page_checks_no_address_and_a_broken_image_still_shows() -> None:
-    """打开制作页只查结构：写着打不开的地址照样列出来，是一张打不开的缩略图，到用它时才拦。"""
-
     broken = "https://gone.test/model.jpg"
     made = await page({FILM_PATH: FILM.replace(GIVEN_IMAGES[0], broken), RUN_PATH: RUN})
     made.adapter = ConversationFilmAdapter(store=made.store, probe=NoProbing(), generation=None)
@@ -189,16 +174,12 @@ async def test_opening_the_page_checks_no_address_and_a_broken_image_still_shows
 
 
 def insert_into_setting(url: str) -> FilmTextEdit:
-    """在第 1 组的场景字里插入一张新图：列表现有 10 张，新图写成 @Image11。"""
-
     return FilmTextEdit(
         "value:video01Setting", text="纽约红砖街区参考 @Image7，街角参考 @Image11。", images=(url,)
     )
 
 
 async def test_an_inserted_image_that_opens_joins_the_list_and_only_it_is_checked() -> None:
-    """插入的图不论哪来的，能打开、是图片就收；列表里原有的图不查。"""
-
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
 
     view = await made.adapter.edit_text(
@@ -274,8 +255,6 @@ async def choose(
 
 
 async def test_any_image_that_opens_can_be_chosen() -> None:
-    """不论是谁上传的、哪段对话出的，能打开、是图片就能选用。"""
-
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
 
     view = await choose(made, "scene", UPLOADED)
@@ -385,7 +364,6 @@ async def test_a_view_choice_that_fails_halfway_leaves_its_group_blocked(
     with pytest.raises(Conflict):
         await choose(made, "view04", url)
 
-    # 两种都停在「列表里有 view04、没有选用它」：文件照样通过检查，这一组出片被拦住。
     assert (await made.content(FILM_PATH), await made.content(RUN_PATH)) == (FILM, RUN_NO_VIEW04)
     view = await made.view()
     assert view.problems == 0
@@ -438,7 +416,6 @@ async def test_an_image_is_generated_with_its_reference_list_as_it_is() -> None:
     sent = job.request.model_dump()
     assert sent["prompt"] == EXPECTED["images"]["view02"]["prompt"]
     assert sent["reference_image_urls"] == EXPECTED["images"]["view02"]["input_str_list"]
-    # 只查这次生成要用的参考图。
     assert sorted(made.probe.asked) == sorted(set(sent["reference_image_urls"]))
 
 

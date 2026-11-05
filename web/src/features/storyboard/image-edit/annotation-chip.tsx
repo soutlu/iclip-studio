@@ -1,8 +1,3 @@
-/** 修改要求里的标注 chip：红色实心序号 +「标注 N」，与画布上的标注同色。点它选中画布上那个标注；
- * 标注在画布上删掉后留成失效态，提交时由终校拦下。
- *
- * 当前编号与选中态经 context 现取（chip 渲染在 composer 的 portal 里，context 照常可用）。 */
-
 import { createContext, use, type ReactNode } from 'react'
 import type { AnnotationNode } from './annotation-node'
 import type { ImageAnnotation } from './image-edit-types'
@@ -61,7 +56,6 @@ export function AnnotationChip({ node }: { node: AnnotationNode }) {
         }
       }}
       role="button"
-      // 不进 Tab 顺序：在正文里用方向键选中节点，画布上的标注自己可以聚焦。
       tabIndex={-1}
     >
       <span className="media-chip-icon">

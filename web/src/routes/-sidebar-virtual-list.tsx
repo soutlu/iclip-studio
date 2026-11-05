@@ -3,7 +3,6 @@ import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from '@tansta
 import { useCallback, useState, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 
-/** 一个命名区段；给了 `dropId` 时整个区段是这个 id 的拖放落点。 */
 export type SidebarSection = {
   key: string
   label: string
@@ -13,13 +12,11 @@ export type SidebarSection = {
 export type SidebarVirtualRow = {
   key: string
   section: SidebarSection
-  /** 连续的同组行包进一个以 `label` 命名的 group。 */
   group?: { key: string; label: string }
   height: number
   focusable?: boolean
   retain?: boolean
   sticky?: boolean
-  /** `retain(true)` 让这一行滚出视口也保持挂载，直到 `retain(false)`。 */
   render: (retain: (active: boolean) => void) => ReactNode
 }
 
@@ -92,7 +89,6 @@ export function SidebarVirtualList({
     overscan: 6,
     rangeExtractor: (range) =>
       [...new Set([...defaultRangeExtractor(range), ...retained])].sort((a, b) => a - b),
-    // 自动分页在视口上方插入行时保留位置，末尾追加时不跟随滚动。
     anchorTo: 'end',
     followOnAppend: false,
   })

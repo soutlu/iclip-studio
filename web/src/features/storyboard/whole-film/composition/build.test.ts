@@ -23,7 +23,6 @@ const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogIt
   ...spec,
 })
 
-/** 组装工具给读字体变量的组件加上的字体项 */
 const FONT: CatalogVariable = { id: 'font', type: 'font', label: '字体', default: '' }
 
 const CATALOG: ComponentCatalog = {
@@ -220,7 +219,6 @@ describe('buildComposition', () => {
     expect(segment?.getAttribute('data-duration')).toBe('1.5')
     expect(segment?.getAttribute('data-track-index')).toBe('0')
     expect(variablesOf(segment)).toEqual({ wordmark: '拾步', tone: 'warm' })
-    // 1920×1080 放进 720×1280：按宽缩到 0.375。
     expect(segment?.parentElement?.getAttribute('style')).toContain('scale(0.375)')
     expect(doc.querySelector('#clip-2')?.getAttribute('data-start')).toBe('3.5')
   })
@@ -257,7 +255,6 @@ describe('buildComposition', () => {
       'width=1080, height=1920',
     )
     expect(doc.querySelectorAll('#stage > video')).toHaveLength(0)
-    // 1920×1080 放进 1080×1920：按宽缩到 0.5625。
     expect(doc.querySelector('#clip-0')?.parentElement?.getAttribute('style')).toContain(
       'scale(0.5625)',
     )
@@ -333,7 +330,6 @@ describe('buildComposition', () => {
       ['ov-1', '6', '2.5'],
       ['ov-2', '0', '1'],
     ])
-    // 没有超出画面轨的特效块时，成片就是画面轨的长度
     expect(build({ overlays: [ov('o', 'lower-third', 0, 1000)] }).durationMs).toBe(5000)
   })
 
@@ -344,7 +340,6 @@ describe('buildComposition', () => {
       'compositions/iclip/default-caption.html',
     )
     expect(captions?.getAttribute('data-duration')).toBe('5')
-    // a 段从素材 0.5 秒开始：「你好。」中点 0.5 秒，在段内，换算后从 0 开始。
     expect(variablesOf(captions)).toEqual({
       words: [{ text: '你好。', start: 0, end: 0.5, sentence: 0 }],
     })
@@ -370,8 +365,6 @@ describe('buildComposition', () => {
     expect(shown).toBe(build().html)
   })
 
-  // 按固定尺寸设计的组件 z-index 写在外层盒子上，铺满的写在宿主上。
-  /** 宿主或它最近的、行内样式写着 z-index 的外层（缩放盒子、.place）的叠放次序 */
   const zOf = (doc: Document, selector: string) => {
     for (let node = doc.querySelector(selector); node !== null; node = node.parentElement) {
       const z = /z-index:(\d+)/.exec(node.getAttribute('style') ?? '')?.[1]
@@ -408,7 +401,6 @@ describe('buildComposition', () => {
     })
     const doc = parse(html)
     expect(['#ov-0', '#ov-1', '#ov-2', '#ov-3'].map((id) => zOf(doc, id))).toEqual([1, 5, 2, 2])
-    // 同一 z 时页面上后写的在上：页面按草稿里的先后写，与 track 无关。
     const order = [...doc.querySelectorAll('.overlays [id^="ov-"]')].map((host) => host.id)
     expect(order).toEqual(['ov-0', 'ov-1', 'ov-2', 'ov-3'])
     const swapped = build({
@@ -476,7 +468,6 @@ describe('buildComposition', () => {
     const links = [...doc.querySelectorAll('head link[rel="stylesheet"]')].map((node) =>
       node.getAttribute('href'),
     )
-    // 字幕组件 default-caption 也在页面上（有字幕），它的 Anton 一并引用；按字体名排序、去重。
     expect(links).toEqual([
       'vendor/fonts/noto-sans-sc.css',
       'vendor/fonts/families/anton.css',
@@ -525,7 +516,6 @@ describe('buildComposition', () => {
         build({
           layer0: [
             comp('c', 0, 1000, 'logo-intro', { variables: { font: 'Brand Serif' } }),
-            // 带字幕的一段，字幕才上画面
             vid('a', 1000, 3000, 'job-a'),
           ],
           overlays: [
@@ -542,13 +532,11 @@ describe('buildComposition', () => {
       expect(variablesOf(doc.querySelector('#captions'))).toEqual({
         words: expect.any(Array),
       })
-      // 固定尺寸的组件段：缩放盒子里的宿主；铺满的特效块与字幕：.place 里的宿主
       for (const selector of ['#clip-0', '#ov-0', '#captions']) {
         expect(styleOf(doc, selector)).toBe(BRAND_VARIABLES)
         expect(styleOf(doc, selector)).not.toContain('--font-mono')
       }
       expect(linksOf(doc)).toContain('vendor/fonts/families/brand-serif.css')
-      // 字体的 CSS 与组件自己的字体一样只引用一次
       expect(linksOf(doc).filter((href) => href?.includes('brand-serif'))).toHaveLength(1)
     })
 
@@ -639,12 +627,10 @@ describe('buildComposition', () => {
       { hfId: 'o"2', element: 'place', host: 'ov-1', inner: 'fit' },
       { hfId: 'captions', element: 'place', host: 'captions', inner: 'fill' },
     ])
-    // 外层里面的缩放盒子与宿主不另写
     for (const inner of ['#clip-1', '#ov-0', '#ov-1', '#captions']) {
       expect(doc.querySelector(inner)?.hasAttribute('data-hf-id')).toBe(false)
     }
     expect(doc.querySelector('#ov-1')?.parentElement?.hasAttribute('data-hf-id')).toBe(false)
-    // 特效块、字幕外层上的叠放次序；里面的宿主与缩放盒子不再写
     const place = (hfId: string) => doc.querySelector(`.place[data-hf-id="${hfId}"]`)
     expect(place('o1')?.getAttribute('style')).toBe('z-index:1')
     expect(place('captions')?.getAttribute('style')).toBe('z-index:3')
@@ -694,7 +680,6 @@ describe('buildComposition', () => {
       y: node.getAttribute('data-y'),
       base: [node.getAttribute('data-hf-edit-base-x'), node.getAttribute('data-hf-edit-base-y')],
     }))
-    // 铺满的与固定尺寸的都写在外层；没挪过的块与画面轨上的段不写
     expect(positioned).toEqual([
       { hfId: 'o1', element: 'place', x: '-36', y: '410', base: ['0', '0'] },
       { hfId: 'o2', element: 'place', x: '120', y: '0', base: ['0', '0'] },
@@ -731,14 +716,11 @@ describe('buildComposition', () => {
     const styleOf = (hfId: string) =>
       doc.querySelector(`.place[data-hf-id="${hfId}"]`)?.getAttribute('style')
     expect(styleOf('o1')).toBe('z-index:1;rotate:30deg;scale:1.5;transform-origin:100px -12px')
-    // 有这几个字段之前存的草稿没写转轴，同 x、y 按 0 读
     expect(styleOf('o2')).toBe('z-index:4;rotate:-90.5deg;scale:1;transform-origin:0px 0px')
     expect(styleOf('captions')).toBe(
       'z-index:3;rotate:0deg;scale:0.8;transform-origin:360px 1100px',
     )
-    // 原大、不转时转轴记着也不写
     expect(styleOf('o3')).toBe('z-index:1')
-    // 位置照写 data-x/y，宿主本身不变换
     expect(doc.querySelector('.place[data-hf-id="o1"]')?.getAttribute('data-x')).toBe('40')
     expect(doc.querySelector('#ov-0')?.hasAttribute('style')).toBe(false)
   })

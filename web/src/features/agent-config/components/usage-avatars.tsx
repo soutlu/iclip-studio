@@ -4,10 +4,6 @@ import { usageNames, type AgentUsage } from '../model-providers.api'
 
 const SHOWN = 3
 
-/**
- * 「谁在用」：引用它的 agent 各一个首字头像，叠成一排，多于 3 个的收成 +N；名字在悬停提示与可访问名里。
- * 没人在用时什么都不画。
- */
 export function UsageAvatars({ users }: { users: readonly AgentUsage[] }) {
   if (users.length === 0) return null
   const label = `在用：${usageNames(users)}`

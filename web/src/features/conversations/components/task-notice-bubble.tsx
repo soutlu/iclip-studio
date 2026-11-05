@@ -1,19 +1,12 @@
-/**
- * 后台任务的完成通知：结果到达处插进来的那一块，role 是 user 但不是人说的话。
- * 与用户气泡同形状、靠右，只描细边、不填底色；图标看任务状态，第二行是任务用时。没有复制、修改等操作。
- */
-
 import type { TranscriptTask } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { formatActivityDuration } from './activity-group'
 
 type TaskNoticeBubbleProps = {
   text: string
-  /** 通知对应的后台工具任务；找不到时只写文字，不猜状态。 */
   task: TranscriptTask | undefined
 }
 
-/** 开始与结束时间都读得出来才算；不足一秒的不写。 */
 const durationOf = (task: TranscriptTask | undefined): string | undefined => {
   if (task?.startedAt === undefined || task.endedAt === undefined) return undefined
   const ms = Date.parse(task.endedAt) - Date.parse(task.startedAt)

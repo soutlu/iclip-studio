@@ -1,5 +1,3 @@
-"""媒体生成持久模型。请求类型与状态词统一定义于 schemas.py，同时用于 HTTP 与持久化。"""
-
 from __future__ import annotations
 
 import uuid
@@ -28,48 +26,32 @@ from iclip.domains.generation.stored_requests import GenerationRequest
 TERMINAL_STATUSES: Final = frozenset({STATUS_COMPLETED, STATUS_FAILED})
 
 REFERENCE_TRIAL_KEY: Final = "referenceId"
-"""参考视频试生成在 ``metadata`` 里记参考视频 id 的键；数据库按它建了索引。"""
 
 InFlightPhase = Literal["queued", "running"]
-"""一批还没跑完的任务给人看的阶段：全在本系统排队是 queued，有一条已交给上游就是 running。"""
 
 Inheritance = Sequence[tuple[uuid.UUID, datetime]]
-"""一段对话经分叉继承的边界对：沿分叉来源往上的每个祖先，配上这条链上它的下一级对话的
-建立时刻。祖先名下已完成、完成时刻不晚于边界的记录归这段对话继承。"""
 
 
 class GenerationOutput(SnakeModel):
-    """一条记录的产出，各项按种类有或没有；还没产出时是空对象。落库就是这个形状（snake_case 键），
-    值为空的顶层键不存，全空存 NULL。"""
-
     url: str | None = None
     watermark_url: str | None = None
-    """视频成功时上游发布的水印版地址；图片没有这一份。"""
     duration_ms: int | None = None
     content_md5: str | None = None
-    """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址。"""
     sentences: tuple[SubtitleSentence, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class GenerationJob:
-    """生成任务持久记录，排期状态由 procrastinate 独立管理。"""
-
     id: uuid.UUID
     owner_user_id: uuid.UUID
     api_key_id: uuid.UUID | None
-    """发起生成时使用的 API key，供审计使用。"""
     kind: GenerationKind
     operation: GenerationOperation
-    """怎么执行：调模型、本地拼接、本地切图或用户上传。与 kind、有没有来源一起决定这一行是哪种记录。"""
     provider: str | None
-    """交给哪家执行方；切图与上传不交给执行方，为空。"""
     request: GenerationRequest | None
-    """受理时的请求快照；切图与上传没有，为空。"""
     status: GenerationStatus
     provider_task_id: str | None
     provider_status: str | None
-    """Provider 原始状态，不映射为内部枚举。"""
     output: GenerationOutput
     error_code: str | None
     error_message: str | None
@@ -77,26 +59,14 @@ class GenerationJob:
     submitted_at: datetime | None
     finished_at: datetime | None
     conversation_id: uuid.UUID | None = None
-    """生成来源对话。无对话上下文时为空；不设外键，删除对话后仍保留来源。"""
     metadata: dict[str, Any] | None = None
-    """调用方自己的键（分镜页给图片记 ``{"shot", "frame"}``）；服务端不读不写、不校验，原样存取。"""
     task_id: uuid.UUID | None = None
-    """需求单 id，调用方给的归属标签；不设外键，只做筛选。"""
     shot_index: int | None = None
-    """镜头组编号，只有视频有：出片由调用方给，可空；编辑段与合成抄原作的。"""
     root_job_id: uuid.UUID | None = None
-    """原作：编辑段与合成都指最初那条出片，不管基于哪一版，所以链只有一层；出片自己为空。
-
-    原作用于血缘与没有镜号时的分组。在分叉副本里剪继承来的出片，原作照样指源对话里那条。"""
     source_job_id: uuid.UUID | None = None
 
 
 def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:
-    """这条记录是否经这组边界对继承而来。
-
-    与仓储按对话读记录时的继承分支是同一条规则；受理时核对来源靠它区分「祖先对话里的」
-    与「继承来的」——同一个人在源对话里分叉之后才完成的出片，按属主读得到却不归副本。"""
-
     if job.status != STATUS_COMPLETED or job.finished_at is None:
         return False
     return any(

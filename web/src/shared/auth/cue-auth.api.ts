@@ -5,7 +5,6 @@ import type { CueAuthUser, CueLoginRequest } from './cue-auth.types'
 
 const cueMeResponseSchema = zUserEnvelope.transform((payload) => payload.user)
 
-/** 登录、登出和 SSO 回调仅依赖状态码与 cookie 副作用。 */
 const ignoredResponseSchema = z.unknown()
 
 const ssoAuthorizeResponseSchema = zSsoAuthorizeOut.refine(
@@ -13,7 +12,6 @@ const ssoAuthorizeResponseSchema = zSsoAuthorizeOut.refine(
   'SSO authorize 响应缺少 authorization_url',
 )
 
-/** fastapi-users 登录使用 OAuth2 表单，成功以 204 设置 HttpOnly 会话 cookie。 */
 export const loginCueUser = async (request: CueLoginRequest): Promise<void> => {
   await apiFetch('/auth/login', ignoredResponseSchema, {
     body: new URLSearchParams({
@@ -42,14 +40,12 @@ export const logoutCueUser = async (): Promise<void> => {
       skipUnauthorizedHandler: true,
     })
   } catch (error) {
-    // 会话本就已失效时后端返回 401，视为登出成功。
     if (!(error instanceof ApiError && error.status === 401)) {
       throw error
     }
   }
 }
 
-/** SSO 关闭时端点返回 404，供调用方探测可用性。 */
 export const fetchSsoAuthorizationUrl = async (): Promise<string> => {
   const payload = await apiFetch('/auth/sso/authorize', ssoAuthorizeResponseSchema, {
     cache: 'no-store',

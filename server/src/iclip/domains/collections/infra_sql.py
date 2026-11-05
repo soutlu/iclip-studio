@@ -1,5 +1,3 @@
-"""合集的 Postgres 仓储。时间统一取数据库 now()，避免应用实例钟差影响排序。"""
-
 from __future__ import annotations
 
 import uuid
@@ -35,7 +33,6 @@ collections_table = Table(
     "collections",
     metadata_obj,
     Column("id", Uuid, primary_key=True),
-    # 删除账号不能级联删除合集。
     Column(
         "owner_user_id",
         Uuid,
@@ -49,7 +46,6 @@ collections_table = Table(
 
 _ROWS = collections_table.c
 
-# 列表按 (created_at, id) 倒序；属主视角与治理者的全量视图各一个。
 Index("ix_collections_owner_created", _ROWS.owner_user_id, _ROWS.created_at.desc(), _ROWS.id.desc())
 Index("ix_collections_created", _ROWS.created_at.desc(), _ROWS.id.desc())
 
@@ -65,14 +61,10 @@ def _row(mapping: RowMapping) -> Collection:
 
 
 def _scope(owner: uuid.UUID | None) -> list[ColumnElement[bool]]:
-    """把属主列绑好的归属条件，语义见平台原语。"""
-
     return owner_conditions(_ROWS.owner_user_id, owner)
 
 
 class SqlCollectionRepository:
-    """``CollectionRepository`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

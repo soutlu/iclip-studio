@@ -34,9 +34,7 @@ import { PanelShell } from './panel-shell'
 import { CardBadge } from './resource-card'
 import { Segmented } from './segmented'
 
-// 标识的规矩同 agent 标识（CONTEXT「MCP 服务」）；保留词与占用由后端拦，原因写在标识下面。
 const ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/
-// HTTP 头名字的 token 字符（合同 §22「字段」）。
 const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
 const MAX_HEADERS = 20
 
@@ -51,10 +49,8 @@ const INPUT_CLASS = 'h-(--control-height-lg) rounded-sm px-3'
 type HeaderRow = {
   key: string
   name: string
-  /** 已保存的请求头名字与打码值；新加的一行都是 null。 */
   savedName: string | null
   masked: string | null
-  /** 新填的值；已保存的一行留空就是沿用原值。 */
   value: string
 }
 
@@ -68,7 +64,6 @@ type Values = {
   headers: HeaderRow[]
 }
 
-/** 测试连接的结果。`fresh` 是这次打开面板后按当前填的配置测过；只有它通过了才能保存。 */
 type TestState =
   | { kind: 'none' }
   | { kind: 'testing' }
@@ -106,7 +101,6 @@ const testOfCheck = (check: McpCheck, fresh: boolean): TestState =>
     ? { elapsedMs: check.elapsedMs, fresh, kind: 'ok' }
     : { fresh, kind: 'failed', reason: check.reason ?? MCP_STATUS_LABEL.failed }
 
-/** 已保存的一行没改名字、也没填新值：沿用原值，提交时不带 `value`（合同 §22「请求头只给打码值」）。 */
 const keepsSavedValue = (row: HeaderRow) =>
   row.value === '' &&
   row.savedName !== null &&
@@ -117,7 +111,6 @@ const headersOf = (rows: readonly HeaderRow[]): McpHeaderIn[] =>
     keepsSavedValue(row) ? { name: row.name.trim() } : { name: row.name.trim(), value: row.value },
   )
 
-/** 合同只收带主机的 http:// 或 https:// 地址。 */
 const isHttpUrl = (text: string): boolean => {
   try {
     const url = new URL(text)
@@ -156,20 +149,14 @@ const validate = (values: Values, creating: boolean): Errors => {
 }
 
 type McpServerPanelProps = {
-  /** null 是添加新服务。 */
   serverId: string | null
   back: 'mcp-library' | 'mcp-select' | null
-  /** 刚建好时随后的试连请求出错的原因，开面板时写在状态行。 */
   checkError: string | undefined
   config: AgentConfig
   onChange: (config: AgentConfig) => void
   onOpenPanel: (panel: Panel | null) => void
 }
 
-/**
- * 一个 MCP 服务的配置：名称与说明，「连接」改地址、连接方式、时限与请求头，测试通过后才能保存；
- * 「工具」选当前 agent 放出哪几个工具（没挂到当前 agent 时只能看）。保存改的是服务本身，选工具改的是草稿。
- */
 export function McpServerPanel({
   back,
   checkError,
@@ -283,7 +270,6 @@ function McpServerForm({
   const selected = binding === undefined ? [] : selectedMcpTools(binding, server)
   const canSave = test.kind === 'ok' && test.fresh && !save.isPending
 
-  /** 改连接相关的项（地址、连接方式、时限、请求头）后要重新测试；名称与说明不用。 */
   const change = (changes: Partial<Values>, connection: boolean) => {
     setValues((current) => ({ ...current, ...changes }))
     setErrors({})
@@ -332,8 +318,7 @@ function McpServerForm({
       const saved = await save.mutateAsync(
         server === undefined
           ? { body: { ...fields, id: values.id.trim(), url }, kind: 'create' }
-          : // 地址没改就不带，沿用原来的（合同 §22），改了才带上。
-            {
+          : {
               body: url === server.url ? fields : { ...fields, url },
               id: server.id,
               kind: 'update',
@@ -343,7 +328,6 @@ function McpServerForm({
       if (after.kind === 'checked' && after.result.ok) toast.success('MCP 配置已保存')
       else toast.error('MCP 配置已保存，但测试连接失败，请检查配置后重新测试')
       if (creating) {
-        // 已经建好：换成这个服务的配置面板，再保存就是修改。试连请求出错时服务上没记结果，原因带过去写在状态行。
         onOpenPanel({
           back,
           checkError: after.kind === 'error' ? after.message : undefined,
@@ -352,7 +336,6 @@ function McpServerForm({
         })
         return
       }
-      // 存好后请求头回到打码值，下次保存前要重新测试。
       setValues(valuesOf(saved.server))
       setTest(
         after.kind === 'error'
@@ -361,7 +344,6 @@ function McpServerForm({
       )
     } catch (error) {
       const message = errorMessageOf(error, '保存失败，请重试保存')
-      // 新建时标识被占用的 409 写在标识下面；地址或名称重复的 409 与别的错误一样写在表单下面。
       if (creating && error instanceof ApiError && error.status === 409 && message.includes('标识'))
         setErrors({ id: message })
       else setFormError(message)
@@ -623,7 +605,6 @@ function McpServerForm({
                         changeHeader(row.key, { value: event.currentTarget.value })
                       }
                       placeholder={row.masked ?? '值'}
-                      // 已保存的值只以打码值放在占位里，怎么改写在悬停提示里，不另写一行字。
                       title={row.masked === null ? undefined : '留空就沿用原值，填写新值会替换它'}
                       type="password"
                       value={row.value}
@@ -698,7 +679,6 @@ function McpServerForm({
                   key={tool.name}
                 >
                   <span className="flex min-w-0 flex-1 flex-col">
-                    {/* 服务给了显示名就先写显示名（对话里工具卡上的就是它），工具名跟在后面。 */}
                     <span className="flex min-w-0 items-baseline gap-2">
                       <span className="truncate font-medium text-on-surface" id={`${id}-name`}>
                         {tool.title ?? tool.name}
@@ -768,7 +748,6 @@ function Field({
   )
 }
 
-/** 测试连接的结果：通了写耗时，没通写原因；测试中转圈。 */
 function TestStatus({ test }: { test: TestState }) {
   return (
     <span

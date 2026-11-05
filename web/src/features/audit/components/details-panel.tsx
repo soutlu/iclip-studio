@@ -1,5 +1,3 @@
-/** 清单：工具条定时间、按人筛选，下面是按人与按任务执行次数两张表。 */
-
 import { useEffect, useEffectEvent, useId } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { ListError, ListPending, NextPageFooter } from '@/shared/ui/list-state'
@@ -21,15 +19,11 @@ import { TableCard } from './table-bits'
 type DetailsPanelProps = {
   range: OverviewRange
   onRangeChange: (next: OverviewRange) => void
-  /** 按人筛选选中的用户名；null 是全部人。 */
   userName: string | null
   onUserNameChange: (userName: string | null) => void
-  /** 按任务执行次数的排序，由接口排。 */
   sort: ExecutionSort
   onSortChange: (next: ExecutionSort) => void
-  /** 上游归属用户名 → 显示名；名册里没有就原样显示。 */
   nameOf: (userName: string) => string | undefined
-  /** 页面的滚动容器，按任务执行次数滚到接近底部时读下一页。 */
   getScrollElement: () => HTMLElement | null
 }
 
@@ -48,13 +42,11 @@ export function DetailsPanel({
 }: DetailsPanelProps) {
   const baseId = useId()
   const people = useAuditPeople(range)
-  // 名单只认这个范围自己的那份；换范围时留着的上一份不拿来判人在不在。
   const roster = people.isPlaceholderData ? undefined : people.data?.items
   const person =
     userName !== null && roster !== undefined && !roster.some((item) => item.userName === userName)
       ? null
       : userName
-  // 选中的人不在名单里就清掉，地址栏也跟着去掉。
   const clearPerson = useEffectEvent(() => onUserNameChange(null))
   useEffect(() => {
     if (person !== userName) clearPerson()

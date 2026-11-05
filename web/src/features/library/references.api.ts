@@ -1,6 +1,3 @@
-/** 资料库「参考视频」的接口：筛选翻成查询串、列表与详情的读取和轮询、建行与改、改标签、重拆、重新打标、移除、试生成。
- * 合同见 contract/conventions.md §14、§15。 */
-
 import {
   queryOptions,
   skipToken,
@@ -42,7 +39,6 @@ export type TagError = NonNullable<ReferenceItem['tagError']>
 export type TestVideo = NonNullable<ReferenceDetail['testVideo']>
 export type TestAspectRatio = z.input<typeof zTestVideoIn>['aspectRatio']
 
-/** 列表的筛选：属主、时间范围、拆解全文关键词，以及选中的标签（同一维度命中任一，不同维度都要命中）。 */
 export interface ReferenceScope extends LibraryTagScope {
   q: string
 }
@@ -55,28 +51,21 @@ export const DEFAULT_REFERENCE_SCOPE: ReferenceScope = {
 export const isDefaultReferenceScope = (scope: ReferenceScope): boolean =>
   isDefaultLibraryTagScope(scope) && scope.q.trim() === ''
 
-/** 一页的卡数，与成片素材同一个量级。 */
 const REFERENCES_PAGE_SIZE = 24
 
-/** 有排队、拆解中或打标中的行时轮询的间隔，与出片记录的轮询一致。 */
 const POLL_MS = 5000
 
-/** 后台还没拆完：排队或拆解中。 */
 export const isBreakdownBusy = (status: BreakdownStatus): boolean =>
   status === 'pending' || status === 'running'
 
-/** 后台还没打完标：排队或打标中。 */
 export const isTaggingBusy = (status: TagStatus): boolean =>
   status === 'pending' || status === 'running'
 
-/** 这一行还有后台在跑，结果会自己变：拆解或打标还没结束。 */
 export const isReferenceBusy = (item: Pick<ReferenceItem, 'breakdownStatus' | 'tagStatus'>) =>
   isBreakdownBusy(item.breakdownStatus) || isTaggingBusy(item.tagStatus)
 
-/** 试生成可选的画幅，按合同的先后。 */
 const TEST_ASPECT_RATIOS: readonly TestAspectRatio[] = zTestVideoIn.shape.aspectRatio.options
 
-/** 取与原片宽高比最接近的画幅；按比值的对数比较，竖版与横版偏差同样计算。 */
 export const nearestTestAspectRatio = (ratio: number): TestAspectRatio => {
   let best: TestAspectRatio = '9:16'
   let bestDistance = Number.POSITIVE_INFINITY
@@ -90,7 +79,6 @@ export const nearestTestAspectRatio = (ratio: number): TestAspectRatio => {
   return best
 }
 
-/** now 可注入方便测试；预设范围按此刻往前数。标签是重复的同名参数。 */
 export const referenceSearchParams = (
   scope: ReferenceScope,
   cursor: string | null,
@@ -118,8 +106,6 @@ export const referenceQueryKeys = {
 
 const READ_LIST_FAILED = '读取参考视频失败'
 
-/** 已读的页里有还没拆完或还没打完标的行就轮询，全部结束停下；缓存留 30 分钟，看完详情退回来不缩回第一页。
- * `enabled` 为假时先不读（筛选里的标签还没对过标签树）。 */
 export const useReferences = (scope: ReferenceScope, enabled = true) =>
   useInfiniteQuery({
     enabled,
@@ -137,7 +123,6 @@ export const useReferences = (scope: ReferenceScope, enabled = true) =>
       state.data?.pages.some((page) => page.items.some(isReferenceBusy)) ? POLL_MS : false,
   })
 
-/** 按人筛选的候选（属主与条数）；标签的候选与条数在标签树里。 */
 export const useReferenceFilters = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -150,7 +135,6 @@ export const useReferenceFilters = () =>
 
 const referencePath = (id: string) => `/references/${encodeURIComponent(id)}`
 
-/** 一条连同拆解正文与最新的试生成；还没拆完、还没打完标或试生成还没结束时轮询，结果自动出现。`id` 为 null 时不读。 */
 export const referenceDetailOptions = (id: string | null) =>
   queryOptions({
     queryFn:
@@ -184,7 +168,6 @@ export const referenceDetailOptions = (id: string | null) =>
 
 export const useReference = (id: string | null) => useQuery(referenceDetailOptions(id))
 
-/** 用一次确认过的视频上传建行。`created` 为假表示这条视频已经在资料库里（200），交回的是原来那一行。 */
 export const createReference = async (
   uploadId: string,
 ): Promise<{ reference: ReferenceDetail; created: boolean }> => {
@@ -196,7 +179,6 @@ export const createReference = async (
   return { created: response.status === 201, reference: data }
 }
 
-/** 改、改标签、重拆、重新打标、移除之后：详情换成服务端交回的那一行，列表、属主条数与标签条数重读。 */
 const useSettle = () => {
   const queryClient = useQueryClient()
   return (reference: ReferenceDetail | null, id: string) => {
@@ -208,7 +190,6 @@ const useSettle = () => {
   }
 }
 
-/** 改拆解正文；版本对不上或正在拆是 409，调用方按 `ApiError.status` 提示。 */
 export const useUpdateReference = (id: string) => {
   const settle = useSettle()
   return useMutation({
@@ -222,7 +203,6 @@ export const useUpdateReference = (id: string) => {
   })
 }
 
-/** 重新拆解：回到排队，答复改完的整行。 */
 export const useRerunReference = (id: string) => {
   const settle = useSettle()
   return useMutation({
@@ -235,7 +215,6 @@ export const useRerunReference = (id: string) => {
   })
 }
 
-/** 整份替换这条在所有维度上的标签；正在排队或打标是 409，调用方按 `ApiError.status` 提示。 */
 export const useReplaceReferenceTags = (id: string) => {
   const settle = useSettle()
   return useMutation({
@@ -249,7 +228,6 @@ export const useReplaceReferenceTags = (id: string) => {
   })
 }
 
-/** 按当前拆解重新打标：回到排队，答复改完的整行。拆解没完成或正在打标是 409。 */
 export const useRetagReference = (id: string) => {
   const settle = useSettle()
   return useMutation({
@@ -262,8 +240,6 @@ export const useRetagReference = (id: string) => {
   })
 }
 
-/** 试生成：只用当前拆解的文字按给定画幅生成一条视频，答复改完的整行，详情换成它。
- * 列表项不带试生成，列表与条数不用重读。拆解未完成或上一次还没结束是 409。 */
 export const useStartTestVideo = (id: string) => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -277,7 +253,6 @@ export const useStartTestVideo = (id: string) => {
   })
 }
 
-/** 从资料库移除；之后对这一行的读写都是 404。 */
 export const useRemoveReference = (id: string) => {
   const settle = useSettle()
   return useMutation({

@@ -1,5 +1,3 @@
-"""参考视频表与它的 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
-
 from __future__ import annotations
 
 import uuid
@@ -49,9 +47,7 @@ reference_videos_table = Table(
     "reference_videos",
     metadata_obj,
     Column("id", Uuid, primary_key=True),
-    # 同一个文件上传时已合成一个地址，所以一条视频一行按地址认。
     Column("video_url", Text, nullable=False),
-    # 上传的人，或第一次拆它的人。
     Column(
         "owner_user_id",
         Uuid,
@@ -60,16 +56,13 @@ reference_videos_table = Table(
     ),
     Column("breakdown_status", Text, nullable=False),
     Column("error_code", Text, nullable=True),
-    # 唯一一份当前拆解，不留历史。
     Column("document", Text, nullable=True),
     Column("version", Integer, nullable=False, server_default=text("1")),
-    # 最近一次拆解是谁要的；不关联外键，与生成记录的 api_key_id 同一做法。
     Column("requested_by", Uuid, nullable=True),
     Column("api_key_id", Uuid, nullable=True),
     Column("started_at", DateTime(timezone=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
-    # 从资料库移除；按地址仍能读到它的拆解。
     Column("deleted_at", DateTime(timezone=True), nullable=True),
     UniqueConstraint("video_url", name="uq_reference_videos_video_url"),
     CheckConstraint(
@@ -209,8 +202,6 @@ def _row_of(row: RowMapping) -> ReferenceVideo:
 
 
 def _like_pattern(q: str) -> str:
-    """关键词按字面包含：``%``、``_`` 与转义符本身都转义掉。"""
-
     escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
@@ -236,8 +227,6 @@ async def _one(conn: AsyncConnection, statement: Any, params: Mapping[str, Any])
 
 
 class SqlReferenceStore:
-    """``ReferenceStore`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -250,7 +239,6 @@ class SqlReferenceStore:
         api_key_id: uuid.UUID | None,
     ) -> tuple[ReferenceVideo, bool]:
         async with self._engine.begin() as conn:
-            # 撞上别的事务正在插的同一个地址时，ON CONFLICT 等它提交再放弃；下一条语句看得到那一行。
             inserted = (
                 await conn.execute(
                     _INSERT,

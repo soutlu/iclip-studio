@@ -56,12 +56,10 @@ _MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
     "agent_runs": "agent_runs",
     "conversations": "compaction（原 conversations.compaction）",
 }
-"""后端不再认、搬到运行时配置（``configs/runtime.yaml``）的段：后端的段名 → 运行时配置里的位置。"""
 
 _RETIRED_SECTIONS: Final[Mapping[str, str]] = {
     "video": "视频理解在运行时总是登记，模型写在代码里，连接用配置页的火山方舟",
 }
-"""后端不再认、也没有新位置的段：段名 → 为什么不用了。"""
 
 
 class ConfigSection(BaseModel):
@@ -69,7 +67,6 @@ class ConfigSection(BaseModel):
 
 
 class EnvSettings(BaseSettings):
-    # 环境变量里是连接串与机密：pydantic 的报错默认带原值，这里不带。
     model_config = SettingsConfigDict(frozen=True, extra="ignore", hide_input_in_errors=True)
 
 
@@ -106,7 +103,6 @@ class ObjectStoreEnv(EnvSettings):
     access_key_id: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_ID")
     access_key_secret: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_SECRET")
     public_url_base: RequiredEnv = Field(validation_alias="OSS_PUBLIC_URL_BASE")
-    # 阿里云的内网 endpoint 只在与桶同地域的 ECS 或 VPC 内可用。
     internal_endpoint: OptionalEnv = Field("", validation_alias="OSS_INTERNAL_ENDPOINT")
 
 
@@ -115,7 +111,6 @@ class MediaGenerationEnv(EnvSettings):
     video_status_base_url: RequiredEnv = Field(validation_alias="VIDEO_STATUS_BASE_URL")
     video_api_key: RequiredEnv = Field(validation_alias="VIDEO_API_KEY")
     image_api_base: RequiredEnv = Field(validation_alias="IMAGE_API_BASE")
-    # 高清版（超分）的完整提交地址；查询地址与 key 同出片。留空就是没开通。
     video_enhance_submit_url: OptionalEnv = Field("", validation_alias=VIDEO_ENHANCE_SUBMIT_URL_ENV)
 
 
@@ -129,7 +124,6 @@ class ProductCatalogEnv(EnvSettings):
 
 class WholeFilmRenderEnv(EnvSettings):
     url: RequiredEnv = Field(validation_alias=WHOLE_FILM_RENDER_URL_ENV)
-    """成片渲染服务的内网根地址（compose 里的服务名），只给服务端用。"""
 
     @field_validator("url")
     @classmethod
@@ -141,9 +135,6 @@ class WholeFilmRenderEnv(EnvSettings):
 
 
 class RuntimeInternalEnv(EnvSettings):
-    """运行时服务调后端内部接口（回调与插件服务）时带的令牌；与运行时给应用 ``video`` 配的
-    ``hooks.token_env`` 是同一个值。"""
-
     token: RequiredEnv = Field(validation_alias=RUNTIME_INTERNAL_TOKEN_ENV)
 
     @field_validator("token")
@@ -155,11 +146,7 @@ class RuntimeInternalEnv(EnvSettings):
 
 
 class RuntimeServiceEnv(EnvSettings):
-    """运行时服务的地址与后端在它那里的应用密钥；密钥与运行时配置里应用 ``video`` 的 ``key_env`` 指向的
-    值相同。"""
-
     url: RequiredEnv = Field(validation_alias=RUNTIME_URL_ENV)
-    """运行时服务的内网根地址（不含 ``/v1``），只给服务端用。"""
     app_key: RequiredEnv = Field(validation_alias=RUNTIME_APP_KEY_ENV)
 
     @field_validator("url")
@@ -213,12 +200,9 @@ class SsoSection(ConfigSection):
 
 
 class VideoEnhanceSection(ConfigSection):
-    """高清版（超分）：用哪个模型、提到哪几档（从高到低，界面按这个顺序列）、帧率。"""
-
     model: str = Field(min_length=1)
     resolutions: tuple[VideoEnhanceResolution, ...] = Field(min_length=1)
     fps: int | None = Field(default=None, ge=15, le=60)
-    """目标帧率；不写就不插帧，保持原片帧率。"""
 
     @field_validator("resolutions")
     @classmethod
@@ -292,14 +276,11 @@ class MediaGenerationSection(ConfigSection):
 
 
 class IclipStudioSection(ConfigSection):
-    """写了就开参考视频的拆解与资料库的打标。模型写定在代码里，经运行时服务调，连接在配置页的模型供应商里。"""
-
     breakdown_concurrency: int | None = Field(default=None, ge=1)
 
 
 class ShotVideoSection(ConfigSection):
-    """写了就给运行时的 ``shot_video`` 插件挂取帧拼板、切格与出图的内部接口；出图的重试策略在运行时配置的
-    ``plugins.config.shot_video``。"""
+    pass
 
 
 class OpsSection(ConfigSection):
@@ -322,8 +303,6 @@ class RuntimeConfig(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _no_sections_moved_to_the_runtime(cls, data: Any) -> Any:
-        """搬去运行时的段还写着时点名它和新位置；不然只有一句「Extra inputs are not permitted」。"""
-
         if not isinstance(data, Mapping):
             return data
         sections: Mapping[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
@@ -417,7 +396,6 @@ class ResolvedMediaGeneration:
     video_model: str
     video_allowed_models: tuple[str, ...]
     video_enhance: ResolvedVideoEnhance | None
-    """高清版；为 None 时提交端点答「没有开通」。"""
     image_models: tuple[ResolvedImageModel, ...]
     image_default_model: str
     image_env: str
@@ -461,15 +439,11 @@ class ResolvedSettings:
     object_store: ObjectStoreEnv | None
     media_generation: ResolvedMediaGeneration | None
     shot_video: bool
-    """配了 ``shot_video`` 段：要给运行时挂取帧拼板、切格与出图的内部接口。"""
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
-    """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
     runtime_internal_token: str
-    """运行时服务调内部接口带的令牌；必填。"""
     runtime_service: ResolvedRuntimeService
-    """后端经它的 HTTP 接口调运行时服务；必填。"""
     log_level: str
     log_format: Literal["console", "json"]
 
@@ -556,8 +530,6 @@ def _resolve_media_generation(
 def _resolve_video_enhance(
     section: VideoEnhanceSection | None, submit_url: str
 ) -> ResolvedVideoEnhance | None:
-    """提交地址留空就是没开通；配了地址却没写 ``media_generation.video.enhance`` 段报错。"""
-
     if not submit_url:
         return None
     if section is None:
@@ -617,8 +589,6 @@ def _resolve_whole_film_render(
 
 
 def _resolve_runtime_service() -> ResolvedRuntimeService:
-    """两个变量缺一个都启动失败：开会话、首页名册、起标题、对话活动与配置页的管理接口都经运行时服务。"""
-
     env = _from_env(RuntimeServiceEnv)
     return ResolvedRuntimeService(url=env.url, app_key=env.app_key)
 
@@ -662,7 +632,6 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
-        # 缺了启动失败：开跑检查在这组内部接口上，没有它每次运行都过不了检查。
         runtime_internal_token=_from_env(RuntimeInternalEnv).token,
         runtime_service=_resolve_runtime_service(),
         log_level=config.ops.log_level,

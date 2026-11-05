@@ -1,10 +1,3 @@
-"""审计报表从运行时取的事实行：消息、跑到终态的顶层运行、按模型的累计用量、每段会话的首末消息。
-
-运行时的表只经它的统计接口读（``/v1/stats/*``，只答本应用的会话），报表 SQL 把取回的行当作参数化的伪表
-（``FACTS_CTE``）接着聚合。按会话取时一次最多 ``MAX_STATS_SESSIONS`` 段，多的分批取；答不上抛
-``RuntimeUnavailable``，由全局错误处理答 503。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -48,22 +41,16 @@ session_facts AS (
                          CAST(:f_session_users AS text[]))
         AS f(conversation_id, first_prompt_at, latest_user_name)
 )"""
-"""四张伪表：``prompt_facts`` 对应消息队列，``run_facts`` 是跑到终态的顶层运行，``usage_facts`` 对应用量
-台账，``session_facts`` 是每段跑过的会话的首条消息时刻与最近一条消息的 ``user_name``。会话列都是对话 id。"""
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeFacts:
-    """一次报表查询用到的运行时事实行；没取的种类为空。"""
-
     prompts: Sequence[PromptStatOut] = ()
     runs: Sequence[RunStatOut] = ()
     usage: Sequence[UsageStatOut] = ()
     sessions: Sequence[SessionStatOut] = ()
 
     def params(self) -> dict[str, list[Any]]:
-        """``FACTS_CTE`` 的绑定参数：每列一个数组。"""
-
         return {
             "f_prompt_sessions": [row.session_id for row in self.prompts],
             "f_prompt_users": [row.user_name for row in self.prompts],
@@ -88,12 +75,6 @@ class RuntimeFacts:
 
 @dataclass(frozen=True, slots=True)
 class WindowFacts:
-    """一段时间窗 ``[since, until)`` 一次取齐的事实行，落在窗里的筛选范围都从这份里切，不再向运行时取。
-
-    ``prompts`` / ``runs`` / ``usage`` 是按这段窗取的（看各行自己的时刻）；``cycles`` 是交付周期样本
-    （最后一条出片在窗里的对话）连同最后一条出片的完成时刻，``cycle_runs`` 是它们的全部运行；
-    ``sessions`` 是向运行时要过首末消息的 ``session_ids`` 里跑过的那些。``until`` 为空不设上界。"""
-
     since: datetime
     until: datetime | None
     prompts: Sequence[PromptStatOut]
@@ -110,9 +91,6 @@ class WindowFacts:
         )
 
     def within(self, since: datetime, until: datetime | None) -> RuntimeFacts:
-        """落在本窗里的 ``[since, until)`` 要的事实行，与直接按这段窗向运行时取的一致：窗内的消息、运行
-        与用量，最后一条出片在窗内的对话的全部运行，它们与窗内有用量的对话的首末消息。"""
-
         def inside(moment: datetime) -> bool:
             return moment >= since and (until is None or moment < until)
 
@@ -137,8 +115,6 @@ def _batches(ids: Collection[uuid.UUID]) -> Iterable[tuple[uuid.UUID, ...]]:
 
 
 class RuntimeStats:
-    """经运行时的统计接口取事实行。按时间窗取的 ``*_in`` 看各行自己的时刻，按会话取的 ``*_of`` 取全部行。"""
-
     def __init__(self, client: RuntimeClient) -> None:
         self._client = client
 
@@ -187,8 +163,6 @@ async def _by_sessions[T](
 
 
 def merge_runs(*groups: Sequence[RunStatOut]) -> tuple[RunStatOut, ...]:
-    """把几次取回的运行并成一份，同一 ``run_id`` 只留一条。"""
-
     merged: dict[str, RunStatOut] = {}
     for group in groups:
         for row in group:

@@ -1,6 +1,3 @@
-"""MCP 服务端点：只有 ``agent:manage``（root）能用，editor 一律 403；其余照原样转给运行时，答复是同一份
-camelCase、请求头只给打码值。规则本身在运行时服务的测试里（``runtime_service/test_mcp_servers.py``）。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncIterator

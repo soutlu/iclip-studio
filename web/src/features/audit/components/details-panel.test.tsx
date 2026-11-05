@@ -11,10 +11,8 @@ import { DEFAULT_EXECUTION_SORT, type ExecutionsPage, type Person } from '../aud
 import { DetailsPanel } from './details-panel'
 
 const nameOf = (userName: string) => (userName === 'lin.xia' ? '林夏' : undefined)
-/** 滚动容器在路由的 `<main>` 上；单测不排版，可控的 IntersectionObserver 替身也不看它。 */
 const noScroller = () => null
 
-/** 时间范围、按人筛选与排序在路由的查询串里，这里替路由层握住它们。 */
 function Harness() {
   const [userName, setUserName] = useState<string | null>(null)
   const [sort, setSort] = useState(DEFAULT_EXECUTION_SORT)
@@ -32,7 +30,6 @@ function Harness() {
   )
 }
 
-/** 喂按人与按任务执行两个接口，记下按任务执行每次请求的查询串。 */
 const serve = ({
   people = [],
   executions,
@@ -58,12 +55,10 @@ const renderDetails = async () => {
   return view
 }
 
-/** 等一会儿，给本不该发出的请求留出发出的时间。 */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
 const bodyRows = (table: HTMLElement) => within(table).getAllByRole('row').slice(1)
 
-/** 表里某一列的单元格：按表头的可访问名找列号。 */
 const cellOf = (table: HTMLElement, row: HTMLElement, column: string) => {
   const headers = within(table).getAllByRole('columnheader')
   const index = headers.findIndex((header) => header.textContent?.startsWith(column))
@@ -84,7 +79,6 @@ afterEach(() => vi.unstubAllGlobals())
 describe('按人', () => {
   it('点表头在前端排序，同一列再点换方向，空值不管升降都排最后', async () => {
     const people = [
-      // 出片最多，但没带镜号：每镜头重试次数是空的。
       personFixture('he.huan', { attemptsPerShot: null, deliveries: 9 }),
       personFixture('lin.xia', { attemptsPerShot: 2, deliveries: 5 }),
       personFixture('zhou.ye', { attemptsPerShot: 1.2, deliveries: 8 }),
@@ -106,7 +100,6 @@ describe('按人', () => {
         (row) =>
           people.find(({ userName }) => within(row).queryByText(userName) !== null)?.userName,
       )
-    // 缺省出片件数降序。
     expect(order()).toEqual(['he.huan', 'zhou.ye', 'lin.xia'])
 
     const header = within(table).getByRole('button', { name: '每镜头重试次数' })
@@ -114,7 +107,6 @@ describe('按人', () => {
     expect(order()).toEqual(['lin.xia', 'zhou.ye', 'he.huan'])
     await user.click(header)
     expect(order()).toEqual(['zhou.ye', 'lin.xia', 'he.huan'])
-    // 排序在前端做，不重新请求。
     expect(peopleRequests).toBe(1)
   })
 })
@@ -147,7 +139,6 @@ describe('按人筛选', () => {
 })
 
 describe('按任务执行次数', () => {
-  /** 两页：第一页 2 段带游标，第二页 1 段；游标记着发它的排序。 */
   const twoPages = (query: URLSearchParams) => {
     const tag = `${query.get('sort')}:${query.get('order')}`
     return query.get('cursor') === null
@@ -277,7 +268,6 @@ describe('按任务执行次数', () => {
 
     const table = screen.getByRole('table', { name: '按任务执行次数' })
     const row = screen.getByRole('row', { name: /四种都有/ })
-    /** 图标在数据前面：单元格里它前头没有字，后头是那项数据。 */
     const expectFlagFirst = (column: string, name: RegExp) => {
       const cell = cellOf(table, row, column)
       const flag = within(cell).getByRole('img', { name })
@@ -304,7 +294,6 @@ describe('按任务执行次数', () => {
     { flagged: 0, title: '共 12 次' },
     { flagged: 3, title: '共 12 次 · 3 次有异常' },
   ])('标题旁写总数，有异常时再写几次有异常：$title', async ({ flagged, title }) => {
-    // 总数与异常数说的是整个范围，不是这一页。
     serve({ executions: () => executionsPageFixture([executionFixture()], { flagged, total: 12 }) })
     await renderDetails()
 

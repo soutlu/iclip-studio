@@ -1,5 +1,3 @@
-/** 按目录分组的文件列表：类型图标、文件名，大小与时间各占一列右对齐。点一行进阅读。 */
-
 import { useCallback } from 'react'
 import { Icon } from '@/shared/icons'
 import type { ConversationFileOut } from '@/shared/api/generated'
@@ -12,13 +10,11 @@ type FileListProps = {
   files: readonly ConversationFileOut[] | undefined
   pending: boolean
   error: string | undefined
-  /** 刚从阅读页返回时，上次打开的那一份：留一层灰并接回焦点，回来就知道停在哪。 */
   lastOpened: string | undefined
   onOpen: (path: string) => void
 }
 
 export function FileList({ error, files, lastOpened, onOpen, pending }: FileListProps) {
-  // 只在这一行挂上时聚焦一次；滚动跟着焦点把它带进视野。
   const focusOnMount = useCallback((node: HTMLButtonElement | null) => node?.focus(), [])
 
   if (pending) return <PanelNotice text="正在读取文件…" />

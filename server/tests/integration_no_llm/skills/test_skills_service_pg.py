@@ -1,7 +1,3 @@
-"""技能库用例连真实 Postgres：发布是原子的、草稿按 base_hash 防覆盖、内容不变不出新版本、恢复后草稿等于
-那一版、导入检查不写库而正式导入只写草稿、导出再导入得到同样的文件、改标识不动版本与草稿而导出用
-当前标识。"""
-
 from __future__ import annotations
 
 import io
@@ -43,9 +39,6 @@ async def author(engine: AsyncEngine) -> uuid.UUID:
 
 @asynccontextmanager
 async def failing_version_files(engine: AsyncEngine) -> AsyncGenerator[None]:
-    """块内往 ``skill_version_files`` 插行时报错：发布写完版本行之后才失败。测试库整个会话共用，
-    触发器用完必须删掉。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -119,8 +112,6 @@ async def put(
     path: str,
     content: str,
 ) -> str:
-    """不管原来有没有，写成 ``content``；交回新的 hash。"""
-
     try:
         base: str | None = (await service.read_file(skill_id, path)).hash
     except NotFound:
@@ -262,7 +253,6 @@ async def test_import_check_writes_nothing_and_import_only_writes_the_draft(
     checked = await service.import_archive(data, dry_run=True, by=author)
 
     assert (checked.action, checked.skill_id, checked.problems) == ("create", None, [])
-    # 显示名取标识，不取正文的标题。
     assert (checked.name, checked.display_name, checked.description) == (
         "pdf-tools",
         "pdf-tools",
@@ -379,7 +369,6 @@ async def test_rename_checks_the_name_and_needs_at_least_one_field(
         await service.rename(skill_id, SkillUpdateIn())
     with pytest.raises(ValidationFailed):
         await service.rename(skill_id, SkillUpdateIn(name="PDF_Kit"))
-    # 只改显示名照常；给的标识与现在相同不算改。
     renamed = await service.rename(
         skill_id, SkillUpdateIn(display_name="  新的  名字 ", name="pdf-tools")
     )

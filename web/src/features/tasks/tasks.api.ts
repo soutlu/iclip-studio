@@ -9,19 +9,15 @@ export type TasksPage = z.output<typeof zTasksPageOut>
 export type TaskIn = z.input<typeof zTaskIn>
 export type TaskCreateIn = z.input<typeof zTaskCreateIn>
 
-/** 需求单页的两个分区：全平台，或服务端按会话身份筛出的「我认领的」。 */
 export type TaskListScope = 'all' | 'mine'
 
 const taskEnvelopeSchema = zTaskEnvelope.transform((payload) => payload.task)
 
-/** 一页取满接口上限，低于上限时与分页前一屏看到的一样多。 */
 const PAGE_LIMIT = 100
 
 export const tasksQueryKeys = {
   all: ['tasks'] as const,
-  /** 需求单页的分页列表。 */
   list: (scope: TaskListScope) => ['tasks', 'list', scope] as const,
-  /** 选择器候选：最近一页，不翻页；与分页列表分开缓存，两者数据形状不同。 */
   options: ['tasks', 'options'] as const,
   byIds: (ids: readonly string[]) => ['tasks', 'by-ids', ids] as const,
   detail: (taskId: string) => ['tasks', 'detail', taskId] as const,
@@ -34,7 +30,6 @@ const listParams = (scope: TaskListScope, cursor: string | null): URLSearchParam
   return params
 }
 
-/** 读一页需求单；``cursor`` 原样回传上一页的 ``nextCursor``。 */
 export const fetchTasksPage = async (
   scope: TaskListScope,
   cursor: string | null,
@@ -55,7 +50,6 @@ export const useTasksPages = (scope: TaskListScope, enabled: boolean) =>
     queryKey: tasksQueryKeys.list(scope),
   })
 
-/** 下拉候选只要最近一页；已选项移出候选时由选择器自己保留名字。 */
 export const useTaskOptions = (enabled: boolean) =>
   useQuery({
     enabled,
@@ -64,7 +58,6 @@ export const useTaskOptions = (enabled: boolean) =>
     select: (page) => page.items.map((task) => ({ id: task.id, label: task.title })),
   })
 
-/** 按 id 批量读取，一次最多一批；库里没有的 id 不回，调用方按缺失处理。 */
 export const listTasksByIds = async (
   ids: readonly string[],
   signal?: AbortSignal,
@@ -93,7 +86,6 @@ export const createTask = async (body: TaskCreateIn): Promise<Task> =>
     method: 'POST',
   })
 
-/** 整体覆盖：body 必须是完整的一张单（先 get 再合并改动）。 */
 export const saveTask = async (taskId: string, body: TaskIn): Promise<Task> =>
   apiFetch(`/tasks/${taskId}`, taskEnvelopeSchema, {
     body,

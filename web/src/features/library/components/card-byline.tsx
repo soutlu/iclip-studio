@@ -4,7 +4,6 @@ import { AuthorAvatar } from './author-avatar'
 type Props = {
   author: string | null
   itemNoun: string
-  /** 点作者按人筛选；不给就只显示作者，不能点。 */
   onAuthor?: ((userName: string) => void) | undefined
   at: string
 }

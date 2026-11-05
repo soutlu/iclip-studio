@@ -1,7 +1,3 @@
-"""按包声明读一份文件：认标签、查属性和引用，记下有名字的节点。
-
-工程文件和运行文件用同一套规则，只是文件头里的写法名、根标签、能引入的包和自带的标签不同。"""
-
 from __future__ import annotations
 
 import re
@@ -20,20 +16,14 @@ _INTEGER: Final = re.compile(r"\d+")
 
 @dataclass
 class Document:
-    """读进来的一份文件：节点树、文件里各标签写法对应的声明、有名字的节点，以及查出的问题。"""
-
     label: str
-    """文件名，写在每条问题前面。"""
 
     root: Node
     tags: dict[str, Tag]
-    """文件里的写法（带前缀）→ 声明。"""
 
     packages: dict[str, Package]
-    """文件里的写法（带前缀）→ 它来自哪个包；自带的标签不在里面。"""
 
     kits: dict[str, Mapping[str, Kit]] = field(default_factory=dict[str, Mapping[str, Kit]])
-    """``source`` 引入的模板包：前缀 → 模板名 → 模板。"""
 
     nodes: dict[str, Node] = field(default_factory=dict[str, Node])
     errors: list[str] = field(default_factory=list[str])
@@ -48,8 +38,6 @@ class Document:
         return self.tags[node.tag]
 
     def is_a(self, node: Node, name: str, package: Package | None = None) -> bool:
-        """``node`` 是不是声明名为 ``name`` 的标签；给了 ``package`` 时还要来自这个包。"""
-
         tag = self.tags.get(node.tag)
         if tag is None or tag.name != name:
             return False
@@ -59,19 +47,13 @@ class Document:
         return [child for child in node.children if self.is_a(child, name)]
 
     def find(self, name: str, package: Package | None = None) -> list[Node]:
-        """全文件里声明名字是 ``name`` 的标签，按先后。"""
-
         return [node for node in self.root.walk() if self.is_a(node, name, package)]
 
     def template(self, reference: str) -> Kit:
-        """``{前缀.模板名}`` 指的模板；只用在读文件时已经查过类型的引用上。"""
-
         prefix, _, name = reference.partition(".")
         return self.kits[prefix][name]
 
     def type_of(self, reference: str, at: Node) -> ValueType | None:
-        """``{引用}`` 的类型；没定义、写在引用它的地方之后、或输出路径不对时记一条问题并返回 None。"""
-
         name, _, path = reference.partition(".")
         templates = self.kits.get(name)
         if templates is not None:
@@ -105,10 +87,6 @@ def load(
     kits: Mapping[str, Mapping[str, Kit]] | None = None,
     builtins: tuple[Tag, ...] = (),
 ) -> Document:
-    """读一份文件并按声明检查；XML 本身读不通时抛 ``MarkupError``，其余问题记在返回值里。
-
-    ``kits`` 是能用 ``source`` 引入的模板包，不给就是一个也没有。"""
-
     chosen, root = parse(source, using=using)
     if chosen != using or root.tag != root_tag:
         raise MarkupError(1, f"只认 {using} 的 <{root_tag}>")

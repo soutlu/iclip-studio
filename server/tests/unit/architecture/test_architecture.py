@@ -1,5 +1,3 @@
-"""验证 tach 依赖图之外的框架引用、模块纯度和异常处理约束。"""
-
 from __future__ import annotations
 
 import ast
@@ -7,9 +5,7 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "iclip"
 
-# 框架及允许直接导入它的路径前缀（相对 src/iclip）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    # Agent 引擎在 agent_runtime，插件在 iclip_video；后端不直接引用 pydantic-ai、harness 与模型 SDK。
     ("pydantic_ai",): (),
     ("pydantic_ai_harness",): (),
     ("fastapi", "starlette"): (
@@ -32,7 +28,6 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "domains/model_providers/api.py",
         "domains/mcp_servers/api.py",
         "domains/agent_config/api.py",
-        # 管理接口转给运行时服务时把它的答复原样做成 Response，上面四组路由共用。
         "platform/runtime_admin.py",
         "domains/identity/middleware.py",
         "domains/identity/accounts.py",
@@ -41,18 +36,14 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("sqlalchemy",): (
         "platform/db/",
         "app/",
-        # 外部只读表使用独立适配器；infra_sql.py 仅表示模块自有表。
         "domains/products/catalog_pg.py",
-        # 审计报表与资料库跨模块只读聚合，同样不是模块自有表。
         "domains/audit/reports_pg.py",
         "domains/library/reports_pg.py",
     ),
     ("fastapi_users", "fastapi_users_db_sqlalchemy"): ("domains/identity/",),
     ("openai",): (),
-    # 端口协议在 store.py，消费方不经 SDK 适配器就能依赖它。
     ("oss2",): ("platform/object_store/oss.py",),
     ("PIL",): ("platform/shot_media/board.py", "platform/media/image.py"),
-    # 队列实现、连接器类型与组合根需要直接引用 procrastinate。
     ("procrastinate",): (
         "domains/generation/queue.py",
         "domains/generation/module.py",
@@ -63,7 +54,6 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "app/",
     ),
 }
-# 模块自有 SQL 按 infra_sql.py 文件名匹配。
 _SQLALCHEMY_MODULE_FILE = "infra_sql.py"
 _SQLALCHEMY_MODULE_PREFIXES = ("domains/",)
 
@@ -168,7 +158,6 @@ def test_no_silent_exception_fallbacks() -> None:
 RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.client": "运行时服务的客户端库：HTTP 接口、两条 WebSocket、报错还原",
     "agent_runtime.errors": "领域错误分类，两边同一套，客户端库按它还原运行时的 4xx",
-    # 后端转发运行时的答复原样交给浏览器，两边的报错只能是同一个形状；它只依赖 FastAPI 与上面那个模块。
     "agent_runtime.http.errors": "状态码表、错误信封与校验文案，两边同一套",
     "agent_runtime.urls": "地址形状判定",
     "agent_runtime.app_wire": "会话接口的请求体与答复体",
@@ -178,7 +167,6 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.transcript.ops": "transcript 实体：消息内容、主 agent 的 id",
     "agent_runtime.file_store.store": "工作区文件的形状与路径规则",
     "agent_runtime.file_store.namespace": "工作区的命名空间规则",
-    # 配置页四组管理接口的路由声明在后端，合同照它导出：请求体模型与上限照用运行时的。
     "agent_runtime.config.skills.schemas": "技能库管理接口的请求体",
     "agent_runtime.config.skills.models": "技能导入包的大小上限",
     "agent_runtime.config.model_providers.schemas": "模型供应商管理接口的请求体",
@@ -188,8 +176,6 @@ RUNTIME_ALLOWLIST: dict[str, str] = {
     "agent_runtime.agent_usage": "管理接口答复里「谁在用」的形状，后端补名字的答复照用",
     "agent_runtime.config.agent_config.package": "agent 导出包的大小上限",
 }
-"""后端源码能引用的运行时模块：接口与帧的形状、报错与客户端库。运行时的引擎、装配、服务、配置的用例与存储、
-插件、HTTP 路由都在运行时服务里，后端只经客户端库调它。"""
 
 
 def test_the_server_imports_only_the_runtime_shapes_and_client() -> None:
@@ -213,8 +199,6 @@ RUNTIME_SCHEMA = "agent_runtime"
 
 
 def _code_strings(tree: ast.AST) -> list[ast.Constant]:
-    """源码里的字符串常量，不含文档字符串（单独成句的字符串）；f-string 的字面部分也算。"""
-
     docstrings = {
         id(node.value)
         for node in ast.walk(tree)
@@ -230,9 +214,6 @@ def _code_strings(tree: ast.AST) -> list[ast.Constant]:
 
 
 def test_the_server_never_names_runtime_tables() -> None:
-    """运行时的表只经它的接口读写：字符串里的 ``agent_runtime.<名字>`` 与 schema 名本身都算。import 不是
-    字符串，不在此列。"""
-
     violations: list[str] = []
     for path in _python_files():
         rel = _rel(path)

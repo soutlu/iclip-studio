@@ -1,6 +1,3 @@
-"""运行时服务的审批：挂着要审批工具的 agent 停在等审批，经会话接口点同意后续跑完；改主意 409，不在等回应的
-卡 404。工具来自交给服务的测试插件 ``approving``。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +28,6 @@ def plugin_registry() -> PluginRegistry:
 
 @pytest.fixture
 def models() -> dict[str, Model]:
-    # 一口气调两次：两张卡凑齐决定才续跑，第一张点过之后改主意还在等回应的那一批里。
     return {TEST_MODEL_NAME: calls_then_says("write_file", "改完了", calls=2)}
 
 

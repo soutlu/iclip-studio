@@ -17,7 +17,6 @@ import { useLoginPrompt } from './-login-prompt'
 import { revealClippedFocus } from './-reveal-clipped-focus'
 import { SidebarConversations } from './-sidebar-conversations'
 
-// 侧栏操作行（导航、登录、重试）与对话行同一套行几何，焦点环落在按钮本身。
 const SIDEBAR_ACTION_CLASS = cn(SIDEBAR_ROW_CLASS, 'w-full ui-focus')
 
 type AppSidebarProps = {
@@ -26,7 +25,6 @@ type AppSidebarProps = {
   onCollapsedChange: (collapsed: boolean) => void
 }
 
-/** 折叠状态由应用壳持有，供拖柄与聊天、面板并排布局统一计算。 */
 export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: AppSidebarProps) {
   const rail = collapsed && !compact
   const expandTip = useTabTooltip()
@@ -39,7 +37,6 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
     document.getElementById(toggleId)?.focus()
   }, [collapsed, toggleId])
   const toggleCollapsed = () => {
-    // 移动端抽屉开合会切换按钮节点，焦点跟随到可见的侧边栏开关。
     restoreToggleFocusRef.current = compact
     onCollapsedChange(!collapsed)
   }
@@ -62,18 +59,15 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   const canGovern = canAuditAll(user)
   const canManageAgents = hasPermission(user, PERMISSION.agentManage)
   const governLabelId = useId()
-  // 全局帧订阅挂在侧边栏顶层，全部对话页与会话页共用同一份列表缓存。
   useLiveConversations(canRead)
 
   const requestComposerFocus = useShellChrome().composerFocus?.request
-  /** 去首页新建任务；从合集行进来时带上合集，首页预选它。 */
   const startNew = useCallback(
     (collectionId?: string) => {
       if (session.isPending) return
       if (!user) return requireLogin()
       if (!canStart) return
       setSearchOpen(false)
-      // 已在首页时路由不变，抽屉不会随路由折叠，这里主动收起，焦点才能落到输入框上。
       if (compact) onCollapsedChange(true)
       requestComposerFocus?.()
       void navigate(
@@ -114,7 +108,6 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
         event.preventDefault()
         openSearch()
       } else if (event.altKey && (event.code === 'KeyN' || event.key.toLowerCase() === 'n')) {
-        // 避开浏览器的新窗口快捷键；code 兼容 macOS Option 键改变字符。
         event.preventDefault()
         startNew()
       }
@@ -140,7 +133,6 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           size="md"
         />
       ) : null}
-      {/* 侧栏浅灰底；桌面与主区的分界线由侧栏拖柄画出，紧凑屏是带投影的抽屉。 */}
       <aside
         id={sidebarId}
         aria-label="侧边栏"
@@ -159,7 +151,6 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
         <div className="flex h-full w-(--layout-app-sidebar-body-width) shrink-0 flex-col">
           <div className="flex h-14 shrink-0 items-center px-2">
             {rail ? (
-              // 图标栏只留品牌标志，它兼作展开开关：悬停或键盘聚焦时换成侧栏图标提示可展开。
               <TooltipRoot {...expandTip.rootProps}>
                 <TooltipTrigger asChild {...expandTip.triggerProps}>
                   <button
@@ -288,7 +279,6 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
             ) : null}
           </nav>
 
-          {/* 折叠只隐藏内容，保留筛选、合集展开和列表滚动位置。 */}
           <div
             aria-hidden={collapsed ? true : undefined}
             inert={collapsed}
@@ -363,11 +353,8 @@ type SidebarActionProps = {
   compact?: boolean
   active?: boolean
   disabled?: boolean
-  /** 置灰的原因，置灰时悬停或按 Tab 移上去弹出；没有原因（如还在确认登录）就不弹。 */
   disabledReason?: string | undefined
-  /** 主操作：深色实心按钮，快捷键常驻右侧；绿色留给「生成」。 */
   emphasis?: boolean
-  /** 图标栏提示里的名字，缺省同 label；label 太短说不清时才传，如「搜索」提示成「搜索任务」。 */
   hint?: string
   icon: IconName
   kbd?: string
@@ -376,11 +363,6 @@ type SidebarActionProps = {
   shortcut?: string
 }
 
-/**
- * 侧栏导航行。图标栏里提示名字（带快捷键），置灰时提示原因，都走共用 Tooltip、出在右侧；
- * 展开且可用时名字与快捷键已在行上，不弹提示。
- * 置灰用 aria-disabled：原生 disabled 收不到指针、进不了 Tab 序，原因就弹不出来；置灰时点击与 Enter / Space 都被拦下。
- */
 function SidebarAction({
   active = false,
   compact = false,
@@ -397,7 +379,6 @@ function SidebarAction({
   const { rootProps, triggerProps } = useTabTooltip()
   const tip = disabled ? disabledReason : compact ? (hint ?? label) : undefined
   return (
-    // 提示始终挂着、只在有内容时弹：权限读完置灰与否变化时按钮不重建，焦点不丢。
     <TooltipRoot {...rootProps} open={rootProps.open && tip !== undefined}>
       <TooltipTrigger asChild {...triggerProps}>
         <button
@@ -409,8 +390,7 @@ function SidebarAction({
             SIDEBAR_ACTION_CLASS,
             'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
             emphasis
-              ? // 深色底上 ui-state 的禁用字色看不清，禁用只整体压淡。内距与间距沿用行几何，图标与下方导航图标同一列。
-                'mb-2 h-10 bg-inverse-surface font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] aria-disabled:text-inverse-on-surface'
+              ? 'mb-2 h-10 bg-inverse-surface font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] aria-disabled:text-inverse-on-surface'
               : 'text-on-surface-variant hover:not-aria-disabled:text-on-surface',
             active && cn(SIDEBAR_ROW_ACTIVE, 'text-on-surface'),
             compact && 'mx-auto size-10 justify-center px-0',
@@ -460,7 +440,6 @@ function SidebarAction({
       {tip !== undefined && (
         <TooltipContent side="right">
           {tip}
-          {/* 图标栏里行上没有快捷键，跟在名字后面；置灰时只说原因。 */}
           {kbd && compact && !disabled && (
             <kbd className="ml-2 font-sans text-inverse-on-surface/60">{kbd}</kbd>
           )}
@@ -470,7 +449,6 @@ function SidebarAction({
   )
 }
 
-/** 品牌标志：深色圆角块里一个衬线斜体「C」，折叠成图标栏时单独出现。 */
 function BrandMark({ className }: { className?: string }) {
   return (
     <span

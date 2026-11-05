@@ -1,12 +1,8 @@
-/** 编辑核心建的 NodeView 宿主里的 React 内容：附件 chip（上传态、悬停预览、失败卡片）与使用方节点，经 portal 渲染进去，
- * 所以节点内容照常读得到外面的 React context。带外壳的 Composer 与不带外壳的使用方都渲染它。 */
-
 import { createPortal } from 'react-dom'
 import { ComposerAttachmentPill, type ComposerAttachmentPreview } from './composer-attachment-pill'
 import type { ComposerAttachment, ComposerAttachments } from './use-composer-attachments'
 import type { ComposerEditor } from './use-composer-editor'
 
-/** 按附件给预览卡补内容，见 ComposerAttachmentPreview；返回 undefined 就是默认预览。 */
 export type ComposerAttachmentPreviewOf = (
   attachment: ComposerAttachment,
 ) => ComposerAttachmentPreview | undefined
@@ -14,7 +10,6 @@ export type ComposerAttachmentPreviewOf = (
 type ComposerNodeViewsProps = {
   editor: ComposerEditor
   attachments: ComposerAttachments
-  /** 失败卡片与悬停预览卡的挂载点：编辑器在弹窗里时给弹窗内的元素（弹窗外点不到），否则给 null 挂到 body。 */
   layerContainer: HTMLElement | null
   attachmentPreview?: ComposerAttachmentPreviewOf | undefined
 }

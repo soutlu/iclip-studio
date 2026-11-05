@@ -26,7 +26,6 @@ const DEFAULT_CREDENTIAL = 'default'
 
 const modelKey = (provider: string, model: string) => `${provider}\u0000${model}`
 
-/** 给当前 agent 选供应商下的对话模型、思考档位与密钥；只列启用的（合同 §19「选模型」）。 */
 export function ModelPanel({
   config,
   onChange,

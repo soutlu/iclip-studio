@@ -1,8 +1,3 @@
-"""审计总览的 Postgres 口径：运行时长、单任务时长、片长与废片，以及总览的分期、均线与前几镜。
-
-运行时长先真跑运行驱动，确认官方运行持久化落下的就是报表读的那几种事件；其余用原生 SQL 直插，
-时间戳自己定。"""
-
 from __future__ import annotations
 
 import uuid
@@ -55,15 +50,10 @@ def local(day: date, hour: int = 0, minute: int = 0) -> datetime:
     return datetime.combine(day, time(hour, minute), tzinfo=SINGAPORE).astimezone(UTC)
 
 
-# --- agent 运行时长：真跑运行驱动 ------------------------------------------------
-
-
 WRITER = "shot-writer"
 
 
 def delegating_runner(engine: AsyncEngine) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """按运行时的装配接法建一个会派活给子代理的主 agent，再按生产接法装 runner。"""
-
     step_store = PgStepStore(engine)
     store = TranscriptStore()
     agent = delegating_agent(
@@ -84,9 +74,6 @@ def _boom() -> str:
 async def test_run_seconds_count_top_level_runs_that_reached_an_end(
     engine: AsyncEngine, reports: PgAuditReports, tmp_path: Path
 ) -> None:
-    """跑完的一轮（派过一个子代理）、工具炸掉失败的一轮各算一轮；子代理自己的运行也落了开始与
-    结束，但不在 agent_job_runs 里，不算；中断后没有终态的一轮不算。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         owner = await plant.user(SARA)
@@ -138,16 +125,9 @@ async def test_run_seconds_count_top_level_runs_that_reached_an_end(
     assert overall.agent_run_seconds.count == 2
 
 
-# --- 单任务时长、运行时长与样本数：直插 --------------------------------------------
-
-
 async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
     engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
-    """X 运行完 29 分钟后出片：空档照算，49 分钟。Y 空了 31 分钟：断开，两段各 10 分钟；出片后的
-    那轮在交付周期外，不进单任务时长。Z 一轮跑了 60 分钟，期间一条失败出片，结束 20 分钟后再出片：
-    空档对的是已合并段的结束，不是上一条出片的结束，所以整段 90 分钟。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara = await plant.user(SARA)
@@ -178,7 +158,6 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
             finished_at=minutes(6),
         )
         await plant.video(z, owner=sara, shot=1, created_at=minutes(80), finished_at=minutes(90))
-        # 开跑了没有终态的一轮：不算运行时长，也不当单任务时长的区间。
         prompt_id = await plant.prompt(z, user_name=SARA, at=minutes(95))
         await plant.run(prompt_id, started_at=minutes(95), ended_at=None)
 
@@ -206,7 +185,6 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
     assert overall.agent_run_seconds is not None
     assert overall.agent_run_seconds.count == 4
     assert overall.agent_run_seconds.avg == (600 + 600 + 600 + 3600) / 4
-    # 只有 X 那条出片记了提交时刻：视频生成时长只有它一个样本。
     assert overall.upstream_seconds is not None
     assert (overall.upstream_seconds.count, overall.upstream_seconds.avg) == (1, 540)
     assert overall.runs == 5 and overall.active_users == 1
@@ -215,9 +193,6 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
 async def test_length_counts_only_known_durations_and_discards_all_but_the_last_take(
     engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
-    """片长只读出片的 ``duration_ms``，空的不计；同一镜全时段最后一条以外的是废片——按时间窗、
-    按人切开看也是，窗里或某人名下的最后一条不因此变成「最后一条」。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek = await plant.user(SARA), await plant.user(DEREK)
@@ -268,17 +243,10 @@ async def test_length_counts_only_known_durations_and_discards_all_but_the_last_
     assert triple(by_conversation[unknown]) == (0, 0.0, 0.0)
 
 
-# --- 总览：分期、非活跃日、均线、前几镜 --------------------------------------------
-
 DAY0 = date(2026, 8, 3)
 
 
 async def plant_week(engine: AsyncEngine) -> dict[str, uuid.UUID]:
-    """新加坡时区 8 月 3 日起的一周：第 2 天没人跑；第 3 天两个人跑。九张需求单与一段没挂单的对话
-    共十件出片，需求单 1 在第 0、1 天各出一次片（算一件）。另有三镜重出过：挂在当天已有出片的
-    需求单下，不添件数；失败的不计次数，其中一段对话已删。还有一镜只失败过，哪里都不出现。
-    上一期只有一轮运行。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek, eva = [await plant.user(name) for name in (SARA, DEREK, EVA)]
@@ -335,7 +303,6 @@ async def plant_week(engine: AsyncEngine) -> dict[str, uuid.UUID]:
             sara, at=local(DAY0, 8), task_id=tasks[7], title="试了两次"
         )
         failed_only = await plant.conversation(sara, at=local(DAY0, 8), title="只失败过")
-        # 每镜的出片按先后，``True`` 是成了；次数只数成了的。
         takes = [
             (retried, eva, 1, local(DAY0 + timedelta(days=3), 14), (True, True, True)),
             (latest, derek, 2, local(DAY0 + timedelta(days=4), 14), (False, True, True, True)),
@@ -383,8 +350,6 @@ async def test_daily_overview_marks_inactive_days_and_dedupes_deliveries(
     assert series[3].metrics.active_users == 2
     assert sum(point.metrics.deliveries for point in series) == 11
 
-    # 最后一期的 7 日窗恰好就是本期，件数也够 10 件，不用往前补：每件出片的 token 与本期一致，
-    # 分母是去重后的 10 件，不是各天件数相加的 11 件。
     ma7 = series[-1].ma7
     assert ma7 is not None
     assert (ma7.tokens_per_delivery.since, ma7.tokens_per_delivery.until) == (since, until)
@@ -408,10 +373,6 @@ async def test_daily_overview_marks_inactive_days_and_dedupes_deliveries(
 
 
 async def test_overview_takes_each_kind_of_runtime_fact_once(engine: AsyncEngine) -> None:
-    """本期、上期、趋势格连同回看、被截的首期与前几镜，共用一次取回的事实行：消息、用量各按时间窗
-    取一次，运行按时间窗与按交付周期的对话各一次，首末消息一次（不到一批的会话数）。起点不在零点上，
-    首期要另算。"""
-
     await plant_week(engine)
 
     async with audit_runtime_client(engine) as client:
@@ -428,10 +389,6 @@ async def test_overview_takes_each_kind_of_runtime_fact_once(engine: AsyncEngine
 async def test_a_shot_lands_on_its_first_success_and_belongs_to_its_owner(
     engine: AsyncEngine, reports: PgAuditReports
 ) -> None:
-    """Sara 第 1 天先失败一次；Derek 那条第 1 天深夜受理、第 2 天凌晨完成，是第一条成功；Sara
-    第 2 天再成一次。镜落在第 2 天（第一条成功生成的完成时刻，不是它的受理时刻，也不是第一次
-    出片），归 Derek，次数 2；第 1 天什么都不算。"""
-
     day1, day2, day3 = (DAY0 + timedelta(days=offset) for offset in range(3))
     async with engine.begin() as conn:
         plant = Plant(conn)
@@ -478,9 +435,6 @@ async def test_a_shot_lands_on_its_first_success_and_belongs_to_its_owner(
 async def test_hourly_overview_clips_the_first_period_and_counts_active_days_exactly(
     engine: AsyncEngine, service: AuditService
 ) -> None:
-    """两天内按小时。起点 00:30 不在整点上：首期期首报 00:00，指标只算 00:30 之后。上一期同一天
-    05:00 有一轮，但在上一期的时间窗外，那天不算活跃日。"""
-
     day = date(2026, 8, 20)
     async with engine.begin() as conn:
         plant = Plant(conn)

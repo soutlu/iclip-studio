@@ -1,5 +1,3 @@
-"""给应用的 agent 名册与起标题：首页能选的顶层 agent，以及用默认对话模型给一段用户消息起标题。"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter

@@ -1,9 +1,3 @@
-"""agent 测试预览：开预览要 ``agent:manage``，每人每个 agent 只有一段当前预览，开新的先中断、再换掉旧的；
-预览 id 当对话 id 用在 transcript、发消息、状态、队列、读工作区文件与订阅上，只认属主本人、且他此刻持
-``agent:manage``，治理者也不例外，换掉的那段对谁都是 404；预览不是对话，不进列表、不起名，活动帧谁都不发。
-
-几个人：属主与另一位管理员是 editor 外加直接授的 ``agent:manage``，治理者是 editor 外加 ``users:manage``。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -43,8 +37,6 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
 
 
 async def grant(pg_url: str, username: str, permissions: list[str]) -> None:
-    """``username`` 是 editor，另直接授 ``permissions``（替换原有的直接授权）。"""
-
     async with connected(pg_url) as conn:
         await conn.execute(
             text(
@@ -65,8 +57,6 @@ ROLES: dict[str, list[str]] = {
 
 @pytest.fixture
 async def people(app: FastAPI, pg_url: str) -> AsyncGenerator[dict[str, httpx.AsyncClient]]:
-    """每人一个登录好的客户端。"""
-
     clients: dict[str, httpx.AsyncClient] = {}
     try:
         for name, permissions in ROLES.items():
@@ -122,7 +112,6 @@ async def test_a_preview_of_the_draft_or_of_a_version_of_an_existing_agent(
 
 
 Route = Callable[[str], tuple[str, str, dict[str, Any] | None]]
-"""按会话 id 拼出（方法，路径，请求体）。"""
 
 ROUTES: dict[str, Route] = {
     "transcript": lambda s: ("GET", f"/conversations/{s}/transcript", None),
@@ -146,8 +135,6 @@ async def call(client: httpx.AsyncClient, route: Route, session_id: str) -> int:
 
 
 async def statuses(client: httpx.AsyncClient, session_id: str) -> dict[str, int]:
-    """每个路由各调一次的状态码；发得出消息就等它收完尾，免得下一位撞上在跑的那条。"""
-
     found = {name: await call(client, route, session_id) for name, route in ROUTES.items()}
     if found["send"] == 200:
         await settled(client, session_id)
@@ -168,7 +155,6 @@ async def test_only_the_owner_holding_agent_manage_reaches_a_preview(
     assert await statuses(owner, preview) == ALL_OK
     for name in ("other_admin", "governor", "plain"):
         assert await statuses(people[name], preview) == ALL_HIDDEN, name
-    # 对话照原来的口径：治理者读得到别人的对话、写不了，别的管理员读不到。
     governor_on_conversation = await statuses(people["governor"], conversation)
     assert {k: governor_on_conversation[k] for k in ("transcript", "status", "files")} == {
         "transcript": 200,
@@ -178,7 +164,6 @@ async def test_only_the_owner_holding_agent_manage_reaches_a_preview(
     assert governor_on_conversation["send"] == 404
     assert await statuses(people["other_admin"], conversation) == ALL_HIDDEN
 
-    # 属主不再持 agent:manage：预览就此认不得，自己的对话照旧。
     await grant(pg_url, "owner", [])
     assert await statuses(owner, preview) == ALL_HIDDEN
     assert await statuses(owner, conversation) == ALL_OK
@@ -217,7 +202,6 @@ async def test_opening_again_replaces_the_current_preview_and_the_old_one_is_gon
     assert await _preview_rows(pg_url) == {(new, "owner", AGENT_ID, None)}
     assert await statuses(owner, old) == ALL_HIDDEN
     assert await statuses(owner, new) == ALL_OK
-    # 换掉的那段在运行时那边的会话留着，只是再也寻址不到。
     assert {old, new} <= await _preview_sessions(pg_url)
 
 
@@ -270,7 +254,6 @@ async def test_a_failed_abort_keeps_the_current_preview(
     assert refused.status_code == 503, refused.text
     assert await _preview_rows(pg_url) == rows
     assert (await owner.get(f"/conversations/{current}/status")).status_code == 200
-    # 中断之前开好的那段没有行指着它，谁都寻址不到。
     (leftover,) = await _preview_sessions(pg_url) - sessions
     assert leftover not in {row[0] for row in rows}
     assert (await owner.get(f"/conversations/{leftover}/status")).status_code == 404
@@ -283,7 +266,6 @@ async def test_concurrent_opens_leave_exactly_one_current_preview(
     people: dict[str, httpx.AsyncClient], pg_url: str
 ) -> None:
     owner = people["owner"]
-    # 第一轮还没有当前预览，两次都是新落行；第二轮两次都要先中断同一段再换掉它。
     for _ in range(2):
         first, second = await asyncio.gather(open_preview(owner), open_preview(owner))
 
@@ -341,7 +323,6 @@ class TestReplacingAnActivePreview:
                 "prm_queued": "queued",
             }
 
-            # 别人在同一个 agent 上开、属主在别的 agent 上开：都不换掉这一段，也不打断它。
             for client, agent_id in ((people["other_admin"], AGENT_ID), (owner, OTHER_AGENT)):
                 elsewhere = await open_preview(client, agent_id)
                 assert elsewhere.status_code == 201, elsewhere.text
@@ -432,8 +413,6 @@ class TestReplacingAnAwaitingPreview:
 
 
 async def _preview_rows(pg_url: str) -> set[tuple[str, str, str, str | None]]:
-    """``iclip.agent_previews`` 的每一行：（预览 id，属主用户名，agent，版本 id）。"""
-
     async with connected(pg_url) as conn:
         rows = await conn.execute(
             text(
@@ -453,8 +432,6 @@ async def _preview_rows(pg_url: str) -> set[tuple[str, str, str, str | None]]:
 
 
 async def _preview_sessions(pg_url: str) -> set[str]:
-    """运行时那边全部预览会话的 id。"""
-
     async with connected(pg_url) as conn:
         rows = await conn.execute(
             text("SELECT id FROM agent_runtime.sessions WHERE preview_agent_id IS NOT NULL")
@@ -482,9 +459,6 @@ async def _prompt_states(pg_url: str, preview: str) -> dict[str, str]:
             {"preview": preview},
         )
         return {row.prompt_id: row.status for row in rows}
-
-
-# --- 订阅与活动帧 ------------------------------------------------------------------
 
 
 def _grant_sync(pg_url: str, username: str, permissions: list[str]) -> None:
@@ -520,7 +494,6 @@ def test_subscribing_to_a_preview_is_for_its_owner_and_its_activity_reaches_nobo
             assert until(mine, "ack")["payload"]["accepted"] == [preview]
             assert until(theirs, "ack")["payload"]["not_found"] == [preview]
 
-            # 先跑预览、再跑对话：两条连接上第一帧活动都该是对话的，预览的一帧都没有。
             for session_id, prompt_id in ((preview, "prm_p"), (conversation, "prm_c")):
                 sent = tc.post(
                     f"/conversations/{session_id}/prompts",

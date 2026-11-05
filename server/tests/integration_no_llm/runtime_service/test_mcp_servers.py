@@ -1,11 +1,3 @@
-"""运行时服务的 MCP 服务：请求头加密存、只给打码值、改的时候没给值就沿用；地址加密存、原样返回、改的时候
-没给就沿用，地址与名称都不能和已有的服务重复；试连记下结果与发现的工具，没保存的配置试连什么都不存；发布时查
-服务与选的工具；被 agent 挂着时不能停用、不能删；换钥连地址与请求头一起换；运行时
-agent 真去调本地 MCP 服务的工具，工具名带服务前缀、只放选了的工具，工具卡写服务名称与工具说明（名册启动时从库里读），连不上时
-这次运行失败并写明是哪个服务。
-
-MCP 服务是进程内的本地服务（``tests.helpers.mcp``），不出网。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -42,9 +34,6 @@ MASKED = "••••" + TOKEN[-4:]
 
 @dataclass
 class Script:
-    """模型替身照着演：``call`` 是第一次请求时调的工具与参数，之后一律答「好了」。``offered`` 记下每次请求
-    交给模型的工具名，``requests`` 记下每次请求的消息。"""
-
     call: tuple[str, dict[str, Any]] | None = None
     offered: list[list[str]] = field(default_factory=list[list[str]])
     requests: list[list[ModelMessage]] = field(default_factory=list[list[ModelMessage]])
@@ -122,8 +111,6 @@ async def stored_headers(engine: AsyncEngine, server_id: str = "calc") -> list[d
 
 
 async def stored_url(engine: AsyncEngine, server_id: str = "calc") -> tuple[str, str]:
-    """库里这个服务的 ``url``（密文）与 ``url_hash``。"""
-
     async with engine.connect() as conn:
         row = (
             await conn.execute(
@@ -143,8 +130,6 @@ def mcp_tool(server: str = "calc", tools: list[str] | None = None) -> dict[str, 
 
 
 async def save_draft(admin: httpx.AsyncClient, *tools: dict[str, Any]) -> int:
-    """建好 ``AGENT``（已有就沿用），把草稿存成挂着这些工具的配置，交回新的 ``lockVersion``。"""
-
     detail = await admin.get(f"/agents/{AGENT}")
     if detail.status_code == 404:
         detail = await admin.post("/agents", json={"id": AGENT, "name": "导演"})
@@ -213,9 +198,6 @@ def tool_frames(turn: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-# --- 管理接口 --------------------------------------------------------------------
-
-
 async def test_headers_are_encrypted_masked_and_kept_when_omitted(
     admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
 ) -> None:
@@ -267,7 +249,6 @@ async def test_the_url_is_encrypted_and_returned_in_full(
     url, url_hash = await stored_url(engine)
     assert mcp.http_url not in url
     assert cipher.decrypt(url) == mcp.http_url
-    # 哈希按去掉首尾空白后的地址算。
     assert url_hash == hashlib.sha256(mcp.http_url.encode()).hexdigest()
 
 
@@ -296,7 +277,6 @@ async def test_a_repeated_url_or_name_is_refused_naming_the_server(
     assert renamed.json()["detail"] == "这个名称已经有了：计算器"
     spare = await read(admin, "spare")
     assert (spare["name"], spare["url"]) == ("备用", mcp.sse_url)
-    # 改自己时交回原来的地址与名称不算重复。
     kept = await admin.patch("/mcp-servers/spare", json={"name": "备用", "url": mcp.sse_url})
     assert kept.status_code == 200, kept.text
 
@@ -363,7 +343,6 @@ async def test_saved_check_records_the_result_and_the_discovered_tools(
     assert saved["lastCheck"]["ok"] is True
     assert [tool["name"] for tool in saved["tools"]] == list(TOOLS)
 
-    # 请求头不对：这次试连没通，原因记下，发现的工具还是上次通的那份。
     wrong = await admin.patch(
         "/mcp-servers/calc", json={"headers": [{"name": "Authorization", "value": "Bearer nope"}]}
     )
@@ -376,7 +355,6 @@ async def test_saved_check_records_the_result_and_the_discovered_tools(
     assert after["lastCheck"]["reason"] == refused["reason"]
     assert [tool["name"] for tool in after["tools"]] == list(TOOLS)
 
-    # 换了地址与连接方式就是另一个服务：上次的试连与工具清掉，SSE 照样连得通。
     moved = await admin.patch(
         "/mcp-servers/calc",
         json={
@@ -400,7 +378,6 @@ async def test_unsaved_check_stores_nothing_and_can_reuse_saved_header_values(
     assert [tool["name"] for tool in passed.json()["tools"]] == list(TOOLS)
     without_token = await admin.post("/mcp-servers/check", json={**form, "headers": []})
     assert without_token.json()["ok"] is False
-    # SSE 被拒时客户端的报错原文带着地址；原因里只留 ``••••``，不露地址。
     refused = await admin.post(
         "/mcp-servers/check", json={**form, "url": mcp.sse_url, "transport": "sse", "headers": []}
     )
@@ -417,7 +394,6 @@ async def test_unsaved_check_stores_nothing_and_can_reuse_saved_header_values(
     assert reused.status_code == 200, reused.text
     assert reused.json()["ok"] is True
     assert (await read(admin))["lastCheck"] is None
-    # 带 serverId 不给地址：连那个服务存着的地址。
     without_url = {k: v for k, v in form.items() if k != "url"}
     stored = await admin.post(
         "/mcp-servers/check",
@@ -446,7 +422,6 @@ async def test_unsaved_check_stores_nothing_and_can_reuse_saved_header_values(
 async def test_publish_checks_the_server_and_the_chosen_tools(
     admin: httpx.AsyncClient, mcp: LocalMcp, provider: None
 ) -> None:
-    # 存草稿只查结构：服务还不存在也存得下。
     lock = await save_draft(admin, mcp_tool(tools=["add"]))
     missing = await publish(admin, lock)
     assert missing.status_code == 422
@@ -476,7 +451,6 @@ async def test_publish_checks_the_server_and_the_chosen_tools(
     lock = await save_draft(admin, mcp_tool(tools=["add"]), mcp_tool("spare"))
     off = await publish(admin, lock)
     assert off.status_code == 422
-    # 停用与没连通过两条都列出来，都指到第二项的 server。
     assert {one["path"] for one in off.json()["problems"]} == {"tools[1].server"}
     assert "已停用" in off.json()["problems"][0]["message"]
 
@@ -496,7 +470,6 @@ async def test_a_server_in_use_cannot_be_disabled_or_deleted(
     assert (disabled.status_code, deleted.status_code) == (409, 409)
     assert AGENT in deleted.json()["detail"]
 
-    # 草稿里去掉了，当前版本还挂着：照样拦。
     await save_draft(admin)
     assert (await read(admin))["usedBy"][0]["inDraft"] is False
     assert (await admin.delete("/mcp-servers/calc")).status_code == 409
@@ -537,7 +510,6 @@ async def test_rotation_reencrypts_the_url_and_the_header_values(
         assert only_new.decrypt(url) == plain_url
         with pytest.raises(RuntimeError):
             CredentialCipher([TEST_CREDENTIAL_KEY]).decrypt(url)
-    # 旧 key 去掉之后照样连得上：试连用的是解开的新密文。
     service = McpServerService(
         SqlMcpServerStore(engine),
         cipher=only_new,
@@ -583,9 +555,6 @@ async def test_importing_a_package_checks_the_mcp_servers_it_names(
     assert [one["path"] for one in item["warnings"]] == ["config.tools[0].server"]
 
 
-# --- 运行 ------------------------------------------------------------------------
-
-
 async def test_the_agent_calls_a_chosen_mcp_tool(
     running: None,
     admin: httpx.AsyncClient,
@@ -603,10 +572,8 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     session = await open_and_prompt(app_client)
 
     assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "completed"}
-    # 库里只有地址的密文，运行装配解开它才连得上。
     assert mcp.http_url not in (await stored_url(engine))[0]
     assert mcp.calls == [("add", {"a": 2, "b": 3})]
-    # 只放选了的工具，名字带上服务的前缀。
     assert script.offered[0] == ["mcp_calc_add"]
     (returned,) = [
         part
@@ -617,12 +584,10 @@ async def test_the_agent_calls_a_chosen_mcp_tool(
     ]
     assert returned.tool_name == "mcp_calc_add"
     assert "5" in str(returned.content)
-    # 卡头是服务的名称接这件工具的显示名，不是工具说明、工具名与标识；参数里没有字符串，没有主语。
     (card,) = tool_frames(await only_turn(app_client, session))
     assert (card["name"], card["state"]) == ("mcp_calc_add", "done")
     assert card["display"] == {"kind": "generic", "summary": "计算器 · 加法", "detail": None}
 
-    # 历史每次读都按名册当下的内容重画：改了服务名称，已跑完的这一轮跟着换。
     renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术"})
     assert renamed.status_code == 200, renamed.text
     (card,) = tool_frames(await only_turn(app_client, session))
@@ -636,7 +601,6 @@ async def test_startup_reads_the_server_index_from_the_database(
     await check(admin)
     services: ConfigServices = runtime_app.state.config_services
     index = services.mcp_index
-    # 当作刚重启：名册是空的，库里有这个服务。
     index.remove("calc")
 
     async with runtime_app.router.lifespan_context(runtime_app):
@@ -652,7 +616,6 @@ async def test_tools_stored_without_a_title_load_with_no_title(
 ) -> None:
     await create_server(admin, mcp)
     await check(admin)
-    # 显示名这一项加上之前试连存下的工具没有 ``title``：启动照常读进名册，答复里是 ``null``。
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -690,7 +653,6 @@ async def test_a_failing_mcp_tool_goes_back_to_the_model(
     assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "completed"}
     assert script.offered[0] == ["mcp_calc_add", "mcp_calc_divide", "mcp_calc_shout"]
     assert mcp.calls == [("divide", {"a": 1, "b": 0})]
-    # 服务报的错照原生的做法作为这次调用的结果交回模型，这一轮照常跑完。
     (returned,) = [
         part
         for message in script.requests[1]

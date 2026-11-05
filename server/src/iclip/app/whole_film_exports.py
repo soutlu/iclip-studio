@@ -1,8 +1,3 @@
-"""成片导出的组合根适配：把草稿换成一条成片生成记录的请求，读最新一次导出，取消。
-
-每次导出是一条成片生成记录，由生成队列交给渲染服务（见 ``generation/render.py``）；这里只在记录
-已交给渲染服务时转问它的排队位置与进度。"""
-
 from __future__ import annotations
 
 import uuid
@@ -47,14 +42,11 @@ from iclip.domains.identity.public import Principal
 _logger = structlog.stdlib.get_logger(__name__)
 
 SUBTITLE_SCAN_LIMIT: Final = 50
-"""每条素材片往回看几条字幕记录找最新的已完成那条；手动重识别不会多到这个数。"""
 
 _NOT_THIS_EXPORT: Final = "没有这次导出"
 
 
 class WholeFilmExportAdapter:
-    """对话域 ``WholeFilmExports`` 的实现。"""
-
     def __init__(
         self,
         *,
@@ -96,10 +88,6 @@ class WholeFilmExportAdapter:
         return job.id
 
     async def _subtitles(self, sources: tuple[uuid.UUID, ...]) -> list[WholeFilmSubtitles]:
-        """每条素材片最新的一条已完成字幕记录（含逐词时间）；一条都没有的素材片不在里面。
-
-        不看属主：出处已在存草稿时核过是这段对话读得到的素材片，它的字幕跟着读。"""
-
         found: list[WholeFilmSubtitles] = []
         for source in sources:
             records = await self._generations.list_for_owner(
@@ -149,8 +137,6 @@ class WholeFilmExportAdapter:
             raise WholeFilmRenderUnavailable(str(exc)) from exc
 
     async def _export_of(self, job: GenerationJob) -> WholeFilmExport:
-        """记录给人看的样子：已交给渲染服务的转问它走到哪一步，其余只看记录。"""
-
         status: WholeFilmExportStatus = "queued"
         progress: float | None = None
         queue_position: int | None = None
@@ -161,7 +147,6 @@ class WholeFilmExportAdapter:
                 status = live.status
                 progress, queue_position = live.progress, live.queue_position
             else:
-                # 渲染服务答不上来，或它已结束、轮询还没记下：按记录上最后一次记下的那一步。
                 status = _recorded_stage(job.provider_status)
         elif job.status == STATUS_COMPLETED:
             status = "done"
@@ -195,8 +180,6 @@ class WholeFilmExportAdapter:
 
 
 def _recorded_stage(provider_status: str | None) -> RenderStage:
-    """记录上最后一次记下的那一步；还没记过（刚交出去）就是排队。"""
-
     for stage in RENDER_STAGES:
         if stage == provider_status:
             return stage

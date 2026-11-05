@@ -23,8 +23,6 @@ const shot = (text: string, view: string | null, start: number) => ({
   view,
 })
 
-/** 列表四张，c 没选用；列表后面接着镜头 4 没进列表的机位图 e（没有编号）。甲写 @1，乙写 @2、@4，丙也写 @2；
- * 镜头 1 开头引用机位图 c（@3），镜头 2 只写了一个超出列表的编号，镜头 3 正文里写 @1，镜头 4 只挂着 e。 */
 const group: FilmGroup = {
   aspectRatio: '9:16',
   frames: [

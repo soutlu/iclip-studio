@@ -9,7 +9,6 @@ import { ListError, NextPageFooter } from './list-state'
 
 type Page = { items: string[]; nextCursor: string | null }
 
-/** 三页、每页一行，记下每次读的游标；`override` 给某一页换结果（挂住或抛错），返回 undefined 就照常给。 */
 const threePages = (override?: (cursor: string) => Promise<Page | undefined> | undefined) => {
   const cursors: (string | null)[] = []
   const fetchPage = async (cursor: string | null): Promise<Page> => {
@@ -24,7 +23,6 @@ const threePages = (override?: (cursor: string) => Promise<Page | undefined> | u
   return { cursors, fetchPage }
 }
 
-/** 真的无限查询接上页脚；出错时报错与重试放在页脚上方，页脚照常挂着，看它自己会不会停。 */
 function PagedList({
   fetchPage,
   counted = true,
@@ -62,7 +60,6 @@ function PagedList({
   )
 }
 
-/** 等一会儿，给本不该发出的请求留出发出的时间。 */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
 describe('自动翻页页脚', () => {
@@ -75,7 +72,6 @@ describe('自动翻页页脚', () => {
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
     expect(cursors).toEqual([null, 'p2', 'p3'])
-    // 读完了页脚就收起，不再有读取状态
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     await settle()
     expect(cursors).toHaveLength(3)
@@ -87,7 +83,6 @@ describe('自动翻页页脚', () => {
     await renderWithProviders(<PagedList fetchPage={fetchPage} />)
 
     expect(await screen.findByText('已显示 1 / 3')).toBeVisible()
-    // 不用再点：页脚里没有按钮
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     await settle()
     expect(cursors).toEqual([null])

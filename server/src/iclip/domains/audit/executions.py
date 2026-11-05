@@ -1,5 +1,3 @@
-"""任务执行清单的纯规则：四种异常的门槛与按排序键翻页的游标。对外表述见合同 §12「任务执行」。"""
-
 from __future__ import annotations
 
 import math
@@ -14,19 +12,13 @@ from iclip.domains.audit.models import ExecutionSort, SortOrder
 from iclip.platform.paging import BAD_CURSOR
 
 RETRY_AT_LEAST: Final = 3
-"""单镜成功生成达到这么多次算反复重试。"""
 STUCK_HOURS: Final = 1
-"""出片停在 ``submitted``、提交上游超过这么多小时算视频悬挂。"""
 SPEND_TIMES: Final = 3
-"""对话 token 合计超过本期每件出片平均 token 的这么多倍算消耗离群。"""
 TASK_CONVERSATIONS: Final = 3
-"""需求单在本期至少有这么多段执行、又从来没有出片算卡住。"""
 
 SortValue = datetime | float | int
-"""排序键的取值：``start`` 是时刻，``retries`` / ``cycle`` 是浮点，``tokens`` 是整数。"""
 
 NULLABLE_SORTS: Final[frozenset[ExecutionSort]] = frozenset({"retries", "cycle"})
-"""取值可能为空的排序键；空值不论升降都排最后。"""
 
 _SORTS: Final[frozenset[str]] = frozenset(get_args(ExecutionSort))
 _ORDERS: Final[frozenset[str]] = frozenset(get_args(SortOrder))
@@ -36,8 +28,6 @@ _NULL: Final = "~"
 
 @dataclass(frozen=True, slots=True)
 class ExecutionCursor:
-    """上一页末行的位置：按哪种排序发的，末行的排序键与对话 id。``value`` 为空即已进入空值尾段。"""
-
     sort: ExecutionSort
     order: SortOrder
     value: SortValue | None
@@ -45,14 +35,10 @@ class ExecutionCursor:
 
 
 def spend_tokens(tokens_per_delivery: float | None) -> float | None:
-    """消耗离群的门槛：本期每件出片平均 token × ``SPEND_TIMES``；本期没有出片为空。"""
-
     return None if tokens_per_delivery is None else tokens_per_delivery * SPEND_TIMES
 
 
 def encode_execution_cursor(cursor: ExecutionCursor) -> str:
-    """把位置写成不透明游标：「排序键|方向|取值|对话 id」，空值写 ``~``。"""
-
     value = cursor.value
     if value is None:
         text = _NULL
@@ -66,8 +52,6 @@ def encode_execution_cursor(cursor: ExecutionCursor) -> str:
 
 
 def decode_execution_cursor(raw: str, *, sort: ExecutionSort, order: SortOrder) -> ExecutionCursor:
-    """还原游标并核对它是这种排序发的；形状不对、排序键或方向对不上都抛 ``ValidationFailed``。"""
-
     parts = raw.split(_SEPARATOR)
     if len(parts) != 4:
         raise ValidationFailed(BAD_CURSOR)

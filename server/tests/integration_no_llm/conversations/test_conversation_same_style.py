@@ -1,5 +1,3 @@
-"""验证做同款：建对话时带 ``sameAs``，源按资料库认；拷哪几份文件、改什么名，什么时候不拷、不落行。"""
-
 from __future__ import annotations
 
 import json
@@ -28,8 +26,6 @@ async def open_conversation(client: httpx.AsyncClient) -> str:
 
 
 async def plant_master(pg_url: str, owner: str, conversation_id: str | None) -> str:
-    """一条成了的出片；挂着对话就让那段对话进资料库，不挂对话时它自己成一张卡。返回出片 id。"""
-
     job_id = str(uuid.uuid4())
     async with connected(pg_url) as conn:
         await conn.execute(
@@ -55,8 +51,6 @@ async def plant_master(pg_url: str, owner: str, conversation_id: str | None) -> 
 
 
 async def open_source(client: httpx.AsyncClient, pg_url: str, owner: str) -> str:
-    """开一段有素材片的对话，资料库里有它的卡，卡 id 就是对话 id。"""
-
     source = await open_conversation(client)
     await plant_master(pg_url, owner, source)
     return source
@@ -72,8 +66,6 @@ async def make_same(
 
 
 async def plant(pg_url: str, namespace: str, files: dict[str, str]) -> None:
-    """往工作区放文件。"""
-
     async with connected(pg_url) as conn:
         for path, content in files.items():
             await conn.execute(
@@ -233,8 +225,6 @@ async def test_a_deleted_source_with_a_library_card_is_copied_anyway(
 async def test_a_source_that_is_not_a_library_card_with_a_conversation_is_404_and_leaves_nothing(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """没有素材片的对话不在资料库里，自己的也不行；不挂对话的卡没有对话可拷。"""
-
     owner = await login_as_editor(client, pg_url)
     theirs = await open_conversation(client)
     await plant(pg_url, f"{owner}/{theirs}", {"film.icml": "<film/>"})
@@ -254,8 +244,6 @@ async def test_a_source_that_is_not_a_library_card_with_a_conversation_is_404_an
 async def test_a_caller_without_generation_read_is_404_and_leaves_nothing_behind(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """只授 ``agent:run`` 的钥匙看不到资料库，连钥匙属主自己的卡也做不了同款。"""
-
     owner = await register_and_login(client, username="gov", email="gov@example.com")
     await set_roles_in_db(pg_url, "gov@example.com", ["root"])
     source = await open_source(client, pg_url, owner)

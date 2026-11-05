@@ -14,7 +14,6 @@ import { conversationsQueryKeys, type SidebarTopology } from '../conversations.a
 import { ConversationRoute } from './conversation-route'
 import { type FakeSocket, SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 
-// jsdom 不支持 Lottie 加载时的 canvas 探测；替换装饰动画以验证会话行为。
 vi.mock('lottie-web/build/player/lottie_light', () => ({
   default: {
     loadAnimation: () => ({
@@ -27,11 +26,9 @@ vi.mock('lottie-web/build/player/lottie_light', () => ({
 
 const TAIL_TEXT = '这是第 2 轮的回复。'
 
-/** renderWithProviders 完成连接握手，返回 socket 供测试发送后续帧。 */
 const renderConversation = async () =>
   renderWithProviders(<ConversationRoute conversationId="c1" />)
 
-/** 路由按对话 id 换键重挂；这里用开关模拟离开再回来同一段对话。 */
 function RemountableConversation() {
   const [shown, setShown] = useState(true)
   return (
@@ -59,7 +56,6 @@ const runningPrompt = (promptId: string) => ({
   prompt: { createdAt: '2026-08-31T03:00:00Z', promptId, status: 'running' },
 })
 
-/** 审批卡通过 approvalId 匹配工具调用。 */
 const APPROVAL_TURN = {
   kind: 'turn',
   ordinal: 3,
@@ -97,7 +93,6 @@ const APPROVAL_TURN = {
   turnId: 'ta',
 }
 
-/** 渲染前替换基线为等待审批状态；ownerUserId 可换成别人、deletedAt 可给时刻，用来演治理者复盘。 */
 const serveApprovalPage = (ownerUserId = mockAuthUser.id, deletedAt: string | null = null) => {
   const page = mockTranscriptPage()
   server.use(
@@ -172,7 +167,6 @@ describe('ConversationRoute', () => {
   })
 
   it('末轮流式追加时，用户在旧轮选中的文字保持不变', async () => {
-    // 带上路由实际传入的分叉回调，覆盖完整的历史轮渲染路径。
     const { socket } = await renderWithProviders(
       <ConversationRoute conversationId="c1" onForked={() => undefined} />,
     )
@@ -242,7 +236,6 @@ describe('ConversationRoute', () => {
       ),
     )
 
-    // 时间线多了一份同样的字，气泡那份还在，本地也仍算在等自己那一轮。
     await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(2))
     expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
   })
@@ -337,7 +330,6 @@ describe('ConversationRoute', () => {
     await screen.findByText(TAIL_TEXT)
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
 
-    // jsdom 不排版：手动给出滚动尺寸，模拟停在离底部很远的位置。
     const scroller = screen.getByTestId('chat-scroller')
     const scrollTo = vi.fn()
     Object.defineProperties(scroller, {
@@ -489,7 +481,6 @@ describe('ConversationRoute', () => {
 
     const card = await screen.findByRole('region', { name: '等待审批' })
     expect(within(card).getByText('写入文件')).toBeInTheDocument()
-    // 审批卡预览要写的内容，来自 display 里的 content。
     expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
       '两张镜头帧拼版，主图在左。',
     )
@@ -502,7 +493,6 @@ describe('ConversationRoute', () => {
         path: '/api/conversations/c1/interactions/appr_1',
       })
     })
-    // 卡片移除由服务端 pending 集合驱动，本地提交仅更新结果。
     expect(await within(card).findByText('已同意')).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: /拒绝/ })).toBeNull()
   })
@@ -579,7 +569,6 @@ describe('ConversationRoute', () => {
     loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
     let asked: { turn: number } | null = null
     let calls = 0
-    // 合同上这几个 id 都是 UUID；副本的 id 由服务端铸，测试里铸一个当它的答复。
     const copy = addMockConversation('开场那段（分叉 · 第 2 轮）')
     server.use(
       http.post('*/api/conversations/c1:fork', async ({ request }) => {
@@ -604,12 +593,10 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
     const buttons = await screen.findAllByRole('button', { name: '从此处另开任务' })
     const button = buttons[buttons.length - 1] as HTMLElement
-    // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
     await user.dblClick(button)
 
     await waitFor(() => expect(forked).toHaveBeenCalledWith(copy.id))
     expect(calls).toBe(1)
-    // mockTranscriptPage 的基线有两轮，点最后一轮的按钮。
     expect(asked).toEqual({ turn: 2 })
   })
 
@@ -672,7 +659,6 @@ describe('ConversationRoute', () => {
   it('标题来自基线，服务端起了新名字就当场换掉', async () => {
     const { socket } = await renderConversation()
 
-    // 历史会话可能不在侧栏首页，初始标题必须来自基线。
     expect(await screen.findByRole('heading', { name: '夜景延时素材生成' })).toBeVisible()
 
     socket.deliver({
@@ -697,7 +683,6 @@ describe('ConversationRoute', () => {
       row.title = '又改了一次'
     })
 
-    // 流没断，主池只带水位重订、不重读基线；补读悬着的这段时间不退回打开页面时的名字。
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(screen.getByRole('heading', { name: '改过的名字' })).toBeVisible()
     release()
@@ -739,7 +724,6 @@ describe('ConversationRoute', () => {
   }, 10_000)
 })
 
-/** 重连用例补读整行，行的 id 要过 ConversationOut 的 uuid 校验。 */
 const ROW_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
 const renderRowConversation = async () =>
@@ -752,7 +736,6 @@ const titleFrame = (title: string) => ({
   type: 'session.meta.updated',
 })
 
-/** 之后读这段对话整行的请求先悬着，调返回的函数放行，交给默认 handler 答复。 */
 const holdRowReads = () => {
   let release = () => {}
   const held = new Promise<void>((resolve) => {
@@ -766,10 +749,6 @@ const holdRowReads = () => {
   return release
 }
 
-/**
- * 断线后等连接按退避（1 秒另加至多 250ms 抖动）重连，再完成握手。`duringOutage` 是断线期间服务端那边的变化，
- * 全局帧不补发。假连接不回 reset：模拟运行时的流没断。
- */
 const reconnect = async (socket: FakeSocket, duringOutage: () => void) => {
   const handshake = socket.onmessage
   act(() => socket.onclose?.())

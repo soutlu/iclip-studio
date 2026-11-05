@@ -1,9 +1,3 @@
-"""比较 Alembic head 与 ``iclip``、``agent_runtime`` 两个 schema 的表定义的表、列集合，生成记录表另
-逐项比到可空性、外键名与索引定义。
-
-_MODULE_METADATA 必须包含两个 schema 里所有表模块的元数据，确保迁移对账完整。
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -152,9 +146,6 @@ def _generation_jobs_declared() -> dict[str, Any]:
 
 
 async def test_generation_jobs_matches_its_table_definition(migrated_pg: str) -> None:
-    """生成记录表与 ``generation_jobs_table`` 逐项一致：列与可空性、主键、外键名、索引名、方法、
-    键表达式与部分索引条件。表达式与条件按 Postgres 规范化后的文本比。"""
-
     engine = build_engine(migrated_pg)
     try:
         async with engine.connect() as conn:

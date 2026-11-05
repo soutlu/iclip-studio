@@ -6,11 +6,9 @@ const DECODE_RATE = 44_100
 
 export type MusicAnalysis = { durationMs: number; peaks: AudioPeaks }
 
-/** 下载并解码一首音乐，量出时长与波形。音乐在对象存储上，是外链素材，不经 apiFetch。 */
 const analyzeMusic = async (url: string, signal: AbortSignal): Promise<MusicAnalysis> => {
   const response = await fetch(url, { signal })
   if (!response.ok) throw new Error(`音乐下载失败：${response.status}`)
-  // 离线上下文不受浏览器「先有用户手势才能出声」的限制。
   const buffer = await new OfflineAudioContext(1, 1, DECODE_RATE).decodeAudioData(
     await response.arrayBuffer(),
   )
@@ -28,7 +26,6 @@ const musicAnalysisQuery = (url: string | undefined) =>
 
 export const useMusicAnalysis = (url: string | undefined) => useQuery(musicAnalysisQuery(url))
 
-/** 记录上没记时长的几首音乐，量出来的时长（地址 → 毫秒）；与列表里的波形共用同一份分析 */
 export const useMeasuredMusicDurations = (urls: readonly string[]): ReadonlyMap<string, number> =>
   useQueries({
     queries: urls.map((url) => musicAnalysisQuery(url)),
@@ -50,7 +47,6 @@ export type MusicBeats =
 
 const NO_STEADY_BEAT = '这首音乐没有稳定的节拍，无法自动卡点'
 
-/** 下载、解码一首音乐，用 HyperFrames 的拍点分析（与 Studio 同一套）找出拍点 */
 const analyzeBeats = async (url: string, signal: AbortSignal): Promise<MusicBeat[]> => {
   const response = await fetch(url, { signal })
   if (!response.ok) throw new Error(`音乐下载失败：${response.status}`)
@@ -75,10 +71,6 @@ const musicBeatsQuery = (url: string | undefined) =>
     retry: false,
   })
 
-/**
- * 成片在用的这首音乐的拍点（音乐文件时间）；每首只分析一次。还在分析、分析失败或没有稳定节拍时
- * 「自动卡点」按给出的原因置灰。
- */
 export const useMusicBeats = (url: string | undefined): MusicBeats => {
   const query = useQuery(musicBeatsQuery(url))
   if (url === undefined) return { kind: 'unavailable', reason: '还没有选用音乐，无法自动卡点' }

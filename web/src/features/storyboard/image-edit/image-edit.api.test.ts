@@ -10,7 +10,6 @@ const NOTICE = '\n图中的编号和圈选只表示位置，输出干净的图�
 const text = (value: string): EditDraftPart => ({ kind: 'text', text: value })
 const image = (url: string, name = 'x.png'): EditDraftPart => ({ kind: 'image', name, url })
 const mark = (id: string, number: number): EditDraftPart => ({ kind: 'annotation', id, number })
-/** 画布上当前的编号：a1 后来成了 3 号（编号以画布为准，不看 chip 里记的）。 */
 const numberOf = (id: string) => ({ a1: 3, a2: 2 })[id]
 
 describe('compileEditRequest', () => {

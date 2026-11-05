@@ -1,5 +1,3 @@
-"""快照消息表迁移：升级建出与 ``step_store_pg`` 一致的表与索引。"""
-
 from __future__ import annotations
 
 import asyncio

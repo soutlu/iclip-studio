@@ -3,12 +3,6 @@ import { listTasksByIds, taskPreviewOf, tasksQueryKeys, type Task } from '@/feat
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import type { TaskPreview, TaskPreviewState } from '@/shared/lib/task-preview'
 
-/**
- * 关联到的需求单按 id 批量读取，一组一个请求；读取失败不视作未关联。
- *
- * 分组按对话列表的页来：再翻一页只多一组、已有各组的键不变，已读到的预览不会因为新页到来而闪一下；
- * 一组读失败也只影响那一页的行。一页最多 50 段对话，不会超过接口一次 100 个 id 的上限。
- */
 export function useAuditTaskPreviews(taskIdGroups: readonly (readonly string[])[]): {
   taskPreviews: ReadonlyMap<string, TaskPreview>
   taskPreviewState: TaskPreviewState

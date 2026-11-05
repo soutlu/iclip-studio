@@ -1,5 +1,3 @@
-/** 审计报表的只读口：总览与按人各按时间范围取一份，按任务执行按时间范围、人与排序翻页。 */
-
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
@@ -30,14 +28,12 @@ type ExecutionsQuery = z.input<typeof zExecutionsAuditExecutionsGetQuery>
 export type ExecutionSortKey = NonNullable<ExecutionsQuery['sort']>
 export type SortOrder = NonNullable<ExecutionsQuery['order']>
 
-/** 按任务执行由接口排序；换排序就从第一页重读。 */
 export type ExecutionSort = { key: ExecutionSortKey; order: SortOrder }
 
 export const DEFAULT_EXECUTION_SORT: ExecutionSort = { key: 'start', order: 'desc' }
 
 const EXECUTIONS_PAGE = 50
 
-/** 按时间范围取数的查询串：UTC+8 零点切的时间窗与固定的审计时区，粒度由服务端定；now 可注入方便测试。 */
 export const overviewSearchParams = (
   range: OverviewRange,
   now: Date = new Date(),
@@ -77,10 +73,6 @@ export const auditQueryKeys = {
     ['audit', 'executions', range, userName, sort] as const,
 }
 
-/**
- * 总览一次取齐本期、上一期、趋势与均线。预设的「此刻」在发请求时才取，重取就是最新的。
- * 换范围时先留着上一份数据，新数据到了再换，页面不闪回骨架。
- */
 export const useAuditOverview = (range: OverviewRange) =>
   useQuery({
     placeholderData: keepPreviousData,
@@ -92,7 +84,6 @@ export const useAuditOverview = (range: OverviewRange) =>
     queryKey: auditQueryKeys.overview(range),
   })
 
-/** 按人一次全给；按人筛选在前端做，所以不带人。换范围时同样先留着上一份。 */
 export const useAuditPeople = (range: OverviewRange) =>
   useQuery({
     placeholderData: keepPreviousData,
@@ -104,10 +95,6 @@ export const useAuditPeople = (range: OverviewRange) =>
     queryKey: auditQueryKeys.people(range),
   })
 
-/**
- * 按任务执行一页 50 段，游标只对发它的那种排序有效，所以排序进查询键、换了就从头读。
- * 缓存留 30 分钟：点进一段对话看上一阵再退回来，已展开的分页不该缩回第一页。
- */
 export const useAuditExecutions = (
   range: OverviewRange,
   userName: string | null,

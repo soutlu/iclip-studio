@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FIXTURES_DIR, WEB_ROOT, libraryVersion, publishedCatalog } from './hyperframes-shared.mjs'
 
-// 每个用例一份测试组件库的副本，改动不碰入库的文件。
 let work
 let library
 beforeEach(async () => {
@@ -58,7 +57,6 @@ describe('hf:registry', () => {
   it('版本目录已存在时跳过组装，按版本目录里的组件文件写带 version 的 catalog.json', async () => {
     const out = join(work, 'out')
     const version = await libraryVersion(library)
-    // 组装过的版本目录里有组件文件：测试组件库的组件都由改写新增，原样就是组装后的
     await cp(join(library, 'patches', 'compositions'), join(out, version, 'compositions'), {
       recursive: true,
     })
@@ -77,7 +75,6 @@ describe('hf:registry', () => {
     expect(published).toEqual(
       await publishedCatalog(source, version, (src) => readFile(join(out, version, src), 'utf8')),
     )
-    // 读字体变量的测试字幕与测试可填项补上了字体项，品牌组件自己写的保持原样
     const fontItems = published.items.flatMap((item) =>
       item.variables
         .filter((variable) => variable.type === 'font')
@@ -88,7 +85,6 @@ describe('hf:registry', () => {
       ['fixture-fields', ''],
       ['fixture-brand-card', 'Playfair Display'],
     ])
-    // 没有重新组装，也没有留下临时目录或临时文件
     expect((await readdir(join(out, version))).sort()).toEqual(['compositions', 'marker'])
     expect((await readdir(out)).sort()).toEqual(['catalog.json', version].sort())
   })

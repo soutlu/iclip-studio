@@ -1,5 +1,3 @@
-"""验证运行器关停在运行刚结束、还没从名单里摘掉的那一刻也能返回。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -22,8 +20,6 @@ pytestmark = pytest.mark.unit
 
 
 class _InstantQueue(JobQueue):
-    """收尾要用的三个方法都不挂起，运行因此能在一次调度里从头跑到尾。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         super().__init__(engine)
         self.finished: list[str] = []
@@ -73,14 +69,12 @@ async def _no_deps(_row: JobRow) -> None:
 
 
 async def test_shutdown_returns_when_a_finished_run_is_still_on_the_books() -> None:
-    # 不会真连：替身接住了收尾要用的方法，运行在碰数据库之前就失败了。
     engine = create_async_engine(
         "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere", pool_pre_ping=True
     )
     queue = _InstantQueue(engine)
     step_store = PgStepStore(engine)
     runner = ConversationRunner(
-        # 没登记 agent：运行一开始就装不起来，收尾全落在不挂起的替身上。
         agents=FixedAgents({}, {}),
         store=TranscriptStore(),
         queue=queue,
@@ -94,7 +88,6 @@ async def test_shutdown_returns_when_a_finished_run_is_still_on_the_books() -> N
     )
 
     await runner.submit(_running_row())
-    # 让出一轮：运行在这一轮里跑完，把自己摘出名单的回调排到下一轮。
     await asyncio.sleep(0)
     assert queue.finished == ["prm_shutdown"], "前提：运行已经跑完，只差回调摘名单"
 

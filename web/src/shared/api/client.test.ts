@@ -8,7 +8,6 @@ const FALLBACK = '读取示例失败'
 const probeSchema = z.object({ title: z.string() })
 const readProbe = () => apiFetch('/probe', probeSchema, { fallbackErrorMessage: FALLBACK })
 
-/** 断言失败被包成可直接展示的 ApiError，返回它供进一步检查。 */
 const rejectionOf = async (promise: Promise<unknown>): Promise<ApiError> => {
   const error: unknown = await promise.then(
     () => undefined,

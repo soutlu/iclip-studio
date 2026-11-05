@@ -21,7 +21,6 @@ describe('copyText', () => {
   it('no navigator.clipboard (plain HTTP): copies via execCommand and cleans up', async () => {
     withClipboard(undefined)
     let copied: string | undefined
-    // 在复制那一刻读隐藏文本框的选区，即 execCommand 实际会复制的内容。
     const execCommand = vi.fn(() => {
       const holder = document.querySelector('textarea')
       copied = holder?.value.slice(holder.selectionStart, holder.selectionEnd)

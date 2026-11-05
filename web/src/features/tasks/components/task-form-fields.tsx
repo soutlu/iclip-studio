@@ -58,7 +58,6 @@ type TaskFormFieldsProps = {
   onUploadingChange: (field: string, busy: boolean) => void
 }
 
-/** 创作内容直接编辑合同 inputs；媒体字段只接收上传完成并确认后的 URL。 */
 export function TaskFormFields({
   editable,
   form,
@@ -66,7 +65,6 @@ export function TaskFormFields({
   onUploadingChange,
 }: TaskFormFieldsProps) {
   const { inputs } = form
-  // 商品没有自己的 id；给每一款配一个本地序号做 key，删中间一款时其余款的图片字段不换挂载点。
   const [productKeys, setProductKeys] = useState(() => inputs.products.map((_, index) => index))
   const productRows = inputs.products.map((product, index) => ({
     key: productKeys[index] ?? index,

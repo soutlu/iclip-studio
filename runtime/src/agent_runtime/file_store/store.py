@@ -1,9 +1,3 @@
-"""命名空间文本存储的路径、错误和后端协议。
-
-路径为逻辑字符串，无本地 inode；命名空间由宿主提供。存储错误由工具层转换为
-ModelRetry，不使用领域 HTTP 错误分类。
-"""
-
 from __future__ import annotations
 
 import unicodedata
@@ -21,29 +15,25 @@ DEFAULT_MAX_FILE_BYTES = 1_000_000
 DEFAULT_MAX_NAMESPACE_BYTES = 20_000_000
 
 MAX_SEARCH_FILES = 200
-"""检索候选文件上限，超出时标记结果截断。"""
 
 MAX_MATCHES_PER_FILE = 3
-"""每文件命中上限，避免高频词占满结果。"""
 
 MAX_SNIPPET_CHARS = 200
 
 
 class FileStoreError(Exception):
-    """文件存储操作失败的基类。"""
+    pass
 
 
 class InvalidPath(FileStoreError):
-    """路径不合语法。"""
+    pass
 
 
 class InvalidContent(FileStoreError):
-    """内容包含后端不支持的字节。"""
+    pass
 
 
 class VersionConflict(FileStoreError):
-    """预期版本与当前文件不一致，包括文件已删除的情形。"""
-
     def __init__(self, path: str, *, expected: int, actual: int | None) -> None:
         if actual is None:
             super().__init__(f"{path} 已经被删除了（期望版本 {expected}）")
@@ -55,8 +45,6 @@ class VersionConflict(FileStoreError):
 
 
 class QuotaExceeded(FileStoreError):
-    """写入会超出容量上限。"""
-
     def __init__(
         self,
         *,
@@ -99,8 +87,6 @@ class FileEntry:
 
 @dataclass(frozen=True, slots=True)
 class SearchMatch:
-    """带文件路径、行号和片段的检索命中。"""
-
     path: str
     line: int
     snippet: str
@@ -108,18 +94,11 @@ class SearchMatch:
 
 @dataclass(frozen=True, slots=True)
 class SearchResult:
-    """检索结果。``truncated`` 为真表示还有没报出来的命中。"""
-
     matches: tuple[SearchMatch, ...]
     truncated: bool
 
 
 def normalize_path(path: str) -> str:
-    """校验并规范化相对路径，失败时抛 InvalidPath。
-
-    使用 NFC 归一化 Unicode，统一 / 分隔且无首尾斜杠，避免等价文件名重复。
-    """
-
     value = unicodedata.normalize("NFC", path)
     if any(unicodedata.category(ch) == "Cc" for ch in value):
         raise InvalidPath(f"路径 {path!r} 里有控制字符")
@@ -146,11 +125,6 @@ def normalize_path(path: str) -> str:
 
 
 def validate_content(content: str) -> None:
-    """拒绝 PostgreSQL text 不支持的 NUL，保持原内容而不静默删除字节。
-
-    在驱动调用前返回存储错误，使工具层可提示模型修正。
-    """
-
     if "\x00" in content:
         raise InvalidContent("内容里有 NUL 字节（\\x00），存不进去；把它去掉再写。")
 
@@ -158,11 +132,6 @@ def validate_content(content: str) -> None:
 def build_matches(
     files: Iterable[tuple[str, str]], query: str, *, limit: int
 ) -> tuple[SearchMatch, ...]:
-    """按行生成最终检索结果；SQL 仅预筛候选，内存替身共用本函数。
-
-    使用 lower 与 PostgreSQL ILIKE 的折叠规则对齐，不使用 casefold。
-    """
-
     needle = query.lower()
     matches: list[SearchMatch] = []
     for path, content in files:
@@ -183,11 +152,6 @@ def build_matches(
 
 
 class FileStore(Protocol):
-    """命名空间文本文件后端。
-
-    实现须统一校验路径，并在同一事务中检查容量和写入，保证并发容量约束。
-    """
-
     async def read(self, namespace: str, path: str) -> StoredFile | None: ...
 
     async def write(
@@ -203,16 +167,11 @@ class FileStore(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class FileSpace:
-    """绑定存储后端与命名空间规则，供共享工作区的调用方复用。"""
-
     store: FileStore
 
     namespace: Callable[[Any], str]
-    """由运行上下文解析命名空间；平台不依赖引擎类型，具体类型由调用方声明。"""
 
     def resolve(self, ctx: Any) -> str:
-        """解析并规范化命名空间，统一所有调用方的隔离边界。"""
-
         return normalize_path(self.namespace(ctx))
 
 

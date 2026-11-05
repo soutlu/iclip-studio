@@ -14,13 +14,11 @@ import { RangeCalendar } from './range-calendar'
 
 type DateRangePickerProps = {
   value: DateRange
-  /** 只交回可应用的范围；自定义只选一端时保持在组件内。 */
   onChange: (value: DateRange) => void
 }
 
 const CLEARED_RANGE = UNBOUNDED_RANGE
 
-/** 与 Tailwind 的 sm 断点一致：宽屏并排两个月。 */
 const WIDE_SCREEN = '(min-width: 40rem)'
 
 const dateName = (date: Date): string =>
@@ -38,7 +36,6 @@ const addDays = (date: Date, days: number): Date => {
   return next
 }
 
-/** 宽屏并排两个月；shared 里还没有通用的媒体查询 hook，这里只读这一条。 */
 function useWideScreen(): boolean {
   const [wide, setWide] = useState(() => window.matchMedia(WIDE_SCREEN).matches)
 
@@ -52,7 +49,6 @@ function useWideScreen(): boolean {
   return wide
 }
 
-/** 时间浮层内容：快捷范围即选即用并在日历上高亮，点日期开始自定义草稿，选满两端后再应用。 */
 export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [today] = useState(() => startOfDay(new Date()))
   const [editingCustom, setEditingCustom] = useState(false)
@@ -70,7 +66,6 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const fullRange = start !== null && end !== null ? { from: start, to: end } : undefined
   const presetDays = dateRangePresetDays(value.range)
 
-  // 日历常驻，可聚焦的那一天始终在 DOM 里，从 chip 切进自定义时直接把焦点交给它。
   const focusCalendar = () => {
     rootRef.current?.querySelector<HTMLButtonElement>('td button[tabindex="0"]')?.focus()
   }
@@ -87,7 +82,6 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
       onChange(value.range === range ? CLEARED_RANGE : { range, since: null, until: null })
       return
     }
-    // 空值来自再次点击当前 chip：草稿只丢草稿，已生效的范围才清除筛选。
     if (range === '' && !(isCustom && value.range !== 'custom')) {
       onChange(CLEARED_RANGE)
     }
@@ -142,12 +136,10 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
           modifiers={{
             endpoint: [start, end].filter((date): date is Date => date !== null),
             inRange: fullRange,
-            // 高亮含今天在内的 N 个整日；实际筛选从此刻往前数 N×24 小时（见 dateRangeBounds），差一个部分日。
             preset:
               presetDays === null ? undefined : { from: addDays(today, 1 - presetDays), to: today },
             rangeEnd: fullRange?.to,
             rangeStart: fullRange?.from,
-            // 只有「选中」进 aria-selected，预设高亮不占这个语义。
             selected: fullRange ?? start ?? undefined,
           }}
           numberOfMonths={wideScreen ? 2 : 1}

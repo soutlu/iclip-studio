@@ -1,7 +1,3 @@
-/** 资料库「爆款素材库」页签：从成片素材里挑进来的素材片，按作者、入库时间和标签筛选；卡片同成片素材，另带打标状态。
- * 点开用成片素材的查看器，定位到这条素材片所在的卡与那一版；上一条、下一条在爆款列表里走。
- * 有标签管理权限时，筛选条最右显示「管理标签」开关，打开后管理面板替换卡片列表。 */
-
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
@@ -29,14 +25,12 @@ import { LibraryTagAdmin } from './library-tag-admin'
 import { LibraryViewer } from './library-viewer'
 import { TaggedLibraryFilters } from './tagged-library-filters'
 
-/** 打开的是哪一条：所在的卡与那一版。 */
 export type HitCaseTarget = { cardId: string; jobId: string }
 
 type HitCasesRouteProps = {
   tabs: ReactNode
   scope: HitCaseScope
   onScopeChange: (next: HitCaseScope) => void
-  /** 地址里的卡与版本；卡为空即没打开查看器。 */
   cardId: string | null
   versionId: string | null
   onHitCaseChange: (target: HitCaseTarget | null, replace: boolean) => void
@@ -59,8 +53,6 @@ export function HitCasesRoute({
   const canManageTags = hasPermission(user, PERMISSION.libraryTagsManage)
   const authors = useHitCaseAuthorSource()
   const [managingTags, setManagingTags] = useState(false)
-  // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
-  // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试。
   const scope = useLibraryTagScope(requestedScope, tags, onScopeChange)
   const hitCases = useHitCases(
     scope,
@@ -68,7 +60,6 @@ export function HitCasesRoute({
   )
   const loaded = hitCases.data?.pages.flatMap((page) => page.items) ?? []
   const total = hitCases.data?.pages[0]?.total ?? undefined
-  // 列表轮询里每有一条打完（还在打的变少），标签树重读一次，条数跟上。
   const busyCount = loaded.filter((item) => isTaggingBusy(item.tagStatus)).length
   const lastBusyCountRef = useRef(busyCount)
   const refetchTags = tagTree.refetch
@@ -80,13 +71,11 @@ export function HitCasesRoute({
   const filtered = !isDefaultHitCaseScope(scope)
   const counter = total === undefined ? undefined : filtered ? `找到 ${total} 条` : `共 ${total} 条`
 
-  // 同一张卡可能有几版都在库里，上一条、下一条按版本走。
   const index = versionId === null ? -1 : loaded.findIndex((item) => item.jobId === versionId)
   const prevId = index > 0 ? (loaded[index - 1]?.jobId ?? null) : null
   const nextId = index >= 0 ? (loaded[index + 1]?.jobId ?? null) : null
   useLoadNextPageWhen(hitCases, index >= 0 && index === loaded.length - 1)
 
-  // 从卡上的故事板点某一帧进来时，从那一刻开始播。
   const [startAt, setStartAt] = useState<{ jobId: string; at: number } | null>(null)
   const open = (item: HitCase, replace: boolean, at: number | null = null) => {
     setStartAt(at === null ? null : { at, jobId: item.jobId })
@@ -199,7 +188,6 @@ export function HitCasesRoute({
   )
 }
 
-/** 画面左下角的打标状态：排队与打标中合成一种。 */
 function TaggingBadge({ status }: { status: HitCase['tagStatus'] }) {
   if (status === 'failed')
     return (

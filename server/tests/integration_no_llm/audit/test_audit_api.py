@@ -1,5 +1,3 @@
-"""审计端点：治理者才能看，参数错给 422，空库回全零的形状；旧的三个端点已经没有了。"""
-
 from __future__ import annotations
 
 import uuid
@@ -40,8 +38,6 @@ async def test_retired_audit_endpoints_are_gone(client: httpx.AsyncClient, pg_ur
 
 
 async def test_governor_reads_an_empty_overview(client: httpx.AsyncClient, pg_url: str) -> None:
-    """空库：一周按天七期，全是非活跃日，均线有窗没值；本期、上一期都是零。"""
-
     await login_as(client, pg_url, "root")
 
     response = await client.get(OVERVIEW, params={**WEEK, "timezone": "Asia/Singapore"})
@@ -103,8 +99,6 @@ async def test_bad_overview_windows_are_422(client: httpx.AsyncClient, pg_url: s
 
 
 async def test_bad_people_windows_are_422(client: httpx.AsyncClient, pg_url: str) -> None:
-    """按人与总览同一套时间窗规则。"""
-
     await login_as(client, pg_url, "root")
 
     missing = await client.get(PEOPLE)
@@ -121,8 +115,6 @@ async def test_bad_people_windows_are_422(client: httpx.AsyncClient, pg_url: str
 
 
 async def test_bad_execution_parameters_are_422(client: httpx.AsyncClient, pg_url: str) -> None:
-    """游标只对发它的那种排序与方向有效：换了排序键或方向，与编坏的游标一样是 422。"""
-
     await login_as(client, pg_url, "root")
     tokens_cursor = encode_execution_cursor(
         ExecutionCursor(sort="tokens", order="desc", value=10, conversation_id=uuid.uuid4())

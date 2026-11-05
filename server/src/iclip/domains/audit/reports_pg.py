@@ -1,14 +1,3 @@
-"""审计报表的 Postgres 查询：``iclip`` 的五张表，加上经运行时统计接口取回的事实行，只读聚合，不建表、不写入。
-
-运行时的表不直接读：消息、运行、用量与会话首末消息由 ``RuntimeStats`` 取回，作为参数化的伪表
-（``FACTS_CTE``）接进同一条 SQL。每条查询先按 ``iclip`` 的数据圈出要整段取的会话（有出片的对话、
-窗内建立的对话、排在前面的镜所在的对话），再连同时间窗里的行一起取，取多了也由 SQL 自己筛。
-
-同一份指标 SQL 服务全体、人、时段、对话四个维度，差别只在六段 CTE 各自的分组键表达式
-（``_DIMENSIONS``）——各指标的时间锚点不同，键要在各自的 CTE 里算。任务执行清单另有一条头查询，
-按排序键与方向各备一份（``_EXECUTIONS_SQL``）。键表达式与方向都是本文件的常量，不来自外部输入；
-外部输入一律走绑定参数。"""
-
 from __future__ import annotations
 
 import uuid
@@ -49,21 +38,6 @@ from iclip.domains.audit.schemas import (
     UsageOut,
 )
 
-# ---------------------------------------------------------------------------
-# 公共 CTE。videos 是全部口径的基础：只认有镜号（shot_index 列）且挂着对话的出片，
-# 需求单从对话取；视频的人是属主的用户名，request 里的 user_name 只发给上游、报表不读。
-# 失败与还没出结果的出片不计费，镜、次数与出片都只看成功的；它们只进单任务时长的区间、
-# 视频悬挂、任务执行的圈定，以及没跑过的对话按最近一条视频定人。
-# person 给每段对话定一个人：最近一轮运行的 user_name，没有运行就取最近一条视频的属主。
-# 分叉出来的副本一律不进报表（``forked_from`` 非空）：它继承的出片记在源对话名下，源那边
-# 已经数过；副本自己跑的是试验数据。挡在 videos / person / runs / agent_runs 四个根 CTE 上，
-# 其余口径都从它们派生。
-# SQL 里的 'video' / 'generate' / 'completed' / 'submitted' 镜像生成域的 KIND_VIDEO /
-# OPERATION_GENERATE / STATUS_COMPLETED / STATUS_SUBMITTED，'video.downloaded' 镜像埋点的
-# VIDEO_DOWNLOADED（报表按表名直接查，不 import 业务模块）；集成测试的种子取自那些常量，改词这里的
-# 用例就红。运行的开始与终态由运行时的统计接口判定。
-# ---------------------------------------------------------------------------
-
 _VIDEOS: Final = """
 videos AS (
     SELECT g.id, g.conversation_id, g.status, g.created_at, g.submitted_at, g.finished_at,
@@ -90,9 +64,6 @@ videos AS (
       AND c.forked_from IS NULL
 )"""
 
-# 每段对话最近一条出片的属主先对整个 videos 排一次序取出来再左连：videos 是物化的 CTE，逐行
-# 取最近一条会对它每段对话全扫一遍。最近一条消息的人与首条消息的时刻来自 session_facts，同样左连；
-# 只有调用方取过首末消息的对话才对得上，其余按没跑过算，引用 person 的查询只读取过的那些。
 _PERSON: Final = """
 latest_video_owner AS (
     SELECT DISTINCT ON (v.conversation_id) v.conversation_id, v.user_name
@@ -110,8 +81,6 @@ person AS (
     WHERE c.forked_from IS NULL
 )"""
 
-# 镜：（对话，镜号）至少成功生成过一条才算，次数只数成功的。时间锚点 first_at 是第一条成功
-# 生成的完成时刻，last_at 是最后一条的；人取按完成时刻排第一的那条成功生成的属主。
 _SHOTS: Final = """
 shots AS (
     SELECT v.conversation_id, v.shot, v.task_id,
@@ -126,7 +95,6 @@ shots AS (
     GROUP BY v.conversation_id, v.shot, v.task_id
 )"""
 
-# 运行按发起人归属，不经 person；需求单从对话取。
 _RUNS: Final = """
 runs AS (
     SELECT j.created_at, j.user_name, c.id AS conversation_id, c.task_id
@@ -135,8 +103,6 @@ runs AS (
     WHERE c.forked_from IS NULL
 )"""
 
-# 一轮 agent 运行：运行驱动发放的顶层运行，从开始到第一条终态（完成或失败），没有终态的不计，
-# 由运行时的统计接口判定（run_facts）。人与需求单同 runs：发起人、对话挂的单。
 _AGENT_RUNS: Final = """
 agent_runs AS (
     SELECT a.user_name, c.id AS conversation_id, c.task_id, a.started_at, a.ended_at
@@ -145,7 +111,6 @@ agent_runs AS (
     WHERE c.forked_from IS NULL
 )"""
 
-# 一段对话的起点：首次运行，没有运行就是对话建立时刻。交付周期与任务执行的开始都用它，取自 person。
 _STARTED_AT: Final = "COALESCE(p.first_prompt_at, p.created_at)"
 
 _CYCLES: Final = f"""
@@ -161,10 +126,6 @@ cycles AS (
     JOIN person p ON p.conversation_id = d.conversation_id
 )"""
 
-# 单任务时长：每段有出片的对话一个样本，锚点同交付周期。区间 = 这段对话有终态的运行
-# [开始, 终态] ∪ 每条出片 [受理, 完成]（没完成的只是受理那一刻），裁进交付周期 [起点, 最后出片]；
-# 按开始排序合并，下一段的开始距已合并段的结束不超过 30 分钟就并进来、空档照算，超过就断开、
-# 空档不计。已合并段的结束是排在前面的全部区间结束的最大值；样本值是各合并段长度之和。
 _ACTIVE_CYCLES: Final = """
 cycle_spans AS (
     SELECT y.conversation_id,
@@ -205,9 +166,6 @@ active_cycles AS (
     GROUP BY y.conversation_id, y.user_name, y.task_id, y.started_at, y.delivered_at
 )"""
 
-# 出片连同废片标记：同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后的那条以外都是废片。
-# 窗口函数在全量上算，时间窗与筛选只能施加在引用它的 CTE 里，否则「全时段最后一条」会退化成
-# 窗内或某人名下的最后一条。
 _TAKES: Final = """
 takes AS (
     SELECT v.*,
@@ -227,7 +185,6 @@ usage_rows AS (
     JOIN person p ON p.conversation_id = c.id
 )"""
 
-# 筛选片段。占位 {t} 是各 CTE 的表别名，{anchor} 是该指标的时间锚点列。
 _WINDOW: Final = """
     AND (CAST(:since AS timestamptz) IS NULL OR {anchor} >= CAST(:since AS timestamptz))
     AND (CAST(:until AS timestamptz) IS NULL OR {anchor} < CAST(:until AS timestamptz))"""
@@ -249,8 +206,6 @@ def _spread_columns(alias: str, prefix: str) -> str:
     return ", ".join(f"{alias}.{prefix}_{name}" for name in ("avg", "median", "p90", "count"))
 
 
-# 时段维度把时间窗内的每一期都列进 keys，没数据的期计数为 0、分布为 NULL；没有上界时铺到此刻。
-# 上界减一微秒，until 恰在期首时不多出一期。
 _PERIOD_AXIS: Final = """
     UNION SELECT axis FROM generate_series(
         date_trunc(CAST(:bucket AS text), CAST(:since AS timestamptz), CAST(:timezone AS text)),
@@ -366,8 +321,6 @@ ORDER BY keys.k
 
 @dataclass(frozen=True, slots=True)
 class _Dimension:
-    """一个维度在六段 CTE 里各自的分组键表达式；``axis`` 是补进 keys 的空期。"""
-
     k_video: str
     k_shot: str
     k_run: str
@@ -397,7 +350,6 @@ def _same(column: str) -> _Dimension:
 _BUCKET: Final = "date_trunc(CAST(:bucket AS text), {anchor}, CAST(:timezone AS text))"
 
 _DIMENSIONS: Final[Mapping[str, _Dimension]] = {
-    # 全体用非空常量做键，六段才能按键对上。
     "overall": _Dimension("'all'", "'all'", "'all'", "'all'", "'all'", "'all'"),
     "user": _same("user_name"),
     "conversation": _same("conversation_id"),
@@ -413,8 +365,6 @@ _DIMENSIONS: Final[Mapping[str, _Dimension]] = {
 }
 _METRICS_SQL: Final = {name: text(dimension.sql()) for name, dimension in _DIMENSIONS.items()}
 
-# 成功生成次数分布：每镜一条记录，按成功次数分档。锚点同镜，看该镜第一条成功生成的完成时刻。
-# 不封顶，累计通过曲线与集中度都在前端从这份原始分布算，SQL 只负责分档计数。
 _ATTEMPTS: Final = text(f"""
 WITH {_VIDEOS}, {_SHOTS}
 SELECT s.attempts, count(*) AS shots
@@ -426,7 +376,6 @@ GROUP BY s.attempts
 ORDER BY s.attempts
 """)
 
-# 活跃日：时间窗里有人发起运行的本地日，锚点同运行次数，只看窗内的运行。
 _ACTIVE_DAYS: Final = text(f"""
 WITH {FACTS_CTE}, {_RUNS}
 SELECT count(DISTINCT date_trunc('day', r.created_at, CAST(:timezone AS text))) AS days
@@ -436,7 +385,6 @@ WHERE TRUE
 {_FILTERS.format(t="r")}
 """)
 
-# 每个时段里有出片的件，键与出片件数同一口径：需求单各一件，没挂需求单的对话各一件。
 _DELIVERY_UNITS: Final = text(f"""
 WITH {_VIDEOS}
 SELECT {_BUCKET.format(anchor="v.finished_at")} AS k,
@@ -450,8 +398,6 @@ GROUP BY 1
 ORDER BY 1
 """)
 
-# 每人每个时段的出片件数，与出片件数同一口径：需求单各一件，没挂需求单的对话各一件。人是视频
-# 的属主，与指标 SQL 的人维度一致；属主没有用户名的不归任何人。
 _USER_DELIVERIES: Final = text(f"""
 WITH {_VIDEOS}
 SELECT v.user_name, {_BUCKET.format(anchor="v.finished_at")} AS k,
@@ -463,9 +409,6 @@ WHERE v.delivered AND v.user_name IS NOT NULL
 GROUP BY 1, 2
 """)
 
-# 成功生成次数最多的镜，同数按最后一条成功生成的完成时刻；标题与人取对话的，已删的对话照列。
-# 锚点同镜。排序与条数不看 person（它对 videos 里的对话都有一行，连接不丢行），所以先不连 person
-# 圈出这几镜的对话（_TOP_SHOT_CONVERSATIONS），取回它们的首末消息再查一遍。
 _TOP_ORDER: Final = "{t}.attempts DESC, {t}.last_at DESC, {t}.conversation_id, {t}.shot"
 _TOP: Final = f"""
 top AS (
@@ -491,8 +434,6 @@ JOIN person p ON p.conversation_id = t.conversation_id
 ORDER BY {_TOP_ORDER.format(t="t")}
 """)
 
-# 指标 SQL 里交付周期的样本：最后一条出片落在时间窗里的对话，连同那条出片的完成时刻。它们的运行与
-# 首末消息要整段取。
 _CYCLE_CONVERSATIONS: Final = text(f"""
 WITH {_VIDEOS}
 SELECT v.conversation_id, max(v.finished_at) AS delivered_at
@@ -503,7 +444,6 @@ HAVING TRUE
 {_WINDOW.format(anchor="max(v.finished_at)")}
 """)
 
-# 任务执行圈定的对话都在这里面：建立时刻落在时间窗里的非副本对话。
 _CREATED_CONVERSATIONS: Final = text("""
 SELECT c.id FROM iclip.conversations c
 WHERE c.forked_from IS NULL
@@ -511,14 +451,6 @@ WHERE c.forked_from IS NULL
   AND c.created_at < CAST(:until AS timestamptz)
 """)
 
-# ---------------------------------------------------------------------------
-# 任务执行：建立时刻落在时间窗里、有运行或出片的对话（副本已由 person 挡掉，已删的照列）。
-# 排序键与异常都按这段对话的全量算，不按时间窗裁；user_name 只筛行，放在最后一步，需求单卡住
-# 按整个时间窗里的执行判。「从来没有出片」按 videos 判，副本自己的出片本就不计。视频悬挂的
-# 'submitted' 镜像生成域的 STATUS_SUBMITTED（同文件头）。
-# 排序键空值不论升降都排最后；翻页从上一页末行的（键，对话 id）接着取，末行已在空值尾段时
-# 只在尾段里按对话 id 往后取。{key} / {kind} / {direction} / {op} 由 _EXECUTIONS_SQL 从常量填。
-# ---------------------------------------------------------------------------
 
 _EXECUTIONS: Final = f"""
 WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_AGENT_RUNS}, {_CYCLES}, {_ACTIVE_CYCLES},
@@ -610,8 +542,6 @@ LEFT JOIN LATERAL (
 ORDER BY page.sort_key {{direction}} NULLS LAST, page.conversation_id {{direction}}
 """
 
-# 排序键在 judged 上的列与它的 SQL 类型：retries / cycle 是 float8、tokens 是 bigint，游标回带的
-# 取值与列同类型，相等比较才不会差一点而重复或漏行。
 _SORT_KEYS: Final[Mapping[ExecutionSort, tuple[str, str]]] = {
     "start": ("j.created_at", "timestamptz"),
     "retries": ("j.retries", "float8"),
@@ -628,7 +558,6 @@ _EXECUTIONS_SQL: Final[Mapping[tuple[ExecutionSort, SortOrder], TextClause]] = {
     for order, (direction, op) in _DIRECTIONS.items()
 }
 
-# 一页对话里成功过的镜，按镜号。
 _SHOTS_OF: Final = text(f"""
 WITH {_VIDEOS}, {_SHOTS}
 SELECT s.conversation_id, s.shot, s.attempts, s.one_take, s.effective
@@ -658,20 +587,14 @@ def _scope_params(scope: Scope) -> dict[str, Any]:
 
 
 def _float(value: Any) -> float | None:
-    """聚合列可能是 numeric / Decimal，也可能因为没有样本而是 NULL。"""
-
     return None if value is None else float(value)
 
 
 def _int(value: Any) -> int:
-    """LEFT JOIN 没对上的计数列是 NULL，按 0 读。"""
-
     return 0 if value is None else int(value)
 
 
 def _total(value: Any) -> float:
-    """LEFT JOIN 没对上的合计列是 NULL，按 0 读。"""
-
     return 0.0 if value is None else float(value)
 
 
@@ -718,23 +641,12 @@ def _metrics_of(row: RowMapping) -> MetricsOut:
 
 @asynccontextmanager
 async def audit_connection(engine: AsyncEngine) -> AsyncGenerator[AsyncConnection]:
-    """审计读查询的连接：本事务里关掉 JIT，连接归还时随回滚复位，不带给池里的其他用途。
-
-    审计 SQL 的代价估算偏高，默认会触发 JIT，编译比真正执行慢一个数量级。``SET LOCAL`` 只在
-    事务里生效：``connect()`` 在第一条语句前自动开事务，它就是这个事务的第一条语句。
-    """
-
     async with engine.connect() as conn:
         await conn.execute(text("SET LOCAL jit = off"))
         yield conn
 
 
 class PgAuditReports:
-    """``AuditReports`` 的 Postgres 实现。每个方法先按 ``iclip`` 的数据圈出要整段取的会话，经
-    ``RuntimeStats`` 取回事实行，再开只读连接查询，连接都经 ``audit_connection``；取事实行时不占连接。
-    ``spanning`` 交回的实例带着一段时间窗预取的事实行，窗里的筛选范围从中切。运行时答不上抛
-    ``RuntimeUnavailable``。"""
-
     def __init__(
         self, engine: AsyncEngine, stats: RuntimeStats, window: WindowFacts | None = None
     ) -> None:
@@ -750,9 +662,6 @@ class PgAuditReports:
             return list((await conn.execute(statement, params)).scalars().all())
 
     async def _load(self, span: Scope) -> WindowFacts:
-        """向运行时取齐 ``span`` 的事实行：窗内的消息、运行与用量，交付周期样本（最后一条出片在窗内的
-        对话）的全部运行；交付周期样本与窗内有用量的对话再取首末消息定人与起点。"""
-
         async with audit_connection(self._engine) as conn:
             rows = await conn.execute(
                 _CYCLE_CONVERSATIONS, {"since": span.since, "until": span.until}
@@ -773,8 +682,6 @@ class PgAuditReports:
         )
 
     async def _window_facts(self, scope: Scope) -> RuntimeFacts:
-        """指标 SQL 按时间窗要的事实行：带着预取的从中切，否则按这段窗现取。"""
-
         window = self._window if self._window is not None else await self._load(scope)
         if not window.covers(scope.since, scope.until):
             raise ValueError("筛选范围越出了预取事实行的时间窗")
@@ -801,7 +708,6 @@ class PgAuditReports:
         return [PeriodMetricsOut(period_start=row["k"], metrics=_metrics_of(row)) for row in rows]
 
     async def active_days(self, scope: Scope, *, timezone: str) -> int:
-        # 只用到消息：不带预取时只向运行时取消息。
         facts = (
             await self._window_facts(scope)
             if self._window is not None
@@ -839,7 +745,6 @@ class PgAuditReports:
     async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
         params = {**_scope_params(scope), "limit": limit}
         conversations = frozenset(await self._ids(_TOP_SHOT_CONVERSATIONS, params))
-        # 首末消息不看时间窗：预取时要过的会话从预取里读，其余再向运行时取。
         window = self._window
         known = window.session_ids if window is not None else frozenset()
         cached = (
@@ -893,7 +798,6 @@ class PgAuditReports:
             "after_id": after.conversation_id if after else None,
             "limit": limit,
         }
-        # 圈定的对话都在窗内建立的这些里面：它们的首末消息、运行与用量整段取，一页的明细也从这份里读。
         created = await self._ids(
             _CREATED_CONVERSATIONS, {"since": scope.since, "until": scope.until}
         )
@@ -955,9 +859,6 @@ class PgAuditReports:
         dict[uuid.UUID, list[ExecutionShotOut]],
         dict[uuid.UUID, list[ModelUsageOut]],
     ]:
-        """一页对话的全量指标、镜与按模型用量；不带时间窗，用维度键圈定这一页的对话。``facts`` 要有
-        这几段对话的全部消息、运行、用量与首末消息。"""
-
         scoped = {
             "since": None,
             "until": None,

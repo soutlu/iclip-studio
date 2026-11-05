@@ -7,30 +7,23 @@ import { canonicalUuid } from '@/shared/lib/uuid'
 import { ARTIFACT_SEARCH_KEY, WORKSPACE_FILE_SEARCH_KEY, WorkbenchHost } from '@/shared/workbench'
 import { conversationsReturnSearch } from '../-conversations-return'
 
-// 产物、组、帧与正在看的文件保存在查询参数，支持刷新与分享。
 const ConversationSearchSchema = z.object({
   [ARTIFACT_SEARCH_KEY]: z.string().optional().catch(undefined),
   [WORKSPACE_FILE_SEARCH_KEY]: z.string().optional().catch(undefined),
   content: shotContentIdSchema.optional().catch(undefined),
   frame: z.int().positive().optional().catch(undefined),
-  /** 旧链接里已下线的 sheet 参数：页面照常打开，并从地址里去掉。 */
   sheet: z.undefined().optional().catch(undefined),
   shot: z.int().positive().optional().catch(undefined),
   take: z.string().optional().catch(undefined),
-  /** 视频编辑器开在哪条出片记录上（编辑链的根）。 */
   video: z.string().min(1).optional().catch(undefined),
-  /** 成片编辑器开着。 */
   wholeFilm: z.literal(true).optional().catch(undefined),
 })
 
-// 会话为私有内容，未登录或会话失效时由路由守卫返回首页。
 export const Route = createFileRoute('/_shell/c/$conversationId')({
   beforeLoad: async ({ params, search }) => {
     if (!(await ensureSessionUser())) {
       throw redirect({ to: '/' })
     }
-    // 后端按 UUID 收下无横线等写法，应用内部只认规范写法：侧栏高亮、标题、草稿和 query key
-    // 都以对话 id 为键，放第二种拼写进来同一段对话会裂成两份。解析不了的原样放行，走 404。
     const canonical = canonicalUuid(params.conversationId)
     if (canonical !== null && canonical !== params.conversationId) {
       throw redirect({ params: { conversationId: canonical }, search, to: '/c/$conversationId' })
@@ -47,7 +40,6 @@ function ConversationIndexRoute() {
   return (
     <ConversationRoute
       backLink={
-        // 这是一次新跳转而非后退：从列表点进来的带上那一屏的筛选，别处进来的回默认视图。
         <Link
           className="shrink-0 rounded-xs text-primary ui-focus hover:underline"
           search={conversationsReturnSearch(conversationId)}
@@ -74,7 +66,6 @@ function ConversationIndexRoute() {
   )
 }
 
-/** 面板由壳渲染，对话 ID 需从当前匹配路由读取。 */
 function ConversationWorkbenchPanel() {
   const { conversationId } = useParams({ strict: false })
   if (conversationId === undefined) return null

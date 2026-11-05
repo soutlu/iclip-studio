@@ -1,5 +1,3 @@
-"""MCP 工具在 agent 里的名字：``mcp_<服务标识>_<工具名>``，能拆回服务与工具。"""
-
 from __future__ import annotations
 
 import pytest
@@ -20,7 +18,6 @@ def test_the_name_is_the_prefix_and_the_servers_own_tool_name() -> None:
     ("name", "expected"),
     [
         ("mcp_calc_add", ("calc", "add")),
-        # 服务标识里没有下划线，第一个下划线之后都是工具名。
         ("mcp_my-files_read_file", ("my-files", "read_file")),
         ("read_file", None),
         ("mcp_calc", None),

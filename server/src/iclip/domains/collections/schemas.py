@@ -1,5 +1,3 @@
-"""合集的 wire 形状。字段名按跨端约定用 camelCase。"""
-
 from __future__ import annotations
 
 import uuid
@@ -32,7 +30,6 @@ class CollectionIn(CamelModel):
 class CollectionOut(CamelModel):
     id: uuid.UUID
     owner_user_id: uuid.UUID
-    """外发：治理者的全量视图要显示这个口袋是谁的。"""
     name: str
     created_at: datetime
     updated_at: datetime
@@ -47,8 +44,6 @@ class CollectionsPageOut(CamelModel):
 
 
 def collection_out(collection: Collection) -> CollectionOut:
-    """领域行 → wire 形状。"""
-
     return CollectionOut(
         id=collection.id,
         owner_user_id=collection.owner_user_id,

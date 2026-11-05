@@ -1,5 +1,3 @@
-"""模型供应商测试的替身与常量：只认几把 API Key 的试连，以及接入供应商、建密钥的 HTTP 驱动。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -18,9 +16,6 @@ BAD_KEY = "sk-bad-5555555555bad1"
 
 
 class KeyCheckingProbe:
-    """只认 ``accepted`` 里的 API Key：认得就通，不认得就答「API Key 无效」。``calls`` 按先后记下每次试连的
-    模型名与 API Key。"""
-
     def __init__(self, accepted: set[str]) -> None:
         self.accepted = accepted
         self.calls: list[tuple[str, str | None]] = []
@@ -37,8 +32,6 @@ class KeyCheckingProbe:
 async def connect_provider(
     client: httpx.AsyncClient, provider: str, name: str | None = None
 ) -> dict[str, Any]:
-    """按声明 ``provider`` 接入一个供应商；引用名默认 ``<provider>-main``。"""
-
     response = await client.post(
         "/model-providers",
         json={"name": name or f"{provider}-main", "provider": provider, "label": provider},

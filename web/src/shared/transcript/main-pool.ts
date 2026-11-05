@@ -1,8 +1,3 @@
-/**
- * 主会话流的读取池，照 Kimi 的 TFe：先读基线、再带水位订阅；断档时重读基线再重订；常驻最近几段，切回来不用重读。
- * 水位带 epoch，订阅与续订把它一起带上。
- */
-
 import { errorMessageOf } from '@/shared/api/client'
 import { TranscriptChannel } from './channel'
 import { MAIN_AGENT_ID, type TranscriptConnection, type TranscriptOps } from './connection'
@@ -18,13 +13,10 @@ import {
   type TranscriptView,
 } from './view'
 
-/** 常驻对话数（Kimi IFe）。 */
 const MAX_RESIDENT = 4
 
-/** 主会话首屏轮数（Kimi 主池覆盖为 10，通用默认 20）。 */
 const MAIN_PAGE_SIZE = 10
 
-/** refresh 前后本地发送状态还在变时，最多重读几次（Kimi 同为 3）。 */
 const MAX_REFRESH_PASSES = 3
 
 const GONE_MESSAGE = '该对话不存在或不属于当前账号，无法查看'
@@ -64,18 +56,10 @@ export class MainTranscriptPool {
   private readonly localPrompts: LocalPromptStore
   private readonly maxResident: number
   private readonly entries = new Map<string, Entry>()
-  /** 已在连接上订阅主流的对话。 */
   private readonly subscribed = new Set<string>()
-  /** 基线从没读到过时的退避重试，按对话记。 */
   private readonly retries = new Map<string, BaselineRetry>()
-  /** 没人在用的对话（Kimi 的 deactivated 集合）。 */
   private readonly inactive = new Set<string>()
-  /**
-   * 正在用这段对话的界面数。Kimi 的 TFe 只有一个当前会话；我们的对话页与工作台同时用同一条主流，任一方卸载
-   * 都不能让另一方的流被淘汰或退订，所以按对话记数，归零才算没人用，有人在用的不进淘汰候选。
-   */
   private readonly holders = new Map<string, number>()
-  /** 基线读不到或对话不可见时给界面的话；读到基线即清掉。 */
   private readonly failures = new Map<string, TranscriptView>()
   private readonly dirty = new Set<Entry>()
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
@@ -91,7 +75,6 @@ export class MainTranscriptPool {
 
   readonly subscribe = (listener: () => void): (() => void) => this.notifier.subscribe(listener)
 
-  /** 同一版内返回同一个对象。 */
   view(conversationId: string): TranscriptView {
     const entry = this.entries.get(conversationId)
     const failure = this.failures.get(conversationId)
@@ -100,7 +83,6 @@ export class MainTranscriptPool {
     return entry.view
   }
 
-  /** 开始用一段对话；返回的释放函数只算一次。 */
   activate(conversationId: string): () => void {
     this.clearRetry(conversationId)
     this.inactive.delete(conversationId)
@@ -119,7 +101,6 @@ export class MainTranscriptPool {
     }
   }
 
-  /** 界面上的「重新加载」与「读不到时重试」。 */
   refresh(conversationId: string): void {
     this.clearRetry(conversationId)
     this.failures.delete(conversationId)
@@ -127,13 +108,11 @@ export class MainTranscriptPool {
     this.notifier.schedule()
   }
 
-  /** 读更早的一页；失败由通道记下，界面据此给重试。 */
   loadOlder(conversationId: string): Promise<void> {
     const entry = this.entries.get(conversationId)
     return entry === undefined ? Promise.resolve() : entry.channel.loadOlder()
   }
 
-  /** Provider 卸载时调用：停掉所有定时器，不再触发读取。 */
   close(): void {
     for (const timer of this.timers) clearTimeout(timer)
     this.timers.clear()
@@ -216,7 +195,6 @@ export class MainTranscriptPool {
     return task
   }
 
-  /** 重读基线再带水位重订（Kimi 的 b）。 */
   private async recover(entry: Entry): Promise<void> {
     const { conversationId } = entry
     try {
@@ -242,7 +220,6 @@ export class MainTranscriptPool {
         return
       }
       if (entry.baselineLoaded) {
-        // 已经有内容：不带水位重订，服务端回 reset，空 reset 再走退避重读。
         if (this.entries.get(conversationId) === entry) this.subscribeMain(conversationId)
         return
       }
@@ -267,7 +244,6 @@ export class MainTranscriptPool {
     }
   }
 
-  /** 读取在途时攒下的 reset，读完再落地，随后回放它之后的批次。 */
   private handOffReset(entry: Entry): void {
     const pending = entry.pendingReset
     entry.pendingReset = null
@@ -290,7 +266,6 @@ export class MainTranscriptPool {
     const entry = this.entries.get(conversationId)
     if (entry === undefined) return
     if (snapshot.items.length === 0) {
-      // 我们的 reset 不带历史轮：不拿它替换内容，按 Kimi 的退避重读基线。
       entry.emptyResetRetries += 1
       this.later(() => {
         if (this.entries.get(conversationId) === entry) void this.resume(entry)
@@ -333,10 +308,6 @@ export class MainTranscriptPool {
     return entry.channel.applyOps(ops, seq, epoch)
   }
 
-  /**
-   * 超出常驻数时淘汰最久没碰的；有人在用、或本地还有没被接替的发送的不淘汰（Kimi 的 k）。
-   * 重读在途时被淘汰也照 Kimi：读完发现条目已不是它就不订阅，下次用时重建条目再读一次基线。
-   */
   private trim(): void {
     if (this.entries.size <= this.maxResident) return
     const candidates = [...this.entries.values()]
@@ -367,7 +338,6 @@ export class MainTranscriptPool {
     return this.localPrompts.hasPendingLocalWork(entry.conversationId, timeline)
   }
 
-  /** 对话不存在或看不见：停在错误态，不再重试，界面可以手动重试。 */
   private gone(conversationId: string): void {
     this.clearRetry(conversationId)
     const entry = this.entries.get(conversationId)

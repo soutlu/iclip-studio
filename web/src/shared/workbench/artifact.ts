@@ -1,21 +1,16 @@
-/** 文件、工具帧与整个工作区共用产物合同；具体渲染器由 app 注册，shared 宿主仅分派。 */
-
 import type { ComponentType } from 'react'
 import type { IconName } from '@/shared/icons'
 
-/** 文件版本变化时渲染器重新读取内容。 */
 export interface FileArtifactSource {
   kind: 'file'
   path: string
   version: number
 }
 
-/** 工具帧上派出的子代理引用；面板按第一个 agentId 读它那条流。 */
 export interface FrameAgentRef {
   agentId: string
 }
 
-/** 工具帧由 display.kind 选择渲染器，metadata 提供展示结果。 */
 export interface FrameArtifactSource {
   kind: 'frame'
   toolCallId: string
@@ -25,7 +20,6 @@ export interface FrameArtifactSource {
   agentRefs?: readonly FrameAgentRef[]
 }
 
-/** 整个工作区当一件产物；渲染器自己读文件列表，来源上只带个数给选择页写行尾。 */
 export interface WorkspaceArtifactSource {
   kind: 'workspace'
   fileCount: number
@@ -34,7 +28,6 @@ export interface WorkspaceArtifactSource {
 export type ArtifactSource = FileArtifactSource | FrameArtifactSource | WorkspaceArtifactSource
 
 export interface Artifact {
-  /** ID 为 file:<path>、frame:<toolCallId> 或 workspace，同时用作 artifact 查询参数。 */
   id: string
   type: string
   title: string
@@ -45,29 +38,18 @@ export interface ArtifactRendererProps {
   conversationId: string
   conversationTitle: string
   artifact: Artifact
-  /** 看别人的对话时为 true，渲染器要收起所有会写工作区或提交任务的入口。 */
   readOnly: boolean
 }
 
 export interface ArtifactEntry {
   type: string
-  /**
-   * 文件按确切路径或文件名模式（`*` 不跨 `/`，`**` 跨目录）；工具帧按服务端 display 的 kind；
-   * 工作区只要有文件就命中。同一文件被多项认领时确切路径优先于模式。
-   */
   match: { path: string } | { pattern: string } | { displayKind: string } | { workspace: true }
-  /** 这一类产物的名字，菜单里还没有产物的常驻行也用它。 */
   label: string
-  /** 某一件产物的标题，可以比 label 更具体。 */
   title: (source: ArtifactSource) => string
-  /** 菜单行尾的一句补充，同名的几件产物靠它分开（比如派活卡的任务摘要）。 */
   detail?: (source: ArtifactSource) => string | undefined
-  /** 折叠态菜单里这一类产物的图标。 */
   icon: IconName
   component: ComponentType<ArtifactRendererProps>
   autoOpen: boolean
-  /** 按路径、模式或工作区命中的类型是常驻项：有了产物就占标签位。给了这一句，还没有产物时选择页也列一行灰的，
-   * 用它解释为什么灰着；不给就等有了产物再出现，只有某个 agent 才交付的类型（制作页）不给。 */
   empty?: string
 }
 

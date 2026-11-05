@@ -1,10 +1,3 @@
-"""技能库 HTTP 端点，全部要求 ``agent:manage``。术语见 docs/CONTEXT.md「技能库」。
-
-业务在运行时服务：每个端点验完权限与请求体，按同一个子路径转给它的 ``/v1/admin/skills``（见
-``iclip.platform.runtime_admin``）。答复里带操作人 id 的端点补上操作人的显示名，其余原样交回。请求与答复的
-声明照旧写在这里，合同由它们导出。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -39,8 +32,6 @@ _MANAGE = "agent:manage"
 
 
 def create_skills_router(runtime: RuntimeClient, user_names: UserNames) -> APIRouter:
-    """``user_names`` 给答复里的操作人补显示名。"""
-
     router = APIRouter(prefix="/skills", tags=["skills"])
 
     async def named(
@@ -110,7 +101,6 @@ def create_skills_router(runtime: RuntimeClient, user_names: UserNames) -> APIRo
             SkillDetailOut, "PATCH", admin_path("skills", str(skill_id)), principal, body
         )
 
-    # 合法的草稿路径只有 SKILL.md 与 references/ 下的，rename 不会与 {path} 撞名；照样登记在它前面。
     @router.post("/{skill_id}/draft/files/rename", response_model=DraftFileOut)
     async def rename_draft_file(
         skill_id: uuid.UUID,

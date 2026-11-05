@@ -1,5 +1,3 @@
-/** 运行过程：一段对话每一轮的步骤清单，图标、名称、耗时一行，点开看这一步调了什么。数据见 run-steps。 */
-
 import { useState } from 'react'
 import { useTranscript } from '@/shared/transcript/use-transcript'
 import { Icon, type IconName } from '@/shared/icons'
@@ -14,7 +12,6 @@ const OUTCOME_LABELS: Partial<Record<ToolOutcome, string>> = {
   running: '进行中',
 }
 
-/** 会话还没开（`conversationId` 为 null）时是空的。 */
 export function RunTrace({ conversationId }: { conversationId: string | null }) {
   const { view } = useTranscript(conversationId)
   const turns = runTurns(
@@ -150,7 +147,6 @@ function CallIcon({ name }: { name: IconName }) {
   return <Icon className="shrink-0" decorative name={name} size="xs" />
 }
 
-/** 行尾：在跑转圈，失败红 ×，跑完写耗时；没有起止时刻就不写。 */
 function Tail({
   durationMs,
   failed,

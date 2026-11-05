@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * 设计规范 ↔ 运行时 token 对账。
- *
- * 事实源是仓库根目录 design-system.html 第一个 <style> 里的 :root（浅色）与 .dark（深色）
- * 两块，除 --pg-*（本页装饰）外全部入账；运行时是 src/app/base.css + globals.css。
- * 两边去掉全部空格、小写后必须逐字相等，任一边多出变量都算漂移。
- *
- * 直接运行做对账；解析与比较导出成函数，供 check-design-system.node-test.mjs 注入漂移自测。
- */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,10 +12,8 @@ export const RUNTIME_PATHS = [
 
 const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '')
 
-/** 值比较口径：去掉全部空白后小写，其余逐字相等 */
 export const normalize = (value) => value.replace(/\s+/g, '').toLowerCase()
 
-/** 取 `prelude {` 之后到配对 `}` 之间的原文（按花括号计数，容得下嵌套块） */
 const blockBody = (text, openIndex) => {
   let depth = 0
   for (let i = openIndex; i < text.length; i += 1) {
@@ -38,7 +27,6 @@ const blockBody = (text, openIndex) => {
 }
 
 const readDeclarations = (body, into) => {
-  // 只收顶层声明：嵌套块（如 @theme 里的 @media）整段跳过
   let depth = 0
   let buffer = ''
   for (const ch of body) {
@@ -54,11 +42,7 @@ const readDeclarations = (body, into) => {
   }
 }
 
-/**
- * 规范侧：第一个 <style> 里第一个 :root 块与第一个 .dark 块，--pg-* 不入账。
- */
 export function collectSpecTokens(html) {
-  // 排除 HTML 注释内的 <style> 字样，定位实际样式块。
   const styleMatch = /<style>([\s\S]*?)<\/style>/.exec(html.replace(/<!--[\s\S]*?-->/g, ''))
   if (!styleMatch) throw new Error('design-system.html 里找不到 <style> 块')
   const css = stripComments(styleMatch[1])
@@ -75,23 +59,16 @@ export function collectSpecTokens(html) {
   return { light: pick(':root'), dark: pick('.dark') }
 }
 
-/**
- * 运行时侧：只收顶层 :root / .dark / @theme 块。
- * @media 里的 :root 是响应式覆写不是 token 登记；@theme inline reference 是工具类登记，
- * 变量自引用（--color-x: var(--color-x)），两者都不入账。
- */
 export function collectRuntimeTokens(css) {
   const text = stripComments(css)
   const light = new Map()
   const dark = new Map()
-  // @theme inline reference 登记 token 后，Tailwind 才能生成对应工具类。
   const registered = new Map()
 
   let cursor = 0
   while (cursor < text.length) {
     const open = text.indexOf('{', cursor)
     if (open < 0) break
-    // 跳过选择器前的 @layer / @import 独立语句。
     const prelude = text.slice(cursor, open).split(';').pop().trim().replace(/\s+/g, ' ')
     const body = blockBody(text, open)
     cursor = open + body.length + 2
@@ -103,16 +80,13 @@ export function collectRuntimeTokens(css) {
     else if (prelude.startsWith('@theme')) readDeclarations(body, light)
   }
 
-  // @theme 里的 `--text-*: initial` 是清空 Tailwind 默认字号，不是 token 登记
   for (const [name, value] of light) if (normalize(value) === 'initial') light.delete(name)
 
   return { light, dark, registered }
 }
 
-/** 必须暴露成 Tailwind 工具类的 token：颜色与海拔三档 */
 const NEEDS_UTILITY = /^--(?:color-[\w-]+|shadow-[123])$/
 
-/** 返回人类可读的差异行；空数组表示对账通过 */
 export function diffTokens(spec, runtime) {
   const problems = []
   for (const theme of ['light', 'dark']) {

@@ -1,5 +1,3 @@
-/** 对话页输入框：发送失败恢复输入，支持修改已发消息；附件入口由 uploads:write 权限控制。 */
-
 import { useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
@@ -13,19 +11,15 @@ type ComposerEditing = {
 }
 
 type ConversationComposerProps = {
-  /** 按编辑器顺序提交文字与附件；抛错时恢复输入内容。 */
   onSend: (parts: ComposerSubmission['parts']) => Promise<void>
   busy?: boolean
   awaitingApproval?: boolean
   contextTokens: number | undefined
   maxContextTokens: number | undefined
   onStop?: (() => void) | undefined
-  /** 修改态替换编辑器内容；退出时由调用方清除 editing。 */
   editing?: ComposerEditing | undefined
   onCancelEdit?: (() => void) | undefined
-  /** 空输入框的提示；等审批时总是提示先确认。 */
   placeholder?: string | undefined
-  /** 发送失败怎么告诉用户；不给就弹一条 toast。输入内容照样恢复。 */
   onSendError?: ((error: unknown) => void) | undefined
 }
 

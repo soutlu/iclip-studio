@@ -1,5 +1,3 @@
-"""全片统一栅格采样：采样点归属、帧号排号与短镜头无帧。"""
-
 from __future__ import annotations
 
 import pytest
@@ -12,16 +10,12 @@ def ids(rows: tuple[tuple[ShotSpan, ...], ...]) -> list[list[str]]:
 
 
 def test_sampling_points_go_to_the_shot_covering_them() -> None:
-    """帧号形如 S<镜头号>-<序号>，序号在镜头内从 1 起排。"""
-
     rows = ((ShotSpan(shot_id=1, start_ms=0, end_ms=2000),),)
 
     assert ids(rows) == [["S1-1", "S1-2"]]
 
 
 def test_the_grid_does_not_move_with_shot_boundaries() -> None:
-    """镜头怎么切都不挪采样点：第二个镜头从 2000ms 这个栅格点开始。"""
-
     rows = (
         (
             ShotSpan(shot_id=1, start_ms=0, end_ms=2000),
@@ -33,8 +27,6 @@ def test_the_grid_does_not_move_with_shot_boundaries() -> None:
 
 
 def test_a_shot_between_two_grid_points_gets_nothing() -> None:
-    """短于一秒且落在栅格点之间的镜头不补中点，一格都不给。"""
-
     rows = (
         (
             ShotSpan(shot_id=1, start_ms=0, end_ms=1200),

@@ -13,7 +13,6 @@ export const handleUndoShortcut = (
   history: UndoHistory | undefined,
   beforeChange?: () => void,
 ) => {
-  // 输入框里的 ⌘Z 是浏览器撤销打字
   if (isTextEntry(event.target) || !(event.metaKey || event.ctrlKey)) return
   if (event.key.toLowerCase() !== 'z' || history === undefined) return
   event.preventDefault()

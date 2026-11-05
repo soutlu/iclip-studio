@@ -1,5 +1,3 @@
-/** 模型运行状态条：相机吉祥物加一句状态；尺寸对齐工具行的图标列，不抢正文。 */
-
 import { useEffect, useRef } from 'react'
 import type { AnimationItem } from 'lottie-web'
 import { cn } from '@/shared/lib/utils'
@@ -9,7 +7,6 @@ const ANIMATION_PATH = '/lottie/requesting-camera.json'
 
 type WorkingIndicatorProps = {
   label: string
-  /** 轮到用户时（如等审批）为 true：吉祥物停在首帧、变灰，文字不再闪。 */
   still?: boolean | undefined
 }
 
@@ -27,7 +24,6 @@ const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: r
 function CameraMascot({ still }: { still: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<AnimationItem | undefined>(undefined)
-  // 动画异步加载，加载完成时按那一刻的 still 决定播不播；用 ref 读，免得 still 一变就重建动画。
   const stillRef = useRef(still)
 
   useEffect(() => {
@@ -69,7 +65,6 @@ function CameraMascot({ still }: { still: boolean }) {
     else if (!prefersReducedMotion()) animation.play()
   }, [still])
 
-  // 素材是写死的绿色填充，CSS color 管不到，停住时用灰度滤镜变灰。
   return (
     <div
       aria-hidden

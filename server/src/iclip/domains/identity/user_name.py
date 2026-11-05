@@ -1,7 +1,3 @@
-"""归属标签 ``user_name`` 的取值规则。上游按它落表对账；它本身不参与授权。
-
-持 ``users:act_as`` 的钥匙会拿这个名字换主体，那一步在 ``acting.py``，在本函数定好名字之后。"""
-
 from __future__ import annotations
 
 from agent_runtime.errors import ValidationFailed
@@ -10,20 +6,11 @@ from iclip.domains.identity.models import Principal
 
 
 def require_own_user_name(principal: Principal, name: str) -> None:
-    """浏览器会话给的名字必须是自己的用户名，免得把账记到别人头上；不是就抛 ``ValidationFailed``。"""
-
     if name != principal.username:
         raise ValidationFailed("user_name 必须是当前登录账号的用户名")
 
 
 def resolve_user_name(principal: Principal, given: str | None) -> str:
-    """定下这次请求发往上游的 ``user_name``。
-
-    API key 调用方必须自己给，给什么用什么：它替自己的终端用户说话，我们不知道那个人是谁，
-    也不拿 key 属主账号顶替。浏览器会话可以不给，用登录账号的用户名；给了就必须是自己的
-    名字，免得把账记到别人头上。
-    """
-
     name = given.strip() if given is not None else ""
     if principal.kind == "api_key":
         if not name:

@@ -1,9 +1,3 @@
-"""用真实的 Gemini 与 OpenRouter 密钥按声明建模型，开着思考问一句：通过 make test-external 运行。
-
-Gemini 需要 ``GEMINI_API_KEY`` 与 ``GEMINI_MODEL``（可选 ``GEMINI_BASE_URL``），OpenRouter 需要
-``OPENROUTER_API_KEY`` 与 ``OPENROUTER_MODEL``（``作者/模型`` 形式，可选 ``OPENROUTER_BASE_URL``），缺了就跳过
-那一家。两家的声明都不内置模型，模型名从环境变量取。各是一次付费请求。"""
-
 from __future__ import annotations
 
 import os

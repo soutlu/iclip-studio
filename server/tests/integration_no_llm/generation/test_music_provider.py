@@ -1,7 +1,3 @@
-"""用 httpx 替身当音乐生成接口、真实 ffmpeg 规整，验证生成背景音乐发出去的请求、转存与各种收尾。
-
-不调真实付费接口：生成端点与模型给的音频地址都是 MockTransport。"""
-
 from __future__ import annotations
 
 import json
@@ -43,8 +39,6 @@ def _generated(url: str = GENERATED_URL) -> dict[str, Any]:
 
 
 class FakeServices:
-    """生成接口与模型给的音频地址的替身：生成端点按剧本回应并记下收到的请求，音频地址给固定字节。"""
-
     def __init__(self, response: httpx.Response | Exception, audio: bytes | None) -> None:
         self.response = response
         self.audio = audio

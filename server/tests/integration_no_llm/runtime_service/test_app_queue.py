@@ -1,7 +1,3 @@
-"""运行时服务的会话接口在一轮还卡着的时候：排着的消息能撤，整段能停，活动与占位读得出来，分叉被挡住。
-
-模型在一扇门上等着，门由用例开，运行中的状态是确定的。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -80,7 +76,6 @@ async def test_a_queued_prompt_is_aborted_while_the_first_one_runs(
     unknown = str(uuid.uuid4())
     activities = await app_client.post("/sessions:activities", json={"ids": [session, unknown]})
     assert activities.status_code == 200, activities.text
-    # 不存在的会话不在答复里。
     assert activities.json() == {
         "items": {
             session: {"busy": True, "pending_interaction": "none", "last_turn_reason": None},
@@ -122,5 +117,4 @@ async def test_aborting_the_session_stops_the_running_turn(
     await settled(app_client, session)
 
     assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "aborted"}
-    # 什么都没在跑时再停一次照样 204。
     assert (await app_client.post(f"/sessions/{session}:abort")).status_code == 204

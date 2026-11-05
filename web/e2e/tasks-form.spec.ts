@@ -16,7 +16,6 @@ const openCreate = async (page: Page) => {
   }
   await page.getByRole('button', { name: '新建需求单' }).click()
   const dialog = page.getByRole('dialog', { name: '新建需求单' })
-  // 手机端弹窗从底部滑入；等入场动画结束再量布局，否则前后两次取到的位置之间弹窗还在移动。
   await dialog.evaluate((element) =>
     Promise.all(element.getAnimations().map((animation) => animation.finished)),
   )
@@ -70,7 +69,6 @@ test('商品图库上传后显示原图，保存再打开仍可预览', async ({
   const naturalRatio = await productImage.evaluate(
     (image: HTMLImageElement) => image.naturalWidth / image.naturalHeight,
   )
-  // 缩放到多大由样式说了算，这里只等它按原图比例稳定下来。
   await expect
     .poll(async () => {
       const bounds = await boundsOf(productImage)
@@ -97,11 +95,9 @@ test('商品图库上传后显示原图，保存再打开仍可预览', async ({
   await expect
     .poll(() => preview.getByRole('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
     .toBeGreaterThan(0)
-  // 预览铺满整个视口而不是被困在需求单弹窗的矩形里。
   const viewport = page.viewportSize()
   if (viewport === null) throw new Error('需要固定视口尺寸核对预览范围')
   expect(await preview.boundingBox()).toMatchObject({ x: 0, y: 0, ...viewport })
-  // Esc 与点暗区都只关预览；需求单弹窗和填了一半的表单还在。
   await page.keyboard.press('Escape')
   await expect(preview).toBeHidden()
   await expect(reopened).toBeVisible()
@@ -212,7 +208,6 @@ test('认领需求后预览单段文字与图片，创建关联对话并发送�
   await expect(confirm).toBeDisabled()
   const agentTrigger = preview.getByRole('button', { name: '请选择 Agent', exact: true })
   await agentTrigger.click()
-  // 菜单叠在弹窗上，Escape 只收起菜单。
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toBeHidden()
   await expect(preview).toBeVisible()
@@ -239,7 +234,6 @@ test('认领需求后预览单段文字与图片，创建关联对话并发送�
   await confirm.click()
   const created = await createdResponse
   const createBody = created.request().postDataJSON() as { id: string }
-  // 对话 id 由客户端铸，回执丢了重发也是同一段。
   expect(createBody).toEqual({
     agentId: 'storyboard',
     id: expect.any(String),

@@ -1,5 +1,3 @@
-"""验证 PgStepStore、PgMediaStore 与 StepPersistence 的持久化协议一致性。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -111,7 +109,6 @@ async def test_list_runs_order_and_filters(store: PgStepStore) -> None:
             started_at=T0 + timedelta(seconds=offset_s),
         )
 
-    # 乱序写入，验证按 started_at 升序读出（协议约定）。
     await store.register_run(rec("b", 20, "conv-1", "root"))
     await store.register_run(rec("a", 10, "conv-1", None))
     await store.register_run(rec("c", 30, "conv-2", "root"))
@@ -166,7 +163,6 @@ async def test_snapshot_idempotency_key_suppresses_replay(store: PgStepStore) ->
 
 
 async def test_snapshot_idempotency_key_survives_prune(engine: AsyncEngine) -> None:
-    """幂等键必须在快照被修剪后保留，以识别旧保存请求的重放。"""
     store = PgStepStore(engine, max_snapshots_per_run=1)
     keyed = ContinuableSnapshot(
         run_id="r1",
@@ -212,7 +208,6 @@ async def test_snapshot_latest_gate_and_roundtrip(store: PgStepStore) -> None:
 
 
 async def test_snapshot_prune_retain_set(engine: AsyncEngine) -> None:
-    """keep=1 且最新的是 interrupted 时，窗口外最新一条 complete 仍须保留。"""
     store = PgStepStore(engine, max_snapshots_per_run=1)
     await store.save_snapshot(
         ContinuableSnapshot(run_id="r1", step_index=1, messages=_messages("s1"), state="complete")
@@ -238,7 +233,6 @@ async def test_snapshot_prune_retain_set(engine: AsyncEngine) -> None:
 
 
 async def test_snapshot_nul_escape_roundtrip(store: PgStepStore) -> None:
-    """jsonb 拒绝含 NUL 转义的负载；text 必须保留该负载。"""
     messages: list[ModelMessage] = [
         ModelRequest(parts=[UserPromptPart(content="a\x00b")]),
         ModelResponse(parts=[TextPart(content="ok")]),
@@ -302,7 +296,7 @@ async def test_media_store_content_addressed(engine: AsyncEngine) -> None:
 async def test_snapshot_media_externalization_roundtrip(
     store: PgStepStore, engine: AsyncEngine
 ) -> None:
-    blob = bytes(range(256)) * 512  # 128 KiB，超过 64 KiB 阈值
+    blob = bytes(range(256)) * 512
     messages: list[ModelMessage] = [
         ModelRequest(
             parts=[
@@ -362,7 +356,6 @@ async def test_snapshot_row_references_messages_stored_once(
 
 
 async def test_snapshot_prune_keeps_stored_messages(engine: AsyncEngine) -> None:
-    """修剪快照不回收消息，与官方一致：共享的与只被修剪快照用过的消息都留着。"""
     store = PgStepStore(engine, max_snapshots_per_run=1)
     shared = _messages("shared")
     pruned_only = [*shared, *_messages("pruned only")]
@@ -419,8 +412,6 @@ async def test_snapshot_reads_mix_inline_and_referenced_rows(
 
 
 async def test_snapshot_missing_referenced_message(store: PgStepStore, engine: AsyncEngine) -> None:
-    """单条读取时抛错；按运行列出时与官方一致，记日志跳过那一行。"""
-
     await store.save_snapshot(
         ContinuableSnapshot(
             run_id="r1",

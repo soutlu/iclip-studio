@@ -1,5 +1,3 @@
-"""千问音频生成给的 wav 地址带签名、24 小时后失效，所以下载规整后转存进自己的桶。"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -90,7 +88,6 @@ class QwenMusicProvider:
                 async with httpx.AsyncClient(transport=self._transport) as client:
                     await download(client, generated_url, source, max_bytes=MAX_AUDIO_BYTES)
             except MediaError as exc:
-                # 模型给的地址带签名，不进会落库给人看的错误信息。
                 cause = type(exc.__cause__).__name__ if exc.__cause__ is not None else "内容不合格"
                 raise ProviderError(
                     f"音乐已生成但下载不下来（{cause}），不重新生成以免重复计费",

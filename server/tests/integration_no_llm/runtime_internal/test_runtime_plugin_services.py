@@ -1,8 +1,3 @@
-"""内部接口上的插件服务：请求与答复照 ``iclip_video`` 的 wire 模型走一趟，进程内的端口适配器照常干活，
-端口的失败按约定的状态码与 ``code`` 答出，客户端能还原成同一个错误。
-
-只挂内部接口的路由与错误信封；这些插件服务不访问对话服务。"""
-
 from __future__ import annotations
 
 import subprocess
@@ -93,7 +88,6 @@ def internal_app(plugins: RuntimePluginServices) -> FastAPI:
 
 
 UNUSED = object()
-"""用例不经过的端口占位。"""
 
 
 def services(
@@ -104,8 +98,6 @@ def services(
     breakdowns: ReferenceBreakdowns | None = None,
     image_models: frozenset[str] = frozenset(),
 ) -> RuntimePluginServices:
-    """给了出图、取帧或切格任一个就挂上 ``shot_video``，没给的那几个用占位。"""
-
     shot = (
         ShotServices(
             generations=(
@@ -188,8 +180,6 @@ async def test_an_invalid_image_request_is_422_with_the_adapters_own_words() -> 
 
 
 async def test_an_owner_who_is_gone_or_deactivated_is_404_or_403() -> None:
-    """适配器自己按属主重建主体：停用的 ``AuthenticationFailed`` 在这些路由上答 403，401 只留给令牌。"""
-
     async def deactivated(_user_id: uuid.UUID) -> Principal:
         raise AuthenticationFailed("账号已停用")
 
@@ -217,8 +207,6 @@ async def test_an_owner_who_is_gone_or_deactivated_is_404_or_403() -> None:
 
 @dataclass
 class ScriptedBoards:
-    """取帧拼板的替身：记下收到的参数；设了 ``error`` 就抛它，否则原样交回传来的台账。"""
-
     error: FrameBoardsFailed | None = None
     calls: list[tuple[str, tuple[tuple[ShotSpan, ...], ...], ExtractionLedger | None]] = field(
         default_factory=list[tuple[str, tuple[tuple[ShotSpan, ...], ...], ExtractionLedger | None]]
@@ -294,8 +282,6 @@ async def test_each_boards_failure_is_422_with_its_code_and_the_model_facing_tex
 
 
 def make_grid_png(path: Path) -> bytes:
-    """四个纯色格、白色分隔带的 2×2 宫格。"""
-
     boxes = [
         (0, 0, 180, 150, "red"),
         (186, 0, 218, 150, "green"),
@@ -415,8 +401,6 @@ async def test_a_cut_that_cannot_be_recorded_is_a_server_error(tmp_path: Path) -
 
 @dataclass
 class ScriptedReferences:
-    """参考视频服务的替身：按地址交回预设的结果。"""
-
     outcomes: dict[str, Outcome]
     asked: list[tuple[uuid.UUID, str]] = field(default_factory=list[tuple[uuid.UUID, str]])
 
@@ -490,8 +474,6 @@ BREAKDOWN_ROUTES = ("reference-breakdowns",)
 async def test_the_services_answer_matches_the_mounted_routes(
     plugins: RuntimePluginServices, answer: dict[str, object], mounted: tuple[str, ...]
 ) -> None:
-    """运行时启动时照这份核对：说开了的那组路由挂着（空请求体答 422），没开的答 404。"""
-
     async with client_for(internal_app(plugins)) as client:
         answered = await client.get("/internal/runtime/plugins/services")
         statuses = {

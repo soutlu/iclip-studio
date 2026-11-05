@@ -1,8 +1,3 @@
-"""子代理流的读取入口：HTTP 带 agent_id、WS 按 agent 订阅、不属于这段对话的 agent 拒绝。
-
-装配走真实 app：主 agent 用会派活的假模型，子代理用分两半说话、中间可以卡住的假模型。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -32,14 +27,10 @@ FIRST_HALF = "S3-1 特写；"
 SECOND_HALF = "S3-2 中景；S3-3 全景"
 
 _ENTERED = threading.Event()
-"""子代理说完前半句了。"""
 _GATE = threading.Event()
-"""放子代理说后半句；app 跑在 TestClient 的线程里，所以用线程事件轮询。"""
 
 
 def _says_in_two_halves() -> FunctionModel:
-    """子代理模型：先说前半句，等门开了再说后半句。默认门是开的，只有重开面板的用例关它。"""
-
     async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
         yield FIRST_HALF
         _ENTERED.set()
@@ -82,8 +73,6 @@ def _send(tc: TestClient, conversation_id: str, text_: str) -> None:
 
 
 def _child_of(ops: list[dict[str, Any]]) -> str:
-    """主流工具卡上 agentRefs 指向的子代理 id。"""
-
     for op in ops:
         if op["op"] == "frame.upsert" and op["frame"].get("agentRefs"):
             return str(op["frame"]["agentRefs"][0]["agentId"])
@@ -91,8 +80,6 @@ def _child_of(ops: list[dict[str, Any]]) -> str:
 
 
 def _run_a_delegation(tc: TestClient, conversation_id: str) -> str:
-    """跑完一轮派活，返回子代理 id。"""
-
     with tc.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "server_hello"
         subscribe(ws, conversation_id)
@@ -115,7 +102,6 @@ def test_a_child_stream_is_read_by_its_agent_id(
         assert body["agent_id"] == child_id
         assert [(turn["turnId"], turn["state"]) for turn in body["items"]] == [("t1", "completed")]
         assert body["items"][0]["content"] == [{"type": "text", "text": TASK}]
-        # 子页的名册和主页同一份：main 加这个子代理。
         assert [agent["agentId"] for agent in body["agents"]] == ["main", child_id]
 
         catchup = tc.get(
@@ -125,7 +111,6 @@ def test_a_child_stream_is_read_by_its_agent_id(
         assert catchup.status_code == 200, catchup.text
         assert catchup.json()["agent_id"] == child_id
 
-        # 子 id 只是运行 id，配别的会话读不到；带路径分隔符的 id 连形状都不对。
         other = open_conversation(tc)
         assert (
             tc.get(f"/conversations/{other}/transcript", params={"agent_id": child_id}).status_code
@@ -151,7 +136,6 @@ def test_a_child_stream_is_read_by_its_agent_id(
                 row.model_name: (row.requests, row.input_tokens, row.output_tokens) for row in rows
             }
 
-    # 派活与收尾的两次父响应、一次子响应都归入原对话，审计不能漏算子代理费用。
     usage = asyncio.run(read_usage())
     assert {name: requests for name, (requests, _, _) in usage.items()} == {
         models[TEST_MODEL_NAME].model_name: 2,
@@ -187,7 +171,6 @@ def test_ws_subscribes_each_agent_in_the_table(ws_agent_app: FastAPI, pg_url: st
             assert resets == {"main", child_id}
             assert until(ws, "ack")["payload"]["accepted"] == [conversation_id]
 
-            # 只退子代理，主流照旧收得到。
             ws.send_json(
                 {
                     "type": "unsubscribe_v2",
@@ -200,7 +183,6 @@ def test_ws_subscribes_each_agent_in_the_table(ws_agent_app: FastAPI, pg_url: st
             frames = _drain_frames(ws)
             assert frames and {frame["payload"]["agent_id"] for frame in frames} == {"main"}
 
-            # 表里混进不属于这段对话的 agent：整帧拒绝，已有订阅不动。
             ws.send_json(
                 {
                     "type": "subscribe_v2",
@@ -216,8 +198,6 @@ def test_ws_subscribes_each_agent_in_the_table(ws_agent_app: FastAPI, pg_url: st
 
 
 def test_reopening_a_running_child_picks_up_where_it_is(ws_agent_app: FastAPI, pg_url: str) -> None:
-    """子代理跑到一半才点开它：先拉页看到 running 的 t1 和已说的半句，再带水位订阅接着收。"""
-
     _GATE.clear()
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -274,8 +254,6 @@ def test_reopening_a_running_child_picks_up_where_it_is(ws_agent_app: FastAPI, p
 
 
 def _child_from_live_frames(ws: Any, *, tries: int = 40) -> str:
-    """主流里派出子代理的那张卡一到就拿它的 agentRefs。"""
-
     for _ in range(tries):
         frame = ws.receive_json()
         if frame.get("type") != "transcript.ops":
@@ -296,8 +274,6 @@ def _texts(turn: dict[str, Any]) -> list[str]:
 
 
 def _drain_frames(ws: Any, *, until_agent: str = "main", tries: int = 80) -> list[dict[str, Any]]:
-    """收 transcript.ops 帧直到某个 agent 的轮到终态；别的 agent 的帧也留着，调用方自己分。"""
-
     collected: list[dict[str, Any]] = []
     for _ in range(tries):
         frame = ws.receive_json()

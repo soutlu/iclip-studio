@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { login } from './login'
 
-// 审计页按 UTC+8 统计与显示。浏览器放在洛杉矶：固定时刻 06:30Z 在那里还是 9 月 22 日，
-// 页面上写的仍是 UTC+8 的 9 月 23 日，才说明日期不跟浏览器时区。
 test.use({ timezoneId: 'America/Los_Angeles' })
 
 test('审计总览：快捷档与日历切时间，卡片标题跳到对应一节，清单共用时间范围', async ({ page }) => {
@@ -21,12 +19,10 @@ test('审计总览：快捷档与日历切时间，卡片标题跳到对应一�
   ).toBeVisible()
   await expect(legend.getByText('7 日均线')).toBeVisible()
 
-  // 快捷档即点即换；今天按小时分期。
   await main.getByRole('radio', { name: '今天' }).click()
   await expect(page).toHaveURL('/audit?period=today')
   await expect(legend.getByText('每小时')).toBeVisible()
 
-  // 日历左侧的预设：上月整月都在片长有数据之前。
   await main.getByRole('button', { name: /^自定义时间范围/ }).click()
   const picker = page.getByRole('dialog', { name: '选择时间范围' })
   await picker.getByRole('button', { name: '上月' }).click()
@@ -37,26 +33,22 @@ test('审计总览：快捷档与日历切时间，卡片标题跳到对应一�
     main.getByRole('region', { name: '模型消耗' }).getByText('暂无片长数据', { exact: true }),
   ).toBeVisible()
 
-  // 自定义：点起点再点终点，应用后才生效。当前是上月，日历停在七、八月，往后翻一个月。
   await main.getByRole('button', { name: /^自定义时间范围/ }).click()
   await picker.getByRole('button', { name: '下个月' }).click()
   await picker.getByRole('button', { name: '9月1日', exact: true }).click()
   await picker.getByRole('button', { name: '9月7日', exact: true }).click()
   await expect(picker.getByText('9月1日 – 9月7日')).toBeVisible()
   await picker.getByRole('button', { name: '应用' }).click()
-  // 弹层退场后焦点回到日期按钮，等它关干净再往下点，免得焦点把滚动拉回顶部。
   await expect(picker).toBeHidden()
   await expect(page).toHaveURL('/audit?period=custom&from=2026-09-01&to=2026-09-07')
   await expect(main.getByText('环比对比 8月25日–31日')).toBeVisible()
 
-  // 卡片标题点了滚到下面对应的一节。
   await main
     .getByRole('article', { name: '出片件数' })
     .getByRole('button', { name: '出片件数' })
     .click()
   await expect(main.getByRole('region', { name: '使用人次' })).toBeInViewport()
 
-  // 清单与总览共用时间范围，切过去再切回来都还是这一段。
   await page.getByRole('tab', { name: '清单' }).click()
   await expect(page).toHaveURL('/audit?period=custom&from=2026-09-01&to=2026-09-07&tab=details')
   await expect(main.getByRole('button', { name: '自定义时间范围：9月1日 – 9月7日' })).toBeVisible()
@@ -84,7 +76,6 @@ test('审计总览在手机宽度不横向滚动', async ({ page }) => {
   expect(overflow).toEqual({ document: 0, main: 0 })
 })
 
-/** 登录治理者、进审计页的清单标签。 */
 const openDetails = async (page: Page) => {
   await page.clock.setFixedTime(new Date('2026-09-23T06:30:00Z'))
   await page.goto('/')
@@ -104,7 +95,6 @@ test('审计清单：按人筛选两张表都变，表头排序进地址，点�
   const people = main.getByRole('table', { name: '按人' })
   const executions = main.getByRole('table', { name: '按任务执行次数' })
 
-  // 筛人：按人表只剩他，按任务执行每一行都是他。
   await main.getByRole('button', { name: '按人筛选' }).click()
   await page.getByRole('menuitemradio', { name: 'lin.xia' }).click()
   await expect(page).toHaveURL('/audit?tab=details&userName=lin.xia')
@@ -113,10 +103,8 @@ test('审计清单：按人筛选两张表都变，表头排序进地址，点�
   const notHis = executions
     .getByRole('row')
     .filter({ hasNot: page.getByRole('cell', { name: 'lin.xia', exact: true }) })
-  // 只剩表头那一行。
   await expect(notHis).toHaveCount(1)
 
-  // 表头排序走接口，排序记在地址里。
   const tokens = executions.getByRole('columnheader', { name: 'token 消耗' })
   await tokens.getByRole('button').click()
   await expect(page).toHaveURL('/audit?sort=tokens&tab=details&userName=lin.xia')
@@ -125,7 +113,6 @@ test('审计清单：按人筛选两张表都变，表头排序进地址，点�
   await expect(page).toHaveURL('/audit?sort=tokens&order=asc&tab=details&userName=lin.xia')
   await expect(tokens).toHaveAttribute('aria-sort', 'ascending')
 
-  // 点整行展开，再点收起。
   const row = executions.getByRole('row').nth(1)
   await row.getByRole('cell').nth(4).click()
   await expect(row).toHaveAttribute('aria-expanded', 'true')

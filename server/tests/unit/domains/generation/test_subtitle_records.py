@@ -1,7 +1,3 @@
-"""字幕记录：素材片完成后自动排一条、手动端点另起一条、识别结果落库与读出、失败不重投。
-
-用内存仓储与真实队列协程，provider 全是替身，不碰识别服务。"""
-
 from __future__ import annotations
 
 import uuid
@@ -78,8 +74,6 @@ SENTENCES = (
 
 
 class _CreateFailsForSubtitles(InMemoryGenerationRepository):
-    """建字幕记录时数据库出错，其余照常。"""
-
     async def create(self, job: GenerationJob) -> GenerationJob:
         if job.kind == "subtitle":
             raise RuntimeError("数据库连接断了")
@@ -126,8 +120,6 @@ def build_world(
     asr_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
-    """装一个真队列与真服务：素材片完成的回调接到服务上，与装配一致。"""
-
     store = repo if repo is not None else InMemoryGenerationRepository()
     for job in jobs:
         store.jobs[job.id] = job
@@ -168,8 +160,6 @@ def build_world(
 
 
 def submitted_take(**fields: Any) -> GenerationJob:
-    """一条交给上游、等结果的出片。"""
-
     return make_job(
         video_request(),
         status=STATUS_SUBMITTED,
@@ -191,9 +181,6 @@ TAKE_SUCCEEDED = ProviderProgress(
     output_url=TAKE_URL,
     watermark_output_url=TAKE_WATERMARK_URL,
 )
-
-
-# --- 自动触发 -------------------------------------------------------------------
 
 
 async def test_a_completed_take_queues_one_subtitle_record_that_keeps_its_attribution() -> None:
@@ -264,8 +251,6 @@ async def test_a_completed_edit_segment_is_not_transcribed() -> None:
 
 
 async def test_a_completed_enhancement_is_not_transcribed() -> None:
-    """高清版不是素材片：上游报成功落了两个地址，也不为它排字幕。"""
-
     enhancement = replace(
         make_enhancement(completed_take()),
         status=STATUS_SUBMITTED,
@@ -337,9 +322,6 @@ async def test_failing_to_create_the_subtitle_record_leaves_the_take_completed()
     ], "只由队列记一条，不重复记"
 
 
-# --- 识别结果与失败 ---------------------------------------------------------------
-
-
 async def test_a_recognized_subtitle_record_completes_with_its_sentences_and_no_address() -> None:
     subtitle = make_subtitle(completed_take())
     world = build_world(
@@ -399,9 +381,6 @@ async def test_a_failed_recognition_is_recorded_and_never_resubmitted() -> None:
     )
     assert world.asr.submit_calls == [subtitle.id], "失败就停，重来只能手动另起一条"
     assert world.submits_to(FAKE_SUBTITLE_PROVIDER) == []
-
-
-# --- 手动识别端点 -----------------------------------------------------------------
 
 
 def principal(*permissions: str, user_id: uuid.UUID | None = None) -> Principal:
@@ -575,8 +554,6 @@ async def test_manual_transcription_is_refused_when_subtitles_are_not_configured
 
 
 async def test_manual_transcription_settles_the_author_like_other_submits() -> None:
-    """钥匙不报名字就拒；持 users:act_as 的钥匙报了名字，属主换成那个人；浏览器只能报自己。"""
-
     users = InMemoryUserRepository()
     sara = await users.ensure_by_name("Sara.Hong", email=placeholder_email("Sara.Hong"))
     take = completed_take(owner_user_id=sara)
@@ -603,9 +580,6 @@ async def test_manual_transcription_needs_the_submit_permission() -> None:
         response = await http.post("/generations/subtitles", json={"sourceJobId": str(take.id)})
 
     assert response.status_code == 403
-
-
-# --- 读取 -----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("sentences", [SENTENCES, ()], ids=["有口播", "没有口播"])

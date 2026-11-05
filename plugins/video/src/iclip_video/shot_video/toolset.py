@@ -1,5 +1,3 @@
-"""取帧与出图工具注册、输入地址校验与工作区编排。"""
-
 from __future__ import annotations
 
 import uuid
@@ -38,17 +36,7 @@ if TYPE_CHECKING:
 
 
 class ShotVideoToolset(FunctionToolset[AgentDepsT]):
-    """三件工具。参数的范围规则挂在登记处的验证器上，工具体只做本职。
-
-    三件都经 ``Tool`` 登记，不走 ``add_function``：后者的参数表由 pyright 从函数推，收 ``ctx``
-    的工具会把 ``ctx`` 也算进参数表，于是任何一个签名正确的验证器都被判不兼容。
-    代价是工具集级别的默认值（``strict`` / ``sequential`` / ``requires_approval`` / ``timeout``
-    等）不再套到这三件上——这里只传 ``id``，所以现在没有差别；将来在 ``super().__init__``
-    上加一个默认值，它对这三件会静默失效。
-    """
-
     def __init__(self, capability: ShotVideo[AgentDepsT]) -> None:
-        # 工具集复用能力 id，供 durable execution 识别。
         super().__init__(id=capability.id)
         self._cap = capability
         self.add_tool(
@@ -91,7 +79,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
             )
 
         boards = document.boards
-        # 板号由台账模型保证从 1 起；复用的台账可能被改过，超出层级数时拒掉。
         stray = sorted({board.board for board in boards if board.board > len(rows)})
         if stray:
             raise ModelRetry(
@@ -99,8 +86,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
                 f"{len(rows)} 个结构层级。用 delete_file 删掉 {EXTRACTION_PATH} 后重新调用 "
                 "plan_shot_frames。"
             )
-        # 台账只存板号与地址；板上有哪几个镜头按 rows 现算。命中复用时 rows 与建账时
-        # 逐字相同（它是 extractionKey 的组成部分），两条路算出来一样。
         shots_of = {
             board.board: sorted({shot.shot_id for shot in rows[board.board - 1]})
             for board in boards
@@ -154,7 +139,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
 
         files, namespace = self._workspace(ctx)
         owner = _owner(ctx)
-        # 出图不用台账内容，只要求先取过帧。
         if await self._cap.extractor.load(files, namespace) is None:
             raise ModelRetry("取帧账本不存在或版本不兼容，先调用 plan_shot_frames。")
         cell_ids, prompts = resolve_requests(frames)
@@ -227,7 +211,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
             owner,
             job,
             cells=AnchorSheets(indexes=tuple(range(1, len(descriptions) + 1))),
-            # 设定图不收缩到目标画幅，避免裁掉主体。
             aspect=None,
             failure_message="设定图处理失败。",
         )
@@ -238,8 +221,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         )
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
-        """取帧收的视频地址只查形状：后端经出网防护下载，取不到如实报。参数表与工具逐字一致，官方按它调。"""
-
         _ = ctx
         require_http(video_url, what="视频地址")
 
@@ -251,12 +232,6 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         global_reference: str,
         target_aspect: str,
     ) -> None:
-        """出图收的参考图地址要取得到、是图片，查过才提交出图。
-
-        参数表必须与工具逐字一致；``frames``、``global_reference``、``target_aspect`` 在这里
-        照收不看，由工具体在提交出图前校验，帧号不要求属于取帧台账。
-        """
-
         _ = (ctx, frames, global_reference, target_aspect)
         await require_media(
             [(f"@Image{n}", url) for n, url in enumerate(reference_images, start=1)],
@@ -265,17 +240,10 @@ class ShotVideoToolset(FunctionToolset[AgentDepsT]):
         )
 
     def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
-        """这次运行的文件存储与命名空间。命名空间算不出来就让它抛，不退回公共的。"""
-
         return self._cap.space.store, self._cap.space.resolve(ctx)
 
 
 def _generation_conversation_id(ctx: RunContext[AgentDepsT]) -> str | None:
-    """出图记录的业务对话归属；预览产物不挂到业务对话。
-
-    入口已把对话 id 规范成 UUID；这里不是 UUID 说明运行状态损坏，直接抛 RuntimeError。
-    """
-
     deps = _deps(ctx)
     conversation_id = deps.conversation_id
     try:
@@ -286,18 +254,10 @@ def _generation_conversation_id(ctx: RunContext[AgentDepsT]) -> str | None:
 
 
 def _owner(ctx: RunContext[AgentDepsT]) -> uuid.UUID:
-    """取这次运行的属主用户 id。
-
-    deps 不是 ``AgentRunDeps`` 说明运行身份没注进来，那是装配 bug 不是模型的输入
-    错误，所以让它炸，不翻成一句可重试的提示。
-    """
-
     return _deps(ctx).user_id
 
 
 def _user_name(ctx: RunContext[AgentDepsT]) -> str:
-    """这次运行替谁跑：随消息进来的归属标签，出图时发给上游落表。不看运行属主是谁。"""
-
     return _deps(ctx).user_name
 
 

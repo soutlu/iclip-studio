@@ -1,5 +1,3 @@
-"""按模型声明建出 pydantic-ai 模型。"""
-
 from __future__ import annotations
 
 import inspect
@@ -19,13 +17,10 @@ from pydantic_ai.settings import ModelSettings
 from agent_runtime.model_vocab import ModelApi, ThinkingEffort
 
 BuiltModel = Model
-"""装配出的一个模型实例；组合根经它引用模型类型，不直接 import 引擎。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
-    """建一个模型要的配置；``name`` 只用于报错；省略 thinking 时使用供应方默认值。"""
-
     name: str
     provider: str
     model: str
@@ -36,13 +31,10 @@ class ModelSpec:
 
 
 def _build_provider(spec: ModelSpec) -> Provider[Any]:
-    """根据配置构造 provider，未知名称抛错。"""
-
     provider_class = cast("Any", infer_provider_class(spec.provider))
     if spec.base_url is None:
         return cast("Provider[Any]", provider_class(api_key=spec.api_key))
 
-    # 各家构造签名不统一：收 base_url 的直接传，只收 api_key 的（如 OpenRouter、DeepSeek）走 openai_client。
     parameters = inspect.signature(provider_class.__init__).parameters
     if "base_url" in parameters:
         return cast("Provider[Any]", provider_class(api_key=spec.api_key, base_url=spec.base_url))
@@ -55,8 +47,6 @@ def _build_provider(spec: ModelSpec) -> Provider[Any]:
 
 
 def provider_known(name: str) -> bool:
-    """官方认不认这个 provider 名。"""
-
     try:
         infer_provider_class(name)
     except ValueError:
@@ -65,9 +55,6 @@ def provider_known(name: str) -> bool:
 
 
 _UNIFIED_THINKING_MODELS: Final = (GoogleModel, OpenRouterModel)
-"""用通用 ``thinking`` 设档位的模型类：它们的适配器把它换成自家参数（Gemini 的 thinkingConfig、OpenRouter
-的 reasoning）。别的类用 ``openai_reasoning_effort``：Qwen profile 未声明 supports_thinking，通用 thinking
-会被忽略。"""
 
 
 def _effort_settings(model_class: type[Model], thinking: ThinkingEffort) -> ModelSettings:
@@ -83,14 +70,10 @@ def _model_settings(
 
 
 def thinking_settings(model: Model, thinking: ThinkingEffort) -> ModelSettings:
-    """给一次请求单独设思考档位的设置，按 ``model`` 的类写法与建模型时相同；请求的设置盖过模型自带的。"""
-
     return _effort_settings(type(model), thinking)
 
 
 def thinking_effort_of(model: Model) -> str | None:
-    """读回 _model_settings 写进模型的思考档位，``thinking=False`` 读作 ``none``；没配返回 None。"""
-
     settings = cast("Mapping[str, object] | None", model.settings)
     if settings is None:
         return None
@@ -101,9 +84,6 @@ def thinking_effort_of(model: Model) -> str | None:
 
 
 def build_model(spec: ModelSpec) -> Model:
-    """构造 Model，拒绝无效 provider 或配置组合。``gemini`` 用这组 API Key 与接口地址直接连 Gemini 原生
-    接口，没给地址走官方地址。"""
-
     if spec.api == "gemini":
         google = GoogleProvider(api_key=spec.api_key, base_url=spec.base_url)
         return GoogleModel(
@@ -111,14 +91,11 @@ def build_model(spec: ModelSpec) -> Model:
         )
     provider = _build_provider(spec)
     if spec.api == "chat":
-        # 模型类由官方按 provider 名决定：Ollama、OpenRouter 等各有专属类。官方把 openai 分派到
-        # Responses 模型，chat 要按 openai-chat 取 Chat Completions 模型。
         kind = "openai-chat" if spec.provider == "openai" else spec.provider
         picked = infer_model(f"{kind}:{spec.model}", provider_factory=lambda _: provider)
         settings = _model_settings(type(picked), spec.thinking)
         if settings is None:
             return picked
-        # 官方的分派入口不收 settings，按它选出的类再造一次。
         return cast(
             "Model", cast("Any", type(picked))(spec.model, provider=provider, settings=settings)
         )

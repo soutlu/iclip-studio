@@ -7,7 +7,6 @@ import { pluginIcon } from '../plugin-icons'
 import { PanelShell } from './panel-shell'
 import { AlertGlyph, CardGlyph } from './resource-card'
 
-/** 本部署的全部插件，一行一个开关；开关只改这一个插件，缺的依赖标红、留给发布检查。 */
 export function PluginPanel({
   config,
   onChange,
@@ -29,7 +28,6 @@ export function PluginPanel({
   )
   return (
     <PanelShell onClose={onClose} title="插件">
-      {/* 搜索框是浅灰底、不描边，聚焦也不出框，光标就是指示（同 v17 的目录搜索）。 */}
       <Input
         aria-label="搜索插件"
         leadingIcon="search"

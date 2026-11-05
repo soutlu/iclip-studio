@@ -13,10 +13,6 @@ const MODEL_TYPES: readonly ModelType[] = ['llm', 'embedding', 'rerank']
 
 const optionKey = (providerId: string, modelName: string) => `${providerId}\u0000${modelName}`
 
-/**
- * 「默认模型」：每个模型类型一行，右边一个菜单胶囊，从启用的供应商里启用的同类型模型中选。
- * `llm` 的默认模型用来生成对话标题；没设的类型写「未设置」。
- */
 export function DefaultModels({
   defaults,
   providers,

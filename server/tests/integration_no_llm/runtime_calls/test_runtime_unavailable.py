@@ -1,5 +1,3 @@
-"""运行时服务连不上：经它的端点一律答 503，后端的信封、一句固定的话，答复与日志里都没有应用密钥。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

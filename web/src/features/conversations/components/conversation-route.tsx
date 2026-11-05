@@ -1,5 +1,3 @@
-/** 标题来自 transcript 基线与推送；侧栏拓扑仅包含各列表首页，无法覆盖全部历史对话，页头合集标签因此只在拓扑里找得到时显示。 */
-
 import type { ReactNode } from 'react'
 import { useUser, useUsersDirectory } from '@/shared/auth'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
@@ -15,11 +13,8 @@ import { ConversationTimeline } from './conversation-timeline'
 
 type ConversationRouteProps = {
   conversationId: string
-  /** 只读说明条右侧的返回入口；去哪由路由层决定，只在只读时露出。 */
   backLink?: ReactNode
-  /** 分叉成功后去副本；导航归路由层，不给回调就没有分叉入口。 */
   onForked?: (conversationId: string) => void
-  /** 血缘提示里回源对话的链接，由路由层按源 id 造。 */
   sourceLink?: (conversationId: string) => ReactNode
 }
 
@@ -31,16 +26,13 @@ export function ConversationRoute({
 }: ConversationRouteProps) {
   const { view } = useTranscript(conversationId)
   const title = useConversationTitle(conversationId, view.title)
-  // 页头的合集标签只用侧栏已经拿到的拓扑，不为它单发请求；拓扑里找不到就不显示。
   const collection = useCachedConversationCollection(conversationId)
-  // 只读只发生在治理者复盘别人的或已删的对话时，名册接口也只有治理者能读。
   const readOnly = useConversationReadOnly(view)
   const { data: user } = useUser()
   const { nameOf } = useUsersDirectory(readOnly)
   const ownerName = view.ownerUserId === null ? undefined : nameOf(view.ownerUserId)
   const deleted = view.deletedAt !== null
   const readOnlyLabel = deleted ? '已删除' : '只读'
-  // 治理者看自己删掉的对话也是只读；主语是自己就不写成第三人称。
   const ownMine = view.ownerUserId !== null && view.ownerUserId === user?.id
   const ownerPhrase = ownMine
     ? '自己的任务'
@@ -52,7 +44,6 @@ export function ConversationRoute({
   const chrome = useShellChrome()
 
   return (
-    // 高度钉在所在栏，使滚动限制在消息区，保持输入框和自动跟随定位稳定。
     <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <header
         className={cn(

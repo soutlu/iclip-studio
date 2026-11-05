@@ -1,6 +1,3 @@
-"""验证直传链路：签名带审计头、确认只按桶里的对象回答并落一条上传记录（媒体生成没开也落）、
-角色门与没桶时不挂路由。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -49,8 +46,6 @@ async def uploads_app(
     monkeypatch: pytest.MonkeyPatch,
     bucket: MemoryObjectStore,
 ) -> FastAPI:
-    """真实数据库配合 bucket 替身，隔离 OSS 凭证；种好能开对话的 agent（清表由 ``engine`` 夹具先做）。"""
-
     for name, value in OSS_ENVS.items():
         monkeypatch.setenv(name, value)
     built = build_backed_app(
@@ -124,8 +119,6 @@ async def test_confirming_something_nobody_uploaded_is_a_conflict(
 async def uploaded(
     client: httpx.AsyncClient, bucket: MemoryObjectStore, content_type: str, ext: str
 ) -> tuple[str, str]:
-    """签一次、把字节放进桶；返回 uploadId 与对象 key。"""
-
     upload_id = (await sign(client, content_type)).json()["uploadId"]
     key = f"iclip/agent/uploads/{upload_id}.{ext}"
     await bucket.put_public_object(object_key=key, content=b"x" * 10, content_type=content_type)
@@ -166,9 +159,6 @@ async def test_confirming_records_an_upload_even_without_media_generation(
     ext: str,
     kind: str,
 ) -> None:
-    """只开对象存储、没开媒体生成：确认照样落一条上传记录，id 就是 uploadId，创建即完成、
-    没有请求与来源、不挂对话，产物地址就是交回的 url，属主是确认的人。"""
-
     user_id = await login_as_editor(client, pg_url)
     upload_id, _ = await uploaded(client, bucket, content_type, ext)
 
@@ -207,9 +197,6 @@ async def test_confirming_records_an_upload_even_without_media_generation(
 async def test_confirming_again_keeps_the_one_record_and_its_first_owner(
     uploads_app: FastAPI, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
-    """替人办事的钥匙按名字记到那个人名下；再确认一次换了名字也还是那一条、属主不变；桶里的对象
-    没了，确认照旧按桶回答 409。"""
-
     async with make_client(uploads_app) as root:
         await register_and_login(root)
         await set_roles_in_db(pg_url, "logan@example.com", ["root"])
@@ -248,8 +235,6 @@ async def confirmed_upload(
     content_type: str = "video/mp4",
     ext: str = "mp4",
 ) -> tuple[str, str, dict[str, object]]:
-    """签一次、把 ``content`` 放进桶、确认；返回 uploadId、对象 key 与确认交回的 JSON。"""
-
     upload_id = (await sign(http, content_type)).json()["uploadId"]
     key = f"iclip/agent/uploads/{upload_id}.{ext}"
     await bucket.put_public_object(object_key=key, content=content, content_type=content_type)
@@ -262,9 +247,6 @@ async def confirmed_upload(
 async def test_the_same_video_uploaded_again_shares_the_first_address(
     uploads_app: FastAPI, pg_url: str, bucket: MemoryObjectStore, second_user: str
 ) -> None:
-    """同一个视频文件第二次传：交回第一次的地址，两行上传记录都在、各记自己的属主与 MD5，第二份
-    对象删掉。再确认第二次那个 uploadId：交回同一份结果，不报还没传上来。"""
-
     content = b"MP4DATA" * 10
     async with make_client(uploads_app) as first_http, make_client(uploads_app) as second_http:
         first_user_id = await login_as_editor(first_http, pg_url)
@@ -308,8 +290,6 @@ async def test_the_same_video_uploaded_again_shares_the_first_address(
 async def test_the_same_image_or_music_uploaded_twice_keeps_two_addresses(
     client: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, content_type: str, ext: str
 ) -> None:
-    """图片与音乐不去重：同样的字节传两次，各留各的地址与对象，不记 MD5。"""
-
     await login_as_editor(client, pg_url)
     content = b"MEDIADATA" * 10
     first_id, first_key, first = await confirmed_upload(client, bucket, content, content_type, ext)
@@ -330,8 +310,6 @@ async def test_the_same_image_or_music_uploaded_twice_keeps_two_addresses(
 async def media_app(
     base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
 ) -> FastAPI:
-    """开了媒体生成的 app：队列连接器用替身，生成记录的接口挂得上；种好能开对话的 agent。"""
-
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     built = build_backed_app(
@@ -359,8 +337,6 @@ async def test_an_upload_reads_back_through_the_generation_records(
     ext: str,
     kind: str,
 ) -> None:
-    """GET /generations/{uploadId} 读得到那条上传；按属主列会看到它，按 operation=generate 筛掉。"""
-
     async with make_client(media_app) as http:
         await login_as_editor(http, pg_url)
         upload_id, _ = await uploaded(http, bucket, content_type, ext)
@@ -394,9 +370,6 @@ async def open_conversation(http: httpx.AsyncClient) -> str:
 async def test_music_attached_to_a_conversation_is_listed_with_its_generated_music(
     media_app: FastAPI, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
-    """属主确认音乐时给了自己的对话：记录挂上它，按对话列音频连同生成的背景音乐一起列出。
-    再确认一次换了对话也还是第一次那条，不改挂的对话。"""
-
     async with make_client(media_app) as http:
         owner = await login_as_editor(http, pg_url)
         mine, another = await open_conversation(http), await open_conversation(http)
@@ -447,8 +420,6 @@ async def test_only_music_can_be_attached_and_only_to_ones_own_conversation(
     whose: str,
     status: int,
 ) -> None:
-    """挂对话只收音乐，只能挂自己的对话：看不见的对话 404，看得见却不是自己的 403；都不落记录。"""
-
     async with make_client(uploads_app) as owner, make_client(uploads_app) as other:
         await login_as_editor(owner, pg_url)
         conversation = await open_conversation(owner)
@@ -472,8 +443,6 @@ async def test_only_music_can_be_attached_and_only_to_ones_own_conversation(
 
 
 async def test_viewer_cannot_sign(client: httpx.AsyncClient) -> None:
-    """新账号默认是 viewer：能查爆款视频，不能上传。"""
-
     await register_and_login(client)
 
     assert (await sign(client, "image/jpeg")).status_code == 403

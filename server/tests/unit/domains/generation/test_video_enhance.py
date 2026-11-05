@@ -1,7 +1,3 @@
-"""高清版（超分）的两个端点：提交一档高清版，与读一条视频能做的各档。
-
-用内存仓储与真实队列协程，provider 是替身，不碰上游。"""
-
 from __future__ import annotations
 
 import uuid
@@ -94,8 +90,6 @@ def build_app(
     enhance: VideoEnhanceSpec | None = ENHANCE,
     users: InMemoryUserRepository | None = None,
 ) -> FastAPI:
-    """``app.state.connector`` 是排队的去处，``app.state.cleared`` 记下抹过哪些对话的收尾标记。"""
-
     app = app_with_principal(granted)
     queue, connector = build_queue(repo)
     cleared = Cleared()
@@ -131,8 +125,6 @@ def submits(app: FastAPI) -> list[dict[str, Any]]:
 
 
 def take(resolution: str | None = "720p", **fields: Any) -> GenerationJob:
-    """一条别人在别的对话里出的已完成素材片，默认 720p、第 3 镜。"""
-
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", NOW)
     fields.setdefault("conversation_id", uuid.uuid4())
@@ -172,13 +164,7 @@ def new_rows(repo: InMemoryGenerationRepository, seeded: set[uuid.UUID]) -> list
     return [job for job_id, job in repo.jobs.items() if job_id not in seeded]
 
 
-# --- 提交 ------------------------------------------------------------------------
-
-
 async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
-    """来源是别人在别的对话里的素材片也提得了；记录是视频、不挂对话、没有原作，镜号抄来源，
-    请求是配置的模型与帧率、来源的原片地址；排进视频那条队列，不碰任何对话的收尾标记。"""
-
     source = take("720p", owner_user_id=uuid.uuid4(), task_id=uuid.uuid4(), metadata={"k": 1})
     repo = InMemoryGenerationRepository([source])
     app = build_app(repo, granted=SUBMITTER)
@@ -220,8 +206,6 @@ async def test_a_take_gets_an_enhancement_queued_on_the_video_lane() -> None:
 
 
 async def test_a_whole_film_gets_a_video_enhancement() -> None:
-    """高清版产出的总是一个视频：成片的高清版种类也是视频，来源是那次导出。"""
-
     first = take("480p")
     exported = film(first)
     repo = InMemoryGenerationRepository([first, exported])
@@ -336,8 +320,6 @@ async def test_a_tier_outside_what_upstream_takes_is_a_422() -> None:
 async def test_an_unfailed_enhancement_of_the_same_tier_is_handed_back_whoever_asked(
     status: str,
 ) -> None:
-    """别人已经提过、还没失败的那一条直接给回来：照样 202，不新建、不排队。"""
-
     source = take("480p")
     theirs = make_enhancement(source, "1080p", status=status, owner_user_id=uuid.uuid4())
     other_tier = make_enhancement(source, "720p", status=status)
@@ -369,8 +351,6 @@ async def test_a_failed_enhancement_can_be_asked_for_again() -> None:
 
 
 async def test_the_author_is_settled_like_a_video_edit() -> None:
-    """钥匙不报名字就拒；持 users:act_as 的钥匙报了名字，属主换成那个人；浏览器只能报自己。"""
-
     source = take("480p")
     repo = InMemoryGenerationRepository([source])
     users = InMemoryUserRepository()
@@ -403,9 +383,6 @@ async def test_submitting_needs_the_submit_permission() -> None:
     assert list(repo.jobs) == [source.id]
 
 
-# --- 读各档 ----------------------------------------------------------------------
-
-
 async def read(
     repo: InMemoryGenerationRepository,
     job_id: uuid.UUID,
@@ -435,8 +412,6 @@ def tiers_of(response: httpx.Response) -> list[str]:
 async def test_tiers_are_the_configured_ones_sharper_than_the_take(
     resolution: str | None, tiers: list[str]
 ) -> None:
-    """按配置的先后列比来源清晰的；来源清晰度认不出（没写或别的写法）就全列，让上游去拒。"""
-
     source = take(resolution)
     assert tiers_of(await read(InMemoryGenerationRepository([source]), source.id)) == tiers
 
@@ -507,8 +482,6 @@ async def test_each_tier_carries_its_most_recent_enhancement_by_anyone() -> None
 
 
 async def test_each_tier_says_whether_its_record_is_the_readers() -> None:
-    """``mine`` 只看这一档最近那条的属主是不是读的人；没有记录为 false。"""
-
     reader = principal("generation:read")
     source = take("480p")
     others = take("480p")

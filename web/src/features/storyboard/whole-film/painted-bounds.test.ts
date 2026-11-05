@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { hitAt, isShown, ownerOf, paintedBounds, painterAt } from './painted-bounds'
 
-// jsdom 不排版：叠放次序由用例直接给出，元素的范围逐个指定；看得见与否、画没画东西按行内样式算。
-
 const win = window
 const POINT = { x: 50, y: 50 }
 
-/** 搭一份合成页片段，返回按 id 取元素的函数 */
 const page = (html: string) => {
   const root = document.createElement('div')
   root.innerHTML = html
@@ -22,7 +19,6 @@ const rect = (element: Element, left: number, top: number, width: number, height
   element.getBoundingClientRect = () => DOMRect.fromRect({ x: left, y: top, width, height })
 }
 
-// jsdom 不排版，Range 量不出字的范围：按文字节点给出字在画面上的范围
 const textRects = new WeakMap<Node, DOMRect>()
 beforeEach(() => {
   vi.spyOn(document, 'createRange').mockImplementation(() => {
@@ -39,14 +35,12 @@ beforeEach(() => {
   })
 })
 
-/** 元素直接带的那段字在画面上的范围 */
 const textRect = (element: Element, left: number, top: number, width: number, height: number) => {
   const node = element.firstChild
   if (node === null) throw new Error('元素里没有字')
   textRects.set(node, DOMRect.fromRect({ x: left, y: top, width, height }))
 }
 
-/** 只认这几个草稿 id 与 caption:0 */
 const OURS = new Set(['v1', 'o1', 'caption:0'])
 const resolve = (hfId: string) => (OURS.has(hfId) ? hfId : undefined)
 

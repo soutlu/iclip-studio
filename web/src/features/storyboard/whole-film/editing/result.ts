@@ -1,6 +1,5 @@
 import type { WholeFilmDraft } from './draft'
 
-/** 操作被拒的原因；能收紧到边界内的输入会被收紧，不算被拒 */
 export type Refusal =
   | 'unknown-clip'
   | 'not-contiguous'

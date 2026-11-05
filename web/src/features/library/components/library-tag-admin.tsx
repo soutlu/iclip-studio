@@ -1,4 +1,3 @@
-/** 标签管理：同一面板展开三级标签树，就地增改与连续录入。 */
 import { useId, useRef, useState, type CSSProperties } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import type { LibraryTagUpdateIn } from '@/shared/api/generated/types.gen'
@@ -19,13 +18,11 @@ import { isAiDimension, type LibraryTag, type TagIndex } from '../library-tags'
 import { CreateDimensionForm, NameForm, RulesEditor } from './library-tag-admin-forms'
 import './library-tag-admin.css'
 
-/** 筛选条最右的「管理标签」开关，由调用方按权限展示；放在 `FilterBarRoot` 里，点它先收起开着的筛选弹层。 */
 export function ManageTagsToggle({
   className,
   open,
   onToggle,
 }: {
-  /** 照筛选条触发器的外形。 */
   className: string
   open: boolean
   onToggle: () => void
@@ -55,7 +52,6 @@ type Editing = { kind: 'add' | 'rename'; id: string; focus: boolean; position?: 
 type DialogState = { kind: 'rules' | 'delete'; tag: LibraryTag; dimension: boolean } | null
 const RETAG_HINT = '修改仅影响之后的打标，已有标签不会重打。'
 
-/** 连续分组保持按列阅读的全局顺序，五个维度分为 2 / 2 / 1。 */
 const dimensionColumnsOf = (dimensions: readonly LibraryTag[]) => {
   const perColumn = Math.floor(dimensions.length / 3)
   const remainder = dimensions.length % 3
@@ -456,7 +452,6 @@ function TagRow({
   const adding = actions.editing?.id === tag.id && actions.editing.kind === 'add'
   const renaming = actions.editing?.id === tag.id && actions.editing.kind === 'rename'
   const hasChildren = tag.children.length > 0
-  // 编辑中不能卸载这条分支，否则行内表单的未保存内容和焦点都会丢失。
   const editingBranch = actions.editing !== null && containsTag(tag, actions.editing.id)
   const expanded = open || Boolean(query) || editingBranch
   const childQuery = tag.name.toLocaleLowerCase().includes(query) ? '' : query

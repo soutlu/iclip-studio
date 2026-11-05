@@ -1,11 +1,3 @@
-"""客户端库与真实运行时服务的贯通冒烟：一段会话、两条 WebSocket，以及应用身份拒绝。
-
-HTTP 方法与错误映射的完整矩阵在运行时的客户端单测中验证；业务接口行为由运行时 HTTP 集成与后端场景覆盖。
-
-经 ``ASGIWebSocketTransport`` 挂上运行时服务（HTTP 交给它继承的 ``ASGITransport``）；运行驱动与事件分发由
-``running`` 夹具跑着服务的 lifespan 起停，与测试同一个事件循环、同一个 engine。这个传输层的任务组要在同一个
-任务里进出，pytest-asyncio 的异步夹具建与收不在同一个任务里，所以客户端在用例里 ``async with`` 建。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +26,6 @@ from tests.helpers.runtime_service import (
 AGENT = "director"
 IMAGE = "https://bkt.oss-ap-southeast-1.aliyuncs.com/style.jpg"
 WAIT = 10.0
-"""等运行跑完、等帧到的上限（秒）。"""
 
 
 @pytest.fixture
@@ -44,16 +35,12 @@ def models() -> dict[str, Model]:
 
 @pytest.fixture
 async def published(admin: httpx.AsyncClient) -> None:
-    """接好供应商与模型、发布 ``AGENT``。"""
-
     provider_id = await connect_provider(admin)
     await add_model(admin, provider_id, TEST_MODEL_NAME)
     await publish_agent(admin, AGENT)
 
 
 def connect(app: FastAPI, key: str = READER_KEY) -> RuntimeClient:
-    """``key`` 默认是被测应用 ``reader``；``ADMIN_KEY`` 是另一个有管理权限的应用 ``bff``。"""
-
     return RuntimeClient("http://runtime.test", key, transport=ASGIWebSocketTransport(app=app))
 
 
@@ -108,8 +95,6 @@ async def test_a_session_runs_and_reads_back(
 
 
 async def test_app_refusals_are_app_rejected(runtime_app: FastAPI, actor: uuid.UUID) -> None:
-    """不认的密钥（401）、没有管理权限的应用（403）在带类型的方法与管理接口上都是应用级拒绝。"""
-
     async with (
         connect(runtime_app) as reader,
         connect(runtime_app, "unknown-key-0123456789-0123456789-ab") as stranger,

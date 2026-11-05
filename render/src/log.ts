@@ -1,6 +1,3 @@
-/**
- * 结构化日志：每行一个 JSON，`event` 是固定的中文短句，变量放在字段里（与后端日志约定一致）。
- */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 export type LogFields = Record<string, unknown>
@@ -10,7 +7,6 @@ export interface Logger {
   info(event: string, fields?: LogFields): void
   warn(event: string, fields?: LogFields): void
   error(event: string, fields?: LogFields): void
-  /** 带上固定字段（如 exportId）的子记录器。 */
   child(fields: LogFields): Logger
 }
 
@@ -48,7 +44,6 @@ export function createLogger(
   }
 }
 
-/** producer 的日志转进本服务的日志：事件名固定，原文放在 message 字段。 */
 export function producerLogger(logger: Logger) {
   const forward =
     (at: LogLevel) =>

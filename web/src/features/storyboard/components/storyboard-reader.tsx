@@ -1,5 +1,3 @@
-/** 结构化分镜工作台的组合根：取数、草稿与路由参数在这里，状态分发给顶栏、分镜页、浮层与出片栏。 */
-
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -32,9 +30,7 @@ type ReaderSearch = {
   content?: string | undefined
   frame?: number | undefined
   shot?: number | undefined
-  /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
-  /** 成片编辑器开着；属于整段对话，换组不关。 */
   wholeFilm?: true | undefined
 }
 
@@ -55,9 +51,7 @@ function StoryboardWorkspace({
   const generations = useShotGenerations(conversationId)
   const frameJobs = useFrameImageJobs(conversationId)
   useLiveGenerations(conversationId)
-  // 关过编辑器就算看过那一格的终态；只记本次会话，刷新后没看过的终态会再出现一次。
   const [seenFrameJobs, setSeenFrameJobs] = useState<ReadonlySet<string>>(() => new Set())
-  // 打开时先选中哪一条、从哪个控件点开都由入口决定。
   const [imageEdit, setImageEdit] = useState<FrameEditSession | null>(null)
   const draft = useShotsDraft({ conversationId, path, file: file.data?.file })
   const latestFrameJob = useMemo(
@@ -80,7 +74,6 @@ function StoryboardWorkspace({
       next.shot !== undefined && next.shot !== position
         ? { content: undefined, frame: undefined, video: undefined }
         : {}
-    // 叠在导航那一刻的参数上：上传完成时才调的 `go` 拿的是发起时的闭包，不能用旧参数盖掉期间打开的浮层。
     void navigate({
       replace: true,
       search: (previous: ReaderSearch) => ({ ...previous, ...cleared, ...next }),
@@ -88,7 +81,6 @@ function StoryboardWorkspace({
     })
   }
 
-  // ↑↓ 键与顶栏的上一组、下一组、镜头组列表共用这条换组路径。
   const goShot = (next: number) => go({ shot: next })
 
   useShotArrowKeys(root, {
@@ -109,9 +101,7 @@ function StoryboardWorkspace({
     search.video === undefined
       ? undefined
       : generations.data?.find((job) => job.id === search.video)
-  // 只读时整页的编辑与生成入口一起收起。
   const editingDisabled = readOnly || gate.preparing
-  // 提交途中按钮自己写着「提交中」，不另说原因。
   const generateBlocker = gate.preparing
     ? undefined
     : generationBlockerOf({
@@ -123,7 +113,6 @@ function StoryboardWorkspace({
   const generateNotice = generationNoticeOf({
     aspectRatio: document.aspect_ratio,
     model: video.options.model,
-    // 改过之后原因就过期了，等下一次出片再说；存盘状态那一格有自己的提示，不重复说。
     submitError: draft.hasUnsavedChanges ? undefined : video.errorOf(shot.index),
   })
   const generate = () =>
@@ -144,7 +133,6 @@ function StoryboardWorkspace({
         }),
       )
     })
-  // 选中素材片的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
   const refill = (prompt: Shot['prompt']) => {
     const problem = validateShot({ ...shot, prompt })
     if (problem !== undefined) {
@@ -158,7 +146,6 @@ function StoryboardWorkspace({
     generations.data === undefined
       ? undefined
       : takesOfShot(generations.data, shot.index, document.aspect_ratio)
-  // 选中的素材片不在本组列表里了（换了组、被删）就回到帧。
   const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
 
   return (
@@ -190,7 +177,6 @@ function StoryboardWorkspace({
             }}
             onUploaded={(content, frame, url, follow) => {
               draft.recordUpload(shot.index, frame, url)
-              // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着素材片就接着放。
               if (follow) go({ content, frame })
             }}
             onUploadingChange={gate.onUploadingChange}
@@ -207,7 +193,6 @@ function StoryboardWorkspace({
             content={search.content}
             frame={search.frame}
             frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
-            // 只挂当前组；换组就卸载重挂，进行中的上传属于原来那组，迟到的结果不要了。
             key={shot.index}
             onSelect={(content, frame) => {
               stage.selectContent()

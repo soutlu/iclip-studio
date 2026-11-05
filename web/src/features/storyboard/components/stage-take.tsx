@@ -1,6 +1,3 @@
-/** 舞台显示选中的素材片，按这条素材片自己的画幅 contain：出了片就用共享播放器显示，停在封面等用户点播放，不循环；
- * 在途是按画幅的骨架加转圈与已用时长，失败是错误图标加完整原因。换一条或切走就卸载，播放随之停止。 */
-
 import type { CSSProperties } from 'react'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -8,7 +5,6 @@ import { VideoPlayer } from '@/shared/ui/video-player'
 import type { Take } from '../takes'
 import { useElapsed } from '@/shared/ui/media-preview'
 
-/** 舞台上的封面截帧宽度：宽屏舞台六七百像素，两倍屏也够。 */
 const POSTER_WIDTH = 1280
 
 export function StageTake({ take }: { take: Take }) {

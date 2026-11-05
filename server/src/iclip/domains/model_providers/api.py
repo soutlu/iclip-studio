@@ -1,10 +1,3 @@
-"""模型供应商 HTTP 端点，约定见合同「模型供应商」一节。全部要求 ``model:manage``。
-
-业务在运行时服务：每个端点验完权限与请求体，按同一个子路径转给它的 ``/v1/admin/model-providers`` 与
-``/v1/admin/default-models``，答复原样交回（见 ``iclip.platform.runtime_admin``）。请求与答复的声明照旧写在
-这里，合同由它们导出。
-"""
-
 from __future__ import annotations
 
 import uuid

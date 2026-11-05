@@ -16,7 +16,6 @@ import type { VideoResolution } from './video-generation-options'
 
 export type GenerationJob = z.infer<typeof zGenerationOut>
 
-/** 列表接口的一页，按 zod 解析后的形状；查询缓存里存的就是它，与生成的 TS 类型在可选字段上不完全同形。 */
 export type GenerationsPage = z.infer<typeof zGenerationsPageOut>
 
 const PAGE_LIMIT = 100
@@ -27,17 +26,13 @@ const conversationGenerationsKey = (conversationId: string) =>
   ['generations', 'conversation', conversationId] as const
 
 export const storyboardQueryKeys = {
-  /** 本对话全部生成记录查询的前缀：视频记录、参考帧编辑、视频编辑链，以及看生成结果选图的制作页都挂在它下面，
-   * 状态跳转帧到了失效它一次就全部重拉。模型清单不在这下面。 */
   conversation: conversationGenerationsKey,
-  /** 本对话全部视频记录；分镜页与需求单面板共用这一份缓存。 */
   videoJobs: (conversationId: string) =>
     [...conversationGenerationsKey(conversationId), 'video'] as const,
   imageModels: ['generations', 'image-models'] as const,
   videoModels: ['generations', 'video-models'] as const,
 }
 
-/** 接入了哪几个视频模型。只有模型 id，下拉直接显示它；允许表随服务端配置走，前端不复制一份。 */
 export const useVideoModels = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -58,19 +53,11 @@ export type VideoGenerationInput = {
   shot: Shot
 }
 
-/** 历史记录里的结构化 shot，与分镜文件里的 prompt 同形，直接就能回填。
- *
- * 记录里没有 shot 的（接口调用方自己写的正文）回填不了，返回 undefined。 */
 export const historyShotOf = (job: GenerationJob): Shot['prompt'] | undefined => {
   const parsed = zVideoShotIn.safeParse(job.request?.['shot'])
   return parsed.success ? parsed.data : undefined
 }
 
-/** 提交一次出片：镜头组与参考图照分镜当前这一版，字段名照上游异步接口（snake_case）。
- *
- * shot 就是分镜文件里这一组的 prompt 原样，正文由服务端拼，这里不发 prompt；镜号只走 shot_index。
- * 分辨率不跟分镜走，是出片时用户选的那一档。不带 user_name：浏览器会话由服务端填登录用户名。
- * 回执只有任务号，记录本身靠刷新列表拿到。 */
 export const submitVideoGeneration = async (input: VideoGenerationInput): Promise<string> => {
   const shot: VideoShotIn = input.shot.prompt
   const body: VideoGenerationIn = {
@@ -92,14 +79,10 @@ export const submitVideoGeneration = async (input: VideoGenerationInput): Promis
   return receipt.task_id
 }
 
-/** 状态跳转帧到了由 useLiveGenerations 立刻失效；存在运行任务时仍每 5 秒轮询兜底，全部结束后停止。 */
 export const generationsRefetchInterval = (
   items: readonly { status: GenerationJob['status'] }[],
 ): number | false => (items.some((item) => isRunningStatus(item.status)) ? POLL_MS : false)
 
-/** 按筛选条件读完全部生成记录，按创建时间倒序；`errorMessage` 是读不出来时给人看的那句。
- *
- * 只读第一页会让更早的记录静默消失：在途、失败与编辑结果都占名额。任一页失败整体抛错。 */
 export const readAllGenerations = (
   filter: Readonly<Record<string, string>>,
   signal: AbortSignal,
@@ -112,21 +95,17 @@ export const readAllGenerations = (
       fallbackErrorMessage: errorMessage,
       signal,
     })
-    // 筛选在分页截断前执行，不满一页就是读完了，省掉最后一次空页请求。
     if (page.items.length < PAGE_LIMIT) return { items: page.items, next: null }
     const last = page.items.at(-1)
-    // 游标没往前走就说明分页坏了，再翻下去是死循环。
     if (last === undefined || last.id === before) {
       throw new ApiError(0, `${errorMessage}：分页异常，请重试`)
     }
     return { items: page.items, next: last.id }
   })
 
-/** 读完本对话的全部视频记录（含编辑链的衍生记录），按创建时间倒序。 */
 export const readConversationVideoJobs = (conversationId: string, signal: AbortSignal) =>
   readAllGenerations({ conversationId, kind: 'video' }, signal, '读取视频记录失败')
 
-/** 本对话视频记录的查询配置；消费方各自用 `select` 投影，同一份数据只请求一次。 */
 export const conversationVideoJobsQuery = (conversationId: string) =>
   queryOptions({
     queryFn: ({ signal }) => readConversationVideoJobs(conversationId, signal),

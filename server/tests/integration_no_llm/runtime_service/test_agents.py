@@ -1,6 +1,3 @@
-"""运行时服务的 agent 配置管理接口：插件列表与插件校验都只看交给服务的插件登记表；建、存草稿、发布被拦下
-时带问题清单、发布、导出 YAML、导入先检查，保留的标识不能用。"""
-
 from __future__ import annotations
 
 import uuid

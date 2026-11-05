@@ -1,14 +1,9 @@
-"""权限与预置角色的唯一事实源，前端依据 /users/me 的权限集展示。
-
-用户权限为角色权限并集加直接授权；API key 权限仅为显式授权集。
-端点权限与行级归属独立判断。"""
-
 from __future__ import annotations
 
 from collections.abc import Iterable
 from typing import Literal, get_args
 
-# 用 type 语句而不是普通别名：只有它会在合同里成为具名组件 ``Permission``，前端才能引用。
+# 使用 type 语句使 Pydantic 将 Permission 导出为独立的 OpenAPI Schema 组件。
 type Permission = Literal[
     "collections:read",
     "collections:write",
@@ -27,18 +22,14 @@ type Permission = Literal[
     "agent:manage",
     "model:manage",
 ]
-"""权限词汇。请求体里授予权限的字段按它校验；响应里的权限集是字符串，词表变动不打坏旧客户端。"""
 
 PERMISSIONS: tuple[str, ...] = get_args(Permission.__value__)
 
 MANAGE_PERMISSION: Permission = "users:manage"
-"""治理者：读取范围扩到所有人的记录，并管理用户与全部 API key；能否写别人的记录由各资源自己定。"""
 
 ACT_AS_PERMISSION: Permission = "users:act_as"
-"""钥匙可以替 ``user_name`` 那个人提交。能替任何人写，也就能读任何人的记录。"""
 
 AGENT_MANAGE_PERMISSION: Permission = "agent:manage"
-"""管理 agent、技能与 agent 测试预览；预览只认属主本人此刻持有它。"""
 
 _VIEWER = frozenset(
     {
@@ -75,8 +66,6 @@ ROOT_ROLE = "root"
 def effective_permissions(
     roles: Iterable[str], direct_permissions: Iterable[str] = ()
 ) -> frozenset[str]:
-    """角色权限并集 ∪ 直接授权；未知角色贡献空集。"""
-
     granted = frozenset(direct_permissions)
     for role in roles:
         granted |= ROLE_PERMISSIONS.get(role, frozenset())

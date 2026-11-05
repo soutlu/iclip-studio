@@ -1,6 +1,5 @@
 import { UserFacingError } from '@/shared/api/client'
 
-/** 按跨域方式读一张图：读出来的图画进 canvas 后还能导出。读不到时抛 UserFacingError。 */
 export const loadCrossOriginImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const element = new Image()

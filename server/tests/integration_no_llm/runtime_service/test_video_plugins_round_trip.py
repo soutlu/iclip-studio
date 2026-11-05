@@ -1,10 +1,3 @@
-"""运行时服务挂上视频插件包、经 HTTP 调后端的内部接口跑一次真工具调用：运行时 → 内部接口 → 后端真实的
-取帧拼板适配器（ffmpeg 抽帧、拼板、存进对象存储）→ 答回运行时，结果进 transcript。
-
-后端这一侧只挂内部接口的路由与错误信封，接的是进程内同一个 ``FrameBoardsAdapter``；运行时的插件登记表
-由 ``iclip_video.registry.open_video_plugins`` 按配置建，它的内部接口客户端经 ``ASGITransport`` 进程内连到
-后端，不走网络。"""
-
 from __future__ import annotations
 
 import json
@@ -78,8 +71,6 @@ PLUGINS_CONFIG: dict[str, Any] = {
 
 
 def make_clip_mp4(path: Path) -> bytes:
-    """三秒动态图样视频，抽帧拼板用。"""
-
     result = subprocess.run(
         [
             "ffmpeg",
@@ -101,8 +92,6 @@ def make_clip_mp4(path: Path) -> bytes:
 
 
 def plans_frames() -> FunctionModel:
-    """第一次请求对参考视频调 ``plan_shot_frames``，拿到结果后收尾。"""
-
     async def stream(
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -127,18 +116,13 @@ def models() -> Mapping[str, Model]:
 
 @pytest.fixture
 def objects() -> FakeObjects:
-    """后端的对象存储替身，预览板存在这里。"""
-
     return FakeObjects()
 
 
 UNUSED = object()
-"""这次只取帧：出图与切格的端口用占位。"""
 
 
 def backend_app(boards: FrameBoardsAdapter) -> FastAPI:
-    """后端的内部接口：真实的取帧拼板适配器与接入的图片模型，回调用不到对话服务。"""
-
     app = FastAPI()
     install_error_handlers(app)
     conversations = cast("ConversationService", object())
@@ -171,8 +155,6 @@ async def runtime_app(
     objects: FakeObjects,
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[FastAPI]:
-    """覆写夹具里的运行时服务：插件登记表由视频插件包按配置建，内部接口进程内连到后端。"""
-
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", TOKEN)
     clip = make_clip_mp4(tmp_path / "clip.mp4")
 
@@ -208,8 +190,6 @@ async def runtime_app(
 
 
 def tool_frames(node: object, name: str) -> list[dict[str, Any]]:
-    """transcript 里叫 ``name`` 的工具帧。"""
-
     if isinstance(node, dict):
         found: list[dict[str, Any]] = []
         mapping = cast("dict[str, Any]", node)
@@ -262,7 +242,6 @@ async def test_a_tool_call_goes_through_the_backend_and_its_result_reaches_the_t
     (frame,) = tool_frames(page.json(), "plan_shot_frames")
     assert frame["state"] == "done", frame
 
-    # 预览板是后端的适配器经 ffmpeg 拼出来、存进后端对象存储的那几块。
     (board_key,) = objects.written
     board_url = objects.public_url(board_key)
     assert frame["output"]["boards"] == [{"board": 1, "shots": [1, 2], "url": board_url}]

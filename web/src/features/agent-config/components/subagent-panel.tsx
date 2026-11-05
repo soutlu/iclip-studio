@@ -12,10 +12,6 @@ import { AlertGlyph, CardGlyph } from './resource-card'
 
 type Current = { id: string; isSubagent: boolean }
 
-/**
- * 从已有的 agent 里选子 agent，不在这里新建；开着的一行在行内展开它的时限、次数与失败提示。
- * 不能选的开关被拦下、原因在提示里；已选的后来不合规矩了也不自动去掉，标红留给发布检查。
- */
 export function SubagentPanel({
   agents,
   config,
@@ -27,7 +23,6 @@ export function SubagentPanel({
   agents: readonly Agent[]
   config: AgentConfig
   current: Current
-  /** 从左侧某张卡片点进来时先展开它。 */
   focus: string | undefined
   onChange: (config: AgentConfig) => void
   onClose: () => void
@@ -35,7 +30,6 @@ export function SubagentPanel({
   const [expanded, setExpanded] = useState<string | null>(focus ?? null)
   const baseId = useId()
   const bindings = config.subagents ?? []
-  // 已归档的只在还绑着时列出来。
   const candidates = agents.filter(
     (agent) =>
       agent.id !== current.id &&
@@ -137,7 +131,6 @@ export function SubagentPanel({
   )
 }
 
-/** 正数：时限可以带小数，次数要整数。空着就是不限，合同里不写。 */
 const parseLimit = (text: string, integer: boolean): number | null | 'invalid' => {
   if (text.trim() === '') return null
   const value = Number(text)
@@ -146,7 +139,6 @@ const parseLimit = (text: string, integer: boolean): number | null | 'invalid' =
   return value
 }
 
-/** 一个子 agent 的调用参数。输入不合格时只在原处标出、不写进草稿，草稿里留着上一个合格的值。 */
 function BindingFields({
   binding,
   id,

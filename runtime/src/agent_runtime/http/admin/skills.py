@@ -1,5 +1,3 @@
-"""技能库管理接口，挂在 ``/v1/admin/skills``。术语见 docs/CONTEXT.md「技能库」。"""
-
 from __future__ import annotations
 
 import uuid
@@ -68,7 +66,6 @@ def create_skills_router(service: SkillsService) -> APIRouter:
 
         return await service.rename(skill_id, body)
 
-    # 合法的草稿路径只有 SKILL.md 与 references/ 下的，rename 不会与 {path} 撞名；照样登记在它前面。
     @router.post("/{skill_id}/draft/files/rename", response_model=DraftFileOut)
     async def rename_draft_file(
         skill_id: uuid.UUID, body: DraftFileRenameIn, actor: EndUser

@@ -1,6 +1,3 @@
-"""使用内存替身验证取帧与出图工具、生成重试、端口错误的转换与能力装配；查任务时后端不可达的两条经内部
-接口的 HTTP 客户端走一趟。抽帧拼板与切格的媒体处理在宿主服务里，由那边的测试覆盖。"""
-
 from __future__ import annotations
 
 import inspect
@@ -77,7 +74,6 @@ DOCUMENT = (
     "**[00:02.000-00:04.000]** 特写…… |\n"
 )
 
-# 替身无网络或子进程操作，缩短轮询间隔以减少测试等待。
 FAST = GenerationPolicy(
     poll_interval_seconds=0.001,
     dev_attempts=2,
@@ -98,8 +94,6 @@ def make_context(deps: object) -> RunContext[object]:
 
 
 def ledger(*_cell_ids: str, url: str | None = None) -> str:
-    """取帧账本。逐格请求不校验帧号是否在账本里，出图工具只看它存不存在。"""
-
     return json.dumps(
         {
             "extractionVersion": 1,
@@ -160,8 +154,6 @@ def ctx() -> RunContext[object]:
 async def check_args(
     tools: ShotVideoToolset[object], name: str, ctx: RunContext[object], **args: Any
 ) -> None:
-    """通过工具注册表调用校验器，覆盖 args_validator 的挂载遗漏。"""
-
     validator = tools.tools[name].args_validator
     assert validator is not None, f"{name} 登记时没挂验证器"
     outcome = validator(ctx, **args)
@@ -175,8 +167,6 @@ async def test_a_reference_that_does_not_open_is_refused_before_any_generation(
     media: ScriptedMedia,
     generations: FakeGenerations,
 ) -> None:
-    """通过真实 Agent 确认打不开的参考图在工具执行前被拒，不提交出图。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     broken = "https://cdn.test/made-up.jpg"
     media.set(broken, (404, None))
@@ -212,8 +202,6 @@ async def test_a_reference_that_does_not_open_is_refused_before_any_generation(
 
 
 async def test_missing_run_identity_is_a_bug_not_a_retry(tools: ShotVideoToolset[object]) -> None:
-    """deps 类型错误属于装配故障，模型重试无法修复。"""
-
     with pytest.raises(RuntimeError, match="AgentRunDeps"):
         await tools.plan_shot_frames(make_context(object()), VIDEO)
 
@@ -229,8 +217,6 @@ async def test_tools_only_take_http_urls(
 async def test_plan_takes_any_http_video_without_probing_it(
     tools: ShotVideoToolset[object], ctx: RunContext[object], media: ScriptedMedia
 ) -> None:
-    """取帧只查地址形状：后端经出网防护下载，取不到如实报。"""
-
     await check_args(
         tools, "plan_shot_frames", ctx, video_url="https://cdn.test/never-mentioned.mp4"
     )
@@ -262,8 +248,6 @@ async def test_reference_images_refuse_a_video(
 async def test_a_reachable_reference_never_seen_in_the_conversation_is_taken(
     tools: ShotVideoToolset[object], ctx: RunContext[object], media: ScriptedMedia
 ) -> None:
-    """MCP 工具给的图：没有扩展名、对话里没出现过，取得到、是图片就收。"""
-
     from_mcp = "https://mcp.example.com/blob/7f3a"
     media.set(from_mcp, (200, "image/png"))
 
@@ -285,8 +269,6 @@ async def test_a_reference_that_does_not_answer_is_reported_as_not_opening(
 async def test_plan_needs_the_document_first(
     tools: ShotVideoToolset[object], ctx: RunContext[object], boards: FakeBoards
 ) -> None:
-    """缺少文档时在要预览板之前失败，不下载视频。"""
-
     with pytest.raises(ModelRetry, match="video_parser"):
         await tools.plan_shot_frames(ctx, VIDEO)
     assert boards.calls == []
@@ -308,8 +290,6 @@ async def test_plan_rejects_a_document_with_a_broken_timecode(
     files: FakeFileStore,
     boards: FakeBoards,
 ) -> None:
-    """结束时间不晚于开始时间时无法取帧，应在下载和抽帧前拒绝。"""
-
     await files.write(NAMESPACE, video_doc_path(VIDEO), "**[00:05.000-00:02.000]** 中景")
     with pytest.raises(ModelRetry, match="终点不晚于起点"):
         await tools.plan_shot_frames(ctx, VIDEO)
@@ -322,8 +302,6 @@ async def test_plan_writes_the_ledger_the_boards_port_built(
     files: FakeFileStore,
     boards: FakeBoards,
 ) -> None:
-    """工作区里没有台账：交给端口的 previous 为空，端口建出的台账照原样落盘。"""
-
     await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
 
     result = await tools.plan_shot_frames(ctx, VIDEO)
@@ -351,8 +329,6 @@ async def test_plan_hands_the_workspace_ledger_to_the_port_and_keeps_it_when_reu
     files: FakeFileStore,
     boards: FakeBoards,
 ) -> None:
-    """台账能否复用由端口判断；端口说复用，工作区里那份就不重写。"""
-
     await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
     original = ledger()
     await files.write(NAMESPACE, EXTRACTION_PATH, original)
@@ -423,7 +399,6 @@ BROKEN_LEDGERS = {
         }
     ),
 }
-"""模型改坏的取帧台账：key 仍然对得上，形状不合。"""
 
 
 async def test_generate_treats_a_broken_ledger_as_missing(
@@ -471,8 +446,6 @@ async def test_generate_accepts_a_frame_the_ledger_never_sampled(
     files: FakeFileStore,
     generations: FakeGenerations,
 ) -> None:
-    """新增镜头或不足一秒的镜头可能没有候选帧，仍应允许生成定格。"""
-
     generations.outcomes = [
         Outcome(status="failed", output_url=None, error_code="PROVIDER_REJECTED")
     ]
@@ -515,8 +488,6 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_corrupt_state(
     files: FakeFileStore,
     generations: FakeGenerations,
 ) -> None:
-    """入口已把对话 id 规范成 UUID，这里不是 UUID 属于状态损坏，不静默归档成空。"""
-
     ctx = make_context(replace(make_deps(), conversation_id="thread-1"))
     await files.write(f"{USER}/thread-1", EXTRACTION_PATH, ledger("S1-1"))
     with pytest.raises(RuntimeError, match="UUID") as failure:
@@ -561,8 +532,6 @@ async def test_generate_refuses_an_empty_global_reference(
 async def submit_once(
     tools: ShotVideoToolset[object], ctx: RunContext[object], files: FakeFileStore
 ) -> ToolFailed:
-    """提交一次生成并捕获模型可见的失败，避免依赖 ffmpeg 切格。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     with pytest.raises(ToolFailed) as failed:
         await tools.generate_shot_frames(
@@ -577,8 +546,6 @@ async def test_generate_submits_a_full_grid_at_the_top_tier(
     files: FakeFileStore,
     generations: FakeGenerations,
 ) -> None:
-    """单格也使用完整四格网格；最高分辨率保证切分后单格尺寸。"""
-
     generations.outcomes = [
         Outcome(status="failed", output_url=None, error_code="PROVIDER_REJECTED")
     ]
@@ -647,8 +614,6 @@ async def test_generate_rejects_bad_parameters_before_paying(
     files: FakeFileStore,
     generations: FakeGenerations,
 ) -> None:
-    """非法参数应在付费提交前拒绝，供模型修正。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     with pytest.raises(ModelRetry, match="aspect_ratio"):
         await tools.generate_shot_frames(
@@ -662,8 +627,6 @@ async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
     generations: FakeGenerations,
     files: FakeFileStore,
 ) -> None:
-    """超时对模型报告失败，诊断留日志；总时限耗尽后不新增生成。"""
-
     generations.outcomes = [Outcome(status="submitted", output_url=None)]
     toolset = mount_shot_video(
         space=FileSpace(store=files, namespace=workspace_namespace),
@@ -686,9 +649,6 @@ HTTP_JOB = uuid.UUID("44444444-4444-4444-4444-444444444444")
 
 @dataclass
 class PollingBackend:
-    """经内部接口出图的后端替身：受理一次出图答 pending；查询按 ``polls`` 依次答或在传输层抛，
-    用完后答完成。"""
-
     polls: list[httpx.Response | httpx.HTTPError]
     submissions: int = 0
     queries: int = 0
@@ -724,8 +684,6 @@ class PollingBackend:
 async def test_generate_keeps_polling_while_the_backend_restarts(
     ctx: RunContext[object], files: FakeFileStore, cuts: FakeCuts
 ) -> None:
-    """查任务时后端重启（502/503、连不上）：已付费的任务还在跑，接着查到它完成，工具照常交回结果。"""
-
     backend = PollingBackend(
         polls=[
             httpx.Response(503, json={"detail": "Service Unavailable"}),
@@ -750,8 +708,6 @@ async def test_generate_keeps_polling_while_the_backend_restarts(
 async def test_generate_reports_a_deterministic_poll_failure(
     ctx: RunContext[object], files: FakeFileStore, cuts: FakeCuts
 ) -> None:
-    """查任务答 404 之类不是暂时的：照旧报错，不接着等，也不另起一张。"""
-
     backend = PollingBackend(polls=[httpx.Response(404, json={"detail": "Not Found"})])
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
 
@@ -809,8 +765,6 @@ async def test_stringified_frames_are_parsed_on_the_agent_path(
     files: FakeFileStore,
     generations: FakeGenerations,
 ) -> None:
-    """frames 与 shots 同形；模型把它裹成字符串时照常受理，不退回改参数。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     generations.outcomes = [
         Outcome(status="failed", output_url=None, error_code="PROVIDER_REJECTED")
@@ -848,7 +802,6 @@ async def test_stringified_frames_are_parsed_on_the_agent_path(
 
 
 GRID = "https://cdn.test/out.png"
-"""``Outcome`` 默认交回的整图地址。"""
 
 
 async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
@@ -858,8 +811,6 @@ async def test_generate_cuts_the_requested_cells_under_their_frame_numbers(
     generations: FakeGenerations,
     cuts: FakeCuts,
 ) -> None:
-    """按帧号要那几格（存到哪由宿主定），收缩到目标画幅。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
 
     result = await tools.generate_shot_frames(
@@ -910,8 +861,6 @@ async def test_a_failed_cut_is_a_brief_failure_with_the_reason_in_the_log(
     tool: str,
     message: str,
 ) -> None:
-    """切格、下载、转存失败对模型只说哪一步没成，原因只进日志。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     cuts.error = GridCutFailed("OSS 写入失败（试了 3 次）: Read timed out")
 
@@ -935,8 +884,6 @@ async def test_a_cut_that_cannot_be_recorded_goes_up_unchanged(
     generations: FakeGenerations,
     cuts: FakeCuts,
 ) -> None:
-    """切图记录落不下是数据库的事：原样抛出，不包成让模型重出一张付费宫格的重试。"""
-
     await files.write(NAMESPACE, EXTRACTION_PATH, ledger("S1-1"))
     cuts.error = ConnectionError("数据库断了")
 

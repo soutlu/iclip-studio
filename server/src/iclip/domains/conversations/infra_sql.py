@@ -1,8 +1,3 @@
-"""对话的 Postgres 仓储。使用数据库时钟，避免实例钟差影响排序与游标。
-
-删除只标记 ``deleted_at``：行留着占住 id。除治理者的审计列表与 ``include_deleted`` 直读，
-每条读写都只看活着的行。agent 测试预览另一张表 ``agent_previews``，每人每个 agent 一行，开新的就换掉这一行。"""
-
 from __future__ import annotations
 
 import uuid
@@ -58,7 +53,6 @@ conversations_table = Table(
     "conversations",
     metadata_obj,
     Column("id", Uuid, primary_key=True),
-    # RESTRICT：已删对话的行也占着 id，删用户不能顺手把它们带走。
     Column(
         "owner_user_id",
         Uuid,
@@ -69,7 +63,6 @@ conversations_table = Table(
     Column("title", Text, nullable=False),
     Column("title_kind", Text, nullable=False, server_default="default"),
     Column("last_run_id", Text, nullable=True),
-    # 删除需求单只清空归属，保留对话。
     Column(
         "task_id",
         Uuid,
@@ -86,7 +79,6 @@ conversations_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("deleted_at", DateTime(timezone=True), nullable=True),
     Column("completed_at", DateTime(timezone=True), nullable=True),
-    # RESTRICT：被分叉过的行不因别处的删除动作消失；源对话本来也只会软删。
     Column(
         "forked_from",
         Uuid,
@@ -100,8 +92,6 @@ _ROWS = conversations_table.c
 _LIVE = _ROWS.deleted_at.is_(None)
 _DELETED = _ROWS.deleted_at.is_not(None)
 
-# 列表一律按 (created_at, id) 倒序，索引都带上这两列以同时支撑排序与游标。
-# 属主视角的索引只收活着的行；首列覆盖 owner_user_id 查询，无需另建单列索引。
 Index(
     "ix_conversations_owner_created",
     _ROWS.owner_user_id,
@@ -110,13 +100,10 @@ Index(
     postgresql_where=_LIVE,
 )
 
-# 审计能查墓碑，所以它的游标索引收全部行。
 Index("ix_conversations_created", _ROWS.created_at.desc(), _ROWS.id.desc())
 
-# 审计报表的 idle 指标按最近活动筛，是 updated_at 仅剩的读路径。
 Index("ix_conversations_updated", _ROWS.updated_at.desc(), _ROWS.id.desc())
 
-# 再排除无归属记录；需求单下的尝试倒序扫这个升序索引。
 Index(
     "ix_conversations_task",
     _ROWS.task_id,
@@ -135,7 +122,6 @@ Index(
 whole_film_drafts_table = Table(
     "whole_film_drafts",
     metadata_obj,
-    # 一段对话一份；对话只软删，行跟着对话留着。
     Column(
         "conversation_id",
         Uuid,
@@ -151,7 +137,6 @@ whole_film_drafts_table = Table(
         nullable=False,
     ),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    # 与迁移 0031 同名同式。
     CheckConstraint("revision >= 1", name="ck_whole_film_drafts_revision"),
     CheckConstraint("jsonb_typeof(document) = 'object'", name="ck_whole_film_drafts_document"),
 )
@@ -161,7 +146,6 @@ _DRAFTS = whole_film_drafts_table.c
 agent_previews_table = Table(
     "agent_previews",
     metadata_obj,
-    # 就是运行时的会话 id；两个 schema 之间不加外键，agent 与版本只是记下来的值。
     Column("id", Uuid, primary_key=True),
     Column(
         "owner_user_id",
@@ -172,7 +156,6 @@ agent_previews_table = Table(
     Column("agent_id", Text, nullable=False),
     Column("version_id", Uuid, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    # 与迁移 0049 同名同式。
     UniqueConstraint("owner_user_id", "agent_id", name="uq_agent_previews_owner_agent"),
 )
 
@@ -198,13 +181,10 @@ def _row(mapping: RowMapping) -> Conversation:
     )
 
 
-# 全站列表的排序键。改这里必须同时改 ``_after``，两者不同源会漏取或重复记录。
 _ORDER: Final = (_ROWS.created_at.desc(), _ROWS.id.desc())
 
 
 def _after(cursor: PageCursor | None) -> list[ColumnElement[bool]]:
-    """按 ``(created_at, id)`` 的复合排序键续页，避免跳过同一时刻建的记录。"""
-
     if cursor is None:
         return []
     return [
@@ -216,10 +196,6 @@ def _after(cursor: PageCursor | None) -> list[ColumnElement[bool]]:
 
 
 def _state_conditions(state: StateFilter | None) -> list[ColumnElement[bool]]:
-    """``done`` / ``open`` 按属主标记筛；``running`` 只留 busy 里的；None 不筛。
-
-    busy 为空时 ``running`` 直接为假，不渲染空 ``IN``。"""
-
     if state is None:
         return []
     if state.state == "done":
@@ -230,8 +206,6 @@ def _state_conditions(state: StateFilter | None) -> list[ColumnElement[bool]]:
 
 
 def _deleted_conditions(deleted: DeletedFilter) -> list[ColumnElement[bool]]:
-    """``live`` / ``deleted`` 各取一边，``all`` 不筛。"""
-
     if deleted == "live":
         return [_LIVE]
     if deleted == "deleted":
@@ -240,8 +214,6 @@ def _deleted_conditions(deleted: DeletedFilter) -> list[ColumnElement[bool]]:
 
 
 def _audit_conditions(scope: AuditFilter, state: StateFilter | None) -> list[ColumnElement[bool]]:
-    """列表与两个计数共用同一组条件，三个数字才对得上；墓碑收不收由 ``scope.deleted`` 决定。"""
-
     conditions = [*_deleted_conditions(scope.deleted), *_state_conditions(state)]
     if scope.owner is not None:
         conditions.append(_ROWS.owner_user_id == scope.owner)
@@ -255,8 +227,6 @@ def _audit_conditions(scope: AuditFilter, state: StateFilter | None) -> list[Col
 
 
 def _reject_missing_reference(error: IntegrityError) -> ValidationFailed:
-    """按外键约束名将无效归属转换为领域错误；无法取得约束名时报告两个可能的引用。"""
-
     constraint = getattr(getattr(error, "orig", None), "diag", None)
     name = getattr(constraint, "constraint_name", None) or ""
     if "task" in name:
@@ -267,13 +237,10 @@ def _reject_missing_reference(error: IntegrityError) -> ValidationFailed:
 
 
 class SqlConversationRepository:
-    """``ConversationRepository`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
     async def create_if_absent(self, conversation: Conversation) -> tuple[Conversation, bool]:
-        # 主键冲突不报错、不写入；剩下的 IntegrityError 只会是需求单或合集不存在。
         statement = (
             pg_insert(conversations_table)
             .values(
@@ -299,7 +266,6 @@ class SqlConversationRepository:
         except IntegrityError as exc:
             raise _reject_missing_reference(exc) from exc
         if row is None:
-            # id 已用过：只答复自己还活着的那一段；已删除或属于别人均为 NotFound。
             return await self.get(conversation.id, owner=conversation.owner_user_id), False
         return _row(row), True
 
@@ -322,12 +288,6 @@ class SqlConversationRepository:
         return _row(row)
 
     async def ancestry(self, conversation_id: uuid.UUID) -> tuple[tuple[uuid.UUID, datetime], ...]:
-        """沿 ``forked_from`` 往上的每个祖先，配上这条链上它的下一级对话的建立时刻，近的在前；
-        不是分叉来的给空。
-
-        不看删除标记：源对话删成墓碑，副本从它那里继承的出片照旧在。只有组合根接生成域时用，
-        不在仓储协议上。"""
-
         start = (
             select(
                 _ROWS.forked_from.label("ancestor"),
@@ -353,7 +313,6 @@ class SqlConversationRepository:
     ) -> tuple[Conversation, ...]:
         conditions = [_ROWS.owner_user_id == owner, _LIVE]
         if title_contains is not None:
-            # autoescape：标题里出现 % 或 _ 时当普通字符，不当通配符
             conditions.append(_ROWS.title.icontains(title_contains, autoescape=True))
         statement = select(conversations_table).where(*conditions).order_by(*_ORDER).limit(limit)
         async with self._engine.connect() as conn:
@@ -415,8 +374,6 @@ class SqlConversationRepository:
         limit: int,
         after: PageCursor | None,
     ) -> tuple[Conversation, ...]:
-        """按建立时间倒序分页，共用于侧栏两区与审计；墓碑收不收由调用方放进 ``conditions``。"""
-
         statement = (
             select(conversations_table)
             .where(*conditions, *_after(after))
@@ -438,7 +395,6 @@ class SqlConversationRepository:
         if not collection_ids:
             return ()
         total = func.count().over(partition_by=_ROWS.collection_id).label("total")
-        # 排名与 ``_page`` 用同一个排序键，合集首屏与「展开更多」才接得上。
         rank = (
             func.row_number().over(partition_by=_ROWS.collection_id, order_by=_ORDER).label("rank")
         )
@@ -448,7 +404,6 @@ class SqlConversationRepository:
                 _ROWS.owner_user_id == owner,
                 _ROWS.collection_id.in_(collection_ids),
                 _LIVE,
-                # 窗口计数前完成筛选，保证总数与返回记录使用相同范围。
                 *_state_conditions(state),
             )
             .subquery()
@@ -464,7 +419,6 @@ class SqlConversationRepository:
         grouped: dict[uuid.UUID, list[RowMapping]] = {}
         for row in rows:
             grouped.setdefault(row["collection_id"], []).append(row)
-        # 恢复调用方的合集顺序，SQL 内部排序仅用于分组。
         return tuple(
             CollectionConversations(
                 collection_id=collection_id,
@@ -593,7 +547,6 @@ class SqlConversationRepository:
     async def touch_run(
         self, conversation_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str, run_id: str
     ) -> Conversation:
-        # agent_id 仅用于匹配，不能改写对话绑定。属主又开跑就不再算收尾。
         statement = (
             update(conversations_table)
             .where(
@@ -623,8 +576,6 @@ def _draft(mapping: RowMapping) -> WholeFilmDraft:
 
 
 class SqlWholeFilmDraftStore:
-    """``WholeFilmDraftStore`` 的 Postgres 实现；保存时刻用数据库时钟。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -645,7 +596,6 @@ class SqlWholeFilmDraftStore:
         updated_by: uuid.UUID,
     ) -> WholeFilmDraft | None:
         if revision == 0:
-            # 第一次存：主键已有行就是别人先存了，不覆盖。
             statement = (
                 pg_insert(whole_film_drafts_table)
                 .values(
@@ -686,8 +636,6 @@ def _preview(mapping: RowMapping) -> AgentPreview:
 
 
 class SqlAgentPreviewStore:
-    """``AgentPreviewStore`` 的 Postgres 实现；建立时刻用数据库时钟。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -713,7 +661,6 @@ class SqlAgentPreviewStore:
         agent_id: str,
         version_id: uuid.UUID | None,
     ) -> AgentPreview:
-        # 一条 upsert：并发的两次替换撞上同一个唯一键时后到的等先到的提交、再走更新，不报错，留下后写的那一行。
         statement = pg_insert(agent_previews_table).values(
             id=preview_id, owner_user_id=owner, agent_id=agent_id, version_id=version_id
         )

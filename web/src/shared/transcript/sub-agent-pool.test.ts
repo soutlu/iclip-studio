@@ -94,7 +94,6 @@ describe('SubAgentTranscriptPool', () => {
     pool.activate('c1', OTHER)
     await ready(pool, OTHER)
 
-    // 这段对话只订着子代理，退掉它就是整段退订；随后的订阅表里只剩当前这个。
     expect(fake.received('unsubscribe_v2')).toHaveLength(1)
     expect(fake.received('subscribe_v2').at(-1)?.payload?.transcript).toEqual({ [OTHER]: 'delta' })
   })

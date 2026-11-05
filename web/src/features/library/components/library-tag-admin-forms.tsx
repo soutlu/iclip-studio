@@ -1,4 +1,3 @@
-/** 标签管理的就地名称表单和规则编辑，共用现有输入、按钮与对话框组件。 */
 import { useEffect, useId, useRef, useState } from 'react'
 import type { LibraryTagUpdateIn } from '@/shared/api/generated/types.gen'
 import { Button } from '@/shared/ui/button'
@@ -7,7 +6,6 @@ import { Input, Textarea } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import { isAiDimension, type LibraryTag } from '../library-tags'
 
-/** 新维度在分组区就地编辑，保存后由真实维度卡接替。 */
 export function CreateDimensionForm({
   busy,
   onCancel,

@@ -1,6 +1,3 @@
-"""验证 tach 依赖图之外的约束：不依赖宿主、不写宿主 schema 的表、框架引用边界、配置模块的引用边界与纯度和
-异常处理。"""
-
 from __future__ import annotations
 
 import ast
@@ -11,39 +8,26 @@ PROJECT = Path(__file__).resolve().parents[3]
 SRC = PROJECT / "src" / "agent_runtime"
 TESTS = PROJECT / "tests"
 
-# 运行时被宿主与应用的插件包依赖，反过来不行：源码与测试都不得引用它们。
 HOST_PACKAGES = frozenset({"iclip", "iclip_video"})
 
-# 框架及允许直接导入它的路径前缀（相对 src/agent_runtime）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("pydantic_ai",): ("harness/", "plugins/"),
     ("pydantic_ai_harness",): ("harness/",),
     ("openai",): ("harness/models.py",),
-    # MCP 客户端只在连 MCP 服务的那一处。
     ("fastmcp", "mcp"): ("harness/mcp.py",),
-    # Web 框架只在运行时服务的 HTTP 入口里出现，引擎、配置与插件都不碰它。
     ("fastapi", "starlette"): ("http/",),
     ("uvicorn",): ("main.py",),
-    # WebSocket 客户端只在给应用的客户端库里。
     ("httpx_ws", "wsproto"): ("client/",),
     ("sqlalchemy",): (
-        # 运行时服务的组合根建 engine；三块配置服务的装配拿它建存储，切换命令也用这一处。
         "http/app.py",
-        # 换钥命令直连数据库，自己建 engine。
         "admin.py",
         "assembly/config_services.py",
         "file_store/pg.py",
-        # StepPersistence 协议后端归属使用该协议的 harness。
         "harness/step_store_pg.py",
-        # 对话用量台账的 Postgres 实现，同样归属 harness，表在 agent_runtime schema。
         "harness/usage_ledger_pg.py",
-        # prompt 队列归属运行驱动，使用 agent_runtime schema。
         "harness/jobs.py",
-        # 运行时会话（对话固定的 agent 版本），同样在 agent_runtime schema。
         "harness/sessions.py",
-        # 运行统计的只读查询：按应用读上面几张表。
         "harness/stats_pg.py",
-        # 四块配置各自的表。
         "config/skills/infra_sql.py",
         "config/model_providers/infra_sql.py",
         "config/mcp_servers/infra_sql.py",
@@ -54,7 +38,6 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
 CONFIG = SRC / "config"
 CONFIG_PACKAGE = "agent_runtime.config"
 
-# 被各处共用、自身无依赖的叶子模块（tach.toml 里 utility = true 的那几个）。
 LEAF_MODULES = frozenset(
     {
         "agent_runtime.errors",
@@ -71,7 +54,6 @@ LEAF_MODULES = frozenset(
 CLIENT = SRC / "client"
 CLIENT_PACKAGE = "agent_runtime.client"
 
-# 客户端库只认接口与帧的形状：这几个模块只依赖 pydantic 与标准库。
 CLIENT_RUNTIME_IMPORTS = frozenset(
     {
         "agent_runtime.errors",
@@ -84,7 +66,6 @@ CLIENT_RUNTIME_IMPORTS = frozenset(
 )
 CLIENT_THIRD_PARTY = frozenset({"httpx", "httpx_ws", "wsproto", "pydantic"})
 
-# 应用进程只装客户端库时不该被带进来的服务端框架与引擎。
 SERVER_SIDE_PACKAGES = (
     "fastapi",
     "starlette",
@@ -159,8 +140,6 @@ def test_client_imports_only_wire_shapes() -> None:
 
 
 def test_importing_the_client_loads_no_server_side_package() -> None:
-    """按真实的 import 链核：上面放行的模块哪天间接带进了框架或引擎，这里会发现。"""
-
     import subprocess
     import sys
 
@@ -227,15 +206,12 @@ def test_models_and_commands_are_pure() -> None:
 
 
 HOST_SCHEMA = "iclip"
-# 写在 SQL 里的宿主表：表名前带 schema 的那几种位置。
 HOST_TABLE_IN_SQL = re.compile(
     rf"\b(from|join|into|update|table|references)\s+{HOST_SCHEMA}\.", re.IGNORECASE
 )
 
 
 def _code_strings(tree: ast.AST) -> list[ast.Constant]:
-    """源码里的字符串常量，不含文档字符串（单独成句的字符串）；f-string 的字面部分也算。"""
-
     docstrings = {
         id(node.value)
         for node in ast.walk(tree)
@@ -251,8 +227,6 @@ def _code_strings(tree: ast.AST) -> list[ast.Constant]:
 
 
 def test_runtime_never_names_the_host_schema() -> None:
-    """SQL 里的 ``iclip.<表>`` 与 schema 名 ``"iclip"`` 本身（``MetaData(schema=…)``、外键前缀）都算。"""
-
     violations: list[str] = []
     for path in _python_files(SRC):
         rel = path.relative_to(SRC).as_posix()

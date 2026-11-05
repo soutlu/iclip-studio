@@ -64,7 +64,6 @@ const provideJobs = () => {
   )
 }
 
-/** 缩略图条里第几张结果；条按时间倒序，0 是最新的 A。 */
 async function resultSlot(strip: HTMLElement, position: number): Promise<HTMLElement> {
   const slots = await within(strip).findAllByRole('button', { name: /^结果 · / })
   const slot = slots[position]
@@ -149,7 +148,6 @@ describe('图片编辑结果替换当前帧', () => {
     await userEvent.click(await resultSlot(strip, 1))
     expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', CANDIDATE_B)
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
-    // 替换完窗口留着，B 成了当前帧那一格。
     await waitFor(() =>
       expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
         'aria-pressed',
@@ -158,7 +156,6 @@ describe('图片编辑结果替换当前帧', () => {
     )
     expect(persisted.shots[0]?.image_urls).toEqual([CANDIDATE_B])
     expect(persisted.shots[0]?.prompt.timeline[0]?.prompt).toContain('同时修改的描述')
-    // 编辑器还开着，分镜页在它后面，取图要带 hidden。
     expect(
       within(page).getByRole('img', { name: '镜头组 1 第 1 帧', hidden: true }),
     ).toHaveAttribute('src', CANDIDATE_B)

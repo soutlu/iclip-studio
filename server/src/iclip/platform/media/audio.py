@@ -19,12 +19,10 @@ SPEECH_BITRATE: Final = "64k"
 
 MUSIC_SILENCE_THRESHOLD_DB: Final = -50
 MUSIC_LOUDNESS_LUFS: Final = -16.0
-# AAC 编码后的峰值会比编码前高一些，不留余量解码出来会削波。
 MUSIC_TRUE_PEAK_DBTP: Final = -1.5
-# 线性缩放用不上它；只有缩放会超出真峰值、loudnorm 退回动态处理时才起作用。取 loudnorm 的默认值。
 MUSIC_LOUDNESS_RANGE: Final = 11.0
 
-# 倒过来再去一次开头，即去掉结尾。不用 stop_periods：它会连乐曲中间的停顿一起删。
+# FFmpeg silenceremove 的 stop_periods 会误删曲中停顿，故通过反转音频再次裁剪头部来去除尾部静音。
 _TRIM_MUSIC_SILENCE: Final = (
     f"silenceremove=start_periods=1:start_threshold={MUSIC_SILENCE_THRESHOLD_DB}dB,"
     "areverse,"
@@ -63,8 +61,7 @@ async def normalize_music(source: Path, *, dest: Path) -> int:
         f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
         f":offset={measured['target_offset']}:linear=true"
     )
-    # loudnorm 在内部升到 192 kHz 处理，输出要重采样回来。编成 AAC 而不是 mp3：mp3 编码器在开头
-    # 补的延迟没有标准的标注方式，播放时整段会往后推几十毫秒。
+    # FFmpeg loudnorm 滤镜会将采样率升至 192 kHz，需显式重采样回 48 kHz；输出 AAC 以避免 MP3 编码器头部延迟导致音画偏移。
     await run(
         [
             "ffmpeg", "-v", "error", "-y", "-i", str(source), "-map", "0:a:0", "-vn",
@@ -97,7 +94,6 @@ async def _loudnorm_measure(source: Path, audio_filter: str) -> dict[str, float]
         ],
         timeout=ENCODE_TIMEOUT_SECONDS,
     )  # fmt: skip
-    # loudnorm 只把测量结果以 JSON 写在 stderr 的末尾；静音量出来是 -inf。
     text = stderr.decode(errors="replace")
     start, end = text.rfind("{"), text.rfind("}")
     try:

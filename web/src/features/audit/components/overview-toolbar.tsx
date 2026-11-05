@@ -1,5 +1,3 @@
-/** 审计页工具条：左边快捷档与常显实际区间的日期按钮（点开是预设加双月日历），右边由各页签放自己的东西。 */
-
 import { useEffect, useState, type ComponentPropsWithRef, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -23,14 +21,11 @@ import {
 type OverviewToolbarProps = {
   range: OverviewRange
   onChange: (next: OverviewRange) => void
-  /** 右侧：总览写环比对比的日期，清单放按人筛选。 */
   children?: ReactNode
 }
 
-/** 浮在页面灰底上的控件外壳：卡片色底、卡片描边（浅色下透明）加极淡的影。 */
 const RAISED = 'border border-dashboard-card-edge bg-dashboard-card shadow-[var(--shadow-xs)]'
 
-/** 工具条上带图标的按钮（日期、按人筛选）；选中时加粗。可作弹层的 asChild 触发器。 */
 export function PickButton({
   selected,
   className,
@@ -83,7 +78,6 @@ export function OverviewToolbar({ range, onChange, children }: OverviewToolbarPr
   )
 }
 
-/** 日期按钮始终写出实际区间；选的不是快捷档时它就是当前选中项。 */
 function RangePopover({
   range,
   now,
@@ -135,7 +129,6 @@ function RangePopover({
 const sameDay = (a: Date, b: Date) => a.getTime() === b.getTime()
 const DAY_MS = 86_400_000
 
-/** 宽屏并排两个月、预设在左；窄屏一个月、预设在上。 */
 const WIDE = '(min-width: 840px)'
 
 function useWide(): boolean {
@@ -149,11 +142,6 @@ function useWide(): boolean {
   return wide
 }
 
-/**
- * 左侧预设与右侧日历联动：点起点再点终点，选预设直接填好两端；应用后才生效。
- * 日历的格子、今天与可选范围都按 UTC+8 的日期；状态里每一天都是那天的 UTC+8 零点，
- * 只在交给日历与接回日历时经 toCalendarDay / fromCalendarDay 换成它认的本地日期。
- */
 function RangePicker({
   initial,
   now,
@@ -174,7 +162,6 @@ function RangePicker({
   const [preset, setPreset] = useState<OverviewPreset | null>(
     initial.preset === 'custom' ? null : initial.preset,
   )
-  // 最后一天所在的月放在右边。
   const monthFor = (day: Date) => startOfZonedMonth(day, wide ? -1 : 0)
   const [month, setMonth] = useState(() => monthFor(start.last))
 

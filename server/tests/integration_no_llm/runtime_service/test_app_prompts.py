@@ -1,6 +1,3 @@
-"""运行时服务的会话接口跑一段真会话：开会话、发消息跑完、读状态、读页与补批、重新生成。运行驱动随服务的
-lifespan 起停，模型是按名字换上的替身。"""
-
 from __future__ import annotations
 
 import uuid
@@ -26,8 +23,6 @@ def models() -> dict[str, Model]:
 
 @pytest.fixture
 async def session(admin: httpx.AsyncClient, app_client: httpx.AsyncClient) -> str:
-    """发布好 ``AGENT``、开好一段会话，交回会话 id。"""
-
     provider_id = await connect_provider(admin)
     await add_model(admin, provider_id, TEST_MODEL_NAME)
     await publish_agent(admin, AGENT)
@@ -80,7 +75,6 @@ async def test_a_prompt_runs_to_completion_and_reads_back(
     assert [(turn["turnId"], turn["state"]) for turn in body["items"]] == [("t1", "completed")]
     assert body["items"][0]["triggerPromptId"] == "prm_first"
     assert body["meta"]["activity"] == "idle"
-    # 应用的信封字段由应用自己加，运行时这一页没有。
     assert {"title", "owner_user_id", "deleted_at", "forked_from", "fork_turn"}.isdisjoint(body)
 
     ops = await app_client.get(f"/sessions/{session}/transcript/ops", params={"since_seq": 0})

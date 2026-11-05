@@ -1,8 +1,3 @@
-/** 参考 Kimi mention-tip；锚点与卡共用悬停时序，hover 桥覆盖二者间隙。
- *
- * 卡用 fixed 定位，位置在视口坐标里算；挂载点可以注入：锚点在模态弹窗里时挂进弹窗，弹窗外的指针事件与焦点都被禁用。
- * 弹窗带 translate 时 fixed 以弹窗为参照，所以落位前减去包含块原点。 */
-
 import {
   type RefObject,
   type SyntheticEvent,
@@ -25,14 +20,10 @@ import { MediaCropper, type MediaPreviewCrop } from './media-cropper'
 import { MEDIA_KIND_ICON, type MediaDescriptor, mediaDisplayName } from './media-descriptor'
 import { UploadRing } from './upload-ring'
 
-/** 媒体元素加载后读到的像素尺寸；时长只有视频有。 */
 type MediaIntrinsic = { width: number; height: number; duration: number | undefined }
 
-/** 卡与锚点间距，同时作为 hover 桥高度。 */
 const TIP_GAP_PX = 6
-/** 视口边距参考 Kimi --p-mention-tip-vmargin。 */
 const TIP_VIEWPORT_MARGIN_PX = 12
-/** 300px 预览区使用两倍分辨率 poster。 */
 const POSTER_WIDTH_PX = 600
 
 type TipPlacement = {
@@ -44,14 +35,10 @@ type TipPlacement = {
 
 type MediaPreviewCardProps = {
   anchorEl: HTMLElement
-  /** 挂载点，默认 body。 */
   container?: HTMLElement | null
   media: MediaDescriptor
-  /** 代替默认第二行（尺寸、时长、大小）的说明。 */
   details?: string | undefined
-  /** 图片要裁时给：预览区换成裁切框。 */
   crop?: MediaPreviewCrop | undefined
-  /** 拿到卡片元素，供锚点判断点击落在不在卡里。 */
   cardRef?: RefObject<HTMLDivElement | null> | undefined
   onEnter: () => void
   onLeave: () => void
@@ -69,7 +56,6 @@ export function MediaPreviewCard({
   onLeave,
   onEnlarge,
 }: MediaPreviewCardProps) {
-  // 拖裁切框时指针可能出卡，拖完前不关；拖完时指针已在卡外就补一次离开。
   const draggingRef = useRef(false)
   const hoveringRef = useRef(false)
   const enterTip = () => {
@@ -84,7 +70,6 @@ export function MediaPreviewCard({
     draggingRef.current = false
     if (!hoveringRef.current) onLeave()
   }
-  // 隐藏状态下测量后定位；挂载与媒体加载回调负责重新测量。
   const [placement, setPlacement] = useState<TipPlacement | null>(null)
   const tipElRef = useRef<HTMLDivElement | null>(null)
   const originRef = useRef<{ x: number; y: number } | null>(null)
@@ -105,7 +90,6 @@ export function MediaPreviewCard({
     )
     const side = anchor.top >= rect.height + TIP_GAP_PX + TIP_VIEWPORT_MARGIN_PX ? 'top' : 'bottom'
     const top = side === 'top' ? anchor.top - rect.height - TIP_GAP_PX : anchor.bottom + TIP_GAP_PX
-    // 包含块原点：首次测量时卡还在 left / top 为 0 的位置，它的视口坐标就是原点；没有带 transform 的祖先时是视口原点。
     originRef.current ??= { x: rect.left, y: rect.top }
     const origin = originRef.current
     const next: TipPlacement = {
@@ -125,7 +109,6 @@ export function MediaPreviewCard({
     )
   }
 
-  // 宽高与时长从已加载的媒体元素上读，合同里的附件不带这些信息。
   const [intrinsic, setIntrinsic] = useState<MediaIntrinsic | null>(null)
   const onImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth, naturalHeight } = event.currentTarget
@@ -145,7 +128,6 @@ export function MediaPreviewCard({
     }
     measure(tipElRef.current)
   }
-  // 竖屏判定会改变媒体封顶高度；尺寸类名生效后重新定位，避免沿用旧卡高。
   const remeasure = useEffectEvent(() => measure(tipElRef.current))
   useLayoutEffect(() => remeasure(), [intrinsic])
 
@@ -158,17 +140,14 @@ export function MediaPreviewCard({
     [
       intrinsic === null ? null : formatDimensions(intrinsic.width, intrinsic.height),
       intrinsic?.duration === undefined ? null : formatDuration(intrinsic.duration),
-      // 视频第二行只报尺寸与时长。
       media.size === undefined || media.kind === 'video' ? null : formatAttachmentSize(media.size),
     ]
       .filter((part) => part !== null)
       .join(' · ')
-  // 只有竖屏放宽封顶高度；读到像素尺寸前按方形与横屏的 220 渲染。
   const mediaSizeClass = cn(
     'block max-w-[300px] rounded-sm object-contain',
     intrinsic !== null && intrinsic.height > intrinsic.width ? 'max-h-[320px]' : 'max-h-[220px]',
   )
-  // 失败态由输入框的失败卡片承担，悬停卡只报上传中。
   const uploading = upload?.status === 'uploading' ? upload : undefined
   const hasSecondRow = uploading !== undefined || details !== '' || canEnlarge
   const meta = (
@@ -245,7 +224,6 @@ export function MediaPreviewCard({
             ) : media.kind === 'image' ? (
               <img alt={name} className={mediaSizeClass} onLoad={onImageLoad} src={previewUrl} />
             ) : (
-              // 仅展示静音首帧，不提供播放控件。
               <video
                 aria-label={name}
                 className={mediaSizeClass}

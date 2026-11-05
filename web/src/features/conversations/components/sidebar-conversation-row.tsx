@@ -39,14 +39,11 @@ const useUnread = (conversation: Conversation, active: boolean): boolean => {
 type SidebarConversationRowProps = {
   conversation: Conversation
   dragging: boolean
-  /** 请调用方打开删除确认；删除本身由确认弹窗执行。 */
   onDelete: (conversation: Conversation) => void
   onOpenMembership: (conversation: Conversation) => void
-  /** 编辑或菜单打开期间保留虚拟行，避免滚动卸载交互状态。 */
   onInteractionChange: (active: boolean) => void
 }
 
-/** 侧栏一行对话：打开、改名、移到合集、标记完成与删除；改对话要有 agent:run，改完各 mutation 自己刷新列表。 */
 export const SidebarConversationRow = memo(function SidebarConversationRow({
   conversation,
   dragging,
@@ -97,7 +94,6 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
   return (
     <TooltipRoot onOpenChange={setTipOpen} open={tipOpen && statusLabels.length > 0 && !dragging}>
       <TooltipTrigger asChild>
-        {/* 拖拽绑在整行而不是链接上：链接的原生拖动会吞掉指针事件。 */}
         <div
           className={cn(
             SIDEBAR_ROW_CLASS,

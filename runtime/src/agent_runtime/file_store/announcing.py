@@ -1,9 +1,3 @@
-"""写完就通知的文件存储：包一层 ``FileStore``，会话工作区里每写一份、删一份就同步报一次变更。
-
-插件的工作区与应用经运行时服务写文件走这一层；分叉与按清单拷文件走底下那份不通知的存储，副本不算
-变更。不是「属主/会话 id」形式的命名空间（会话以外的存储）不通知。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -16,13 +10,9 @@ from agent_runtime.file_store.store import FileEntry, FileStore, SearchResult, S
 FileChange = Literal["created", "modified", "deleted"]
 
 AnnounceFileChange = Callable[[uuid.UUID, uuid.UUID, str, FileChange], None]
-"""（属主，会话 id，路径，变更）；写入提交之后同步调用，不 await。"""
 
 
 class AnnouncingFileStore:
-    """``FileStore`` 的同形包装：写入版本为 1 报 ``created``、否则报 ``modified``，真删了才报
-    ``deleted``。"""
-
     def __init__(self, inner: FileStore, announce: AnnounceFileChange) -> None:
         self._inner = inner
         self._announce_change = announce

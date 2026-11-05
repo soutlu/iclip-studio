@@ -13,10 +13,6 @@ import { StageLabel } from '../editing/stage-label'
 import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
 
-/**
- * 预览切到素材：选中镜头时停在选区开头，拖选区一端时停在那一端的画面，都不播放；按播放或空格才从
- * 选区里放到出点停下。每次选中都换一个新对象，同一个镜头再点也回到开头。
- */
 export type MaterialView = {
   range: MaterialRange
   show: Edge
@@ -28,16 +24,13 @@ type MaterialPreviewProps = {
   controlRef: RefObject<MaterialPreviewControl | null>
   url: string
   view: MaterialView
-  /** 「素材 · 镜头组 1 · 生成 B · 镜头 2」 */
   label: string
-  /** 素材里正放到的时刻（毫秒） */
   timeMs: number
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   onNotice: (message: string) => void
 }
 
-/** 盖在成片预览上的素材画面；回到成片时由编辑器卸掉。 */
 export function MaterialPreview({
   controlRef,
   url,
@@ -62,7 +55,6 @@ export function MaterialPreview({
     const end = range.endMs / 1000
     let cancelled = false
     let frame = 0
-    // 停在出点时媒体在出点之前一点，按媒体时刻判断不出已到出点，单独记着。
     let atEnd = false
     const seekTo = (edge: Edge) => {
       atEnd = edge === 'end'
@@ -85,7 +77,6 @@ export function MaterialPreview({
       frame = requestAnimationFrame(tick)
     }
     const play = () => {
-      // 暂停后续播；已到出点（包括修剪停在末端）则重播选区。
       if (
         atEnd ||
         video.ended ||
@@ -100,7 +91,6 @@ export function MaterialPreview({
           if (!cancelled && !video.paused) frame = requestAnimationFrame(tick)
         },
         (error: unknown) => {
-          // 加载中暂停或切换素材会中止 play 请求，这是正常操作。
           if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) return
           playing(false)
           failed()
@@ -122,7 +112,7 @@ export function MaterialPreview({
     <div className="wf-material-preview">
       <StageBackdrop url={videoSnapshotUrl(url, 320)} />
       <div className="editor-hero-wrap">
-        {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成的视频没有字幕轨，不装样子 */}
+        {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成视频无字幕轨 */}
         <video
           className="wf-material-video editor-preview stage-picture"
           onLoadedMetadata={({ currentTarget: video }) =>

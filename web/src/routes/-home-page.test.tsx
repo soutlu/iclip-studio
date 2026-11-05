@@ -30,7 +30,6 @@ const renderHome = async (initialPath = '/') => {
   return { ...rendered, user: userEvent.setup() }
 }
 
-// 首页草稿存在 sessionStorage，同一文件的用例之间不能串。
 beforeEach(() => {
   sessionStorage.clear()
 })
@@ -57,7 +56,6 @@ describe('首页真实数据流程', () => {
 
     expect(await screen.findByRole('button', { name: picker })).toBeInTheDocument()
     await waitFor(() => expect(router.state.location.search).toEqual({}))
-    // 合集已读到、参数已移除，选择照旧，不被打回。
     await user.click(screen.getByRole('button', { name: picker }))
     expect(await screen.findByRole('combobox', { name: '搜索合集' })).toBeVisible()
     expect(screen.getAllByText('夏季亚麻系列').length).toBeGreaterThan(0)
@@ -211,7 +209,6 @@ describe('首页真实数据流程', () => {
     await waitFor(() => expect(targets).toHaveLength(2))
     await waitFor(() => expect(screen.getByRole('button', { name: '发送' })).toBeEnabled())
     expect(router.state.location.pathname).toBe('/')
-    // 删除留下墓碑（合同 §6），只数活着的对话。
     expect(liveConversations()).toHaveLength(0)
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('保留这份原稿')
     await user.click(screen.getByRole('button', { name: '发送' }))
@@ -224,14 +221,12 @@ describe('首页真实数据流程', () => {
 
 describe('首页做同款', () => {
   const SAME_PLACEHOLDER = '参照该视频做同款，请输入要替换的内容'
-  /** 挂着对话的卡，mock 里做得了同款。 */
   const sourceCard = () => {
     const card = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
     if (card === undefined) throw new Error('mock 里没有这张卡')
     return card
   }
 
-  /** 记下每次建对话的请求体。 */
   const recordCreateBodies = () => {
     const bodies: { id: string; sameAs?: string }[] = []
     server.events.on('request:start', async ({ request }) => {
@@ -330,7 +325,6 @@ describe('首页做同款', () => {
     },
     {
       scene: '这张卡做不了同款',
-      // 不挂对话的卡，没有对话可拷。
       id: () => mockLibraryVideos().find((video) => video.conversationId === null)?.id,
       message: /该视频没有可用的制作文件，无法做同款/,
     },
@@ -346,12 +340,10 @@ describe('首页做同款', () => {
 })
 
 describe('首页草稿', () => {
-  /** 草稿在 sessionStorage 里的位置；坏数据与删除都直接看它。 */
   const DRAFT_KEY = 'cue:home-draft-v1'
   const editor = () => screen.getByLabelText('输入消息')
   const imageFile = () => new File(['fake-png-bytes'], '参考图.png', { type: 'image/png' })
 
-  // jsdom 不解码图片；附件上传前的尺寸校验读这个桩。
   beforeEach(() => {
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
@@ -424,7 +416,6 @@ describe('首页草稿', () => {
     const other = await renderHome()
     expect(await screen.findByRole('button', { name: '分镜 Agent' })).toBeVisible()
     expect(editor()).toHaveTextContent('秋季上新')
-    // 合集列表读到之后（新登录人也看得到这个合集）仍是未关联。
     await other.user.click(screen.getByRole('button', { name: '关联合集：未关联合集' }))
     expect(await screen.findByRole('option', { name: /夏季亚麻系列/ })).toBeVisible()
     expect(screen.getByRole('button', { name: '关联合集：未关联合集' })).toBeInTheDocument()

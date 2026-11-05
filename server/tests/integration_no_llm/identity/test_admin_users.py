@@ -1,5 +1,3 @@
-"""用户管理面：分页信封、users:manage 门控、自我保护规则与管理上限。"""
-
 from __future__ import annotations
 
 import httpx
@@ -92,8 +90,6 @@ BEYOND_OWN = {"detail": "不能修改权限超出自己的用户，也不能授�
 async def test_manager_cannot_touch_users_with_more_permissions(
     app: FastAPI, migrated_pg: str
 ) -> None:
-    """admin 停用、降级 root，或原样重发 root 的角色，都是 403，root 保持原样。"""
-
     async with make_client(app) as root, make_client(app) as admin:
         root_id = await register_and_login(root, username="rose", email="rose@example.com")
         await set_roles_in_db(migrated_pg, "rose@example.com", ["root"])
@@ -115,8 +111,6 @@ async def test_manager_cannot_touch_users_with_more_permissions(
 
 
 async def test_manager_cannot_grant_beyond_own_permissions(app: FastAPI, migrated_pg: str) -> None:
-    """admin 把别人设成 root、直接授予自己没有的权限都是 403，对方保持原样。"""
-
     async with make_client(app) as admin, make_client(app) as editor:
         await register_and_login(admin, username="ada", email="ada@example.com")
         await set_roles_in_db(migrated_pg, "ada@example.com", ["admin"])
@@ -138,8 +132,6 @@ async def test_manager_cannot_grant_beyond_own_permissions(app: FastAPI, migrate
 
 
 async def test_manager_edits_users_within_own_permissions(app: FastAPI, migrated_pg: str) -> None:
-    """admin 能把 editor 升为 admin、改另一个 admin、停用 editor。"""
-
     async with make_client(app) as admin, make_client(app) as member:
         await register_and_login(admin, username="ada", email="ada@example.com")
         await set_roles_in_db(migrated_pg, "ada@example.com", ["admin"])
@@ -160,8 +152,6 @@ async def test_manager_edits_users_within_own_permissions(app: FastAPI, migrated
 
 
 async def test_root_manages_anyone(app: FastAPI, migrated_pg: str) -> None:
-    """root 持有全部权限，停用、降级 admin 与把别人设成 root 都照常。"""
-
     async with (
         make_client(app) as root,
         make_client(app) as admin,
@@ -208,8 +198,6 @@ async def test_unknown_role_and_permission_rejected(
 async def test_deactivation_kills_live_cookie_session(
     app: FastAPI, client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """停用应使现有 cookie 会话在下一次请求失效，无需等待 JWT 到期。"""
-
     await register_and_login(client)
     await set_roles_in_db(migrated_pg, "logan@example.com", ["root"])
 

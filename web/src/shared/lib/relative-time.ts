@@ -1,4 +1,3 @@
-/** 把 ISO 时刻渲染成「3天前」这种粗粒度相对时间；未来时刻按「刚刚」处理。 */
 export const formatRelativeTime = (iso: string): string => {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ''

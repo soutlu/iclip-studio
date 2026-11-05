@@ -1,8 +1,3 @@
-"""爆款视频的 Postgres 仓储。
-
-表由迁移建出、数据由部署方自行导入，运行时只读、不写、不刷新。排序与截断都在数据库里做：
-换一个排序维度是换一批样本，不是把同一批本地重排。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -63,22 +58,13 @@ _SORT_COLUMNS: Final[dict[SortKey, ColumnElement[object]]] = {
     "orders": _ROWS.orders,
     "revenue": _ROWS.revenue,
 }
-"""排序维度到列的映射；调用方给的字符串只作为键，不进 SQL。"""
 
 
 class PgInspirationVideos:
-    """按款号与降级范围读取可下载的爆款视频。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
     async def styles_with_videos(self, style_nos: Sequence[str]) -> frozenset[str]:
-        """这批款里哪些自己就有视频。
-
-        刻意不接受 :class:`MetricFilters`：判定的是「这个款有没有视频」，与本次
-        请求设了什么门槛无关。
-        """
-
         if not style_nos:
             return frozenset()
         statement = select(_ROWS.style_no).where(_ROWS.style_no.in_(list(style_nos))).distinct()
@@ -89,11 +75,6 @@ class PgInspirationVideos:
     async def groups_with_videos(
         self, category_ids: Sequence[int]
     ) -> tuple[frozenset[tuple[int, str]], frozenset[int]]:
-        """这些品类中，哪些品类／品牌组合有视频可以拿来当替身。
-
-        一次查询同时回答两级：``(品类, 品牌)`` 与仅按品类。
-        """
-
         if not category_ids:
             return frozenset(), frozenset()
         statement = (
@@ -116,11 +97,6 @@ class PgInspirationVideos:
         sort_by: SortKey,
         limit: int,
     ) -> tuple[str, ...]:
-        """取这些范围内表现最好的若干条可下载地址。
-
-        三个范围求并集后一次排序：替身与本款视频在同一个序里比较，截断由数据库执行。
-        """
-
         scopes = _scopes(style_nos, brand_categories, categories)
         if scopes is None:
             return ()
@@ -128,7 +104,6 @@ class PgInspirationVideos:
         statement = (
             select(_ROWS.oss_url)
             .where(scopes, *_thresholds(filters))
-            # video_id 是主键，作为末位键让指标持平时的先后确定。
             .order_by(column.desc(), _ROWS.video_id.asc())
             .limit(limit)
         )
@@ -142,8 +117,6 @@ def _scopes(
     brand_categories: Sequence[StyleGrouping],
     categories: Sequence[int],
 ) -> ColumnElement[bool] | None:
-    """把三级匹配范围合成一个 WHERE 条件；三者皆空时返回 ``None``。"""
-
     clauses: list[ColumnElement[bool]] = []
     if style_nos:
         clauses.append(_ROWS.style_no.in_(list(style_nos)))
@@ -161,8 +134,6 @@ def _scopes(
 
 
 def _thresholds(filters: MetricFilters) -> list[ColumnElement[bool]]:
-    """把设了值的下限转成条件；``None`` 的维度不生成条件。"""
-
     pairs = (
         (_ROWS.impressions, filters.min_impressions),
         (_ROWS.views, filters.min_views),

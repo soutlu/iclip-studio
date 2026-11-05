@@ -1,7 +1,3 @@
-"""网格裁剪几何：解析 PGM 并检测近白或近黑分隔带。
-
-检测失败的轴使用等分，并通过 GridLayout.detected 显式报告。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -11,17 +7,14 @@ _WHITESPACE = frozenset(b" \t\r\n\v\f")
 _COMMENT = ord("#")
 
 MAX_GRID_SIDE = 6
-"""单边格数上限，用于限制每次调用的产物数量。"""
 
 
 class GridError(ValueError):
-    """网格几何的输入不合法（PGM 坏了、行列数越界、画幅写错）。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class GrayImage:
-    """8-bit 灰度图，行主序。"""
-
     width: int
     height: int
     pixels: bytes
@@ -29,34 +22,25 @@ class GrayImage:
 
 @dataclass(frozen=True, slots=True)
 class GridLayout:
-    """按阅读顺序排列的矩形及检测标志；坐标为输入灰度图中的 (x, y, w, h)。"""
-
     boxes: tuple[tuple[int, int, int, int], ...]
     detected_x: bool
     detected_y: bool
 
     @property
     def detected(self) -> bool:
-        """两个轴均检测到实际分隔带。"""
-
         return self.detected_x and self.detected_y
 
 
 _WHITE_LEVEL = 230
 _BLACK_LEVEL = 25
 _GUTTER_SHARE = 0.95
-"""一行/一列里近纯白或近纯黑的占比达到多少才算分隔带。"""
 _SEARCH_SHARE = 0.12
-"""在理论等分线附近多大范围内找分隔带。"""
 _MARGIN_CAP_SHARE = 0.08
-"""外圈边框最多修掉多少。"""
 _MIN_GUTTER_PX = 2
 _ASPECT_TOLERANCE = 0.02
 
 
 def parse_pgm(data: bytes) -> GrayImage:
-    """解析一张二进制 P5 PGM（maxval 必须是 255）。"""
-
     magic, pos = _header_token(data, 0)
     if magic != b"P5":
         raise GridError(f"PGM 魔数必须是 P5，实际是 {magic!r}")
@@ -77,14 +61,11 @@ def parse_pgm(data: bytes) -> GrayImage:
 
 
 def grid_cell_boxes(image: GrayImage, *, rows: int, cols: int) -> GridLayout:
-    """通过行列投影寻找理论等分线附近的分隔带并裁除外框，检测不足的轴使用等分。"""
-
     _check_side(rows, "rows")
     _check_side(cols, "cols")
     width, height = image.width, image.height
     if len(image.pixels) != width * height:
         raise GridError("灰度图的像素长度和尺寸对不上")
-    # 用查找表批量分类灰度值，避免逐像素分支比较。
     table = bytes(
         1 if value >= _WHITE_LEVEL else 2 if value <= _BLACK_LEVEL else 0 for value in range(256)
     )
@@ -101,8 +82,6 @@ def grid_cell_boxes(image: GrayImage, *, rows: int, cols: int) -> GridLayout:
 
 
 def fit_box_to_aspect(box: tuple[int, int, int, int], ratio: float) -> tuple[int, int, int, int]:
-    """居中收缩到目标画幅；比例偏差在 2% 内时保留原矩形，避免无意义裁剪。"""
-
     x, y, w, h = box
     if w <= 0 or h <= 0:
         raise GridError(f"格区域尺寸非法: {box}")
@@ -119,8 +98,6 @@ def fit_box_to_aspect(box: tuple[int, int, int, int], ratio: float) -> tuple[int
 def scale_box(
     box: tuple[int, int, int, int], *, from_width: int, to_width: int
 ) -> tuple[int, int, int, int]:
-    """把检测坐标系里的矩形放大回原图坐标系（检测在降采样图上做，裁剪在原图上做）。"""
-
     if from_width <= 0 or to_width <= 0:
         raise GridError("缩放的宽度必须是正数")
     factor = to_width / from_width
@@ -144,8 +121,6 @@ def _is_gutter(line: bytes, size: int) -> bool:
 
 
 def _axis_segments(flags: Sequence[bool], *, count: int) -> tuple[list[tuple[int, int]], bool]:
-    """沿一个轴切出 ``count`` 段；返回 ``(区间列表, 是否量到了真实分隔带)``。"""
-
     length = len(flags)
     naive = [(k * length // count, (k + 1) * length // count) for k in range(count)]
     if count == 1 or length < count * 4:
@@ -181,7 +156,6 @@ def _axis_segments(flags: Sequence[bool], *, count: int) -> tuple[list[tuple[int
     starts = [lead, *(end for _, end in cuts)]
     ends = [*(start for start, _ in cuts), trail]
     segments = list(zip(starts, ends, strict=True))
-    # 区间不足等分宽度的一半时，视为该轴检测失败。
     min_len = length // (count * 2)
     if any(end - start < min_len for start, end in segments):
         return naive, False
@@ -203,8 +177,6 @@ def _gutter_runs(flags: Sequence[bool]) -> list[tuple[int, int]]:
 
 
 def _header_token(data: bytes, pos: int) -> tuple[bytes, int]:
-    """读下一个头部 token，跳过空白与 ``#`` 注释。"""
-
     length = len(data)
     while pos < length:
         byte = data[pos]

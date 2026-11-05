@@ -79,10 +79,8 @@ MAX_URL_CHARS: Final = 2000
 MAX_COMPOSE_SEGMENTS: Final = 100
 
 COLUMN_FIELDS: Final = frozenset({"conversation_id", "task_id", "metadata", "shot_index"})
-"""请求里落成记录列的字段：不进请求快照。"""
 
 RECORD_ONLY_FIELDS: Final = frozenset({"source_url", "range_start_ms", "range_end_ms"})
-"""进请求快照、但只记账的字段：不转发给上游，对外的 ``request`` 里不给，另有顶层字段。"""
 
 NOT_FORWARDED_FIELDS: Final = COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot"})
 
@@ -258,14 +256,11 @@ class VideoGenerationIn(SnakeModel):
             )
         if self.prompt is not None and self.prompt != assembled:
             raise ValueError("prompt 与 shot 拼出的正文不一致，二者只传一个")
-        # 模型是 frozen 的，校验器又不能换掉 self，派生字段只能这样填进去。
         object.__setattr__(self, "prompt", assembled)
         return self
 
 
 class VideoEditRequest(VideoGenerationIn):
-    """编辑段的请求快照：转发给上游的那条视频请求，外加只记账的替换区间（基底媒体时间，毫秒）。"""
-
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
 
@@ -457,8 +452,6 @@ class MusicRequest(CamelModel):
 
 
 class WholeFilmVideoSource(CamelModel):
-    """导出用到的一条素材片：记录 id 与它的公开地址。"""
-
     job_id: uuid.UUID
     url: DownloadUrl
 
@@ -469,25 +462,17 @@ class WholeFilmMusicSource(CamelModel):
 
 
 class WholeFilmSubtitles(CamelModel):
-    """一条素材片最新的那条已完成字幕记录的逐句结果。"""
-
     source_job_id: uuid.UUID
     subtitle_job_id: uuid.UUID
     sentences: tuple[SubtitleSentence, ...]
 
 
 class WholeFilmRequest(CamelModel):
-    """一次成片导出交给渲染服务的全部输入，受理时定下，之后不变。生成域不解析草稿。
-
-    ``videos`` 是画面轨用到的素材片，去重、按第一次出现的先后；用列表是因为 JSONB 不保留键序。"""
-
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER
 
     revision: int
-    """导出的那一版草稿。"""
     document: dict[str, Any]
-    """草稿原样（camelCase 的 JSON）。"""
     videos: list[WholeFilmVideoSource]
     music: WholeFilmMusicSource | None
     subtitles: list[WholeFilmSubtitles]
@@ -504,17 +489,13 @@ class VideoEnhanceIn(CamelModel):
 
 
 class VideoEnhanceRequest(SnakeModel):
-    """一次超分交给上游的全部输入，字段照上游超分接口，原样转发。"""
-
     kind: ClassVar[GenerationKind] = KIND_VIDEO
     operation: ClassVar[GenerationOperation] = OPERATION_ENHANCE
 
     model: ModelName
     resolution: VideoEnhanceResolution
     fps: Annotated[int, Field(ge=15, le=60)] | None = None
-    """目标帧率；为空就不插帧，不发给上游。"""
     video_url: DownloadUrl
-    """来源的原片地址，不是水印版。"""
     user_name: UserName
 
 
@@ -523,8 +504,6 @@ def request_to_payload(request: GenerationRequest) -> dict[str, Any]: ...
 @overload
 def request_to_payload(request: None) -> None: ...
 def request_to_payload(request: GenerationRequest | None) -> dict[str, Any] | None:
-    """请求快照落库的形状：落成列的字段不存，外部底图只在有的时候存。"""
-
     if request is None:
         return None
     exclude = set(COLUMN_FIELDS)
@@ -719,16 +698,13 @@ class VideoEnhanceTierOut(CamelModel):
     resolution: VideoEnhanceResolution
     job: GenerationOut | None
     mine: bool
-    """``job`` 的属主是不是这次读的主体；没有记录为 false。"""
 
 
 class VideoEnhancementsOut(CamelModel):
     """一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。"""
 
     downloaded_job_ids: list[uuid.UUID]
-    """视频是它自己；成片是它导出时用到的各条素材片。来源做不了高清版时为空。"""
     tiers: list[VideoEnhanceTierOut]
-    """比来源清晰的那几档，按运行配置的先后；没开通或来源做不了高清版时为空。"""
 
 
 class GenerationsPageOut(CamelModel):

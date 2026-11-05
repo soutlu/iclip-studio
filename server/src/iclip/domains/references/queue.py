@@ -1,9 +1,3 @@
-"""参考视频的后台拆解。自带一个 procrastinate App，队列 ``references``，与生成队列共用组合根的连接器。
-
-一次任务：接手（``pending`` → ``running``）→ 拆解 → 写回 → 排一次打标。拆解任务**不挂自动重试**：
-崩在半路自动重投会再付一次钱。崩在半路的行停在拆解中，由每分钟一次的周期任务按超时收尾；重拆由
-人或 AI 导演决定。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -23,24 +17,19 @@ _logger = structlog.stdlib.get_logger(__name__)
 QUEUE: Final = "references"
 
 _STOP_MARGIN_SECONDS: Final = 5
-"""worker 自身关停宽限期之外的等待余量。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ReferenceQueueSettings:
     concurrency: int = 2
-    """每个服务进程同时拆几条。拆解在本机跑 ffmpeg，单个请求几十 MB。"""
 
     shutdown_grace_seconds: int = 15
-    """关停时等执行中任务的时限；没等完的那一行停在拆解中，按超时收尾。"""
 
     heartbeat_interval_seconds: int = 10
     stalled_worker_timeout_seconds: int = 30
 
 
 class ReferenceQueue:
-    """排拆解、执行拆解、收尾超时；任务协程可独立于调度器调用。"""
-
     def __init__(
         self,
         store: ReferenceStore,
@@ -57,7 +46,6 @@ class ReferenceQueue:
         self._app = procrastinate.App(connector=connector)
         self._worker: asyncio.Task[None] | None = None
 
-        # 不给 retry：任务抛出就停在 failed，不重投。
         self._run = self._app.task(name="references.run_breakdown", queue=QUEUE)(self.run_breakdown)
         heal = self._app.task(name="references.time_out_stalled", queue=QUEUE, pass_context=True)(
             self._heal_periodic
@@ -69,13 +57,9 @@ class ReferenceQueue:
         return self._app
 
     async def enqueue_breakdown(self, reference_id: uuid.UUID) -> None:
-        """排一次拆解；排不上就抛出，由服务层收尾这一行。"""
-
         await self._run.defer_async(reference_id=str(reference_id))
 
     async def run_breakdown(self, reference_id: str) -> None:
-        """拆一次：接手不到（已被别的执行接手或已有结论）就不做；拆成写回后排一次打标。"""
-
         claim = await self._store.claim(uuid.UUID(reference_id))
         if claim is None:
             _logger.info("参考视频不在排队中，不再拆", reference_id=reference_id)
@@ -100,8 +84,6 @@ class ReferenceQueue:
         )
 
     async def time_out_stalled(self) -> int:
-        """拆解中超过 ``BREAKDOWN_TIMEOUT_SECONDS`` 的行收成 ``failed / timeout``，交回几行。"""
-
         count = await self._store.time_out_stalled(older_than_seconds=BREAKDOWN_TIMEOUT_SECONDS)
         if count:
             _logger.warning("参考视频拆解超时，已按超时收尾", count=count)
@@ -111,8 +93,6 @@ class ReferenceQueue:
         await self.time_out_stalled()
 
     def start(self) -> None:
-        """幂等启动 worker。"""
-
         if self._worker is not None:
             return
         settings = self._settings
@@ -124,7 +104,6 @@ class ReferenceQueue:
                 shutdown_graceful_timeout=settings.shutdown_grace_seconds,
                 update_heartbeat_interval=settings.heartbeat_interval_seconds,
                 stalled_worker_timeout=settings.stalled_worker_timeout_seconds,
-                # 信号处理统一交给 uvicorn，避免覆盖 SIGTERM 处理器。
                 install_signal_handlers=False,
                 delete_jobs="successful",
             ),
@@ -132,8 +111,6 @@ class ReferenceQueue:
         )
 
     async def stop(self) -> None:
-        """取消 worker 并在宽限期内等它退出。"""
-
         if self._worker is None:
             return
         worker, self._worker = self._worker, None

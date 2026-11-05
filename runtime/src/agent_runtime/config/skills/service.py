@@ -1,7 +1,3 @@
-"""技能库用例：建技能、改草稿、发布与读版本、恢复到草稿、归档，以及 zip 导入导出。
-
-同一技能的草稿修改、发布、恢复与覆盖导入都在锁住这个技能行的事务里做，判断与写入看到的是同一份草稿。"""
-
 from __future__ import annotations
 
 import uuid
@@ -63,8 +59,6 @@ from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 
 @dataclass(frozen=True, slots=True)
 class SkillArchive:
-    """导出的压缩包：下载用的文件名与 zip 的字节。"""
-
     filename: str
     content: bytes
 
@@ -127,8 +121,6 @@ def _check_draft_path(path: str) -> None:
 
 
 async def _sync_unpublished_description(writer: SkillWriter, skill_md: str) -> None:
-    """还没发布过的技能，``description`` 跟着草稿里的 ``SKILL.md`` 走；frontmatter 不合格时不动。"""
-
     if writer.skill.latest_version_id is not None:
         return
     description = frontmatter_description(skill_md)
@@ -137,42 +129,29 @@ async def _sync_unpublished_description(writer: SkillWriter, skill_md: str) -> N
 
 
 class SkillsService:
-    """``usages`` 由组合根接到 agent 配置域，回答哪些 agent 在用一个技能。"""
-
     def __init__(self, store: SkillStore, *, usages: SkillUsages) -> None:
         self._store = store
         self._usages = usages
 
     async def list(self) -> SkillsOut:
-        """全部技能，带有没有未发布的修改。"""
-
         summaries = await self._store.list()
         return SkillsOut(
             items=[_skill_out(summary.skill, summary.draft_hash) for summary in summaries]
         )
 
     async def detail(self, skill_id: uuid.UUID) -> SkillDetailOut:
-        """一个技能连同草稿的文件清单与在用它的 agent；没有这个技能是 ``NotFound``。"""
-
         skill = await self._require(skill_id)
         return _detail_out(
             skill, await self._store.draft(skill_id), await self._usages.skill_users(skill_id)
         )
 
     async def catalog(self) -> tuple[Skill, ...]:
-        """全部技能，含已归档的，供别的模块查标识、状态与最新版。"""
-
         return tuple(summary.skill for summary in await self._store.list())
 
     async def version_files(self, version_id: uuid.UUID) -> Mapping[str, str]:
-        """一个已发布版本的全部文件（路径 → 内容），供运行时写进本机缓存；版本发布后不再变。"""
-
         return await self._store.version_files(version_id)
 
     async def create(self, body: SkillCreateIn, *, by: uuid.UUID) -> SkillDetailOut:
-        """建一个技能，草稿里只有按标识、显示名与描述生成的 ``SKILL.md``。标识不合规矩、显示名或描述
-        为空或超长是 ``ValidationFailed``，标识已被占用是 ``Conflict``。"""
-
         name = check_name(body.name)
         display_name = clean_display_name(body.display_name)
         description = clean_description(body.description)
@@ -192,9 +171,6 @@ class SkillsService:
         return await self.detail(skill_id)
 
     async def rename(self, skill_id: uuid.UUID, body: SkillUpdateIn) -> SkillDetailOut:
-        """改显示名或标识，都不进版本，草稿与版本不动。两项都没给、显示名为空或超长、标识不合规矩是
-        ``ValidationFailed``；标识已被别的技能占用是 ``Conflict``，什么都不写。"""
-
         if body.display_name is None and body.name is None:
             raise ValidationFailed("请给出要改的显示名或标识")
         display_name = None if body.display_name is None else clean_display_name(body.display_name)
@@ -209,8 +185,6 @@ class SkillsService:
         return await self.detail(skill_id)
 
     async def read_file(self, skill_id: uuid.UUID, path: str) -> DraftFileOut:
-        """草稿里的一个文件；没有这个技能或文件是 ``NotFound``。"""
-
         await self._require(skill_id)
         found = await self._store.draft_file(skill_id, path)
         if found is None:
@@ -226,10 +200,6 @@ class SkillsService:
     async def write_file(
         self, skill_id: uuid.UUID, path: str, body: DraftFileWriteIn, *, by: uuid.UUID
     ) -> DraftFileOut:
-        """写草稿里的一个文件。``base_hash`` 为 ``None`` 是新建，文件已存在是 ``Conflict``；否则要与库里
-        的 ``hash`` 一致，不一致或文件已被删掉是 ``Conflict``。路径、内容或写完后的文件数与总大小不合格是
-        ``ValidationFailed``；``SKILL.md`` 的 frontmatter 发布时才查。"""
-
         _check_draft_path(path)
         if (problem := content_problem(body.content)) is not None:
             raise ValidationFailed(f"{path}：{problem}")
@@ -250,9 +220,6 @@ class SkillsService:
         return await self.read_file(skill_id, path)
 
     async def delete_file(self, skill_id: uuid.UUID, path: str, *, base_hash: str) -> None:
-        """删草稿里的一个文件。``SKILL.md`` 不能删（``ValidationFailed``）；文件不存在是 ``NotFound``，
-        ``base_hash`` 与库里的不一致是 ``Conflict``。"""
-
         if path == SKILL_MD:
             raise ValidationFailed(f"{SKILL_MD} 不能删")
         async with self._store.edit(skill_id) as writer:
@@ -266,10 +233,6 @@ class SkillsService:
     async def move_file(
         self, skill_id: uuid.UUID, body: DraftFileRenameIn, *, by: uuid.UUID
     ) -> DraftFileOut:
-        """把草稿里的一个文件改到新路径，内容不变，一次写完。``SKILL.md`` 不能改名、新路径不合格或与原路径
-        相同是 ``ValidationFailed``；原文件不存在是 ``NotFound``；``base_hash`` 与库里的不一致、新路径已有
-        文件是 ``Conflict``。"""
-
         if body.source == SKILL_MD:
             raise ValidationFailed(f"{SKILL_MD} 不能改名")
         _check_draft_path(body.target)
@@ -290,9 +253,6 @@ class SkillsService:
     async def publish(
         self, skill_id: uuid.UUID, body: SkillPublishIn, *, by: uuid.UUID
     ) -> SkillVersionOut:
-        """把草稿发布成一个新版本：校验草稿，算清单与内容 hash，与最新版相同就拒绝，再在同一个事务里
-        写版本与文件、移动最新版、更新 ``description``。草稿不合格、没有改动都是 ``ValidationFailed``。"""
-
         note = clean_note(body.note)
         version_id = uuid.uuid4()
         async with self._store.edit(skill_id) as writer:
@@ -320,8 +280,6 @@ class SkillsService:
         )
 
     async def version(self, skill_id: uuid.UUID, version_id: uuid.UUID) -> SkillVersionDetailOut:
-        """一个版本连同它的清单；没有这个技能或版本是 ``NotFound``。"""
-
         version = await self._require_version(skill_id, version_id)
         return SkillVersionDetailOut(
             **_version_out(version).model_dump(),
@@ -341,8 +299,6 @@ class SkillsService:
     async def restore(
         self, skill_id: uuid.UUID, version_id: uuid.UUID, *, by: uuid.UUID
     ) -> SkillDetailOut:
-        """把一个版本的文件整份抄回草稿，替换草稿里的全部文件；不发布。"""
-
         version = await self._require_version(skill_id, version_id)
         files = await self._store.version_files(version.id)
         async with self._store.edit(skill_id) as writer:
@@ -350,9 +306,6 @@ class SkillsService:
         return await self.detail(skill_id)
 
     async def archive(self, skill_id: uuid.UUID) -> SkillDetailOut:
-        """归档；已归档的原样不动。某个 agent 的草稿或当前版本还绑定着它是 ``Conflict``，列出那些 agent；
-        只被旧版本用到的不拦。"""
-
         async with self._store.edit(skill_id) as writer:
             if writer.skill.status != STATUS_ARCHIVED:
                 users = await self._usages.skill_users(skill_id)
@@ -362,15 +315,9 @@ class SkillsService:
         return await self.detail(skill_id)
 
     async def unarchive(self, skill_id: uuid.UUID) -> SkillDetailOut:
-        """取消归档；在用的原样不动。"""
-
         return await self._set_status(skill_id, STATUS_ACTIVE)
 
     async def import_archive(self, data: bytes, *, dry_run: bool, by: uuid.UUID) -> SkillImportOut:
-        """导入一个技能压缩包。``dry_run`` 只读不写：交回读出来的标识、显示名（取标识）、描述、文件清单、
-        全部问题，以及会新建技能还是覆盖同名技能的草稿（按技能现在的标识匹配）。正式导入时有问题是
-        ``ValidationFailed``，否则新建一个只有草稿的技能，或整份替换同名技能的草稿（显示名不动），都不发布。"""
-
         parsed = read_archive(data)
         problems = list(parsed.problems)
         skill_md = parsed.files.get(SKILL_MD)
@@ -410,9 +357,6 @@ class SkillsService:
         return result
 
     async def export(self, skill_id: uuid.UUID, version_id: uuid.UUID | None) -> SkillArchive:
-        """把一个版本（不给就是最新版）打成 zip：顶层目录与文件名用技能当前的标识，``SKILL.md`` 里的
-        ``name`` 也换成它。没发布过、没有这个技能或版本是 ``NotFound``。"""
-
         skill = await self._require(skill_id)
         if version_id is None:
             if skill.latest_version_id is None:

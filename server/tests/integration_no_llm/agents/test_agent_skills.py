@@ -1,5 +1,3 @@
-"""通过完整 app 验证运行时把 agent 版本里绑定的技能装配到运行中的 Agent。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -25,8 +23,6 @@ def seen_tools() -> list[str]:
 
 @pytest.fixture
 def models(seen_tools: list[str]) -> dict[str, FunctionModel]:
-    """通过 stream_function 记录模型实际可见工具，适配流式运行。"""
-
     async def peek(_messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         seen_tools.extend(tool.name for tool in info.function_tools)
         yield "看完了"
@@ -58,6 +54,5 @@ async def test_declared_skill_reaches_the_running_agent(
     assert sent.status_code == 200, sent.text
     await settled(client, conversation_id)
 
-    # 正文加载与 references 读取工具需同时挂载，确保完整 skill 访问能力。
     assert "load_capability" in seen_tools
     assert "get_skill_reference" in seen_tools

@@ -1,9 +1,3 @@
-"""模型媒体引用与消息还原协议。
-
-媒体 tag 保存原始 URL；图片另附像素，其余类型由工具读取内容。
-tag 包含还原所需信息，无需查询存储；消息转换见 transcript.prompt_media。
-"""
-
 from __future__ import annotations
 
 import re
@@ -24,16 +18,12 @@ _LABEL_BY_KIND: Final[Mapping[MediaKind, str]] = {
 }
 
 IMAGE_CONTEXT_MAX_EDGE: Final = 1024
-"""模型输入图片的最长边；tag 始终保留原图 URL。"""
 
-# 属性值经 _escape_attr 转义后不含引号与尖括号；地址不含空白。
 _URL_ATTR = r'[^"<>\s]+'
 _OPEN = rf'<(image|video|audio|file) url="({_URL_ATTR})">'
 _TAG_RE: Final = re.compile(rf"{_OPEN}</\1>")
-"""视频、音频与文件使用的空标签。"""
 
 _OPEN_RE: Final = re.compile(_OPEN)
-"""图片开标签，后续为像素和闭标签。"""
 
 _CLOSE_RE: Final = re.compile(r"</(image|video|audio|file)>")
 
@@ -51,44 +41,31 @@ def _unescape_attr(value: str) -> str:
 
 
 def media_tag_open(kind: MediaKind, url: str) -> str:
-    """生成媒体开标签；拒绝含空白的 URL，确保可按协议还原。"""
-
     if not is_http_url(url):
         raise ValueError(f"媒体 tag 的地址只接受不含空白的 HTTP/HTTPS URL: {url!r}")
     return f'<{kind} url="{_escape_attr(url)}">'
 
 
 def media_kind_label(kind: MediaKind) -> str:
-    """媒体类型的显示名称。"""
-
     return _LABEL_BY_KIND[kind]
 
 
 def media_tag_close(kind: MediaKind) -> str:
-    """生成媒体闭标签。"""
-
     return f"</{kind}>"
 
 
 def media_tag(kind: MediaKind, url: str) -> str:
-    """生成无像素内容的完整媒体标签。"""
-
     return media_tag_open(kind, url) + media_tag_close(kind)
 
 
 @dataclass(frozen=True, slots=True)
 class MediaTag:
-    """解析后的媒体标签。"""
-
     kind: MediaKind
     url: str
     wraps: bool = False
-    """是否为包含后续像素与闭标签的开标签。"""
 
 
 def parse_media_tag(text: str) -> MediaTag | None:
-    """仅解析完整匹配的媒体标签，保留用户正文中的类似文本。"""
-
     match = _TAG_RE.fullmatch(text)
     wraps = match is None
     if match is None:
@@ -104,14 +81,10 @@ def parse_media_tag(text: str) -> MediaTag | None:
 
 
 def is_media_tag_close(text: str) -> bool:
-    """识别完整闭标签，在还原图片附件时跳过；正文中的标签字样保持原样。"""
-
     return _CLOSE_RE.fullmatch(text) is not None
 
 
 def resized_image_url(url: str, *, max_edge: int) -> str:
-    """添加 OSS 缩放参数；无法处理时抛错，避免未经缩放的原图进入模型上下文。"""
-
     _require_oss_processable(url, what=f"图片没法缩到长边 {max_edge}")
     return f"{url}?x-oss-process=image/resize,l_{max_edge}"
 
@@ -119,8 +92,6 @@ def resized_image_url(url: str, *, max_edge: int) -> str:
 def cropped_image_url(
     url: str, *, x: int, y: int, width: int, height: int, max_edge: int | None
 ) -> str:
-    """添加 OSS 原图坐标裁切参数；可选 max_edge 在裁切后缩放，越界部分由 OSS 截止至图像边界。"""
-
     _require_oss_processable(url, what="图片没法按区域裁切")
     process = f"image/crop,x_{x},y_{y},w_{width},h_{height}"
     if max_edge is not None:
@@ -129,18 +100,13 @@ def cropped_image_url(
 
 
 def image_info_url(url: str) -> str:
-    """添加 OSS 图片信息查询参数；无法处理时抛错。"""
-
     _require_oss_processable(url, what="查不了图片信息")
     return f"{url}?x-oss-process=image/info"
 
 
 def _require_oss_processable(url: str, *, what: str) -> None:
-    """校验 OSS 域名且 URL 不含已有 query，确保可追加处理参数；判定见 ``is_oss_processable``。"""
-
     if is_oss_processable(url):
         return
-    # 判定只答能不能挂；去掉 query 就能挂，毛病才在 query 上，否则先说域名。
     if is_oss_processable(urlsplit(url)._replace(query="").geturl()):
         raise ValueError(f"地址已经带了 query，没法再挂 OSS 处理参数: {url!r}")
     raise ValueError(f"这个域名不支持 OSS 处理参数，{what}: {url!r}")

@@ -17,7 +17,6 @@ import { CardGlyph } from './resource-card'
 
 const DRAFT = 'draft'
 
-/** 发布人的头像：名字的首字压在圆底上；本系统里已没有这个人时是一个空圆。 */
 function PublisherAvatar({ name }: { name: string | null }) {
   return (
     <span
@@ -41,16 +40,12 @@ type AgentHeaderProps = {
   onSelectAgent: (id: string) => void
   definitionOpen: boolean
   onEditDefinition: () => void
-  /** 版本号从大到小；还在读时为 undefined。 */
   versions: readonly AgentVersion[] | undefined
-  /** 正在看的版本，看草稿时为 null。 */
   viewingVersionId: string | null
   onViewVersion: (versionId: string | null) => void
-  /** 草稿与当前版本不同（含还没保存的修改）。 */
   unpublished: boolean
 }
 
-/** 左栏头部：切换或新建 agent、改定义、看版本。归档的 agent 不进切换菜单。 */
 export function AgentHeader({
   agents,
   agentEntryRef,

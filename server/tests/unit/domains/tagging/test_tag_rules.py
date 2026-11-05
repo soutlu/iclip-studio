@@ -1,5 +1,3 @@
-"""标签纯规则的边界：长度上限、跨维度同名、AI 取值计数与改名时排除自身。"""
-
 from __future__ import annotations
 
 import uuid
@@ -103,7 +101,6 @@ def test_switching_a_dimension_to_ai_counts_its_values_against_the_limit() -> No
     over = ai_tree(AI_VALUE_LIMIT - 10, 11)
     with pytest.raises(ValidationFailed, match="将有 501 个，超过上限 500 个"):
         check_change(over, over[1].id, name=None, auto_fill="ai", sets_auto_fill=True)
-    # 已经是 AI 的维度再设一次不重算。
     full = ai_tree(AI_VALUE_LIMIT, 0)
     check_change(full, full[0].id, name=None, auto_fill="ai", sets_auto_fill=True)
 

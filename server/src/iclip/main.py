@@ -1,5 +1,3 @@
-"""CLI serve 入口。装配发生在每个 worker import ``iclip.asgi`` 时。"""
-
 from __future__ import annotations
 
 import argparse
@@ -16,7 +14,6 @@ def main() -> None:
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=7788)
     parser.add_argument("--reload", action="store_true")
-    # 可重复；给了就只看这些目录（uvicorn 不再默认看当前目录），不给照 uvicorn 默认。
     parser.add_argument("--reload-dir", action="append", dest="reload_dirs")
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
@@ -27,8 +24,6 @@ def main() -> None:
         parser.error("--reload 与多 worker 互斥")
 
     os.environ["CONFIG_FILE"] = args.config
-    # 这里先配一遍给监督进程（reload / 多 worker 时 uvicorn 的启动行由它打）；
-    # 每个 worker 进程装配 app 时再按 config.yaml 的级别与格式配自己那一份。
     configure_logging("INFO", "console")
     uvicorn.run(
         "iclip.asgi:app",
@@ -37,7 +32,6 @@ def main() -> None:
         reload=args.reload,
         reload_dirs=args.reload_dirs,
         workers=args.workers if not args.reload else 1,
-        # 不让 uvicorn 自带一套 handler，它的日志与其他来源同一格式
         log_config=None,
     )
 

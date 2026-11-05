@@ -19,7 +19,6 @@ test('从侧栏进资料库，按画幅与关键词筛，筛选留在地址里�
   await expect(main.getByRole('article')).toHaveCount(1)
   await expect(page).toHaveURL(/q=/)
 
-  // mock 会话不跨刷新保存，用离开再退回验证筛选从地址还原。
   await page.getByRole('button', { name: '需求单' }).click()
   await expect(page).toHaveURL('/tasks')
   await page.goBack()

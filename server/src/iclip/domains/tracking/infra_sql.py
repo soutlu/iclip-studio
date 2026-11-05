@@ -1,5 +1,3 @@
-"""埋点事件表与它的 Postgres 仓储。只追加；发生时刻统一用数据库时钟。"""
-
 from __future__ import annotations
 
 import uuid
@@ -31,14 +29,12 @@ tracking_events_table = Table(
     metadata_obj,
     Column("id", Uuid, primary_key=True),
     Column("name", Text, nullable=False),
-    # 生成记录从不硬删，主语可以建外键：事件必须指着一条真实存在的记录。
     Column(
         "job_id",
         Uuid,
         ForeignKey(f"{DB_SCHEMA}.generation_jobs.id", name="fk_tracking_events_job"),
         nullable=True,
     ),
-    # 不关联对话外键，与生成记录同一做法。
     Column("conversation_id", Uuid, nullable=True),
     Column(
         "user_id",
@@ -46,7 +42,6 @@ tracking_events_table = Table(
         ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_tracking_events_user", ondelete="cascade"),
         nullable=False,
     ),
-    # 不关联 api_keys 外键，保留 key 删除后的审计身份。
     Column("api_key_id", Uuid, nullable=True),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
     CheckConstraint(
@@ -57,10 +52,6 @@ tracking_events_table = Table(
     Index("ix_tracking_events_name", "name", "occurred_at"),
 )
 
-# 可下载的视频就是素材片：成功、有地址，且是出片（没有来源的 generate）或合成（compose）。按表名直接查，
-# 不 import 生成域；'video' / 'generate' / 'compose' / 'completed' 镜像 KIND_VIDEO /
-# OPERATION_GENERATE / OPERATION_COMPOSE / STATUS_COMPLETED，集成测试的种子取自那些常量，
-# 生成域改词这里的用例就红。
 _DOWNLOADABLE: Final = text("""
 SELECT EXISTS (
     SELECT 1 FROM iclip.generation_jobs g
@@ -72,8 +63,6 @@ SELECT EXISTS (
 
 
 class SqlTrackingRepository:
-    """``TrackingRepository`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

@@ -5,16 +5,11 @@ import { filmBeats } from './music'
 import type { Refusal } from './result'
 import { componentMsOf, cutsOf, layer0End, musicOf, sourceOf } from './timeline'
 
-/** 离拍点这么近就算在拍上 */
 const BEAT_EPS_MS = 10
 
 export type BeatSyncResult =
   { ok: true; draft: WholeFilmDraft; moved: number; kept: number } | { ok: false; refusal: Refusal }
 
-/**
- * 切点能挪的范围：改切点前一段的时长，后面整体跟着移；往后挪要出点之后还有画面（视频段看素材，
- * 组件段看组件自己的时长）
- */
 const cutRange = (draft: WholeFilmDraft, before: Layer0Clip, context: EditContext) => {
   const room = MAX_FILM_MS - layer0End(draft)
   const length =
@@ -25,11 +20,6 @@ const cutRange = (draft: WholeFilmDraft, before: Layer0Clip, context: EditContex
   return { min: MIN_CLIP_MS - before.duration, max: Math.min(footage, room) }
 }
 
-/**
- * 切点从 T 挪到 target 会不会切进口播，按切点前一段素材的字幕句子判断（后一段的入点不动）：
- * 往前挪不能截掉任何一句；往后挪时切点原本不能在句子中间，新出点也不能落在句子中间。
- * 素材还没有字幕记录时不知道口播在哪，不拦。
- */
 const cutsSpeech = (before: Layer0Clip, delta: number, context: EditContext): boolean => {
   if (before.type !== 'video') return false
   const subtitle = sourceOf(context, before.sourceJobId).subtitle
@@ -41,16 +31,10 @@ const cutsSpeech = (before: Layer0Clip, delta: number, context: EditContext): bo
   return inside(out) || inside(next)
 }
 
-/**
- * 自动卡点：音乐不动，把每个切点挪到一拍之内最近的拍点，挪的是切点前一段的出点，后面的段跟着移。
- * 会切断口播、或素材不够长的切点保持不动。
- * moved 只数这次真的挪到拍上的切点，原本就在拍上的切点不算 moved 也不算 kept。
- */
 export const autoBeatSync = (draft: WholeFilmDraft, context: EditContext): BeatSyncResult => {
   if (!draft.music) return { ok: false, refusal: 'no-music' }
   const [first, second] = musicOf(context, draft.music.jobId).beats
   if (!first || !second) return { ok: false, refusal: 'no-beats' }
-  // 拍间距取歌里前两拍，同设计稿
   const gap = second.timeMs - first.timeMs
   const beats = filmBeats(draft, context)
   const distance = (beat: MusicBeat, at: number) => Math.abs(beat.timeMs - at)

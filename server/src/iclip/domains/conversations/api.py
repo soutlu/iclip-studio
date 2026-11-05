@@ -1,7 +1,3 @@
-"""对话 HTTP 端点。对话读取使用 agent:read，Agent 目录和写操作使用 agent:run。
-
-不可见对话返回 404；治理者可跨属主读取，写入仍限属主。"""
-
 from __future__ import annotations
 
 import uuid
@@ -81,8 +77,6 @@ from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 @contextmanager
 def _render_unavailable_as_502() -> Generator[None]:
-    """渲染服务不可用不是调用方的错，照 SSO / PMS 不可达的先例答 502，``detail`` 是原因。"""
-
     try:
         yield
     except WholeFilmRenderUnavailable as exc:
@@ -94,7 +88,6 @@ def create_conversations_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/conversations", tags=["conversations"])
 
-    # 活动状态独立于对话记录，在序列化前批量读取。
     async def _out(conversation: Conversation) -> ConversationOut:
         activities = await service.activities([conversation.id])
         return conversation_out(conversation, activities[conversation.id])
@@ -597,8 +590,6 @@ def create_conversations_router(
         await service.delete(principal, conversation_id)
         return Response(status_code=204)
 
-    # 带路径参数的单行读放在最后：``/agents``、``/search``、``/audit``、``/video-progress``、
-    # ``/ungrouped`` 先匹配。
     @router.get("/{conversation_id}", response_model=ConversationEnvelope)
     async def read_conversation(
         conversation_id: uuid.UUID,
@@ -619,12 +610,6 @@ PreviewAgentId = Annotated[str, Path(min_length=1, max_length=MAX_AGENT_ID_CHARS
 
 
 def create_previews_router(service: ConversationService) -> APIRouter:
-    """agent 测试预览：开一段新的、换掉自己在这个 agent 上的当前预览，要 ``agent:manage``；约定见合同「Agent 配置」
-    一节。
-
-    预览的 transcript、发消息、订阅与读工作区文件走对话的那几个端点，预览 id 当对话 id 用；谁能用由对话服务
-    一处判（只有开它的人、且他此刻持 ``agent:manage``）。没有列表端点。"""
-
     router = APIRouter(prefix="/agents/{agent_id}/previews", tags=["agents"])
 
     @router.post("", response_model=AgentPreviewOut, status_code=201)

@@ -1,9 +1,3 @@
-/**
- * 工具行，结构照 Kimi ToolDisclosure / ToolPanel：20px 图标栏 + 动词 + 对象 + 小箭头，行尾只放状态；
- * 展开是一块 13 行封顶、内部滚动的面板。整行点了展开，文件名是另一个按钮，点了在工作台打开那份文件。
- * 每次调用只按自己的协议状态画：成功不画图标，失败红 ×，被拒绝灰 × 加「已拒绝」，转入后台的写「已转入后台」，不看前后调用。
- */
-
 import { use, useState, type ReactNode } from 'react'
 import type { ToolCallFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
@@ -36,9 +30,7 @@ import { WorkbenchLinksContext } from './workbench-links'
 
 type ToolLineProps = {
   frame: ToolCallFrame
-  /** 本段对话的全部交互，用 approvalId 认出被拒绝的调用。 */
   interactions: ReadonlyMap<string, TranscriptInteraction>
-  /** 这次调用转入了后台（有以它的 toolCallId 为 taskId 的后台工具任务）。 */
   backgrounded: boolean
 }
 
@@ -49,13 +41,11 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
   const panel = delegated ? undefined : toolPanel(frame, outcome)
   const media = toolMedia(frame)
   const [open, setOpen] = useState(false)
-  // 面板第一次展开才挂载，长文件与 Markdown 不在折叠时白排版。
   const [mounted, setMounted] = useState(false)
   const [preview, setPreview] = useState<LightboxMedia | null>(null)
   const link = useWorkspaceFileLink()
   const linked = use(WorkbenchLinksContext)
   const { detail: name, file } = card
-  // 被拒绝的那一步没动过文件，文件名只写字；没有工作台时也只写字。
   const openFile =
     file === undefined || outcome === 'denied' || !linked ? undefined : () => link.open(file)
 
@@ -81,7 +71,6 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
       ) : (
         <div className="group/row relative flex min-h-5 items-center gap-2 text-body leading-5 text-chat-secondary-text">
           {panel === undefined ? null : (
-            // 整行的展开按钮铺在底下，行内容不接指针事件；文件名按钮浮在它上面，两个目标互不嵌套。
             <button
               aria-expanded={open}
               aria-label={`${open ? '收起' : '展开'}「${card.label}${name === undefined ? '' : ` ${name}`}」的详情`}
@@ -135,7 +124,6 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
   )
 }
 
-/** 20px 图标栏，与展开体的缩进、引导线对齐。 */
 export function RowIcon({ name }: { name: Parameters<typeof Icon>[0]['name'] }) {
   return (
     <span className="pointer-events-none grid size-5 shrink-0 place-items-center text-chat-muted-text">
@@ -144,7 +132,6 @@ export function RowIcon({ name }: { name: Parameters<typeof Icon>[0]['name'] }) 
   )
 }
 
-/** 展开体：左缩进到图标栏之后，图标栏中线上一条虚线引导。 */
 export function Indented({ children }: { children: ReactNode }) {
   return (
     <div className="relative pt-1.5 pb-1 pl-7">
@@ -157,10 +144,6 @@ export function Indented({ children }: { children: ReactNode }) {
   )
 }
 
-/**
- * 行尾：检索命中数；运行中转圈，失败红 ×，被拒绝灰 × 加字。成功不画，转入后台的写「已转入后台」：
- * 这张卡只记启动，进度看输入框上方的后台任务卡。
- */
 function Tail({
   backgrounded,
   frame,
@@ -197,7 +180,6 @@ function Tail({
   )
 }
 
-/** 文件名按钮：正文字体，悬停变墨色加细下划线，点了在工作台打开。浮在整行展开按钮之上。 */
 function FileName({
   className,
   name,
@@ -222,7 +204,6 @@ function FileName({
   )
 }
 
-/** 面板头：文件名加复制；检索没有头。 */
 function PanelView({ panel, title = null }: { panel: ToolPanel; title: ReactNode }) {
   const copy = panelCopyText(panel)
   return (
@@ -264,7 +245,6 @@ function PanelBody({ panel }: { panel: ToolPanel }) {
       )
     case 'diff':
       return (
-        // 改动行自带左右内边距与整行底色，抵消面板正文的内边距。
         <div aria-label="改动" className="-mx-3" role="region">
           <EditLines after={panel.after} before={panel.before} />
         </div>
@@ -280,7 +260,6 @@ function PanelBody({ panel }: { panel: ToolPanel }) {
   }
 }
 
-/** 检索命中：文件名在前，命中的那一行在后；能对上工作区文件的整条可点。 */
 function MatchesBody({
   matches,
   truncated,
@@ -327,7 +306,6 @@ function MatchRow({ match }: { match: SearchMatch }) {
   )
 }
 
-/** 派出了子代理的卡：点开的是工作台里它那条流。产物参数记在 URL 上，刷新与分享都还在；再点一次也能把折叠的工作台重新展开。 */
 function DelegatedHead({
   children,
   icon,
@@ -367,7 +345,6 @@ function DelegatedHead({
   )
 }
 
-/** 照 Kimi media-tool：图本身就是正文，点开灯箱看原图。 */
 function MediaWall({
   items,
   onOpen,
@@ -378,7 +355,6 @@ function MediaWall({
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((item) => {
-        // 没有标题的图（如读图）只画图本身，可访问名称退回「图片」。
         const name = item.caption ?? '图片'
         return (
           <figure className="flex w-[120px] min-w-0 flex-col gap-1.5" key={item.url}>

@@ -1,6 +1,3 @@
-"""按随代码发布的声明建模型：每家供应商的每个接口建出对应的模型类，用上密钥里的接口地址；思考档位按
-建出的类写成通用 ``thinking`` 或 ``openai_reasoning_effort``。"""
-
 from __future__ import annotations
 
 import pytest
@@ -69,7 +66,6 @@ def test_each_declared_api_builds_its_model_class_on_the_credential_address(
         shipped, llm(name, api), {"api_key": "sk-test", "base_url": base_url}, "low"
     )
 
-    # OpenAIResponsesModel 不是 OpenAIChatModel 的子类，按类型精确比对。
     assert type(model) is model_class
     assert model.model_name == name
     assert endpoint(model) == base_url

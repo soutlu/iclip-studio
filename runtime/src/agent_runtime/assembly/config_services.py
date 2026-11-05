@@ -1,5 +1,3 @@
-"""技能库、模型供应商、MCP 服务与 agent 配置四块服务的装配：运行时服务的组合根与一次性切换命令共用这一份。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -38,8 +36,6 @@ from agent_runtime.secrets import CredentialCipher
 
 @dataclass(frozen=True, slots=True)
 class ConfigServices:
-    """四块配置的服务，读写同一个库；``mcp_index`` 是 MCP 服务的名册，由 ``mcp_servers`` 维护，给工具卡读。"""
-
     skills: SkillsService
     model_providers: ModelProviderService
     mcp_servers: McpServerService
@@ -54,16 +50,6 @@ def build_config_services(
     plugins: PluginRegistry,
     probe: CredentialProbe | None = None,
 ) -> ConfigServices:
-    """建四块配置的服务。
-
-    agent 配置与技能库、模型供应商、MCP 服务互相要用：那三边经端口问 agent 表「谁在用」，agent 配置经端口查
-    它们。先建 agent 的仓储交给那三边，再用它们的服务装 agent 配置。``plugins`` 是 agent 配置校验插件与列出
-    可挂插件时看的登记表；``probe`` 不给就用真实的试连。MCP 服务总是真连。密钥的机密字段与 MCP 服务的
-    请求头用同一串加密 key。
-
-    供应商声明里有 pydantic-ai 不认的 provider 时报错（见 ``require_known_providers``）。
-    """
-
     agent_store = SqlAgentStore(engine)
     references = AgentReferences(agent_store)
     cipher = CredentialCipher(credential_keys)

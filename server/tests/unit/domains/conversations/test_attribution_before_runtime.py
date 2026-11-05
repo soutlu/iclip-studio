@@ -1,9 +1,3 @@
-"""建对话、做同款、分叉在运行时写任何东西之前挡掉的那几种：需求单或合集不在、做同款认不到源。不连库。
-
-运行时的会话与文件各开各的事务，用例最后才落对话行；在这之前就能判的失败要先判，否则留下
-一份没有对话行、谁也寻址不到的会话。外键仍兜底，见集成测试 ``test_missing_attribution_is_still_reported_as_such``。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -49,8 +43,6 @@ def _untouched(*_: object, **__: object) -> NoReturn:
 
 
 class SourceOnlyRepo:
-    """只读得到源对话；落行一碰就报错。"""
-
     async def get(
         self, conversation_id: uuid.UUID, *, owner: uuid.UUID | None, include_deleted: bool = False
     ) -> Conversation:
@@ -63,8 +55,6 @@ class SourceOnlyRepo:
 
 
 class UntouchedRuntime:
-    """运行时会话的替身：开会话、分叉、拷文件一碰就报错，用来断言运行时什么都没写。"""
-
     async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
         raise AssertionError("前置校验没过，不该在运行时开会话")
 

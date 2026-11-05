@@ -1,6 +1,3 @@
-"""技能库端点：只有 ``agent:manage``（root）能用，editor 一律 403；带斜杠的路径原样往返，冲突 409，
-校验失败 422，导出给 zip、导入用 multipart。"""
-
 from __future__ import annotations
 
 import io
@@ -188,9 +185,6 @@ async def test_import_creates_a_draft_only_skill(
 async def test_renaming_a_draft_file_moves_it_in_one_step(
     client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """内容与 hash 不变、旧路径没了；hash 对不上、新路径已有文件是 409，SKILL.md、范围外的新路径与原地
-    改名是 422，原文件不在是 404。被拒的改名什么都不动。"""
-
     await login_as_root(client, migrated_pg)
     created = await client.post(
         "/skills", json={"name": "pdf-tools", "displayName": "PDF 工具", "description": "处理 PDF"}
@@ -238,8 +232,6 @@ async def test_renaming_a_draft_file_moves_it_in_one_step(
 async def test_skill_answers_name_the_people_behind_the_ids(
     app: FastAPI, client: httpx.AsyncClient, migrated_pg: str
 ) -> None:
-    """列表、详情、版本都带操作人的显示名；运行时记下的人在本系统里没有时为 null。"""
-
     author = await login_as_root(client, migrated_pg)
     await set_display_name_in_db(migrated_pg, "root@example.com", "管理员")
     created = await client.post(

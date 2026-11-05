@@ -1,5 +1,3 @@
-/** 按任务执行次数：一段对话一行，接口排序与翻页；异常只用图标放在对应那项数据前，点整行展开镜头带与按模型用量。 */
-
 import { Link } from '@tanstack/react-router'
 import { Fragment, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react'
 import { Icon } from '@/shared/icons'
@@ -27,7 +25,6 @@ type ExecutionsTableProps = {
 
 const COLUMNS = 9
 
-/** 数字与短字段列收成内容宽，余下宽度按 3:2 分给「对话」「需求单」。 */
 const FIT_TD = cn(TD, 'w-px')
 
 export function ExecutionsTable({
@@ -115,7 +112,6 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
   const task = execution.taskTitle ?? '无'
   const delivered = execution.deliveredAt !== null
 
-  // 点整行展开或收起；点行里的对话名是打开对话，不展开。
   const onClick = (event: MouseEvent<HTMLTableRowElement>) => {
     if (event.target instanceof Element && event.target.closest('a, button') !== null) return
     onToggle()
@@ -132,7 +128,6 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
       <tr
         aria-expanded={open}
         aria-label={`${execution.title}，${open ? '收起' : '展开'}镜头与模型用量`}
-        // 行贴满卡边，焦点环往里画，不被卡片与滚动容器裁掉。
         className="group/row cursor-pointer ui-focus [--state-focus-offset:calc(var(--state-focus-ring)*-1)] hover:bg-state-hover"
         onClick={onClick}
         onKeyDown={onKeyDown}
@@ -205,7 +200,6 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
   )
 }
 
-/** 按模型的用量：一个模型一行。 */
 function UsageList({ usage }: { usage: Execution['usage'] }) {
   if (usage.length === 0) return null
   return (
@@ -225,7 +219,6 @@ function UsageList({ usage }: { usage: Execution['usage'] }) {
   )
 }
 
-/** 出片与否：中性状态点加文字，是为实心点、否为空心点，不用判断色。 */
 function DeliveredMark({ delivered }: { delivered: boolean }) {
   return (
     <span className={cn('inline-flex items-center gap-1.5', !delivered && 'text-on-surface-muted')}>
@@ -244,7 +237,6 @@ function DeliveredMark({ delivered }: { delivered: boolean }) {
 const TONE_CLASS = { bad: 'text-error', warn: 'text-warning' } as const
 const TONE_ICON = { bad: 'alert', warn: 'warning' } as const
 
-/** 异常图标：悬停看是哪种、门槛多少；读屏读同一句话。 */
 function AnomalyFlag({
   kind,
   thresholds,

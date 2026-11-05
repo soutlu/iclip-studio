@@ -1,4 +1,3 @@
-/** jsdom 的媒体读取边界：按各套测试自己的文件表返回关键帧与时长，画面固定为 720×1280、无原声轨。 */
 export const createMediaReaderMock = (
   files: ReadonlyMap<string, { keyframes: readonly number[]; duration: number }>,
 ) => {

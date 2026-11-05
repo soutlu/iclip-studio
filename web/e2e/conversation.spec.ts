@@ -2,13 +2,9 @@ import { expect, test } from '@playwright/test'
 import { openConversation } from './helpers'
 import { login } from './login'
 
-/** MSW 里的长对话（14 轮历史），按地址打开，不在侧栏。 */
 const LONG_CONVERSATION = '/c/0199aaaa-0000-7000-8000-0000000000aa'
 
-// Headless Chromium 默认隐藏滚动条，必须显示它才能检验显隐引起的正文重排。
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } })
-
-// MSW 同时提供 REST 历史与 WebSocket 流式批次，用于验证浏览器中的合并渲染。
 
 test('点开一段对话：历史铺开，回复逐字长出来', async ({ page }) => {
   await openConversation(page, '夜景延时素材生成')
@@ -18,7 +14,6 @@ test('点开一段对话：历史铺开，回复逐字长出来', async ({ page 
 
   await expect(page.getByText('第 1 个问题')).toBeVisible()
   await expect(page.getByText('这是第 2 轮的回复。')).toBeVisible()
-  // 第 3 轮边流式边写同一文件，文件名随时会出现在它的工具行里，所以只在历史轮次里找读取行。
   const historyTurn = page.getByRole('article', { name: '第 2 轮' })
   await expect(historyTurn.getByText('读取文件')).toBeVisible()
   await expect(
@@ -27,7 +22,6 @@ test('点开一段对话：历史铺开，回复逐字长出来', async ({ page 
 
   await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('listitem').filter({ hasText: '拆出 3 个镜头' })).toBeVisible()
-  // 正文里的路径是行内代码，按 code 标签定位。
   await expect(page.locator('code', { hasText: 'shots/storyboard.md' })).toBeVisible()
 })
 
@@ -73,7 +67,6 @@ test('长对话可以滚动，鼠标离开后正文位置与宽度保持稳定',
   }))
   await page.getByRole('heading', { name: '夜景延时素材生成' }).hover()
 
-  // 跨过两次滚动条空闲收起周期，逐帧检查，避免只看最终位置漏掉中间的跳动。
   const samples = await scroller.evaluate(async (element) => {
     const positions: { height: number; top: number; width: number }[] = []
     const end = performance.now() + 1500
@@ -103,7 +96,6 @@ test('在会话页发一条：气泡先出来，回复跟着长出来', async ({
   await openConversation(page, '夜景延时素材生成')
   await expect(page.getByText('第 1 个问题')).toBeVisible()
 
-  // 首次订阅会启动演示轮；末轮完成且会话空闲时才允许重新生成。
   const demoTurn = page.getByRole('article').filter({ hasText: '把这段素材拆一下' })
   await expect(demoTurn.getByRole('button', { name: '重新生成', exact: true })).toBeEnabled({
     timeout: 15_000,
@@ -125,7 +117,6 @@ test('在跑的时候再发一条：排队、追加、停止', async ({ page }) 
   await openConversation(page, '夜景延时素材生成')
   await expect(page.getByText('第 1 个问题')).toBeVisible()
 
-  // 等待运行开始后按 Enter 发送；运行中发送按钮已替换为停止。
   await page.getByRole('button', { name: '停止' }).waitFor()
   await page.getByLabel('输入消息').fill('顺便配个音')
   await page.getByLabel('输入消息').press('Enter')
@@ -151,7 +142,6 @@ test('长对话首屏只铺最近 10 轮，点「加载更早」接上前面几�
   await page.setViewportSize({ height: 900, width: 1440 })
   await page.goto('/')
   await login(page)
-  // 原型环境的登录态在 MSW 内存里，整页跳转会丢；用应用内导航打开不在侧栏的长对话。
   await page.evaluate((path) => {
     window.history.pushState(null, '', path)
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -172,7 +162,6 @@ test('长对话首屏只铺最近 10 轮，点「加载更早」接上前面几�
   await loadEarlier.click()
   await expect(page.getByText('长对话第 1 轮的回复。')).toBeAttached()
   await expect(loadEarlier).toHaveCount(0)
-  // 旧页插在上面，第 5 轮仍停在原处；容差留给按钮消失带来的那一点位移。
   const after = await anchor.boundingBox()
   expect(Math.abs((after?.y ?? 0) - before.y)).toBeLessThan(60)
 })

@@ -1,8 +1,3 @@
-/**
- * 一段对话的消息区与输入区：轮次、乐观气泡、进行中状态、排队消息、审批卡、后台任务与输入框。
- * 对话页在它上面加页头；Agent 配置页的测试预览直接用它，会话在发第一条消息时才开。
- */
-
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import {
@@ -60,14 +55,12 @@ const frameAwaiting = (
         frame.kind === 'tool' && frame.approvalId === interactionId,
     )
 
-/** 点了就发、失败弹一条提示的操作；放在模块级，包它的回调才能保持引用不变。 */
 const act = (work: Promise<void>) => {
   void work.catch((error: unknown) => {
     toast.error(errorMessageOf(error, '操作失败'))
   })
 }
 
-/** 参考 Kimi Requesting → Working：助手正文、思考非空或存在工具块。 */
 const hasAssistantOutput = (turn: TranscriptTurn | undefined): boolean =>
   turn?.steps.some((step) =>
     step.frames.some((frame) => {
@@ -78,27 +71,17 @@ const hasAssistantOutput = (turn: TranscriptTurn | undefined): boolean =>
   ) ?? false
 
 export type ConversationTimelineProps = {
-  /** 会话 id；null 表示还没开，第一次发送时先经 `openConversation` 开好。 */
   conversationId: string | null
-  /** 会话还没开时，第一次发送先调它开会话、交回会话 id；失败时这次发送失败，输入内容恢复。 */
   openConversation?: (() => Promise<string>) | undefined
-  /** 只读时输入框换成这条说明，右侧放 `backLink`；不给就能发消息。 */
   readOnly?: { note: string; backLink?: ReactNode } | undefined
-  /** 分叉成功后去副本；导航归路由层，不给回调就没有分叉入口。 */
   onForked?: ((conversationId: string) => void) | undefined
-  /** 血缘提示里回源对话的链接，由路由层按源 id 造。 */
   sourceLink?: ((conversationId: string) => ReactNode) | undefined
-  /** 空输入框的提示。 */
   placeholder?: string | undefined
-  /** 盖在消息区上的另一块内容；消息区仍在原位、保留滚动位置，只是看不见，输入区照常可用。 */
   overlay?: ReactNode
-  /** 发送失败写在输入框上方，不弹 toast；下一次发送成功时清掉。 */
   inlineSendError?: boolean | undefined
-  /** 所在页面有没有工作台；没有时在工作台打开东西的入口都不出现（见 WorkbenchLinksContext）。 */
   workbench?: boolean | undefined
 }
 
-/** 保留原内容用于校验末轮身份；重新生成可能复用轮号。 */
 type EditingTurn = {
   turnId: string
   content: readonly PromptContentPart[]
@@ -116,7 +99,6 @@ export function ConversationTimeline({
   workbench = true,
 }: ConversationTimelineProps) {
   const { loadOlder, refresh, view } = useTranscript(conversationId)
-  // 乐观气泡与在途那一轮存在对话级的 store 里，离开页面再回来仍在，读取池也据此判断本地是否有未完成的发送。
   const { state: local, store: localPrompts } = useLocalPrompts(conversationId)
   const { pending, inFlightPromptId } = local
   const [editingTurn, setEditingTurn] = useState<EditingTurn | null>(null)
@@ -145,17 +127,14 @@ export function ConversationTimeline({
   const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
   const loadEarlier = () => {
     keepPlace()
-    // 失败由视图的 loadOlderError 呈现成「重试」，这里不再另报。
     void loadOlder().catch(() => {})
   }
-  // 每次仅显示一张审批卡；其他待处理交互依次展示。
   const approval = view.pendingInteractions.find(
     (interaction) => interaction.interactionKind === 'approval',
   )
 
   const queued = view.prompts.filter((prompt) => prompt.status === 'queued')
   const running = view.prompts.find((prompt) => prompt.status === 'running')
-  // inFlight 表示本地提交状态，turnActive 取 transcript meta；队列不参与 working 判定。
   const latestTurn = turns.at(-1)
   const turnActive = view.activity === 'turn'
   const timeline: LocalTimeline = { prompts: view.prompts, turnActive, turns }
@@ -164,15 +143,12 @@ export function ConversationTimeline({
   const settled = inFlightSettled(local, timeline)
   const inFlight = inFlightPromptId !== null && !settled
 
-  // 收尾在渲染时就已算进 inFlight；store 不能在渲染中写，清掉记录放到提交之后。
   useEffect(() => {
     if (conversationId !== null && settled && inFlightPromptId !== null)
       localPrompts.settle(conversationId, inFlightPromptId)
   }, [conversationId, inFlightPromptId, localPrompts, settled])
   const working = inFlight || turnActive
-  // 重新生成仅允许空闲对话末轮；运行、排队或本地提交中均视为忙，与服务端 409 条件一致。
   const conversationBusy = working || hasLivePrompts
-  // 同时核对轮号和原内容，防止末轮替换或轮号复用后继续修改旧轮。
   const editing =
     editingTurn !== null &&
     latestTurn?.turnId === editingTurn.turnId &&
@@ -180,12 +156,10 @@ export function ConversationTimeline({
       ? editingTurn
       : null
   const retry = turnActive ? latestTurn?.steps.at(-1)?.retry : undefined
-  // 刚发出去的那句还没有自己的轮时，末轮是上一句的，不拿它的输出当这次的进度。
   const currentTurn =
     inFlight && !turns.some((turn) => turn.triggerPromptId === inFlightPromptId)
       ? undefined
       : latestTurn
-  // 卡在审批上时轮次仍算在跑，但该轮到用户了：状态行换成「等待审批」、吉祥物停住，不再像在忙。
   const awaitingApproval = approval !== undefined
   const workingLabel = awaitingApproval
     ? conversationStatusLabel('approval')
@@ -196,7 +170,6 @@ export function ConversationTimeline({
         : '正在思考…'
   const showEmptyState = view.status === 'ready' && turns.length === 0 && bubbles.length === 0
 
-  /** 发送失败时撤销乐观气泡，输入框负责恢复内容；气泡由带同一 promptId 的轮或插话块接替。 */
   const dispatch = async (
     parts: readonly ComposerPart[],
     request: (
@@ -213,7 +186,6 @@ export function ConversationTimeline({
       if (openConversation === undefined) throw new Error('会话还没开，无法发送')
       target = await openConversation()
     }
-    // 挂气泡也放进 try：任何一步出错都撤回并把错误交给输入框，内容不会丢。
     let startsFlight = false
     try {
       startsFlight = localPrompts.begin(target, { content, promptId }, timeline)
@@ -228,8 +200,7 @@ export function ConversationTimeline({
   const send = (parts: readonly ComposerPart[]) =>
     editing === null
       ? dispatch(parts, (target, promptId, content) => submitPrompt(target, { content, promptId }))
-      : // 修改末轮后服务端会替换旧轮，新轮带的是这次的 promptId。
-        dispatch(parts, async (target, promptId, content) => {
+      : dispatch(parts, async (target, promptId, content) => {
           await regeneratePrompt(target, editing.turnId, { content, promptId })
           setEditingTurn(null)
         })
@@ -238,8 +209,6 @@ export function ConversationTimeline({
     toast.success('已另开一个任务')
     onForked?.(forked)
   })
-  // 交给按轮 memo 的回调保持引用不变：末轮流式更新时历史轮不重渲，正文节点与其中的选区都还在。
-  // 有轮才有这些入口，有轮会话就已经开了。
   const { start: startFork } = fork
   const editTurn = useCallback(
     (turn: TranscriptTurn) => setEditingTurn({ content: turn.content, turnId: turn.turnId }),
@@ -294,9 +263,7 @@ export function ConversationTimeline({
         >
           <div
             className={cn(
-              // 轮间 28px：有悬停的设备上，历史轮悬停才露出的终态栏（24px）叠在这段空隙里，见 ConversationTurn。
               'mx-auto flex min-h-full w-full max-w-(--layout-home-read-max) flex-col gap-7 px-5 pt-4',
-              // 尾部留白与下方渐隐等高：滚到底时最后一行正好停在渐隐之上。
               showEmptyState ? 'pb-4' : 'pb-8',
             )}
           >
@@ -321,7 +288,6 @@ export function ConversationTimeline({
                 key={turn.turnId}
                 latest={turn.turnId === latestTurn?.turnId}
                 onEdit={canWrite && turn.turnId === latestTurn?.turnId ? editTurn : undefined}
-                // 分叉不写源对话，别人的、已删的都分得动，所以不受只读限制。
                 forkDisabled={conversationBusy || fork.isPending}
                 onFork={onForked === undefined ? undefined : forkTurn}
                 onRegenerate={
@@ -341,7 +307,6 @@ export function ConversationTimeline({
               </div>
             ) : null}
             <PromptQueue
-              // 等待审批时不能向当前轮追加消息。
               canSteer={running !== undefined && approval === undefined}
               onDiscard={(promptId) => onSession((id) => abortPrompt(id, promptId))}
               onSteer={(promptId) => onSession((id) => steerPrompt(id, promptId))}
@@ -375,7 +340,6 @@ export function ConversationTimeline({
         {overlaid ? (
           <div className="absolute inset-0 overflow-y-auto">{overlay}</div>
         ) : sticking ? null : (
-          // 只有图标的圆钮：窄栏里带字的胶囊会压住正文。
           <button
             aria-label="回到底部"
             className="absolute bottom-4 left-1/2 grid size-(--control-height-sm) -translate-x-1/2 animate-in ui-state cursor-pointer place-items-center rounded-full border-[0.5px] border-chat-hairline bg-top-layer text-chat-secondary-text shadow-[var(--shadow-1)] ui-focus duration-(--dur-s) ease-(--ease-decel) fade-in slide-in-from-bottom-2"
@@ -404,7 +368,6 @@ export function ConversationTimeline({
             />
           )}
           {view.forkedFrom === null || sourceLink === undefined ? null : (
-            // 说明最多折两行；图标与右侧链接对齐第一行，链接不收缩。
             <p
               aria-label="分叉来源"
               className="flex items-start justify-between gap-3 rounded-lg border-[0.5px] border-chat-hairline bg-top-layer px-4 py-3 text-body-sm text-chat-secondary-text"

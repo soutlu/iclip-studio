@@ -1,7 +1,3 @@
-"""会话归属应用的迁移：已有会话回填为 ``video``，之后新行必须写明应用。
-
-升级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -17,10 +13,8 @@ from iclip.platform.db.engine import build_engine
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "4d1a8c6e2b90"
-"""0043，会话表还没有应用。"""
 
 AFTER = "fd5fe51c6ffc"
-"""0044，会话归属应用。"""
 
 
 async def _execute(url: str, statement: str, params: dict[str, object]) -> None:

@@ -1,9 +1,3 @@
-"""子代理的 transcript：父侧把 delegate_task 与子运行对上号，子侧把子运行镜像成独立一条流。
-
-子代理的 agent id 就是它落库的 run id，轮 id 恒为 t1；父工具卡与子运行的关联记在官方工具账本里，
-实时与历史两条路都据此重建。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -36,23 +30,14 @@ from agent_runtime.transcript.ops import MAIN_AGENT_ID, TextContent
 _logger = structlog.stdlib.get_logger(__name__)
 
 CHILD_TURN_ID = "t1"
-"""子代理一次运行就是一轮，轮 id 与序号都固定。"""
 
 _DRAIN_SECONDS = 5.0
-"""等镜像收流的上限；超时说明投影任务卡住了，宁可报错也不挂住父运行。"""
 
 
 @dataclass(slots=True)
 class Delegation:
-    """一次 delegate_task 从父侧带给子运行的上下文；子侧回填 child_run_id。
-
-    必须可变：子运行在自己的 Task 里跑，contextvar 是复制下去的，子侧 set() 回不到父侧，
-    只有改同一个对象父侧才看得见。
-    """
-
     conversation_id: str
     on_spawn: Callable[[str, SubAgentProfile], None]
-    """子运行开跑时回调 (child_run_id, 子代理档案)，由父侧写自己那条流。"""
     child_run_id: str | None = None
 
 
@@ -63,13 +48,11 @@ current_delegation: ContextVar[Delegation | None] = ContextVar(
 
 @dataclass(frozen=True, slots=True)
 class _End:
-    """子运行正常收尾，投影器可以收流。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class _Raise:
-    """把子运行的异常送进投影器，让它走自己的失败或取消收尾。"""
-
     error: BaseException
 
 
@@ -78,8 +61,6 @@ _Item = AgentStreamEvent | AgentRunResultEvent[Any] | _End | _Raise
 
 @dataclass(kw_only=True)
 class SubAgentBridge(AbstractCapability[Any]):
-    """父运行侧：每次 delegate_task 都把派出的子运行记进账本，并给父工具卡补上 agentRefs。"""
-
     store: StepStore
     live: TranscriptStore
     conversation_id: str
@@ -107,7 +88,6 @@ class SubAgentBridge(AbstractCapability[Any]):
             result = await handler(args)
         except BaseException:
             current_delegation.reset(token)
-            # 子运行失败或被停时，账本与交接的存储错误不能盖掉原来的异常。
             try:
                 await self._settle(ctx, call=call, tool_def=tool_def, delegation=delegation)
             except Exception:
@@ -120,8 +100,6 @@ class SubAgentBridge(AbstractCapability[Any]):
         return result
 
     def _spawned(self, tool_call_id: str, child_run_id: str, profile: SubAgentProfile) -> None:
-        """子运行开跑：父流上的那张卡认领它，并开一条 subagent 任务。"""
-
         self.live.append(
             self.conversation_id,
             self.parent_agent_id,
@@ -136,12 +114,9 @@ class SubAgentBridge(AbstractCapability[Any]):
         tool_def: ToolDefinition,
         delegation: Delegation,
     ) -> None:
-        """把子运行 id 写进工具账本，并在子快照落库后交接子流的实时状态。"""
-
         child_run_id = delegation.child_run_id
         if child_run_id is None:
             return
-        # annotate_tool_effect 按 ctx 上的工具身份找记录，工具钩子之外的 ctx 不带这两个字段。
         scoped = (
             ctx
             if ctx.tool_call_id is not None and ctx.tool_name is not None
@@ -149,7 +124,6 @@ class SubAgentBridge(AbstractCapability[Any]):
         )
         await annotate_tool_effect(self.store, scoped, effect_summary=child_run_id)
         _logger.debug("子代理已记入账本", tool_call_id=call.tool_call_id, child_run_id=child_run_id)
-        # 与 ConversationRunner._hand_over 同口径：中断快照也算落库，否则失败的子轮永远交接不掉。
         if await self.store.latest_snapshot(run_id=child_run_id, include_interrupted=True) is None:
             _logger.warning("子代理那一轮还没落进快照，先留在实时状态里", child_run_id=child_run_id)
             return
@@ -159,22 +133,14 @@ class SubAgentBridge(AbstractCapability[Any]):
 
 @dataclass(kw_only=True)
 class SubAgentMirror(AbstractCapability[Any]):
-    """子运行侧：把这次子运行投影成它自己那条 transcript 流。
-
-    启动期构造一次，挂在 SubAgents.shared_capabilities 上；每次运行的状态都在 for_run 的副本上。
-    """
-
     id: str | None = "subagent_mirror"
     live: TranscriptStore
     display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY
     profiles: Mapping[str, SubAgentProfile] = field(default_factory=dict)
-    """子代理名 → 落库 metadata 那份档案，由 subagent_profiles 产出；任务卡上的字段从这里取。"""
     _delegation: Delegation | None = None
     _queue: asyncio.Queue[_Item] | None = None
 
     async def for_run(self, ctx: RunContext[Any]) -> AbstractCapability[Any]:
-        """按运行取一份副本；不是被 delegate 起的运行拿不到 delegation，所有钩子直通。"""
-
         return replace(self, _delegation=current_delegation.get(), _queue=asyncio.Queue[_Item]())
 
     async def wrap_run(
@@ -218,7 +184,6 @@ class SubAgentMirror(AbstractCapability[Any]):
             queue.put_nowait(_Raise(error))
             raise
         else:
-            # 结果事件带着用量与完整历史，投影器靠它补步骤用量。
             queue.put_nowait(AgentRunResultEvent(result=result))
             queue.put_nowait(_End())
             return result
@@ -226,8 +191,6 @@ class SubAgentMirror(AbstractCapability[Any]):
             await asyncio.shield(asyncio.wait_for(consumer, _DRAIN_SECONDS))
 
     async def on_event(self, ctx: RunContext[Any], *, event: AgentStreamEvent) -> None:
-        """把子运行的事件递给镜像任务；覆写这个钩子同时让 agent.run 开流式。"""
-
         if self._queue is not None and self._delegation is not None:
             self._queue.put_nowait(event)
 
@@ -243,8 +206,6 @@ class SubAgentMirror(AbstractCapability[Any]):
 
 
 async def _drain(queue: asyncio.Queue[_Item]) -> AsyncIterator[NativeEvent]:
-    """把队列变成投影器要的事件流；异常按原样抛出，交给它自己的失败与取消收尾。"""
-
     while True:
         item = await queue.get()
         match item:

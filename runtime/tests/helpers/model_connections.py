@@ -1,5 +1,3 @@
-"""模型连接查找的替身：按（声明名，模型名）给定好的连接，没给的抛 ``ModelUnavailable``，并记下查过什么。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping

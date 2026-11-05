@@ -1,5 +1,3 @@
-"""真实静态字体文件的解析与字形覆盖。"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -38,8 +36,6 @@ def test_properties_come_from_the_font_not_the_file_name(
 
 
 def test_win_line_metrics_do_not_decide_whether_a_font_is_usable(tmp_path: Path) -> None:
-    """Win 行高度量为 0 的字体照样读得出：只看字族、字重、样式、字形与轮廓。"""
-
     path = make_font(tmp_path / "no-win-metrics.ttf", characters="A", win_metrics=(0, 0))
 
     assert inspect_font(path).unicode_ranges == ((ord("A"), ord("A")),)
@@ -84,7 +80,6 @@ def test_readable_metadata_does_not_hide_a_broken_glyph_outline(tmp_path: Path, 
     path = make_font(tmp_path / "broken.font", characters="A", otf=otf)
     if otf:
         with TTFont(path, recalcBBoxes=False) as font:
-            # rmoveto 缺少两个坐标操作数，随后直接 endchar。
             font["CFF "].cff.topDictIndex[0].CharStrings["uni0041"].setBytecode(b"\x15\x0e")
             font.save(path)
     else:
@@ -94,7 +89,6 @@ def test_readable_metadata_does_not_hide_a_broken_glyph_outline(tmp_path: Path, 
         data = bytearray(path.read_bytes())
         assert data.count(glyph_data) == 1
         offset = data.index(glyph_data) + glyph_offset
-        # 轮廓记录声称有 32767 条 contour，但字节仍只是原先的一个矩形。
         data[offset : offset + 2] = b"\x7f\xff"
         path.write_bytes(data)
 

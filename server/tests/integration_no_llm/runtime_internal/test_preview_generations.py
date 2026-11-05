@@ -1,8 +1,3 @@
-"""测试预览里出的图不挂对话：工具按运行依赖构造不带对话的请求，预览被换掉后才到达内部接口也保持隔离。
-普通对话照旧挂着，所以治理者按预览 id 列不出记录，生成帧也不带预览 id；从这张宫格切出的图同样不挂。
-
-装的是开着取帧与出图的后端（媒体生成、对象存储、``shot_video`` 段与本机 ffmpeg）；队列不跑，记录停在受理。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -128,8 +123,6 @@ async def _complete(url: str, job_id: str) -> None:
 
 
 async def _cut(url: str, principal: Principal, grid_id: str) -> tuple[GenerationJob, ...]:
-    """照切格接口落切图记录的那一步（``SettledRecords.record_cuts``），从这张宫格切一格。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         records = SettledRecords(SqlGenerationRepository(engine))
@@ -141,8 +134,6 @@ async def _cut(url: str, principal: Principal, grid_id: str) -> tuple[Generation
 
 
 async def _tool_request(owner_id: str, session_id: str, *, preview: bool) -> ImageRequest:
-    """取真实工具已交给生成端口的请求，模拟传输晚于预览关闭才送达后端。"""
-
     generations = FakeGenerations(outcomes=[Outcome(status="failed")])
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda _: httpx.Response(404))
@@ -176,7 +167,6 @@ async def _tool_request(owner_id: str, session_id: str, *, preview: bool) -> Ima
             model=TestModel(),
             usage=RunUsage(),
         )
-        # 本例只执行到出站请求，媒体完成与裁图另由后端记录验证。
         with pytest.raises(ToolFailed):
             await tools.generate_anchor_sheet(context, ["雨中中景"])
     (request,) = generations.submitted
@@ -194,8 +184,6 @@ def _submit(tc: TestClient, owner_id: str, request: ImageRequest) -> str:
 
 
 def _generation_frames_until(ws: Any, session_id: str, *, tries: int = 40) -> list[dict[str, Any]]:
-    """收 ``event.generation.changed``，直到收到一帧挂着 ``session_id`` 的。"""
-
     frames: list[dict[str, Any]] = []
     for _ in range(tries):
         frame: dict[str, Any] = ws.receive_json()
@@ -238,7 +226,6 @@ def test_images_arriving_after_the_preview_is_replaced_are_recorded_without_a_co
             "/generations", params={"conversationId": conversation}, headers=governor
         )
 
-        # 预览出的宫格完成后切图：切出来的沿用宫格的对话，也不挂。
         asyncio.run(_complete(migrated_pg, from_preview))
         principal = Principal(
             kind="user",
@@ -248,7 +235,6 @@ def test_images_arriving_after_the_preview_is_replaced_are_recorded_without_a_co
         )
         cuts = asyncio.run(_cut(migrated_pg, principal, from_preview))
 
-    # 治理者那边：预览出的那张发了帧，但不带预览 id；按预览 id 列不出东西。
     assert any(frame["payload"]["id"] == from_preview for frame in frames)
     assert [frame.get("session_id") for frame in frames if frame.get("session_id")] == [
         conversation
@@ -256,7 +242,6 @@ def test_images_arriving_after_the_preview_is_replaced_are_recorded_without_a_co
     assert by_preview.status_code == 200, by_preview.text
     assert by_preview.json()["items"] == []
     assert [item["id"] for item in by_conversation.json()["items"]] == [from_conversation]
-    # 落库：预览的那张与从它切出的都不挂对话，普通对话的照旧挂着。
     assert [cut.conversation_id for cut in cuts] == [None]
     assert asyncio.run(_conversation_of(migrated_pg, from_preview)) is None
     assert asyncio.run(_conversation_of(migrated_pg, from_conversation)) == uuid.UUID(conversation)

@@ -1,9 +1,3 @@
-"""对话行变化的广播：哪些写入发整行帧、帧里是什么，以及同一段对话的整行帧按提交顺序广播。不连库。
-
-帧上没有序号，客户端按到达先后生效：同一段对话两次写入的整行帧要是广播得比提交乱，后到的旧行会把新行
-盖回去，所以广播顺序必须等于提交顺序。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -56,8 +50,6 @@ def _row(**overrides: Any) -> Conversation:
 
 @dataclass
 class OneRowRepo:
-    """只存一行的仓储；``missing`` 为真时写入都按对话不可见抛 ``NotFound``。"""
-
     row: Conversation
     missing: bool = False
 
@@ -102,8 +94,6 @@ class OneRowRepo:
 
 @dataclass
 class PlainRepo:
-    """按调用先后提交的仓储；``committed`` 依次记下每次写入后的标题，即提交顺序。"""
-
     row: Conversation
     committed: list[str] = field(default_factory=list)
 
@@ -128,7 +118,6 @@ class PlainRepo:
         return self._write(task_id=task_id)
 
     async def apply_generated_title(self, conversation_id: uuid.UUID, *, title: str) -> bool:
-        # 与 SQL 的条件更新同一口径：只有还是默认标题时才写。
         if self.row.title_kind != "default":
             return False
         self._write(title=title, title_kind="generated")
@@ -137,8 +126,6 @@ class PlainRepo:
 
 @dataclass
 class Announced:
-    """按广播的先后记下每一帧。"""
-
     rows: list[tuple[str, uuid.UUID, uuid.UUID, Mapping[str, Any]]] = field(default_factory=list)
     deleted: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
     titles: list[tuple[uuid.UUID, uuid.UUID, str]] = field(default_factory=list)
@@ -160,13 +147,11 @@ class Announced:
 
 
 class ClaimDown(Exception):
-    """认领那一步的连接被重置。"""
+    pass
 
 
 @dataclass
 class FlakyClaims:
-    """前 ``failures`` 次认领抛 ``ClaimDown``，之后保存需求单的认领归属。"""
-
     failures: int = 1
     owners: dict[uuid.UUID, uuid.UUID] = field(default_factory=dict)
 
@@ -182,8 +167,6 @@ def _untouched(*_: object, **__: object) -> NoReturn:
 
 
 class OpensSessions:
-    """运行时会话的替身：这里只看整行广播，agent 都当作能开对话；分叉与拷文件用不到。"""
-
     async def abort(self, session_id: uuid.UUID) -> None:
         raise AssertionError("这里不中断会话")
 
@@ -229,8 +212,6 @@ async def _exists(_: uuid.UUID) -> bool:
 
 
 async def _until(ready: Callable[[], bool]) -> None:
-    """让出事件循环，直到别的任务走到 ``ready`` 成立的那一步。"""
-
     for _ in range(100):
         if ready():
             return
@@ -239,8 +220,6 @@ async def _until(ready: Callable[[], bool]) -> None:
 
 
 async def _settle() -> None:
-    """多让几拍，让已经开工的任务走到它此刻能走到的最远处。"""
-
     for _ in range(20):
         await asyncio.sleep(0)
 
@@ -296,8 +275,6 @@ async def test_marking_done_announces_the_written_row() -> None:
 
 
 async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> None:
-    """首次死在对话行提交之后、认领之前：created 帧照样发出；同一个 id 重发补上认领，不再补发帧。"""
-
     announced = Announced()
     claims = FlakyClaims()
     service = build(OneRowRepo(row=_row()), announced, claim_task=claims)
@@ -311,7 +288,6 @@ async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> No
         ("created", conversation_id)
     ]
 
-    # 重发的请求体不带需求单：认领看的是落库的那一行，不是这一次的请求。
     replayed, fresh = await service.create(
         OWNER, agent_id="storyboard", conversation_id=conversation_id
     )
@@ -322,8 +298,6 @@ async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> No
 
 
 async def test_attaching_a_task_announces_the_row_before_claiming_it() -> None:
-    """认领是别的模块的端口：它失败时行已经提交，updated 帧不能跟着丢；重新挂同一张单补上认领。"""
-
     existing = _row()
     announced = Announced()
     claims = FlakyClaims()
@@ -341,10 +315,6 @@ async def test_attaching_a_task_announces_the_row_before_claiming_it() -> None:
 
 
 async def test_concurrent_writes_broadcast_their_rows_in_commit_order() -> None:
-    """两次改名在读活动处交错：先提交那次的活动读得慢，它的整行帧也不能比后提交那次晚广播。
-
-    不串行时广播是 new-write、old-write，客户端按到达先后生效，把标题改回旧的，库里却是新的。"""
-
     existing = _row()
     repo = PlainRepo(row=existing)
     announced = Announced()
@@ -374,8 +344,6 @@ async def test_concurrent_writes_broadcast_their_rows_in_commit_order() -> None:
 
 
 async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
-    """生成标题要调模型，不能占着这段对话的行锁：模型还没回话时，属主的改名照常落地。"""
-
     existing = _row()
     repo = PlainRepo(row=existing)
     announced = Announced()
@@ -394,7 +362,6 @@ async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
     gate.set()
     await naming
 
-    # 属主改过名，条件更新不再覆盖，也就不发标题帧。
     assert repo.row.title == "用户起的名字"
     assert announced.titles == [(OWNER.user_id, existing.id, "用户起的名字")]
 
@@ -431,13 +398,10 @@ async def test_a_title_that_could_not_be_generated_stays_default_for_the_next_tu
 
 @pytest.mark.parametrize("kind", ["custom", "generated"])
 async def test_a_title_that_is_no_longer_default_is_not_generated_again(kind: TitleKind) -> None:
-    """改过名或已经起过名的对话，开新一轮时不再调模型。"""
-
     existing = _row(title="已有的名字", title_kind=kind)
     repo = PlainRepo(row=existing)
     announced = Announced()
 
-    # 生成端口是 _untouched：一旦调模型就抛错。
     service = build(repo, announced)
     await service.name_at_turn_start(existing.id, "做一条春季新款视频")
 
@@ -446,8 +410,6 @@ async def test_a_title_that_is_no_longer_default_is_not_generated_again(kind: Ti
 
 
 async def test_clearing_the_completion_mark_from_another_domain_announces_the_row() -> None:
-    """出片提交抹掉收尾标记，与属主手动取消是同一种行变化。"""
-
     existing = _row(completed_at=NOW)
     announced = Announced()
 

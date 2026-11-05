@@ -1,5 +1,3 @@
-"""uploads 装配单元：组合根只调用 ``build_uploads_module``。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,7 +18,6 @@ from iclip.platform.object_store.store import PublicBucket
 @dataclass(frozen=True)
 class UploadsModule:
     routers: tuple[Any, ...]
-    """使用 Any 隔离 Web 框架类型。"""
 
     service: UploadService
 
@@ -34,10 +31,6 @@ def build_uploads_module(
     fetch: FetchBytes,
     conversation_writable: ConversationWritable,
 ) -> UploadsModule:
-    """``record`` 把确认过的上传记成一条记录，``find_recorded`` 查这次上传记过没有；两者都由
-    组合根接到生成域。``fetch`` 是转存图片用的出网下载，组合根接到出网下载器。
-    ``conversation_writable`` 判音乐能不能挂到那段对话，组合根接到对话域。"""
-
     service = UploadService(
         objects,
         record=record,

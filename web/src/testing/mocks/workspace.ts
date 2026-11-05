@@ -1,5 +1,3 @@
-/** REST 读取与 WebSocket 模拟写入共用内存文件表，确保通知后重读得到新内容。 */
-
 import { http, HttpResponse } from 'msw'
 import type {
   ImageGenerationIn,
@@ -11,7 +9,7 @@ import type {
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
 import { zSubtitleIn } from '@/shared/api/generated/zod.gen'
-// no-inline：这几条要作为地址进请求体、进 <video src>，不能被构建按小文件内联成 data URI。
+// ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
@@ -19,7 +17,6 @@ import { VIDEO_MODELS } from '../video-models'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
 import { isMockVideoUpload, onMockUploadConfirmed } from './uploads'
 
-/** 本地 data URL 帧，避免网络依赖。 */
 const FRAME_A =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='320'%3E%3Crect width='180' height='320' fill='%23e4ded2'/%3E%3Ccircle cx='90' cy='120' r='38' fill='%23a8742a'/%3E%3Crect x='60' y='170' width='60' height='110' fill='%236b5330'/%3E%3C/svg%3E"
 const FRAME_B =
@@ -32,7 +29,6 @@ type MockFrames = { a: string; b: string; c: string }
 const DATA_FRAMES: MockFrames = { a: FRAME_A, b: FRAME_B, c: FRAME_C }
 const workspaceFrames = new Map<string, MockFrames>()
 
-/** 浏览器专用 PNG，保持原示例图形，360×640 满足既有上传尺寸合同。 */
 const FRAME_PNGS: Record<string, string> = {
   a: 'iVBORw0KGgoAAAANSUhEUgAAAWgAAAKAAgMAAADMdAo0AAAACVBMVEXk3tKodCprUzAOLc9JAAACEElEQVR42u3bUU6DQBSG0c4DS3A/XcI8wH5cj6vUxEQbW6Bh5teOPd8CTsgFaoTL6SRJkiRJkiRJkiRJkiRJkiRJkiRJkiSdTstH5wT8snyWk/vb05e8zH3lslxUu5/B786ZcfQeybKkDnv6Sc+xg+532NM1PccOutdhl1t07XyLXxabR5+JlNt0jc2jy0RW5A4TKWt0Tdwvve6atVF3GPaq3Dzssk7X1Kjbh70+6uZhb8iNwy5bdE2NunXYW6NuHPam3DbsHF226Zo6i23ncfssNp3HIL0jN5zHskfXR6SnPXp+RHrvAmm4RIL0rnz86svRZZ+uj0dP+/T8ePT+tXf46huTvkM+emEPSZd76PpE9HQPPaN70Pfc5wfvdDS6/Tf14K8qGo1Go8eg/W1E/xntv4Lfo/2363mIJ2bP8OBzzIfMYz7QH/TlyZgvqsZ8KRh8Szroa+Pge/Tg2/8x1yGS+yHBrZbgLk5wgyi59xTc1grumAU345L7fMEtxODuZHDjM7mnGtyuDe4EJzeZg/vXwa3x5K57cEM/+V1B8GuI5DccwS9Pkt/LBL/ySX6blPyiKvkdmCRJ0nVvm72i0Wg0Go1Go9FoNBqNRqPRaDQajUaj0Wg0Go1Go9FoNBqNRqPRaDQajUaj0Wg0Go1Go9FoNBqNRqPRaDQajUaj0Wg0+n/SkiRJkiRJkiRJkkbvHb9ilkSQA7ohAAAAAElFTkSuQmCC',
   b: 'iVBORw0KGgoAAAANSUhEUgAAAWgAAAKAAQMAAACL1HDkAAAABlBMVEXT3uQqX4pbgSiKAAAChElEQVR42u3TzY3eIBRG4UEsyI4GItFJKG1SGqVQAksWCOJxHMc/wOfR6HIZ6T3rZ3ve3hBCCCGEEEIIIYQQQgghhNChH4T65zT61zT6fRpdfk+iRXGTaFn8JFqVMInWJU6iTUmTaFvyJPq9lEl0KZ+ZnlCLRbsptFy0n0KrRYcptF50nEKbRacptF10nkIvy39iekr9gZ9PT6jFqt0EWq7aT6DVqsMEWq86TqDNqtME2q46T6DX5R9PT6n/4qfTE2qxaceu5aY9u1abDuxabzqya7PpxK7tpjO73pZ/OD2l/oefTU+oxa4ds5a79sxa7Towa73ryKzNrhOztrvOzHpf/tH0lPo/fjI9oRYH7Vi1PGjPqtVBB1atDzqyanPQiVXbg86s+rD8g+kp9RG/np5Qi5N2jFqetGfU6qQDo9YnHRm1OenEqO1JZ0Z9Wv7l9JT6jF9NT6jFRTs2LS/as2l10YFN64uObNpcdGLT9qIzm74s/2J6Sn3F/ekJtbhpx6TlTXsmrW46MGl905FJm5tOTNredGbSt+W701PqO+5NT6hFRTsWLSvas2hV0YFF64qOLNpUdGLRtqIzi64s35meUtdwe3pCLaraMWhZ1Z5Bq6oODFpXdWTQpqoTg7ZVnRl0dfnm9JS6jlvTE2rR0G64lg3th2vV0GG41g0dh2vT0Gm4tg2dh+vG8o3pKXUL16cn1KKp3WAtm9oP1qqpw2CtmzoO1qap02BtmzoP1s3lq9NT6jauTU+oRUe7oVp2tB+qVUeHoVp3dByqTUenodp2dB6qO8tXpqfUPXyfnlCLrnYDtexqP1Crrg4Dte7q+CWNEEIIIYQQQgghhBBCCCH0/fsDW28/8IKYIwAAAAAASUVORK5CYII=',
@@ -43,22 +39,14 @@ const httpFrames = (): MockFrames => {
   return { a: url('a'), b: url('b'), c: url('c') }
 }
 
-/** 出片与合成都放这条 6 秒的测试卡；编辑段的结果放另一条 3 秒的彩条，切换时看得出来。
- *
- * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。三条都是 VP9-in-MP4、每秒
- * 一个关键帧，与线上的素材片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
- * 原样拷出来。只有这条 6 秒的测试卡带一条 Opus 原声（Chromium 能解，AAC 不能），时间线上看得到
- * 真实波形；彩条与横版没有音轨，原声轨显示「无声」。 */
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
 const EDITED_MS = 3000
-/** 第 3 组那条素材片改用同样 6 秒的横版测试卡：预览黑框是固定比例，横版才会露出上下黑边。 */
 const WIDE_VIDEO_URL = sampleWideUrl
 
 const PREAMBLE = ['参考锁定：模特的服装与发型跟住 @Image1。', '剪辑形式：硬切。'].join('\n')
 
-/** 与服务端 shot_prompt.py 同一条拼装规则：受理时把结构化 shot 拼成正文，记录里两者都存。 */
 const assembleShotPrompt = (shot: VideoShotIn): string => {
   const lines = shot.timeline.map(
     (item) => `${item.timestamps[0]}–${item.timestamps[1]}秒 ${item.prompt}`,
@@ -66,7 +54,6 @@ const assembleShotPrompt = (shot: VideoShotIn): string => {
   return `${shot.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
 }
 
-/** 第 2 组那条素材片当初提交的镜头组，形状与分镜文件里的 prompt 相同；带 shot 的记录才能回填。 */
 const HISTORY_SHOT: VideoShotIn = {
   global_settings: PREAMBLE,
   timeline: [
@@ -75,7 +62,6 @@ const HISTORY_SHOT: VideoShotIn = {
   ],
 }
 
-/** 比 video_shot.json 早一点，列表里的时间才有先后。 */
 const EARLIER = '2026-09-01T09:20:00Z'
 
 const STORYBOARD_MD = [
@@ -214,28 +200,20 @@ type MockJob = {
   errorMessage?: string
   id: string
   kind?: 'video' | 'image' | 'subtitle' | 'audio'
-  /** 字幕记录完成后的逐句结果；别的记录没有。 */
   sentences?: SubtitleSentence[]
-  /** 省略即 generate；合成是 compose，上传的音乐是 upload。 */
   operation?: 'generate' | 'compose' | 'upload'
   outputUrl?: string
   prompt: string
   request?: Record<string, unknown>
   metadata?: Record<string, unknown>
   taskId?: string | null
-  /** 镜头组编号：出片照请求，编辑段与合成抄基底的；图片没有。 */
   shotIndex?: number | null
   status: 'completed' | 'failed' | 'pending' | 'submitted'
   watermarkOutputUrl?: string
-  /** 产物实际多长：视频取上游实测的，合成是本系统量的，图片没有。 */
   durationMs?: number
-  /** 原作号：编辑段与合成指最初那条出片，出片与图片不填。 */
   rootJobId?: string | null
-  /** 直接来源：编辑段与合成指基底素材片，帧图编辑指底图那条。 */
   sourceJobId?: string | null
-  /** 来源的地址：帧图编辑是它改的底图，底图在不在库里都有。 */
   sourceUrl?: string | null
-  /** 编辑段改的区间，毫秒。 */
   rangeStartMs?: number | null
   rangeEndMs?: number | null
 }
@@ -257,11 +235,9 @@ const job = (spec: MockJob) => ({
   sourceUrl: spec.sourceUrl ?? null,
   rangeStartMs: spec.rangeStartMs ?? null,
   rangeEndMs: spec.rangeEndMs ?? null,
-  // 种子记录没有单独的完成时刻，到了终态就记在创建那一刻。
   finishedAt: spec.status === 'completed' || spec.status === 'failed' ? spec.createdAt : null,
   durationMs: spec.durationMs ?? null,
   sentences: spec.sentences ?? null,
-  // 这里的加工是瞬时的，没有在途阶段可报。
   clipStage: null,
   watermarkOutputUrl: spec.watermarkOutputUrl ?? null,
 })
@@ -275,7 +251,6 @@ const generations = new Map<string, MockRecord[]>()
 const findJob = (conversationId: string | null | undefined, id: string): MockRecord | undefined =>
   generations.get(conversationId ?? '')?.find((item) => item.id === id)
 
-/** 素材片：完成了的出片或合成，编辑段只能基于它。 */
 const isFinishedTake = (record: MockRecord): boolean =>
   record.kind === 'video' &&
   record.status === 'completed' &&
@@ -285,30 +260,25 @@ const isFinishedTake = (record: MockRecord): boolean =>
 
 const VIDEO_DONE_MS = 3000
 
-/** 重置 mock 时清除完成计时器，防止写入下一个用例。 */
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
 type MockGenerationChange = {
-  /** 没挂对话的记录（如超分记录）为 null，帧上就没有对话。 */
   conversationId: string | null
   id: string
   kind: string
   operation: string
   status: string
-  /** 与真实帧一样，没有镜号时整项省略。 */
   shot_index?: number
   metadata: Record<string, unknown> | null
 }
 
 const generationWatchers = new Set<(change: MockGenerationChange) => void>()
 
-/** 生成记录状态每跳一格通知一次；WebSocket 模拟据此发 event.generation.changed，返回取消函数。 */
 export const watchMockGenerations = (watcher: (change: MockGenerationChange) => void) => {
   generationWatchers.add(watcher)
   return () => void generationWatchers.delete(watcher)
 }
 
-/** 发一条生成记录的状态跳转帧。 */
 export const announceMockGeneration = (
   conversationId: string | null,
   record: {
@@ -331,7 +301,6 @@ const announceGeneration = (conversationId: string | null, record: MockRecord) =
   announceMockGeneration(conversationId, record)
 }
 
-/** 任一对话里的一条素材片（完成的出片或合成）；高清版的 mock 按它定来源。 */
 export const findMockTake = (id: string): MockRecord | undefined =>
   [...generations.values()].flat().find((record) => record.id === id && isFinishedTake(record))
 
@@ -367,7 +336,6 @@ export const seedMockWorkspace = (
           version: 1,
         },
       ],
-      // 下面几份照真实工作区的文件各给一份，文件页按类别渲染时有东西可看。
       ['storyboard.md', { content: STORYBOARD_MD, updatedAt: EARLIER, version: 2 }],
       ['口播文案.txt', { content: VOICEOVER_TXT, updatedAt: EARLIER, version: 1 }],
       [
@@ -398,7 +366,6 @@ export const seedMockWorkspace = (
       id: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
       outputUrl: WIDE_VIDEO_URL,
       prompt: '模特走向镜头，停下微笑，暖光。',
-      // 横版素材片：素材片卡按请求里的画幅画，不跟分镜。
       request: {
         aspect_ratio: '16:9',
         model: 'wan3.0-video',
@@ -414,9 +381,7 @@ export const seedMockWorkspace = (
       durationMs: VIDEO_MS,
       id: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
       outputUrl: VIDEO_URL,
-      // 带结构化 shot 的记录可以回填镜头组；纯描述的那两条只能看不能回填。
       prompt: assembleShotPrompt(HISTORY_SHOT),
-      // 480p 出的：高清版的菜单里有 1080p、720p 两档。
       request: {
         aspect_ratio: '9:16',
         model: 'vendor-a-seedance-2-5',
@@ -428,7 +393,6 @@ export const seedMockWorkspace = (
       status: 'completed',
       watermarkOutputUrl: VIDEO_URL,
     }),
-    // 上面那条出片较早的一次片段编辑失败了（镜头 5–6）：编辑器工具条上常驻失败提醒，编辑轨上不占位置。
     job({
       createdAt: '2026-09-01T11:20:00Z',
       errorMessage: '模型超时，未生成视频',
@@ -441,7 +405,6 @@ export const seedMockWorkspace = (
       sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
       status: 'failed',
     }),
-    // 只记了正文与分辨率：素材片卡按分镜画幅画，不显示模型。
     job({
       createdAt: '2026-09-01T11:40:00Z',
       errorMessage: '上游返回了空结果，换个描述再试一次。',
@@ -451,7 +414,6 @@ export const seedMockWorkspace = (
       shotIndex: 2,
       status: 'failed',
     }),
-    // 刚提交不久、还在上游跑：静态种子，不会自己跑完；时刻跟着打开的那一刻，在途卡上的已用时长才像真的。
     job({
       createdAt: new Date(Date.now() - 38_000).toISOString(),
       id: '7d415293-2d41-4f52-afbc-4a5b6c7d8e9f',
@@ -481,10 +443,7 @@ export const seedMockWorkspace = (
       prompt: '出镜头帧：近景微笑。',
       status: 'completed',
     }),
-    // 演示在途的图片编辑：第 2 组第 3 帧已在上游跑。静态种子，不会自己跑完；分镜页据此画帧角标。
-    // 只挂在「预览第 N 帧」这种非镜头首帧上：首帧按钮叫「镜头 N」，带角标后名字会变，e2e 按精确名找它。
     job({
-      // 提交时刻跟着当前时间走：编辑器版本条与舞台上的走表从十几秒起，像一条真在跑的任务。
       createdAt: new Date(Date.now() - 12_000).toISOString(),
       id: 'c296ace8-7296-44a7-84f1-9fa0b1c2d3e4',
       kind: 'image',
@@ -493,7 +452,6 @@ export const seedMockWorkspace = (
       metadata: { shot: 2, frame: 3 },
       status: 'submitted',
     }),
-    // 同一帧较早的失败记录，用于检查编辑器长错误详情，不改变最新的在途状态。
     job({
       createdAt: '2026-09-01T12:40:00Z',
       id: 'd3a7bdc9-9528-446e-8b73-8f64b0d5c812',
@@ -521,7 +479,6 @@ export const seedMockWorkspace = (
   ])
 }
 
-/** 全局参考图为主的分镜示例；两条流共用文件路径和工作台。 */
 export const seedMockReplicaWorkspace = (conversationId: string) => {
   const frames = httpFrames()
   const document = {
@@ -573,7 +530,6 @@ export const seedMockReplicaWorkspace = (conversationId: string) => {
       ],
     ]),
   )
-  // 第 5 张参考图的编辑还在本系统排队，演示帧上的「排队中」角标；静态种子，不会自己跑完。
   generations.set(conversationId, [
     job({
       createdAt: '2026-09-01T12:45:00Z',
@@ -587,7 +543,6 @@ export const seedMockReplicaWorkspace = (conversationId: string) => {
   ])
 }
 
-/** 修改第 2 组描述并递增版本；不存在工作区时返回 false。 */
 export const touchMockShots = (conversationId: string): boolean => {
   const files = workspaces.get(conversationId)
   const file = files?.get(SHOTS_MOCK_PATH)
@@ -611,7 +566,6 @@ const imageIndexes = (prompt: string): number[] => [
 const hasOnlyKeys = (value: Record<string, unknown>, keys: string[]) =>
   Object.keys(value).every((key) => keys.includes(key))
 
-/** 模拟文档结构、时间顺序和图片引用校验，不模拟图片地址能否访问的检查。 */
 const validateShotsContent = (content: string): string | undefined => {
   let parsed: unknown
   try {
@@ -702,7 +656,6 @@ const validateShotsContent = (content: string): string | undefined => {
   return undefined
 }
 
-/** 收下一次出片：与 `POST /generations/video` 同一条记录与完成节奏，出的是同一条测试卡。制作页的 mock 用它。 */
 export const acceptMockVideo = (spec: {
   conversationId: string
   prompt: string
@@ -718,7 +671,6 @@ export const acceptMockVideo = (spec: {
     watermarkOutputUrl: VIDEO_URL,
   })
 
-/** 收下一次按描述生图：同一套记录与完成节奏，出的是 `outputUrl`。制作页的 mock 用它。 */
 export const acceptMockImage = (spec: {
   conversationId: string
   prompt: string
@@ -731,7 +683,6 @@ export const acceptMockImage = (spec: {
     request: { prompt: spec.prompt },
   })
 
-/** 往一段对话的工作区放一份文件（还没有工作区就建一个）：版本从 1 起，已有就加一，返回新版本。制作页的 mock 用它。 */
 export const putMockWorkspaceFile = (conversationId: string, path: string, content: string) => {
   const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
   workspaces.set(conversationId, files)
@@ -754,7 +705,6 @@ const addRecord = (conversationId: string, record: MockRecord) => {
   return record
 }
 
-// 挂到对话上的音乐上传，确认时记一条上传的音频记录（id 就是 uploadId）；后端不量上传的时长。
 onMockUploadConfirmed(({ uploadId, url, contentType, conversationId }) => {
   if (conversationId === null || !contentType.startsWith('audio/')) return
   if (findJob(conversationId, uploadId) !== undefined) return
@@ -772,7 +722,6 @@ onMockUploadConfirmed(({ uploadId, url, contentType, conversationId }) => {
   )
 })
 
-/** 这段对话的音乐：一首生成的（记了时长），一首上传的（没记时长，要前端量）。 */
 export const seedMockMusic = (conversationId: string) => {
   const generated = addRecord(
     conversationId,
@@ -807,7 +756,6 @@ const SUBTITLE_SENTENCES: SubtitleSentence[] = [
   { startMs: 2_400, endMs: 5_200, speaker: null, text: '车流划出一道道光' },
 ]
 
-/** 演示对话第 2 组那条竖版素材片的字幕记录（识别完成，两句；旧格式没有逐词时间） */
 export const seedMockSubtitles = (conversationId: string) =>
   addRecord(
     conversationId,
@@ -848,7 +796,6 @@ export const workspaceHandlers = [
     return HttpResponse.json({ file: { content: file.content, path, version: file.version } })
   }),
 
-  // 版本不匹配返回 409，内容结构无效返回 422；mock 不校验媒体地址。
   http.put('*/api/conversations/:conversationId/workspace/file', async ({ params, request }) => {
     const body = (await request.json()) as {
       content: string
@@ -903,7 +850,6 @@ export const workspaceHandlers = [
     }),
   ),
 
-  // 模型输出时长与编辑输入边界由服务端合同声明。
   http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)),
 
   http.get('*/api/generations', ({ request }) => {
@@ -916,7 +862,6 @@ export const workspaceHandlers = [
     const rootJobId = params.get('rootJobId')
     const sourceJobId = params.get('sourceJobId')
     const rawMetadata = params.get('metadata')
-    // 与后端同一口径：metadata 是一段 JSON 对象，按顶层键包含匹配。
     const metadata =
       rawMetadata === null ? null : (JSON.parse(rawMetadata) as Record<string, unknown>)
     items = items.filter(
@@ -937,7 +882,6 @@ export const workspaceHandlers = [
     return HttpResponse.json({ items })
   }),
 
-  // 与后端同一口径：底图地址对上本对话的一张图就记它为来源，对不上当外部底图；地址照请求回。
   http.post('*/api/generations/image', async ({ request }) => {
     const body = (await request.json()) as ImageGenerationIn
     const sourceUrl = body.sourceUrl ?? null
@@ -960,7 +904,6 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 视频那一对端点照上游：提交只回任务号，字段是 snake_case。正文可直接给，也可给 shot 由服务端拼。
   http.post('*/api/generations/video', async ({ request }) => {
     const body = (await request.json()) as VideoGenerationIn
     const prompt =
@@ -977,14 +920,11 @@ export const workspaceHandlers = [
       shotIndex: body.shot_index ?? null,
       outputUrl: VIDEO_URL,
       watermarkOutputUrl: VIDEO_URL,
-      // 出的就是那条测试卡，实测时长照它。
       durationMs: VIDEO_MS,
     })
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),
 
-  // 两种片段生成共用版本链；编辑校验一条本人视频上传，图生至少引用一张图片。
-  // 这里不探时长；生成结果用现成的彩条代替，区间照请求记。
   http.post('*/api/generations/video-edits', async ({ request }) => {
     const body = (await request.json()) as VideoEditIn
     const base = findJob(body.conversation_id, body.source_job_id)
@@ -1037,8 +977,6 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 合成：基底要是这段对话里一条完成的素材片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
-  // 这里拼不了视频，产物用现成的测试卡代替。
   http.post('*/api/generations/video-composites', async ({ request }) => {
     const body = (await request.json()) as VideoComposeIn
     const base = findJob(body.conversationId, body.baseJobId)
@@ -1091,7 +1029,6 @@ export const workspaceHandlers = [
       rootJobId: base.sourceJobId === null ? base.id : base.rootJobId,
       sourceJobId: base.id,
       outputUrl: VIDEO_URL,
-      // 真实后端拼完自己量；这里把各段按出处的时长闭合后相加。mock 的编辑段不记时长，按样片算。
       durationMs: placed.reduce((total, { source, start, end }) => {
         const length = source.durationMs ?? (source === base ? VIDEO_MS : EDITED_MS)
         return total + Math.max(0, (end === null ? length : end * 1000) - start * 1000)
@@ -1122,7 +1059,6 @@ export const workspaceHandlers = [
       metadata: body.metadata ?? null,
       sourceJobId: source.id,
       outputUrl: null,
-      // 竖版样片沿用预置字幕；横版样片没有音轨，识别正常完成但结果为空。
       sentences: source.outputUrl === VIDEO_URL ? SUBTITLE_SENTENCES : [],
     })
     return HttpResponse.json({ generation: created }, { status: 202 })
@@ -1149,7 +1085,6 @@ export const workspaceHandlers = [
   }),
 ]
 
-/** 受理一条生成记录并在固定延迟后把它标成完成，与真实后端的「先受理、后台出结果」同形。 */
 function acceptGeneration(spec: {
   kind: 'image' | 'video' | 'audio' | 'subtitle'
   operation?: 'generate' | 'compose'
@@ -1192,7 +1127,6 @@ function acceptGeneration(spec: {
   const timer = setTimeout(() => {
     created.outputUrl = spec.outputUrl
     created.watermarkOutputUrl = spec.watermarkOutputUrl ?? null
-    // 时长、产物地址与完成时刻一起落，与真实后端同一次写入。
     created.durationMs = spec.durationMs ?? null
     created.sentences = spec.sentences ?? null
     created.finishedAt = new Date().toISOString()

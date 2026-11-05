@@ -1,5 +1,3 @@
-/** jsdom 存储不可用，使用内存实现验证跨模块重载的未读记录。 */
-
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { recordSeenRun, useSeenRun } from './conversations.unread'

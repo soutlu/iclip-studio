@@ -12,14 +12,11 @@ const modelById = (id: string) => {
   return model
 }
 
-/** 一块解出来的音频：从 `timestamp` 秒起，各声道的样本。 */
 type FakeAudio = { timestamp: number; sampleRate: number; channels: number[][] }
 
-/** mediabunny 边界替身：提供媒体样本，记录裁剪范围与送入编码器的时钟，不执行真实编解码。 */
 const media = vi.hoisted(() => ({
   keyframes: [] as number[],
   duration: 0,
-  /** `null` 是没有音轨，`'undecodable'` 是有音轨却解不了。 */
   audio: null as FakeAudio[] | null | 'undecodable',
   failEncoding: false,
   events: [] as string[],
@@ -178,7 +175,6 @@ describe('submitClipGeneration', () => {
 
   beforeEach(() => {
     Object.assign(media, {
-      // 24fps 的模型出片：关键帧在镜头切点上，间隔不等。
       keyframes: [0, 1.916667, 4.208333, 6.5],
       duration: 8.042,
       audio: null,
@@ -230,7 +226,6 @@ describe('submitClipGeneration', () => {
         mode: 'edit',
         referenceClips: [{ mediaUrl: baseMediaUrl, start: 1.917, end: 6.5 }],
       },
-      // 两端正好是基底的关键帧（取整到毫秒的读数）。
       range: { start: 1.917, end: 6.5 },
       model: modelById('wan3.0-video'),
       prompt: '换成浅灰背景',

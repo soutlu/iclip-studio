@@ -13,38 +13,30 @@ import {
 } from './cue-auth.api'
 import type { CueAuthUser, CueLoginRequest } from './cue-auth.types'
 
-/** 会话域查询键的首段：以它开头的缓存跟着登录流程走，换账号时不随业务缓存清掉。 */
 export const AUTH_QUERY_KEY_ROOT = 'auth'
 
-// 会话唯一事实源：GET /users/me 的 TanStack Query 缓存。
 export const USER_QUERY_KEY = [AUTH_QUERY_KEY_ROOT, 'current-user'] as const
 
-// SSO 整页跳转期间暂存站内返回路径。
 const SSO_NEXT_STORAGE_KEY = 'cue_sso_next'
 
 const BUSINESS_QUERIES: QueryFilters = {
   predicate: (query) => query.queryKey[0] !== AUTH_QUERY_KEY_ROOT,
 }
 
-/** 身份改变前丢弃旧账号的数据，也阻止尚未完成的查询重新写回缓存。 */
 const clearBusinessQueries = async (): Promise<void> => {
   await queryClient.cancelQueries(BUSINESS_QUERIES)
   queryClient.removeQueries(BUSINESS_QUERIES)
 }
 
-/** 身份探测兼做换人清场：身份变了先清业务缓存再返回。放在 queryFn 而不是 onSuccess，
- * 因为 ensureSessionUser 与 useUser 共用它，且清场必须发生在新身份进缓存之前。 */
 const fetchCurrentUser = async (context?: { signal: AbortSignal }): Promise<null | CueAuthUser> => {
   let user: null | CueAuthUser
   try {
-    // 登录态探测的 401 不触发全局会话复核，避免守卫递归。
     user = await getCurrentCueUser()
   } catch (error) {
     if (!(error instanceof ApiError && error.status === 401)) throw error
     user = null
   }
 
-  // 登录或退出可取消旧身份探测，迟到的响应不能清理新账号的数据。
   context?.signal.throwIfAborted()
   const previous = queryClient.getQueryData<null | CueAuthUser>(USER_QUERY_KEY)
   if ((previous?.id ?? null) !== (user?.id ?? null)) {
@@ -83,11 +75,9 @@ const auth = configureAuth<null | CueAuthUser, ApiError, CueLoginRequest, CueLog
 
 export const useUser = auth.useUser
 
-/** 路由守卫从用户缓存读取身份；无缓存时加载 /users/me。 */
 export const ensureSessionUser = () =>
   queryClient.ensureQueryData({ queryFn: fetchCurrentUser, queryKey: [...USER_QUERY_KEY] })
 
-// 登录态变化后必须 invalidate 路由，使 beforeLoad 使用最新用户缓存重算。
 const useSessionInvalidation = () => {
   const router = useRouter()
 
@@ -111,7 +101,6 @@ export const useLogin = (options?: LoginOptions) => {
   })
 }
 
-/** 使用 onSettled 重算路由，确保登出失败时也复核本地状态。 */
 export const useLogout = (options?: LogoutOptions) => {
   const invalidateSession = useSessionInvalidation()
 
@@ -124,7 +113,6 @@ export const useLogout = (options?: LogoutOptions) => {
   })
 }
 
-/** 强刷 /users/me 并写入缓存，供接口 401 / 403 后复核身份。 */
 export const refreshSessionUser = (): Promise<null | CueAuthUser> =>
   queryClient.fetchQuery({
     queryFn: fetchCurrentUser,
@@ -132,7 +120,6 @@ export const refreshSessionUser = (): Promise<null | CueAuthUser> =>
     staleTime: 0,
   })
 
-/** 只有 404 表示 SSO 关闭；5xx、断网与响应异常原样抛出，交给查询的重试与错误态，不当成关闭。 */
 export const probeSsoLoginEnabled = async (): Promise<boolean> => {
   try {
     await fetchSsoAuthorizationUrl()
@@ -149,7 +136,7 @@ export const startSsoLogin = async (nextPath: string): Promise<void> => {
   try {
     sessionStorage.setItem(SSO_NEXT_STORAGE_KEY, nextPath)
   } catch {
-    // 存储不可用时放弃暂存，SSO 完成后回首页。
+    // 忽略浏览器禁用或写满 Web Storage 时抛出的异常。
   }
 
   window.location.assign(authorizationUrl)
@@ -167,7 +154,6 @@ export const consumeSsoNextPath = (): null | string => {
   }
 }
 
-/** 仅通过 useCompleteSsoLogin 暴露换会话流程，确保同步重算路由守卫。 */
 const completeSsoLogin = async (jwt: string): Promise<CueAuthUser> => {
   await completeSsoCallback(jwt)
   await queryClient.cancelQueries({ queryKey: USER_QUERY_KEY, exact: true })

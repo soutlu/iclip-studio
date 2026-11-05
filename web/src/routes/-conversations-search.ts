@@ -1,5 +1,3 @@
-/** 全部对话的筛选条件在查询串里的读写：等于默认值的条件不落地址栏，非法取值退回默认。 */
-
 import { z } from 'zod'
 import {
   auditDeletedSchema,

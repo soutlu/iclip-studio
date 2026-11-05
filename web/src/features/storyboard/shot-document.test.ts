@@ -232,7 +232,6 @@ describe('structured editing', () => {
     )
   })
 
-  // 与服务端 test_format_seconds 同一组样例：保留到毫秒，整秒不带小数点。
   it.each([
     [0, 4, '0–4秒'],
     [3.5, 8.25, '3.5–8.25秒'],
@@ -286,7 +285,6 @@ describe('内容 id 编解码', () => {
 })
 
 describe('resolveShotSelection', () => {
-  // 全局设定不引用图片；镜头 1 引用 @Image2、@Image1；镜头 3 没有图。
   it.each([
     ['scene:1', 1, 'scene:1', 1],
     ['scene:1', undefined, 'scene:1', 2],

@@ -1,5 +1,3 @@
-"""验证一次视频拆解：按时长选路、请求形状，以及哪些失败值得再拆一次。"""
-
 from __future__ import annotations
 
 import json
@@ -26,8 +24,6 @@ DOCUMENT = "# 出场元素\n……\n# 时间线\n……\n# 整片分析\n……"
 
 
 class FakeSampler:
-    """视频有给定那么长：不超过上限时交出两帧并记下抽帧的地址，超过时不抽。"""
-
     def __init__(self, *, seconds: float, audio: bytes | None = b"mp3") -> None:
         self.seconds = seconds
         self.audio = audio
@@ -44,9 +40,6 @@ class FakeSampler:
 
 
 class Upstream:
-    """运行时模型调用接口的替身：记下发给它的请求，把设定的方舟答复原样交回。``requests`` 是要转给方舟的
-    请求体。"""
-
     def __init__(self) -> None:
         self.calls: list[httpx.Request] = []
         self.response = httpx.Response(200, json=responses_body())
@@ -93,8 +86,6 @@ def breakdown_with(
 async def test_the_call_goes_through_the_runtimes_model_call_with_a_longer_wait(
     upstream: Upstream,
 ) -> None:
-    """密钥不出运行时：后端只带应用密钥，说要哪家声明的哪个模型；等运行时比它等方舟的 900 秒更久。"""
-
     await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
 
     (call,) = upstream.calls
@@ -166,7 +157,6 @@ RETRYABLE = [
     httpx.Response(500, text="upstream exploded"),
     httpx.Response(429, text="slow down"),
     httpx.Response(200, text="not json"),
-    # 运行时连不上方舟：再拆可能就好。
     httpx.Response(502, json={"detail": "连不上上游", "code": "upstream_unreachable"}),
 ]
 
@@ -184,8 +174,6 @@ async def test_an_unusable_answer_is_worth_another_breakdown(
 
 
 async def test_a_rejected_request_is_not_worth_another_breakdown(upstream: Upstream) -> None:
-    """4xx 是请求本身被拒，原样再发一次也是白付。"""
-
     upstream.response = httpx.Response(400, text="payload too large")
 
     with pytest.raises(BreakdownError) as raised:

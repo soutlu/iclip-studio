@@ -1,7 +1,3 @@
-/** 正文与编辑器文档的互转：每行对应一个段落，帧节点保留原始 @ImageN 字符，选区偏移以原文 UTF-16 为准。
- * 文档用编辑核心的 schema（帧节点见 `frameNodeSpec`）；上传中的附件 chip 不进正文，在正文里占 0 个字符。
- * 制作页的正文也是这套写法，帧节点只换了芯片的渲染，按自己的节点表另建一份（`createPromptDoc`）。 */
-
 import type { Node as PMNode } from 'prosemirror-model'
 import { createComposerSchema, type ComposerNodeSpec } from '@/shared/ui/composer'
 import { FRAME_NODES, type FrameNode } from './frame-node'
@@ -11,13 +7,9 @@ const FRAME_REF = /@Image(\d+)/g
 export type PromptDoc = {
   promptToDoc: (prompt: string) => PMNode
   docToPrompt: (doc: PMNode) => string
-  /** 帧节点在编辑器中占一个位置，在正文中占完整标记长度。 */
   promptOffsetAt: (doc: PMNode, position: number) => number
 }
 
-/** 按一张只有帧节点的节点表（模块级常量）建互转；与编辑器挂载时按同一张表建的 schema 是同一个实例。
- * `tokens` 是正文里认成帧节点的记号（全局匹配）：第一个分组是编号，没有编号的记号（制作页新插入的图）编号记 0，
- * 原文记号照样往返。 */
 export const createPromptDoc = (
   nodes: readonly ComposerNodeSpec<FrameNode>[],
   tokens: RegExp = FRAME_REF,

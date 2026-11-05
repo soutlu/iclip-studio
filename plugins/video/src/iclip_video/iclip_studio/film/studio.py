@@ -1,14 +1,3 @@
-"""制作页：把检查通过的工程按视频请求排成镜头组，改一段字（连同字里插入、删除的图），给一张图换地址
-或选用，改整份工程的画幅。
-
-改字、换图和改画幅只替换原文里对应的那几段，文件其余部分一个字不动；改字插入或删掉图时，这组视频的参考图
-列表、「素材」里的照片和这组文字里的图号跟着改。写之前按人保存文件时的同一套规则检查，有问题就
-不写，说明是给人看的一句话。
-
-定位用 ``target``：``value:<名字>`` 是一段 ``text:Value`` 的正文，``shot:<Shots 名>:<第几镜>``
-是一个镜头的正文；镜头里的台词用 ``line:<段名>`` 对上是剧本里的哪一句。它们只在同一版文件里
-有效，改字时带着文件版本号一起传回。"""
-
 from __future__ import annotations
 
 import re
@@ -65,68 +54,47 @@ _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
 _ASPECT: Final = re.compile(r"""(\saspect-ratio\s*=\s*)(["'])(.*?)\2""", re.S)
 _UNWRITABLE: Final = ("<!--", "<![CDATA[")
-"""正文里有注释或 CDATA 时只换那一段会把它们弄丢，这样的正文不让在页面上改。"""
 
 _VIEW_CITE: Final = "参考@Image{}，"
-"""机位图选用时写在那一镜正文开头的一句，N 是它在这组视频参考图列表里的位置。"""
 
 _VIEW_LOCKED: Final = "机位图的引用随选用增删；请在镜头上取消选用"
 
 _PHOTO_NAME: Final = "素材照片{}"
-"""页面上插入的新照片在「素材」里的名字，N 从 1 起取第一个没被占用的。"""
 
 
 class FilmEditRejected(ValueError):
-    """这次改动没有写进文件；消息是给人看的一句话。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class TextEdited:
-    """改字写好的工程文件。"""
-
     source: str
     inserted: tuple[str, ...]
-    """这次新进参考图列表的图的地址，按先后；调用方写文件之前查它们能不能打开。"""
 
 
 @dataclass(frozen=True, slots=True)
 class _Slot:
-    """改过的字里一处图号指的图：``int`` 是这组参考图列表里现有的第几张（从 0 起），``str`` 是新插入
-    的图的地址。"""
-
     key: int | str
 
 
 @dataclass(frozen=True, slots=True)
 class _Typed:
-    """这组视频里改过的一段字：按 ``_Slot`` 拆开的新正文（未转义）。"""
-
     target: str
     node: Node
     runs: tuple[str | _Slot, ...]
     head: str
-    """用户写的新正文本身，图号还是用户编的；查机位图的引用在不在开头时看它。"""
 
 
 @dataclass(frozen=True, slots=True)
 class _View:
-    """一张机位图：用它的那一镜，以及这一镜所在的视频。"""
-
     video: Node
     group: int
-    """视频是第几组，从 1 起。"""
 
     shot: Node
     number: int
-    """这一镜在这组里排第几，从 1 起。"""
 
 
 def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
-    """每个视频节点一组，顺序与文件里相同。``film`` 是工程文件 ``source`` 检查通过后的样子。
-
-    ``frames`` 先是这组视频的参考图列表，编号就是位置；再按镜头先后接上这组里还没进列表的机位图，
-    没有编号，好让人在页面上生成、选用它们。"""
-
     project = film.project
     videos = project.find("ReferenceVideo")
     views = _views(project, videos)
@@ -175,15 +143,10 @@ def music_description(film: Film) -> str | None:
 
 
 def image_prompt(film: Film, image: str) -> PicturePrompt:
-    """按描述生成 ``image`` 这个生图节点时发给模型的描述与参考图。"""
-
     return render_picture(film, film.project.nodes[image])
 
 
 def missing_references(film: Film, node: str) -> tuple[str, ...]:
-    """生成节点 ``node`` 的参考图列表里现在没有图的那几张，按列表先后，用给人看的称呼；不为空时
-    不能生成。机位图按 ``node`` 所在的那一组称呼：视频是它自己这组，生图节点是用它当机位图的那组。"""
-
     project = film.project
     videos = project.find("ReferenceVideo")
     views = _views(project, videos)
@@ -201,14 +164,6 @@ def missing_references(film: Film, node: str) -> tuple[str, ...]:
 def edit_text(
     source: str, run_source: str | None, film: Film, edits: Sequence[FilmTextEdit]
 ) -> TextEdited:
-    """把几段字写回工程文件。``film`` 是 ``source`` 与运行文件 ``run_source`` 检查通过后的样子。
-
-    镜头的改动带着这一镜的每句台词，台词只改字：不能删、不能加、不能调先后，说话人不变。台词的字
-    改在剧本里那一段说话人的后面。用户打的花括号换成全角，免得当成台词。
-
-    只用在一个视频里的字可以插入、删掉图（见 ``_renumber_group``）；几个节点共用的字里不能有图号。
-    改完的两个文件按保存检查把关，不通过就不写。"""
-
     if not edits:
         raise FilmEditRejected("没有要改的字")
     if len({edit.target for edit in edits}) != len(edits):
@@ -277,19 +232,6 @@ def edit_text(
 def choose_image(
     film: Film, project_source: str, run_source: str | None, image: str, url: str | None
 ) -> list[tuple[str, str]]:
-    """给一个图片节点换图，返回按先后要写的 (文件, 新的原文)；本来就是这样时返回空列表。
-
-    生图节点在运行文件里登记这张图并选用它，``url`` 为 None 是删掉它的选用，这张图就没有图了；
-    用户给的图直接改工程文件里的地址，不能没有图。``url`` 取不取得到由调用方先查。
-
-    生图节点是某一镜的机位图（那一镜的 ``view`` 指着它）时，工程文件跟着改：选用时它不在那组视频的
-    参考图列表里，就插进列表、在那一镜正文开头写「参考@ImageN，」、这组文字里不小于 N 的图号各加 1；
-    取消选用时它在列表里，就删掉这两处、比 N 大的图号各减 1；换成另一版只改运行文件。
-
-    两个文件都要写时，先写的那一个写完而后一个没写成，留下的是「列表里有、但没有选用」：两份文件
-    都照样通过检查，出片时这组被缺图拦住，再选用或取消选用一次就补齐。所以选用先写工程文件，
-    取消选用先写运行文件。"""
-
     project = film.project
     node = project.nodes.get(image)
     if node is None or project.declared(node).output not in (("", IMAGE), ("image", IMAGE)):
@@ -323,12 +265,6 @@ def choose_image(
 
 
 def set_aspect_ratio(film: Film, project_source: str, aspect: str) -> str | None:
-    """把整份工程的画幅改成 ``aspect``，返回新的工程文件；所有目标本来就是它时返回 None。
-
-    改的是每个视频节点和每张机位图（某一镜 ``view`` 指着的生图节点）的 ``aspect-ratio``：保存检查要求
-    所有视频同画幅、机位图与视频同画幅。设定图等其余图片不动，``view`` 指着用户给的图时它没有画幅，
-    跳过。运行文件不写，已选用的图照旧选用。``aspect`` 只收视频能写的画幅。"""
-
     if aspect not in VIDEO_ASPECTS:
         raise FilmEditRejected(f"不支持 {aspect} 画幅，可选 {'、'.join(VIDEO_ASPECTS)}")
     project = film.project
@@ -354,8 +290,6 @@ def set_aspect_ratio(film: Film, project_source: str, aspect: str) -> str | None
 
 
 def _views(project: Document, videos: list[Node]) -> dict[str, _View]:
-    """图片节点 → 用它当机位图的那一镜。保存检查保证一张机位图只给一个镜头用。"""
-
     views: dict[str, _View] = {}
     for group, video in enumerate(videos, start=1):
         for number, shot in enumerate(project.kids(video_shots(project, video), "Shot"), start=1):
@@ -366,8 +300,6 @@ def _views(project: Document, videos: list[Node]) -> dict[str, _View]:
 
 
 def _label(image: str, group: int | None, views: dict[str, _View]) -> str:
-    """给人看的称呼：机位图叫「镜头 N」，别组的叫「第 M 组镜头 N」；其余的叫图片节点的名字。"""
-
     view = views.get(image)
     if view is None:
         return image
@@ -414,8 +346,6 @@ def _generated(project: Document, image: str) -> bool:
 
 
 def _settings(project: Document, video: Node, source: str) -> tuple[FilmSetting, ...]:
-    """全局设定，与拼给视频的先后相同：拍法、人物产品场景、声音；称呼是模板里这个槽的段名。"""
-
     prompt = project.nodes[_required(video, "prompt")]
     kit = project.template(_required(prompt, "template"))
     filled = slot_values(project, prompt)
@@ -470,9 +400,6 @@ def _shots(film: Film, video: Node, source: str) -> tuple[FilmShot, ...]:
 
 
 def _place_view(film: Film, source: str, image: str, *, listed: bool) -> str | None:
-    """``image`` 是某一镜的机位图时，让它在那组视频的参考图列表里（``listed``）或不在，连同那一镜
-    开头的引用和这组的图号；返回新的原文，不是机位图或本来就是这样时返回 None。"""
-
     project = film.project
     view = _views(project, project.find("ReferenceVideo")).get(image)
     if view is None:
@@ -517,8 +444,6 @@ def _place_view(film: Film, source: str, image: str, *, listed: bool) -> str | N
 
 
 def _later_views(project: Document, view: _View, listing: list[Node]) -> Node | None:
-    """列表里第一张排在 ``view`` 那一镜之后的机位图：新的机位图插在它前面。"""
-
     order = {
         shot.reference("view"): number
         for number, shot in enumerate(project.kids(video_shots(project, view.video), "Shot"), 1)
@@ -536,8 +461,6 @@ def _later_views(project: Document, view: _View, listing: list[Node]) -> Node | 
 
 
 def _drop_cite(raw: str, number: int, text: Node, view: _View) -> str:
-    """取消选用时去掉那一镜开头的「参考@ImageN，」；其余原样。"""
-
     cite = _VIEW_CITE.format(number)
     lead = len(raw) - len(raw.lstrip())
     if text is not view.shot or not raw[lead:].startswith(cite):
@@ -546,16 +469,12 @@ def _drop_cite(raw: str, number: int, text: Node, view: _View) -> str:
 
 
 def _shifted(found: re.Match[str], number: int, shift: int) -> str:
-    """插入时不小于 N 的图号加 1；删除时比 N 大的减 1。"""
-
     current = int(found.group(1))
     moves = current >= number if shift > 0 else current > number
     return f"@Image{current + shift}" if moves else found.group(0)
 
 
 def _users(project: Document, text: Node) -> list[Node]:
-    """用到这段字的生成节点，按先后。"""
-
     return [
         node
         for node in project.root.walk()
@@ -566,9 +485,6 @@ def _users(project: Document, text: Node) -> list[Node]:
 
 
 def _typed(film: Film, video: Node, edit: FilmTextEdit, node: Node, text: str) -> _Typed:
-    """把视频 ``video`` 里改过的一段字按图号拆开：列表现有 M 张时，``@Image1``…``@ImageM`` 是现有的图，
-    ``@Image(M+1)`` 起依次是 ``edit.images`` 里的图；新图的地址就是列表里某张现有的图时，当作那一张。"""
-
     old = listed_images(film, video)
     count = len(old)
     keys: list[int | str] = []
@@ -604,13 +520,6 @@ def _renumber_group(
     splice: _Splice,
     photos: _InsertedImages,
 ) -> list[tuple[str, str]]:
-    """视频 ``video`` 里几段字改好以后，按这组全部的字重排它的参考图列表，返回改过的每段应读出的正文。
-
-    新插入的图不在列表里时排在元素图之后、机位图之前（是生图节点选用的图就引用那个节点，否则引用
-    「素材」里同一地址的照片，没有就新加一张，见 ``_InsertedImages``）；元素图在这组的字里一处都不用了就从列表删掉。列表定下以后按一张新旧编号对照表改一遍
-    这组的字：改过的段写新的正文，没改的段只改图号。机位图的「参考@ImageN，」随选用增删，改字时
-    删掉或挪动它不写。"""
-
     project = film.project
     listing = references(project, video)
     count = len(listing)
@@ -697,10 +606,6 @@ def _renumber_group(
 
 
 class _InsertedImages:
-    """改字时新进参考图列表的图在列表里怎么引用：地址是某个生图节点现在选用的图，就引用那个节点的
-    输出，它以后重新生成或换了选用，引用跟着变；否则是「素材」里的照片，同一地址的照片已经有了就用它，
-    没有就新加一张，几组插入同一张图时只加一次。"""
-
     def __init__(self, film: Film) -> None:
         project = film.project
         self._project = project
@@ -726,14 +631,9 @@ class _InsertedImages:
 
     @property
     def inserted(self) -> tuple[str, ...]:
-        """新进了某组参考图列表的图的地址，按先后，不重复。"""
-
         return tuple(self._inserted)
 
     def reference_for(self, url: str) -> str:
-        """列表里引用 ``url`` 这张图的写法（花括号里的名字）。机位图只随选用进列表，它选用的图不能
-        这样插入。"""
-
         if url not in self._inserted:
             self._inserted.append(url)
         generated = self._generated.get(url)
@@ -757,9 +657,6 @@ class _InsertedImages:
         return name
 
     def write(self, source: str, splice: _Splice) -> None:
-        """把新加的照片写进「素材」：接在第一个视频之前的最后一张照片后面；还没有照片时接在引入的包
-        后面，没引入 media 时一并引入。"""
-
         if not self._new:
             return
         project = self._project
@@ -779,15 +676,12 @@ class _InsertedImages:
         lines = [f'<{prefix}:Image id="{name}" src={_quoted(url)}/>' for name, url in self._new]
         if media is None:
             lines.insert(0, f'<import as="media" from="{MEDIA_PACKAGE.ref}"/>')
-        # 检查通过的工程文件总引入了模板与文字的包；没引入 media 时也就还没有照片，接在包后面。
         anchor = photos[-1] if photos else imports[-1]
         indent = _indent(source, anchor)
         splice.insert(*_after(source, anchor, f"\n{indent}".join(lines)))
 
 
 def _resolve(project: Document, target: str) -> Node | None:
-    """``target`` 指的那个有正文的标签；对不上返回 None。"""
-
     kind, _, rest = target.partition(":")
     if kind == "shot":
         name, _, number = rest.rpartition(":")
@@ -811,8 +705,6 @@ def _writable(source: str, node: Node) -> bool:
 
 
 def _editable(source: str, film: Film, node: Node) -> bool:
-    """页面上能不能改这段：镜头连同它的每句台词都要能就地改。"""
-
     if not _writable(source, node):
         return False
     if not film.project.is_a(node, "Shot"):
@@ -821,8 +713,6 @@ def _editable(source: str, film: Film, node: Node) -> bool:
 
 
 def _new_text(edit: FilmTextEdit) -> str:
-    """镜头以外这次要写进这个标签的正文（未转义）。"""
-
     if edit.text is None:
         raise FilmEditRejected("要给改好的文字")
     text = _clean(edit.text).strip()
@@ -832,8 +722,6 @@ def _new_text(edit: FilmTextEdit) -> str:
 
 
 class _Splice:
-    """攒下对原文的几处替换与插入，最后从后往前一次改完，前面的位置不受影响。"""
-
     def __init__(self) -> None:
         self._edits: list[tuple[int, int, int, str]] = []
 
@@ -844,7 +732,6 @@ class _Splice:
         self._edits.append((position, 0, position, text))
 
     def apply(self, source: str) -> str:
-        # 同一处先替换再插入，插入的才不会被替换掉；插在同一处的几段按加进来的先后排。
         ordered = sorted(
             enumerate(self._edits), key=lambda item: (item[1][0], item[1][1], item[0]), reverse=True
         )
@@ -854,9 +741,6 @@ class _Splice:
 
 
 def _shot_text(shot: Node, edit: FilmTextEdit) -> tuple[str, list[tuple[str, str]]]:
-    """核对一个镜头的改动，返回 (镜头的新正文, 每句台词的段名与新的字)，都未转义。台词的字
-    照剧本的读法去掉首尾空白、连续空白合成一个空格。"""
-
     names = LINE_REFERENCE.findall(shot.text)
     lines = edit.lines
     if edit.parts is None or lines is None or len(edit.parts) != len(lines) + 1:
@@ -883,8 +767,6 @@ def _clean(text: str) -> str:
 
 
 def _body(raw: str, text: str) -> str:
-    """按原来的排版写出新正文：原来另起一行缩进写的，新的每行也这样缩进。"""
-
     lines = _escape(text).split("\n")
     lead = raw[: len(raw) - len(raw.lstrip())]
     trail = raw[len(raw.rstrip()) :] if raw.strip() else ""
@@ -905,8 +787,6 @@ def _attribute(value: str, quote: str) -> str:
 
 
 def _select_in_run(film: Film, source: str | None, image: str, url: str | None) -> str | None:
-    """在运行文件里给 ``image`` 选用 ``url``；``url`` 为 None 时删掉它的选用。没变化返回 None。"""
-
     output = f"{image}.image"
     run = film.run
     if source is None:
@@ -981,16 +861,12 @@ def _quoted(value: str) -> str:
 
 
 def _span(node: Node) -> tuple[int, int]:
-    """一个标签的开始标签在原文里的位置；对不上原文时不在页面上改。"""
-
     if node.opening is None:
         raise FilmEditRejected("这一处没法在页面上改，跟 AI 导演说")
     return node.opening
 
 
 def _tag_lines(source: str, node: Node) -> tuple[int, int]:
-    """一个自闭合标签在原文里的位置；它独占一行时连这一行一起算。"""
-
     start, stop = _span(node)
     line_start = source.rfind("\n", 0, start) + 1
     line_end = source.find("\n", stop)
@@ -1008,16 +884,12 @@ def _indent(source: str, node: Node) -> str:
 
 
 def _after(source: str, node: Node, text: str) -> tuple[int, str]:
-    """在自闭合标签 ``node`` 那一行后面另起一行插入，缩进与它相同。"""
-
     newline = source.find("\n", _span(node)[1])
     position = len(source) if newline < 0 else newline + 1
     return position, f"{_indent(source, node)}{text}\n"
 
 
 def _before_close(source: str, root: Node, text: str) -> tuple[int, str]:
-    """插在根标签的结束标签那一行前面。"""
-
     assert root.inner is not None
     position = source.rfind("\n", 0, root.inner[1]) + 1
     indent = "  "
@@ -1027,9 +899,6 @@ def _before_close(source: str, root: Node, text: str) -> tuple[int, str]:
 
 
 def _before_end(source: str, node: Node, text: str) -> tuple[int, str]:
-    """插在 ``node`` 的结束标签那一行前面，比它多缩进一级；``node`` 自闭合或结束标签不独占一行时
-    不在页面上改。"""
-
     if node.inner is None:
         raise FilmEditRejected("这一组的参考图列表没法在页面上改，跟 AI 导演说")
     position = source.rfind("\n", 0, node.inner[1]) + 1

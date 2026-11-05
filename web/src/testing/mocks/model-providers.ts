@@ -1,11 +1,3 @@
-/**
- * 模型供应商的 mock：五份声明（百炼内置两个模型，其余不内置），两个按百炼接入的供应商（百炼自己的，与停用了声明里模型、只用自己加的模型的团队服务），
- * 各自的密钥、模型与默认模型，形状与规则照合同 §18。agent 编辑页的「选模型」（§19）从这里现算，改了供应商下一次读就看得到。
- * 「谁在用」由调用方按 agent 的草稿与当前版本答（`usage`）。试连与测试模型：字段值里带 `invalid` 的不通；
- * 保存密钥不试连。
- * 每例由 `resetMockModelProviders` 放回预置数据。
- */
-
 import { http, HttpResponse } from 'msw'
 import type {
   AgentModelRef,
@@ -33,7 +25,6 @@ type CustomModel = Omit<ProviderModelOut, 'source' | 'usedBy'>
 type MockCredential = Omit<CredentialOut, 'usedBy'>
 type MockProvider = Omit<ModelProviderOut, 'credentials' | 'models'> & {
   credentials: MockCredential[]
-  /** 停用了的声明里的模型，记成 `类型:名字`。 */
   disabledDeclared: string[]
   custom: CustomModel[]
 }
@@ -54,7 +45,6 @@ const apiKeyField = {
   type: 'secret',
 } as const
 
-/** 不内置模型、能自己加模型的声明。 */
 const openDeclaration = (
   name: string,
   label: string,
@@ -216,7 +206,6 @@ export const resetMockModelProviders = () => {
 const declarationOf = (provider: MockProvider) =>
   mockDeclarations.find((item) => item.name === provider.provider)
 
-/** 合同 §18：机密字段只给 `••••` 加末 4 位，原值不足 8 位只给 `••••`。 */
 const maskedFields = (provider: MockProvider, fields: Record<string, string>) => {
   const secrets = new Set(
     declarationOf(provider)
@@ -231,7 +220,6 @@ const maskedFields = (provider: MockProvider, fields: Record<string, string>) =>
   )
 }
 
-/** 声明里的模型（叠上停用）在前，自己加的按类型、名字排。 */
 const modelsOf = (provider: MockProvider): Omit<ProviderModelOut, 'usedBy'>[] => [
   ...(declarationOf(provider)?.models ?? []).map((model) => ({
     ...model,
@@ -246,7 +234,6 @@ const modelsOf = (provider: MockProvider): Omit<ProviderModelOut, 'usedBy'>[] =>
 const byCreatedDesc = <T extends { createdAt: string }>(items: readonly T[]) =>
   [...items].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
 
-/** agent 编辑页的「选模型」：只列启用的供应商与它们启用的 llm 模型（合同 §19）。 */
 export const mockModelOptions = (): ModelOptionsOut => ({
   providers: byCreatedDesc(providers)
     .filter((provider) => provider.enabled)
@@ -279,13 +266,11 @@ const isDefaultModel = (provider: MockProvider, type: ModelType, name: string) =
     (item) => item.providerId === provider.id && item.type === type && item.modelName === name,
   )
 
-/** 用一组字段发一次请求：字段值里带 `invalid` 的不通。 */
 const probe = (fields: Record<string, string>): ProbeOut =>
   Object.values(fields).some((value) => value.includes('invalid'))
     ? { elapsedMs: 420, ok: false, reason: '接口返回 401，API Key 无效' }
     : { elapsedMs: 236, ok: true, reason: null }
 
-/** 按声明收字段：没给的用 default，去掉首尾空白、空串当没填；必填的缺了、声明里没有的都不收。 */
 const checkFields = (provider: MockProvider, fields: Record<string, string>) => {
   const declared = declarationOf(provider)?.credentialFields ?? []
   const unknown = Object.keys(fields).find((name) => !declared.some((field) => field.name === name))
@@ -319,14 +304,12 @@ const checkCustomModel = (
   return null
 }
 
-/** 路径里模型名在最后、可以带斜杠（合同 §18「模型」），按地址取出类型与名字。 */
 const modelPathOf = (url: string) => {
   const [, tail = ''] = new URL(url).pathname.split('/models/')
   const [type = '', ...rest] = tail.split('/')
   return { name: rest.map(decodeURIComponent).join('/'), type: type as ModelType }
 }
 
-/** 模型供应商与默认模型的全部端点；`usage` 答哪些 agent 的草稿或当前版本写着某个模型引用。 */
 export const modelProviderHandlers = (usage: Usage) => {
   const providerUsers = (provider: MockProvider) =>
     usage((model) => model.provider === provider.name)
@@ -486,7 +469,6 @@ export const modelProviderHandlers = (usage: Usage) => {
         if (JSON.stringify(fields) !== JSON.stringify(saved.fields)) {
           const problem = checkFields(provider, fields)
           if (problem !== null) return detail(problem, 422)
-          // 空值当没填（合同 §18「字段」）。
           saved.fields = Object.fromEntries(
             Object.entries(fields)
               .map(([key, value]) => [key, value.trim()] as const)

@@ -1,6 +1,3 @@
-"""运行时服务的配置：YAML 给应用名单与运行参数，环境变量给连接串、加密钥匙与各应用的密钥；缺了或不对都在
-启动时报错，报错不带机密。"""
-
 from __future__ import annotations
 
 import base64
@@ -78,7 +75,6 @@ def test_the_yaml_file_ignores_environment_variables(
 
 
 NO_HOOKS = "    hooks: {gate: null, run_started: null, turn_started: null}\n"
-"""一个应用不要任何回调时的写法：三个键都写、都为 null。"""
 
 
 @pytest.mark.parametrize(
@@ -92,7 +88,6 @@ NO_HOOKS = "    hooks: {gate: null, run_started: null, turn_started: null}\n"
         f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}webhooks: {{}}\n",
         f"apps:\n  bff:\n    key_env: K\n{NO_HOOKS}"
         "agent_runs:\n  heartbeat_seconds: 30\n  lease_seconds: 30\n",
-        # 回调：整段不写、少写一个键、有地址没令牌、地址不是 http(s)、超时不是正数。
         "apps:\n  bff:\n    key_env: K\n",
         "apps:\n  bff:\n    key_env: K\n    hooks: {gate: null, run_started: null}\n",
         "apps:\n  bff:\n    key_env: K\n"
@@ -109,8 +104,6 @@ def test_malformed_yaml_fails_validation(tmp_path: Path, text: str) -> None:
 
 
 def plugin_factory(config: Mapping[str, Any]) -> AbstractAsyncContextManager[None]:
-    """``plugins.factory`` 指向的入口替身；读配置不调它。"""
-
     raise AssertionError(f"读配置时不该调插件包入口：{config}")
 
 
@@ -222,8 +215,6 @@ def test_the_hook_token_stays_out_of_the_settings_repr(
 
 
 def test_an_app_without_hook_urls_reads_no_token(tmp_path: Path, env: pytest.MonkeyPatch) -> None:
-    """三个地址都为 null 时不读令牌：令牌环境变量写了也不要求它存在。"""
-
     text = YAML.replace(
         "    hooks:\n      gate: null\n",
         "    hooks:\n      token_env: RUNTIME_TOOL_TOKEN\n      gate: null\n",

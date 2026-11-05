@@ -155,7 +155,6 @@ describe('生成音乐浮层', () => {
     await user.click(screen.getByRole('button', { name: '打开' }))
     const popover = await screen.findByRole('dialog', { name: '生成音乐' })
 
-    // 预填把占位文字换掉会移除节点；焦点此时在 body
     act(() => (document.activeElement as HTMLElement).blur())
     release()
     await waitFor(() =>
@@ -201,7 +200,6 @@ describe('生成音乐浮层', () => {
     const submit = within(popover).getByRole('button', { name: '生成音乐' })
     await waitFor(() => expect(submit).toBeEnabled())
 
-    // Safari 与 Firefox-mac 点按钮不聚焦：焦点留在 body，提交钮换成转圈会移除图标节点
     act(() => (document.activeElement as HTMLElement).blur())
     fireEvent.click(submit)
     expect(await within(popover).findByRole('button', { name: '正在提交' })).toBeDisabled()

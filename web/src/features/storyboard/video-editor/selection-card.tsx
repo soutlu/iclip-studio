@@ -4,7 +4,6 @@ import { IconButton } from '@/shared/ui/button'
 import { placeCard } from '../editing/card-placement'
 
 type SelectionCardProps = {
-  /** 左边那一帧；没有画面（在跑的编辑片段）时为 undefined，放生成图标。 */
   frame: string | undefined
   title: string
   line: string
@@ -12,11 +11,9 @@ type SelectionCardProps = {
   onClose: () => void
 }
 
-/** 选中草稿里一块、或编辑轨上在跑的那条时弹出的小卡：一帧、标题、说明一行与关闭。 */
 export function SelectionCard({ frame, title, line, anchorRef, onClose }: SelectionCardProps) {
   const cardRef = useRef<HTMLElement>(null)
 
-  // 横向对准选中描边的中点，尖角指向它；同 AI 改段卡的摆法。
   const place = useEffectEvent(() => {
     const card = cardRef.current
     const stage = card?.offsetParent

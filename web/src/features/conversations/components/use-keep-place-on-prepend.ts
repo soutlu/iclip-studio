@@ -1,9 +1,5 @@
 import { type RefObject, useLayoutEffect, useRef } from 'react'
 
-/**
- * 旧页插在最上面时，浏览器保持 scrollTop 不变，眼前的内容会被顶下去。点之前记下到底部的距离，旧页落地
- * （最早一轮变了）后按它把 scrollTop 补回来；读完却没变（失败或没有更早的）就作罢。不依赖 CSS overflow-anchor。
- */
 export const useKeepPlaceOnPrepend = (
   scrollerRef: RefObject<HTMLElement | null>,
   firstItemId: string | undefined,

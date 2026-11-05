@@ -1,5 +1,3 @@
-"""配置页管理接口经后端转给真实的运行时 app：后端答的与直接问运行时答的逐字节相同。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -21,8 +19,6 @@ async def root(client: httpx.AsyncClient, migrated_pg: str) -> str:
 
 @pytest.fixture
 async def direct(app: FastAPI, root: str) -> AsyncGenerator[httpx.AsyncClient]:
-    """绕过后端、以应用 ``video`` 的身份代 root 直接问运行时；路径相对 ``/v1/admin``。"""
-
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app.state.runtime_service),
         base_url=f"{RUNTIME_URL}/v1/admin",

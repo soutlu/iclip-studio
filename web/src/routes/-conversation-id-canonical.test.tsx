@@ -8,7 +8,6 @@ import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
 import { addMockConversation, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { FakeSocket } from '@/testing/ws'
 
-/** 重定向发生在会话页的 beforeLoad，要用应用真实路由树才看得到；侧栏顶层要订全局帧，连接用假 socket。 */
 const renderAt = async (initialPath: string) => {
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -27,7 +26,6 @@ const renderAt = async (initialPath: string) => {
   return router
 }
 
-// 每例清理单例 queryClient，避免登录缓存污染后续测试。
 afterEach(() => {
   queryClient.clear()
 })

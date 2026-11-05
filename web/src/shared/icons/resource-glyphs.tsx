@@ -5,11 +5,6 @@ type ResourceGlyphProps = ComponentProps<'svg'> & {
   absoluteStrokeWidth?: boolean
 }
 
-/**
- * 原创资源图形，参考双层浅填充与统一的小尺寸几何规则：
- * https://phosphoricons.com/
- * https://lucide.dev/contribute/icons/specification
- */
 function ResourceGlyph({
   size = 24,
   strokeWidth: _strokeWidth,

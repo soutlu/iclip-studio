@@ -1,5 +1,3 @@
-"""试连一个模型：发一个最小的请求，交回通没通、耗时与一句不带机密的失败原因。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +26,6 @@ from pydantic_ai.settings import ModelSettings
 _logger = structlog.stdlib.get_logger(__name__)
 
 PROBE_MAX_TOKENS: Final = 16
-"""OpenAI 的 Responses 接口不收小于 16 的输出上限。"""
 
 PROBE_TIMEOUT_SECONDS: Final = 15.0
 
@@ -47,16 +44,12 @@ class ProbeOutcome:
 
 
 def scrub(text: str, secrets: Collection[str]) -> str:
-    """把 ``secrets`` 里的每个值从 ``text`` 里抹掉。"""
-
     for secret in sorted((one for one in secrets if one), key=len, reverse=True):
         text = text.replace(secret, _REDACTED)
     return text
 
 
 def _upstream_message(body: object) -> str | None:
-    """上游错误体里给人看的那句：``{"error": {"message"}}`` 或 ``{"message"}``。"""
-
     if not isinstance(body, Mapping):
         return None
     payload = cast("Mapping[str, object]", body)
@@ -67,9 +60,6 @@ def _upstream_message(body: object) -> str | None:
 
 
 def describe_failure(exc: BaseException, *, timeout_seconds: float) -> str:
-    """一次失败的请求换成给人看的一句话。只用状态码、错误类别与上游错误体里的那句说明，不用异常的完整
-    文本：那里可能带着请求。"""
-
     status = f"（HTTP {exc.status_code}）" if isinstance(exc, ModelHTTPError) else ""
     detail = _upstream_message(exc.body) if isinstance(exc, ModelAPIError) else None
     suffix = f"：{detail[:_MAX_DETAIL_CHARS]}" if detail else ""
@@ -96,9 +86,6 @@ async def probe_model(
     timeout_seconds: float = PROBE_TIMEOUT_SECONDS,
     max_tokens: int = PROBE_MAX_TOKENS,
 ) -> ProbeOutcome:
-    """用 ``build()`` 建出的模型发一个最小的请求，不重试。建不出模型与请求失败都放进结果，原因里抹掉
-    ``secrets``；``label`` 只用来记日志。"""
-
     started = time.monotonic()
 
     def failed(reason: str, exc: Exception) -> ProbeOutcome:
@@ -111,7 +98,6 @@ async def probe_model(
     try:
         model = build()
     except (RuntimeError, ValueError, UserError) as exc:
-        # 这几类是 build_model 对配置组合的拒绝，消息里只有 provider 名与字段名。
         return failed(f"按声明建不出模型：{exc}", exc)
     settings = ModelSettings(max_tokens=max_tokens, timeout=timeout_seconds, max_retries=0)
     try:
@@ -120,7 +106,6 @@ async def probe_model(
                 model, [ModelRequest.user_text_prompt(PROBE_PROMPT)], model_settings=settings
             )
     except Exception as exc:
-        # 试连的任何失败都是要交给人看的结果，不是服务端错误；原因已分类，类型另记日志。
         return failed(describe_failure(exc, timeout_seconds=timeout_seconds), exc)
     return ProbeOutcome(ok=True, elapsed_ms=int((time.monotonic() - started) * 1000))
 

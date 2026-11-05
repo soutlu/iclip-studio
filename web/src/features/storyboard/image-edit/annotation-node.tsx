@@ -1,5 +1,3 @@
-/** 修改要求里的标注节点：节点只存标注 id 与建它时的编号，渲染交给 AnnotationChip。 */
-
 import type { ComposerNodeSpec, ComposerPart } from '@/shared/ui/composer'
 import { AnnotationChip } from './annotation-chip'
 

@@ -1,12 +1,9 @@
-/** 审计页反复出现的小件：卡片外壳、带标题的一节、标题旁的 ⓘ、环比字、图例记号。 */
-
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import type { Delta } from '../overview-model'
 
-/** 内容区铺浅灰、卡片纯白不描边，靠一层淡影分层。 */
 export function Card({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
   return (
     <div
@@ -19,7 +16,6 @@ export function Card({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
   )
 }
 
-/** 一节：标题带 ⓘ，旁边可跟一句读数；区域的可访问名只取标题字。 */
 export function Section({
   id,
   title,
@@ -47,7 +43,6 @@ export function Section({
   )
 }
 
-/** 口径说明收进标题旁的小图标，悬停或聚焦才看；页面上只留读数与结论。 */
 export function InfoTip({ text }: { text: string }) {
   return (
     <TooltipRoot>
@@ -73,7 +68,6 @@ const TONE_CLASS = {
   flat: 'font-medium text-on-surface-muted',
 } as const satisfies Record<Delta['tone'], string>
 
-/** 环比只用带方向的彩色字，不套底色胶囊；悬停写明和哪几天比。 */
 export function DeltaText({
   delta,
   title,
@@ -105,7 +99,6 @@ export function DeltaText({
   )
 }
 
-/** 图例一项：记号加名字，可再跟一个 ⓘ。 */
 export function LegendItem({ marks, children }: { marks: ReactNode; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -115,7 +108,6 @@ export function LegendItem({ marks, children }: { marks: ReactNode; children: Re
   )
 }
 
-/** 图例记号：柱与分项是方块，当天的值是圆点，均线是横线（30 日均线虚线），非活跃日是描边浅灰块。 */
 export function Mark({
   kind,
   color,

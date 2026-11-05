@@ -1,6 +1,3 @@
-/** 成片草稿与导出的 mock：每段对话一份草稿，形状与版本号规矩同后端（合同 §6「成片草稿」「成片导出」）。
- * 只查文档的形状与版本号，不核对引用的记录；整份保存，版本对不上是 409。 */
-
 import { http, HttpResponse } from 'msw'
 import type { WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { zWholeFilmDraftIn, zWholeFilmExportIn } from '@/shared/api/generated/zod.gen'
@@ -9,10 +6,6 @@ type StoredDraft = { revision: number; document: WholeFilmDocument; updatedAt: s
 
 const drafts = new Map<string, StoredDraft>()
 
-/**
- * 导出的 mock：每段对话记最近一次导出，读最近一次时按读的次数往前走，
- * 排队（前面 1 个、0 个）→ 渲染（还没有进度、40%、80%）→ 上传 → 完成，下载地址长期有效，同后端。
- */
 type MockExport = {
   id: string
   sourceJobIds: string[]
@@ -59,7 +52,6 @@ const exportOut = (found: MockExport) => {
   }
 }
 
-/** 一次没取消的导出（按导出 id 找），高清版的 mock 把它当成片记录；没有为 undefined。 */
 export const findMockWholeFilmExport = (
   exportId: string,
 ): { sourceJobIds: readonly string[]; downloadUrl: string } | undefined => {
@@ -69,11 +61,9 @@ export const findMockWholeFilmExport = (
     : { downloadUrl: `/mock-exports/${found.id}.mp4`, sourceJobIds: found.sourceJobIds }
 }
 
-/** 这段对话现存的草稿；还没存过是 undefined。 */
 export const mockWholeFilmDraft = (conversationId: string): StoredDraft | undefined =>
   drafts.get(conversationId)
 
-/** 直接放一份草稿（版本号加一），模拟别处已经存过。 */
 export const putMockWholeFilmDraft = (conversationId: string, document: WholeFilmDocument) => {
   const revision = (drafts.get(conversationId)?.revision ?? 0) + 1
   const stored = { revision, document, updatedAt: new Date().toISOString() }
@@ -137,12 +127,10 @@ export const wholeFilmHandlers = [
     const found = latestExports.get(String(params['conversationId']))
     if (found?.id !== String(params['exportId']))
       return HttpResponse.json({ detail: '成片导出不存在' }, { status: 404 })
-    // 已经完成的也答 204、状态不变
     if (found.reads <= EXPORT_STEPS.length) found.cancelled = true
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // 导出完成后的下载：按附件给一小段字节
   http.get('*/mock-exports/:name', () =>
     HttpResponse.arrayBuffer(new Uint8Array([0, 0, 0, 24]).buffer, {
       headers: {

@@ -1,7 +1,3 @@
-"""启动探测怎么选编解码：第一个通过的选中，都不过落到软件，编不出或解不开的不要。
-
-ffmpeg 由替身代跑：编码那一步按命令里的编码器名、解码那一步按输入文件名决定成不成。"""
-
 from __future__ import annotations
 
 import subprocess
@@ -24,8 +20,6 @@ from iclip.platform.media.codec import (
 
 @dataclass
 class FakeFfmpeg:
-    """替身：``broken`` 里的那几档编码与解码都失败，其余都成功。"""
-
     broken: frozenset[str] = frozenset()
     ran: list[list[str]] = field(default_factory=list)
 
@@ -39,8 +33,6 @@ class FakeFfmpeg:
 
 
 def _codec_of(command: Sequence[str]) -> str:
-    """编码那一步按 -c:v 认，解码那一步按输入文件名认。"""
-
     if "-c:v" in command:
         encoder = command[command.index("-c:v") + 1]
         return next(
@@ -80,8 +72,6 @@ def test_when_every_candidate_fails_software_is_used_with_a_warning() -> None:
 
 
 def test_a_candidate_that_cannot_decode_its_own_output_is_rejected() -> None:
-    """编码成功不算数：这一档的解码选项解不开产物，也不选它。"""
-
     fake = FakeFfmpeg()
     failing_decode = MediaCodec(
         name="no-decode",

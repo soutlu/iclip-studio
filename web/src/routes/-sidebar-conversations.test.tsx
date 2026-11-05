@@ -89,7 +89,6 @@ const workFrame = (
   payload: { pending_interaction: 'none', ...payload },
 })
 
-/** 视频帧让视频进度在一秒的尾随窗口后才重拉（见 conversations.live.ts），等它时放宽超时。 */
 const PROGRESS_REFRESH_TIMEOUT = { timeout: 3000 }
 
 const render = async (initialPath = '/', permissions = mockAuthUser.permissions) => {
@@ -316,7 +315,6 @@ describe('SidebarConversations', () => {
       release = resolve
     })
     server.use(
-      // 只扣住「运行中」那一档的拓扑；放行后交给默认处理器照常作答。
       http.get('*/api/conversations', async ({ request }) => {
         if (new URL(request.url).searchParams.get('state') !== 'running') return undefined
         await held
@@ -911,7 +909,6 @@ describe('SidebarConversations', () => {
         release = resolve
       })
       const cursors: (string | null)[] = []
-      // 不返回响应就落到默认 handler：先记下、挂住，放行后照常分页。
       server.use(
         http.get('*/api/conversations/ungrouped', async ({ request }) => {
           cursors.push(new URL(request.url).searchParams.get('cursor'))

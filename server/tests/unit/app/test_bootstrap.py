@@ -1,5 +1,3 @@
-"""验证组合根的依赖完整性和路由挂载条件。"""
-
 from __future__ import annotations
 
 import httpx
@@ -57,8 +55,6 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def engine():
-    """仅构造 engine，不连接数据库；测试只覆盖装配。"""
-
     return build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
 
 
@@ -101,9 +97,6 @@ async def test_without_media_generation_the_routes_are_absent(base_env: None) ->
 def test_startup_fails_without_the_runtime_service(
     base_env: None, monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
-    """开会话、首页名册、起标题、对话活动与配置页都经运行时服务，少了它的地址或密钥就起不来；运行时回调后端
-    的内部接口少了令牌，每次运行都过不了开跑检查，同样起不来。"""
-
     monkeypatch.delenv(missing)
 
     with pytest.raises(ValidationError, match=missing):
@@ -113,8 +106,6 @@ def test_startup_fails_without_the_runtime_service(
 def test_media_generation_without_ffmpeg_fails_at_startup(
     base_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """视频裁剪拼接跟着媒体生成一起装，缺 ffmpeg 要在启动时就报，不留到队列里才发现。"""
-
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: False)
@@ -123,17 +114,11 @@ def test_media_generation_without_ffmpeg_fails_at_startup(
         build_app(config_with_media(), engine=engine(), object_store=MemoryObjectStore())
 
 
-def _keep_logging(_level: str, _fmt: str) -> None:
-    """替换 ``configure_logging``：不动 structlog 的配置，``capture_logs`` 才截得到。"""
+def _keep_logging(_level: str, _fmt: str) -> None: ...
 
 
 @pytest.fixture
 def local_media_env(base_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """开媒体生成与拆解两条本地加工队列的环境。
-
-    unit 门禁的机器不一定装 ffmpeg，这里只看装配。``configure_logging`` 会整个换掉 structlog
-    的配置，要先让它不动，才截得到启动日志。"""
-
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
@@ -146,8 +131,6 @@ def build_local_media(
     breakdown: int | None = None,
     media_codec: MediaCodec | None = None,
 ) -> list[EventDict]:
-    """装配一次，交回「编解码已选定」那几条日志。"""
-
     config = config_with_media()
     assert config.media_generation is not None
     config = config.model_copy(
@@ -195,8 +178,6 @@ def test_local_queues_take_the_written_concurrency_or_the_codec_default(
 async def test_startup_says_when_subtitles_are_off_and_the_route_is_mounted_either_way(
     local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
 ) -> None:
-    """识别可以不开，但启动日志要说出来；手动识别的入口照挂，没开通由它自己明确拒绝。"""
-
     config = config_with_media()
     assert config.media_generation is not None
     if configured:
@@ -229,8 +210,6 @@ async def test_startup_says_when_subtitles_are_off_and_the_route_is_mounted_eith
 async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_way(
     local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
 ) -> None:
-    """生成背景音乐可以不开，但启动日志要说出来；入口照挂，没开通由它自己明确拒绝（422）。"""
-
     config = config_with_media()
     assert config.media_generation is not None
     if configured:
@@ -297,9 +276,6 @@ def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig
 async def test_the_plugin_services_answer_follows_the_backend_config(
     local_media_env: None, config: RuntimeConfig, answer: dict[str, object]
 ) -> None:
-    """运行时启动时照这份核对配了的插件：取帧与出图要 ``shot_video`` 段连同媒体生成与对象存储，
-    拆解要 ``iclip_studio`` 段。"""
-
     app = build_app(config, engine=engine(), object_store=MemoryObjectStore(), media_codec=SOFTWARE)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"

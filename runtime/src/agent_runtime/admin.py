@@ -1,10 +1,3 @@
-"""运行时服务的管理命令，直连数据库：``python -m agent_runtime.admin rotate-credential-keys``。
-
-``rotate-credential-keys`` 把模型供应商全部密钥的机密字段与全部 MCP 服务的地址、请求头的值改用
-``CREDENTIAL_ENCRYPTION_KEYS`` 的第一个 key 加密，打印各改了几个；连接串取 ``DATABASE_URL``。换钥步骤见
-docs/deploy.md「换密钥加密钥匙」。
-"""
-
 from __future__ import annotations
 
 import argparse

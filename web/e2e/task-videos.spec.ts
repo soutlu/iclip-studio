@@ -4,7 +4,6 @@ import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import { login } from './login'
 
-/** mock 出片用的测试卡源文件；下载回来的字节要和它一致。 */
 const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.meta.url)
 
 const TASK_TITLE = '通勤背包 · 城市宣传片'
@@ -26,7 +25,6 @@ const openTask = async (page: Page, username: 'tester' | 'governor' = 'tester') 
   return page.getByRole('dialog', { name: TASK_TITLE, exact: true })
 }
 
-/** 通过浏览器 MSW 提交，既覆盖生成帧推动发现新产物，也避免向真实后端发起生成。 */
 const submitMockVideo = (page: Page, conversationId: string) =>
   page.evaluate(async (id) => {
     const response = await fetch('/api/generations/video', {
@@ -66,7 +64,6 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
   await expect(link).toHaveAttribute('target', '_blank')
   const conversationId = href.split('/').at(-1)
   if (!conversationId) throw new Error('缺少对话编号')
-  // 在隔离的浏览器 MSW 环境提交一次出片，验证面板发现新结果并形成版本切换。
   const submitted = await submitMockVideo(page, conversationId)
   expect(submitted).toBe(202)
   const latest = group.getByRole('button', { name: '镜头组 2 V2', exact: true })
@@ -76,7 +73,6 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
   await expect(earlier).toHaveAttribute('aria-pressed', 'true')
   await latest.click()
 
-  // 共享播放器没有原生控件；播放键可用，视频开始前进；切到另一版会停止并卸载旧播放器。
   expect(await video.evaluate((el: HTMLVideoElement) => el.controls)).toBe(false)
   await group.getByRole('button', { name: '播放', exact: true }).click()
   await expect
@@ -93,7 +89,6 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
     .toBe(false)
   await page.keyboard.press('Escape')
   await expect(preview).toBeHidden()
-  // 双击画面同样放大
   await video.dblclick()
   await expect(preview).toBeVisible()
   await page.keyboard.press('Escape')
@@ -105,7 +100,6 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
   await page.getByRole('menuitem', { name: '下载原片', exact: true }).click()
   const saved = await download
   expect(await saved.failure()).toBeNull()
-  // 文件名取自地址（mock 的出片是构建产物里那条 MP4 测试卡），字节要和源文件一致。
   expect(saved.suggestedFilename()).toMatch(/^sample-video(-[^/]*)?\.mp4$/)
   const path = await saved.path()
   expect(await readFile(path)).toEqual(await readFile(SAMPLE_VIDEO))
@@ -169,7 +163,6 @@ test('不同关联对话的内联播放与放大播放互斥', async ({ page }) 
   await expect.poll(() => firstVideo.evaluate((el: HTMLVideoElement) => el.paused)).toBe(true)
   await firstPlayer.getByRole('button', { name: '放大', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '镜头组 2', exact: true })).toBeVisible()
-  // 放大后 Radix 会将底层需求单从可访问树隐藏，用已知播放器属性检查底层媒体状态。
   await expect
     .poll(() =>
       page

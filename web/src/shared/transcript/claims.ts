@@ -1,5 +1,3 @@
-/** 乐观气泡由谁接替：先按 id，轮头 triggerPromptId 认发出去的那句，插话块 promptIds 认插队的那句；服务端没给 id 的才退回比内容。 */
-
 import type { PromptContentPart, TranscriptPrompt, TranscriptTurn } from './vendor'
 
 export type PendingPrompt = {
@@ -27,10 +25,6 @@ const steeredInto = (turn: TranscriptTurn, promptId: string): boolean =>
     ),
   )
 
-/**
- * 排队中的由队列行显示，到终态的直接撤；其余看时间线里有没有认领它的轮或插话块。
- * 只有没带 triggerPromptId 的轮才按内容认，带了 id 却对不上的不算，避免认错同样内容的旧轮。
- */
 export const claimed = (
   item: PendingPrompt,
   turns: readonly TranscriptTurn[],
@@ -43,7 +37,6 @@ export const claimed = (
     (turn) =>
       turn.triggerPromptId === item.promptId ||
       steeredInto(turn, item.promptId) ||
-      // 只有运行没有消息映射的旧轮才没有 id；别把这条放宽成一般的内容比对。
       (turn.triggerPromptId === undefined && sameContent(turn.content, item.content)),
   )
 }

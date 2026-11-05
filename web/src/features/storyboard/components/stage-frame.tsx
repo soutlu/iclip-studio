@@ -1,23 +1,13 @@
-/** 舞台显示分镜帧。画面按分镜画幅 contain，整张画面是「打开原图」按钮；这帧正在替换时压一层「正在上传」。
- * 画面比例与分镜画幅不一致时，空出来的地方铺同一张图的模糊暗版，上下排时舞台两侧也铺满。
- * 舞台上另叠左右切帧箭头与底部正中的帧计数（`StageFrameNav`），以及顶部工具条（`FrameStageBar`）：它们与画面按钮是兄弟、
- * 叠在它上面，点它们不开原图；焦点在舞台里时 ←/→ 也切帧，与点箭头走同一个 `stepFrame`（见 `use-stage-frame-steps.ts`）。
- * 位置与显隐见 storyboard.css 的「舞台叠层」一节。 */
-
 import type { Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { IconButton } from '@/shared/ui/button'
 import { FrameCounter, type FrameGallery } from './frame-counter'
 
 type StageFrameProps = {
-  /** 当前帧；这段没有帧时为 undefined，舞台留空。 */
   frame: { name: string; url: string } | undefined
-  /** 这一帧正在替换。 */
   uploading: boolean
   onOpen: () => void
-  /** 「打开原图」按钮；箭头到头隐藏时焦点交给它。 */
   openRef: Ref<HTMLButtonElement>
-  /** 没有图时舞台上写的一句。 */
   emptyText?: string
 }
 
@@ -71,15 +61,12 @@ export function StageFrame({
 }
 
 type StageFrameNavProps = {
-  /** 底部正中的帧计数；不给就不画。 */
   counter: { aspectRatio: string; gallery: FrameGallery } | undefined
-  /** 哪一侧还能切；到头的一侧箭头不出现（不是置灰）。 */
   hasPrevious: boolean
   hasNext: boolean
   onStep: (step: -1 | 1) => void
 }
 
-/** 叠在舞台上的切帧箭头与帧计数；制作页不要帧计数。 */
 export function StageFrameNav({ counter, hasNext, hasPrevious, onStep }: StageFrameNavProps) {
   return (
     <>

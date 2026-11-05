@@ -7,18 +7,11 @@ type PanelShellProps = {
   title: string
   onClose: () => void
   children: ReactNode
-  /** 底栏按钮；不给就是一个「完成」，给 false 就没有底栏（动作写在内容里的表单）。 */
   footer?: ReactNode
-  /** 内容区自己管滚动（编辑器）时传 false。 */
   scroll?: boolean
-  /** 标题栏右侧的小件（版本、移除、删除）。 */
   actions?: ReactNode
 } & Omit<ComponentPropsWithoutRef<'section'>, 'children' | 'title'>
 
-/**
- * 右侧的配置面板：返回图标 + 标题、内容、底栏。打开时焦点落在标题上，Esc 关闭；
- * 面板里弹出的菜单挂在 body 上，它们的 Esc 只关自己，不连带关面板。
- */
 export function PanelShell({
   actions,
   children,

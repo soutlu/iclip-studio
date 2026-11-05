@@ -4,7 +4,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { canvasPng, openConversation, openStoryboardShot } from './helpers'
 import { login } from './login'
 
-/** 在镜头组 1 的第 1 帧上打开图片编辑器，返回弹窗与「修改要求」输入框。 */
 const openFrameEditor = async (page: Page, { mobile = false } = {}) => {
   await openConversation(page, '夜景延时素材生成', { mobile })
   const group = page.getByRole('region', { name: '镜头组 1', exact: true })
@@ -18,7 +17,6 @@ const openFrameEditor = async (page: Page, { mobile = false } = {}) => {
   return { dialog, editor, group, sourceUrl }
 }
 
-/** 本机文件拖放：文件字节由页面里的 Canvas 画出来。 */
 const fileDrag = (page: Page, png: Buffer, names: readonly string[]) =>
   page.evaluateHandle(
     ([bytes, fileNames]) => {
@@ -30,7 +28,6 @@ const fileDrag = (page: Page, png: Buffer, names: readonly string[]) =>
     [Array.from(png), names] as const,
   )
 
-/** 上传完的图在 mock 对象存储里，浏览器取缩略图时给它一张真图。 */
 const serveMockOss = async (page: Page, png: Buffer) => {
   await page.context().route('http://localhost/mock-oss/**', async (route) => {
     if (route.request().method() === 'GET')
@@ -63,7 +60,6 @@ for (const prefix of ['', '把']) {
       await expect(option).toBeVisible()
       if (method === '鼠标') await option.click()
       else {
-        // 第一项是「编辑底图」，↓ 一下到标注。
         await editor.press('ArrowDown')
         await expect(option).toHaveAttribute('aria-selected', 'true')
         await editor.press('Enter')
@@ -71,9 +67,7 @@ for (const prefix of ['', '把']) {
       const chip = editor.getByRole('button', { name: '标注 1', exact: true })
       await expect(chip).toBeVisible()
       await page.keyboard.insertText('改成蓝色')
-      // chip 里的红色序号也是一个字。
       await expect(editor).toHaveText(`${prefix}1标注 1改成蓝色`)
-      // 光标落在刚输入的文字里；它与标注同一行，说明插入标注没有把后文挤到下一行。
       const reference = await chip.boundingBox()
       if (!reference) throw new Error('标注没有可测量的位置')
       const caret = await editor.evaluate(() => {
@@ -102,7 +96,6 @@ test('普通编辑只填写要求，回车就提交编辑底图', async ({ page 
     sourceUrl,
   })
   expect(body['metadata']).toEqual({ shot: 1, frame: 1 })
-  // 提交后输入留着，方便用同一段要求再生成。
   await expect(editor).toHaveText('将衣服改成蓝色')
 })
 
@@ -142,7 +135,6 @@ for (const width of [1600, 390]) {
     await group.getByRole('button', { name: '编辑图片', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /^编辑图片/ })
     const history = dialog.getByRole('group', { name: '该帧的图片' })
-    // 选中在跑的那一格，舞台显示生成中与已用时长。
     await history.getByRole('button', { name: /^生成中 · / }).click()
     await expect(dialog.getByRole('status')).toHaveAccessibleName(/^生成中，已用 /)
     await history.getByRole('button', { name: /^生成失败 · / }).click()
@@ -155,7 +147,6 @@ for (const width of [1600, 390]) {
     await expect(error).toBeVisible()
     await expect(reason).toHaveAttribute('aria-expanded', 'true')
     await expect(reason).toBeFocused()
-    // 长服务响应在原因卡片内换行、滚动，不把弹窗或移动端页面横向撑开。
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     )
@@ -163,7 +154,6 @@ for (const width of [1600, 390]) {
     await error.hover()
     await page.mouse.wheel(0, 600)
     await expect.poll(() => error.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
-    // Esc 先收起原因，编辑器留着。
     await page.keyboard.press('Escape')
     await expect(error).toBeHidden()
     await expect(dialog).toBeVisible()
@@ -206,14 +196,12 @@ for (const width of [1600, 390]) {
     await dialog.getByRole('button', { name: '关闭图片编辑', exact: true }).click()
     await expect(dialog).toBeHidden()
 
-    // 关掉编辑器后帧上仍能看到任务在跑；mock 三秒后出图，前端每五秒问一次。
     await expect(group.getByText('生成中', { exact: true })).toBeVisible()
     const view = group.getByRole('button', { name: '有新结果 · 查看', exact: true })
     await expect(view).toBeVisible({ timeout: 15_000 })
 
     await view.click()
     await expect(dialog).toBeVisible()
-    // 从角标进来直接落在那条结果上：和当前帧左右对比，替换就能点。
     await expect(dialog.getByRole('slider', { name: '对比分割线', exact: true })).toBeVisible()
     await expect(dialog.getByRole('button', { name: '替换当前帧', exact: true })).toBeEnabled()
     await dialog.getByRole('button', { name: '关闭图片编辑', exact: true }).click()
@@ -231,11 +219,9 @@ test('往编辑器拖本地图片：输入卡就地上传，弹窗其余位置�
   await expect(dialog.getByRole('button', { name: '添加参考图', exact: true })).toBeEnabled()
   const png = await canvasPng(page)
   await serveMockOss(page, png)
-  // 弹窗输入卡之外不应出现另一个上传遮罩。
   const overlays = page.getByTestId('composer-drop-overlay')
   const cardOverlay = dialog.getByTestId('composer-drop-overlay')
 
-  // 落在输入卡（正文以外的工具行）：卡片就地收下，提示只盖卡片，聊天遮罩从头到尾不亮。
   const card = dialog.getByRole('button', { name: '添加参考图', exact: true })
   const accepted = await fileDrag(page, png, ['拖入参考.png'])
   await card.dispatchEvent('dragenter', { dataTransfer: accepted })
@@ -246,7 +232,6 @@ test('往编辑器拖本地图片：输入卡就地上传，弹窗其余位置�
   await expect(cardOverlay).toBeHidden()
   await expect(editor.getByText('拖入参考.png', { exact: true })).toBeVisible()
 
-  // 落在舞台：弹窗拒收，文件不会跑进背后的聊天输入框。
   const stage = dialog.getByRole('img', { name: '当前编辑帧', exact: true })
   const refused = await fileDrag(page, png, ['误投.png'])
   await stage.dispatchEvent('dragenter', { dataTransfer: refused })
@@ -270,7 +255,6 @@ for (const width of [1335, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
     const { dialog, editor } = await openFrameEditor(page, { mobile: width === 390 })
     await expect(dialog.getByRole('button', { name: '添加参考图', exact: true })).toBeEnabled()
-    // 短边不到 300 的图过不了上传前的校验，chip 停在失败态。
     const png = await canvasPng(page, { height: 120, width: 120 })
     await editor.click()
     await page.keyboard.insertText('参考')
@@ -285,7 +269,6 @@ for (const width of [1335, 390]) {
     await failure.getByRole('button', { name: '移除', exact: true }).click()
     await expect(chip).toHaveCount(0)
 
-    // 键盘：再来一张失败的，选中 chip 按 Enter 打开卡片，Tab 到「移除」回车。
     await card.dispatchEvent('drop', { dataTransfer: await fileDrag(page, png, ['再试.png']) })
     await expect(editor.getByRole('img', { name: '上传失败' })).toBeVisible()
     await editor.press('ArrowLeft')
@@ -310,7 +293,6 @@ test('悬停预览卡在弹窗里能点「放大」；首页输入框的预览�
   const card = dialog.getByRole('button', { name: '添加参考图', exact: true })
   await card.dispatchEvent('drop', { dataTransfer: await fileDrag(page, png, ['皮革纹理.png']) })
   const chip = editor.getByText('皮革纹理.png', { exact: true })
-  // 只有 chip 也能提交：传完按钮就亮。
   await expect(dialog.getByRole('button', { name: '生成图片' })).toBeEnabled()
   await chip.hover()
   const tip = dialog.getByRole('tooltip')
@@ -321,7 +303,6 @@ test('悬停预览卡在弹窗里能点「放大」；首页输入框的预览�
   await expect(page.getByRole('dialog', { name: '皮革纹理.png' })).toBeHidden()
   await expect(dialog).toBeVisible()
 
-  // 首页对照：同一套 chip 与预览卡，挂载点换了，外观与行为不变。
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
   await page.goto('/')

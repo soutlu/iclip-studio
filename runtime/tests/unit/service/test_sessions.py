@@ -1,8 +1,3 @@
-"""会话服务中需要替身控制的竞争与失败边界；正常分叉、文件拷贝与应用隔离由真实 PG / HTTP 测试覆盖。
-
-保留源在规划前变化、无效 agent、无前置条件拷贝，以及归属与预览会话的校验早于其他读取和写入的断言。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -37,8 +32,6 @@ ASSISTANT_VERSION = uuid.uuid4()
 
 @dataclass
 class RecordingSessions:
-    """返回已知归属与目标占用结果，只记录是否产生写入。"""
-
     apps: dict[uuid.UUID, str] = field(default_factory=lambda: {SOURCE: APP, TARGET: APP})
     preview_ids: frozenset[uuid.UUID] = frozenset()
     target_taken: bool = False
@@ -95,8 +88,6 @@ class RecordingSeed:
 
 @dataclass
 class TwoTurnHistory:
-    """源有两轮；``moved`` 为真时数完轮数后源又变化（比如末轮被重新生成截掉），规划不出分叉起点。"""
-
     moved: bool = False
     planned: list[tuple[str, int, str]] = field(default_factory=list)
     seed: RecordingSeed = field(default_factory=RecordingSeed)
@@ -206,8 +197,6 @@ async def test_copy_files_without_a_precondition_copies_what_the_source_has() ->
 
 
 class UnreadableQueue:
-    """归属未确认时不得读取队列，避免向其他应用泄露会话信息。"""
-
     async def view(self, conversation_id: str) -> JobQueueView:
         raise AssertionError("归属校验失败前不应读取队列")
 

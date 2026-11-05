@@ -1,8 +1,3 @@
-"""参考视频的测试替身：方舟接口的协议替身、抽帧替身、种用户与种行。
-
-拆解与打标走真的适配器（``ArkVideoBreakdowns`` / ``ArkTagger``），只把 HTTP 与 ffmpeg 换成替身，
-失败原因的映射与打标的解析因此照生产路径走。"""
-
 from __future__ import annotations
 
 import json
@@ -37,22 +32,16 @@ STUDIO_ENVS = {
     "OSS_ACCESS_KEY_SECRET": "sk",
     "OSS_PUBLIC_URL_BASE": "https://cdn.example.test",
 }
-"""拆解配好、媒体生成没开要的环境变量；地址都是替身，装配期不外呼。"""
 
 
 def config_with_studio() -> RuntimeConfig:
-    """测试运行配置外加 ``iclip_studio`` 段，不带媒体生成段。"""
-
     return make_runtime_config().model_copy(update={"iclip_studio": IclipStudioSection()})
 
 
 STUDIO_MEDIA_ENVS = STUDIO_ENVS | MEDIA_ENVS
-"""拆解配好、媒体生成也开着要的环境变量。"""
 
 
 def config_with_studio_and_media() -> RuntimeConfig:
-    """拆解配好、媒体生成也开着：视频允许表里有试生成用的模型。"""
-
     media = config_with_media()
     assert media.media_generation is not None
     video = VideoGenerationSection(model="seedance", allowed_models=("seedance", TEST_VIDEO_MODEL))
@@ -65,8 +54,6 @@ def config_with_studio_and_media() -> RuntimeConfig:
 
 
 class NoTestVideos:
-    """没有试生成过；提交不该被调到。"""
-
     async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None:
         return None
 
@@ -83,8 +70,6 @@ class NoTestVideos:
 
 
 async def upload_video(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> str:
-    """走一遍直传：签名、把字节放进桶、确认；返回 ``uploadId``。"""
-
     signed = await client.post("/uploads/sign", json={"contentType": "video/mp4"})
     assert signed.status_code == 200, signed.text
     upload_id = signed.json()["uploadId"]
@@ -102,12 +87,9 @@ VIDEO = "https://cdn.example.test/iclip/agent/uploads/ref.mp4"
 DOCUMENT = "# 出场元素\n\n| 类型 | 名字 | 辨识特征 | 首次出现 |\n| 产品 | 白色跑鞋 | 网面 | 0.0 |"
 
 Answer = httpx.Response | Exception
-"""替身对一次请求的回答：一个响应，或要抛出的传输层异常。"""
 
 
 def responses_body(text_out: str, *, status: str = "completed") -> dict[str, Any]:
-    """方舟 Responses 的响应体：一段思考加一条正文。"""
-
     return {
         "status": status,
         "output": [
@@ -130,7 +112,6 @@ DEFAULT_TAGS: Mapping[str, Sequence[TagSelection]] = {
     "d2": (),
     "d3": ({"category": "开箱测评型", "subcategories": ("对比测评",)},),
 }
-"""按预置树作答：``d1`` 品类、``d2`` 场景、``d3`` 内容结构。"""
 
 
 def tag_answer(answer: Mapping[str, Sequence[TagSelection]] = DEFAULT_TAGS) -> httpx.Response:
@@ -145,8 +126,6 @@ def breakdown_answer(document: str = DOCUMENT) -> httpx.Response:
 
 
 def model_unavailable() -> httpx.Response:
-    """运行时答的「配置页里没启用这个模型」。"""
-
     return httpx.Response(
         409,
         json={
@@ -157,10 +136,6 @@ def model_unavailable() -> httpx.Response:
 
 
 class FakeArk:
-    """运行时模型调用接口连同后面方舟的替身：带 ``text.format`` 的请求是打标，其余是拆解；各自按给定的回答答。
-    ``requests`` 是要转给方舟的请求体，``calls`` 是发给运行时的整个请求体外加这次等答复的上限
-    （``read_timeout``）。"""
-
     def __init__(self, *, breakdown: Answer | None = None, tag: Answer | None = None) -> None:
         self.breakdown: Answer = breakdown if breakdown is not None else breakdown_answer()
         self.tag: Answer = tag if tag is not None else tag_answer()
@@ -189,8 +164,6 @@ class FakeArk:
 
 
 class FakeSampler:
-    """5 秒的短片，抽出一帧；``broken`` 时取视频就失败。"""
-
     def __init__(self, *, broken: bool = False) -> None:
         self.broken = broken
 
@@ -203,8 +176,6 @@ class FakeSampler:
 def ark_pipeline(
     ark: FakeArk, *, sampler: FakeSampler | None = None
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
-    """真的拆解与打标适配器，按生产的写法各建一份（经运行时客户端调写定的模型）；运行时与抽帧都是替身。"""
-
     runtime = RuntimeClient(
         "http://runtime.test", "app-key-test-0123456789", transport=httpx.MockTransport(ark)
     )
@@ -241,8 +212,6 @@ async def plant_reference(
     started_minutes_ago: float | None = None,
     created_minutes_ago: float = 0,
 ) -> uuid.UUID:
-    """直接种一行，不带条目；``started_minutes_ago`` 给了就把开始时刻放到那么久以前。"""
-
     reference_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(

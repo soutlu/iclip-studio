@@ -1,5 +1,3 @@
-"""identity 测试替身与构造器。"""
-
 from __future__ import annotations
 
 import uuid
@@ -38,9 +36,6 @@ def make_account(
 
 
 class FakePrincipals:
-    """组合根「按用户 id 重建主体」那一步的替身：认得的 id 交回给定主体，其余与真的一样抛
-    ``NotFound``；记下每次问的 id。"""
-
     def __init__(self, *principals: Principal) -> None:
         self._principals = {principal.user_id: principal for principal in principals}
         self.asked: list[uuid.UUID] = []

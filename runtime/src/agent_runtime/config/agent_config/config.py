@@ -1,8 +1,3 @@
-"""Agent 配置的格式：草稿与版本存的都是这一份，导出包里也是它（去掉密钥）。
-
-只管结构：字段、类型、同一工具集、同一 MCP 服务与同一子 agent 不重复。引用的供应商、模型、插件、MCP 服务、
-技能与子 agent 存不存在、能不能用，由 ``compile`` 在发布时查。"""
-
 from __future__ import annotations
 
 import uuid
@@ -33,7 +28,6 @@ class _Strict(BaseModel):
 
 class AgentModelSettings(_Strict):
     thinking: ThinkingEffort | None = None
-    """思考档位，必须在这个模型允许的档位里；不写就不设。"""
 
 
 class AgentModelRef(_Strict):
@@ -42,7 +36,6 @@ class AgentModelRef(_Strict):
     provider: _Name
     name: _Name
     credential_id: uuid.UUID | None = None
-    """用哪把密钥，必须是这个供应商的；不写就用供应商的默认密钥。导出时去掉。"""
     settings: AgentModelSettings = AgentModelSettings()
 
 
@@ -52,7 +45,6 @@ class CapToolConfig(_Strict):
     type: Literal["cap"]
     toolset: _Name
     enabled: bool = True
-    """停用的条目留在配置里，编译时去掉，也不查。"""
     parameters: dict[str, Any] = Field(default_factory=dict[str, Any])
 
 
@@ -77,12 +69,9 @@ class McpToolConfig(_Strict):
 
 
 ToolConfig = Annotated[CapToolConfig | McpToolConfig, Field(discriminator="type")]
-"""按 ``type`` 区分的工具条目：``cap`` 是插件，``mcp`` 是 MCP 服务；以后加一种来源就在这里加一个分支。"""
 
 
 def _tool_key(tool: CapToolConfig | McpToolConfig) -> str:
-    """同一个来源只能挂一次：插件按插件名，MCP 服务按服务标识。"""
-
     return f"cap:{tool.toolset}" if isinstance(tool, CapToolConfig) else f"mcp:{tool.server}"
 
 
@@ -101,7 +90,6 @@ class SubagentConfig(_Strict):
     timeout_seconds: float | None = Field(default=None, gt=0)
     max_calls: int | None = Field(default=None, ge=1)
     on_failure: str | None = None
-    """子 agent 失败时返回给主 agent 的一段话。"""
 
 
 class AgentConfig(_Strict):
@@ -109,7 +97,6 @@ class AgentConfig(_Strict):
 
     schema_version: Literal[1]
     instructions: str = ""
-    """提示词。"""
     model: AgentModelRef | None = None
     tools: tuple[ToolConfig, ...] = ()
     subagents: tuple[SubagentConfig, ...] = ()
@@ -147,26 +134,18 @@ def _first_repeat(values: Sequence[str]) -> int | None:
 
 
 def empty_config() -> AgentConfig:
-    """新建 agent 时的草稿：没有提示词、模型、工具与子 agent。"""
-
     return AgentConfig(schema_version=SCHEMA_VERSION)
 
 
 def dump_config(config: AgentConfig) -> dict[str, Any]:
-    """存库与比较用的 JSON 形态。"""
-
     return config.model_dump(mode="json")
 
 
 def load_config(stored: Mapping[str, Any]) -> AgentConfig:
-    """读回库里的配置；存进去时校验过，读不出来是持久化状态坏了，直接抛。"""
-
     return AgentConfig.model_validate(stored)
 
 
 def parse_config(raw: object, *, prefix: str = "") -> AgentConfig | tuple[Problem, ...]:
-    """校验一份外来的配置（如导入的包），不合格交回全部问题，``path`` 前面接上 ``prefix``。"""
-
     try:
         return AgentConfig.model_validate(raw)
     except ValidationError as exc:
@@ -204,9 +183,6 @@ _MESSAGES: Final[Mapping[str, str]] = {
 def problems_from_errors(
     errors: Sequence[ErrorDetails], *, prefix: str = ""
 ) -> tuple[Problem, ...]:
-    """把 pydantic 的校验错误换成问题清单：位置拼成 ``a.b[0].c``，常见的错误换成中文说明。插件参数的
-    校验也用它，``prefix`` 给 ``tools[i].parameters``。"""
-
     return tuple(
         Problem(path=_join(prefix, _path(error["loc"])), message=_message(error))
         for error in errors
@@ -228,7 +204,6 @@ def _message(error: ErrorDetails) -> str:
 
 def _path(loc: Sequence[int | str]) -> str:
     parts = list(loc)
-    # 区分联合类型时 pydantic 把 type 的值插在下标后面（tools[0].cap.toolset），对字段路径没有意义。
     if len(parts) >= 3 and parts[0] == _TOOLS_FIELD and isinstance(parts[1], int):
         del parts[2]
     rendered = ""
@@ -249,8 +224,6 @@ def _join(prefix: str, path: str) -> str:
 
 
 def config_refs(stored: Mapping[str, Any], skill_ids: Sequence[uuid.UUID]) -> ConfigRefs:
-    """一份库里的配置连同它的技能名单引用了什么。"""
-
     config = load_config(stored)
     return ConfigRefs(
         provider=config.model.provider if config.model is not None else None,
@@ -263,8 +236,6 @@ def config_refs(stored: Mapping[str, Any], skill_ids: Sequence[uuid.UUID]) -> Co
 
 
 def agent_refs(state: AgentState) -> AgentRefs:
-    """一个 agent 的草稿与当前版本各引用了什么。"""
-
     agent = state.agent
     return AgentRefs(
         agent_id=agent.id,

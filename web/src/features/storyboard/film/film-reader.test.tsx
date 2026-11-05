@@ -30,7 +30,6 @@ const artifact: ArtifactRendererProps['artifact'] = {
   type: 'film',
 }
 
-/** 记下每次改字发出去的体；不拦，照常交给 mock 处理。 */
 const recordEdits = () => {
   const bodies: FilmTextEditsIn[] = []
   server.use(
@@ -41,7 +40,6 @@ const recordEdits = () => {
   return bodies
 }
 
-/** 记下每次出片发出去的体；不拦，照常交给 mock 处理。 */
 const recordVideos = () => {
   const videos: FilmVideoGenerationIn[] = []
   server.use(
@@ -80,26 +78,22 @@ const mount = async ({
   )
 }
 
-/** 挂上一份能用的工程，返回文案列；默认场景图与镜头 2 的机位图没选用，`complete` 时全都选用了。 */
 const renderFilm = async ({ readOnly = false, complete = false } = {}) => {
   await mount({ complete, readOnly })
   return screen.findByRole('region', { name: '分镜文案' })
 }
 
-/** 一段字的编辑器里那几枚图片芯片的读屏名字，按先后。 */
 const chipsIn = (editor: HTMLElement) =>
   within(editor)
     .queryAllByRole('button')
     .map((chip) => chip.getAttribute('aria-label'))
 
-/** 整段换成 `text`：全选后粘贴，走编辑器自己的事务。 */
 const replaceText = async (editor: HTMLElement, text: string) => {
   editor.focus()
   await userEvent.keyboard('{Control>}a{/Control}')
   pasteTextIntoComposer(editor, text)
 }
 
-/** 记下每次改画幅发出去的体；不拦，照常交给 mock 处理。 */
 const recordAspects = () => {
   const bodies: FilmAspectRatioIn[] = []
   server.use(
@@ -110,14 +104,12 @@ const recordAspects = () => {
   return bodies
 }
 
-/** 在出片栏的画幅菜单里选 `value`。 */
 const pickAspect = async (aspect: HTMLElement, value: string) => {
   await userEvent.click(aspect)
   const menu = await screen.findByRole('menu', { name: '画幅' })
   await userEvent.click(within(menu).getByRole('menuitemradio', { name: new RegExp(`^${value}`) }))
 }
 
-/** 记下换图与按描述生图发出去的体；不拦，照常交给 mock 处理。 */
 const recordImages = () => {
   const choices: FilmImageChoiceIn[] = []
   const generations: FilmImageGenerationIn[] = []
@@ -132,7 +124,6 @@ const recordImages = () => {
   return { choices, generations }
 }
 
-/** 本对话的图片记录：图片任务的两种查法（对话级与按图）都给这几条，视频没有。 */
 const serveImageJobs = (jobs: ReturnType<typeof makeGenerationJob>[]) =>
   server.use(
     http.get('*/api/generations', ({ request }) =>
@@ -142,7 +133,6 @@ const serveImageJobs = (jobs: ReturnType<typeof makeGenerationJob>[]) =>
     ),
   )
 
-/** 镜头 1 那张机位图（没选用、不在列表里）按描述生成过一次，状态与结果照给的。 */
 const shot1Generation = (over: Partial<ReturnType<typeof makeGenerationJob>>) =>
   makeGenerationJob({
     kind: 'image',
@@ -151,17 +141,14 @@ const shot1Generation = (over: Partial<ReturnType<typeof makeGenerationJob>>) =>
     ...over,
   })
 
-/** 参考图里的芯片，按先后。 */
 const stripChips = (script: HTMLElement) =>
   within(within(script).getByRole('group', { name: '参考图' })).getAllByRole('button')
 
-/** 参考图里每枚芯片的读屏名（名字、编号与有没有选用），按先后。 */
 const stripNames = (script: HTMLElement) =>
   stripChips(script).map((chip) => chip.getAttribute('aria-label'))
 
 const photo = () => new File(['photo'], '我的照片.png', { type: 'image/png' })
 
-/** 舞台左上的标签：正文编辑器之外、写在舞台工具条上的那一枚。 */
 const stageTag = () =>
   screen.queryByText(/^(@\d+|镜头 \d+)$/, { selector: 'p' })?.textContent ?? null
 
@@ -170,14 +157,12 @@ describe('制作页', () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
     expect(stageTag()).toBe('@1')
-    // 标题行里的参考图也有同名芯片，按字里的找。
     const product = within(settings).getByRole('textbox', { name: '产品' })
     const sole = within(product).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
 
     await userEvent.click(sole)
     await waitFor(() => expect(stageTag()).toBe('@3'))
 
-    // 第 4 张还没有图，舞台是生成卡；再往后是镜头 2 的画面，选中跟到镜头 2。
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     expect(
       await screen.findByRole('heading', { name: '涂鸦滑板场 · 图像生成' }),
@@ -186,7 +171,6 @@ describe('制作页', () => {
     const shot = within(script).getByRole('group', { name: '镜头 2' })
     await waitFor(() => expect(shot).toHaveAttribute('aria-current', 'true'))
     expect(stageTag()).toBe('@5')
-    // 列表之后是没进列表的镜头 1 机位图：舞台写它的名字，选中跟到镜头 1。
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     await waitFor(() =>
       expect(within(script).getByRole('group', { name: '镜头 1' })).toHaveAttribute(
@@ -376,7 +360,6 @@ describe('制作页', () => {
       within(script).getByRole('textbox', { name: '镜头 3的描述' }),
       '改过的第三镜。',
     )
-    // 不等停手自动存：点出片时先存，再按存好的那一版出。
     await userEvent.click(generate)
     await waitFor(() => expect(videos).toHaveLength(1))
     expect(bodies).toHaveLength(1)
@@ -464,7 +447,6 @@ describe('制作页', () => {
 
 describe('制作页的图', () => {
   beforeEach(() => {
-    // 上传要登录；jsdom 读不出图的尺寸，给一张够大的。
     loginAs(mockAuthUser)
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
@@ -526,7 +508,6 @@ describe('制作页的图', () => {
     const button = within(card).getByRole('button', { name: '生成图片' })
     expect(button).toBeDisabled()
     expect(button).toHaveAccessibleDescription(blocker)
-    // 组里涂鸦滑板场是 @4，这张图自己的列表里它是 @2。
     expect(card).toHaveTextContent('@1的人物，站在@2的坡面上')
     expect(within(card).getByRole('img', { name: '金发女生 @1' })).toBeVisible()
     expect(within(card).getByRole('img', { name: '涂鸦滑板场 @2' })).toBeVisible()
@@ -546,7 +527,6 @@ describe('制作页的图', () => {
     expect(within(card).getByRole('button', { name: '放大查看镜头 1的生成结果' })).toBeVisible()
     expect(card).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先生成并选用图片')
     expect(within(card).getByRole('button', { name: '再生成' })).toBeDisabled()
-    // 生成过就能开编辑器，到版本里挑。
     expect(screen.getByRole('button', { name: '编辑图片' })).toBeInTheDocument()
 
     await userEvent.click(within(card).getByRole('button', { name: '选用该图片' }))
@@ -554,7 +534,6 @@ describe('制作页的图', () => {
     await waitFor(() =>
       expect(choices).toEqual([{ filmVersion: 1, node: 'shot1_view', runVersion: 1, url: result }]),
     )
-    // 镜头 1 的机位图排在镜头 2 的之前：它成了 @5，镜头 2 的挪到 @6，舞台跟着这张图走。
     await waitFor(() =>
       expect(screen.getByRole('img', { name: '镜头 1' })).toHaveAttribute('src', result),
     )
@@ -631,7 +610,6 @@ describe('制作页的图片编辑器', () => {
 
     const box = within(editor).getByRole('textbox', { name: '修改要求' })
     expect(box).toHaveTextContent('金发女生的脚部特写')
-    // 输入卡的提交按钮也叫「再生成」，不在版本条里。
     const send = () =>
       within(editor)
         .getAllByRole('button', { name: '再生成' })
@@ -692,7 +670,6 @@ describe('制作页的图片编辑器', () => {
     expect(choices[0]).toMatchObject({ node: 'shot1_view', url: result })
     expect(await within(editor).findByText('已选用')).toBeInTheDocument()
     expect(strip).toHaveTextContent('在用')
-    // 插进列表成了 @5（舞台原来的第 5 张是镜头 2 的机位图，现在挪到 @6）：舞台跟着镜头 1 的图走。
     await waitFor(() => expect(stageTag()).toBe('@5'))
 
     await userEvent.click(within(editor).getByRole('button', { name: '撤销' }))
@@ -700,7 +677,6 @@ describe('制作页的图片编辑器', () => {
     expect(choices[1]).toMatchObject({ node: 'shot1_view', url: null })
     await waitFor(() => expect(strip).not.toHaveTextContent('在用'))
     expect(within(editor).getByRole('button', { name: '选用该图片' })).toBeInTheDocument()
-    // 移出列表：位置 5 又是镜头 2 的机位图，舞台不停在那里，跟到列表后面的镜头 1。
     await waitFor(() => expect(stageTag()).toBe('镜头 1'))
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(editor).not.toBeInTheDocument())
@@ -745,7 +721,6 @@ describe('制作页的图片编辑器', () => {
 
 describe('制作页字里插入、删除图片', () => {
   beforeEach(() => {
-    // 上传要登录；jsdom 读不出图的尺寸，给一张够大的。
     loginAs(mockAuthUser)
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
@@ -753,7 +728,6 @@ describe('制作页字里插入、删除图片', () => {
     vi.unstubAllGlobals()
   })
 
-  /** 聚焦一段字（光标在段首）敲 @，等向上弹出的选图菜单。 */
   const openMention = async (editor: HTMLElement) => {
     act(() => editor.focus())
     await userEvent.keyboard('@')
@@ -769,13 +743,11 @@ describe('制作页字里插入、删除图片', () => {
 
     expect(await within(shot3).findByRole('img', { name: '新插入的图片 新' })).toBeInTheDocument()
     await waitFor(() => expect(bodies).toHaveLength(1))
-    // 列表现有 5 张（4 张元素图加镜头 2 的机位图），新图写成 @Image6。
     const [edit] = bodies[0]?.edits ?? []
     expect(edit?.target).toBe('shot:board:3')
     expect(edit?.parts?.[0]).toMatch(/^@Image6低机位脚部特写/)
     expect(edit?.images).toHaveLength(1)
 
-    // 新照片排在机位图之前成了 @5，镜头 2 开头的机位图引用顺延成 @6。
     await waitFor(() => expect(chipsIn(shot3)).toEqual(['在舞台查看素材照片1 @5']))
     expect(stripNames(script)).toContain('在舞台查看素材照片1 @5')
     expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 2的描述' }))).toEqual([
@@ -794,7 +766,6 @@ describe('制作页字里插入、删除图片', () => {
         .map((option) => option.getAttribute('aria-label')),
     ).toEqual(['插入金发女生', '插入绒面一脚蹬', '插入绒面一脚蹬', '插入涂鸦滑板场', '从电脑上传'])
 
-    // 鞋面与鞋底两张照片同名，第一张是鞋面（@2）。
     const [upper] = within(menu).getAllByRole('option', { name: '插入绒面一脚蹬' })
     if (upper === undefined) throw new Error('菜单里没有绒面一脚蹬')
     await userEvent.click(upper)
@@ -847,7 +818,6 @@ describe('制作页字里插入、删除图片', () => {
       await userEvent.keyboard('@')
       expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
     }
-    // 出场元素的描述有。
     await openMention(within(script).getByRole('textbox', { name: '人物' }))
   })
 

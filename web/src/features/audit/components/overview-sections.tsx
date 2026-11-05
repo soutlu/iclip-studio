@@ -1,5 +1,3 @@
-/** 总览首屏以下的四节：出片质量、耗时、模型消耗、使用人次。 */
-
 import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 import type { Metrics, Overview } from '../audit.api'
@@ -27,7 +25,6 @@ import { OverviewChart } from './overview-chart'
 
 type SectionProps = { id: string; overview: Overview }
 
-/** 各节里的一张卡；按自身宽度（容器查询）决定分项图例摆一列还是两列。 */
 function Panel({ children }: { children: ReactNode }) {
   return <Card className="@container px-5.5 py-5">{children}</Card>
 }
@@ -46,8 +43,6 @@ function MiniHead({ title, info, end }: { title: string; info?: string; end?: Re
 
 const deltaTitleOf = (overview: Overview) =>
   `与 ${fmtDayRange(new Date(overview.window.previousSince), new Date(overview.window.previousUntil))} 相比`
-
-// ——— 出片质量 ———
 
 export function QualitySection({
   id,
@@ -97,7 +92,6 @@ export function QualitySection({
   )
 }
 
-/** 两条对照的占比条：上一条是各档占镜数，下一条是占出片次数（成功生成次数）；下面点名出片次数最多的镜。 */
 function ReworkShare({
   overview,
   summary,
@@ -112,7 +106,6 @@ function ReworkShare({
       <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">所选时间范围内暂无新镜头</p>
     )
   }
-  // 段宽不到一成就不在段里写字，靠悬停和图例。
   const bar = (shares: readonly number[]) =>
     ATTEMPT_BINS.map((bin, index) => {
       const share = shares[index] ?? 0
@@ -191,8 +184,6 @@ function ReworkShare({
     </>
   )
 }
-
-// ——— 耗时 ———
 
 const SPAN_ROWS: readonly {
   name: string
@@ -280,7 +271,6 @@ function SpanMark({
   )
 }
 
-/** 一段用时的区间轨：中位到最慢一成铺淡色，三个标签依次放上排或下排，同排相距不足两成就换排。 */
 function SpanRow({
   name,
   hint,
@@ -358,8 +348,6 @@ function SpanRow({
   )
 }
 
-// ——— 模型消耗 ———
-
 const BUCKET_WORD = { hour: '每小时', day: '每日', week: '每周' } as const
 
 export function CostSection({ id, overview }: SectionProps) {
@@ -421,7 +409,6 @@ export function CostSection({ id, overview }: SectionProps) {
               />
             </>
           ) : (
-            // 片长读生成记录的产物时长，出片暂时都是空；空就显示「—」，不拿请求秒数去猜。
             <Stat
               sub={`${fmtCount(current.completedVideos)} 条成功出片，暂无片长数据`}
               value={EMPTY}
@@ -570,7 +557,6 @@ function StackKeys({
   )
 }
 
-/** 缓存命中率的圆环：底圈是中性浅色，命中部分用图表绿。 */
 function CacheRing({ rate }: { rate: number | null }) {
   const circumference = 2 * Math.PI * 34
   return (
@@ -601,8 +587,6 @@ function CacheRing({ rate }: { rate: number | null }) {
     </div>
   )
 }
-
-// ——— 使用人次 ———
 
 export function ProducersSection({ id, overview }: SectionProps) {
   const current = overview.current.metrics

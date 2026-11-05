@@ -1,6 +1,3 @@
-"""模型供应商的纯规则：整理名称、按声明校验与合并密钥字段、加解密与打码、合并模型列表、校验自己加的
-模型、为写定的模型挑连接。不合格是 ``ValidationFailed``，消息直接给人看，从不带字段的值。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -55,8 +52,6 @@ def clean_credential_name(name: str) -> str:
 
 
 def _clean_given(declaration: ProviderDeclaration, given: Mapping[str, str]) -> dict[str, str]:
-    """去掉首尾空白；不认识的字段、超长的值不收。空串留着，交给必填检查。"""
-
     cleaned: dict[str, str] = {}
     for name, value in given.items():
         field = declaration.field(name)
@@ -70,8 +65,6 @@ def _clean_given(declaration: ProviderDeclaration, given: Mapping[str, str]) -> 
 
 
 def _complete(declaration: ProviderDeclaration, fields: Mapping[str, str]) -> dict[str, str]:
-    """去掉空值，查必填项。"""
-
     kept = {name: value for name, value in fields.items() if value}
     for field in declaration.credential_fields:
         if field.required and field.name not in kept:
@@ -80,8 +73,6 @@ def _complete(declaration: ProviderDeclaration, fields: Mapping[str, str]) -> di
 
 
 def new_fields(declaration: ProviderDeclaration, given: Mapping[str, str]) -> dict[str, str]:
-    """新建一把密钥的明文字段：没给的字段用声明里的 ``default``。"""
-
     cleaned = _clean_given(declaration, given)
     for field in declaration.credential_fields:
         if field.name not in cleaned and field.default is not None:
@@ -92,17 +83,12 @@ def new_fields(declaration: ProviderDeclaration, given: Mapping[str, str]) -> di
 def merged_fields(
     declaration: ProviderDeclaration, current: Mapping[str, str], given: Mapping[str, str]
 ) -> dict[str, str]:
-    """改一把密钥：给了的字段替换，没给的（包括机密字段）保持原值。给打码后的值不会被当成「不改」，
-    它就是新值。"""
-
     return _complete(declaration, {**current, **_clean_given(declaration, given)})
 
 
 def encrypt_fields(
     declaration: ProviderDeclaration, plain: Mapping[str, str], cipher: CredentialCipher
 ) -> dict[str, str]:
-    """明文换成存储形态：机密字段加密，其余原样。"""
-
     secrets = declaration.secret_fields
     return {
         name: cipher.encrypt(value) if name in secrets else value for name, value in plain.items()
@@ -119,8 +105,6 @@ def decrypt_fields(
 
 
 def masked_fields(declaration: ProviderDeclaration, plain: Mapping[str, str]) -> dict[str, str]:
-    """返回给人看的字段：机密字段打码，其余原样。"""
-
     secrets = declaration.secret_fields
     return {name: mask_secret(value) if name in secrets else value for name, value in plain.items()}
 
@@ -128,8 +112,6 @@ def masked_fields(declaration: ProviderDeclaration, plain: Mapping[str, str]) ->
 def merge_models(
     declaration: ProviderDeclaration, settings: Sequence[ModelSetting]
 ) -> tuple[ProviderModel, ...]:
-    """模型列表：声明里的模型（默认启用，表里记了停用的显示为停用）在前，自己加的在后。"""
-
     disabled = {
         (setting.name, setting.type)
         for setting in settings
@@ -175,9 +157,6 @@ def responses_connection(
     model_name: str,
     cipher: CredentialCipher,
 ) -> ModelConnection | None:
-    """用这份声明的供应商里，按接入时刻从早到晚（同一时刻按 id）第一个启用、把 ``model_name`` 当启用的
-    llm、又有默认密钥的那个，交回它的 Responses 地址与默认密钥的明文；一个都没有给 ``None``。"""
-
     ordered = sorted(states, key=lambda state: (state.provider.created_at, state.provider.id))
     for state in ordered:
         provider = state.provider
@@ -194,7 +173,6 @@ def responses_connection(
         fields = decrypt_fields(declaration, credential.fields, cipher)
         base_url = fields.get(BASE_URL_FIELD)
         if base_url is None:
-            # 只有声明里接口地址必填的供应商才能这样直接调；写定的声明不是这种，是代码写错了。
             raise RuntimeError(
                 f"{declaration.label}的密钥没有接口地址，不能直接调它的 Responses 接口"
             )
@@ -205,8 +183,6 @@ def responses_connection(
 
 
 def probe_model(models: Sequence[ProviderModel]) -> ProviderModel:
-    """试连用的模型：第一个启用的 llm 模型。"""
-
     found = next((one for one in models if one.type == "llm" and one.enabled), None)
     if found is None:
         raise ValidationFailed("先添加一个模型再试连")
@@ -222,8 +198,6 @@ def custom_model(
     context_size: int | None,
     thinking: Sequence[ThinkingEffort],
 ) -> ModelDeclaration:
-    """按声明里模型的同一套规则校验一个自己加的模型：接口也只能是这家供应商支持的。"""
-
     try:
         model = ModelDeclaration(
             name=name,

@@ -6,7 +6,6 @@ import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/sh
 const CARD_CLASS =
   'flex h-12 min-w-0 items-center gap-2.5 rounded-md bg-surface-container-low px-2.5 text-left text-body text-on-surface'
 
-// 同一资源在摘要、列表与页头使用同一图形与分类色；操作图标沿用中性线条。
 const RESOURCE_GLYPHS: Partial<Record<IconName, { icon: IconName; className: string }>> = {
   agent: { icon: 'resource-agent', className: 'bg-resource-agent/10 text-resource-agent' },
   skill: { icon: 'resource-skill', className: 'bg-resource-skill/10 text-resource-skill' },
@@ -39,7 +38,6 @@ const RESOURCE_GLYPHS: Partial<Record<IconName, { icon: IconName; className: str
   'video-type': { icon: 'resource-frame', className: 'bg-resource-video/10 text-resource-video' },
 }
 
-/** 资源图标块；较大的列表入口可由 className 调整容器尺寸。 */
 export function CardGlyph({ name, className }: { name: IconName; className?: string | undefined }) {
   const resource = RESOURCE_GLYPHS[name]
   return (
@@ -56,7 +54,6 @@ export function CardGlyph({ name, className }: { name: IconName; className?: str
   )
 }
 
-/** 卡片尾部的小角标：版本号、时限、次数。 */
 export function CardBadge({ children, icon }: { children: ReactNode; icon?: IconName }) {
   return (
     <span className="inline-flex h-4.5 shrink-0 items-center gap-0.5 rounded-xs bg-state-active px-1.5 text-caption font-medium text-on-surface-variant tabular-nums">
@@ -66,7 +63,6 @@ export function CardBadge({ children, icon }: { children: ReactNode; icon?: Icon
   )
 }
 
-/** 红色的提示图标，原因在悬停提示与可访问名里。 */
 export function AlertGlyph({ reason }: { reason: string }) {
   return (
     <TooltipRoot>
@@ -83,19 +79,14 @@ export function AlertGlyph({ reason }: { reason: string }) {
 type ResourceCardProps = {
   icon: IconName
   name: string
-  /** 名字被截断时，悬停看全名与说明。 */
   tip: string
   trailing?: ReactNode
-  /** 不给就是不可点的静态卡片（插件、查看历史版本时）。 */
   onOpen?: (() => void) | undefined
-  /** 点开后右侧打开的是这一张。 */
   active?: boolean
-  /** 停用了的（如供应商）：图标与名字变淡，卡片照常可点。 */
   muted?: boolean
   label?: string
 }
 
-/** 左侧各节的摘要卡片：图标、名字、尾部小件，单行。 */
 export function ResourceCard({
   active = false,
   icon,
@@ -143,7 +134,6 @@ export function ResourceCard({
   )
 }
 
-/** 空的一节在草稿里放一张描边的添加卡；`blockedReason` 时置灰、点了不动，原因在提示里。 */
 export function AddCard({
   blockedReason,
   label,
@@ -177,7 +167,6 @@ export function AddCard({
   )
 }
 
-/** 查看历史版本时空的一节：一道淡色短线表示没配置。 */
 export function EmptyDash() {
   return (
     <span className="leading-12 text-on-surface-faint" role="img" aria-label="未配置">

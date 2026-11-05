@@ -3,7 +3,6 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 import { login } from './login'
 
-/** 登录后从侧边栏进一段演示对话，返回工作台；紧凑屏的工作台默认折叠，mobile 时先展开。 */
 export const openConversation = async (page: Page, title: string, { mobile = false } = {}) => {
   await page.goto('/')
   await login(page)
@@ -12,7 +11,6 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
   return page.getByRole('complementary', { name: '工作台' })
 }
 
-/** 分镜工作台里切到第 n 组：点顶栏组号展开镜头组列表，再点那一组。列表挂在 body 上，不在工作台里。 */
 export const openStoryboardShot = async (panel: Locator, index: number) => {
   await panel.getByRole('button', { name: /展开镜头组列表/ }).click()
   const list = panel.page().getByRole('menu', { name: '镜头组列表', exact: true })
@@ -20,10 +18,6 @@ export const openStoryboardShot = async (panel: Locator, index: number) => {
   await expect(list).toBeHidden()
 }
 
-/**
- * 在页面里用 Canvas 画一张 PNG 当本地上传文件，默认 600×800（上传前会校验短边至少 300）。
- * fill 是底色；给 label 时在中间画一块深色标签，一眼认得出这是测试图。
- */
 export const canvasPng = async (
   page: Page,
   {
@@ -61,7 +55,6 @@ type MockResponseGate = {
   release: (pathname: string) => void
 }
 
-/** 暂停这个路径的 mock 响应：请求照常发出，响应等 {@link releaseMockResponses} 后才回来。 */
 export const pauseMockResponses = (page: Page, pathname: string) =>
   page.evaluate(
     (path) =>
@@ -69,7 +62,6 @@ export const pauseMockResponses = (page: Page, pathname: string) =>
     pathname,
   )
 
-/** 放行 {@link pauseMockResponses} 暂停的响应。 */
 export const releaseMockResponses = (page: Page, pathname: string) =>
   page.evaluate(
     (path) =>
@@ -77,7 +69,6 @@ export const releaseMockResponses = (page: Page, pathname: string) =>
     pathname,
   )
 
-/** video_shot.json 的一组镜头；分镜与复刻共用这份形状。 */
 export type VideoShot = {
   index: number
   seconds: number
@@ -90,7 +81,6 @@ export type VideoShot = {
 
 export type VideoShotDocument = { aspect_ratio: string; shots: VideoShot[] }
 
-/** 读当前会话页工作区里的 video_shot.json 与版本号，断言写回结果；failure 是读取失败时报错的前缀。 */
 export const readVideoShots = (page: Page, failure: string) =>
   page.evaluate(async (failure) => {
     const conversationId = window.location.pathname.split('/').at(-1)

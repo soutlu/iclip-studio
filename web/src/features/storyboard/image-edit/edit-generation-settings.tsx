@@ -17,16 +17,12 @@ type EditGenerationSettingsProps = {
   models: readonly ImageModel[]
   options: ResolvedImageOptions
   aspectRatio: string
-  /** 画幅的悬停提示：分镜页说跟随分镜，制作页只报画幅。 */
   aspectNote: string
   onModelChange: (value: string) => void
   onChannelChange: (value: ImageChannel) => void
   onResolutionChange: (value: ImageResolution) => void
 }
 
-/** 输入卡工具行里的生成设置：画幅只读排在最前，模型、分辨率就地选择，渠道收在齿轮菜单里；
- * 选项收敛仍由 image-edit.api 统一处理。画幅由分镜决定、不能改，所以不带边框和下拉箭头；
- * 一家都出不了时由调用方报出来，不出这一行。 */
 export function EditGenerationSettings({
   models,
   options: { model, resolution, channel },
@@ -50,7 +46,6 @@ export function EditGenerationSettings({
         leading={<Icon decorative name="image" size="sm" />}
         onChange={onModelChange}
         options={models.map((item) => {
-          // 画幅由分镜决定，做不了它的模型置灰标出来，不从清单里藏掉。
           const usable = modelSupportsAspect(item, aspectRatio)
           return {
             disabled: !usable,

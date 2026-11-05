@@ -1,8 +1,3 @@
-"""参考视频端点：端点权限、只收本人的视频上传、属主检查与状态码、改标签与重新打标；拆解没配置时只挂
-读端点与改标签，上传不可用时不挂建行。
-
-拆解与打标是替身，队列连接器是内存替身（不跑 lifespan，排进去的任务不执行）。"""
-
 from __future__ import annotations
 
 import uuid
@@ -43,8 +38,6 @@ def bucket() -> MemoryObjectStore:
 async def studio_app(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
 ) -> AsyncGenerator[FastAPI]:
-    """拆解配好、媒体生成没开的 app。"""
-
     for name, value in STUDIO_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
@@ -73,8 +66,6 @@ async def http(studio_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> None:
-    """第一次叫到这个名字就注册，之后只是重新登录。"""
-
     email = f"{username}@example.com"
     created = await client.post(
         "/auth/register", json={"email": email, "password": PASSWORD, "username": username}
@@ -154,7 +145,6 @@ async def test_only_the_owner_edits_and_removes(
     assert (await http.post(f"{path}/breakdowns")).status_code == 403
 
     await login_as(http, pg_url, "maya", "editor")
-    # 还在排队：改、重拆与重新打标都撞上拆解中；改标签不看拆解。
     assert (await http.patch(path, json=edit)).status_code == 409
     assert (await http.post(f"{path}/breakdowns")).status_code == 409
     assert (await http.post(f"{path}/tagging")).status_code == 409
@@ -227,8 +217,6 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
 async def test_without_media_generation_there_is_no_test_video(
     http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
-    """媒体生成没开：试生成的入口不挂，详情里的 ``testVideo`` 为空。"""
-
     await login_as(http, pg_url, "maya", "editor")
     upload_id = await upload_video(http, bucket)
     reference = (await http.post("/references", json={"uploadId": upload_id})).json()
@@ -245,8 +233,6 @@ async def test_without_media_generation_there_is_no_test_video(
 async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """拆解配好、对象存储没配：上传模块不装配，资料库不收上传；重拆不需要对象存储。"""
-
     for name, value in STUDIO_ENVS.items():
         if not name.startswith("OSS_"):
             monkeypatch.setenv(name, value)

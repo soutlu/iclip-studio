@@ -1,6 +1,5 @@
 export const PLATFORM_OPTIONS = [{ value: 'douyin', label: '抖音' }]
 
-/** 标题里常见的平台简称；卡片省略与平台字段重复的前缀时按这张表认。 */
 export const PLATFORM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   amazon: ['amz'],
 }

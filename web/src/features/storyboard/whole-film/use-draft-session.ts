@@ -13,18 +13,10 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
 
 type Options = {
-  /** 停下多久后保存 */
   debounceMs?: number
   onNotice: (message: string) => void
 }
 
-/**
- * 一段对话的成片草稿：编辑历史（一次编辑一步撤销）与自动保存。
- *
- * 停止编辑 `debounceMs` 后整份保存，同一时刻只有一次保存在途，后面的改动等它回来再存。
- * 服务端已有更新的一版（409）时换成那一版、清空历史，并用一句话告诉用户。加载后不主动保存；
- * 卸载时还有没存的改动就立刻存一次。
- */
 export function useDraftSession(
   conversationId: string,
   initial: WholeFilmDraftOut,
@@ -54,7 +46,6 @@ export function useDraftSession(
     noticeRef.current(STALE_NOTICE)
   }, [conversationId])
 
-  /** 存一次手上的这一版；结果：存好了、本来就存好了、换成了别处的新版、保存失败 */
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
     while (inFlightRef.current !== null) await inFlightRef.current
     const document = presentRef.current
@@ -106,7 +97,6 @@ export function useDraftSession(
     [saveNow],
   )
 
-  /** 记一步编辑；被拒时说明原因并返回 false */
   const apply = useCallback((result: EditResult): boolean => {
     if (!result.ok) {
       noticeRef.current(REFUSAL_TEXT[result.refusal])
@@ -124,12 +114,7 @@ export function useDraftSession(
     redo: () => setHistory(redo),
     apply,
     save,
-    /** 立刻保存（关闭编辑器、重试保存时用） */
     flush: () => void saveNow(),
-    /**
-     * 立刻保存并给出服务端存着的那一版的 revision（导出按它）；保存失败或换成了别处的新版时为
-     * undefined，原因已经显示给用户。
-     */
     settle: async (): Promise<number | undefined> => {
       const outcome = await saveNow()
       return outcome === 'saved' || outcome === 'clean' ? revisionRef.current : undefined

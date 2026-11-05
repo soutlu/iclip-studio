@@ -1,7 +1,3 @@
-"""后端给运行时的内部接口：令牌不对 401，以及开跑检查、运行开始与轮次开始三个回调。
-
-回调请求体是运行时 ``agent_runtime.hooks`` 的模型，这里按它们的 JSON 形状直接发。"""
-
 from __future__ import annotations
 
 import json
@@ -29,7 +25,6 @@ from tests.helpers.runtime_backed import RUNTIME_INTERNAL_TOKEN, config_services
 from tests.helpers.ws import AGENT_ID, open_conversation, sign_in, until
 
 TOKEN = RUNTIME_INTERNAL_TOKEN
-"""集成层 ``base_env`` 设好的内部令牌。"""
 
 AUTHORIZED = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -147,8 +142,6 @@ async def test_the_gate_refuses_an_unknown_owner_with_404(client: httpx.AsyncCli
 def test_run_started_records_the_run_and_broadcasts_the_reported_activity(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """回调报的活动是「在跑、等审批」，而这段对话其实没有消息在跑：行里是回调那份，就说明没再去读。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -201,8 +194,6 @@ async def test_run_started_on_a_deleted_conversation_is_404(
 
 
 async def test_run_started_on_a_preview_records_nothing(client: httpx.AsyncClient) -> None:
-    """预览会话不是对话：同一个没有对话行的 id，不标预览是 404，标了预览是什么都不做的 204。"""
-
     body = {"session_id": str(uuid.uuid4()), "run_id": "run-preview", "activity": IDLE}
 
     plain = await client.post("/internal/runtime/hooks/run-started", json=body, headers=AUTHORIZED)
@@ -249,8 +240,6 @@ async def test_turn_started_names_the_conversation_once(
 async def test_turn_started_flagged_preview_does_not_name(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """标了预览的轮次开始不起名；拿一段默认标题的对话 id 来发，起了名就看得出来。"""
-
     await set_default_llm(config_services_of(app))
     await login_as_editor(client, pg_url)
     conversation_id = await new_conversation(client, AGENT_ID)

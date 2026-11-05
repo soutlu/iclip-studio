@@ -9,7 +9,6 @@ const COLLECTION_ID = '10000000-0000-4000-8000-000000000000'
 const SESSION_COUNT = 1000
 const sessionTitle = (number: number) => `历史任务 ${String(number).padStart(4, '0')}`
 const paginationPath = `/api/conversations/by-collection/${COLLECTION_ID}`
-// 菜单打开时 Radix 会将背景标为 aria-hidden，滚动容器仍在；保留它供离屏交互测试操作。
 const listOf = (page: Page) =>
   page.getByRole('region', { name: '任务列表', exact: true, includeHidden: true })
 const sessionRows = (page: Page) => listOf(page).getByRole('link', { name: /^历史任务 \d{4}$/ })
@@ -234,7 +233,6 @@ test('连续追加剩余分页和切换会话不改变侧栏的阅读位置', as
   await complete
   expect(await scrollTopOf(list)).toBe(2500)
 
-  // 虚拟列表的 overscan 行也有盒子；选择与滚动区实际相交的一行。
   const listBounds = await list.boundingBox()
   if (listBounds === null) throw new Error('任务列表必须可见')
   const rows = await sessionRows(page).all()
@@ -313,7 +311,6 @@ test('拖拽期间滚出源行，再移到任务区和原合集都正常且不�
     await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
     await page.mouse.down()
     await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 + 12, { steps: 4 })
-    // 源行可能在滚动区边缘；先将指针移到中间，避免 dnd-kit 的边缘自动滚动与下方滚动互相拉扯。
     const bounds = await list.boundingBox()
     if (bounds === null) throw new Error('任务列表必须可见')
     await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { steps: 4 })

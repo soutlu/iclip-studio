@@ -33,7 +33,6 @@ const renderPage = async (permissions = mockGovernor.permissions) => {
   return user
 }
 
-/** 记下发往模型供应商与默认模型端点的写请求，响应仍交给预置的 mock。 */
 const recordWrites = () => {
   const sent: Sent[] = []
   server.events.on('request:start', ({ request }) => {
@@ -60,9 +59,6 @@ const openProviders = async (user: User) => {
 
 const formNamed = (name: string) => within(within(panel()).getByRole('form', { name }))
 
-/**
- * 只建供应商：接入方式（null 是默认的第一个）、显示名、引用名；建好后选中它并展开「添加密钥」，交回那张表单。
- */
 const createProviderFor = async (
   user: User,
   declaration: string | null,
@@ -72,7 +68,6 @@ const createProviderFor = async (
   await user.click(within(panel()).getByRole('button', { name: '添加供应商' }))
   const form = formNamed('添加供应商')
   expect(form.queryByLabelText('API Key')).toBeNull()
-  // 默认是第一份声明。
   expect(form.getByRole('button', { name: '接入方式：阿里云百炼' })).toBeVisible()
   if (declaration !== null) {
     await user.click(form.getByRole('button', { name: /^接入方式：/ }))
@@ -142,7 +137,6 @@ describe('添加供应商', () => {
     expect(within(panel()).getByRole('textbox', { name: '供应商显示名' })).toHaveValue(
       '海外模型服务',
     )
-    // 卡片上是模型数与密钥数：声明里的 2 个模型，还没有密钥。
     expect(keyCount('海外模型服务')).toEqual(['2', '0'])
     expect(keyForm.getByLabelText('名称')).toHaveFocus()
 
@@ -204,7 +198,6 @@ describe('密钥', () => {
     await user.click(form.getByRole('button', { name: '试连' }))
 
     expect(await form.findByText('接口返回 401，API Key 无效')).toBeVisible()
-    // 改了字段，上一次的结果作废。
     await user.type(form.getByLabelText('API Key'), '1')
     expect(form.queryByText('接口返回 401，API Key 无效')).toBeNull()
     await user.click(form.getByRole('button', { name: '保存' }))
@@ -299,7 +292,6 @@ describe('模型', () => {
     const user = await renderPage()
     await openProviders(user)
     const keyForm = await createProviderFor(user, 'Google Gemini', '谷歌', 'google-main')
-    // 接口地址选填，不填走官方地址。
     expect(keyForm.getByLabelText('接口地址')).toHaveValue('')
     await user.type(keyForm.getByLabelText('名称'), '主账号')
     await user.type(keyForm.getByLabelText('API Key'), 'AIza-mock-0001')
@@ -373,7 +365,6 @@ describe('模型', () => {
         path: expect.stringMatching(/^\/api\/model-providers\/[\w-]+\/models\/test$/),
       },
     ])
-    // 只有 llm 能测。
     expect(within(panel()).queryByRole('button', { name: '测试模型 text-embedding-v4' })).toBeNull()
 
     await createProviderFor(user, null, '新服务', 'fresh')
@@ -439,7 +430,6 @@ describe('模型', () => {
     await user.click(plus)
     expect(sent).toHaveLength(1)
 
-    // 读到列表后别人把它挂到了 agent 上：页面以为没人用，后端答 409。
     server.use(
       http.patch('*/api/model-providers/:providerId/models/*', () =>
         HttpResponse.json({ detail: '分镜助手正在使用，不能停用' }, { status: 409 }),

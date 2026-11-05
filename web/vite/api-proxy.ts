@@ -6,7 +6,7 @@ export const createSameOriginApiProxy = (
   backendProxyTarget: string,
 ): Record<string, ProxyOptions> => ({
   '/api': {
-    // 保留浏览器可见 Host，使 WS 的 Origin 与 Host 在后端同源校验中保持一致。
+    // 保留原始 Host 请求头，使 WebSocket 握手的 Origin 与 Host 通过后端同源校验。
     changeOrigin: false,
     rewrite: (requestPath: string) => requestPath.replace(API_PREFIX, ''),
     target: backendProxyTarget,

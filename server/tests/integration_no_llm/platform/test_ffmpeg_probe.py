@@ -1,5 +1,3 @@
-"""用真实 ffprobe 验证读关键帧：读得出素材原有的关键帧，读不了的素材报 MediaError。"""
-
 from __future__ import annotations
 
 import subprocess
@@ -19,8 +17,6 @@ pytestmark = [
 
 
 async def test_reads_the_keyframes_a_video_was_encoded_with(tmp_path: Path) -> None:
-    """带音轨的素材也一样：时刻与裁剪用的是同一条时间轴，从 0 起。"""
-
     path = tmp_path / "keyed.mp4"
     synthesize_video(path, size="160x120", seconds=3, audio=True, keyframes=[0, 0.7, 2.1])
 

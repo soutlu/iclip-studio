@@ -29,7 +29,6 @@ test('再进一个列表已在缓存里、一渲染就够长的页面，也从�
   await page.setViewportSize({ width: 1400, height: 700 })
   await page.goto('/')
   await login(page, 'governor')
-  // 先进一次全部对话，下次进来列表直接从缓存渲染，页面一开始就比一屏长。
   await page.getByRole('button', { name: '全部任务', exact: true }).click()
   const conversations = page.getByRole('main', { name: '全部任务' })
   await expect(conversations.getByRole('link').first()).toBeVisible()

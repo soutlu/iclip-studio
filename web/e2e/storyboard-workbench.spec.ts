@@ -3,7 +3,6 @@
 import { expect, test } from '@playwright/test'
 import { canvasPng, openConversation, openStoryboardShot } from './helpers'
 
-// 视口需容纳 264px 侧栏、400px 聊天和 560px 面板。
 test.use({ viewport: { height: 900, width: 1600 } })
 
 test('短桌面中舞台贴着画面在左、文案列在右，画面完整可见；箭头叠在画面上切帧，到头隐藏、不开原图', async ({
@@ -34,7 +33,6 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
   if (groupBox === null || previewBox === null || scriptBox === null || barBox === null) {
     throw new Error('舞台、文案列和出片栏必须有可见布局')
   }
-  // 左右排：画面整个在文案列左边，两者都落在本组区域里、出片栏之上。
   expect(previewBox.height).toBeGreaterThan(0)
   expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(scriptBox.x)
   for (const box of [previewBox, scriptBox]) {
@@ -43,13 +41,11 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
     expect(box.y).toBeGreaterThanOrEqual(groupBox.y)
     expect(box.y + box.height).toBeLessThanOrEqual(barBox.y)
   }
-  // 编辑、替换叠在画面右上：点它们只开自己的入口，不开原图。
   const editBox = await group.getByRole('button', { name: '编辑图片', exact: true }).boundingBox()
   if (editBox === null) throw new Error('舞台工具条必须有可见布局')
   expect(editBox.y).toBeGreaterThanOrEqual(previewBox.y)
   expect(editBox.x + editBox.width).toBeLessThanOrEqual(previewBox.x + previewBox.width)
 
-  // 鼠标：悬停画面露出箭头，点箭头只切帧、不开原图；到头的一侧箭头不出现。
   const next = group.getByRole('button', { name: '下一帧', exact: true })
   const previous = group.getByRole('button', { name: '上一帧', exact: true })
   await expect(previous).toHaveCount(0)
@@ -65,7 +61,6 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
   await expect(preview).toBeVisible()
   await expect(previous).toHaveCount(0)
 
-  // 键盘：Enter 切到末帧，这一侧箭头随即消失，焦点落回画面，不掉回页面开头。
   await next.focus()
   await page.keyboard.press('Enter')
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
@@ -73,7 +68,6 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
   const open = group.getByRole('button', { name: '打开原图', exact: true })
   await expect(open).toBeFocused()
 
-  // 焦点在舞台里时 ←/→ 也切帧，到头不动，焦点一直留在舞台里。
   await page.keyboard.press('ArrowLeft')
   await expect(preview).toBeInViewport({ ratio: 1 })
   await expect(page).toHaveURL(/frame=2/)
@@ -99,17 +93,14 @@ for (const width of [1335, 390]) {
     const group = panel.getByRole('region', { name: '镜头组 2' })
     const takes = group.getByRole('region', { name: '本组素材片', exact: true })
     const cards = takes.getByRole('listitem')
-    // 第 2 组的种子：在途（最新）、失败、成功（最早）。
     await expect(cards).toHaveCount(3)
     await expect(cards.nth(0).getByRole('button', { name: /生成中$/ })).toBeVisible()
     await expect(cards.nth(1).getByRole('button', { name: /生成失败$/ })).toBeVisible()
     await expect(cards.nth(2).getByRole('button', { name: /的素材片$/ })).toBeVisible()
 
     if (width === 390) {
-      // 上下排：素材片区排在正文之后，随主体滚到底才整块露出来。
       await group.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
       await expect(takes).toBeInViewport({ ratio: 1 })
-      // 横滑到最旧那张再出一条片：新卡排到最前，行滚回开头让它露出来。
       const conversationId = new URL(page.url()).pathname.split('/').at(-1)
       const submit = async () => {
         const status = await page.evaluate(async (id) => {
@@ -141,7 +132,6 @@ for (const width of [1335, 390]) {
       await expect(cards).toHaveCount(6)
       await expect(cards.first()).toBeInViewport()
     } else {
-      // 左右排：素材片区钉在列底，正文自己滚到底它也不动。
       await expect(takes).toBeInViewport({ ratio: 1 })
       await group
         .getByRole('region', { name: '分镜文案' })
@@ -166,7 +156,6 @@ for (const width of [1335, 390]) {
     )
     const takes = group.getByRole('region', { name: '本组素材片', exact: true })
     await expect(takes.getByRole('listitem')).toHaveCount(3)
-    // 卡上只挂封面，不挂 <video>。
     await expect(takes.locator('video')).toHaveCount(0)
     const card = takes.getByRole('button', { name: /的素材片$/ })
     await expect(card).toHaveCount(1)
@@ -177,11 +166,7 @@ for (const width of [1335, 390]) {
     await expect(card).toBeFocused()
     await expect(card).toHaveAttribute('aria-pressed', 'true')
     const video = player.locator('video')
-    // mock 的出片是一条 MP4 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
-    // dev 下地址没有 hash、带 ?no-inline 查询串，构建产物里有 hash、没查询串。
     await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.mp4(\?.*)?$/)
-    // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的；点卡片只放上舞台、停在封面，
-    // 不自动播、不循环，点播放键才开始播。
     expect(await video.evaluate((el: HTMLVideoElement) => el.controls)).toBe(false)
     await expect(player.getByRole('slider', { name: '播放进度' })).toBeVisible()
     await expect(video).not.toHaveAttribute('autoplay')
@@ -192,12 +177,10 @@ for (const width of [1335, 390]) {
       .poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime))
       .toBeGreaterThan(0)
     await expect(takes.locator('video')).toHaveCount(0)
-    // 操作叠在舞台右上、完整可见，不在播放器里，与播放器底部的控件胶囊互不遮挡。
     for (const name of ['下载视频', '编辑视频', '回填提示词'])
       await expect(group.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 })
     await expect(player.getByRole('button', { name: '下载视频' })).toHaveCount(0)
 
-    // 点文案回到帧：播放器卸载，舞台回到这一段的帧。
     await group.getByRole('button', { name: '镜头 2', exact: true }).click()
     await expect(video).toHaveCount(0)
     await expect(card).toHaveAttribute('aria-pressed', 'false')
@@ -220,7 +203,6 @@ test.describe('移动触屏分镜', () => {
     await group.getByRole('button', { name: '镜头 2', exact: true }).tap()
     await group.getByRole('button', { name: '下一帧', exact: true }).tap()
 
-    // 上下排：舞台在上，画面整张露出来；帧的操作叠在舞台右上，常显不靠悬停。舞台上没有添加入口。
     await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({
       ratio: 1,
     })
@@ -242,13 +224,11 @@ test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可�
   await openStoryboardShot(panel, 2)
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
 
-  // 点第二镜里的 @2，地址记下第 2 帧，替换与拖放都要留在这一帧。
   const secondScene = shot2.getByRole('group', { name: '镜头 2', exact: true })
   await secondScene.getByRole('button', { name: '查看第 2 帧' }).click()
   await expect(page).toHaveURL(/frame=2/)
   const preview = shot2.getByRole('img', { name: '镜头组 2 第 2 帧' })
   const imageArea = shot2.getByRole('group', { name: '当前帧图片' })
-  // 夹具订阅后会整份重写分镜；等示例 agent 更新完成，避免重置图片打断上传和编辑。
   await expect(shot2.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
     '台词并成一句',
     { timeout: 20_000 },
@@ -285,7 +265,6 @@ test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可�
   await expect(shot2.getByText('松开可替换当前图片', { exact: true })).toBeVisible()
   await expect(page.getByTestId('composer-drop-overlay')).toBeHidden()
   await imageArea.dispatchEvent('drop', { dataTransfer })
-  // 拖入是替换：还是第 2 帧，画面换成刚拖进来的图，不新增帧。
   await expect(preview).not.toHaveAttribute('src', uploadedUrl ?? '')
   await expect(preview).toHaveAttribute('src', /\/mock-oss\//)
   await expect(preview).toHaveJSProperty('naturalWidth', 600)
@@ -309,13 +288,11 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
   await openStoryboardShot(panel, 2)
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
   const editor = shot2.getByRole('textbox', { name: '镜头 2 的描述' })
-  // 夹具订阅后会整份重写分镜；等它落定再编辑，免得打的字被重置。
   await expect(editor).toContainText('台词并成一句', { timeout: 20_000 })
   const chips = editor.getByRole('button', { name: '查看第 2 帧' })
   const before = await chips.count()
 
   await editor.click()
-  // 正文可能折成多行，End 只到点击所在视觉行的行尾；用整段末尾的键把光标放到文末。
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End')
   await page.keyboard.type(' 与双肩包 @')
   await expect(editor).toHaveText(/台词并成一句。 与双肩包 @$/)
@@ -334,7 +311,6 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
     menu.boundingBox(),
   ])
   if (editorBox === null || menuBox === null) throw new Error('正文与弹层必须有可见布局')
-  // 弹层整个落在光标所在行下面，不遮住正在打的字；光标在正文最后一行，弹层也就在正文下面。
   expect(menuBox.y).toBeGreaterThanOrEqual(caret.bottom - 1)
   expect(menuBox.y).toBeGreaterThanOrEqual(editorBox.y + editorBox.height - 1)
 
@@ -343,7 +319,6 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
     'aria-selected',
     'true',
   )
-  // 只有一行时 ↑↓ 不动。
   await page.keyboard.press('ArrowDown')
   await expect(menu.getByRole('option', { name: '插入第 2 帧' })).toHaveAttribute(
     'aria-selected',

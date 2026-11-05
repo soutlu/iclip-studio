@@ -37,7 +37,7 @@ def inspect_font(path: Path) -> FontInfo:
         with TTFont(path, lazy=False) as font:
             info = _info(font)
             font.ensureDecompiled(recurse=True)
-            # CFF 的 CharStrings 在 ensureDecompiled 之后仍按需解码，要逐字形画一遍才验得出坏轮廓。
+            # fontTools 的 CFF CharStrings 在 ensureDecompiled 后仍按需解码，须逐字形绘制方可检出损坏轮廓。
             glyphs = font.getGlyphSet()
             for name in font.getGlyphOrder():
                 glyphs[name].draw(BoundsPen(glyphs))

@@ -18,10 +18,8 @@ const pad2 = (value: number): string => String(value).padStart(2, '0')
 const fullTime = (date: Date): string =>
   `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
 
-/** 时刻是栏里唯一显示时间文字的按钮。 */
 const timeButton = () => screen.getByRole('button', { name: /\d{2}:\d{2}$/ })
 
-/** 触屏点一下：没有悬停，只有按下、抬起和随后的点击。 */
 const tap = (user: ReturnType<typeof userEvent.setup>, target: Element) =>
   user.pointer({ keys: '[TouchA]', target })
 
@@ -40,7 +38,6 @@ describe('TurnActions', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('复制')
 
     await user.click(button)
-    // 等待剪贴板 Promise 完成后触发的状态微任务。
     await act(async () => {})
     expect(writeText).toHaveBeenCalledWith('最终回复')
 

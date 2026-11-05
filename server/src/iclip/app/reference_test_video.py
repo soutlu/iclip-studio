@@ -1,9 +1,3 @@
-"""参考视频的试生成：把 references 声明的 ``TestVideos`` 端口接到生成域上。
-
-一次试生成就是属主名下一条普通的视频生成：模型与分辨率固定，时长与正文由拆解拼出，画幅由调用方给，
-带声音；``metadata`` 记 ``referenceId``，读最新一次就按它筛。读只要生成仓储，媒体生成没开也读得到；
-提交要生成服务，没开时试生成的入口不挂。"""
-
 from __future__ import annotations
 
 import uuid
@@ -37,8 +31,6 @@ TEST_VIDEO_RESOLUTION: Final = "480p"
 
 
 class GenerationTestVideos:
-    """``generation`` 为 ``None`` 即媒体生成没开：只能读，提交是装配错误。"""
-
     def __init__(self, repo: GenerationRepository, generation: GenerationService | None) -> None:
         self._repo = repo
         self._generation = generation
@@ -66,7 +58,6 @@ class GenerationTestVideos:
     ) -> None:
         if self._generation is None:
             raise RuntimeError("媒体生成没开，试生成的入口不该挂上")
-        # 上限只在生成域定义一处；先查，报出给人看的原因，而不是请求校验的字段报错。
         if len(prompt.text) > MAX_PROMPT_CHARS:
             raise ValidationFailed(f"拆解超过 {MAX_PROMPT_CHARS} 字，无法试生成")
         try:
@@ -86,8 +77,6 @@ class GenerationTestVideos:
 
 
 def _status(job: GenerationJob) -> TestVideoStatus:
-    """排队、提交中与等上游都算还没结束。"""
-
     if job.status == STATUS_COMPLETED:
         return TEST_VIDEO_COMPLETED
     if job.status == STATUS_FAILED:

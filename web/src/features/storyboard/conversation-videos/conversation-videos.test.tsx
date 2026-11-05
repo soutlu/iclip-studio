@@ -193,7 +193,6 @@ describe('ConversationVideos', () => {
     })
 
     act(() => socket.deliver(changed('0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d')))
-    // 留出一次真实请求往返的时间，否则「没重拉」是空断言。
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(reads).toBe(1)
 

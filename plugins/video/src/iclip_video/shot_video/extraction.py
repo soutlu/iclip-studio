@@ -1,5 +1,3 @@
-"""读拆解文档里的镜头区间，读写工作区里的取帧台账；抽帧拼板交给 ``FrameBoards`` 端口。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -29,16 +27,12 @@ _logger = structlog.stdlib.get_logger(__name__)
 
 
 class FrameExtractor:
-    """按拆解文档要预览板，并读取工作区里的取帧台账。"""
-
     def __init__(self, *, boards: FrameBoards) -> None:
         self._boards = boards
 
     async def shot_rows(
         self, files: FileStore, namespace: str, doc_path: str
     ) -> tuple[tuple[ShotSpan, ...], ...]:
-        """解析文档中的镜头区间，失败时提供可修正的错误。"""
-
         stored = await files.read(namespace, doc_path)
         if stored is None:
             raise ModelRetry(f"参考视频拆解文档 {doc_path} 不存在，先对该视频调用 video_parser。")
@@ -59,8 +53,6 @@ class FrameExtractor:
         video_url: str,
         rows: Sequence[Sequence[ShotSpan]],
     ) -> tuple[ExtractionLedger, bool]:
-        """把工作区里现有的台账交给端口判断能否复用，交回台账与是否复用；持久化由调用方负责。"""
-
         try:
             result = await self._boards.boards(
                 video_url=video_url, rows=rows, previous=await self.load(files, namespace)
@@ -70,11 +62,6 @@ class FrameExtractor:
         return result.ledger, result.reused
 
     async def load(self, files: FileStore, namespace: str) -> ExtractionLedger | None:
-        """读取取帧台账；形状不合或版本不符一律视为不存在。
-
-        这里只确认工作区里有一份合规的当前版本台账；它是不是这次取帧的产物（key 与板地址），
-        由 ``FrameBoards`` 端口判断。"""
-
         stored = await files.read(namespace, EXTRACTION_PATH)
         if stored is None:
             return None

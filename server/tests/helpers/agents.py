@@ -1,8 +1,3 @@
-"""集成测试里往库里种 agent：一个按百炼声明接入的测试供应商（密钥用 ``GOOD_KEY``）、自己加的测试模型、
-技能与发布好的 agent。全部经各领域的服务写，与配置页走同一套校验与发布检查。
-
-运行时按模型名把模型换成测试替身（见 ``model_builder``），所以这里种的模型只是名字，不连真实端点。"""
-
 from __future__ import annotations
 
 import uuid
@@ -35,16 +30,12 @@ from tests.helpers.model_providers import GOOD_KEY
 from tests.helpers.references import plant_user
 
 TEST_PROVIDER = "test-provider"
-"""种下的供应商引用名（按百炼声明接入）。"""
 
 SEEDER = "agent-seeder"
-"""种 agent 时建的作者账号的用户名；数用户的用例把它除外。"""
 
 
 @dataclass(frozen=True)
 class SkillSeed:
-    """一个技能：标识、描述、正文与 ``references/`` 下的文件（文件名 → 内容）。"""
-
     name: str
     description: str = "测试用的技能。"
     body: str = "照着流程做。"
@@ -53,8 +44,6 @@ class SkillSeed:
 
 @dataclass(frozen=True)
 class SubagentSeed:
-    """派活给哪个 agent（它要先种好）与三个控制项。"""
-
     agent: str
     timeout_seconds: float | None = None
     max_calls: int | None = None
@@ -63,8 +52,6 @@ class SubagentSeed:
 
 @dataclass(frozen=True)
 class AgentSeed:
-    """种一个 agent 并发布 v1。``listed`` 为假的是只当子 agent 用的。"""
-
     agent_id: str
     model: str = TEST_MODEL_NAME
     instructions: str = ""
@@ -77,13 +64,10 @@ class AgentSeed:
 
 
 CONVERSABLE_SEEDS = (AgentSeed("storyboard"), AgentSeed("director"))
-"""只是要能开对话的测试种这两个：首页上能选、发布过、没有工具。"""
 
 
 @dataclass
 class Seeded:
-    """种完之后测试要用的 id：作者、供应商、各模型名、技能 id 与各 agent 的 v1。"""
-
     author: uuid.UUID
     provider_id: uuid.UUID
     skills: dict[str, uuid.UUID] = field(default_factory=dict[str, uuid.UUID])
@@ -91,8 +75,6 @@ class Seeded:
 
 
 def model_builder(models: Mapping[str, Model]) -> ModelBuilder:
-    """按模型名换成测试替身；没登记的名字直接报错，装配会把它报成 agent 装不起来。"""
-
     def build(found: RuntimeModel, _thinking: ThinkingEffort | None) -> Model:
         return models[found.model.name]
 
@@ -107,8 +89,6 @@ async def seed_provider(
     context_sizes: Mapping[str, int] | None = None,
     thinking: Sequence[ThinkingEffort] = (),
 ) -> Seeded:
-    """建作者、接入测试供应商、加一把默认密钥，并把 ``models`` 加成自己加的 llm 模型（走 chat）。"""
-
     author = await plant_user(engine, SEEDER)
     providers = services.model_providers
     provider = await providers.create(
@@ -134,8 +114,6 @@ async def seed_provider(
 
 
 async def seed_skill(services: ConfigServices, seeded: Seeded, skill: SkillSeed) -> uuid.UUID:
-    """建一个技能、写好正文与参考文件并发布，交回技能 id；同名的已种过就直接用。"""
-
     if skill.name in seeded.skills:
         return seeded.skills[skill.name]
     library = services.skills
@@ -198,8 +176,6 @@ async def save_and_publish(
     config: AgentConfig,
     skill_ids: Sequence[uuid.UUID] = (),
 ) -> uuid.UUID:
-    """整份保存草稿再发布，交回新版本 id。"""
-
     agents = services.agent_config
     detail = await agents.detail(agent_id)
     saved = await agents.save_draft(
@@ -218,8 +194,6 @@ async def save_and_publish(
 
 
 async def seed_agent(services: ConfigServices, seeded: Seeded, seed: AgentSeed) -> uuid.UUID:
-    """建 agent、存草稿、发布 v1，``listed`` 照种子设；交回 v1 的 id。"""
-
     agents = services.agent_config
     await agents.create(
         AgentCreateIn(id=seed.agent_id, name=seed.agent_id, description=seed.description),
@@ -238,8 +212,6 @@ async def seed_agent(services: ConfigServices, seeded: Seeded, seed: AgentSeed) 
 async def seed_agents(
     services: ConfigServices, engine: AsyncEngine, seeds: Sequence[AgentSeed]
 ) -> Seeded:
-    """接入测试供应商（种子用到的模型都加上）并依次种下 ``seeds``；子 agent 要排在用它的 agent 前面。"""
-
     seeded = await seed_provider(
         services,
         engine,

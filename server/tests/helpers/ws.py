@@ -1,5 +1,3 @@
-"""WS 集成测试共用的同步动作：登录、开对话、等运行结束、订阅、按类型等帧、按轮收操作。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -31,11 +29,6 @@ def sign_in(tc: TestClient, pg_url: str) -> None:
 def sign_in_as(
     tc: TestClient, pg_url: str, *, username: str, roles: tuple[str, ...]
 ) -> dict[str, str]:
-    """注册、授角色、登录，返回只带这个人会话 cookie 的请求头。
-
-    随后清空客户端的 cookie 罐，同一个 TestClient 就能替几个人分别发请求、开连接。
-    不开第二个 TestClient：那是第二个事件循环，会碰同一个进程内的连接集合。"""
-
     email = f"{username}@example.com"
     created = tc.post(
         "/auth/register", json={"email": email, "password": PASSWORD, "username": username}
@@ -58,8 +51,6 @@ def open_conversation(tc: TestClient, headers: Mapping[str, str] | None = None) 
 
 
 def settled(tc: TestClient, conversation_id: str, *, tries: int = 200) -> None:
-    """app.settled 的同步客户端版。"""
-
     for _ in range(tries):
         queue = tc.get(f"/conversations/{conversation_id}/prompts").json()
         if queue["active"] is None and not queue["queued"]:
@@ -89,8 +80,6 @@ def subscribe(
 
 
 def until(ws: Any, kind: str, *, tries: int = 40) -> dict[str, Any]:
-    """等待指定帧类型，跳过期间的 ack 和心跳。"""
-
     for _ in range(tries):
         frame: dict[str, Any] = ws.receive_json()
         if frame.get("type") == kind:
@@ -99,8 +88,6 @@ def until(ws: Any, kind: str, *, tries: int = 40) -> dict[str, Any]:
 
 
 def drain_turn(ws: Any, *, tries: int = 40) -> list[dict[str, Any]]:
-    """按轮终态收集操作；低粒度会过滤批次，不能等待固定帧数。"""
-
     collected: list[dict[str, Any]] = []
     for _ in range(tries):
         frame = ws.receive_json()

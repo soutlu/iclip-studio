@@ -41,7 +41,6 @@ async def cut_concat(
     silent = [not (await probe_video(cut.source)).has_audio for cut in cuts]
     keyframes = await _keyframe_plan(cuts, profile=profile)
 
-    # 各段参数互不相同，走 concat 滤镜：concat 分离器要求各输入参数一致。
     inputs: list[str] = []
     chains: list[str] = []
     labels: list[str] = []
@@ -114,8 +113,7 @@ def _concat_keyframes(
         for time in [cut.start, *inside]:
             frames.add(round(Fraction(offset + time - cut.start) * frame_rate))
         offset += cut.duration
-    # ffmpeg 把第一个时间戳不早于给定时刻的帧编成关键帧。给帧的正点时刻会因十进制写法向上舍入而
-    # 落到下一帧，所以往前挪半帧；同一帧给两个时刻，它会把后一帧也编成关键帧，所以先按帧去重。
+    # FFmpeg -force_key_frames 匹配首个时间戳 >= 指定值的帧，故前移半帧以防浮点舍入落入下一帧，并按帧号去重。
     return ",".join(
         f"{max(Fraction(0), (frame - Fraction(1, 2)) / frame_rate):.6f}" for frame in sorted(frames)
     )

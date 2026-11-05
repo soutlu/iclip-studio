@@ -8,7 +8,6 @@ import { catalog, exportRequest, flush, manualWorker, memoryLogger } from './tes
 let base: string
 let close: () => Promise<void>
 let renders: ReturnType<typeof manualWorker>['renders']
-/** 渲染服务每次受理时读到的组件库；用例可以换掉它，模拟发布了新的一版 */
 let current: ComponentLibrary
 
 beforeEach(async () => {

@@ -1,5 +1,3 @@
-/** 参考 Kimi activity-run：连续可折叠块至少两个且包含工具时成组；摘要按首次出现顺序聚合。 */
-
 import type {
   ToolCallFrame,
   TranscriptFrame,
@@ -16,14 +14,12 @@ export type TurnEntry = {
 export type ActivityNode =
   { kind: 'entry'; entry: TurnEntry } | { kind: 'run'; runId: string; items: readonly TurnEntry[] }
 
-/** 摘要的一条子句；tone 缺省是主文字色。pinned 的子句（失败数、拒绝数、时长）窄屏下不被截掉。 */
 export type SummaryClause = {
   text: string
   tone?: 'danger' | 'faint'
   pinned?: boolean
 }
 
-/** 正文、通知与错误中断分组；带媒体或派出子代理的工具保持独立，折叠后预览和「查看」入口都还在。 */
 const foldable = (frame: TranscriptFrame) =>
   frame.kind === 'thinking' ||
   (frame.kind === 'tool' && toolMedia(frame).length === 0 && (frame.agentRefs?.length ?? 0) === 0)
@@ -53,15 +49,10 @@ export const groupTurnEntries = (entries: readonly TurnEntry[]): ActivityNode[] 
   return out
 }
 
-/** 轮内的一个展示块：活动组与相邻的单独工具收进同一张活动卡，其余块各自成块。 */
 export type TurnBlock =
   | { kind: 'card'; cardId: string; nodes: readonly ActivityNode[] }
   | { kind: 'entry'; entry: TurnEntry }
 
-/**
- * 只重排展示，不改变分组：活动组照旧可折叠，带图或派出子代理的工具仍在组外，
- * 只是和相邻的活动组同卡，折起来时它们那一行照样露着。正文、思考、通知与用户插话把卡隔开。
- */
 export const groupActivityCards = (nodes: readonly ActivityNode[]): TurnBlock[] => {
   const out: TurnBlock[] = []
   let card: ActivityNode[] = []
@@ -87,7 +78,6 @@ export const groupActivityCards = (nodes: readonly ActivityNode[]): TurnBlock[] 
   return out
 }
 
-/** 参考 Kimi 时长格式：20s、3m11s、1h2m；不足一秒不显示。 */
 export const formatActivityDuration = (ms: number): string => {
   if (ms < 1000) return ''
   const seconds = Math.round(ms / 1000)
@@ -103,11 +93,9 @@ export const formatActivityDuration = (ms: number): string => {
 type ToolFrame = ToolCallFrame
 type Interactions = ReadonlyMap<string, TranscriptInteraction>
 
-/** 组里失败的那几次调用，按出现顺序；被拒绝的不算失败。只看每次调用自己的状态，不看前后。 */
 export const failedTools = (items: readonly TurnEntry[], interactions: Interactions): TurnEntry[] =>
   items.filter(({ frame }) => frame.kind === 'tool' && toolOutcome(frame, interactions) === 'error')
 
-/** 文件操作与检索按操作类型聚合，其余工具按标题聚合；认不出的工具归到「操作」。 */
 const bucketKey = (frame: ToolFrame): string => {
   const { label, operation } = toolCard(frame.display, frame.view)
   if (operation !== undefined) return `op:${operation}`
@@ -126,7 +114,6 @@ const doneClause = (key: string, count: number, live: boolean): string => {
   return `${prefix}${key.slice(8)} ×${count}`
 }
 
-/** 完成态的计数句，动词与卡头标题同一套词（docs/tool-design.md §4）。 */
 const OPERATION_LABELS = {
   read: (n: number) => `读取 ${n} 个文件`,
   write: (n: number) => `写入 ${n} 个文件`,
@@ -135,7 +122,6 @@ const OPERATION_LABELS = {
   grep: (n: number) => `搜索 ${n} 次`,
 } as const
 
-/** 运行中的当前项：动词加主语；标题本身就是动宾短语，前面加「正在」即可。 */
 const doingClause = (frame: TranscriptFrame): string => {
   if (frame.kind === 'thinking') return '思考中…'
   if (frame.kind !== 'tool') return ''
@@ -153,7 +139,6 @@ const DOING_VERB = {
   grep: '正在搜索',
 } as const
 
-/** 按首次出现顺序聚合，失败数与被拒绝数附在所属类别后；两者都只看每次调用自己的状态。 */
 const aggregate = (
   tools: readonly ToolFrame[],
   live: boolean,
@@ -182,7 +167,6 @@ const aggregate = (
   return clauses
 }
 
-/** 完成态摘要附带可用的墙钟时长。 */
 export const summarizeDone = (
   items: readonly TurnEntry[],
   durationMs: number | undefined,
@@ -195,7 +179,6 @@ export const summarizeDone = (
   return clauses
 }
 
-/** 运行态摘要先展示当前操作，再显示已完成类别和实时时长。 */
 export const summarizeRunning = (
   items: readonly TurnEntry[],
   liveFrameId: string | undefined,
@@ -226,7 +209,6 @@ export const summarizeRunning = (
   return clauses
 }
 
-/** 步骤去重后，以最早开始和最晚结束计算墙钟时长；缺少时间戳时返回 undefined。 */
 export const runHistoryMs = (items: readonly TurnEntry[]): number | undefined => {
   const steps = new Map<string, TranscriptStep>()
   for (const { step } of items) steps.set(step.stepId, step)

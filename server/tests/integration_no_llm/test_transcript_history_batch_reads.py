@@ -1,5 +1,3 @@
-"""历史重建走批量读：结果与逐个运行去查一模一样，查询条数不随运行数增长，子代理页不重建主流。"""
-
 from __future__ import annotations
 
 import uuid
@@ -41,7 +39,7 @@ T0 = datetime(2026, 9, 1, tzinfo=UTC)
 
 
 class PerRunPgStore(PerRunBatchReads, PgStepStore):
-    """参照实现：同一个库，批量读换成逐个运行去查。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,11 +49,6 @@ class Seeded:
 
 
 async def _seed(store: PgStepStore, *, runs: int, delegate_every: int) -> Seeded:
-    """造一段对话：每 ``delegate_every`` 轮派一个下属运行，另有失败轮、被停轮与同刻开跑的两个下属。
-
-    被停那轮派出的下属没有自己的终态，读出来要随父算 cancelled。
-    """
-
     conversation_id = str(uuid.uuid4())
     messages: list[ModelMessage] = []
     children: list[str] = []
@@ -110,7 +103,6 @@ async def _seed(store: PgStepStore, *, runs: int, delegate_every: int) -> Seeded
                     started_at=at,
                 )
             )
-            # 同一轮派出的下属同一时刻开跑，次序要稳定。
             await store.register_run(
                 RunRecord(
                     run_id=child,
@@ -177,8 +169,6 @@ def _history(store: PgStepStore) -> TranscriptHistory:
 
 @contextmanager
 def _statements(engine: AsyncEngine) -> Generator[list[str]]:
-    """数这段代码向库发了几条 SQL。"""
-
     seen: list[str] = []
 
     def count(*args: Any, **_: Any) -> None:
@@ -208,7 +198,6 @@ async def test_batch_reads_rebuild_the_same_history_as_per_run_reads(engine: Asy
     assert await batch.read_tasks(seeded.conversation_id) == view.tasks
     for child in seeded.children:
         assert await batch.read_child(child) == await per_run.read_child(child)
-    # 数据确实走到了要比的那几条分支：失败轮、被停轮带出的下属随父算 killed、同刻开跑的两个下属。
     assert [turn.state for turn in view.turns][:3] == ["completed", "failed", "cancelled"]
     assert any(task.state == "killed" for task in view.tasks)
     assert len(view.tasks) == len(seeded.children)
@@ -229,8 +218,6 @@ async def test_rebuild_issues_the_same_number_of_queries_for_10_or_50_runs(
 
 @dataclass(frozen=True, slots=True)
 class _ReadSpy(TranscriptHistory):
-    """记下主流整段重建被调了几次。"""
-
     reads: list[str] = field(default_factory=list)
 
     async def read(self, conversation_id: str) -> TranscriptHistoryView:
@@ -244,7 +231,7 @@ async def test_child_page_does_not_rebuild_the_main_stream(engine: AsyncEngine) 
     large = await _seed(store, runs=50, delegate_every=5)
     history = _ReadSpy(store, NoPromptRuns(), delegate_tool=DELEGATE_TOOL)
 
-    no_runner: Any = None  # 子代理页不碰运行驱动
+    no_runner: Any = None
     service = TranscriptService(
         store=TranscriptStore(),
         history=history,

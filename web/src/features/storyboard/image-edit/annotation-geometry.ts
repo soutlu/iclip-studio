@@ -5,7 +5,6 @@ type Bounds = { left: number; top: number; right: number; bottom: number }
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value))
 
-/** Convert viewport coordinates to the contained image, excluding its letterbox. */
 export function imagePoint(
   client: AnnotationPoint,
   viewport: { left: number; top: number; width: number; height: number },
@@ -31,7 +30,6 @@ export function annotationBounds(annotation: ImageAnnotation): Bounds {
   }
 }
 
-/** Clamp the entire shape, preserving its size when dragging against an image edge. */
 export function moveAnnotation(
   annotation: ImageAnnotation,
   delta: AnnotationPoint,
@@ -42,7 +40,6 @@ export function moveAnnotation(
   return { ...annotation, points: annotation.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
 }
 
-/** Each handle edits the visible shape boundary; pen and point marks only move. */
 export function resizeAnnotation(
   annotation: ImageAnnotation,
   handle: number,
@@ -107,7 +104,6 @@ export function annotationHandles(annotation: ImageAnnotation): AnnotationPoint[
   ]
 }
 
-/** Midpoint quadratic curves retain the first and last sampled points without overshooting. */
 function penPath(points: AnnotationPoint[]): string {
   const first = points[0]
   if (!first) return ''
@@ -125,7 +121,6 @@ function penPath(points: AnnotationPoint[]): string {
   return commands.join(' ')
 }
 
-/** Shared image-space geometry; unitsPerPixel keeps controls readable as the viewport resizes. */
 export function annotationVisual(annotation: ImageAnnotation, size: ImageSize, unitsPerPixel = 1) {
   const points = annotation.points.map((p) => ({ x: p.x * size.width, y: p.y * size.height }))
   const bounds = annotationBounds(annotation)
@@ -162,7 +157,6 @@ export function annotationVisual(annotation: ImageAnnotation, size: ImageSize, u
   const labelHeight = 20 * unitsPerPixel
   const anchorRadius =
     (annotation.kind === 'point' ? targetRadius : 0) + (strokeWidth + haloWidth) / 2
-  // Include the label outline so the visible edges have a full six-pixel gap.
   const gap = (6 + 0.75) * unitsPerPixel
   const dx = anchorRadius + gap + labelWidth / 2
   const dy = anchorRadius + gap + labelHeight / 2
@@ -189,7 +183,6 @@ export function annotationVisual(annotation: ImageAnnotation, size: ImageSize, u
     fontSize: 14 * unitsPerPixel,
     radius: 4 * unitsPerPixel,
   }
-  // Intersect the anchor-to-label ray with both visible boundaries, including after edge clamping.
   const vx = label.x - anchor.x
   const vy = label.y - anchor.y
   const distance = Math.hypot(vx, vy)
@@ -222,25 +215,14 @@ export function annotationVisual(annotation: ImageAnnotation, size: ImageSize, u
   }
 }
 
-/** 选中标注操作条的尺寸（px），高度对应 CSS 的 --control-height-xl。 */
 const TOOLBAR_MAX_WIDTH = 240
 const TOOLBAR_HEIGHT = 44
-/** 与视口四边、与其它编号之间的留白。 */
 const TOOLBAR_INSET = 8
-/** 与选中标注之间的间距。 */
 const TOOLBAR_GAP = 12
-/** 避让时的占位：操作条加下方留白。 */
 const TOOLBAR_FOOTPRINT = TOOLBAR_HEIGHT + TOOLBAR_INSET
 
-/** 编号框，以中心点和尺寸表示（annotationVisual 的 label）。 */
 type LabelBox = { x: number; y: number; width: number; height: number }
 
-/**
- * 选中标注操作条在视口里的位置（px）。优先放在标注与编号上方，放不下翻到下方；挡住其它编号
- * 就让开，密集标注时也能点到它们；最后夹在视口内。
- * `image` 是底图固有尺寸与显示缩放，底图按 contain 居中；`selected` 与 `labels` 用图片像素坐标，
- * `labels` 含选中标注自己的编号。
- */
 export function placeAnnotationToolbar({
   viewport,
   image,
@@ -283,7 +265,6 @@ export function placeAnnotationToolbar({
     markTop >= TOOLBAR_HEIGHT + TOOLBAR_GAP + TOOLBAR_INSET
       ? markTop - TOOLBAR_HEIGHT - TOOLBAR_GAP
       : clampTop(markBottom + TOOLBAR_GAP)
-  // 自下而上逐个让到编号上方；顶出视口就改到标注下方，自上而下让到编号下方。
   for (const box of obstacles.toSorted((a, b) => b.top - a.top)) {
     if (blocks(top, box)) top = box.top - TOOLBAR_INSET - TOOLBAR_FOOTPRINT
   }

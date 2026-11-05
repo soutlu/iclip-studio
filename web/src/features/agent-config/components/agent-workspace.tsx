@@ -50,7 +50,6 @@ type AgentWorkspaceProps = {
   agentEntryRef: RefObject<HTMLButtonElement | null>
   onCreateAgent: () => void
   onSelectAgent: (id: string) => void
-  /** 这个 agent 还没保存的修改；没有为 undefined。由页面按 agent 保管，切走再切回来还在。 */
   edit: DraftValue | undefined
   onEditChange: (edit: DraftValue | undefined) => void
   panel: Panel | null
@@ -59,10 +58,6 @@ type AgentWorkspaceProps = {
   onViewVersion: (versionId: string | null) => void
 }
 
-/**
- * 一个 agent 的编辑区：左栏是配置摘要与保存、发布，右栏是打开的配置面板。
- * 编辑的是服务端草稿的一份拷贝；保存整份覆盖并带读到的 lockVersion，发布前先把没保存的修改存上。
- */
 export function AgentWorkspace({
   agentId,
   agents,
@@ -125,7 +120,6 @@ export function AgentWorkspace({
     setNotice(errorMessageOf(error, fallback))
   }
 
-  /** 存上没保存的修改，交回存好后的详情（下一步发布要用它的 lockVersion）；失败交回 null。 */
   const save = async (): Promise<AgentDetail | null> => {
     setNotice(null)
     try {
@@ -289,7 +283,6 @@ export function AgentWorkspace({
         </footer>
       </section>
 
-      {/* 没开面板时右栏是页面上的测试预览（PreviewHost），这一栏不占位。 */}
       <section
         aria-label="配置调整"
         className="flex min-h-0 min-w-0 flex-col"

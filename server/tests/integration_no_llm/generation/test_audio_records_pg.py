@@ -1,5 +1,3 @@
-"""音频记录落在生成记录表里：生成背景音乐的往返，以及它不混进视频的在途与素材片口径。"""
-
 from __future__ import annotations
 
 import uuid
@@ -54,8 +52,6 @@ async def test_generated_music_round_trips_its_request_address_and_duration(
 async def test_audio_records_do_not_count_as_videos_in_flight_or_masters(
     engine: AsyncEngine,
 ) -> None:
-    """对话的「视频在跑」与最新素材片只看视频：排队、提交中、完成的背景音乐都不算。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     quiet, busy_music = uuid.uuid4(), uuid.uuid4()

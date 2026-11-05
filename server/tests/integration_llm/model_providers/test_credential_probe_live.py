@@ -1,8 +1,3 @@
-"""用真实的百炼密钥试连一次：通过 make test-external 运行。
-
-需要 ``MODEL_API_KEY``（百炼的 API Key）与 ``MODEL_BASE_URL``（百炼的 OpenAI 兼容接口地址），缺一个就跳过。
-声明里每个模型都试一次，各是一次最小的付费请求。"""
-
 from __future__ import annotations
 
 import os

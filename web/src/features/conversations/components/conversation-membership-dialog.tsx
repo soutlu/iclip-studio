@@ -12,7 +12,6 @@ import { Select } from '@/shared/ui/field'
 import { toast } from '@/shared/ui/toast'
 import { useSetConversationMembership } from '../conversations.api'
 
-/** select 的空串表示无归属，提交时转换为 null。 */
 const NONE = ''
 
 type Option = { id: string; label: string }
@@ -25,7 +24,6 @@ type Conversation = {
 }
 
 type ConversationMembershipDialogProps = {
-  /** 候选项由 routes 层注入，避免跨 feature 依赖。 */
   collectionOptions: Option[]
   collectionUnavailable?: string | undefined
   conversation?: Conversation | undefined
@@ -38,7 +36,6 @@ type ConversationMembershipDialogProps = {
   taskUnavailable?: string | undefined
 }
 
-/** 合集与需求单归属互相独立，均允许为空。 */
 export function ConversationMembershipDialog({
   collectionOptions,
   collectionUnavailable,
@@ -106,7 +103,6 @@ function MembershipForm({
     saveMutation.mutate(
       {
         conversationId: conversation.id,
-        // 仅提交发生变化的归属，避免多余请求。
         ...(collectionChanged ? { collectionId: collectionId || null } : {}),
         ...(taskChanged ? { taskId: taskId || null } : {}),
       },

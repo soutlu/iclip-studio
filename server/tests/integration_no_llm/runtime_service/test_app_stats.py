@@ -1,8 +1,3 @@
-"""运行时服务的统计接口：只答调用方应用的会话；按时间窗（各行自己的时刻，左闭右开）或按会话取，二选一；
-运行只算运行驱动登记过、开始与终态都有的顶层运行；会话的首末消息按发起时刻，同一时刻按 ``prompt_id``。
-
-应用 A 是 ``reader``（``app_client``），应用 B 是 ``bff``。"""
-
 from __future__ import annotations
 
 import uuid
@@ -59,7 +54,6 @@ async def test_stats_answer_only_the_calling_apps_sessions(
             prompt = await plant.prompt(session_id, user_name="Sara.Hong", at=ago(hours=2))
             await plant.run(prompt, started_at=ago(hours=2), ended_at=ago(hours=1))
             await plant.usage(session_id, tokens=10, last_at=ago(hours=1))
-        # 没开会话的对话 id：哪个应用都不认。
         stray = uuid.uuid4()
         await plant.prompt(stray, user_name="Sara.Hong", at=ago(hours=2))
 
@@ -75,8 +69,6 @@ async def test_stats_answer_only_the_calling_apps_sessions(
 async def test_stats_leave_out_preview_sessions(
     engine: AsyncEngine, admin: httpx.AsyncClient, app_client: httpx.AsyncClient
 ) -> None:
-    """预览会话（试 agent 草稿或某一版用的）不是应用的对话，四个统计接口都不算它。"""
-
     created = await admin.post("/agents", json={"id": "tester", "name": "测试"})
     assert created.status_code == 201, created.text
     async with engine.begin() as conn:
@@ -111,8 +103,6 @@ async def test_stats_leave_out_preview_sessions(
 async def test_window_falls_on_each_rows_own_time_and_sessions_take_everything(
     engine: AsyncEngine, app_client: httpx.AsyncClient
 ) -> None:
-    """消息看发起时刻，运行看开始事件（不看登记时刻），用量看最后一次累加；窗口左闭右开。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         session_id = await open_session(conn, "reader")
@@ -123,7 +113,6 @@ async def test_window_falls_on_each_rows_own_time_and_sessions_take_everything(
         await plant.prompt(session_id, user_name="Eva.Lin", at=ago(hours=1))
         await plant.usage(session_id, tokens=10, last_at=ago(hours=3), model="m-a")
         await plant.usage(session_id, tokens=20, last_at=ago(hours=1), model="m-b")
-        # 登记时刻与开始事件错开：窗外开始的那次登记在窗内，窗内开始的那次登记在窗外。
         for prompt_id, registered in ((early, ago(hours=2)), (at_since, ago(hours=6))):
             await conn.execute(
                 text(
@@ -156,9 +145,6 @@ async def test_window_falls_on_each_rows_own_time_and_sessions_take_everything(
 async def test_runs_in_a_window_keep_their_whole_history_outside_it(
     engine: AsyncEngine, app_client: httpx.AsyncClient
 ) -> None:
-    """窗口只圈开始事件：窗内开始、窗后才结束的照算，结束取窗外那条；窗前开始、窗内结束的不算；
-    窗前已有一条开始事件、窗内又补了一条的，第一条开始在窗外，也不算。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         session_id = await open_session(conn, "reader")
@@ -197,8 +183,6 @@ async def test_runs_in_a_window_keep_their_whole_history_outside_it(
 async def test_runs_are_registered_top_level_runs_that_reached_an_end(
     engine: AsyncEngine, app_client: httpx.AsyncClient
 ) -> None:
-    """跑完与失败的各算一次，结束取第一条终态；没有终态的不算；没登记的运行（子代理的内部运行）不算。"""
-
     async with engine.begin() as conn:
         plant = Plant(conn)
         session_id = await open_session(conn, "reader")
@@ -215,7 +199,6 @@ async def test_runs_are_registered_top_level_runs_that_reached_an_end(
                 ),
                 {"kind": kind, "at": at, "conversation_id": str(session_id)},
             )
-        # 同一次运行后来又补了一条终态：结束仍是第一条。
         first = (
             await conn.execute(
                 text(

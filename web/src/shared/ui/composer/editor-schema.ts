@@ -1,6 +1,3 @@
-/** 参考 Kimi schema：doc → paragraph → text | attachment | 使用方节点。附件与使用方节点都是可选中的 inline atom；
- * NodeView 渲染内容，toDOM / parseDOM 负责序列化。 */
-
 import type { Node as PMNode, NodeSpec } from 'prosemirror-model'
 import { Schema } from 'prosemirror-model'
 import type { ComposerNode, ErasedNodeSpec } from './composer-node'
@@ -25,7 +22,6 @@ const baseNodes: Record<string, NodeSpec> = {
     atom: true,
     group: 'inline',
     inline: true,
-    // 复制附件节点时使用可读文件名。
     leafText: (node) => node.attrs['name'] as string,
     parseDOM: [
       {
@@ -51,13 +47,11 @@ const baseNodes: Record<string, NodeSpec> = {
   },
 }
 
-/** 节点 attrs 收进 ComposerNode；值只有字符串与数字两种。 */
 export const composerNodeOf = (node: PMNode): ComposerNode => ({
   attrs: node.attrs,
   name: node.type.name,
 })
 
-/** 从复制出去的 HTML 认回节点：attrs 不是约定的那几个键、值不是字符串或数字就不认。 */
 const parseNodeAttrs = (spec: ErasedNodeSpec, raw: string | null) => {
   if (raw === null) return false
   let parsed: unknown
@@ -102,7 +96,6 @@ const customNodeSpec = (spec: ErasedNodeSpec): NodeSpec => ({
 const NO_NODES: readonly ErasedNodeSpec[] = []
 const schemas = new WeakMap<readonly ErasedNodeSpec[], Schema>()
 
-/** 按使用方的节点 spec 建 schema；同一组 spec（模块级常量）只建一次。 */
 export const createComposerSchema = (nodes: readonly ErasedNodeSpec[] = NO_NODES): Schema => {
   const cached = schemas.get(nodes)
   if (cached !== undefined) return cached
@@ -121,7 +114,6 @@ export const createComposerSchema = (nodes: readonly ErasedNodeSpec[] = NO_NODES
 
 const isAttachment = (node: PMNode) => node.type.name === ATTACHMENT
 
-/** 按出现顺序收集去重后的附件 ID。 */
 export const collectAttachmentIds = (doc: PMNode): string[] => {
   const ids: string[] = []
   doc.descendants((node) => {
@@ -138,7 +130,6 @@ export type ComposerSegment =
   | { readonly kind: 'attachment'; readonly attId: string }
   | { readonly kind: 'node'; readonly node: ComposerNode }
 
-/** 按文档顺序保留文字、附件与使用方节点，避免失去相邻引用语义；段落以换行分隔并去除首尾空白。 */
 export const readComposerSegments = (doc: PMNode): ComposerSegment[] => {
   const segments: ComposerSegment[] = []
   let buffer = ''
@@ -170,11 +161,9 @@ export const readComposerSegments = (doc: PMNode): ComposerSegment[] => {
   return segments.filter((segment) => segment.kind !== 'text' || segment.text.length > 0)
 }
 
-/** 只提取用户文字，段落以换行连接；附件与使用方节点另按 parts 提交。 */
 export const readComposerText = (doc: PMNode): string =>
   doc.textBetween(0, doc.content.size, '\n', () => '')
 
-/** 没有任何字符、附件或使用方节点。 */
 export const isComposerEmpty = (doc: PMNode): boolean => {
   let empty = true
   doc.descendants((node) => {

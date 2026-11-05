@@ -1,11 +1,3 @@
-"""视频插件包给运行时服务的入口：运行时配置写 ``plugins.factory: iclip_video.registry:open_video_plugins``，
-``plugins.config`` 按 ``VideoPluginsConfig`` 校验。
-
-视频业务的插件类只在这里列出：``workspace``、``iclip_studio``、``video_shots`` 与 ``video`` 总是登记（``video`` 的模型
-写定在代码里，连接每次调用时经宿主现查），``video_breakdown`` 与 ``shot_video`` 各按自己的配置段登记。要后端服务的端口经内部接口（``internal_api``）的 HTTP 客户端；``iclip_studio`` 不接生图（后端不开放这
-条接口），生图工具照旧不登记。
-"""
-
 from __future__ import annotations
 
 import os
@@ -39,43 +31,32 @@ from iclip_video.video_shots.capability import VideoShots
 from iclip_video.video_understanding import ArkVideoUnderstanding
 
 DEFAULT_INTERNAL_TIMEOUT_SECONDS: Final = 1800.0
-"""调后端内部接口等答复的默认上限。后端最慢的两条都要等：拆解排队后最多等 20 分钟才答，取帧拼板下载视频
-最多 5 分钟、抽帧最多 15 分钟。"""
 
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Z_][A-Z0-9_]*$")]
 
 
 class _Section(BaseModel):
-    # 机密只该以环境变量名出现；误把值本身写进配置时，校验报错也不带出来。
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
 
 class InternalApiSection(_Section):
-    """后端给运行时的内部接口（conventions §21）。"""
-
     base_url: HttpUrl
-    """后端的根地址，插件服务在它下面的 ``/internal/runtime/plugins``。"""
 
     token_env: EnvName
-    """放内部令牌（后端的 ``RUNTIME_INTERNAL_TOKEN``）的环境变量名。"""
 
     timeout_seconds: float = Field(default=DEFAULT_INTERNAL_TIMEOUT_SECONDS, gt=0)
 
 
 class OssSection(_Section):
-    """本桶对象的公网地址前缀与内网地址前缀：查图片信息前把前者换成后者。不写就原样访问。"""
-
     public_url_base: HttpUrl
     internal_url_base: HttpUrl
 
 
 class VideoBreakdownSection(_Section):
-    """写了就登记 ``video_breakdown``：拆解经内部接口交给后端的参考视频，与资料库共用一份。"""
+    pass
 
 
 class ShotVideoSection(_Section):
-    """写了就登记 ``shot_video``，字段是出图的重试策略；后端的 ``shot_video`` 配置段只是挂内部接口的开关。"""
-
     poll_interval_seconds: float = Field(default=5.0, gt=0)
     dev_attempts: int = Field(default=2, ge=1)
     pro_attempts: int = Field(default=1, ge=0)
@@ -85,10 +66,7 @@ class ShotVideoSection(_Section):
 
 
 class VideoPluginsConfig(_Section):
-    """运行时配置里 ``plugins.config`` 的形状。机密只写放它的环境变量名。"""
-
     internal_api: InternalApiSection | None = None
-    """挂 ``video_breakdown`` 或 ``shot_video`` 时必填。"""
 
     oss: OssSection | None = None
     video_breakdown: VideoBreakdownSection | None = None
@@ -97,8 +75,6 @@ class VideoPluginsConfig(_Section):
     @model_validator(mode="before")
     @classmethod
     def _no_video_section(cls, data: Any) -> Any:
-        """旧的 ``video`` 段还写着时说清怎么改；不然只有一句「Extra inputs are not permitted」。"""
-
         if isinstance(data, Mapping) and "video" in data:
             raise ValueError(
                 "video 段已去掉：视频理解总是登记，模型写在代码里，连接用配置页的火山方舟；"
@@ -124,19 +100,6 @@ async def open_video_plugins(
     internal_transport: httpx.AsyncBaseTransport | None = None,
     outbound_transport: httpx.AsyncBaseTransport | None = None,
 ) -> AsyncGenerator[PluginBinder]:
-    """``agent_runtime.plugins.base.PluginFactory`` 的实现。
-
-    进入时校验配置、读机密的环境变量，建两个 HTTP 客户端：调后端内部接口的那个带根地址、令牌与超时，
-    查 OSS 与调方舟的那个什么都不带，令牌不会发到别处去。配了 ``shot_video`` 或 ``video_breakdown`` 时
-    向后端取它开了哪些插件服务，后端没开对应的那项就起不来；交回的绑定函数用后端接入的图片模型核对出图要的
-    那家。退出时关掉两个客户端。``internal_transport`` 与 ``outbound_transport`` 是测试换传输层的口子。
-
-    Raises:
-        pydantic.ValidationError: 配置形状不对。
-        RuntimeError: 机密的环境变量没设置；取不到后端开了哪些插件服务；配了的插件后端没开对应服务；
-            绑定时出图要的模型不在后端接入的模型里。
-    """
-
     settings = VideoPluginsConfig.model_validate(config)
     async with AsyncExitStack() as stack:
         outbound = await stack.enter_async_context(
@@ -167,10 +130,7 @@ def _internal_client(
         transport=transport,
         base_url=str(section.base_url),
         headers={"Authorization": f"Bearer {token}"},
-        # 建连另有短上限：后端地址不通时启动检查立刻失败，不等满整段答复上限。
         timeout=httpx.Timeout(section.timeout_seconds, connect=CONNECT_TIMEOUT_SECONDS),
-        # 并发由调用方自己约束（运行时同时跑的运行数），池上不封顶：等池子空出连接也算在整段答复上限里，
-        # 慢的拆解与取帧占满池子时，后面的调用排着队等到超时。
         limits=httpx.Limits(max_connections=None, max_keepalive_connections=20),
     )
 
@@ -183,7 +143,6 @@ def _registry(
     api: InternalApi | None,
     image_models: frozenset[str],
 ) -> PluginRegistry:
-    # 文件生产与读取共用 FileSpace，避免命名空间不一致。
     space = FileSpace(store=host.files, namespace=workspace_namespace)
     plugins: list[type[CapPlugin[Any]]] = [
         Workspace.bind(
@@ -226,9 +185,6 @@ def _registry(
 
 
 async def _check_backend(api: InternalApi | None, settings: VideoPluginsConfig) -> frozenset[str]:
-    """配了要后端服务的插件，启动时核对后端开了对应服务，交回后端接入的图片模型（没配 ``shot_video`` 为空）。
-    取不到或没开就起不来，不带着注定 404 的工具跑。"""
-
     wanted = [
         name
         for name, section in (
@@ -272,15 +228,12 @@ def _as_is(url: str) -> str:
 
 
 def _require(api: InternalApi | None, plugin: str) -> InternalApi:
-    # 配置校验已拦住这种写法；直接建 VideoPluginsConfig 绕过校验时照样报错。
     if api is None:
         raise RuntimeError(f"{plugin} 要经后端内部接口干活，但没配 internal_api")
     return api
 
 
 def _secret(env_name: str, what: str) -> str:
-    """读环境变量里的机密；报错只带变量名，不带值。"""
-
     value = os.environ.get(env_name, "").strip()
     if not value:
         raise RuntimeError(f"{what}的环境变量 {env_name} 没有设置")

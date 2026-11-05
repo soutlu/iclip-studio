@@ -7,7 +7,6 @@ import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { CueUserMenu } from './cue-user-menu'
 
-/** 已登录用户的头像菜单；后面跟一个页面控件，用来确认焦点不会跑出菜单。 */
 async function renderMenu(compact = false) {
   loginAs(mockAuthUser)
   await renderWithProviders(

@@ -1,7 +1,3 @@
-"""浏览器连接经后端转到运行时：回执一帧一个、运行时的帧原文转发（多了字段也照转）、事件流上新加的字段与
-帧不断连接、两条上游各自断开与事件流重新连上时的关闭码、溢出后连接照常收尾、文件变化经对话内容流原样到达
-订着的连接，以及活动与轮次收尾分走两条上游时客户端看得到的先后。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -50,7 +46,6 @@ from tests.helpers.ws import (
 )
 
 JOTTER = "jotter"
-"""挂着测试插件 ``jotting`` 的 agent：替身模型调它一次，往工作区写 ``notes.md``。"""
 
 
 @pytest.fixture
@@ -75,14 +70,10 @@ def _send(tc: TestClient, conversation_id: str, prompt_id: str) -> None:
 
 
 def _frames_until_turn_and_idle(ws: Any, conversation_id: str) -> list[dict[str, Any]]:
-    """收这段对话的帧，直到这一轮在 transcript 上收了尾、活动也回到空闲。"""
-
     return [json.loads(raw) for raw in _texts_until_turn_and_idle(ws, conversation_id)]
 
 
 def _texts_until_turn_and_idle(ws: Any, conversation_id: str) -> list[str]:
-    """同 ``_frames_until_turn_and_idle``，交回浏览器收到的原文。"""
-
     texts: list[str] = []
     turn_ended = idle = False
     for _ in range(200):
@@ -104,8 +95,6 @@ def _texts_until_turn_and_idle(ws: Any, conversation_id: str) -> list[str]:
 
 
 def _closed_with(ws: Any) -> int:
-    """收帧直到连接被关，交回关闭码。"""
-
     for _ in range(200):
         try:
             ws.receive_json()
@@ -114,15 +103,8 @@ def _closed_with(ws: Any) -> int:
     raise AssertionError("连接没被关")
 
 
-# --- 回执 ----------------------------------------------------------------------
-
-
 def test_each_subscribe_frame_gets_exactly_one_ack(ws_agent_app: FastAPI, pg_url: str) -> None:
-    """看得见的转给运行时、由它回执；看不见的与写法不对的就地回 not_found，不转；子代理流不属于这段对话的
-    由运行时回 404。每帧 id 只回一个回执。"""
-
     with TestClient(ws_agent_app) as tc:
-        # 别人的对话在运行时那边有会话：要是转了过去，运行时会回 accepted。
         theirs = open_conversation(
             tc, sign_in_as(tc, pg_url, username="someone", roles=("editor",))
         )
@@ -159,7 +141,6 @@ def test_each_subscribe_frame_gets_exactly_one_ack(ws_agent_app: FastAPI, pg_url
         "last": 1,
     }
     assert acks["visible"][0]["payload"]["accepted"] == [mine]
-    # 就地回的与运行时回的是同一种回执。
     assert acks["invisible"][0] == {
         "type": "ack",
         "id": "invisible",
@@ -176,12 +157,7 @@ def test_each_subscribe_frame_gets_exactly_one_ack(ws_agent_app: FastAPI, pg_url
     )
 
 
-# --- 原样转发 --------------------------------------------------------------------
-
-
 def _wire(frame: Any) -> dict[str, Any]:
-    """帧在 WebSocket 上的样子：原文帧就是它的原文，解析过的帧与运行时和后端发帧时的序列化相同。"""
-
     raw = (
         frame.text
         if isinstance(frame, RawFrame | WorkChangedFrame)
@@ -194,8 +170,6 @@ def _wire(frame: Any) -> dict[str, Any]:
 def test_relayed_frames_are_the_runtimes_frames_field_for_field(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """浏览器收到的 reset / ops 与活动帧，和后端从运行时收到的那一帧逐字段相同，先后也相同：后端只决定发给谁。"""
-
     from_runtime: list[dict[str, Any]] = []
     receive = TranscriptChannel.receive
     following = EventStream.__anext__
@@ -230,24 +204,18 @@ def test_relayed_frames_are_the_runtimes_frames_field_for_field(
         if frame["type"] in relayed and frame["session_id"] == conversation_id
     ]
     assert {frame["type"] for frame in received} == set(relayed)
-    # 两条上游各自按序转发；浏览器停在收尾与空闲之后，运行时可能已经多发了几帧。
     for kind in (("transcript.reset", "transcript.ops"), ("event.session.work_changed",)):
         browser = [frame for frame in received if frame["type"] in kind]
         runtime = [frame for frame in sent if frame["type"] in kind]
         assert browser == runtime[: len(browser)]
 
 
-# --- 运行时先于后端升级 ------------------------------------------------------------
-
 _RUNTIME_SEND = "agent_runtime.http.streams._Channel._send"
-"""运行时两条 WebSocket 发帧的那一处；测试在这里改写帧，模拟比后端新的运行时。"""
 
 _TRANSCRIPT_FRAMES = ("transcript.reset", "transcript.ops", "ack")
 
 
 class _Text:
-    """替身帧：运行时发帧时调它的 ``model_dump_json``，拿到的就是这段原文。"""
-
     def __init__(self, text: str) -> None:
         self._text = text
 
@@ -258,8 +226,6 @@ class _Text:
 def _rewrite_runtime_frames(
     monkeypatch: pytest.MonkeyPatch, rewrite: Callable[[dict[str, Any]], tuple[str, ...] | None]
 ) -> None:
-    """运行时每发一帧先交给 ``rewrite``：返回 None 照发原帧，否则依次发它给的原文。"""
-
     original = pkgutil.resolve_name(_RUNTIME_SEND)
 
     async def send(channel: Any, frame: Envelope) -> None:
@@ -274,8 +240,6 @@ def _rewrite_runtime_frames(
 
 
 def _extended(wire: dict[str, Any]) -> str:
-    """外层与 ``payload`` 里各多一个后端不认识的字段；序列化的写法也与运行时不同，原文对得上才是没重新序列化。"""
-
     extended = {**wire, "added_later": {"nested": [1, 2]}}
     if isinstance(wire.get("payload"), dict):
         extended["payload"] = {**wire["payload"], "also_added": True}
@@ -283,8 +247,6 @@ def _extended(wire: dict[str, Any]) -> str:
 
 
 def _ack(ws: Any, frame_id: str) -> dict[str, Any]:
-    """等这一帧订阅的回执，跳过期间的其他帧。"""
-
     for _ in range(200):
         frame: dict[str, Any] = ws.receive_json()
         if frame["type"] == "ack" and frame["id"] == frame_id:
@@ -295,8 +257,6 @@ def _ack(ws: Any, frame_id: str) -> dict[str, Any]:
 def test_runtime_frames_with_unknown_fields_reach_the_browser_verbatim(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """对话内容流的帧多了后端不认识的字段：浏览器收到的就是运行时发的那段原文，连接不断。"""
-
     sent: list[str] = []
 
     def extend(wire: dict[str, Any]) -> tuple[str, ...] | None:
@@ -325,7 +285,6 @@ def test_runtime_frames_with_unknown_fields_reach_the_browser_verbatim(
                     for op in frame["payload"]["ops"]
                 ):
                     break
-            # 连接还在：再订一段看不见的对话，照常回执。
             missing = str(uuid.uuid4())
             subscribe(ws, missing, frame_id="probe")
             probe = _ack(ws, "probe")
@@ -339,9 +298,6 @@ def test_runtime_frames_with_unknown_fields_reach_the_browser_verbatim(
 def test_added_event_fields_and_types_do_not_close_browser_connections(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """事件流上的活动多了字段、还多了后端不认识的帧：活动按属主发出，浏览器收到的就是运行时发的那段原文；
-    认不出的不知道该发给谁，跳过，也不当成断线去关浏览器连接。"""
-
     sent: list[str] = []
 
     def extend(wire: dict[str, Any]) -> tuple[str, ...] | None:
@@ -376,16 +332,9 @@ def test_added_event_fields_and_types_do_not_close_browser_connections(
     assert not any(frame["type"] == "event.session.something_new" for frame in frames)
 
 
-# --- 活动与轮次收尾的先后 ------------------------------------------------------------
-
-
 def test_after_the_turn_ends_and_the_badge_goes_idle_the_row_reads_idle(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """活动走事件流、轮次收尾走对话内容流，两条上游之间不保证先后。前端收到活动变化就按 id 补读这一行，读的
-    期间到达的帧在结果回来后重放（conversations.live.ts）：所以要的是活动帧按 忙 → 闲 的顺序到达，并且收到闲
-    那一帧之后补读的行已经是空闲。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)
@@ -405,14 +354,9 @@ def test_after_the_turn_ends_and_the_badge_goes_idle_the_row_reads_idle(
     assert row["activity"]["lastTurnReason"] == "completed"
 
 
-# --- 上游断开 --------------------------------------------------------------------
-
-
 def test_a_dropped_transcript_upstream_closes_the_browser_with_1001_and_releases_the_pins(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """对话内容流那一头断了：浏览器连接以 1001 关，运行时那边这条连接占着的实时状态放开。"""
-
     dropping = threading.Event()
     receive = TranscriptChannel.receive
 
@@ -433,7 +377,6 @@ def test_a_dropped_transcript_upstream_closes_the_browser_with_1001_and_releases
             until(ws, "transcript.reset")
             assert store.holds(conversation_id)
             dropping.set()
-            # 下一帧到达上游时断开。
             subscribe(ws, conversation_id, frame_id="s2")
             assert _closed_with(ws) == 1001
         _wait_released(store, conversation_id)
@@ -450,9 +393,6 @@ def _wait_released(store: TranscriptStore, conversation_id: str) -> None:
 def test_a_dropped_event_stream_closes_every_browser_connection_then_reconnects(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """事件流断了：此刻的每条浏览器连接都以 1001 关（断线期间的活动补不回来，客户端重连后重拉）；后端随后
-    重连事件流，新连接照常收到活动。"""
-
     dropping = threading.Event()
     following = EventStream.__anext__
 
@@ -471,7 +411,6 @@ def test_a_dropped_event_stream_closes_every_browser_connection_then_reconnects(
             assert first.receive_json()["type"] == "server_hello"
             assert second.receive_json()["type"] == "server_hello"
             dropping.set()
-            # 这一轮的第一条活动到达时事件流断开。
             _send(tc, conversation_id, "prm_drop")
             assert _closed_with(first) == 1001
             assert _closed_with(second) == 1001
@@ -493,8 +432,6 @@ def test_a_dropped_event_stream_closes_every_browser_connection_then_reconnects(
 
 
 def _closed_before_ack(ws: Any, frame_id: str) -> int:
-    """收帧直到连接被关，交回关闭码；先收到 ``frame_id`` 的回执说明连接没被关。"""
-
     for _ in range(200):
         try:
             frame = ws.receive_json()
@@ -508,9 +445,6 @@ def _closed_before_ack(ws: Any, frame_id: str) -> int:
 def test_a_browser_connected_while_the_event_stream_was_down_is_closed_when_it_reconnects(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """浏览器的重连比事件流快：断线期间连上、重拉过的连接，在事件流连上时也以 1001 关，重连后重拉补上
-    两者之间的活动。"""
-
     dropping = threading.Event()
     holding = threading.Event()
     reconnecting = threading.Event()
@@ -527,7 +461,6 @@ def test_a_browser_connected_while_the_event_stream_was_down_is_closed_when_it_r
 
     @asynccontextmanager
     async def held(client: RuntimeClient) -> AsyncGenerator[EventStream]:
-        # 断开之后的那次重连停在握手前，直到测试放行。
         if holding.is_set():
             reconnecting.set()
             while not released.is_set():
@@ -565,15 +498,9 @@ def test_a_browser_connected_while_the_event_stream_was_down_is_closed_when_it_r
         settled(tc, conversation_id)
 
 
-# --- 溢出 ------------------------------------------------------------------------
-
-
 def test_an_overflowed_connection_ends_even_with_a_local_ack_pending(
     ws_agent_app: FastAPI, pg_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """溢出后发送泵以 1013 关了连接、不再取队列，读循环这时正要就地回一个 ``not_found`` 回执：它不等队列空位，
-    连接照常收尾，运行时那边这条连接占着的实时状态放开。"""
-
     connections: list[Any] = []
     add = LiveConnections.add
     agent_of = ConversationService.agent_of
@@ -588,7 +515,6 @@ def test_an_overflowed_connection_ends_even_with_a_local_ack_pending(
     async def held_agent_of(
         service: ConversationService, principal: Principal, conversation_id: str, *, writing: bool
     ) -> str:
-        # 读循环停在核这段对话的可见性上，溢出与关连接在这期间发生。
         if conversation_id == blocked:
             looking_up.set()
             while not released.is_set():
@@ -618,21 +544,15 @@ def test_an_overflowed_connection_ends_even_with_a_local_ack_pending(
                 assert tc.portal is not None
                 tc.portal.call(offer, MAX_EVENT_BUFFER + 1)
                 assert _closed_with(ws) == 1013
-                # 发送泵退出后，转发与广播仍会把队列填满（这里直接填），回执就放不进去了。
                 tc.portal.call(offer, MAX_EVENT_BUFFER)
             finally:
                 released.set()
             _wait_released(store, conversation_id)
 
 
-# --- 文件变化 --------------------------------------------------------------------
-
-
 def test_a_plugin_write_reaches_the_subscribed_browser_as_is(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """插件在运行时写工作区，文件帧经这条连接背后的对话内容流原样到浏览器；没订这段对话的连接收不到。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         created = tc.post("/conversations", json={"agentId": JOTTER})
@@ -646,8 +566,6 @@ def test_a_plugin_write_reaches_the_subscribed_browser_as_is(
             _send(tc, conversation_id, "prm_jot")
             changed = until(ws, "event.fs.changed", tries=200)
             settled(tc, conversation_id)
-            # 帧按序入队：旁观的连接此刻订一段别的对话，跳过全局帧与心跳后先到的应是它的回执，
-            # 说明前面那帧文件变化没给它。
             subscribe(bystander, open_conversation(tc), grade="off", frame_id="probe")
             bystander_first = next(
                 frame
@@ -677,8 +595,6 @@ async def _seed_film(pg_url: str, namespace: str) -> None:
 def test_a_film_edit_on_the_page_reaches_the_subscribed_browser(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """制作页改画幅：后端经运行时写工程文件，变化同样经对话内容流回到订着这段对话的浏览器连接。"""
-
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
         conversation_id = open_conversation(tc)

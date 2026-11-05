@@ -1,5 +1,3 @@
-"""运行时服务的组合根：按设置建 engine、三块配置的服务与运行驱动这一整套对象，挂上 ``/v1`` 接口与错误信封。"""
-
 from __future__ import annotations
 
 import uuid
@@ -82,32 +80,15 @@ def create_app(
     hook_transport: httpx.AsyncBaseTransport | None = None,
     model_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
-    """按设置装出运行时服务。
-
-    只建对象、不连库：engine 建出来时不连接，连接池在第一次请求时才开；运行驱动与事件分发在 lifespan 里
-    起停，lifespan 结束时关掉回调用的 HTTP 客户端与自己建的 engine。合同导出因此只 import、建 app、不启动。
-
-    ``plugins`` 是交给本服务的插件登记表：agent 装配按它造插件，管理接口校验 agent 配置（插件名、要求
-    同挂的插件、参数）与列出可挂的插件也只看它，不另找插件。要写工作区的插件给
-    ``PluginBinder``，用本服务的工作区存储绑定，写入才会发给订着这段会话的对话内容流连接。``credential_probe``
-    不给就用真实的试连；``engine`` 不给就按 ``settings.database_url`` 自己建，给了由调用方负责关；
-    ``build_model`` 是测试换模型替身的口子，``hook_transport`` 是测试接住回调请求的口子，``model_transport``
-    是测试接住模型调用转给上游的请求的口子。插件经 ``PluginHost.model_connection`` 查写定的模型的连接，与给应用的
-    模型调用接口查的是同一份。
-    """
-
     configure_logging(settings.log_level, settings.log_format)
 
     owns_engine = engine is None
-    # 取连接前先 ping，理由同后端的 build_engine：被取消打断的清理可能把已关的连接留在池里。
     active_engine = (
         engine
         if engine is not None
         else create_async_engine(settings.database_url, pool_pre_ping=True)
     )
 
-    # 会话活动在写入提交后同步交给应用事件流的集线器，按会话归属的应用分发；工作区文件变化同步交给按会话
-    # 登记的对话内容流连接，跟着订阅走。
     session_store = PgSessionStore(active_engine)
     session_apps = SessionApps(session_store)
     event_hub = AppEventHub(session_apps.info_of)
@@ -135,11 +116,9 @@ def create_app(
         )
 
     file_store = PgFileStore(active_engine)
-    # 分叉与按清单拷文件用底下这份，副本不算变更；插件与应用经接口写文件用会通知的那份。
     announcing_files = AnnouncingFileStore(file_store, on_file_change)
 
     async def model_connection(declaration: str, model: str) -> ModelConnection:
-        # 登记表要先绑好，下面的配置服务才能按它校验插件；插件只在工具调用时查连接，那时配置服务早已建好。
         return await config_services.model_providers.responses_connection(declaration, model)
 
     registry = (
@@ -159,7 +138,6 @@ def create_app(
     mcp_servers = config_services.mcp_servers
     agent_config = config_services.agent_config
 
-    # 运行这一侧：持久化、用量、队列、实时投影、历史、装配、会话与工作区。
     step_store = PgStepStore(
         active_engine, max_snapshots_per_run=settings.agent_runs.max_snapshots_per_run
     )
@@ -196,9 +174,7 @@ def create_app(
         files=file_store,
     )
 
-    # 回调按会话归属的应用找地址；没配回调的应用不在表里。
     hook_client = httpx.AsyncClient(transport=hook_transport)
-    # 给应用的模型调用转上游用；建连另有短上限，上游地址不通时不等满整段答复上限。
     model_call_client = httpx.AsyncClient(
         transport=model_transport,
         timeout=httpx.Timeout(MODEL_CALL_TIMEOUT_SECONDS, connect=_MODEL_CALL_CONNECT_SECONDS),
@@ -210,13 +186,11 @@ def create_app(
     )
 
     async def is_preview(session_id: str) -> bool:
-        # 查不到会话行就按普通会话报：开跑检查自己会因找不到会话而不放行。
         found = await session_apps.info_of(session_id)
         return found is not None and found.preview
 
     async def deps_for(row: JobRow) -> AgentRunDeps:
         preview = await is_preview(row.conversation_id)
-        # 开跑检查：应用不放行就抛，这次运行记为失败。
         await hooks.gate(
             GatePayload(
                 session_id=uuid.UUID(row.conversation_id),
@@ -279,7 +253,6 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-        # MCP 服务的名册先读好，运行驱动一起来工具卡就按它画。分发先起：运行驱动启动时的清扫就可能改活动。
         await mcp_servers.load_index()
         await event_hub.start()
         await transcripts.runner.start()
@@ -295,8 +268,6 @@ def create_app(
 
     app = FastAPI(title=TITLE, lifespan=lifespan)
     install_error_handlers(app)
-    # 测试核对连接断开后实时状态有没有放开；经三块配置的服务种 agent、经装配入口核对缓存，与服务自己用的是
-    # 同一份。
     app.state.transcript_store = transcript_store
     app.state.config_services = config_services
     app.state.agent_runtime = agent_runtime
@@ -322,7 +293,6 @@ def create_app(
     v1.include_router(create_model_calls_router(model_connection, model_call_client))
     v1.include_router(create_stats_router(PgRunStats(active_engine), auth.calling_app))
     app.include_router(v1)
-    # WebSocket 不在 v1 的路由组里：组上的 Bearer 依赖只在 HTTP 请求上跑，两条连接自己认应用。
     app.include_router(create_events_router(auth.identify, event_hub))
     app.include_router(
         create_transcript_ws_router(auth.identify, transcripts, sessions, file_changes)

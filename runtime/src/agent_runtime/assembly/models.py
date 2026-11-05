@@ -1,6 +1,3 @@
-"""模型供应商接到 Agent 引擎：按「声明 + 模型 + 密钥字段 + 思考档位」建出模型，试连端口的实现，以及启动时
-核对声明里的 provider 名官方都认。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -24,8 +21,6 @@ def provider_model_spec(
     fields: Mapping[str, str],
     thinking: ThinkingEffort | None,
 ) -> ModelSpec:
-    """``fields`` 是明文密钥字段。不是 llm、思考档位不在模型允许的档位里都抛 ``ValueError``。"""
-
     api = model.properties.api
     if api is None:
         raise ValueError(f"{model.name} 是 {model.type} 模型，不能当对话模型用")
@@ -48,14 +43,10 @@ def build_provider_model(
     fields: Mapping[str, str],
     thinking: ThinkingEffort | None,
 ) -> BuiltModel:
-    """按供应商声明建出 pydantic-ai 模型；规则见 ``provider_model_spec`` 与 ``build_model``。"""
-
     return build_model(provider_model_spec(declaration, model, fields, thinking))
 
 
 def require_known_providers(declarations: Declarations) -> None:
-    """声明里的 ``pydantic_ai_provider`` 官方不认就启动失败。"""
-
     unknown = sorted(
         f"{name}（{declaration.pydantic_ai_provider}）"
         for name, declaration in declarations.items()
@@ -66,8 +57,6 @@ def require_known_providers(declarations: Declarations) -> None:
 
 
 class PydanticAiCredentialProbe:
-    """``CredentialProbe`` 的实现：用这组字段建出模型，发一个最小的请求。思考档位能关就关，答得快。"""
-
     async def probe(
         self, declaration: ProviderDeclaration, model: ProviderModel, fields: Mapping[str, str]
     ) -> ProbeResult:

@@ -1,5 +1,3 @@
-"""通过真实 Agent 与工具体验证镜头组交付：素材范围、整表校验与工具卡。"""
-
 from __future__ import annotations
 
 import inspect
@@ -52,8 +50,6 @@ def files() -> FakeFileStore:
 
 @pytest.fixture
 def plugin(files: FakeFileStore) -> type[VideoShots[object]]:
-    """与组合根同一条路：服务绑进类。"""
-
     return VideoShots[object].bind(space=FileSpace(store=files, namespace=workspace_namespace))
 
 
@@ -77,8 +73,6 @@ def make_deps() -> AgentRunDeps:
 
 
 def shot_payload(image_urls: list[str]) -> dict[str, Any]:
-    """agent 路径提交的一组镜头；全局设定按顺序引用每张图。"""
-
     references = "、".join(f"@Image{index}" for index in range(1, len(image_urls) + 1))
     return {
         "aspect_ratio": "9:16",
@@ -102,8 +96,6 @@ def shot_payload(image_urls: list[str]) -> dict[str, Any]:
 async def invoke(
     capability: VideoShots[object], tool_name: str, args: str | dict[str, Any]
 ) -> list[ModelMessage]:
-    """模型只调用一次工具，随后结束，保留注册校验器与工具返回的完整路径。"""
-
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="shots-call")])
@@ -132,8 +124,6 @@ def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
 async def check_args(
     tools: VideoShotsToolset[object], name: str, ctx: RunContext[object], **args: Any
 ) -> None:
-    """通过工具注册表调用校验器，覆盖 args_validator 的挂载遗漏。"""
-
     validator = tools.tools[name].args_validator
     assert validator is not None, f"{name} 登记时没挂验证器"
     outcome = validator(ctx, **args)
@@ -148,8 +138,6 @@ async def deliver(
     *,
     aspect_ratio: str = "9:16",
 ) -> str:
-    """直接调用交付工具体，取给模型的那份；地址范围校验由独立用例覆盖。"""
-
     delivered = await tools.write_video_shots(ctx, aspect_ratio, shots)
     assert isinstance(delivered.return_value, str)
     return delivered.return_value
@@ -162,8 +150,6 @@ async def test_shots_card_shows_exactly_what_the_delivery_writes(
     files: FakeFileStore,
     stringified: str | None,
 ) -> None:
-    """分镜表的交付画成普通文件写入，卡上的原文就是工具写进文件的那份；字符串化入参照常还原且只记一条日志。"""
-
     shot = one_shot().model_dump()
     shots: object = [shot]
     if stringified == "prompt":
@@ -186,8 +172,6 @@ async def test_shots_card_shows_exactly_what_the_delivery_writes(
 async def test_shots_card_from_json_text_args_matches_the_written_file(
     capability: VideoShots[object], plugin: type[VideoShots[object]], files: FakeFileStore
 ) -> None:
-    """模型多以 JSON 文本给参数：投影经注册表画卡，与工具按 JSON 校验后写下的原文一致。"""
-
     args = json.dumps(shot_payload([FRAME_URL]), ensure_ascii=False)
 
     messages = await invoke(capability, "write_video_shots", args)
@@ -215,8 +199,6 @@ async def test_shots_card_from_json_text_args_matches_the_written_file(
 def test_shots_card_without_content_when_the_delivery_would_be_refused(
     plugin: type[VideoShots[object]], args: object
 ) -> None:
-    """工具会退回的入参没有要写的原文：照样是写入 video_shot.json 那一行，只是不带内容。"""
-
     drawn = plugin.display_table()["write_video_shots"](args)
 
     assert drawn == FileIoDisplay(operation="write", path=SHOTS_PATH)
@@ -333,8 +315,6 @@ async def test_delivery_rejects_a_bad_aspect_ratio(
 async def test_delivery_names_the_frame_that_does_not_open(
     tools: VideoShotsToolset[object], ctx: RunContext[object], media: ScriptedMedia
 ) -> None:
-    """打不开的帧地址按组与张的位置报给模型，不回显地址。"""
-
     broken = "https://cdn.test/编的.jpg"
     media.set(broken, (404, None))
     second = one_shot(image_urls=[FRAME_URL, broken])
@@ -351,8 +331,6 @@ async def test_delivery_names_the_frame_that_does_not_open(
 async def test_a_reachable_frame_never_seen_in_the_conversation_is_delivered(
     capability: VideoShots[object], files: FakeFileStore, media: ScriptedMedia
 ) -> None:
-    """MCP 工具给的地址没有扩展名、对话里也没出现过：取得到、是图片就收。"""
-
     from_mcp = "https://mcp.example.com/files/abc123?signature=x"
     media.set(from_mcp, (200, "image/webp"))
 
@@ -458,8 +436,6 @@ async def test_invalid_shot_input_keeps_the_existing_file_on_the_agent_path(
 async def run_delivery_once(
     capability: VideoShots[object], shots: object
 ) -> tuple[list[ToolReturnPart], list[EventDict]]:
-    """让模型只调一次交付工具，返回它收到的退回单与本次的日志。"""
-
     def call_once(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
             return ModelResponse(
@@ -487,8 +463,6 @@ async def run_delivery_once(
 async def test_stringified_nested_input_is_parsed_on_the_agent_path(
     capability: VideoShots[object], files: FakeFileStore, field: str
 ) -> None:
-    """弱模型把嵌套结构整体序列化成字符串时照常交付，并留一条可数的日志。"""
-
     shot = one_shot().model_dump()
     shots: object
     if field == "prompt":

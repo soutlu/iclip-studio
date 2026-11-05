@@ -1,5 +1,3 @@
-"""对话的 wire 形状。字段名按跨端约定用 camelCase。"""
-
 from __future__ import annotations
 
 import uuid
@@ -64,24 +62,14 @@ class ConversationIn(CamelModel):
     """
 
     id: uuid.UUID | None = None
-    """由调用方铸的对话 id，可不给（服务端生成）。给了就按它幂等：重发同一个 id
-    不会多出第二段对话，答复的是已有那一段。"""
 
     agent_id: Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
     title: Title | None = None
     task_id: uuid.UUID | None = None
     collection_id: uuid.UUID | None = None
     user_name: str | None = None
-    """替谁开这段对话。持 ``users:act_as`` 的 API key 按它定属主；其余钥匙照旧记在
-    自己名下；浏览器会话只能写自己的用户名。"""
 
     same_as: uuid.UUID | None = None
-    """做同款的源对话 id（资料库卡的 id）。给了就在建对话时把源的 ``treatment.md``、
-    ``film.icml``（改名 ``old_film.icml``）、``film.icrun``、``video_shot.json``（改名
-    ``old_video_shot.json``）有的拷进来；不拷历史，也不记血缘。源按资料库认，
-    不看调用者打不打得开那段对话、它删没删：调用者没有 ``generation:read``、或这个 id 不是挂着
-    对话的资料库卡是 404，源既没有 ``film.icml`` 也没有 ``video_shot.json`` 是 422；带同一个
-    ``id`` 重发不再拷。"""
 
 
 class ConversationForkIn(CamelModel):
@@ -92,16 +80,12 @@ class ConversationForkIn(CamelModel):
     """
 
     turn: Annotated[int, Field(ge=1)]
-    """从源对话的第几轮分叉，从 1 数。这一轮包含在副本里。"""
 
     title: Title | None = None
-    """副本的名字。不给就沿用源标题加个后缀。"""
 
     agent_id: Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)] | None = None
-    """副本用哪个 Agent 跑。不给就沿用源对话的，给了就换一个，用于对照试跑。"""
 
     collection_id: uuid.UUID | None = None
-    """把副本直接放进自己的某个合集。源对话的合集不会带过来。"""
 
 
 class ConversationRename(CamelModel):
@@ -145,7 +129,6 @@ class ConversationActivityOut(CamelModel):
 class ConversationOut(CamelModel):
     id: uuid.UUID
     owner_user_id: uuid.UUID
-    """谁的对话。治理者的审计视图要看得出这一点，所以对外发。"""
     agent_id: str
     title: str
     last_run_id: str | None
@@ -154,13 +137,9 @@ class ConversationOut(CamelModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
-    """属主删掉它的时刻。只有治理者审计带 ``deleted`` 筛选时才会见到非空值。"""
     completed_at: datetime | None
-    """属主标记这活儿收尾的时刻；没标过为空。属主再动手会被抹回空。"""
     forked_from: uuid.UUID | None
-    """从哪段对话分叉来的；不是分叉来的为空。前端据此画血缘提示。"""
     fork_turn: int | None
-    """分叉自源对话的第几轮，从 1 数。与 ``forkedFrom`` 同时有值。"""
     activity: ConversationActivityOut
 
 
@@ -272,13 +251,10 @@ class ConversationFileEnvelope(CamelModel):
 
 
 MAX_FILM_EDITS: Final = 64
-"""一次最多改几段字：页面自动保存时一次只送改过的那几段。"""
 
 MAX_FILM_REFERENCES: Final = 10
-"""按描述再生成时最多几张参考图，与生成域的图片参考图上限相同。"""
 
 MAX_FILM_VIDEO_REFERENCES: Final = 30
-"""改一段字时最多新插入几张图：一次视频请求最多 30 张参考图，再多保存检查也不会通过。"""
 
 
 class FilmPromptTextOut(CamelModel):
@@ -399,7 +375,6 @@ class FilmTextEditIn(CamelModel):
     images: Annotated[
         list[str], Field(default_factory=list[str], max_length=MAX_FILM_VIDEO_REFERENCES)
     ]
-    """新插入的图：列表现有 M 张时，字里的 ``@Image(M+1)`` 起依次指这里的每一张。"""
 
     @field_validator("images")
     @classmethod
@@ -582,8 +557,6 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
 
 
 def conversation_out(conversation: Conversation, activity: ConversationActivity) -> ConversationOut:
-    """合并对话记录与引擎提供的活动投影，转换为响应模型。"""
-
     return ConversationOut(
         id=conversation.id,
         owner_user_id=conversation.owner_user_id,
@@ -619,7 +592,6 @@ class AgentPreviewOut(CamelModel):
     id: uuid.UUID
     agent_id: str
     version_id: uuid.UUID | None
-    """为空即试的是草稿：每次运行装 agent 当下的草稿。"""
     created_at: datetime
 
 
@@ -635,8 +607,6 @@ def agent_preview_out(preview: AgentPreview) -> AgentPreviewOut:
 def audit_item_out(
     conversation: Conversation, activity: ConversationActivity, latest_master_url: str | None
 ) -> ConversationsAuditItemOut:
-    """在 ``conversation_out`` 之上补这段对话自己最新一条素材片的地址，转换为审计列表的条目。"""
-
     return ConversationsAuditItemOut(
         **dict(conversation_out(conversation, activity)),
         latest_master_url=latest_master_url,

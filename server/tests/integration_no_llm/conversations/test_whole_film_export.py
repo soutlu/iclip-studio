@@ -1,9 +1,3 @@
-"""成片导出：每次导出是一条成片生成记录，由生成队列交给渲染服务；端点受理、读最新一次与取消。
-
-草稿经 HTTP 存，素材片、音乐与字幕记录经生成仓储直接落库；渲染服务用桩，队列不起 worker，测试直接
-调应用装配好的那个生成队列的 ``run_submit`` / ``run_poll``。对象存储按环境变量装真的 OSS 适配器
-（带内网 endpoint），签名与地址换算都在本地算，不发请求。"""
-
 from __future__ import annotations
 
 import uuid
@@ -61,10 +55,8 @@ from tests.helpers.whole_film import component_clip, draft_document, video_clip
 URL = "/conversations"
 
 PUBLIC = "https://cdn.example.test"
-"""``MEDIA_ENVS`` 里的 ``OSS_PUBLIC_URL_BASE``。"""
 
 INTERNAL_HOST = "iclip-test.oss-ap-southeast-1-internal.aliyuncs.com"
-"""``OSS_BUCKET`` 加内网 endpoint 的 host：本桶对象交给渲染服务时换成它。"""
 
 RENDER_ENVS = {
     **MEDIA_ENVS,
@@ -84,8 +76,6 @@ async def _app(
     *,
     render_url: str | None,
 ) -> FastAPI:
-    """经 ``engine`` 夹具清表，种 agent 一定在清表之后。"""
-
     for name, value in RENDER_ENVS.items():
         monkeypatch.setenv(name, value)
     if render_url is None:
@@ -119,8 +109,6 @@ async def client(export_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
 
 @pytest.fixture
 def queue(export_app: FastAPI) -> GenerationQueue:
-    """应用装配好的那个生成队列：端点受理的记录排给它。"""
-
     return export_app.state.generation.queue
 
 
@@ -160,8 +148,6 @@ async def latest(http: httpx.AsyncClient, conversation_id: uuid.UUID) -> dict[st
 async def started_export(
     http: httpx.AsyncClient, generations: SqlGenerationRepository, owner: uuid.UUID
 ) -> tuple[uuid.UUID, str, uuid.UUID]:
-    """新开一段对话、存一份用一条素材片的草稿并导出；给出对话、导出 id 与那条素材片。"""
-
     conversation = await new_conversation(http)
     take = await finished(generations, owner, conversation, f"take-{uuid.uuid4()}")
     revision = await save_draft(http, conversation, draft_document(source_job_id=take.id))
@@ -225,10 +211,6 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
     render: StubRender,
     queue: GenerationQueue,
 ) -> None:
-    """受理即记一条成片生成记录；队列把草稿原样、各素材片与音乐（本桶对象换成内网地址）、有字幕的那条
-    素材片的逐词字幕与签好的上传地址交给渲染服务；渲染中读得到它的进度，完成后记录带上成片的公开地址。
-    导出不抹对话的收尾标记。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     first = await finished(generations, owner, mine, "first")
@@ -344,8 +326,6 @@ async def test_the_render_services_own_failure_and_a_lost_export_fail_the_record
     render: StubRender,
     queue: GenerationQueue,
 ) -> None:
-    """渲染服务报失败，记录照它的错误码与原因失败；它查不到这次导出（重启过）记 ``RENDER_LOST``。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     failing, failed_id, _ = await started_export(client, generations, owner)
     lost, lost_id, _ = await started_export(client, generations, owner)
@@ -376,8 +356,6 @@ async def test_a_refusal_or_an_outage_at_submit_fails_the_record_not_the_request
     render: StubRender,
     queue: GenerationQueue,
 ) -> None:
-    """渲染服务不收（400）或连不上都不影响受理（202）；队列提交时记录失败，前者带它的那句话。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     render.reject = ("unknown-component", "组件 brand-intro 不在组件库里")
     refused_in, refused_id, _ = await started_export(client, generations, owner)
@@ -412,9 +390,6 @@ async def test_cancel_follows_where_the_record_is(
     render: StubRender,
     queue: GenerationQueue,
 ) -> None:
-    """排队中直接记取消、之后也不再交给渲染服务；已交出去的先让渲染服务取消再记；正在交给渲染服务
-    答 409；渲染服务连不上答 502、记录不动；已结束的答 204、不改。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
 
     waiting_in, waiting_id, _ = await started_export(client, generations, owner)
@@ -467,9 +442,6 @@ async def test_the_render_lane_waits_six_hours_while_other_lanes_keep_the_defaul
     generations: SqlGenerationRepository,
     queue: GenerationQueue,
 ) -> None:
-    """渲染服务一次只渲染一个，导出交出去 2 小时还在排队不算超时，7 小时才按超时收尾；视频那条
-    lane 照旧 1 小时。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     _, export_id, _ = await started_export(client, generations, owner)
     await queue.run_submit(export_id)
@@ -515,9 +487,6 @@ async def test_latest_is_the_owners_newest_export_of_this_very_conversation(
     engine: AsyncEngine,
     generations: SqlGenerationRepository,
 ) -> None:
-    """还没导出过是 null；之后别人记在这段对话上的、自己在别的对话里的都不算；分叉出来的对话不继承
-    源对话的导出。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine, another = await new_conversation(client), await new_conversation(client)
     assert await latest(client, mine) is None
@@ -547,8 +516,6 @@ async def test_a_high_definition_version_of_an_export_is_not_the_latest_export(
     pg_url: str,
     generations: SqlGenerationRepository,
 ) -> None:
-    """给导出做的高清版是视频 / 超分，不挂对话：最新一次导出照旧是那次导出，也取消不了它。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     own = await complete(
@@ -569,8 +536,6 @@ async def test_exports_belong_to_the_owner_and_to_their_conversation(
     pg_url: str,
     generations: SqlGenerationRepository,
 ) -> None:
-    """读不到这段对话 404，治理者 403；同一个人的另一段对话拿这个导出 id 取消是 404，导出照旧。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine, export_id, _ = await started_export(client, generations, owner)
     another = await new_conversation(client)
@@ -600,9 +565,6 @@ async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
     render: StubRender,
     queue: GenerationQueue,
 ) -> None:
-    """版本号不是存着的那一版 409；还没有草稿、画面轨是空的都导不出 422，都不记导出。
-    画面轨只有组件段也能导，用到的素材片为空。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
 

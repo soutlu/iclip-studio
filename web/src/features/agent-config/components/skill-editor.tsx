@@ -38,7 +38,6 @@ import {
 import { PanelShell } from './panel-shell'
 import { ADD_KEY, KEEP_KEY, NAME_KEY, SkillFileTabs, type FileTabsMode } from './skill-file-tabs'
 
-/** 一个文件还没保存的内容；`baseHash` 是改动所基于的 hash，null 是还没存到服务端的新文件。 */
 type Edit = { content: string; baseHash: string | null }
 
 const sentences = (messages: string[]): string | null =>
@@ -48,7 +47,6 @@ const sentences = (messages: string[]): string | null =>
       ? (messages[0] ?? null)
       : messages.map((message) => `${message}。`).join('')
 
-/** 文本框随内容长高，整段显示不截断。 */
 const fitHeight = (el: HTMLTextAreaElement) => {
   el.style.height = 'auto'
   el.style.height = `${el.scrollHeight}px`
@@ -56,19 +54,10 @@ const fitHeight = (el: HTMLTextAreaElement) => {
 
 type SkillEditorProps = {
   skillId: string
-  /** 返回上一页（技能库、选技能）或收起面板。 */
   onBack: () => void
-  /** 绑在当前 Agent 上时可以从它移除；不给就是没绑。 */
   onRemove: (() => void) | undefined
 }
 
-/**
- * 编辑一个技能：标题区是技能图标、技能标识与显示名，下面整段显示 `SKILL.md` frontmatter 里的说明，
- * 再下面是草稿的文件页签与原文编辑器（所有文件共用，按文件类型高亮与检查）。
- * 显示名与标识是技能本身的属性，不进版本，「保存草稿」时一并改、立即生效；说明随 `SKILL.md` 进草稿。
- * 文件内容的改动先留在本地，「保存草稿」时逐个写回并带上读到的 hash；改名、删除与新建页签当场生效
- * （没保存过的新文件只在本地改）。「发布技能」先存上没保存的改动，再发布服务端的草稿。
- */
 export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const queryClient = useQueryClient()
   const detail = useSkillDetail(skillId)
@@ -90,12 +79,10 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
-  // 说明框挂上时量一次高度；之后内容变了在下面的 effect 里量，宽度变了（面板拉宽拉窄）在这里量。
   const attachDescription = useCallback((el: HTMLTextAreaElement | null) => {
     descriptionRef.current = el
     if (el === null) return
     fitHeight(el)
-    // 只看宽度：改高度本身也会触发观察，按高度重算会来回触发。
     let width = el.clientWidth
     const observer = new ResizeObserver(() => {
       if (el.clientWidth === width) return
@@ -109,7 +96,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     }
   }, [])
 
-  // 改名、新建与删除确认会换掉页签里的元素，要聚焦的元素记下来，渲染后再放焦点。
   const elementsRef = useRef(new Map<string, HTMLElement>())
   const focusRequestRef = useRef<string | null>(null)
   useLayoutEffect(() => {
@@ -138,7 +124,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       current === undefined ? current : change(current),
     )
 
-  /** 改一个文件；改回与读到的一样就不再算改过（新文件除外）。 */
   const updateFile = (path: string, next: (current: string) => string) => {
     setEdits((previous) => {
       const base = loaded(path)
@@ -221,7 +206,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     }
     const from = mode.path
     if (to === from) return finishFileAction(from)
-    // 还没存到服务端的新文件只在本地改名。
     if (!onServer(from)) {
       moveEdit(from, to)
       return finishFileAction(to)
@@ -237,7 +221,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
           file.path === from ? { ...file, path: to } : file,
         ),
       }))
-      // 改名不改内容与 hash，没保存的改动跟着搬过去。
       moveEdit(from, to)
       finishFileAction(to)
       void refresh(skillId)
@@ -275,10 +258,8 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     finishFileAction(SKILL_MD)
   }
 
-  /** 存上没保存的改动：逐个文件写回，最后改显示名与标识。全部成功交回 true。 */
   const save = async (): Promise<boolean> => {
     if (detail.data === undefined) return false
-    // 只查这次要存的：显示名改过才查名称，标识改过才查标识，SKILL.md 改过才查说明。
     const problems: typeof errors = {}
     if (title !== null && title.trim() === '') problems.title = '请填写技能名称'
     if (edits[SKILL_MD] !== undefined && description.trim() === '')
@@ -289,7 +270,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       else if (!isValidName(trimmed)) problems.name = NAME_RULE
     }
     setErrors(problems)
-    // 按标题区自上而下，聚焦第一个有错的框。
     const invalid =
       problems.name !== undefined
         ? nameRef
@@ -312,7 +292,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       try {
         const saved = await writeSkillFile(skillId, path, edit.content, edit.baseHash)
         queryClient.setQueryData(fileKey(path), saved)
-        // 保存途中又改了的留着，基于刚存下的 hash。
         setEdits(({ [path]: current, ...rest }) =>
           current === undefined || current.content === edit.content
             ? rest
@@ -322,7 +301,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
         ok = false
         const label = fileLabel(path)
         if (error instanceof ApiError && error.status === 409) {
-          // 库里的已经变了：丢掉这一个文件的改动、读回最新的，别的文件接着存。
           setEdits(({ [path]: _stale, ...rest }) => rest)
           void queryClient.invalidateQueries({ exact: true, queryKey: fileKey(path) })
           messages.push(
@@ -352,7 +330,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       } catch (error) {
         ok = false
         if (error instanceof ApiError && error.status === 409) {
-          // 标识已被别的技能占用：原因写在标识框下面。
           setErrors((current) => ({ ...current, name: errorMessageOf(error, '这个标识已被占用') }))
           nameRef.current?.focus()
         } else {
@@ -423,7 +400,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
   const activeQuery = active === SKILL_MD ? skillMd : activeFile
   const activeContent =
     active === SKILL_MD ? skillMdContent : (edits[active]?.content ?? activeFile.data?.content)
-  // 每个文件一个编辑器实例：换文件就重新挂载，撤销历史不串到别的文件。
   const body =
     activeContent !== undefined ? (
       <SourceEditor
@@ -531,7 +507,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     >
       <div className="-mx-2 flex shrink-0 flex-col">
         <div className="flex items-center gap-1">
-          {/* 图标块与 Agent 头部同一种写法，放大到与两行文字等高。 */}
           <span
             aria-hidden
             className="ml-2 grid size-11 shrink-0 place-items-center rounded-sm bg-surface-container-high text-on-surface-variant"
@@ -588,7 +563,6 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
             updateFile(SKILL_MD, (current) => withDescription(current, text, skill.name))
             setErrors(({ description: _description, ...rest }) => rest)
           }}
-          // 说明是一段话：回车不换行。
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.preventDefault()
           }}

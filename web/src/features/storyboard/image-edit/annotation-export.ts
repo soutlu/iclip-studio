@@ -3,7 +3,6 @@ import { loadCrossOriginImage } from '../cross-origin-image'
 import { annotationVisual } from './annotation-geometry'
 import type { ImageAnnotation } from './image-edit-types'
 
-/** Render only after the user explicitly requests an annotated input image. Failures throw UserFacingError. */
 export async function exportAnnotatedImage(
   url: string,
   annotations: ImageAnnotation[],
@@ -17,7 +16,6 @@ export async function exportAnnotatedImage(
   const context = canvas.getContext('2d')
   if (!context) throw new UserFacingError('当前浏览器不支持导出标注图片')
   context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  // Resolve semantic colors through a real element because CSS variables may refer to other tokens.
   const colorProbe = document.createElement('span')
   colorProbe.style.color = 'var(--color-error)'
   colorProbe.style.backgroundColor = 'var(--color-on-scrim)'
@@ -29,7 +27,6 @@ export async function exportAnnotatedImage(
   const foreground = colors.backgroundColor
   const labelColor = colors.borderTopColor
   colorProbe.remove()
-  // A 480 px short edge is the review scale: larger exports retain the same legible marker proportions.
   const unitsPerPixel = Math.min(canvas.width, canvas.height) / 480
   for (const annotation of annotations) {
     const geometry = annotationVisual(annotation, canvas, unitsPerPixel)
@@ -104,7 +101,6 @@ export async function exportAnnotatedImage(
       geometry.label.height,
       geometry.label.radius,
     )
-    // 序号与标注线同色的红色实心、细白圈，与画布一致；连线仍用深色。
     context.fillStyle = stroke
     context.fill()
     context.strokeStyle = foreground

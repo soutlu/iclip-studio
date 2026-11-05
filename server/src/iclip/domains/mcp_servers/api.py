@@ -1,9 +1,3 @@
-"""MCP 服务 HTTP 端点，约定见合同「MCP 服务」一节。全部要求 ``agent:manage``。
-
-业务在运行时服务：每个端点验完权限与请求体，按同一个子路径转给它的 ``/v1/admin/mcp-servers``，答复原样交回
-（见 ``iclip.platform.runtime_admin``）。请求与答复的声明照旧写在这里，合同由它们导出。
-"""
-
 from __future__ import annotations
 
 from typing import Annotated

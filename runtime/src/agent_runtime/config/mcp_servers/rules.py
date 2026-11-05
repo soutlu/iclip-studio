@@ -1,6 +1,3 @@
-"""MCP 服务的纯规则：标识、名称、描述、地址、时限与请求头的整理，地址的哈希，请求头的加解密与打码。不合格是
-``ValidationFailed``，消息直接给人看，从不带请求头的值。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -31,8 +28,6 @@ def check_server_id(server_id: str) -> str:
 
 
 def clean_name(name: str) -> str:
-    """连续的空白并成一个空格、去掉首尾；空的、超长的不收。"""
-
     cleaned = " ".join(name.split())
     if not cleaned:
         raise ValidationFailed("请填写名称")
@@ -49,8 +44,6 @@ def clean_description(description: str) -> str:
 
 
 def check_url(url: str) -> str:
-    """只收 ``http`` 与 ``https`` 的完整地址，去掉首尾空白。"""
-
     cleaned = url.strip()
     if len(cleaned) > MAX_URL_CHARS:
         raise ValidationFailed(f"地址最多 {MAX_URL_CHARS} 个字符")
@@ -65,8 +58,6 @@ def check_url(url: str) -> str:
 
 
 def url_hash(url: str) -> str:
-    """``check_url`` 收下的地址的 sha256（十六进制），表上按它判地址不重复。"""
-
     return hashlib.sha256(url.encode()).hexdigest()
 
 
@@ -79,11 +70,6 @@ def check_timeout(seconds: int) -> int:
 def plain_headers(
     given: Sequence[McpHeaderIn], current: Mapping[str, str] | None = None
 ) -> tuple[McpHeader, ...]:
-    """请求头的明文：名字按 HTTP 规矩、不分大小写不能重复，值去掉首尾空白、不能为空、不能换行。
-
-    ``current`` 是已保存的明文请求头（按名字，不分大小写）：没给 ``value`` 的取同名的原值；没有 ``current``
-    或里面没有这个名字时，没给 ``value`` 就是不合格。"""
-
     if len(given) > MAX_HEADERS:
         raise ValidationFailed(f"请求头最多 {MAX_HEADERS} 个")
     known = {name.lower(): value for name, value in (current or {}).items()}
@@ -114,8 +100,6 @@ def plain_headers(
 
 
 def encrypt_headers(plain: Sequence[McpHeader], cipher: CredentialCipher) -> tuple[McpHeader, ...]:
-    """明文换成存储形态：每个请求头的值都加密。"""
-
     return tuple(McpHeader(name=one.name, value=cipher.encrypt(one.value)) for one in plain)
 
 
@@ -124,8 +108,6 @@ def decrypt_headers(stored: Sequence[McpHeader], cipher: CredentialCipher) -> tu
 
 
 def masked_headers(plain: Sequence[McpHeader]) -> tuple[McpHeader, ...]:
-    """返回给人看的请求头：每个值都打码。"""
-
     return tuple(McpHeader(name=one.name, value=mask_secret(one.value)) for one in plain)
 
 

@@ -1,5 +1,3 @@
-"""轮次开始回调不等起名：起标题的模型被卡住时回调照样答 204，放开后标题才落到对话上。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -35,8 +33,6 @@ def agent_seeds() -> tuple[AgentSeed, ...]:
 
 @pytest.fixture
 async def title_gate() -> AsyncGenerator[asyncio.Event]:
-    """起标题的模型在它放开之前不答；用例结束时一定放开，后台任务不留着。"""
-
     gate = asyncio.Event()
     try:
         yield gate

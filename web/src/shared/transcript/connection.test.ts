@@ -15,13 +15,10 @@ const SNAPSHOT = {
 
 const EPOCH = 'e1'
 
-/** 帧外层的出帧时刻。 */
 const AT = '2026-10-30T08:00:00+00:00'
 
-/** 水位连同它所属的实时流。 */
 const mark = (seq: number, epoch = EPOCH) => ({ epoch, seq })
 
-// payload 自己带 type，与外层相同（合同 §5「订阅」）。
 function reset(seq: number, conversationId = 'c1', epoch = EPOCH) {
   return {
     type: 'transcript.reset',
@@ -58,7 +55,6 @@ const fsChanged = (
   payload: { changes },
 })
 
-/** 塞进坏帧里的正文，告警里不该出现。 */
 const BODY = '帧正文不进日志'
 
 const malformed = (type: string, envelope: object) => ({
@@ -67,8 +63,6 @@ const malformed = (type: string, envelope: object) => ({
   type,
 })
 
-/** JSON 坏掉的一条，加上各类帧载荷形状不对的各一条；type 是告警里应带的帧类型。 */
-/** 全局帧信封：属主与出帧时刻，没有序号（合同 §5「全局帧」）。 */
 const ENVELOPE = { owner_user_id: 'u1', timestamp: AT }
 const OWNER = 'u1'
 
@@ -109,13 +103,11 @@ const MALFORMED = [
     stream_epoch: EPOCH,
     payload: { type: 'transcript.ops', agent_id: 'main', ops: BODY, seq: 6 },
   }),
-  // 载荷就是 transcript 事件本身：自己不带 type 的不认。
   malformed('transcript.ops', {
     session_id: 'c1',
     stream_epoch: EPOCH,
     payload: { agent_id: 'main', ops: [], seq: 6, note: BODY },
   }),
-  // 不知道属于哪条实时流的批次，水位无从记起。
   malformed('transcript.ops', {
     session_id: 'c1',
     payload: { type: 'transcript.ops', agent_id: 'main', ops: [], seq: 6, note: BODY },
@@ -189,7 +181,6 @@ describe('TranscriptConnection', () => {
     socket.deliver(ops(42))
     expect(connection.watermarkOf('c1', 'main')).toEqual(mark(42))
 
-    // 模拟服务端重启后批次号归一，验证 reset 允许水位回退。
     socket.deliver(reset(1))
     expect(connection.watermarkOf('c1', 'main')).toEqual(mark(1))
   })
@@ -242,7 +233,6 @@ describe('TranscriptConnection', () => {
 
     before.onclose?.()
     vi.advanceTimersByTime(2_000)
-    // 测试工厂复用原 socket，重订帧仍发送到同一对象。
     socket.deliver(SERVER_HELLO)
 
     const resubscribed = before
@@ -353,7 +343,6 @@ describe('TranscriptConnection', () => {
     const connection = connect(['c1'], () => clock)
 
     expect(connection.health().stale).toBe(false)
-    // 心跳为 10 秒，但失活阈值受 30 秒下限约束。
     clock += 31_000
     expect(connection.health().stale).toBe(true)
   })
@@ -362,7 +351,6 @@ describe('TranscriptConnection', () => {
     '关闭后立即重连，旧连接晚到的事件不影响新连接，旧连接已打开=%s',
     async (opened) => {
       vi.useFakeTimers()
-      // 浏览器 close() 异步派发关闭事件；连接尚未建立时还会先派发 error。
       class ClosingSocket extends FakeSocket {
         override close(): void {
           const connecting = this.readyState === 0
@@ -401,7 +389,6 @@ describe('TranscriptConnection', () => {
         previous.deliver(SERVER_HELLO)
       }
 
-      // React StrictMode 在旧连接的关闭事件到达前，重跑 effect 建立替换连接。
       connection.close()
       connection.connect()
       const active = sockets[1]
@@ -460,7 +447,6 @@ describe('TranscriptConnection', () => {
       session_id: 'c9',
       payload: { title: '夜景延时素材生成' },
     })
-    // 运行帧省略结束原因，上层应规范化为 null。
     socket.deliver({
       ...ENVELOPE,
       type: 'event.session.work_changed',
@@ -485,7 +471,6 @@ describe('TranscriptConnection', () => {
         metadata: { shot: 2, frame: 3 },
       },
     })
-    // 任务没有来源对话时信封上没有 session_id，空的归属字段服务端整个省略。
     socket.deliver({
       ...ENVELOPE,
       type: 'event.generation.changed',
@@ -582,7 +567,6 @@ describe('TranscriptConnection', () => {
 
     socket.deliver({ ...ENVELOPE, type: 'event.session.created', session_id: row.id, payload: row })
     socket.deliver({ ...ENVELOPE, type: 'event.session.updated', session_id: row.id, payload: row })
-    // 删除帧的对话 id 只在信封上，没有 payload。
     socket.deliver({ ...ENVELOPE, type: 'event.session.deleted', session_id: row.id })
 
     expect(seen).toEqual([
@@ -716,7 +700,6 @@ describe('TranscriptConnection', () => {
     expect(table?.payload?.['transcript_since']).toEqual({ main: 5 })
     expect(table?.payload?.['transcript_epoch']).toEqual({ main: EPOCH })
 
-    // 子流的帧按 agent_id 分发，主流那份回调不收；水位各记各的。
     socket.deliver({
       ...ops(2),
       payload: { type: 'transcript.ops', agent_id: 'run-child', ops: [], seq: 2 },
@@ -818,7 +801,6 @@ describe('TranscriptConnection', () => {
     vi.advanceTimersByTime(2_000)
     socket.deliver(SERVER_HELLO)
 
-    // FakeSocket 在 createSocket 里复用同一个实例，前后两次连接发的帧都记在它上面。
     expect(before.frames().map((frame) => frame.type)).toEqual(['subscribe_v2', 'subscribe_v2'])
     socket.deliver(fsChanged('c1', [{ path: 'video_shot.json', change: 'modified' }]))
     expect(seen).toEqual(['video_shot.json'])

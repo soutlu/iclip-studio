@@ -1,6 +1,3 @@
-"""试连 Gemini 与 OpenRouter：按随代码发布的声明与自己加的模型建出真实的模型类，请求经替身传输层答复，
-不连网。请求要发到声明的接口地址（没填走官方地址）、带上 API Key 与输出上限；上游拒绝时原因里没有密钥。"""
-
 from __future__ import annotations
 
 import json
@@ -46,8 +43,6 @@ CHAT_REPLY: dict[str, Any] = {
 
 @dataclass
 class Upstream:
-    """替身上游：记下每个请求，按 ``status`` 与 ``body`` 答复。"""
-
     status: int
     body: dict[str, Any]
     requests: list[httpx2.Request] = field(default_factory=list)
@@ -63,8 +58,6 @@ class Upstream:
 
 @pytest.fixture
 def upstream(monkeypatch: pytest.MonkeyPatch) -> Callable[[int, dict[str, Any]], Upstream]:
-    """把 httpx2 的默认传输层换成替身：两家 SDK 建的客户端都经它发请求，连不到网。"""
-
     def install(status: int, body: dict[str, Any]) -> Upstream:
         fake = Upstream(status, body)
 
@@ -140,7 +133,6 @@ async def test_openrouter_probe_calls_chat_completions_with_thinking_off(
     assert request.headers["authorization"] == f"Bearer {KEY}"
     assert body["model"] == "openai/gpt-6.1-terra"
     assert body["max_tokens"] == PROBE_MAX_TOKENS
-    # 模型允许 none，试连就关掉思考；通用 thinking=False 经 OpenRouter 适配器写成 reasoning。
     assert body["reasoning"] == {"effort": "none"}
 
 
@@ -183,7 +175,6 @@ async def test_an_openrouter_model_without_its_author_says_why_before_any_reques
         load_declarations()["openrouter"], custom_llm("gpt-x", "chat", ()), {"api_key": KEY}
     )
 
-    # 官方建模型时就拒绝不带作者的名字，原因原样给人看；没有发出请求。
     assert not result.ok
     assert result.reason is not None
     assert result.reason.startswith("按声明建不出模型：OpenRouter model names must be prefixed")

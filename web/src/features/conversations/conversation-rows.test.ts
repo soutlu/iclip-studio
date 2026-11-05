@@ -25,7 +25,6 @@ const row = (overrides: Partial<SessionRow> = {}): SessionRow => ({
 const busy = { busy: true, lastTurnReason: null, pendingInteraction: 'none' } as const
 const idle = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' } as const
 
-/** 一次已经读完的 HTTP 请求：开本、合并、关本。 */
 const read = <T extends SessionRow>(store: ConversationRowStore, rows: T[]): T[] => {
   const book = store.open()
   const merged = store.mergeRows(rows, book)
@@ -33,7 +32,6 @@ const read = <T extends SessionRow>(store: ConversationRowStore, rows: T[]): T[]
   return merged
 }
 
-/** 一次在途的请求：本子已开，`settle` 交回结果。 */
 const inFlight = (store: ConversationRowStore) => {
   const book = store.open()
   return {
@@ -55,7 +53,6 @@ describe('ConversationRowStore 记录本', () => {
     store.applyTitle(ID, '帧上的名字')
     expect(store.get(ID)).toMatchObject({ activity: busy, title: '帧上的名字' })
 
-    // 这一页读库早于两帧。
     listing.settle([row({ title: '读库时的名字', updatedAt: '2026-10-01T00:05:00Z' })])
 
     expect(store.get(ID)).toMatchObject({
@@ -87,13 +84,10 @@ describe('ConversationRowStore 记录本', () => {
     const second = inFlight(store)
     store.applyActivity(ID, busy)
 
-    // 第一本记着两帧：读库早于它们的结果回来，两帧都重放。
     first.settle([row()])
     expect(store.get(ID)).toMatchObject({ activity: busy, title: '甲' })
 
-    // 第一本已关，第二本还开着：之后的帧只进第二本。
     store.applyTitle(ID, '乙')
-    // 第二本开在「甲」之后：它的结果里已经是「甲」，不重放「甲」，只重放忙与「乙」。
     second.settle([row({ title: '甲' })])
     expect(store.get(ID)).toMatchObject({ activity: busy, title: '乙' })
   })
@@ -115,7 +109,6 @@ describe('ConversationRowStore 记录本', () => {
     expect(store.get(ID)).toMatchObject({ activity: busy, title: '新建' })
 
     store.applyActivity(ID, idle)
-    // 帧里的活动是写库时读的，比刚到的 work_changed 旧。
     store.applyRow(
       row({
         activity: { ...row().activity, ...busy },

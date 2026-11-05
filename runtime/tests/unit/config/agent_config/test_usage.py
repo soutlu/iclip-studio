@@ -1,6 +1,3 @@
-"""子 agent 的两种身份：一个 agent 有没有子 agent 看它自己的草稿与当前版本合在一起；是不是别人的子 agent 看
-别的 agent 的草稿或当前版本，自己写自己不算。agent 列表的 ``hasSubagents`` 与 ``isSubagent`` 就按这两条算。"""
-
 from __future__ import annotations
 
 import uuid

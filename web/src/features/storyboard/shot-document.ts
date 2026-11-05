@@ -1,5 +1,3 @@
-/** 结构化分镜文件、局部编辑与文本导出；保留字段身份和原始正文。 */
-
 import { z } from 'zod'
 import { UserFacingError } from '@/shared/api/client'
 import { MAX_REFERENCE_IMAGES } from './shots'
@@ -8,14 +6,9 @@ const nonblank = z.string().refine((value) => value.trim().length > 0, '请填�
 const timestamp = z.number().nonnegative({ error: '镜头时间不得小于 0 秒' })
 const UNKNOWN_CONTENT = '包含无法识别的内容'
 
-/**
- * 校验没有专门文案的问题（类型不符等）时的兜底；zod 默认文案是英文，不给用户看。
- * 逐条写了 error 的校验优先于它。
- */
 const FALLBACK_ISSUE = { error: () => '格式不正确' }
 const FRAME_REF = /@Image(\d+)/g
 
-/** 与工具相同，按正文首次出现顺序提取编号；不改写原始标记。 */
 export const extractImageIndexes = (prompt: string): number[] => [
   ...new Set([...prompt.matchAll(FRAME_REF)].map((match) => Number(match[1]))),
 ]
@@ -139,7 +132,6 @@ export const parseShotsDocument = (content: string): ShotsDocument | null => {
   return result.success ? result.data : null
 }
 
-/** 草稿可以暂时不合法；保存边界使用同一文档校验并返回可显示的原因。 */
 export const validateShot = (shot: Shot): string | undefined => {
   const result = shotSchema.safeParse(shot, FALLBACK_ISSUE)
   if (result.success) return undefined
@@ -178,7 +170,6 @@ export const updateTimelinePrompt = (shot: Shot, position: number, prompt: strin
   }
 }
 
-/** 有效选区内插入引用；文本已经变化或未指定选区时追加末尾。 */
 export const insertReferenceText = (
   prompt: string,
   number: number,
@@ -201,14 +192,8 @@ export const insertReferenceText = (
 const OUTPUT_CONSTRAINT = '不要生成字幕，不要生成背景音乐。'
 const SHOTS_HEADING = '镜头：'
 
-/** 起止秒保留到毫秒并去掉末尾的零，同服务端 format_seconds：3.5、4、8.25。 */
-/** 秒数给人看：最多三位小数，去掉浮点尾差与多余的零。 */
 export const formatSeconds = (value: number): string => Number(value.toFixed(3)).toString()
 
-/**
- * 「复制完整提示词」显示的正文：全局设定、空一行、「镜头：」、每镜一行「起–止秒 正文」、末尾约束。
- * 拼装规则归服务端（shot_prompt.py），这里照同一规则给人看，出片时发的是结构化镜头组。
- */
 export const formatShotPrompt = (shot: Shot): string => {
   const lines = shot.prompt.timeline.map(
     (item) =>
@@ -219,7 +204,6 @@ export const formatShotPrompt = (shot: Shot): string => {
 
 const SENTENCE_END = /[。；！？!?;]/
 
-/** 只读标题从镜头正文取首句，文件中的正文保持原样。 */
 export const promptTitle = (prompt: string): string | undefined => {
   const firstLine = prompt
     .split('\n')
@@ -239,7 +223,6 @@ export const promptTitle = (prompt: string): string | undefined => {
 export const shotName = (shot: Shot): string =>
   promptTitle(shot.prompt.timeline[0]?.prompt ?? '') ?? `镜头组 ${shot.index}`
 
-/** 顶栏镜头组列表里的一行；首帧取第一个镜头引用的第一张图，没引用就用第一张。 */
 export const shotGroupSummary = (shot: Shot, aspectRatio: string) => {
   const frame =
     shot.prompt.timeline[0]?.image_indexes.find(

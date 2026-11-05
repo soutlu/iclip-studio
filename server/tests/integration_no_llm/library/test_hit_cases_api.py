@@ -1,8 +1,3 @@
-"""爆款素材库端点：能否入选与三种 422、入选幂等、入选带人工标签并排一次打标、改标签与重新打标要先
-入选且不在打标、移出连同标签、按作者/入选时间/标签筛选与翻页、标签树里的条数；没配打标时照样入选但不打标。
-
-打标是替身，队列连接器是内存替身（不跑 lifespan，排进去的任务不执行），排了几次看连接器里的任务。"""
-
 from __future__ import annotations
 
 import uuid
@@ -51,8 +46,6 @@ async def studio_app(
     monkeypatch: pytest.MonkeyPatch,
     connector: InMemoryConnector,
 ) -> AsyncGenerator[FastAPI]:
-    """打标配好（拆解同一段配置）、媒体生成没开的 app。"""
-
     for name, value in STUDIO_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
@@ -81,8 +74,6 @@ async def http(studio_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> None:
-    """第一次叫到这个名字就注册，之后只是重新登录。"""
-
     email = f"{username}@example.com"
     created = await client.post(
         "/auth/register", json={"email": email, "password": PASSWORD, "username": username}
@@ -127,8 +118,6 @@ async def test_anonymous_is_401(http: httpx.AsyncClient) -> None:
 async def test_ineligible_materials_are_422_with_their_reason(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """图片不是素材片；不挂对话的出片没有对话；对话里没有新片执行方案。不存在的视频是 404。"""
-
     await login_as(http, pg_url, "maya", "editor")
     nora = await plant_named_user(engine, "nora")
     conversation = await plant_conversation(engine, nora)
@@ -180,8 +169,6 @@ async def test_a_deleted_conversation_still_counts(
 async def test_adding_keeps_manual_tags_queues_once_and_is_idempotent(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine, connector: InMemoryConnector
 ) -> None:
-    """别人对话里的素材片也能加；再加一次原样交回，带来的不同标签不写、也不再排打标。"""
-
     await login_as(http, pg_url, "maya", "editor")
     nora = await plant_named_user(engine, "nora")
     _, job_id = await plant_material(engine, nora)
@@ -251,8 +238,6 @@ async def test_tags_and_retagging_need_an_entry_that_is_not_being_tagged(
 async def test_retagging_needs_generation_submit(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """看得见就能入选、改标签、移出；重新打标是付费调用，另要 ``generation:submit``。"""
-
     await login_as(http, pg_url, "vera", "viewer")
     nora = await plant_named_user(engine, "nora")
     _, job_id = await plant_material(engine, nora)
@@ -288,8 +273,6 @@ async def test_removing_deletes_the_entry_with_its_tags_and_is_idempotent(
 async def test_the_list_filters_by_tags_and_pages_by_when_they_were_added(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """同一维度命中任一、维度之间都要命中、选大类也算小类；不再是素材片的不列；不存在的标签是 422。"""
-
     await login_as(http, pg_url, "maya", "editor")
     nora = await plant_named_user(engine, "nora")
     amz = await tag_id(engine, "平台&渠道", "AMZ")
@@ -341,8 +324,6 @@ async def test_the_list_filters_by_tags_and_pages_by_when_they_were_added(
 async def test_authors_follow_the_material_owner_not_the_curator_or_conversation_owner(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """作者候选按在库版本计数，筛选与卡面作者一致；入选人与对话属主不参与作者判定。"""
-
     await login_as(http, pg_url, "maya", "editor")
     nora = await plant_named_user(engine, "nora")
     vera = await plant_named_user(engine, "vera")
@@ -375,8 +356,6 @@ async def test_authors_follow_the_material_owner_not_the_curator_or_conversation
 async def test_author_time_and_tags_filter_together_with_matching_count_and_cursor(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """时间看入选时刻，左闭右开；组合筛选的计数与后续页使用同一范围。"""
-
     await login_as(http, pg_url, "maya", "editor")
     nora = await plant_named_user(engine, "nora")
     vera = await plant_named_user(engine, "vera")
@@ -422,7 +401,6 @@ async def test_author_time_and_tags_filter_together_with_matching_count_and_curs
     assert last.json()["items"] == []
     assert last.json()["nextCursor"] is None
 
-    # 不带时区沿用资料库的 UTC 口径，时间上下界也可以单独使用。
     since_only = await http.get(
         HIT_CASES,
         params={"userName": "nora", "tags": str(amz), "since": "2026-01-10T00:00:00"},
@@ -464,8 +442,6 @@ async def test_invalid_author_or_time_filters_are_422(
 async def test_the_card_id_opens_the_card_holding_that_version(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
-    """卡 id 就是素材片所在对话；那段对话的素材卡详情里能找到这一版。"""
-
     await login_as(http, pg_url, "maya", "editor")
     nora = await plant_named_user(engine, "nora")
     conversation, job_id = await plant_material(engine, nora)

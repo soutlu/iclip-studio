@@ -1,5 +1,3 @@
-"""MCP 服务接到引擎：试连端口的实现，以及把服务的连接参数换成引擎认的形状。"""
-
 from __future__ import annotations
 
 from agent_runtime.config.mcp_servers.public import McpEndpoint, McpProbeResult, McpTool
@@ -16,8 +14,6 @@ def mcp_connection(endpoint: McpEndpoint) -> McpConnection:
 
 
 class HarnessMcpProbe:
-    """``McpProbe`` 的实现：用官方 MCP 客户端连一次、列出工具。"""
-
     async def probe(self, endpoint: McpEndpoint) -> McpProbeResult:
         outcome = await probe_mcp(mcp_connection(endpoint))
         return McpProbeResult(

@@ -22,23 +22,16 @@ import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/s
 import { toast } from '@/shared/ui/toast'
 
 type VideoDownloadProps = {
-  /** 每下载一次，按这些生成记录各记一条下载事件：素材片是它自己，导出的成片是它用到的各条素材片；为空就不记。下载高清版同样按它记。 */
   downloadedJobIds: readonly string[]
   url: string
   watermarkUrl: string | null
-  /** 叠在按钮自己的样式上，如放大尺寸。 */
   className?: string
-  /** 可见文字；给了就渲染成共用的带字按钮（下载图标在前），可访问名称就是这段文字。缺省是描边小圆图标按钮。 */
   children?: ReactNode
-  /** 能做高清版的那条记录（素材片或导出的成片）；给了就读它各档的高清版，菜单里多出高清项。不给就和没有高清版时一样。 */
   enhanceSourceId?: string
-  /** 只有原片时菜单第一项的名字，成片传「下载成片」。 */
   originalLabel?: string
-  /** 片长，用来估高清版要多久；不知道就不估。 */
   durationMs?: number | null | undefined
 }
 
-/** 上游处理耗时约为片长的 15–20 倍，按慢的估。 */
 const ENHANCE_SLOWDOWN = 20
 
 const estimateText = (durationMs: number | null | undefined): string | undefined =>
@@ -54,10 +47,6 @@ const BADGE_LABEL: Record<EnhanceBadge, string> = {
 
 const FALLBACK_NAME = '生成的视频'
 
-/**
- * 图标按钮上的高清版状态：在做是沿按钮外沿转的一段细弧（样式见 video-download.css），颜色跟按钮的图标走；
- * 做好、没做成是右上角的绿点、红点。
- */
 function EnhanceBadgeMark({ badge }: { badge: EnhanceBadge }) {
   if (badge === 'running') {
     return <span aria-hidden className="video-download-ring" data-enhance-ring="" />
@@ -74,12 +63,6 @@ function EnhanceBadgeMark({ badge }: { badge: EnhanceBadge }) {
   )
 }
 
-/**
- * 视频的下载按钮：只有原片且没有高清档时点了就下；否则先开菜单，选原片、水印版或各档高清版。
- * 高清版一档一行：还没做的点了就提交，菜单不关，那一行原地变成「正在生成」；做好的直接下载。
- * 图标按钮另外标出高清版的状态（见 `enhanceBadge`）；打开菜单就把自己各档已有的结果记成看过，
- * 菜单开着时出的结果也算看过；打开时顺带重拉各档，别人刚提交的也看得到。带字按钮什么都不标。
- */
 export function VideoDownload({
   children,
   className,
@@ -100,7 +83,6 @@ export function VideoDownload({
   const settledIds = settledOwnJobIds(rows)
   const settledKey = settledIds.join(',')
 
-  // 菜单开着时某一档出了结果，那一行原地变了，等于当场看到。画之前就记，点不闪一下。
   useLayoutEffect(() => {
     if (menuOpen && settledKey !== '') markEnhancementsSeen(settledKey.split(','))
   }, [menuOpen, settledKey])
@@ -109,11 +91,9 @@ export function VideoDownload({
     setMenuOpen(open)
     if (!open || enhanceSourceId === undefined) return
     markEnhancementsSeen(settledIds)
-    // 没有在做的档时不轮询、别人的帧也收不到，打开时重拉一次。
     void queryClient.invalidateQueries({ queryKey: videoEnhancementsKeys.source(enhanceSourceId) })
   }
 
-  // 下载事件与取字节并行发出，不等它回来。
   const download = (href: string, fallbackName: string) => {
     for (const jobId of downloadedJobIds) recordVideoDownloaded(jobId)
     void fetchAndSave(href, fallbackName)
@@ -177,7 +157,6 @@ export function VideoDownload({
   return (
     <>
       <MenuRoot onOpenChange={onMenuOpenChange}>
-        {/* disabled 交给菜单触发器：它拦下自己的按下与按键，再转交给按钮。 */}
         <MenuTrigger asChild disabled={downloading}>
           {trigger}
         </MenuTrigger>
@@ -214,7 +193,6 @@ type EnhanceTierItemProps = {
   onDownload: (resolution: EnhanceResolution, url: string) => void
 }
 
-/** 高清版的一档。提交与重试时拦下菜单项的默认收起，菜单开着、那一行原地变成「正在生成」。 */
 function EnhanceTierItem({ estimate, onDownload, onSubmit, row }: EnhanceTierItemProps) {
   const { resolution } = row
   switch (row.state) {
@@ -253,7 +231,6 @@ function EnhanceTierItem({ estimate, onDownload, onSubmit, row }: EnhanceTierIte
   }
 }
 
-/** 在做的一档：转圈加已用时长，点不了。 */
 function RunningTierItem({ resolution, since }: { resolution: EnhanceResolution; since: string }) {
   const elapsed = useElapsed(since)
   return (

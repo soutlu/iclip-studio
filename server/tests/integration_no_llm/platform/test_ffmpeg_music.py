@@ -1,6 +1,3 @@
-"""用真实 ffmpeg 验证规整背景音乐：去掉首尾静音、统一响度、编成 48 kHz 双声道 AAC 的 m4a，交回
-量出来的时长；没有声音、没有音轨与读不了的素材明确报错。"""
-
 from __future__ import annotations
 
 import json
@@ -35,8 +32,6 @@ def _streams(path: Path) -> list[dict[str, object]]:
 
 
 def _loudness(path: Path) -> float:
-    """量一个文件的综合响度（LUFS），用 ebur128 滤镜，与被测的 loudnorm 是两套实现。"""
-
     run = subprocess.run(
         [
             "ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
@@ -50,8 +45,6 @@ def _loudness(path: Path) -> float:
 
 
 def _edge_volume(path: Path, *, at_end: bool) -> float:
-    """开头或结尾 50 毫秒的平均电平（dB）；那里是静音时是 -91 左右。"""
-
     position = ["-sseof", "-0.05"] if at_end else []
     run = subprocess.run(
         [
@@ -101,8 +94,6 @@ async def test_music_without_silence_keeps_its_length(tmp_path: Path) -> None:
 
 
 async def test_all_silence_is_a_media_error(tmp_path: Path) -> None:
-    """模型给回一段全是静音的音频：没有可以规整的声音，这次生成算失败。"""
-
     source = tmp_path / "silent.wav"
     synthesize_padded_music(source, lead=1.0, body=1.0, tail=1.0, volume=0)
 

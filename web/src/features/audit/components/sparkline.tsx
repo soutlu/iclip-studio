@@ -1,5 +1,3 @@
-/** 迷你趋势：一条线加淡面积，末点一个圆点；不画坐标，只看走势。 */
-
 import { useId } from 'react'
 
 type SparklineProps = {
@@ -10,7 +8,6 @@ type SparklineProps = {
 
 export function Sparkline({ values, width, height }: SparklineProps) {
   const gradientId = `spark-${useId().replace(/[^\w-]/g, '')}`
-  // 不到两个点连不成线，只占位。
   if (values.length < 2) {
     return <svg aria-hidden className="inline-block align-middle" height={height} width={width} />
   }

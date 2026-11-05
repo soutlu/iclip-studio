@@ -1,5 +1,3 @@
-"""工程文件的生图节点与生成域之间的适配，制作页用。"""
-
 from __future__ import annotations
 
 import uuid
@@ -19,12 +17,9 @@ from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
 
 FILM_NODE_KEY = "film_node"
-"""生图节点的生成记录在 ``metadata`` 里用这个键记节点名，制作页按它列这个节点的版本。"""
 
 
 class FilmImagesAdapter:
-    """工程文件的生图节点与生成域之间的往来：出图时给记录标上节点名，查进度。"""
-
     def __init__(self, service: GenerationService) -> None:
         self._service = service
 

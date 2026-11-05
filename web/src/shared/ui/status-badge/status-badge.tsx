@@ -1,5 +1,3 @@
-/** 对话与媒体生成任务的状态角标。只画调用方给的状态，不查数据、不汇总任务。 */
-
 import { cva } from 'class-variance-authority'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -12,14 +10,12 @@ export type MediaBadgeStatus = 'idle' | 'queued' | 'running' | 'failed' | 'compl
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger'
 
-/** 右下角叠标：小圆里的对勾或叉、排队时钟、呼吸圆点。 */
 type Marker = 'check' | 'close' | 'clock' | 'dot'
 
 type BadgeSpec = {
   label: string
   tone: Tone
   icon: IconName
-  /** 主图形旋转；只有对话进行中用。 */
   spin?: true
   marker?: Marker
 }
@@ -45,11 +41,9 @@ const MEDIA_KIND: Record<'image' | 'video', { icon: IconName; name: string }> = 
   video: { icon: 'video', name: '视频' },
 }
 
-/** 不画角标的地方要说出同一个对话状态时取这里的词；`idle` 没有词，所以不在入参里。 */
 export const conversationStatusLabel = (status: Exclude<ConversationBadgeStatus, 'idle'>): string =>
   CONVERSATION[status].label
 
-/** 媒体状态的同一用法，`idle` 同样没有词。 */
 export const mediaStatusLabel = (status: Exclude<MediaBadgeStatus, 'idle'>): string =>
   MEDIA[status].label
 
@@ -94,11 +88,8 @@ const badgeClass = cva('status-badge inline-flex shrink-0 items-center', {
 })
 
 type SharedProps = {
-  /** 纯图标放标题旁；带文字用在要直接读出状态的地方。 */
   appearance?: 'icon' | 'label'
-  /** 替代默认文案，如帧上的「有新结果」。 */
   text?: string
-  /** 浮层里的补充说明，空白忽略。 */
   detail?: string
   className?: string
 }
@@ -115,10 +106,6 @@ const specOf = (props: StatusBadgeProps): BadgeSpec | undefined => {
   return { ...MEDIA[props.status], icon: MEDIA_KIND[props.kind].icon }
 }
 
-/**
- * `idle` 不渲染。纯图标以 `aria-label` 命名（媒体类带「视频 / 图片」前缀），悬停出浮层；
- * 带文字以可见文字命名，有 `detail` 时才出浮层。不进 Tab 序。
- */
 export function StatusBadge(props: StatusBadgeProps) {
   const spec = specOf(props)
   if (spec === undefined) return null

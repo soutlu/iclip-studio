@@ -3,14 +3,12 @@ import { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
 import { zCollectionEnvelope, zCollectionsPageOut } from '@/shared/api/generated/zod.gen'
 
-// 删除返回 204，没有正文可校验
 const noContentSchema = z.unknown()
 
 const collectionEnvelopeSchema = zCollectionEnvelope.transform((payload) => payload.collection)
 const collectionsPageSchema = zCollectionsPageOut.transform((payload) => payload.items)
 export type Collection = z.output<typeof collectionEnvelopeSchema>
 
-// 请求后端允许的最大合集数。
 const LIST_LIMIT = 100
 
 const collectionsQueryKeys = {
@@ -18,7 +16,6 @@ const collectionsQueryKeys = {
   list: () => ['collections', 'list'] as const,
 }
 
-/** 仅查询当前用户的合集，按最近修改排序。 */
 export const useCollections = (enabled: boolean) =>
   useQuery({
     enabled,
@@ -31,7 +28,6 @@ export const useCollections = (enabled: boolean) =>
     queryKey: collectionsQueryKeys.list(),
   })
 
-/** 新建或改名；onSaved 返回的 Promise 会被等待，mutateAsync 在它完成后才 resolve。 */
 export const useSaveCollection = (onSaved: (collection: Collection) => void | Promise<void>) => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -52,7 +48,6 @@ export const useSaveCollection = (onSaved: (collection: Collection) => void | Pr
   })
 }
 
-/** 删除合集仅解除分组，不删除其中的对话。 */
 export const useDeleteCollection = (onSaved: () => void) => {
   const queryClient = useQueryClient()
   return useMutation({

@@ -1,7 +1,3 @@
-"""四个端口的 HTTP 客户端：请求的路径与请求体照 conventions §21，答复读回端口的值；422 还原成端口声明的
-错误、原话不变；连不上、超时、其他状态码与形状不对的答复都抛 ``InternalApiError``，其中后端暂时不可达是
-``InternalApiUnavailable``，查出图任务时还原成 ``ImageJobUnavailable``。"""
-
 from __future__ import annotations
 
 import json
@@ -76,8 +72,6 @@ JOB_BODY: dict[str, Any] = {
 
 @dataclass
 class Backend:
-    """后端的替身：每个请求都记下来，答 ``status`` 与 ``body``；``raises`` 给了就在传输层抛它。"""
-
     status: int = 200
     body: Any = None
     raises: httpx.HTTPError | None = None
@@ -233,8 +227,6 @@ async def call_cut(api: InternalApi) -> object:
 async def test_a_422_without_a_code_is_not_taken_for_a_port_failure(
     call: Callable[[InternalApi], Awaitable[object]],
 ) -> None:
-    """请求结构校验失败的 422 只有 ``detail``：那是客户端发错了，不当成端口的失败让工具重试。"""
-
     backend = Backend(status=422, body={"detail": "rows[0][0].shot_id: Field required"})
 
     with pytest.raises(InternalApiError, match="422"):
@@ -302,8 +294,6 @@ CALL_IDS = ["submit", "get", "frame-boards", "grid-cuts", "breakdowns", "service
 async def test_any_other_status_is_an_internal_api_error_naming_it(
     call: Callable[[InternalApi], Awaitable[object]], status: int, body: dict[str, str]
 ) -> None:
-    """确定性的失败不当成暂时不可达：查任务时也照样报，不让轮询接着等。"""
-
     backend = Backend(status=status, body=body)
 
     with pytest.raises(InternalApiError) as raised:
@@ -328,8 +318,6 @@ UNAVAILABLE_IDS = ["connect", "timeout", "502", "503", "504"]
 async def test_an_unreachable_backend_is_unavailable_and_the_submission_fails(
     backend: Callable[[], Backend],
 ) -> None:
-    """提交不是幂等的：后端暂时不可达也照样失败即报，不在端口上翻成可以接着等的错误。"""
-
     with pytest.raises(InternalApiUnavailable):
         await submit(backend().api())
 

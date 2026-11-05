@@ -1,22 +1,16 @@
-/** 瀑布流：TanStack Virtual 的多列（lanes）虚拟列表，只渲染视口附近的卡片；列数随容器宽度变。成片素材、灵感库与成片页共用，卡片长什么样由调用方给。 */
-
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react'
 import { columnCountFor, columnGapFor } from '../library-layout'
 
-/** 同一列里上下两张卡的间距。 */
 const ROW_GAP = 20
 
-/** 首帧还没量到容器时按这个视口估，jsdom 里也靠它渲染出卡片。 */
 const INITIAL_RECT = { height: 900, width: 1200 }
 
 type LibraryGridProps<T> = {
   items: readonly T[]
   keyOf: (item: T) => string
-  /** 按列宽估的整张卡高度；估准了布局就不跳，估不准由挂上后的实测纠正。 */
   estimateHeight: (item: T, columnWidth: number) => number
   renderItem: (item: T, columnWidth: number) => ReactNode
-  /** 页面的滚动容器；虚拟列表跟着它的滚动位置算哪些卡在视口里。 */
   getScrollElement: () => HTMLElement | null
 }
 
@@ -51,7 +45,6 @@ export function LibraryGrid<T>({
     scrollMargin: offsetTop,
   })
 
-  // 列宽一变，按新列宽重估全部卡片的高度并重新分列。
   useLayoutEffect(() => {
     virtualizer.measure()
   }, [virtualizer, lanes, columnWidth])
@@ -85,7 +78,6 @@ export function LibraryGrid<T>({
   )
 }
 
-/** 容器宽度与它在滚动容器里的纵向偏移，连同要挂到容器上的 ref；宽度变了（筛选条换行、侧栏收起）两者一起重量。 */
 function useContainerBox(getScrollElement: () => HTMLElement | null) {
   const [box, setBox] = useState({ offsetTop: 0, width: 0 })
 
@@ -102,7 +94,6 @@ function useContainerBox(getScrollElement: () => HTMLElement | null) {
           old.width === width && old.offsetTop === offsetTop ? old : { offsetTop, width },
         )
       }
-      // 挂上时同步量一次：ResizeObserver 首次回调引起的重渲染赶不上首帧，按宽 0 排出的高度会让页脚误判到底。
       measure()
       const observer = new ResizeObserver(measure)
       observer.observe(container)
@@ -114,7 +105,6 @@ function useContainerBox(getScrollElement: () => HTMLElement | null) {
   return [box, containerRef] as const
 }
 
-/** 几种常见画幅轮着占位，和真卡同一个节奏。 */
 const SKELETONS = [
   { id: 'a', ratio: '9 / 16' },
   { id: 'b', ratio: '3 / 4' },
@@ -126,7 +116,6 @@ const SKELETONS = [
   { id: 'h', ratio: '3 / 4' },
 ] as const
 
-/** 读取中的占位：CSS 多列排几张灰卡，读屏只读到 label。 */
 export function LibraryGridSkeleton({ label }: { label: string }) {
   return (
     <div className="library-skeleton-grid" role="status">

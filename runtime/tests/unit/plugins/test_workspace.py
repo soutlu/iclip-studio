@@ -1,5 +1,3 @@
-"""验证工作区工具的路径边界、错误映射和命名空间隔离；存储与图片探针使用内存替身。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -57,8 +55,6 @@ A_BIG_JPEG = ImageInfo(media_type="image/jpeg", size_bytes=2048, width=3000, hei
 
 
 class FakeProbe:
-    """返回固定图片信息或抛出预设异常。"""
-
     def __init__(self, info: ImageInfo = A_BIG_JPEG, *, error: str | None = None) -> None:
         self.info = info
         self.error = error
@@ -87,16 +83,12 @@ def make_workspace(store: FakeFileStore, probe: FakeProbe | None = None) -> Work
 
 
 def model_facing(result: ToolReturn) -> list[object]:
-    """提取面向模型的工具结果；return_value 联合类型需先经 isinstance 收窄。"""
-
     value = result.return_value
     assert isinstance(value, list)
     return list(value)
 
 
 def text(result: ToolReturn) -> str:
-    """文本工具给模型的正文；卡片用的 metadata 另行断言。"""
-
     value = result.return_value
     assert isinstance(value, str)
     return value
@@ -139,8 +131,6 @@ def ctx() -> RunContext[object]:
     ],
 )
 def test_illegal_paths_are_refused(path: str) -> None:
-    """工作区使用逻辑路径，无本地 inode；越界检查依赖路径语法。"""
-
     with pytest.raises(InvalidPath):
         normalize_path(path)
 
@@ -158,14 +148,10 @@ def test_paths_are_canonicalized(given: str, expected: str) -> None:
 
 
 def test_unicode_paths_normalize_to_one_file() -> None:
-    """预组合字符与组合字符须归一化，避免同一文件名产生两份文件。"""
-
     assert normalize_path("caf\u00e9.md") == normalize_path("cafe\u0301.md")
 
 
 def test_namespace_fails_closed_when_deps_is_not_a_run_deps() -> None:
-    """缺少运行身份属于装配错误，公共命名空间会破坏用户隔离。"""
-
     with pytest.raises(RuntimeError, match="不是 AgentRunDeps"):
         workspace_namespace(make_context({"user_id": str(USER)}))
 
@@ -230,7 +216,6 @@ async def test_read_pages_and_says_how_much_is_left(
     assert "     4\t第4行" in text(page)
     assert "6 行" in text(page)
     assert "offset=5" in text(page)
-    # 卡片只拿范围，正文仍在 output 里，不重复一份。
     assert page.metadata == {"path": "长稿.md", "lines": 2, "truncated": True}
     whole = await tools.read_file(ctx, "长稿.md")
     assert whole.metadata == {"path": "长稿.md", "lines": 10, "truncated": False}
@@ -247,8 +232,6 @@ async def test_read_past_the_end_is_retryable(
 async def test_read_stops_at_a_whole_line_once_the_char_limit_is_reached(
     tools: WorkspaceToolset[object], ctx: RunContext[object]
 ) -> None:
-    """行数没到上限也按字符封顶：停在整行处，提示下一次的 offset。"""
-
     line = "x" * 20_000
     await tools.write_file(ctx, "宽稿.md", "\n".join([line] * 5))
 
@@ -266,8 +249,6 @@ async def test_read_stops_at_a_whole_line_once_the_char_limit_is_reached(
 async def test_read_cuts_a_single_line_over_the_char_limit_and_says_so(
     tools: WorkspaceToolset[object], ctx: RunContext[object]
 ) -> None:
-    """一行紧凑 JSON 也不能整行塞进上下文；提示单独成行，不被前端当成带行号的正文。"""
-
     await tools.write_file(ctx, "面板.json", "y" * 80_000 + "\n第二行")
 
     page = await tools.read_file(ctx, "面板.json")
@@ -291,7 +272,6 @@ async def test_edit_replaces_a_unique_match(
     await tools.write_file(ctx, "稿.md", "开场是夜景\n结尾是日景")
     edited = await tools.edit_file(ctx, "稿.md", "夜景", "黄昏")
     assert "开场是黄昏" in text(await tools.read_file(ctx, "稿.md"))
-    # 卡尾角标：改了一行算一增一删。
     assert edited.metadata == {"added": 1, "removed": 1}
 
 
@@ -322,12 +302,9 @@ async def test_edit_on_a_missing_file_points_at_write_file(
 async def test_edit_surfaces_a_concurrent_change_instead_of_clobbering_it(
     store: FakeFileStore, ctx: RunContext[object]
 ) -> None:
-    """edit_file 的读改写间存在并发窗口，版本冲突必须保留其他运行的修改。"""
-
     class RacingStore(FakeFileStore):
         async def read(self, namespace: str, path: str) -> StoredFile | None:
             found = await super().read(namespace, path)
-            # 模拟读取后、写回前发生并发更新。
             await super().write(namespace, path, "别人写的内容")
             return found
 
@@ -387,8 +364,6 @@ async def test_move_of_a_missing_source_is_retryable(
 async def test_move_onto_the_same_path_is_refused(
     tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
 ) -> None:
-    """两个写法归一化后是同一路径，照常移动会把文件删掉。"""
-
     await tools.write_file(ctx, "分镜/film.icml", "原稿")
 
     with pytest.raises(ModelRetry, match="destination"):
@@ -418,7 +393,6 @@ async def test_search_reports_the_matching_lines(
     assert "稿.md:1" in text(found)
     assert "稿.md:3" in text(found)
     assert "稿.md:2" not in text(found)
-    # 卡身逐条画命中行，拿的是结构化的那份。
     assert found.metadata == {
         "query": "夜景",
         "truncated": False,
@@ -477,8 +451,6 @@ def read_tools(probe: FakeProbe) -> WorkspaceToolset[object]:
 async def check_args(
     tools: WorkspaceToolset[object], ctx: RunContext[object], **args: object
 ) -> None:
-    """通过工具注册表调用校验器，覆盖 args_validator 的挂载遗漏。"""
-
     validator = tools.tools["ReadMediaFile"].args_validator
     assert validator is not None, "ReadMediaFile 登记时没挂验证器"
     outcome = validator(ctx, **args)
@@ -487,8 +459,6 @@ async def check_args(
 
 
 async def test_a_big_image_is_downsampled_and_says_so() -> None:
-    """降采样结果必须包含原图尺寸与缩放说明，避免模型误用缩略图坐标。"""
-
     result = await read_tools(FakeProbe()).read_media_file(make_context(make_deps()), OSS_IMAGE)
 
     facing = model_facing(result)
@@ -501,13 +471,10 @@ async def test_a_big_image_is_downsampled_and_says_so() -> None:
     summary = str(facing[1])
     assert "3000×2000" in summary
     assert "1024" in summary
-    # 卡片只画交付的图，缩放说明不上卡。
     assert result.metadata == {"items": [{"url": f"{OSS_IMAGE}?x-oss-process=image/resize,l_1024"}]}
 
 
 async def test_a_small_image_goes_untouched() -> None:
-    """长边不超过 1024 时无需缩放，OSS 也不会放大原图。"""
-
     probe = FakeProbe(ImageInfo(media_type="image/png", size_bytes=1536, width=800, height=600))
     result = await read_tools(probe).read_media_file(make_context(make_deps()), OSS_IMAGE)
 
@@ -522,8 +489,6 @@ async def test_a_small_image_goes_untouched() -> None:
 
 
 async def test_a_region_crops_in_original_coordinates_and_flags_the_offset() -> None:
-    """裁切使用原图坐标，超出图像边界的区域按实际尺寸报告；长边超过 1024 再缩放。"""
-
     result = await read_tools(FakeProbe()).read_media_file(
         make_context(make_deps()),
         OSS_IMAGE,
@@ -543,9 +508,6 @@ async def test_a_region_crops_in_original_coordinates_and_flags_the_offset() -> 
 
 
 async def test_a_stringified_region_is_parsed_on_the_agent_path(store: FakeFileStore) -> None:
-    """模型有一定概率把 region 裹成一个 JSON 字符串传进来；还原后照常裁切，不退回改参数。"""
-
-    # 入参按生产形状整体是一个 JSON 字符串，走 validate_json 那条分支；region 在里面又被裹了一层。
     args = json.dumps(
         {"url": OSS_IMAGE, "region": '{"x": 100, "y": 100, "width": 5000, "height": 5000}'}
     )
@@ -592,8 +554,6 @@ async def test_a_small_region_is_not_downsampled_again() -> None:
 
 
 async def test_a_region_starting_outside_the_image_reports_the_real_size() -> None:
-    """图外起点会产生空图；错误需携带原图尺寸以便修正。"""
-
     with pytest.raises(ModelRetry, match="3000×2000") as failure:
         await read_tools(FakeProbe()).read_media_file(
             make_context(make_deps()),
@@ -605,8 +565,6 @@ async def test_a_region_starting_outside_the_image_reports_the_real_size() -> No
 
 
 async def test_full_resolution_over_the_limit_points_at_region() -> None:
-    """原分辨率超限时提示使用 region，避免重复提交同一无效请求。"""
-
     probe = FakeProbe(
         ImageInfo(
             media_type="image/png",
@@ -650,11 +608,6 @@ async def test_region_and_full_resolution_are_mutually_exclusive() -> None:
 
 
 async def test_an_unreachable_image_is_refused_before_the_model_sees_it() -> None:
-    """在模型接收图片前拒绝探测失败的地址，避免错误延迟到模型供应商。
-
-    读不到不是模型能改的，提示里只报原因：引导它换地址会让它反复重试同一张。
-    """
-
     with capture_logs() as logs, pytest.raises(ModelRetry, match="图片无法读取") as failure:
         await read_tools(FakeProbe(error="地址访问不到")).read_media_file(
             make_context(make_deps()), OSS_IMAGE
@@ -667,8 +620,6 @@ async def test_an_unreachable_image_is_refused_before_the_model_sees_it() -> Non
 
 
 async def test_an_address_that_cannot_carry_scaling_is_refused() -> None:
-    """不支持缩放参数的地址不能满足图片尺寸限制。"""
-
     with pytest.raises(ModelRetry, match="图片无法读取"):
         await read_tools(FakeProbe()).read_media_file(
             make_context(make_deps()), "https://cdn.test/no-extension"
@@ -676,8 +627,6 @@ async def test_an_address_that_cannot_carry_scaling_is_refused() -> None:
 
 
 async def test_an_oss_image_never_seen_in_the_conversation_is_read() -> None:
-    """读图不查地址来源：对话里没出现过的 OSS 图片照读。"""
-
     tools = read_tools(FakeProbe())
     ctx = make_context(make_deps())
     fresh = "https://bucket.oss-ap-southeast-1.aliyuncs.com/never-mentioned.jpg"
@@ -695,12 +644,9 @@ async def test_read_media_file_only_takes_http_urls(url: str) -> None:
 
 
 async def test_edits_to_one_file_in_one_reply_both_land() -> None:
-    """模型在同一回复里对同一文件发出多个 edit_file 时依次执行，不因版本冲突退回重试。"""
-
     class YieldingStore(FakeFileStore):
         async def read(self, namespace: str, path: str) -> StoredFile | None:
             found = await super().read(namespace, path)
-            # 真实存储的读写之间会让出事件循环；内存替身不让出就复现不了并行读改写。
             await asyncio.sleep(0)
             return found
 
@@ -741,8 +687,6 @@ async def test_edits_to_one_file_in_one_reply_both_land() -> None:
 
 
 async def test_a_subagent_shares_the_conversation_workspace(store: FakeFileStore) -> None:
-    """子代理另起运行，仅继承 deps 中的对话 id；命名空间不得使用新的 ctx.conversation_id。"""
-
     workspace = make_workspace(store)
 
     def child_script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -780,7 +724,6 @@ async def test_a_subagent_shares_the_conversation_workspace(store: FakeFileStore
 
     result = await boss.run("安排下去", deps=make_deps())
 
-    # 最终输出无法识别被 ModelRetry 掩盖的读取失败，需额外确认未发生重试。
     retries = [
         part
         for message in result.all_messages()

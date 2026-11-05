@@ -57,8 +57,6 @@ export function ReferencesRoute({
   const { data: user } = useUser()
   const canManageTags = hasPermission(user, PERMISSION.libraryTagsManage)
   const [managingTags, setManagingTags] = useState(false)
-  // 地址里的标签先对过标签树：树里没有的（如已被删掉）不带去查，免得整页 422；没选标签就不必等树。
-  // 树读失败时也照原样去查，列表才有结果，好露出读标签失败的提示与重试，不一直停在骨架上。
   const scope = useLibraryTagScope(requestedScope, tags, onScopeChange)
   const references = useReferences(
     scope,
@@ -67,7 +65,6 @@ export function ReferencesRoute({
   const loaded = references.data?.pages.flatMap((page) => page.items) ?? []
   const total = references.data?.pages[0]?.total ?? undefined
   const canUpload = references.data?.pages[0]?.canUpload ?? false
-  // 列表轮询里每有一行打完（还在跑的行变少），标签树重读一次，条数跟上。
   const busyCount = loaded.filter(isReferenceBusy).length
   const lastBusyCountRef = useRef(busyCount)
   const refetchTags = tagTree.refetch
@@ -116,7 +113,6 @@ export function ReferencesRoute({
               multiple
               onChange={(event) => {
                 upload.uploadVideos([...(event.currentTarget.files ?? [])])
-                // 清空才能再选同一个文件。
                 event.currentTarget.value = ''
               }}
               ref={fileInputRef}

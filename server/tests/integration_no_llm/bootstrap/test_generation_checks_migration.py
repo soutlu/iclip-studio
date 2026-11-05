@@ -1,7 +1,3 @@
-"""删生成记录表 CHECK 约束的迁移：升级后一条约束都不剩、新种类直接落得进去，主键外键照旧。
-
-升级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -18,10 +14,8 @@ from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "44c6505380a0"
-"""0034，生成记录表还有种类、操作与各种行形状的约束。"""
 
 CHECKS_DROPPED = "b5d1e7a0c934"
-"""0035，约束都删了。"""
 
 CHECKS = {
     "ck_generation_jobs_kind",
@@ -55,8 +49,6 @@ async def _constraints(url: str, contype: str) -> set[str]:
 
 
 async def _whole_film(url: str) -> uuid.UUID:
-    """落一条排队中的成片导出记录，返回它的 id。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         owner = await make_user(engine)
@@ -78,8 +70,6 @@ async def _whole_film(url: str) -> uuid.UUID:
 
 
 def test_upgrade_drops_every_check_and_keeps_keys(scratch_db: str) -> None:
-    """0034 不收成片导出那种行；升级后 12 条约束都没了，那种行落得进去，主键与两条外键还在。"""
-
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
     assert asyncio.run(_constraints(scratch_db, "c")) == CHECKS

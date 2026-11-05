@@ -1,5 +1,3 @@
-"""tracking 装配单元：组合根只调用 ``build_tracking_module``。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,7 +11,6 @@ from iclip.domains.tracking.service import TrackingService
 @dataclass(frozen=True)
 class TrackingModule:
     routers: tuple[Any, ...]
-    """使用 Any 隔离 Web 框架类型。"""
 
     service: TrackingService
 

@@ -1,5 +1,3 @@
-"""生成任务状态跳转经包装仓库广播为全局帧。"""
-
 from __future__ import annotations
 
 import uuid
@@ -24,15 +22,12 @@ from tests.helpers.generation import (
 Announced = tuple[
     uuid.UUID, uuid.UUID | None, uuid.UUID, str, str, str, int | None, Mapping[str, Any] | None
 ]
-"""(属主, 对话, 任务, kind, operation, status, 镜号, metadata)。"""
 
 TAG = {"frame": 1}
 FRAME = {"path": "video_shot.json", "shot": 1, "frame": 3}
 
 
 class _RecordingConnections(LiveConnections):
-    """记录生成任务帧，不创建 WS 连接。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.announced: list[Announced] = []
@@ -108,8 +103,6 @@ async def test_an_image_job_carries_its_metadata_and_a_failure_is_announced_once
 
 
 async def test_settled_rows_are_announced_once_when_they_land() -> None:
-    """切图与上传落库即完成，落下的那一刻算一跳；重复确认的上传没插进去就不再发。"""
-
     live = _RecordingConnections()
     repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
     grid = make_job(image_request(), conversation_id=uuid.uuid4())

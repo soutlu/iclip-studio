@@ -1,7 +1,3 @@
-/** 分镜工作台底部的出片栏：一排控件（最左是写回文件的画幅，竖线隔开后是模型、分辨率、音频三项生成设置），
- * 加唯一的主色按钮出当前这一组；控件上方的状态行说明为什么不能出片、哪里有问题（暂态原因不显示，见 `generationStatusOf`）。
- * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
-
 import { useId, useRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
@@ -24,8 +20,6 @@ import { AspectGlyph } from './aspect-glyph'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
 
-/** 画幅：分镜页上写回分镜文件，制作页上写回工程文件（所有组与机位图一起改），都不是生成选项。写回到哪里由调用方
- * 在 `description` 里说明，悬停画幅按钮时显示。 */
 type AspectControl = {
   value: string
   disabled: boolean
@@ -34,15 +28,12 @@ type AspectControl = {
 }
 
 type VideoGenerationBarProps = {
-  /** 当前镜头组的镜号，主按钮写的就是它。 */
   shotIndex: number
   models: { items: readonly string[]; status: VideoModelsStatus }
   value: VideoGenerationOptions
   onChange: (value: VideoGenerationOptions) => void
   aspect: AspectControl
-  /** 出片被挡住的原因；有它时主按钮置灰并以它为说明，一直挡着的还写在状态行上。 */
   blocker: GenerationBlocker | undefined
-  /** 出片栏要提醒的错误（上次提交失败的原话、画幅不被模型支持）；没被一直挡着时写在状态行上。 */
   notice: string | undefined
   submitting: boolean
   onGenerate: () => void
@@ -59,7 +50,6 @@ export function VideoGenerationBar({
   submitting,
   value,
 }: VideoGenerationBarProps) {
-  // 模型只有 id，没有展示名；清单还没到手时先占个位。
   const modelLabel =
     value.model ?? (models.status === 'ready' ? '' : MODELS_PENDING_TEXT[models.status])
   const paramsRef = useRef<HTMLDivElement | null>(null)
@@ -75,7 +65,6 @@ export function VideoGenerationBar({
       role="group"
     >
       {status === undefined ? null : <BarStatusLine id={statusId} status={status} />}
-      {/* 暂态原因只给读屏：sr-only 绝对定位，不占出片栏的高度。 */}
       {hiddenReason === undefined ? null : (
         <span className="sr-only" id={hiddenReasonId}>
           {hiddenReason}
@@ -89,13 +78,11 @@ export function VideoGenerationBar({
         >
           <AspectPicker
             aspect={aspect}
-            // 状态行此刻写的是错误时，画幅出错就由它说明；写着置灰原因时那句与画幅无关。
             errorId={status?.tone === 'error' ? statusId : undefined}
             model={value.model}
           />
           <span aria-hidden className="storyboard-bar-divider" />
           <GenerationPicker
-            // 工作台窄时模型 id 截断，尺寸规则见出片栏一节。
             className="storyboard-bar-model"
             disabled={submitting || models.items.length === 0}
             label="视频模型"
@@ -109,7 +96,6 @@ export function VideoGenerationBar({
             aria-label="分辨率"
             className="storyboard-bar-segmented"
             disabled={submitting}
-            // Radix 再点一次已选项会给空串，不在档位里的值一律忽略，分辨率始终有值。
             onValueChange={(next) => {
               const resolution = VIDEO_RESOLUTIONS.find((item) => item === next)
               if (resolution !== undefined) onChange({ ...value, resolution })
@@ -165,7 +151,6 @@ export function VideoGenerationBar({
   )
 }
 
-/** 控件上方的状态行。错误用 alert 播报；置灰原因不播报，由主按钮的说明关联读出。 */
 function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLine }) {
   const error = status.tone === 'error'
   return (
@@ -174,7 +159,6 @@ function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLin
       data-tone={status.tone}
       id={id}
       role={error ? 'alert' : undefined}
-      // 窄时截断，完整的字靠悬停看。
       title={status.text}
     >
       <Icon decorative name={error ? 'alert' : 'info'} size="xs" />
@@ -183,8 +167,6 @@ function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLin
   )
 }
 
-/** 画幅选择器；选中模型做不了的档位置灰并标「不支持」，不替用户改。当前画幅做不了时按钮本身标成错误态，
- * `errorId` 指向说明原因的状态行。 */
 function AspectPicker({
   aspect,
   errorId,
@@ -209,7 +191,6 @@ function AspectPicker({
       value: ratio,
     }
   })
-  // agent 可以写任何 宽:高，不在档位里的也要照原样显示得出来，并在菜单里勾着它。
   if (!ASPECT_RATIOS.some((ratio) => ratio === aspect.value))
     options.unshift({
       leading: <AspectGlyph longSide={14} ratio={aspect.value} />,
@@ -230,7 +211,6 @@ function AspectPicker({
   )
 }
 
-/** 出片主按钮：被挡住或提交中时用 aria-disabled 置灰，仍可聚焦，说明关联到状态行；能出片时不带这个属性。 */
 function GenerateButton({
   blocked,
   describedBy,

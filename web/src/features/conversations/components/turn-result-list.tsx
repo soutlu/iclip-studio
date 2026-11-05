@@ -1,5 +1,3 @@
-/** 轮尾的结果入口：这一轮写成、改成的文件各一条，点了在工作台打开；只有悬停暗示，不写「查看」。 */
-
 import { Icon } from '@/shared/icons'
 import { baseName } from '@/shared/lib/file-kind'
 import { useWorkspaceFileLink } from '@/shared/workbench'

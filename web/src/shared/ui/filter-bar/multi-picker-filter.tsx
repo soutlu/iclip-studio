@@ -1,5 +1,3 @@
-/** 筛选条上的多选弹层：勾一项就改一次条件，弹层留着接着勾；名词、宽度与触发器外观由各条筛选条给。 */
-
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -12,8 +10,6 @@ import {
 } from '@/shared/ui/search-list'
 import { FilterPopup } from './filter-bar'
 
-/** 一个候选：`description` 是名字下面一行说明，`count` 是右侧的条数。
- * 分层清单里，`group` 的一行是下面几行的上级（本身也能勾），`depth` 从 0 开始逐级缩进。 */
 export type MultiPickerOption = {
   id: string
   label: string
@@ -26,12 +22,10 @@ export type MultiPickerOption = {
 type MultiPickerFilterProps = {
   id: string
   icon: IconName
-  /** 候选的名词：没选时的触发器文字，也是搜索框、弹层与状态文案里的叫法。 */
   noun: string
   options: readonly MultiPickerOption[]
   value: readonly string[]
   onChange: (value: string[]) => void
-  /** 候选多时给搜索框；不给时每行都在 Tab 序列里，空格勾选。 */
   searchable?: boolean | undefined
   isPending?: boolean | undefined
   error?: string | undefined
@@ -43,7 +37,6 @@ type MultiPickerFilterProps = {
 const ROW_CLASS =
   'flex w-full ui-state cursor-pointer items-start gap-2.5 rounded-sm px-2.5 py-2 text-left text-body-sm text-on-surface ui-focus'
 
-/** 触发器文字：没选是名词，选一个是它，选多个是第一个加「+n」。 */
 const triggerText = (noun: string, labels: readonly string[]): string => {
   const [first] = labels
   if (first === undefined) return noun
@@ -64,7 +57,6 @@ export function MultiPickerFilter({
   width,
   className,
 }: MultiPickerFilterProps) {
-  // 已选但候选里没有了（如条数归零不再列出）：仍列在最前面，留一个取消勾选的入口。
   const choices: readonly MultiPickerOption[] = [
     ...value
       .filter((selected) => !options.some((option) => option.id === selected))
@@ -74,7 +66,6 @@ export function MultiPickerFilter({
   const labelOf = (selected: string) =>
     choices.find((option) => option.id === selected)?.label ?? selected
   const label = triggerText(noun, value.map(labelOf))
-  // 条件按候选的先后排，地址栏里的顺序不随勾选先后变。
   const toggle = (picked: string) => {
     const next = value.includes(picked)
       ? value.filter((selected) => selected !== picked)
@@ -130,7 +121,6 @@ export function MultiPickerFilter({
   )
 }
 
-/** 一行：左边勾、中间名字与说明、右边条数；下级行整体缩进一格，上级行名字加粗。 */
 function OptionContent({ option, selected }: { option: MultiPickerOption; selected: boolean }) {
   return (
     <>
@@ -162,7 +152,6 @@ function OptionContent({ option, selected }: { option: MultiPickerOption; select
   )
 }
 
-/** 不带搜索的短清单：每行是一个复选框按钮，Tab 走过去，空格或回车勾选。 */
 function CheckList({
   options,
   value,

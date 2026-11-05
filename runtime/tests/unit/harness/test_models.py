@@ -1,7 +1,3 @@
-"""模型适配的自定义分支：端点经客户端注入，chat 与 responses 都保留思考设置；gemini 走原生接口。
-思考档位按建出的模型类写：Gemini 与 OpenRouter 用通用 ``thinking``，别的用 ``openai_reasoning_effort``，
-都能从模型读回。"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -75,8 +71,6 @@ def openrouter_endpoint(model: OpenRouterModel) -> str:
 
 
 def test_provider_without_base_url_param_still_gets_configured_endpoint() -> None:
-    """deepseek 构造器不接受 base_url，通过 openai_client 传入端点。"""
-
     model = build_model(spec(name="ds", provider="deepseek", model="deepseek-chat"))
 
     assert isinstance(model, OpenAIChatModel)
@@ -84,8 +78,6 @@ def test_provider_without_base_url_param_still_gets_configured_endpoint() -> Non
 
 
 def test_bailian_thinking_lands_as_reasoning_effort_on_both_apis() -> None:
-    """chat 分派入口不接受 settings，需额外构造模型并保持两种 API 设置一致；档位能从模型读回。"""
-
     for api in ("chat", "responses"):
         model = build_model(spec(api=api, thinking="medium"))
         assert model.settings == {"openai_reasoning_effort": "medium"}
@@ -116,7 +108,6 @@ def test_openrouter_chat_builds_its_own_model_class_on_the_official_or_given_add
 
     assert isinstance(official, OpenRouterModel)
     assert openrouter_endpoint(official) == OPENROUTER_OFFICIAL
-    # 带设置时按选出的类再造一次，类与端点都不能丢。
     assert isinstance(relayed, OpenRouterModel)
     assert openrouter_endpoint(relayed) == RELAY
 

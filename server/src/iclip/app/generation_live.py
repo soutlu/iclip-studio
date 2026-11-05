@@ -1,5 +1,3 @@
-"""生成任务状态跳转落库后发 ``event.generation.changed``；仓储实现与连接管理经组合根适配。"""
-
 from __future__ import annotations
 
 import uuid
@@ -21,13 +19,6 @@ from iclip.domains.generation.schemas import SubtitleSentence
 
 
 class AnnouncingGenerationRepository:
-    """包在 ``GenerationRepository`` 外面：每次业务状态跳转写成功，就向属主广播一帧。
-
-    受理落 ``pending`` 也算一跳，agent 发起的出图才会在页面上冒出来；创建即完成的切图与上传落库
-    也算一跳，重复确认的上传没插进去就不发。``record_progress`` 只更新
-    provider 原始状态、不改业务状态，不发帧，否则每次轮询上游都会喊一声——本地加工的阶段词也走
-    它，所以最多晚一轮轮询才被看到；``mark_failed`` 与 ``mark_completed`` 带状态守卫没命中时返回 None，也不发帧。"""
-
     def __init__(self, inner: GenerationRepository, live: LiveConnections) -> None:
         self._inner = inner
         self._live = live

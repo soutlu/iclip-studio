@@ -10,7 +10,6 @@ import type { Task } from '../tasks.api'
 type TaskProduct = Task['inputs']['products'][number]
 const imageLabel = (product: TaskProduct) => `${product.name.trim() || product.style_no} 商品图`
 
-// 按 2 倍显示尺寸取图：封面只保证盖满 196×180 的框，裁切仍由 object-cover 做；参考图按 28px 高等比缩放。
 const COVER_PROCESS = 'resize,m_mfit,w_400,h_360/format,webp'
 const REFERENCE_PROCESS = 'resize,h_56/format,webp'
 
@@ -23,7 +22,6 @@ export function TaskCardMedia({ products }: { products: TaskProduct[] }) {
   )
 }
 
-/** 滚动控件与打开详情的按钮平级，避免按钮嵌套和滚动时误开详情。 */
 export function TaskCardReferences({
   inputs,
   onOpen,
@@ -74,7 +72,6 @@ export function TaskCardReferences({
 
   if (!images.length) return null
   return (
-    // 覆盖层与封面同宽同比例，因此同高同底边，参考条贴着封面下沿；覆盖层不吃指针事件，点空白仍是打开详情。
     <div className="task-card-media pointer-events-none absolute inset-x-0 top-0 flex items-end px-2 pb-1.5">
       <div className="pointer-events-auto flex w-full min-w-0 items-center gap-1">
         {edges.previous && (
@@ -130,7 +127,6 @@ function ProductImage({
   onLoad?: (() => void) | undefined
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
-  // 封面到达后淡入；参考条一排缩略图同时淡入会闪，直接显示。
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const failed = src !== undefined && failedSrc === src
 

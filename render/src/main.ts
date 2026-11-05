@@ -1,7 +1,3 @@
-/**
- * 渲染服务入口：读配置 → 检查 Chrome → 探测浏览器渲染方式（hardware / software）与视频编码器
- * 并写进日志 → 起 HTTP 服务。启动时清掉上次留下的临时项目目录。组件库每次受理导出时读（见 library.ts）。
- */
 import { execFile } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { promisify } from 'node:util'

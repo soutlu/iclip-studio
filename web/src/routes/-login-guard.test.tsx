@@ -9,7 +9,6 @@ import { TooltipProvider } from '@/shared/ui/tooltip'
 import { addMockConversation, addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { FakeSocket } from '@/testing/ws'
 
-/** 使用应用路由树与 queryClient 单例，确保 beforeLoad 和 ensureSessionUser 共用身份缓存；侧栏顶层要订全局帧，连接用假 socket；提示层 Provider 同应用壳一样挂一次。 */
 const renderAt = async (initialPath: string) => {
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -30,7 +29,6 @@ const renderAt = async (initialPath: string) => {
   return router
 }
 
-// 每例清理单例 queryClient，避免登录缓存污染后续测试。
 afterEach(() => {
   queryClient.clear()
 })

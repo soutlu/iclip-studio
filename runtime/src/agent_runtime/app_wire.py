@@ -1,10 +1,3 @@
-"""给应用的 ``/v1`` 接口的请求体与答复体：会话、工作区、agent 名册与起标题、模型调用、运行统计。
-
-路由（``agent_runtime.http``）与应用用的客户端库（``agent_runtime.client``）共用这一份，只依赖 pydantic
-与 transcript、文件存储的形状，不碰 Web 框架。transcript 的消息与读页信封在
-``agent_runtime.transcript.wire``。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -17,15 +10,10 @@ from agent_runtime.file_store.store import FileEntry
 from agent_runtime.transcript.wire import Envelope, PromptId, PromptParts, SessionActivityOut
 
 END_USER_HEADER: Final = "X-End-User"
-"""代办用户的请求头：管理接口里是操作人，会话接口里是会话的属主，值都是用户 id。"""
 
 MAX_AGENT_ID_CHARS = 128
-"""agent 标识的长度上限，与后端建对话的请求体一致。"""
 
 AgentIdField = Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
-
-
-# --- 会话 ---------------------------------------------------------------------
 
 
 class PreviewTargetIn(Envelope):
@@ -55,11 +43,8 @@ class SessionForkIn(Envelope):
 
     target_id: uuid.UUID
     source_user: uuid.UUID
-    """源会话的属主。"""
     turn: Annotated[int, Field(ge=1)]
-    """从第几轮分叉，从 1 数，这一轮包含在副本里。"""
     agent_id: AgentIdField | None = None
-    """不给照抄源会话固定的版本；给了按开会话的规矩固定那个 agent 的当前版本。"""
 
 
 class FilesCopyIn(Envelope):
@@ -67,11 +52,8 @@ class FilesCopyIn(Envelope):
 
     target_id: uuid.UUID
     source_user: uuid.UUID
-    """源会话的属主。"""
     files: tuple[tuple[str, str], ...]
-    """（源路径，目标路径）；源里没有的跳过。"""
     require_any: tuple[str, ...] = ()
-    """这些源路径一个都不在时什么都不写，答 ``copied: false``；空着即没有这个前提，照拷。"""
 
 
 class FilesCopyOut(Envelope):
@@ -84,14 +66,10 @@ class ActivitiesIn(Envelope):
 
 class ActivitiesOut(Envelope):
     items: dict[uuid.UUID, SessionActivityOut]
-    """按会话 id；只有调用方应用自己的会话，不存在的与别的应用的都不在，没跑过的是空闲。"""
 
 
 class BusyOut(Envelope):
     ids: tuple[uuid.UUID, ...]
-
-
-# --- 消息 ---------------------------------------------------------------------
 
 
 class SessionPromptIn(Envelope):
@@ -107,9 +85,6 @@ class SessionPromptIn(Envelope):
     agent_id: AgentIdField
 
 
-# --- 工作区 -------------------------------------------------------------------
-
-
 class FilesOut(Envelope):
     files: tuple[FileEntry, ...]
 
@@ -121,13 +96,9 @@ class FileWriteIn(Envelope):
     expected_version: int | None = None
 
 
-# --- agent 名册与起标题 ----------------------------------------------------------
-
-
 class AgentEntryOut(Envelope):
     id: str
     name: str
-    """给人看的名字。"""
 
 
 class AgentDirectoryOut(Envelope):
@@ -139,24 +110,17 @@ class AgentDirectoryOut(Envelope):
 
 class TitleIn(Envelope):
     text: str
-    """这一轮的用户消息。"""
 
 
 class TitleOut(Envelope):
     title: str | None
-    """没设默认对话模型、建不出模型或模型没给出标题时为空，应用照旧用默认名。"""
 
-
-# --- 模型调用 -------------------------------------------------------------------
 
 MODEL_CALL_TIMEOUT_SECONDS: Final = 900.0
-"""运行时等上游答一次模型调用的上限。应用等运行时的上限要比它长，才收得到运行时自己报的超时。"""
 
 UPSTREAM_TIMEOUT_CODE: Final = "upstream_timeout"
-"""运行时等上游等满了上限：无法确认上游执行过没有（504）。"""
 
 UPSTREAM_UNREACHABLE_CODE: Final = "upstream_unreachable"
-"""运行时连不上上游，或没收到完整的答复（502）。"""
 
 
 class ModelCallIn(Envelope):
@@ -164,17 +128,13 @@ class ModelCallIn(Envelope):
     上游接口的请求体，运行时只把它的 ``model`` 换成这个模型名，别的原样转发。"""
 
     declaration: Annotated[str, Field(min_length=1)]
-    """供应商声明名，如 ``volcengine``。"""
 
     model: Annotated[str, Field(min_length=1)]
 
     payload: dict[str, Any]
 
 
-# --- 运行统计 -------------------------------------------------------------------
-
 MAX_STATS_SESSIONS: Final = 1000
-"""统计接口一次按会话取时最多列多少段会话；更多的由应用分批取。"""
 
 StatsSessionIds = Annotated[
     tuple[uuid.UUID, ...], Field(min_length=1, max_length=MAX_STATS_SESSIONS)
@@ -218,7 +178,6 @@ class RunStatOut(Envelope):
     session_id: uuid.UUID
     run_id: str
     user_name: str
-    """这次运行所属消息的 ``user_name``。"""
     started_at: datetime
     ended_at: datetime
 
@@ -258,7 +217,6 @@ class UsageStatsOut(Envelope):
 
 class SessionStatsOut(Envelope):
     items: tuple[SessionStatOut, ...]
-    """只有跑过的会话；没有消息的不在里面。"""
 
 
 __all__ = [

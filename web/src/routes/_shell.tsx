@@ -38,7 +38,6 @@ export const Route = createFileRoute('/_shell')({
   validateSearch: ShellSearchSchema,
 })
 
-/** 壳持有布局偏好；视口只派生几何，不回写桌面的排列与宽度。 */
 function AppShell() {
   const navigate = useNavigate()
   const matches = useMatches()
@@ -162,7 +161,6 @@ function AppShell() {
   return (
     <LoginPromptProvider value={requireLogin}>
       <ShellChromeContext value={chrome}>
-        {/* 桌面：主区贴住侧栏与视口三边，与侧栏之间由拖柄画出常显分隔线；紧凑屏侧栏是抽屉，主区铺满。 */}
         <div className="relative flex h-dvh overflow-hidden" style={shellVars}>
           <AppSidebar
             collapsed={compact ? mobileSidebarCollapsed : state.sidebarCollapsed}

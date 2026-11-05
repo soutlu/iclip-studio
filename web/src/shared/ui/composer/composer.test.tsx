@@ -21,7 +21,6 @@ const imageFile = (name = '截图.png', type = 'image/png') =>
   new File(['fake-png-bytes'], name, { type })
 const videoFile = (name = '样片.mp4') => new File(['fake-mp4-bytes'], name, { type: 'video/mp4' })
 
-/** 只在正文里找：失败卡片与悬停卡上也有文件名。 */
 const pillHost = (name: string): HTMLElement => {
   const host = within(editor()).getByText(name).parentElement
   if (host === null) throw new Error(`没找到 ${name} 的 pill`)
@@ -29,7 +28,6 @@ const pillHost = (name: string): HTMLElement => {
 }
 
 describe('Composer', () => {
-  // jsdom 不解码图片；附件上传前的尺寸校验读这个桩。
   beforeEach(() => {
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
@@ -43,7 +41,6 @@ describe('Composer', () => {
 
     pasteTextIntoComposer(editor(), '做一个产品宣传片')
     expect(sendButton()).toBeEnabled()
-    // 没在跑时写了字也没有排队提示。
     expect(screen.queryByText('发送后将排队，本轮结束后执行')).toBeNull()
 
     fireEvent.keyDown(editor(), { key: 'Enter' })
@@ -154,7 +151,6 @@ describe('Composer', () => {
     const url = 'https://bkt.oss-ap-southeast-1.aliyuncs.com/u/S6-1.jpg'
     await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} />)
 
-    // 粘的就是气泡复制出的那串文本，带缩进与换行。
     pasteTextIntoComposer(
       editor(),
       serializePromptContent([
@@ -193,7 +189,6 @@ describe('Composer', () => {
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).not.toHaveBeenCalled()
 
-    // 失败的 pill 不再出悬停预览，改为点开卡片。
     fireEvent.click(pill)
     const card = await screen.findByRole('dialog', { name: '截图.png上传失败' })
     expect(within(card).getByText(/不收 image\/png 这个类型/)).toBeInTheDocument()
@@ -204,7 +199,6 @@ describe('Composer', () => {
   it('失败卡片点「重试」：用原文件重新上传，传完发送解锁并带上公网地址', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
-    // 按本用例独有的 webp 类型认请求：第一次签名失败，重试时交给默认 handler。
     let webpSigns = 0
     server.use(
       http.post('*/api/uploads/sign', async ({ request }) => {
@@ -281,7 +275,6 @@ describe('Composer', () => {
     pasteFilesIntoComposer(editor(), [imageFile()])
     await within(pillHost('截图.png')).findByRole('img', { name: '上传失败' })
 
-    // 粘贴后光标在 pill 之后；PM 按 keyCode 分发，左移一步选中整个原子节点。
     fireEvent.keyDown(editor(), { key: 'ArrowLeft', keyCode: 37 })
     fireEvent.keyDown(editor(), { key: 'Enter' })
 
@@ -301,7 +294,6 @@ describe('Composer', () => {
     pasteFilesIntoComposer(editor(), [imageFile()])
     await waitFor(() => expect(sendButton()).toBeEnabled())
 
-    // 验证 PM captureKeyDown 的 stopNativeHorizontalDelete：退格删除完整原子节点。
     fireEvent.keyDown(editor(), { key: 'Backspace', keyCode: 8 })
 
     await waitFor(() => expect(screen.queryByText('截图.png')).not.toBeInTheDocument())
@@ -323,7 +315,6 @@ describe('Composer', () => {
 
     await user.keyboard('{Control>}y{/Control}')
     expect(await within(editor()).findByText('截图.png')).toBeInTheDocument()
-    // 重做带回来的 pill 不是空壳：状态与地址都在，不必重新上传就能发。
     expect(sendButton()).toBeEnabled()
     await user.click(sendButton())
     expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -341,7 +332,6 @@ describe('Composer', () => {
     pasteTextIntoComposer(editor(), '参考这张')
     pasteFilesIntoComposer(editor(), [imageFile()])
     await waitFor(() => expect(sendButton()).toBeEnabled())
-    // 等过 500ms 的分组间隔：这条验证撤销能把条目带回来；500ms 内发送的情形见下一条。
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -413,7 +403,6 @@ describe('Composer', () => {
     pasteFilesIntoComposer(editor(), [imageFile()])
     await waitFor(() => expect(sendButton()).toBeEnabled())
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
-    // 最后补几个字马上发送：这次编辑与清空落在同一个 500ms 分组窗口里。
     pasteTextIntoComposer(editor(), '，竖版')
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -421,7 +410,6 @@ describe('Composer', () => {
 
     await userEvent.keyboard('{Control>}z{/Control}')
     expect(await within(editor()).findByText('截图.png')).toBeInTheDocument()
-    // 补的字接在 pill 后面，分开断言。
     expect(editor()).toHaveTextContent('参考这张')
     expect(editor()).toHaveTextContent('，竖版')
     expect(sendButton()).toBeEnabled()
@@ -444,7 +432,6 @@ describe('Composer', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(editor()).not.toHaveTextContent('第一条'))
 
-    // 清空之后 500ms 内就开始打下一条。
     pasteTextIntoComposer(editor(), '下一条')
     await userEvent.keyboard('{Control>}z{/Control}')
 
@@ -480,7 +467,6 @@ describe('Composer', () => {
     })
     await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} />)
     pasteTextIntoComposer(editor(), '正文')
-    // jsdom 没有布局，将实际 drop 事件的命中位置固定在正文之前。
     vi.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue({ inside: 0, pos: 1 })
 
     const file = imageFile()
@@ -558,7 +544,6 @@ describe('Composer', () => {
       types: ['Files'],
     }
 
-    // ProseMirror 对可编辑区的 dragenter / dragover 一律 preventDefault，再冒到 window。
     const enter = createEvent.dragEnter(editor(), { dataTransfer })
     enter.preventDefault()
     fireEvent(editor(), enter)
@@ -600,7 +585,6 @@ describe('Composer', () => {
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).not.toHaveBeenCalled()
 
-    // pill 本身显示上传中：拿不到进度时是不确定的进度条；悬停预览照旧，报「上传中」。
     const pill = pillHost('截图.png')
     const progress = within(pill).getByRole('progressbar', { name: '上传中' })
     expect(progress).not.toHaveAttribute('aria-valuenow')
@@ -618,7 +602,6 @@ describe('Composer', () => {
     fireEvent.mouseEnter(pillHost('截图.png'))
 
     const tip = await screen.findByRole('tooltip')
-    // 'fake-png-bytes' 共 14 字节；jsdom 不加载图片，所以没有像素尺寸。
     expect(within(tip).getByText('14 B')).toBeInTheDocument()
     expect(within(tip).queryByText('已上传')).not.toBeInTheDocument()
   })
@@ -645,7 +628,6 @@ describe('Composer', () => {
     pasteFilesIntoComposer(editor(), [imageFile()])
     await waitFor(() => expect(sendButton()).toBeEnabled())
 
-    // jsdom 没有 elementFromPoint，走不通 PM 的 mousedown；先聚焦输入框，再只发 click。
     editor().focus()
     fireEvent.click(pillHost('截图.png'))
     expect(await screen.findByRole('dialog', { name: '截图.png' })).toBeInTheDocument()
@@ -668,7 +650,6 @@ describe('Composer 的附件预览补充', () => {
     onChange: () => {},
   }
 
-  /** 传完的附件要不要裁由 `cropped` 定；上传中的不补。 */
   const renderWithPreview = (cropped: boolean) =>
     renderWithProviders(
       <Composer

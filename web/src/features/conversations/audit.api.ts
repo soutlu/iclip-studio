@@ -1,5 +1,3 @@
-/** 治理者的全部对话：筛选条件翻成 /conversations/audit 的查询串，分页交给 useInfiniteQuery。 */
-
 import { useInfiniteQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
@@ -11,14 +9,12 @@ import { dateRangeBounds, type DateRange } from '@/shared/lib/date-range'
 import { conversationsQueryKeys, type ConversationListState } from './conversations.api'
 import { conversationRowsOf } from './conversation-rows'
 
-/** 删没删：缺省只看活着的，deleted 只看属主删掉的，all 都看。取合同查询参数的枚举。 */
 export const auditDeletedSchema = zAuditConversationsConversationsAuditGetQuery.shape.deleted
   .unwrap()
   .unwrap()
 
 type AuditDeleted = z.output<typeof auditDeletedSchema>
 
-/** 时间范围作用在 createdAt 上，与列表排序同一列。 */
 export interface AuditFilters extends DateRange {
   state: ConversationListState
   deleted: AuditDeleted
@@ -38,12 +34,10 @@ export const DEFAULT_AUDIT_FILTERS: AuditFilters = {
 
 export type AuditPage = z.output<typeof zConversationsAuditOut>
 
-/** 列表里的一段对话：对话本身加上它自己最新一条素材片的地址。 */
 export type AuditConversation = AuditPage['items'][number]
 
 const PAGE_LIMIT = 50
 
-/** 组查询串；一次要多少段由调用方定，now 可注入方便测试。 */
 export const auditSearchParams = (
   filters: AuditFilters,
   cursor: string | null,
@@ -76,10 +70,6 @@ const fetchAuditPage = (
     },
   )
 
-/**
- * 一页 50 段；两个总数每页都带，取最新一页的即可。
- * 缓存留 30 分钟：治理者点进一段对话看上一阵再退回列表，已展开的分页不该缩回第一页。
- */
 export const useAuditConversations = (filters: AuditFilters, enabled: boolean) =>
   useInfiniteQuery({
     enabled,

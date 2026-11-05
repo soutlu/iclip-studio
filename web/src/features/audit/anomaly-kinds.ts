@@ -1,5 +1,3 @@
-/** 四种异常给人看的名字、轻重与悬停说明；说明里的门槛取自接口，门槛改了文字跟着变。 */
-
 import type { ExecutionAnomalyKind, ExecutionThresholds } from './audit.api'
 import { fmtTokens } from './overview-format'
 
@@ -25,7 +23,6 @@ export const ANOMALY_META: Record<ExecutionAnomalyKind, AnomalyMeta> = {
   spend: {
     label: '消耗离群',
     tone: 'warn',
-    // 本期没有出片时算不出门槛的 token 数，只说倍数。
     describe: ({ spendTimes, spendTokens }) =>
       `单段对话的 token 超过所选时间范围内每件出片平均消耗的 ${spendTimes} 倍${spendTokens === null ? '' : `（${fmtTokens(spendTokens)} token）`}`,
   },
@@ -36,6 +33,5 @@ export const ANOMALY_META: Record<ExecutionAnomalyKind, AnomalyMeta> = {
   },
 }
 
-/** 悬停与读屏用的一句话：「反复重试：单镜成功生成 3 次及以上」。 */
 export const anomalyText = (kind: ExecutionAnomalyKind, thresholds: ExecutionThresholds) =>
   `${ANOMALY_META[kind].label}：${ANOMALY_META[kind].describe(thresholds)}`

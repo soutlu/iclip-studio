@@ -1,9 +1,3 @@
-"""integration_no_llm 夹具：真实 Postgres 三级解析 + 迁移 + app 装配。
-
-Postgres 解析顺序：显式 ``TEST_DATABASE_URL`` > testcontainers 本地兜底
-> 不可用即 skip（CI 必须提供 service container，因此 CI 永不静默 skip）。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -51,15 +45,11 @@ SERVER_DIR = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(autouse=True)
 def _no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """官方护栏：这一层只用替身，任何真模型请求都直接报错。按用例开关，不影响同一进程里的其他层。"""
-
     monkeypatch.setattr(pydantic_ai_models, "ALLOW_MODEL_REQUESTS", False)
 
 
 @pytest.fixture(autouse=True)
 def _offline_media_checks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """插件提交点的地址检查不连网：没预设的地址一律答取得到，类型按扩展名认。"""
-
     offline_media_checks(monkeypatch)
 
 
@@ -89,8 +79,6 @@ def pg_url() -> Generator[str]:
 
 @pytest.fixture(scope="session")
 def migrated_pg(pg_url: str) -> str:
-    """对测试库执行 alembic upgrade head（每会话一次）。"""
-
     cfg = AlembicConfig(str(SERVER_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(SERVER_DIR / "migrations"))
     cfg.attributes["sqlalchemy_url"] = pg_url
@@ -103,19 +91,15 @@ def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.setenv("DATABASE_URL", migrated_pg)
     monkeypatch.setenv("AUTH_SECRET", TEST_SECRET)
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
-    # 运行时服务由 build_backed_app 装在进程内，地址只是个名字。
     monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
     monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_APP_KEY)
-    # 开跑检查、运行开始与轮次开始经后端的内部接口回调，令牌两边共用。
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", RUNTIME_INTERNAL_TOKEN)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.delenv("PMS_BASE_URL", raising=False)
     monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)
     monkeypatch.delenv("ROOT_EMAIL", raising=False)
     monkeypatch.delenv("SSO_OAUTH_NAME", raising=False)
-    # 隔离开发机的产品目录库配置。
     monkeypatch.delenv("PRODUCT_CATALOG_DATABASE_URL", raising=False)
-    # 隔离开发机的对象存储凭证。
     monkeypatch.delenv("OSS_BUCKET", raising=False)
 
 
@@ -126,8 +110,6 @@ async def _reset(url: str) -> None:
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    """清空测试表后给出引擎，供直接装配仓储、报表与运行时的测试使用。"""
-
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
@@ -138,22 +120,16 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 @pytest.fixture
 def agent_seeds() -> tuple[AgentSeed, ...]:
-    """测试可覆写：非空即在 app 装好后往库里种这些 agent 并发布 v1（默认不种，库里没有 agent）。"""
-
     return ()
 
 
 @pytest.fixture
 def models() -> Mapping[str, Model]:
-    """模型名 → 替身；种下的 agent 默认用 TEST_MODEL_NAME。"""
-
     return {TEST_MODEL_NAME: TestModel()}
 
 
 @pytest.fixture
 def runtime_plugins() -> PluginRegistry | PluginBinder:
-    """测试可覆写：交给运行时服务的插件登记表（默认是视频插件包始终登记的三个）。"""
-
     return standard_plugins
 
 
@@ -183,8 +159,6 @@ async def app(
     runtime_plugins: PluginRegistry | PluginBinder,
     tmp_path: Path,
 ) -> FastAPI:
-    """经 ``engine`` 夹具清表：同一个用例里也要 ``engine`` 的，清表一定发生在种 agent 之前。"""
-
     built = _build_app(make_runtime_config(), engine, models, runtime_plugins, tmp_path / "skills")
     if agent_seeds:
         await seed_agents(config_services_of(built), engine, agent_seeds)
@@ -193,8 +167,6 @@ async def app(
 
 @pytest.fixture
 def cors_allow_origins() -> tuple[str, ...]:
-    """测试可覆写：WS app 的跨域白名单（默认空，只认同源）。"""
-
     return ()
 
 
@@ -208,11 +180,6 @@ def ws_agent_app(
     runtime_plugins: PluginRegistry | PluginBinder,
     tmp_path: Path,
 ) -> Generator[FastAPI]:
-    """在 TestClient 事件循环中装配带 agent 的 WS app；种 agent 在另一个事件循环里做完。
-
-    使用 NullPool 避免 asyncpg 连接跨事件循环复用。
-    """
-
     asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
     built = _build_app(
@@ -230,15 +197,11 @@ def ws_agent_app(
 
 @pytest.fixture
 def root_email() -> str | None:
-    """测试可覆写：非空即启用 root 引导（ROOT_EMAIL）。"""
-
     return None
 
 
 @pytest.fixture
 def sso_oauth_name() -> str | None:
-    """测试可覆写：非空即设置 OAuth 账号表里的提供方名（SSO_OAUTH_NAME）。"""
-
     return None
 
 
@@ -252,8 +215,6 @@ async def sso_app(
     root_email: str | None,
     sso_oauth_name: str | None,
 ) -> AsyncGenerator[FastAPI]:
-    """SSO 开启的 app；协议外呼经 MockTransport。"""
-
     monkeypatch.setenv("SSO_BASE_URL", "https://sso.test")
     monkeypatch.setenv("SSO_REDIRECT_URL", "https://app.test/auth/sso/landing")
     if root_email:

@@ -20,17 +20,10 @@ type Args = {
   conversationId: string
   rootJobId: string
   source: DraftSource | undefined
-  /** 最近一次完成的合成的片段：存着的草稿用不了时从它还原。 */
   latest: readonly Segment[] | undefined
-  /** 编辑记录、原片关键帧与所有编辑段的关键帧都读好了；之前不定草稿。 */
   ready: boolean
 }
 
-/**
- * 这条原片的草稿。打开时定一次：存着的每一处都对得上就用它，否则从最近一次合成还原，再不行就是默认草稿；
- * 之后只随用户的改动变，每次改动后整份存进浏览器。存不进去时提示一次，改动照常生效。
- * 定下之前 `draft` 为 undefined，`change` 不写入：还没读完时的改动会盖掉存着的草稿。
- */
 export function useDraft({ conversationId, rootJobId, source, latest, ready }: Args) {
   const key = draftStorageKey(conversationId, rootJobId)
   const [draft, setDraft] = useState<Draft>()

@@ -18,7 +18,6 @@ test('治理者从侧栏进「全部对话」，看到别人在跑的对话，�
   await expect(running.getByRole('img', { name: /的封面$/ })).toHaveJSProperty('naturalWidth', 512)
   await expect(page.getByRole('status', { name: '任务总数' })).toContainText('进行中')
 
-  // 筛出小王，进出一段对话后仍该停在这一屏：页面上的返回按钮和浏览器后退都算。
   await page.getByRole('button', { name: '用户：用户', exact: true }).click()
   const search = page.getByRole('combobox', { name: '搜索用户' })
   await search.fill('小王')
@@ -48,7 +47,6 @@ test('不是从全部对话点进来的会话，返回按钮回默认视图', as
   await page.goto('/')
   await login(page, 'governor')
 
-  // 从审计清单的「按任务执行次数」点进小王的一段对话。
   await page.getByRole('button', { name: '审计', exact: true }).click()
   await page.getByRole('tab', { name: '清单' }).click()
   const executions = page

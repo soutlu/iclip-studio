@@ -1,7 +1,3 @@
-"""参考视频的拆解：把 references 声明的拆解端口接到 ``platform/video_breakdown`` 的拆解
-（``BreakdownRunner``）上；反过来把 ``video_breakdown`` 插件的 ``ReferenceBreakdowns`` 端口接到参考视频
-服务上。打标在 [library_tagging.py](library_tagging.py)。"""
-
 from __future__ import annotations
 
 import uuid
@@ -29,8 +25,6 @@ from iclip.platform.video_breakdown.service import BreakdownRunner
 
 
 class ArkVideoBreakdowns:
-    """``VideoBreakdowns`` 的实现：用 ``BreakdownRunner`` 拆，把它的失败换成落到行上的原因。"""
-
     def __init__(self, breakdown: BreakdownRunner) -> None:
         self._breakdown = breakdown
 
@@ -42,15 +36,11 @@ class ArkVideoBreakdowns:
         except BreakdownModelUnavailable as exc:
             raise BreakdownFailed(str(exc), code=ERROR_MODEL_UNAVAILABLE) from exc
         except BreakdownError as exc:
-            # 可重试的（限流、服务端错、连不上、答得不完整）再拆可能就好；被拒与等满总超时不会。
             code = ERROR_MODEL_CALL_FAILED if exc.retryable else ERROR_MODEL_FAILED
             raise BreakdownFailed(str(exc), code=code) from exc
 
 
 class ReferenceBreakdownsAdapter:
-    """``video_breakdown`` 的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。
-    每次调用都用 ``resolve_principal`` 按运行属主 id 重建主体，它的错误原样抛出。"""
-
     def __init__(
         self,
         service: ReferenceService,
@@ -72,9 +62,6 @@ class ReferenceBreakdownsAdapter:
 def build_reference_breakdown(
     runtime: RuntimeClient, downloads: MediaDownloads, codec: MediaCodec
 ) -> ArkVideoBreakdowns:
-    """建参考视频自己的一份拆解：模型经运行时服务的 ``runtime`` 调；探时长与下载视频按 ``downloads``
-    选路（客户端与组合根共用：本桶对象走内网，别的只连公网），抽帧解码用启动时选定的 ``codec``。"""
-
     model = ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL)
     breakdown = BreakdownRunner(model=model, sampler=FfmpegVideoSampler(downloads, codec))
     return ArkVideoBreakdowns(breakdown)

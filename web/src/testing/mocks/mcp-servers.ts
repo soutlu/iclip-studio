@@ -1,9 +1,3 @@
-/**
- * MCP 服务的 mock：四个服务（通了的、SSE 的、上次没连上的、还没测试过的），形状照合同 §22。增改删与试连改内存里的数据，
- * 请求头存明文、答复只给打码值；试连按地址判：含 `invalid` 或 `fail` 的连不上，其余都通。每例由
- * `resetMockMcpServers` 放回预置数据。
- */
-
 import { http, HttpResponse } from 'msw'
 import type {
   AgentUsageOut,
@@ -33,7 +27,6 @@ const FEISHU_TOOLS: Tool[] = [
   { description: '修改已有文档的内容', name: 'update', title: null },
 ]
 
-/** 新登记的服务试连通了时发现的工具。 */
 const DEFAULT_TOOLS: Tool[] = [
   { description: '按关键词检索内容', name: 'search', title: null },
   { description: '获取单条内容详情', name: 'read', title: null },
@@ -102,7 +95,6 @@ const seed = (): MockServer[] => [
       { description: '检索可商用的品牌配乐', name: 'music', title: null },
     ],
   ),
-  // 刚登记、还没测试过：没有发现的工具，挂上后发布会被拦下。
   server(
     {
       description: '查询客户跟进记录',
@@ -123,7 +115,6 @@ export const resetMockMcpServers = () => {
   servers = seed()
 }
 
-/** 此刻登记着的一个服务（发布检查要看它在不在、启没启用、发现过哪些工具）；没有为 undefined。 */
 export const mockMcpServer = (
   id: string,
 ): Pick<McpServerOut, 'enabled' | 'id' | 'name' | 'tools'> | undefined =>
@@ -136,7 +127,6 @@ const ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/
 const invalid = (detail: string) => HttpResponse.json({ detail }, { status: 422 })
 const notFound = () => HttpResponse.json({ detail: 'MCP 服务不存在' }, { status: 404 })
 
-/** 按地址判通不通；通了交出工具：已登记的服务交它上次发现的，新的交两个默认工具。 */
 const probe = (url: string, known: MockServer | undefined): McpCheckOut => {
   const host = (() => {
     try {
@@ -152,10 +142,6 @@ const probe = (url: string, known: MockServer | undefined): McpCheckOut => {
   return { elapsedMs, ok: true, reason: null, tools: known?.tools ?? DEFAULT_TOOLS }
 }
 
-/**
- * 按合同 §22 合出请求头：给了 `current`（改已保存的服务、或带 `serverId` 试连）时没给值的取同名原值，
- * 没有这个名字就不合格；没给 `current` 时每个都要给值。不合格交回原因。
- */
 const resolveHeaders = (
   headers: readonly McpHeaderIn[],
   current: MockServer['headers'] | null,
@@ -201,7 +187,6 @@ const inUseMessage = (item: MockServer, usages: AgentUsageOut[]) =>
     )
     .join('、')}；先在它们的草稿与当前版本里去掉再操作`
 
-/** MCP 服务的全部端点；`usage` 答某个服务被哪些 agent 的草稿或当前版本挂着。 */
 export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) => {
   const toOut = (item: MockServer): McpServerOut => ({
     ...item,
@@ -209,7 +194,6 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
     usedBy: usage(item.id),
   })
   const find = (id: unknown) => servers.find((item) => item.id === String(id))
-  /** 地址或名称与 `self` 以外的服务重复时的 409，写明撞的是哪个服务。 */
   const duplicate = (self: MockServer | undefined, url: string, name: string) => {
     const others = servers.filter((item) => item !== self)
     const sameUrl = others.find((item) => item.url === url.trim())
@@ -228,7 +212,6 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
         body.serverId === null || body.serverId === undefined ? undefined : find(body.serverId)
       if (body.serverId !== null && body.serverId !== undefined && known === undefined)
         return notFound()
-      // 带 serverId 不给地址就用那个服务的地址。
       const url = body.url ?? known?.url
       if (url === undefined) return invalid('请填写地址')
       if (!checkUrl(url)) return invalid('地址要以 http:// 或 https:// 开头并带主机')

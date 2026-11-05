@@ -1,9 +1,3 @@
-/**
- * Agent 配置的 mock：几个 agent（含一个长名字、一个没发布过、一个已归档）、带发布人的版本、本部署的插件
- * （技能在 ./skills，可选的模型由 ./model-providers 现算），形状照合同 §18–§19。草稿、发布与恢复改内存里的数据，lockVersion 与发布检查照合同做，
- * 发布检查只做页面用得到的那几条（模型、插件依赖、MCP 服务、技能、子 agent）。每例由 `resetMockAgentConfig` 放回预置数据。
- */
-
 import { http, HttpResponse } from 'msw'
 import type {
   AgentConfig,
@@ -81,7 +75,6 @@ export const mockAgentPlugins: AgentPluginOut[] = [
   },
 ]
 
-// 技能由技能库的 mock 管（./skills），这里只按 id 查它发没发布过。
 export { mockSkillId }
 
 const DIRECTOR_PROMPT = [
@@ -107,7 +100,6 @@ const directorConfig = (thinking: 'low' | 'medium', tools: string[]): AgentConfi
   model: { name: 'qwen3.8-flash', provider: 'bailian', settings: { thinking } },
   schema_version: 1,
   subagents: [{ agent: 'breakdown-helper', max_calls: 3, timeout_seconds: 300 }],
-  // 挂着一个 MCP 服务（见 mcp-servers.ts 的 feishu-docs），只放出其中两个工具。
   tools: [...tools.map(cap), { server: 'feishu-docs', tools: ['search', 'read'], type: 'mcp' }],
 })
 
@@ -115,7 +107,6 @@ type MockAgent = Omit<
   AgentDetailOut,
   'activeVersion' | 'hasSubagents' | 'hasUnpublishedChanges' | 'isSubagent' | 'usedBy'
 > & {
-  /** 版本号从大到小。 */
   versions: AgentVersionDetailOut[]
   activeVersionId: string | null
 }
@@ -196,7 +187,6 @@ const seedAgents = (): MockAgent[] => {
         name: 'AI 导演',
         status: 'active',
       },
-      // 草稿比当前版本多想一档：有未发布的修改。
       {
         baseVersionId: uuid(6, 6),
         config: directorConfig('medium', [
@@ -293,7 +283,6 @@ const findAgent = (id: string) => agents.find((item) => item.id === id)
 
 const activeOf = (item: MockAgent) => item.versions.find((v) => v.id === item.activeVersionId)
 
-/** 键序无关的比较：配置是 JSON 文档，前端回传时键的先后可能不同。 */
 const canonical = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(canonical)
@@ -362,7 +351,6 @@ const toDetail = (item: MockAgent): AgentDetailOut => ({
 const mcpServerIdsOf = (config: AgentConfig | undefined) =>
   (config?.tools ?? []).flatMap((tool) => (tool.type === 'mcp' ? [tool.server] : []))
 
-/** 哪些 agent 的草稿或当前版本挂着这个 MCP 服务，形状同合同 §19 的 `usedBy`；MCP 服务的 mock 用它答「谁在用」。 */
 export const mockMcpServerUsage = (serverId: string): AgentUsageOut[] =>
   agents.flatMap((item) => {
     const inDraft = mcpServerIdsOf(item.draft.config).includes(serverId)
@@ -372,7 +360,6 @@ export const mockMcpServerUsage = (serverId: string): AgentUsageOut[] =>
       : []
   })
 
-/** 哪些 agent 的草稿或当前版本里的模型引用合 `match`，形状同合同 §19 的 `usedBy`；模型供应商的 mock 用它答「谁在用」。 */
 export const mockModelUsage = (match: (model: AgentModelRef) => boolean): AgentUsageOut[] =>
   agents
     .flatMap((item) => {
@@ -393,7 +380,6 @@ const stale = () =>
 const ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/
 const RESERVED_IDS = new Set(['plugins', 'order', 'import', 'model-options'])
 
-/** 页面用得到的几条发布检查，`path` 写法照合同 §19「发布」。 */
 const publishProblems = (item: MockAgent): AgentProblemOut[] => {
   const { config, skillIds } = item.draft
   const problems: AgentProblemOut[] = []
@@ -435,7 +421,6 @@ const publishProblems = (item: MockAgent): AgentProblemOut[] => {
       })
     }
   })
-  // MCP 服务照运行时的发布检查：在、启用、连通过（发现过工具），选的工具都在发现的工具里。
   ;(config.tools ?? []).forEach((tool, index) => {
     if (tool.type !== 'mcp') return
     const path = `tools[${index}]`
@@ -501,7 +486,6 @@ const publishProblems = (item: MockAgent): AgentProblemOut[] => {
   return problems
 }
 
-/** Agent 配置页用到的全部端点；`actor` 是当前登录的人，记成新版本的发布人与草稿的修改人。 */
 export const agentConfigHandlers = (actor: () => Actor) => [
   http.get('*/api/agents', () => HttpResponse.json({ items: agents.map(toOut) })),
 

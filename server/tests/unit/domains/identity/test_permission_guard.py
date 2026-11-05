@@ -1,5 +1,3 @@
-"""端点权限声明：权限名在声明时校验，全部持有才放行，拒绝时点名缺的每一项。"""
-
 from __future__ import annotations
 
 import uuid

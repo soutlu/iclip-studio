@@ -1,5 +1,3 @@
-"""SSO / PMS 协议客户端的解析契约（httpx MockTransport）。"""
-
 from __future__ import annotations
 
 import json

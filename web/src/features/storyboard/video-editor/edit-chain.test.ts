@@ -16,7 +16,6 @@ const at = (time: string) => `2026-09-15T${time}Z`
 const job = (spec: Partial<GenerationJob> & { id: string }): GenerationJob =>
   makeGenerationJob({ createdAt: at('10:00:00'), ...spec })
 
-/** 编辑段：原作号一律指根，来源是这次的基底（根或某次合成）；区间按秒给。 */
 const edit = (
   id: string,
   source: string,
@@ -32,7 +31,6 @@ const edit = (
     ...spec,
   })
 
-/** 合成：来源是基底，镜号抄原作；请求里的片段不影响投影，给一份读不出来的也一样。 */
 const composite = (id: string, base: string, spec: Partial<GenerationJob> = {}): GenerationJob =>
   job({
     id,
@@ -47,7 +45,6 @@ const composite = (id: string, base: string, spec: Partial<GenerationJob> = {}):
 
 const root = job({ id: 'root', outputUrl: 'https://oss.example/root.mp4', shotIndex: 2 })
 
-/** 只有这条原作时，版本视图的各版 */
 const ownVersions = (chain: readonly GenerationJob[]) =>
   projectVersions(root, rootVersionGroup(root, chain, [root]))
 
@@ -56,7 +53,6 @@ describe('projectVersions', () => {
     const versions = ownVersions([
       composite('late', 'root', { createdAt: at('10:01:00'), finishedAt: at('10:09:00') }),
       composite('early', 'root', { createdAt: at('10:02:00'), finishedAt: at('10:03:00') }),
-      // 旧记录里有基于合成再合成的一版，同样列出。
       composite('branch', 'early', { createdAt: at('10:04:00'), finishedAt: at('10:05:00') }),
       edit('e1', 'root', [1, 2], { outputUrl: 'https://oss.example/e1.mp4' }),
     ])
@@ -87,7 +83,6 @@ describe('projectVersions', () => {
 })
 
 describe('同一镜头组里有几条原作', () => {
-  // 镜头组 2 里两条原作 A、B，完成先后交错：A、B、A 的合成、B 的合成。
   const takeA = job({ id: 'a', outputUrl: 'https://oss.example/a.mp4', shotIndex: 2 })
   const takeB = job({
     id: 'b',
