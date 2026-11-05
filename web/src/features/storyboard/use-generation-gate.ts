@@ -1,16 +1,10 @@
-/** 出片闸门：有组在上传或已在准备时不再发起，组件卸载后不再改状态。 */
-import { useCallback, useEffect, useRef, useState } from 'react'
+/** 出片闸门：有组在上传时不发起，提交全程由 useSubmitLock 锁住。`preparing` 只表示请求还在路上，受理后的
+ * 停留不算，那时脚本区已经可以编辑。 */
+import { useCallback, useState } from 'react'
+import { useSubmitLock } from './use-submit-lock'
 
 export const useGenerationGate = () => {
-  const [preparing, setPreparing] = useState(false)
-  const lifetimeRef = useRef({ busy: false, mounted: true })
-  useEffect(() => {
-    const current = lifetimeRef.current
-    current.mounted = true
-    return () => {
-      current.mounted = false
-    }
-  }, [])
+  const { phase, run: runLocked } = useSubmitLock()
   const [uploadingGroups, setUploadingGroups] = useState<ReadonlySet<number>>(() => new Set())
   const onUploadingChange = useCallback((group: number, uploading: boolean) => {
     setUploadingGroups((current) => {
@@ -23,18 +17,11 @@ export const useGenerationGate = () => {
   }, [])
   const uploading = uploadingGroups.size > 0
   const run = useCallback(
-    async (task: (mounted: () => boolean) => Promise<void>) => {
-      if (lifetimeRef.current.busy || uploading) return
-      lifetimeRef.current.busy = true
-      setPreparing(true)
-      try {
-        await task(() => lifetimeRef.current.mounted)
-      } finally {
-        lifetimeRef.current.busy = false
-        if (lifetimeRef.current.mounted) setPreparing(false)
-      }
+    async (task: (mounted: () => boolean) => Promise<boolean>) => {
+      if (uploading) return
+      await runLocked(task)
     },
-    [uploading],
+    [runLocked, uploading],
   )
-  return { onUploadingChange, preparing, run, uploading }
+  return { onUploadingChange, phase, preparing: phase === 'sending', run, uploading }
 }

@@ -5,7 +5,7 @@
 import { useId, useRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
-import { Button } from '@/shared/ui/button'
+import { SubmitButton, type SubmitPhase } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
@@ -44,7 +44,8 @@ type VideoGenerationBarProps = {
   blocker: GenerationBlocker | undefined
   /** 出片栏要提醒的错误（上次提交失败的原话、画幅不被模型支持）；没被一直挡着时写在状态行上。 */
   notice: string | undefined
-  submitting: boolean
+  /** 提交的进度，只改变主按钮，其他控件全程可用。 */
+  phase: SubmitPhase
   onGenerate: () => void
 }
 
@@ -55,8 +56,8 @@ export function VideoGenerationBar({
   notice,
   onChange,
   onGenerate,
+  phase,
   shotIndex,
-  submitting,
   value,
 }: VideoGenerationBarProps) {
   // 模型只有 id，没有展示名；清单还没到手时先占个位。
@@ -97,7 +98,7 @@ export function VideoGenerationBar({
           <GenerationPicker
             // 工作台窄时模型 id 截断，尺寸规则见出片栏一节。
             className="storyboard-bar-model"
-            disabled={submitting || models.items.length === 0}
+            disabled={models.items.length === 0}
             label="视频模型"
             leading={<Icon decorative name="video" size="sm" />}
             onChange={(model) => onChange({ ...value, model })}
@@ -108,7 +109,6 @@ export function VideoGenerationBar({
           <ChipGroup
             aria-label="分辨率"
             className="storyboard-bar-segmented"
-            disabled={submitting}
             // Radix 再点一次已选项会给空串，不在档位里的值一律忽略，分辨率始终有值。
             onValueChange={(next) => {
               const resolution = VIDEO_RESOLUTIONS.find((item) => item === next)
@@ -135,7 +135,6 @@ export function VideoGenerationBar({
                 aria-label="生成音频"
                 aria-pressed={value.generateAudio}
                 className="storyboard-bar-control storyboard-bar-audio ui-state ui-focus"
-                disabled={submitting}
                 onClick={() => onChange({ ...value, generateAudio: !value.generateAudio })}
                 type="button"
               >
@@ -157,8 +156,8 @@ export function VideoGenerationBar({
                 : statusId
           }
           onGenerate={onGenerate}
+          phase={phase}
           shotIndex={shotIndex}
-          submitting={submitting}
         />
       </div>
     </div>
@@ -230,33 +229,34 @@ function AspectPicker({
   )
 }
 
-/** 出片主按钮：被挡住或提交中时用 aria-disabled 置灰，仍可聚焦，说明关联到状态行；能出片时不带这个属性。 */
+/** 出片主按钮：被挡住时用 aria-disabled 置灰，提交中与刚受理时用它拦下点击但不置灰，都仍可聚焦，说明关联到状态行；
+ * 能出片时不带这个属性。 */
 function GenerateButton({
   blocked,
   describedBy,
   onGenerate,
+  phase,
   shotIndex,
-  submitting,
 }: {
   blocked: boolean
   describedBy: string | undefined
   onGenerate: () => void
+  phase: SubmitPhase
   shotIndex: number
-  submitting: boolean
 }) {
-  const unavailable = submitting || blocked
+  const unavailable = phase !== 'idle' || blocked
   return (
-    <Button
+    <SubmitButton
       aria-describedby={describedBy}
       aria-disabled={unavailable ? true : undefined}
       className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
+      label={`生成第 ${shotIndex} 组`}
       leadingIcon="video"
       onClick={() => {
         if (!unavailable) onGenerate()
       }}
+      phase={phase}
       size="md"
-    >
-      {submitting ? '提交中…' : `生成第 ${shotIndex} 组`}
-    </Button>
+    />
   )
 }

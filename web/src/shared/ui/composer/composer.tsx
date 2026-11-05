@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { Button, IconButton } from '@/shared/ui/button'
+import { IconButton, SubmitButton } from '@/shared/ui/button'
 import { useFileDropTarget, useWindowFileDrop } from '@/shared/ui/file-drop'
 import type { ComposerNode, ComposerNodeSpec, ErasedNodeSpec } from './composer-node'
 import { ComposerNodeViews, type ComposerAttachmentPreviewOf } from './composer-node-views'
@@ -98,6 +98,8 @@ type ComposerProps<N extends ComposerNode, Item> = {
   /** 发送按钮之前的工具行内容。 */
   trailing?: ReactNode
   sending?: boolean
+  /** 提交已受理、正在停留：`submitAction` 的按钮打勾，回车也不提交。 */
+  accepted?: boolean
   /** dense 从单行起步，否则从三行起步。 */
   dense?: boolean
   /** 运行时替换为停止按钮，不受空输入的发送禁用条件影响。 */
@@ -164,6 +166,7 @@ const NO_NODES: readonly ErasedNodeSpec[] = []
 
 export function Composer<N extends ComposerNode = never, Item = never>({
   accept = 'media',
+  accepted = false,
   addControl,
   ariaLabel = '输入消息',
   attachmentLimit,
@@ -203,7 +206,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
 
   /** 只有内容非空且引用附件全部就绪才可发送；编辑器经 ref 获取最新判定闭包。 */
   const canSendNow = () => {
-    if (sending || submitAction?.disabled === true || editor.empty) return false
+    if (sending || accepted || submitAction?.disabled === true || editor.empty) return false
     return !editor.attIds.some((attId) => attachments.entries.get(attId)?.status !== 'ready')
   }
 
@@ -376,21 +379,21 @@ export function Composer<N extends ComposerNode = never, Item = never>({
               </button>
             ) : null}
             {submitAction !== undefined ? (
-              <Button
+              <SubmitButton
                 className={cn(
                   'shrink-0 rounded-full',
                   submitAction.size === 'sm' &&
-                    'h-(--control-height-sm) gap-1.5 px-2.5 text-label [&>svg]:size-(--icon-sm)',
+                    'h-(--control-height-sm) gap-1.5 px-2.5 text-label [&_svg]:size-(--icon-sm)',
                 )}
                 disabled={!canSend}
+                label={submitAction.label}
                 leadingIcon={submitAction.icon}
-                loading={sending}
                 onClick={submit}
+                pendingLabel={submitAction.pendingLabel}
+                phase={accepted ? 'accepted' : sending ? 'sending' : 'idle'}
                 size="md"
                 variant={submitAction.emphasis === 'primary' ? 'primary' : 'tonal'}
-              >
-                {sending ? submitAction.pendingLabel : submitAction.label}
-              </Button>
+              />
             ) : // 跑着的时候输入框也能发：写了字就把发送钮亮出来，发出去的排队。空着时只留停止。
             !busy || onStop === undefined || !editor.empty ? (
               <button

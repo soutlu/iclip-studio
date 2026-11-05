@@ -19,6 +19,7 @@ import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { renderWithProviders } from '@/testing/render'
+import { SUBMIT_HOLD_MS } from '../use-submit-lock'
 import { DEFAULT_GENERATE_AUDIO, DEFAULT_VIDEO_RESOLUTION } from '../video-generation-options'
 import { FilmReader } from './film-reader'
 
@@ -761,16 +762,56 @@ describe('制作页的图片编辑器', () => {
       within(editor)
         .getAllByRole('button', { name: '再生成' })
         .find((button) => !strip.contains(button))
-    await userEvent.click(send() ?? editor)
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await user.click(send() ?? editor)
     await waitFor(() => expect(generations).toHaveLength(1))
     expect(generations[0]).toEqual({ filmVersion: 1, node: 'shot2_view', runVersion: 1 })
+    await within(editor).findByRole('button', { name: '已提交' })
 
+    act(() => {
+      vi.advanceTimersByTime(SUBMIT_HOLD_MS)
+    })
+    await waitFor(() => expect(send()).toBeDefined())
     pasteTextIntoComposer(box, '傍晚，')
-    await userEvent.click(send() ?? editor)
+    await user.click(send() ?? editor)
     await waitFor(() => expect(generations).toHaveLength(2))
     expect(generations[1]?.prompt?.text).toContain('傍晚，')
     expect(generations[1]?.prompt?.text).toContain('@Image1的脚部特写')
     expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
+    vi.useRealTimers()
+  })
+
+  it('「再生成」受理后立刻显示「已提交」，图片记录在后台刷新，不等它回来', async () => {
+    const { generations } = recordImages()
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '在舞台查看镜头 2的画面' }))
+    await userEvent.click(await screen.findByRole('button', { name: '编辑图片' }))
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    const strip = within(editor).getByRole('group', { name: '该图片的版本' })
+    await userEvent.click(within(strip).getByRole('button', { name: '再生成' }))
+    const tiles = within(strip).getAllByRole('button').length
+
+    // 版本条出来之后才挂住：挂早了编辑器打不开，失败的就不是这件事。
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('*/api/generations', async () => {
+        await held
+      }),
+    )
+    const send = within(editor)
+      .getAllByRole('button', { name: '再生成' })
+      .find((button) => !strip.contains(button))
+    await userEvent.click(send ?? editor)
+
+    await waitFor(() => expect(generations).toHaveLength(1))
+    await within(editor).findByRole('button', { name: '已提交' })
+
+    act(() => release())
+    await waitFor(() => expect(within(strip).getAllByRole('button')).toHaveLength(tiles + 1))
   })
 
   it('这张图的参考图有没选用的：「再生成」与生成卡一样拦住，写同一句原因，按钮与回车都不提交', async () => {

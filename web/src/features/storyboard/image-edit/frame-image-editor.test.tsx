@@ -1,7 +1,7 @@
 import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster, toast } from '@/shared/ui/toast'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
@@ -11,9 +11,10 @@ import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
+import { SUBMIT_HOLD_MS } from '../use-submit-lock'
 import { FrameImageEditor } from './frame-image-editor'
 import { editDraftKey } from './image-edit-draft'
-import type { FrameEditDraft, FrameEditTarget } from './image-edit-types'
+import type { EditDraftPart, FrameEditDraft, FrameEditTarget } from './image-edit-types'
 
 const target: FrameEditTarget = {
   conversationId: 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d',
@@ -42,10 +43,11 @@ type EditorPageProps = {
   initialKey?: string
   onApply?: (previousUrl: string | null, url: string | null) => void
   onClose?: (opened: ReadonlySet<string>) => void
+  regenerate?: ComponentProps<typeof FrameImageEditor>['regenerate']
 }
 
 /** 分镜那一侧的替身：替换就把第 1 帧换掉，关窗就卸载编辑器。 */
-function EditorPage({ initialKey, onApply, onClose }: EditorPageProps) {
+function EditorPage({ initialKey, onApply, onClose, regenerate }: EditorPageProps) {
   const [open, setOpen] = useState(true)
   const [frames, setFrames] = useState([BASE, FRAME_2])
   return (
@@ -58,6 +60,7 @@ function EditorPage({ initialKey, onApply, onClose }: EditorPageProps) {
           frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
           aspectRatio="9:16"
           initialKey={initialKey}
+          regenerate={regenerate}
           onClose={(opened) => {
             onClose?.(opened)
             setOpen(false)
@@ -156,29 +159,195 @@ describe('图片编辑器', () => {
     const channels = await screen.findByRole('group', { name: '图片生成渠道' })
     expect(within(channels).getByRole('menuitemradio', { name: 'dev' })).toBeChecked()
     await userEvent.click(within(channels).getByRole('menuitemradio', { name: 'pro' }))
-    await userEvent.click(generate)
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await user.click(generate)
     await waitFor(() => expect(submissions).toHaveLength(1))
     expect(submissions[0]?.['channel']).toBe('pro')
 
     await waitFor(() => expect(models).toBeEnabled())
-    await userEvent.click(models)
+    await user.click(models)
     // 菜单按模型名称列出，提交的是模型 id。
-    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Seedream 5.0 Pro' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Seedream 5.0 Pro' }))
     expect(models).toHaveTextContent('Seedream 5.0 Pro')
 
     expect(screen.queryByRole('button', { name: '更多生成设置' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: '图片分辨率' }))
+    await user.click(screen.getByRole('button', { name: '图片分辨率' }))
     const resolutionMenu = await screen.findByRole('menu', { name: '图片分辨率' })
     const resolutions = within(resolutionMenu).getAllByRole('menuitemradio')
     expect(resolutions.map((option) => option.textContent)).toEqual(['1K', '2K'])
-    await userEvent.keyboard('{Escape}')
+    await user.keyboard('{Escape}')
 
-    await userEvent.click(generate)
+    act(() => {
+      vi.advanceTimersByTime(SUBMIT_HOLD_MS)
+    })
+    await waitFor(() => expect(generate).toHaveAccessibleName('生成图片'))
+    await user.click(generate)
     await waitFor(() => expect(submissions).toHaveLength(2))
     expect(submissions[1]?.['model']).toBe('seedream_v5_pro')
     expect(submissions[1]?.['channel']).toBeUndefined()
     expect(submissions[1]?.['sourceUrl']).toBe(BASE)
     expect(submissions[1]?.['metadata']).toEqual({ frame: 1, shot: 1 })
+    vi.useRealTimers()
+  })
+
+  describe('受理后的停留', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const advance = (ms: number) => {
+      act(() => {
+        vi.advanceTimersByTime(ms)
+      })
+    }
+    const recordSubmissions = () => {
+      const submissions: Record<string, unknown>[] = []
+      server.use(
+        http.post('*/api/generations/image', async ({ request }) => {
+          submissions.push((await request.json()) as Record<string, unknown>)
+          return HttpResponse.json({ generation: job() }, { status: 202 })
+        }),
+      )
+      return submissions
+    }
+    /** 打开「再生成」，返回输入卡的提交按钮（版本条上也有一格同名的）。 */
+    const openRegenerate = async (
+      editor: HTMLElement,
+      user: ReturnType<typeof userEvent.setup>,
+    ) => {
+      const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+      await user.click(within(strip).getByRole('button', { name: '再生成' }))
+      const send = within(editor)
+        .getAllByRole('button', { name: '再生成' })
+        .find((button) => !strip.contains(button))
+      if (send === undefined) throw new Error('输入卡没有「再生成」按钮')
+      await waitFor(() => expect(send).toBeEnabled())
+      return send
+    }
+    const regeneratePrompt: EditDraftPart[] = [{ kind: 'text', text: '金发女生的脚部特写' }]
+
+    it('改图：受理后按钮和回车都不再提交，停留过后恢复', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const submissions = recordSubmissions()
+      await renderWithProviders(<EditorPage />)
+      const editor = await screen.findByRole('dialog')
+      const generate = within(editor).getByRole('button', { name: '生成图片' })
+      await waitFor(() => expect(generate).toBeEnabled())
+
+      await user.click(generate)
+      expect(await within(editor).findByRole('button', { name: '已提交' })).toBe(generate)
+      expect(generate).toBeDisabled()
+      fireEvent.keyDown(within(editor).getByRole('textbox', { name: '修改要求' }), { key: 'Enter' })
+      await user.click(generate)
+      advance(SUBMIT_HOLD_MS - 500)
+      expect(generate).toHaveAccessibleName('已提交')
+      expect(submissions).toHaveLength(1)
+
+      advance(500)
+      await waitFor(() => expect(generate).toHaveAccessibleName('生成图片'))
+      await waitFor(() => expect(generate).toBeEnabled())
+      await user.click(generate)
+      await waitFor(() => expect(submissions).toHaveLength(2))
+    })
+
+    it('改图：提交失败不打勾，立刻能重试', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      let attempts = 0
+      server.use(
+        http.post('*/api/generations/image', () => {
+          attempts += 1
+          return HttpResponse.json({ detail: '图片额度已用完' }, { status: 422 })
+        }),
+      )
+      await renderWithProviders(<EditorPage />)
+      const editor = await screen.findByRole('dialog')
+      const generate = within(editor).getByRole('button', { name: '生成图片' })
+      await waitFor(() => expect(generate).toBeEnabled())
+
+      await user.click(generate)
+      expect(await within(editor).findByText(/图片额度已用完/)).toBeVisible()
+      await waitFor(() => expect(generate).toBeEnabled())
+      expect(generate).toHaveAccessibleName('生成图片')
+      await user.click(generate)
+      await waitFor(() => expect(attempts).toBe(2))
+    })
+
+    it('再生成：受理后不再提交，停留过后恢复', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const submit = vi.fn(async () => {})
+      await renderWithProviders(<EditorPage regenerate={{ parts: regeneratePrompt, submit }} />)
+      const editor = await screen.findByRole('dialog')
+      const send = await openRegenerate(editor, user)
+
+      await user.click(send)
+      expect(await within(editor).findByRole('button', { name: '已提交' })).toBe(send)
+      fireEvent.keyDown(within(editor).getByRole('textbox', { name: '修改要求' }), { key: 'Enter' })
+      await user.click(send)
+      advance(SUBMIT_HOLD_MS - 500)
+      expect(send).toHaveAccessibleName('已提交')
+      expect(submit).toHaveBeenCalledTimes(1)
+
+      advance(500)
+      await waitFor(() => expect(send).toHaveAccessibleName('再生成'))
+      await waitFor(() => expect(send).toBeEnabled())
+      await user.click(send)
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+    })
+
+    it('再生成：提交失败不打勾，立刻能重试', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const submit = vi.fn(async () => {
+        throw new Error('再生成被拒')
+      })
+      await renderWithProviders(<EditorPage regenerate={{ parts: regeneratePrompt, submit }} />)
+      const editor = await screen.findByRole('dialog')
+      const send = await openRegenerate(editor, user)
+
+      await user.click(send)
+      expect(await within(editor).findByText('再生成提交失败')).toBeVisible()
+      await waitFor(() => expect(send).toBeEnabled())
+      expect(send).toHaveAccessibleName('再生成')
+      await user.click(send)
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+    })
+
+    it('停留中换底图：输入卡换 key 重挂，锁还在，过后按新底图提交', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const completed = job({ status: 'completed', outputUrl: RESULT })
+      server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+      const submissions = recordSubmissions()
+      await renderWithProviders(<EditorPage />)
+      const editor = await screen.findByRole('dialog')
+      const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+      const result = await within(strip).findByRole('button', { name: /^结果 · / })
+      const original = within(editor).getByRole('textbox', { name: '修改要求' })
+      const generate = within(editor).getByRole('button', { name: '生成图片' })
+      await waitFor(() => expect(generate).toBeEnabled())
+
+      await user.click(generate)
+      await within(editor).findByRole('button', { name: '已提交' })
+      await user.click(result)
+      expect(original).not.toBeInTheDocument()
+
+      const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+      pasteTextIntoComposer(textbox, '换成红色')
+      const held = within(editor).getByRole('button', { name: '已提交' })
+      expect(held).toBeDisabled()
+      fireEvent.keyDown(textbox, { key: 'Enter' })
+      await user.click(held)
+      expect(submissions).toHaveLength(1)
+
+      advance(SUBMIT_HOLD_MS)
+      await waitFor(() => expect(held).toHaveAccessibleName('生成图片'))
+      await waitFor(() => expect(held).toBeEnabled())
+      await user.click(held)
+      await waitFor(() => expect(submissions).toHaveLength(2))
+      expect(submissions[1]?.['sourceUrl']).toBe(RESULT)
+    })
   })
 
   it('做不了分镜画幅的模型在菜单里置灰并标不支持', async () => {

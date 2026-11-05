@@ -1,5 +1,5 @@
-/** 出片的生成选项（模型、分辨率、音频，只记在本次会话）、提交与失败原因。防重复点击归调用方的
- * 出片闸门（useGenerationGate）；202 后由任务列表轮询进度，同组可继续生成新版本。
+/** 出片的生成选项（模型、分辨率、音频，只记在本次会话）、提交与失败原因。防重复提交归调用方的
+ * 出片闸门（useGenerationGate）；202 后立刻刷新任务列表，由它轮询进度，按钮解锁后同组可继续生成新版本。
  *
  * 出片失败的原因留在这里按镜头组记着，由工作台渲染在底部出片栏里：全局 toast 弹在视口
  * 底部、压着聊天输入区，离按下的按钮太远。 */
@@ -41,17 +41,19 @@ export const useVideoGeneration = (conversationId: string, fileModel?: string) =
   const model = allowed(wanted.model) ?? allowed(fileModel) ?? models.data?.default
   const options: VideoGenerationOptions = { ...wanted, model }
 
-  /** 给第 `index` 组出片：`send` 按出片栏这次选的模型、分辨率、音频发请求，分镜页与制作页各发各的。 */
+  /** 给第 `index` 组出片：`send` 按出片栏这次选的模型、分辨率、音频发请求，分镜页与制作页各发各的。返回是否已受理。 */
   const submit = async (index: number, send: (choice: VideoChoice) => Promise<unknown>) => {
-    if (model === undefined) return
+    if (model === undefined) return false
     setFailure(undefined)
     try {
       await send({ generateAudio: options.generateAudio, model, resolution: options.resolution })
       void queryClient.invalidateQueries({
         queryKey: storyboardQueryKeys.videoJobs(conversationId),
       })
+      return true
     } catch (error) {
       setFailure({ index, message: errorMessageOf(error, '视频提交失败') })
+      return false
     }
   }
 

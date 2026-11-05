@@ -111,15 +111,16 @@ function StoryboardWorkspace({
       : generations.data?.find((job) => job.id === search.video)
   // 只读时整页的编辑与生成入口一起收起。
   const editingDisabled = readOnly || gate.preparing
-  // 提交途中按钮自己写着「提交中」，不另说原因。
-  const generateBlocker = gate.preparing
-    ? undefined
-    : generationBlockerOf({
-        modelsStatus: video.modelsStatus,
-        readOnly,
-        saveState: draft.state.kind,
-        uploading: gate.uploading,
-      })
+  // 提交途中与受理后的停留里按钮自己写着状态，不另说原因，状态行也不跳动。
+  const generateBlocker =
+    gate.phase !== 'idle'
+      ? undefined
+      : generationBlockerOf({
+          modelsStatus: video.modelsStatus,
+          readOnly,
+          saveState: draft.state.kind,
+          uploading: gate.uploading,
+        })
   const generateNotice = generationNoticeOf({
     aspectRatio: document.aspect_ratio,
     model: video.options.model,
@@ -129,13 +130,13 @@ function StoryboardWorkspace({
   const generate = () =>
     gate.run(async (mounted) => {
       const saved = await draft.saveNow()
-      if (saved === null || !mounted()) return
+      if (saved === null || !mounted()) return false
       const current = saved.shots.find((item) => item.index === shot.index)
       if (current === undefined) {
         video.reportError(shot.index, '已保存的镜头组读取失败，请重新打开后生成')
-        return
+        return false
       }
-      await video.submit(current.index, (choice) =>
+      return video.submit(current.index, (choice) =>
         submitVideoGeneration({
           ...choice,
           aspectRatio: saved.aspect_ratio,
@@ -244,7 +245,7 @@ function StoryboardWorkspace({
         <VideoGenerationBar
           aspect={{
             description: '画幅写回分镜，不是生成参数',
-            disabled: editingDisabled,
+            disabled: readOnly,
             onChange: draft.updateAspectRatio,
             value: document.aspect_ratio,
           }}
@@ -253,8 +254,8 @@ function StoryboardWorkspace({
           notice={generateNotice}
           onChange={video.setOptions}
           onGenerate={() => void generate()}
+          phase={gate.phase}
           shotIndex={shot.index}
-          submitting={gate.preparing}
           value={video.options}
         />
       </div>
