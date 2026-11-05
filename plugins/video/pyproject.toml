@@ -16,7 +16,7 @@ agent-runtime = { path = "../../runtime", editable = true }
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
+    "pytest>=9.2.0",
     "pytest-asyncio>=1.4.0",
     "pytest-timeout>=2.4.0",
     "ruff>=0.16.6",
