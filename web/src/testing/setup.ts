@@ -62,6 +62,11 @@ for (const proto of [Range.prototype, Element.prototype]) {
   }
 }
 
+// jsdom 没有 HTMLMediaElement.error；浏览器里没出错时是 null。
+if (!('error' in HTMLMediaElement.prototype)) {
+  Object.defineProperty(HTMLMediaElement.prototype, 'error', { configurable: true, value: null })
+}
+
 // jsdom 没有指针捕获；按下可拖的元素（时间线上的块、组件卡片）时会调用。
 if (!('setPointerCapture' in Element.prototype)) {
   for (const [name, value] of [

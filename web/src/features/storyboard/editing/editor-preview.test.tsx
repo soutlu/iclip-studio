@@ -1,12 +1,113 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef, type ComponentProps } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithTooltip } from '@/testing/render'
 import { EditorPreview, type EditorPreviewHandle } from './editor-preview'
 import { layoutPlay } from './play-layout'
 
 afterEach(() => vi.restoreAllMocks())
+
+describe('视频下载', () => {
+  const renderPreview = (
+    current: ComponentProps<typeof EditorPreview>['current'],
+    onDownloadSettled = vi.fn<() => void>(),
+  ) => {
+    renderWithTooltip(
+      <EditorPreview
+        current={current}
+        currentTime={0}
+        contentKey="draft"
+        poster={undefined}
+        backdrop={undefined}
+        onDownloadSettled={onDownloadSettled}
+        onTime={() => {}}
+        onPlay={() => {}}
+        overlay={null}
+        readout={null}
+        timeline={null}
+        barStart={null}
+        barNotice={null}
+        barTools={null}
+        barEnd={null}
+        ref={null}
+      />,
+    )
+    return onDownloadSettled
+  }
+  const twoSegments = () =>
+    layoutPlay([
+      { mediaUrl: 'https://example.com/a.mp4', start: 0, end: 2 },
+      { mediaUrl: 'https://example.com/b.mp4', start: 0, end: 2 },
+    ])
+  const videos = () => {
+    const stage = screen.getByLabelText('视频预览')
+    const hidden = stage.querySelector<HTMLVideoElement>('video[aria-hidden="true"]')
+    if (hidden === null) throw new Error('没有预载视频槽')
+    return { active: screen.getByLabelText<HTMLVideoElement>('视频播放器'), hidden }
+  }
+
+  it('两个视频都跨域加载，才能和读关键帧、波形的请求共用浏览器缓存', () => {
+    renderPreview(twoSegments())
+    const { active, hidden } = videos()
+    expect(active).toHaveAttribute('crossorigin', 'anonymous')
+    expect(hidden).toHaveAttribute('crossorigin', 'anonymous')
+  })
+
+  const reportNetwork = (video: HTMLVideoElement, state: number) =>
+    Object.defineProperty(video, 'networkState', { configurable: true, value: state })
+  const failLoading = (video: HTMLVideoElement) => {
+    Object.defineProperty(video, 'error', { configurable: true, value: { code: 4 } })
+    reportNetwork(video, HTMLMediaElement.NETWORK_NO_SOURCE)
+    fireEvent.error(video)
+  }
+
+  it('当前视频还没开始下载或还在下载时不通知', () => {
+    const settled = renderPreview(twoSegments())
+    const { active } = videos()
+    // 刚赋 src 时是 NO_SOURCE，真正开始加载才变 LOADING
+    reportNetwork(active, HTMLMediaElement.NETWORK_NO_SOURCE)
+    fireEvent.suspend(active)
+    reportNetwork(active, HTMLMediaElement.NETWORK_LOADING)
+    fireEvent.suspend(active)
+    expect(settled).not.toHaveBeenCalled()
+  })
+
+  it('当前视频停止缓冲时通知，可以通知多次', () => {
+    const settled = renderPreview(twoSegments())
+    const { active } = videos()
+    expect(settled).not.toHaveBeenCalled()
+    reportNetwork(active, HTMLMediaElement.NETWORK_IDLE)
+    fireEvent.suspend(active)
+    expect(settled).toHaveBeenCalledTimes(1)
+    fireEvent.suspend(active)
+    expect(settled).toHaveBeenCalledTimes(2)
+  })
+
+  it('预载槽停止缓冲不算', () => {
+    const settled = renderPreview(twoSegments())
+    const { active, hidden } = videos()
+    reportNetwork(active, HTMLMediaElement.NETWORK_LOADING)
+    reportNetwork(hidden, HTMLMediaElement.NETWORK_IDLE)
+    fireEvent.suspend(hidden)
+    expect(settled).not.toHaveBeenCalled()
+  })
+
+  it('当前视频加载失败时通知，预载槽失败不算', () => {
+    const settled = renderPreview(twoSegments())
+    const { active, hidden } = videos()
+    reportNetwork(active, HTMLMediaElement.NETWORK_LOADING)
+    failLoading(hidden)
+    expect(settled).not.toHaveBeenCalled()
+    failLoading(active)
+    expect(settled).toHaveBeenCalledTimes(1)
+  })
+
+  it('没有内容可加载时直接通知；内容还在读取时不通知', () => {
+    expect(renderPreview(layoutPlay([]))).toHaveBeenCalledTimes(1)
+    expect(renderPreview(undefined)).not.toHaveBeenCalled()
+  })
+})
 
 it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟继续；预载槽事件不影响播放', async () => {
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)

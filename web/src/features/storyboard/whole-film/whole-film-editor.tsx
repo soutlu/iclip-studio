@@ -12,6 +12,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
+import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
@@ -274,7 +275,6 @@ function EditorBody({
     ].sort(),
   )
   const keyframes = useKeyframeIndexes(shownUrls)
-  const peaks = useAudioPeaks(sourceUrls)
 
   const music = useConversationMusic(conversationId)
   const captionStatusId = useId()
@@ -329,6 +329,8 @@ function EditorBody({
   const [popoverId, setPopoverId] = useState<string | null>(null)
   // 画面上正在显示的合成页，画面点选在它里面找点中了什么
   const [previewFrame, setPreviewFrame] = useState<HTMLIFrameElement | null>(null)
+  const [mediaSettled, setMediaSettled] = useState(false)
+  const [buffering, setBuffering] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('materials')
   const [sideChips, setSideChips] = useState<SideChips>({ brand: undefined, general: undefined })
   const [snap, setSnap] = useState(true)
@@ -724,6 +726,8 @@ function EditorBody({
     window.location.origin,
   )
   const playBlocked = preview.kind === 'blocked' ? preview.message : undefined
+  // 视频先下载，波形等它们停下再读同一份缓存；预览被挡住时舞台不加载视频，没有可等的。
+  const peaks = useAudioPeaks(sourceUrls, { enabled: mediaSettled || preview.kind === 'blocked' })
   const canvas = draft.canvas ?? DEFAULT_CANVAS
   /** 在画面上点中：等于在时间线上点中，但不打开组件浮层 */
   const selectOnCanvas = (next: Selection) => {
@@ -823,7 +827,9 @@ function EditorBody({
           controlRef={previewRef}
           height={canvas.height}
           message={playBlocked}
+          onBuffering={setBuffering}
           onFrame={setPreviewFrame}
+          onMediaSettled={() => setMediaSettled(true)}
           onPlaying={setPlaying}
           onTime={setPlayheadMs}
           srcdoc={preview.kind === 'ready' ? preview.html : undefined}
@@ -856,6 +862,17 @@ function EditorBody({
             sentenceText={sentenceText}
             snap={snap}
           />
+          {buffering ? (
+            <div
+              aria-label="正在缓冲"
+              className="pointer-events-none absolute inset-0 z-(--z-local-2) grid place-items-center text-on-scrim"
+              role="status"
+            >
+              <span className="rounded-full bg-scrim/32 p-2">
+                <Icon className="animate-spin" decorative name="spinner" size="xl" />
+              </span>
+            </div>
+          ) : null}
         </PreviewPlayer>
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview

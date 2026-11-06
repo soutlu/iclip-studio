@@ -1,10 +1,16 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubtitleIn, WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
+import {
+  downloadingVideos,
+  finishBuffering,
+  starvedVideos,
+  stopVideoDownload,
+} from '@/testing/hyperframes-player'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
@@ -25,6 +31,8 @@ import { wholeFilmQueryKeys } from './whole-film.api'
 
 // jsdom 读不了真文件：mediabunny 换成按地址给关键帧表、时长与画面尺寸的替身；没有原声轨。
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
+// 打开音轨就是开始读波形。
+const audioReads = vi.hoisted(() => [] as string[])
 
 // 拍点分析换成给定的结果；解码由各用例按需替换 OfflineAudioContext
 const beats = vi.hoisted(() => ({ analyze: vi.fn() }))
@@ -48,7 +56,10 @@ vi.mock('mediabunny', () => {
         getDisplayWidth: () => Promise.resolve(720),
         getDisplayHeight: () => Promise.resolve(1280),
       })
-    getPrimaryAudioTrack = () => Promise.resolve(null)
+    getPrimaryAudioTrack = () => {
+      audioReads.push(this.url)
+      return Promise.resolve(null)
+    }
     computeDuration = () => Promise.resolve(files.get(this.url)?.duration ?? 0)
     dispose = () => {}
   }
@@ -171,6 +182,77 @@ const clipsAroundComponent = () =>
 /** 组件库目录换成给定的一份（默认是测试组件库的目录） */
 const serveCatalog = (catalog: ComponentCatalog) =>
   server.use(http.get('/hyperframes/catalog.json', () => HttpResponse.json(catalog)))
+
+describe('成片编辑器 · 波形最后加载', () => {
+  afterEach(() => {
+    downloadingVideos.clear()
+    audioReads.length = 0
+  })
+
+  const waveMarks = () => within(filmLane()).findAllByText('无声')
+  const sortedReads = () => [...audioReads].sort()
+  /** 重载延迟与换页的几帧都过完，预览已经换上来。 */
+  const previewSwapped = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+  it('合成页的视频全部停止下载前不读波形，之后才读', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    downloadingVideos.add(URL_A).add(URL_B)
+    await openEditor()
+    await previewSwapped()
+    expect(audioReads).toEqual([])
+
+    act(() => stopVideoDownload(URL_A))
+    await previewSwapped()
+    expect(audioReads).toEqual([])
+
+    act(() => stopVideoDownload(URL_B))
+    expect((await waveMarks()).length).toBeGreaterThan(0)
+    expect(sortedReads()).toEqual([URL_A, URL_B])
+  })
+
+  it('视频在预览换上来之前就停止下载时也读', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    expect((await waveMarks()).length).toBeGreaterThan(0)
+    expect(sortedReads()).toEqual([URL_A, URL_B])
+  })
+
+  it('预览被挡住时舞台不加载视频，直接读波形', async () => {
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      draftOf([
+        video('v1', TAKE_A, 0, 2_000),
+        card('c1', 1_000, { component: 'no-such-component' }),
+      ]),
+    )
+    downloadingVideos.add(URL_A)
+    await openEditor()
+    expect((await waveMarks()).length).toBeGreaterThan(0)
+    expect(audioReads).toEqual([URL_A])
+  })
+})
+
+describe('成片编辑器 · 缓冲', () => {
+  afterEach(() => starvedVideos.clear())
+
+  it('当前片段数据不够时舞台转圈，播放按钮是「暂停」；够了转圈消失', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    const user = userEvent.setup()
+    starvedVideos.add(URL_A)
+    await openEditor()
+    const toolbar = screen.getByRole('toolbar', { name: '剪辑工具' })
+    // 重载延迟与换页的几帧过完，播放器才接上控制
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+    await user.click(within(toolbar).getByRole('button', { name: '播放' }))
+    expect(screen.getByRole('status', { name: '正在缓冲' })).toBeVisible()
+    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
+
+    act(() => finishBuffering(URL_A))
+    expect(screen.queryByRole('status', { name: '正在缓冲' })).toBeNull()
+    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
+  })
+})
 
 describe('成片编辑器', () => {
   it('素材区按镜头组、原作分轨', async () => {

@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { createRef, useState, type ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { renderWithTooltip } from '@/testing/render'
+import { finishFrameLoads } from '@/testing/timeline-frames'
 import type { GenerationJob } from '../storyboard.api'
 import {
   draftItemsOf,
@@ -170,12 +172,17 @@ const names = (group: HTMLElement) =>
     .getAllByRole('button')
     .map((button) => button.getAttribute('aria-label'))
 
+let viewport: ReturnType<typeof stubIntersectionObserver>
+
 beforeEach(() => {
   // jsdom 不排版：轨道区按 600px 宽算，6 秒的原片每秒 100px。
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
     DOMRect.fromRect({ x: 100, y: 0, width: 600, height: 200 }),
   )
+  viewport = stubIntersectionObserver()
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('三条轨', () => {
   it('草稿按排序首尾相接，块名写来源与时长；原片轨是全部镜头，每块带开关', () => {
@@ -672,7 +679,7 @@ describe('拖草稿块的修剪把手', () => {
     expect(trimCut()).toBeNull()
   })
 
-  it('左把手往外拉长：被拖的块画成一整块（已提交与拉长后合起来），里面是拉回来的画面，盖在前一块上；别的块不动；松手后首尾接上', () => {
+  it('左把手往外拉长：被拖的块画成一整块（已提交与拉长后合起来），里面是拉回来的画面，盖在前一块上；别的块不动；松手后首尾接上', async () => {
     layOut()
     const { on } = renderEditing(cut, selected)
     const before = draftLayout()
@@ -684,6 +691,8 @@ describe('拖草稿块的修剪把手', () => {
     // 一个元素：已提交 4–4.5 秒 ∪ 拉长后 3.5–4.5 秒，画面从拉长后的开头（这一段的 1.0 秒）起
     const dragged = groupOf(draftBlock(/第 2 段/))
     expect(boxOf(dragged)).toEqual(spanAt(3.5, 1))
+    await viewport.scroll(true)
+    finishFrameLoads()
     expect(framesOf(dragged)).toEqual([1.25, 1.75])
     // 盖在第 1 段（3–4 秒）后一半上
     const previous = boxOf(groupOf(draftBlock(/第 1 段/)))
@@ -718,7 +727,7 @@ describe('拖草稿块的修剪把手', () => {
     expect(dragged.left + dragged.width).toBeGreaterThanOrEqual(previous.left + previous.width)
   })
 
-  it('第一块左把手往回拉：左边钉在 0，拉回来的画面在块的开头、向右变长盖在后一块上，把手停在 0；松手后后面的块往右滑', () => {
+  it('第一块左把手往回拉：左边钉在 0，拉回来的画面在块的开头、向右变长盖在后一块上，把手停在 0；松手后后面的块往右滑', async () => {
     layOut()
     // 镜头 1 开头剪到 0.5 秒：它在 0–0.5 秒，镜头 2 接在 0.5 秒
     const draft = trimItem(EMPTY_DRAFT, itemOf(EMPTY_DRAFT, 'shot-1'), { t0: 0.5, t1: 1 })
@@ -730,6 +739,8 @@ describe('拖草稿块的修剪把手', () => {
     fireEvent.pointerMove(start, { pointerId: 1, clientX: 270 })
     const dragged = groupOf(draftBlock(/^镜头 1 ·/))
     expect(boxOf(dragged)).toEqual(spanAt(0, 0.8))
+    await viewport.scroll(true)
+    finishFrameLoads()
     expect(framesOf(dragged)).toEqual([0.25, 0.75])
     // 盖在镜头 2（0.5–1.5 秒）上，后面的块都不动
     expect(othersOf(/^镜头 1 ·/)).toEqual(othersOf(/^镜头 1 ·/, before))
