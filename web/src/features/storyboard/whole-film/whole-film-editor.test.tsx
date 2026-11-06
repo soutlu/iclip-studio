@@ -5,7 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubtitleIn, WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { downloadingVideos, stopVideoDownload } from '@/testing/hyperframes-player'
+import {
+  downloadingVideos,
+  finishBuffering,
+  starvedVideos,
+  stopVideoDownload,
+} from '@/testing/hyperframes-player'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
@@ -224,6 +229,28 @@ describe('成片编辑器 · 波形最后加载', () => {
     await openEditor()
     expect((await waveMarks()).length).toBeGreaterThan(0)
     expect(audioReads).toEqual([URL_A])
+  })
+})
+
+describe('成片编辑器 · 缓冲', () => {
+  afterEach(() => starvedVideos.clear())
+
+  it('当前片段数据不够时舞台转圈，播放按钮是「暂停」；够了转圈消失', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    const user = userEvent.setup()
+    starvedVideos.add(URL_A)
+    await openEditor()
+    const toolbar = screen.getByRole('toolbar', { name: '剪辑工具' })
+    // 重载延迟与换页的几帧过完，播放器才接上控制
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+    await user.click(within(toolbar).getByRole('button', { name: '播放' }))
+    expect(screen.getByRole('status', { name: '正在缓冲' })).toBeVisible()
+    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
+
+    act(() => finishBuffering(URL_A))
+    expect(screen.queryByRole('status', { name: '正在缓冲' })).toBeNull()
+    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
   })
 })
 

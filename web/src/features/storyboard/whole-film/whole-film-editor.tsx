@@ -12,6 +12,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
+import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
@@ -329,6 +330,7 @@ function EditorBody({
   // 画面上正在显示的合成页，画面点选在它里面找点中了什么
   const [previewFrame, setPreviewFrame] = useState<HTMLIFrameElement | null>(null)
   const [mediaSettled, setMediaSettled] = useState(false)
+  const [buffering, setBuffering] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('materials')
   const [sideChips, setSideChips] = useState<SideChips>({ brand: undefined, general: undefined })
   const [snap, setSnap] = useState(true)
@@ -825,6 +827,7 @@ function EditorBody({
           controlRef={previewRef}
           height={canvas.height}
           message={playBlocked}
+          onBuffering={setBuffering}
           onFrame={setPreviewFrame}
           onMediaSettled={() => setMediaSettled(true)}
           onPlaying={setPlaying}
@@ -859,6 +862,17 @@ function EditorBody({
             sentenceText={sentenceText}
             snap={snap}
           />
+          {buffering ? (
+            <div
+              aria-label="正在缓冲"
+              className="pointer-events-none absolute inset-0 z-(--z-local-2) grid place-items-center text-on-scrim"
+              role="status"
+            >
+              <span className="rounded-full bg-scrim/32 p-2">
+                <Icon className="animate-spin" decorative name="spinner" size="xl" />
+              </span>
+            </div>
+          ) : null}
         </PreviewPlayer>
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview

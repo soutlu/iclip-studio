@@ -56,6 +56,8 @@ type PreviewPlayerProps = {
   onFrame: (iframe: HTMLIFrameElement | null) => void
   /** 显示中的合成页里所有视频都不再下载时调用；页里没有视频时不调用。可能调用多次。 */
   onMediaSettled?: (() => void) | undefined
+  /** 当前片段数据不够、时间线停下等待时给 true，等完给 false；等待中 `onPlaying` 保持 true */
+  onBuffering?: ((buffering: boolean) => void) | undefined
   /** 铺满预览卡片的一层（画面点选）：选中框、把手能画到画面外 */
   children?: ReactNode
 }
@@ -64,6 +66,16 @@ const once = (target: EventTarget, type: string) =>
   new Promise<void>((resolve) => target.addEventListener(type, () => resolve(), { once: true }))
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+/** 视频能流畅放或出错时调用 `done`，返回的函数取消。不用 canplay：数据刚够就走，走一下又会停。 */
+const whenPlayable = (video: HTMLVideoElement, done: () => void) => {
+  video.addEventListener('canplaythrough', done)
+  video.addEventListener('error', done)
+  return () => {
+    video.removeEventListener('canplaythrough', done)
+    video.removeEventListener('error', done)
+  }
+}
 
 /**
  * HyperFrames 播放器。合成页换了（每次编辑后）就在底下另起一个播放器加载新页：就绪、跳到原来的时刻、
@@ -81,6 +93,7 @@ export function PreviewPlayer({
   controlRef,
   onFrame,
   onMediaSettled,
+  onBuffering,
   children,
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -88,10 +101,13 @@ export function PreviewPlayer({
   // 正在显示的播放器；只有它的事件驱动编辑器
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({ onTime, onPlaying, onFrame, onMediaSettled })
+  const callbacksRef = useRef({ onTime, onPlaying, onFrame, onMediaSettled, onBuffering })
   const sizeRef = useRef({ width, height })
+  // 用户想不想播放：缓冲造成的暂停不改它，换页后也按它接着放
+  const wantsPlayRef = useRef(false)
+  const stopWaitRef = useRef<(() => void) | null>(null)
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled }
+    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering }
     sizeRef.current = { width, height }
   })
 
@@ -116,30 +132,84 @@ export function PreviewPlayer({
   // 正在显示的播放器：接上事件；换下或卸载时拆掉
   useEffect(() => {
     if (active === null) return
+    const giveUpPlaying = () => {
+      wantsPlayRef.current = false
+      stopWaitRef.current?.()
+    }
+    /** 运行时的时间线不等视频：当前片段数据不够就停下时间线，够了再接着放。返回是否在等 */
+    const waitForClip = () => {
+      if (stopWaitRef.current !== null) return true
+      const seconds = active.currentTime
+      const clips =
+        active.iframeElement.contentDocument?.querySelectorAll<HTMLVideoElement>(
+          'video[data-start]',
+        ) ?? []
+      const clip = [...clips].find((video) => {
+        const start = Number(video.dataset['start'])
+        return start <= seconds && seconds < start + Number(video.dataset['duration'])
+      })
+      // 出错的视频不会再有事件，等它就是永远转圈
+      if (
+        clip === undefined ||
+        clip.error !== null ||
+        clip.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+      )
+        return false
+      const stop = () => {
+        cancel()
+        stopWaitRef.current = null
+        callbacksRef.current.onBuffering?.(false)
+      }
+      const cancel = whenPlayable(clip, () => {
+        stop()
+        if (wantsPlayRef.current) active.play()
+      })
+      stopWaitRef.current = stop
+      callbacksRef.current.onBuffering?.(true)
+      active.pause()
+      return true
+    }
     const onTimeUpdate = (event: Event) => {
       const seconds = (event as CustomEvent<{ currentTime: number }>).detail.currentTime
       callbacksRef.current.onTime(Math.round(seconds * 1000))
+      if (wantsPlayRef.current) waitForClip()
     }
     const onPlay = () => callbacksRef.current.onPlaying(true)
-    const onPause = () => callbacksRef.current.onPlaying(false)
+    const onPause = () => {
+      if (!wantsPlayRef.current) callbacksRef.current.onPlaying(false)
+    }
+    const onEnded = () => {
+      wantsPlayRef.current = false
+      callbacksRef.current.onPlaying(false)
+    }
     active.addEventListener('timeupdate', onTimeUpdate)
     active.addEventListener('play', onPlay)
     active.addEventListener('pause', onPause)
-    active.addEventListener('ended', onPause)
+    active.addEventListener('ended', onEnded)
     controlRef.current = {
-      play: () => active.play(),
-      pause: () => active.pause(),
+      play: () => {
+        wantsPlayRef.current = true
+        // 在等数据时 play 事件还没来，按钮也要变成「暂停」，用户才取消得了
+        callbacksRef.current.onPlaying(true)
+        if (!waitForClip()) active.play()
+      },
+      pause: () => {
+        giveUpPlaying()
+        active.pause()
+      },
       // 在放就先停下（发 pause 事件），跳过去停在那里；之后从那里接着放
       seek: (ms) => {
+        giveUpPlaying()
         active.pause()
         active.seek(frameSeconds(ms))
       },
     }
     return () => {
+      stopWaitRef.current?.()
       active.removeEventListener('timeupdate', onTimeUpdate)
       active.removeEventListener('play', onPlay)
       active.removeEventListener('pause', onPause)
-      active.removeEventListener('ended', onPause)
+      active.removeEventListener('ended', onEnded)
       active.remove()
       controlRef.current = null
     }
@@ -176,6 +246,8 @@ export function PreviewPlayer({
     if (!loaded) return
     if (srcdoc === undefined) {
       // 合成不了时只显示原因；藏起来的旧页面不能接着出声
+      wantsPlayRef.current = false
+      stopWaitRef.current?.()
       activeRef.current?.pause()
       return
     }
@@ -186,7 +258,7 @@ export function PreviewPlayer({
       const host = hostRef.current
       if (host === null) return
       const old = activeRef.current
-      const resumePlaying = old !== null && !old.paused
+      const resumePlaying = old !== null && wantsPlayRef.current
       old?.pause()
       const resumeAt = old?.currentTime ?? 0
       const next = document.createElement('hyperframes-player') as PlayerElement

@@ -10,13 +10,37 @@ const NETWORK_LOADING = 2
 /** 还在下载的视频地址；放进去的地址，合成页里对应的视频报 NETWORK_LOADING。 */
 export const downloadingVideos = new Set<string>()
 
+/** 数据不够播的视频地址；放进去的地址，合成页里对应的视频报 HAVE_METADATA，否则报 HAVE_ENOUGH_DATA。 */
+export const starvedVideos = new Set<string>()
+
+/** 加载出错的视频地址；放进去的地址，合成页里对应的视频带 `error`。 */
+const failedVideos = new Set<string>()
+
+const emitFrom = (url: string, type: string) => {
+  for (const player of document.querySelectorAll<FakeHyperframesPlayer>('hyperframes-player'))
+    for (const video of player.iframeElement.contentDocument?.querySelectorAll('video') ?? [])
+      if (video.getAttribute('src') === url) video.dispatchEvent(new Event(type))
+}
+
 /** 这个地址下载停下：从 `downloadingVideos` 拿掉，合成页里对应的视频发 suspend。 */
 export const stopVideoDownload = (url: string) => {
   downloadingVideos.delete(url)
-  for (const player of document.querySelectorAll<FakeHyperframesPlayer>('hyperframes-player'))
-    for (const video of player.iframeElement.contentDocument?.querySelectorAll('video') ?? [])
-      if (video.getAttribute('src') === url) video.dispatchEvent(new Event('suspend'))
+  emitFrom(url, 'suspend')
 }
+
+/** 这个地址数据够了：从 `starvedVideos` 拿掉，合成页里对应的视频发 canplaythrough。 */
+export const finishBuffering = (url: string) => {
+  starvedVideos.delete(url)
+  emitFrom(url, 'canplaythrough')
+}
+
+/** 这个地址加载出错：合成页里对应的视频带上 `error` 并发 error。用完用 `clearFailedVideos` 清掉。 */
+export const failVideo = (url: string) => {
+  failedVideos.add(url)
+  emitFrom(url, 'error')
+}
+
+export const clearFailedVideos = () => failedVideos.clear()
 
 class FakeHyperframesPlayer extends HTMLElement {
   static readonly observedAttributes = ['srcdoc']
@@ -47,9 +71,16 @@ class FakeHyperframesPlayer extends HTMLElement {
     page.body.replaceChildren(
       ...[...parsed.querySelectorAll('video')].map((source) => {
         const video = page.importNode(source)
-        Object.defineProperty(video, 'networkState', {
-          get: () =>
-            downloadingVideos.has(source.getAttribute('src') ?? '') ? NETWORK_LOADING : 0,
+        const url = source.getAttribute('src') ?? ''
+        Object.defineProperties(video, {
+          networkState: { get: () => (downloadingVideos.has(url) ? NETWORK_LOADING : 0) },
+          readyState: {
+            get: () =>
+              starvedVideos.has(url)
+                ? HTMLMediaElement.HAVE_METADATA
+                : HTMLMediaElement.HAVE_ENOUGH_DATA,
+          },
+          error: { get: () => (failedVideos.has(url) ? { code: 4 } : null) },
         })
         return video
       }),
@@ -61,8 +92,8 @@ class FakeHyperframesPlayer extends HTMLElement {
     this.dispatchEvent(new Event('play'))
   }
 
+  // 同真播放器：已经停着也发 pause
   pause() {
-    if (this.paused) return
     this.paused = true
     this.dispatchEvent(new Event('pause'))
   }
