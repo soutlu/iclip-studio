@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { card, draftOf, fixtureCatalog as catalog, sentence, video } from '@/testing/whole-film'
+import { buildComposition } from './composition/build'
 import type { WholeFilmDraft } from './editing/draft'
 import { compositionMedia, previewState, withBaseHref } from './preview-document'
 
@@ -36,6 +37,31 @@ describe('预览页', () => {
     const base = html.indexOf('<base ')
     const font = html.indexOf(`<link rel="stylesheet" href="${catalog.runtime.cjkFont}">`)
     expect(font).toBeGreaterThan(base)
+  })
+
+  describe('预览模式', () => {
+    const PREVIEW_MARK = '<meta name="hyperframes-studio-preview" content="1">'
+    const draft = draftOf([video('v1', 's1', 0, 1_000), video('v2', 's1', 0, 1_000)])
+    const videoTags = (html: string) => html.match(/<video [^>]*>/g) ?? []
+
+    it('预览页的视频跨域加载、只预读元数据，页头带预览标记', () => {
+      const { html } = ready(draft)
+      expect(videoTags(html)).toHaveLength(2)
+      for (const tag of videoTags(html)) {
+        expect(tag).toContain('crossorigin="anonymous"')
+        expect(tag).toContain('preload="metadata"')
+        expect(tag).not.toContain('preload="auto"')
+      }
+      expect(html.slice(html.indexOf('<head'), html.indexOf('</head>'))).toContain(PREVIEW_MARK)
+    })
+
+    it('合成构建的输出不变，渲染服务那条路不受影响', () => {
+      const { html } = buildComposition({ draft, media: mediaOf(draft), catalog })
+      expect(videoTags(html)).toHaveLength(2)
+      for (const tag of videoTags(html)) expect(tag).toContain('preload="auto"')
+      expect(html).not.toContain('crossorigin')
+      expect(html).not.toContain('hyperframes-studio-preview')
+    })
   })
 
   it('用合成构建生成：素材片地址、组件段、字幕都在页里', () => {

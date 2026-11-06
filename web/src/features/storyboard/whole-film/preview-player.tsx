@@ -54,6 +54,8 @@ type PreviewPlayerProps = {
   controlRef: RefObject<PreviewControl | null>
   /** 正在显示的合成页 iframe：每次换上新播放器、画好之后给一次；拆掉、合成不了时给 null */
   onFrame: (iframe: HTMLIFrameElement | null) => void
+  /** 显示中的合成页里所有视频都不再下载时调用；页里没有视频时不调用。可能调用多次。 */
+  onMediaSettled?: (() => void) | undefined
   /** 铺满预览卡片的一层（画面点选）：选中框、把手能画到画面外 */
   children?: ReactNode
 }
@@ -78,6 +80,7 @@ export function PreviewPlayer({
   onPlaying,
   controlRef,
   onFrame,
+  onMediaSettled,
   children,
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -85,10 +88,10 @@ export function PreviewPlayer({
   // 正在显示的播放器；只有它的事件驱动编辑器
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({ onTime, onPlaying, onFrame })
+  const callbacksRef = useRef({ onTime, onPlaying, onFrame, onMediaSettled })
   const sizeRef = useRef({ width, height })
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onFrame }
+    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled }
     sizeRef.current = { width, height }
   })
 
@@ -141,6 +144,27 @@ export function PreviewPlayer({
       controlRef.current = null
     }
   }, [active, controlRef])
+
+  useEffect(() => {
+    const page = active?.iframeElement.contentDocument
+    if (page === null || page === undefined) return
+    const check = () => {
+      const videos = [...page.querySelectorAll('video')]
+      if (
+        videos.length > 0 &&
+        videos.every((video) => video.networkState !== HTMLMediaElement.NETWORK_LOADING)
+      )
+        callbacksRef.current.onMediaSettled?.()
+    }
+    page.addEventListener('suspend', check, true)
+    page.addEventListener('error', check, true)
+    // 播放器画好才换上来，小文件这时已经下完，不会再有事件。
+    check()
+    return () => {
+      page.removeEventListener('suspend', check, true)
+      page.removeEventListener('error', check, true)
+    }
+  }, [active])
 
   useEffect(() => {
     if (active === null) return
