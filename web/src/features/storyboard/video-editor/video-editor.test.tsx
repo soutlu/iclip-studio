@@ -168,6 +168,31 @@ const serveJobs = (items: () => readonly GenerationJob[]) =>
   )
 const serveChain = (items: readonly GenerationJob[]) => serveJobs(() => items)
 
+const videoFile = () => new HttpResponse(new Uint8Array([1, 2, 3]))
+const downloaded = (jobId: string) => ({ jobId, name: 'video.downloaded' })
+const watchDownloads = (respond: () => Response | Promise<Response> = videoFile) => {
+  const calls: unknown[] = []
+  server.use(
+    http.get('https://example.com/:file', ({ request }) => {
+      calls.push(request.url)
+      return respond()
+    }),
+    http.post('*/api/tracking/events', async ({ request }) => {
+      calls.push(await request.json())
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  vi.stubGlobal(
+    'URL',
+    class extends URL {
+      static override createObjectURL = () => 'blob:http://localhost/video'
+      static override revokeObjectURL() {}
+    },
+  )
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  return calls
+}
+
 const timeline = () => screen.findByRole('region', { name: '视频编辑时间线' })
 const originalTrack = async () => within(await timeline()).getByRole('group', { name: '原片' })
 const shot = async (no: number) =>
@@ -1318,6 +1343,77 @@ describe('草稿与编辑轨', () => {
     expect(shotEye(3)).toHaveAccessibleName('关闭镜头 3')
   })
 
+  const selectPart = async () => {
+    await originalTrack()
+    await userEvent.click(await within(editTrack()).findByRole('button', { name: PART_1 }))
+    return within(smallCard('镜头 3–4 的编辑片段')).getByRole('button', { name: '下载视频' })
+  }
+
+  it('小卡下载编辑段：下的是生成的整个文件，保存后按这条编辑段记一次下载', async () => {
+    const calls = watchDownloads()
+    serveChain([editSegment({ id: EDIT_ID })])
+    await renderEditor()
+
+    await userEvent.click(await selectPart())
+
+    await waitFor(() => expect(calls).toEqual([EDITED_URL, downloaded(EDIT_ID)]))
+  })
+
+  it('小卡下载失败时提示且不记下载，重试成功才记一次', async () => {
+    let attempts = 0
+    const calls = watchDownloads(() =>
+      (attempts += 1) === 1 ? new HttpResponse(null, { status: 503 }) : videoFile(),
+    )
+    serveChain([editSegment({ id: EDIT_ID })])
+    await renderEditor()
+
+    const download = await selectPart()
+    await userEvent.click(download)
+    expect(await screen.findByText('视频下载失败，请重试')).toBeVisible()
+    await waitFor(() => expect(download).not.toHaveAttribute('aria-disabled'))
+    await userEvent.click(download)
+
+    await waitFor(() => expect(calls).toEqual([EDITED_URL, EDITED_URL, downloaded(EDIT_ID)]))
+  })
+
+  it('小卡下载不动选中、选用和播放', async () => {
+    const calls = watchDownloads()
+    serveChain([editSegment({ id: EDIT_ID })])
+    await renderEditor()
+    const download = await selectPart()
+    const namesBefore = draftNames()
+    const storedBefore = window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))
+
+    await userEvent.click(download)
+    await waitFor(() => expect(calls).toHaveLength(2))
+
+    expect(smallCard('镜头 3–4 的编辑片段')).toBeVisible()
+    expect(within(draftTrack()).getByRole('button', { name: /第 1 段/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(draftNames()).toEqual(namesBefore)
+    expect(partEye(PART_1)).toHaveAccessibleName('取消选用这一段')
+    expect(window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))).toBe(storedBefore)
+    expect(playButton()).toBeVisible()
+    expect(playhead()).toHaveValue('2')
+  })
+
+  it('镜头和还在生成的编辑片段的小卡没有下载入口', async () => {
+    serveChain([
+      editSegment({ id: EDIT_ID, status: 'submitted', outputUrl: null, durationMs: null }),
+    ])
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+
+    await user.click(within(draftTrack()).getByRole('button', { name: '镜头 2 · 1.0 秒 · 原片' }))
+    expect(buttonNames(smallCard('镜头 2'))).toEqual(['关闭'])
+
+    await user.click(await within(editTrack()).findByRole('button', { name: '镜头 3–4 · 生成中' }))
+    expect(buttonNames(smallCard('镜头 3–4 · 正在生成'))).toEqual(['关闭'])
+  })
+
   it('小眼睛只开关、不改选中；重新打开的镜头排在同一位置已有的编辑段后面', async () => {
     serveChain([editSegment({ id: EDIT_ID })])
     const user = userEvent.setup()
@@ -1806,6 +1902,42 @@ describe('合成与版本视图', () => {
     expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', COMPOSITE_URL)
     expect(playhead()).toHaveValue('0')
     expect(playButton()).toBeVisible()
+  })
+
+  it('版本视图「下载」不弹菜单，保存期间不能再点；下的和记的都是正在看的版本', async () => {
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const calls = watchDownloads(async () => {
+      await held
+      return videoFile()
+    })
+    const opened = composite({ id: COMPOSITE_ID })
+    serveChain([root, opened])
+    const user = userEvent.setup()
+    await renderEditor(opened)
+    await findVersion('V2')
+    const download = () => within(controls()).getByRole('button', { name: '下载' })
+
+    await user.click(download())
+    expect(screen.queryByRole('menu')).toBeNull()
+    await waitFor(() => expect(calls).toEqual([COMPOSITE_URL]))
+    expect(download()).toBeDisabled()
+    release()
+    await waitFor(() => expect(calls).toEqual([COMPOSITE_URL, downloaded(COMPOSITE_ID)]))
+    await waitFor(() => expect(download()).toBeEnabled())
+
+    await user.click(versionButton('V1 原片'))
+    await user.click(download())
+    await waitFor(() =>
+      expect(calls).toEqual([
+        COMPOSITE_URL,
+        downloaded(COMPOSITE_ID),
+        ROOT_URL,
+        downloaded(ROOT_ID),
+      ]),
+    )
   })
 
   it('提交失败保留输入和错误，允许重新提交', async () => {
