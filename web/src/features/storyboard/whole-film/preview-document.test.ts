@@ -44,13 +44,12 @@ describe('预览页', () => {
     const draft = draftOf([video('v1', 's1', 0, 1_000), video('v2', 's1', 0, 1_000)])
     const videoTags = (html: string) => html.match(/<video [^>]*>/g) ?? []
 
-    it('预览页的视频跨域加载、只预读元数据，页头带预览标记', () => {
+    it('预览页的视频跨域加载、初始不预读，页头带预览标记', () => {
       const { html } = ready(draft)
       expect(videoTags(html)).toHaveLength(2)
       for (const tag of videoTags(html)) {
         expect(tag).toContain('crossorigin="anonymous"')
-        expect(tag).toContain('preload="metadata"')
-        expect(tag).not.toContain('preload="auto"')
+        expect(tag).toContain('preload="none"')
       }
       expect(html.slice(html.indexOf('<head'), html.indexOf('</head>'))).toContain(PREVIEW_MARK)
     })

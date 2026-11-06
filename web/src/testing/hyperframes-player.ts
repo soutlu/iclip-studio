@@ -13,10 +13,14 @@ export const downloadingVideos = new Set<string>()
 /** 数据不够播的视频地址；放进去的地址，合成页里对应的视频报 HAVE_METADATA，否则报 HAVE_ENOUGH_DATA。 */
 export const starvedVideos = new Set<string>()
 
+/** 各地址已缓冲的时间段（秒）；合成页里对应的视频按它报 `buffered`，没写的地址什么都没缓冲。 */
+export const bufferedVideos = new Map<string, readonly (readonly [number, number])[]>()
+
 /** 加载出错的视频地址；放进去的地址，合成页里对应的视频带 `error`。 */
 const failedVideos = new Set<string>()
 
-const emitFrom = (url: string, type: string) => {
+/** 合成页里这个地址的视频发 `type` 事件。 */
+export const emitFrom = (url: string, type: string) => {
   for (const player of document.querySelectorAll<FakeHyperframesPlayer>('hyperframes-player'))
     for (const video of player.iframeElement.contentDocument?.querySelectorAll('video') ?? [])
       if (video.getAttribute('src') === url) video.dispatchEvent(new Event(type))
@@ -81,6 +85,16 @@ class FakeHyperframesPlayer extends HTMLElement {
                 : HTMLMediaElement.HAVE_ENOUGH_DATA,
           },
           error: { get: () => (failedVideos.has(url) ? { code: 4 } : null) },
+          buffered: {
+            get: () => {
+              const ranges = bufferedVideos.get(url) ?? []
+              return {
+                length: ranges.length,
+                start: (at: number) => ranges[at]?.[0],
+                end: (at: number) => ranges[at]?.[1],
+              }
+            },
+          },
         })
         return video
       }),

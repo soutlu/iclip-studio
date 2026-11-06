@@ -67,11 +67,38 @@ const once = (target: EventTarget, type: string) =>
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-/** 视频能流畅放或出错时调用 `done`，返回的函数取消。不用 canplay：数据刚够就走，走一下又会停。 */
+/** 缓冲恢复时，当前位置往后至少要有这么多秒；片段剩得更少时缓冲到片段结束就够 */
+const RESUME_BUFFER_SECONDS = 3
+
+/** 缓冲段的起点比当前位置晚不超过这么多秒，也算覆盖当前位置 */
+const BUFFER_START_TOLERANCE_SECONDS = 0.05
+
+const hasResumeBuffer = (video: HTMLVideoElement) => {
+  if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return false
+  const { buffered, currentTime } = video
+  const clipEnd = Number(video.dataset['mediaStart'] ?? 0) + Number(video.dataset['duration'])
+  const needed = Math.max(0, Math.min(RESUME_BUFFER_SECONDS, clipEnd - currentTime))
+  return Array.from({ length: buffered.length }).some(
+    (_, at) =>
+      buffered.start(at) <= currentTime + BUFFER_START_TOLERANCE_SECONDS &&
+      buffered.end(at) - currentTime >= needed,
+  )
+}
+
+/**
+ * 视频缓冲够了或出错时调用 `done`，返回的函数取消。canplaythrough 要估算整段都能播完，只等它太久，
+ * 所以也看实际缓冲到了哪；它和 error 仍然直接结束等待。
+ */
 const whenPlayable = (video: HTMLVideoElement, done: () => void) => {
+  const checkBuffer = () => {
+    if (hasResumeBuffer(video)) done()
+  }
+  const bufferEvents = ['progress', 'canplay', 'seeked']
+  for (const type of bufferEvents) video.addEventListener(type, checkBuffer)
   video.addEventListener('canplaythrough', done)
   video.addEventListener('error', done)
   return () => {
+    for (const type of bufferEvents) video.removeEventListener(type, checkBuffer)
     video.removeEventListener('canplaythrough', done)
     video.removeEventListener('error', done)
   }

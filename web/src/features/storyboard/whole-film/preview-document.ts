@@ -27,10 +27,12 @@ export const withBaseHref = (html: string, baseHref: string): string => {
 }
 
 // preload 不是 auto 时播放器不建父页面副本，否则每个文件下载两遍；只改预览，合成输出还要跑在渲染服务里。
+// 写 none 不写 metadata：metadata 一开始就下载，运行时之后设成 none 也停不下来，几个文件会一起抢带宽；
+// 初始写 none 时，运行时按播放位置调 load()，一次只加载用得到的片段。
 const withPreviewMedia = (html: string): string =>
   html
     .replaceAll('<video ', '<video crossorigin="anonymous" ')
-    .replaceAll('preload="auto"', 'preload="metadata"')
+    .replaceAll('preload="auto"', 'preload="none"')
     .replace(/<head[^>]*>/i, '$&\n<meta name="hyperframes-studio-preview" content="1">')
 
 type MediaSources = {

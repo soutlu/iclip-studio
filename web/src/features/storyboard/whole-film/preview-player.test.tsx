@@ -2,7 +2,9 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  bufferedVideos,
   clearFailedVideos,
+  emitFrom,
   failVideo,
   finishBuffering,
   starvedVideos,
@@ -51,9 +53,9 @@ const handlers = () => ({
 })
 
 /** 挂上预览，等播放器换上来；播放器记下 play 事件的次数。 */
-const openPreview = async () => {
+const openPreview = async (srcdoc = page()) => {
   const on = handlers()
-  const view = render(preview(page(), on))
+  const view = render(preview(srcdoc, on))
   await waitFor(() => expect(on.control.current).not.toBeNull())
   const plays = vi.fn()
   playerOf().addEventListener('play', plays)
@@ -67,7 +69,109 @@ const openPreview = async () => {
 
 afterEach(() => {
   starvedVideos.clear()
+  bufferedVideos.clear()
   clearFailedVideos()
+})
+
+describe('缓冲够了就继续', () => {
+  /** 时间线第 0 秒起的片段，取素材的 1–9 秒。 */
+  const LONG_CLIP = `<!doctype html><html><head></head><body><video src="${FIRST}" data-start="0" data-duration="8" data-media-start="1"></video></body></html>`
+
+  /** 播到片段里素材的第 `at` 秒时数据不够，时间线停下等待。 */
+  const waitAt = async (at: number) => {
+    const opened = await openPreview(LONG_CLIP)
+    const video = playerOf()
+      .querySelector('iframe')
+      ?.contentDocument?.querySelector<HTMLVideoElement>('video')
+    if (video === null || video === undefined) throw new Error('合成页里没有视频')
+    video.currentTime = at
+    starvedVideos.add(FIRST)
+    act(() => opened.control().play())
+    expect(opened.onBuffering).toHaveBeenLastCalledWith(true)
+    return opened
+  }
+  /** 浏览器报告这些缓冲段，视频数据也够接着播了。 */
+  const report = (ranges: readonly (readonly [number, number])[], event = 'progress') => {
+    starvedVideos.delete(FIRST)
+    bufferedVideos.set(FIRST, ranges)
+    act(() => emitFrom(FIRST, event))
+  }
+
+  it('当前位置往后不足 3 秒不继续，够 3 秒就继续', async () => {
+    const { plays, onBuffering } = await waitAt(2)
+    report([[1, 4.9]])
+    expect(plays).not.toHaveBeenCalled()
+    expect(onBuffering).toHaveBeenLastCalledWith(true)
+
+    report([[1, 5]])
+    expect(plays).toHaveBeenCalledTimes(1)
+    expect(onBuffering).toHaveBeenLastCalledWith(false)
+  })
+
+  it.each(['progress', 'canplay', 'seeked'])('%s 时检查缓冲', async (event) => {
+    const { plays } = await waitAt(2)
+    report([[2, 6]], event)
+    expect(plays).toHaveBeenCalledTimes(1)
+  })
+
+  it('片段剩下不足 3 秒时，缓冲到片段结束就继续；片段结束按素材起点算', async () => {
+    const { plays } = await waitAt(7.5)
+    report([[7, 8.9]])
+    expect(plays).not.toHaveBeenCalled()
+
+    report([[7, 9]])
+    expect(plays).toHaveBeenCalledTimes(1)
+  })
+
+  it('当前位置已过片段结束时，到不了当前位置的缓冲段也不算', async () => {
+    const { plays } = await waitAt(9.5)
+    report([[1, 9.2]])
+    expect(plays).not.toHaveBeenCalled()
+  })
+
+  it('不覆盖当前位置的缓冲段不算', async () => {
+    const { plays } = await waitAt(2)
+    report([
+      [0, 1],
+      [2.5, 8],
+    ])
+    expect(plays).not.toHaveBeenCalled()
+
+    report([
+      [0, 1],
+      [2.04, 8],
+    ])
+    expect(plays).toHaveBeenCalledTimes(1)
+  })
+
+  it('缓冲段够了但视频还没到能往下放的状态，不继续', async () => {
+    const { plays } = await waitAt(2)
+    bufferedVideos.set(FIRST, [[1, 8]])
+    act(() => emitFrom(FIRST, 'progress'))
+    expect(plays).not.toHaveBeenCalled()
+  })
+
+  it('canplaythrough 不看缓冲段，直接继续', async () => {
+    const { plays } = await waitAt(2)
+    bufferedVideos.set(FIRST, [[2, 2.5]])
+    act(() => finishBuffering(FIRST))
+    expect(plays).toHaveBeenCalledTimes(1)
+  })
+
+  it('error 不看缓冲段，直接继续', async () => {
+    const { plays } = await waitAt(2)
+    act(() => failVideo(FIRST))
+    expect(plays).toHaveBeenCalledTimes(1)
+  })
+
+  it('用户暂停后缓冲够了也不继续，也不再报缓冲', async () => {
+    const { control, plays, onBuffering } = await waitAt(2)
+    act(() => control().pause())
+    const calls = onBuffering.mock.calls.length
+    report([[1, 8]])
+    expect(plays).not.toHaveBeenCalled()
+    expect(onBuffering).toHaveBeenCalledTimes(calls)
+  })
 })
 
 describe('预览缓冲', () => {
