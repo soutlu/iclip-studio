@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -15,6 +16,7 @@ import { cn } from '@/shared/lib/utils'
 import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
 import type { PlaySegment } from './play-layout'
+import { acquire } from './thumbnail-queue'
 import { roundSeconds, timeLabel } from './time-label'
 import { releasePointer, type Edge } from './timeline-drag'
 import './timeline.css'
@@ -258,12 +260,47 @@ export function Frames({ part }: { part: PlaySegment }) {
   )
 }
 
+const loadedFrames = new Set<string>()
+
 function Frame({ src, style }: { src: string; style: CSSProperties }) {
   const [failed, setFailed] = useState(false)
-  return failed ? (
-    <span className="timeline-frame-empty" style={style} />
+  const [started, setStarted] = useState(() => loadedFrames.has(src))
+  const placeholderRef = useRef<HTMLSpanElement>(null)
+  const turnRef = useRef<(() => void) | null>(null)
+  const release = useCallback(() => {
+    turnRef.current?.()
+    turnRef.current = null
+  }, [])
+  useEffect(() => release, [release])
+  // 不用 loading="lazy"：懒加载的图不开始下载就一直占着名额。
+  useEffect(() => {
+    const placeholder = placeholderRef.current
+    if (started || placeholder === null) return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.at(-1)?.isIntersecting === true)
+        turnRef.current ??= acquire(() => setStarted(true))
+      else release()
+    })
+    observer.observe(placeholder)
+    return () => observer.disconnect()
+  }, [started, release])
+  return failed || !started ? (
+    <span className="timeline-frame-empty" ref={placeholderRef} style={style} />
   ) : (
-    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} style={style} />
+    <img
+      alt=""
+      draggable={false}
+      onError={() => {
+        setFailed(true)
+        release()
+      }}
+      onLoad={() => {
+        loadedFrames.add(src)
+        release()
+      }}
+      src={src}
+      style={style}
+    />
   )
 }
 

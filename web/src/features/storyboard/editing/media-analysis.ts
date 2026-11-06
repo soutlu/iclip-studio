@@ -20,11 +20,23 @@ export type PeaksState =
   | { kind: 'ready'; peaks: AudioPeaks }
   | { kind: 'failed'; error: unknown }
 
-export const useAudioPeaks = (urls: readonly string[]): ReadonlyMap<string, PeaksState> =>
+let peaksTurn: Promise<unknown> = Promise.resolve()
+
+const readPeaksInTurn = (url: string) => {
+  const read = peaksTurn.then(async () => (await loadReader()).readAudioPeaks(url))
+  peaksTurn = read.catch(() => undefined)
+  return read
+}
+
+export const useAudioPeaks = (
+  urls: readonly string[],
+  { enabled = true }: { enabled?: boolean } = {},
+): ReadonlyMap<string, PeaksState> =>
   useQueries({
     queries: urls.map((url) => ({
       queryKey: ['video-editor', 'audio-peaks', url],
-      queryFn: async () => (await loadReader()).readAudioPeaks(url),
+      queryFn: () => readPeaksInTurn(url),
+      enabled,
       ...KEEP,
     })),
     combine: (results) =>

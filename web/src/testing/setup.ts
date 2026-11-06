@@ -61,6 +61,10 @@ for (const proto of [Range.prototype, Element.prototype]) {
   }
 }
 
+if (!('error' in HTMLMediaElement.prototype)) {
+  Object.defineProperty(HTMLMediaElement.prototype, 'error', { configurable: true, value: null })
+}
+
 if (!('setPointerCapture' in Element.prototype)) {
   for (const [name, value] of [
     ['setPointerCapture', () => undefined],

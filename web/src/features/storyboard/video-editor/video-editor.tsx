@@ -232,6 +232,7 @@ function Editor({
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
   const [trimPreview, setTrimPreview] = useState<TrimPreview>()
+  const [videoSettled, setVideoSettled] = useState(false)
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const { downloading, download } = useMediaDownload()
@@ -643,13 +644,17 @@ function Editor({
     viewedDuration === undefined
       ? undefined
       : layoutPlay([{ mediaUrl: viewed.mediaUrl, start: 0, end: viewedDuration }])
-  const current = clipsView
-    ? shots === undefined
-      ? undefined
-      : sourcePreview
-        ? layoutPlay([{ mediaUrl, start: 0, end: duration }])
-        : layoutPlay(outputOf(staged))
-    : wholePlay
+  const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
+  const current =
+    timelineKeyframes?.isError === true
+      ? []
+      : clipsView
+        ? shots === undefined
+          ? undefined
+          : sourcePreview
+            ? layoutPlay([{ mediaUrl, start: 0, end: duration }])
+            : layoutPlay(outputOf(staged))
+        : wholePlay
   const total = clipsView ? totalOf(items) : 0
   const lengthDifference = total - duration
 
@@ -665,7 +670,7 @@ function Editor({
         ]
       : listed.map((version) => version.mediaUrl),
   )
-  const peaks = useAudioPeaks(audioUrls)
+  const peaks = useAudioPeaks(audioUrls, { enabled: videoSettled })
   useFailureToasts(
     useMemo(
       () => [
@@ -720,7 +725,6 @@ function Editor({
     </Button>
   )
 
-  const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
   const peaksOf = (url: string) => peaks.get(url) ?? LOADING_PEAKS
   const timeline =
     timelineKeyframes?.isError === true ? (
@@ -1006,6 +1010,7 @@ function Editor({
             currentTime={currentTime}
             shownTime={trimPreview?.shown}
             shownDuration={trimPreview?.kind === 'draft' ? total : undefined}
+            onDownloadSettled={() => setVideoSettled(true)}
             onPlay={collapseCard}
             onTime={setCurrentTime}
             overlay={

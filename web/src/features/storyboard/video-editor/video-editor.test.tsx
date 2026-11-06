@@ -1,20 +1,32 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '@/shared/ui/toast'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { finishFrameLoads } from '@/testing/timeline-frames'
 import { VIDEO_MODELS } from '@/testing/video-models'
+import { Frames } from '../editing/timeline'
 import type { GenerationJob } from '../storyboard.api'
 import { draftStorageKey } from './use-draft'
 import { VideoEditor } from './video-editor'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
+type HeldRead = {
+  promise: Promise<null>
+  resolve: (track: null) => void
+  reject: (cause: Error) => void
+}
+const audioReads = vi.hoisted(() => ({
+  opened: [] as string[],
+  held: new Map<string, HeldRead>(),
+}))
 
 vi.mock('mediabunny', async () => {
   const { createMediaReaderMock } = await import('@/testing/media-reader')
@@ -59,7 +71,10 @@ vi.mock('mediabunny', async () => {
     }
   }
   return {
-    ...createMediaReaderMock(files),
+    ...createMediaReaderMock(files, (url) => {
+      audioReads.opened.push(url)
+      return audioReads.held.get(url)?.promise ?? Promise.resolve(null)
+    }),
     BufferTarget,
     Quality,
     VideoSampleSink,
@@ -93,20 +108,28 @@ const rootWithShotPrompts = makeGenerationJob({
   },
 })
 
+let stageNetworkState: number = HTMLMediaElement.NETWORK_LOADING
+
+const stopVideoDownload = () => {
+  stageNetworkState = HTMLMediaElement.NETWORK_IDLE
+  fireEvent.suspend(screen.getByLabelText('视频播放器'))
+}
+
+const editorOf = (video = root) => (
+  <>
+    <VideoEditor
+      conversationId={CONVERSATION}
+      loading={false}
+      onClose={() => {}}
+      shotIndex={1}
+      video={video}
+    />
+    <Toaster />
+  </>
+)
+
 const renderEditor = (video = root) =>
-  renderWithProviders(
-    <>
-      <VideoEditor
-        conversationId={CONVERSATION}
-        loading={false}
-        onClose={() => {}}
-        shotIndex={1}
-        video={video}
-      />
-      <Toaster />
-    </>,
-    { initialPath: '/c/test' },
-  )
+  renderWithProviders(editorOf(video), { initialPath: '/c/test' })
 
 const editSegment = (overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({
@@ -228,12 +251,175 @@ beforeEach(() => {
   })
   vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
   vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
+  stubIntersectionObserver()
+  stageNetworkState = HTMLMediaElement.NETWORK_LOADING
+  vi.spyOn(HTMLMediaElement.prototype, 'networkState', 'get').mockImplementation(
+    () => stageNetworkState,
+  )
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   files.clear()
   referenceSamples.length = 0
+  for (const held of audioReads.held.values()) held.resolve(null)
+  audioReads.held.clear()
+  audioReads.opened.length = 0
+})
+
+describe('时间线缩略图限量排队', () => {
+  const mediaOf = (name: string) => `https://bucket.oss-cn-hangzhou.aliyuncs.com/${name}.mp4`
+  const timesOf = (images: readonly HTMLImageElement[]) =>
+    images.map((image) => Number(/t_(\d+),/.exec(image.getAttribute('src') ?? '')?.[1]))
+  const framesOf = (mediaUrl: string) => <Frames part={{ mediaUrl, start: 1, end: 4 }} />
+  const imagesIn = (container: HTMLElement) => [...container.querySelectorAll('img')]
+
+  it('全部进入可视区时只请求 3 张，一张加载完才出下一张', async () => {
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('limit')))
+    await viewport.scroll(true)
+    expect(timesOf(imagesIn(view.container))).toEqual([1250, 1750, 2250])
+
+    const [first] = imagesIn(view.container)
+    if (first === undefined) throw new Error('没有图')
+    fireEvent.load(first)
+    expect(timesOf(imagesIn(view.container))).toEqual([1250, 1750, 2250, 2750])
+  })
+
+  it('加载失败的格子留空，也让出名额', async () => {
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('failed')))
+    await viewport.scroll(true)
+    const [first] = imagesIn(view.container)
+    if (first === undefined) throw new Error('没有图')
+    fireEvent.error(first)
+    expect(timesOf(imagesIn(view.container))).toEqual([1750, 2250, 2750])
+  })
+
+  it('不在可视区的不请求', async () => {
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('outside')))
+    await viewport.scroll(false)
+    expect(imagesIn(view.container)).toEqual([])
+  })
+
+  it('还在排队就离开可视区的不再请求，已开始的继续', async () => {
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('left')))
+    await viewport.scroll(true)
+    await viewport.scroll(false)
+    const running = imagesIn(view.container)
+    expect(running).toHaveLength(3)
+    for (const image of running) fireEvent.load(image)
+    expect(imagesIn(view.container)).toHaveLength(3)
+  })
+
+  it('卸载时释放名额：加载到一半关掉，后面的还能开始', async () => {
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('closed')))
+    await viewport.scroll(true)
+    view.unmount()
+    const next = render(framesOf(mediaOf('after-closed')))
+    await viewport.scroll(true)
+    expect(imagesIn(next.container)).toHaveLength(3)
+  })
+
+  it('加载过的图再次挂载直接显示，不等可视区也不排队', async () => {
+    const viewport = stubIntersectionObserver()
+    const media = mediaOf('seen')
+    const view = render(framesOf(media))
+    await viewport.scroll(true)
+    finishFrameLoads(view.container)
+    view.unmount()
+
+    await viewport.scroll(false)
+    const again = render(framesOf(media))
+    expect(imagesIn(again.container)).toHaveLength(6)
+  })
+})
+
+describe('波形等视频停止下载再读', () => {
+  const silentMarks = async () => within(await timeline()).findAllByText('无声')
+  const hold = (url: string) => {
+    let resolve: HeldRead['resolve'] = () => {}
+    let reject: HeldRead['reject'] = () => {}
+    const promise = new Promise<null>((onResolve, onReject) => {
+      resolve = onResolve
+      reject = onReject
+    })
+    const held = { promise, resolve, reject }
+    audioReads.held.set(url, held)
+    return held
+  }
+
+  it('视频下载中不读波形，停止下载后才读', async () => {
+    serveChain([])
+    await renderEditor()
+    await originalTrack()
+    expect(audioReads.opened).toEqual([])
+    expect(within(await timeline()).queryByText('无声')).toBeNull()
+
+    stopVideoDownload()
+    expect((await silentMarks()).length).toBeGreaterThan(0)
+    expect(audioReads.opened).toEqual([ROOT_URL])
+  })
+
+  it('读过的波形再次打开时直接显示，不等视频也不重读', async () => {
+    serveChain([])
+    const view = await renderEditor()
+    await originalTrack()
+    stopVideoDownload()
+    await silentMarks()
+
+    view.rerender(null)
+    view.rerender(editorOf())
+    expect((await silentMarks()).length).toBeGreaterThan(0)
+    expect(audioReads.opened).toEqual([ROOT_URL])
+  })
+
+  it.each([
+    { outcome: '读完', finish: (held: HeldRead) => held.resolve(null) },
+    { outcome: '读失败', finish: (held: HeldRead) => held.reject(new Error('文件损坏')) },
+  ])('同一时间只读一个文件，前一个 $outcome 后才读下一个', async ({ finish }) => {
+    const held = hold(ROOT_URL)
+    serveChain([editSegment({ id: EDIT_ID })])
+    await renderEditor()
+    await originalTrack()
+    await within(editTrack()).findByRole('button', { name: /第 1 段/ })
+
+    stopVideoDownload()
+    await waitFor(() => expect(audioReads.opened).toEqual([ROOT_URL]))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)))
+    expect(audioReads.opened).toEqual([ROOT_URL])
+
+    finish(held)
+    await waitFor(() => expect(audioReads.opened).toEqual([ROOT_URL, EDITED_URL]))
+  })
+
+  const expectKeyframeFailureShown = async () => {
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('视频时长无效，无法分段')
+    expect(within(alert).getByRole('button', { name: '重试' })).toBeVisible()
+    expect(screen.queryByText('正在读取视频信息…')).toBeNull()
+  }
+
+  it('剪辑视图读不到原片关键帧：舞台没有视频可等，直接读波形，仍有失败提示', async () => {
+    files.delete(ROOT_URL)
+    serveChain([])
+    await renderEditor()
+    await waitFor(() => expect(audioReads.opened).toEqual([ROOT_URL]))
+    await expectKeyframeFailureShown()
+  })
+
+  it('版本视图读不到这一版的关键帧：舞台没有视频可等，直接读波形，仍有失败提示', async () => {
+    const opened = composite({ id: COMPOSITE_ID })
+    files.delete(COMPOSITE_URL)
+    serveChain([root, opened])
+    await renderEditor(opened)
+    await waitFor(() => expect(audioReads.opened).toContain(COMPOSITE_URL))
+    await expectKeyframeFailureShown()
+  })
 })
 
 describe('VideoEditor', () => {
@@ -303,7 +489,8 @@ describe('VideoEditor', () => {
       within(await originalTrack()).getAllByRole('button', { name: /^镜头 \d ·/ }),
     ).toHaveLength(8)
     expect(draftNames()).toHaveLength(8)
-    expect(within(await timeline()).getAllByText('无声').length).toBeGreaterThan(0)
+    stopVideoDownload()
+    expect((await within(await timeline()).findAllByText('无声')).length).toBeGreaterThan(0)
     expect(within(editTrack()).getAllByRole('button', { name: /^生成镜头 \d$/ })).toHaveLength(8)
     expect(card()).toBeNull()
     expect(screen.queryByRole('group', { name: '视频版本' })).toBeNull()
