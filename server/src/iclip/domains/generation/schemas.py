@@ -701,9 +701,8 @@ class VideoEnhanceTierOut(CamelModel):
 
 
 class VideoEnhancementsOut(CamelModel):
-    """一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。"""
+    """一条视频能做的高清版各档。"""
 
-    downloaded_job_ids: list[uuid.UUID]
     tiers: list[VideoEnhanceTierOut]
 
 

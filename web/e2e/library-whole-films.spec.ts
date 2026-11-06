@@ -12,7 +12,7 @@ const showDecodedFrame = async (dialog: Locator) => {
     .toBe(true)
 }
 
-test('资料库成片：最新卡面、详情、下载记素材片、返回与标题筛选', async ({ page }) => {
+test('资料库成片：最新卡面、详情、下载记成片、返回与标题筛选', async ({ page }) => {
   await page.goto('/')
   await login(page)
   await page.getByRole('button', { name: '资料库', exact: true }).click()

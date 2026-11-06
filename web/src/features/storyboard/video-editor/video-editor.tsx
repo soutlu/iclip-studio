@@ -2,7 +2,6 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { PercentCrop } from 'react-image-crop'
 import { errorMessageOf } from '@/shared/api/client'
-import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button } from '@/shared/ui/button'
@@ -14,6 +13,7 @@ import type {
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
+import { VideoDownload } from '@/shared/ui/video-download'
 import { GenerationPicker } from '../components/generation-picker'
 import {
   compileImageClipPrompt,
@@ -235,7 +235,6 @@ function Editor({
   const [videoSettled, setVideoSettled] = useState(false)
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
-  const { downloading, download } = useMediaDownload()
   const busy = submission !== undefined
   useSubmissionGuard(busy)
 
@@ -713,16 +712,15 @@ function Editor({
       {composing === undefined ? '合成新版本' : '正在合成'}
     </Button>
   ) : (
-    <Button
+    <VideoDownload
       className="video-editor-compose"
-      leadingIcon="download"
-      loading={downloading}
-      onClick={() => void download(viewed.mediaUrl, '生成的视频')}
-      size="md"
+      jobId={viewed.jobId}
+      url={viewed.mediaUrl}
       variant="inverted"
+      watermarkUrl={null}
     >
       下载
-    </Button>
+    </VideoDownload>
   )
 
   const peaksOf = (url: string) => peaks.get(url) ?? LOADING_PEAKS
@@ -882,6 +880,16 @@ function Editor({
   const smallCard =
     selectedItem !== undefined ? (
       <SelectionCard
+        action={
+          selectedEdit === undefined || selectedEdit.job.outputUrl === null ? undefined : (
+            <VideoDownload
+              className="border-0 text-on-surface-variant"
+              jobId={selectedEdit.job.id}
+              url={selectedEdit.job.outputUrl}
+              watermarkUrl={null}
+            />
+          )
+        }
         anchorRef={selectionBoxRef}
         frame={videoSnapshotUrl(selectedItem.mediaUrl, CARD_FRAME_WIDTH, selectedItem.t0)}
         key={selectedItem.id}

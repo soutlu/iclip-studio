@@ -256,8 +256,8 @@ function FilmViewer({
         </p>
         <div className="mt-auto flex flex-wrap items-center gap-2">
           <VideoDownload
-            downloadedJobIds={version.sourceJobIds}
             enhanceSourceId={version.jobId}
+            jobId={version.jobId}
             originalLabel="下载成片"
             url={version.outputUrl}
             watermarkUrl={null}

@@ -25,6 +25,7 @@ class Conversation:
     completed_at: datetime | None = None
     forked_from: uuid.UUID | None = None
     fork_turn: int | None = None
+    same_as: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +88,6 @@ class WholeFilmExport:
     queue_position: int | None
     error: WholeFilmExportError | None
     download_url: str | None
-    source_job_ids: tuple[uuid.UUID, ...]
 
 
 __all__ = [

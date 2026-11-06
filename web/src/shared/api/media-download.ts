@@ -24,14 +24,16 @@ export const useMediaDownload = () => {
   const activeRef = useRef(false)
   const [downloading, setDownloading] = useState(false)
 
-  const download = async (url: string, fallbackName: string) => {
-    if (activeRef.current) return
+  const download = async (url: string, fallbackName: string): Promise<boolean> => {
+    if (activeRef.current) return false
     activeRef.current = true
     setDownloading(true)
     try {
       await saveAs(url, fallbackName)
+      return true
     } catch {
       toast.error('视频下载失败，请重试')
+      return false
     } finally {
       activeRef.current = false
       setDownloading(false)

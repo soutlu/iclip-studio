@@ -90,6 +90,15 @@ async def files_of(pg_url: str, namespace: str) -> dict[str, str]:
         return {row.path: row.content for row in rows}
 
 
+async def same_as_of(pg_url: str, conversation_id: str) -> str | None:
+    async with connected(pg_url) as conn:
+        found = await conn.execute(
+            text("SELECT CAST(same_as AS text) FROM iclip.conversations WHERE id = :id"),
+            {"id": conversation_id},
+        )
+        return found.scalar_one()
+
+
 async def row_exists(pg_url: str, conversation_id: str) -> bool:
     async with connected(pg_url) as conn:
         found = await conn.execute(
@@ -136,6 +145,31 @@ async def test_same_as_copies_the_four_files_renamed(
     assert transcript.status_code == 200, transcript.text
     assert transcript.json()["items"] == [], "不拷历史"
     assert await files_of(pg_url, f"{owner}/{source}") == EVERYTHING, "源不能被动到"
+
+
+async def test_the_new_conversation_records_its_source(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = await login_as_editor(client, pg_url)
+    source = await open_source(client, pg_url, owner)
+    await plant(pg_url, f"{owner}/{source}", {"film.icml": "<film/>"})
+
+    made = await make_same(client, source)
+
+    assert made.status_code == 201, made.text
+    copy = made.json()["conversation"]
+    assert await same_as_of(pg_url, copy["id"]) == source
+    assert "sameAs" not in copy, "来源只给分析用，接口不返回"
+
+
+async def test_a_conversation_opened_without_same_as_records_no_source(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+
+    plain = await open_conversation(client)
+
+    assert await same_as_of(pg_url, plain) is None
 
 
 @pytest.mark.parametrize(

@@ -12866,16 +12866,8 @@
       },
       "VideoEnhancementsOut": {
         "additionalProperties": false,
-        "description": "一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。",
+        "description": "一条视频能做的高清版各档。",
         "properties": {
-          "downloadedJobIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Downloadedjobids",
-            "type": "array"
-          },
           "tiers": {
             "items": {
               "$ref": "#/components/schemas/VideoEnhanceTierOut"
@@ -12885,7 +12877,6 @@
           }
         },
         "required": [
-          "downloadedJobIds",
           "tiers"
         ],
         "title": "VideoEnhancementsOut",
@@ -13943,14 +13934,6 @@
             ],
             "title": "Queueposition"
           },
-          "sourceJobIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Sourcejobids",
-            "type": "array"
-          },
           "status": {
             "enum": [
               "queued",
@@ -13970,33 +13953,23 @@
           "progress",
           "queuePosition",
           "error",
-          "downloadUrl",
-          "sourceJobIds"
+          "downloadUrl"
         ],
         "title": "WholeFilmExportOut",
         "type": "object"
       },
       "WholeFilmExportStartedOut": {
         "additionalProperties": false,
-        "description": "已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出\n用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。",
+        "description": "已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。",
         "properties": {
           "exportId": {
             "format": "uuid",
             "title": "Exportid",
             "type": "string"
-          },
-          "sourceJobIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Sourcejobids",
-            "type": "array"
           }
         },
         "required": [
-          "exportId",
-          "sourceJobIds"
+          "exportId"
         ],
         "title": "WholeFilmExportStartedOut",
         "type": "object"
@@ -14171,14 +14144,6 @@
             "title": "Outputurl",
             "type": "string"
           },
-          "sourceJobIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Sourcejobids",
-            "type": "array"
-          },
           "userName": {
             "anyOf": [
               {
@@ -14195,8 +14160,7 @@
           "jobId",
           "outputUrl",
           "finishedAt",
-          "userName",
-          "sourceJobIds"
+          "userName"
         ],
         "title": "WholeFilmVersionOut",
         "type": "object"
@@ -18673,7 +18637,7 @@
     },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id 与用到的素材片。只有属主能导；\n``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。\n渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。",
+        "description": "按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。\n渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {
@@ -20011,7 +19975,7 @@
     },
     "/generations/{job_id}/enhancements": {
       "get": {
-        "description": "一条视频能做的高清版各档（比它清晰的，按运行配置的先后）与各档最近的一条超分记录（谁提的\n都算，``mine`` 标它是不是读的人的），以及下载高清版时要记下载事件的素材片。\n\n来源不按属主取，id 不存在 404。来源不是素材片或导出完成的成片时两项都空；高清版没开通时\n``tiers`` 为空。",
+        "description": "一条视频能做的高清版各档（比它清晰的，按运行配置的先后）与各档最近的一条超分记录（谁提的\n都算，``mine`` 标它是不是读的人的）。\n\n来源不按属主取，id 不存在 404。来源不是素材片或导出完成的成片、高清版没开通时 ``tiers`` 为空。",
         "operationId": "list_video_enhancements_generations__job_id__enhancements_get",
         "parameters": [
           {
@@ -24606,7 +24570,7 @@
     },
     "/tracking/events": {
       "post": {
-        "description": "记一条事件。发起人取自凭证，发生时刻取服务端时钟。\n\n``video.downloaded`` 必带 ``jobId``、不带 ``conversationId``，缺了或多带是 ``422``；\n``jobId`` 须是一条素材片（成功、有地址的出片或合成），不存在与不合格同样是 ``404``。",
+        "description": "记一条事件。发起人取自凭证，发生时刻取服务端时钟。\n\n``video.downloaded`` 必带 ``jobId``、不带 ``conversationId``，缺了或多带是 ``422``；\n``jobId`` 是下载的那个文件的记录，须是成功、有地址的视频或成片，不存在与不合格同样是 ``404``。",
         "operationId": "record_event_tracking_events_post",
         "requestBody": {
           "content": {

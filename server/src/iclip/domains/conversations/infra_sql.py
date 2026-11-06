@@ -86,6 +86,14 @@ conversations_table = Table(
         nullable=True,
     ),
     Column("fork_turn", Integer, nullable=True),
+    Column(
+        "same_as",
+        Uuid,
+        ForeignKey(
+            f"{DB_SCHEMA}.conversations.id", name="fk_conversations_same_as", ondelete="set null"
+        ),
+        nullable=True,
+    ),
 )
 
 _ROWS = conversations_table.c
@@ -178,6 +186,7 @@ def _row(mapping: RowMapping) -> Conversation:
         completed_at=mapping["completed_at"],
         forked_from=mapping["forked_from"],
         fork_turn=mapping["fork_turn"],
+        same_as=mapping["same_as"],
     )
 
 
@@ -256,6 +265,7 @@ class SqlConversationRepository:
                 updated_at=func.now(),
                 forked_from=conversation.forked_from,
                 fork_turn=conversation.fork_turn,
+                same_as=conversation.same_as,
             )
             .on_conflict_do_nothing(index_elements=[_ROWS.id])
             .returning(*conversations_table.c)

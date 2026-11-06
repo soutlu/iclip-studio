@@ -23,7 +23,6 @@ type MockSource = {
   shotIndex: number | null
   url: string
   durationMs: number | null
-  downloadedJobIds: readonly string[]
 }
 
 const resolutionOf = (request: Record<string, unknown> | null): string | null => {
@@ -35,7 +34,6 @@ const videoSource = (id: string): MockSource | undefined => {
   const take = findMockTake(id)
   if (take !== undefined && take.outputUrl !== null) {
     return {
-      downloadedJobIds: [id],
       durationMs: take.durationMs,
       id,
       resolution: resolutionOf(take.request),
@@ -46,7 +44,6 @@ const videoSource = (id: string): MockSource | undefined => {
   const found = findMockLibraryVersion(id)
   if (found === undefined) return undefined
   return {
-    downloadedJobIds: [id],
     durationMs: found.version.durationMs,
     id,
     resolution: found.version.take.resolution ?? null,
@@ -55,12 +52,10 @@ const videoSource = (id: string): MockSource | undefined => {
   }
 }
 
-const filmSource = (id: string, url: string, sourceJobIds: readonly string[]): MockSource => ({
-  downloadedJobIds: sourceJobIds,
+const filmSource = (id: string, url: string): MockSource => ({
   durationMs: null,
   id,
-  resolution:
-    sourceJobIds[0] === undefined ? null : (videoSource(sourceJobIds[0])?.resolution ?? null),
+  resolution: null,
   shotIndex: null,
   url,
 })
@@ -71,11 +66,9 @@ const sourceOf = (id: string): MockSource | undefined => {
   const film = mockLibraryWholeFilms()
     .flatMap((card) => card.versions)
     .find((version) => version.jobId === id)
-  if (film !== undefined) return filmSource(id, film.outputUrl, film.sourceJobIds)
+  if (film !== undefined) return filmSource(id, film.outputUrl)
   const exported = findMockWholeFilmExport(id)
-  return exported === undefined
-    ? undefined
-    : filmSource(id, exported.downloadUrl, exported.sourceJobIds)
+  return exported === undefined ? undefined : filmSource(id, exported.downloadUrl)
 }
 
 const offeredTiers = (source: MockSource): Resolution[] => {
@@ -192,7 +185,6 @@ export const enhancementHandlers = (activeUserId: () => string) => [
     const source = sourceOf(String(params['jobId']))
     if (source === undefined) return notFound()
     return HttpResponse.json({
-      downloadedJobIds: source.downloadedJobIds,
       tiers: offeredTiers(source).map((resolution) => {
         const job = latestOf(source.id, resolution) ?? null
         return { job, mine: job !== null && owners.get(job.id) === activeUserId(), resolution }

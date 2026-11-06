@@ -5,7 +5,7 @@ test.use({ viewport: { height: 900, width: 1440 } })
 
 const TAKE = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
 
-test('高清版：舞台菜单里生成 1080p，做好出点、打开菜单点消失，下载记在素材片上', async ({
+test('高清版：舞台菜单里生成 1080p，做好出点、打开菜单点消失，下载记在高清版上', async ({
   page,
 }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
@@ -26,7 +26,13 @@ test('高清版：舞台菜单里生成 1080p，做好出点、打开菜单点�
   await download.click()
   const menu = page.getByRole('menu')
   await expect(menu.getByRole('menuitem', { name: '下载高清版 720p' })).toBeVisible()
+  const submitted = page.waitForResponse(
+    (response) =>
+      response.url().includes('/generations/video-enhancements') &&
+      response.request().method() === 'POST',
+  )
   await menu.getByRole('menuitem', { name: /^生成高清版 1080p/ }).click()
+  const { generation } = (await (await submitted).json()) as { generation: { id: string } }
   const running = menu.getByRole('menuitem', { name: /^正在生成高清版 1080p/ })
   await expect(running).toBeVisible()
   await expect(running).toHaveAttribute('aria-disabled', 'true')
@@ -48,7 +54,10 @@ test('高清版：舞台菜单里生成 1080p，做好出点、打开菜单点�
   )
   const saved = page.waitForEvent('download')
   await menu.getByRole('menuitem', { name: '下载高清版 1080p' }).click()
-  expect((await tracked).postDataJSON()).toEqual({ jobId: TAKE, name: 'video.downloaded' })
+  expect((await tracked).postDataJSON()).toEqual({
+    jobId: generation.id,
+    name: 'video.downloaded',
+  })
   expect((await saved).suggestedFilename()).toMatch(/\.mp4$/)
   await expect(menu).toBeHidden()
   await expect(download).not.toHaveAccessibleDescription(/高清版/)

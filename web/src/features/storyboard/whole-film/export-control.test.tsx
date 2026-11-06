@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -9,14 +9,9 @@ import { ExportControl } from './export-control'
 import type { ExportView } from './use-whole-film-export'
 
 const EXPORT_ID = '4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b'
-const USED = ['1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e']
+const FILM_URL = 'https://downloads.example.test/film.mp4'
 
-const DONE: ExportView = {
-  kind: 'done',
-  exportId: EXPORT_ID,
-  downloadUrl: 'https://downloads.example.test/film.mp4',
-  sourceJobIds: USED,
-}
+const DONE: ExportView = { kind: 'done', exportId: EXPORT_ID, downloadUrl: FILM_URL }
 
 const enhanceJob = (status: 'submitted' | 'failed' | 'completed') =>
   makeGenerationJob({
@@ -34,10 +29,7 @@ const serveTiers = (tiers: Tier[]) => {
   server.use(
     http.get(`*/api/generations/${EXPORT_ID}/enhancements`, () => {
       state.reads += 1
-      return HttpResponse.json({
-        downloadedJobIds: USED,
-        tiers: tiers.map((tier) => ({ ...tier, mine: true })),
-      })
+      return HttpResponse.json({ tiers: tiers.map((tier) => ({ ...tier, mine: true })) })
     }),
   )
   return state
@@ -48,7 +40,42 @@ const renderControl = (view: ExportView) =>
     <ExportControl blocked={undefined} onCancel={() => {}} onStart={() => {}} view={view} />,
   )
 
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
 describe('ExportControl · 高清版', () => {
+  it('下载成片：保存成功后记这次导出的成片，一条', async () => {
+    const tiers = serveTiers([])
+    const events: unknown[] = []
+    server.use(
+      http.post('*/api/tracking/events', async ({ request }) => {
+        events.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.get(
+        FILM_URL,
+        () => new HttpResponse(new Uint8Array([1]), { headers: { 'Content-Type': 'video/mp4' } }),
+      ),
+    )
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static override createObjectURL = () => 'blob:http://localhost/video'
+        static override revokeObjectURL() {}
+      },
+    )
+    const saved = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await renderControl(DONE)
+    await waitFor(() => expect(tiers.reads).toBe(1))
+
+    await userEvent.click(screen.getByRole('button', { name: '下载成片' }))
+
+    await waitFor(() => expect(events).toEqual([{ jobId: EXPORT_ID, name: 'video.downloaded' }]))
+    expect(saved).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     {
       name: '有在做的一档：写进度',

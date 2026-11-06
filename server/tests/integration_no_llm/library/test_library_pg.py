@@ -1089,15 +1089,9 @@ async def test_a_whole_film_card_holds_its_conversations_own_exports(
     assert (card.title, card.user_name) == ("春夏凉鞋合集", NORA)
     assert [version.user_name for version in card.versions] == [NORA, NORA, LENA]
     assert [version.finished_at for version in card.versions] == [at(45), at(200), at(300)]
-    assert [version.source_job_ids for version in card.versions] == [
-        [seed.a],
-        [seed.a, seed.d],
-        [seed.d, seed.a, seed.b],
-    ]
     assert card.face.output_url == url(f"film-{films.w2}")
     assert (c1.conversation_owner, c1.conversation_deleted) == (seed.nora, False)
     assert (rows[1].card.title, rows[1].card.user_name) == ("凉鞋合集（分叉）", LENA)
-    assert rows[2].card.face.source_job_ids == []
 
 
 async def test_high_definition_versions_are_neither_takes_nor_exports(
