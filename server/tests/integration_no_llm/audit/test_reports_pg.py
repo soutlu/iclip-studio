@@ -1067,6 +1067,7 @@ class ThreeShots:
         source: uuid.UUID | None = None,
         root: uuid.UUID | None = None,
         conversation: uuid.UUID | None = None,
+        status: str = STATUS_COMPLETED,
     ) -> uuid.UUID:
         job = uuid.uuid4()
         await self.conn.execute(
@@ -1085,7 +1086,7 @@ class ThreeShots:
                 "kind": kind,
                 "operation": operation,
                 "request": json.dumps(request),
-                "status": STATUS_COMPLETED,
+                "status": status,
                 "source": source,
                 "root": root,
                 "url": f"https://example.test/{job}.mp4",
@@ -1123,7 +1124,7 @@ async def high_definition_of_a_take(shots: ThreeShots) -> uuid.UUID:
     return await shots.high_definition(shots.first)
 
 
-async def edit_of_a_take(shots: ThreeShots) -> uuid.UUID:
+async def edit_of_a_take(shots: ThreeShots, *, status: str = STATUS_COMPLETED) -> uuid.UUID:
     return await shots.derive(
         kind=KIND_VIDEO,
         operation=OPERATION_GENERATE,
@@ -1131,6 +1132,7 @@ async def edit_of_a_take(shots: ThreeShots) -> uuid.UUID:
         source=shots.first,
         root=shots.first,
         conversation=shots.conversation,
+        status=status,
     )
 
 
@@ -1180,6 +1182,77 @@ async def test_a_download_makes_the_shots_it_came_from_effective(
     )
     executions = await executions_by_id(service)
     assert [shot.effective for shot in executions[conversation].shots] == effective
+
+
+async def plant_shots(conn: AsyncConnection, seed: Seed) -> ThreeShots:
+    conversation = await plant_conversation(conn, owner=seed.sara, at=ago(hours=1))
+    first, second, _ = [
+        await plant_take(conn, conversation, owner=seed.sara, shot=shot, at=ago(minutes=50))
+        for shot in (1, 2, 3)
+    ]
+    return ThreeShots(conn, conversation, seed.sara, first, second, ago(minutes=30))
+
+
+async def report_of(engine: AsyncEngine) -> dict[uuid.UUID, bool]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text("SELECT job_id, downloaded FROM iclip.video_generation_report")
+        )
+        return {row.job_id: row.downloaded for row in rows}
+
+
+@pytest.mark.parametrize("status", [STATUS_COMPLETED, STATUS_FAILED])
+async def test_the_report_lists_takes_but_no_edit_segments(
+    seed: Seed, engine: AsyncEngine, status: str
+) -> None:
+    async with engine.begin() as conn:
+        shots = await plant_shots(conn, seed)
+        edit = await edit_of_a_take(shots, status=status)
+
+    report = await report_of(engine)
+    assert shots.first in report
+    assert edit not in report
+
+
+async def test_downloading_an_edit_segment_credits_its_take_without_listing_it(
+    seed: Seed, engine: AsyncEngine
+) -> None:
+    async with engine.begin() as conn:
+        shots = await plant_shots(conn, seed)
+        edit = await edit_of_a_take(shots)
+        await plant_download(conn, edit, user_id=seed.derek)
+
+    report = await report_of(engine)
+    assert report[shots.first] is True
+    assert edit not in report
+
+
+async def test_downloading_a_composite_of_an_edit_segment_credits_its_take(
+    seed: Seed, engine: AsyncEngine
+) -> None:
+    async with engine.begin() as conn:
+        shots = await plant_shots(conn, seed)
+        edit = await edit_of_a_take(shots)
+        composite = await shots.derive(
+            kind=KIND_VIDEO,
+            operation=OPERATION_COMPOSE,
+            request={
+                "segments": [
+                    {
+                        "sourceJobId": str(edit),
+                        "url": "https://example.test/e.mp4",
+                        "start": 0,
+                        "end": 3,
+                    }
+                ]
+            },
+            source=shots.first,
+            root=shots.first,
+            conversation=shots.conversation,
+        )
+        await plant_download(conn, composite, user_id=seed.derek)
+
+    assert (await report_of(engine))[shots.first] is True
 
 
 async def test_audio_records_do_not_count_toward_any_metric(
