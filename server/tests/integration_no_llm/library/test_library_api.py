@@ -218,14 +218,12 @@ async def test_whole_film_cards_carry_every_version_and_the_conversation(
     )
     assert card["canOpenConversation"] is True
     assert [version["jobId"] for version in card["versions"]] == [str(first), str(second)]
-    assert card["versions"][0]["sourceJobIds"] == [str(video_id)]
     assert card["face"] == card["versions"][-1]
     assert card["face"] == {
         "jobId": str(second),
         "outputUrl": f"https://oss.example.test/{second}.mp4",
         "finishedAt": card["face"]["finishedAt"],
         "userName": "nora",
-        "sourceJobIds": [],
     }
 
     colleague = as_colleague.json()["items"][0]

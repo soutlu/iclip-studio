@@ -617,7 +617,7 @@ class ConversationService:
 
     async def export_whole_film(
         self, principal: Principal, conversation_id: uuid.UUID, *, revision: int
-    ) -> tuple[uuid.UUID, tuple[uuid.UUID, ...]]:
+    ) -> uuid.UUID:
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()
         found = await self._drafts.get(conversation.id)
@@ -626,10 +626,9 @@ class ConversationService:
         document = None if found is None else WholeFilmDocument.model_validate(found.document)
         if document is None or not document.layer0:
             raise ValidationFailed("画面轨里还没有内容，导不出成片")
-        export_id = await exports.start(
+        return await exports.start(
             principal, conversation_id=conversation.id, revision=revision, document=document
         )
-        return export_id, document.video_sources()
 
     async def latest_whole_film_export(
         self, principal: Principal, conversation_id: uuid.UUID

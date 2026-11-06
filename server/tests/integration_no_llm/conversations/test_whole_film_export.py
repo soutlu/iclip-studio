@@ -234,8 +234,8 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
 
     assert started.status_code == 202, started.text
     export_id = started.json()["exportId"]
+    assert started.json() == {"exportId": export_id}
     sources = [str(second.id), str(first.id)]
-    assert started.json()["sourceJobIds"] == sources
     pending = await record(generations, export_id)
     assert (pending.kind, pending.operation, pending.provider) == (
         KIND_WHOLE_FILM,
@@ -254,7 +254,6 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
         "queuePosition": None,
         "error": None,
         "downloadUrl": None,
-        "sourceJobIds": sources,
     }
     assert render.submitted == [], "受理时不调渲染服务"
 
@@ -297,7 +296,6 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
         "queuePosition": None,
         "error": None,
         "downloadUrl": None,
-        "sourceJobIds": sources,
     }
     with pytest.raises(StillRunning):
         await queue.run_poll(export_id)
@@ -315,7 +313,6 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
         "queuePosition": None,
         "error": None,
         "downloadUrl": f"{PUBLIC}/{key}",
-        "sourceJobIds": sources,
     }
 
 
@@ -586,7 +583,6 @@ async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
     revision = await save_draft(client, mine, components_only, revision)
     started = await client.post(exports_url(mine), json={"revision": revision})
     assert started.status_code == 202, started.text
-    assert started.json()["sourceJobIds"] == []
     await queue.run_submit(started.json()["exportId"])
     (payload,) = render.submitted
     assert (payload["document"], payload["media"]["videos"]) == (components_only, {})

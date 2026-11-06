@@ -95,7 +95,6 @@ class EnhanceTier:
 
 @dataclass(frozen=True, slots=True)
 class VideoEnhancements:
-    downloaded_job_ids: tuple[uuid.UUID, ...]
     tiers: tuple[EnhanceTier, ...]
 
 
@@ -563,18 +562,14 @@ class GenerationService:
 
     async def enhancements(self, job_id: uuid.UUID) -> VideoEnhancements:
         source = await self._repo.get(job_id, owner=None)
-        if not _enhanceable(source):
-            return VideoEnhancements(downloaded_job_ids=(), tiers=())
-        downloaded = _downloaded_with(source)
-        if self._enhance is None:
-            return VideoEnhancements(downloaded_job_ids=downloaded, tiers=())
+        if not _enhanceable(source) or self._enhance is None:
+            return VideoEnhancements(tiers=())
         latest: dict[VideoEnhanceResolution, GenerationJob] = {}
         for job in await self._repo.enhancements_of(source.id):
             resolution = _enhanced_to(job)
             if resolution is not None:
                 latest.setdefault(resolution, job)
         return VideoEnhancements(
-            downloaded_job_ids=downloaded,
             tiers=tuple(
                 EnhanceTier(resolution=resolution, job=latest.get(resolution))
                 for resolution in await self._enhance_tiers(self._enhance, source)
@@ -746,12 +741,6 @@ def _enhanceable(job: GenerationJob) -> bool:
         and job.status == STATUS_COMPLETED
         and job.output.url is not None
     )
-
-
-def _downloaded_with(source: GenerationJob) -> tuple[uuid.UUID, ...]:
-    if isinstance(source.request, WholeFilmRequest):
-        return tuple(video.job_id for video in source.request.videos)
-    return (source.id,)
 
 
 def _enhanced_to(job: GenerationJob) -> VideoEnhanceResolution | None:

@@ -160,8 +160,8 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ### 成片导出
 
 业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用（服务器未配置渲染服务时统一返回 `422`）：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：传入当前草稿版本号 `{ revision }`（与数据库最新草稿版本不一致返回 `409`，画面轨为空返回 `422`）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId, sourceJobIds }`。每条视频片段固定取它最新一条已完成的字幕记录。
-- **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, status, progress, queuePosition, error, downloadUrl, sourceJobIds } }`（从未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：传入当前草稿版本号 `{ revision }`（与数据库最新草稿版本不一致返回 `409`，画面轨为空返回 `422`）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`。每条视频片段固定取它最新一条已完成的字幕记录。
+- **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 
 ### 分叉
@@ -239,7 +239,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率和可选的渠道 `channel` 必须在 `GET /generations/image-models` 声明的范围内。如果是基于已有图片修图（帧图编辑），传入底图地址 `sourceUrl`（服务端会优先在本对话/继承图片或本人上传记录里查找并关联 `sourceJobId`，找不到则记录为外部底图地址） |
 | `POST /generations/subtitles` | `subtitle` / `generate`（字幕识别） | 识别指定素材片（`sourceJobId`）原片的口播字幕（每当素材片生成完成时后台也会自动创建一条）。识别结果保存在 `sentences: [{ startMs, endMs, text, speaker, words }]` 中；如果视频没有音轨或全程无人说话，任务同样正常完成（`completed`），`sentences` 为空数组 `[]` |
 | `POST /generations/music` | `audio` / `generate`（生成背景音乐） | 必须传入关联的对话 `conversationId` 和提示词 `prompt`（1～3000 字，前端默认填入制作页的 `musicDescription`）。服务端调用千问音乐模型后，会自动切除首尾静音、统一响度并转存为 m4a 文件，同时记录实测时长 `durationMs` |
-| `POST /generations/video-enhancements` | `video` / `enhance`（超分高清版） | 传入 `{ sourceJobId, resolution: "720p" | "1080p", userName }`。**不限制源视频是谁生成的**，任何人都可以对素材片或已导出的成片发起超分（只允许提升到比源视频更高的分辨率档位）。同一源视频的同一档位只要已有未失败的记录，就会直接幂等返回该记录。可通过 `GET /generations/{id}/enhancements` 查询某条视频可做的超分档位、各档最新状态以及下载时应记账的源视频列表 `downloadedJobIds` |
+| `POST /generations/video-enhancements` | `video` / `enhance`（超分高清版） | 传入 `{ sourceJobId, resolution: "720p" | "1080p", userName }`。**不限制源视频是谁生成的**，任何人都可以对素材片或已导出的成片发起超分（只允许提升到比源视频更高的分辨率档位）。同一源视频的同一档位只要已有未失败的记录，就会直接幂等返回该记录。可通过 `GET /generations/{id}/enhancements` 查询某条视频可做的超分档位与各档最新状态 |
 
 - **通用列表查询 `GET /generations`**：支持按 `kind`、`operation`、`conversationId`（查询分叉副本时会自动包含继承来的祖先出片记录）、`taskId`、`shotIndex`、`rootJobId`（一键查出某条原始出片下的所有编辑段与合成版本）、`sourceJobId` 以及 `metadata`（JSONB 包含匹配，例如分镜页按 `{"shot":1,"frame":2}` 查格子图，制作页按 `{"film_node":"hero"}` 查节点图）筛选，使用上一页最后一条的 `id` 作为 `before` 游标向下翻页。
 
@@ -261,7 +261,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 - **成片素材 `GET /library/videos` 与详情 `GET /library/videos/{id}`**：
   - 列表按每张素材卡最新一条自有素材片的完成时间（`face.finishedAt`）倒序分页，支持按作者 `userName`、完成时间范围 `since` / `until`、横竖屏 `orientation`（`portrait | landscape`）和关键词 `q`（匹配提示词正文与对话标题）筛选。
   - 卡详情返回按镜头组排列的所有历史版本 `groups[]`（有镜号的组按镜号从小到大排在前面，无镜号的排在后面；组内按完成先后编为第 1..N 版），以及布尔值 `canMakeSame`（只要该卡关联了对话，且对话工作区里有 `film.icml` 或 `video_shot.json`，`canMakeSame` 就为 `true`，任何浏览者都可以点它做同款）。
-- **成片列表 `GET /library/whole-films`**：按对话聚合展示全站已导出的完整成片（不含分叉继承），每张卡直接返回该对话下所有的导出版本 `versions[]`（前端点击下载某版成片时，需遍历其 `sourceJobIds` 为每条源素材片上报一次 `video.downloaded`）。
+- **成片列表 `GET /library/whole-films`**：按对话聚合展示全站已导出的完整成片（不含分叉继承），每张卡直接返回该对话下所有的导出版本 `versions[]`。
 - **品牌字体模板 `/brand-templates`**（需开启媒体生成功能）：管理员通过 `/brand-templates/fonts/sign` 和 `.../confirm` 上传不超过 32 MiB 的静态 TTF/OTF 字体文件；前端通过 `GET .../{id}/font-info` 获取字体族名与包含的 Unicode 字符范围（如果渲染或预览时发现缺字或字体加载失败，必须明确报错提示，禁止悄悄回退成系统默认字体）。
 
 ## 14. 参考视频 (References)

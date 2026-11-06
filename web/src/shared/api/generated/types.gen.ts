@@ -6855,13 +6855,9 @@ export type VideoEnhanceTierOut = {
 /**
  * VideoEnhancementsOut
  *
- * 一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。
+ * 一条视频能做的高清版各档。
  */
 export type VideoEnhancementsOut = {
-  /**
-   * Downloadedjobids
-   */
-  downloadedJobIds: Array<string>
   /**
    * Tiers
    */
@@ -7404,10 +7400,6 @@ export type WholeFilmExportOut = {
    */
   queuePosition: number | null
   /**
-   * Sourcejobids
-   */
-  sourceJobIds: Array<string>
-  /**
    * Status
    */
   status: 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
@@ -7416,18 +7408,13 @@ export type WholeFilmExportOut = {
 /**
  * WholeFilmExportStartedOut
  *
- * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
- * 用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。
  */
 export type WholeFilmExportStartedOut = {
   /**
    * Exportid
    */
   exportId: string
-  /**
-   * Sourcejobids
-   */
-  sourceJobIds: Array<string>
 }
 
 /**
@@ -7541,10 +7528,6 @@ export type WholeFilmVersionOut = {
    * Outputurl
    */
   outputUrl: string
-  /**
-   * Sourcejobids
-   */
-  sourceJobIds: Array<string>
   /**
    * Username
    */

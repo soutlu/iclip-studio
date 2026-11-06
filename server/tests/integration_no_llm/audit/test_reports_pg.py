@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from typing import Any
@@ -21,9 +23,12 @@ from iclip.domains.generation.schemas import (
     KIND_IMAGE,
     KIND_SUBTITLE,
     KIND_VIDEO,
+    KIND_WHOLE_FILM,
     OPERATION_COMPOSE,
     OPERATION_CUT,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
+    OPERATION_RENDER,
     OPERATION_UPLOAD,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
@@ -1042,6 +1047,139 @@ async def test_a_composite_downloaded_in_a_fork_counts_toward_the_ancestors_shot
         (2, False),
         (3, False),
     ]
+
+
+@dataclass(frozen=True)
+class ThreeShots:
+    conn: AsyncConnection
+    conversation: uuid.UUID
+    owner: uuid.UUID
+    first: uuid.UUID
+    second: uuid.UUID
+    at: datetime
+
+    async def derive(
+        self,
+        *,
+        kind: str,
+        operation: str,
+        request: dict[str, Any],
+        source: uuid.UUID | None = None,
+        root: uuid.UUID | None = None,
+        conversation: uuid.UUID | None = None,
+    ) -> uuid.UUID:
+        job = uuid.uuid4()
+        await self.conn.execute(
+            text(
+                "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                " operation, provider, request, status, source_job_id, root_job_id, output,"
+                " created_at, submitted_at, finished_at)"
+                " VALUES (:id, :owner, CAST(:conversation AS uuid), :kind, :operation, 'p',"
+                " CAST(:request AS jsonb), :status, CAST(:source AS uuid), CAST(:root AS uuid),"
+                " jsonb_build_object('url', CAST(:url AS text)), :at, :at, :at)"
+            ),
+            {
+                "id": job,
+                "owner": self.owner,
+                "conversation": conversation,
+                "kind": kind,
+                "operation": operation,
+                "request": json.dumps(request),
+                "status": STATUS_COMPLETED,
+                "source": source,
+                "root": root,
+                "url": f"https://example.test/{job}.mp4",
+                "at": self.at,
+            },
+        )
+        return job
+
+    async def film(self, *videos: uuid.UUID) -> uuid.UUID:
+        return await self.derive(
+            kind=KIND_WHOLE_FILM,
+            operation=OPERATION_RENDER,
+            request={"videos": [{"jobId": str(video)} for video in videos]},
+            conversation=self.conversation,
+        )
+
+    async def high_definition(self, source: uuid.UUID) -> uuid.UUID:
+        return await self.derive(
+            kind=KIND_VIDEO,
+            operation=OPERATION_ENHANCE,
+            request={"model": "video-enhance", "resolution": "1080p"},
+            source=source,
+        )
+
+
+async def film_of_two_shots(shots: ThreeShots) -> uuid.UUID:
+    return await shots.film(shots.first, shots.second)
+
+
+async def high_definition_of_a_film(shots: ThreeShots) -> uuid.UUID:
+    return await shots.high_definition(await film_of_two_shots(shots))
+
+
+async def high_definition_of_a_take(shots: ThreeShots) -> uuid.UUID:
+    return await shots.high_definition(shots.first)
+
+
+async def edit_of_a_take(shots: ThreeShots) -> uuid.UUID:
+    return await shots.derive(
+        kind=KIND_VIDEO,
+        operation=OPERATION_GENERATE,
+        request={"model": "m", "prompt": "p", "range_start_ms": 0, "range_end_ms": 1000},
+        source=shots.first,
+        root=shots.first,
+        conversation=shots.conversation,
+    )
+
+
+async def film_holding_a_composite(shots: ThreeShots) -> uuid.UUID:
+    return await shots.film(
+        await plant_composite(
+            shots.conn, shots.conversation, owner=shots.owner, base=shots.first, at=shots.at
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("downloaded", "effective"),
+    [
+        (film_of_two_shots, [True, True, False]),
+        (high_definition_of_a_film, [True, True, False]),
+        (high_definition_of_a_take, [True, False, False]),
+        (edit_of_a_take, [True, False, False]),
+        (film_holding_a_composite, [True, False, False]),
+    ],
+)
+async def test_a_download_makes_the_shots_it_came_from_effective(
+    reports: PgAuditReports,
+    service: AuditService,
+    seed: Seed,
+    engine: AsyncEngine,
+    downloaded: Callable[[ThreeShots], Awaitable[uuid.UUID]],
+    effective: list[bool],
+) -> None:
+    before = await reports.overall(Scope(since=EVER))
+    at = ago(minutes=30)
+    async with engine.begin() as conn:
+        conversation = await plant_conversation(conn, owner=seed.sara, at=ago(hours=1))
+        first, second, _ = [
+            await plant_take(conn, conversation, owner=seed.sara, shot=shot, at=ago(minutes=50))
+            for shot in (1, 2, 3)
+        ]
+        file = await downloaded(
+            ThreeShots(conn, conversation, seed.sara, first, second, at),
+        )
+        await plant_download(conn, file, user_id=seed.derek)
+
+    overall = await reports.overall(Scope(since=EVER))
+    assert (overall.shots, overall.effective_shots) == (
+        before.shots + 3,
+        before.effective_shots + sum(effective),
+    )
+    executions = await executions_by_id(service)
+    assert [shot.effective for shot in executions[conversation].shots] == effective
 
 
 async def test_audio_records_do_not_count_toward_any_metric(

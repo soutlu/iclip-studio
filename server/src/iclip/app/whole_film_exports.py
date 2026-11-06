@@ -165,7 +165,6 @@ class WholeFilmExportAdapter:
             queue_position=queue_position,
             error=error,
             download_url=job.output.url if status == "done" else None,
-            source_job_ids=_source_job_ids(job),
         )
 
     async def _live(self, job: GenerationJob) -> RenderExport | None:
@@ -184,12 +183,6 @@ def _recorded_stage(provider_status: str | None) -> RenderStage:
         if stage == provider_status:
             return stage
     return "queued"
-
-
-def _source_job_ids(job: GenerationJob) -> tuple[uuid.UUID, ...]:
-    if not isinstance(job.request, WholeFilmRequest):
-        raise RuntimeError(f"成片记录 {job.id} 的请求不是成片导出的形状")
-    return tuple(video.job_id for video in job.request.videos)
 
 
 __all__ = ["SUBTITLE_SCAN_LIMIT", "WholeFilmExportAdapter"]

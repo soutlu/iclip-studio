@@ -291,17 +291,15 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:read")],
     ) -> VideoEnhancementsOut:
         """一条视频能做的高清版各档（比它清晰的，按运行配置的先后）与各档最近的一条超分记录（谁提的
-        都算，``mine`` 标它是不是读的人的），以及下载高清版时要记下载事件的素材片。
+        都算，``mine`` 标它是不是读的人的）。
 
-        来源不按属主取，id 不存在 404。来源不是素材片或导出完成的成片时两项都空；高清版没开通时
-        ``tiers`` 为空。
+        来源不按属主取，id 不存在 404。来源不是素材片或导出完成的成片、高清版没开通时 ``tiers`` 为空。
         """
 
         found = await service.enhancements(job_id)
         jobs = [tier.job for tier in found.tiers if tier.job is not None]
         addresses = await service.source_addresses(jobs)
         return VideoEnhancementsOut(
-            downloaded_job_ids=list(found.downloaded_job_ids),
             tiers=[
                 VideoEnhanceTierOut(
                     resolution=tier.resolution,

@@ -379,14 +379,12 @@ export function authorsOf(cards: readonly { userName: string | null }[]) {
 type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
 
 export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
-  const sources = mockLibraryVideos(now).map((video) => video.face.jobId)
   return ['春夏品牌成片', '城市漫步成片'].map((title, index) => {
     const versions = Array.from({ length: index === 0 ? 2 : 1 }, (_, version) => ({
       jobId: `fa000001-0000-4000-8000-${String(index * 10 + version + 1).padStart(12, '0')}`,
       outputUrl: version === 0 ? sampleVideoUrl : sampleWideUrl,
       finishedAt: new Date(now - (index * 12 + 3 - version) * HOUR_MS).toISOString(),
       userName: index === 0 ? 'tester' : 'Nora.Ho',
-      sourceJobIds: sources.slice(index + version, index + version + 2),
     }))
     const face = versions.at(-1)
     if (face === undefined) throw new Error('成片夹具必须有版本')

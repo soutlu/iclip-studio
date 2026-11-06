@@ -14,7 +14,6 @@ import { EnhanceNotices } from './enhance-notices'
 
 const SOURCE = '3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f'
 const ENHANCED = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
-const USED = ['1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e', '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f']
 const HD = 'https://downloads.example.test/hd.mp4'
 const OTHER_USER = '22222222-2222-4222-8222-222222222222'
 
@@ -53,7 +52,7 @@ const serveRecord = (record: Record = {}) => {
     }),
     http.get(`*/api/generations/${SOURCE}/enhancements`, () => {
       reads.enhancements += 1
-      return HttpResponse.json({ downloadedJobIds: USED, tiers: [] })
+      return HttpResponse.json({ tiers: [] })
     }),
   )
   return reads
@@ -65,8 +64,8 @@ const renderNotices = async () => {
       <Toaster />
       <EnhanceNotices />
       <VideoDownload
-        downloadedJobIds={USED}
         enhanceSourceId={SOURCE}
+        jobId={SOURCE}
         url="https://downloads.example.test/clean.mp4"
         watermarkUrl={null}
       />
@@ -102,7 +101,7 @@ describe('EnhanceNotices', () => {
     expect(await screen.findByText(`${label}的高清版 1080p 已生成`)).toBeVisible()
   })
 
-  it('提示条上的「下载」：取高清原片，按来源的 downloadedJobIds 记下载事件', async () => {
+  it('提示条上的「下载」：取高清原片，保存成功后记这条高清版', async () => {
     serveRecord()
     const events: unknown[] = []
     const fetched: string[] = []
@@ -131,9 +130,26 @@ describe('EnhanceNotices', () => {
 
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
     expect(fetched).toEqual([HD])
-    await waitFor(() =>
-      expect(events).toEqual(USED.map((jobId) => ({ jobId, name: 'video.downloaded' }))),
+    await waitFor(() => expect(events).toEqual([{ jobId: ENHANCED, name: 'video.downloaded' }]))
+  })
+
+  it('提示条上的「下载」取不到文件：提示失败，不记事件', async () => {
+    serveRecord()
+    let events = 0
+    server.use(
+      http.post('*/api/tracking/events', () => {
+        events += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.get(HD, () => new HttpResponse('下载服务不可用', { status: 503 })),
     )
+    const { socket } = await renderNotices()
+
+    act(() => socket.deliver(enhanceFrame('completed')))
+    await userEvent.click(await screen.findByRole('button', { name: '下载' }))
+
+    expect(await screen.findByText('视频下载失败，请重试')).toBeVisible()
+    expect(events).toBe(0)
   })
 
   it('自己的没做成：提示失败，「重试」按这条来源这一档重新提交', async () => {

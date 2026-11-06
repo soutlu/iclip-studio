@@ -503,14 +503,14 @@ def create_conversations_router(
         body: WholeFilmExportIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmExportStartedOut:
-        """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id 与用到的素材片。只有属主能导；
+        """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
         ``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。
         渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。"""
 
-        export_id, sources = await service.export_whole_film(
+        export_id = await service.export_whole_film(
             principal, conversation_id, revision=body.revision
         )
-        return WholeFilmExportStartedOut(export_id=export_id, source_job_ids=list(sources))
+        return WholeFilmExportStartedOut(export_id=export_id)
 
     @router.get(
         "/{conversation_id}/whole-film/exports/latest", response_model=WholeFilmExportLatestOut

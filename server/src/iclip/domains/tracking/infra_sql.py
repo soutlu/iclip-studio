@@ -56,8 +56,7 @@ _DOWNLOADABLE: Final = text("""
 SELECT EXISTS (
     SELECT 1 FROM iclip.generation_jobs g
     WHERE g.id = :job_id AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
-      AND g.kind = 'video'
-      AND (g.operation = 'compose' OR (g.operation = 'generate' AND g.source_job_id IS NULL))
+      AND g.kind IN ('video', 'whole_film')
 )
 """)
 

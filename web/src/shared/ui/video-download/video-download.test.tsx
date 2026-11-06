@@ -50,41 +50,33 @@ describe('VideoDownload', () => {
     { entry: '只有原片时直接点下载', item: null, url: CLEAN, watermarkUrl: null },
     { entry: '选「下载原片」', item: '下载原片', url: CLEAN, watermarkUrl: MARKED },
     { entry: '选「下载水印版」', item: '下载水印版', url: MARKED, watermarkUrl: MARKED },
-  ])(
-    '$entry：按 downloadedJobIds 记下载事件，不等它回来就取字节保存',
-    async ({ item, url, watermarkUrl }) => {
-      const { fetched, saved } = stubSaving()
-      const events: unknown[] = []
-      let release: () => void = () => undefined
-      const gate = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      server.use(
-        http.post('*/api/tracking/events', async ({ request }) => {
-          events.push(await request.json())
-          await gate
-          return new HttpResponse(null, { status: 204 })
-        }),
-      )
-      const user = userEvent.setup()
-      await renderWithProviders(
-        <VideoDownload downloadedJobIds={[JOB_ID]} url={CLEAN} watermarkUrl={watermarkUrl} />,
-      )
+  ])('$entry：保存成功后按这条记录记一条下载事件', async ({ item, url, watermarkUrl }) => {
+    const { fetched, saved } = stubSaving()
+    const events: unknown[] = []
+    server.use(
+      http.post('*/api/tracking/events', async ({ request }) => {
+        events.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(
+      <VideoDownload jobId={JOB_ID} url={CLEAN} watermarkUrl={watermarkUrl} />,
+    )
 
-      await user.click(screen.getByRole('button', { name: '下载视频' }))
-      if (item !== null) await user.click(await screen.findByRole('menuitem', { name: item }))
+    await user.click(screen.getByRole('button', { name: '下载视频' }))
+    if (item !== null) await user.click(await screen.findByRole('menuitem', { name: item }))
 
-      await waitFor(() => expect(events).toEqual([{ jobId: JOB_ID, name: 'video.downloaded' }]))
-      await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
-      expect(fetched).toEqual([url])
-      release()
-    },
-  )
+    await waitFor(() => expect(events).toEqual([{ jobId: JOB_ID, name: 'video.downloaded' }]))
+    expect(saved).toHaveBeenCalledTimes(1)
+    expect(fetched).toEqual([url])
+  })
 
   it.each(['http', 'network', 'empty'])(
-    '下载遇到 %s 错误时提示失败并允许重试，等待时阻止重复点击',
+    '下载遇到 %s 错误时提示失败、不记事件并允许重试，等待时阻止重复点击',
     async (failure) => {
       let requests = 0
+      let events = 0
       let release: () => void = () => undefined
       const gate = new Promise<void>((resolve) => {
         release = resolve
@@ -98,7 +90,10 @@ describe('VideoDownload', () => {
           if (failure === 'http') return new HttpResponse('下载服务不可用', { status: 503 })
           return new HttpResponse(null, { status: 200 })
         }),
-        http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
+        http.post('*/api/tracking/events', () => {
+          events += 1
+          return new HttpResponse(null, { status: 204 })
+        }),
       )
       const createObjectURL = vi.fn(() => 'blob:http://localhost/download')
       vi.stubGlobal(
@@ -114,7 +109,7 @@ describe('VideoDownload', () => {
       await renderWithProviders(
         <>
           <Toaster />
-          <VideoDownload downloadedJobIds={[JOB_ID]} url={url} watermarkUrl={null} />
+          <VideoDownload jobId={JOB_ID} url={url} watermarkUrl={null} />
         </>,
       )
       await userEvent.click(screen.getByRole('button', { name: '下载视频' }))
@@ -134,10 +129,11 @@ describe('VideoDownload', () => {
           'aria-disabled',
         ),
       )
+      expect(events).toBe(0)
     },
   )
 
-  it('带字按钮：名字就是那段字；每下载一次，给的每条记录各记一条，连点也照记；没给记录就不记', async () => {
+  it('带字按钮：名字就是那段字；每下载一次记一条，连点也照记', async () => {
     const { fetched, saved } = stubSaving()
     const events: unknown[] = []
     server.use(
@@ -146,10 +142,9 @@ describe('VideoDownload', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
-    const OTHER = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f'
     const user = userEvent.setup()
-    const { rerender } = await renderWithProviders(
-      <VideoDownload downloadedJobIds={[JOB_ID, OTHER]} url={CLEAN} watermarkUrl={null}>
+    await renderWithProviders(
+      <VideoDownload jobId={JOB_ID} url={CLEAN} watermarkUrl={null}>
         下载成片
       </VideoDownload>,
     )
@@ -160,21 +155,9 @@ describe('VideoDownload', () => {
     await waitFor(() => expect(button).toBeEnabled())
     await user.click(button)
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(events).toHaveLength(4))
-    expect(events).toEqual(
-      [JOB_ID, OTHER, JOB_ID, OTHER].map((jobId) => ({ jobId, name: 'video.downloaded' })),
-    )
-
-    rerender(
-      <VideoDownload downloadedJobIds={[]} url={CLEAN} watermarkUrl={null}>
-        下载成片
-      </VideoDownload>,
-    )
-    await waitFor(() => expect(button).toBeEnabled())
-    await user.click(button)
-    await waitFor(() => expect(saved).toHaveBeenCalledTimes(3))
-    expect(fetched).toEqual([CLEAN, CLEAN, CLEAN])
-    expect(events).toHaveLength(4)
+    await waitFor(() => expect(events).toHaveLength(2))
+    expect(events).toEqual([JOB_ID, JOB_ID].map((jobId) => ({ jobId, name: 'video.downloaded' })))
+    expect(fetched).toEqual([CLEAN, CLEAN])
   })
 
   it('事件接口失败时下载照常完成，不弹提示，只在控制台留一条警告', async () => {
@@ -188,7 +171,7 @@ describe('VideoDownload', () => {
     await renderWithProviders(
       <>
         <Toaster />
-        <VideoDownload downloadedJobIds={[JOB_ID]} url={CLEAN} watermarkUrl={null} />
+        <VideoDownload jobId={JOB_ID} url={CLEAN} watermarkUrl={null} />
       </>,
     )
 
@@ -233,7 +216,6 @@ describe('VideoDownload · 高清版', () => {
       http.get(ENHANCEMENTS_URL, () => {
         state.reads += 1
         return HttpResponse.json({
-          downloadedJobIds: [JOB_ID],
           tiers: current.map((tier) => ({ ...tier, mine: tier.mine ?? true })),
         })
       }),
@@ -275,9 +257,9 @@ describe('VideoDownload · 高清版', () => {
       <>
         <Toaster />
         <VideoDownload
-          downloadedJobIds={[JOB_ID]}
           durationMs={6000}
           enhanceSourceId={JOB_ID}
+          jobId={JOB_ID}
           url={CLEAN}
           watermarkUrl={MARKED}
           {...props}
@@ -401,8 +383,9 @@ describe('VideoDownload · 高清版', () => {
     )
   })
 
-  it('下载高清版：取高清原片，按 downloadedJobIds 记下载事件，并收起这一档的提示条', async () => {
-    serveTiers([{ job: enhanceJob('completed', { outputUrl: HD }), resolution: '1080p' }])
+  it('下载高清版：取高清原片，事件记这一档的记录，并收起这一档的提示条', async () => {
+    const tier = enhanceJob('completed', { outputUrl: HD })
+    serveTiers([{ job: tier, resolution: '1080p' }])
     const { fetched, saved } = stubSaving()
     const events: unknown[] = []
     server.use(
@@ -411,8 +394,7 @@ describe('VideoDownload · 高清版', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
-    const OTHER = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f'
-    const { user } = await renderEnhanceable({ downloadedJobIds: [JOB_ID, OTHER] })
+    const { user } = await renderEnhanceable()
     act(() => {
       toast('第 2 组的高清版 1080p 已生成', { id: enhanceNoticeId(JOB_ID, '1080p') })
     })
@@ -426,9 +408,7 @@ describe('VideoDownload · 高清版', () => {
 
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
     expect(fetched).toEqual([HD])
-    await waitFor(() =>
-      expect(events).toEqual([JOB_ID, OTHER].map((jobId) => ({ jobId, name: 'video.downloaded' }))),
-    )
+    await waitFor(() => expect(events).toEqual([{ jobId: tier.id, name: 'video.downloaded' }]))
     await waitFor(() =>
       expect(screen.queryByText('第 2 组的高清版 1080p 已生成')).not.toBeInTheDocument(),
     )
@@ -577,13 +557,11 @@ describe('VideoDownload · 高清版', () => {
     server.use(
       http.get('*/api/generations/:jobId/enhancements', () => {
         reads += 1
-        return HttpResponse.json({ downloadedJobIds: [], tiers: [] })
+        return HttpResponse.json({ tiers: [] })
       }),
     )
     const user = userEvent.setup()
-    await renderWithProviders(
-      <VideoDownload downloadedJobIds={[JOB_ID]} url={CLEAN} watermarkUrl={MARKED} />,
-    )
+    await renderWithProviders(<VideoDownload jobId={JOB_ID} url={CLEAN} watermarkUrl={MARKED} />)
     const menu = await openMenu(user)
     expect(itemNames(menu)).toEqual(['下载原片', '下载水印版'])
     expect(within(menu).queryByRole('separator')).not.toBeInTheDocument()

@@ -502,18 +502,6 @@ async def test_each_tier_says_whether_its_record_is_the_readers() -> None:
     ]
 
 
-async def test_downloads_count_against_the_take_or_the_films_videos() -> None:
-    lead, later = take("720p"), take("480p")
-    exported = film(lead, later)
-    repo = InMemoryGenerationRepository([lead, later, exported])
-
-    video = await read(repo, lead.id)
-    whole = await read(repo, exported.id)
-
-    assert video.json()["downloadedJobIds"] == [str(lead.id)]
-    assert whole.json()["downloadedJobIds"] == [str(lead.id), str(later.id)]
-
-
 async def test_a_source_that_cannot_be_enhanced_has_nothing_to_offer() -> None:
     base = take("480p")
     edit = make_edit(
@@ -524,7 +512,7 @@ async def test_a_source_that_cannot_be_enhanced_has_nothing_to_offer() -> None:
     response = await read(repo, edit.id)
 
     assert response.status_code == 200
-    assert response.json() == {"downloadedJobIds": [], "tiers": []}
+    assert response.json() == {"tiers": []}
 
 
 async def test_without_enhance_switched_on_there_are_no_tiers() -> None:
@@ -532,7 +520,7 @@ async def test_without_enhance_switched_on_there_are_no_tiers() -> None:
     response = await read(InMemoryGenerationRepository([source]), source.id, enhance=None)
 
     assert response.status_code == 200
-    assert response.json() == {"downloadedJobIds": [str(source.id)], "tiers": []}
+    assert response.json() == {"tiers": []}
 
 
 async def test_reading_tiers_of_a_missing_record_is_a_404() -> None:

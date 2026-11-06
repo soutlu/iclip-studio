@@ -88,7 +88,6 @@ class WholeFilmExport:
     queue_position: int | None
     error: WholeFilmExportError | None
     download_url: str | None
-    source_job_ids: tuple[uuid.UUID, ...]
 
 
 __all__ = [
