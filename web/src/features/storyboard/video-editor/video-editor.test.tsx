@@ -147,6 +147,14 @@ const rootWithShotPrompts = makeGenerationJob({
   },
 })
 
+/** jsdom 不下载媒体：舞台的 networkState 由用例决定，默认一直在下载。 */
+let stageNetworkState: number = HTMLMediaElement.NETWORK_LOADING
+
+const stopVideoDownload = () => {
+  stageNetworkState = HTMLMediaElement.NETWORK_IDLE
+  fireEvent.suspend(screen.getByLabelText('视频播放器'))
+}
+
 const editorOf = (video = root, onClose = () => {}) => (
   <>
     <VideoEditor
@@ -292,6 +300,10 @@ beforeEach(() => {
   vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
   vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
   stubIntersectionObserver()
+  stageNetworkState = HTMLMediaElement.NETWORK_LOADING
+  vi.spyOn(HTMLMediaElement.prototype, 'networkState', 'get').mockImplementation(
+    () => stageNetworkState,
+  )
 })
 
 afterEach(() => {
@@ -306,7 +318,6 @@ afterEach(() => {
 })
 
 describe('波形等视频停止下载再读', () => {
-  const activeVideo = () => screen.getByLabelText('视频播放器')
   const silentMarks = async () => within(await timeline()).findAllByText('无声')
   const hold = (url: string) => {
     let resolve: HeldRead['resolve'] = () => {}
@@ -327,7 +338,7 @@ describe('波形等视频停止下载再读', () => {
     expect(audioReads.opened).toEqual([])
     expect(within(await timeline()).queryByText('无声')).toBeNull()
 
-    fireEvent.suspend(activeVideo())
+    stopVideoDownload()
     expect((await silentMarks()).length).toBeGreaterThan(0)
     expect(audioReads.opened).toEqual([ROOT_URL])
   })
@@ -336,7 +347,7 @@ describe('波形等视频停止下载再读', () => {
     serveChain([])
     const view = await renderEditor()
     await originalTrack()
-    fireEvent.suspend(activeVideo())
+    stopVideoDownload()
     await silentMarks()
 
     view.rerender(null)
@@ -355,7 +366,7 @@ describe('波形等视频停止下载再读', () => {
     await originalTrack()
     await within(editTrack()).findByRole('button', { name: /第 1 段/ })
 
-    fireEvent.suspend(activeVideo())
+    stopVideoDownload()
     await waitFor(() => expect(audioReads.opened).toEqual([ROOT_URL]))
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)))
     expect(audioReads.opened).toEqual([ROOT_URL])
@@ -364,19 +375,28 @@ describe('波形等视频停止下载再读', () => {
     await waitFor(() => expect(audioReads.opened).toEqual([ROOT_URL, EDITED_URL]))
   })
 
-  it('剪辑视图读不到原片关键帧时舞台没有视频可等，直接读波形', async () => {
+  const expectKeyframeFailureShown = async () => {
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('视频时长无效，无法分段')
+    expect(within(alert).getByRole('button', { name: '重试' })).toBeVisible()
+    expect(screen.queryByText('正在读取视频信息…')).toBeNull()
+  }
+
+  it('剪辑视图读不到原片关键帧：舞台没有视频可等，直接读波形，仍有失败提示', async () => {
     files.delete(ROOT_URL)
     serveChain([])
     await renderEditor()
     await waitFor(() => expect(audioReads.opened).toEqual([ROOT_URL]))
+    await expectKeyframeFailureShown()
   })
 
-  it('版本视图读不到这一版的关键帧时舞台没有视频可等，直接读波形', async () => {
+  it('版本视图读不到这一版的关键帧：舞台没有视频可等，直接读波形，仍有失败提示', async () => {
     const opened = composite({ id: COMPOSITE_ID })
     files.delete(COMPOSITE_URL)
     serveChain([root, opened])
     await renderEditor(opened)
     await waitFor(() => expect(audioReads.opened).toContain(COMPOSITE_URL))
+    await expectKeyframeFailureShown()
   })
 })
 
@@ -447,7 +467,7 @@ describe('VideoEditor', () => {
       within(await originalTrack()).getAllByRole('button', { name: /^镜头 \d ·/ }),
     ).toHaveLength(8)
     expect(draftNames()).toHaveLength(8)
-    fireEvent.suspend(screen.getByLabelText('视频播放器'))
+    stopVideoDownload()
     expect((await within(await timeline()).findAllByText('无声')).length).toBeGreaterThan(0)
     expect(within(editTrack()).getAllByRole('button', { name: /^生成镜头 \d$/ })).toHaveLength(8)
     expect(card()).toBeNull()

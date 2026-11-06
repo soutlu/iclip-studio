@@ -32,10 +32,11 @@ export const stopVideoDownload = (url: string) => {
   emitFrom(url, 'suspend')
 }
 
-/** 这个地址数据够了：从 `starvedVideos` 拿掉，合成页里对应的视频发 canplaythrough。 */
+/** 这个地址数据够了：从 `starvedVideos` 拿掉、整段都已缓冲，合成页里对应的视频发 progress。 */
 export const finishBuffering = (url: string) => {
   starvedVideos.delete(url)
-  emitFrom(url, 'canplaythrough')
+  bufferedVideos.set(url, [[0, Number.MAX_SAFE_INTEGER]])
+  emitFrom(url, 'progress')
 }
 
 /** 这个地址加载出错：合成页里对应的视频带上 `error` 并发 error。用完用 `clearFailedVideos` 清掉。 */
@@ -46,10 +47,28 @@ export const failVideo = (url: string) => {
 
 export const clearFailedVideos = () => failedVideos.clear()
 
+/** 同真播放器的 `_media`：就绪时 `setupFromIframe` 给页里每段媒体建父页面副本，建副本走 `_createEntry`。 */
+export class FakeParentMedia {
+  /** 建过副本的地址 */
+  readonly entries: string[] = []
+
+  _createEntry(url: string): string | null {
+    this.entries.push(url)
+    return url
+  }
+
+  setupFromIframe(page: Document) {
+    for (const video of page.querySelectorAll('video[data-start]'))
+      this._createEntry(video.getAttribute('src') ?? '')
+  }
+}
+
 class FakeHyperframesPlayer extends HTMLElement {
   static readonly observedAttributes = ['srcdoc']
   readonly iframeElement = document.createElement('iframe')
+  readonly _media = new FakeParentMedia()
   currentTime = 0
+  duration = Number.POSITIVE_INFINITY
   paused = true
   painted = false
 
@@ -62,6 +81,8 @@ class FakeHyperframesPlayer extends HTMLElement {
     this.painted = false
     this.#showVideos(srcdoc ?? '')
     queueMicrotask(() => {
+      const page = this.iframeElement.contentDocument
+      if (page !== null) this._media.setupFromIframe(page)
       this.dispatchEvent(new CustomEvent('ready', { detail: {} }))
       this.painted = true
       this.dispatchEvent(new Event('painted'))
@@ -101,7 +122,9 @@ class FakeHyperframesPlayer extends HTMLElement {
     )
   }
 
+  // 同真播放器：在结尾 play 会跳回开头
   play() {
+    if (this.currentTime >= this.duration) this.currentTime = 0
     this.paused = false
     this.dispatchEvent(new Event('play'))
   }

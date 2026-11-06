@@ -126,7 +126,6 @@ export function EditorPreview({
   const pendingSeekRef = useRef<[number | null, number | null]>([null, null])
   const stopPlaybackRef = useRef<(() => void) | null>(null)
   const emitTime = useEffectEvent((clock: number) => onTime(clock))
-  const emitDownloadSettled = useEffectEvent(() => onDownloadSettled?.())
   const [active, setActive] = useState<Slot>(0)
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -178,9 +177,16 @@ export function EditorPreview({
     setIndex(0)
     if (shown.showing !== showing && shown.segments !== undefined) setSwitches(switches + 1)
   }
-  useEffect(() => {
-    if (segments?.length === 0) emitDownloadSettled()
-  }, [segments])
+  // 舞台上是否还有视频在下载，只看激活槽位。刚赋 src 时 networkState 是 NO_SOURCE，不能写成「不是 LOADING」。
+  const settleIfIdle = () => {
+    const element = elementsRef.current[active]
+    const idle =
+      element !== null &&
+      (element.error !== null || element.networkState === HTMLMediaElement.NETWORK_IDLE)
+    if (segments?.length === 0 || idle) onDownloadSettled?.()
+  }
+  const settleFromEffect = useEffectEvent(settleIfIdle)
+  useEffect(() => settleFromEffect(), [segments])
   const lastShowingRef = useRef(showing)
   const resumeClock = useEffectEvent(() => currentTime)
 
@@ -405,12 +411,10 @@ export function EditorPreview({
             if (slot === active) {
               setFailed(true)
               setPlaying(false)
-              onDownloadSettled?.()
             }
+            settleIfIdle()
           }}
-          onSuspend={() => {
-            if (slot === active) onDownloadSettled?.()
-          }}
+          onSuspend={settleIfIdle}
           onLoadedMetadata={(event) => {
             const media = event.currentTarget
             if (slot === active && media.videoWidth > 0 && media.videoHeight > 0) {

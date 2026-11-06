@@ -54,26 +54,52 @@ describe('视频下载', () => {
     expect(hidden).toHaveAttribute('crossorigin', 'anonymous')
   })
 
+  const reportNetwork = (video: HTMLVideoElement, state: number) =>
+    Object.defineProperty(video, 'networkState', { configurable: true, value: state })
+  const failLoading = (video: HTMLVideoElement) => {
+    Object.defineProperty(video, 'error', { configurable: true, value: { code: 4 } })
+    reportNetwork(video, HTMLMediaElement.NETWORK_NO_SOURCE)
+    fireEvent.error(video)
+  }
+
+  it('当前视频还没开始下载或还在下载时不通知', () => {
+    const settled = renderPreview(twoSegments())
+    const { active } = videos()
+    // 刚赋 src 时是 NO_SOURCE，真正开始加载才变 LOADING
+    reportNetwork(active, HTMLMediaElement.NETWORK_NO_SOURCE)
+    fireEvent.suspend(active)
+    reportNetwork(active, HTMLMediaElement.NETWORK_LOADING)
+    fireEvent.suspend(active)
+    expect(settled).not.toHaveBeenCalled()
+  })
+
   it('当前视频停止缓冲时通知，可以通知多次', () => {
     const settled = renderPreview(twoSegments())
+    const { active } = videos()
     expect(settled).not.toHaveBeenCalled()
-    fireEvent.suspend(videos().active)
+    reportNetwork(active, HTMLMediaElement.NETWORK_IDLE)
+    fireEvent.suspend(active)
     expect(settled).toHaveBeenCalledTimes(1)
-    fireEvent.suspend(videos().active)
+    fireEvent.suspend(active)
     expect(settled).toHaveBeenCalledTimes(2)
   })
 
   it('预载槽停止缓冲不算', () => {
     const settled = renderPreview(twoSegments())
-    fireEvent.suspend(videos().hidden)
+    const { active, hidden } = videos()
+    reportNetwork(active, HTMLMediaElement.NETWORK_LOADING)
+    reportNetwork(hidden, HTMLMediaElement.NETWORK_IDLE)
+    fireEvent.suspend(hidden)
     expect(settled).not.toHaveBeenCalled()
   })
 
   it('当前视频加载失败时通知，预载槽失败不算', () => {
     const settled = renderPreview(twoSegments())
-    fireEvent.error(videos().hidden)
+    const { active, hidden } = videos()
+    reportNetwork(active, HTMLMediaElement.NETWORK_LOADING)
+    failLoading(hidden)
     expect(settled).not.toHaveBeenCalled()
-    fireEvent.error(videos().active)
+    failLoading(active)
     expect(settled).toHaveBeenCalledTimes(1)
   })
 

@@ -701,14 +701,19 @@ function Editor({
     viewedDuration === undefined
       ? undefined
       : layoutPlay([{ mediaUrl: viewed.mediaUrl, start: 0, end: viewedDuration }])
-  // 剪辑视图的舞台：原片预览放整条原片；草稿预览按草稿播放，每块是它来源用到的那一段。
-  const current = clipsView
-    ? shots === undefined
-      ? undefined
-      : sourcePreview
-        ? layoutPlay([{ mediaUrl, start: 0, end: duration }])
-        : layoutPlay(outputOf(staged))
-    : wholePlay
+  // 版本视图只在看的那一版读不出关键帧时报错；别的版本读不出只是那一行空着。
+  const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
+  // 剪辑视图的舞台：原片预览放整条原片；草稿预览按草稿播放，每块是它来源用到的那一段。读不出关键帧时舞台没有内容。
+  const current =
+    timelineKeyframes?.isError === true
+      ? []
+      : clipsView
+        ? shots === undefined
+          ? undefined
+          : sourcePreview
+            ? layoutPlay([{ mediaUrl, start: 0, end: duration }])
+            : layoutPlay(outputOf(staged))
+        : wholePlay
   const total = clipsView ? totalOf(items) : 0
   const lengthDifference = total - duration
 
@@ -724,10 +729,8 @@ function Editor({
         ]
       : listed.map((version) => version.mediaUrl),
   )
-  // 视频先下载，波形等它停下再读同一份缓存；读不到关键帧时舞台不加载视频，没有可等的。
-  const peaks = useAudioPeaks(audioUrls, {
-    enabled: videoSettled || (clipsView ? keyframes.isError : viewedKeyframes?.isError === true),
-  })
+  // 视频先下载，波形等它停下再读同一份缓存
+  const peaks = useAudioPeaks(audioUrls, { enabled: videoSettled })
   useFailureToasts(
     useMemo(
       () => [
@@ -782,8 +785,6 @@ function Editor({
     </Button>
   )
 
-  // 版本视图只在看的那一版读不出关键帧时报错；别的版本读不出只是那一行空着。
-  const timelineKeyframes = clipsView ? keyframes : viewedKeyframes
   const peaksOf = (url: string) => peaks.get(url) ?? LOADING_PEAKS
   const timeline =
     timelineKeyframes?.isError === true ? (
