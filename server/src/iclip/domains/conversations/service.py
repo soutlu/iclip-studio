@@ -705,6 +705,7 @@ class ConversationService:
                     collection_id=collection_id,
                     created_at=now,
                     updated_at=now,
+                    same_as=same_as,
                 )
             )
             if created:

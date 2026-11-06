@@ -426,6 +426,30 @@ async def test_a_fork_of_a_fork_points_at_its_direct_parent(
     assert second["forkTurn"] == 1
 
 
+async def test_a_fork_of_a_same_as_conversation_records_no_source(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    origin = await open_conversation(client)
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text("UPDATE iclip.conversations SET same_as = :origin WHERE id = :id"),
+            {"origin": origin, "id": source},
+        )
+
+    forked = await fork(client, source, turn=1)
+
+    assert forked.status_code == 201, forked.text
+    async with connected(pg_url) as conn:
+        found = await conn.execute(
+            text("SELECT same_as FROM iclip.conversations WHERE id = :id"),
+            {"id": forked.json()["conversation"]["id"]},
+        )
+        assert found.scalar_one() is None
+
+
 async def test_inherited_turns_cannot_be_regenerated(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
