@@ -8,7 +8,6 @@ const drafts = new Map<string, StoredDraft>()
 
 type MockExport = {
   id: string
-  sourceJobIds: string[]
   reads: number
   cancelled: boolean
 }
@@ -35,7 +34,6 @@ export const resetMockWholeFilm = () => {
 const exportOut = (found: MockExport) => {
   const base = {
     id: found.id,
-    sourceJobIds: found.sourceJobIds,
     error: null,
     downloadUrl: null,
   }
@@ -52,13 +50,9 @@ const exportOut = (found: MockExport) => {
   }
 }
 
-export const findMockWholeFilmExport = (
-  exportId: string,
-): { sourceJobIds: readonly string[]; downloadUrl: string } | undefined => {
+export const findMockWholeFilmExport = (exportId: string): { downloadUrl: string } | undefined => {
   const found = [...latestExports.values()].find((item) => item.id === exportId && !item.cancelled)
-  return found === undefined
-    ? undefined
-    : { downloadUrl: `/mock-exports/${found.id}.mp4`, sourceJobIds: found.sourceJobIds }
+  return found === undefined ? undefined : { downloadUrl: `/mock-exports/${found.id}.mp4` }
 }
 
 export const mockWholeFilmDraft = (conversationId: string): StoredDraft | undefined =>
@@ -98,23 +92,11 @@ export const wholeFilmHandlers = [
       const stored = drafts.get(conversationId)
       if (parsed.data.revision !== (stored?.revision ?? 0))
         return HttpResponse.json({ detail: STALE_EXPORT_DETAIL }, { status: 409 })
-      const sourceJobIds = [
-        ...new Set(
-          (stored?.document.layer0 ?? []).flatMap((clip) =>
-            clip.type === 'video' ? [clip.sourceJobId] : [],
-          ),
-        ),
-      ]
-      if (sourceJobIds.length === 0)
+      if (!stored?.document.layer0.some((clip) => clip.type === 'video'))
         return HttpResponse.json({ detail: '画面轨里还没有视频，无法导出' }, { status: 422 })
       const exportId = crypto.randomUUID()
-      latestExports.set(conversationId, {
-        id: exportId,
-        sourceJobIds,
-        reads: 0,
-        cancelled: false,
-      })
-      return HttpResponse.json({ exportId, sourceJobIds }, { status: 202 })
+      latestExports.set(conversationId, { id: exportId, reads: 0, cancelled: false })
+      return HttpResponse.json({ exportId }, { status: 202 })
     },
   ),
 

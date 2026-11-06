@@ -1053,7 +1053,6 @@ describe('成片编辑器 · 导出', () => {
     queuePosition: null,
     error: null,
     downloadUrl: null,
-    sourceJobIds: [TAKE_A, TAKE_B],
     ...state,
   })
 
@@ -1153,7 +1152,7 @@ describe('成片编辑器 · 导出', () => {
               { detail: '成片草稿已经有更新的一版，重新读取后再导出' },
               { status: 409 },
             )
-          : HttpResponse.json({ exportId: EXPORT_ID, sourceJobIds: [TAKE_A] }, { status: 202 })
+          : HttpResponse.json({ exportId: EXPORT_ID }, { status: 202 })
       }),
     )
     serveLatest(null, DONE)

@@ -10,7 +10,6 @@ import {
   readGeneration,
   useSubmitVideoEnhancement,
   videoEnhancementsKeys,
-  videoEnhancementsQuery,
 } from '@/shared/api/video-enhancements'
 import { markEnhancementsSeen } from '@/shared/api/video-enhancements-seen'
 import type { SessionUpdate } from '@/shared/transcript/connection'
@@ -42,15 +41,17 @@ export function EnhanceNotices() {
     const label = sourceLabel(job)
     const seen = () => markEnhancementsSeen([job.id])
     if (job.status === 'completed' && job.outputUrl !== null) {
-      const { downloadedJobIds } = await queryClient.fetchQuery(videoEnhancementsQuery(sourceJobId))
       const outputUrl = job.outputUrl
+      const save = async () => {
+        if (await download(outputUrl, `生成的视频（高清版 ${resolution}）`))
+          recordVideoDownloaded(job.id)
+      }
       toast(`${label}的高清版 ${resolution} 已生成`, {
         action: {
           label: '下载',
           onClick: () => {
             seen()
-            for (const downloaded of downloadedJobIds) recordVideoDownloaded(downloaded)
-            void download(outputUrl, `生成的视频（高清版 ${resolution}）`)
+            void save()
           },
         },
         duration: NOTICE_MS,

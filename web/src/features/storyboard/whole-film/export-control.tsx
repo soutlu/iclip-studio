@@ -80,8 +80,8 @@ export function ExportControl({ view, blocked, onStart, onCancel }: ExportContro
           </Button>
           <VideoDownload
             className="editor-compose"
-            downloadedJobIds={view.sourceJobIds}
             enhanceSourceId={view.exportId}
+            jobId={view.exportId}
             originalLabel="下载成片"
             url={view.downloadUrl}
             watermarkUrl={null}

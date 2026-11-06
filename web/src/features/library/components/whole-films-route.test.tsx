@@ -10,21 +10,19 @@ import { stubScrollViewport } from '@/testing/scroll-viewport'
 import { DEFAULT_WHOLE_FILM_SCOPE, type WholeFilmCard } from '../whole-films.api'
 import { WholeFilmsRoute } from './whole-films-route'
 
-const source = (n: number) => `fa020001-0000-4000-8000-${String(n).padStart(12, '0')}`
-const version = (n: number, sourceJobIds: string[]) => ({
+const version = (n: number) => ({
   jobId: `fa010001-0000-4000-8000-${String(n).padStart(12, '0')}`,
   outputUrl: `https://media.test/film-${n}.mp4`,
   finishedAt: `2026-10-14T10:00:0${n}Z`,
   userName: 'writer',
-  sourceJobIds,
 })
 const film: WholeFilmCard = {
   conversationId: 'fa010002-0000-4000-8000-000000000001',
   title: '秋日成片',
   canOpenConversation: true,
   userName: 'tester',
-  face: version(2, [source(3)]),
-  versions: [version(1, [source(1), source(2)]), version(2, [source(3)])],
+  face: version(2),
+  versions: [version(1), version(2)],
 }
 
 function Harness({ initialFilm = null }: { initialFilm?: string | null }) {
@@ -59,7 +57,7 @@ afterEach(() => {
 })
 
 describe('WholeFilmsRoute', () => {
-  it('按最新一版展示卡片；切到 V1 下载时按那一版用到的素材片各记一次，没有脚本或做同款', async () => {
+  it('按最新一版展示卡片；切到 V1 下载时记那一版成片，没有脚本或做同款', async () => {
     const events: unknown[] = []
     server.use(
       http.post('*/api/tracking/events', async ({ request }) => {
@@ -87,10 +85,7 @@ describe('WholeFilmsRoute', () => {
     await user.click(within(dialog).getByRole('button', { name: 'V1' }))
     await user.click(within(dialog).getByRole('button', { name: '下载视频' }))
     await waitFor(() =>
-      expect(events).toEqual([
-        { jobId: source(1), name: 'video.downloaded' },
-        { jobId: source(2), name: 'video.downloaded' },
-      ]),
+      expect(events).toEqual([{ jobId: version(1).jobId, name: 'video.downloaded' }]),
     )
   })
 

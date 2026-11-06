@@ -108,7 +108,6 @@ class WholeFilmVersionOut(CamelModel):
     output_url: str
     finished_at: datetime
     user_name: str | None
-    source_job_ids: list[uuid.UUID]
 
 
 class WholeFilmCardOut(CamelModel):

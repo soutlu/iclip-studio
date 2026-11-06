@@ -44,20 +44,14 @@ videos AS (
            (g.output ->> 'duration_ms')::int AS duration_ms,
            -- 完成的出片：出成了且有完成时刻；各口径只引用这一列。
            (g.status = 'completed' AND g.finished_at IS NOT NULL) AS delivered,
-           -- 有人下载过它，或以它为原作的合成：下载的那条沿原作折回出片，原作可以在祖先对话里，
-           -- 折回的就是祖先那条出片。子查询不相关，整个集合只算一遍，逐行只做成员判断。
-           g.id IN (
-               SELECT COALESCE(d.root_job_id, d.id)
-               FROM iclip.tracking_events t
-               JOIN iclip.generation_jobs d ON d.id = t.job_id
-               WHERE t.name = 'video.downloaded'
-           ) AS downloaded,
+           COALESCE(r.downloaded, false) AS downloaded,
            g.shot_index AS shot,
            u.username AS user_name,
            c.task_id
     FROM iclip.generation_jobs g
     JOIN iclip.conversations c ON c.id = g.conversation_id
     JOIN iclip.users u ON u.id = g.owner_user_id
+    LEFT JOIN iclip.video_generation_report r ON r.job_id = g.id
     -- 出片 = 没有来源的视频 generate，且有镜号；编辑段与合成抄了原作的镜号，也一律不算。
     WHERE g.kind = 'video' AND g.operation = 'generate' AND g.source_job_id IS NULL
       AND g.shot_index IS NOT NULL

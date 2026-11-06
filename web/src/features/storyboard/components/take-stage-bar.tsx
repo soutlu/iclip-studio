@@ -26,9 +26,9 @@ export function TakeStageBar({ actions, onEditVideo, onRefill, take }: TakeStage
           {download.kind === 'enabled' && take.outputUrl !== undefined ? (
             <VideoDownload
               className={stageActionClass}
-              downloadedJobIds={[take.shown.id]}
               durationMs={take.shown.durationMs}
               enhanceSourceId={take.shown.id}
+              jobId={take.shown.id}
               url={take.outputUrl}
               watermarkUrl={take.shown.watermarkOutputUrl}
             />

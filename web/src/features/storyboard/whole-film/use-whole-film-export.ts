@@ -28,7 +28,7 @@ export type ExportView =
   | { kind: 'queued'; ahead: number | null }
   | { kind: 'rendering'; progress: number | null }
   | { kind: 'uploading' }
-  | { kind: 'done'; exportId: string; downloadUrl: string; sourceJobIds: readonly string[] }
+  | { kind: 'done'; exportId: string; downloadUrl: string }
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' }
 
@@ -51,12 +51,7 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
     case 'done':
       return state.downloadUrl === null
         ? { kind: 'failed', message: '导出完成了却没拿到下载地址，请重新导出' }
-        : {
-            kind: 'done',
-            exportId: state.id,
-            downloadUrl: state.downloadUrl,
-            sourceJobIds: state.sourceJobIds,
-          }
+        : { kind: 'done', exportId: state.id, downloadUrl: state.downloadUrl }
     case 'failed':
       return { kind: 'failed', message: failureText(state.error) }
     case 'cancelled':

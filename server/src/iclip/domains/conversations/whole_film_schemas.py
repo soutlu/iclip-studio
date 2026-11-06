@@ -265,11 +265,9 @@ class WholeFilmExportIn(CamelModel):
 
 
 class WholeFilmExportStartedOut(CamelModel):
-    """已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
-    用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。"""
+    """已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。"""
 
     export_id: uuid.UUID
-    source_job_ids: list[uuid.UUID]
 
 
 class WholeFilmExportErrorOut(CamelModel):
@@ -286,7 +284,6 @@ class WholeFilmExportOut(CamelModel):
     queue_position: int | None
     error: WholeFilmExportErrorOut | None
     download_url: str | None
-    source_job_ids: list[uuid.UUID]
 
 
 class WholeFilmExportLatestOut(CamelModel):
@@ -305,7 +302,6 @@ def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
         if export.error is None
         else WholeFilmExportErrorOut(code=export.error.code, message=export.error.message),
         download_url=export.download_url,
-        source_job_ids=list(export.source_job_ids),
     )
 
 

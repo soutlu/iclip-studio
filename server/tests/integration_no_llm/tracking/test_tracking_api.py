@@ -14,10 +14,13 @@ from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,
     KIND_VIDEO,
+    KIND_WHOLE_FILM,
     OPERATION_COMPOSE,
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
+    OPERATION_RENDER,
     OPERATION_UPLOAD,
+    STATUS_PENDING,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
 from tests.helpers.auth import register_and_login, set_roles_in_db
@@ -29,14 +32,16 @@ _JOBS: tuple[tuple[str, str, str, str, str | None, bool], ...] = (
     ("video", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
     ("edit", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, "video", True),
     ("composite", KIND_VIDEO, OPERATION_COMPOSE, STATUS_COMPLETED, "video", True),
+    ("enhancement", KIND_VIDEO, OPERATION_ENHANCE, STATUS_COMPLETED, "video", True),
+    ("film", KIND_WHOLE_FILM, OPERATION_RENDER, STATUS_COMPLETED, None, True),
+    ("upload", KIND_VIDEO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
+    ("pending", KIND_VIDEO, OPERATION_GENERATE, STATUS_PENDING, None, False),
     ("failed", KIND_VIDEO, OPERATION_GENERATE, STATUS_FAILED, None, False),
     ("no_url", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, None, False),
     ("image", KIND_IMAGE, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
-    ("upload", KIND_VIDEO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
     ("music_upload", KIND_AUDIO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
-    ("enhancement", KIND_VIDEO, OPERATION_ENHANCE, STATUS_COMPLETED, "video", True),
 )
-DOWNLOADABLE = ("video", "composite")
+DOWNLOADABLE = ("video", "edit", "composite", "enhancement", "film", "upload")
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> uuid.UUID:
@@ -81,6 +86,8 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                     "user_name": "nora",
                 }
                 if enhancement
+                else {"videos": [{"jobId": str(ids["video"])}]}
+                if operation == OPERATION_RENDER
                 else {"model": "m", "prompt": "p", "user_name": "nora"}
             )
             edit = operation == OPERATION_GENERATE and source is not None
@@ -140,7 +147,7 @@ async def test_anonymous_is_401(client: httpx.AsyncClient) -> None:
     assert (await client.post(EVENTS, json=download(uuid.uuid4()))).status_code == 401
 
 
-async def test_anyone_who_reads_generations_records_a_download_of_any_take_or_composite(
+async def test_anyone_who_reads_generations_records_a_download_of_any_finished_video_file(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
     owner = await login_as(client, pg_url, "nora", "editor")
@@ -149,7 +156,7 @@ async def test_anyone_who_reads_generations_records_a_download_of_any_take_or_co
 
     responses = [await client.post(EVENTS, json=download(jobs[label])) for label in DOWNLOADABLE]
 
-    assert [(r.status_code, r.content) for r in responses] == [(204, b""), (204, b"")]
+    assert [(r.status_code, r.content) for r in responses] == [(204, b"")] * len(DOWNLOADABLE)
     rows = await recorded(pg_url)
     assert {
         (row["name"], row["job_id"], row["conversation_id"], row["user_id"], row["api_key_id"])

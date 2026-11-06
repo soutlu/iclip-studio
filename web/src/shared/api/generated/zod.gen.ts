@@ -3396,10 +3396,9 @@ export const zVideoEnhanceTierOut = z.object({
 /**
  * VideoEnhancementsOut
  *
- * 一条视频能做的高清版各档，以及下载高清版时记下载事件的素材片。
+ * 一条视频能做的高清版各档。
  */
 export const zVideoEnhancementsOut = z.object({
-  downloadedJobIds: z.array(z.uuid()),
   tiers: z.array(zVideoEnhanceTierOut),
 })
 
@@ -3627,7 +3626,6 @@ export const zWholeFilmExportOut = z.object({
   id: z.uuid(),
   progress: z.number().nullable(),
   queuePosition: z.int().nullable(),
-  sourceJobIds: z.array(z.uuid()),
   status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),
 })
 
@@ -3643,12 +3641,10 @@ export const zWholeFilmExportLatestOut = z.object({
 /**
  * WholeFilmExportStartedOut
  *
- * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
- * 用到的素材片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。
  */
 export const zWholeFilmExportStartedOut = z.object({
   exportId: z.uuid(),
-  sourceJobIds: z.array(z.uuid()),
 })
 
 /**
@@ -3700,7 +3696,6 @@ export const zWholeFilmVersionOut = z.object({
   finishedAt: z.iso.datetime(),
   jobId: z.uuid(),
   outputUrl: z.string(),
-  sourceJobIds: z.array(z.uuid()),
   userName: z.string().nullable(),
 })
 

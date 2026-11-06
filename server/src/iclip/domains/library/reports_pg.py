@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Any, Final
 
 from iclip_video.shot_prompt import parse_shot_prompt
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import TextClause, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -333,7 +333,7 @@ page AS (
 )
 SELECT p.id AS conversation_id, p.title, p.conversation_owner, p.conversation_deleted,
        p.user_name, g.id AS job_id, (g.output ->> 'url') AS output_url, g.finished_at,
-       vu.username AS version_user_name, g.request->'videos' AS sources
+       vu.username AS version_user_name
 FROM page p
 JOIN iclip.generation_jobs g ON g.conversation_id = p.id
 JOIN iclip.users vu ON vu.id = g.owner_user_id
@@ -443,15 +443,6 @@ class _StoredVideoRequest(BaseModel):
     resolution: str | None = None
     generate_audio: bool | None = None
     reference_image_urls: list[str] = []
-
-
-class _StoredWholeFilmSource(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True)
-
-    job_id: uuid.UUID = Field(alias="jobId")
-
-
-_WHOLE_FILM_SOURCES: Final = TypeAdapter(list[_StoredWholeFilmSource])
 
 
 def _script_of(request: _StoredVideoRequest) -> ScriptOut | None:
@@ -585,9 +576,6 @@ def _film_cards_of(rows: Sequence[RowMapping]) -> list[WholeFilmCardRow]:
             output_url=row["output_url"],
             finished_at=row["finished_at"],
             user_name=row["version_user_name"],
-            source_job_ids=[
-                source.job_id for source in _WHOLE_FILM_SOURCES.validate_python(row["sources"])
-            ],
         )
         cards.setdefault(row["conversation_id"], (row, []))[1].append(version)
     return [

@@ -22,7 +22,7 @@ import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/s
 import { toast } from '@/shared/ui/toast'
 
 type VideoDownloadProps = {
-  downloadedJobIds: readonly string[]
+  jobId: string
   url: string
   watermarkUrl: string | null
   className?: string
@@ -66,9 +66,9 @@ function EnhanceBadgeMark({ badge }: { badge: EnhanceBadge }) {
 export function VideoDownload({
   children,
   className,
-  downloadedJobIds,
   durationMs,
   enhanceSourceId,
+  jobId,
   originalLabel = '下载原片',
   url,
   watermarkUrl,
@@ -94,22 +94,21 @@ export function VideoDownload({
     void queryClient.invalidateQueries({ queryKey: videoEnhancementsKeys.source(enhanceSourceId) })
   }
 
-  const download = (href: string, fallbackName: string) => {
-    for (const jobId of downloadedJobIds) recordVideoDownloaded(jobId)
-    void fetchAndSave(href, fallbackName)
+  const download = async (href: string, fallbackName: string, downloadedJobId: string) => {
+    if (await fetchAndSave(href, fallbackName)) recordVideoDownloaded(downloadedJobId)
   }
 
   const submitTier = (resolution: EnhanceResolution) => {
     if (enhanceSourceId !== undefined) submit.mutate({ resolution, sourceJobId: enhanceSourceId })
   }
 
-  const downloadTier = (resolution: EnhanceResolution, href: string) => {
+  const downloadTier = (resolution: EnhanceResolution, href: string, tierJobId: string) => {
     if (enhanceSourceId !== undefined) toast.dismiss(enhanceNoticeId(enhanceSourceId, resolution))
-    download(href, `${FALLBACK_NAME}（高清版 ${resolution}）`)
+    void download(href, `${FALLBACK_NAME}（高清版 ${resolution}）`, tierJobId)
   }
 
   const direct = watermarkUrl === null && rows.length === 0
-  const onClick = direct ? () => download(url, FALLBACK_NAME) : undefined
+  const onClick = direct ? () => void download(url, FALLBACK_NAME, jobId) : undefined
   const badge = children === undefined ? enhanceBadge(rows, seen) : null
   const trigger =
     children === undefined ? (
@@ -161,11 +160,13 @@ export function VideoDownload({
           {trigger}
         </MenuTrigger>
         <MenuSurface align="end">
-          <MenuItem onSelect={() => download(url, FALLBACK_NAME)}>
+          <MenuItem onSelect={() => void download(url, FALLBACK_NAME, jobId)}>
             {watermarkUrl === null ? originalLabel : '下载原片'}
           </MenuItem>
           {watermarkUrl === null ? null : (
-            <MenuItem onSelect={() => download(watermarkUrl, `${FALLBACK_NAME}（水印版）`)}>
+            <MenuItem
+              onSelect={() => void download(watermarkUrl, `${FALLBACK_NAME}（水印版）`, jobId)}
+            >
               下载水印版
             </MenuItem>
           )}
@@ -190,7 +191,7 @@ type EnhanceTierItemProps = {
   row: EnhanceTierRow
   estimate: string | undefined
   onSubmit: (resolution: EnhanceResolution) => void
-  onDownload: (resolution: EnhanceResolution, url: string) => void
+  onDownload: (resolution: EnhanceResolution, url: string, jobId: string) => void
 }
 
 function EnhanceTierItem({ estimate, onDownload, onSubmit, row }: EnhanceTierItemProps) {
@@ -212,7 +213,7 @@ function EnhanceTierItem({ estimate, onDownload, onSubmit, row }: EnhanceTierIte
       return <RunningTierItem resolution={resolution} since={row.since} />
     case 'done':
       return (
-        <MenuItem onSelect={() => onDownload(resolution, row.url)}>
+        <MenuItem onSelect={() => onDownload(resolution, row.url, row.jobId)}>
           下载高清版 {resolution}
         </MenuItem>
       )
