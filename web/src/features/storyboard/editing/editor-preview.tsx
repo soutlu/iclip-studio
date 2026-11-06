@@ -81,6 +81,8 @@ type Props = {
   onTime: (clock: number) => void
   onPlay: () => void
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
+  /** 当前视频不再下载时调用：下完或浏览器停止缓冲、加载失败、没有内容可加载。可能调用多次。 */
+  onDownloadSettled?: (() => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
   overlay: ReactNode
@@ -108,6 +110,7 @@ export function EditorPreview({
   onTime,
   onPlay,
   onPlaybackChange,
+  onDownloadSettled,
   externalAudio,
   aspectRatio,
   overlay,
@@ -123,6 +126,7 @@ export function EditorPreview({
   const pendingSeekRef = useRef<[number | null, number | null]>([null, null])
   const stopPlaybackRef = useRef<(() => void) | null>(null)
   const emitTime = useEffectEvent((clock: number) => onTime(clock))
+  const emitDownloadSettled = useEffectEvent(() => onDownloadSettled?.())
   const [active, setActive] = useState<Slot>(0)
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -174,6 +178,9 @@ export function EditorPreview({
     setIndex(0)
     if (shown.showing !== showing && shown.segments !== undefined) setSwitches(switches + 1)
   }
+  useEffect(() => {
+    if (segments?.length === 0) emitDownloadSettled()
+  }, [segments])
   const lastShowingRef = useRef(showing)
   const resumeClock = useEffectEvent(() => currentTime)
 
@@ -364,6 +371,8 @@ export function EditorPreview({
           aria-hidden={slot !== active}
           aria-label={slot === active ? '视频播放器' : undefined}
           className={cn('editor-video', slot !== active && 'invisible')}
+          // OSS 回 Vary: Origin，不带 crossorigin 就和 mediabunny 的 fetch 不共用缓存。
+          crossOrigin="anonymous"
           key={id}
           muted={muted || externalAudio !== undefined}
           onWaiting={(event) => {
@@ -396,7 +405,11 @@ export function EditorPreview({
             if (slot === active) {
               setFailed(true)
               setPlaying(false)
+              onDownloadSettled?.()
             }
+          }}
+          onSuspend={() => {
+            if (slot === active) onDownloadSettled?.()
           }}
           onLoadedMetadata={(event) => {
             const media = event.currentTarget

@@ -249,6 +249,7 @@ function Editor({
   const [cardOpen, setCardOpen] = useState(true)
   // 正按着修剪把手：拖动中的样子只给舞台、时间线和卡上的文字看，草稿与选区松手才改。
   const [trimPreview, setTrimPreview] = useState<TrimPreview>()
+  const [videoSettled, setVideoSettled] = useState(false)
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const { downloading, download } = useMediaDownload()
@@ -723,7 +724,10 @@ function Editor({
         ]
       : listed.map((version) => version.mediaUrl),
   )
-  const peaks = useAudioPeaks(audioUrls)
+  // 视频先下载，波形等它停下再读同一份缓存；读不到关键帧时舞台不加载视频，没有可等的。
+  const peaks = useAudioPeaks(audioUrls, {
+    enabled: videoSettled || (clipsView ? keyframes.isError : viewedKeyframes?.isError === true),
+  })
   useFailureToasts(
     useMemo(
       () => [
@@ -1071,6 +1075,7 @@ function Editor({
             shownTime={trimPreview?.shown}
             // 拖草稿块的把手时舞台放的是拖动中的草稿，总长仍按草稿本身写，同「共 X 秒」
             shownDuration={trimPreview?.kind === 'draft' ? total : undefined}
+            onDownloadSettled={() => setVideoSettled(true)}
             onPlay={collapseCard}
             onTime={setCurrentTime}
             overlay={
